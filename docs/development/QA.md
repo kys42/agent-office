@@ -1,3 +1,12 @@
+# 퇴근·보관 설정과 보조 자리 수명 · 2026-10-05
+
+- 단위/계약 101개 통과. 기간 경계·자동 보관 끄기·핀/수동 보관 우선순위·잘못된 설정 조합의 API 거부·저장 재개 검증.
+- 보조 응답 직후 유지 → 도구/폴링에는 유지 → 부모 새 요청에서 접힘 → 상세 결과 계속 접근. 중첩 부모·미수집 부모·메인 대기·진행 중/확인 필요 예외·새 보조 요청 재참여를 검증.
+- 220개 도구 이벤트 이후에도 부모의 taskStartedAt을 보존하며 fragment merge/compact snapshot/재수집에서 경계가 회귀하지 않음.
+- Playwright 전체 실행 22개 통과 후 새 설정 테스트의 native option matcher를 toHaveJSProperty(disabled,true)로 정정하고 해당 1개 재실행 통과. 실제 옵션의 disabled 속성은 처음부터 정상. 합계 23개 시나리오 확인.
+- 설정의 일 단위 선택·보관 끄기·복귀 시 요약·대기 역전 방지·390px overflow 없음. 합성 캡처는 .local/office-settings-lifecycle.png.
+- TypeScript 포함 production build, formatter, Electron(IPC/미니/격리) 및 MCP(4개 읽기 도구/검색/인수인계) smoke 통과. 변경 diff 읽기 리뷰에서 새 중·고위험 회귀 없음.
+
 # 동료 투영·소식 열람·에셋 확장 검증 · 2026-10-05
 
 - 단위/계약 테스트 **96개**, Playwright **21개**, TypeScript 포함 production build, formatter 통과.

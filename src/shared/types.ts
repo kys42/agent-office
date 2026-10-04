@@ -146,6 +146,8 @@ export interface Session {
   gitCommit?: string | null;
   model: string | null;
   startedAt: number;
+  /** Latest own user request/native turn start, retained beyond compact event windows. */
+  taskStartedAt?: number;
   updatedAt: number;
   observedAt: number;
   status: Mood;
@@ -194,6 +196,7 @@ export interface Preferences {
   maxSessions: number;
   standbyHours?: number;
   archiveDays?: number;
+  autoArchive?: boolean;
   bubbleHours?: number;
 }
 export interface Snapshot {

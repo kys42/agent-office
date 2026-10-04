@@ -1,3 +1,4 @@
+import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { resolveIdentity } from './identity.js';
@@ -424,6 +425,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     gitCommit,
     model,
     startedAt,
+    taskStartedAt: latestTaskStart(events),
     updatedAt,
     observedAt: now,
     status: state.status,

@@ -1,3 +1,4 @@
+import { validOfficeSchedule } from '../src/shared/lifecycle.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
 import path from 'node:path';
@@ -29,6 +30,7 @@ export const DEFAULT_PREFS: Preferences = {
   maxSessions: 120,
   standbyHours: 4,
   archiveDays: 7,
+  autoArchive: true,
   bubbleHours: 3,
 };
 export class OfficeStore {
@@ -54,6 +56,8 @@ export class OfficeStore {
     const prefs = { ...DEFAULT_PREFS, ...(value ? JSON.parse(value.value) : {}) };
     if (patch) {
       Object.assign(prefs, patch);
+      if (!validOfficeSchedule(prefs))
+        throw new Error('보관 시점은 대기 시점보다 뒤로 설정해 주세요.');
       this.db
         .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
         .run(JSON.stringify(prefs));
@@ -71,7 +75,10 @@ export class OfficeStore {
         const prior = get.get(s.id) as { data: string } | undefined;
         this.ingestNotices(s);
         if (prior && JSON.parse(prior.data).revision === s.revision) continue;
-        put.run(s.id, provider, s.project, s.updatedAt, JSON.stringify(s));
+        const taskStartedAt =
+          Math.max(s.taskStartedAt ?? 0, prior ? (JSON.parse(prior.data).taskStartedAt ?? 0) : 0) ||
+          undefined;
+        put.run(s.id, provider, s.project, s.updatedAt, JSON.stringify({ ...s, taskStartedAt }));
         remove.run(s.id);
         index.run(
           s.id,

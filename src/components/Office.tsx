@@ -356,7 +356,7 @@ export function Office({
                         data-parent-id={station.id}
                         data-furniture="helper-desk"
                         style={{ transform: `translate(${child.x}px, ${child.y}px)` }}
-                        aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료`}
+                        aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료${s.runtime?.phase === 'responded' && !presentSession(s, clock).working ? ', 결과 남김' : ''}`}
                         title={
                           privacy
                             ? undefined
@@ -370,6 +370,14 @@ export function Office({
                           size={44}
                         />
                         <Furniture kind="helper" />
+                        {s.runtime?.phase === 'responded' && !presentSession(s, clock).working && (
+                          <span
+                            className="helper-result"
+                            title="응답을 남겼어요 · 메인의 다음 요청까지 머물러요"
+                          >
+                            ✓
+                          </span>
+                        )}
                         <b>{privacy ? '보조 동료' : s.relation?.role || sessionName(s)}</b>
                         {notices.some(
                           (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),

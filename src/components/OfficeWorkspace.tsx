@@ -6,6 +6,7 @@ import { officeZone, sessionName } from '../shared/office';
 import { date, ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
+import { officeSchedule } from '../shared/lifecycle';
 import { officeResidents, sessionScopeLabel } from '../shared/residents';
 import { RestLounge } from './RestLounge';
 import { Sprite } from './Sprite';
@@ -25,6 +26,7 @@ export function OfficeWorkspace({
   onSelect,
   onReturn,
   onRefresh,
+  onSettings,
   refreshing,
   demo,
 }: {
@@ -35,6 +37,7 @@ export function OfficeWorkspace({
   onSelect: (id: string) => void;
   onReturn: (id: string) => void;
   onRefresh: () => void;
+  onSettings: () => void;
   refreshing: boolean;
   demo: boolean;
 }) {
@@ -145,9 +148,14 @@ export function OfficeWorkspace({
             </button>
           ))}
         </div>
-        <span className="office-policy">
-          {prefs.standbyHours ?? 4}시간 후 대기 · {prefs.archiveDays ?? 7}일 후 보관
-        </span>
+        <button
+          className="office-policy"
+          onClick={onSettings}
+          aria-label="사무실 설정 열기"
+          title="퇴근·보관 기준 바꾸기"
+        >
+          {officeSchedule(prefs)} <span aria-hidden="true">⚙</span>
+        </button>
       </div>
       {zone === 'office' ? (
         <div className="office-layout">
@@ -286,7 +294,7 @@ export function OfficeWorkspace({
         <details className="background-records">
           <summary>
             보조·자동 작업 기록 <b>{hidden.length}</b>
-            <span>작업이 끝난 보조 동료와 내부 실행은 여기에 보관해요.</span>
+            <span>이전 작업의 보조 동료와 내부 실행은 여기에 보관해요.</span>
           </summary>
           <div>
             {[...hidden]

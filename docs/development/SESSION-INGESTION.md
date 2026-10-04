@@ -117,3 +117,7 @@ OpenClaw의 `session_nodes` optional 열은 PRAGMA로 확인한다. `created_via
 자체 `src/shared/residents.ts`는 canonical Session 목록을 표시용 동료로 투영한다. OpenClaw 실행을 한 데이터 행으로 병합하지 않으며, 서브세션·내부 실행을 숨겨도 상세/검색/MCP/소식 원본이 남는다. 따라서 페르소나 화면 정리와 세션 중복 병합은 서로 다른 단계다. 좌석은 actor key로 저장하고 개인 메모·별명·접기 영수증은 기존 session/event key를 유지한다. 상세 실행 선택은 정확한 원본 ID로 돌아간다.
 
 검증 fixture는 `tests/residents.test.ts`와 `tests/ui/residents.spec.ts`에 있다. optional DB 열, cross-persona parent key, metadata가 없는 최신 fragment, 대표 실행 교체, 재시작 영수증/좌석, 내부 작업을 이름으로 오분류하지 않는 경우를 포함한다.
+
+### 현재 작업 경계 보존
+
+office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정제된 공통 이벤트에서 요청/명시적 턴 시작을 찾는 자체 `shared/lifecycle.ts`를 사용한다. 본문·소스명을 UI에서 다시 분석하지 않는다. 어댑터의 events 180개 절단과 store snapshot의 4개 절단 전에 경계를 추출하고, partial tail 재수집에서 이미 관측한 경계가 사라져 보조가 재등장하지 않도록 저장한다. 전체 native history가 제공되지 않으면 경계를 추측하지 않고 일반 대기 정책으로 제한한다. fixture는 `tests/lifecycle-settings.test.ts`와 `tests/residents.test.ts`다.

@@ -57,13 +57,13 @@ export function attachSessions(sessions: Session[]): Session[] {
 }
 export function officeZone(
   s: Session,
-  prefs: Pick<Preferences, 'standbyHours' | 'archiveDays'>,
+  prefs: Pick<Preferences, 'standbyHours' | 'archiveDays' | 'autoArchive'>,
   now = Date.now(),
 ): OfficeZone {
   if (s.archived) return 'archive';
   if (s.pinned) return 'office';
   const age = now - Math.max(s.updatedAt, s.returnedAt || 0);
-  if (age >= (prefs.archiveDays ?? 7) * 86400_000) return 'archive';
+  if (prefs.autoArchive !== false && age >= (prefs.archiveDays ?? 7) * 86400_000) return 'archive';
   if (age >= (prefs.standbyHours ?? 4) * 3600_000) return 'waiting';
   return 'office';
 }

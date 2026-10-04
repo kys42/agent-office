@@ -26,6 +26,11 @@ const make = (id: string, patch: Partial<Session> = {}): Session => ({
   nativeId: id,
   status: 'idle',
   updatedAt: now,
+  startedAt: now - 5000,
+  events: [],
+  activity: undefined,
+  runtime: undefined,
+  taskStartedAt: undefined,
   archived: false,
   pinned: false,
   actor: undefined,
@@ -107,8 +112,8 @@ test('Persona projection keeps one resident per namespace and raw run identities
   assert.equal(allocateSeats(after, seats)[seatKey(a)], seats[seatKey(aki)]);
   assert.equal(officeResidents([{ ...cron, status: 'done' }], now).sessions[0].zone, 'waiting');
 });
-test('Inactive helpers and internal runs fold away; working helpers, forks and attention stay visible', () => {
-  const root = make('root'),
+test('Previous-task helpers and internal runs fold away; working helpers, forks and attention stay visible', () => {
+  const root = make('root', { taskStartedAt: now }),
     child = make('child', {
       relation: { kind: 'subagent', parentNativeId: 'root', source: 'fixture' },
     });
@@ -129,7 +134,7 @@ test('Inactive helpers and internal runs fold away; working helpers, forks and a
   assert.equal(active.sessions.find((s) => s.id === 'child')?.attachedTo, 'root');
   assert.equal(
     officeResidents([{ ...child, status: 'work', updatedAt: now - 121_000 }], now).hidden.length,
-    1,
+    0,
   );
   assert.equal(officeResidents([{ ...guardian, pinned: true }], now).hidden.length, 0);
 });
@@ -265,4 +270,63 @@ test('Persisted views and persona seats survive restart; new content resets expo
     store.close();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('Completed helpers remain through silence until a parent request, not a tool or late result', () => {
+  const parent = make('p', { taskStartedAt: now - 10_000 });
+  const child = make('c', {
+    taskStartedAt: now - 5_000,
+    status: 'done',
+    relation: { kind: 'subagent', parentNativeId: 'p', source: 'fixture' },
+  });
+  const retained = officeResidents([parent, child], now);
+  assert.equal(retained.hidden.length, 0);
+  assert.equal(retained.sessions[1].attachedTo, 'p');
+  const tools = {
+    ...parent,
+    updatedAt: now + 1,
+    events: [
+      { id: 'exec', at: now + 1, kind: 'tool' as const, text: 'exec', sourceRef: 'fixture' },
+    ],
+  };
+  assert.equal(officeResidents([tools, child], now + 1).hidden.length, 0);
+  const next = { ...parent, taskStartedAt: now + 2 };
+  assert.equal(officeResidents([next, child], now + 3).hidden[0].id, 'c');
+  assert.equal(
+    officeResidents([next, { ...child, updatedAt: now + 4 }], now + 5).hidden[0].id,
+    'c',
+  );
+  assert.equal(
+    officeResidents([next, { ...child, updatedAt: now + 4, status: 'work' }], now + 5).hidden
+      .length,
+    0,
+  );
+  assert.equal(officeResidents([next, { ...child, status: 'call' }], now + 5).hidden.length, 0);
+  assert.equal(
+    officeResidents([next, { ...child, taskStartedAt: now + 4 }], now + 5).hidden.length,
+    0,
+  );
+  assert.equal(
+    officeResidents([parent, { ...child, zone: 'waiting' }], now).sessions[1].attachedTo,
+    'p',
+  );
+  assert.equal(officeResidents([{ ...parent, zone: 'waiting' }, child], now).hidden[0].id, 'c');
+});
+test('Nested helpers retire on their main task boundary; uncollected parents retain recent results conservatively', () => {
+  const main = make('main', { taskStartedAt: now - 9000 });
+  const child = make('child', {
+    taskStartedAt: now - 7000,
+    relation: { kind: 'subagent', parentNativeId: 'main', source: 'fixture' },
+  });
+  const nested = make('nested', {
+    taskStartedAt: now - 6000,
+    relation: { kind: 'subagent', parentNativeId: 'child', source: 'fixture' },
+  });
+  assert.equal(officeResidents([main, child, nested], now).hidden.length, 0);
+  assert.equal(
+    officeResidents([{ ...main, taskStartedAt: now }, child, nested], now).hidden.length,
+    2,
+  );
+  assert.equal(officeResidents([nested], now).hidden.length, 0);
+  assert.equal(officeResidents([{ ...nested, zone: 'waiting' }], now).hidden.length, 1);
 });

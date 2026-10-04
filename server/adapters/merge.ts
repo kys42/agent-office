@@ -1,3 +1,4 @@
+import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import type { Session } from '../../src/shared/types.js';
 import { hash } from './normalize.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
@@ -48,6 +49,7 @@ export function mergeSessions(input: Session[]): Session[] {
         sourcePaths: [...new Set(group.flatMap((s) => s.sourcePaths ?? [s.sourcePath]))].sort(),
         title: [...group].reverse().find((s) => s.nativeTitle)?.title ?? group[0].title,
         nativeTitle: group.some((s) => s.nativeTitle),
+        taskStartedAt: latestTaskStart(events, Math.max(...group.map((s) => s.taskStartedAt ?? 0))),
         startedAt: Math.min(...group.map((s) => s.startedAt)),
         events: events.slice(-180),
         partial: group.some((s) => s.partial) || events.length > 180,

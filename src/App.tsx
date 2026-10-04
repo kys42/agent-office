@@ -412,6 +412,7 @@ export default function App() {
             <OfficeWorkspace
               key={demo ? 'demo' : 'live'}
               snapshot={snapshot}
+              onSettings={() => setView('settings')}
               selected={selected}
               onSelect={choose}
               onReturn={returnToOffice}

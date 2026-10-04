@@ -1,3 +1,4 @@
+import { durationLabel, officeSchedule } from '../shared/lifecycle';
 import {
   Plug,
   ShieldCheck,
@@ -105,6 +106,91 @@ export function Settings({
         </section>
         <div>
           <section className="settings-section">
+            <h2>사무실 설정</h2>
+            <p>두 시점 모두 마지막 활동부터 계산해요. 고정한 동료는 자리를 지켜요.</p>
+            <div className="setting-row">
+              <div>
+                <b>보관 공간 자동 이동</b>
+                <p>끄면 대기 라운지에 머물러요. 직접 보관하는 기능은 그대로예요.</p>
+              </div>
+              <Toggle
+                checked={p.autoArchive !== false}
+                label="보관 공간 자동 이동"
+                onChange={() =>
+                  onPrefs({
+                    autoArchive: p.autoArchive === false,
+                    archiveDays: Math.max(
+                      p.archiveDays ?? 7,
+                      Math.floor((p.standbyHours ?? 4) / 24) + 1,
+                    ),
+                  })
+                }
+              />
+            </div>
+            <div className="lifecycle-settings">
+              <label>
+                말풍선 유지
+                <select
+                  aria-label="말풍선 유지 시간"
+                  value={p.bubbleHours ?? 3}
+                  onChange={(e) => onPrefs({ bubbleHours: Number(e.target.value) })}
+                >
+                  {[1, 3, 6, 12, 24].map((h) => (
+                    <option key={h} value={h}>
+                      {h}시간
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                퇴근 · 대기 라운지로
+                <select
+                  aria-label="대기까지 시간"
+                  value={p.standbyHours ?? 4}
+                  onChange={(e) => {
+                    const standbyHours = Number(e.target.value);
+                    onPrefs({
+                      standbyHours,
+                      archiveDays: Math.max(p.archiveDays ?? 7, Math.floor(standbyHours / 24) + 1),
+                    });
+                  }}
+                >
+                  {[...new Set([1, 2, 4, 8, 24, 48, 72, 168, 336, 720, 2160, p.standbyHours ?? 4])]
+                    .sort((a, b) => a - b)
+                    .map((h) => (
+                      <option key={h} value={h}>
+                        {durationLabel(h)} 뒤
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                보관 공간으로
+                <select
+                  aria-label="보관까지 기간"
+                  disabled={p.autoArchive === false}
+                  value={p.archiveDays ?? 7}
+                  onChange={(e) => onPrefs({ archiveDays: Number(e.target.value) })}
+                >
+                  {[...new Set([1, 3, 7, 14, 30, 60, 90, 180, 365, p.archiveDays ?? 7])]
+                    .sort((a, b) => a - b)
+                    .map((d) => (
+                      <option key={d} value={d} disabled={d * 24 <= (p.standbyHours ?? 4)}>
+                        {d}일 뒤
+                      </option>
+                    ))}
+                </select>
+              </label>
+            </div>
+            <p className="office-schedule-preview" aria-live="polite">
+              마지막 활동 → {officeSchedule(p)}
+            </p>
+            <p className="helper-lifecycle-note">
+              보조 동료는 결과를 남겨두고 메인의 다음 요청이 시작되면 자리에서 빠져요. 아직 일하거나
+              확인을 기다리면 남아 있어요. 메인이 퇴근하면 이전 작업 기록으로 접어둬요.
+            </p>
+          </section>
+          <section className="settings-section">
             <h2>내 작업 리듬에 맞게</h2>
             <div className="setting-row">
               <Pause size={18} />
@@ -158,54 +244,6 @@ export function Settings({
               <option value={120}>최근 120개</option>
               <option value={300}>최근 300개</option>
             </select>
-          </section>
-          <section className="settings-section">
-            <h2>사무실에서 쉬어가는 시간</h2>
-            <p>최근 활동을 기준으로 공간을 구분해요. 고정한 동료는 자리를 지켜요.</p>
-            <div className="lifecycle-settings">
-              <label>
-                말풍선 유지
-                <select
-                  aria-label="말풍선 유지 시간"
-                  value={p.bubbleHours ?? 3}
-                  onChange={(e) => onPrefs({ bubbleHours: Number(e.target.value) })}
-                >
-                  {[1, 3, 6, 12, 24].map((h) => (
-                    <option key={h} value={h}>
-                      {h}시간
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                대기 라운지로
-                <select
-                  aria-label="대기까지 시간"
-                  value={p.standbyHours ?? 4}
-                  onChange={(e) => onPrefs({ standbyHours: Number(e.target.value) })}
-                >
-                  {[1, 2, 4, 8, 24].map((h) => (
-                    <option key={h} value={h}>
-                      {h}시간 뒤
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                보관 공간으로
-                <select
-                  aria-label="보관까지 기간"
-                  value={p.archiveDays ?? 7}
-                  onChange={(e) => onPrefs({ archiveDays: Number(e.target.value) })}
-                >
-                  {[3, 7, 14, 30, 90].map((d) => (
-                    <option key={d} value={d}>
-                      {d}일 뒤
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
           </section>
           <section className="settings-section scope-settings">
             <h2>기록에서 제외할 프로젝트</h2>

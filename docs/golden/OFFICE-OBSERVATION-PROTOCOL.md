@@ -120,3 +120,11 @@ Session {
 - `OfficeNotice.viewedAt?`는 사용자가 해당 버전을 직접 열어본 시각이며 읽음/접기와 별도다. `background?`는 현재 세션의 origin/relation에서 조회 시 계산하는 분류이며 소식 version을 바꾸지 않는다. 일반 최종 응답과 미해결 확인 요청만 중요 배지에 센다.
 - `mergeSessions`는 최신 fragment에 metadata가 없어도 기존의 근거 있는 actor/origin/sessionKey/부모 관계를 보존한다. 이 보완을 다른 native ID 병합에 사용하지 않는다.
 - 에셋 ID·팔레트·hue·소품은 [표현 계약](../development/OFFICE-ASSETS.md)이다. source의 branch/project/status를 색상 설정으로 덮어쓰지 않는다.
+
+## 작업 단위 보조 자리와 이동 설정
+
+`Session.taskStartedAt?`는 정제된 자기 user 요청 또는 명시적 lifecycle.started 중 가장 최근 시각이다. 공개 이벤트에서 어댑터가 추출하며 도구 호출·파일 mtime·폴링·최종 응답으로 갱신하지 않는다. 긴 도구 구간으로 요청이 events에서 잘리기 **전**에 추출하고, fragment 병합·저장소 재수집·compact snapshot에서도 이미 관측한 최대 시각을 유지한다. 원본 턴 ID가 아니며 완료/성공의 근거로 쓰지 않는다. 필드가 없으면 해당 snapshot의 공개 이벤트와 자기 startedAt을 보수적 fallback으로 쓴다.
+
+`helperPresence`는 부모 체인의 새 taskStartedAt을 비교해 이전 작업 보조를 접는다. 완료 직후나 조용해졌다는 이유로만 없애지 않는다. 작업 중·확인 필요·핀 예외, 부모 대기/보관, 미수집 부모·순환 관계를 따로 처리한다. ‘새 작업’의 경계는 사용자 요청 또는 원본 turn 시작이라는 관측 가능한 대리 기준이며, 같은 목적의 추가 지시인지 의미를 추론하지 않는다.
+
+`Preferences.autoArchive?`는 생략 시 true로 호환한다. standbyHours는 1~2160, archiveDays는 1~365이며 둘은 마지막 활동 기준이다. autoArchive=true이면 archiveDays*24 > standbyHours를 검증한다. false일 때도 수동 archived는 존중한다. canonical 세션과 소식은 자동 이동으로 삭제되지 않는다.

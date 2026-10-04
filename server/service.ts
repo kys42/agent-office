@@ -32,8 +32,9 @@ const prefsSchema = z
     excludedProjects: z.array(z.string().max(150)).max(100).optional(),
     enabledProviders: z.array(providerSchema).max(3).optional(),
     maxSessions: z.number().int().min(10).max(300).optional(),
-    standbyHours: z.number().int().min(1).max(24).optional(),
-    archiveDays: z.number().int().min(1).max(90).optional(),
+    standbyHours: z.number().int().min(1).max(2160).optional(),
+    autoArchive: z.boolean().optional(),
+    archiveDays: z.number().int().min(1).max(365).optional(),
     bubbleHours: z.number().int().min(1).max(24).optional(),
   })
   .strict();
@@ -153,7 +154,7 @@ export class OfficeService extends EventEmitter {
           prefs.maxSessions,
         );
         for (const file of files) {
-          const stamp = `office-v8:${file.size}:${file.mtime}`;
+          const stamp = `office-v9:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
           if (!s) {

@@ -442,3 +442,45 @@
 .rest-lounge .lounge-return {
   color: #705c43;
 }
+.office-policy {
+  align-items: center;
+  gap: 7px;
+  border-radius: 4px;
+  padding: 5px;
+  text-align: right;
+}
+.office-policy:hover {
+  background: #b7a18218;
+  color: #dec99b;
+}
+.office-schedule-preview {
+  padding: 12px;
+  border: 1px solid #655469;
+  border-radius: 6px;
+  margin-top: 16px !important;
+  color: #dcc9ab !important;
+  line-height: 1.7;
+}
+.helper-lifecycle-note {
+  margin-top: 12px !important;
+  line-height: 1.8 !important;
+}
+.lifecycle-settings select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.helper-result {
+  position: absolute;
+  right: 3px;
+  top: 5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  font-size: 11px;
+  border: 1px solid #698861;
+  color: #365a3a;
+  background: #e0edcc;
+  border-radius: 3px;
+  z-index: 3;
+}

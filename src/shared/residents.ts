@@ -1,11 +1,34 @@
 import type { Session } from './types';
-import { attachSessions } from './office';
+import { attachSessions, parentSession } from './office';
 import { isWorking } from './presentation';
+import { taskStart } from './lifecycle';
 
 export const isHelper = (s: Session) => ['subagent', 'child'].includes(s.relation?.kind ?? '');
 export const isBackground = (s: Session) =>
   ['scheduled', 'internal'].includes(s.origin?.kind ?? '');
 export const needsAttention = (s: Session) => !s.archived && ['call', 'error'].includes(s.status);
+
+/** Retain a helper's result for its parent's current task, independent of silence duration. */
+export function helperPresence(s: Session, sessions: Session[], now = Date.now()) {
+  if (s.pinned || isWorking(s, now) || needsAttention(s)) return { visible: true };
+  if (s.archived) return { visible: false };
+  const anchor = taskStart(s) ?? s.startedAt;
+  const visited = new Set([s.id]);
+  let current = s,
+    host: Session | undefined;
+  while (isHelper(current)) {
+    const parent = parentSession(current, sessions);
+    if (!parent || visited.has(parent.id)) break;
+    visited.add(parent.id);
+    // A resumed helper gets a newer own task anchor. Late results alone cannot revive it.
+    if ((taskStart(parent) ?? 0) > anchor || parent.archived || parent.zone === 'archive')
+      return { visible: false };
+    host = parent;
+    current = parent;
+  }
+  // Unknown relationships are not grounds for disappearing a recently observed helper.
+  return { visible: (host?.zone ?? s.zone) === 'office' || (!host?.zone && !s.zone), host };
+}
 export const sessionScopeLabel = (s: Session) =>
   s.origin?.kind === 'scheduled'
     ? '자동 실행'
@@ -23,14 +46,13 @@ export function officeResidents(sessions: Session[], now = Date.now()) {
   for (const s of sessions) {
     if (s.actor) {
       actors.set(s.actor.id, [...(actors.get(s.actor.id) ?? []), s]);
-    } else if (
-      !s.pinned &&
-      (isBackground(s)
-        ? !needsAttention(s)
-        : isHelper(s) && !isWorking(s, now) && !needsAttention(s))
-    ) {
-      hidden.push(s);
-    } else residents.push(s);
+    } else {
+      const presence = isHelper(s)
+        ? helperPresence(s, sessions, now)
+        : { visible: true, host: undefined };
+      if (!s.pinned && (isBackground(s) ? !needsAttention(s) : !presence.visible)) hidden.push(s);
+      else residents.push(presence.host ? { ...s, zone: presence.host.zone } : s);
+    }
   }
   for (const group of actors.values()) {
     const ordered = [...group].sort((a, b) => {
