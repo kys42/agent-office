@@ -11,6 +11,7 @@ import {
 import { sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Sprite } from './Sprite';
+import { PanelTabs } from './PanelTabs';
 export type ReceiptHandler = (
   receipts: NoticeReceipt[],
   action: 'read' | 'dismiss' | 'unread' | 'view',
@@ -240,14 +241,7 @@ export function NewsInbox({
   const unread = unreadNoticeCount(notices);
   return (
     <aside className="inspector news-inbox" aria-label="소식함">
-      <div className="inspector-top">
-        <span className="inspector-crumb">
-          <Mail size={13} /> 소식함
-        </span>
-        <button className="icon-btn" aria-label="소식함 닫기" title="닫기 · Esc" onClick={onClose}>
-          <X size={17} />
-        </button>
-      </div>
+      <PanelTabs active="inbox" unread={unread} onRoster={onClose} onClose={onClose} />
       <div className="inbox-heading">
         <h2>
           {unread ? (

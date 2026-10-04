@@ -36,6 +36,8 @@ export function Office({
   privacy,
   onShowWaiting,
   footer,
+  spotlight = null,
+  onHover,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -48,6 +50,8 @@ export function Office({
   privacy: boolean;
   onShowWaiting: () => void;
   footer?: ReactNode;
+  spotlight?: string | null;
+  onHover?: (id: string | null) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -124,6 +128,36 @@ export function Office({
     setZoom(null);
     holder.current?.scrollTo({ top: 0, left: 0 });
   };
+  const zoomBy = (delta: number) => setZoom(Math.min(2, Math.max(0.15, scale + delta)));
+  useEffect(() => {
+    const command = (e: Event) => {
+      const what = (e as CustomEvent<string>).detail;
+      if (what === 'fit') fit();
+      if (what === 'zoom-in') zoomBy(0.2);
+      if (what === 'zoom-out') zoomBy(-0.15);
+    };
+    window.addEventListener('office:command', command);
+    return () => window.removeEventListener('office:command', command);
+  });
+  // When zoomed in, bring the chosen colleague's desk into view. Furniture never moves.
+  useEffect(() => {
+    if (zoom === null || !selected || !holder.current) return;
+    const owner = sessions.find(
+      (s) => s.id === selected || s.resident?.sessionIds.includes(selected),
+    );
+    const el = holder.current.querySelector<HTMLElement>(
+      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"]`,
+    );
+    if (!el) return;
+    const box = el.getBoundingClientRect(),
+      view = holder.current.getBoundingClientRect();
+    holder.current.scrollTo({
+      left: holder.current.scrollLeft + box.left - view.left - (view.width - box.width) / 2,
+      top: holder.current.scrollTop + box.top - view.top - (view.height - box.height) / 2,
+      behavior: reducedMotion ? 'auto' : 'smooth',
+    });
+  }, [selected, zoom === null]);
+  const callers = primary.filter((s) => s.status === 'call' || s.status === 'error');
   return (
     <section
       className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''}`}
@@ -229,7 +263,7 @@ export function Office({
                   const branch = branchInfo(s);
                   return (
                     <div
-                      className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'}`}
+                      className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
                       data-working={pose.working}
                       key={s.id}
                       data-station-id={s.id}
@@ -245,8 +279,14 @@ export function Office({
                         aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}
                         title={POSTURE_LABELS[pose.posture]}
                         onClick={() => onSelect(s.id)}
-                        onMouseEnter={() => setHover(s.id)}
-                        onMouseLeave={() => setHover(null)}
+                        onMouseEnter={() => {
+                          setHover(s.id);
+                          onHover?.(s.id);
+                        }}
+                        onMouseLeave={() => {
+                          setHover(null);
+                          onHover?.(null);
+                        }}
                       >
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {arrival && (
@@ -356,7 +396,7 @@ export function Office({
                     const childPose = presentSession(s, clock);
                     return (
                       <button
-                        className={`helper-desk ${selected === s.id ? 'chosen' : ''} ${childPose.working ? 'helper-working' : ''}`}
+                        className={`helper-desk ${selected === s.id ? 'chosen' : ''} ${childPose.working ? 'helper-working' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
                         key={s.id}
                         data-session-id={s.id}
                         data-parent-id={station.id}
@@ -417,6 +457,21 @@ export function Office({
             </>
           )}
         </span>
+        {callers.length > 0 && (
+          <button
+            className="hud-pill hud-call"
+            title="기다리는 동료에게 가기"
+            onClick={() => {
+              const i = callers.findIndex(
+                (s) => s.id === selected || s.resident?.sessionIds.includes(selected ?? ''),
+              );
+              onSelect(callers[(i + 1) % callers.length].id);
+            }}
+          >
+            <i className="hud-call-dot" />
+            불러요 {callers.length}
+          </button>
+        )}
         {footer}
       </div>
       <div className="stage-hud hud-bottom-right scene-controls">
@@ -424,7 +479,7 @@ export function Office({
           aria-label="사무실 축소"
           title="축소"
           disabled={scale < 0.2}
-          onClick={() => setZoom(Math.max(0.15, scale - 0.15))}
+          onClick={() => zoomBy(-0.15)}
         >
           <Minus size={14} />
         </button>
@@ -441,7 +496,7 @@ export function Office({
           aria-label="사무실 확대"
           title="확대 · 화면을 스크롤해 둘러보기"
           disabled={scale >= 2}
-          onClick={() => setZoom(Math.min(2, scale + 0.2))}
+          onClick={() => zoomBy(0.2)}
         >
           <Plus size={14} />
         </button>

@@ -24,13 +24,15 @@ export function Memory({
   onSelect,
   demo,
   privacy,
+  initialQuery = '',
 }: {
+  initialQuery?: string;
   sessions: Session[];
   onSelect: (id: string) => void;
   demo: boolean;
   privacy: boolean;
 }) {
-  const [query, setQuery] = useState(''),
+  const [query, setQuery] = useState(initialQuery),
     [filter, setFilter] = useState<Provider | 'all'>('all'),
     [notesOnly, setNotesOnly] = useState(false),
     [hits, setHits] = useState<SearchHit[]>([]),

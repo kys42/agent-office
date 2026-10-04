@@ -14,6 +14,13 @@ import {
   AlertCircle,
   Sparkles,
   Inbox,
+  Armchair,
+  Archive,
+  Keyboard,
+  RotateCw,
+  Wind,
+  Building2,
+  Coffee,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import {
@@ -36,7 +43,10 @@ import { Settings } from './components/Settings';
 import { MiniOffice } from './components/MiniOffice';
 import { NewsInbox } from './components/News';
 import { applyNoticeReceipt, unreadNoticeCount } from './shared/notices';
-import type { NoticeReceipt } from './shared/types';
+import type { NoticeReceipt, OfficeZone } from './shared/types';
+import { CommandPalette, type PaletteAction } from './components/CommandPalette';
+import { Modal } from './components/Modal';
+import { awayDigest, triage, unreadInbox } from './shared/triage';
 const tabs = [
   { id: 'office', title: '우리 사무실', short: '사무실', icon: Home },
   { id: 'memory', title: '기억 서랍', short: '기억', icon: BookOpen },
@@ -110,26 +120,45 @@ export default function App() {
       }),
     [],
   );
-  const openSearch = () => {
-    setView('memory');
-    setTimeout(
-      () => document.querySelector<HTMLInputElement>('[aria-label="기록 검색"]')?.focus(),
-      100,
-    );
+  const [palette, setPalette] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [memoryQuery, setMemoryQuery] = useState('');
+  const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
+  const openSearch = () => setPalette(true);
+  const goZone = (zone: OfficeZone) => {
+    setView('office');
+    setZoneRequest({ zone, at: Date.now() });
   };
+  const officeCommand = (what: 'fit' | 'zoom-in' | 'zoom-out') =>
+    window.dispatchEvent(new CustomEvent('office:command', { detail: what }));
+  // Global keys read the latest render through a ref so the listener is registered once.
+  const keyHandler = useRef<(e: KeyboardEvent) => void>(() => {});
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        openSearch();
-      }
-      if (e.key === 'Escape') {
-        setSelected(null);
-        setInbox(false);
-      }
-    };
+    const handler = (e: KeyboardEvent) => keyHandler.current(e);
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
+  }, []);
+  // Remember when the person stepped away; on return, summarise only what arrived since.
+  const [away, setAway] = useState<{ from: number; back: number } | null>(null);
+  const awayStart = useRef<number | null>(null);
+  useEffect(() => {
+    const leave = () => {
+      if (awayStart.current === null) awayStart.current = Date.now();
+    };
+    const back = () => {
+      const from = awayStart.current;
+      awayStart.current = null;
+      if (from !== null && Date.now() - from >= 2 * 60_000) setAway({ from, back: Date.now() });
+    };
+    const visibility = () => (document.hidden ? leave() : back());
+    window.addEventListener('blur', leave);
+    window.addEventListener('focus', back);
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.removeEventListener('blur', leave);
+      window.removeEventListener('focus', back);
+      document.removeEventListener('visibilitychange', visibility);
+    };
   }, []);
   useEffect(() => {
     document.body.classList.toggle('mini-mode', mini);
@@ -142,7 +171,20 @@ export default function App() {
     .sort((a, b) => (a.officeSeat ?? 0) - (b.officeSeat ?? 0));
   const current = sessions.find((s) => s.id === selected);
   const prefs = snapshot?.preferences;
-  const unread = unreadNoticeCount(snapshot?.notices ?? []);
+  const notices = snapshot?.notices ?? [];
+  const unread = unreadNoticeCount(notices);
+  useEffect(() => {
+    document.title = unread ? `(${unread}) Agent Office` : 'Agent Office · 우리 사무실';
+  }, [unread]);
+  const digest = away ? awayDigest(notices, away.from) : null;
+  const queue = triage(
+    [...ordered].sort((a, b) => b.updatedAt - a.updatedAt),
+    notices,
+  ).flatMap((g) => g.sessions);
+  const openInbox = () => {
+    setInbox(true);
+    setSelected(null);
+  };
   const refresh = async () => {
     if (demo) {
       notify('데모 화면이에요. 실제 연결을 보려면 데모를 종료해 주세요.');
@@ -263,6 +305,163 @@ export default function App() {
       };
     });
   };
+  const markRead = (id: string) => {
+    const s = sessions.find((x) => x.id === id);
+    const list = s ? unreadInbox(s, notices) : [];
+    if (!list.length) return notify('이 동료에게 읽지 않은 소식이 없어요');
+    void onReceipt(
+      list.map(({ id, version }) => ({ id, version })),
+      'read',
+    );
+    notify(`소식 ${list.length}건을 읽음으로 표시했어요`);
+  };
+  // Keep the order stable during a burst of J/K so reading an item doesn't reshuffle the cursor.
+  const navOrder = useRef<{ ids: string[]; at: number }>({ ids: [], at: 0 });
+  const step = (delta: number) => {
+    if (!queue.length) return;
+    const fresh = Date.now() - navOrder.current.at < 90_000;
+    const live = new Set(queue.map((s) => s.id));
+    const ids = fresh
+      ? [
+          ...navOrder.current.ids.filter((id) => live.has(id)),
+          ...queue.map((s) => s.id).filter((id) => !navOrder.current.ids.includes(id)),
+        ]
+      : queue.map((s) => s.id);
+    const owner = ids.findIndex(
+      (id) =>
+        id === selected ||
+        queue.find((s) => s.id === id)?.resident?.sessionIds.includes(selected ?? ''),
+    );
+    const next = owner < 0 ? (delta > 0 ? 0 : ids.length - 1) : owner + delta;
+    navOrder.current = { ids, at: Date.now() };
+    setView('office');
+    choose(ids[(next + ids.length) % ids.length]);
+  };
+  keyHandler.current = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      setPalette((v) => !v);
+      return;
+    }
+    if (e.key === 'Escape') {
+      setSelected(null);
+      setInbox(false);
+      return;
+    }
+    const target = e.target as HTMLElement | null;
+    const typing =
+      target?.closest('input, textarea, select, [contenteditable="true"]') ||
+      document.querySelector('[role="dialog"]');
+    if (typing || e.metaKey || e.ctrlKey || e.altKey || !snapshot || mini) return;
+    const key = e.key.toLowerCase();
+    const run = (fn: () => void) => {
+      e.preventDefault();
+      fn();
+    };
+    if (e.key === '/') run(() => setPalette(true));
+    else if (e.key === '?') run(() => setHelp(true));
+    else if (key === 'j') run(() => step(1));
+    else if (key === 'k') run(() => step(-1));
+    else if (key === 'i') run(() => (inbox ? setInbox(false) : openInbox()));
+    else if (key === 'r' && selected) run(() => markRead(selected));
+    else if (view === 'office' && key === 'f') run(() => officeCommand('fit'));
+    else if (view === 'office' && (e.key === '+' || e.key === '='))
+      run(() => officeCommand('zoom-in'));
+    else if (view === 'office' && e.key === '-') run(() => officeCommand('zoom-out'));
+    else if (['1', '2', '3'].includes(e.key))
+      run(() => goZone((['office', 'waiting', 'archive'] as const)[Number(e.key) - 1]));
+  };
+  const actions: PaletteAction[] = [
+    {
+      id: 'inbox',
+      label: '소식함 열기',
+      hint: `확인할 소식 ${unread}건`,
+      keys: 'I',
+      icon: <Inbox size={15} />,
+      keywords: '알림 결과 응답',
+      run: openInbox,
+    },
+    {
+      id: 'office',
+      label: '사무실 보기',
+      keys: '1',
+      icon: <Building2 size={15} />,
+      run: () => goZone('office'),
+    },
+    {
+      id: 'waiting',
+      label: '대기 라운지 보기',
+      keys: '2',
+      icon: <Armchair size={15} />,
+      keywords: '쉬는 퇴근',
+      run: () => goZone('waiting'),
+    },
+    {
+      id: 'archive',
+      label: '보관 공간 보기',
+      keys: '3',
+      icon: <Archive size={15} />,
+      keywords: '오래된',
+      run: () => goZone('archive'),
+    },
+    {
+      id: 'memory',
+      label: '기억 서랍',
+      hint: '모든 도구의 기록 검색',
+      icon: <BookOpen size={15} />,
+      run: () => setView('memory'),
+    },
+    {
+      id: 'activity',
+      label: '활동 기록',
+      icon: <Clock3 size={15} />,
+      keywords: '타임라인',
+      run: () => setView('activity'),
+    },
+    {
+      id: 'settings',
+      label: '연결과 설정',
+      icon: <Settings2 size={15} />,
+      keywords: '퇴근 보관 수집 연결',
+      run: () => setView('settings'),
+    },
+    {
+      id: 'privacy',
+      label: prefs?.privacy ? '화면 내용 다시 보기' : '화면 내용 숨기기',
+      hint: '화면 공유할 때',
+      icon: prefs?.privacy ? <Eye size={15} /> : <EyeOff size={15} />,
+      keywords: '개인정보 프라이버시',
+      run: () => onPrefs({ privacy: !prefs?.privacy }),
+    },
+    {
+      id: 'motion',
+      label: prefs?.reducedMotion ? '움직임 다시 켜기' : '움직임 줄이기',
+      icon: <Wind size={15} />,
+      keywords: '애니메이션',
+      run: () => onPrefs({ reducedMotion: !prefs?.reducedMotion }),
+    },
+    {
+      id: 'refresh',
+      label: '지금 다시 확인',
+      hint: '로컬 기록을 바로 읽어요',
+      icon: <RotateCw size={15} />,
+      keywords: '새로고침',
+      run: refresh,
+    },
+    {
+      id: 'mini',
+      label: '미니 오피스로 전환',
+      icon: <PictureInPicture2 size={15} />,
+      run: () => api.window('mini'),
+    },
+    {
+      id: 'keys',
+      label: '키보드 단축키',
+      keys: '?',
+      icon: <Keyboard size={15} />,
+      run: () => setHelp(true),
+    },
+  ];
   if (mini)
     return (
       <MiniOffice
@@ -290,7 +489,7 @@ export default function App() {
         </div>
         <button className="global-search" onClick={openSearch}>
           <Search size={15} />
-          <span>세션, 결정, 오류를 찾아보세요</span>
+          <span>동료, 기록, 명령 찾기</span>
           <kbd>⌘K</kbd>
         </button>
         <div className="header-actions">
@@ -337,6 +536,7 @@ export default function App() {
                 onClick={() => {
                   setView(t.id);
                   setSelected(null);
+                  if (t.id === 'memory') setMemoryQuery('');
                 }}
               >
                 <t.icon size={19} strokeWidth={1.8} />
@@ -382,6 +582,34 @@ export default function App() {
               <button onClick={refresh}>다시 연결</button>
             </div>
           )}
+          {digest && digest.results + digest.attention > 0 && (
+            <div className="away-banner" role="status">
+              <Coffee size={15} />
+              <span>
+                <b>
+                  자리 비운 {Math.max(1, Math.round((away!.back - away!.from) / 60_000))}분 동안
+                </b>
+                {digest.attention > 0 && (
+                  <em className="tone-attention">확인 필요 {digest.attention}건</em>
+                )}
+                {digest.results > 0 && <em className="tone-result">새 결과 {digest.results}건</em>}
+              </span>
+              <button
+                onClick={() => {
+                  setAway(null);
+                  if (digest.sessionIds.length === 1) {
+                    setView('office');
+                    choose(digest.sessionIds[0]);
+                  } else openInbox();
+                }}
+              >
+                {digest.sessionIds.length === 1 ? '바로 보기' : '소식함에서 보기'}
+              </button>
+              <button className="icon-btn" aria-label="요약 닫기" onClick={() => setAway(null)}>
+                <X size={14} />
+              </button>
+            </div>
+          )}
           {!snapshot && !error ? (
             <div className="loading-state">
               <div className="loading-pet">
@@ -420,9 +648,14 @@ export default function App() {
               onRefresh={refresh}
               refreshing={refreshing}
               demo={demo}
+              unread={unread}
+              onInbox={openInbox}
+              zoneRequest={zoneRequest}
             />
           ) : view === 'memory' ? (
             <Memory
+              key={memoryQuery}
+              initialQuery={memoryQuery}
               sessions={sessions}
               onSelect={choose}
               demo={demo}
@@ -490,6 +723,9 @@ export default function App() {
                 ? `${time(snapshot.lastSync)} 확인 · 5초마다`
                 : '연결 확인 중'}
           </span>
+          <button className="footer-keys" onClick={() => setHelp(true)} title="키보드 단축키">
+            <kbd>⌘K</kbd> 찾기 <kbd>?</kbd> 단축키
+          </button>
           <span className="version">v0.1</span>
           <button
             onClick={() => {
@@ -501,6 +737,57 @@ export default function App() {
           </button>
         </div>
       </footer>
+      {palette && snapshot && (
+        <CommandPalette
+          sessions={officeResidents(sessions).sessions}
+          notices={notices}
+          actions={actions}
+          demo={demo}
+          privacy={prefs?.privacy ?? false}
+          onClose={() => setPalette(false)}
+          onSelect={(id) => {
+            setView('office');
+            choose(id);
+          }}
+          onDeepSearch={(q) => {
+            setMemoryQuery(q);
+            setView('memory');
+          }}
+        />
+      )}
+      {help && (
+        <Modal title="키보드 단축키" onClose={() => setHelp(false)}>
+          <div className="shortcut-grid">
+            {[
+              ['찾기', [['⌘', 'K'], ['/']], '동료·기록·명령을 한곳에서'],
+              ['다음 할 일', [['J']], '기다리는 동료 → 새 결과 → 작업 중 순서'],
+              ['이전 할 일', [['K']], ''],
+              ['읽음으로 표시', [['R']], '선택한 동료의 미확인 소식'],
+              ['소식함', [['I']], '열기 / 닫기'],
+              ['사무실 · 라운지 · 보관', [['1'], ['2'], ['3']], ''],
+              ['전체 보기 · 확대 · 축소', [['F'], ['+'], ['−']], '사무실에서'],
+              ['닫기', [['Esc']], '업무 카드 · 소식함 · 창'],
+            ].map(([label, combos, hint]) => (
+              <div key={label as string}>
+                <span>
+                  <b>{label as string}</b>
+                  {hint && <small>{hint as string}</small>}
+                </span>
+                <span className="shortcut-keys">
+                  {(combos as string[][]).map((combo, i) => (
+                    <span key={i}>
+                      {combo.map((k) => (
+                        <kbd key={k}>{k}</kbd>
+                      ))}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="shortcut-note">입력 중에는 한 글자 단축키가 동작하지 않아요.</p>
+        </Modal>
+      )}
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />

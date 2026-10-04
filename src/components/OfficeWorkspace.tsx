@@ -44,6 +44,9 @@ export function OfficeWorkspace({
   onSettings,
   refreshing,
   demo,
+  unread,
+  onInbox,
+  zoneRequest,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -55,6 +58,9 @@ export function OfficeWorkspace({
   onSettings: () => void;
   refreshing: boolean;
   demo: boolean;
+  unread: number;
+  onInbox: () => void;
+  zoneRequest?: { zone: OfficeZone; at: number } | null;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -71,6 +77,12 @@ export function OfficeWorkspace({
     [snapshot.sessions],
   );
   const [historyLimit, setHistoryLimit] = useState(20);
+  // List hover spotlights a desk; desk hover only highlights its list row (no room dimming).
+  const [listHover, setListHover] = useState<string | null>(null);
+  const [deskHover, setDeskHover] = useState<string | null>(null);
+  useEffect(() => {
+    if (zoneRequest) setZone(zoneRequest.zone);
+  }, [zoneRequest]);
   const zones = useMemo(
     () =>
       Object.fromEntries(
@@ -177,6 +189,8 @@ export function OfficeWorkspace({
             reducedMotion={prefs.reducedMotion}
             privacy={prefs.privacy}
             onShowWaiting={() => setZone('waiting')}
+            spotlight={listHover}
+            onHover={setDeskHover}
             footer={
               hidden.length > 0 && (
                 <details className="background-records">
@@ -279,6 +293,11 @@ export function OfficeWorkspace({
         totalSessions={office}
         zoneCount={zones[zone].length}
         notices={snapshot.notices ?? []}
+        unread={unread}
+        onInbox={onInbox}
+        onReceipt={onReceipt}
+        hovered={deskHover ?? listHover}
+        onHover={setListHover}
         selected={selected}
         onSelect={onSelect}
         privacy={prefs.privacy}

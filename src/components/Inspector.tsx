@@ -28,7 +28,7 @@ import { api, isDesktop } from '../lib/api';
 import { Conversation } from './Conversation';
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
-import { ActivitySummary } from './ActivitySummary';
+import { NowCard, nowState } from './NowCard';
 import { unreadNoticeCount } from '../shared/notices';
 import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
@@ -183,6 +183,17 @@ export function Inspector({
     ? sessions.filter((x) => x.actor?.id === s.actor!.id).sort((a, b) => b.updatedAt - a.updatedAt)
     : [];
   const news = notices.filter((n) => n.sessionId === s.id);
+  const state = nowState(s, news);
+  const resumeLabel = s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 명령 복사';
+  const resume = async () => {
+    try {
+      const value = await api.resume(s.id);
+      if (s.provider !== 'codex' || !isDesktop) await copy(value);
+      else notify(value);
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const presentation = presentSession(s);
   return (
     <>
@@ -304,6 +315,18 @@ export function Inspector({
             </select>
           </label>
         )}
+        <div className="inspector-now">
+          <NowCard
+            session={s}
+            notices={news}
+            privacy={privacy}
+            onReceipt={onReceipt}
+            onResume={resume}
+            resumeLabel={resumeLabel}
+            canResume={!demo}
+            onShowNews={() => setTab('news')}
+          />
+        </div>
         <div className="inspector-tabs" role="tablist" aria-label="업무 카드 항목">
           {(['history', 'news', 'overview', 'notes'] as const).map((t) => (
             <button
@@ -337,7 +360,7 @@ export function Inspector({
             </details>
           )}
           {loadError && <div className="inline-error">{loadError}</div>}
-          {!privacy && (tab === 'history' || tab === 'overview') && <ActivitySummary session={s} />}
+
           {(tab === 'history' || tab === 'overview') && (
             <ArtifactCards
               id={s.id}
@@ -526,28 +549,31 @@ export function Inspector({
               사무실에 자리 마련하기 <ArrowRight size={14} />
             </button>
           )}
-          <button className="button primary" onClick={handoff} disabled={busy || privacy}>
-            <PackageOpen size={17} />
-            {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
-            <ArrowRight size={16} />
-          </button>
-          <div>
-            <button
-              className="button subtle"
-              disabled={demo}
-              onClick={async () => {
-                try {
-                  const value = await api.resume(s.id);
-                  if (s.provider !== 'codex' || !isDesktop) await copy(value);
-                  else notify(value);
-                } catch (e) {
-                  notify((e as Error).message);
-                }
-              }}
-            >
-              <Terminal size={14} />
-              {s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 정보 복사'}
+          {state === 'attention' ? (
+            <button className="button primary" onClick={resume} disabled={demo}>
+              <Terminal size={16} />
+              {resumeLabel}
+              <ArrowRight size={16} />
             </button>
+          ) : (
+            <button className="button primary" onClick={handoff} disabled={busy || privacy}>
+              <PackageOpen size={17} />
+              {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
+              <ArrowRight size={16} />
+            </button>
+          )}
+          <div>
+            {state === 'attention' ? (
+              <button className="button subtle" onClick={handoff} disabled={busy || privacy}>
+                <PackageOpen size={14} />
+                {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
+              </button>
+            ) : (
+              <button className="button subtle" disabled={demo} onClick={resume}>
+                <Terminal size={14} />
+                {resumeLabel}
+              </button>
+            )}
             <button
               className="icon-btn"
               aria-label="원본 위치 열기"
