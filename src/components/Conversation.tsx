@@ -163,9 +163,13 @@ export function Conversation({
       return next;
     });
   const last = groups.at(-1)?.events.at(-1)?.id;
+  // Our own scroll events arrive a frame later; by then content above may have grown, so they
+  // must not be mistaken for the person scrolling up (which turns following off).
+  const programmaticAt = useRef(0);
   const scrollBottom = () => {
     const scroller = root.current?.closest('.inspector-scroll');
     if (!scroller) return;
+    programmaticAt.current = performance.now();
     if (filterRef.current === 'all') {
       scroller.scrollTop = scroller.scrollHeight;
       return;
@@ -184,6 +188,10 @@ export function Conversation({
     const scroller = root.current?.closest('.inspector-scroll');
     if (!scroller) return;
     const onScroll = () => {
+      if (performance.now() - programmaticAt.current < 250) {
+        if (follow.current) scrollBottom();
+        return;
+      }
       follow.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
       if (follow.current) setNewBelow(false);
     };
