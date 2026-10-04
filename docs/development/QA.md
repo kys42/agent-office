@@ -1,3 +1,13 @@
+# 동료 투영·소식 열람·에셋 확장 검증 · 2026-10-05
+
+- 단위/계약 테스트 **96개**, Playwright **21개**, TypeScript 포함 production build, formatter 통과.
+- Electron smoke: 3종 세션·미니 모드·IPC 영속성·renderer isolation 통과. MCP smoke: 읽기 도구 4개·검색·인수인계·오래된 revision 거절 통과.
+- 추가 회귀: 최신 진행 우선, X 이후 과거 말풍선 재생 방지, version별 열람/읽음/접기, 재시작 복원, OpenClaw 페르소나 대표 교체와 안정 좌석, SQLite optional cron 메타데이터, cross-persona key 관계, 최신 fragment의 메타데이터 누락, 일반 guardian 이름과 내부 origin 구분.
+- UI: 페르소나 실행 선택이 실제 세션 상세로 연결되고 한 자리만 강조됨. 내부 실행은 접힌 기록에서 접근. 라운지 침대/펫 에셋·프로젝트 이름표, 390px 화면 overflow 없음. 작업 중 표식과 휴식 구분, 명시적 열람 배지 확인.
+- 합성 데모 캡처를 docs/images에 갱신. 실제 화면은 .local에만 보관. 실서버 확인 당시 canonical 234개 → 표시 동료 37명, 접힌 보조 82개. OpenClaw 120개 실행 → 페르소나 5명. 수집 제한/시간에 따라 변하는 관측값이며 제품 상수 아님.
+- 로컬 production preview 4319의 화면/API 200, 세 공급자 연결, 실제 화면 JS 오류 0. Tailscale Serve HTTPS/API는 노드 IP를 지정하고 정상 인증서 검증을 유지한 요청으로 200 확인. 이 컴퓨터의 일반 DNS 조회는 ENOTFOUND여서 기본 DNS 경로의 외부 접속 성공으로 주장하지 않음. OS DNS 설정은 변경하지 않음.
+- 범위 한정 독립 읽기 리뷰에서 추가 고위험 회귀 없음. 내부 링크 116개 확인. 색상/소품 편집 및 영구 꾸미기 저장 UI는 아직 범위 밖이며 확장 계약만 구현.
+
 # 첫 PR 검증 · 2026-10-05
 
 [PR #1](https://github.com/kys42/agent-office/pull/1), 첫 구현 커밋 `1300bff` 기준으로 로컬 단위 88개·UI 18개·전체 빌드·포맷·MCP·Electron smoke가 통과했다. GitHub Actions의 Node 24 / Ubuntu에서도 포맷·단위·빌드·MCP·UI 검증을 통과했다. UI의 실제 로컬 기록 연결 1개는 CI에서 제외하며 나머지는 합성 fixture를 사용한다.

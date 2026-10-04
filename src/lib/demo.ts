@@ -1,20 +1,21 @@
 import type { Session, Snapshot, Mood, Provider } from '../shared/types';
 import { noticeCandidates } from '../shared/notices';
 import { runtimeObservation } from '../shared/presentation';
-import { allocateSeats, officeZone, attachSessions } from '../shared/office';
+import { officeResidents } from '../shared/residents';
+import { allocateSeats, officeZone, attachSessions, seatKey } from '../shared/office';
 export function reconcileDemo(snapshot: Snapshot): Snapshot {
   const sessions = snapshot.sessions.map((s) => ({
     ...s,
     zone: officeZone(s, snapshot.preferences),
   }));
-  const active = sessions.filter((s) => s.zone === 'office');
+  const active = officeResidents(sessions).sessions.filter((s) => s.zone === 'office');
   const previous = Object.fromEntries(
-    active.filter((s) => s.officeSeat !== undefined).map((s) => [s.id, s.officeSeat!]),
+    active.filter((s) => s.officeSeat !== undefined).map((s) => [seatKey(s), s.officeSeat!]),
   );
   const seats = allocateSeats(active, previous);
   return {
     ...snapshot,
-    sessions: attachSessions(sessions.map((s) => ({ ...s, officeSeat: seats[s.id] }))),
+    sessions: attachSessions(sessions.map((s) => ({ ...s, officeSeat: seats[seatKey(s)] }))),
   };
 }
 const defs: [string, Provider, string, string, Mood, string][] = [

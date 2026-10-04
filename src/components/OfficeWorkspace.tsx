@@ -6,6 +6,8 @@ import { officeZone, sessionName } from '../shared/office';
 import { date, ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
+import { officeResidents, sessionScopeLabel } from '../shared/residents';
+import { RestLounge } from './RestLounge';
 import { Sprite } from './Sprite';
 import type { ReceiptHandler } from './News';
 function saved<T>(key: string, fallback: T): T {
@@ -45,7 +47,12 @@ export function OfficeWorkspace({
   const [sort, setSort] = useState<'recent' | 'frequent'>(
     () => saved(key, { sort: 'recent' }).sort as 'recent' | 'frequent',
   );
-  const { sessions, preferences: prefs } = snapshot;
+  const { preferences: prefs } = snapshot;
+  const { sessions, hidden } = useMemo(
+    () => officeResidents(snapshot.sessions),
+    [snapshot.sessions],
+  );
+  const [historyLimit, setHistoryLimit] = useState(20);
   const zones = useMemo(
     () =>
       Object.fromEntries(
@@ -58,7 +65,9 @@ export function OfficeWorkspace({
   );
   const office = zones.office;
   useEffect(() => {
-    const s = sessions.find((s) => s.id === selected);
+    const s = sessions.find(
+      (s) => s.id === selected || s.resident?.sessionIds.includes(selected ?? ''),
+    );
     if (s) {
       setZone(s.zone || officeZone(s, prefs));
     }
@@ -219,48 +228,51 @@ export function OfficeWorkspace({
               ))}
             </select>
           </div>
-          <div className="room-sessions">
-            {rows.map((s) => (
-              <article key={s.id} className="room-session">
-                <button className="room-session-main" onClick={() => choose(s.id)}>
-                  <div className={`avatar avatar-${s.provider}`}>
-                    <Sprite
-                      provider={s.provider}
-                      mood={zone === 'archive' ? 'idle' : 'sleep'}
-                      size={52}
-                    />
-                  </div>
-                  <div>
-                    <span className="provider-label">{PROVIDERS[s.provider].name}</span>
-                    <h3>{prefs.privacy ? '숨긴 세션' : sessionName(s)}</h3>
-                    <p>{prefs.privacy ? '프로젝트 숨김' : s.project}</p>
-                    <small>
-                      <Clock3 size={11} />
-                      {ago(s.updatedAt)} 활동 · {s.openCount || 0}번 열어봄
-                    </small>
-                  </div>
-                  <ArrowUpRight size={17} />
-                </button>
-                <div className="room-session-bottom">
-                  <span>
-                    {s.archived
-                      ? '직접 보관함'
-                      : zone === 'archive'
-                        ? '오래된 기록'
-                        : MOODS[s.status].label}
-                  </span>
-                  <button
-                    onClick={() => {
-                      onReturn(s.id);
-                      setZone('office');
-                    }}
-                  >
-                    사무실로 데려오기 <ArrowUpRight size={13} />
+          {zone === 'waiting' ? (
+            <RestLounge
+              sessions={rows}
+              privacy={prefs.privacy}
+              reducedMotion={prefs.reducedMotion}
+              onSelect={choose}
+              onReturn={(id) => {
+                onReturn(id);
+                setZone('office');
+              }}
+            />
+          ) : (
+            <div className="room-sessions">
+              {rows.map((s) => (
+                <article key={s.id} className="room-session">
+                  <button className="room-session-main" onClick={() => choose(s.id)}>
+                    <div className={`avatar avatar-${s.provider}`}>
+                      <Sprite provider={s.provider} mood="idle" size={52} />
+                    </div>
+                    <div>
+                      <span className="provider-label">{PROVIDERS[s.provider].name}</span>
+                      <h3>{prefs.privacy ? '숨긴 세션' : sessionName(s)}</h3>
+                      <p>{prefs.privacy ? '프로젝트 숨김' : s.project}</p>
+                      <small>
+                        <Clock3 size={11} />
+                        {ago(s.updatedAt)} 활동 · {s.openCount || 0}번 열어봄
+                      </small>
+                    </div>
+                    <ArrowUpRight size={17} />
                   </button>
-                </div>
-              </article>
-            ))}
-          </div>
+                  <div className="room-session-bottom">
+                    <span>{s.archived ? '직접 보관함' : '오래된 기록'}</span>
+                    <button
+                      onClick={() => {
+                        onReturn(s.id);
+                        setZone('office');
+                      }}
+                    >
+                      사무실로 데려오기 <ArrowUpRight size={13} />
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
           {!rows.length && (
             <div className="empty-state">
               <Armchair size={32} />
@@ -270,6 +282,36 @@ export function OfficeWorkspace({
           )}
         </section>
       )}
+      {hidden.length > 0 && (
+        <details className="background-records">
+          <summary>
+            보조·자동 작업 기록 <b>{hidden.length}</b>
+            <span>작업이 끝난 보조 동료와 내부 실행은 여기에 보관해요.</span>
+          </summary>
+          <div>
+            {[...hidden]
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .slice(0, historyLimit)
+              .map((s) => (
+                <button key={s.id} onClick={() => choose(s.id)}>
+                  <span>{privacyName(s, prefs.privacy)}</span>
+                  <small>
+                    {sessionScopeLabel(s)} · {ago(s.updatedAt)}
+                  </small>
+                </button>
+              ))}
+          </div>
+          {hidden.length > historyLimit && (
+            <button className="button subtle" onClick={() => setHistoryLimit((n) => n + 20)}>
+              기록 더 보기
+            </button>
+          )}
+        </details>
+      )}
     </>
   );
+}
+
+function privacyName(s: Session, privacy: boolean) {
+  return privacy ? '숨긴 기록' : sessionName(s);
 }

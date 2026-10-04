@@ -36,6 +36,25 @@ export interface SessionRelation {
   source: string;
   agentPath?: string;
   role?: string;
+  parentSessionKey?: string;
+}
+export interface SessionActor {
+  id: string;
+  name: string;
+  source: string;
+}
+export interface SessionOrigin {
+  kind: 'interactive' | 'scheduled' | 'internal' | 'unknown';
+  source: string;
+  role?: string;
+}
+/** View projection only: its member sessions remain independently addressable. */
+export interface OfficeResident {
+  key: string;
+  name: string;
+  sessionIds: string[];
+  activeCount: number;
+  backgroundCount: number;
 }
 export type NoticeKind = 'request' | 'progress' | 'reply' | 'message' | 'attention' | 'error';
 export interface OfficeNotice {
@@ -50,6 +69,8 @@ export interface OfficeNotice {
   receivedAt: number;
   version: string;
   seenAt: number | null;
+  viewedAt?: number | null;
+  background?: boolean;
   dismissedAt: number | null;
   resolvedAt: number | null;
   bootstrap: boolean;
@@ -58,6 +79,7 @@ export interface NoticeReceipt {
   id: string;
   version: string;
 }
+export type NoticeAction = 'read' | 'dismiss' | 'unread' | 'view';
 export interface Artifact {
   url: string;
   kind: 'pull' | 'issues';
@@ -111,6 +133,10 @@ export interface Session {
   sourcePaths?: string[];
   provider: Provider;
   agentName?: string;
+  actor?: SessionActor;
+  origin?: SessionOrigin;
+  sessionKey?: string;
+  resident?: OfficeResident;
   title: string;
   nativeTitle?: boolean;
   alias: string;
@@ -198,7 +224,7 @@ export interface OfficeAPI {
   detail: (id: string) => Promise<Session>;
   visit: (id: string) => Promise<Snapshot>;
   returnToOffice: (id: string) => Promise<Snapshot>;
-  notices: (receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread') => Promise<Snapshot>;
+  notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
   snapshot: () => Promise<Snapshot>;

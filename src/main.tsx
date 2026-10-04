@@ -9,6 +9,7 @@ import App from './App';
 import './styles.css';
 import './office-scene.css';
 import './conversation-news.css';
+import './resident-life.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {

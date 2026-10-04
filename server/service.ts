@@ -153,7 +153,7 @@ export class OfficeService extends EventEmitter {
           prefs.maxSessions,
         );
         for (const file of files) {
-          const stamp = `office-v7:${file.size}:${file.mtime}`;
+          const stamp = `office-v8:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
           if (!s) {
@@ -284,7 +284,7 @@ export class OfficeService extends EventEmitter {
             .array(z.object({ id: z.string().max(1000), version: z.string().max(100) }).strict())
             .max(1000)
             .parse(args[0]),
-          z.enum(['read', 'dismiss', 'unread']).parse(args[1]),
+          z.enum(['read', 'dismiss', 'unread', 'view']).parse(args[1]),
         );
         return this.emitSnapshot();
       case 'patch':

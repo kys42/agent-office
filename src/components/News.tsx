@@ -3,6 +3,7 @@ import { Check, Mail, X, ArrowUpRight } from 'lucide-react';
 import type { OfficeNotice, NoticeReceipt, Session } from '../shared/types';
 import {
   noticeLabel,
+  noticeExposure,
   isFinalNotice,
   isAttentionNotice,
   unreadNoticeCount,
@@ -11,7 +12,7 @@ import { sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 export type ReceiptHandler = (
   receipts: NoticeReceipt[],
-  action: 'read' | 'dismiss' | 'unread',
+  action: 'read' | 'dismiss' | 'unread' | 'view',
 ) => void;
 
 export function NewsList({
@@ -57,10 +58,20 @@ export function NewsList({
                 {noticeLabel(n)}
                 {!n.seenAt && <i />}
               </span>
+              <span className="notice-exposure">
+                {noticeExposure(n)}
+                {n.background ? ' · 보조·자동' : ''}
+              </span>
               <time>{ago(n.at)}</time>
             </div>
             {onSelect && session && (
-              <button className="news-session" onClick={() => onSelect(n.sessionId)}>
+              <button
+                className="news-session"
+                onClick={() => {
+                  if (!privacy) onReceipt(receipt, 'view');
+                  onSelect(n.sessionId);
+                }}
+              >
                 {privacy ? '숨긴 동료' : sessionName(session)}
                 <ArrowUpRight size={13} />
               </button>
@@ -69,13 +80,14 @@ export function NewsList({
             {!privacy && n.text.length > 160 && (
               <button
                 className="news-more"
-                onClick={() =>
+                onClick={() => {
+                  if (!open) onReceipt(receipt, 'view');
                   setExpanded((old) => {
                     const next = new Set(old);
                     open ? next.delete(n.id) : next.add(n.id);
                     return next;
-                  })
-                }
+                  });
+                }}
               >
                 {open ? '접기' : '더 보기'}
               </button>
@@ -114,6 +126,7 @@ export function NewsFeed({
   onReceipt,
   onSelect,
   initialFilter = 'final',
+  includeBackground = false,
 }: {
   notices: OfficeNotice[];
   sessions: Session[];
@@ -121,11 +134,16 @@ export function NewsFeed({
   onReceipt: ReceiptHandler;
   onSelect?: (id: string) => void;
   initialFilter?: 'final' | 'attention' | 'all';
+  includeBackground?: boolean;
 }) {
   const [filter, setFilter] = useState(initialFilter);
   const [includeRead, setIncludeRead] = useState(false);
   const matches = (n: OfficeNotice, kind = filter) =>
-    kind === 'final' ? isFinalNotice(n) : kind === 'attention' ? isAttentionNotice(n) : true;
+    kind === 'final'
+      ? isFinalNotice(n) && (includeBackground || !n.background)
+      : kind === 'attention'
+        ? isAttentionNotice(n)
+        : true;
   const counts = (kind: typeof filter) =>
     notices.filter((n) => !n.seenAt && matches(n, kind)).length;
   const selected = notices.filter((n) => matches(n) && (includeRead || !n.seenAt));

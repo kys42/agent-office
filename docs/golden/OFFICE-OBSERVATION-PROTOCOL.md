@@ -64,7 +64,7 @@ Session {
 | 이름 | custom-title, optional session index | threads.name / session index / 정제된 title | session_nodes label/display_name 또는 공개 요청 |
 | 진행 설명 | 공개 assistant text | 공개 commentary/final message 및 event | 공개 assistant text |
 | 상태 | 사용자·도구·stop_reason | task_started/complete/aborted, 도구·입력 요청 | transcript와 session_nodes status |
-| 부모 | subagents 경로; parentUuid는 메시지 포인터 | 명시적 subagent/parent/fork 메타데이터 | parent_session_key를 해당 agent의 ID로 해석 |
+| 부모 | subagents 경로; parentUuid는 메시지 포인터 | 명시적 subagent/parent/fork 메타데이터 | parent_session_key의 정확한 key 매치; 같은 agent native ID fallback |
 | 브랜치 | gitBranch | session_meta.git.branch 및 metadata | 기록에 없는 경우 null 유지 |
 | 사용량 | message usage, streaming message ID 중복 방지 | cumulative token record, 문맥 한도 별도 | fresh session total 또는 수집한 message sample |
 
@@ -73,9 +73,9 @@ Session {
 ## 영속성과 갱신
 
 - sessions: 원본 관측 캐시. personal: 별명·메모·핀·사용자 보관·열람 빈도. settings.office_seats: 안정적인 배치 순서 토큰. 원본 재수집은 personal을 덮어쓰지 않는다.
-- notices: 공개 소식과 seenAt/dismissedAt/resolvedAt. notice_observed: 초기화 때 건너뛴 과거 이벤트도 기억해서 다음 폴링이 새 소식으로 재생하지 않게 한다. notice_cursors: 최초 연결 여부와 관측 기준.
+- notices: 공개 소식과 seenAt/viewedAt/dismissedAt/resolvedAt. notice_observed: 초기화 때 건너뛴 과거 이벤트도 기억해서 다음 폴링이 새 소식으로 재생하지 않게 한다. notice_cursors: 최초 연결 여부와 관측 기준.
 - 첫 연결은 최근 3시간의 마지막 공개 소식 한 건으로 시작한다. 그 뒤 처음 발견된 메시지는 timestamp가 조금 늦게 전달되어도 놓치지 않는다. 동일 이벤트 내용이 바뀌면 새 version이 되고 미확인으로 돌아온다.
-- 확인 요청은 `{id, version}` 목록과 read/dismiss/unread 행위로 보낸다. 서버는 정확히 같은 버전만 변경한다. 읽음 버튼을 누르는 동안 도착한 새로운 문장을 읽음 처리하지 않는다.
+- 확인 요청은 `{id, version}` 목록과 read/dismiss/unread/view 행위로 보낸다. 서버는 정확히 같은 버전만 변경한다. 읽음 버튼을 누르는 동안 도착한 새로운 문장을 읽음 처리하지 않는다.
 - seenAt은 원문 작업 완료와 다르며 dismissedAt은 읽음과 다르다. 진행 소식이 업데이트될 때 이전 내용의 접기 상태를 새 내용에 무조건 전파하지 않는다.
 - 전체 미확인 소식을 유지하고 최근 읽은 소식은 30일간 목록에서 조회한다. 원본이 수집 범위에서 빠지거나 제외되면 목록에서도 숨기되 사용자의 확인 상태를 지우지 않는다.
 - 수집 오류는 마지막 정상 기록을 보존한다. 원본 파일·DB는 항상 읽기 전용이다.
@@ -110,3 +110,13 @@ Session {
 `OfficeNotice.phase`는 해당 공개 메시지의 근거를 보존한다. 새 notice kind `message`는 단계 없는 공개 응답이다. 기존 phase 없는 reply도 기본 소식함에서는 미검증 메시지다. `isFinalNotice`, `isAttentionNotice`, `isInboxNotice`, `unreadNoticeCount`가 모든 표시 표면과 noticeStats.unread의 공통 정책이다. noticeStats.total과 snapshot.notices에는 전체 기록이 남는다. 폴링과 분류 보완은 읽음/접기를 초기화하지 않고 새 내용·새 최종 버전만 다시 미확인으로 만든다.
 
 대화의 현재 원본 수집 구간에서 빠진 공개 메시지는 해당 세션의 저장된 소식으로 보완할 수 있다. 이때 `OfficeEvent.excerpt=true`로 표시하고 화면에 **보관된 발췌 · 원문 일부**를 명시한다. 원본 이벤트가 있으면 항상 원본을 우선하며 이벤트 ID 또는 같은 종류/phase/본문·시각으로 중복을 막는다. 공개 발췌는 원문 전체인 것처럼 표현하지 않는다. 최종 응답 필터를 선택하면 마지막 해당 응답의 시작 부분으로 이동한다.
+
+## 동료 투영과 에셋 확장 (v1 호환)
+
+- `Session.actor?: {id,name,source}`: 대화 위의 안정적인 페르소나. 현재 OpenClaw agent 디렉터리에서만 제공한다. UI가 provider 이름으로 임의 그룹하지 않는다.
+- `Session.origin?: {kind,source,role?}`: interactive/scheduled/internal/unknown. 원본 메타데이터에서만 채운다. `relation.kind`(부모 관계), `runtime.phase`(실행 상태)와 독립이다.
+- `sessionKey?`, `relation.parentSessionKey?`: OpenClaw 원본 key. 같은 provider 안에서 정확히 한 부모가 일치하면 다른 페르소나도 연결한다. 애매한 매치는 만들지 않는다. 연결된 페르소나들이 같은 자리로 합쳐지지는 않는다.
+- `officeResidents(canonicalSessions)`는 사무실/라운지/미니를 위한 표현 투영이며 저장된 세션과 MCP 결과를 바꾸지 않는다. `resident={key,name,sessionIds,activeCount,backgroundCount}`는 투영 시에만 붙인다. 자리 키는 actor가 있으면 `actor:<actor.id>`, 없으면 Session.id다.
+- `OfficeNotice.viewedAt?`는 사용자가 해당 버전을 직접 열어본 시각이며 읽음/접기와 별도다. `background?`는 현재 세션의 origin/relation에서 조회 시 계산하는 분류이며 소식 version을 바꾸지 않는다. 일반 최종 응답과 미해결 확인 요청만 중요 배지에 센다.
+- `mergeSessions`는 최신 fragment에 metadata가 없어도 기존의 근거 있는 actor/origin/sessionKey/부모 관계를 보존한다. 이 보완을 다른 native ID 병합에 사용하지 않는다.
+- 에셋 ID·팔레트·hue·소품은 [표현 계약](../development/OFFICE-ASSETS.md)이다. source의 branch/project/status를 색상 설정으로 덮어쓰지 않는다.

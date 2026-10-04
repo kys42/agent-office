@@ -51,7 +51,7 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 
 - Codex는 첫 owner `session_meta`의 `payload.id` → `session_id` → `thread_id`를 사용한다. 뒤에 상속된 부모 metadata가 있어도 owner를 바꾸지 않는다. 파일명이 달라도 native ID가 같으면 continuation으로 합친다.
 - Claude root는 `sessionId`; subagent는 마지막 `subagents` 경로 앞 부모 UUID와 agent ID를 함께 사용해 `subagent:<parent>:<agent>`로 범위를 나눈다. `parentUuid` 하나만으로 부모 세션을 추론하지 않는다.
-- OpenClaw는 agent namespace와 DB의 current session ID 또는 JSONL header ID를 사용한다. DB parent key는 같은 agent의 native ID로 해석한다.
+- OpenClaw는 agent namespace와 DB의 current session ID 또는 JSONL header ID를 사용한다. DB parent key는 정확한 sessionKey로 연결하고 같은 agent의 native ID로도 해석한다. 다른 페르소나의 부모는 정확하고 유일한 key 매치일 때만 연결한다.
 - 원본 ID를 얻지 못한 일반 fallback은 `identity.evidence`에 남긴다. 부분 Codex 파일에서 owner header를 놓치면 파일 ID로 새 동료를 만들지 않고 오류로 격리한다.
 - 명시적 fork/자식은 별도 세션이다. 비슷한 제목·같은 cwd·같은 브랜치는 병합 근거가 아니다.
 
@@ -107,3 +107,13 @@ JSONL 읽기 캐시는 size+mtime+파서 버전, OpenClaw DB 캐시는 행 갱�
 외부 모듈을 바꿀 때 고정 커밋·라이선스·원본 checksum·runtime 수정 범위를 함께 갱신한다. 기존 fixture와 원본 origin 테스트, byte boundary/large-header/rotation/continuation/namespace/streaming/receipt 테스트를 유지한다. 필요하면 원본 DB를 읽기 전용으로 복제해 로컬 replay하고 결과만 기록한다.
 
 새 플랫폼은 `Session`, `RuntimeObservation`, `SessionRelation`, `OfficeEvent`, `Usage`, source/partial 근거를 채운다. 적어도 root/continuation/child 또는 미지원 관계, 공개/비공개 메시지, phase 불명, 사용량 누락, 재시작·잘림을 합성 fixture로 검증한다. 저장소·UI에 공급자별 임시 분기를 추가하기보다 [공통 규격](../golden/OFFICE-OBSERVATION-PROTOCOL.md)을 명시적으로 발전시킨다. 라이선스/의존성이 맞지 않거나 의미가 다른 전체 앱은 통째로 편입하지 않는다.
+
+## 동료 투영·내부 실행 분류 (2026-10-05)
+
+이번 변경은 새로운 외부 모듈 복사가 아니다. 이미 vendoring한 Orca의 `readCodexNonUserOrigin` 결과를 자체 `identity.ts`가 공통 `Session.origin`으로 번역한다. ordinary thread_spawn의 역할 이름이 guardian인 경우와 내부 guardian origin을 구별한다. 내부 구현의 목적/안전성은 추측하지 않는다.
+
+OpenClaw의 `session_nodes` optional 열은 PRAGMA로 확인한다. `created_via`, `created_actor_type`, `session_key`가 없어도 기존 DB를 읽는다. cron은 native metadata로만 구분하고 디렉터리 agentName은 공통 actor가 된다. 캐시 정책 키는 office-v8로 올려 기존 관측을 다시 정규화한다. JSONL/SQLite 조각 병합은 이미 확보한 origin/부모/actor 근거를 보존한다.
+
+자체 `src/shared/residents.ts`는 canonical Session 목록을 표시용 동료로 투영한다. OpenClaw 실행을 한 데이터 행으로 병합하지 않으며, 서브세션·내부 실행을 숨겨도 상세/검색/MCP/소식 원본이 남는다. 따라서 페르소나 화면 정리와 세션 중복 병합은 서로 다른 단계다. 좌석은 actor key로 저장하고 개인 메모·별명·접기 영수증은 기존 session/event key를 유지한다. 상세 실행 선택은 정확한 원본 ID로 돌아간다.
+
+검증 fixture는 `tests/residents.test.ts`와 `tests/ui/residents.spec.ts`에 있다. optional DB 열, cross-persona parent key, metadata가 없는 최신 fragment, 대표 실행 교체, 재시작 영수증/좌석, 내부 작업을 이름으로 오분류하지 않는 경우를 포함한다.

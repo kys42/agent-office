@@ -4,6 +4,8 @@ import { MOODS, type Session, type OfficeNotice } from '../shared/types';
 import { sessionName } from '../shared/office';
 import { layoutOffice, layoutSignature } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
+import { Furniture } from './Furniture';
+import { noticeExposure } from '../shared/notices';
 import { Sprite } from './Sprite';
 import { sessionActivity, activityLabel, toolLabel } from '../shared/activity';
 import { bubbleNotice, noticeLabel, unreadNoticeCount, isInboxNotice } from '../shared/notices';
@@ -203,36 +205,36 @@ export function Office({
                   </small>
                 </div>
                 {area.benches.map((bench, i) => (
-                  <div
+                  <Furniture
+                    kind="desk"
                     key={`${bench.key}:${i}`}
-                    className={`team-bench ${bench.members.length > 1 ? 'shared-bench' : ''}`}
-                    data-bench-key={privacy ? undefined : bench.key}
-                    data-furniture="desk"
+                    shared={bench.members.length > 1}
+                    assetKey={privacy ? undefined : bench.key}
                     style={{ left: bench.x, top: bench.y, width: bench.width }}
-                  >
-                    <span className="bench-surface" />
-                  </div>
+                  />
                 ))}
                 {area.stations.map((station) => {
                   const s = byId.get(station.id)!;
-                  const active = s.id === selected;
-                  const news = notices.filter((n) => n.sessionId === s.id);
+                  const members = s.resident?.sessionIds ?? [s.id];
+                  const active = members.includes(selected ?? '');
+                  const news = notices.filter((n) => members.includes(n.sessionId));
                   const bubble = bubbleNotice(news, bubbleHours, clock);
                   const unread = unreadNoticeCount(news);
                   const activity = sessionActivity(s);
                   const pose = presentSession(s, clock);
-                  const arrival = (arrivals[s.id] ?? 0) > clock;
+                  const arrival = members.some((id) => (arrivals[id] ?? 0) > clock);
                   const text = bubble?.text ?? activity.text;
                   const label = bubble ? noticeLabel(bubble) : activityLabel(s);
                   const branch = branchInfo(s);
                   return (
                     <div
-                      className={`desk-station ${active ? 'selected-station' : ''}`}
+                      className={`desk-station ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'}`}
+                      data-working={pose.working}
                       key={s.id}
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
                     >
-                      <div className="office-chair" data-furniture="chair" aria-hidden="true" />
+                      <Furniture kind="chair" />
                       <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                       <button
                         className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !arrival ? pose.posture : 'still'} ${arrival ? 'work-arrival' : ''}`}
@@ -253,11 +255,14 @@ export function Office({
                         )}
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
-                      <div className="desk-equipment" aria-hidden="true">
-                        <i className="desk-screen" />
-                        <i className="desk-keyboard" />
-                        <i className="desk-cup" />
-                      </div>
+                      <Furniture kind="equipment" />
+                      {pose.working && (
+                        <span className="working-beacon">
+                          <i />
+                          <i />
+                          <i /> 작업 중
+                        </span>
+                      )}
                       <button
                         className={`desk-branch branch-${branch.kind}`}
                         title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
@@ -276,7 +281,16 @@ export function Office({
                           <span>{privacy ? s.provider : sessionName(s)}</span>
                           {s.pinned && <Pin size={10} />}
                         </strong>
-                        <small>{unread ? `미확인 소식 ${unread}` : MOODS[s.status].label}</small>
+                        <small>
+                          <span>
+                            {pose.working
+                              ? s.resident && s.resident.activeCount > 1
+                                ? `${s.resident.activeCount}개 작업 중`
+                                : '일하는 중'
+                              : MOODS[s.status].label}
+                          </span>
+                          {unread > 0 && <em>소식 {unread}</em>}
+                        </small>
                       </button>
                       {(bubble ||
                         (!news.length &&
@@ -284,19 +298,30 @@ export function Office({
                             active ||
                             ['work', 'think', 'call', 'error'].includes(s.status)))) && (
                         <div
-                          className={`speech-bubble bubble-${s.status} ${bubble && !bubble.seenAt ? 'unread' : ''}`}
+                          className={`speech-bubble bubble-${s.status} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
                         >
                           <button
                             className="speech-open"
-                            onClick={() => (bubble ? onNews(s.id) : onSelect(s.id))}
+                            onClick={() => {
+                              if (bubble) {
+                                if (!privacy)
+                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                                onNews(bubble.sessionId);
+                              } else onSelect(s.id);
+                            }}
                             title={privacy ? '내용 숨김' : text}
                           >
                             <span className="speech-copy">
-                              <small>{privacy ? '내용 숨김' : label}</small>
+                              <small>
+                                {privacy ? '내용 숨김' : label}
+                                {bubble && (
+                                  <span className="bubble-exposure">{noticeExposure(bubble)}</span>
+                                )}
+                              </small>
                               <b>{privacy ? MOODS[s.status].label : text}</b>
                               <em>
                                 {ago(bubble?.at ?? activity.at)}
-                                {bubble?.seenAt ? ' · 확인함' : ''}
+
                                 {!privacy && activity.tool
                                   ? ` · ${toolLabel(activity.tool.name)}`
                                   : ''}
@@ -344,7 +369,7 @@ export function Office({
                           mood={presentSession(s, clock).mood}
                           size={44}
                         />
-                        <span className="helper-table" />
+                        <Furniture kind="helper" />
                         <b>{privacy ? '보조 동료' : s.relation?.role || sessionName(s)}</b>
                         {notices.some(
                           (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),

@@ -4,6 +4,7 @@ import { MOODS } from '../shared/types';
 import { Sprite } from './Sprite';
 import { api } from '../lib/api';
 import { isInboxNotice } from '../shared/notices';
+import { presentSession } from '../shared/presentation';
 import { sessionName } from '../shared/office';
 import { sessionActivity, activityLabel } from '../shared/activity';
 export function MiniOffice({
@@ -45,7 +46,7 @@ export function MiniOffice({
       <div className="mini-desks">
         {primary.slice(0, 6).map((s, i) => (
           <button
-            className="mini-station"
+            className={`mini-station ${presentSession(s).working ? 'mini-working' : ''}`}
             key={s.id}
             style={{ gridColumn: i + 1 }}
             data-seat={s.officeSeat}
@@ -61,11 +62,11 @@ export function MiniOffice({
               (n) =>
                 !n.seenAt &&
                 isInboxNotice(n) &&
-                (n.sessionId === s.id ||
+                ((s.resident?.sessionIds ?? [s.id]).includes(n.sessionId) ||
                   sessions.some((c) => c.id === n.sessionId && c.attachedTo === s.id)),
             ) && <span className="mini-unread">새 소식</span>}
             <div className="mini-pet">
-              <Sprite provider={s.provider} mood={s.status} size={64} />
+              <Sprite provider={s.provider} mood={presentSession(s).mood} size={64} />
             </div>
             <img src="./sprites/desk.png" alt="" />
             <b title={privacy ? undefined : sessionName(s)}>

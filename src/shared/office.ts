@@ -2,7 +2,8 @@ import type { OfficeZone, Preferences, Session, Artifact } from './types';
 import { branchInfo } from './branch';
 
 export const sessionName = (s: Session) =>
-  (s.alias || s.title || '이름 없는 세션').replace(/\s+/g, ' ').trim();
+  (s.resident?.name || s.alias || s.title || '이름 없는 세션').replace(/\s+/g, ' ').trim();
+export const seatKey = (s: Session) => (s.actor ? `actor:${s.actor.id}` : s.id);
 export const projectKey = (s: Session) =>
   (s.workspace?.evidence !== 'unknown' && s.workspace?.key) || s.cwd || `unknown:${s.id}`;
 // A shared bench needs a branch/commit and worktree identity. Project zones do not.
@@ -13,6 +14,13 @@ export const benchKey = (s: Session) => {
     : `${projectKey(s)}::unknown:${s.id}`;
 };
 export function parentSession(s: Session, sessions: Session[]): Session | undefined {
+  if (s.relation?.parentSessionKey) {
+    const exact = sessions.filter(
+      (p) =>
+        p.id !== s.id && p.provider === s.provider && p.sessionKey === s.relation?.parentSessionKey,
+    );
+    if (exact.length === 1) return exact[0];
+  }
   const id = s.relation?.parentNativeId ?? s.parentId;
   if (!id) return;
   return sessions.find(
@@ -25,6 +33,7 @@ export function parentSession(s: Session, sessions: Session[]): Session | undefi
 }
 export function attachSessions(sessions: Session[]): Session[] {
   return sessions.map((s) => {
+    if (s.resident || s.actor) return { ...s, attachedTo: undefined };
     let current = s;
     const visited = new Set([s.id]);
     let parent: Session | undefined;
@@ -69,14 +78,14 @@ export function allocateSeats(
   const result: Record<string, number> = {};
   const used = new Set<number>();
   for (const s of primary) {
-    const order = previous[s.id];
+    const order = previous[seatKey(s)] ?? previous[s.id];
     if (Number.isInteger(order) && order >= 0 && order < 6000 && !used.has(order)) {
-      result[s.id] = order;
+      result[seatKey(s)] = order;
       used.add(order);
     }
   }
   const pending = primary
-    .filter((s) => result[s.id] === undefined)
+    .filter((s) => result[seatKey(s)] === undefined)
     .sort(
       (a, b) =>
         Number(b.pinned) - Number(a.pinned) ||
@@ -87,7 +96,7 @@ export function allocateSeats(
     for (const s of pending.filter((s) => projectKey(s) === project)) {
       let order = 0;
       while (used.has(order)) order++;
-      result[s.id] = order;
+      result[seatKey(s)] = order;
       used.add(order);
     }
   }

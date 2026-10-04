@@ -14,7 +14,8 @@ import type {
 } from '../src/shared/types.js';
 import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
-import { allocateSeats, officeZone, attachSessions } from '../src/shared/office.js';
+import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
+import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
 export const defaultDataDir = () =>
   process.env.AGENT_OFFICE_DATA_DIR ??
@@ -169,9 +170,10 @@ export class OfficeStore {
       const next = old
         ? {
             ...n,
-            receivedAt: old.receivedAt,
+            receivedAt: now,
             bootstrap: old.bootstrap,
             seenAt: null,
+            viewedAt: null,
             dismissedAt: null,
             resolvedAt: old.resolvedAt,
           }
@@ -201,7 +203,11 @@ export class OfficeStore {
       .run(s.id, Math.max(cursor?.at ?? 0, s.updatedAt));
   }
   noticeList(): OfficeNotice[] {
-    const visible = new Set(this.list().map((s) => s.id));
+    const sessions = this.list();
+    const visible = new Set(sessions.map((s) => s.id));
+    const background = new Set(
+      sessions.filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
+    );
     const rows = this.db.prepare('SELECT data FROM notices ORDER BY at DESC').all() as {
       data: string;
     }[];
@@ -209,9 +215,10 @@ export class OfficeStore {
       .map((r) => JSON.parse(r.data) as OfficeNotice)
       .filter(
         (n) => visible.has(n.sessionId) && (!n.seenAt || Date.now() - n.seenAt < 30 * 86400_000),
-      );
+      )
+      .map((n) => ({ ...n, background: background.has(n.sessionId) }));
   }
-  noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread') {
+  noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
     const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
     const put = this.db.prepare('UPDATE notices SET data=? WHERE id=?');
     for (const receipt of receipts) {
@@ -222,11 +229,13 @@ export class OfficeStore {
       if (n.version !== receipt.version) continue;
       const next = {
         ...n,
-        ...(action === 'read'
-          ? { seenAt: Date.now() }
-          : action === 'unread'
-            ? { seenAt: null }
-            : { dismissedAt: Date.now() }),
+        ...(action === 'view'
+          ? { viewedAt: n.viewedAt ?? Date.now() }
+          : action === 'read'
+            ? { seenAt: Date.now() }
+            : action === 'unread'
+              ? { seenAt: null }
+              : { dismissedAt: Date.now() }),
       };
       put.run(JSON.stringify(next), n.id);
     }
@@ -257,7 +266,7 @@ export class OfficeStore {
     };
   }
   assignSeats(): void {
-    const sessions = this.list().filter((s) => s.zone === 'office');
+    const sessions = officeResidents(this.list()).sessions.filter((s) => s.zone === 'office');
     const row = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
       { value: string } | undefined;
     const previous = row ? JSON.parse(row.value) : {};
@@ -294,7 +303,7 @@ export class OfficeStore {
         .map((r) => JSON.parse(r.data) as Session)
         .filter((s) => this.visible(s, prefs))
         .map((s) => {
-          const d = { ...this.decorate(s), officeSeat: seats[s.id] };
+          const d = { ...this.decorate(s), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
           return full ? d : { ...d, events: d.events.slice(-4) };
         }),
     );

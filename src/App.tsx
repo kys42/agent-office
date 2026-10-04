@@ -36,7 +36,8 @@ import { demoSnapshot, reconcileDemo } from './lib/demo';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
-import { officeZone, allocateSeats } from './shared/office';
+import { officeZone, allocateSeats, seatKey } from './shared/office';
+import { officeResidents } from './shared/residents';
 import { Roster } from './components/Roster';
 import { Inspector } from './components/Inspector';
 import { Memory } from './components/Memory';
@@ -141,8 +142,8 @@ export default function App() {
     return () => document.body.classList.remove('mini-mode');
   }, [mini]);
   const sessions = snapshot?.sessions ?? [];
-  const ordered = sessions
-    .filter((s) => (s.zone || officeZone(s, snapshot?.preferences || {})) === 'office')
+  const ordered = officeResidents(sessions)
+    .sessions.filter((s) => (s.zone || officeZone(s, snapshot?.preferences || {})) === 'office')
     .sort((a, b) => (a.officeSeat ?? 0) - (b.officeSeat ?? 0));
   const current = sessions.find((s) => s.id === selected);
   const prefs = snapshot?.preferences;
@@ -190,7 +191,10 @@ export default function App() {
     }
     setSnapshot(await api.patch(id, p));
   };
-  const onReceipt = async (receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread') => {
+  const onReceipt = async (
+    receipts: NoticeReceipt[],
+    action: 'read' | 'dismiss' | 'unread' | 'view',
+  ) => {
     if (demo) {
       setSnapshot((s) =>
         s ? { ...s, notices: applyNoticeReceipt(s.notices ?? [], receipts, action) } : s,
@@ -244,18 +248,20 @@ export default function App() {
           ? { ...x, archived: false, returnedAt: Date.now(), zone: 'office' as const }
           : x,
       );
-      const active = sessions.filter((x) => officeZone(x, s.preferences) === 'office');
+      const active = officeResidents(sessions).sessions.filter(
+        (x) => officeZone(x, s.preferences) === 'office',
+      );
       const seats = allocateSeats(
         active,
         Object.fromEntries(
-          active.filter((x) => x.officeSeat !== undefined).map((x) => [x.id, x.officeSeat!]),
+          active.filter((x) => x.officeSeat !== undefined).map((x) => [seatKey(x), x.officeSeat!]),
         ),
       );
       return {
         ...s,
         sessions: sessions.map((x) => ({
           ...x,
-          officeSeat: seats[x.id],
+          officeSeat: seats[seatKey(x)],
           zone: officeZone(x, s.preferences),
         })),
       };

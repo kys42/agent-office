@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { Session, SessionPatch, Handoff, OfficeNotice } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
+import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
 import { Modal } from './Modal';
 import { ago, compact, shortPath, time, date } from '../lib/format';
@@ -175,6 +176,9 @@ export function Inspector({
   };
   const parent = parentSession(s, sessions);
   const children = sessions.filter((x) => parentSession(x, sessions)?.id === s.id);
+  const personaRuns = s.actor
+    ? sessions.filter((x) => x.actor?.id === s.actor!.id).sort((a, b) => b.updatedAt - a.updatedAt)
+    : [];
   const news = notices.filter((n) => n.sessionId === s.id);
   const presentation = presentSession(s);
   return (
@@ -266,12 +270,26 @@ export function Inspector({
               </button>
             )}
             {!parent && s.relation?.parentNativeId && <span>부모 작업 미수집</span>}
-            {children.map((child) => (
-              <button key={child.id} onClick={() => onSelect(child.id)}>
-                {child.relation?.kind === 'fork' ? '분기' : '보조 동료'} · {sessionName(child)}
-              </button>
-            ))}
           </div>
+        )}
+        {personaRuns.length > 0 && (
+          <label className="persona-run-picker">
+            <span>
+              {privacy ? '페르소나' : s.actor?.name} · 실행 기록 {personaRuns.length}개
+            </span>
+            <select
+              aria-label="페르소나의 실행 기록"
+              value={s.id}
+              onChange={(e) => onSelect(e.target.value)}
+            >
+              {personaRuns.map((run) => (
+                <option value={run.id} key={run.id}>
+                  {sessionScopeLabel(run)} · {privacy ? '숨긴 기록' : sessionName(run)} ·{' '}
+                  {ago(run.updatedAt)}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <div className="inspector-tabs" role="tablist" aria-label="업무 카드 항목">
           {(['history', 'news', 'overview', 'notes'] as const).map((t) => (
@@ -294,6 +312,17 @@ export function Inspector({
           ))}
         </div>
         <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
+          {!privacy && children.length > 0 && (
+            <details className="related-runs">
+              <summary>연결된 보조·분기 작업 {children.length}개</summary>
+              {children.map((child) => (
+                <button key={child.id} onClick={() => onSelect(child.id)}>
+                  {child.relation?.kind === 'fork' ? '분기' : sessionScopeLabel(child)} ·{' '}
+                  {sessionName(child)}
+                </button>
+              ))}
+            </details>
+          )}
           {loadError && <div className="inline-error">{loadError}</div>}
           {!privacy && (tab === 'history' || tab === 'overview') && <ActivitySummary session={s} />}
           {(tab === 'history' || tab === 'overview') && (
@@ -315,6 +344,7 @@ export function Inspector({
           ) : tab === 'news' ? (
             <NewsFeed
               key={s.id + (showNews ?? '')}
+              includeBackground
               initialFilter={showNews ? 'all' : 'final'}
               notices={news}
               sessions={sessions}

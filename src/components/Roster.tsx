@@ -4,6 +4,7 @@ import { MOODS, PROVIDERS } from '../shared/types';
 import { Sprite } from './Sprite';
 import { ago } from '../lib/format';
 import { sessionActivity, activityLabel } from '../shared/activity';
+import { isWorking } from '../shared/presentation';
 import { sessionName } from '../shared/office';
 export function Roster({
   sessions,
@@ -31,7 +32,7 @@ export function Roster({
   onFilter: (p: Provider | 'all') => void;
 }) {
   const calls = totalSessions.filter((s) => s.status === 'call');
-  const working = totalSessions.filter((s) => s.status === 'work' || s.status === 'think').length;
+  const working = totalSessions.filter((s) => isWorking(s)).length;
   return (
     <aside className="roster">
       <div className="stats-grid">
@@ -121,7 +122,7 @@ export function Roster({
             .map((s) => (
               <button
                 key={s.id}
-                className={`session-row ${s.id === selected ? 'selected' : ''}`}
+                className={`session-row ${s.id === selected || s.resident?.sessionIds.includes(selected ?? '') ? 'selected' : ''}`}
                 onClick={() => onSelect(s.id)}
               >
                 <div className={`avatar avatar-${s.provider}`}>
@@ -129,7 +130,7 @@ export function Roster({
                 </div>
                 <div className="session-copy">
                   <strong>
-                    {privacy ? PROVIDERS[s.provider].name : s.alias || s.title}
+                    {privacy ? PROVIDERS[s.provider].name : sessionName(s)}
                     {s.pinned && <Pin size={11} />}
                   </strong>
                   <span>
@@ -146,7 +147,8 @@ export function Roster({
                   )}
                   <small style={{ color: MOODS[s.status].color }}>
                     <i className="status-dot" style={{ background: MOODS[s.status].color }} />
-                    {MOODS[s.status].label}
+                    {isWorking(s) ? '일하는 중' : MOODS[s.status].label}
+                    {s.resident ? ` · 실행 ${s.resident.sessionIds.length}개` : ''}
                     {s.relation?.kind === 'subagent' || s.relation?.kind === 'child'
                       ? ' · 보조 동료'
                       : s.relation?.kind === 'fork'

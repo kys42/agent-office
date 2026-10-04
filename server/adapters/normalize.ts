@@ -406,6 +406,15 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     sourcePaths: [opt.sourcePath],
     provider: opt.provider,
     agentName: opt.agentName,
+    actor:
+      opt.provider === 'openclaw' && opt.agentName
+        ? {
+            id: `openclaw:${opt.agentName}`,
+            name: opt.agentName,
+            source: 'OpenClaw agent directory',
+          }
+        : undefined,
+    origin: resolved.origin,
     title: redact(title || `${project} 작업`, 160),
     nativeTitle,
     alias: '',

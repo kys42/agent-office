@@ -3,12 +3,16 @@ import type { ExecutionPhase, Mood, RuntimeObservation, Session } from './types'
 import { runtimeObservation } from './runtime';
 export { runtimeObservation } from './runtime';
 
+export const isWorking = (s: Session, now = Date.now()) =>
+  !s.archived && ['work', 'think'].includes(s.status) && now - s.updatedAt <= 120_000;
+
 export function presentSession(s: Session, now = Date.now()) {
   const runtime =
     s.runtime ?? runtimeObservation(s.observedStatus ?? s.status, s.updatedAt, s.statusReason);
   const stale = now - s.updatedAt > 120_000;
   const resting =
-    ['idle', 'sleep', 'done', 'leave'].includes(s.status) &&
+    (['idle', 'sleep', 'done', 'leave'].includes(s.status) ||
+      (stale && ['work', 'think'].includes(s.status))) &&
     !['needs-input', 'error'].includes(runtime.phase);
   const seed = [...s.id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);
   // Decorative time is independent of execution: no fake reading/reviewing/commits.
@@ -35,8 +39,13 @@ export function presentSession(s: Session, now = Date.now()) {
                   : s.status === 'done'
                     ? 'result'
                     : 'resting';
-  const mood: Mood = posture === 'dozing' ? 'sleep' : posture === 'strolling' ? 'idle' : s.status;
-  return { runtime, stale, posture, mood, decorative: resting, seed };
+  const mood: Mood =
+    posture === 'dozing'
+      ? 'sleep'
+      : posture === 'strolling' || (resting && stale)
+        ? 'idle'
+        : s.status;
+  return { runtime, stale, posture, mood, decorative: resting, seed, working: isWorking(s, now) };
 }
 export const POSTURE_LABELS: Record<string, string> = {
   stored: '보관 중',

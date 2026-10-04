@@ -35,6 +35,16 @@ export function mergeSessions(input: Session[]): Session[] {
       );
       return {
         ...latest,
+        actor: [...group].reverse().find((s) => s.actor)?.actor,
+        origin:
+          [...group].reverse().find((s) => s.origin && s.origin.kind !== 'unknown')?.origin ??
+          latest.origin,
+        sessionKey: [...group].reverse().find((s) => s.sessionKey)?.sessionKey,
+        relation:
+          [...group]
+            .reverse()
+            .find((s) => s.relation?.parentSessionKey || s.relation?.parentNativeId)?.relation ??
+          latest.relation,
         sourcePaths: [...new Set(group.flatMap((s) => s.sourcePaths ?? [s.sourcePath]))].sort(),
         title: [...group].reverse().find((s) => s.nativeTitle)?.title ?? group[0].title,
         nativeTitle: group.some((s) => s.nativeTitle),

@@ -35,9 +35,12 @@ export async function readOpenClawDatabases(
             ).map((r) => [r.session_key, r.current_session_id]),
           )
         : new Map<string, string>();
+      const optional = ['session_key', 'created_via', 'created_actor_type'].filter((c) =>
+        columns.has(c),
+      );
       const nodes = db
         .prepare(
-          `SELECT current_session_id, entry_json, updated_at, status, label, display_name, parent_session_key, archived_at FROM session_nodes ORDER BY updated_at DESC LIMIT ?`,
+          `SELECT current_session_id, entry_json, updated_at, status, label, display_name, parent_session_key, archived_at${optional.length ? ',' + optional.join(',') : ''} FROM session_nodes ORDER BY updated_at DESC LIMIT ?`,
         )
         .all(limit) as Record<string, any>[];
       const tail = db.prepare(
@@ -65,7 +68,7 @@ export async function readOpenClawDatabases(
           const last = (tip.get(nativeId) as any)?.seq ?? 0;
           const watermark = rewrite?.get(nativeId);
           const revision = hash(
-            `office-v7:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}`,
+            `office-v8:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
           );
           const key = `${file}:${nativeId}`;
           const prior = cache.get(key);
@@ -105,9 +108,23 @@ export async function readOpenClawDatabases(
             timestamp(meta.lastInteractionAt ?? meta.updatedAt, n.updated_at),
           );
           s.parentId = parentIds.get(n.parent_session_key) ?? null;
+          s.sessionKey = typeof n.session_key === 'string' ? n.session_key : undefined;
+          const scheduled =
+            n.created_via === 'cron' ||
+            (typeof n.session_key === 'string' && /^agent:[^:]+:cron:/.test(n.session_key));
+          s.origin = {
+            kind: scheduled
+              ? 'scheduled'
+              : n.created_actor_type === 'user'
+                ? 'interactive'
+                : 'unknown',
+            source: n.created_via ? 'session_nodes.created_via' : 'session_nodes.session_key',
+            role: typeof n.created_via === 'string' ? n.created_via : undefined,
+          };
           s.relation = {
-            kind: s.parentId ? 'child' : n.parent_session_key ? 'unknown' : 'root',
+            kind: s.parentId || n.parent_session_key ? 'child' : 'root',
             parentNativeId: s.parentId,
+            parentSessionKey: n.parent_session_key ?? undefined,
             source: n.parent_session_key ? 'session_nodes.parent_session_key' : 'session_nodes',
           };
           s.sourceVersion = 'sqlite/session_nodes+transcript_events';

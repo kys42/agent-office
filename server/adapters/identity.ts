@@ -82,6 +82,18 @@ export function resolveIdentity(
   };
   return {
     nativeId,
+    origin: {
+      kind:
+        origin &&
+        (origin.source === 'internal' ||
+          ['guardian', 'review', 'compact', 'memory_consolidation'].includes(
+            origin.kind ?? origin.threadSource ?? '',
+          ))
+          ? ('internal' as const)
+          : ('unknown' as const),
+      source: origin ? 'native non-user origin (Orca)' : 'native session',
+      role: origin?.kind ?? undefined,
+    },
     owner,
     ownerRecord,
     relation,

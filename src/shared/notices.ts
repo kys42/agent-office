@@ -1,4 +1,4 @@
-import type { NoticeKind, OfficeEvent, OfficeNotice, Session } from './types';
+import type { NoticeAction, NoticeKind, OfficeEvent, OfficeNotice, Session } from './types';
 import { conversationKind } from './conversation';
 import { messageExcerpt, sessionActivity } from './activity';
 export const NOTICE_LABELS: Record<NoticeKind, string> = {
@@ -56,6 +56,7 @@ export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false
       receivedAt: now,
       version: noticeVersion(`${kind}:${text}:${e.at}`),
       seenAt: null,
+      viewedAt: null,
       dismissedAt: null,
       resolvedAt: null,
       bootstrap,
@@ -68,26 +69,17 @@ export function bubbleNotice(
   hours = 3,
   now = Date.now(),
 ): OfficeNotice | undefined {
-  const eligible = notices.filter(
-    (n) =>
-      !n.dismissedAt &&
-      (now - n.receivedAt < hours * 3600_000 ||
-        (!n.resolvedAt && ['attention', 'error'].includes(n.kind))),
-  );
-  const rank = (n: OfficeNotice) =>
-    !n.resolvedAt && ['attention', 'error'].includes(n.kind)
-      ? 0
-      : !n.seenAt && isFinalNotice(n)
-        ? 1
-        : !n.seenAt
-          ? 2
-          : 3;
-  return eligible.sort((a, b) => rank(a) - rank(b) || b.at - a.at)[0];
+  // One current message, never a queue. Closing/expiring it must not reveal history.
+  const latest = [...notices].sort((a, b) => b.at - a.at || b.receivedAt - a.receivedAt)[0];
+  if (!latest || latest.dismissedAt) return;
+  if (['attention', 'error'].includes(latest.kind) && latest.resolvedAt) return;
+  if (now - latest.receivedAt >= hours * 3600_000 && !isAttentionNotice(latest)) return;
+  return latest;
 }
 export function applyNoticeReceipt(
   notices: OfficeNotice[],
   receipts: { id: string; version: string }[],
-  action: 'read' | 'dismiss' | 'unread',
+  action: NoticeAction,
   now = Date.now(),
 ) {
   const versions = new Map(receipts.map((r) => [r.id, r.version]));
@@ -96,11 +88,13 @@ export function applyNoticeReceipt(
       ? n
       : {
           ...n,
-          ...(action === 'read'
-            ? { seenAt: now }
-            : action === 'unread'
-              ? { seenAt: null }
-              : { dismissedAt: now }),
+          ...(action === 'view'
+            ? { viewedAt: n.viewedAt ?? now }
+            : action === 'read'
+              ? { seenAt: now }
+              : action === 'unread'
+                ? { seenAt: null }
+                : { dismissedAt: now }),
         },
   );
 }
@@ -108,8 +102,11 @@ export function applyNoticeReceipt(
 export const isFinalNotice = (n: OfficeNotice) => n.kind === 'reply' && n.phase === 'final';
 export const isAttentionNotice = (n: OfficeNotice) =>
   !n.resolvedAt && (n.kind === 'attention' || n.kind === 'error');
-export const isInboxNotice = (n: OfficeNotice) => isFinalNotice(n) || isAttentionNotice(n);
+export const isInboxNotice = (n: OfficeNotice) =>
+  isAttentionNotice(n) || (!n.background && isFinalNotice(n));
 export const unreadNoticeCount = (notices: OfficeNotice[]) =>
   notices.filter((n) => !n.seenAt && isInboxNotice(n)).length;
 export const noticeLabel = (n: OfficeNotice) =>
   n.kind === 'reply' && !isFinalNotice(n) ? '응답 · 구분 없음' : NOTICE_LABELS[n.kind];
+export const noticeExposure = (n: OfficeNotice) =>
+  n.seenAt ? '읽음' : n.viewedAt ? '열어봄' : '처음 도착';

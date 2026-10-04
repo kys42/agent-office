@@ -12,6 +12,7 @@ docs/
 ├── development/                  # 구현·연결·검증·개발 이력
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
 │   ├── SESSION-INGESTION.md       # 수집 흐름·자체/외부 모듈·장애 분석
+│   ├── OFFICE-ASSETS.md          # 가구·펫·소품 확장 계약
 │   ├── MCP.md                    # 읽기 전용 도구 연결
 │   ├── QA.md                     # 날짜별 검증 결과·한계
 │   └── PLAN.md                   # 초기 구현 계획 이력
@@ -28,6 +29,7 @@ docs/
 | UI나 상태의 의미 변경 | [골든 정책](golden/GOLDEN-OFFICE-POLICY.md) |
 | 플랫폼 추가·공통 필드 변경 | [관측 규격](golden/OFFICE-OBSERVATION-PROTOCOL.md) |
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
+| 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
 | 실행과 검증 | [루트 README](../README.md), [검증 기록](development/QA.md), [MCP 연결](development/MCP.md) |
