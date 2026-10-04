@@ -23,7 +23,7 @@
 
 사용자 지적에 따라 초기 6개 레포를 받았으나 파서를 별도 구현했던 사실과 파일 UUID 우선 회귀 원인을 명시했다. Orca를 추가 checkout(ea6a6d6). JSONL byte reader/record budget와 Codex non-user-origin을 vendor 모듈로 편입하고 원본 테스트 17개도 Node runner로 연결했다. Agent Sessions의 Claude nested workflow parent/sidecar/title precedence를 이식했다. 기존 OpenClaw SQLite read-only 어댑터는 유지한다.
 
-공통 identity 모듈, 첫 native header 우선, parent-scoped Claude child ID, 전체 sourcePaths 보존, transport ordinal 충돌 방지, streaming snapshot 갱신, 기존 notice 읽음/닫음 이관을 적용했다. 75개 테스트/타입/빌드/native/MCP 통과. 실제 데이터 복사본 및 실행 서버에서 현재 대화 3개 source → 1개 캐릭터, 원래 seat 2, ghost 0을 확인했다. 로컬/Tailscale preview와 macOS 패키지 갱신. 문서는 docs/INGESTION-REFERENCE-AUDIT.md 및 골든/공통 규격/아키텍처/고지를 갱신했다.
+공통 identity 모듈, 첫 native header 우선, parent-scoped Claude child ID, 전체 sourcePaths 보존, transport ordinal 충돌 방지, streaming snapshot 갱신, 기존 notice 읽음/닫음 이관을 적용했다. 75개 테스트/타입/빌드/native/MCP 통과. 실제 데이터 복사본 및 실행 서버에서 현재 대화 3개 source → 1개 캐릭터, 원래 seat 2, ghost 0을 확인했다. 로컬/Tailscale preview와 macOS 패키지 갱신. 문서는 docs/research/INGESTION-REFERENCE-AUDIT.md 및 골든/공통 규격/아키텍처/고지를 갱신했다.
 
 ---
 
@@ -43,7 +43,7 @@
 - 공통 합성 세션 데이터, 고정 좌석, 진행 메시지 우선, 대화형 상세·더보기·접힌 도구 기록·대기/보관 시연.
 - Gather, Linear, Kinopio의 공개 화면을 짧게 확인하고 표현 원리와 적용 시안 ID를 카탈로그에 기록. 외부 에셋·라이브러리 도입 없음.
 - 전체 9안 브라우저 렌더링과 공통 핵심 동작, 각 페이지·원본 ZIP 및 Tailnet HTTP 200 확인. 제품 코드 변경과 앱 전체 테스트는 이 시안 범위에 없음.
-- 원본: public/design/office-themes-2026-10-04/ · 기록: docs/design/office-themes-2026-10-04.md.
+- 원본: public/design/office-themes-2026-10-04/ · 기록: docs/research/design/office-themes-2026-10-04.md.
 - 추천 01/04/09는 사용자 선택과 구분하며 실제 앱 적용 전.
 
 ## 2026-10-04 — 도구 이름보다 사용자용 진행 설명을 우선 표시
@@ -61,7 +61,7 @@
 - 대화 기본 탭, 사용자·에이전트 말풍선, 길이별 더 보기, 도구 기록 접기, 새 기록 따라가기.
 - PR·이슈 실제 링크 카드, 기존 gh 연결로 제목·상태 읽기, 실패 시 미확인 링크 유지.
 - 리뷰 후 snapshot tail 이벤트 즉시 병합 보강. 상세 재조회가 실패해도 새 대화가 표시되며 펼친 말풍선과 메모 초안을 보존한다.
-- 단위 31개, UI 10개 시나리오(회귀 수정 후 해당 테스트 재실행 포함), 타입/빌드, 네이티브 IPC·미니·MCP 통과. 최신 패키지·실연결 확인은 docs/QA.md 참조.
+- 단위 31개, UI 10개 시나리오(회귀 수정 후 해당 테스트 재실행 포함), 타입/빌드, 네이티브 IPC·미니·MCP 통과. 최신 패키지·실연결 확인은 docs/development/QA.md 참조.
 - 커밋 단위 제안: feat 고정 좌석과 세션 생애주기, feat 실제 이름과 실시간 대화·작업 링크. 아직 커밋·원격 PR은 만들지 않았다.
 
 ## 2026-10-04 — 현재 Codex 세션이 자는 상태로 표시되던 오류 수정
@@ -93,7 +93,7 @@
 
 ### 검증
 
-단위 22개, UI 6개, 타입 검사/빌드, 네이티브 IPC/미니, MCP 계약 통과. 실제 패키지에서 세 공급자 238개 기록 연결. 상세 근거는 docs/QA.md.
+단위 22개, UI 6개, 타입 검사/빌드, 네이티브 IPC/미니, MCP 계약 통과. 실제 패키지에서 세 공급자 238개 기록 연결. 상세 근거는 docs/development/QA.md.
 
 ### 전달과 후속
 
@@ -102,7 +102,7 @@
 - 사용자 후속 요청으로 Tailscale Serve 4319에 실제 세션 웹 미리보기를 연결했다. HTTPS 응답 및 3종 API 연결 확인. 기존 Serve 경로는 유지했다.
 - 원격 저장소·PR·공개 배포는 생성하지 않았다. 프로젝트 전체 상태는 진행중으로 유지한다.
 - 커밋 단위 제안: `feat: 실제 세션을 연결하는 픽셀 오피스 구현`, `test: 어댑터 및 데스크탑 회귀 검증`, `docs: 조사 근거와 실행 가이드 기록`. 커밋은 실행하지 않았다.
-- 후속 제품 범위와 제한은 README 및 docs/RESEARCH.md에 기록했다.
+- 후속 제품 범위와 제한은 README 및 docs/research/RESEARCH.md에 기록했다.
 
 ## 2026-10-05 — 첫 PR와 인수인계 문서
 
@@ -112,3 +112,11 @@
 - 실제 대화가 담긴 캡처는 `.local/pr-private-screenshots/`에 보존하고 Git에는 합성 데모 캡처만 넣었다. 장치별 Tailnet 주소를 예시 주소로 교체하고 개인 로그·DB·리서치 clone·빌드 산출물은 제외했다.
 - PR 준비 재검증: 단위 88개, UI 18개, 타입/전체 빌드, MCP 4개 도구 계약, 포맷 검사 통과. 문서 로컬 링크 누락 0개. 이 기록의 로컬 결과와 GitHub CI 결과는 별개이며 원격 CI는 PR에서 확인한다.
 - PR: https://github.com/kys42/agent-office/pull/1. 첫 구현 `1300bff`의 Linux CI 두 실행 모두 통과. 독립 리뷰에서 수집 정체성·대화/소식·격리 경계·문서 일치성의 차단 이슈 없음. 문서·이미지 마무리 커밋은 최종 PR 체크로 재확인한다.
+
+## 2026-10-05 — 문서 구조 정리
+
+- `docs/golden/`: 프로젝트 맥락, 제품 정책, 플랫폼 공통 관측 규격을 정본으로 모았다.
+- `docs/development/`: 아키텍처, 세션 분석, MCP, QA와 초기 구현 계획을 모았다. 초기 계획은 현재 작업 목록과 구분한다.
+- `docs/research/`: 레포 조사·모듈 감사와 `design/` 시안 카탈로그를 모았다. 이미지 공용 경로와 원본 `references/`, 런타임 `vendor/`는 유지한다.
+- 전체·폴더별 README에 읽기 순서, 문서 역할, 새 문서 분류·채택 기준을 추가했다. 루트 README, 문서 간 링크, vendor 안내, PR 본문과 로컬 문서 인덱스를 새 경로로 연결했다.
+- 문서 상대 링크·기존 경로 잔존·diff whitespace를 확인했다. 앱 실행 코드 변경이 없어 로컬 앱 테스트를 반복하지 않는다. 원격 PR CI는 최신 커밋 체크로 확인한다.

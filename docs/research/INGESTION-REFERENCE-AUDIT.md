@@ -1,6 +1,6 @@
 # 세션 수집 레퍼런스 재사용 결정 · 2026-10-04
 
-이 문서는 비교 당시의 선택 근거다. 현재 처리 흐름·모듈 소유 경계·장애 분석 순서는 [세션 기록 분석](SESSION-INGESTION.md), 제품 정책은 [골든 문서](GOLDEN-OFFICE-POLICY.md)를 따른다.
+이 문서는 비교 당시의 선택 근거다. 현재 처리 흐름·모듈 소유 경계·장애 분석 순서는 [세션 기록 분석](../development/SESSION-INGESTION.md), 제품 정책은 [골든 문서](../golden/GOLDEN-OFFICE-POLICY.md)를 따른다.
 
 ## 무엇이 잘못됐나
 

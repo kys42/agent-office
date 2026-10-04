@@ -2,11 +2,11 @@
 
 2026-10-04 / v1 / 신규 9안 / 탐색 중. 기존 E 기반 앱을 보존하고 정적 미리보기만 추가했다.
 
-- [전체 카탈로그](../../public/design/office-themes-2026-10-04/index.html)
-- [한눈에 비교](../../public/design/office-themes-2026-10-04/overview.html)
-- [편집 원본·동작·확인 범위](../../public/design/office-themes-2026-10-04/README.md)
-- [Manifest](../../public/design/office-themes-2026-10-04/manifest.json)
-- [9안 비교 스크린샷](../../public/design/office-themes-2026-10-04/assets/overview.jpg)
+- [전체 카탈로그](../../../public/design/office-themes-2026-10-04/index.html)
+- [한눈에 비교](../../../public/design/office-themes-2026-10-04/overview.html)
+- [편집 원본·동작·확인 범위](../../../public/design/office-themes-2026-10-04/README.md)
+- [Manifest](../../../public/design/office-themes-2026-10-04/manifest.json)
+- [9안 비교 스크린샷](../../../public/design/office-themes-2026-10-04/assets/overview.jpg)
 - 로컬: http://127.0.0.1:4319/design/office-themes-2026-10-04/
 - Tailnet: https://your-device.your-tailnet.ts.net:4319/design/office-themes-2026-10-04/
 

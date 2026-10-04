@@ -56,7 +56,7 @@ npm run dev
 
 ## 제품과 구현 정본
 
-[전체 문서 지도](docs/README.md) · [프로젝트 맥락과 결정](docs/PROJECT-CONTEXT.md) · [골든 사무실 정책](docs/GOLDEN-OFFICE-POLICY.md) · [세션 분석·모듈 출처](docs/SESSION-INGESTION.md) · [공통 관측 규격 v1](docs/OFFICE-OBSERVATION-PROTOCOL.md)
+[전체 문서 지도](docs/README.md) · [프로젝트 맥락과 결정](docs/golden/PROJECT-CONTEXT.md) · [골든 사무실 정책](docs/golden/GOLDEN-OFFICE-POLICY.md) · [세션 분석·모듈 출처](docs/development/SESSION-INGESTION.md) · [공통 관측 규격 v1](docs/golden/OFFICE-OBSERVATION-PROTOCOL.md)
 
 원본 어댑터 → 공통 관측 → 제품 정책 → 사무실 표현을 분리합니다. 공급자별 데이터 근거, 그룹/관계, 실행 상태, 소식 수명, 후보 기능과 아직 지원하지 않는 범위를 함께 기록합니다.
 
@@ -97,7 +97,7 @@ tailscale serve --bg --https=4319 http://127.0.0.1:4319
 }
 ```
 
-Node 24 이상. 사용자 데이터 위치를 바꾼 경우 `AGENT_OFFICE_DATA_DIR`도 같은 값으로 설정하세요. Codex TOML 예시는 [연결 가이드](docs/MCP.md)에 있습니다. 자동 등록이나 기존 설정 덮어쓰기는 하지 않습니다.
+Node 24 이상. 사용자 데이터 위치를 바꾼 경우 `AGENT_OFFICE_DATA_DIR`도 같은 값으로 설정하세요. Codex TOML 예시는 [연결 가이드](docs/development/MCP.md)에 있습니다. 자동 등록이나 기존 설정 덮어쓰기는 하지 않습니다.
 
 도구: `office_list_sessions`, `office_search`, `office_get_session`, `office_prepare_handoff`. 모두 readOnly입니다. 검색된 원문은 자료로 취급해야 하며 에이전트의 새 실행 지시가 아닙니다.
 
@@ -112,6 +112,6 @@ npx tsx scripts/mcp-smoke.ts    # build 후 MCP stdio 계약
 npm audit
 ```
 
-UI 테스트의 실제 연결 smoke는 로컬 기록이 있는 개발 환경을 사용합니다. 나머지 테스트는 합성 데이터로 원본을 수정하지 않습니다. [검증 기록](docs/QA.md), [아키텍처](docs/ARCHITECTURE.md), [참고 저장소 및 재사용](docs/RESEARCH.md), [수집 모듈 비교·도입 근거](docs/INGESTION-REFERENCE-AUDIT.md), [구현 계획](docs/PLAN.md), [고지](THIRD_PARTY_NOTICES.md).
+UI 테스트의 실제 연결 smoke는 로컬 기록이 있는 개발 환경을 사용합니다. 나머지 테스트는 합성 데이터로 원본을 수정하지 않습니다. [검증 기록](docs/development/QA.md), [아키텍처](docs/development/ARCHITECTURE.md), [참고 저장소 및 재사용](docs/research/RESEARCH.md), [수집 모듈 비교·도입 근거](docs/research/INGESTION-REFERENCE-AUDIT.md), [구현 계획](docs/development/PLAN.md), [고지](THIRD_PARTY_NOTICES.md).
 
 실제 승인·세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 직원 성장, 원격 동기화, 서명·공증·자동 업데이트는 후속 범위입니다. 기능 카탈로그 140개 전체 구현이나 프로덕션 배포 완료를 주장하지 않습니다.

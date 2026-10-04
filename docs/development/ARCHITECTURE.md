@@ -68,7 +68,7 @@ Session.activity는 원본 공개 메시지에서 가져온 220자 이내 발췌
 
 ### 수집 모듈 출처
 
-JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `server/adapters/files.ts`에서 bounded read stream으로 사용한다. `identity.ts`가 provider identity를 공통 관계로 바꾸며 Codex origin은 vendored Orca 함수를 호출한다. Claude 중첩 경로/sidecar/title 정책은 Agent Sessions 이식이다. OpenClaw SQLite는 기존 read-only 전용 어댑터를 유지한다. 전체 비교와 의존성 선택: [INGESTION-REFERENCE-AUDIT.md](INGESTION-REFERENCE-AUDIT.md).
+JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `server/adapters/files.ts`에서 bounded read stream으로 사용한다. `identity.ts`가 provider identity를 공통 관계로 바꾸며 Codex origin은 vendored Orca 함수를 호출한다. Claude 중첩 경로/sidecar/title 정책은 Agent Sessions 이식이다. OpenClaw SQLite는 기존 read-only 전용 어댑터를 유지한다. 전체 비교와 의존성 선택: [INGESTION-REFERENCE-AUDIT.md](../research/INGESTION-REFERENCE-AUDIT.md).
 
 ### 현재 Git과 기록 Git의 분리
 

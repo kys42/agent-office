@@ -6,7 +6,7 @@
 
 Claude Code, Codex, OpenClaw에서 진행하는 실제 작업을 한 사무실에서 이해하고, 에이전트를 눌러 요청·진행·결과와 작업 기억을 이어받는다. 설치된 실행 파일 목록보다 **실제 로컬 세션과 공개 활동**이 중심이다. 공급자별 로그 포맷은 어댑터에서 끝내고 사무실은 하나의 공통 규격을 읽는다.
 
-사용자가 선택한 시안 E는 [원본 기획](../references/design-source/docs/01-brief.md)과 [디자인 컨셉](../references/design-source/docs/02-design-concepts.md)에 있다. 원본 출처는 `kys42/claude-skills`의 `claude/agent-desktop-pet-design-9aex2v` 브랜치, 조사 당시 커밋은 `9a644d65e651e55213af2fe409d09e37f12a849e`다. 현재 앱은 별도 `kys42/agent-office` 프로젝트다.
+사용자가 선택한 시안 E는 [원본 기획](../../references/design-source/docs/01-brief.md)과 [디자인 컨셉](../../references/design-source/docs/02-design-concepts.md)에 있다. 원본 출처는 `kys42/claude-skills`의 `claude/agent-desktop-pet-design-9aex2v` 브랜치, 조사 당시 커밋은 `9a644d65e651e55213af2fe409d09e37f12a849e`다. 현재 앱은 별도 `kys42/agent-office` 프로젝트다.
 
 사용자 첨부 `agent_office_feature_catalog_2026-10-03.pdf`는 140개 기능 후보를 가진 조사 자료였다. 모든 후보의 구현 완료를 뜻하지 않는다. 원본 PDF 자체는 이 저장소에 포함하지 않았으며, 채택·미채택 범위는 아래 문서와 골든 정책에 기록한다.
 
@@ -14,7 +14,7 @@ Claude Code, Codex, OpenClaw에서 진행하는 실제 작업을 한 사무실�
 
 | 사용자 관점의 문제 | 현재 채택한 결정 | 근거 문서 / 구현 |
 | --- | --- | --- |
-| 지금 일하는 대화가 안 보이거나 여러 동료로 갈라짐 | 파일 ID와 원본 대화 ID를 분리. continuation만 합치고 실제 fork·subagent는 관계를 보존 | [세션 분석](SESSION-INGESTION.md), `identity.ts`, `merge.ts` |
+| 지금 일하는 대화가 안 보이거나 여러 동료로 갈라짐 | 파일 ID와 원본 대화 ID를 분리. continuation만 합치고 실제 fork·subagent는 관계를 보존 | [세션 분석](../development/SESSION-INGESTION.md), `identity.ts`, `merge.ts` |
 | 자리 이동과 빈자리가 많아 한눈에 못 봄 | 실제 가구를 프로젝트별로 배치하고 전체를 화면에 맞춤. 상태·명단 정렬은 가구를 이동시키지 않음 | [골든 정책 §5](GOLDEN-OFFICE-POLICY.md#5-사무실-공간-계약--동적-가구-v2), `office-layout.ts` |
 | 동일 프로젝트가 한 팀처럼 보이면 좋겠음 | 같은 프로젝트는 바닥 구역, 같은 브랜치·worktree는 공동 책상, 실제 자식은 낮은 보조 책상 | `office.ts`, `office-layout.ts` |
 | 프로젝트명만으로 작업을 구분하기 어려움 | 원본 세션 이름/사용자 별명 우선. 프로젝트·브랜치·작업 위치는 보조 정보 | `office.ts`, `branch.ts`, Inspector |
@@ -48,7 +48,7 @@ Claude Code, Codex, OpenClaw에서 진행하는 실제 작업을 한 사무실�
 
 ## 후속 작업자가 시작할 때
 
-1. [문서 지도](README.md)에서 해당 계약과 [수집 출처](INGESTION-REFERENCE-AUDIT.md)를 읽는다.
+1. [문서 지도](../README.md)에서 해당 계약과 [수집 출처](../research/INGESTION-REFERENCE-AUDIT.md)를 읽는다.
 2. 세션 중복은 identity/merge, 잘못된 상태는 normalize/runtime, 배치는 office/layout, 대화·소식은 conversation/notices/store 경계를 먼저 확인한다.
 3. 원본 형식이 달라졌으면 개인 원문을 복사하기보다 최소 합성 fixture로 재현하고 해당 테스트를 추가한다.
 4. 현재 실행 중인 preview의 데이터·프로세스를 보존한다. 검증에는 별도 임시 디렉터리나 합성 데모를 사용한다.

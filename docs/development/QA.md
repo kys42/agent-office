@@ -47,7 +47,7 @@
 - 실행 중 preview를 새 backend로 재시작 후 실제 RPC에서도 같은 source 3 → 1, seat 2, ghost 0과 세 플랫폼 연결 정상 확인. 로컬/Tailscale HTTPS 페이지 모두 HTTP 200.
 - UI 레이아웃 변경은 없어서 이번에는 전체 UI 15개를 재실행하지 않았다. 이전 UI 결과는 아래 과거 기록이며 이번 native IPC/snapshot 검증과 구분한다.
 - 초기 대형 header 복구 테스트에서 공유 FileHandle을 Node stream iterator가 닫는 EBADF를 발견. bounded async byte generator를 주입해 수정했고 해당 재현 포함 전체 테스트가 통과했다.
-- 외부 모듈 원본, 커밋, 라이선스, 실제 도입/이식/제외 범위: [수집 레퍼런스 감사](INGESTION-REFERENCE-AUDIT.md).
+- 외부 모듈 원본, 커밋, 라이선스, 실제 도입/이식/제외 범위: [수집 레퍼런스 감사](../research/INGESTION-REFERENCE-AUDIT.md).
 
 ---
 
@@ -74,7 +74,7 @@
 - 390×844: 가로 넘침 없음.
 - 840×218: 투명 미니 창, 6개 책상, 원래 사무실로 복귀.
 - 이름 편집, 메모 저장, 검색, 도구 필터, 내용 숨기기, 수집 중지, 움직임 줄이기, 인수인계 미리보기 검증.
-- 문서 이미지에는 합성 데모 기록만 사용했다. [사무실](images/office.png), [업무 카드](images/detail.png), [미니](images/mini.png), [대기 라운지](images/waiting.png).
+- 문서 이미지에는 합성 데모 기록만 사용했다. [사무실](../images/office.png), [업무 카드](../images/detail.png), [미니](../images/mini.png), [대기 라운지](../images/waiting.png).
 
 ## 독립 리뷰에서 보강한 부분
 
