@@ -1,0 +1,508 @@
+/* Furniture is placed by the topology layout, never baked into the room background. */
+.view-office,
+.view-office:has(.demo-banner) {
+  width: 100%;
+  max-width: none;
+}
+.office-layout {
+  grid-template-columns: minmax(0, 1fr) 270px;
+  gap: 18px;
+}
+.office-card.dynamic-office {
+  display: flex;
+  flex-direction: column;
+  height: clamp(380px, calc(100dvh - 292px), 1100px);
+}
+.dynamic-office .office-card-top {
+  height: 42px;
+  flex-shrink: 0;
+  padding: 0 13px;
+}
+.dynamic-office .office-card-bottom {
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0 12px;
+  font-size: 9px;
+}
+.dynamic-office .scene-controls {
+  gap: 3px;
+}
+.scene-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 7px;
+  color: #cdbed7;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  font-size: 10px;
+}
+.scene-controls button:hover,
+.scene-controls button.is-fit {
+  background: #514057;
+  border-color: #73607a;
+  color: #f4ddb2;
+}
+.scene-controls button:disabled {
+  opacity: 0.35;
+}
+.dynamic-office .scene-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #ad855c;
+  scrollbar-color: #78594b #c79f70;
+}
+.scene-size {
+  position: relative;
+}
+.dynamic-office .office-map {
+  position: absolute;
+  overflow: hidden;
+  border: 4px solid #6e5149;
+  background-color: #d1ad7b;
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 31px, #9d79582c 31px 33px),
+    repeating-linear-gradient(
+      90deg,
+      #f8daa216 0 105px,
+      #886c4719 105px 107px,
+      transparent 107px 219px,
+      #fff2be21 219px 222px
+    );
+  box-shadow:
+    inset 0 0 0 3px #edd0a0,
+    0 4px 0 #755441;
+}
+.office-wall {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 24px 9px;
+  background: repeating-linear-gradient(90deg, transparent 0 42px, #526d5c12 42px 44px), #b9c9ac;
+  border-bottom: 7px solid #6c7861;
+  box-shadow: 0 4px 0 #8a70574a;
+}
+.office-wall > span {
+  color: #4d6656;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 5px;
+  text-shadow: 0 1px #e5ecd0;
+}
+.wall-window {
+  width: 66px;
+  height: 32px;
+  border: 4px solid #e4dcc1;
+  background:
+    linear-gradient(90deg, transparent 46%, #e4dcc1 46% 54%, transparent 54%),
+    linear-gradient(0deg, #a8c6ce 47%, #e4dcc1 47% 57%, #b9d7d7 57%);
+  box-shadow:
+    0 3px #758b7d,
+    0 0 0 2px #8f9f8d;
+}
+.floor-light {
+  position: absolute;
+  top: 54px;
+  left: 20px;
+  width: 140px;
+  height: 60px;
+  background: #fff4bd14;
+  transform: skewX(-30deg);
+  pointer-events: none;
+}
+.project-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border: 2px dashed color-mix(in srgb, var(--project-color), transparent 45%);
+  border-radius: 5px;
+}
+.project-floor-mark {
+  position: absolute;
+  left: 13px;
+  top: 8px;
+  right: 13px;
+  height: 23px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #564d36;
+  text-shadow: 0 1px #f5d5a8;
+  pointer-events: none;
+}
+.project-floor-mark > span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #ffebc9;
+  background: var(--project-color);
+  text-shadow: none;
+  font-size: 10px;
+  border-radius: 2px;
+}
+.project-floor-mark b {
+  font:
+    17px 'Do Hyeon',
+    sans-serif;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.project-floor-mark small {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #776644;
+  margin-left: auto;
+}
+.dynamic-office .team-bench {
+  height: 53px;
+  z-index: 2;
+}
+.dynamic-office .bench-surface {
+  background: linear-gradient(
+    #f0cc96 0 5px,
+    #cea36f 5px 29px,
+    #b78a59 29px 35px,
+    #785048 35px 40px,
+    transparent 40px
+  );
+  border-radius: 2px 2px 0 0;
+  border-top-color: #ffe2ab;
+}
+.dynamic-office .shared-bench .bench-surface {
+  background: linear-gradient(
+    #f2d09a 0 5px,
+    #d4aa77 5px 29px,
+    #be905f 29px 35px,
+    #785048 35px 40px,
+    transparent 40px
+  );
+}
+.dynamic-office .bench-surface::before,
+.dynamic-office .bench-surface::after {
+  top: 37px;
+  height: 14px;
+}
+.desk-station {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 164px;
+  height: 238px;
+  z-index: 3;
+}
+.desk-station.selected-station {
+  z-index: 4;
+}
+.office-chair {
+  position: absolute;
+  top: 105px;
+  left: 60px;
+  width: 44px;
+  height: 36px;
+  background: linear-gradient(#71857b 0 4px, #4e665b 4px 23px, #95a696 23px 27px, #596e61 27px);
+  border: 3px solid #3e514c;
+  border-radius: 7px 7px 2px 2px;
+  box-shadow:
+    0 4px #384541,
+    3px 5px 0 3px #77543d33;
+}
+.office-chair::after {
+  content: '';
+  position: absolute;
+  width: 28px;
+  height: 6px;
+  left: 5px;
+  bottom: -12px;
+  background: #46514a;
+  border-left: 4px solid #35403a;
+  border-right: 4px solid #35403a;
+}
+.dynamic-office .pet-shadow {
+  left: 52px;
+  top: 134px;
+  height: 12px;
+}
+.dynamic-office .office-pet {
+  left: 42px;
+  top: 62px;
+  width: 80px;
+  height: 80px;
+  z-index: 2;
+}
+.desk-equipment {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.desk-screen {
+  position: absolute;
+  top: 122px;
+  left: 34px;
+  width: 32px;
+  height: 20px;
+  background: linear-gradient(135deg, #d0e4bf, #839d89);
+  border: 3px solid #454c46;
+  border-radius: 2px;
+  box-shadow: 0 4px 0 -1px #5c6051;
+}
+.desk-keyboard {
+  position: absolute;
+  top: 149px;
+  left: 37px;
+  width: 29px;
+  height: 5px;
+  background: repeating-linear-gradient(90deg, #efdbb8 0 3px, #a8916c 3px 4px);
+  box-shadow: 0 2px #947a5b;
+}
+.desk-cup {
+  position: absolute;
+  top: 135px;
+  right: 27px;
+  width: 11px;
+  height: 13px;
+  background: #eee1bd;
+  border-top: 3px solid #766453;
+  box-shadow:
+    3px 2px 0 -1px #eee1bd,
+    0 2px #b28c64;
+}
+.desk-branch {
+  position: absolute;
+  top: 158px;
+  left: 14px;
+  width: 136px;
+  height: 19px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px;
+  border: 1px solid #b78c5b;
+  border-radius: 2px;
+  color: #62452f;
+  background: #f2d29ca6;
+  font-size: 10px;
+  z-index: 4;
+}
+.desk-branch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.desk-branch svg {
+  flex-shrink: 0;
+}
+.desk-branch:hover {
+  background: #f6dba6;
+  border-color: #856038;
+}
+.dynamic-office .desk-name {
+  left: 82px;
+  top: 191px;
+  width: 152px;
+  padding: 3px 6px;
+  transform: translateX(-50%);
+  z-index: 4;
+}
+.dynamic-office .desk-name strong {
+  font-size: 11px;
+}
+.dynamic-office .desk-name small {
+  font-size: 9px;
+}
+.dynamic-office .speech-bubble {
+  left: 82px;
+  top: 63px;
+  width: 154px;
+  max-width: 154px;
+  min-height: 0;
+  border-radius: 7px;
+  z-index: 5;
+}
+.dynamic-office .speech-open {
+  padding: 5px 18px 5px 7px;
+}
+.dynamic-office .speech-copy b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.35;
+  max-height: 30px;
+}
+.dynamic-office .speech-copy small {
+  font-size: 8px;
+  line-height: 1.3;
+}
+.dynamic-office .speech-copy em {
+  font-size: 8px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dynamic-office .speech-bubble:after {
+  border-width: 2px;
+}
+.dynamic-office .helper-desk {
+  top: 0;
+  left: 0;
+  height: 68px;
+  z-index: 4;
+}
+.dynamic-office .helper-table {
+  top: 32px;
+}
+.dynamic-office .helper-desk > b {
+  margin-top: 5px;
+  max-width: 70px;
+}
+.scene-empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -40%);
+  text-align: center;
+  color: #695244;
+  width: 340px;
+}
+.scene-empty h3 {
+  font:
+    24px 'Do Hyeon',
+    sans-serif;
+  margin: 15px 0 7px;
+}
+.scene-empty p {
+  font-size: 13px;
+}
+.scene-empty button {
+  margin-top: 14px;
+  color: #fff0cf;
+  background: #695547;
+  padding: 10px 14px;
+  border-radius: 5px;
+}
+.app.has-dock .office-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app.has-dock .office-layout > .roster {
+  display: none;
+}
+@media (min-width: 1001px) {
+  .view-office .roster-panel {
+    max-height: calc(100dvh - 502px);
+    min-height: 190px;
+  }
+}
+@media (max-width: 1100px) {
+  .office-layout {
+    grid-template-columns: minmax(0, 1fr) 235px;
+    gap: 12px;
+  }
+  .dynamic-office .floor-label {
+    display: none;
+  }
+}
+@media (max-width: 850px) {
+  .office-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .office-card.dynamic-office {
+    height: min(560px, 68dvh);
+    min-height: 380px;
+  }
+  .dynamic-office .office-card-top {
+    padding: 0 8px;
+  }
+  .dynamic-office .office-card-bottom > span:last-child {
+    display: none;
+  }
+  .app.has-dock .office-layout > .roster {
+    display: block;
+  }
+}
+@media (min-width: 851px) {
+  .view-office {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .view-office > .demo-banner,
+  .view-office > .office-heading,
+  .view-office > .office-zone-bar {
+    flex-shrink: 0;
+  }
+  .view-office > .office-layout {
+    flex: 1;
+    min-height: 260px;
+    align-items: stretch;
+  }
+  .office-column {
+    height: 100%;
+    min-height: 0;
+  }
+  .office-card.dynamic-office {
+    height: 100%;
+    min-height: 260px;
+  }
+  .office-layout > .roster {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    gap: 12px;
+  }
+  .view-office .roster-panel {
+    min-height: 100px;
+    max-height: none;
+    flex: 1;
+  }
+  .roster > .stats-grid,
+  .roster > .call-card,
+  .roster > .calm-card {
+    flex-shrink: 0;
+    margin: 0;
+  }
+  .roster-foot {
+    display: none;
+  }
+}
+@media (min-width: 851px) and (max-height: 800px) {
+  .view-office .office-heading {
+    margin-bottom: 14px;
+  }
+  .view-office .office-heading .eyebrow {
+    display: none;
+  }
+  .view-office .office-heading h1 {
+    font-size: 25px;
+  }
+  .view-office .office-heading p {
+    font-size: 11px;
+  }
+  .view-office .office-zone-bar {
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+  }
+  .roster > .stats-grid .stat {
+    padding: 9px;
+  }
+  .roster > .call-card,
+  .roster > .calm-card {
+    padding: 10px;
+    min-height: 50px;
+  }
+}

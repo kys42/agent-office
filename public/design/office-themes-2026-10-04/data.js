@@ -1,0 +1,26 @@
+window.CONCEPTS = [
+ {id:'01',slug:'sunroom',name:'햇살 작업실',en:'Sunday Studio',line:'햇살 드는 넓은 사무실, 옆에는 동료들의 짧은 소식.',family:'따뜻한 공간',layout:'가로형 오픈 오피스 + 오늘의 소식',reason:'기존 E의 편안한 공간감을 확장하면서 진행 문구를 가장 편하게 읽는 안.',limit:'세션이 늘어나면 층 전환과 말풍선 밀도를 조정해야 합니다.',refs:['gather']},
+ {id:'02',slug:'nightshift',name:'심야 관제실',en:'After Hours',line:'빛나는 책상과 간결한 기록으로, 지금 움직이는 일에 집중.',family:'어두운 공간',layout:'측면 도구막대 + 넓은 관제 구역 + 기록 패널',reason:'밤에 오래 켜 두는 모니터에 맞춘 낮은 명도와 선명한 활동 대비.',limit:'실제 구현에서 작은 글자의 대비와 장시간 피로도를 확인할 안.',refs:['linear','gather']},
+ {id:'03',slug:'ledger',name:'사무실 일지',en:'The Office Ledger',line:'왼쪽은 동료들의 자리, 오른쪽은 차곡차곡 쌓인 하루.',family:'새로운 해석',layout:'펼친 노트의 평면도 + 시간순 여백 일지',reason:'공간과 작업 맥락을 한 권의 기록처럼 함께 읽습니다.',limit:'노트 구도는 넓은 화면에 적합하며 작은 창에서는 한 페이지로 접어야 합니다.',refs:['kinopio']},
+ {id:'04',slug:'blocks',name:'프로젝트 마을',en:'Little Departments',line:'같은 프로젝트는 같은 방. 가까운 책상이 관계를 설명해요.',family:'따뜻한 공간',layout:'프로젝트 크기에 따른 비대칭 방 배치',reason:'프로젝트가 여러 개인 실제 사용에서 관련 세션을 공간으로 묶습니다.',limit:'프로젝트 수가 많을 때 방 배치와 고정 좌석 규칙을 조율해야 합니다.',refs:['gather','kinopio']},
+ {id:'05',slug:'orbit',name:'궤도 사무실',en:'Orbital Office',line:'중앙의 정원을 둘러싼 여섯 자리, 일의 흐름을 한눈에.',family:'어두운 공간',layout:'원형 데스크 링 + 하단 메시지 띠',reason:'캐릭터 존재감과 사무실의 상징성을 가장 강하게 만드는 실험안.',limit:'원형 배치는 좌석 수가 제한되므로 여러 구역을 오가는 방식이 필요합니다.',refs:['gather','linear']},
+ {id:'06',slug:'greenhouse',name:'숲속 연구소',en:'Field Station',line:'창밖은 숲, 안쪽은 조용히 이어지는 긴 작업대.',family:'따뜻한 공간',layout:'세로 프로젝트 색인 + 3개의 긴 작업대 + 상태 메모',reason:'가구 중심의 차분한 공간과 긴 텍스트가 읽히는 목록을 결합합니다.',limit:'일러스트 배경과 메시지의 대비를 실데이터 길이로 확인해야 합니다.',refs:['gather']},
+ {id:'07',slug:'blueprint',name:'설계 스튜디오',en:'Office / Plan 01',line:'장식보다 좌석의 질서. 정밀한 도면 위에 살아 있는 동료들.',family:'새로운 해석',layout:'넓은 건축 평면도 + 얇은 좌석 색인',reason:'좌석 유지, 프로젝트 구역, 상태를 명료하게 보여주는 도구 중심 안.',limit:'도면의 작은 치수 표시는 축소 화면에서 생략할 필요가 있습니다.',refs:['linear']},
+ {id:'08',slug:'pocket',name:'포켓 오피스',en:'Pocket Office',line:'책상 위 작은 기계 안에, 익숙한 세 동료가 살고 있어요.',family:'새로운 해석',layout:'기기 프레임 + 픽셀 사무실 + 하단 대화창',reason:'원래 캐릭터의 픽셀 정체성을 제품 전체의 촉감으로 연결합니다.',limit:'기기 프레임이 화면을 차지하므로 작은 창에서는 테두리를 줄여야 합니다.',refs:['gather','kinopio']},
+ {id:'09',slug:'building',name:'동료의 빌딩',en:'House of Work',line:'층마다 다른 작업실. 창 너머로 오늘의 일이 보여요.',family:'어두운 공간',layout:'3층 단면 건물 + 좌측 세션 안내판',reason:'많은 동료를 층별 공간으로 확장할 수 있는 기억하기 쉬운 구도.',limit:'프로젝트와 층의 연결은 실제 세션 수를 기준으로 정교화해야 합니다.',refs:['gather','kinopio']}
+];
+window.SESSIONS = [
+ {id:0,title:'사무실에 새 동료 맞이하기',project:'agent-office',provider:'claude',name:'Claude Code',state:'work',status:'작업 중',message:'세션 수집기를 연결하고 있어요. 새로 열린 대화도 사무실에 바로 들어오게 할게요.',tool:'파일 수정 · collectors/claude.ts',request:'Claude Code, Codex, OpenClaw에서 지금 작업하는 세션이 사무실에 함께 보이게 해줘.',time:'방금',uses:32,zone:'office'},
+ {id:1,title:'검색 결과를 더 빠르게',project:'agent-office',provider:'codex',name:'Codex',state:'think',status:'생각 중',message:'검색 흐름을 살펴보고 있어요. 결과가 늦게 뜨는 지점부터 찾겠습니다.',tool:'코드 읽기 · search.ts',request:'세션 검색에서 입력할 때마다 결과가 조금 늦게 나와. 원인을 찾아서 개선해줘.',time:'1분 전',uses:48,zone:'office'},
+ {id:2,title:'오늘의 업무 브리핑',project:'daily-brief',provider:'openclaw',name:'OpenClaw',state:'work',status:'작업 중',message:'오늘의 기록을 모으고 있어요. 끝난 일과 이어 할 일을 나눠 정리하겠습니다.',tool:'기록 조회 · daily summary',request:'오늘 작업한 내용을 짧게 브리핑해줘. 다음에 이어 할 일도 같이 적어줘.',time:'2분 전',uses:21,zone:'office'},
+ {id:3,title:'9월의 작업 회고',project:'my-notes',provider:'claude',name:'Claude Code',state:'call',status:'응답 필요',message:'회고의 초안을 정리했어요. 제목은 “작은 개선이 쌓인 한 달”로 할까요?',tool:'선택 대기',request:'9월에 작업한 내용을 돌아보고 블로그에 올릴 회고 초안을 만들어줘.',time:'4분 전',uses:12,zone:'office'},
+ {id:4,title:'로그인 재시도 오류 수정',project:'api-server',provider:'codex',name:'Codex',state:'work',status:'작업 중',message:'재시도 횟수 제한을 고쳤어요. 같은 문제가 돌아오지 않는지 테스트 중입니다.',tool:'exec · npm test',request:'로그인 실패 뒤 재시도가 계속 반복되는 문제를 수정해줘.',time:'6분 전',uses:40,zone:'office'},
+ {id:5,title:'컴포넌트 정리',project:'design-system',provider:'claude',name:'Claude Code',state:'done',status:'응답 완료',message:'버튼과 입력창의 간격을 정리했어요. 변경 내용과 확인한 화면을 남겼습니다.',tool:'응답 완료',request:'버튼과 입력창 사이에 제각각인 간격을 공통 규칙으로 정리해줘.',time:'12분 전',uses:18,zone:'office'},
+ {id:6,title:'작은 버그를 잡는 시간',project:'web-app',provider:'codex',name:'Codex',state:'sleep',status:'대기 중',message:'수정을 마쳤어요. 다음 요청이 오면 여기서 이어갈 수 있어요.',tool:'최근 작업 없음',request:'사이드바가 접힐 때 잘리는 글자를 수정해줘.',time:'5시간 전',uses:9,zone:'waiting'},
+ {id:7,title:'주간 일정 정리',project:'assistant',provider:'openclaw',name:'OpenClaw',state:'sleep',status:'보관됨',message:'지난주 일정을 정리했어요. 기록은 보관 공간에 남아 있어요.',tool:'보관 상태',request:'주간 일정을 업무와 개인 일정으로 나눠 정리해줘.',time:'9일 전',uses:4,zone:'archive'}
+];
+window.REFERENCES = [
+ {id:'gather',title:'Gather · Virtual Office',url:'https://www.gather.town/virtual-office',date:'2026-10-04',kind:'공식 제품 화면',principle:'벽·러그·책상 군집으로 공간의 쓰임을 설명하는 방식.',adaptation:'화상회의 대신 고정 세션 자리와 프로젝트 인접 배치에 적용. 원본 이미지·코드 도입 없음.'},
+ {id:'linear',title:'Linear · Features / Build',url:'https://linear.app/build',date:'2026-10-04',kind:'공식 제품 소개 화면',principle:'낮은 명도의 큰 여백, 미세한 경계선, 최소한의 상태 강조.',adaptation:'02의 진행 패널과 07의 얇은 정보 위계에 적용. 제품 성능이나 사용성을 검증한 자료는 아님.'},
+ {id:'kinopio',title:'Kinopio · Spatial Thinking',url:'https://kinopio.club/',date:'2026-10-04',kind:'제작자 운영 서비스 · 화면 데모',principle:'관련 내용을 가까이 놓고, 자유로운 카드와 선으로 관계를 읽게 하는 방식.',adaptation:'03의 여백 기록과 04의 프로젝트별 방, 08의 물성, 09의 공간별 문맥에 적용. 자산·라이브러리 도입 없음.'}
+];

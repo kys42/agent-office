@@ -1,0 +1,41 @@
+{
+  "repository": "https://github.com/stablyai/orca",
+  "commit": "ea6a6d60774ac2b74bb6692d1798e3ab13b99ae0",
+  "license": "MIT",
+  "files": [
+    {
+      "path": "src/main/ai-vault/session-scanner-jsonl-reader.ts",
+      "sha256": "7f31e83b638c7535c6ac9f77c0fd3f7de63835fff198d36710b175e39f6ff24e"
+    },
+    {
+      "path": "src/main/ai-vault/session-transcript-record-budget.ts",
+      "sha256": "c8f8a090092518eaee52a2c63fefacd45ffc3d3e3540d00cef9b64895895eef6"
+    },
+    {
+      "path": "src/main/ai-vault/session-scanner-codex-non-user-origin.ts",
+      "sha256": "28c0619fb30cd4c3d12b0ea070cac5819b7e1380946aae3a4c48af75f73ea152"
+    },
+    {
+      "path": "src/main/ai-vault/session-scanner-record-value.ts",
+      "sha256": "9d75db5197e0644e2c4973f9dce4b1fee5221d537e6cd43b2b5a7368b7168dd5"
+    },
+    {
+      "path": "src/main/ai-vault/session-scanner-values.ts",
+      "sha256": "84bd661a68407dadd8d5125dabb3b297326378b917236cc0857ef6b1c6dec59c"
+    },
+    {
+      "path": "src/main/ai-vault/session-scanner-jsonl-reader.test.ts",
+      "sha256": "209279f3691e36247eb02e956fb823ad8678468e44ac7354cdaf113c0c6b6a8d"
+    },
+    {
+      "path": "src/main/ai-vault/session-scanner-codex-non-user-origin.test.ts",
+      "sha256": "740b2e93814bff1199f61e4cd5bfd1c4d23810094c391db382abaebb39c7eba9"
+    }
+  ],
+  "changes": {
+    "session-scanner-jsonl-reader.ts": "Replace WSL stream opener with injected AsyncIterable<Buffer>; .js import suffix. Byte folding unchanged.",
+    "session-scanner-codex-non-user-origin.ts": "Import asRecord/extractString from extracted local values.js only.",
+    "values.ts": "extractString copied unchanged; asRecord module copied unchanged.",
+    "session-transcript-record-budget.ts": "Unchanged."
+  }
+}

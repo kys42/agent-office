@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>탑뷰 에이전트 오피스</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&amp;family=IBM+Plex+Sans+KR:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#FFD84A}a:hover{color:#FFE88A}
+.dh{font-family:'Do Hyeon','Apple SD Gothic Neo',sans-serif;font-weight:400}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.mapbg{position:absolute;left:0;top:0;width:960px;height:720px;image-rendering:pixelated}
+.spr{position:absolute;left:0;top:0;--row:0;width:96px;height:96px;background-repeat:no-repeat;background-size:384px 768px;background-position:0 calc(var(--row) * -96px);image-rendering:pixelated;animation:frames .72s steps(4) infinite}
+.sp-claude{background-image:url(/_blob/c79a539ecd7e7fa927d4ae6e705efac8)}
+.sp-codex{background-image:url(/_blob/3769435b50d08e3c8f5546798260ebe5)}
+.sp-openclaw{background-image:url(/_blob/2ca9c52fb72c2230ac27f2f2abf32e65)}
+.sp-gemini{background-image:url(/_blob/7a40edd2b988df5350e5062af9824933)}
+.sp-claude-walk{background-image:url(/_blob/a02bd8e26a56520ec1554360117e35c7)}
+.sp-codex-walk{background-image:url(/_blob/3119f9602cfcd461dde0f662caffce07)}
+.sp-openclaw-walk{background-image:url(/_blob/0663372a3ebe0fd0dde485c6b8de6925)}
+.sp-gemini-walk{background-image:url(/_blob/717dbb6b57c4153ca9971eba09265ff0)}
+.st-idle{--row:0}.st-work{--row:1}.st-think{--row:2;animation-duration:1.4s}.st-call{--row:3;animation-duration:.6s}.st-done{--row:4;animation-duration:1.2s}.st-error{--row:5;animation-duration:.5s}.st-sleep{--row:6;animation-duration:2.4s}.st-leave{--row:7}
+.wk{background-size:384px 288px;animation-duration:.48s}
+.wk-down{--row:0}.wk-up{--row:1}.wk-side{--row:2}
+.flip{transform:scaleX(-1)}
+.mini{position:relative;display:block;width:48px;height:48px;overflow:hidden}
+.mini .spr{transform:scale(.5);transform-origin:0 0}
+.pet{position:absolute;width:96px;height:96px;padding:0;margin:0;border:0;background:none;cursor:pointer}
+.pet:focus-visible{outline:3px dashed #FFD84A;outline-offset:-6px}
+.shadow{position:absolute;width:52px;height:14px;border-radius:50%;background:rgba(43,30,20,.28)}
+.ring{position:absolute;width:76px;height:24px;border-radius:50%;border:3px solid #FFD84A;box-shadow:0 0 0 3px rgba(255,216,74,.35);box-sizing:border-box;animation:ring 1.2s ease-in-out infinite}
+.tag{position:absolute;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:4px 10px 4px 8px;border-radius:999px;background:rgba(32,27,44,.88);color:#FFFFFF;font:600 13px/1.1 'IBM Plex Sans KR',sans-serif;white-space:nowrap;z-index:1500;pointer-events:none}
+.tag.sel{background:#FFD84A;color:#2B2634;box-shadow:0 0 0 3px #2B2634}
+.tdot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+.bub{position:absolute;transform:translate(-50%,-100%);display:flex;align-items:center;gap:8px;max-width:184px;padding:6px 11px 6px 6px;background:#FFFFFF;color:#2B2634;border:3px solid #2B2634;border-radius:12px;box-shadow:0 4px 0 #2B2634;font:700 14px/1.2 'IBM Plex Sans KR',sans-serif;white-space:nowrap;z-index:2000;pointer-events:none;box-sizing:border-box}
+.bub span.t{overflow:hidden;text-overflow:ellipsis}
+.bub:after{content:'';position:absolute;left:50%;top:100%;width:10px;height:10px;margin-left:-6px;margin-top:-4px;background:inherit;border-right:3px solid #2B2634;border-bottom:3px solid #2B2634;transform:rotate(45deg)}
+.bub.walk{background:#F3F0F8;font-weight:600}
+.bub.error{background:#FFD38A}
+.bub.done{background:#BFE0FF}
+.ic{width:26px;height:26px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.callbub{position:absolute;transform:translateY(-100%);width:288px;padding:12px 14px 14px;background:#FF5A7A;color:#2B0712;border:3px solid #2B2634;border-radius:16px;box-shadow:0 5px 0 #2B2634;z-index:2100;box-sizing:border-box;animation:nudge 1.4s ease-in-out infinite}
+.callbub:after{content:'';position:absolute;left:162px;top:100%;width:14px;height:14px;margin-top:-6px;background:#FF5A7A;border-right:3px solid #2B2634;border-bottom:3px solid #2B2634;transform:rotate(45deg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:12px;border:3px solid #2B2634;font:700 15px 'IBM Plex Sans KR',sans-serif;cursor:pointer;text-decoration:none}
+.row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px 8px 8px;border:0;border-radius:14px;background:transparent;color:#FFFFFF;cursor:pointer;text-align:left;font-family:inherit;box-sizing:border-box;min-height:56px}
+.row:hover{background:rgba(255,255,255,.06)}
+.row.sel{background:#463F55}
+.badge{flex:none;padding:5px 9px;border-radius:999px;font:700 12.5px 'IBM Plex Sans KR',sans-serif;color:#2B2634;white-space:nowrap}
+.sug{min-height:34px;padding:0 12px;border-radius:999px;border:0;background:#5A5268;color:#FFFFFF;cursor:pointer;font:600 14px 'IBM Plex Sans KR',sans-serif}
+@keyframes frames{from{background-position-x:0}to{background-position-x:-384px}}
+@keyframes ring{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes nudge{0%,100%{transform:translateY(-100%)}50%{transform:translateY(calc(-100% - 4px))}}
+</style>
+</helmet>
+<div style="position: relative; width: 1320px; height: 800px; overflow: hidden; background: #2B2634; color: #FFFFFF; font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', sans-serif">
+
+  <header style="position: absolute; left: 16px; right: 16px; top: 0; height: 64px; display: flex; align-items: center; gap: 14px">
+    <h1 class="dh" style="margin: 0; font-size: 28px">우리 사무실</h1>
+    <span style="font-size: 14px; color: #CFC8DD">금요일 오후 2:40 · 목업 데이터</span>
+    <span style="flex: 1"></span>
+    <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #CFC8DD">
+      <span style="width: 18px; height: 18px; border-radius: 5px; background: #F2C14E; border: 2px solid #2B2634; box-shadow: 0 0 0 2px #F2C14E"></span>
+      노란 매트 = 호출 존 · 부를 일이 생기면 여기로 걸어와요
+    </span>
+    <button class="btn" onClick="{{restart}}" style="background: #463F55; color: #FFFFFF; border-color: #5A5268">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5"></path></svg>
+      처음부터
+    </button>
+  </header>
+
+  <div style="position: absolute; left: 16px; top: 64px; width: 960px; height: 720px; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 4px #463F55">
+    <img class="mapbg" src="/_blob/8443f4c2ad44c9cc4d32149eb7643c0a" alt="사무실 지도">
+
+    <sc-for list="{{desks}}" as="d" hint-placeholder-count="6">
+      <img src="/_blob/d9a334eb9804e25b7c2643c21b2fb934" alt="" style="{{d.pos}}">
+    </sc-for>
+    <img src="/_blob/d0b30c99674b1f7b11b11b03cbcab21c" alt="" style="position: absolute; left: 702px; top: 546px; width: 180px; height: 48px; image-rendering: pixelated; z-index: 594">
+
+    <sc-for list="{{view}}" as="v" hint-placeholder-count="8">
+      <sc-if value="{{v.showShadow}}" hint-placeholder-val="{{true}}">
+        <div class="shadow" style="{{v.shadowPos}}"></div>
+      </sc-if>
+      <sc-if value="{{v.ring}}" hint-placeholder-val="{{false}}">
+        <div class="ring" style="{{v.ringPos}}"></div>
+      </sc-if>
+      <button class="pet" style="{{v.pos}}" onClick="{{v.pick}}" aria-label="{{v.aria}}">
+        <span class="{{v.sprCls}}"></span>
+      </button>
+      <div class="{{v.tagCls}}" style="{{v.tagPos}}"><span class="tdot" style="{{v.dot}}"></span>{{v.name}}</div>
+    </sc-for>
+
+    <sc-for list="{{bubbles}}" as="b" hint-placeholder-count="8">
+      <div class="{{b.cls}}" style="{{b.pos}}">
+        <span class="ic" style="{{b.icBg}}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B2634" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"></path></svg>
+        </span>
+        <span class="t">{{b.text}}</span>
+      </div>
+    </sc-for>
+
+    <sc-if value="{{callBubble.show}}" hint-placeholder-val="{{true}}">
+      <div class="callbub" style="{{callBubble.pos}}">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span class="ic" style="background: #FFFFFF">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2B2634" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+          </span>
+          <span class="dh" style="font-size: 19px">{{callBubble.name}} 가 불러요</span>
+        </div>
+        <div style="margin-top: 8px; font: 700 17px/1.35 'IBM Plex Sans KR', sans-serif">{{callBubble.q}}</div>
+        <div style="display: flex; gap: 8px; margin-top: 10px">
+          <button class="btn" onClick="{{approve}}" style="flex: 1; background: #FFFFFF; color: #2B2634">허용</button>
+          <button class="btn" onClick="{{deny}}" style="flex: 1; background: #2B2634; color: #FFFFFF">거절</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <aside aria-label="지금 상황" style="position: absolute; left: 992px; top: 64px; width: 312px; height: 720px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+      <sc-for list="{{counts}}" as="c" hint-placeholder-count="6">
+        <div style="{{c.box}}">
+          <span class="dh" style="font-size: 24px; line-height: 1">{{c.n}}</span>
+          <span style="font-size: 12px; font-weight: 700">{{c.label}}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{callCard.show}}" hint-placeholder-val="{{true}}">
+      <div style="padding: 14px; border-radius: 16px; background: #FF5A7A; color: #2B0712; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; justify-content: space-between">
+          <span class="dh" style="font-size: 20px">{{callCard.name}}</span>
+          <span style="font-size: 12.5px; font-weight: 700">{{callCard.where}}</span>
+        </div>
+        <div style="font: 700 15px/1.4 'IBM Plex Sans KR', sans-serif">{{callCard.q}}</div>
+        <div class="mono" style="padding: 8px 10px; border-radius: 10px; background: #2B2634; color: #FFE4EA; font-size: 12px">{{callCard.code}}</div>
+        <div style="display: flex; gap: 8px">
+          <button class="btn" onClick="{{approve}}" style="flex: 1; background: #FFFFFF; color: #2B2634">허용</button>
+          <button class="btn" onClick="{{deny}}" style="flex: 1; background: #2B2634; color: #FFFFFF">거절</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 8px; border-radius: 16px; background: #352F41; display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{roster}}" as="r" hint-placeholder-count="8">
+        <button class="{{r.cls}}" onClick="{{r.pick}}">
+          <span class="mini" style="{{r.miniBg}}"><span class="{{r.sprCls}}"></span></span>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+            <span class="dh" style="font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.name}}</span>
+            <span style="font-size: 12.5px; color: #CFC8DD; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.what}}</span>
+          </span>
+          <span class="badge" style="{{r.badge}}">{{r.state}}</span>
+        </button>
+        <sc-if value="{{r.open}}" hint-placeholder-val="{{false}}">
+          <div style="margin: 0 4px 8px; padding: 12px; border-radius: 12px; background: #2B2634; display: flex; flex-direction: column; gap: 8px">
+            <sc-if value="{{r.viewing}}" hint-placeholder-val="{{true}}">
+              <div style="display: flex; align-items: center; gap: 8px">
+                <span style="flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.5; color: #CFC8DD; white-space: pre-line">{{r.sub}}</span>
+                <button onClick="{{r.edit}}" aria-label="이름 바꾸기" style="width: 44px; height: 44px; flex: none; border-radius: 12px; border: 0; background: #463F55; color: #FFFFFF; cursor: pointer; display: flex; align-items: center; justify-content: center">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                </button>
+              </div>
+            </sc-if>
+            <sc-if value="{{r.editing}}" hint-placeholder-val="{{false}}">
+              <label for="nameInputE" style="font-size: 12px; color: #CFC8DD">이름표 달기 · 비우면 세션 제목</label>
+              <div style="display: flex; gap: 6px">
+                <input id="nameInputE" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{r.title}}" style="flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; border-radius: 10px; border: 2px solid #FFD84A; background: #FFFFFF; color: #2B2634; font: 700 16px 'IBM Plex Sans KR', sans-serif; box-sizing: border-box">
+                <button class="btn" onClick="{{save}}" style="background: #FFD84A; color: #2B2634">달기</button>
+              </div>
+              <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                <sc-for list="{{r.sugs}}" as="sg" hint-placeholder-count="3">
+                  <button class="sug" onClick="{{sg.use}}">{{sg.label}}</button>
+                </sc-for>
+              </div>
+            </sc-if>
+            <button class="btn" style="background: #FFD84A; color: #2B2634">터미널 열기</button>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1320,"height":800}}'>
+const TICK = 100;
+const SPEED = 9;
+const ST = {
+  call: { label: '불러요', color: '#FF5A7A', rank: 0 },
+  error: { label: '막혔어요', color: '#FFB547', rank: 1 },
+  work: { label: '일하는 중', color: '#4CC38A', rank: 2 },
+  think: { label: '생각 중', color: '#A78BFA', rank: 3 },
+  done: { label: '다 했어요', color: '#5AA9FF', rank: 4 },
+  idle: { label: '쉬는 중', color: '#B8B2C6', rank: 5 },
+  sleep: { label: '꾸벅꾸벅', color: '#8E88A0', rank: 6 },
+  leave: { label: '퇴근', color: '#6F6981', rank: 7 }
+};
+const ICON = {
+  work: 'M16 18l6-6-6-6M8 6l-6 6 6 6',
+  think: 'M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z',
+  error: 'M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  done: 'M20 6 9 17l-5-5',
+  idle: 'M7 12h.01M12 12h.01M17 12h.01',
+  sleep: 'M4 7h6l-6 8h6M14 4h5l-5 6h5',
+  leave: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
+  walk: 'M5 12h14M13 6l6 6-6 6'
+};
+const SUGS = { claude: ['코코', '당근', '모모'], codex: ['네모', '삑삑', '큐브'], openclaw: ['집게', '꽃게', '가재'], gemini: ['별이', '반짝', '쌍둥'] };
+const AGENT = { claude: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw', gemini: 'Gemini CLI' };
+const SESS = {
+  s1: { sp: 'claude', nick: '코코', title: '데스크탑 펫 디자인 시안', repo: 'claude-skills', branch: 'agent-desktop-pet' },
+  s2: { sp: 'claude', nick: '', title: '9월 회고 글 발행', repo: 'blog', branch: 'post/retro' },
+  s3: { sp: 'claude', nick: '셜록', title: 'sync 버그 추적', repo: 'work-manager', branch: 'fix/sync' },
+  s4: { sp: 'codex', nick: '', title: 'Rate limit 미들웨어', repo: 'api-server', branch: 'feat/rate-limit' },
+  s5: { sp: 'codex', nick: '랜디', title: '랜딩 히어로 개편', repo: 'landing', branch: 'main' },
+  s6: { sp: 'openclaw', nick: '집사', title: '받은편지함 정리', repo: '개인 비서', branch: 'telegram' },
+  s7: { sp: 'gemini', nick: '', title: 'ETL v2 마이그레이션', repo: 'data-pipeline', branch: 'etl-v2' },
+  s8: { sp: 'codex', nick: '긁적이', title: '뉴스 스크래퍼 정리', repo: 'scraper', branch: 'main' },
+  s9: { sp: 'claude', nick: '', title: '로그인 hotfix', repo: 'api-server', branch: 'hotfix/login' }
+};
+const CALLS = [
+  { q: 'dist 지우고 다시 빌드해도 돼요?', code: '$ rm -rf dist && npm run build', after: '다시 빌드 중…' },
+  { q: 'main 에 push 해도 될까요?', code: '$ git push origin post/retro', after: '푸시 끝! 발행 준비 중' }
+];
+const DESKS = [[120, 285], [312, 285], [504, 285], [120, 501], [312, 501], [504, 501]];
+const CALL_SPOT = [360, 688];
+const ENTS = [
+  { id: 's1', start: [120, 285], mood: 'work', sit: true },
+  { id: 's3', start: [312, 285], mood: 'think', sit: true },
+  { id: 's6', start: [504, 285], mood: 'work', sit: true },
+  { id: 's4', start: [120, 501], mood: 'error', sit: true },
+  { id: 's2', start: CALL_SPOT, mood: 'call', sit: false },
+  { id: 's8', start: [504, 501], mood: 'idle', sit: true },
+  { id: 's5', start: [870, 218], mood: 'done', sit: false },
+  { id: 's7', start: [792, 576], mood: 'sleep', sit: true },
+  { id: 's9', start: [600, 150], mood: 'idle', sit: false, hidden: true }
+];
+const SCRIPTS = {
+  s1: [{ stay: null, mood: 'work', sit: true, say: 'canvas.json 편집 중' }],
+  s3: [{ stay: null, mood: 'think', sit: true, say: '실패 원인 찾는 중…' }],
+  s4: [{ stay: null, mood: 'error', sit: true, say: '테스트 3개 실패' }],
+  s7: [{ stay: null, mood: 'sleep', sit: true, say: '25분째 조용…' }],
+  s6: [
+    { stay: 7000, mood: 'work', sit: true, say: '메일 7/12 분류' },
+    { to: [504, 178], say: '우편함 보러 가요' },
+    { stay: 2600, mood: 'idle', say: '새 메일 3통!' },
+    { to: [504, 285], say: '자리로' },
+    { loop: 0 }
+  ],
+  s2: [
+    { stay: null, mood: 'call', until: 'callDone', say: '' },
+    { to: [408, 688], sayKey: 'afterCall' },
+    { to: [408, 501] },
+    { to: [312, 501] },
+    { stay: 9000, mood: 'work', sit: true, sayKey: 'afterCall' },
+    { to: [408, 501], say: '또 물어볼 게 있어요' },
+    { to: [408, 688] },
+    { to: CALL_SPOT },
+    { act: 'nextCall' },
+    { loop: 0 }
+  ],
+  s5: [
+    { stay: 3500, mood: 'done', say: 'PR #31 올렸어요!' },
+    { to: [900, 330], say: '산책 중' },
+    { to: [900, 452] },
+    { to: [700, 466] },
+    { stay: 2600, mood: 'idle', say: '리뷰 기다리는 중' },
+    { to: [700, 330], say: '커피 한 잔 더' },
+    { to: [870, 218] },
+    { loop: 0 }
+  ],
+  s8: [
+    { stay: 2600, mood: 'idle', sit: true, say: '오늘 일 끝!' },
+    { to: [600, 501], say: '퇴근합니다~' },
+    { to: [600, 150] },
+    { hide: true, mood: 'leave' },
+    { stay: null, mood: 'leave' }
+  ],
+  s9: [
+    { wait: 9600 },
+    { show: [600, 150], say: '출근했어요!' },
+    { stay: 1400, mood: 'idle', say: '출근했어요!' },
+    { to: [600, 501], say: '자리 찾는 중' },
+    { to: [504, 501] },
+    { stay: null, mood: 'work', sit: true, say: '로그인 버그 보는 중' }
+  ]
+};
+function freshEnts() {
+  return ENTS.map((e) => ({ id: e.id, x: e.start[0], y: e.start[1], step: 0, timer: null, hidden: !!e.hidden, mood: e.mood, sit: e.sit, walking: false, dir: 'down', flip: false, say: '', sayKey: null }));
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { ents: freshEnts(), call: 'open', callIdx: 0, selected: 's2', names: {}, editing: false, draft: '' };
+  }
+  componentDidMount() {
+    this.iv = setInterval(() => this.tick(), TICK);
+  }
+  componentWillUnmount() {
+    clearInterval(this.iv);
+  }
+  tick() {
+    let call = this.state.call;
+    let callIdx = this.state.callIdx;
+    const ents = this.state.ents.map((e) => {
+      const st = SCRIPTS[e.id][e.step];
+      if (!st) return e;
+      const n = Object.assign({}, e);
+      const next = () => { n.step = e.step + 1; n.timer = null; };
+      if (st.loop !== undefined) { n.step = st.loop; n.timer = null; return n; }
+      if (st.act === 'nextCall') { callIdx = (callIdx + 1) % CALLS.length; call = 'open'; next(); return n; }
+      if (st.hide) { n.hidden = true; n.walking = false; if (st.mood) n.mood = st.mood; next(); return n; }
+      if (st.show) { n.hidden = false; n.x = st.show[0]; n.y = st.show[1]; n.say = st.say || ''; n.sayKey = null; next(); return n; }
+      if (st.wait !== undefined) {
+        const t = (e.timer == null ? st.wait : e.timer) - TICK;
+        if (t <= 0) next(); else n.timer = t;
+        return n;
+      }
+      if (st.to) {
+        if (st.say !== undefined) { n.say = st.say; n.sayKey = null; }
+        if (st.sayKey) n.sayKey = st.sayKey;
+        n.sit = false; n.walking = true;
+        const dx = st.to[0] - e.x;
+        const dy = st.to[1] - e.y;
+        const d = Math.hypot(dx, dy);
+        if (Math.abs(dx) > Math.abs(dy)) { n.dir = 'side'; n.flip = dx < 0; } else { n.dir = dy < 0 ? 'up' : 'down'; n.flip = false; }
+        if (d <= SPEED) { n.x = st.to[0]; n.y = st.to[1]; next(); } else { n.x = e.x + (dx / d) * SPEED; n.y = e.y + (dy / d) * SPEED; }
+        return n;
+      }
+      if (st.stay !== undefined) {
+        n.walking = false; n.mood = st.mood; n.sit = !!st.sit;
+        if (st.say !== undefined) { n.say = st.say; n.sayKey = null; }
+        if (st.sayKey) n.sayKey = st.sayKey;
+        if (st.until === 'callDone') { if (call !== 'open') next(); return n; }
+        if (st.stay === null) return n;
+        const t = (e.timer == null ? st.stay : e.timer) - TICK;
+        if (t <= 0) next(); else n.timer = t;
+        return n;
+      }
+      return n;
+    });
+    this.setState({ ents, call, callIdx });
+  }
+  renderVals() {
+    const { ents, call, callIdx, selected, names, editing, draft } = this.state;
+    const nickOf = (id) => (names[id] === undefined ? SESS[id].nick : names[id]);
+    const nameOf = (id) => nickOf(id) || SESS[id].title;
+    const pick = (id) => () => this.setState({ selected: id, editing: false });
+    const sayOf = (e) => {
+      if (e.sayKey === 'afterCall') return call === 'ok' ? CALLS[callIdx].after : '다른 방법 찾는 중';
+      return e.say;
+    };
+    const shown = ents.filter((e) => !e.hidden);
+    const view = shown.map((e) => {
+      const S = SESS[e.id];
+      const x = Math.round(e.x);
+      const y = Math.round(e.y);
+      const onSofa = e.id === 's7' && e.sit;
+      const sprCls = e.walking
+        ? 'spr wk sp-' + S.sp + '-walk wk-' + e.dir + (e.flip ? ' flip' : '')
+        : 'spr sp-' + S.sp + ' st-' + e.mood;
+      const tagTop = e.sit ? (onSofa ? y + 24 : y + 42) : y + 8;
+      return {
+        pos: 'left:' + (x - 48) + 'px;top:' + (y - 90) + 'px;z-index:' + y,
+        sprCls,
+        aria: nameOf(e.id) + ', ' + ST[e.mood].label,
+        showShadow: !e.sit,
+        shadowPos: 'left:' + (x - 26) + 'px;top:' + (y - 8) + 'px;z-index:' + (y - 1),
+        ring: e.id === selected && !e.sit,
+        tagCls: 'tag' + (e.id === selected ? ' sel' : ''),
+        ringPos: 'left:' + (x - 38) + 'px;top:' + (y - (e.sit ? 2 : 12)) + 'px;z-index:' + (e.sit ? 1400 : y - 1),
+        tagPos: 'left:' + x + 'px;top:' + tagTop + 'px',
+        dot: 'background:' + ST[e.mood].color,
+        name: nameOf(e.id),
+        pick: pick(e.id)
+      };
+    });
+    const callerOut = shown.find((e) => e.id === 's2' && e.mood === 'call' && !e.walking && call === 'open');
+    const bubbles = shown
+      .filter((e) => !(callerOut && e.id === 's2'))
+      .map((e) => {
+        const text = sayOf(e);
+        if (!text) return null;
+        const x = Math.round(e.x);
+        const y = Math.round(e.y);
+        const kind = e.walking ? 'walk' : e.mood;
+        const variant = e.walking ? ' walk' : e.mood === 'error' ? ' error' : e.mood === 'done' ? ' done' : '';
+        const color = e.walking ? '#E4DFEE' : ST[e.mood].color;
+        return {
+          cls: 'bub' + variant,
+          pos: 'left:' + x + 'px;top:' + (y - 72) + 'px',
+          icBg: 'background:' + color,
+          icon: ICON[kind] || ICON.idle,
+          text
+        };
+      })
+      .filter(Boolean);
+    const c = CALLS[callIdx];
+    const callBubble = callerOut
+      ? { show: true, name: nameOf('s2'), q: c.q, pos: 'left:' + (Math.round(callerOut.x) - 170) + 'px;top:' + (Math.round(callerOut.y) - 74) + 'px' }
+      : { show: false };
+    const callCard = call === 'open' ? { show: true, name: nameOf('s2'), where: 'blog · ' + AGENT.claude, q: c.q, code: c.code } : { show: false };
+    const moodOf = (e) => (e.hidden ? (e.id === 's9' ? null : 'leave') : e.mood);
+    const listed = ents.filter((e) => moodOf(e));
+    const roster = listed
+      .slice()
+      .sort((a, b) => ST[moodOf(a)].rank - ST[moodOf(b)].rank)
+      .map((e) => {
+        const S = SESS[e.id];
+        const m = moodOf(e);
+        const isSel = e.id === selected;
+        const nk = nickOf(e.id);
+        return {
+          cls: 'row' + (isSel ? ' sel' : ''),
+          name: nameOf(e.id),
+          what: (e.walking ? '이동 중 · ' : '') + (m === 'leave' ? '17:02 퇴근 · 3시간 조용' : sayOf(e) || S.repo),
+          state: ST[m].label,
+          badge: 'background:' + ST[m].color,
+          sprCls: 'spr sp-' + S.sp + ' st-' + (m === 'leave' ? 'leave' : m),
+          miniBg: 'border-radius:10px;background:#463F55',
+          open: isSel,
+          viewing: isSel && !editing,
+          editing: isSel && editing,
+          title: S.title,
+          sub: (nk ? '세션 제목 · ' + S.title + '\n' : '이름표 없음 · ') + S.repo + ' · ' + S.branch + ' · ' + AGENT[S.sp],
+          edit: () => this.setState({ editing: true, draft: nk || '' }),
+          sugs: SUGS[S.sp].map((label) => ({ label, use: () => this.setState({ draft: label }) })),
+          pick: pick(e.id)
+        };
+      });
+    const count = (ms) => listed.filter((e) => ms.includes(moodOf(e))).length;
+    const box = (col) => 'display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 0 8px;border-radius:12px;color:#2B2634;background:' + col;
+    const counts = [
+      { n: count(['work', 'think']), label: '일하는 중', box: box('#4CC38A') },
+      { n: count(['call']), label: '불러요', box: box('#FF5A7A') },
+      { n: count(['error']), label: '막혔어요', box: box('#FFB547') },
+      { n: count(['done']), label: '다 했어요', box: box('#5AA9FF') },
+      { n: count(['idle', 'sleep']), label: '쉬는 중', box: box('#B8B2C6') },
+      { n: count(['leave']), label: '퇴근', box: box('#8E88A0') }
+    ];
+    const desks = DESKS.map(([dx, dy]) => ({ pos: 'position:absolute;left:' + (dx - 66) + 'px;top:' + dy + 'px;width:132px;height:84px;image-rendering:pixelated;z-index:' + (dy + 84) }));
+    return {
+      view, bubbles, callBubble, callCard, roster, counts, desks, draft,
+      onDraft: (ev) => this.setState({ draft: ev.target.value }),
+      save: () => this.setState({ editing: false, names: Object.assign({}, names, { [selected]: this.state.draft.trim() }) }),
+      approve: () => this.setState({ call: 'ok' }),
+      deny: () => this.setState({ call: 'no' }),
+      restart: () => this.setState({ ents: freshEnts(), call: 'open', callIdx: 0 })
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>도트 오피스 데스크탑</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&amp;family=Nanum+Gothic+Coding:wght@700&amp;family=Do+Hyeon&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#FFD166}a:hover{color:#FFE29A}
+.sk{font-family:'Silkscreen',monospace}
+.ng{font-family:'Nanum Gothic Coding',monospace;font-weight:700}
+.dh{font-family:'Do Hyeon',sans-serif}
+.spr{position:absolute;--s:2;--row:0;width:calc(32px * var(--s));height:calc(32px * var(--s));background-repeat:no-repeat;background-size:calc(128px * var(--s)) calc(256px * var(--s));background-position:0 calc(var(--row) * -32px * var(--s));image-rendering:pixelated;animation:frames .72s steps(4) infinite}
+.sp-claude{background-image:url(/_blob/c79a539ecd7e7fa927d4ae6e705efac8)}
+.sp-codex{background-image:url(/_blob/3769435b50d08e3c8f5546798260ebe5)}
+.sp-openclaw{background-image:url(/_blob/2ca9c52fb72c2230ac27f2f2abf32e65)}
+.sp-gemini{background-image:url(/_blob/7a40edd2b988df5350e5062af9824933)}
+.st-idle{--row:0}.st-work{--row:1}.st-think{--row:2;animation-duration:1.4s}.st-call{--row:3;animation-duration:.6s}.st-done{--row:4;animation-duration:1.2s}.st-error{--row:5;animation-duration:.5s}.st-sleep{--row:6;animation-duration:2.4s}.st-leave{--row:7}
+.walker{position:absolute;animation:walkoff 6s linear infinite}
+.pb{position:absolute;background:#FFF8E7;color:#14173A;padding:7px 10px 8px;box-shadow:0 -3px 0 0 #0B0D22,0 3px 0 0 #0B0D22,-3px 0 0 0 #0B0D22,3px 0 0 0 #0B0D22,3px 6px 0 0 rgba(5,6,20,.45);white-space:nowrap}
+.tail1{position:absolute;bottom:-6px;width:9px;height:3px;background:#FFF8E7;box-shadow:-3px 0 0 #0B0D22,3px 0 0 #0B0D22}
+.tail2{position:absolute;bottom:-9px;width:3px;height:3px;background:#FFF8E7;box-shadow:-3px 0 0 #0B0D22,3px 0 0 #0B0D22,0 3px 0 #0B0D22}
+.pix{box-shadow:0 -3px 0 0 #0B0D22,0 3px 0 0 #0B0D22,-3px 0 0 0 #0B0D22,3px 0 0 0 #0B0D22}
+.blinkc{animation:blinkc 1s steps(1) infinite}
+.bob{animation:bob .6s steps(2) infinite}
+@keyframes frames{from{background-position-x:0}to{background-position-x:calc(-128px * var(--s))}}
+@keyframes walkoff{0%{transform:translateX(-40px)}100%{transform:translateX(90px)}}
+@keyframes blinkc{0%{opacity:1}50%{opacity:0}}
+@keyframes bob{0%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #151936; color: #F1EEFF; font-family: 'Nanum Gothic Coding', monospace">
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 225px; width: 1440px; height: 225px; background: #181C3D"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 450px; width: 1440px; height: 225px; background: #1C2045"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 675px; width: 1440px; height: 225px; background: #20254D"></div>
+
+  <div aria-hidden="true">
+    <div style="position: absolute; left: 92px; top: 64px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 310px; top: 40px; width: 6px; height: 6px; background: #FFE9A8"></div>
+    <div style="position: absolute; left: 470px; top: 98px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 690px; top: 52px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 905px; top: 120px; width: 6px; height: 6px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 960px; top: 34px; width: 3px; height: 3px; background: #FFE9A8"></div>
+    <div style="position: absolute; left: 60px; top: 610px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 1380px; top: 690px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 1395px; top: 260px; width: 6px; height: 6px; background: #FFE9A8"></div>
+    <div style="position: absolute; left: 70px; top: 300px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 880px; top: 700px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 1100px; top: 740px; width: 6px; height: 6px; background: #C9C8FF"></div>
+  </div>
+
+  <svg aria-hidden="true" width="66" height="66" viewBox="0 0 11 11" shape-rendering="crispEdges" style="position: absolute; left: 40px; top: 30px">
+    <rect x="3" y="0" width="5" height="1" fill="#FFF2C4"></rect>
+    <rect x="2" y="1" width="7" height="1" fill="#FFF2C4"></rect>
+    <rect x="1" y="2" width="9" height="2" fill="#FFF2C4"></rect>
+    <rect x="0" y="4" width="11" height="3" fill="#FFF2C4"></rect>
+    <rect x="1" y="7" width="9" height="2" fill="#FFF2C4"></rect>
+    <rect x="2" y="9" width="7" height="1" fill="#FFF2C4"></rect>
+    <rect x="3" y="10" width="5" height="1" fill="#FFF2C4"></rect>
+    <rect x="3" y="3" width="2" height="2" fill="#E8D49A"></rect>
+    <rect x="6" y="6" width="2" height="1" fill="#E8D49A"></rect>
+  </svg>
+
+  <div class="pix" style="position: absolute; left: 150px; top: 150px; width: 700px; height: 410px; background: #1A1D3A; display: flex; flex-direction: column">
+    <div style="height: 30px; background: #3B3F7A; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 3px solid #0B0D22">
+      <span style="width: 9px; height: 9px; background: #8C8FD6"></span>
+      <span style="width: 9px; height: 9px; background: #8C8FD6"></span>
+      <span class="sk" style="margin-left: 8px; font-size: 12px; color: #D9D7FF">canvas.json - claude-skills</span>
+    </div>
+    <div style="flex: 1; display: flex; padding: 18px 0">
+      <div class="sk" style="width: 46px; display: flex; flex-direction: column; align-items: flex-end; gap: 9px; padding-right: 12px; font-size: 10px; color: #5A5E9A">
+        <span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span><span>20</span><span>21</span>
+      </div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; padding-top: 3px">
+        <div style="display: flex; gap: 6px"><div style="width: 48px; height: 6px; background: #FF8FB8"></div><div style="width: 150px; height: 6px; background: #5A5E9A"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 24px"><div style="width: 84px; height: 6px; background: #FFD166"></div><div style="width: 210px; height: 6px; background: #5A5E9A"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 24px"><div style="width: 60px; height: 6px; background: #FFD166"></div><div style="width: 120px; height: 6px; background: #5BE7C4"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 48px; background: #233A3A; margin-right: 0"><div style="width: 230px; height: 6px; background: #5BE7C4"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 48px; background: #233A3A"><div style="width: 180px; height: 6px; background: #5BE7C4"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 48px"><div style="width: 140px; height: 6px; background: #5A5E9A"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 24px"><div style="width: 30px; height: 6px; background: #FF8FB8"></div></div>
+        <div style="display: flex; gap: 6px"><div style="width: 40px; height: 6px; background: #FF8FB8"></div><div style="width: 100px; height: 6px; background: #5A5E9A"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 24px"><div style="width: 96px; height: 6px; background: #FFD166"></div><div style="width: 64px; height: 6px; background: #5A5E9A"></div></div>
+        <div style="display: flex; gap: 6px; padding-left: 24px"><div style="width: 6px; height: 12px; background: #F1EEFF" class="blinkc"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pix" style="position: absolute; left: 900px; top: 330px; width: 430px; height: 300px; background: #0D0F1F; display: flex; flex-direction: column">
+    <div style="height: 30px; background: #3B3F7A; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 3px solid #0B0D22">
+      <span style="width: 9px; height: 9px; background: #8C8FD6"></span>
+      <span style="width: 9px; height: 9px; background: #8C8FD6"></span>
+      <span class="sk" style="margin-left: 8px; font-size: 12px; color: #D9D7FF">zsh - blog</span>
+    </div>
+    <div class="ng" style="flex: 1; padding: 16px 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #A9A6D6">
+      <div><span style="color: #5BE7C4">~/blog</span> npm run build</div>
+      <div>build failed: stale files in dist/</div>
+      <div style="color: #FFD166">권한 요청 · Bash</div>
+      <div style="color: #F1EEFF">rm -rf dist &amp;&amp; npm run build</div>
+      <div style="color: #F1EEFF">허용할까요? (y/n) <span class="blinkc" style="display: inline-block; width: 8px; height: 14px; background: #F1EEFF; vertical-align: -2px"></span></div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 0; top: 856px; width: 1440px; height: 44px; background: #0B0D22; border-top: 3px solid #3B3F7A; display: flex; align-items: center; gap: 10px; padding: 0 12px; box-sizing: border-box">
+    <div class="sk pix" style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; background: #FF5FA2; color: #14173A; font-size: 12px">
+      <svg width="14" height="12" viewBox="0 0 7 6" shape-rendering="crispEdges" aria-hidden="true"><rect x="1" y="0" width="2" height="1" fill="#14173A"></rect><rect x="4" y="0" width="2" height="1" fill="#14173A"></rect><rect x="0" y="1" width="7" height="2" fill="#14173A"></rect><rect x="1" y="3" width="5" height="1" fill="#14173A"></rect><rect x="2" y="4" width="3" height="1" fill="#14173A"></rect><rect x="3" y="5" width="1" height="1" fill="#14173A"></rect></svg>
+      AGENTS 8
+    </div>
+    <div style="width: 26px; height: 26px; background: #3B3F7A"></div>
+    <div style="width: 26px; height: 26px; background: #2B2F5E"></div>
+    <div style="width: 26px; height: 26px; background: #2B2F5E"></div>
+    <div style="flex: 1"></div>
+    <span class="sk" style="font-size: 12px; color: #A9A6D6">FRI 23:14</span>
+  </div>
+
+  <div class="pix" style="position: absolute; left: 1128px; top: 26px; width: 284px; background: #14173A; padding: 12px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <span class="sk" style="font-size: 13px; color: #FFD166">AGENT OFFICE</span>
+      <span class="sk" style="font-size: 10px; color: #A9A6D6">NIGHT SHIFT</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; background: #1E2350"><span class="sk" style="font-size: 18px; color: #5BE7C4">3</span><span style="font-size: 11px; color: #C9C6F0">근무</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; background: #3A1A3A"><span class="sk blinkc" style="font-size: 18px; color: #FF5FA2">1</span><span style="font-size: 11px; color: #FFC4DD">호출</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; background: #3A2A1A"><span class="sk" style="font-size: 18px; color: #FFB066">1</span><span style="font-size: 11px; color: #FFD9B3">오류</span></div>
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0; background: #1E2350"><span class="sk" style="font-size: 18px; color: #A9A6D6">1</span><span style="font-size: 11px; color: #C9C6F0">퇴근</span></div>
+    </div>
+    <div style="font-size: 12px; color: #A9A6D6">펫 더블클릭 → 사무실 열기</div>
+  </div>
+
+  <sc-for list="{{pets}}" as="p" hint-placeholder-count="8">
+    <div class="{{p.wrapCls}}" style="{{p.wrapPos}}">
+      <div class="{{p.cls}}" style="left: 0; top: 0" role="img" aria-label="{{p.aria}}"></div>
+      <div class="pb" style="{{p.bubblePos}}">
+        <div class="ng" style="font-size: 11px; color: #4A4E8A; line-height: 1">{{p.repo}}</div>
+        <div class="ng" style="{{p.textStyle}}">{{p.say}}</div>
+        <span class="tail1" style="{{p.tail1}}"></span>
+        <span class="tail2" style="{{p.tail2}}"></span>
+      </div>
+    </div>
+  </sc-for>
+
+  <div class="pb" style="left: 900px; top: 132px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; white-space: normal; width: 300px; box-sizing: border-box">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span class="sk bob" style="display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #FF5FA2; color: #FFFFFF; font-size: 13px">!</span>
+      <span class="ng" style="font-size: 12px; color: #4A4E8A">9월 회고 글 발행 · blog</span>
+    </div>
+    <div class="ng" style="font-size: 15px; line-height: 1.45">dist 지우고 다시 빌드해도 돼요?</div>
+    <div style="display: flex; gap: 10px; margin-top: 2px">
+      <button class="ng pix" style="min-height: 34px; padding: 0 14px; border: 0; background: #FF5FA2; color: #14173A; font-size: 14px; cursor: pointer">Y 허용</button>
+      <button class="ng pix" style="min-height: 34px; padding: 0 14px; border: 0; background: #E4E0F7; color: #14173A; font-size: 14px; cursor: pointer">N 거절</button>
+    </div>
+    <span class="tail1" style="left: 146px"></span>
+    <span class="tail2" style="left: 149px"></span>
+  </div>
+
+  <div class="pix" style="position: absolute; left: 500px; top: 640px; width: 280px; background: #14173A; padding: 12px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: center; justify-content: space-between">
+      <span class="dh" style="font-size: 18px">Rate limit 미들웨어</span>
+      <span class="sk" style="font-size: 10px; padding: 3px 6px; background: #FFB066; color: #14173A">ERROR</span>
+    </div>
+    <div style="font-size: 12px; color: #A9A6D6">api-server · Codex · 이름표 없음</div>
+    <div style="font-size: 13px; line-height: 1.5">테스트 3개 실패 · 42/45<br><span style="color: #FFB066">limiter.test.ts:42</span></div>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span class="sk" style="font-size: 10px; color: #A9A6D6">HP</span>
+      <div style="flex: 1; height: 9px; background: #0B0D22; padding: 2px; box-sizing: border-box"><div style="width: 45%; height: 100%; background: #5BE7C4"></div></div>
+      <span class="sk" style="font-size: 10px; color: #A9A6D6">45%</span>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <span class="ng" style="font-size: 12px; color: #FFD166">▶ 로그 보기</span>
+      <span class="ng" style="font-size: 12px; color: #A9A6D6">터미널 열기</span>
+      <span class="ng" style="font-size: 12px; color: #A9A6D6">이름 짓기</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+const TEXT = { call: '#D61F69', error: '#B34A00', done: '#1F64AE', sleep: '#5A5E8A', leave: '#5A5E8A', work: '#14173A', think: '#5B41B8' };
+const PETS = [
+  { sp: 'claude', st: 'think', repo: '셜록', say: '원인 찾는 중...', cx: 250, foot: 150 },
+  { sp: 'claude', st: 'work', repo: '코코', say: 'canvas.json 편집', cx: 580, foot: 150 },
+  { sp: 'claude', st: 'call', repo: '9월 회고 글 발행', say: '', cx: 1050, foot: 330, noBubble: true },
+  { sp: 'gemini', st: 'sleep', repo: 'ETL v2 마이그레이션', say: 'zz... 25분째', cx: 1262, foot: 330 },
+  { sp: 'openclaw', st: 'work', repo: '집사', say: '메일 분류 7/12', cx: 250, foot: 856 },
+  { sp: 'codex', st: 'error', repo: 'Rate limit 미들웨어', say: '테스트 3개 실패', cx: 640, foot: 856, noBubble: true },
+  { sp: 'codex', st: 'done', repo: '랜디', say: 'PR #31 올림!', cx: 880, foot: 856 },
+  { sp: 'codex', st: 'leave', repo: '긁적이', say: '퇴근~ 내일 봐요', cx: 1300, foot: 856, walk: true }
+];
+class Component extends DCLogic {
+  renderVals() {
+    const S = 2;
+    const pets = PETS.map((p) => {
+      const size = 32 * S;
+      const left = p.cx - size / 2;
+      const top = p.foot - 30 * S;
+      return {
+        wrapCls: p.walk ? 'walker' : '',
+        wrapPos: 'position:absolute;left:' + left + 'px;top:' + top + 'px;width:' + size + 'px;height:' + size + 'px',
+        cls: 'spr sp-' + p.sp + ' st-' + p.st,
+        aria: p.repo + ' ' + p.st,
+        repo: p.repo,
+        say: p.say,
+        textStyle: 'margin-top:5px;font-size:13px;line-height:1;color:' + TEXT[p.st],
+        bubblePos: (p.noBubble ? 'display:none;' : '') + 'left:4px;bottom:calc(100% + 10px)',
+        tail1: 'left:12px',
+        tail2: 'left:15px'
+      };
+    });
+    return { pets };
+  }
+}
+</script>
+</body>
+</html>

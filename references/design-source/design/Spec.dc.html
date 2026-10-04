@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>펫 스킨 규격</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&amp;family=IBM+Plex+Sans+KR:wght@400;600&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#4B3FB0}a:hover{color:#2E2580}
+.dh{font-family:'Do Hyeon','Apple SD Gothic Neo',sans-serif;font-weight:400}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.spr{position:relative;display:block;--s:3;--row:0;width:calc(32px * var(--s));height:calc(32px * var(--s));background-repeat:no-repeat;background-size:calc(128px * var(--s)) calc(256px * var(--s));background-position:0 calc(var(--row) * -32px * var(--s));image-rendering:pixelated;animation:frames .72s steps(4) infinite}
+.sheet{width:256px;height:512px;background-repeat:no-repeat;background-size:256px 512px;image-rendering:pixelated}
+.sp-claude{background-image:url(/_blob/c79a539ecd7e7fa927d4ae6e705efac8)}
+.sp-codex{background-image:url(/_blob/3769435b50d08e3c8f5546798260ebe5)}
+.sp-openclaw{background-image:url(/_blob/2ca9c52fb72c2230ac27f2f2abf32e65)}
+.sp-gemini{background-image:url(/_blob/7a40edd2b988df5350e5062af9824933)}
+.st-idle{--row:0}.st-work{--row:1}.st-think{--row:2;animation-duration:1.4s}.st-call{--row:3;animation-duration:.6s}.st-done{--row:4;animation-duration:1.2s}.st-error{--row:5;animation-duration:.5s}.st-sleep{--row:6;animation-duration:2.4s}.st-leave{--row:7}
+.s15{--s:1.5}
+.tab{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;border-radius:12px;border:2px solid #D9DBE6;background:#FFFFFF;color:#1C1D29;cursor:pointer;font-family:'Do Hyeon',sans-serif;font-size:17px}
+.tab.on{background:#1C1D29;color:#FFFFFF;border-color:#1C1D29}
+.panel{background:#FFFFFF;border-radius:20px;box-shadow:0 1px 0 #D9DBE6,0 10px 30px rgba(28,29,41,.06)}
+@keyframes frames{from{background-position-x:0}to{background-position-x:calc(-128px * var(--s))}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; min-height: 1280px; box-sizing: border-box; padding: 40px 48px 48px; background: #EEF0F5; font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', sans-serif; color: #1C1D29; display: flex; flex-direction: column; gap: 22px">
+
+  <div style="display: flex; align-items: flex-end; gap: 24px">
+    <div style="flex: 1">
+      <h1 class="dh" style="margin: 0; font-size: 40px; line-height: 1.1">펫 스킨 규격</h1>
+      <p style="margin: 8px 0 0; font-size: 16px; color: #4A4D63">시트 한 장과 pet.json 하나면 새 직원이 출근해요. 상태 8개 × 프레임 4개, 행 순서만 지키면 어떤 그림체든 갈아 끼울 수 있어요.</p>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <sc-for list="{{tabs}}" as="tb" hint-placeholder-count="4">
+        <button class="{{tb.cls}}" onClick="{{tb.pick}}"><span class="{{tb.icon}}"></span>{{tb.label}}</button>
+      </sc-for>
+      <button class="tab" style="border-style: dashed; color: #4A4D63">+ 내 시트 올리기</button>
+    </div>
+  </div>
+
+  <div style="display: flex; gap: 22px; align-items: stretch">
+    <section class="panel" style="width: 470px; padding: 22px; box-sizing: border-box; background: #23263A; color: #E9EAF5; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; align-items: baseline; justify-content: space-between">
+        <h2 class="dh" style="margin: 0; font-size: 22px">{{sheetName}}</h2>
+        <span class="mono" style="font-size: 12px; color: #A9ACC9">128×256 · 프레임 32×32 · 2배 확대</span>
+      </div>
+      <div style="display: flex; gap: 12px">
+        <div style="width: 120px; padding-top: 26px; display: flex; flex-direction: column">
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+            <div style="height: 64px; display: flex; flex-direction: column; justify-content: center; gap: 2px">
+              <span class="mono" style="font-size: 12px; color: #FFD166">{{r.idx}} · {{r.key}}</span>
+              <span style="font-size: 13px; color: #E9EAF5">{{r.label}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div>
+          <div class="mono" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 256px; height: 26px; font-size: 11px; color: #A9ACC9; text-align: center">
+            <span>f0</span><span>f1</span><span>f2</span><span>f3</span>
+          </div>
+          <div style="position: relative; width: 256px; height: 512px; background: #2E3250; border-radius: 6px">
+            <div class="{{sheetCls}}"></div>
+            <div style="position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(233, 234, 245, 0.14) 1px, transparent 1px), linear-gradient(to bottom, rgba(233, 234, 245, 0.14) 1px, transparent 1px); background-size: 64px 64px"></div>
+          </div>
+        </div>
+      </div>
+      <p style="margin: 0; font-size: 13px; line-height: 1.55; color: #C9CBE0">발끝 기준점은 (16, 30), 말풍선은 (16, 2)에서 떠요. 프레임마다 캐릭터가 이 점을 벗어나지 않으면 바닥·창틀·책상 어디에 세워도 자연스러워요.</p>
+    </section>
+
+    <section class="panel" style="flex: 1; min-width: 0; padding: 22px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; align-items: baseline; justify-content: space-between">
+        <h2 class="dh" style="margin: 0; font-size: 22px">재생 미리보기</h2>
+        <span class="mono" style="font-size: 12px; color: #6B6E85">6fps · steps(4)</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+        <sc-for list="{{previews}}" as="pv" hint-placeholder-count="8">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 14px; background: #F4F5F9">
+            <span style="flex: none; border-radius: 10px; background: #2E3250"><span class="{{pv.cls}}"></span></span>
+            <span style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+              <span class="dh" style="font-size: 18px">{{pv.label}}</span>
+              <span style="font-size: 12.5px; line-height: 1.4; color: #4A4D63">{{pv.when}}</span>
+            </span>
+          </div>
+        </sc-for>
+      </div>
+    </section>
+
+    <section style="width: 420px; display: flex; flex-direction: column; gap: 22px">
+      <div class="panel" style="padding: 20px 22px; background: #1C1D29; color: #E9EAF5">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px">
+          <h2 class="dh" style="margin: 0; font-size: 22px">pet.json</h2>
+          <span class="mono" style="font-size: 12px; color: #A9ACC9">스킨 1개 = 파일 2개</span>
+        </div>
+<pre class="mono" style="margin: 0; font-size: 12.5px; line-height: 1.6; color: #C9CBE0; white-space: pre">{
+  <span style="color: #8FD3FF">"id"</span>: <span style="color: #FFD166">"{{json.id}}"</span>,
+  <span style="color: #8FD3FF">"match"</span>: { <span style="color: #8FD3FF">"agent"</span>: <span style="color: #FFD166">"{{json.agent}}"</span> },
+  <span style="color: #8FD3FF">"sheet"</span>: <span style="color: #FFD166">"{{json.sheet}}"</span>,
+  <span style="color: #8FD3FF">"frame"</span>: { "w": 32, "h": 32 },
+  <span style="color: #8FD3FF">"scale"</span>: 2, <span style="color: #8FD3FF">"fps"</span>: 6,
+  <span style="color: #8FD3FF">"anchor"</span>: { "x": 16, "y": 30 },
+  <span style="color: #8FD3FF">"bubbleAnchor"</span>: { "x": 16, "y": 2 },
+  <span style="color: #8FD3FF">"states"</span>: {
+    "idle": 0, "work": 1, "think": 2, "call": 3,
+    "done": 4, "error": 5, "sleep": 6,
+    "leave": { "row": 7, "loop": false }
+  },
+  <span style="color: #8FD3FF">"names"</span>: [<span style="color: #FFD166">{{json.names}}</span>]
+}</pre>
+      </div>
+
+      <div class="panel" style="padding: 20px 22px; display: flex; flex-direction: column; gap: 12px">
+        <h2 class="dh" style="margin: 0; font-size: 22px">이름표 규칙</h2>
+        <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 14px">
+          <li style="display: flex; gap: 10px; align-items: baseline"><span class="dh" style="width: 22px; height: 22px; flex: none; border-radius: 50%; background: #1C1D29; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 13px">1</span><span><b>내가 붙인 별명</b> <span style="color: #4A4D63">— 코코, 셜록처럼 직접 단 이름</span></span></li>
+          <li style="display: flex; gap: 10px; align-items: baseline"><span class="dh" style="width: 22px; height: 22px; flex: none; border-radius: 50%; background: #6B6E85; color: #FFFFFF; display: inline-flex; align-items: center; justify-content: center; font-size: 13px">2</span><span><b>세션 제목</b> <span style="color: #4A4D63">— 에이전트가 붙인 제목 (9월 회고 글 발행)</span></span></li>
+          <li style="display: flex; gap: 10px; align-items: baseline"><span class="dh" style="width: 22px; height: 22px; flex: none; border-radius: 50%; background: #A9ACC9; color: #1C1D29; display: inline-flex; align-items: center; justify-content: center; font-size: 13px">3</span><span><b>레포 · 브랜치</b> <span style="color: #4A4D63">— 둘 다 없을 때, 같은 레포면 #2 붙임</span></span></li>
+        </ol>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: #F4F5F9">
+          <span style="flex: none; border-radius: 10px; background: #2E3250"><span class="{{nameDemo.cls}}"></span></span>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+            <span class="dh" style="font-size: 19px">{{nameDemo.name}}</span>
+            <span class="mono" style="font-size: 11.5px; color: #4A4D63">{{nameDemo.sub}}</span>
+          </span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px; border-radius: 10px; border: 2px solid #D9DBE6; font-size: 13px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+            이름표
+          </span>
+        </div>
+        <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #4A4D63">이름표는 세션 ID에 붙어서, 같은 세션이 다시 출근해도 그대로 따라와요. 비우면 다시 세션 제목으로 돌아가요.</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel" style="padding: 22px 24px; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: flex; align-items: baseline; gap: 14px">
+      <h2 class="dh" style="margin: 0; font-size: 24px">상태가 겹치면? 왼쪽이 이겨요</h2>
+      <span style="font-size: 14px; color: #4A4D63">한 세션은 항상 상태 하나만 보여줘요. 에이전트 이벤트 → 상태 매핑</span>
+    </div>
+    <ol style="margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 10px">
+      <sc-for list="{{ladder}}" as="ld" hint-placeholder-count="8">
+        <li style="{{ld.box}}">
+          <span style="display: flex; align-items: center; justify-content: space-between">
+            <span class="mono" style="font-size: 11px; opacity: 0.75">#{{ld.rank}}</span>
+            <span style="border-radius: 8px; background: #2E3250"><span class="{{ld.cls}}"></span></span>
+          </span>
+          <span class="dh" style="font-size: 19px">{{ld.label}}</span>
+          <span style="font-size: 12.5px; line-height: 1.45">{{ld.trigger}}</span>
+          <span class="mono" style="font-size: 11px; opacity: 0.8">{{ld.event}}</span>
+        </li>
+      </sc-for>
+    </ol>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1280}}'>
+const SPECIES = [
+  { key: 'claude', label: 'Claude Code', agent: 'claude-code', names: '"코코", "당근", "모모"', demo: { name: '9월 회고 글 발행', sub: '세션 제목 · blog · post/retro' } },
+  { key: 'codex', label: 'Codex', agent: 'codex', names: '"네모", "삑삑", "큐브"', demo: { name: '랜디', sub: '별명 · 랜딩 히어로 개편' } },
+  { key: 'openclaw', label: 'OpenClaw', agent: 'openclaw', names: '"집게", "꽃게", "가재"', demo: { name: '집사', sub: '별명 · 받은편지함 정리' } },
+  { key: 'gemini', label: 'Gemini CLI', agent: 'gemini-cli', names: '"별이", "반짝", "쌍둥"', demo: { name: 'data-pipeline #2', sub: '이름 없음 · 레포 + 번호' } }
+];
+const STATES = [
+  { key: 'idle', label: '대기', when: '세션은 열려 있고 할 일이 없을 때' },
+  { key: 'work', label: '일하는 중', when: '파일 편집·명령 실행 등 툴이 돌아가는 동안' },
+  { key: 'think', label: '생각 중', when: '툴 없이 답을 만드는 중' },
+  { key: 'call', label: '불러요', when: '권한 요청·질문으로 나를 기다릴 때' },
+  { key: 'done', label: '다 했어요', when: '턴이 끝나고 다음 지시를 기다릴 때' },
+  { key: 'error', label: '막혔어요', when: '툴 실패·테스트 실패가 이어질 때' },
+  { key: 'sleep', label: '꾸벅꾸벅', when: '15분 넘게 아무 일도 없을 때' },
+  { key: 'leave', label: '퇴근', when: '1시간 조용하거나 세션 종료 · 1번 재생 후 사라짐' }
+];
+const LADDER = [
+  { key: 'call', trigger: '나를 기다리는 중. 데스크탑에서 바로 허용/거절', event: 'Notification · permission', bg: '#1C1D29', fg: '#FFFFFF' },
+  { key: 'error', trigger: '같은 실패가 2번 이상', event: 'PostToolUse · error', bg: '#3A2A4A', fg: '#FFFFFF' },
+  { key: 'work', trigger: '툴 시작~끝 사이', event: 'PreToolUse → PostToolUse', bg: '#E4E6F0', fg: '#1C1D29' },
+  { key: 'think', trigger: '응답 생성 중, 툴 없음', event: 'stream · no tool', bg: '#E4E6F0', fg: '#1C1D29' },
+  { key: 'done', trigger: '턴 종료 후 10분간', event: 'Stop', bg: '#E4E6F0', fg: '#1C1D29' },
+  { key: 'idle', trigger: '열려 있지만 조용', event: 'idle < 15m', bg: '#F4F5F9', fg: '#1C1D29' },
+  { key: 'sleep', trigger: '15분 무활동', event: 'idle ≥ 15m', bg: '#F4F5F9', fg: '#1C1D29' },
+  { key: 'leave', trigger: '1시간 무활동·종료', event: 'idle ≥ 60m · SessionEnd', bg: '#F4F5F9', fg: '#1C1D29' }
+];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sp: 'claude' };
+  }
+  renderVals() {
+    const cur = SPECIES.find((s) => s.key === this.state.sp) || SPECIES[0];
+    const label = (k) => STATES.find((s) => s.key === k).label;
+    return {
+      tabs: SPECIES.map((s) => ({
+        label: s.label,
+        cls: 'tab' + (s.key === cur.key ? ' on' : ''),
+        icon: 'spr s15 sp-' + s.key + ' st-idle',
+        pick: () => this.setState({ sp: s.key })
+      })),
+      sheetName: cur.key + '.png',
+      sheetCls: 'sheet sp-' + cur.key,
+      rows: STATES.map((s, i) => ({ idx: 'r' + i, key: s.key, label: s.label })),
+      previews: STATES.map((s) => ({ label: s.label, when: s.when, cls: 'spr sp-' + cur.key + ' st-' + s.key })),
+      ladder: LADDER.map((l, i) => ({
+        rank: i + 1,
+        label: label(l.key),
+        trigger: l.trigger,
+        event: l.event,
+        cls: 'spr s15 sp-' + cur.key + ' st-' + l.key,
+        box: 'display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;background:' + l.bg + ';color:' + l.fg
+      })),
+      json: { id: 'dot-' + cur.key, agent: cur.agent, sheet: cur.key + '.png', names: cur.names },
+      nameDemo: Object.assign({ cls: 'spr s15 sp-' + cur.key + ' st-idle' }, cur.demo)
+    };
+  }
+}
+</script>
+</body>
+</html>

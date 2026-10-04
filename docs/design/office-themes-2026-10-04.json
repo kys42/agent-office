@@ -1,0 +1,265 @@
+{
+  "product": "Agent Office",
+  "round": 2,
+  "version": 1,
+  "date": "2026-10-04",
+  "status": "exploration",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "data": "Synthetic shared data, no private session logs",
+  "gallery": "index.html",
+  "overview": "overview.html",
+  "baseline": {
+    "id": "E",
+    "status": "previous preference, preserved",
+    "preview": "assets/baseline-e.png",
+    "source": "references/design-source/design/E-Office.dc.html"
+  },
+  "sharedSources": [
+    "office.js",
+    "office.css",
+    "data.js"
+  ],
+  "agentRecommendations": [
+    "01",
+    "04",
+    "09"
+  ],
+  "userSelection": null,
+  "concepts": [
+    {
+      "id": "01",
+      "slug": "sunroom",
+      "name": "햇살 작업실",
+      "en": "Sunday Studio",
+      "line": "햇살 드는 넓은 사무실, 옆에는 동료들의 짧은 소식.",
+      "family": "따뜻한 공간",
+      "layout": "가로형 오픈 오피스 + 오늘의 소식",
+      "reason": "기존 E의 편안한 공간감을 확장하면서 진행 문구를 가장 편하게 읽는 안.",
+      "limit": "세션이 늘어나면 층 전환과 말풍선 밀도를 조정해야 합니다.",
+      "refs": [
+        "gather"
+      ],
+      "status": "exploration",
+      "preview": "sunroom.html",
+      "source": [
+        "sunroom.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "02",
+      "slug": "nightshift",
+      "name": "심야 관제실",
+      "en": "After Hours",
+      "line": "빛나는 책상과 간결한 기록으로, 지금 움직이는 일에 집중.",
+      "family": "어두운 공간",
+      "layout": "측면 도구막대 + 넓은 관제 구역 + 기록 패널",
+      "reason": "밤에 오래 켜 두는 모니터에 맞춘 낮은 명도와 선명한 활동 대비.",
+      "limit": "실제 구현에서 작은 글자의 대비와 장시간 피로도를 확인할 안.",
+      "refs": [
+        "linear",
+        "gather"
+      ],
+      "status": "exploration",
+      "preview": "nightshift.html",
+      "source": [
+        "nightshift.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "03",
+      "slug": "ledger",
+      "name": "사무실 일지",
+      "en": "The Office Ledger",
+      "line": "왼쪽은 동료들의 자리, 오른쪽은 차곡차곡 쌓인 하루.",
+      "family": "새로운 해석",
+      "layout": "펼친 노트의 평면도 + 시간순 여백 일지",
+      "reason": "공간과 작업 맥락을 한 권의 기록처럼 함께 읽습니다.",
+      "limit": "노트 구도는 넓은 화면에 적합하며 작은 창에서는 한 페이지로 접어야 합니다.",
+      "refs": [
+        "kinopio"
+      ],
+      "status": "exploration",
+      "preview": "ledger.html",
+      "source": [
+        "ledger.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "04",
+      "slug": "blocks",
+      "name": "프로젝트 마을",
+      "en": "Little Departments",
+      "line": "같은 프로젝트는 같은 방. 가까운 책상이 관계를 설명해요.",
+      "family": "따뜻한 공간",
+      "layout": "프로젝트 크기에 따른 비대칭 방 배치",
+      "reason": "프로젝트가 여러 개인 실제 사용에서 관련 세션을 공간으로 묶습니다.",
+      "limit": "프로젝트 수가 많을 때 방 배치와 고정 좌석 규칙을 조율해야 합니다.",
+      "refs": [
+        "gather",
+        "kinopio"
+      ],
+      "status": "exploration",
+      "preview": "blocks.html",
+      "source": [
+        "blocks.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "05",
+      "slug": "orbit",
+      "name": "궤도 사무실",
+      "en": "Orbital Office",
+      "line": "중앙의 정원을 둘러싼 여섯 자리, 일의 흐름을 한눈에.",
+      "family": "어두운 공간",
+      "layout": "원형 데스크 링 + 하단 메시지 띠",
+      "reason": "캐릭터 존재감과 사무실의 상징성을 가장 강하게 만드는 실험안.",
+      "limit": "원형 배치는 좌석 수가 제한되므로 여러 구역을 오가는 방식이 필요합니다.",
+      "refs": [
+        "gather",
+        "linear"
+      ],
+      "status": "exploration",
+      "preview": "orbit.html",
+      "source": [
+        "orbit.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "06",
+      "slug": "greenhouse",
+      "name": "숲속 연구소",
+      "en": "Field Station",
+      "line": "창밖은 숲, 안쪽은 조용히 이어지는 긴 작업대.",
+      "family": "따뜻한 공간",
+      "layout": "세로 프로젝트 색인 + 3개의 긴 작업대 + 상태 메모",
+      "reason": "가구 중심의 차분한 공간과 긴 텍스트가 읽히는 목록을 결합합니다.",
+      "limit": "일러스트 배경과 메시지의 대비를 실데이터 길이로 확인해야 합니다.",
+      "refs": [
+        "gather"
+      ],
+      "status": "exploration",
+      "preview": "greenhouse.html",
+      "source": [
+        "greenhouse.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "07",
+      "slug": "blueprint",
+      "name": "설계 스튜디오",
+      "en": "Office / Plan 01",
+      "line": "장식보다 좌석의 질서. 정밀한 도면 위에 살아 있는 동료들.",
+      "family": "새로운 해석",
+      "layout": "넓은 건축 평면도 + 얇은 좌석 색인",
+      "reason": "좌석 유지, 프로젝트 구역, 상태를 명료하게 보여주는 도구 중심 안.",
+      "limit": "도면의 작은 치수 표시는 축소 화면에서 생략할 필요가 있습니다.",
+      "refs": [
+        "linear"
+      ],
+      "status": "exploration",
+      "preview": "blueprint.html",
+      "source": [
+        "blueprint.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "08",
+      "slug": "pocket",
+      "name": "포켓 오피스",
+      "en": "Pocket Office",
+      "line": "책상 위 작은 기계 안에, 익숙한 세 동료가 살고 있어요.",
+      "family": "새로운 해석",
+      "layout": "기기 프레임 + 픽셀 사무실 + 하단 대화창",
+      "reason": "원래 캐릭터의 픽셀 정체성을 제품 전체의 촉감으로 연결합니다.",
+      "limit": "기기 프레임이 화면을 차지하므로 작은 창에서는 테두리를 줄여야 합니다.",
+      "refs": [
+        "gather",
+        "kinopio"
+      ],
+      "status": "exploration",
+      "preview": "pocket.html",
+      "source": [
+        "pocket.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    },
+    {
+      "id": "09",
+      "slug": "building",
+      "name": "동료의 빌딩",
+      "en": "House of Work",
+      "line": "층마다 다른 작업실. 창 너머로 오늘의 일이 보여요.",
+      "family": "어두운 공간",
+      "layout": "3층 단면 건물 + 좌측 세션 안내판",
+      "reason": "많은 동료를 층별 공간으로 확장할 수 있는 기억하기 쉬운 구도.",
+      "limit": "프로젝트와 층의 연결은 실제 세션 수를 기준으로 정교화해야 합니다.",
+      "refs": [
+        "gather",
+        "kinopio"
+      ],
+      "status": "exploration",
+      "preview": "building.html",
+      "source": [
+        "building.html",
+        "office.js",
+        "office.css",
+        "data.js"
+      ]
+    }
+  ],
+  "references": [
+    {
+      "id": "gather",
+      "title": "Gather · Virtual Office",
+      "url": "https://www.gather.town/virtual-office",
+      "date": "2026-10-04",
+      "kind": "공식 제품 화면",
+      "principle": "벽·러그·책상 군집으로 공간의 쓰임을 설명하는 방식.",
+      "adaptation": "화상회의 대신 고정 세션 자리와 프로젝트 인접 배치에 적용. 원본 이미지·코드 도입 없음."
+    },
+    {
+      "id": "linear",
+      "title": "Linear · Features / Build",
+      "url": "https://linear.app/build",
+      "date": "2026-10-04",
+      "kind": "공식 제품 소개 화면",
+      "principle": "낮은 명도의 큰 여백, 미세한 경계선, 최소한의 상태 강조.",
+      "adaptation": "02의 진행 패널과 07의 얇은 정보 위계에 적용. 제품 성능이나 사용성을 검증한 자료는 아님."
+    },
+    {
+      "id": "kinopio",
+      "title": "Kinopio · Spatial Thinking",
+      "url": "https://kinopio.club/",
+      "date": "2026-10-04",
+      "kind": "제작자 운영 서비스 · 화면 데모",
+      "principle": "관련 내용을 가까이 놓고, 자유로운 카드와 선으로 관계를 읽게 하는 방식.",
+      "adaptation": "03의 여백 기록과 04의 프로젝트별 방, 08의 물성, 09의 공간별 문맥에 적용. 자산·라이브러리 도입 없음."
+    }
+  ]
+}
