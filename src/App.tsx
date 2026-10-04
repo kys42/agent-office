@@ -1,33 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Home,
   BookOpen,
   Clock3,
   Settings2,
   Search,
-  ChevronLeft,
-  ChevronRight,
-  Monitor,
+  PictureInPicture2,
   Eye,
   EyeOff,
-  RefreshCw,
-  Wifi,
   ShieldCheck,
   ArrowUpRight,
-  Play,
   X,
-  Archive,
   AlertCircle,
-  ChevronsUpDown,
   Sparkles,
-  Pause,
+  Inbox,
 } from 'lucide-react';
-import { api } from './lib/api';
+import { api, isDesktop } from './lib/api';
 import {
-  MOODS,
   PROVIDERS,
   type Preferences,
-  type Provider,
   type Session,
   type SessionPatch,
   type Snapshot,
@@ -36,9 +27,9 @@ import { demoSnapshot, reconcileDemo } from './lib/demo';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
-import { officeZone, allocateSeats, seatKey } from './shared/office';
+import { officeZone, allocateSeats, seatKey, sessionName } from './shared/office';
+import { messageExcerpt } from './shared/activity';
 import { officeResidents } from './shared/residents';
-import { Roster } from './components/Roster';
 import { Inspector } from './components/Inspector';
 import { Memory } from './components/Memory';
 import { Settings } from './components/Settings';
@@ -47,10 +38,10 @@ import { NewsInbox } from './components/News';
 import { applyNoticeReceipt, unreadNoticeCount } from './shared/notices';
 import type { NoticeReceipt } from './shared/types';
 const tabs = [
-  { id: 'office', title: '우리 사무실', icon: Home },
-  { id: 'memory', title: '기억 서랍', icon: BookOpen },
-  { id: 'activity', title: '활동 기록', icon: Clock3 },
-  { id: 'settings', title: '연결과 설정', icon: Settings2 },
+  { id: 'office', title: '우리 사무실', short: '사무실', icon: Home },
+  { id: 'memory', title: '기억 서랍', short: '기억', icon: BookOpen },
+  { id: 'activity', title: '활동 기록', short: '활동', icon: Clock3 },
+  { id: 'settings', title: '연결과 설정', short: '설정', icon: Settings2 },
 ] as const;
 export default function App() {
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
@@ -119,15 +110,18 @@ export default function App() {
       }),
     [],
   );
+  const openSearch = () => {
+    setView('memory');
+    setTimeout(
+      () => document.querySelector<HTMLInputElement>('[aria-label="기록 검색"]')?.focus(),
+      100,
+    );
+  };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setView('memory');
-        setTimeout(
-          () => document.querySelector<HTMLInputElement>('[aria-label="기록 검색"]')?.focus(),
-          100,
-        );
+        openSearch();
       }
       if (e.key === 'Escape') {
         setSelected(null);
@@ -139,6 +133,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     document.body.classList.toggle('mini-mode', mini);
+    document.body.classList.toggle('is-desktop', isDesktop);
     return () => document.body.classList.remove('mini-mode');
   }, [mini]);
   const sessions = snapshot?.sessions ?? [];
@@ -147,6 +142,7 @@ export default function App() {
     .sort((a, b) => (a.officeSeat ?? 0) - (b.officeSeat ?? 0));
   const current = sessions.find((s) => s.id === selected);
   const prefs = snapshot?.preferences;
+  const unread = unreadNoticeCount(snapshot?.notices ?? []);
   const refresh = async () => {
     if (demo) {
       notify('데모 화면이에요. 실제 연결을 보려면 데모를 종료해 주세요.');
@@ -276,61 +272,58 @@ export default function App() {
         reducedMotion={prefs?.reducedMotion ?? false}
       />
     );
+  const docked = !!current || inbox;
   return (
     <div
-      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${current || inbox ? 'has-dock' : ''}`}
+      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
     >
       <header className="app-header">
         <div className="brand">
-          <div className="brand-mark">
+          <div className="brand-mark" aria-hidden="true">
             <span />
             <span />
             <span />
             <span />
           </div>
-          <b>
-            agent office<span>작은 동료들의 큰 하루</span>
-          </b>
+          <b>Agent Office</b>
+          {demo && <span className="brand-tag">DEMO</span>}
         </div>
-        <div className="header-spacer" />
-        <button
-          className="global-search"
-          onClick={() => {
-            setView('memory');
-            setTimeout(
-              () => document.querySelector<HTMLInputElement>('[aria-label="기록 검색"]')?.focus(),
-              100,
-            );
-          }}
-        >
+        <button className="global-search" onClick={openSearch}>
           <Search size={15} />
-          <span>기억 찾기</span>
-          <kbd>⌘ K</kbd>
+          <span>세션, 결정, 오류를 찾아보세요</span>
+          <kbd>⌘K</kbd>
         </button>
-        <button
-          className={`button inbox-button ${inbox ? 'active' : ''}`}
-          aria-label="소식함 열기"
-          onClick={() => {
-            setInbox((v) => !v);
-            setSelected(null);
-          }}
-        >
-          <span>소식함</span>
-          <b>{unreadNoticeCount(snapshot?.notices ?? [])}</b>
-        </button>
-        <div className="header-divider" />
-        <button
-          className="icon-btn"
-          aria-label={prefs?.privacy ? '내용 다시 보기' : '화면 내용 숨기기'}
-          title="화면 내용 숨기기"
-          onClick={() => onPrefs({ privacy: !prefs?.privacy })}
-        >
-          {prefs?.privacy ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-        <button className="button mini-button" onClick={() => api.window('mini')}>
-          <Monitor size={15} />
-          미니 오피스
-        </button>
+        <div className="header-actions">
+          <button
+            className={`inbox-button ${inbox ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
+            aria-label="소식함 열기"
+            title="동료가 남긴 최종 응답과 확인 요청"
+            onClick={() => {
+              setInbox((v) => !v);
+              setSelected(null);
+            }}
+          >
+            <Inbox size={16} />
+            <span>소식함</span>
+            <b>{unread}</b>
+          </button>
+          <button
+            className={`icon-btn ${prefs?.privacy ? 'is-on' : ''}`}
+            aria-label={prefs?.privacy ? '내용 다시 보기' : '화면 내용 숨기기'}
+            title={prefs?.privacy ? '내용 다시 보기' : '화면 내용 숨기기 · 화면 공유할 때'}
+            onClick={() => onPrefs({ privacy: !prefs?.privacy })}
+          >
+            {prefs?.privacy ? <EyeOff size={17} /> : <Eye size={17} />}
+          </button>
+          <button
+            className="icon-btn mini-button"
+            aria-label="미니 오피스"
+            title="미니 오피스 · 화면 아래에 작게 띄우기"
+            onClick={() => api.window('mini')}
+          >
+            <PictureInPicture2 size={17} />
+          </button>
+        </div>
       </header>
       <div className="app-body">
         <nav className="side-nav" aria-label="주 메뉴">
@@ -346,8 +339,8 @@ export default function App() {
                   setSelected(null);
                 }}
               >
-                <t.icon size={21} />
-                <span>{t.title.replace('우리 ', '')}</span>
+                <t.icon size={19} strokeWidth={1.8} />
+                <span>{t.short}</span>
               </button>
             ))}
           </div>
@@ -361,16 +354,15 @@ export default function App() {
                 setSelected(null);
               }}
             >
-              <Settings2 size={21} />
+              <Settings2 size={19} strokeWidth={1.8} />
               <span>설정</span>
             </button>
-            <div className="user-token">Y</div>
           </div>
         </nav>
         <main className={`main-content view-${view}`}>
           {demo && (
             <div className="demo-banner">
-              <Sparkles size={15} />
+              <Sparkles size={14} />
               <span>구경하는 사무실 · 모든 기록은 예시 데이터예요</span>
               <button
                 onClick={() => {
@@ -379,34 +371,38 @@ export default function App() {
                   history.replaceState(null, '', location.pathname);
                 }}
               >
-                실제 동료 만나기 <ArrowUpRight size={14} />
+                실제 동료 만나기 <ArrowUpRight size={13} />
               </button>
             </div>
           )}
           {error && (
             <div className="error-banner">
-              <AlertCircle size={17} />
+              <AlertCircle size={16} />
               <span>{error}</span>
               <button onClick={refresh}>다시 연결</button>
             </div>
           )}
           {!snapshot && !error ? (
             <div className="loading-state">
-              <Sprite provider="claude" mood="work" size={96} />
+              <div className="loading-pet">
+                <Sprite provider="claude" mood="work" size={96} />
+              </div>
               <h2>사무실 문을 열고 있어요</h2>
               <p>이 컴퓨터의 동료들을 만나러 가는 중…</p>
             </div>
           ) : !snapshot ? (
             <div className="empty-state">
-              <Sprite provider="codex" size={96} />
+              <Sprite provider="codex" mood="error" size={96} />
               <h2>잠깐, 연결을 확인해 볼까요</h2>
               <p>데스크탑 앱을 실행하거나 로컬 수집기를 시작해 주세요.</p>
-              <button className="button primary" onClick={refresh}>
-                다시 연결
-              </button>
-              <button className="button subtle" onClick={() => setDemo(true)}>
-                예시 사무실 구경하기
-              </button>
+              <div className="empty-actions">
+                <button className="button primary" onClick={refresh}>
+                  다시 연결
+                </button>
+                <button className="button subtle" onClick={() => setDemo(true)}>
+                  예시 사무실 구경하기
+                </button>
+              </div>
             </div>
           ) : view === 'office' ? (
             <OfficeWorkspace
@@ -470,19 +466,29 @@ export default function App() {
       </div>
       <footer className="app-footer">
         <div>
-          <ShieldCheck size={13} />
-          <span>내 컴퓨터 안에서만</span>
-          <i />{' '}
+          <span className="footer-local">
+            <ShieldCheck size={12} />이 컴퓨터 안에서만
+          </span>
           {snapshot?.connectors.map((c) => (
-            <button key={c.provider} onClick={() => setView('settings')} title={c.message}>
+            <button
+              key={c.provider}
+              onClick={() => setView('settings')}
+              title={`${PROVIDERS[c.provider].name} · ${c.message}`}
+            >
               <span className={`connector-dot ${c.state}`} />
               {PROVIDERS[c.provider].short}
+              <em>{c.state === 'connected' ? c.count : '—'}</em>
             </button>
           ))}
         </div>
         <div>
-          <span>
-            {snapshot?.lastSync ? `${time(snapshot.lastSync)} 마지막 확인` : '연결 확인 중'}
+          <span className={`sync-state ${prefs?.paused ? 'paused' : ''}`}>
+            <i />
+            {prefs?.paused
+              ? '수집 쉬는 중'
+              : snapshot?.lastSync
+                ? `${time(snapshot.lastSync)} 확인 · 5초마다`
+                : '연결 확인 중'}
           </span>
           <span className="version">v0.1</span>
           <button
@@ -507,6 +513,13 @@ export default function App() {
     </div>
   );
 }
+const KIND_LABEL: Record<string, string> = {
+  tool: '도구 사용',
+  assistant: '응답',
+  user: '요청',
+  result: '도구 결과',
+  lifecycle: '작업 흐름',
+};
 function Activity({
   sessions,
   onSelect,
@@ -516,65 +529,95 @@ function Activity({
   onSelect: (id: string) => void;
   privacy: boolean;
 }) {
+  const [kind, setKind] = useState<'talk' | 'all'>('talk');
   const events = sessions
     .flatMap((s) => s.events.map((event) => ({ s, event })))
+    .filter(({ event }) => kind === 'all' || ['user', 'assistant'].includes(event.kind))
     .sort((a, b) => b.event.at - a.event.at)
-    .slice(0, 70);
+    .slice(0, 90);
+  const days = new Map<string, typeof events>();
+  for (const item of events) {
+    const key = date(item.event.at);
+    days.set(key, [...(days.get(key) ?? []), item]);
+  }
+  const today = new Date().toDateString();
+  const touched = sessions.filter((s) => new Date(s.updatedAt).toDateString() === today);
   return (
-    <div className="activity-page">
-      <div className="page-intro">
-        <span className="eyebrow">THE LITTLE THINGS ADD UP</span>
-        <h1>오늘도, 한 걸음씩.</h1>
-        <p>동료들이 남긴 최근 발자국이에요. 완료 여부는 업무 카드에서 직접 확인할 수 있어요.</p>
-      </div>
+    <div className="activity-page page">
+      <header className="page-head">
+        <div>
+          <span className="eyebrow">Activity</span>
+          <h1>활동 기록</h1>
+          <p>동료들이 남긴 최근 발자국. 완료 여부는 업무 카드에서 직접 확인해요.</p>
+        </div>
+        <div className="segmented" role="group" aria-label="기록 종류">
+          <button aria-pressed={kind === 'talk'} onClick={() => setKind('talk')}>
+            대화만
+          </button>
+          <button aria-pressed={kind === 'all'} onClick={() => setKind('all')}>
+            도구 포함
+          </button>
+        </div>
+      </header>
       <div className="activity-summary">
         <div>
-          <strong>
-            {
-              sessions.filter(
-                (s) => new Date(s.updatedAt).toDateString() === new Date().toDateString(),
-              ).length
-            }
-          </strong>
-          <span>오늘 기록이 있는 세션</span>
+          <span>오늘 움직인 세션</span>
+          <strong>{touched.length}</strong>
+          <div className="activity-faces">
+            {touched.slice(0, 6).map((s) => (
+              <span key={s.id} className={`face face-${s.provider}`}>
+                <Sprite provider={s.provider} mood="idle" size={26} />
+              </span>
+            ))}
+          </div>
         </div>
         <div>
-          <strong>{sessions.filter((s) => s.notes).length}</strong>
           <span>기억을 남긴 업무</span>
+          <strong>{sessions.filter((s) => s.notes).length}</strong>
+          <small>메모는 인수인계에 함께 담겨요</small>
         </div>
         <div>
-          <strong>{sessions.filter((s) => s.completed).length}</strong>
           <span>직접 확인한 결과</span>
+          <strong>{sessions.filter((s) => s.completed).length}</strong>
+          <small>응답 완료와 별개로 내가 남긴 확인</small>
         </div>
       </div>
       <div className="activity-list">
-        {events.map(({ s, event }, i) => (
-          <button key={`${s.id}:${event.id}:${i}`} onClick={() => onSelect(s.id)}>
-            <time>
-              {date(event.at)}
-              <b>{time(event.at)}</b>
-            </time>
-            <div className={`avatar avatar-${s.provider}`}>
-              <Sprite provider={s.provider} mood={s.status} size={44} />
-            </div>
-            <div>
-              <span>
-                {privacy ? PROVIDERS[s.provider].name : s.alias || s.project}
-                <i>·</i>
-                {event.kind === 'tool'
-                  ? '도구 사용'
-                  : event.kind === 'assistant'
-                    ? '응답 기록'
-                    : event.kind === 'user'
-                      ? '요청 기록'
-                      : event.kind === 'result'
-                        ? '도구 결과'
-                        : '작업 흐름'}
-              </span>
-              <p>{privacy ? '기록 내용 숨김' : event.text}</p>
-            </div>
-            <ArrowUpRight size={17} />
-          </button>
+        {[...days].map(([day, items]) => (
+          <section key={day} className="activity-day">
+            <h2>
+              {day}
+              <span>{items.length}개</span>
+            </h2>
+            <ol>
+              {items.map(({ s, event }, i) => (
+                <li key={`${s.id}:${event.id}:${i}`}>
+                  <button
+                    onClick={() => onSelect(s.id)}
+                    className={`activity-row kind-${event.kind}`}
+                  >
+                    <time>{time(event.at)}</time>
+                    <span className={`face face-${s.provider}`}>
+                      <Sprite provider={s.provider} mood={s.status} size={32} />
+                    </span>
+                    <div>
+                      <span className="activity-meta">
+                        <b>{privacy ? PROVIDERS[s.provider].name : sessionName(s)}</b>
+                        <i className={`kind-chip kind-${event.kind}`}>
+                          {event.kind === 'assistant' && event.phase === 'final'
+                            ? '최종 응답'
+                            : KIND_LABEL[event.kind]}
+                        </i>
+                        {!privacy && <small>{s.project}</small>}
+                      </span>
+                      <p>{privacy ? '기록 내용 숨김' : messageExcerpt(event.text, 280)}</p>
+                    </div>
+                    <span className="activity-ago">{ago(event.at)}</span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </section>
         ))}
       </div>
       {events.length === 0 && (

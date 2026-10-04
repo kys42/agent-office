@@ -10,6 +10,7 @@ import {
 } from '../shared/notices';
 import { sessionName } from '../shared/office';
 import { ago } from '../lib/format';
+import { Sprite } from './Sprite';
 export type ReceiptHandler = (
   receipts: NoticeReceipt[],
   action: 'read' | 'dismiss' | 'unread' | 'view',
@@ -54,7 +55,7 @@ export function NewsList({
             data-notice-id={n.id}
           >
             <div className="news-meta">
-              <span>
+              <span className="news-kind">
                 {noticeLabel(n)}
                 {!n.seenAt && <i />}
               </span>
@@ -72,7 +73,10 @@ export function NewsList({
                   onSelect(n.sessionId);
                 }}
               >
-                {privacy ? '숨긴 동료' : sessionName(session)}
+                <span className={`face face-${session.provider}`}>
+                  <Sprite provider={session.provider} mood={session.status} size={22} />
+                </span>
+                <span>{privacy ? '숨긴 동료' : sessionName(session)}</span>
                 <ArrowUpRight size={13} />
               </button>
             )}
@@ -237,19 +241,25 @@ export function NewsInbox({
   return (
     <aside className="inspector news-inbox" aria-label="소식함">
       <div className="inspector-top">
-        <span>
-          <Mail size={15} /> 동료가 남긴 결과
+        <span className="inspector-crumb">
+          <Mail size={13} /> 소식함
         </span>
-        <button className="icon-btn" aria-label="소식함 닫기" onClick={onClose}>
-          <X size={20} />
+        <button className="icon-btn" aria-label="소식함 닫기" title="닫기 · Esc" onClick={onClose}>
+          <X size={17} />
         </button>
       </div>
       <div className="inbox-heading">
         <h2>
-          답변이 오면, 여기 있어요<span>.</span>
+          {unread ? (
+            <>
+              확인할 소식 <b>{unread}</b>건
+            </>
+          ) : (
+            '모두 확인했어요'
+          )}
         </h2>
         <p>
-          최종 응답과 확인할 요청 <b>{unread}</b>건 · 진행 상황은 대화에서
+          동료가 남긴 최종 응답과 나를 기다리는 요청만 모아요. 진행 상황은 대화에서 볼 수 있어요.
         </p>
       </div>
       <NewsFeed
@@ -259,9 +269,7 @@ export function NewsInbox({
         onReceipt={onReceipt}
         onSelect={onSelect}
       />
-      <p className="news-footnote">
-        상단 숫자는 최종 응답·확인 필요만 세어요. 말풍선 접기와 읽음은 별개예요.
-      </p>
+      <p className="news-footnote">말풍선 접기와 읽음은 별개예요. 접어도 미확인 소식은 남아요.</p>
     </aside>
   );
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Mail, Pin, X, GitBranch, ZoomIn, ZoomOut, Maximize2, Armchair } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Mail, Pin, X, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import { MOODS, type Session, type OfficeNotice } from '../shared/types';
 import { sessionName } from '../shared/office';
 import { layoutOffice, layoutSignature } from '../shared/office-layout';
@@ -12,18 +12,18 @@ import { bubbleNotice, noticeLabel, unreadNoticeCount, isInboxNotice } from '../
 import { presentSession, POSTURE_LABELS } from '../shared/presentation';
 import type { ReceiptHandler } from './News';
 import { ago } from '../lib/format';
-const colors = ['#709473', '#b18456', '#9682ae', '#658e9d', '#b27485', '#979051'];
+const colors = ['#7fae86', '#d39a62', '#a48fd0', '#6fa9bd', '#d08497', '#b8ad5d'];
 function projectColor(key: string) {
   let n = 0;
   for (const c of key) n = (n * 31 + c.charCodeAt(0)) >>> 0;
   return colors[n % colors.length];
 }
-const windowAspect = () =>
-  Math.max(
-    0.7,
-    (window.innerWidth - (window.innerWidth > 1000 ? 430 : 100)) /
-      Math.max(380, window.innerHeight - 290),
-  );
+/** Decorative only: the room follows the local clock, never session state. */
+function dayPhase(at: number) {
+  const h = new Date(at).getHours();
+  return h >= 6 && h < 8 ? 'dawn' : h >= 8 && h < 17 ? 'day' : h >= 17 && h < 19 ? 'dusk' : 'night';
+}
+const PHASE_COPY = { dawn: '이른 아침', day: '낮', dusk: '해질녘', night: '밤' } as const;
 export function Office({
   sessions,
   notices,
@@ -35,6 +35,7 @@ export function Office({
   reducedMotion,
   privacy,
   onShowWaiting,
+  footer,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -46,10 +47,11 @@ export function Office({
   reducedMotion: boolean;
   privacy: boolean;
   onShowWaiting: () => void;
+  footer?: ReactNode;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
-  const [aspect, setAspect] = useState(windowAspect);
+  const [aspect, setAspect] = useState(1.6);
   const [zoom, setZoom] = useState<number | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
@@ -111,59 +113,28 @@ export function Office({
     zoom ??
     Math.max(
       0.01,
-      Math.min(1.2, (viewport.width - 12) / layout.width, (viewport.height - 12) / layout.height),
+      Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
     );
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const primary = sessions.filter((s) => !s.attachedTo);
+  const working = sessions.filter((s) => presentSession(s, clock).working).length;
+  const phase = dayPhase(clock);
+  const now = new Date(clock);
   const fit = () => {
     setZoom(null);
     holder.current?.scrollTo({ top: 0, left: 0 });
   };
   return (
     <section
-      className={`office-card dynamic-office ${reducedMotion || hidden ? 'motion-paused' : ''}`}
+      className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''}`}
       aria-label="픽셀 사무실"
     >
-      <div className="office-card-top">
-        <div>
-          <span className="live-dot" />
-          <strong>우리 사무실</strong>
-          <span className="floor-label">하나의 공간 · {layout.projects.length}개 팀</span>
-        </div>
-        <div className="scene-controls">
-          <button
-            aria-label="사무실 축소"
-            title="축소"
-            disabled={scale < 0.2}
-            onClick={() => setZoom(Math.max(0.15, scale - 0.15))}
-          >
-            <ZoomOut size={15} />
-          </button>
-          <button
-            className={zoom === null ? 'is-fit' : ''}
-            aria-label="사무실 모두 보기"
-            title="모든 동료를 한눈에"
-            onClick={fit}
-          >
-            <Maximize2 size={13} />
-            <span>모두 보기</span>
-          </button>
-          <button
-            aria-label="사무실 확대"
-            title="확대 · 화면을 스크롤해 둘러보기"
-            disabled={scale >= 2}
-            onClick={() => setZoom(Math.min(2, scale + 0.2))}
-          >
-            <ZoomIn size={15} />
-          </button>
-        </div>
-      </div>
       <div className="map-holder scene-viewport" ref={holder} data-scale={scale.toFixed(3)}>
         <div
           className="scene-size"
           style={{
-            width: Math.max(viewport.width, layout.width * scale + 12),
-            height: Math.max(viewport.height, layout.height * scale + 12),
+            width: Math.max(viewport.width, layout.width * scale + 48),
+            height: Math.max(viewport.height, layout.height * scale + 92),
           }}
         >
           <div
@@ -172,16 +143,46 @@ export function Office({
               width: layout.width,
               height: layout.height,
               transform: `scale(${scale})`,
-              left: Math.max(6, (viewport.width - layout.width * scale) / 2),
-              top: Math.max(6, (viewport.height - layout.height * scale) / 2),
+              left: Math.max(24, (viewport.width - layout.width * scale) / 2),
+              top: Math.max(28, (viewport.height - layout.height * scale) / 2 - 8),
             }}
           >
             <div className="office-wall" aria-hidden="true">
-              <div className="wall-window" />
-              <span>AGENT OFFICE</span>
-              <div className="wall-window" />
+              <div className="wall-trim" />
+              <div className="wall-decor wall-left">
+                <div className="wall-window">
+                  <i className="sky-body" />
+                </div>
+                <div className="wall-board">
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              </div>
+              <div className="wall-sign">
+                <span>AGENT OFFICE</span>
+                <b className="wall-clock">
+                  {String(now.getHours()).padStart(2, '0')}
+                  <i>:</i>
+                  {String(now.getMinutes()).padStart(2, '0')}
+                </b>
+              </div>
+              <div className="wall-decor wall-right">
+                <div className="wall-shelf">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                  <i />
+                </div>
+                <div className="wall-window">
+                  <i className="sky-body" />
+                </div>
+              </div>
             </div>
             <div className="floor-light" aria-hidden="true" />
+            <i className="wall-plant plant-left" aria-hidden="true" />
+            <i className="wall-plant plant-right" aria-hidden="true" />
             {layout.projects.map((area, index) => (
               <div
                 className="project-area"
@@ -228,12 +229,13 @@ export function Office({
                   const branch = branchInfo(s);
                   return (
                     <div
-                      className={`desk-station ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'}`}
+                      className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'}`}
                       data-working={pose.working}
                       key={s.id}
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
                     >
+                      <i className="desk-glow" aria-hidden="true" />
                       <Furniture kind="chair" />
                       <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                       <button
@@ -249,7 +251,7 @@ export function Office({
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {arrival && (
                           <span className="arrival-envelope">
-                            <Mail size={19} />
+                            <Mail size={16} />
                             <b>일이 도착했어요!</b>
                           </span>
                         )}
@@ -268,7 +270,7 @@ export function Office({
                         title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
                         onClick={() => onSelect(s.id)}
                       >
-                        <GitBranch size={10} />
+                        <GitBranch size={9} />
                         <span>{privacy ? '내용 숨김' : branch.label}</span>
                       </button>
                       <button
@@ -279,7 +281,7 @@ export function Office({
                         <strong>
                           <i style={{ background: MOODS[s.status].color }} />
                           <span>{privacy ? s.provider : sessionName(s)}</span>
-                          {s.pinned && <Pin size={10} />}
+                          {s.pinned && <Pin size={9} />}
                         </strong>
                         <small>
                           <span>
@@ -298,7 +300,7 @@ export function Office({
                             active ||
                             ['work', 'think', 'call', 'error'].includes(s.status)))) && (
                         <div
-                          className={`speech-bubble bubble-${s.status} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
+                          className={`speech-bubble bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
                         >
                           <button
                             className="speech-open"
@@ -313,19 +315,22 @@ export function Office({
                           >
                             <span className="speech-copy">
                               <small>
-                                {privacy ? '내용 숨김' : label}
-                                {bubble && (
-                                  <span className="bubble-exposure">{noticeExposure(bubble)}</span>
-                                )}
+                                <span className="bubble-label">
+                                  {privacy ? '내용 숨김' : label}
+                                </span>
+                                <em>
+                                  {bubble && (
+                                    <span className="bubble-exposure">
+                                      {noticeExposure(bubble)}
+                                    </span>
+                                  )}
+                                  {ago(bubble?.at ?? activity.at)}
+                                  {!privacy && activity.tool
+                                    ? ` · ${toolLabel(activity.tool.name)}`
+                                    : ''}
+                                </em>
                               </small>
                               <b>{privacy ? MOODS[s.status].label : text}</b>
-                              <em>
-                                {ago(bubble?.at ?? activity.at)}
-
-                                {!privacy && activity.tool
-                                  ? ` · ${toolLabel(activity.tool.name)}`
-                                  : ''}
-                              </em>
                             </span>
                           </button>
                           {bubble && (
@@ -337,7 +342,7 @@ export function Office({
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
                               }
                             >
-                              <X size={13} />
+                              <X size={11} strokeWidth={2.6} />
                             </button>
                           )}
                         </div>
@@ -348,15 +353,16 @@ export function Office({
                 {area.stations.flatMap((station) =>
                   station.children.map((child) => {
                     const s = byId.get(child.id)!;
+                    const childPose = presentSession(s, clock);
                     return (
                       <button
-                        className={`helper-desk ${selected === s.id ? 'chosen' : ''}`}
+                        className={`helper-desk ${selected === s.id ? 'chosen' : ''} ${childPose.working ? 'helper-working' : ''}`}
                         key={s.id}
                         data-session-id={s.id}
                         data-parent-id={station.id}
                         data-furniture="helper-desk"
                         style={{ transform: `translate(${child.x}px, ${child.y}px)` }}
-                        aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료${s.runtime?.phase === 'responded' && !presentSession(s, clock).working ? ', 결과 남김' : ''}`}
+                        aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료${s.runtime?.phase === 'responded' && !childPose.working ? ', 결과 남김' : ''}`}
                         title={
                           privacy
                             ? undefined
@@ -364,13 +370,9 @@ export function Office({
                         }
                         onClick={() => onSelect(s.id)}
                       >
-                        <Sprite
-                          provider={s.provider}
-                          mood={presentSession(s, clock).mood}
-                          size={44}
-                        />
+                        <Sprite provider={s.provider} mood={childPose.mood} size={44} />
                         <Furniture kind="helper" />
-                        {s.runtime?.phase === 'responded' && !presentSession(s, clock).working && (
+                        {s.runtime?.phase === 'responded' && !childPose.working && (
                           <span
                             className="helper-result"
                             title="응답을 남겼어요 · 메인의 다음 요청까지 머물러요"
@@ -390,7 +392,7 @@ export function Office({
             ))}
             {!primary.length && (
               <div className="scene-empty">
-                <Armchair size={32} />
+                <Armchair size={30} />
                 <h3>다음 동료를 기다리고 있어요</h3>
                 <p>새 활동이 생기면 책상이 놓여요.</p>
                 <button onClick={onShowWaiting}>대기 중인 동료 보기</button>
@@ -399,13 +401,50 @@ export function Office({
           </div>
         </div>
       </div>
-      <div className="office-card-bottom">
-        <span>
-          <i className="yellow-tile" />
-          {primary.length}개 책상 · 보조 {sessions.length - primary.length}명 · 모두 이 공간에
-          있어요
+      <div className="stage-hud hud-bottom-left office-card-bottom">
+        <span className="hud-pill">
+          {phase === 'night' || phase === 'dusk' ? <Moon size={12} /> : <Sun size={12} />}
+          {PHASE_COPY[phase]}
+          <i />
+          {layout.projects.length}개 프로젝트 · {primary.length}개 책상
+          {sessions.length - primary.length > 0
+            ? ` · 보조 ${sessions.length - primary.length}`
+            : ''}
+          {working > 0 && (
+            <>
+              <i />
+              <em>{working}명 작업 중</em>
+            </>
+          )}
         </span>
-        <span>{Math.round(scale * 100)}% · 같은 프로젝트는 한 구역</span>
+        {footer}
+      </div>
+      <div className="stage-hud hud-bottom-right scene-controls">
+        <button
+          aria-label="사무실 축소"
+          title="축소"
+          disabled={scale < 0.2}
+          onClick={() => setZoom(Math.max(0.15, scale - 0.15))}
+        >
+          <Minus size={14} />
+        </button>
+        <button
+          className={`zoom-readout ${zoom === null ? 'is-fit' : ''}`}
+          aria-label="사무실 모두 보기"
+          title="모든 동료를 한눈에"
+          onClick={fit}
+        >
+          {zoom === null ? <Maximize2 size={12} /> : null}
+          <span>{zoom === null ? '모두 보기' : `${Math.round(scale * 100)}%`}</span>
+        </button>
+        <button
+          aria-label="사무실 확대"
+          title="확대 · 화면을 스크롤해 둘러보기"
+          disabled={scale >= 2}
+          onClick={() => setZoom(Math.min(2, scale + 0.2))}
+        >
+          <Plus size={14} />
+        </button>
       </div>
     </section>
   );

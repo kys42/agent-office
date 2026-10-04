@@ -65,6 +65,9 @@ export function Inspector({
     const previous = document.activeElement as HTMLElement | null;
     const el = panelRef.current!;
     el.focus({ preventScroll: true });
+    // On phones the card follows the room in the page flow; bring it into view.
+    if (window.matchMedia('(max-width: 860px)').matches)
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return () => {
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
@@ -185,77 +188,87 @@ export function Inspector({
     <>
       <aside className="inspector" aria-label="동료의 업무 카드" ref={panelRef} tabIndex={-1}>
         <div className="inspector-top">
-          <span>동료의 이야기</span>
+          <span className="inspector-crumb">
+            <i style={{ background: PROVIDERS[s.provider].color }} />
+            {PROVIDERS[s.provider].name}
+            {s.agentName && !privacy ? <em> · {s.agentName}</em> : ''}
+          </span>
           <div>
             <button
               className={`icon-btn ${s.pinned ? 'gold' : ''}`}
               aria-label={s.pinned ? '고정 해제' : '사무실에 고정'}
+              title={s.pinned ? '고정 해제' : '사무실에 고정 · 자리를 지켜요'}
               onClick={() => patch({ pinned: !s.pinned })}
             >
-              <Pin size={17} />
+              <Pin size={15} />
             </button>
-            <button className="icon-btn" aria-label="업무 카드 닫기" onClick={onClose}>
-              <X size={20} />
+            <button
+              className="icon-btn"
+              aria-label="업무 카드 닫기"
+              title="닫기 · Esc"
+              onClick={onClose}
+            >
+              <X size={17} />
             </button>
           </div>
         </div>
         <div className="inspector-heading">
-          <div className={`profile-avatar avatar-${s.provider}`}>
-            <Sprite provider={s.provider} mood={s.status} size={72} />
+          <div className={`profile-avatar face-${s.provider} status-${s.status}`}>
+            <Sprite provider={s.provider} mood={s.status} size={64} />
           </div>
-          <span className="provider-label" style={{ color: PROVIDERS[s.provider].color }}>
-            {PROVIDERS[s.provider].name}
-            {s.agentName && !privacy ? ` · ${s.agentName}` : ''}
-          </span>
-          {editing ? (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await patch({ alias });
-                setEditing(false);
-              }}
-              className="name-editor"
-            >
-              <label className="sr-only" htmlFor="nickname">
-                새 별명
-              </label>
-              <input
-                autoFocus
-                id="nickname"
-                value={alias}
-                maxLength={60}
-                onChange={(e) => setAlias(e.target.value)}
-                placeholder="별명을 붙여 주세요"
-              />
-              <button className="icon-btn" type="submit" aria-label="별명 저장">
-                <Check size={20} />
-              </button>
-            </form>
-          ) : (
-            <h2>
-              {privacy ? '내용을 숨긴 동료' : sessionName(s)}
-              <button
-                className="icon-btn"
-                aria-label="이름 바꾸기"
-                onClick={() => setEditing(true)}
+          <div className="inspector-title">
+            {editing ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await patch({ alias });
+                  setEditing(false);
+                }}
+                className="name-editor"
               >
-                <Pencil size={14} />
-              </button>
-            </h2>
-          )}
-          <p className="inspector-project">
-            <Folder size={13} />
-            {privacy ? '프로젝트 숨김' : s.project}
-            {s.alias && !privacy && <span title={s.title}>원래 이름 · {s.title}</span>}
-          </p>
-          <div className="status-line">
-            <span className={`status-pill pill-${s.status}`}>
-              <i style={{ background: MOODS[s.status].color }} />
-              {MOODS[s.status].label}
-            </span>
-            <span>
-              {ago(s.updatedAt)} · {s.statusEvidence === 'derived' ? '기록 기반 추정' : '관측 기록'}
-            </span>
+                <label className="sr-only" htmlFor="nickname">
+                  새 별명
+                </label>
+                <input
+                  autoFocus
+                  id="nickname"
+                  value={alias}
+                  maxLength={60}
+                  onChange={(e) => setAlias(e.target.value)}
+                  placeholder="별명을 붙여 주세요"
+                />
+                <button className="icon-btn" type="submit" aria-label="별명 저장">
+                  <Check size={17} />
+                </button>
+              </form>
+            ) : (
+              <h2>
+                {privacy ? '내용을 숨긴 동료' : sessionName(s)}
+                <button
+                  className="icon-btn"
+                  aria-label="이름 바꾸기"
+                  title="별명 붙이기"
+                  onClick={() => setEditing(true)}
+                >
+                  <Pencil size={12} />
+                </button>
+              </h2>
+            )}
+            <p className="inspector-project">
+              <Folder size={12} />
+              <span>{privacy ? '프로젝트 숨김' : s.project}</span>
+              {s.alias && !privacy && <span title={s.title}>원래 이름 · {s.title}</span>}
+            </p>
+            <div className="status-line">
+              <span className={`status-pill pill-${s.status}`}>
+                <i style={{ background: MOODS[s.status].color }} />
+                {MOODS[s.status].label}
+              </span>
+              <span>
+                {ago(s.updatedAt)} ·{' '}
+                {s.statusEvidence === 'derived' ? '기록 기반 추정' : '관측 기록'}
+              </span>
+            </div>
           </div>
         </div>
         {!privacy && (

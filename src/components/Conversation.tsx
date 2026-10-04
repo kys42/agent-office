@@ -191,11 +191,18 @@ export function Conversation({
     const observer = new ResizeObserver(() => {
       if (follow.current) scrollBottom();
     });
-    observer.observe(root.current!);
     observer.observe(scroller);
+    // Context cards above the conversation mount asynchronously; follow them too.
+    const observeChildren = () => {
+      for (const child of Array.from(scroller.children)) observer.observe(child);
+    };
+    observeChildren();
+    const mutations = new MutationObserver(observeChildren);
+    mutations.observe(scroller, { childList: true });
     return () => {
       scroller.removeEventListener('scroll', onScroll);
       observer.disconnect();
+      mutations.disconnect();
     };
   }, []);
   useEffect(() => {

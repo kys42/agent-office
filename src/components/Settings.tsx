@@ -52,12 +52,14 @@ export function Settings({
     ...new Set([...snapshot.sessions.map((s) => s.project), ...p.excludedProjects]),
   ].sort();
   return (
-    <div className="settings-page">
-      <div className="page-intro">
-        <span className="eyebrow">MAKE YOURSELF AT HOME</span>
-        <h1>편안하게 함께 일하려면.</h1>
-        <p>어떤 동료를 만나고, 어떤 기록을 남길지 직접 정하세요.</p>
-      </div>
+    <div className="settings-page page">
+      <header className="page-head">
+        <div>
+          <span className="eyebrow">Settings</span>
+          <h1>연결과 설정</h1>
+          <p>어떤 동료를 만나고, 어떤 기록을 남길지 직접 정하세요.</p>
+        </div>
+      </header>
       <div className="settings-grid">
         <section className="settings-section">
           <div className="section-title">
@@ -69,12 +71,19 @@ export function Settings({
           {snapshot.connectors.map((c) => (
             <div className="connector-card" key={c.provider}>
               <div className="connector-title">
-                <div className={`avatar avatar-${c.provider}`}>
-                  <Sprite provider={c.provider} size={48} />
+                <div className={`face face-lg face-${c.provider}`}>
+                  <Sprite
+                    provider={c.provider}
+                    mood={c.state === 'connected' ? 'idle' : 'sleep'}
+                    size={40}
+                  />
                 </div>
                 <div>
-                  <h3>{PROVIDERS[c.provider].name}</h3>
-                  <span className={`connection-${c.state}`}>
+                  <h3>
+                    {PROVIDERS[c.provider].name}
+                    <em>{c.count}개</em>
+                  </h3>
+                  <span className={`connection-state connection-${c.state}`}>
                     {c.state === 'connected'
                       ? '기록 연결됨'
                       : c.state === 'paused'
