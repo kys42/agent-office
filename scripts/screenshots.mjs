@@ -25,6 +25,12 @@ try {
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   await page.getByRole('button', { name: '소식함 열기' }).click();
   await page.getByRole('complementary', { name: '소식함' }).waitFor();
+  // Wait for the dock resize observer to fit the room before capturing it.
+  await page.waitForFunction(() => {
+    const room = document.querySelector('.office-map')?.getBoundingClientRect();
+    const viewport = document.querySelector('.scene-viewport')?.getBoundingClientRect();
+    return room && viewport && room.right <= viewport.right && room.bottom <= viewport.bottom;
+  });
   await page.screenshot({ path: 'docs/images/inbox-final-only.png', animations: 'disabled' });
   await page.getByRole('button', { name: '소식함 닫기' }).click();
   await page.getByRole('tab', { name: /대기 라운지/ }).click();

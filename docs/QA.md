@@ -1,3 +1,11 @@
+# 첫 PR 검증 · 2026-10-05
+
+[PR #1](https://github.com/kys42/agent-office/pull/1), 첫 구현 커밋 `1300bff` 기준으로 로컬 단위 88개·UI 18개·전체 빌드·포맷·MCP·Electron smoke가 통과했다. GitHub Actions의 Node 24 / Ubuntu에서도 포맷·단위·빌드·MCP·UI 검증을 통과했다. UI의 실제 로컬 기록 연결 1개는 CI에서 제외하며 나머지는 합성 fixture를 사용한다.
+
+독립 읽기 전용 리뷰에서 identity/continuation, phase/receipt, renderer/HTTP 경계, CI 이식성, 새 프로젝트 맥락·세션 분석 문서를 확인했고 차단 이슈는 발견되지 않았다. 개인 실기록과 캡처는 Git에서 제외하고 데모 이미지로 갱신했다. 이후 문서·이미지 보완 커밋의 CI는 PR 체크를 기준으로 확인한다.
+
+---
+
 # 대화 분류·중요 소식 검증 · 2026-10-05
 
 - `npm test`: **88/88 통과**. 공통 대화 분류, 서로 다른 phase의 같은 문장 보존, Claude/Codex/OpenClaw 완료/진행 근거 매핑, 중요 소식 숫자, 기존 phase 없는 소식의 읽음/접기 보존, 스트리밍 최종 전환, 버전 경합, observed-only cursor의 재분류 시 과거 소식 재생성 방지 포함.
