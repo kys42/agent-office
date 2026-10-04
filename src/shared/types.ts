@@ -23,6 +23,7 @@ export interface WorkspaceIdentity {
   root: string | null;
   worktree: string | null;
   evidence: 'git-common-dir' | 'record-path' | 'unknown';
+  locationSource?: WorkingLocation;
   git?: {
     branch: string | null;
     commit: string | null;
@@ -121,6 +122,43 @@ export interface Usage {
   scope: 'session' | 'sample';
   source: string;
 }
+export interface UsageEntry {
+  id: string;
+  at: number;
+  model: string | null;
+  input: number;
+  output: number;
+  cached: number;
+  cacheWrite: number;
+  cacheWriteHour: number;
+}
+export interface SessionCost {
+  usd: number | null;
+  priced: number;
+  unpriced: number;
+  tokens: number;
+  since: number | null;
+  rateVersion: string;
+}
+export interface WorkingLocation {
+  path: string;
+  at: number;
+  source: 'tool-workdir' | 'shell-cd';
+}
+export interface QuotaWindow {
+  key: string;
+  label: string;
+  usedPercent: number;
+  resetsAt: number | null;
+}
+export interface ProviderQuota {
+  provider: Provider;
+  state: 'ok' | 'unavailable' | 'error';
+  windows: QuotaWindow[];
+  checkedAt: number;
+  source: string;
+  message: string;
+}
 export interface Session {
   protocolVersion?: 1;
   id: string;
@@ -142,6 +180,10 @@ export interface Session {
   alias: string;
   project: string;
   cwd: string | null;
+  workingLocation?: WorkingLocation;
+  /** Adapter-only usage samples; removed at the persistence boundary. */
+  usageEntries?: UsageEntry[];
+  cost?: SessionCost;
   branch: string | null;
   gitCommit?: string | null;
   model: string | null;
@@ -224,6 +266,7 @@ export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
 export interface OfficeAPI {
+  quotas: () => Promise<ProviderQuota[]>;
   detail: (id: string) => Promise<Session>;
   visit: (id: string) => Promise<Snapshot>;
   returnToOffice: (id: string) => Promise<Snapshot>;

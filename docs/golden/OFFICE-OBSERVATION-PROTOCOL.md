@@ -128,3 +128,12 @@ Session {
 `helperPresence`는 부모 체인의 새 taskStartedAt을 비교해 이전 작업 보조를 접는다. 완료 직후나 조용해졌다는 이유로만 없애지 않는다. 작업 중·확인 필요·핀 예외, 부모 대기/보관, 미수집 부모·순환 관계를 따로 처리한다. ‘새 작업’의 경계는 사용자 요청 또는 원본 turn 시작이라는 관측 가능한 대리 기준이며, 같은 목적의 추가 지시인지 의미를 추론하지 않는다.
 
 `Preferences.autoArchive?`는 생략 시 true로 호환한다. standbyHours는 1~2160, archiveDays는 1~365이며 둘은 마지막 활동 기준이다. autoArchive=true이면 archiveDays*24 > standbyHours를 검증한다. false일 때도 수동 archived는 존중한다. canonical 세션과 소식은 자동 이동으로 삭제되지 않는다.
+
+
+## 사용량·실행 위치의 v1 호환 확장
+
+`ProviderQuota`는 Session 밖의 계정 단위 규격이다. provider/state/windows/checkedAt/source/message를 반환하며 각 창은 key/label/usedPercent/resetsAt이다. 사용 비율을 받아 UI에서 잔여로 변환한다. 새 공급자도 없는 창을 생성하지 않는다.
+
+`UsageEntry`는 adapter→store 내부 표본으로 원본 메시지/response key, model, at, cache를 제외한 input/output/cached/cacheWrite/cacheWriteHour를 담는다. 저장 경계에서 별도 ledger로 옮기고 공개 snapshot에는 `SessionCost` 집계만 보낸다. cost와 기존 Usage.scope는 서로 다른 수집 범위일 수 있다. native cumulative 사용량을 반복 합산하지 않는다.
+
+`Session.workingLocation`은 명시 실행 인수 관측(path/at/source), `workspace.locationSource`는 그 경로의 Git 검증 근거다. 시작 cwd/기록 branch는 바꾸지 않는다. 공통 공간 계층이 검증된 workspace를 사용하고 화면에서 도구 코드를 재해석하지 않는다. 상세 정책은 [구현 문서](../development/USAGE-AND-WORKSPACE.md).

@@ -9,7 +9,7 @@ import { noticeExposure } from '../shared/notices';
 import { Sprite } from './Sprite';
 import { sessionActivity, activityLabel, toolLabel } from '../shared/activity';
 import { bubbleNotice, noticeLabel, unreadNoticeCount, isInboxNotice } from '../shared/notices';
-import { presentSession, POSTURE_LABELS } from '../shared/presentation';
+import { presentSession, focusLevel, POSTURE_LABELS } from '../shared/presentation';
 import type { ReceiptHandler } from './News';
 import { ago } from '../lib/format';
 const colors = ['#709473', '#b18456', '#9682ae', '#658e9d', '#b27485', '#979051'];
@@ -88,19 +88,19 @@ export function Office({
     };
   }, []);
   useEffect(() => {
-    const ids = new Set(notices.map((n) => n.id));
+    const ids = new Set(notices.map((n) => `${n.id}:${n.version}`));
     if (seen.current) {
       const fresh = notices.filter(
         (n) =>
           n.kind === 'request' &&
           !n.bootstrap &&
-          !seen.current!.has(n.id) &&
+          !seen.current!.has(`${n.id}:${n.version}`) &&
           Date.now() - n.receivedAt < 30_000,
       );
       if (fresh.length && !document.hidden)
         setArrivals((old) => ({
           ...old,
-          ...Object.fromEntries(fresh.map((n) => [n.sessionId, Date.now() + 4500])),
+          ...Object.fromEntries(fresh.map((n) => [n.sessionId, Date.now() + 12_000])),
         }));
     }
     seen.current = ids;
@@ -223,12 +223,21 @@ export function Office({
                   const activity = sessionActivity(s);
                   const pose = presentSession(s, clock);
                   const arrival = members.some((id) => (arrivals[id] ?? 0) > clock);
-                  const text = bubble?.text ?? activity.text;
-                  const label = bubble ? noticeLabel(bubble) : activityLabel(s);
+                  const latestRequest = arrival
+                    ? news
+                        .filter((n) => n.kind === 'request')
+                        .sort((a, b) => b.at - a.at)
+                        .at(0)
+                    : undefined;
+                  const request = latestRequest?.dismissedAt ? undefined : latestRequest;
+                  const displayedBubble = request ?? bubble;
+                  const focus = focusLevel(s, clock);
+                  const text = displayedBubble?.text ?? activity.text;
+                  const label = displayedBubble ? noticeLabel(displayedBubble) : activityLabel(s);
                   const branch = branchInfo(s);
                   return (
                     <div
-                      className={`desk-station ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'}`}
+                      className={`desk-station ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus}`}
                       data-working={pose.working}
                       key={s.id}
                       data-station-id={s.id}
@@ -246,9 +255,21 @@ export function Office({
                         onMouseEnter={() => setHover(s.id)}
                         onMouseLeave={() => setHover(null)}
                       >
+                        {focus > 0 && (
+                          <span className="focus-aura" aria-hidden="true">
+                            <i />
+                            <i />
+                            <i />
+                          </span>
+                        )}
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {arrival && (
                           <span className="arrival-envelope">
+                            <span className="paper-stack" aria-hidden="true">
+                              <i />
+                              <i />
+                              <i />
+                            </span>
                             <Mail size={19} />
                             <b>일이 도착했어요!</b>
                           </span>
@@ -260,7 +281,12 @@ export function Office({
                         <span className="working-beacon">
                           <i />
                           <i />
-                          <i /> 작업 중
+                          <i />{' '}
+                          {focus === 2
+                            ? '몰입 중 · 15분+'
+                            : focus === 1
+                              ? '집중 중 · 5분+'
+                              : '작업 중'}
                         </span>
                       )}
                       <button
@@ -292,21 +318,24 @@ export function Office({
                           {unread > 0 && <em>소식 {unread}</em>}
                         </small>
                       </button>
-                      {(bubble ||
+                      {(displayedBubble ||
                         (!news.length &&
                           (hover === s.id ||
                             active ||
                             ['work', 'think', 'call', 'error'].includes(s.status)))) && (
                         <div
-                          className={`speech-bubble bubble-${s.status} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
+                          className={`speech-bubble bubble-${s.status} ${displayedBubble && !displayedBubble.seenAt ? 'unread' : ''} ${displayedBubble?.viewedAt || displayedBubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
                         >
                           <button
                             className="speech-open"
                             onClick={() => {
-                              if (bubble) {
+                              if (displayedBubble) {
                                 if (!privacy)
-                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                                onNews(bubble.sessionId);
+                                  onReceipt(
+                                    [{ id: displayedBubble.id, version: displayedBubble.version }],
+                                    'view',
+                                  );
+                                onNews(displayedBubble.sessionId);
                               } else onSelect(s.id);
                             }}
                             title={privacy ? '내용 숨김' : text}
@@ -314,13 +343,15 @@ export function Office({
                             <span className="speech-copy">
                               <small>
                                 {privacy ? '내용 숨김' : label}
-                                {bubble && (
-                                  <span className="bubble-exposure">{noticeExposure(bubble)}</span>
+                                {displayedBubble && (
+                                  <span className="bubble-exposure">
+                                    {noticeExposure(displayedBubble)}
+                                  </span>
                                 )}
                               </small>
                               <b>{privacy ? MOODS[s.status].label : text}</b>
                               <em>
-                                {ago(bubble?.at ?? activity.at)}
+                                {ago(displayedBubble?.at ?? activity.at)}
 
                                 {!privacy && activity.tool
                                   ? ` · ${toolLabel(activity.tool.name)}`
@@ -328,13 +359,16 @@ export function Office({
                               </em>
                             </span>
                           </button>
-                          {bubble && (
+                          {displayedBubble && (
                             <button
                               className="bubble-dismiss"
                               aria-label={`${privacy ? '동료' : sessionName(s)} 말풍선 접기`}
                               title="말풍선만 접기 · 미확인 소식은 남아요"
                               onClick={() =>
-                                onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
+                                onReceipt(
+                                  [{ id: displayedBubble.id, version: displayedBubble.version }],
+                                  'dismiss',
+                                )
                               }
                             >
                               <X size={13} />

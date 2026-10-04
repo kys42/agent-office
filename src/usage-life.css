@@ -1,0 +1,287 @@
+.usage-dock {
+  width: 370px;
+  flex: 0 0 370px;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 25px 23px;
+  background: #fbf9f5;
+  border-left: 1px solid #e4dfd7;
+  color: #514c46;
+}
+.usage-dock header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.usage-dock header small {
+  color: #929078;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.usage-dock h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  margin: 8px 0;
+}
+.usage-intro {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #81796e;
+  margin: 15px 0 20px;
+}
+.quota-card {
+  background: #fffdf9;
+  padding: 18px;
+  border: 1px solid #e4dfd7;
+  border-radius: 14px;
+  margin: 18px 0;
+}
+.quota-title,
+.quota-window > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.quota-title b {
+  font-size: 14px;
+}
+.quota-title span {
+  font-size: 10px;
+  color: #867964;
+  background: #f3ede3;
+  padding: 4px 7px;
+  border-radius: 5px;
+}
+.quota-window {
+  margin-top: 20px;
+}
+.quota-window strong {
+  color: #66816a;
+  font-size: 16px;
+}
+.quota-window span {
+  font-size: 12px;
+}
+.quota-window progress {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 8px;
+  margin: 9px 0;
+  border: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #eeeae2;
+}
+.quota-window progress::-webkit-progress-bar {
+  background: #eeeae2;
+}
+.quota-window progress::-webkit-progress-value {
+  background: #9ab596;
+  border-radius: 5px;
+}
+.quota-window progress::-moz-progress-bar {
+  background: #9ab596;
+}
+.quota-card small {
+  color: #9b9285;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.quota-card p {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #867964;
+}
+.cost-card {
+  display: grid;
+  gap: 7px;
+  padding: 19px;
+  margin: 14px 0;
+  background: linear-gradient(140deg, #f0f4e8, #faf3e8);
+  border: 1px solid #dce3cf;
+  border-radius: 12px;
+}
+.cost-card > span {
+  color: #88836d;
+  font-size: 11px;
+}
+.cost-card > strong {
+  font-size: 30px;
+  color: #657759;
+  letter-spacing: -1px;
+}
+.cost-card > b {
+  font-size: 12px;
+}
+.cost-card small,
+.cost-card p,
+.cost-card summary {
+  font-size: 11px;
+  line-height: 1.8;
+}
+.cost-card p {
+  margin: 2px 0;
+  color: #8d8373;
+}
+.cost-card summary {
+  cursor: pointer;
+}
+.cost-card a {
+  color: #627953;
+}
+.working-location code {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  padding: 10px;
+  background: #f1eee7;
+  border-radius: 6px;
+}
+.working-location p,
+.working-location small {
+  font-size: 11px;
+  line-height: 1.8;
+  color: #8d8373;
+}
+.paper-stack {
+  position: absolute;
+  width: 37px;
+  height: 32px;
+  left: -40px;
+  top: -10px;
+  animation: papers-arrive 0.65s cubic-bezier(0.18, 0.8, 0.25, 1) both;
+}
+.paper-stack i {
+  position: absolute;
+  display: block;
+  width: 29px;
+  height: 23px;
+  background: repeating-linear-gradient(#fff8db 0 5px, #c9bd94 5px 6px);
+  border: 2px solid #9d896a;
+  border-radius: 2px;
+  box-shadow: 2px 2px 0 #c5b18d;
+  transform: rotate(-8deg);
+}
+.paper-stack i:nth-child(2) {
+  left: 4px;
+  top: -5px;
+  transform: rotate(5deg);
+}
+.paper-stack i:nth-child(3) {
+  left: -2px;
+  top: -10px;
+  transform: rotate(-4deg);
+}
+.focus-aura {
+  position: absolute;
+  inset: -7px 2px 0;
+  z-index: -1;
+  filter: drop-shadow(0 0 8px #e9b26e);
+  pointer-events: none;
+}
+.focus-aura i {
+  position: absolute;
+  bottom: 8px;
+  width: 28px;
+  height: 48px;
+  left: 10px;
+  background: linear-gradient(0deg, #efa74b99, #f9d87a77, transparent);
+  border-radius: 70% 10% 50% 50%;
+  animation: focus-flame 1.5s ease-in-out infinite alternate;
+}
+.focus-aura i:nth-child(2) {
+  left: 27px;
+  height: 65px;
+  animation-delay: -0.5s;
+}
+.focus-aura i:nth-child(3) {
+  left: 45px;
+  height: 42px;
+  animation-delay: -1s;
+}
+.focus-level-2 .focus-aura {
+  filter: drop-shadow(0 0 10px #f08b5e);
+}
+.focus-level-2 .focus-aura i {
+  background: linear-gradient(0deg, #f28c6199, #ffd684aa, transparent);
+}
+.focus-level-2 .working-beacon {
+  color: #b26739;
+  background: #fff1d2;
+}
+@keyframes papers-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-55px) rotate(-20deg);
+  }
+  75% {
+    transform: translateY(4px) rotate(3deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+}
+@keyframes focus-flame {
+  from {
+    transform: scaleY(0.85) rotate(-7deg);
+    opacity: 0.6;
+  }
+  to {
+    transform: scaleY(1.08) rotate(6deg);
+    opacity: 1;
+  }
+}
+.motion-paused .paper-stack,
+.motion-paused .focus-aura i,
+.reduce-motion .paper-stack,
+.reduce-motion .focus-aura i {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .paper-stack,
+  .focus-aura i {
+    animation: none;
+  }
+}
+@media (max-width: 800px) {
+  .usage-dock {
+    width: 320px;
+    flex-basis: 320px;
+    padding: 18px;
+  }
+  .usage-button {
+    padding: 7px;
+  }
+  .usage-button span {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .usage-dock {
+    position: fixed;
+    right: 0;
+    top: 68px;
+    bottom: 28px;
+    width: min(360px, 94vw);
+    z-index: 40;
+    box-shadow: -12px 0 40px #30281720;
+  }
+}
+
+.usage-dock .button {
+  background: #e8eedf;
+  color: #52634b;
+  border: 1px solid #d3ddc7;
+}
+.usage-dock .button:disabled {
+  opacity: 0.65;
+}
+.usage-dock .icon-btn {
+  color: #817764;
+}

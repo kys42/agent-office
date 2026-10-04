@@ -1,8 +1,17 @@
+import { toolLocation, wrappedLocations } from './working-location.js';
 import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { resolveIdentity } from './identity.js';
-import type { Mood, OfficeEvent, Provider, Session, Usage } from '../../src/shared/types.js';
+import type {
+  Mood,
+  OfficeEvent,
+  Provider,
+  Session,
+  Usage,
+  UsageEntry,
+  WorkingLocation,
+} from '../../src/shared/types.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
 import { runtimeObservation, deriveState } from '../../src/shared/runtime.js';
 export { deriveState } from '../../src/shared/runtime.js';
@@ -127,6 +136,20 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   const events: OfficeEvent[] = [];
   const seen = new Map<string, number>();
   const usageByMessage = new Map<string, Usage>();
+  const usageEntries = new Map<string, UsageEntry>();
+  let workingLocation: WorkingLocation | undefined;
+  const hasNativeUsage = records.some(
+    ({ r }) => r.type === 'token_usage_record' && r.payload?.usage && r.payload?.response_id,
+  );
+  let lastCodexTotal: string | undefined;
+  const locate = (name: string, args: unknown, at: number) => {
+    const location =
+      name === 'functions.exec' ||
+      (name === 'exec' && typeof args === 'string' && args.includes('tools.exec_command'))
+        ? wrappedLocations(args, at).at(-1)
+        : toolLocation(name, args, at);
+    if (location) workingLocation = location;
+  };
   const add = (
     r: Obj,
     at: number,
@@ -198,7 +221,34 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       nativeTitle = true;
     }
     if (r.type === 'summary' && !title) title = cleanTitle(r.summary);
+    if (r.type === 'response_item' && ['function_call', 'custom_tool_call'].includes(p.type))
+      locate(String(p.name ?? ''), p.arguments ?? p.input, at);
+    if (Array.isArray(m.content))
+      for (const b of m.content)
+        if (['tool_use', 'toolCall'].includes(b.type))
+          locate(String(b.name ?? ''), b.input ?? b.arguments, at);
     if (r.type === 'token_usage_record') {
+      const sample = p.usage;
+      if (
+        p.response_id &&
+        sample &&
+        num(sample.input_tokens) !== null &&
+        num(sample.output_tokens) !== null
+      ) {
+        const cached = num(sample.cached_input_tokens) ?? 0;
+        const write = num(sample.cache_write_input_tokens) ?? 0;
+        const id = `response:${p.response_id}`;
+        usageEntries.set(id, {
+          id,
+          at,
+          model,
+          input: Math.max(0, sample.input_tokens - cached - write),
+          output: sample.output_tokens,
+          cached,
+          cacheWrite: write,
+          cacheWriteHour: 0,
+        });
+      }
       const u = p.thread_token_usage;
       if (u) {
         usage = {
@@ -216,6 +266,32 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       const t = p.type;
       if (t === 'token_count' && p.info) {
         const u = p.info.total_token_usage;
+        const last = p.info.last_token_usage;
+        const totalKey =
+          u && [u.input_tokens, u.output_tokens, u.cached_input_tokens, u.total_tokens].join(':');
+        // A native last-request sample tied to the cumulative snapshot is stable
+        // across repeated token_count notifications. Never sum cumulative totals.
+        if (
+          !hasNativeUsage &&
+          last &&
+          totalKey &&
+          totalKey !== lastCodexTotal &&
+          num(last.input_tokens) !== null &&
+          num(last.output_tokens) !== null
+        ) {
+          const cached = num(last.cached_input_tokens) ?? 0;
+          usageEntries.set(`codex:${totalKey}`, {
+            id: `codex:${totalKey}`,
+            at,
+            model,
+            input: Math.max(0, last.input_tokens - cached),
+            output: last.output_tokens,
+            cached,
+            cacheWrite: 0,
+            cacheWriteHour: 0,
+          });
+        }
+        if (totalKey) lastCodexTotal = totalKey;
         if (u)
           usage = {
             ...usage,
@@ -332,6 +408,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             scope: opt.partial ? 'sample' : 'session',
           };
           const key = String(m.id ?? r.id ?? r.uuid ?? at);
+          if (input !== null && output !== null) {
+            const hour = num(u.cache_creation?.ephemeral_1h_input_tokens) ?? 0;
+            const entry: UsageEntry = {
+              id: `message:${key}`,
+              at,
+              model,
+              input,
+              output,
+              cached: cached ?? 0,
+              cacheWrite: Math.max(0, write - hour),
+              cacheWriteHour: hour,
+            };
+            if (!usageEntries.has(entry.id) || usageEntries.get(entry.id)!.output <= output)
+              usageEntries.set(entry.id, entry);
+          }
           const prev = usageByMessage.get(key);
           if (!prev || (value.output ?? 0) >= (prev.output ?? 0)) usageByMessage.set(key, value);
         }
@@ -421,6 +512,8 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     alias: '',
     project: redact(project, 120),
     cwd,
+    workingLocation,
+    usageEntries: [...usageEntries.values()],
     branch: redact(branch) || null,
     gitCommit,
     model,
@@ -447,7 +540,9 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     events: events.slice(-180),
     artifacts,
     notes: '',
-    revision: hash(`${nativeId}:${updatedAt}:${events.length}:${action}`),
+    revision: hash(
+      `${nativeId}:${updatedAt}:${events.length}:${action}:${JSON.stringify([...usageEntries.values()])}:${JSON.stringify(workingLocation)}`,
+    ),
     completed: false,
   };
 }

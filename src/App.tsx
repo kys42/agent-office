@@ -1,5 +1,7 @@
+import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Gauge,
   Home,
   BookOpen,
   Clock3,
@@ -56,6 +58,7 @@ export default function App() {
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? demoSnapshot() : null);
   const [inbox, setInbox] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
   const [selected, setSelected] = useState<string | null>(
@@ -209,6 +212,7 @@ export default function App() {
     }
   };
   const choose = (id: string) => {
+    setShowUsage(false);
     setInbox(false);
     setShowNews(null);
     setSelected(id);
@@ -278,7 +282,7 @@ export default function App() {
     );
   return (
     <div
-      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${current || inbox ? 'has-dock' : ''}`}
+      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${current || inbox || showUsage ? 'has-dock' : ''}`}
     >
       <header className="app-header">
         <div className="brand">
@@ -311,12 +315,25 @@ export default function App() {
           className={`button inbox-button ${inbox ? 'active' : ''}`}
           aria-label="소식함 열기"
           onClick={() => {
+            setShowUsage(false);
             setInbox((v) => !v);
             setSelected(null);
           }}
         >
           <span>소식함</span>
           <b>{unreadNoticeCount(snapshot?.notices ?? [])}</b>
+        </button>
+        <button
+          className={`button usage-button ${showUsage ? 'active' : ''}`}
+          aria-label="사용량 열기"
+          onClick={() => {
+            setShowUsage((v) => !v);
+            setInbox(false);
+            setSelected(null);
+          }}
+        >
+          <Gauge size={15} />
+          <span>사용량</span>
         </button>
         <div className="header-divider" />
         <button
@@ -452,6 +469,13 @@ export default function App() {
             notify={notify}
             demo={demo}
             privacy={prefs?.privacy ?? false}
+          />
+        )}
+        {showUsage && (
+          <UsagePanel
+            demo={demo}
+            privacy={prefs?.privacy ?? false}
+            onClose={() => setShowUsage(false)}
           />
         )}
         {inbox && (

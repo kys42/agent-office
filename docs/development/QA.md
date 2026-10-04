@@ -1,3 +1,12 @@
+# 사용량·비용·실행 위치·연출 검증 · 2026-10-05
+
+- 단위/계약 109개 통과. 구독 창의 기간/미관측/복수 bucket, lazy 조회·동시 요청 결합·실패 캐시, probe handshake/timeout, streaming/partial/restart 비용 중복, native Codex 우선, literal workdir/cd·Git worktree·detached HEAD·장식 상태 검증.
+- 합성 UI 25개 시나리오 확인: 전체 실행에서 합성 24개 통과 후 기존 요청 도착 테스트의 제한 시간을 12초 연출+5초 UI tick에 맞춰 수정해 재실행 통과. 새 3개 시나리오는 quota dock/개인정보/390px, 서류·최신 요청·집중, 비용과 실제 worktree 상세를 검증. 다른 worktree가 쓰는 5173을 보존하고 독립 5181에서 실행했다.
+- 실제 연결 테스트는 별도 포트의 Origin 차단 때문에 해당 화면 부분이 실패했다. 보안 허용 목록을 느슨하게 하지 않고 production 4319에서 별도 검증: Claude/Codex/OpenClaw 연결, 실제 사용량 패널 3개 공급자/3개 한도 창, 브라우저 오류 0. 당시 관측 세션 236개 중 비용 표본 76개, 검증된 실행 위치 123개. 시간에 따라 변하는 표본 수다.
+- Claude OAuth 실제 5시간/주간, Codex 앱 bundled CLI 실제 주간 한도 읽기 성공. PATH npm launcher의 바이너리 누락 발견 후 설치 앱 CLI 우선 사용. 계정이 제공하지 않은 창은 생성하지 않음.
+- build/typecheck/formatter, Electron 3종/미니/IPC/격리, MCP 읽기 4개/검색/인수인계/stale revision 거부 통과. 독립 diff 리뷰의 streaming revision·최신 요청 선택 지적 수정 및 재리뷰에서 추가 중·고위험 이슈 없음.
+- production 4319 재시작, Tailnet HTTPS는 IP 지정+정상 TLS로 200 확인. 일반 DNS 경로는 별도 성공 주장하지 않음. 실제 캡처/로그는 .local에만 보존. 새로운 worktree는 만들지 않았고 다른 작업의 5173 서버는 보존한다.
+
 # 퇴근·보관 설정과 보조 자리 수명 · 2026-10-05
 
 - 단위/계약 101개 통과. 기간 경계·자동 보관 끄기·핀/수동 보관 우선순위·잘못된 설정 조합의 API 거부·저장 재개 검증.

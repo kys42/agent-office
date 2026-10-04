@@ -19,3 +19,9 @@ Copyright (c) 2026 Lovecast Inc. MIT License. From stablyai/orca commit ea6a6d60
 ## Agent Sessions parser policies
 
 Copyright (c) 2026 Alexander Malakhov. MIT License. Claude nested subagent path/sidecar detection and title precedence are adapted from `AgentSessions/Services/ClaudeSessionParser.swift`, commit b7893c772b0014918211f1c45a5ab58add229703. The port is in `server/adapters/identity.ts`, `claude.ts`, and `normalize.ts`. Upstream copies and the full license are preserved in `vendor/agent-sessions/`; the license ships in `public/licenses/agent-sessions-LICENSE.txt`. Swift application code is not bundled.
+
+## Acorn and usage-reference research
+
+Acorn parses literal JavaScript call syntax without executing transcript content. MIT License, Copyright (C) 2012-2022 by various contributors. The complete license ships in `public/licenses/acorn-LICENSE.txt`; `package-lock.json` pins the version.
+
+The quota service is an independent TypeScript implementation informed by Orca's `claude-oauth-usage-request.ts` / `codex-rpc-rate-limit-probe.ts` (same pinned commit above), and Agent Sessions' OAuth credential resolver / Codex CLI probe (same pinned commit above). No additional upstream runtime module is copied. Provenance and limits: `docs/development/USAGE-AND-WORKSPACE.md`.

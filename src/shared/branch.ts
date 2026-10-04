@@ -2,6 +2,34 @@ import type { Session } from './types';
 
 /** Keep session history separate from what is currently checked out on disk. */
 export function branchInfo(s: Session) {
+  if (
+    s.workspace?.locationSource &&
+    s.workspace.worktree &&
+    s.workspace.evidence === 'git-common-dir' &&
+    s.workspace.locationSource.path !== s.cwd
+  ) {
+    const current = s.workspace.git;
+    if (current?.branch)
+      return {
+        label: `${current.branch} · 작업`,
+        detail: '최근 도구 실행 위치에서 확인한 현재 브랜치 · 시작 기록과 별도예요.',
+        key: `current:${current.branch}`,
+        kind: 'current',
+      };
+    if (current?.state === 'detached')
+      return {
+        label: `HEAD · ${current.commit?.slice(0, 7) || '분리됨'} · 작업`,
+        detail: '최근 실행 worktree는 특정 커밋을 바라봐요. 시작 브랜치와 별도예요.',
+        key: current.commit ? `current-commit:${current.commit}` : null,
+        kind: 'detached',
+      };
+    return {
+      label: '작업 브랜치 미확인',
+      detail: '최근 실행 위치의 Git 브랜치를 확인할 수 없어요.',
+      key: null,
+      kind: 'unknown',
+    };
+  }
   if (s.branch)
     return {
       label: s.branch,

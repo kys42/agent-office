@@ -121,3 +121,8 @@ OpenClaw의 `session_nodes` optional 열은 PRAGMA로 확인한다. `created_via
 ### 현재 작업 경계 보존
 
 office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정제된 공통 이벤트에서 요청/명시적 턴 시작을 찾는 자체 `shared/lifecycle.ts`를 사용한다. 본문·소스명을 UI에서 다시 분석하지 않는다. 어댑터의 events 180개 절단과 store snapshot의 4개 절단 전에 경계를 추출하고, partial tail 재수집에서 이미 관측한 경계가 사라져 보조가 재등장하지 않도록 저장한다. 전체 native history가 제공되지 않으면 경계를 추측하지 않고 일반 대기 정책으로 제한한다. fixture는 `tests/lifecycle-settings.test.ts`와 `tests/residents.test.ts`다.
+
+
+### office-v10 · 사용 표본과 실행 경로
+
+새 optional UsageEntry/WorkingLocation을 채우기 위해 JSONL/OpenClaw SQLite 캐시 버전을 올렸다. native Codex response 사용량을 token_count보다 우선하고, 메시지별 streaming 비용과 별도 ledger를 추가했다. 실제 shell workdir/cwd와 literal cd는 어댑터에서 읽고 Codex wrapper는 Acorn 구문만 분석한다. 값에 따라 실행하거나 UI에서 원본을 재분석하지 않는다. [사용량·실행 위치와 레퍼런스 근거](USAGE-AND-WORKSPACE.md).
