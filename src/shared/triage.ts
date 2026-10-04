@@ -55,9 +55,14 @@ export const durationShort = (ms: number) => {
  * What arrived while the person was away. Bootstrap notices (first collection) are history,
  * not news, so they never appear here.
  */
-export function awayDigest(notices: OfficeNotice[], since: number) {
+export function awayDigest(notices: OfficeNotice[], since: number, until = Infinity) {
   const fresh = notices.filter(
-    (n) => !n.bootstrap && !n.seenAt && n.receivedAt > since && isInboxNotice(n),
+    (n) =>
+      !n.bootstrap &&
+      !n.seenAt &&
+      n.receivedAt > since &&
+      n.receivedAt <= until &&
+      isInboxNotice(n),
   );
   const attention = fresh.filter(isAttentionNotice);
   return {

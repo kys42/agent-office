@@ -36,6 +36,7 @@ export function Inspector({
   session,
   sessions,
   notices,
+  memberIds,
   onReceipt,
   onSelect,
   showNews,
@@ -49,6 +50,8 @@ export function Inspector({
   session: Session;
   sessions: Session[];
   notices: OfficeNotice[];
+  /** All runs of the colleague in the room, so the now card matches the roster. */
+  memberIds?: string[];
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
   showNews?: string | null;
@@ -183,7 +186,9 @@ export function Inspector({
     ? sessions.filter((x) => x.actor?.id === s.actor!.id).sort((a, b) => b.updatedAt - a.updatedAt)
     : [];
   const news = notices.filter((n) => n.sessionId === s.id);
-  const state = nowState(s, news);
+  const members = new Set(memberIds ?? [s.id]);
+  const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
+  const state = nowState(s, colleagueNews);
   const resumeLabel = s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 명령 복사';
   const resume = async () => {
     try {
@@ -317,8 +322,9 @@ export function Inspector({
         )}
         <div className="inspector-now">
           <NowCard
+            key={s.id}
             session={s}
-            notices={news}
+            notices={colleagueNews}
             privacy={privacy}
             onReceipt={onReceipt}
             onResume={resume}

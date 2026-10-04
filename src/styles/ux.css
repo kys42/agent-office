@@ -8,7 +8,7 @@
   justify-content: space-between;
   gap: 8px;
 }
-.panel-tabs [role='tablist'] {
+.panel-tabs .panel-switch {
   display: inline-flex;
   padding: 3px;
   gap: 2px;
@@ -16,7 +16,7 @@
   background: var(--bg-2);
   border: 1px solid var(--line);
 }
-.panel-tabs [role='tab'] {
+.panel-tabs .panel-switch button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -27,15 +27,15 @@
   font-weight: 560;
   color: var(--text-3);
 }
-.panel-tabs [role='tab']:hover {
+.panel-tabs .panel-switch button:hover {
   color: var(--text-2);
 }
-.panel-tabs [role='tab'][aria-selected='true'] {
+.panel-tabs .panel-switch button[aria-pressed='true'] {
   color: var(--text);
   background: var(--bg-4);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
-.panel-tabs [role='tab'] b {
+.panel-tabs .panel-switch button b {
   min-width: 18px;
   padding: 0 5px;
   border-radius: 5px;

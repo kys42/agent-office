@@ -91,9 +91,9 @@ test('Keyboard triage walks the to-do order and marks results read', async ({ pa
 
 test('Panel tabs switch colleagues and news in one click', async ({ page }) => {
   await page.goto('/?demo');
-  await page.getByRole('tab', { name: /소식/ }).first().click();
+  await page.locator('.panel-tabs').getByRole('button', { name: /^소식/ }).click();
   await expect(page.getByRole('complementary', { name: '소식함' })).toBeVisible();
-  await page.getByRole('tab', { name: '동료' }).click();
+  await page.locator('.panel-tabs').getByRole('button', { name: '동료', exact: true }).click();
   await expect(page.getByRole('complementary', { name: '동료 목록' })).toBeVisible();
 });
 
@@ -159,4 +159,42 @@ test('Coming back summarises only what arrived while away', async ({ page }) => 
   await banner.getByRole('button', { name: '바로 보기' }).click();
   await expect(page.locator('.inspector-heading h2')).toHaveText('집사');
   await expect(banner).toBeHidden();
+});
+
+test('Single-key shortcuts use physical keys, so they work with the Korean input source', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  await expect(page.locator('.office-pet')).toHaveCount(6);
+  await page.evaluate(() =>
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㅓ', code: 'KeyJ', bubbles: true })),
+  );
+  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  // Esc inside a field leaves the field first instead of closing the card.
+  await page.getByLabel('업무 메모').count();
+  await page.getByRole('tab', { name: '기억 메모' }).click();
+  await page.getByLabel('업무 메모').focus();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toHaveCount(0);
+});
+
+test('A zone shortcut is applied once and not replayed after visiting other pages', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  await expect(page.locator('.office-pet')).toHaveCount(6);
+  await page.keyboard.press('2');
+  await expect(page.getByRole('tab', { name: /대기 라운지/ })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.getByRole('tab', { name: /사무실/ }).click();
+  await page.getByRole('button', { name: '기억 서랍', exact: true }).click();
+  await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /사무실/ }).first()).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 });

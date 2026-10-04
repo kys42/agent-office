@@ -62,7 +62,10 @@ export function CommandPalette({
   const q = norm(query);
   useEffect(() => {
     setHits([]);
-    if (q.length < 2 || privacy) return;
+    if (q.length < 2 || privacy) {
+      setLoading(false);
+      return;
+    }
     let live = true;
     setLoading(true);
     const t = setTimeout(async () => {

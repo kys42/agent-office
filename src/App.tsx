@@ -42,7 +42,7 @@ import { Memory } from './components/Memory';
 import { Settings } from './components/Settings';
 import { MiniOffice } from './components/MiniOffice';
 import { NewsInbox } from './components/News';
-import { applyNoticeReceipt, unreadNoticeCount } from './shared/notices';
+import { applyNoticeReceipt, isAttentionNotice, unreadNoticeCount } from './shared/notices';
 import type { NoticeReceipt, OfficeZone } from './shared/types';
 import { CommandPalette, type PaletteAction } from './components/CommandPalette';
 import { Modal } from './components/Modal';
@@ -125,6 +125,7 @@ export default function App() {
   const [memoryQuery, setMemoryQuery] = useState('');
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
   const openSearch = () => setPalette(true);
+  const closeHelp = useCallback(() => setHelp(false), []);
   const goZone = (zone: OfficeZone) => {
     setView('office');
     setZoneRequest({ zone, at: Date.now() });
@@ -176,9 +177,32 @@ export default function App() {
   useEffect(() => {
     document.title = unread ? `(${unread}) Agent Office` : 'Agent Office · 우리 사무실';
   }, [unread]);
-  const digest = away ? awayDigest(notices, away.from) : null;
+  // Snapshots poll every 5s, so allow a short grace after returning; later news is not "away".
+  const digest = away ? awayDigest(notices, away.from, away.back + 15_000) : null;
+  const digestEmpty = !digest || digest.results + digest.attention === 0;
+  useEffect(() => {
+    if (!away || !digestEmpty) return;
+    const t = setTimeout(() => setAway(null), Math.max(0, away.back + 15_000 - Date.now()));
+    return () => clearTimeout(t);
+  }, [away, digestEmpty]);
+  const residents = officeResidents(sessions).sessions;
+  const ownerOf = (id: string | null) =>
+    id ? residents.find((r) => r.id === id || r.resident?.sessionIds.includes(id)) : undefined;
+  // Same in-group order as the roster: pinned first, then the saved sort preference.
+  const rosterSort = (() => {
+    try {
+      return JSON.parse(localStorage.getItem(`office:view:${demo ? 'demo' : 'live'}`) || '{}').sort;
+    } catch {
+      return 'recent';
+    }
+  })();
   const queue = triage(
-    [...ordered].sort((a, b) => b.updatedAt - a.updatedAt),
+    [...ordered].sort(
+      (a, b) =>
+        Number(b.pinned) - Number(a.pinned) ||
+        (rosterSort === 'frequent' ? (b.openCount || 0) - (a.openCount || 0) : 0) ||
+        b.updatedAt - a.updatedAt,
+    ),
     notices,
   ).flatMap((g) => g.sessions);
   const openInbox = () => {
@@ -306,9 +330,16 @@ export default function App() {
     });
   };
   const markRead = (id: string) => {
-    const s = sessions.find((x) => x.id === id);
-    const list = s ? unreadInbox(s, notices) : [];
-    if (!list.length) return notify('이 동료에게 읽지 않은 소식이 없어요');
+    const s = ownerOf(id);
+    const all = s ? unreadInbox(s, notices) : [];
+    // Questions stay until explicitly acknowledged ('확인했어요'); R only reads results.
+    const list = all.filter((n) => !isAttentionNotice(n));
+    if (!list.length)
+      return notify(
+        all.length
+          ? '확인 요청은 업무 카드의 ‘확인했어요’로 처리해 주세요'
+          : '이 동료에게 읽지 않은 결과가 없어요',
+      );
     void onReceipt(
       list.map(({ id, version }) => ({ id, version })),
       'read',
@@ -338,38 +369,47 @@ export default function App() {
     choose(ids[(next + ids.length) % ids.length]);
   };
   keyHandler.current = (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    if (mini || !snapshot || e.isComposing) return;
+    if ((e.metaKey || e.ctrlKey) && e.code === 'KeyK') {
       e.preventDefault();
       setPalette((v) => !v);
       return;
     }
+    const field =
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>('input, textarea, select, [contenteditable="true"]')
+        : null;
     if (e.key === 'Escape') {
-      setSelected(null);
-      setInbox(false);
+      // In a field, Esc leaves the field first; the panels close on the next press.
+      if (field) field.blur();
+      else {
+        setSelected(null);
+        setInbox(false);
+      }
       return;
     }
-    const target = e.target as HTMLElement | null;
-    const typing =
-      target?.closest('input, textarea, select, [contenteditable="true"]') ||
-      document.querySelector('[role="dialog"]');
-    if (typing || e.metaKey || e.ctrlKey || e.altKey || !snapshot || mini) return;
-    const key = e.key.toLowerCase();
+    if (field || document.querySelector('[role="dialog"]') || e.metaKey || e.ctrlKey || e.altKey)
+      return;
+    // Physical keys, so shortcuts also work while the Korean input source is active (J → ㅓ).
     const run = (fn: () => void) => {
       e.preventDefault();
       fn();
     };
-    if (e.key === '/') run(() => setPalette(true));
-    else if (e.key === '?') run(() => setHelp(true));
-    else if (key === 'j') run(() => step(1));
-    else if (key === 'k') run(() => step(-1));
-    else if (key === 'i') run(() => (inbox ? setInbox(false) : openInbox()));
-    else if (key === 'r' && selected) run(() => markRead(selected));
-    else if (view === 'office' && key === 'f') run(() => officeCommand('fit'));
-    else if (view === 'office' && (e.key === '+' || e.key === '='))
+    const code = e.code;
+    // Punctuation keeps its character under the Korean layout; letters do not.
+    if (e.key === '?' || (code === 'Slash' && e.shiftKey)) run(() => setHelp(true));
+    else if (e.key === '/' || code === 'Slash') run(() => setPalette(true));
+    else if (code === 'KeyJ') run(() => step(1));
+    else if (code === 'KeyK') run(() => step(-1));
+    else if (code === 'KeyI') run(() => (inbox ? setInbox(false) : openInbox()));
+    else if (code === 'KeyR' && selected) run(() => markRead(selected));
+    else if (view === 'office' && code === 'KeyF') run(() => officeCommand('fit'));
+    else if (view === 'office' && (code === 'Equal' || code === 'NumpadAdd'))
       run(() => officeCommand('zoom-in'));
-    else if (view === 'office' && e.key === '-') run(() => officeCommand('zoom-out'));
-    else if (['1', '2', '3'].includes(e.key))
-      run(() => goZone((['office', 'waiting', 'archive'] as const)[Number(e.key) - 1]));
+    else if (view === 'office' && (code === 'Minus' || code === 'NumpadSubtract'))
+      run(() => officeCommand('zoom-out'));
+    else if (['Digit1', 'Digit2', 'Digit3'].includes(code))
+      run(() => goZone((['office', 'waiting', 'archive'] as const)[Number(code.slice(-1)) - 1]));
   };
   const actions: PaletteAction[] = [
     {
@@ -651,6 +691,7 @@ export default function App() {
               unread={unread}
               onInbox={openInbox}
               zoneRequest={zoneRequest}
+              onZoneHandled={() => setZoneRequest(null)}
             />
           ) : view === 'memory' ? (
             <Memory
@@ -672,6 +713,7 @@ export default function App() {
             session={current}
             sessions={sessions}
             notices={snapshot?.notices ?? []}
+            memberIds={ownerOf(current.id)?.resident?.sessionIds ?? [current.id]}
             onReceipt={onReceipt}
             onSelect={choose}
             showNews={showNews}
@@ -756,7 +798,7 @@ export default function App() {
         />
       )}
       {help && (
-        <Modal title="키보드 단축키" onClose={() => setHelp(false)}>
+        <Modal title="키보드 단축키" onClose={closeHelp}>
           <div className="shortcut-grid">
             {[
               ['찾기', [['⌘', 'K'], ['/']], '동료·기록·명령을 한곳에서'],

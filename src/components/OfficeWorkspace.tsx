@@ -47,6 +47,7 @@ export function OfficeWorkspace({
   unread,
   onInbox,
   zoneRequest,
+  onZoneHandled,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -61,6 +62,7 @@ export function OfficeWorkspace({
   unread: number;
   onInbox: () => void;
   zoneRequest?: { zone: OfficeZone; at: number } | null;
+  onZoneHandled?: () => void;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -81,7 +83,9 @@ export function OfficeWorkspace({
   const [listHover, setListHover] = useState<string | null>(null);
   const [deskHover, setDeskHover] = useState<string | null>(null);
   useEffect(() => {
-    if (zoneRequest) setZone(zoneRequest.zone);
+    if (!zoneRequest) return;
+    setZone(zoneRequest.zone);
+    onZoneHandled?.();
   }, [zoneRequest]);
   const zones = useMemo(
     () =>

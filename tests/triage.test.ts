@@ -113,3 +113,11 @@ test('away digest only counts new unread inbox notices after leaving, never boot
     },
   );
 });
+
+test('away digest is frozen at the moment of return; later news is not "while away"', () => {
+  const from = now - 10 * 60_000;
+  const back = now - 60 * 60_000 + 11 * 60_000;
+  const later = notice('late', { receivedAt: back + 60 * 60_000 });
+  assert.equal(awayDigest([later], from - 60 * 60_000, back).results, 0);
+  assert.equal(awayDigest([later], from - 60 * 60_000).results, 1);
+});

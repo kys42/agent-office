@@ -16,18 +16,16 @@ export function PanelTabs({
 }) {
   return (
     <div className="panel-tabs">
-      <div role="tablist" aria-label="오른쪽 패널">
+      <div className="panel-switch" role="group" aria-label="오른쪽 패널 보기">
         <button
-          role="tab"
-          aria-selected={active === 'roster'}
+          aria-pressed={active === 'roster'}
           onClick={active === 'roster' ? undefined : onRoster}
         >
           <Users size={14} />
           동료
         </button>
         <button
-          role="tab"
-          aria-selected={active === 'inbox'}
+          aria-pressed={active === 'inbox'}
           onClick={active === 'inbox' ? undefined : onInbox}
         >
           <Inbox size={14} />

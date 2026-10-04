@@ -12,6 +12,9 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Keep the latest handler without re-running focus setup on every parent render.
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const el = ref.current!;
@@ -19,7 +22,7 @@ export function Modal({
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        close.current();
       }
       if (e.key === 'Tab') {
         const focusable = [
@@ -43,7 +46,7 @@ export function Modal({
       el.removeEventListener('keydown', key);
       previous?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div
       className="modal-backdrop"
