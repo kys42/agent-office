@@ -24,6 +24,16 @@ const patchSchema = z
     completed: z.boolean().optional(),
   })
   .strict();
+const zoneRuleSchema = z
+  .object({
+    id: z.string().min(1).max(60),
+    name: z.string().trim().min(1).max(40),
+    match: z.enum(['session', 'worktree', 'path', 'branch']),
+    value: z.string().trim().min(1).max(1000),
+    repo: z.string().max(1000).optional(),
+    target: z.string().max(1100).optional(),
+  })
+  .strict();
 const prefsSchema = z
   .object({
     paused: z.boolean().optional(),
@@ -36,6 +46,7 @@ const prefsSchema = z
     autoArchive: z.boolean().optional(),
     archiveDays: z.number().int().min(1).max(365).optional(),
     bubbleHours: z.number().int().min(1).max(24).optional(),
+    zoneRules: z.array(zoneRuleSchema).max(200).optional(),
   })
   .strict();
 export class OfficeService extends EventEmitter {

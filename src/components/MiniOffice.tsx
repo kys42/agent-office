@@ -1,4 +1,5 @@
 import { Expand, GripHorizontal, X, EyeOff } from 'lucide-react';
+import { zoneLabel } from '../shared/zones';
 import type { Session, OfficeNotice } from '../shared/types';
 import { MOODS } from '../shared/types';
 import { Sprite } from './Sprite';
@@ -72,7 +73,7 @@ export function MiniOffice({
             <b title={privacy ? undefined : sessionName(s)}>
               {privacy ? s.provider : sessionName(s)}
             </b>
-            <small className="mini-project">{privacy ? '프로젝트' : s.project}</small>
+            <small className="mini-project">{privacy ? '프로젝트' : zoneLabel(s)}</small>
           </button>
         ))}
         {sessions.length === 0 && (

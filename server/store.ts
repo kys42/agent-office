@@ -18,6 +18,7 @@ import { deriveState } from '../src/shared/runtime.js';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
+import { applyZone } from '../src/shared/zones.js';
 export const defaultDataDir = () =>
   process.env.AGENT_OFFICE_DATA_DIR ??
   path.join(os.homedir(), 'Library', 'Application Support', 'Agent Office');
@@ -265,7 +266,7 @@ export class OfficeStore {
       prefs.standbyHours,
     );
     return {
-      ...session,
+      ...applyZone(session, prefs.zoneRules),
       status: state.status,
       statusReason: state.reason ?? s.statusReason,
       statusEvidence: state.reason ? 'derived' : s.statusEvidence,

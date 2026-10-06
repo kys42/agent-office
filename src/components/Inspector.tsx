@@ -17,8 +17,9 @@ import {
   FileText,
   Download,
   Terminal,
+  LayoutGrid,
 } from 'lucide-react';
-import type { Session, SessionPatch, Handoff, OfficeNotice } from '../shared/types';
+import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -32,6 +33,8 @@ import { NowCard, nowState } from './NowCard';
 import { unreadNoticeCount } from '../shared/notices';
 import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
+import { zoneLabel } from '../shared/zones';
+import { ZoneEditor } from './ZoneEditor';
 export function Inspector({
   session,
   sessions,
@@ -46,6 +49,8 @@ export function Inspector({
   notify,
   demo,
   privacy,
+  zoneRules,
+  onZoneRules,
 }: {
   session: Session;
   sessions: Session[];
@@ -61,6 +66,8 @@ export function Inspector({
   notify: (s: string) => void;
   demo: boolean;
   privacy: boolean;
+  zoneRules?: ZoneRule[];
+  onZoneRules?: (rules: ZoneRule[]) => Promise<void>;
 }) {
   const [s, setS] = useState(session);
   const panelRef = useRef<HTMLElement>(null);
@@ -84,6 +91,7 @@ export function Inspector({
   }, [tab, session.id]);
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
+  const [zoneOpen, setZoneOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
   const [notesDirty, setNotesDirty] = useState(false);
   const [packet, setPacket] = useState<Handoff | null>(null);
@@ -126,6 +134,8 @@ export function Inspector({
     session.pinned,
     session.archived,
     session.completed,
+    session.area?.ruleId,
+    session.area?.name,
     demo,
   ]);
   useEffect(() => {
@@ -133,6 +143,7 @@ export function Inspector({
     setNotes(session.notes);
     setNotesDirty(false);
     setEditing(false);
+    setZoneOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
@@ -272,7 +283,20 @@ export function Inspector({
             )}
             <p className="inspector-project">
               <Folder size={12} />
-              <span>{privacy ? '프로젝트 숨김' : s.project}</span>
+              <span>
+                {privacy ? '프로젝트 숨김' : s.area ? `${s.area.name} · ${s.project}` : s.project}
+              </span>
+              {!privacy && onZoneRules && (
+                <button
+                  className={`zone-trigger ${zoneOpen ? 'active' : ''}`}
+                  aria-expanded={zoneOpen}
+                  title="이 동료를 직접 나눈 사무실 구역으로 보내요"
+                  onClick={() => setZoneOpen((v) => !v)}
+                >
+                  <LayoutGrid size={11} />
+                  구역
+                </button>
+              )}
               {s.alias && !privacy && <span title={s.title}>원래 이름 · {s.title}</span>}
             </p>
             <div className="status-line">
@@ -287,6 +311,16 @@ export function Inspector({
             </div>
           </div>
         </div>
+        {zoneOpen && !privacy && onZoneRules && (
+          <ZoneEditor
+            key={s.id}
+            session={s}
+            sessions={sessions}
+            rules={zoneRules ?? []}
+            onRules={onZoneRules}
+            onClose={() => setZoneOpen(false)}
+          />
+        )}
         {!privacy && (
           <div className="relation-strip">
             <span title={branchInfo(s).detail}>
@@ -413,6 +447,15 @@ export function Inspector({
                       프로젝트
                     </dt>
                     <dd>{s.project}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <LayoutGrid size={14} />
+                      구역
+                    </dt>
+                    <dd>
+                      {s.area ? `${zoneLabel(s)} · 직접 나눔` : `${s.project} · 프로젝트 기준`}
+                    </dd>
                   </div>
                   <div>
                     <dt>

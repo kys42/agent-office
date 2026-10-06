@@ -2025,3 +2025,48 @@
     flex: none;
   }
 }
+
+/* A user-made area wears a dashed outline on its number tag. */
+.project-floor-mark.custom-area > span {
+  outline: 1px dashed #f6e6cc;
+  outline-offset: 1px;
+}
+
+/* Moving a colleague between zones */
+.office-pet[draggable='true'] {
+  cursor: grab;
+}
+.is-dragging .office-pet[draggable='true'] {
+  cursor: grabbing;
+}
+.is-dragging .speech-bubble {
+  pointer-events: none;
+  opacity: 0.35;
+}
+.project-area.drop-target {
+  outline: 3px dashed var(--accent);
+  outline-offset: 4px;
+  background-color: rgba(244, 184, 108, 0.14);
+}
+.project-area.drop-home {
+  outline: 2px dashed rgba(246, 230, 204, 0.4);
+  outline-offset: 4px;
+}
+.office-map.drop-new {
+  outline: 3px dashed rgba(246, 230, 204, 0.55);
+  outline-offset: -10px;
+}
+.stage-hud.drag-hint {
+  top: 12px;
+  bottom: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: rgba(17, 18, 22, 0.86);
+  border: 1px solid var(--accent-line);
+  color: var(--accent-2);
+  font-size: 12px;
+  pointer-events: none;
+}

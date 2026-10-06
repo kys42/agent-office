@@ -4,8 +4,10 @@ import { branchInfo } from './branch';
 export const sessionName = (s: Session) =>
   (s.resident?.name || s.alias || s.title || '이름 없는 세션').replace(/\s+/g, ' ').trim();
 export const seatKey = (s: Session) => (s.actor ? `actor:${s.actor.id}` : s.id);
-export const projectKey = (s: Session) =>
+/** The zone a session's own workspace evidence gives it, before any user rule. */
+export const nativeProjectKey = (s: Session) =>
   (s.workspace?.evidence !== 'unknown' && s.workspace?.key) || s.cwd || `unknown:${s.id}`;
+export const projectKey = (s: Session) => s.area?.key ?? nativeProjectKey(s);
 // A shared bench needs a branch/commit and worktree identity. Project zones do not.
 export const benchKey = (s: Session) => {
   const branch = branchInfo(s);
