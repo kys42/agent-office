@@ -183,11 +183,19 @@ export function Inspector({
     };
   }, [locatable, session.id, session.updatedAt, terminalCheck]);
   const live = locatable && terminal?.id === session.id ? terminal.target : null;
-  // Finishing a turn does not always add a record line, so look again while it works.
+  // Finishing a turn does not always add a record line, so look again while it works —
+  // only while the card is on screen; a hidden window resumes on its next visibility change.
   useEffect(() => {
     if (!live || live.canSend) return;
-    const timer = setTimeout(() => setTerminalCheck((n) => n + 1), 4000);
-    return () => clearTimeout(timer);
+    const check = () => {
+      if (!document.hidden) setTerminalCheck((n) => n + 1);
+    };
+    const timer = setTimeout(check, 4000);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', check);
+    };
   }, [live]);
   const closePacket = useCallback(() => setPacket(null), []);
   const patch = async (p: SessionPatch) => {
@@ -417,9 +425,15 @@ export function Inspector({
               enabled={terminalSend}
               privacy={privacy}
               onSend={async (text) => {
-                notify(await api.send!(s.id, text));
+                const id = s.id;
+                notify(await api.send!(id, text));
                 // The turn is starting; show it as working until the terminal reports idle again.
-                setTerminal({ id: s.id, target: { ...live, status: 'busy', canSend: false } });
+                // Only for the same colleague: the card may have switched while sending.
+                setTerminal((t) =>
+                  t?.id === id && t.target
+                    ? { id, target: { ...t.target, status: 'busy', canSend: false } }
+                    : t,
+                );
               }}
             />
           )}

@@ -32,6 +32,7 @@ const api: OfficeAPI = {
   terminal: (id) => action('office:terminal', id),
   jump: (id) => action('office:jump', id),
   send: (id, text) => action('office:send', id, text),
+  terminalSend: (enable) => action('office:terminal-send', enable),
   exportFile: (name, content) => ipcRenderer.invoke('office:export', name, content),
   onSelect: (cb) => {
     const f = (_: unknown, id: string) => cb(id);

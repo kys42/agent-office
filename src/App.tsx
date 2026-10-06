@@ -233,6 +233,21 @@ export default function App() {
       setRefreshing(false);
     }
   };
+  // Desktop-only opt-in, kept outside the shared preferences (see office:terminal-send).
+  const [terminalSend, setTerminalSend] = useState(false);
+  useEffect(() => {
+    api
+      .terminalSend?.()
+      .then(setTerminalSend)
+      .catch(() => setTerminalSend(false));
+  }, []);
+  const toggleTerminalSend = async () => {
+    try {
+      setTerminalSend(await api.terminalSend!(!terminalSend));
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const onPrefs = async (p: Partial<Preferences>) => {
     if (demo) {
       setSnapshot((s) =>
@@ -730,7 +745,14 @@ export default function App() {
               privacy={prefs?.privacy ?? false}
             />
           ) : view === 'settings' ? (
-            <Settings snapshot={snapshot} onPrefs={onPrefs} onRefresh={refresh} notify={notify} />
+            <Settings
+              snapshot={snapshot}
+              onPrefs={onPrefs}
+              onRefresh={refresh}
+              notify={notify}
+              terminalSend={api.terminalSend && !demo ? terminalSend : undefined}
+              onTerminalSend={toggleTerminalSend}
+            />
           ) : (
             <Activity sessions={sessions} onSelect={choose} privacy={prefs?.privacy ?? false} />
           )}
@@ -752,7 +774,7 @@ export default function App() {
             privacy={prefs?.privacy ?? false}
             zoneRules={prefs?.zoneRules ?? []}
             onZoneRules={saveZoneRules}
-            terminalSend={prefs?.terminalSend ?? false}
+            terminalSend={terminalSend && !demo}
           />
         )}
         {showUsage && (

@@ -46,11 +46,16 @@ export function Settings({
   onPrefs,
   onRefresh,
   notify,
+  terminalSend,
+  onTerminalSend,
 }: {
   snapshot: Snapshot;
   onPrefs: (p: Partial<Preferences>) => void;
   onRefresh: () => void;
   notify: (s: string) => void;
+  /** Desktop only; undefined hides the setting (web preview, demo). */
+  terminalSend?: boolean;
+  onTerminalSend?: () => void;
 }) {
   const p = snapshot.preferences;
   const projects = [
@@ -250,22 +255,21 @@ export function Settings({
                 onChange={() => onPrefs({ privacy: !p.privacy })}
               />
             </div>
-            <div className="setting-row">
-              <Terminal size={18} />
-              <div>
-                <b>터미널로 보내기</b>
-                <p>
-                  Orca·tmux에서 쉬고 있는 Claude Code 세션에 업무 카드에서 바로 이어서 말해요. 그
-                  터미널에 직접 친 것과 같아서, 권한 확인 없이 띄운 세션이면 그대로 실행돼요.
-                  데스크탑 앱에서만 동작해요.
-                </p>
+            {terminalSend !== undefined && onTerminalSend && (
+              <div className="setting-row">
+                <Terminal size={18} />
+                <div>
+                  <b>터미널로 보내기</b>
+                  <p>
+                    Orca·tmux에서 쉬고 있는 Claude Code 세션에 업무 카드에서 바로 이어서 말해요. 그
+                    터미널에 직접 친 것과 같아서, 권한 확인 없이 띄운 세션이면 그대로 실행돼요.
+                    입력창에 써 둔 초안이 있으면 그 뒤에 이어 붙어요. 이 데스크탑 앱에서만 켤 수
+                    있어요.
+                  </p>
+                </div>
+                <Toggle checked={terminalSend} label="터미널로 보내기" onChange={onTerminalSend} />
               </div>
-              <Toggle
-                checked={p.terminalSend === true}
-                label="터미널로 보내기"
-                onChange={() => onPrefs({ terminalSend: !p.terminalSend })}
-              />
-            </div>
+            )}
           </section>
           <section className="settings-section">
             <h2>도구마다 불러올 최근 기록</h2>

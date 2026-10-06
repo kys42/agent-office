@@ -261,8 +261,6 @@ export interface Preferences {
   autoArchive?: boolean;
   bubbleHours?: number;
   zoneRules?: ZoneRule[];
-  /** Opt-in: type follow-ups into a live Orca/tmux terminal from the desktop app. */
-  terminalSend?: boolean;
 }
 export interface Snapshot {
   sessions: Session[];
@@ -324,6 +322,11 @@ export interface OfficeAPI {
   jump?: (id: string) => Promise<JumpResult>;
   /** Desktop only, opt-in: type text into the live terminal of an idle session. */
   send?: (id: string, text: string) => Promise<string>;
+  /**
+   * Desktop only: read, or change, the opt-in for `send`. Kept in the desktop profile, outside
+   * the preferences shared with the web preview; turning it on asks for native confirmation.
+   */
+  terminalSend?: (enable?: boolean) => Promise<boolean>;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
 }

@@ -35,7 +35,6 @@ export const DEFAULT_PREFS: Preferences = {
   archiveDays: 7,
   autoArchive: true,
   bubbleHours: 3,
-  terminalSend: false,
 };
 export class OfficeStore {
   db: DatabaseSync;

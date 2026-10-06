@@ -10,9 +10,9 @@ import {
   dialog,
 } from 'electron';
 import path from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
-import type { JumpResult, Session, Snapshot } from '../src/shared/types.js';
+import type { JumpResult, Provider, Session } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import {
   focusTerminal,
@@ -27,8 +27,7 @@ let main: BrowserWindow | null = null,
   mini: BrowserWindow | null = null,
   tray: Tray | null = null,
   bridge: ServiceBridge,
-  quitting = false,
-  terminalSend: boolean | undefined;
+  quitting = false;
 const root = path.join(__dirname, '..');
 const index = path.join(root, 'dist', 'index.html');
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -36,8 +35,7 @@ else {
   app.on('second-instance', () => showMain());
   app.whenReady().then(() => {
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
-    bridge.on('snapshot', (s: Snapshot) => {
-      terminalSend = s.preferences?.terminalSend === true;
+    bridge.on('snapshot', (s) => {
       for (const w of [main, mini])
         if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
     });
@@ -188,41 +186,71 @@ function setupIPC() {
     return (await resume(await bridge.call('detail', [id]))).text;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
+  const identities = new Map<string, { provider: Provider; nativeId: string }>();
   const live = async (id: unknown, fresh = false) => {
-    const s: Session = await bridge.call('detail', [id]);
-    return {
-      s,
-      terminal: s.provider === 'claude' ? await locateTerminal(s.nativeId, { fresh }) : null,
-    };
+    let known = typeof id === 'string' ? identities.get(id) : undefined;
+    if (!known) {
+      const s: Session = await bridge.call('detail', [id]);
+      known = { provider: s.provider, nativeId: s.nativeId };
+      identities.set(s.id, known);
+      if (identities.size > 500) identities.delete(identities.keys().next().value!);
+    }
+    return known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
   };
   ipcMain.handle('office:terminal', async (e, id) => {
     trusted(e);
-    const { terminal } = await live(id);
+    const terminal = await live(id);
     return terminal ? terminalTarget(terminal) : null;
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
-    const { s, terminal } = await live(id, true);
-    if (!terminal) return resume(s);
+    const terminal = await live(id, true);
+    if (!terminal) return resume(await bridge.call('detail', [id]));
     try {
       return { action: 'focused', text: await focusTerminal(terminal) };
-    } catch {
+    } catch (error) {
+      if (error instanceof TerminalInputError) throw error;
       throw new Error(`${hostName(terminal.host)} 터미널로 이동하지 못했어요.`);
     }
+  });
+  // The opt-in lives in the desktop profile, not in the shared preferences, so the web preview
+  // can never turn it on. Turning it on always goes through a native confirmation.
+  ipcMain.handle('office:terminal-send', async (e, enable) => {
+    trusted(e);
+    if (typeof enable !== 'boolean') return terminalSendEnabled();
+    if (enable) {
+      const owner = BrowserWindow.fromWebContents(e.sender);
+      const options: Electron.MessageBoxOptions = {
+        type: 'warning',
+        buttons: ['켜기', '취소'],
+        defaultId: 1,
+        cancelId: 1,
+        message: '터미널로 보내기를 켤까요?',
+        detail:
+          'Orca·tmux에서 쉬고 있는 Claude Code 세션에, 업무 카드에서 쓴 글을 그 터미널에 직접 입력해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
+      };
+      const { response } = owner
+        ? await dialog.showMessageBox(owner, options)
+        : await dialog.showMessageBox(options);
+      if (response !== 0) return terminalSendEnabled();
+    }
+    await writeFile(terminalSendFile(), JSON.stringify({ enabled: enable }), { mode: 0o600 });
+    return enable;
   });
   ipcMain.handle('office:send', async (e, id, text) => {
     trusted(e);
     if (typeof text !== 'string' || text.length > 20000) throw new Error('잘못된 요청');
-    if (terminalSend === undefined)
-      terminalSend = (await bridge.call('snapshot')).preferences?.terminalSend === true;
-    if (!terminalSend) throw new Error('설정에서 ‘터미널로 보내기’를 켜 주세요.');
-    const { terminal } = await live(id, true);
+    if (!(await terminalSendEnabled())) throw new Error('설정에서 ‘터미널로 보내기’를 켜 주세요.');
+    const terminal = await live(id, true);
     if (!terminal) throw new Error('지금 열려 있는 Orca·tmux 터미널을 찾지 못했어요.');
     try {
       return await sendToTerminal(terminal, text);
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
-      throw new Error(`${hostName(terminal.host)}에 보내지 못했어요. 터미널을 확인해 주세요.`);
+      // The text may already be in the terminal; never invite a blind resend.
+      throw new Error(
+        `${hostName(terminal.host)}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
+      );
     } finally {
       forgetTerminal(terminal.process.sessionId);
     }
@@ -240,6 +268,14 @@ function setupIPC() {
     await writeFile(result.filePath, content, { mode: 0o600 });
     return true;
   });
+}
+const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+async function terminalSendEnabled() {
+  try {
+    return JSON.parse(await readFile(terminalSendFile(), 'utf8')).enabled === true;
+  } catch {
+    return false;
+  }
 }
 async function resume(s: Session): Promise<JumpResult> {
   if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
