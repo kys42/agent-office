@@ -124,8 +124,8 @@ export function DeskPet({
         <button
           className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaker ? 'is-speaking' : ''}`}
           data-solid
-          aria-label={`데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 책상 줄 펼치기`}
-          title={`우리 사무실 · 동료 ${total}명\n누르면 책상 줄로 펼쳐지고, 끌어서 옮길 수 있어요`}
+          aria-label={`데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 펼치기`}
+          title={`우리 사무실 · 동료 ${total}명\n누르면 마지막에 쓴 모습(책상 줄·바닥 책상)으로 펼쳐지고, 끌어서 옮길 수 있어요`}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             e.currentTarget.setPointerCapture(e.pointerId);

@@ -249,12 +249,21 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
     })
     .toBeLessThanOrEqual(8);
   const tools = (await strip.locator('.desk-row-tools').boundingBox())!;
-  const bubbleTop = Math.min(
-    ...(await strip
-      .locator('.speech-bubble')
-      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
-  );
-  expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
+  const tops = await strip
+    .locator('.speech-bubble')
+    .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+  expect(tops.length).toBeGreaterThan(0);
+  expect(tools.y + tools.height).toBeLessThanOrEqual(Math.min(...tops));
+  // Only the flag itself takes the mouse: below its cloth, clicks reach the desktop.
+  const below = await strip
+    .locator('.zone-flag')
+    .first()
+    .evaluate((flag) => {
+      const cloth = flag.querySelector('.zone-flag-cloth')!.getBoundingClientRect();
+      const hit = document.elementFromPoint(cloth.left + cloth.width / 2, cloth.bottom + 30);
+      return !!hit?.closest('[data-solid]');
+    });
+  expect(below).toBe(false);
   await strip.screenshot({ path: '.local/desk-floor.png' });
   // Hide and pin work the same on the floor.
   const desk = strip.locator('[data-station-id="demo:4"]');
@@ -277,6 +286,38 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await page.locator('.dock-pet-anchor').hover();
   await page.getByRole('button', { name: '바닥 책상 펼치기' }).click();
   await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+});
+
+test('Floor desks: helpers stand on the floor and screen sharing hides zone and desk names', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const host = snapshot.sessions.find((s) => s.id === 'demo:0')!;
+  snapshot.sessions.push({
+    ...host,
+    id: 'demo:helper',
+    nativeId: 'demo-helper',
+    alias: '',
+    title: '보조 조사',
+    status: 'work',
+    updatedAt: Date.now(),
+    officeSeat: undefined,
+    relation: { kind: 'subagent', parentNativeId: host.nativeId, role: '조사', source: 'demo' },
+    parentId: host.nativeId,
+  });
+  snapshot.preferences = { ...snapshot.preferences, privacy: true };
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini=floor');
+  const strip = page.locator('.desk-row.desk-floor');
+  const helper = strip.locator('.helper-desk');
+  await expect(helper).toHaveCount(1);
+  const table = (await helper.locator('.helper-table').boundingBox())!;
+  const bench = (await strip.locator('.team-bench').first().boundingBox())!;
+  expect(Math.abs(table.y + table.height - (bench.y + bench.height))).toBeLessThanOrEqual(3);
+  // Privacy: flags and plates never show real names.
+  await expect(strip.locator('.zone-flag-cloth span').first()).toHaveText('프로젝트');
+  await expect(strip.locator('.floor-plate').first()).not.toContainText('코코');
+  expect(await strip.locator('.zone-flag').first().getAttribute('title')).toBeNull();
 });
 
 test('Real local collector reports all three providers without modifying source data', async ({

@@ -65,7 +65,9 @@ try {
     omitBackground: true,
     animations: 'disabled',
   });
-  console.log('Saved office, detail, desk pet, desk row and floor screenshots using demo data only.');
+  console.log(
+    'Saved office, detail, desk pet, desk row and floor screenshots using demo data only.',
+  );
 } finally {
   await browser.close();
 }

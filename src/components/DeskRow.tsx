@@ -45,8 +45,8 @@ import { PinButton } from './PinButton';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
-/** A helper desk's table bottom, from the top of its 68px box (sprite 44 + table). */
-const HELPER_TABLE_FOOT = 53;
+/** A helper desk's table bottom, from the top of its 68px box (.helper-table: top 32 + 14). */
+const HELPER_TABLE_FOOT = 46;
 
 /**
  * The office as one line along the screen edge: the same project zones, shared benches,
@@ -116,6 +116,9 @@ export function DeskRow({
     if (!el) return;
     let frame = 0;
     const measure = () => {
+      // Boxes may reach below the scene (desk glow, 238px stations on the floor version);
+      // focus must never lift the strip off the screen's edge.
+      if (el.scrollTop) el.scrollTop = 0;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() =>
         setView({ left: el.scrollLeft, width: el.clientWidth, scroll: el.scrollWidth }),
@@ -197,22 +200,26 @@ export function DeskRow({
               >
                 {floor ? (
                   // A flag between zones: the pole stands on the floor, the cloth names the zone.
+                  // Only the pole, cloth and base take the mouse; the box around them lets clicks
+                  // through like the rest of the strip. The flag stands on the desks' floor line.
                   <div
                     className={`zone-flag ${zone.custom ? 'custom-area' : ''}`}
-                    data-solid
-                    style={{ left: -FLOOR_ZONE_GAP / 2 }}
+                    style={{
+                      left: -FLOOR_ZONE_GAP / 2,
+                      bottom: FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT),
+                    }}
                     title={
                       privacy
                         ? undefined
                         : `${zone.name} · ${zone.stations.length}명${zone.helpers.length ? ' + 보조' : ''}${zone.custom ? ` · 직접 나눈 구역 (${zone.custom.join(', ')})` : ''}`
                     }
                   >
-                    <i className="zone-flag-pole" />
-                    <span className="zone-flag-cloth">
+                    <i className="zone-flag-pole" data-solid />
+                    <span className="zone-flag-cloth" data-solid>
                       <b>{String(index + 1).padStart(2, '0')}</b>
                       <span>{privacy ? '프로젝트' : zone.name}</span>
                     </span>
-                    <i className="zone-flag-base" />
+                    <i className="zone-flag-base" data-solid />
                   </div>
                 ) : (
                   <>
@@ -313,7 +320,15 @@ export function DeskRow({
                         <button
                           className="floor-plate"
                           data-solid
-                          title={privacy ? undefined : `${label.name} · ${MOODS[s.status].label}`}
+                          title={
+                            privacy
+                              ? undefined
+                              : `${label.name} · ${
+                                  pose.working && s.resident && s.resident.activeCount > 1
+                                    ? `${s.resident.activeCount}개 작업 중`
+                                    : MOODS[s.status].label
+                                }`
+                          }
                           onClick={() => open(s.id)}
                         >
                           <i style={{ background: MOODS[s.status].color }} />
@@ -377,6 +392,14 @@ export function DeskRow({
                     </div>
                   );
                 })}
+                {floor &&
+                  zone.helpers.map((helper) => (
+                    <i
+                      className="floor-shadow"
+                      key={`shadow:${helper.id}`}
+                      style={{ left: helper.x + 2, width: 64, top: top + DESK_FOOT - 6 }}
+                    />
+                  ))}
                 {zone.helpers.map((helper) => {
                   const s = byId.get(helper.id)!;
                   const pose = model.view(s.id)!.pose;

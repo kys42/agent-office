@@ -27,22 +27,27 @@ export function DeskDock() {
   const { model, snapshot, error, receipt, veil, patch } = useOffice(demo);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
-  useEffect(() => {
-    if (mode === 'pet') return;
-    setExpanded(mode);
+  // Remember only looks the person (or the main process) actually switched to — not the
+  // initial hash of a reloaded window, which may be stale.
+  const remember = (next: DockMode) => {
+    if (next === 'pet') return;
+    setExpanded(next);
     try {
-      localStorage.setItem(EXPAND_KEY, mode);
+      localStorage.setItem(EXPAND_KEY, next);
     } catch {
       /* per-viewer convenience only */
     }
-  }, [mode]);
+  };
   const privacy = snapshot?.preferences.privacy ?? false;
   const reducedMotion = snapshot?.preferences.reducedMotion ?? false;
   // Desktop: the main process owns the window mode (bounds first, then it tells us).
   // A browser preview has no window to resize, so it switches locally.
   const go = (next: DockMode) => {
     if (api.dock) void api.dock(next);
-    else setMode(next);
+    else {
+      remember(next);
+      setMode(next);
+    }
   };
   const solid = useRef<boolean | null>(null);
   useEffect(
@@ -50,6 +55,7 @@ export function DeskDock() {
       api.onDock?.((next) => {
         // Every (re)show resets native mouse handling to see-through; forget our last claim.
         solid.current = null;
+        remember(next);
         setMode(next);
       }),
     [],

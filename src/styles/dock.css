@@ -455,6 +455,10 @@ body.dock-mode {
 .desk-floor .helper-desk > b {
   display: none;
 }
+/* Zone signs carry their own tooltip (the office CSS makes floor marks see-through). */
+.row-zone-mark {
+  pointer-events: auto;
+}
 .floor-shadow {
   position: absolute;
   z-index: 1;
@@ -471,7 +475,8 @@ body.dock-mode {
 .floor-plate {
   position: absolute;
   left: 82px;
-  top: 144px;
+  /* The desk's front edge (bench 134 + 29…40), below the keyboard and cup. */
+  top: 159px;
   z-index: 4;
   max-width: 138px;
   height: 16px;
@@ -520,11 +525,14 @@ body.dock-mode {
 }
 .zone-flag {
   position: absolute;
-  bottom: 0;
   z-index: 2;
   width: 34px;
   height: 214px;
   transform: translateX(-50%);
+  pointer-events: none;
+}
+.zone-flag > * {
+  pointer-events: auto;
 }
 .zone-flag-pole {
   position: absolute;
