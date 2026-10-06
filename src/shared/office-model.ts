@@ -3,7 +3,7 @@ import { officeResidents } from './residents';
 import { officeZone, sessionName } from './office';
 import { presentSession } from './presentation';
 import { TRIAGE_ORDER, triageGroup, unreadInbox, type TriageGroup } from './triage';
-import { isInboxNotice, unreadNoticeCount } from './notices';
+import { isAttentionNotice, isInboxNotice, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
 import { isVeiled } from './veil';
 
@@ -45,6 +45,8 @@ export interface OfficeModel {
   scene: Session[];
   /** Primary colleagues the person hid, in seat order (to bring them back). */
   veiled: ResidentView[];
+  /** Every session carrying a hiding time, shown or not ("bring everyone back"). */
+  hiddenSessionIds: string[];
   /** Shown office colleagues per triage group, helpers included (same as the roster). */
   counts: Record<TriageGroup, number>;
   /** Important unread news across the whole office (header/inbox number). */
@@ -134,6 +136,7 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
     seats,
     scene: bySeat.filter((s) => !byId.get(s.id)?.veiled),
     veiled: seats.filter((v) => v.veiled),
+    hiddenSessionIds: sessions.filter((s) => s.hiddenAt).map((s) => s.id),
     counts,
     unread: unreadNoticeCount(notices),
     lead,
@@ -172,15 +175,19 @@ export function petSummary(model: OfficeModel) {
   const group = TRIAGE_ORDER.find((g) => g !== 'resting' && model.counts[g]) ?? 'resting';
   const count =
     group === 'resting' ? model.seats.length - model.veiled.length : model.counts[group];
+  // Not yet opened, not closed, not first-collection history, and only just arrived.
   const fresh = (n: OfficeNotice) =>
-    !n.bootstrap && !n.dismissedAt && model.now - n.receivedAt < PET_FRESH_MS;
-  // The newest arrival wins, by receipt time (an old event can be collected late).
+    !n.bootstrap && !n.dismissedAt && !n.viewedAt && model.now - n.receivedAt < PET_FRESH_MS;
+  // A question beats a result; otherwise the newest arrival wins, by receipt time
+  // (an old event can be collected late).
+  const before = (a: OfficeNotice, b: OfficeNotice) =>
+    Number(isAttentionNotice(a)) - Number(isAttentionNotice(b)) || a.receivedAt - b.receivedAt;
   let speaker: { view: ResidentView; notice: OfficeNotice } | undefined;
   for (const seat of model.seats)
     if (!seat.veiled)
       for (const v of [seat, ...seat.helpers])
         for (const notice of v.unread)
-          if (fresh(notice) && (!speaker || notice.receivedAt > speaker.notice.receivedAt))
+          if (fresh(notice) && (!speaker || before(notice, speaker.notice) > 0))
             speaker = { view: v, notice };
   return {
     group,

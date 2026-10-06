@@ -38,11 +38,28 @@ export function rowBounds(area: Rect, height = ROW_HEIGHT): Rect {
   return { x: area.x, y: area.y + area.height - h, width: area.width, height: h };
 }
 
-/** The saved pet spot, or the bottom-right corner of the work area the first time. */
-export function petBounds(saved: Point | null | undefined, area: Rect, size = PET_SIZE): Rect {
-  const fallback = {
-    x: area.x + area.width - size.width - 32,
-    y: area.y + area.height - size.height - 24,
+/** Where the pet stands: the bottom-centre of its window, stable when the window resizes. */
+export const petFeet = (b: Rect): Point => ({
+  x: Math.round(b.x + b.width / 2),
+  y: b.y + b.height,
+});
+
+/** The window around a saved standing spot, or the bottom-right corner the first time. */
+export function petBounds(feet: Point | null | undefined, area: Rect, size = PET_SIZE): Rect {
+  const at = feet ?? {
+    x: area.x + area.width - size.width / 2 - 32,
+    y: area.y + area.height - 24,
   };
-  return clampInto({ ...(saved ?? fallback), ...size }, area);
+  return clampInto({ x: at.x - size.width / 2, y: at.y - size.height, ...size }, area);
+}
+
+/**
+ * Read `desk-pet.json`: v2 stores the standing spot; the first format stored the top-left
+ * of the original 132×148 window, converted here so upgrades keep the pet in place.
+ */
+export function readPetSpot(raw: unknown): Point | null {
+  const p = raw as { v?: number; x?: unknown; y?: unknown } | null;
+  if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return null;
+  if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+  return p.v === 2 ? { x: p.x, y: p.y } : { x: p.x + 66, y: p.y + 148 };
 }

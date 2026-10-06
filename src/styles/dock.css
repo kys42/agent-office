@@ -229,7 +229,7 @@ body.dock-mode {
   position: absolute;
   top: 4px;
   left: -4px;
-  z-index: 5;
+  z-index: 7;
   display: flex;
   gap: 2px;
   padding: 2px;
@@ -437,6 +437,7 @@ body.dock-mode {
 .reduce-motion .desk-pet-stage,
 .reduce-motion .desk-row,
 .reduce-motion .dock-pet-body,
+.reduce-motion .desk-pet.is-speaking .dock-pet-body,
 .reduce-motion .dock-pet-shadow,
 .reduce-motion .dock-pet-bang {
   animation: none;
@@ -445,6 +446,7 @@ body.dock-mode {
   .desk-pet-stage,
   .desk-row,
   .dock-pet-body,
+  .desk-pet.is-speaking .dock-pet-body,
   .dock-pet-shadow,
   .dock-pet-bang {
     animation: none;

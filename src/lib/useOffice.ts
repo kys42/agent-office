@@ -162,7 +162,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return;
     }
     try {
-      for (const id of ids) setSnapshot(await api.patch(id, { hiddenAt }));
+      setSnapshot(await api.veil(ids, on));
     } catch (e) {
       notify((e as Error).message);
     }

@@ -16,9 +16,10 @@ import { ServiceBridge } from '../server/bridge.js';
 import type { DockAction, DockMode, Session } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import {
-  PET_SIZE,
   clampInto,
   petBounds,
+  petFeet,
+  readPetSpot,
   rowBounds,
   type Point,
   type Rect,
@@ -130,8 +131,7 @@ const petFile = () =>
   path.join(process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'), 'desk-pet.json');
 function loadPetSpot(): Point | null {
   try {
-    const p = JSON.parse(readFileSync(petFile(), 'utf8'));
-    return Number.isFinite(p?.x) && Number.isFinite(p?.y) ? { x: p.x, y: p.y } : null;
+    return readPetSpot(JSON.parse(readFileSync(petFile(), 'utf8')));
   } catch {
     return null;
   }
@@ -139,15 +139,16 @@ function loadPetSpot(): Point | null {
 async function savePetSpot() {
   try {
     await mkdir(path.dirname(petFile()), { recursive: true, mode: 0o700 });
-    await writeFile(petFile(), JSON.stringify(petSpot), { mode: 0o600 });
+    await writeFile(petFile(), JSON.stringify({ v: 2, ...petSpot }), { mode: 0o600 });
   } catch (e) {
     console.error('Desk pet position:', e);
   }
 }
 const workAreaFor = (b: Rect) => screen.getDisplayMatching(b).workArea;
 function dockBounds(mode: DockMode): Rect {
+  // The display under the pet's feet (the nearest one if that display is gone).
   const area = petSpot
-    ? workAreaFor({ ...petSpot, ...PET_SIZE })
+    ? workAreaFor({ x: petSpot.x - 1, y: petSpot.y - 1, width: 2, height: 2 })
     : screen.getPrimaryDisplay().workArea;
   const pet = petBounds(petSpot, area);
   // The row opens along the bottom of whichever display the pet is on.
@@ -219,8 +220,9 @@ function stopDrag(save: boolean) {
   const b = dock.getBounds();
   const fixed = clampInto(b, workAreaFor(b));
   if (fixed.x !== b.x || fixed.y !== b.y) dock.setBounds(fixed);
-  if (petSpot?.x === fixed.x && petSpot?.y === fixed.y) return;
-  petSpot = { x: fixed.x, y: fixed.y };
+  const feet = petFeet(fixed);
+  if (petSpot?.x === feet.x && petSpot?.y === feet.y) return;
+  petSpot = feet;
   void savePetSpot();
 }
 function trusted(e: Electron.IpcMainInvokeEvent) {

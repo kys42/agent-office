@@ -217,10 +217,12 @@ export function DeskRow({
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
-                      <VeilButton
-                        name={label.name}
-                        onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
-                      />
+                      {v.group !== 'attention' && (
+                        <VeilButton
+                          name={label.name}
+                          onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
+                        />
+                      )}
                       <Furniture kind="equipment" />
                       {pose.working && (
                         <span className="working-beacon">
@@ -346,12 +348,7 @@ export function DeskRow({
           <button
             className="desk-row-veiled"
             title={`가린 동료 ${model.veiled.length}명 · 누르면 모두 다시 보여요\n다음 대화가 오면 저절로 돌아와요`}
-            onClick={() =>
-              onVeil(
-                model.veiled.flatMap((v) => v.session.resident?.sessionIds ?? [v.session.id]),
-                false,
-              )
-            }
+            onClick={() => onVeil(model.hiddenSessionIds, false)}
           >
             <EyeOff size={11} />
             가림 {model.veiled.length}

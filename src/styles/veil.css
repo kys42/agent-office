@@ -23,6 +23,11 @@
 .veil-button:focus-visible {
   opacity: 1;
 }
+/* Lift the desk so neighbours' tags never draw over the explanation. */
+.desk-station:has(.veil-button:hover),
+.desk-station:has(.veil-button:focus-visible) {
+  z-index: 8;
+}
 .veil-button:hover {
   transform: scale(1.1);
   color: var(--accent-2);

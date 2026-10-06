@@ -139,3 +139,56 @@ test('a just-arrived result turns the collapsed pet into its colleague', () => {
     'a hidden colleague does not take over the pet',
   );
 });
+
+test('only a real next conversation brings them back, not chatter or background runs', () => {
+  const s = make('a', { hiddenAt });
+  const progress = notice('a', { kind: 'progress', phase: 'commentary', at: now });
+  assert.equal(isVeiled([s], [progress]), true, 'progress notes do not end the hiding');
+  const working = make('a', { hiddenAt, activity: { text: '진행', kind: 'progress', at: now } });
+  assert.equal(isVeiled([working], []), true);
+  assert.equal(isVeiled([s], [notice('a', { background: true })]), true, 'background final');
+  assert.equal(isVeiled([s], [notice('a')]), false, 'a final answer');
+  // A persona's scheduled run answering does not count; its interactive session does.
+  const cron = make('cron', {
+    actor: { id: 'butler', name: '집사', source: 'fixture' } as Session['actor'],
+    origin: { kind: 'scheduled', source: 'fixture' },
+    activity: { text: '정기 보고', kind: 'reply', at: now },
+  });
+  assert.equal(isVeiled([s, cron], [notice('cron')]), true);
+  const returned = make('a', { hiddenAt, returnedAt: now });
+  assert.equal(isVeiled([returned], []), false, 'bringing them back to the office shows them');
+});
+
+test('bring-everyone-back covers every hidden session, shown or not', () => {
+  const caller = make('c', { officeSeat: 0, hiddenAt, status: 'call' });
+  const quiet = make('q', { officeSeat: 1, hiddenAt });
+  const model = buildOfficeModel(snap([caller, quiet]), now);
+  assert.deepEqual(
+    model.veiled.map((v) => v.session.id),
+    ['q'],
+  );
+  assert.deepEqual(model.hiddenSessionIds.sort(), ['c', 'q']);
+});
+
+test('the pet prefers a question, skips opened news, and lets go once closed', () => {
+  const a = make('a', { officeSeat: 0 });
+  const b = make('b', { officeSeat: 1 });
+  const reply = notice('a', { receivedAt: now - 1_000 });
+  const question = notice('b', {
+    kind: 'attention',
+    phase: undefined,
+    receivedAt: now - 20_000,
+  });
+  assert.equal(
+    petSummary(buildOfficeModel(snap([a, b], [reply, question]), now)).speaker?.notice.id,
+    question.id,
+    'a question beats a newer result',
+  );
+  const opened = notice('a', { viewedAt: now - 500 });
+  assert.equal(petSummary(buildOfficeModel(snap([a, b], [opened]), now)).speaker, undefined);
+  // Closing the bubble the pet spoke releases it (no silent speaking state).
+  const closed = { ...reply, dismissedAt: now };
+  const pet = petSummary(buildOfficeModel(snap([a, b], [closed]), now));
+  assert.equal(pet.speaker, undefined);
+  assert.equal(pet.lead?.session.id, 'a', 'back to the usual representative');
+});

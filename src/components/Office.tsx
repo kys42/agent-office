@@ -34,6 +34,7 @@ export function Office({
   spotlight = null,
   onHover,
   onVeil,
+  canVeil = () => true,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -50,6 +51,8 @@ export function Office({
   onHover?: (id: string | null) => void;
   /** Hide a colleague until their next conversation. */
   onVeil?: (s: Session) => void;
+  /** Someone waiting for the person cannot be hidden. */
+  canVeil?: (s: Session) => boolean;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -291,7 +294,7 @@ export function Office({
                         )}
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
-                      {onVeil && (
+                      {onVeil && canVeil(s) && (
                         <VeilButton
                           name={privacy ? s.provider : sessionName(s)}
                           onVeil={() => onVeil(s)}

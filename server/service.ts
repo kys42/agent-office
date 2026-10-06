@@ -22,7 +22,6 @@ const patchSchema = z
     pinned: z.boolean().optional(),
     archived: z.boolean().optional(),
     completed: z.boolean().optional(),
-    hiddenAt: z.number().int().min(0).nullable().optional(),
   })
   .strict();
 const prefsSchema = z
@@ -291,6 +290,12 @@ export class OfficeService extends EventEmitter {
         return this.emitSnapshot();
       case 'patch':
         this.store.patch(z.string().max(400).parse(args[0]), patchSchema.parse(args[1]));
+        return this.emitSnapshot();
+      case 'veil':
+        this.store.veil(
+          z.array(z.string().max(400)).max(500).parse(args[0]),
+          z.boolean().parse(args[1]),
+        );
         return this.emitSnapshot();
       case 'preferences':
         this.store.preferences(prefsSchema.parse(args[0]));

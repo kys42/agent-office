@@ -184,9 +184,10 @@ export function OfficeWorkspace({
             reducedMotion={prefs.reducedMotion}
             privacy={prefs.privacy}
             onShowWaiting={() => setZone('waiting')}
-            spotlight={listHover}
+            spotlight={listHover && model.view(listHover)?.veiled ? null : listHover}
             onHover={setDeskHover}
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
+            canVeil={(s) => model.view(s.id)?.group !== 'attention'}
             footer={
               <>
                 {model.veiled.length > 0 && (
@@ -214,14 +215,7 @@ export function OfficeWorkspace({
                       </div>
                       <button
                         className="button subtle"
-                        onClick={() =>
-                          onVeil(
-                            model.veiled.flatMap(
-                              (v) => v.session.resident?.sessionIds ?? [v.session.id],
-                            ),
-                            false,
-                          )
-                        }
+                        onClick={() => onVeil(model.hiddenSessionIds, false)}
                       >
                         모두 다시 보기
                       </button>

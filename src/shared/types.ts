@@ -223,7 +223,7 @@ export interface Handoff {
   createdAt: number;
 }
 export type SessionPatch = Partial<
-  Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed' | 'hiddenAt'>
+  Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
 /** Desk pet window: a small floating pet, or a full-width row of desks. */
 export type DockMode = 'pet' | 'row';
@@ -238,6 +238,8 @@ export interface OfficeAPI {
   snapshot: () => Promise<Snapshot>;
   refresh: () => Promise<Snapshot>;
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;
+  /** Hide colleagues until their next conversation (`on`), or bring them back. */
+  veil: (ids: string[], on: boolean) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;

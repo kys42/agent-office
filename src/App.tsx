@@ -136,7 +136,8 @@ export default function App() {
     document.body.classList.toggle('is-desktop', isDesktop);
   }, []);
   const sessions = snapshot?.sessions ?? [];
-  const ordered = model.bySeat;
+  // J/K walks what the office shows: hidden colleagues stay out until they talk again.
+  const ordered = model.scene;
   const current = sessions.find((s) => s.id === selected);
   const prefs = snapshot?.preferences;
   const notices = snapshot?.notices ?? [];

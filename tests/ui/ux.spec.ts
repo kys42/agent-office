@@ -208,15 +208,14 @@ test('Hiding a colleague clears them from the office and the desk row until they
   const eye = nemo.getByRole('button', { name: /가리기$/ });
   await expect(eye).toBeVisible();
   await eye.hover();
-  await expect(nemo.locator('.veil-tip')).toContainText('다음 대화가 올 때까지');
+  await expect(nemo.locator('.veil-tip')).toContainText('다음 대화(새 요청·최종 응답)');
   await eye.click();
   await expect(nemo).toHaveCount(0);
   await expect(page.locator('.office-map [data-station-id]')).toHaveCount(5);
-  // Someone waiting for the person is never hidden.
+  // Someone waiting for the person cannot be hidden: no eye button at all.
   const caller = page.locator('.office-map [data-station-id="demo:3"]');
   await caller.hover();
-  await caller.getByRole('button', { name: /가리기$/ }).click();
-  await expect(caller).toBeVisible();
+  await expect(caller.getByRole('button', { name: /가리기$/ })).toHaveCount(0);
   const veiled = page.locator('.veiled-records');
   await expect(veiled).toContainText('가린 동료 1');
   await veiled.locator('summary').click();
