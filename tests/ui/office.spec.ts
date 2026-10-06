@@ -153,7 +153,7 @@ test('Desktop viewport fits the room and narrow viewport does not overflow', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: '.local/office-mobile.png', fullPage: true });
 });
-test('Desk pet unfolds into one full-width row of desks and opens a colleague', async ({
+test('Desk pet unfolds into a one-line office with zones, benches and bubbles', async ({
   page,
 }) => {
   await page.goto('/?demo');
@@ -161,10 +161,10 @@ test('Desk pet unfolds into one full-width row of desks and opens a colleague', 
   const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
   await expect(pet).toBeVisible();
   await expect(pet).toContainText('기다려요');
-  await expect(page.locator('.row-desk')).toHaveCount(0);
+  const desks = page.locator('.desk-row [data-station-id]');
+  await expect(desks).toHaveCount(0);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });
   await pet.click();
-  const desks = page.locator('.row-desk');
   await expect(desks).toHaveCount(6);
   const tops = await desks.evaluateAll((els) =>
     els.map((e) => Math.round(e.getBoundingClientRect().top)),
@@ -177,7 +177,11 @@ test('Desk pet unfolds into one full-width row of desks and opens a colleague', 
       return [row.x, row.width, Math.round(row.y + row.height)];
     })
     .toEqual([0, 1440, 970]);
-  await expect(page.locator('.row-news').first()).toBeVisible();
+  // Same office semantics as the big map: project zones, a shared bench, live bubbles.
+  expect(await page.locator('.desk-row .row-zone').count()).toBeGreaterThan(1);
+  await expect(page.locator('.desk-row .shared-bench').first()).toBeVisible();
+  await expect(page.locator('.desk-row .speech-bubble').first()).toBeVisible();
+  await expect(page.locator('.desk-row .desk-name em').first()).toContainText('소식');
   await page.locator('.desk-row').screenshot({ path: '.local/desk-row.png' });
   await page.keyboard.press('Escape');
   await expect(desks).toHaveCount(0);
@@ -185,13 +189,13 @@ test('Desk pet unfolds into one full-width row of desks and opens a colleague', 
   await page.getByRole('button', { name: '책상 줄 접기' }).click();
   await expect(pet).toBeVisible();
   await pet.click();
-  await desks.nth(1).click();
+  await page.locator('.desk-row .office-pet').nth(1).click();
   await expect(page.locator('.office-map')).toBeVisible();
   await expect(page.locator('.inspector')).toBeVisible();
   // A hash-only goto stays in the same document; the dock window always loads fresh.
   await page.goto('/?demo#mini=row');
   await page.reload();
-  await expect(page.locator('.row-desk')).toHaveCount(6);
+  await expect(desks).toHaveCount(6);
   await page.getByRole('button', { name: '사무실 펼치기' }).click();
   await expect(page.locator('.office-map')).toBeVisible();
 });

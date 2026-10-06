@@ -72,7 +72,7 @@ else {
     tray.on('click', () => showMain());
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
-      if (dock && !dock.isDestroyed()) dock.setBounds(dockBounds(dockMode));
+      if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
     };
     screen.on('display-removed', reseat);
     screen.on('display-metrics-changed', reseat);
@@ -168,6 +168,7 @@ function showDock(mode: DockMode = 'pet') {
     dockMode = mode;
     dock = new BrowserWindow({
       ...dockBounds(mode),
+      show: false,
       resizable: false,
       frame: false,
       transparent: true,
@@ -189,6 +190,8 @@ function showDock(mode: DockMode = 'pet') {
       stopDrag(false);
       dock = null;
     });
+    // The renderer follows the main process; tell it the mode it may have missed while loading.
+    dock.webContents.on('did-finish-load', () => dock?.webContents.send('office:dock', dockMode));
     void dock.loadFile(index, { hash: mode === 'row' ? 'mini=row' : 'mini' });
   } else setDockMode(mode);
   dock.showInactive();

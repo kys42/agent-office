@@ -9,19 +9,30 @@ const initialMode = (): DockMode => (location.hash === '#mini=row' ? 'row' : 'pe
 
 /**
  * The floating dock window. It reads the same office core as the big office and only
- * decides the presentation: a small pet, or a full-width row of desks.
+ * decides the presentation: a small pet, or the office laid out as one row of desks.
  */
 export function DeskDock() {
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
-  const { model, snapshot } = useOffice(demo);
+  const { model, snapshot, error, receipt } = useOffice(demo);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const privacy = snapshot?.preferences.privacy ?? false;
   const reducedMotion = snapshot?.preferences.reducedMotion ?? false;
+  // Desktop: the main process owns the window mode (bounds first, then it tells us).
+  // A browser preview has no window to resize, so it switches locally.
   const go = (next: DockMode) => {
-    setMode(next);
-    void api.dock?.(next);
+    if (api.dock) void api.dock(next);
+    else setMode(next);
   };
-  useEffect(() => api.onDock?.(setMode), []);
+  const solid = useRef<boolean | null>(null);
+  useEffect(
+    () =>
+      api.onDock?.((next) => {
+        // Every (re)show resets native mouse handling to see-through; forget our last claim.
+        solid.current = null;
+        setMode(next);
+      }),
+    [],
+  );
   useEffect(() => {
     document.body.classList.add('dock-mode');
     return () => document.body.classList.remove('dock-mode');
@@ -36,10 +47,8 @@ export function DeskDock() {
   }, [mode]);
   // Click-through: only drawn things ([data-solid]) take the mouse; the transparent rest of
   // the window lets clicks reach the desktop and the apps behind it.
-  const solid = useRef<boolean | null>(null);
   useEffect(() => {
     if (!api.dock) return;
-    solid.current = null;
     const claim = (over: boolean) => {
       if (over === solid.current) return;
       solid.current = over;
@@ -55,16 +64,26 @@ export function DeskDock() {
       window.removeEventListener('mousemove', move);
       document.documentElement.removeEventListener('mouseleave', leave);
     };
-  }, [mode]);
+  }, []);
   return (
-    <div
-      key={mode}
-      className={`desk-dock mode-${mode} ${reducedMotion ? 'reduce-motion' : ''} ${privacy ? 'is-private' : ''}`}
-    >
+    <div key={mode} className={`desk-dock mode-${mode} ${reducedMotion ? 'reduce-motion' : ''}`}>
       {mode === 'pet' ? (
-        <DeskPet model={model} loading={!snapshot} onExpand={() => go('row')} />
+        <DeskPet
+          model={model}
+          status={snapshot ? null : error ? '연결 확인' : '연결 중'}
+          onExpand={() => go('row')}
+        />
       ) : (
-        <DeskRow model={model} loading={!snapshot} privacy={privacy} onCollapse={() => go('pet')} />
+        <DeskRow
+          model={model}
+          status={
+            snapshot ? null : error ? `연결을 확인해 주세요 · ${error}` : '사무실 문을 여는 중…'
+          }
+          privacy={privacy}
+          reducedMotion={reducedMotion}
+          onReceipt={receipt}
+          onCollapse={() => go('pet')}
+        />
       )}
     </div>
   );

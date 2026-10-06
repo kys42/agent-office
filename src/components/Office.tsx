@@ -1,23 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Mail, Pin, X, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
+import { Mail, Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import { MOODS, type Session, type OfficeNotice } from '../shared/types';
 import { sessionName } from '../shared/office';
-import { layoutOffice, layoutSignature } from '../shared/office-layout';
+import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
-import { noticeExposure } from '../shared/notices';
 import { Sprite } from './Sprite';
-import { sessionActivity, activityLabel, toolLabel } from '../shared/activity';
-import { bubbleNotice, noticeLabel, unreadNoticeCount, isInboxNotice } from '../shared/notices';
+import { SpeechBubble } from './SpeechBubble';
+import { HelperDesk } from './HelperDesk';
+import { stationSpeech } from '../shared/speech';
+import { isInboxNotice } from '../shared/notices';
 import { presentSession, POSTURE_LABELS } from '../shared/presentation';
 import type { ReceiptHandler } from './News';
-import { ago } from '../lib/format';
-const colors = ['#7fae86', '#d39a62', '#a48fd0', '#6fa9bd', '#d08497', '#b8ad5d'];
-function projectColor(key: string) {
-  let n = 0;
-  for (const c of key) n = (n * 31 + c.charCodeAt(0)) >>> 0;
-  return colors[n % colors.length];
-}
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -252,14 +246,10 @@ export function Office({
                   const s = byId.get(station.id)!;
                   const members = s.resident?.sessionIds ?? [s.id];
                   const active = members.includes(selected ?? '');
-                  const news = notices.filter((n) => members.includes(n.sessionId));
-                  const bubble = bubbleNotice(news, bubbleHours, clock);
-                  const unread = unreadNoticeCount(news);
-                  const activity = sessionActivity(s);
+                  const speech = stationSpeech(s, notices, bubbleHours, clock);
+                  const { bubble, unread } = speech;
                   const pose = presentSession(s, clock);
                   const arrival = members.some((id) => (arrivals[id] ?? 0) > clock);
-                  const text = bubble?.text ?? activity.text;
-                  const label = bubble ? noticeLabel(bubble) : activityLabel(s);
                   const branch = branchInfo(s);
                   return (
                     <div
@@ -334,58 +324,23 @@ export function Office({
                           {unread > 0 && <em>소식 {unread}</em>}
                         </small>
                       </button>
-                      {(bubble ||
-                        (!news.length &&
-                          (hover === s.id ||
-                            active ||
-                            ['work', 'think', 'call', 'error'].includes(s.status)))) && (
-                        <div
-                          className={`speech-bubble bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
-                        >
-                          <button
-                            className="speech-open"
-                            onClick={() => {
-                              if (bubble) {
-                                if (!privacy)
-                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                                onNews(bubble.sessionId);
-                              } else onSelect(s.id);
-                            }}
-                            title={privacy ? '내용 숨김' : text}
-                          >
-                            <span className="speech-copy">
-                              <small>
-                                <span className="bubble-label">
-                                  {privacy ? '내용 숨김' : label}
-                                </span>
-                                <em>
-                                  {bubble && (
-                                    <span className="bubble-exposure">
-                                      {noticeExposure(bubble)}
-                                    </span>
-                                  )}
-                                  {ago(bubble?.at ?? activity.at)}
-                                  {!privacy && activity.tool
-                                    ? ` · ${toolLabel(activity.tool.name)}`
-                                    : ''}
-                                </em>
-                              </small>
-                              <b>{privacy ? MOODS[s.status].label : text}</b>
-                            </span>
-                          </button>
-                          {bubble && (
-                            <button
-                              className="bubble-dismiss"
-                              aria-label={`${privacy ? '동료' : sessionName(s)} 말풍선 접기`}
-                              title="말풍선만 접기 · 미확인 소식은 남아요"
-                              onClick={() =>
-                                onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
-                              }
-                            >
-                              <X size={11} strokeWidth={2.6} />
-                            </button>
-                          )}
-                        </div>
+                      {speech.shows(hover === s.id || active) && (
+                        <SpeechBubble
+                          session={s}
+                          speech={speech}
+                          privacy={privacy}
+                          onOpen={() => {
+                            if (bubble) {
+                              if (!privacy)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                              onNews(bubble.sessionId);
+                            } else onSelect(s.id);
+                          }}
+                          onDismiss={() =>
+                            bubble &&
+                            onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
+                          }
+                        />
                       )}
                     </div>
                   );
@@ -395,36 +350,20 @@ export function Office({
                     const s = byId.get(child.id)!;
                     const childPose = presentSession(s, clock);
                     return (
-                      <button
-                        className={`helper-desk ${selected === s.id ? 'chosen' : ''} ${childPose.working ? 'helper-working' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                      <HelperDesk
                         key={s.id}
-                        data-session-id={s.id}
-                        data-parent-id={station.id}
-                        data-furniture="helper-desk"
-                        style={{ transform: `translate(${child.x}px, ${child.y}px)` }}
-                        aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료${s.runtime?.phase === 'responded' && !childPose.working ? ', 결과 남김' : ''}`}
-                        title={
-                          privacy
-                            ? undefined
-                            : `${sessionName(s)} · ${s.relation?.role || '보조 동료'}`
-                        }
-                        onClick={() => onSelect(s.id)}
-                      >
-                        <Sprite provider={s.provider} mood={childPose.mood} size={44} />
-                        <Furniture kind="helper" />
-                        {s.runtime?.phase === 'responded' && !childPose.working && (
-                          <span
-                            className="helper-result"
-                            title="응답을 남겼어요 · 메인의 다음 요청까지 머물러요"
-                          >
-                            ✓
-                          </span>
-                        )}
-                        <b>{privacy ? '보조 동료' : s.relation?.role || sessionName(s)}</b>
-                        {notices.some(
+                        session={s}
+                        parentId={station.id}
+                        at={child}
+                        mood={childPose.mood}
+                        working={childPose.working}
+                        news={notices.some(
                           (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
-                        ) && <i className="helper-news" />}
-                      </button>
+                        )}
+                        privacy={privacy}
+                        className={`${selected === s.id ? 'chosen' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                        onClick={() => onSelect(s.id)}
+                      />
                     );
                   }),
                 )}

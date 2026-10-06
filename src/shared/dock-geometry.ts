@@ -8,9 +8,12 @@ export interface Rect {
 export type Point = Pick<Rect, 'x' | 'y'>;
 
 export const PET_SIZE = { width: 132, height: 148 };
-export const ROW_HEIGHT = 196;
-export const DESK_MIN = 88;
-export const DESK_MAX = 132;
+/** The row draws the office's own 164×238 stations, scaled between these factors. */
+export const ROW_SCALE_MAX = 0.86;
+export const ROW_SCALE_MIN = 0.62;
+/** Station-space height of the row scene (bubble headroom + station + zone label). */
+export const ROW_SCENE_HEIGHT = 292;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE_MAX);
 
 /** Keep a window fully inside a display's work area (shrinking it only if it cannot fit). */
 export function clampInto(b: Rect, area: Rect): Rect {
@@ -39,8 +42,8 @@ export function petBounds(saved: Point | null | undefined, area: Rect, size = PE
   return clampInto({ ...(saved ?? fallback), ...size }, area);
 }
 
-/** Desks share the row evenly between a readable minimum and a natural maximum. */
-export function deskWidth(count: number, available: number, min = DESK_MIN, max = DESK_MAX) {
-  if (count <= 0 || available <= 0) return max;
-  return Math.max(min, Math.min(max, Math.floor(available / count)));
+/** Shrink the row scene to fit the screen when it can, but never below a readable size. */
+export function rowScale(sceneWidth: number, available: number) {
+  if (sceneWidth <= 0 || available <= 0) return ROW_SCALE_MAX;
+  return Math.max(ROW_SCALE_MIN, Math.min(ROW_SCALE_MAX, available / sceneWidth));
 }

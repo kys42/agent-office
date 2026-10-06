@@ -189,26 +189,17 @@ body.dock-mode {
   border-radius: 6px;
 }
 
-/* ───────── Row ───────── */
+/* ───────── Row ─────────
+   The scene reuses the big office's station classes (desk-station, team-bench, office-pet,
+   desk-name, speech-bubble, helper-desk, project-floor-mark) in station space, scaled from
+   the bottom-left corner. Only the zone floor rug is row specific. */
 .desk-row {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 196px;
+  height: 252px;
   user-select: none;
-}
-.desk-row-floor {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 62px;
-  background:
-    repeating-linear-gradient(90deg, transparent 0 118px, rgba(98, 60, 33, 0.16) 118px 120px),
-    repeating-linear-gradient(0deg, transparent 0 22px, rgba(98, 60, 33, 0.3) 22px 24px), #c9996a;
-  border-top: 4px solid #3a2820;
-  box-shadow: 0 -12px 26px -16px rgba(0, 0, 0, 0.55);
 }
 .desk-row-track {
   position: absolute;
@@ -216,6 +207,8 @@ body.dock-mode {
   right: 196px;
   bottom: 0;
   height: 100%;
+  display: flex;
+  align-items: flex-end;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -225,129 +218,45 @@ body.dock-mode {
   display: none;
 }
 .desk-row-lane {
-  display: flex;
-  align-items: flex-end;
-  width: max-content;
-  height: 100%;
-  margin: 0 auto;
-  padding: 0 14px;
-}
-.row-desk {
   position: relative;
   flex: 0 0 auto;
+  margin: 0 auto;
+}
+.desk-row-scene {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform-origin: 0 100%;
+}
+.row-zone {
+  position: absolute;
+  top: 0;
   height: 100%;
 }
-.row-desk:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -4px;
-  border-radius: 12px;
+/* The zone rug starts at chair height so heads and bubbles float over the desktop. */
+.row-zone > .row-zone-floor {
+  top: 126px;
+  bottom: 0;
+  width: 100%;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px),
+    color-mix(in srgb, var(--project-color) 30%, #c9996a);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--project-color) 62%, #4a2e1c),
+    0 4px 0 rgba(70, 40, 20, 0.35),
+    0 10px 24px -10px rgba(0, 0, 0, 0.55);
 }
-.row-desk.is-working::before {
-  content: '';
-  position: absolute;
-  left: 6%;
-  right: 6%;
-  top: 46px;
-  bottom: 34px;
-  z-index: 0;
-  background: radial-gradient(closest-side, rgba(255, 210, 140, 0.26), transparent);
+.row-zone > .row-zone-mark {
+  top: auto;
+  bottom: 7px;
+  z-index: 5;
 }
-.row-status {
-  position: absolute;
-  top: 31px;
-  left: 50%;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 99px;
-  transform: translateX(-50%);
-  font-size: 9.5px;
-  white-space: nowrap;
-  color: var(--text-2);
-  background: rgba(17, 18, 22, 0.9);
-  border: 1px solid var(--line-2);
-}
-.row-status i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-.row-desk.group-attention .row-status {
-  color: var(--text);
-  border-color: rgba(255, 122, 138, 0.5);
-}
-.row-news {
-  position: absolute;
-  top: 56px;
-  right: 6px;
-  z-index: 4;
-  padding: 1px 5px;
-  border-radius: 5px;
-  font-size: 9px;
-  font-weight: 650;
-  color: var(--accent-ink);
-  background: var(--accent);
-}
-.row-pet {
-  position: absolute;
-  top: 55px;
-  left: 50%;
-  z-index: 1;
-  transform: translateX(-50%);
-  transition: translate 0.15s var(--ease-out);
-}
-.row-desk:hover .row-pet {
-  translate: 0 -5px;
-}
-.row-desk-img {
-  position: absolute;
-  bottom: 38px;
-  left: 50%;
-  z-index: 2;
-  width: 80px;
-  height: 51px;
-  transform: translateX(-50%);
-  image-rendering: pixelated;
-}
-.row-name {
-  position: absolute;
-  bottom: 22px;
-  left: 50%;
-  z-index: 3;
-  max-width: calc(100% - 10px);
-  padding: 1px 6px;
-  border-radius: 4px;
-  transform: translateX(-50%);
-  font-family: var(--font-pixel);
-  font-size: 10px;
-  font-weight: 700;
-  color: #f7ecdc;
-  background: rgba(28, 21, 19, 0.9);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.row-desk:hover .row-name {
-  color: var(--accent-2);
-}
-.row-project {
-  position: absolute;
-  bottom: 5px;
-  left: 4px;
-  right: 4px;
-  z-index: 3;
-  font-size: 9px;
-  text-align: center;
-  color: #4d3524;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.row-speech {
+  display: contents;
 }
 .row-empty {
   align-self: center;
-  margin-bottom: 64px;
+  margin: 0 auto 72px;
   padding: 8px 14px;
   border-radius: 10px;
   font-size: 12px;

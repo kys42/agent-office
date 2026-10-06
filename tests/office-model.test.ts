@@ -126,20 +126,39 @@ test('the pet speaks for the most urgent colleague, falling back to seat order',
   assert.equal(petSummary(buildOfficeModel(null, now)).lead, undefined);
 });
 
-test('helper desks report their news to the colleague they sit next to', () => {
+test('a helper that needs the person makes the pet call, like the roster', () => {
   const host = make('host', { officeSeat: 0 });
+  const other = make('other', { officeSeat: 1, status: 'work', updatedAt: now - 5_000 });
   const helper = make('helper', {
     relation: { kind: 'subagent', parentNativeId: 'host', source: 'fixture' },
     parentId: 'host',
-    status: 'work',
+    status: 'error',
     updatedAt: now - 5_000,
   });
-  const model = buildOfficeModel(snap([host, helper], [notice('helper')]), now);
+  // Real stores mark helper news as background: finals drop out, questions/errors stay.
+  const notices = [
+    notice('helper', { kind: 'error', phase: undefined, background: true }),
+    notice('helper', { background: true }),
+  ];
+  const model = buildOfficeModel(snap([host, other, helper], notices), now);
   const seat = model.seats.find((v) => v.session.id === 'host')!;
-  assert.equal(model.seats.length, 1, 'helpers sit beside their host, not at their own desk');
+  assert.equal(model.seats.length, 2, 'helpers sit beside their host, not at their own desk');
+  assert.deepEqual(
+    seat.helpers.map((v) => v.session.id),
+    ['helper'],
+  );
   assert.equal(seat.unread.length, 0);
-  assert.equal(seat.helperUnread.length, 1);
+  assert.equal(seat.helperUnread.length, 1, 'background finals are not important news');
   assert.ok(hasNews(seat));
+  const roster = Object.fromEntries(
+    triage(model.bySeat, notices, now).flatMap((g) => g.sessions.map((s) => [s.id, g.group])),
+  );
+  assert.equal(roster.helper, 'attention');
+  assert.equal(model.counts.attention, 1);
+  const pet = petSummary(model);
+  assert.equal(pet.group, 'attention');
+  assert.equal(pet.calling, true);
+  assert.equal(pet.lead?.session.id, 'helper');
   assert.equal(model.ownerOf('host')?.id, 'host');
 });
 

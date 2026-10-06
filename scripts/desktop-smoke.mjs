@@ -117,8 +117,8 @@ try {
   await dock.waitForTimeout(400); // entrance fade
   await dock.screenshot({ path: '.local/native-pet.png' });
   await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
-  await dock.waitForSelector('.row-desk');
-  assert.equal(await dock.locator('.row-desk').count(), 3);
+  await dock.waitForSelector('.desk-row [data-station-id]');
+  assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();
   assert.equal(row.width, row.area.width, 'row spans the whole work area');
   assert.equal(row.x, row.area.x);

@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  DESK_MAX,
-  DESK_MIN,
   PET_SIZE,
   ROW_HEIGHT,
+  ROW_SCALE_MAX,
+  ROW_SCALE_MIN,
+  ROW_SCENE_HEIGHT,
   clampInto,
-  deskWidth,
   petBounds,
   rowBounds,
+  rowScale,
 } from '../src/shared/dock-geometry.js';
 
 // A 1512×982 MacBook display: 25px menu bar on top, 70px Dock at the bottom.
@@ -45,9 +46,10 @@ test('a pet dragged past an edge or left on a removed display comes back inside'
   });
 });
 
-test('desks share the row between a readable minimum and a natural maximum', () => {
-  assert.equal(deskWidth(6, 1092), DESK_MAX);
-  assert.equal(deskWidth(10, 1092), 109);
-  assert.equal(deskWidth(40, 1092), DESK_MIN, 'many colleagues scroll instead of shrinking');
-  assert.equal(deskWidth(0, 1092), DESK_MAX);
+test('the row scene shrinks to fit the screen, but never below a readable size', () => {
+  assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE_MAX <= ROW_HEIGHT, 'the window holds the scene');
+  assert.equal(rowScale(800, 1092), ROW_SCALE_MAX);
+  assert.equal(rowScale(1400, 1092), 1092 / 1400);
+  assert.equal(rowScale(6000, 1092), ROW_SCALE_MIN, 'a big office scrolls instead');
+  assert.equal(rowScale(0, 1092), ROW_SCALE_MAX);
 });

@@ -9,17 +9,18 @@ const DRAG_SLOP = 4;
 /** The collapsed dock: the colleague who most needs the person, as a small desktop pet. */
 export function DeskPet({
   model,
-  loading,
+  status,
   onExpand,
 }: {
   model: OfficeModel;
-  loading: boolean;
+  /** Shown instead of the summary until the first snapshot arrives (or fails). */
+  status: string | null;
   onExpand: () => void;
 }) {
   const pet = petSummary(model);
   const total = model.seats.length;
-  const label = loading ? '연결 중' : pet.label;
-  const count = !loading && pet.group !== 'resting' ? pet.count : null;
+  const label = status ?? pet.label;
+  const count = !status && pet.group !== 'resting' ? pet.count : null;
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
@@ -49,7 +50,7 @@ export function DeskPet({
         </button>
       </div>
       <button
-        className={`desk-pet tone-${loading ? 'resting' : pet.group}`}
+        className={`desk-pet tone-${status ? 'resting' : pet.group}`}
         data-solid
         aria-label={`데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 책상 줄 펼치기`}
         title={`우리 사무실 · 동료 ${total}명\n누르면 책상 줄로 펼쳐지고, 끌어서 옮길 수 있어요`}
@@ -78,7 +79,7 @@ export function DeskPet({
         <span className="dock-pet-body">
           <Sprite
             provider={pet.lead?.session.provider ?? 'claude'}
-            mood={loading ? 'think' : (pet.lead?.pose.mood ?? 'idle')}
+            mood={status ? 'think' : (pet.lead?.pose.mood ?? 'idle')}
             size={72}
           />
         </span>

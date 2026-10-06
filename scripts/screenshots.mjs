@@ -51,7 +51,7 @@ try {
     animations: 'disabled',
   });
   await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
-  await dock.waitForSelector('.row-desk');
+  await dock.waitForSelector('.desk-row [data-station-id]');
   await dock.locator('.desk-row').screenshot({
     path: 'docs/images/desk-row.png',
     omitBackground: true,

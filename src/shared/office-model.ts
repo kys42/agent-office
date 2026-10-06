@@ -21,10 +21,15 @@ export interface ResidentView {
   unread: OfficeNotice[];
   /** Unread important news left by helper desks attached to this colleague. */
   helperUnread: OfficeNotice[];
+  /** Helper desks attached to this colleague (empty for helpers themselves). */
+  helpers: ResidentView[];
 }
 
 export interface OfficeModel {
   now: number;
+  notices: OfficeNotice[];
+  /** How long a notice bubble stays on a desk (preference, default 3h). */
+  bubbleHours: number;
   residents: Session[];
   hidden: Session[];
   /** Residents per zone, in projection order. */
@@ -33,6 +38,7 @@ export interface OfficeModel {
   bySeat: Session[];
   /** Primary office colleagues in seat order: the desks a compact view draws. */
   seats: ResidentView[];
+  /** Office colleagues per triage group, helpers included (same as the roster). */
   counts: Record<TriageGroup, number>;
   /** Important unread news across the whole office (header/inbox number). */
   unread: number;
@@ -54,38 +60,52 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
     ZONES.map((z) => [z, residents.filter((s) => zoneOf(s) === z)]),
   ) as Record<OfficeZone, Session[]>;
   const bySeat = [...zones.office].sort(seatOrder);
-  const hostOf = new Map(residents.flatMap((c) => (c.attachedTo ? [[c.id, c.attachedTo]] : [])));
-  const helperNews = new Map<string, OfficeNotice[]>();
-  for (const n of notices) {
-    const host = hostOf.get(n.sessionId);
-    if (host && !n.seenAt && isInboxNotice(n))
-      helperNews.set(host, [...(helperNews.get(host) ?? []), n]);
+  // One pass over the news: important unread notices per session, newest first.
+  const unreadBy = new Map<string, OfficeNotice[]>();
+  for (const n of [...notices].sort((a, b) => b.at - a.at))
+    if (!n.seenAt && isInboxNotice(n))
+      unreadBy.set(n.sessionId, [...(unreadBy.get(n.sessionId) ?? []), n]);
+  const unreadOf = (ids: string[]) =>
+    ids.flatMap((id) => unreadBy.get(id) ?? []).sort((a, b) => b.at - a.at);
+  const views = residents.map((s): ResidentView => {
+    const unread = unreadOf(s.resident?.sessionIds ?? [s.id]);
+    return {
+      session: s,
+      zone: zoneOf(s),
+      pose: presentSession(s, now),
+      group: triageGroup(s, notices, now, unread),
+      unread,
+      helperUnread: [],
+      helpers: [],
+    };
+  });
+  const byId = new Map(views.map((v) => [v.session.id, v]));
+  for (const v of views) {
+    const host = v.session.attachedTo && byId.get(v.session.attachedTo);
+    if (!host) continue;
+    host.helpers.push(v);
+    host.helperUnread.push(...v.unread);
   }
-  const views = residents.map((s): ResidentView => ({
-    session: s,
-    zone: zoneOf(s),
-    pose: presentSession(s, now),
-    group: triageGroup(s, notices, now),
-    unread: unreadInbox(s, notices),
-    helperUnread: helperNews.get(s.id) ?? [],
-  }));
   const byMember = new Map<string, ResidentView>();
   for (const v of views)
     for (const id of v.session.resident?.sessionIds ?? [v.session.id])
       if (!byMember.has(id)) byMember.set(id, v);
-  const byId = new Map(views.map((v) => [v.session.id, v]));
   const seats = bySeat.filter((s) => !s.attachedTo).map((s) => byId.get(s.id)!);
+  // Helpers count on their own (like the roster) and follow their host's seat for the lead.
+  const desks = seats.flatMap((v) => [v, ...v.helpers]);
   const counts = Object.fromEntries(
-    TRIAGE_ORDER.map((g) => [g, seats.filter((v) => v.group === g).length]),
+    TRIAGE_ORDER.map((g) => [g, desks.filter((v) => v.group === g).length]),
   ) as Record<TriageGroup, number>;
   const rank = (v: ResidentView) => TRIAGE_ORDER.indexOf(v.group);
-  const lead = seats.reduce<ResidentView | undefined>(
+  const lead = desks.reduce<ResidentView | undefined>(
     (best, v) => (!best || rank(v) < rank(best) ? v : best),
     undefined,
   );
   const view = (id: string) => byId.get(id) ?? byMember.get(id);
   return {
     now,
+    notices,
+    bubbleHours: snapshot?.preferences.bubbleHours ?? 3,
     residents,
     hidden,
     zones,
