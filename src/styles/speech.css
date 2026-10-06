@@ -45,9 +45,10 @@
 .desk-station:has(.speech-bubble.is-expanded) {
   z-index: 7;
 }
-/* The desk row's headroom ends at the window top. */
+/* The desk row's headroom ends at the tools band: bubble bottom 206px from the window top
+   (44 band + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
 .desk-row .speech-bubble.is-expanded .speech-copy b {
-  max-height: 104px;
+  max-height: 112px;
 }
 .speech-detail {
   display: none;

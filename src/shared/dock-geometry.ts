@@ -15,7 +15,7 @@ export const PET_SIZE = { width: 200, height: 350 };
  */
 export const ROW_SCALE = 1;
 /** Station-space height of the row scene (tall-bubble headroom + station + zone label). */
-export const ROW_SCENE_HEIGHT = 344;
+export const ROW_SCENE_HEIGHT = 376;
 /** A see-through band above the scene for the row's tools, so they never cover a bubble. */
 export const ROW_TOOLS_BAND = 44;
 export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;

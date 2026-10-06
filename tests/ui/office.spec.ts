@@ -222,6 +222,10 @@ test('A crowded desk row keeps the desk size and pages with side arrows', async 
       .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
   );
   expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
+  // …also when a long bubble is unfolded.
+  const long = page.locator('.desk-row .speech-bubble').first();
+  await long.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  expect((await long.boundingBox())!.y).toBeGreaterThanOrEqual(tools.y + tools.height);
 });
 test('Real local collector reports all three providers without modifying source data', async ({
   request,
