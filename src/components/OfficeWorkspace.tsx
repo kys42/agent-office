@@ -187,7 +187,7 @@ export function OfficeWorkspace({
             spotlight={listHover && model.view(listHover)?.veiled ? null : listHover}
             onHover={setDeskHover}
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
-            canVeil={(s) => model.view(s.id)?.group !== 'attention'}
+            canVeil={(s) => !model.view(s.id)?.needsPerson}
             footer={
               <>
                 {model.veiled.length > 0 && (

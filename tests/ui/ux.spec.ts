@@ -282,6 +282,9 @@ test('Bubbles draw read state instead of writing it, and unfold long text in pla
   const unfold = bubble.getByRole('button', { name: '말풍선 전체 보기' });
   await unfold.click();
   await expect(bubble).toHaveClass(/is-expanded/);
+  // A first-row desk unfolds within the office map (the map clips above its wall).
+  const map = (await page.locator('.office-map').boundingBox())!;
+  expect((await bubble.boundingBox())!.y).toBeGreaterThanOrEqual(map.y);
   await bubble.screenshot({ path: '.local/bubble-expanded.png' });
   await bubble.getByRole('button', { name: '말풍선 짧게 보기' }).click();
   await expect(bubble).not.toHaveClass(/is-expanded/);

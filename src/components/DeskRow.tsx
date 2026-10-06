@@ -217,7 +217,7 @@ export function DeskRow({
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
-                      {v.group !== 'attention' && (
+                      {!v.needsPerson && (
                         <VeilButton
                           name={label.name}
                           onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}

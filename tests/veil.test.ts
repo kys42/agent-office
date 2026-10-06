@@ -100,6 +100,8 @@ test('anyone who needs the person is shown even if hidden; helpers follow their 
     now,
   );
   assert.deepEqual(asking.scene.map((s) => s.id).sort(), ['h', 'x']);
+  assert.equal(asking.view('h')?.needsPerson, true, 'no hide button for a host whose helper asks');
+  assert.equal(quiet.view('h')?.needsPerson, false);
 });
 
 test('a just-arrived result turns the collapsed pet into its colleague', () => {

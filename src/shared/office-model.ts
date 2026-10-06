@@ -26,6 +26,8 @@ export interface ResidentView {
   helpers: ResidentView[];
   /** Hidden by the person until the next conversation (helpers follow their host). */
   veiled: boolean;
+  /** This colleague or one of its helpers waits for the person: never hidden, no hide button. */
+  needsPerson: boolean;
 }
 
 export interface OfficeModel {
@@ -96,6 +98,7 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
           ids.map((id) => canonical.get(id) ?? s),
           notices,
         ),
+      needsPerson: group === 'attention',
     };
   });
   const byId = new Map(views.map((v) => [v.session.id, v]));
@@ -106,7 +109,10 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
     host.helperUnread.push(...v.unread);
   }
   for (const host of views) {
-    if (host.helpers.some((h) => h.group === 'attention')) host.veiled = false;
+    if (host.helpers.some((h) => h.group === 'attention')) {
+      host.needsPerson = true;
+      host.veiled = false;
+    }
     for (const h of host.helpers) h.veiled = host.veiled;
   }
   const byMember = new Map<string, ResidentView>();
