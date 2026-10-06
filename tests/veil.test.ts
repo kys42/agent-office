@@ -164,6 +164,12 @@ test('only a real next conversation brings them back, not chatter or background 
     activity: { text: '새 요청', kind: 'request', at: now },
   });
   assert.equal(isVeiled([loneHelper], []), false);
+  // …also through its notices, which the store files as background.
+  const loneQuiet = {
+    ...loneHelper,
+    activity: { text: '진행', kind: 'progress' as const, at: now },
+  };
+  assert.equal(isVeiled([loneQuiet], [notice('h', { kind: 'request', background: true })]), false);
   const returned = make('a', { hiddenAt, returnedAt: now });
   assert.equal(isVeiled([returned], []), false, 'bringing them back to the office shows them');
 });
@@ -209,5 +215,16 @@ test('the pet prefers a question, skips opened news, and lets go once closed', (
     petSummary(buildOfficeModel(snap([a, b], [first, read]), now)).speaker,
     undefined,
     'reading the newest does not replay the older one either',
+  );
+  const asked = notice('a', {
+    kind: 'attention',
+    phase: undefined,
+    receivedAt: now - 3_000,
+    resolvedAt: now,
+  });
+  assert.equal(
+    petSummary(buildOfficeModel(snap([a, b], [first, asked]), now)).speaker,
+    undefined,
+    'a resolved question still stands in front of the older result',
   );
 });

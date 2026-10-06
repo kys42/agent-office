@@ -5,8 +5,7 @@ import { isBackground, isHelper } from './residents';
 
 /** The next conversation a hidden colleague comes back for. Progress chatter is not one. */
 const isConversation = (n: OfficeNotice) =>
-  !n.background &&
-  (n.kind === 'request' || isFinalNotice(n) || n.kind === 'attention' || n.kind === 'error');
+  n.kind === 'request' || isFinalNotice(n) || n.kind === 'attention' || n.kind === 'error';
 
 /**
  * A colleague the person hid stays out of the scenes until their next conversation: a new
@@ -20,9 +19,16 @@ export function isVeiled(members: Session[], notices: OfficeNotice[]): boolean {
   const hiddenAt = Math.max(0, ...members.map((m) => m.hiddenAt ?? 0));
   if (!hiddenAt) return false;
   if (members.some((m) => (m.returnedAt ?? 0) > hiddenAt)) return false;
-  const talking = members.filter((m) => !isBackground(m) && (members.length === 1 || !isHelper(m)));
+  // A helper at its own desk speaks for itself, though the store files its news as background.
+  const alone = members.length === 1 && isHelper(members[0]);
+  const talking = members.filter((m) => !isBackground(m) && (alone || !isHelper(m)));
   const ids = new Set(talking.map((m) => m.id));
-  if (notices.some((n) => ids.has(n.sessionId) && n.at > hiddenAt && isConversation(n)))
+  if (
+    notices.some(
+      (n) =>
+        ids.has(n.sessionId) && n.at > hiddenAt && (alone || !n.background) && isConversation(n),
+    )
+  )
     return false;
   return !talking.some((m) => {
     const a = sessionActivity(m);

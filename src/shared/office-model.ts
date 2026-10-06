@@ -3,7 +3,7 @@ import { officeResidents } from './residents';
 import { officeZone, sessionName } from './office';
 import { presentSession } from './presentation';
 import { TRIAGE_ORDER, triageGroup, unreadInbox, type TriageGroup } from './triage';
-import { isAttentionNotice, isInboxNotice, unreadNoticeCount } from './notices';
+import { isAttentionNotice, isFinalNotice, isInboxNotice, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
 import { isVeiled } from './veil';
 
@@ -188,12 +188,14 @@ export function petSummary(model: OfficeModel) {
     !n.dismissedAt &&
     !n.viewedAt &&
     model.now - n.receivedAt < PET_FRESH_MS;
-  // Each session's latest important arrival, read or not: handling it never replays history.
+  // Each session's latest important arrival — read, resolved or not — so handling it never
+  // replays older news; only an unresolved inbox notice may then speak.
+  const important = (n: OfficeNotice) =>
+    n.kind === 'attention' || n.kind === 'error' || (!n.background && isFinalNotice(n));
   const latestBy = new Map<string, OfficeNotice>();
   for (const n of model.notices) {
     const prior = latestBy.get(n.sessionId);
-    if (isInboxNotice(n) && (!prior || n.receivedAt > prior.receivedAt))
-      latestBy.set(n.sessionId, n);
+    if (important(n) && (!prior || n.receivedAt > prior.receivedAt)) latestBy.set(n.sessionId, n);
   }
   // A question beats a result; otherwise the newest arrival wins, by receipt time
   // (an old event can be collected late).
@@ -210,7 +212,12 @@ export function petSummary(model: OfficeModel) {
             (a, n) => (n && (!a || n.receivedAt > a.receivedAt) ? n : a),
             undefined,
           );
-        if (latest && fresh(latest) && (!speaker || before(latest, speaker.notice) > 0))
+        if (
+          latest &&
+          isInboxNotice(latest) &&
+          fresh(latest) &&
+          (!speaker || before(latest, speaker.notice) > 0)
+        )
           speaker = { view: v, notice: latest };
       }
   return {
