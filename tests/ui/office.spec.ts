@@ -227,6 +227,58 @@ test('A crowded desk row keeps the desk size and pages with side arrows', async 
   await long.getByRole('button', { name: '말풍선 전체 보기' }).click();
   expect((await long.boundingBox())!.y).toBeGreaterThanOrEqual(tools.y + tools.height);
 });
+test('Floor desks stand on the bottom edge with flags for zones, switchable from the row', async ({
+  page,
+}) => {
+  await page.goto('/?demo#mini=floor');
+  await page.reload();
+  const strip = page.locator('.desk-row.desk-floor');
+  await expect(strip.locator('[data-station-id]')).toHaveCount(6);
+  // No rugs or name cards: flags mark zones, plates name the desks.
+  await expect(strip.locator('.row-zone-floor')).toHaveCount(0);
+  await expect(strip.locator('.desk-name')).toHaveCount(0);
+  const zones = await strip.locator('.row-zone').count();
+  await expect(strip.locator('.zone-flag')).toHaveCount(zones);
+  await expect(strip.locator('.zone-flag').first()).toContainText('agent-office');
+  await expect(strip.locator('.floor-plate').first()).toContainText('코코');
+  // Desk legs reach the window's bottom edge.
+  await expect
+    .poll(async () => {
+      const bench = (await strip.locator('.team-bench').first().boundingBox())!;
+      return Math.round(970 - (bench.y + bench.height));
+    })
+    .toBeLessThanOrEqual(8);
+  const tools = (await strip.locator('.desk-row-tools').boundingBox())!;
+  const bubbleTop = Math.min(
+    ...(await strip
+      .locator('.speech-bubble')
+      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
+  );
+  expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
+  await strip.screenshot({ path: '.local/desk-floor.png' });
+  // Hide and pin work the same on the floor.
+  const desk = strip.locator('[data-station-id="demo:4"]');
+  await desk.hover();
+  await desk.getByRole('button', { name: /고정$/ }).click();
+  await expect(desk.locator('.floor-plate svg')).toHaveCount(1);
+  await desk.hover();
+  await desk.getByRole('button', { name: /가리기$/ }).click();
+  await expect(strip.locator('[data-station-id]')).toHaveCount(5);
+  // Switch looks; the pet reopens the last one used.
+  await page.getByRole('button', { name: '사무실 줄로 보기' }).click();
+  await expect(page.locator('.desk-row:not(.desk-floor) .row-zone-floor').first()).toBeVisible();
+  await page.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+  await page.keyboard.press('Escape');
+  const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
+  await pet.click();
+  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+  await page.getByRole('button', { name: '책상 줄 접기' }).click();
+  await page.locator('.dock-pet-anchor').hover();
+  await page.getByRole('button', { name: '바닥 책상 펼치기' }).click();
+  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+});
+
 test('Real local collector reports all three providers without modifying source data', async ({
   request,
   page,

@@ -5,7 +5,18 @@ import type { DockMode } from '../shared/types';
 import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
 
-const initialMode = (): DockMode => (location.hash === '#mini=row' ? 'row' : 'pet');
+const initialMode = (): DockMode =>
+  location.hash === '#mini=row' ? 'row' : location.hash === '#mini=floor' ? 'floor' : 'pet';
+type Expanded = Exclude<DockMode, 'pet'>;
+const EXPAND_KEY = 'office:dock-expand';
+/** The person's last unfolded look (office row or floor desks); the pet reopens it. */
+function lastExpanded(): Expanded {
+  try {
+    return localStorage.getItem(EXPAND_KEY) === 'floor' ? 'floor' : 'row';
+  } catch {
+    return 'row';
+  }
+}
 
 /**
  * The floating dock window. It reads the same office core as the big office and only
@@ -15,6 +26,16 @@ export function DeskDock() {
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
   const { model, snapshot, error, receipt, veil, patch } = useOffice(demo);
   const [mode, setMode] = useState<DockMode>(initialMode);
+  const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
+  useEffect(() => {
+    if (mode === 'pet') return;
+    setExpanded(mode);
+    try {
+      localStorage.setItem(EXPAND_KEY, mode);
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }, [mode]);
   const privacy = snapshot?.preferences.privacy ?? false;
   const reducedMotion = snapshot?.preferences.reducedMotion ?? false;
   // Desktop: the main process owns the window mode (bounds first, then it tells us).
@@ -38,7 +59,7 @@ export function DeskDock() {
     return () => document.body.classList.remove('dock-mode');
   }, []);
   useEffect(() => {
-    if (mode !== 'row') return;
+    if (mode === 'pet') return;
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') go('pet');
     };
@@ -73,10 +94,12 @@ export function DeskDock() {
           privacy={privacy}
           onReceipt={receipt}
           status={snapshot ? null : error ? '연결 확인' : '연결 중'}
-          onExpand={() => go('row')}
+          onExpand={() => go(expanded)}
+          onFloor={() => go('floor')}
         />
       ) : (
         <DeskRow
+          variant={mode === 'floor' ? 'floor' : 'office'}
           model={model}
           status={
             snapshot ? null : error ? `연결을 확인해 주세요 · ${error}` : '사무실 문을 여는 중…'
@@ -87,6 +110,7 @@ export function DeskDock() {
           onVeil={veil}
           onPin={(s) => void patch(s.id, { pinned: !s.pinned }).catch(() => {})}
           onCollapse={() => go('pet')}
+          onSwitch={() => go(mode === 'floor' ? 'row' : 'floor')}
         />
       )}
     </div>

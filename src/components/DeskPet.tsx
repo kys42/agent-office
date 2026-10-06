@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Expand, X } from 'lucide-react';
+import { Expand, Flag, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
@@ -22,13 +22,17 @@ export function DeskPet({
   privacy,
   onReceipt,
   onExpand,
+  onFloor,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
   status: string | null;
   privacy: boolean;
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
+  /** Unfold in the last used look (office row or floor desks). */
   onExpand: () => void;
+  /** Unfold the floor desks: desks on the screen's bottom edge, zones marked by flags. */
+  onFloor: () => void;
 }) {
   const pet = petSummary(model);
   const total = model.seats.length;
@@ -99,6 +103,14 @@ export function DeskPet({
             onClick={() => api.window('main')}
           >
             <Expand size={12} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="바닥 책상 펼치기"
+            title="바닥 책상 · 화면 맨 아래에 책상만, 구역은 깃발"
+            onClick={onFloor}
+          >
+            <Flag size={12} />
           </button>
           <button
             className="icon-btn"

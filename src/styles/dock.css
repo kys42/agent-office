@@ -445,8 +445,171 @@ body.dock-mode {
   background: var(--bg-3);
 }
 
+/* ───────── Floor desks (variant of the row) ─────────
+   No rugs or name cards: the desk legs stand on the window's bottom edge (the work area's
+   floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
+   on a pole marks where each zone begins. */
+.desk-floor .desk-row-arrow {
+  bottom: 96px;
+}
+.desk-floor .helper-desk > b {
+  display: none;
+}
+.floor-shadow {
+  position: absolute;
+  z-index: 1;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(0, 0, 0, 0.42),
+    rgba(0, 0, 0, 0.14) 70%,
+    transparent
+  );
+  pointer-events: none;
+}
+.floor-plate {
+  position: absolute;
+  left: 82px;
+  top: 144px;
+  z-index: 4;
+  max-width: 138px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #f7ecdc;
+  background: linear-gradient(#3a2a22, #2a1d17);
+  border: 1px solid #1a110d;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.18),
+    0 1px 0 rgba(0, 0, 0, 0.35);
+}
+.floor-plate:hover {
+  color: var(--accent-2);
+}
+.floor-plate i {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.floor-plate span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.floor-plate em {
+  flex-shrink: 0;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-style: normal;
+  text-align: center;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.zone-flag {
+  position: absolute;
+  bottom: 0;
+  z-index: 2;
+  width: 34px;
+  height: 214px;
+  transform: translateX(-50%);
+}
+.zone-flag-pole {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8a6a52, #4a342a);
+}
+.zone-flag-pole::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: -5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f2c887;
+  box-shadow: 0 0 0 1px #6e4a3a;
+}
+.zone-flag-base {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 15px;
+  height: 6px;
+  border-radius: 3px 3px 1px 1px;
+  background: #3a2820;
+  box-shadow: 0 3px 6px -2px rgba(0, 0, 0, 0.5);
+}
+/* A tall vertical banner (nobori) in the zone colour, swallow-tailed at the bottom. */
+.zone-flag-cloth {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  width: 24px;
+  max-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 0 14px;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d1410;
+  background: var(--project-color);
+  border: 2px solid color-mix(in srgb, var(--project-color) 55%, #2a1a10);
+  border-left-width: 1px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%);
+  transform-origin: left top;
+  animation: zone-flag-wave 4.5s ease-in-out infinite;
+  overflow: hidden;
+}
+.zone-flag-cloth b {
+  padding: 1px 2px;
+  border-radius: 2px;
+  font-family: 'Galmuri9', var(--font-pixel);
+  font-size: 9px;
+  color: var(--project-color);
+  background: #1d1410;
+}
+.zone-flag-cloth span {
+  /* Only the name runs top to bottom; a long one ends in an ellipsis. */
+  writing-mode: vertical-rl;
+  max-height: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.zone-flag.custom-area .zone-flag-cloth {
+  border-style: dashed;
+}
+@keyframes zone-flag-wave {
+  50% {
+    transform: skewY(2deg) scaleX(0.94);
+  }
+}
+
 .reduce-motion .desk-pet-stage,
 .reduce-motion .desk-row,
+.reduce-motion .zone-flag-cloth,
+.motion-paused .zone-flag-cloth,
 .reduce-motion .dock-pet-body,
 .reduce-motion .desk-pet.is-speaking .dock-pet-body,
 .reduce-motion .dock-pet-shadow,
@@ -456,6 +619,7 @@ body.dock-mode {
 @media (prefers-reduced-motion: reduce) {
   .desk-pet-stage,
   .desk-row,
+  .zone-flag-cloth,
   .dock-pet-body,
   .desk-pet.is-speaking .dock-pet-body,
   .dock-pet-shadow,

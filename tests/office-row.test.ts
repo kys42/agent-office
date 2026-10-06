@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { demoSnapshot } from '../src/lib/demo.js';
 import {
+  FLOOR_ZONE_GAP,
   layoutOffice,
   layoutRow,
   officeTopology,
@@ -199,4 +200,21 @@ test('each kind of speech gets its own bubble tone', () => {
   assert.equal(tone('call'), 'attention');
   assert.equal(tone('idle', undefined, 'request'), 'mine');
   assert.equal(tone('idle', undefined, 'reply'), 'reply');
+});
+
+test('the floor version keeps the same topology with room for a flag between zones', () => {
+  const sessions = [session(0), session(1), session(2, 'other'), session(3, 'third')];
+  const row = layoutRow(sessions);
+  const floor = layoutRow(sessions, { zoneGap: FLOOR_ZONE_GAP });
+  assert.deepEqual(
+    floor.zones.map((z) => [z.key, z.stations.map((s) => s.id), z.benches.length]),
+    row.zones.map((z) => [z.key, z.stations.map((s) => s.id), z.benches.length]),
+  );
+  for (let i = 1; i < floor.zones.length; i++)
+    assert.equal(
+      floor.zones[i].x - (floor.zones[i - 1].x + floor.zones[i - 1].width),
+      FLOOR_ZONE_GAP,
+      'a flag pole fits between zones',
+    );
+  assert.equal(floor.width - row.width, (FLOOR_ZONE_GAP - 18) * (floor.zones.length - 1));
 });
