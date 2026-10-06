@@ -2,6 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { OfficeAPI, Snapshot } from '../src/shared/types.js';
 const call = (method: string, ...args: unknown[]) =>
   ipcRenderer.invoke('office:call', method, args);
+// Electron prefixes main-process errors; terminal actions show their message to the person.
+const action = (channel: string, ...args: unknown[]) =>
+  ipcRenderer.invoke(channel, ...args).catch((e: Error) => {
+    throw new Error(e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
+  });
 const api: OfficeAPI = {
   quotas: () => call('quotas'),
   snapshot: () => call('snapshot'),
@@ -24,6 +29,9 @@ const api: OfficeAPI = {
   window: (action, id) => ipcRenderer.invoke('office:window', action, id),
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
+  terminal: (id) => action('office:terminal', id),
+  jump: (id) => action('office:jump', id),
+  send: (id, text) => action('office:send', id, text),
   exportFile: (name, content) => ipcRenderer.invoke('office:export', name, content),
   onSelect: (cb) => {
     const f = (_: unknown, id: string) => cb(id);

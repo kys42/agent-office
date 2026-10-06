@@ -752,6 +752,7 @@ export default function App() {
             privacy={prefs?.privacy ?? false}
             zoneRules={prefs?.zoneRules ?? []}
             onZoneRules={saveZoneRules}
+            terminalSend={prefs?.terminalSend ?? false}
           />
         )}
         {showUsage && (

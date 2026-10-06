@@ -261,6 +261,8 @@ export interface Preferences {
   autoArchive?: boolean;
   bubbleHours?: number;
   zoneRules?: ZoneRule[];
+  /** Opt-in: type follow-ups into a live Orca/tmux terminal from the desktop app. */
+  terminalSend?: boolean;
 }
 export interface Snapshot {
   sessions: Session[];
@@ -286,6 +288,18 @@ export interface Handoff {
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
+/** Live terminal hosting a session, observed by the desktop app only. Never carries a handle. */
+export interface TerminalTarget {
+  kind: 'orca' | 'tmux';
+  label: string;
+  /** Agent CLI process state, e.g. idle, busy, shell. */
+  status: string;
+  canSend: boolean;
+}
+export interface JumpResult {
+  action: 'focused' | 'opened' | 'copy';
+  text: string;
+}
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
   detail: (id: string) => Promise<Session>;
@@ -304,6 +318,12 @@ export interface OfficeAPI {
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
+  /** Desktop only: the live terminal of a session, if one can be verified. */
+  terminal?: (id: string) => Promise<TerminalTarget | null>;
+  /** Desktop only: focus the live terminal, or fall back to resume. */
+  jump?: (id: string) => Promise<JumpResult>;
+  /** Desktop only, opt-in: type text into the live terminal of an idle session. */
+  send?: (id: string, text: string) => Promise<string>;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
 }

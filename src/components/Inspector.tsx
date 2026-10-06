@@ -19,7 +19,14 @@ import {
   Terminal,
   LayoutGrid,
 } from 'lucide-react';
-import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
+import type {
+  Session,
+  SessionPatch,
+  Handoff,
+  OfficeNotice,
+  TerminalTarget,
+  ZoneRule,
+} from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -35,6 +42,7 @@ import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
+import { TerminalSend } from './TerminalSend';
 export function Inspector({
   session,
   sessions,
@@ -51,6 +59,7 @@ export function Inspector({
   privacy,
   zoneRules,
   onZoneRules,
+  terminalSend = false,
 }: {
   session: Session;
   sessions: Session[];
@@ -68,6 +77,7 @@ export function Inspector({
   privacy: boolean;
   zoneRules?: ZoneRule[];
   onZoneRules?: (rules: ZoneRule[]) => Promise<void>;
+  terminalSend?: boolean;
 }) {
   const [s, setS] = useState(session);
   const panelRef = useRef<HTMLElement>(null);
@@ -156,6 +166,29 @@ export function Inspector({
   useEffect(() => {
     if (!editing) setAlias(session.alias);
   }, [session.alias, editing]);
+  // The live Orca/tmux terminal, verified by the desktop app. Keyed by session so a switch
+  // never shows the previous colleague's terminal.
+  const [terminal, setTerminal] = useState<{ id: string; target: TerminalTarget | null }>();
+  const [terminalCheck, setTerminalCheck] = useState(0);
+  const locatable = isDesktop && !demo && session.provider === 'claude' && !!api.terminal;
+  useEffect(() => {
+    if (!locatable) return;
+    let valid = true;
+    const id = session.id;
+    api.terminal!(id)
+      .then((target) => valid && setTerminal({ id, target }))
+      .catch(() => valid && setTerminal({ id, target: null }));
+    return () => {
+      valid = false;
+    };
+  }, [locatable, session.id, session.updatedAt, terminalCheck]);
+  const live = locatable && terminal?.id === session.id ? terminal.target : null;
+  // Finishing a turn does not always add a record line, so look again while it works.
+  useEffect(() => {
+    if (!live || live.canSend) return;
+    const timer = setTimeout(() => setTerminalCheck((n) => n + 1), 4000);
+    return () => clearTimeout(timer);
+  }, [live]);
   const closePacket = useCallback(() => setPacket(null), []);
   const patch = async (p: SessionPatch) => {
     try {
@@ -200,9 +233,19 @@ export function Inspector({
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
-  const resumeLabel = s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 명령 복사';
+  const resumeLabel = live
+    ? `${live.kind === 'orca' ? 'Orca' : 'tmux'}로 이동`
+    : s.provider === 'codex' && isDesktop
+      ? 'Codex에서 열기'
+      : '재개 명령 복사';
   const resume = async () => {
     try {
+      if (api.jump) {
+        const result = await api.jump(s.id);
+        if (result.action === 'copy') await copy(result.text);
+        else notify(result.text);
+        return;
+      }
       const value = await api.resume(s.id);
       if (s.provider !== 'codex' || !isDesktop) await copy(value);
       else notify(value);
@@ -364,8 +407,22 @@ export function Inspector({
             onResume={resume}
             resumeLabel={resumeLabel}
             canResume={!demo}
+            canType={!!live && terminalSend}
             onShowNews={() => setTab('news')}
           />
+          {live && (
+            <TerminalSend
+              key={s.id}
+              target={live}
+              enabled={terminalSend}
+              privacy={privacy}
+              onSend={async (text) => {
+                notify(await api.send!(s.id, text));
+                // The turn is starting; show it as working until the terminal reports idle again.
+                setTerminal({ id: s.id, target: { ...live, status: 'busy', canSend: false } });
+              }}
+            />
+          )}
         </div>
         <div className="inspector-tabs" role="tablist" aria-label="업무 카드 항목">
           {(['history', 'news', 'overview', 'notes'] as const).map((t) => (

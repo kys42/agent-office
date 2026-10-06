@@ -53,6 +53,8 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 ## 배포와 경계
 
+원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`와 main 전용 IPC(`office:terminal`·`office:jump`·`office:send`)에만 있다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기는 opt-in·쉬는 세션만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
+
 패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 미니 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 알림 업데이트는 focus를 호출하지 않는다.
 
 서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.

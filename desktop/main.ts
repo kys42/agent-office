@@ -12,13 +12,23 @@ import {
 import path from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
-import type { Session } from '../src/shared/types.js';
+import type { JumpResult, Session, Snapshot } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
+import {
+  focusTerminal,
+  forgetTerminal,
+  hostName,
+  locateTerminal,
+  sendToTerminal,
+  terminalTarget,
+  TerminalInputError,
+} from './terminals.js';
 let main: BrowserWindow | null = null,
   mini: BrowserWindow | null = null,
   tray: Tray | null = null,
   bridge: ServiceBridge,
-  quitting = false;
+  quitting = false,
+  terminalSend: boolean | undefined;
 const root = path.join(__dirname, '..');
 const index = path.join(root, 'dist', 'index.html');
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -26,7 +36,8 @@ else {
   app.on('second-instance', () => showMain());
   app.whenReady().then(() => {
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
-    bridge.on('snapshot', (s) => {
+    bridge.on('snapshot', (s: Snapshot) => {
+      terminalSend = s.preferences?.terminalSend === true;
       for (const w of [main, mini])
         if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
     });
@@ -174,13 +185,47 @@ function setupIPC() {
   });
   ipcMain.handle('office:resume', async (e, id) => {
     trusted(e);
+    return (await resume(await bridge.call('detail', [id]))).text;
+  });
+  // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
+  const live = async (id: unknown, fresh = false) => {
     const s: Session = await bridge.call('detail', [id]);
-    if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
-      await shell.openExternal(`codex://threads/${s.nativeId}`);
-      return 'Codex에서 세션 열기를 요청했어요';
+    return {
+      s,
+      terminal: s.provider === 'claude' ? await locateTerminal(s.nativeId, { fresh }) : null,
+    };
+  };
+  ipcMain.handle('office:terminal', async (e, id) => {
+    trusted(e);
+    const { terminal } = await live(id);
+    return terminal ? terminalTarget(terminal) : null;
+  });
+  ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
+    trusted(e);
+    const { s, terminal } = await live(id, true);
+    if (!terminal) return resume(s);
+    try {
+      return { action: 'focused', text: await focusTerminal(terminal) };
+    } catch {
+      throw new Error(`${hostName(terminal.host)} 터미널로 이동하지 못했어요.`);
     }
-    const quoted = "'" + s.nativeId.replace(/'/g, "'\\''") + "'";
-    return s.provider === 'claude' ? `claude --resume ${quoted}` : `OpenClaw 세션: ${s.nativeId}`;
+  });
+  ipcMain.handle('office:send', async (e, id, text) => {
+    trusted(e);
+    if (typeof text !== 'string' || text.length > 20000) throw new Error('잘못된 요청');
+    if (terminalSend === undefined)
+      terminalSend = (await bridge.call('snapshot')).preferences?.terminalSend === true;
+    if (!terminalSend) throw new Error('설정에서 ‘터미널로 보내기’를 켜 주세요.');
+    const { terminal } = await live(id, true);
+    if (!terminal) throw new Error('지금 열려 있는 Orca·tmux 터미널을 찾지 못했어요.');
+    try {
+      return await sendToTerminal(terminal, text);
+    } catch (error) {
+      if (error instanceof TerminalInputError) throw error;
+      throw new Error(`${hostName(terminal.host)}에 보내지 못했어요. 터미널을 확인해 주세요.`);
+    } finally {
+      forgetTerminal(terminal.process.sessionId);
+    }
   });
   ipcMain.handle('office:export', async (e, name, content) => {
     trusted(e);
@@ -195,6 +240,17 @@ function setupIPC() {
     await writeFile(result.filePath, content, { mode: 0o600 });
     return true;
   });
+}
+async function resume(s: Session): Promise<JumpResult> {
+  if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
+    await shell.openExternal(`codex://threads/${s.nativeId}`);
+    return { action: 'opened', text: 'Codex에서 세션 열기를 요청했어요' };
+  }
+  const quoted = "'" + s.nativeId.replace(/'/g, "'\\''") + "'";
+  return {
+    action: 'copy',
+    text: s.provider === 'claude' ? `claude --resume ${quoted}` : `OpenClaw 세션: ${s.nativeId}`,
+  };
 }
 app.on('activate', () => showMain());
 app.on('before-quit', () => {

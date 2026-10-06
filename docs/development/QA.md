@@ -1,3 +1,19 @@
+# 원래 터미널 이동·바로 보내기 · 2026-10-06
+
+- 단위/계약 **134개** 통과(신규 `tests/terminals.test.ts` 12개)
+  - 세션 기록 형식·pid 일치·PID 재사용(UTC lstart) 거부
+  - 인수 속 가짜 환경변수 무시, tmux tty 불일치·Orca 탭 불일치/끊김/쓰기 불가 거부
+  - handle 없는 렌더러 뷰, 제어문자 제거·4000자 제한
+  - Orca/tmux 명령 인자와 순서, 작업 중·shell 상태 거부, 공유 서비스(웹 RPC)에서 터미널 메서드 거부와 opt-in 기본값 꺼짐
+- Playwright **37개**, TypeScript·formatter·production build, MCP smoke(4개 읽기 도구) 통과
+- Electron smoke(3종·미니·IPC·격리) 통과. 같은 앱이 메인 체크아웃에서 실행 중이라 단일 인스턴스 잠금을 피하려고 별도 `--user-data-dir`로 실행했다
+- 실측: 이 워크트리에 임시 Orca 터미널(`claude -n ao-send-test`)과 detached tmux(`claude -n ao-tmux-test`)를 띄워 확인했다. 개인 세션에는 보내지 않았다
+  - 실행 중 세션 23개가 모두 세션 기록 파일과 매칭되고, 조회는 Orca 약 0.3초, tmux 약 0.07초
+  - Orca 탭 전환(`navigated: true`)과 tmux 패널 선택 동작
+  - 두 줄 입력이 한 번의 사용자 메시지로 기록되고 응답이 돌아옴(Orca·tmux 모두). 작업 중 두 번째 보내기는 거부됨
+  - 격리 프로필의 앱에서 IPC `terminal`·`jump`·`send`, 설정이 꺼져 있을 때 거부, 입력창 클릭·⌘↵ 보내기와 보낸 직후 작업 중 표시를 확인했다
+- 한계: Codex·Ghostty·Warp·VS Code 내장 터미널은 대상이 아니다(기존 재개 동작 유지). tmux 이동은 해당 tmux를 띄운 터미널 앱을 앞으로 가져오지 않는다. 세션 기록 파일은 Claude Code의 비공개 형식이라 바뀌면 기존 재개로 돌아간다
+
 # UX 재설계(할 일 흐름) · 2026-10-05
 
 - 단위/계약 **107개** 통과(신규 `tests/triage.test.ts` 6개: 돌아온 시점으로 고정한 요약 구간, 할 일 그룹 순서, 진행/읽음/보조·단계 불명 응답 제외, 페르소나 실행의 미해결 질문 승격, 관측된 작업 시작 기반 경과 시간, 자리 비운 사이 요약의 bootstrap/읽음/이전 수신 제외).

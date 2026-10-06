@@ -29,6 +29,7 @@ export function NowCard({
   onResume,
   resumeLabel,
   canResume,
+  canType = false,
   onShowNews,
 }: {
   session: Session;
@@ -38,6 +39,8 @@ export function NowCard({
   onResume: () => void;
   resumeLabel: string;
   canResume: boolean;
+  /** The live terminal accepts follow-ups typed from this card. */
+  canType?: boolean;
   onShowNews: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -132,7 +135,9 @@ export function NowCard({
                 )}
               </div>
               <small className="now-note">
-                답변과 승인은 원래 앱에서 해 주세요. Agent Office는 기록을 읽기만 해요.
+                {canType
+                  ? '승인 요청은 원래 앱에서 답해 주세요. 쉬는 중이면 아래에서 바로 이어서 말할 수 있어요.'
+                  : '답변과 승인은 원래 앱에서 해 주세요. Agent Office는 기록을 읽기만 해요.'}
               </small>
             </>
           )}

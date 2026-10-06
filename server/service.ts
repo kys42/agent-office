@@ -48,6 +48,7 @@ const prefsSchema = z
     archiveDays: z.number().int().min(1).max(365).optional(),
     bubbleHours: z.number().int().min(1).max(24).optional(),
     zoneRules: z.array(zoneRuleSchema).max(200).optional(),
+    terminalSend: z.boolean().optional(),
   })
   .strict();
 export class OfficeService extends EventEmitter {
