@@ -11,7 +11,7 @@ import {
   SlidersHorizontal,
   EyeOff,
 } from 'lucide-react';
-import type { OfficeZone, Provider, Snapshot } from '../shared/types';
+import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
 import { sessionName } from '../shared/office';
@@ -52,6 +52,7 @@ export function OfficeWorkspace({
   onZoneHandled,
   model,
   onVeil,
+  onPin,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -71,6 +72,8 @@ export function OfficeWorkspace({
   model: OfficeModel;
   /** Hide colleagues (all member runs) until their next conversation, or bring them back. */
   onVeil: (ids: string[], on: boolean) => void;
+  /** Keep a colleague in the office however long it stays quiet (toggles `pinned`). */
+  onPin: (s: Session) => void;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -188,6 +191,7 @@ export function OfficeWorkspace({
             onHover={setDeskHover}
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
             canVeil={(s) => !model.view(s.id)?.needsPerson}
+            onPin={onPin}
             footer={
               <>
                 {model.veiled.length > 0 && (

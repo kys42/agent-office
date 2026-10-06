@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { demoSnapshot } from '../../src/lib/demo';
+import type { OfficeNotice } from '../../src/shared/types';
 
 test('Roster is a to-do list: waiting, results, working — and tiles jump to rows', async ({
   page,
@@ -208,7 +209,9 @@ test('Hiding a colleague clears them from the office and the desk row until they
   const eye = nemo.getByRole('button', { name: /가리기$/ });
   await expect(eye).toBeVisible();
   await eye.hover();
-  await expect(nemo.locator('.veil-tip')).toContainText('다음 대화(새 요청·최종 응답)');
+  await expect(nemo.locator('.veil-button .veil-tip')).toContainText(
+    '다음 대화(새 요청·최종 응답)',
+  );
   await eye.click();
   await expect(nemo).toHaveCount(0);
   await expect(page.locator('.office-map [data-station-id]')).toHaveCount(5);
@@ -315,4 +318,104 @@ test('Bubbles show the original message: "~" survives and inline style renders',
   // Unfolded, it grows sideways with the text, not only downwards.
   expect((await bubble.boundingBox())!.width).toBeGreaterThan(narrow + 20);
   await bubble.screenshot({ path: '.local/bubble-markdown.png' });
+});
+
+test('Each kind of speech has its own bubble: mine, thought, progress, reply, call, error', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const now = Date.now();
+  const kinds: [string, Partial<OfficeNotice>, string][] = [
+    [
+      'demo:0',
+      { kind: 'request', phase: undefined, text: '데일리 다시 뽑아줘. 9/28~10/2 범위로.' },
+      'mine',
+    ],
+    [
+      'demo:1',
+      {
+        kind: 'progress',
+        phase: 'commentary',
+        text: '세션 로그를 어떻게 묶을지 생각하는 중이에요.',
+      },
+      'thought',
+    ],
+    [
+      'demo:2',
+      { kind: 'progress', phase: 'commentary', text: '로그 파일 3개를 읽고 있어요.' },
+      'progress',
+    ],
+    [
+      'demo:3',
+      {
+        kind: 'attention',
+        phase: undefined,
+        text: '원래 앱에서 질문이나 입력 요청을 확인해 주세요.',
+      },
+      'attention',
+    ],
+    ['demo:4', { kind: 'error', phase: undefined, text: '테스트가 실패했어요.' }, 'error'],
+    [
+      'demo:5',
+      { kind: 'reply', phase: 'final', text: '정리를 마쳤어요. 결과 표를 남겼습니다.' },
+      'reply',
+    ],
+  ];
+  snapshot.notices = kinds.map(([sessionId, patch], i) => ({
+    id: `${sessionId}::tone${i}`,
+    sessionId,
+    eventId: `tone${i}`,
+    kind: 'reply',
+    phase: 'final',
+    text: '',
+    at: now - i * 1000,
+    receivedAt: now - i * 1000,
+    version: 'v',
+    seenAt: null,
+    viewedAt: null,
+    dismissedAt: null,
+    resolvedAt: null,
+    bootstrap: false,
+    ...patch,
+  }));
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/');
+  for (const [id, , tone] of kinds)
+    await expect(
+      page.locator(`.office-map [data-station-id="${id}"] .speech-bubble`),
+    ).toHaveAttribute('data-tone', tone);
+  await expect(page.locator('.office-map .speech-bubble.tone-thought .bubble-trail')).toHaveCount(
+    1,
+  );
+  await expect(page.locator('.office-map .speech-bubble.tone-progress .bubble-typing')).toHaveCount(
+    1,
+  );
+  await page.locator('.office-map').screenshot({ path: '.local/bubble-tones-office.png' });
+  await page.goto('/#mini=row');
+  await page.reload();
+  await expect(page.locator('.desk-row .speech-bubble')).toHaveCount(6);
+  await page.locator('.desk-row').screenshot({ path: '.local/bubble-tones-row.png' });
+});
+
+test('Pinning keeps a colleague in the office: the pin stays visible on the desk', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  const desk = page.locator('.office-map [data-station-id="demo:2"]');
+  await desk.hover();
+  const pin = desk.getByRole('button', { name: /고정$/ });
+  await pin.hover();
+  await expect(desk.locator('.pin-button .veil-tip')).toContainText(
+    '대기 라운지·보관으로 옮기지 않아요',
+  );
+  await pin.click();
+  const pinned = desk.getByRole('button', { name: /고정 풀기$/ });
+  await expect(pinned).toHaveAttribute('aria-pressed', 'true');
+  await page.mouse.move(5, 5);
+  await expect(pinned).toBeVisible();
+  await pinned.click();
+  await expect(desk.getByRole('button', { name: /고정$/ })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
 });

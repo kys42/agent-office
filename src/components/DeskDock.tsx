@@ -13,7 +13,7 @@ const initialMode = (): DockMode => (location.hash === '#mini=row' ? 'row' : 'pe
  */
 export function DeskDock() {
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
-  const { model, snapshot, error, receipt, veil } = useOffice(demo);
+  const { model, snapshot, error, receipt, veil, patch } = useOffice(demo);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const privacy = snapshot?.preferences.privacy ?? false;
   const reducedMotion = snapshot?.preferences.reducedMotion ?? false;
@@ -85,6 +85,7 @@ export function DeskDock() {
           reducedMotion={reducedMotion}
           onReceipt={receipt}
           onVeil={veil}
+          onPin={(s) => void patch(s.id, { pinned: !s.pinned }).catch(() => {})}
           onCollapse={() => go('pet')}
         />
       )}

@@ -110,3 +110,213 @@
 .speech-bubble.is-expanded .md-p + .md-p {
   margin-top: 4px;
 }
+
+/* ───────── Bubble tones: each kind of speech has its own shape ─────────
+   Colours flow through variables so read state (quiet border) works for every shape. */
+.speech-bubble[data-tone] {
+  --b-bg: #fffaf1;
+  --b-ink: #2a2128;
+  --b-line: #2a2128;
+  --b-chip: #efe6d6;
+  --b-chip-ink: #6b5e55;
+  --b-meta: #9a8b7d;
+  background: var(--b-bg);
+  color: var(--b-ink);
+  border-color: var(--b-line);
+  box-shadow: 0 3px 0 var(--b-line);
+}
+.speech-bubble[data-tone]::after {
+  background: var(--b-bg);
+  border-color: var(--b-line);
+}
+.speech-bubble[data-tone] .bubble-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--b-chip-ink);
+  background: var(--b-chip);
+}
+.speech-bubble[data-tone] .speech-copy > small > em {
+  color: var(--b-meta);
+}
+.speech-bubble[data-tone].bubble-opened {
+  --b-line: #9b8d80;
+  box-shadow: 0 2px 0 rgba(80, 60, 45, 0.35);
+}
+
+/* Mine — the person's own words: an ink bubble with its tail from the right. */
+.speech-bubble.tone-mine {
+  --b-bg: #2b2433;
+  --b-ink: #f7ecdc;
+  --b-line: #f4b86c;
+  --b-chip: #f4b86c;
+  --b-chip-ink: #2a1a08;
+  --b-meta: #c9b9a6;
+  border-radius: 12px 12px 3px 12px;
+}
+.speech-bubble.tone-mine::after {
+  left: 80%;
+}
+.tone-mine .bubble-expand,
+.tone-mine .speech-copy code {
+  color: #f7ecdc;
+  background: rgba(255, 255, 255, 0.12);
+}
+.tone-mine .speech-detail {
+  color: #c9b9a6;
+  border-top-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Thought — a cloud with little circles trailing to the head. */
+.speech-bubble.tone-thought {
+  --b-bg: #f5f2ff;
+  --b-ink: #3f3470;
+  --b-line: #6b5bb8;
+  --b-chip: #e6e0ff;
+  --b-chip-ink: #4b3f8f;
+  --b-meta: #8d84b8;
+  border-radius: 26px 22px 28px 20px / 22px 26px 20px 24px;
+  box-shadow: 0 3px 0 rgba(107, 91, 184, 0.45);
+}
+.speech-bubble.tone-thought::after {
+  display: none;
+}
+.tone-thought .speech-open {
+  padding-inline: 11px;
+}
+.tone-thought .speech-copy b {
+  font-style: italic;
+  font-weight: 500;
+}
+.bubble-trail {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  pointer-events: none;
+}
+.bubble-trail i {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--b-bg);
+  border: 2px solid var(--b-line);
+}
+.bubble-trail i:first-child {
+  left: -10px;
+  top: 3px;
+  width: 11px;
+  height: 11px;
+}
+.bubble-trail i:last-child {
+  left: -2px;
+  top: 16px;
+  width: 6px;
+  height: 6px;
+}
+
+/* Progress — a work note: dashed edge and typing dots. */
+.speech-bubble.tone-progress {
+  --b-bg: #effaf4;
+  --b-ink: #1f3b2c;
+  --b-line: #2f8a5f;
+  --b-chip: #d8f4e4;
+  --b-chip-ink: #19663f;
+  --b-meta: #6f9a84;
+  border-style: dashed;
+  border-radius: 5px;
+}
+.bubble-typing {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 2px;
+}
+.bubble-typing i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: bubble-typing 1.2s ease-in-out infinite;
+}
+.bubble-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.bubble-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes bubble-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Reply — the finished answer: solid paper with a blue "done" edge. */
+.speech-bubble.tone-reply {
+  --b-chip: #dbe9ff;
+  --b-chip-ink: #1f4f96;
+  box-shadow:
+    inset 4px 0 0 #78b6ff,
+    0 3px 0 var(--b-line);
+}
+.tone-reply .speech-open {
+  padding-left: 11px;
+}
+
+/* Attention — a call: heavy red edge with a soft pulse. */
+.speech-bubble.tone-attention {
+  --b-bg: #fff1f3;
+  --b-ink: #3a1018;
+  --b-line: #c2304a;
+  --b-chip: #ffdfe4;
+  --b-chip-ink: #a2213a;
+  --b-meta: #b0707c;
+  border-width: 3px;
+  animation:
+    bubble-in 0.34s var(--ease-out) both,
+    bubble-call 1.6s ease-in-out 0.4s infinite;
+}
+@keyframes bubble-call {
+  50% {
+    box-shadow:
+      0 3px 0 var(--b-line),
+      0 0 0 5px rgba(194, 48, 74, 0.18);
+  }
+}
+
+/* Error — a warning label: amber stripes along the top. */
+.speech-bubble.tone-error {
+  --b-bg: #fff7e8;
+  --b-ink: #3b2a0a;
+  --b-line: #b7791f;
+  --b-chip: #fde8c8;
+  --b-chip-ink: #8b4d0d;
+  --b-meta: #a8895a;
+  background:
+    repeating-linear-gradient(135deg, rgba(183, 121, 31, 0.32) 0 6px, transparent 6px 12px) top /
+      100% 5px no-repeat,
+    var(--b-bg);
+}
+
+/* Anything else — a plain grey note. */
+.speech-bubble.tone-message {
+  --b-bg: #f6f4f0;
+  --b-line: #6b6460;
+}
+
+.reduce-motion .bubble-typing i,
+.motion-paused .bubble-typing i,
+.reduce-motion .speech-bubble.tone-attention,
+.motion-paused .speech-bubble.tone-attention {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bubble-typing i,
+  .speech-bubble.tone-attention {
+    animation: none;
+  }
+}

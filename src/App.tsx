@@ -526,6 +526,15 @@ export default function App() {
                 void veil(ids, on);
                 notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
               }}
+              onPin={(s) =>
+                onPatch(s.id, { pinned: !s.pinned })
+                  .then(() =>
+                    notify(
+                      s.pinned ? '고정을 풀었어요' : '고정했어요 · 오래 지나도 사무실에 남아요',
+                    ),
+                  )
+                  .catch((e) => notify(e.message))
+              }
               onSettings={() => setView('settings')}
               selected={selected}
               onSelect={choose}

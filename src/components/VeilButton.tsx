@@ -7,7 +7,7 @@ export function VeilButton({ name, onVeil }: { name: string; onVeil: () => void 
   const tip = useId();
   return (
     <button
-      className="veil-button"
+      className="desk-hover-btn veil-button"
       data-solid
       aria-label={`${name} 가리기`}
       aria-describedby={tip}

@@ -1,8 +1,25 @@
 import type { OfficeEvent, OfficeNotice, Session } from './types';
-import { bubbleNotice, noticeLabel, unreadNoticeCount } from './notices';
+import { bubbleNotice, isFinalNotice, noticeLabel, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
 
 const LIVE = ['work', 'think', 'call', 'error'];
+/**
+ * What kind of thing a bubble is saying — each kind gets its own bubble shape:
+ * mine (the person's own request), thought (thinking), progress (work notes), reply (final
+ * answer), attention (needs input), error, message (anything else).
+ */
+export type BubbleTone =
+  'mine' | 'thought' | 'progress' | 'reply' | 'attention' | 'error' | 'message';
+export const TONE_LABELS: Record<BubbleTone, string> = {
+  mine: '내 요청',
+  thought: '생각 중',
+  progress: '진행 중',
+  reply: '최종 응답',
+  attention: '응답 필요',
+  error: '확인 필요',
+  message: '응답',
+};
+
 /** Bubbles render this much of the original message (code blocks dropped). */
 const MARKDOWN_LIMIT = 1500;
 
@@ -53,10 +70,40 @@ export function stationSpeech(
     : activity.kind === 'status'
       ? null
       : sourceMarkdown(s, activity.eventId);
+  const b = bubble;
+  // A colleague waiting for the person speaks as a call, whatever its last note was.
+  const tone: BubbleTone = b
+    ? b.kind === 'request'
+      ? 'mine'
+      : s.status === 'call'
+        ? 'attention'
+        : b.kind === 'attention' || b.kind === 'error'
+          ? b.kind
+          : b.kind === 'progress'
+            ? s.status === 'think'
+              ? 'thought'
+              : 'progress'
+            : b.kind === 'reply' && isFinalNotice(b)
+              ? 'reply'
+              : 'message'
+    : s.status === 'call'
+      ? 'attention'
+      : s.status === 'error'
+        ? 'error'
+        : activity.kind === 'request'
+          ? 'mine'
+          : s.status === 'think'
+            ? 'thought'
+            : activity.kind === 'progress' || s.status === 'work'
+              ? 'progress'
+              : activity.kind === 'reply'
+                ? 'reply'
+                : 'message';
   return {
     members,
     news,
     bubble,
+    tone,
     activity,
     unread: unreadNoticeCount(news),
     text: bubble?.text ?? activity.text,

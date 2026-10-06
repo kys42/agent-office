@@ -172,3 +172,31 @@ test('the compact snapshot keeps the message a desk is speaking', () => {
   const recentOnly = session(0, 'team', { events, activity: { ...s.activity!, eventId: 'e9' } });
   assert.equal(snapshotEvents(recentOnly).length, 4);
 });
+
+test('each kind of speech gets its own bubble tone', () => {
+  const tone = (status: Session['status'], n?: Partial<OfficeNotice>, kind = 'progress') =>
+    stationSpeech(
+      session(0, 'team', {
+        status,
+        activity: { text: 'x', kind: kind as 'progress', at: now },
+      }),
+      n ? [notice('fixture:0', n)] : [],
+      3,
+      now,
+    ).tone;
+  assert.equal(tone('idle', { kind: 'request', phase: undefined }), 'mine');
+  assert.equal(tone('think', { kind: 'progress', phase: 'commentary' }), 'thought');
+  assert.equal(tone('work', { kind: 'progress', phase: 'commentary' }), 'progress');
+  assert.equal(tone('done', { kind: 'reply', phase: 'final' }), 'reply');
+  assert.equal(tone('done', { kind: 'reply', phase: undefined }), 'message');
+  assert.equal(tone('call', { kind: 'attention', phase: undefined }), 'attention');
+  assert.equal(tone('call', { kind: 'progress', phase: 'commentary' }), 'attention', 'calling');
+  assert.equal(tone('call', { kind: 'request', phase: undefined }), 'mine', 'my words stay mine');
+  assert.equal(tone('error', { kind: 'error', phase: undefined }), 'error');
+  // Live speech without a notice follows the colleague's state.
+  assert.equal(tone('think'), 'thought');
+  assert.equal(tone('work'), 'progress');
+  assert.equal(tone('call'), 'attention');
+  assert.equal(tone('idle', undefined, 'request'), 'mine');
+  assert.equal(tone('idle', undefined, 'reply'), 'reply');
+});

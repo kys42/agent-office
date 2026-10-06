@@ -7,11 +7,12 @@ import {
   Expand,
   EyeOff,
   GitBranch,
+  Pin,
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ReceiptAction } from '../lib/useOffice';
-import { MOODS, type NoticeReceipt } from '../shared/types';
+import { MOODS, type NoticeReceipt, type Session } from '../shared/types';
 import { branchInfo } from '../shared/branch';
 import {
   layoutRow,
@@ -29,6 +30,7 @@ import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
+import { PinButton } from './PinButton';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -48,6 +50,7 @@ export function DeskRow({
   reducedMotion,
   onReceipt,
   onVeil,
+  onPin,
   onCollapse,
 }: {
   model: OfficeModel;
@@ -56,6 +59,7 @@ export function DeskRow({
   reducedMotion: boolean;
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
   onVeil: (ids: string[], on: boolean) => void;
+  onPin: (s: Session) => void;
   onCollapse: () => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
@@ -223,6 +227,7 @@ export function DeskRow({
                           onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
                         />
                       )}
+                      <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
                       <Furniture kind="equipment" />
                       {pose.working && (
                         <span className="working-beacon">
@@ -249,6 +254,7 @@ export function DeskRow({
                         <strong>
                           <i style={{ background: MOODS[s.status].color }} />
                           <span>{label.name}</span>
+                          {s.pinned && <Pin size={9} />}
                         </strong>
                         <small>
                           <span>

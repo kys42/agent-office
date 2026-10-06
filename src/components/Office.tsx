@@ -9,6 +9,7 @@ import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
+import { PinButton } from './PinButton';
 import { stationSpeech } from '../shared/speech';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, POSTURE_LABELS } from '../shared/presentation';
@@ -35,6 +36,7 @@ export function Office({
   onHover,
   onVeil,
   canVeil = () => true,
+  onPin,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -53,6 +55,8 @@ export function Office({
   onVeil?: (s: Session) => void;
   /** Someone waiting for the person cannot be hidden. */
   canVeil?: (s: Session) => boolean;
+  /** Keep a colleague in the office however long it stays quiet (or let go). */
+  onPin?: (s: Session) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -298,6 +302,13 @@ export function Office({
                         <VeilButton
                           name={privacy ? s.provider : sessionName(s)}
                           onVeil={() => onVeil(s)}
+                        />
+                      )}
+                      {onPin && (
+                        <PinButton
+                          name={privacy ? s.provider : sessionName(s)}
+                          pinned={s.pinned}
+                          onPin={() => onPin(s)}
                         />
                       )}
                       <Furniture kind="equipment" />
