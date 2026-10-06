@@ -36,7 +36,7 @@ try {
   await page.getByRole('tab', { name: /대기 라운지/ }).click();
   await page.screenshot({ path: 'docs/images/waiting.png', animations: 'disabled' });
   const dock = await browser.newPage({
-    viewport: { width: 1440, height: 420 },
+    viewport: { width: 1440, height: 460 },
     deviceScaleFactor: 1,
     reducedMotion: 'reduce',
   });
