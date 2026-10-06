@@ -10,6 +10,8 @@ import type { NoticeReceipt, Preferences, SessionPatch, Snapshot } from '../shar
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
 const CLOCK_MS = 15_000;
+/** Matches the service's per-request limit for `veil`. */
+const VEIL_BATCH = 500;
 
 /**
  * The office core every window shares: the same snapshot, the same derived model and the
@@ -162,7 +164,9 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return;
     }
     try {
-      setSnapshot(await api.veil(ids, on));
+      // The service takes up to 500 ids per request; "bring everyone back" can be more.
+      for (let i = 0; i < ids.length; i += VEIL_BATCH)
+        setSnapshot(await api.veil(ids.slice(i, i + VEIL_BATCH), on));
     } catch (e) {
       notify((e as Error).message);
     }

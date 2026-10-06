@@ -157,6 +157,13 @@ test('only a real next conversation brings them back, not chatter or background 
     activity: { text: '정기 보고', kind: 'reply', at: now },
   });
   assert.equal(isVeiled([s, cron], [notice('cron')]), true);
+  // A helper shown at its own desk (no parent in view) returns on its own conversation.
+  const loneHelper = make('h', {
+    hiddenAt,
+    relation: { kind: 'subagent', parentNativeId: 'gone', source: 'fixture' },
+    activity: { text: '새 요청', kind: 'request', at: now },
+  });
+  assert.equal(isVeiled([loneHelper], []), false);
   const returned = make('a', { hiddenAt, returnedAt: now });
   assert.equal(isVeiled([returned], []), false, 'bringing them back to the office shows them');
 });
