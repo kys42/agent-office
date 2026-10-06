@@ -1,3 +1,48 @@
+# 2026-10-06 · 데스크 펫·한 줄 사무실·코어 공유 (PR #5, Issue #4 #7)
+
+- 미니 오피스(840×218, 최대 6명)를 **데스크 펫**으로 교체했다. 바탕화면에 작은 펫으로 떠 있다가 누르면 작업 영역 하단 전체 폭에 **한 줄 사무실**이 펼쳐진다. 트레이 메뉴는 '데스크 펫'과 '책상 줄 펼치기', 헤더와 팔레트는 '데스크 펫'.
+- **코어 공유, 표현만 분리**:
+  - `src/lib/useOffice.ts`: snapshot 구독·데모·액션(refresh/setPrefs/patch/receipt/visit/veil/returnToOffice)
+  - `src/shared/office-model.ts`: `buildOfficeModel` → 투영·구역·좌석·ResidentView·counts·lead·scene·veiled
+  - 큰 사무실(App/OfficeWorkspace/Office), DeskPet, DeskRow는 이걸 받아 그리기만 한다
+  - 배치는 `officeTopology`(구역 → 같은 worktree·브랜치 긴 책상 → 보조 책상)를 `layoutOffice`(2D)와 `layoutRow`(1D)가 나눠 쓴다
+  - 말풍선은 `stationSpeech`, `SpeechBubble`, `HelperDesk` 공통
+- **창(Electron main)**:
+  - 펫과 줄 모드는 main이 단일 기준이다(`office:dock` IPC, 로드 직후 모드 재전송)
+  - 드래그는 main이 커서를 16ms마다 따라간다. 4px 미만이면 클릭
+  - 투명 영역은 `setIgnoreMouseEvents(forward)`로 클릭을 통과시키고, `[data-solid]` 위에서만 마우스를 받는다. `acceptFirstMouse`
+  - 펫 위치는 발밑 지점으로 `desk-pet.json` v2에 저장한다(예전 좌상단 형식은 자동 변환)
+  - 펫을 쓰는 중에 큰 사무실을 닫으면 펫이 다시 나타난다
+- **한 줄 사무실**:
+  - 큰 사무실 책상 CSS를 그대로 `ROW_SCALE = 1`로 그린다. 인원이 늘어도 책상이 작아지지 않는다
+  - 넘치면 양옆 화살표가 나오고, 숨은 인원 수와 기다리는 동료 빨간 점을 표시한다. ←/→ 키와 휠 가로 스크롤
+  - 도구는 말풍선 위 투명 띠에 둔다. 창 높이는 420px(장면 376 + 도구 띠 44)
+- **가리기**(눈 버튼):
+  - `Session.hiddenAt`은 서비스 `veil(ids, on)` 요청으로 기록한다. 한 트랜잭션, 서비스 시각, `personal` 테이블
+  - '다음 대화'가 오면 해제된다: 새 요청, 최종 응답, 확인 요청/오류
+  - 진행 메모와 예약·내부 실행의 대화로는 풀리지 않는다. 혼자 앉은 보조는 자기 대화로 풀린다
+  - 부르는 동료(보조 포함)에게는 버튼이 없고, J/K 이동과 스포트라이트에서도 빠진다
+- **고정**(핀 버튼): `pinned` 토글. 고정된 책상은 핀이 늘 보인다.
+- **펫 말풍선**:
+  - 동료마다 최신 중요 소식(읽음·해결 포함) 하나만 후보로 본다. 그 소식이 미확인·미열람·안 접힘·2분 이내일 때만 그 동료가 펫이 되어 말한다
+  - 확인 요청을 우선하고, 이름표가 붙고, 마우스를 올리면 정보가 펼쳐진다
+- **말풍선**:
+  - 종류마다 모양이 다르다(`tone`): 내 요청, 생각 구름, 진행 메모, 최종 응답, 응답 필요, 확인 필요. 부르는 동료는 응답 필요 모양
+  - 펼치기 탭을 누르면 옆으로도 넓어진다
+  - 읽음 상태는 미확인 점과 흐린 테두리로 그린다(글자는 스크린리더용)
+  - 원문 마크다운을 인라인 스타일로 그린다(remark-gfm `singleTilde:false`)
+- **⚠ 참고 — 소식 요약은 손대지 말 것**: `messageExcerpt`는 `* _ \` ~`를 전부 지운다. 하지만 그 결과가 소식 version에 들어가서, 바꾸면 지난 소식이 전부 다시 울린다. 그래서 말풍선만 snapshot에 함께 실은 원문 이벤트(`snapshotEvents`)를 쓴다. 소식함 목록은 아직 물결이 빠진다(버전 이관 정책이 필요).
+- **base 통합**: 머지 직전에 base에 커스텀 구역(#6)과 사용량(#1)이 들어와서 충돌했다.
+  - `zoneLabel`과 `custom`은 `residentLabel`과 `officeTopology`로 옮겼다
+  - 새 요청 우선 말풍선은 `stationSpeech(focus=request)`로 표현했다
+  - 드래그 이동(`onZoneDrop`)과 가리기·고정 버튼이 같이 동작한다
+- **리뷰**:
+  - #4 범위: 독립 세션과 Codex 지적 모두 반영
+  - #7 범위: 독립 세션의 Major 2건을 반영하고, Codex 재리뷰 6회에서 나온 P2 엣지 케이스를 모두 반영. 최종 결과 회귀 없음
+  - 기존 코드 이슈는 #7 코멘트에 남겼다: 타임스탬프 없는 레코드의 mtime fallback, snapshot 비용, dock 창 notify 없음, 데모 창별 snapshot
+- **검증**: 머지 후 단위 149, UI 43, Electron smoke, MCP 통과, CI 통과. smoke는 임시 `--user-data-dir`로 띄워서, 떠 있는 개발용 앱의 단일 인스턴스 잠금과 충돌하지 않는다(12회 중 첫 1회 실패는 원인 미확인).
+- **미확인**: 실제 마우스 드래그, OS 수준 클릭 통과, 다중 디스플레이는 자동화로 검증하지 못했다.
+
 # 2026-10-06 · 사용량·비용·집중 연출(PR #1)을 새 디자인에 통합
 
 - `feat/office-ux`(PR #3)가 PR #1의 마지막 커밋(사용 한도·세션 비용·실행 위치·집중 연출) 이전에서 갈라져 충돌. 스택 머지를 위해 v1을 office-ux에 병합.
