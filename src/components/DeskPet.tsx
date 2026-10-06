@@ -2,8 +2,9 @@ import { useRef } from 'react';
 import { Expand, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ReceiptAction } from '../lib/useOffice';
-import type { NoticeReceipt } from '../shared/types';
-import { petSummary, type OfficeModel } from '../shared/office-model';
+import { MOODS, type NoticeReceipt } from '../shared/types';
+import { petSummary, residentLabel, type OfficeModel } from '../shared/office-model';
+import { branchInfo } from '../shared/branch';
 import { PET_SIZE } from '../shared/dock-geometry';
 import { stationSpeech } from '../shared/speech';
 import { Sprite } from './Sprite';
@@ -35,9 +36,16 @@ export function DeskPet({
   const count = !status && pet.group !== 'resting' ? pet.count : null;
   const speaker = status ? undefined : pet.speaker;
   const speech = speaker
-    ? stationSpeech(speaker.view.session, model.notices, model.bubbleHours, model.now)
+    ? stationSpeech(
+        speaker.view.session,
+        model.notices,
+        model.bubbleHours,
+        model.now,
+        speaker.notice,
+      )
     : undefined;
   const bubble = speech?.bubble;
+  const who = speaker && residentLabel(speaker.view.session, privacy);
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
@@ -60,6 +68,26 @@ export function DeskPet({
                 void api.window('main', bubble.sessionId);
               }}
               onDismiss={() => onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')}
+              detail={
+                who && (
+                  <>
+                    <span>
+                      <strong>{who.name}</strong> · {MOODS[speaker.view.session.status].label}
+                    </span>
+                    {!privacy && (
+                      <span>
+                        {who.project} · {branchInfo(speaker.view.session).label}
+                      </span>
+                    )}
+                    <span>
+                      {speaker.view.unread.length > 1
+                        ? `읽지 않은 소식 ${speaker.view.unread.length}건 · `
+                        : ''}
+                      누르면 큰 사무실에서 열려요
+                    </span>
+                  </>
+                )
+              }
             />
           </div>
         )}
@@ -118,6 +146,11 @@ export function DeskPet({
             />
           </span>
           <span className="dock-pet-shadow" />
+          {who && (
+            <span className="dock-pet-name" title={privacy ? undefined : who.detail}>
+              {who.name}
+            </span>
+          )}
           <span className="dock-pet-pill">
             <i />
             {label}

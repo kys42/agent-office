@@ -165,7 +165,7 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
 }
 
 /** Station-space geometry of the desk row (the same 164×238 station as the big office). */
-export const ROW_TOP = 56;
+export const ROW_TOP = 72;
 const ROW_PAD = 12;
 const ROW_ZONE_GAP = 18;
 const HELPER_WIDTH = 73;

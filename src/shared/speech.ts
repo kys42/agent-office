@@ -13,10 +13,12 @@ export function stationSpeech(
   notices: OfficeNotice[],
   bubbleHours = 3,
   now = Date.now(),
+  /** Speak this notice instead of the desk's current bubble (e.g. what woke the pet). */
+  focus?: OfficeNotice,
 ) {
   const members = s.resident?.sessionIds ?? [s.id];
   const news = notices.filter((n) => members.includes(n.sessionId));
-  const bubble = bubbleNotice(news, bubbleHours, now);
+  const bubble = focus ?? bubbleNotice(news, bubbleHours, now);
   const activity = sessionActivity(s);
   return {
     members,

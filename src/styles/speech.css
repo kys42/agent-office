@@ -1,0 +1,72 @@
+/* ───────── Shared speech bubble extras (big office, desk row, desk pet) ───────── */
+/* Read state is drawn — unread dot, muted border — so the words are for screen readers. */
+.speech-bubble .bubble-exposure {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.speech-bubble .bubble-exposure::after {
+  content: none;
+}
+/* Unfold tab under the text. */
+.speech-bubble:has(> .bubble-expand) .speech-open {
+  padding-bottom: 16px;
+}
+.bubble-expand {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  z-index: 2;
+  width: 30px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  transform: translateX(-50%);
+  color: #2a2128;
+  background: rgba(42, 33, 40, 0.08);
+  transition: background 0.15s;
+}
+.bubble-expand:hover {
+  background: rgba(42, 33, 40, 0.18);
+}
+.speech-bubble.is-expanded .speech-copy b {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.desk-station:has(.speech-bubble.is-expanded) {
+  z-index: 7;
+}
+/* The desk row's headroom ends at the window top. */
+.desk-row .speech-bubble.is-expanded .speech-copy b {
+  max-height: 104px;
+}
+.speech-detail {
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed rgba(42, 33, 40, 0.25);
+  font-size: 10px;
+  line-height: 1.35;
+  color: #5b4d55;
+}
+.speech-detail > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.speech-detail strong {
+  font-weight: 700;
+  color: #2a2128;
+}
+.speech-bubble.is-expanded .speech-detail {
+  display: flex;
+}

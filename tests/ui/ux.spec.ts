@@ -256,8 +256,34 @@ test('A just-arrived result turns the collapsed pet into that colleague with a b
   await expect(bubble).toBeVisible();
   await expect(bubble).toContainText(reply.text.slice(0, 12));
   await expect(page.locator('.desk-pet.is-speaking')).toBeVisible();
+  // Who is speaking: a name tag, and more on hover.
+  const speaker = snapshot.sessions.find((x) => x.id === reply.sessionId)!;
+  await expect(page.locator('.dock-pet-name')).toHaveText(speaker.alias!);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet-speaking.png' });
+  await expect(page.locator('.dock-pet-speech .speech-detail')).toBeHidden();
+  await page.locator('.dock-pet-anchor').hover();
+  await expect(page.locator('.dock-pet-speech .speech-detail')).toContainText(speaker.project);
+  await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet-hover.png' });
   await page.getByRole('button', { name: /말풍선 접기/ }).click();
   await expect(bubble).toHaveCount(0);
   await expect(page.locator('.desk-pet.is-speaking')).toHaveCount(0);
+});
+
+test('Bubbles draw read state instead of writing it, and unfold long text in place', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  const bubble = page.locator('.office-map [data-station-id="demo:0"] .speech-bubble');
+  await expect(bubble).toBeVisible();
+  // The state words remain for screen readers but are not drawn.
+  await expect(bubble.locator('.bubble-exposure')).toHaveText('처음 도착');
+  expect(
+    await bubble.locator('.bubble-exposure').evaluate((e) => e.getBoundingClientRect().width),
+  ).toBeLessThanOrEqual(1);
+  const unfold = bubble.getByRole('button', { name: '말풍선 전체 보기' });
+  await unfold.click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await bubble.screenshot({ path: '.local/bubble-expanded.png' });
+  await bubble.getByRole('button', { name: '말풍선 짧게 보기' }).click();
+  await expect(bubble).not.toHaveClass(/is-expanded/);
 });

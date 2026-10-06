@@ -114,3 +114,19 @@ test('desks speak the same words in both views: a notice bubble, else live progr
   const busyOld = { ...old, sessionId: busy.id };
   assert.equal(stationSpeech(busy, [busyOld], 3, now).shows(false), false, 'news hides live text');
 });
+
+test('the pet can speak the notice that woke it, not just the desk’s latest one', () => {
+  const s = session(0, 'team', { status: 'idle' });
+  const reply = notice(s.id, { at: now - 2_000 });
+  const progress = notice(s.id, {
+    kind: 'progress',
+    phase: 'commentary',
+    text: '진행 중',
+    at: now,
+  });
+  assert.equal(stationSpeech(s, [reply, progress], 3, now).bubble?.id, progress.id);
+  const focused = stationSpeech(s, [reply, progress], 3, now, reply);
+  assert.equal(focused.bubble?.id, reply.id);
+  assert.equal(focused.text, reply.text);
+  assert.equal(focused.label, '최종 응답');
+});

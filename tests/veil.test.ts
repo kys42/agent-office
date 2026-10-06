@@ -116,6 +116,14 @@ test('a just-arrived result turns the collapsed pet into its colleague', () => {
     petSummary(buildOfficeModel(snap([a, b], [fresh, newer]), now)).speaker?.view.session.id,
     'a',
   );
+  // Late-collected older events: the latest receipt wins, even within one colleague.
+  const late = notice('b', { at: now - 60_000, receivedAt: now - 500 });
+  const early = notice('a', { at: now - 1_000, receivedAt: now - 5_000 });
+  const mine = notice('b', { at: now - 2_000, receivedAt: now - 9_000 });
+  assert.equal(
+    petSummary(buildOfficeModel(snap([a, b], [late, early, mine]), now)).speaker?.notice.id,
+    late.id,
+  );
   for (const stale of [
     notice('b', { receivedAt: now - PET_FRESH_MS - 1 }),
     notice('b', { bootstrap: true }),

@@ -174,14 +174,14 @@ export function petSummary(model: OfficeModel) {
     group === 'resting' ? model.seats.length - model.veiled.length : model.counts[group];
   const fresh = (n: OfficeNotice) =>
     !n.bootstrap && !n.dismissedAt && model.now - n.receivedAt < PET_FRESH_MS;
+  // The newest arrival wins, by receipt time (an old event can be collected late).
   let speaker: { view: ResidentView; notice: OfficeNotice } | undefined;
   for (const seat of model.seats)
     if (!seat.veiled)
-      for (const v of [seat, ...seat.helpers]) {
-        const notice = v.unread.find(fresh);
-        if (notice && (!speaker || notice.receivedAt > speaker.notice.receivedAt))
-          speaker = { view: v, notice };
-      }
+      for (const v of [seat, ...seat.helpers])
+        for (const notice of v.unread)
+          if (fresh(notice) && (!speaker || notice.receivedAt > speaker.notice.receivedAt))
+            speaker = { view: v, notice };
   return {
     group,
     count,

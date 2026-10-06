@@ -67,6 +67,8 @@ export function DeskRow({
     if (!el) return;
     const wheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
+      // An unfolded bubble scrolls its own text.
+      if (e.target instanceof Element && e.target.closest('.speech-bubble.is-expanded')) return;
       el.scrollLeft += e.deltaY;
       e.preventDefault();
     };
@@ -158,7 +160,12 @@ export function DeskRow({
                   } as CSSProperties
                 }
               >
-                <div className="project-area row-zone-floor" data-solid />
+                {/* The rug starts at chair height so heads and bubbles float over the desktop. */}
+                <div
+                  className="project-area row-zone-floor"
+                  data-solid
+                  style={{ top: ROW_TOP + 96 }}
+                />
                 <div
                   className="project-floor-mark row-zone-mark"
                   title={privacy ? undefined : zone.name}
