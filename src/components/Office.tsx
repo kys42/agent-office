@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Mail, Pin, X, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import { MOODS, type Session, type OfficeNotice } from '../shared/types';
-import { sessionName } from '../shared/office';
+import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
@@ -38,6 +38,7 @@ export function Office({
   footer,
   spotlight = null,
   onHover,
+  onZoneDrop,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -52,6 +53,8 @@ export function Office({
   footer?: ReactNode;
   spotlight?: string | null;
   onHover?: (id: string | null) => void;
+  /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
+  onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -62,6 +65,19 @@ export function Office({
   const [hidden, setHidden] = useState(document.hidden);
   const [arrivals, setArrivals] = useState<Record<string, number>>({});
   const seen = useRef<Set<string> | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropKey, setDropKey] = useState<string | null | undefined>(undefined);
+  const draggable = !!onZoneDrop && !privacy;
+  const dragFrom = dragging ? sessions.find((s) => s.id === dragging) : undefined;
+  const endDrag = () => {
+    setDragging(null);
+    setDropKey(undefined);
+  };
+  const drop = (zoneKey: string | null) => {
+    const from = dragFrom;
+    endDrag();
+    if (from && onZoneDrop && zoneKey !== projectKey(from)) onZoneDrop(from.id, zoneKey);
+  };
   useEffect(() => {
     const el = holder.current!;
     let windowSize = '';
@@ -160,7 +176,7 @@ export function Office({
   const callers = primary.filter((s) => s.status === 'call' || s.status === 'error');
   return (
     <section
-      className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''}`}
+      className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''} ${dragging ? 'is-dragging' : ''}`}
       aria-label="픽셀 사무실"
     >
       <div className="map-holder scene-viewport" ref={holder} data-scale={scale.toFixed(3)}>
@@ -172,7 +188,18 @@ export function Office({
           }}
         >
           <div
-            className="office-map"
+            className={`office-map ${dragging && dropKey === null ? 'drop-new' : ''}`}
+            onDragOver={(e) => {
+              if (!dragging) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'move';
+              setDropKey(null);
+            }}
+            onDrop={(e) => {
+              if (!dragging) return;
+              e.preventDefault();
+              drop(null);
+            }}
             style={{
               width: layout.width,
               height: layout.height,
@@ -219,9 +246,22 @@ export function Office({
             <i className="wall-plant plant-right" aria-hidden="true" />
             {layout.projects.map((area, index) => (
               <div
-                className="project-area"
+                className={`project-area ${dragging && dropKey === area.key ? (dragFrom && projectKey(dragFrom) === area.key ? 'drop-home' : 'drop-target') : ''}`}
                 key={area.key}
                 data-project-key={privacy ? undefined : area.key}
+                onDragOver={(e) => {
+                  if (!dragging) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'move';
+                  setDropKey(area.key);
+                }}
+                onDrop={(e) => {
+                  if (!dragging) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  drop(area.key);
+                }}
                 style={
                   {
                     transform: `translate(${area.x}px, ${area.y}px)`,
@@ -231,7 +271,16 @@ export function Office({
                   } as CSSProperties
                 }
               >
-                <div className="project-floor-mark" title={privacy ? undefined : area.name}>
+                <div
+                  className={`project-floor-mark ${area.custom ? 'custom-area' : ''}`}
+                  title={
+                    privacy
+                      ? undefined
+                      : area.custom
+                        ? `${area.name} · 직접 나눈 구역 (${area.custom.join(', ')})`
+                        : area.name
+                  }
+                >
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <b>{privacy ? '프로젝트' : area.name}</b>
                   <small>
@@ -277,7 +326,19 @@ export function Office({
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
                         aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}
-                        title={POSTURE_LABELS[pose.posture]}
+                        title={
+                          draggable
+                            ? `${POSTURE_LABELS[pose.posture]} · 끌어서 다른 구역으로`
+                            : POSTURE_LABELS[pose.posture]
+                        }
+                        draggable={draggable}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', s.id);
+                          e.dataTransfer.effectAllowed = 'move';
+                          setDragging(s.id);
+                          setHover(null);
+                        }}
+                        onDragEnd={endDrag}
                         onClick={() => onSelect(s.id)}
                         onMouseEnter={() => {
                           setHover(s.id);
@@ -441,6 +502,15 @@ export function Office({
           </div>
         </div>
       </div>
+      {dragging && (
+        <div className="stage-hud drag-hint" role="status">
+          {dropKey === null
+            ? '여기에 놓으면 새 구역을 만들어요'
+            : dropKey && dragFrom && dropKey !== projectKey(dragFrom)
+              ? `${layout.projects.find((p) => p.key === dropKey)?.name ?? '이'} 구역으로 옮겨요`
+              : '다른 구역 바닥이나 빈 바닥에 놓아 주세요'}
+        </div>
+      )}
       <div className="stage-hud hud-bottom-left office-card-bottom">
         <span className="hud-pill">
           {phase === 'night' || phase === 'dusk' ? <Moon size={12} /> : <Sun size={12} />}

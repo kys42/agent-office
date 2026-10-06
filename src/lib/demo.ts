@@ -3,9 +3,10 @@ import { noticeCandidates } from '../shared/notices';
 import { runtimeObservation } from '../shared/presentation';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../shared/office';
+import { applyZone } from '../shared/zones';
 export function reconcileDemo(snapshot: Snapshot): Snapshot {
   const sessions = snapshot.sessions.map((s) => ({
-    ...s,
+    ...applyZone(s, snapshot.preferences.zoneRules),
     zone: officeZone(s, snapshot.preferences),
   }));
   const active = officeResidents(sessions).sessions.filter((s) => s.zone === 'office');

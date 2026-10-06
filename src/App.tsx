@@ -28,6 +28,7 @@ import {
   type Preferences,
   type Session,
   type SessionPatch,
+  type ZoneRule,
   type Snapshot,
 } from './shared/types';
 import { demoSnapshot, reconcileDemo } from './lib/demo';
@@ -38,6 +39,7 @@ import { officeZone, allocateSeats, seatKey, sessionName } from './shared/office
 import { messageExcerpt } from './shared/activity';
 import { officeResidents } from './shared/residents';
 import { Inspector } from './components/Inspector';
+import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
 import { Settings } from './components/Settings';
 import { MiniOffice } from './components/MiniOffice';
@@ -124,6 +126,7 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [memoryQuery, setMemoryQuery] = useState('');
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
+  const [areaDrop, setAreaDrop] = useState<{ id: string; zone: string | null } | null>(null);
   const openSearch = () => setPalette(true);
   const closeHelp = useCallback(() => setHelp(false), []);
   const goZone = (zone: OfficeZone) => {
@@ -231,13 +234,18 @@ export default function App() {
       setSnapshot((s) =>
         s ? reconcileDemo({ ...s, preferences: { ...s.preferences, ...p } }) : s,
       );
-      return;
+      return true;
     }
     try {
       setSnapshot(await api.preferences(p));
+      return true;
     } catch (e) {
       notify((e as Error).message);
+      return false;
     }
+  };
+  const saveZoneRules = async (zoneRules: ZoneRule[]) => {
+    if (await onPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
   };
   const onPatch = async (id: string, p: SessionPatch) => {
     if (demo) {
@@ -692,6 +700,7 @@ export default function App() {
               onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
+              onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />
           ) : view === 'memory' ? (
             <Memory
@@ -723,6 +732,8 @@ export default function App() {
             notify={notify}
             demo={demo}
             privacy={prefs?.privacy ?? false}
+            zoneRules={prefs?.zoneRules ?? []}
+            onZoneRules={saveZoneRules}
           />
         )}
         {inbox && (
@@ -797,6 +808,22 @@ export default function App() {
           }}
         />
       )}
+      {areaDrop &&
+        (() => {
+          const moving = sessions.find((s) => s.id === areaDrop.id);
+          return moving ? (
+            <Modal title="사무실 구역 옮기기" onClose={() => setAreaDrop(null)}>
+              <ZoneEditor
+                session={moving}
+                sessions={sessions}
+                rules={prefs?.zoneRules ?? []}
+                onRules={saveZoneRules}
+                onClose={() => setAreaDrop(null)}
+                initialZone={areaDrop.zone}
+              />
+            </Modal>
+          ) : null;
+        })()}
       {help && (
         <Modal title="키보드 단축키" onClose={closeHelp}>
           <div className="shortcut-grid">

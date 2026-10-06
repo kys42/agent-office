@@ -198,3 +198,78 @@ test('A zone shortcut is applied once and not replayed after visiting other page
     'true',
   );
 });
+
+test('A colleague can be sent to a custom office area and returned to its project', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  await page.getByRole('button', { name: '모모, 응답 완료', exact: true }).click();
+  await page.getByRole('button', { name: '구역', exact: true }).click();
+  const editor = page.locator('.zone-editor');
+  await expect(
+    editor.locator('.zone-picker').getByRole('button', { name: /새 구역/ }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await editor.getByLabel('새 구역 이름').fill('리서치');
+  await editor.getByRole('radio', { name: /이 세션만/ }).check();
+  await editor.getByRole('button', { name: '리서치 구역으로 보내기' }).click();
+  const mark = page.locator('.project-floor-mark.custom-area');
+  await expect(mark).toHaveCount(1);
+  await expect(mark).toContainText('리서치');
+  await expect(mark).toContainText('1명');
+  await expect(page.locator('.inspector-project')).toContainText('리서치');
+  await page.screenshot({ path: 'test-results/custom-area.png' });
+
+  // A second colleague picks the existing area instead of retyping its name.
+  await page.getByRole('button', { name: '코코, 일하는 중', exact: true }).click();
+  await page.getByRole('button', { name: '구역', exact: true }).click();
+  await expect(
+    editor.locator('.zone-picker').getByRole('button', { name: /리서치/ }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await editor.getByRole('radio', { name: /이 세션만/ }).check();
+  await editor.getByRole('button', { name: '리서치 구역으로 보내기' }).click();
+  await expect(mark).toContainText('2명');
+
+  await page.getByRole('button', { name: '사무실 설정 열기' }).click();
+  const zones = page.locator('.zone-settings');
+  await expect(zones.getByLabel('리서치 구역 이름')).toHaveValue('리서치');
+  await expect(zones.getByRole('button', { name: /이 세션만/ })).toHaveCount(2);
+  await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
+
+  await page.getByRole('button', { name: '모모, 응답 완료', exact: true }).click();
+  await page.getByRole('button', { name: '구역', exact: true }).click();
+  await page.getByRole('button', { name: /프로젝트 구역으로/ }).click();
+  await expect(mark).toContainText('1명');
+});
+
+test('Dragging a colleague onto another zone asks who follows, then moves the desk', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  const pet = page.locator('.office-pet[data-session-id="demo:5"]');
+  const home = await page.locator('.project-area', { has: pet }).getAttribute('data-project-key');
+  const target = page.locator('.project-area', {
+    has: page.locator('.office-pet[data-session-id="demo:0"]'),
+  });
+  const targetKey = await target.getAttribute('data-project-key');
+  expect(targetKey).not.toBe(home);
+  // Desks bob while working, so skip the stability wait; drop near the zone's floor mark.
+  await pet.dragTo(target, { force: true, targetPosition: { x: 40, y: 20 } });
+  const dialog = page.getByRole('dialog', { name: '사무실 구역 옮기기' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.zone-picker button.active')).toContainText('agent-office');
+  await dialog.getByRole('radio', { name: /이 세션만/ }).check();
+  await dialog.getByRole('button', { name: 'agent-office 구역으로 보내기' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.locator(`.project-area[data-project-key="${targetKey}"] [data-station-id="demo:5"]`),
+  ).toBeVisible();
+
+  // Empty floor opens a new zone.
+  await page.locator('.office-pet[data-session-id="demo:0"]').dragTo(page.locator('.office-wall'), {
+    force: true,
+  });
+  await expect(
+    dialog.locator('.zone-picker').getByRole('button', { name: /새 구역/ }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await dialog.getByRole('button', { name: '취소' }).click();
+});

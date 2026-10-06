@@ -30,6 +30,24 @@ export interface WorkspaceIdentity {
     observedAt: number;
   };
 }
+/** User-defined office area. Explicit only: path prefixes are never grouped automatically. */
+export interface ZoneRule {
+  id: string;
+  name: string;
+  match: 'session' | 'worktree' | 'path' | 'branch';
+  /** Session id, worktree path, folder path or branch name (`prefix*` matches a prefix). */
+  value: string;
+  /** Workspace key the rule was made from, so other repositories never join by accident. */
+  repo?: string;
+  /** Join an existing project zone (its `projectKey`) instead of a custom area. */
+  target?: string;
+}
+export interface SessionArea {
+  key: string;
+  name: string;
+  ruleId: string;
+  match: ZoneRule['match'];
+}
 export interface SessionRelation {
   kind: 'root' | 'subagent' | 'fork' | 'child' | 'unknown';
   parentNativeId: string | null;
@@ -167,6 +185,8 @@ export interface Session {
   runtime?: RuntimeObservation;
   workspace?: WorkspaceIdentity;
   attachedTo?: string;
+  /** Custom office area from preferences; replaces the project zone only in the office view. */
+  area?: SessionArea;
   usage: Usage;
   events: OfficeEvent[];
   artifacts: string[];
@@ -198,6 +218,7 @@ export interface Preferences {
   archiveDays?: number;
   autoArchive?: boolean;
   bubbleHours?: number;
+  zoneRules?: ZoneRule[];
 }
 export interface Snapshot {
   sessions: Session[];

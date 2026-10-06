@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { zoneLabel } from '../shared/zones';
 import { CheckCheck, ChevronDown, Pin, Search, X } from 'lucide-react';
 import type { OfficeNotice, OfficeZone, Provider, Session } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
@@ -287,7 +288,7 @@ export function Roster({
                             )}
                           </strong>
                           <span className="session-meta">
-                            {privacy ? '내용 숨김' : s.project}
+                            {privacy ? '내용 숨김' : zoneLabel(s)}
                             <i>·</i>
                             {sort === 'frequent'
                               ? `${s.openCount || 0}번 열어봄`
