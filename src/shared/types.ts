@@ -223,6 +223,9 @@ export interface Handoff {
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
+/** Desk pet window: a small floating pet, or a full-width row of desks. */
+export type DockMode = 'pet' | 'row';
+export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   detail: (id: string) => Promise<Session>;
   visit: (id: string) => Promise<Snapshot>;
@@ -242,6 +245,9 @@ export interface OfficeAPI {
   resume: (id: string) => Promise<string>;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
+  /** Desktop only. Browser previews switch the dock layout locally. */
+  dock?: (action: DockAction) => Promise<void>;
+  onDock?: (callback: (mode: DockMode) => void) => () => void;
 }
 export const PROVIDERS: Record<
   Provider,

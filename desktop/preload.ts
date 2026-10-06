@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { OfficeAPI, Snapshot } from '../src/shared/types.js';
+import type { DockMode, OfficeAPI, Snapshot } from '../src/shared/types.js';
 const call = (method: string, ...args: unknown[]) =>
   ipcRenderer.invoke('office:call', method, args);
 const api: OfficeAPI = {
@@ -28,6 +28,12 @@ const api: OfficeAPI = {
     const f = (_: unknown, id: string) => cb(id);
     ipcRenderer.on('office:select', f);
     return () => ipcRenderer.removeListener('office:select', f);
+  },
+  dock: (action) => ipcRenderer.invoke('office:dock', action),
+  onDock: (cb) => {
+    const f = (_: unknown, mode: DockMode) => cb(mode);
+    ipcRenderer.on('office:dock', f);
+    return () => ipcRenderer.removeListener('office:dock', f);
   },
 };
 contextBridge.exposeInMainWorld('office', api);

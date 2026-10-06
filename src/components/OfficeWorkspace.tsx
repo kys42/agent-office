@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Archive,
   Armchair,
@@ -10,14 +10,15 @@ import {
   ChevronUp,
   SlidersHorizontal,
 } from 'lucide-react';
-import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
+import type { OfficeZone, Provider, Snapshot } from '../shared/types';
+import type { OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
-import { officeZone, sessionName } from '../shared/office';
+import { sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
 import { officeSchedule } from '../shared/lifecycle';
-import { officeResidents, sessionScopeLabel } from '../shared/residents';
+import { sessionScopeLabel } from '../shared/residents';
 import { RestLounge } from './RestLounge';
 import { Sprite } from './Sprite';
 import type { ReceiptHandler } from './News';
@@ -48,6 +49,7 @@ export function OfficeWorkspace({
   onInbox,
   zoneRequest,
   onZoneHandled,
+  model,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -63,6 +65,8 @@ export function OfficeWorkspace({
   onInbox: () => void;
   zoneRequest?: { zone: OfficeZone; at: number } | null;
   onZoneHandled?: () => void;
+  /** Shared office core: projection and zones are derived once for every view. */
+  model: OfficeModel;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -74,10 +78,7 @@ export function OfficeWorkspace({
     () => saved(key, { sort: 'recent' }).sort as 'recent' | 'frequent',
   );
   const { preferences: prefs } = snapshot;
-  const { sessions, hidden } = useMemo(
-    () => officeResidents(snapshot.sessions),
-    [snapshot.sessions],
-  );
+  const { residents: sessions, hidden, zones } = model;
   const [historyLimit, setHistoryLimit] = useState(20);
   // List hover spotlights a desk; desk hover only highlights its list row (no room dimming).
   const [listHover, setListHover] = useState<string | null>(null);
@@ -87,24 +88,10 @@ export function OfficeWorkspace({
     setZone(zoneRequest.zone);
     onZoneHandled?.();
   }, [zoneRequest]);
-  const zones = useMemo(
-    () =>
-      Object.fromEntries(
-        (['office', 'waiting', 'archive'] as OfficeZone[]).map((z) => [
-          z,
-          sessions.filter((s) => (s.zone || officeZone(s, prefs)) === z),
-        ]),
-      ) as Record<OfficeZone, Session[]>,
-    [sessions, prefs],
-  );
   const office = zones.office;
   useEffect(() => {
-    const s = sessions.find(
-      (s) => s.id === selected || s.resident?.sessionIds.includes(selected ?? ''),
-    );
-    if (s) {
-      setZone(s.zone || officeZone(s, prefs));
-    }
+    const owner = selected ? model.view(selected) : undefined;
+    if (owner) setZone(owner.zone);
   }, [selected]);
   const rows = zones[zone]
     .filter(

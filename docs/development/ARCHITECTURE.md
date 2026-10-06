@@ -35,6 +35,16 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - 최근 입력량 기반의 문맥 근사치와 세션 누적 사용량은 별도 필드다. OpenClaw의 contextTokens를 실제 사용량으로 오인하지 않는다.
 - 누락 값은 null이다. 큰 파일의 Claude 합계는 수집 구간 범위임을 표시한다. 금액 환산은 하지 않는다.
 
+## 렌더러 코어와 표현
+
+큰 사무실 창과 데스크 펫 창은 같은 코드로 같은 코어를 쓰고 표현만 다르다.
+
+- `src/lib/useOffice.ts`: snapshot 구독, 데모 분기, 변경 액션(refresh / setPrefs / patch / receipt / visit / returnToOffice), 15초 시계. `setPrefs`는 저장 성공 여부를 돌려준다.
+- `src/shared/office-model.ts`: `buildOfficeModel(snapshot, now)`이 동료 투영, 구역, 좌석 순서, 동료별 `ResidentView`(자세·할 일 그룹·미확인 소식·보조 소식), 그룹별 수, 대표 동료를 한 번에 파생한다. 개인정보 가림과 프로젝트 라벨은 `residentLabel` 한 곳에서 정한다.
+- 표현: App/OfficeWorkspace(큰 사무실), DeskPet(접힌 펫), DeskRow(책상 줄). `src/main.tsx`가 `#mini*` 해시로 루트를 고른다.
+- 창 모드(펫/줄)·위치·클릭 통과는 표현 상태라 코어에 넣지 않는다. Electron main이 소유하고 `office:dock` IPC로 렌더러와 맞춘다. 창 기하는 `src/shared/dock-geometry.ts`(순수). 펫 위치만 데이터 디렉터리의 `desk-pet.json`에 저장한다.
+- Office.tsx와 Roster.tsx는 애니메이션 시계와 명단 필터 때문에 아직 같은 shared 헬퍼를 직접 호출한다. 결과는 모델과 같으며, `ResidentView`로 옮기는 일은 후속이다.
+
 ## 보관과 조회
 
 데이터 위치: `~/Library/Application Support/Agent Office/office.sqlite`. `AGENT_OFFICE_DATA_DIR`로 변경할 수 있다. 디렉터리 0700, DB 0600, WAL, busy_timeout. 원본과 사용자 메타데이터를 별도 테이블로 유지한다.
@@ -53,7 +63,7 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 ## 배포와 경계
 
-패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 미니 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 알림 업데이트는 focus를 호출하지 않는다.
+패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
 
 서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
 

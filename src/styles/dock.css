@@ -1,0 +1,446 @@
+/* ───────────────────────── Desk pet & desk row (floating dock window) ─────────────────────────
+   The window is transparent: only the pet, the desks, the floor and the caps are drawn, so the
+   row reads as desks standing on the bottom edge of the desktop. Geometry mirrors
+   src/shared/dock-geometry.ts (PET_SIZE, ROW_HEIGHT). */
+body.dock-mode {
+  background: transparent;
+  overflow: hidden;
+}
+.dock-mode #root {
+  background: transparent;
+}
+/* Animate the fixed layers themselves: a transform on a wrapper would re-anchor them. */
+.desk-pet-stage,
+.desk-row {
+  animation: dock-enter 0.18s var(--ease-out);
+}
+@keyframes dock-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ───────── Pet ───────── */
+.desk-pet-stage {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 132px;
+  height: 148px;
+  display: grid;
+  place-items: end center;
+  user-select: none;
+}
+.desk-pet {
+  position: relative;
+  width: 116px;
+  height: 128px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+  border-radius: 18px;
+  cursor: grab;
+  touch-action: none;
+}
+.desk-pet:active {
+  cursor: grabbing;
+}
+.desk-pet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.dock-pet-body {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.35));
+  animation: dock-pet-bob 2.8s ease-in-out infinite;
+  transition: scale 0.15s var(--ease-out);
+}
+.desk-pet:hover .dock-pet-body {
+  scale: 1.07;
+}
+@keyframes dock-pet-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.dock-pet-shadow {
+  width: 46px;
+  height: 8px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  animation: dock-pet-shadow 2.8s ease-in-out infinite;
+}
+@keyframes dock-pet-shadow {
+  50% {
+    transform: scaleX(0.82);
+    opacity: 0.7;
+  }
+}
+.dock-pet-pill {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  margin-top: 5px;
+  padding: 0 4px 0 8px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.7);
+}
+.dock-pet-pill:not(:has(b)) {
+  padding-right: 9px;
+}
+.dock-pet-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-idle);
+}
+.dock-pet-pill b {
+  min-width: 17px;
+  padding: 1px 5px;
+  border-radius: 99px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: center;
+  background: var(--bg-5);
+}
+.tone-attention .dock-pet-pill {
+  border-color: rgba(255, 122, 138, 0.55);
+}
+.tone-attention .dock-pet-pill i {
+  background: var(--st-call);
+}
+.tone-attention .dock-pet-pill b {
+  color: #2a0a0f;
+  background: var(--st-call);
+}
+.tone-results .dock-pet-pill i {
+  background: var(--accent);
+}
+.tone-results .dock-pet-pill b {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.tone-working .dock-pet-pill i {
+  background: var(--st-work);
+  box-shadow: 0 0 0 3px rgba(95, 214, 155, 0.16);
+}
+.dock-pet-bang {
+  position: absolute;
+  top: 6px;
+  right: 22px;
+  z-index: 4;
+  width: 18px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-family: var(--font-pixel);
+  font-size: 14px;
+  font-weight: 700;
+  color: #2a0a0f;
+  background: var(--st-call);
+  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.6);
+  animation: dock-pet-bang 1.2s steps(2) infinite;
+}
+@keyframes dock-pet-bang {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.dock-pet-tools {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.desk-pet-stage:hover .dock-pet-tools,
+.dock-pet-tools:focus-within {
+  opacity: 1;
+}
+.dock-pet-tools .icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* ───────── Row ───────── */
+.desk-row {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 196px;
+  user-select: none;
+}
+.desk-row-floor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 62px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 118px, rgba(98, 60, 33, 0.16) 118px 120px),
+    repeating-linear-gradient(0deg, transparent 0 22px, rgba(98, 60, 33, 0.3) 22px 24px), #c9996a;
+  border-top: 4px solid #3a2820;
+  box-shadow: 0 -12px 26px -16px rgba(0, 0, 0, 0.55);
+}
+.desk-row-track {
+  position: absolute;
+  left: 224px;
+  right: 196px;
+  bottom: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+}
+.desk-row-track::-webkit-scrollbar {
+  display: none;
+}
+.desk-row-lane {
+  display: flex;
+  align-items: flex-end;
+  width: max-content;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 14px;
+}
+.row-desk {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+}
+.row-desk:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
+  border-radius: 12px;
+}
+.row-desk.is-working::before {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 46px;
+  bottom: 34px;
+  z-index: 0;
+  background: radial-gradient(closest-side, rgba(255, 210, 140, 0.26), transparent);
+}
+.row-status {
+  position: absolute;
+  top: 31px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  transform: translateX(-50%);
+  font-size: 9.5px;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: rgba(17, 18, 22, 0.9);
+  border: 1px solid var(--line-2);
+}
+.row-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.row-desk.group-attention .row-status {
+  color: var(--text);
+  border-color: rgba(255, 122, 138, 0.5);
+}
+.row-news {
+  position: absolute;
+  top: 56px;
+  right: 6px;
+  z-index: 4;
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 650;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.row-pet {
+  position: absolute;
+  top: 55px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  transition: translate 0.15s var(--ease-out);
+}
+.row-desk:hover .row-pet {
+  translate: 0 -5px;
+}
+.row-desk-img {
+  position: absolute;
+  bottom: 38px;
+  left: 50%;
+  z-index: 2;
+  width: 80px;
+  height: 51px;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+}
+.row-name {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  z-index: 3;
+  max-width: calc(100% - 10px);
+  padding: 1px 6px;
+  border-radius: 4px;
+  transform: translateX(-50%);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  font-weight: 700;
+  color: #f7ecdc;
+  background: rgba(28, 21, 19, 0.9);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.row-desk:hover .row-name {
+  color: var(--accent-2);
+}
+.row-project {
+  position: absolute;
+  bottom: 5px;
+  left: 4px;
+  right: 4px;
+  z-index: 3;
+  font-size: 9px;
+  text-align: center;
+  color: #4d3524;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.row-empty {
+  align-self: center;
+  margin-bottom: 64px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: rgba(17, 18, 22, 0.92);
+}
+.desk-row-cap {
+  position: absolute;
+  bottom: 9px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 46px;
+  border-radius: 12px;
+  background: rgba(17, 18, 22, 0.95);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.65);
+}
+.desk-row-title {
+  left: 12px;
+  max-width: 204px;
+  padding: 0 12px 0 3px;
+}
+.desk-row-title > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.desk-row-title b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 650;
+}
+.desk-row-title small {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desk-row-pet {
+  width: 40px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--bg-3);
+  transition: background 0.15s;
+}
+.desk-row-pet:hover {
+  background: var(--bg-5);
+}
+.desk-row-tools {
+  right: 12px;
+  gap: 2px;
+  padding: 0 6px;
+}
+.desk-row-tools .icon-btn {
+  width: 30px;
+  height: 30px;
+}
+.desk-row-lounge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  margin-right: 4px;
+  padding: 0 9px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+
+.reduce-motion .desk-pet-stage,
+.reduce-motion .desk-row,
+.reduce-motion .dock-pet-body,
+.reduce-motion .dock-pet-shadow,
+.reduce-motion .dock-pet-bang {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-pet-stage,
+  .desk-row,
+  .dock-pet-body,
+  .dock-pet-shadow,
+  .dock-pet-bang {
+    animation: none;
+  }
+}

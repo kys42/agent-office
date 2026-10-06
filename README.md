@@ -51,9 +51,11 @@ npm run dev
 - PR·이슈의 실제 링크 카드와 GitHub에서 확인한 제목·상태
 - 별명, 고정, 업무 메모, 결과 확인, 기록 보관
 - 도구를 넘나드는 키워드 검색과 인수인계 Markdown 미리보기·복사·저장
-- 투명한 미니 오피스와 트레이에서 큰 사무실로 복귀
+- 데스크 펫: 바탕화면에 작게 떠 있다가 누르면 화면 아래 전체 폭에 책상 줄로 펼쳐짐. 끌어서 옮기고, 투명한 곳의 클릭은 뒤 앱으로 통과. 책상을 누르면 큰 사무실에서 그 세션이 열리고, 큰 사무실을 닫으면 다시 펫으로 돌아옴
 - 프로젝트 제외, 도구별 수집 중단, 움직임 줄이기, 화면 내용 숨기기
 - 읽기 전용 MCP로 같은 기억에 접근
+
+![데스크 펫을 펼친 책상 줄](docs/images/desk-row.png)
 
 기본 최근 120개/도구를 불러옵니다. 연결 설정에서 60~300개로 바꿀 수 있습니다. 큰 파일의 처음·최근 구간, 최근 180개 이벤트를 보존하고 부분 기록임을 표시합니다. 사용량 미지원은 `—`, 오래된 기록은 대기·보관 공간에서 확인합니다. ‘자주 찾은 순’은 이 앱에서 세션을 열어 본 횟수입니다. 응답 완료는 업무 완료로 단정하지 않습니다.
 
@@ -110,7 +112,7 @@ Node 24 이상. 사용자 데이터 위치를 바꾼 경우 `AGENT_OFFICE_DATA_D
 npm test                   # 공급자 파서·상태·사용량·정책·저장·경로 탐색
 npm run typecheck
 npm run test:ui            # Playwright — npm run dev 또는 자동 실행
-node scripts/desktop-smoke.mjs # build 후 Electron/IPC/미니 창, 임시 합성 fixture
+node scripts/desktop-smoke.mjs # build 후 Electron/IPC/데스크 펫·책상 줄 창, 임시 합성 fixture
 npx tsx scripts/mcp-smoke.ts    # build 후 MCP stdio 계약
 npm audit
 ```

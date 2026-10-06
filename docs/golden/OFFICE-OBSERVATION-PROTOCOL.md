@@ -116,7 +116,7 @@ Session {
 - `Session.actor?: {id,name,source}`: 대화 위의 안정적인 페르소나. 현재 OpenClaw agent 디렉터리에서만 제공한다. UI가 provider 이름으로 임의 그룹하지 않는다.
 - `Session.origin?: {kind,source,role?}`: interactive/scheduled/internal/unknown. 원본 메타데이터에서만 채운다. `relation.kind`(부모 관계), `runtime.phase`(실행 상태)와 독립이다.
 - `sessionKey?`, `relation.parentSessionKey?`: OpenClaw 원본 key. 같은 provider 안에서 정확히 한 부모가 일치하면 다른 페르소나도 연결한다. 애매한 매치는 만들지 않는다. 연결된 페르소나들이 같은 자리로 합쳐지지는 않는다.
-- `officeResidents(canonicalSessions)`는 사무실/라운지/미니를 위한 표현 투영이며 저장된 세션과 MCP 결과를 바꾸지 않는다. `resident={key,name,sessionIds,activeCount,backgroundCount}`는 투영 시에만 붙인다. 자리 키는 actor가 있으면 `actor:<actor.id>`, 없으면 Session.id다.
+- `officeResidents(canonicalSessions)`는 사무실/라운지/데스크 펫을 위한 표현 투영이며 저장된 세션과 MCP 결과를 바꾸지 않는다. `resident={key,name,sessionIds,activeCount,backgroundCount}`는 투영 시에만 붙인다. 자리 키는 actor가 있으면 `actor:<actor.id>`, 없으면 Session.id다.
 - `OfficeNotice.viewedAt?`는 사용자가 해당 버전을 직접 열어본 시각이며 읽음/접기와 별도다. `background?`는 현재 세션의 origin/relation에서 조회 시 계산하는 분류이며 소식 version을 바꾸지 않는다. 일반 최종 응답과 미해결 확인 요청만 중요 배지에 센다.
 - `mergeSessions`는 최신 fragment에 metadata가 없어도 기존의 근거 있는 actor/origin/sessionKey/부모 관계를 보존한다. 이 보완을 다른 native ID 병합에 사용하지 않는다.
 - 에셋 ID·팔레트·hue·소품은 [표현 계약](../development/OFFICE-ASSETS.md)이다. source의 branch/project/status를 색상 설정으로 덮어쓰지 않는다.

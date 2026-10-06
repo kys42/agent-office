@@ -5,12 +5,14 @@ import '@fontsource/jetbrains-mono/latin-400.css';
 import '@fontsource/jetbrains-mono/latin-500.css';
 import './styles/fonts.css';
 import App from './App';
+import { DeskDock } from './components/DeskDock';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
 import './styles/panel.css';
 import './styles/pages.css';
 import './styles/ux.css';
+import './styles/dock.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -30,8 +32,8 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
     );
   }
 }
+// Same office core, two presentations: the big office window or the floating desk pet.
+const dock = location.hash.startsWith('#mini');
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <Boundary>
-    <App />
-  </Boundary>,
+  <Boundary>{dock ? <DeskDock /> : <App />}</Boundary>,
 );

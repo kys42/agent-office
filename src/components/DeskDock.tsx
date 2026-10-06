@@ -1,0 +1,71 @@
+import { useEffect, useRef, useState } from 'react';
+import { api } from '../lib/api';
+import { useOffice } from '../lib/useOffice';
+import type { DockMode } from '../shared/types';
+import { DeskPet } from './DeskPet';
+import { DeskRow } from './DeskRow';
+
+const initialMode = (): DockMode => (location.hash === '#mini=row' ? 'row' : 'pet');
+
+/**
+ * The floating dock window. It reads the same office core as the big office and only
+ * decides the presentation: a small pet, or a full-width row of desks.
+ */
+export function DeskDock() {
+  const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
+  const { model, snapshot } = useOffice(demo);
+  const [mode, setMode] = useState<DockMode>(initialMode);
+  const privacy = snapshot?.preferences.privacy ?? false;
+  const reducedMotion = snapshot?.preferences.reducedMotion ?? false;
+  const go = (next: DockMode) => {
+    setMode(next);
+    void api.dock?.(next);
+  };
+  useEffect(() => api.onDock?.(setMode), []);
+  useEffect(() => {
+    document.body.classList.add('dock-mode');
+    return () => document.body.classList.remove('dock-mode');
+  }, []);
+  useEffect(() => {
+    if (mode !== 'row') return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') go('pet');
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [mode]);
+  // Click-through: only drawn things ([data-solid]) take the mouse; the transparent rest of
+  // the window lets clicks reach the desktop and the apps behind it.
+  const solid = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!api.dock) return;
+    solid.current = null;
+    const claim = (over: boolean) => {
+      if (over === solid.current) return;
+      solid.current = over;
+      void api.dock?.(over ? 'solid' : 'through');
+    };
+    const move = (e: MouseEvent) =>
+      claim(e.target instanceof Element && !!e.target.closest('[data-solid]'));
+    // A fast exit can skip the transparent margin; never leave the window holding clicks.
+    const leave = () => claim(false);
+    window.addEventListener('mousemove', move);
+    document.documentElement.addEventListener('mouseleave', leave);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      document.documentElement.removeEventListener('mouseleave', leave);
+    };
+  }, [mode]);
+  return (
+    <div
+      key={mode}
+      className={`desk-dock mode-${mode} ${reducedMotion ? 'reduce-motion' : ''} ${privacy ? 'is-private' : ''}`}
+    >
+      {mode === 'pet' ? (
+        <DeskPet model={model} loading={!snapshot} onExpand={() => go('row')} />
+      ) : (
+        <DeskRow model={model} loading={!snapshot} privacy={privacy} onCollapse={() => go('pet')} />
+      )}
+    </div>
+  );
+}

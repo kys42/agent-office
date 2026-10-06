@@ -153,9 +153,45 @@ test('Desktop viewport fits the room and narrow viewport does not overflow', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: '.local/office-mobile.png', fullPage: true });
 });
-test('Mini office has interactive desks and expands', async ({ page }) => {
-  await page.goto('/?demo#mini');
-  await expect(page.locator('.mini-station')).toHaveCount(6);
+test('Desk pet unfolds into one full-width row of desks and opens a colleague', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  await page.getByRole('button', { name: '데스크 펫', exact: true }).click();
+  const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
+  await expect(pet).toBeVisible();
+  await expect(pet).toContainText('기다려요');
+  await expect(page.locator('.row-desk')).toHaveCount(0);
+  await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });
+  await pet.click();
+  const desks = page.locator('.row-desk');
+  await expect(desks).toHaveCount(6);
+  const tops = await desks.evaluateAll((els) =>
+    els.map((e) => Math.round(e.getBoundingClientRect().top)),
+  );
+  expect(new Set(tops).size, 'every desk stands in the same single row').toBe(1);
+  // The row slides in; measure where it settles.
+  await expect
+    .poll(async () => {
+      const row = (await page.locator('.desk-row').boundingBox())!;
+      return [row.x, row.width, Math.round(row.y + row.height)];
+    })
+    .toEqual([0, 1440, 970]);
+  await expect(page.locator('.row-news').first()).toBeVisible();
+  await page.locator('.desk-row').screenshot({ path: '.local/desk-row.png' });
+  await page.keyboard.press('Escape');
+  await expect(desks).toHaveCount(0);
+  await pet.click();
+  await page.getByRole('button', { name: '책상 줄 접기' }).click();
+  await expect(pet).toBeVisible();
+  await pet.click();
+  await desks.nth(1).click();
+  await expect(page.locator('.office-map')).toBeVisible();
+  await expect(page.locator('.inspector')).toBeVisible();
+  // A hash-only goto stays in the same document; the dock window always loads fresh.
+  await page.goto('/?demo#mini=row');
+  await page.reload();
+  await expect(page.locator('.row-desk')).toHaveCount(6);
   await page.getByRole('button', { name: '사무실 펼치기' }).click();
   await expect(page.locator('.office-map')).toBeVisible();
 });
