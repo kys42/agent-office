@@ -181,9 +181,20 @@ export function petSummary(model: OfficeModel) {
   const group = TRIAGE_ORDER.find((g) => g !== 'resting' && model.counts[g]) ?? 'resting';
   const count =
     group === 'resting' ? model.seats.length - model.veiled.length : model.counts[group];
-  // Not yet opened, not closed, not first-collection history, and only just arrived.
+  // Not yet read, opened or closed, not first-collection history, and only just arrived.
   const fresh = (n: OfficeNotice) =>
-    !n.bootstrap && !n.dismissedAt && !n.viewedAt && model.now - n.receivedAt < PET_FRESH_MS;
+    !n.bootstrap &&
+    !n.seenAt &&
+    !n.dismissedAt &&
+    !n.viewedAt &&
+    model.now - n.receivedAt < PET_FRESH_MS;
+  // Each session's latest important arrival, read or not: handling it never replays history.
+  const latestBy = new Map<string, OfficeNotice>();
+  for (const n of model.notices) {
+    const prior = latestBy.get(n.sessionId);
+    if (isInboxNotice(n) && (!prior || n.receivedAt > prior.receivedAt))
+      latestBy.set(n.sessionId, n);
+  }
   // A question beats a result; otherwise the newest arrival wins, by receipt time
   // (an old event can be collected late).
   const before = (a: OfficeNotice, b: OfficeNotice) =>
@@ -192,11 +203,13 @@ export function petSummary(model: OfficeModel) {
   for (const seat of model.seats)
     if (!seat.veiled)
       for (const v of [seat, ...seat.helpers]) {
-        // Only each colleague's latest arrival may speak: closing it never replays history.
-        const latest = v.unread.reduce<OfficeNotice | undefined>(
-          (a, n) => (!a || n.receivedAt > a.receivedAt ? n : a),
-          undefined,
-        );
+        // Only each colleague's latest arrival may speak.
+        const latest = (v.session.resident?.sessionIds ?? [v.session.id])
+          .map((id) => latestBy.get(id))
+          .reduce<OfficeNotice | undefined>(
+            (a, n) => (n && (!a || n.receivedAt > a.receivedAt) ? n : a),
+            undefined,
+          );
         if (latest && fresh(latest) && (!speaker || before(latest, speaker.notice) > 0))
           speaker = { view: v, notice: latest };
       }

@@ -204,4 +204,10 @@ test('the pet prefers a question, skips opened news, and lets go once closed', (
   const first = notice('a', { receivedAt: now - 30_000 });
   const second = notice('a', { receivedAt: now - 2_000, dismissedAt: now });
   assert.equal(petSummary(buildOfficeModel(snap([a, b], [first, second]), now)).speaker, undefined);
+  const read = { ...second, dismissedAt: null, seenAt: now };
+  assert.equal(
+    petSummary(buildOfficeModel(snap([a, b], [first, read]), now)).speaker,
+    undefined,
+    'reading the newest does not replay the older one either',
+  );
 });
