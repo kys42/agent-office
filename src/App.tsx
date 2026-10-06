@@ -80,6 +80,7 @@ export default function App() {
     patch: onPatch,
     receipt: onReceipt,
     visit,
+    veil,
     returnToOffice,
   } = useOffice(demo, notify);
   useEffect(
@@ -520,6 +521,10 @@ export default function App() {
               key={demo ? 'demo' : 'live'}
               snapshot={snapshot}
               model={model}
+              onVeil={(ids, on) => {
+                void veil(ids, on);
+                notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
+              }}
               onSettings={() => setView('settings')}
               selected={selected}
               onSelect={choose}

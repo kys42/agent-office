@@ -26,11 +26,43 @@ body.dock-mode {
   position: fixed;
   right: 0;
   bottom: 0;
-  width: 132px;
-  height: 148px;
+  /* width/height: PET_SIZE (inline, from dock-geometry) */
   display: grid;
   place-items: end center;
   user-select: none;
+}
+.dock-pet-anchor {
+  position: relative;
+  width: 116px;
+  height: 128px;
+  margin-bottom: 4px;
+}
+/* A 164px box like a desk station, so the shared bubble sits over the pet's head. */
+.dock-pet-speech {
+  position: absolute;
+  left: -24px;
+  top: -40px;
+  width: 164px;
+  height: 0;
+  z-index: 6;
+}
+.dock-pet-speech .speech-copy b {
+  -webkit-line-clamp: 3;
+}
+.desk-pet.is-speaking .dock-pet-body {
+  animation:
+    dock-pet-arrive 0.5s var(--ease-out),
+    dock-pet-bob 2.8s ease-in-out 0.5s infinite;
+}
+@keyframes dock-pet-arrive {
+  0% {
+    transform: translateY(10px) scale(0.85);
+    opacity: 0.4;
+  }
+  60% {
+    transform: translateY(-8px) scale(1.04);
+    opacity: 1;
+  }
 }
 .desk-pet {
   position: relative;
@@ -168,7 +200,7 @@ body.dock-mode {
 .dock-pet-tools {
   position: absolute;
   top: 4px;
-  left: 6px;
+  left: -4px;
   z-index: 5;
   display: flex;
   gap: 2px;
@@ -179,7 +211,7 @@ body.dock-mode {
   opacity: 0;
   transition: opacity 0.15s;
 }
-.desk-pet-stage:hover .dock-pet-tools,
+.dock-pet-anchor:hover .dock-pet-tools,
 .dock-pet-tools:focus-within {
   opacity: 1;
 }

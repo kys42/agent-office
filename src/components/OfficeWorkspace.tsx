@@ -9,6 +9,7 @@ import {
   Layers,
   ChevronUp,
   SlidersHorizontal,
+  EyeOff,
 } from 'lucide-react';
 import type { OfficeZone, Provider, Snapshot } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
@@ -50,6 +51,7 @@ export function OfficeWorkspace({
   zoneRequest,
   onZoneHandled,
   model,
+  onVeil,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -67,6 +69,8 @@ export function OfficeWorkspace({
   onZoneHandled?: () => void;
   /** Shared office core: projection and zones are derived once for every view. */
   model: OfficeModel;
+  /** Hide colleagues (all member runs) until their next conversation, or bring them back. */
+  onVeil: (ids: string[], on: boolean) => void;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -170,7 +174,7 @@ export function OfficeWorkspace({
         </div>
         {zone === 'office' ? (
           <Office
-            sessions={office}
+            sessions={model.scene}
             notices={snapshot.notices ?? []}
             bubbleHours={prefs.bubbleHours ?? 3}
             onReceipt={onReceipt}
@@ -182,43 +186,85 @@ export function OfficeWorkspace({
             onShowWaiting={() => setZone('waiting')}
             spotlight={listHover}
             onHover={setDeskHover}
+            onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
             footer={
-              hidden.length > 0 && (
-                <details className="background-records">
-                  <summary>
-                    <Layers size={13} />
-                    보조·자동 작업 기록 <b>{hidden.length}</b>
-                    <ChevronUp size={13} className="chev" />
-                  </summary>
-                  <div className="background-pop">
-                    <p>이전 작업의 보조 동료와 내부 실행은 여기에 접어 둬요.</p>
-                    <div>
-                      {[...hidden]
-                        .sort((a, b) => b.updatedAt - a.updatedAt)
-                        .slice(0, historyLimit)
-                        .map((s) => (
-                          <button key={s.id} onClick={() => onSelect(s.id)}>
+              <>
+                {model.veiled.length > 0 && (
+                  <details className="background-records veiled-records">
+                    <summary>
+                      <EyeOff size={13} />
+                      가린 동료 <b>{model.veiled.length}</b>
+                      <ChevronUp size={13} className="chev" />
+                    </summary>
+                    <div className="background-pop">
+                      <p>다음 대화가 오면 저절로 돌아와요. 지금 다시 보려면 고르세요.</p>
+                      <div>
+                        {model.veiled.map(({ session: s }) => (
+                          <button
+                            key={s.id}
+                            onClick={() => onVeil(s.resident?.sessionIds ?? [s.id], false)}
+                          >
                             <span className={`face face-${s.provider}`}>
                               <Sprite provider={s.provider} mood="idle" size={22} />
                             </span>
                             <span>{prefs.privacy ? '숨긴 기록' : sessionName(s)}</span>
-                            <small>
-                              {sessionScopeLabel(s)} · {ago(s.updatedAt)}
-                            </small>
+                            <small className="veil-row-hint">다시 보기</small>
                           </button>
                         ))}
-                    </div>
-                    {hidden.length > historyLimit && (
+                      </div>
                       <button
                         className="button subtle"
-                        onClick={() => setHistoryLimit((n) => n + 20)}
+                        onClick={() =>
+                          onVeil(
+                            model.veiled.flatMap(
+                              (v) => v.session.resident?.sessionIds ?? [v.session.id],
+                            ),
+                            false,
+                          )
+                        }
                       >
-                        기록 더 보기
+                        모두 다시 보기
                       </button>
-                    )}
-                  </div>
-                </details>
-              )
+                    </div>
+                  </details>
+                )}
+                {hidden.length > 0 && (
+                  <details className="background-records">
+                    <summary>
+                      <Layers size={13} />
+                      보조·자동 작업 기록 <b>{hidden.length}</b>
+                      <ChevronUp size={13} className="chev" />
+                    </summary>
+                    <div className="background-pop">
+                      <p>이전 작업의 보조 동료와 내부 실행은 여기에 접어 둬요.</p>
+                      <div>
+                        {[...hidden]
+                          .sort((a, b) => b.updatedAt - a.updatedAt)
+                          .slice(0, historyLimit)
+                          .map((s) => (
+                            <button key={s.id} onClick={() => onSelect(s.id)}>
+                              <span className={`face face-${s.provider}`}>
+                                <Sprite provider={s.provider} mood="idle" size={22} />
+                              </span>
+                              <span>{prefs.privacy ? '숨긴 기록' : sessionName(s)}</span>
+                              <small>
+                                {sessionScopeLabel(s)} · {ago(s.updatedAt)}
+                              </small>
+                            </button>
+                          ))}
+                      </div>
+                      {hidden.length > historyLimit && (
+                        <button
+                          className="button subtle"
+                          onClick={() => setHistoryLimit((n) => n + 20)}
+                        >
+                          기록 더 보기
+                        </button>
+                      )}
+                    </div>
+                  </details>
+                )}
+              </>
             }
           />
         ) : (

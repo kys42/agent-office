@@ -198,3 +198,66 @@ test('A zone shortcut is applied once and not replayed after visiting other page
     'true',
   );
 });
+
+test('Hiding a colleague clears them from the office and the desk row until they talk again', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  const nemo = page.locator('.office-map [data-station-id="demo:1"]');
+  await nemo.hover();
+  const eye = nemo.getByRole('button', { name: /가리기$/ });
+  await expect(eye).toBeVisible();
+  await eye.hover();
+  await expect(nemo.locator('.veil-tip')).toContainText('다음 대화가 올 때까지');
+  await eye.click();
+  await expect(nemo).toHaveCount(0);
+  await expect(page.locator('.office-map [data-station-id]')).toHaveCount(5);
+  // Someone waiting for the person is never hidden.
+  const caller = page.locator('.office-map [data-station-id="demo:3"]');
+  await caller.hover();
+  await caller.getByRole('button', { name: /가리기$/ }).click();
+  await expect(caller).toBeVisible();
+  const veiled = page.locator('.veiled-records');
+  await expect(veiled).toContainText('가린 동료 1');
+  await veiled.locator('summary').click();
+  await page.getByRole('button', { name: '모두 다시 보기' }).click();
+  await expect(page.locator('.office-map [data-station-id="demo:1"]')).toHaveCount(1);
+  await expect(veiled).toHaveCount(0);
+
+  await page.goto('/?demo#mini=row');
+  await page.reload();
+  const row = page.locator('.desk-row [data-station-id]');
+  await expect(row).toHaveCount(6);
+  const desk = page.locator('.desk-row [data-station-id="demo:4"]');
+  await desk.hover();
+  await desk.getByRole('button', { name: /가리기$/ }).click();
+  await expect(row).toHaveCount(5);
+  await page.getByRole('button', { name: /가림 1/ }).click();
+  await expect(row).toHaveCount(6);
+});
+
+test('A just-arrived result turns the collapsed pet into that colleague with a bubble', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const reply = snapshot.notices!.find((n) => n.kind === 'reply' && n.phase === 'final')!;
+  Object.assign(reply, { bootstrap: false, receivedAt: Date.now() });
+  await page.route('**/api/rpc', async (route) => {
+    const { method, args } = route.request().postDataJSON();
+    if (method === 'notices' && args[1] === 'dismiss')
+      for (const r of args[0]) {
+        const n = snapshot.notices!.find((x) => x.id === r.id);
+        if (n) n.dismissedAt = Date.now();
+      }
+    await route.fulfill({ json: { result: snapshot } });
+  });
+  await page.goto('/#mini');
+  const bubble = page.locator('.dock-pet-speech .speech-bubble');
+  await expect(bubble).toBeVisible();
+  await expect(bubble).toContainText(reply.text.slice(0, 12));
+  await expect(page.locator('.desk-pet.is-speaking')).toBeVisible();
+  await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet-speaking.png' });
+  await page.getByRole('button', { name: /말풍선 접기/ }).click();
+  await expect(bubble).toHaveCount(0);
+  await expect(page.locator('.desk-pet.is-speaking')).toHaveCount(0);
+});

@@ -8,6 +8,7 @@ import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
+import { VeilButton } from './VeilButton';
 import { stationSpeech } from '../shared/speech';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, POSTURE_LABELS } from '../shared/presentation';
@@ -32,6 +33,7 @@ export function Office({
   footer,
   spotlight = null,
   onHover,
+  onVeil,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -46,6 +48,8 @@ export function Office({
   footer?: ReactNode;
   spotlight?: string | null;
   onHover?: (id: string | null) => void;
+  /** Hide a colleague until their next conversation. */
+  onVeil?: (s: Session) => void;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -287,6 +291,12 @@ export function Office({
                         )}
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
+                      {onVeil && (
+                        <VeilButton
+                          name={privacy ? s.provider : sessionName(s)}
+                          onVeil={() => onVeil(s)}
+                        />
+                      )}
                       <Furniture kind="equipment" />
                       {pose.working && (
                         <span className="working-beacon">

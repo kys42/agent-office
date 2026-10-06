@@ -178,6 +178,8 @@ export interface Session {
   lastViewedAt?: number;
   openCount?: number;
   returnedAt?: number;
+  /** The person hid this colleague at this time; shown again on their next conversation. */
+  hiddenAt?: number | null;
 }
 export interface Connector {
   provider: Provider;
@@ -221,7 +223,7 @@ export interface Handoff {
   createdAt: number;
 }
 export type SessionPatch = Partial<
-  Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
+  Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed' | 'hiddenAt'>
 >;
 /** Desk pet window: a small floating pet, or a full-width row of desks. */
 export type DockMode = 'pet' | 'row';

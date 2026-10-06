@@ -147,6 +147,26 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
         : s,
     );
   };
+  /** Hide colleagues until their next conversation (`on`), or bring them back now. */
+  const veil = async (ids: string[], on: boolean) => {
+    const hiddenAt = on ? Date.now() : null;
+    if (demo) {
+      setSnapshot((s) =>
+        s
+          ? reconcileDemo({
+              ...s,
+              sessions: s.sessions.map((x) => (ids.includes(x.id) ? { ...x, hiddenAt } : x)),
+            })
+          : s,
+      );
+      return;
+    }
+    try {
+      for (const id of ids) setSnapshot(await api.patch(id, { hiddenAt }));
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const returnToOffice = async (id: string) => {
     if (!demo) {
       try {
@@ -193,6 +213,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     patch,
     receipt,
     visit,
+    veil,
     returnToOffice,
   };
 }

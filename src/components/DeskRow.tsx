@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Coffee, Expand, GitBranch, X } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Coffee,
+  Expand,
+  EyeOff,
+  GitBranch,
+  X,
+} from 'lucide-react';
 import { api } from '../lib/api';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
@@ -19,6 +28,7 @@ import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
+import { VeilButton } from './VeilButton';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 16;
@@ -37,6 +47,7 @@ export function DeskRow({
   privacy,
   reducedMotion,
   onReceipt,
+  onVeil,
   onCollapse,
 }: {
   model: OfficeModel;
@@ -44,6 +55,7 @@ export function DeskRow({
   privacy: boolean;
   reducedMotion: boolean;
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
+  onVeil: (ids: string[], on: boolean) => void;
   onCollapse: () => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
@@ -61,7 +73,7 @@ export function DeskRow({
     el.addEventListener('wheel', wheel, { passive: false });
     return () => el.removeEventListener('wheel', wheel);
   }, []);
-  const sessions = model.bySeat;
+  const sessions = model.scene;
   const signature = layoutSignature(sessions);
   const layout = useMemo(() => layoutRow(sessions), [signature]);
   // Track what is in view, so each arrow knows who is hidden on its side.
@@ -198,6 +210,10 @@ export function DeskRow({
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
+                      <VeilButton
+                        name={label.name}
+                        onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
+                      />
                       <Furniture kind="equipment" />
                       {pose.working && (
                         <span className="working-beacon">
@@ -319,6 +335,21 @@ export function DeskRow({
           {model.seats.length}명
           {model.counts.attention > 0 && <em>기다려요 {model.counts.attention}</em>}
         </span>
+        {model.veiled.length > 0 && (
+          <button
+            className="desk-row-veiled"
+            title={`가린 동료 ${model.veiled.length}명 · 누르면 모두 다시 보여요\n다음 대화가 오면 저절로 돌아와요`}
+            onClick={() =>
+              onVeil(
+                model.veiled.flatMap((v) => v.session.resident?.sessionIds ?? [v.session.id]),
+                false,
+              )
+            }
+          >
+            <EyeOff size={11} />
+            가림 {model.veiled.length}
+          </button>
+        )}
         {lounge > 0 && (
           <span className="desk-row-lounge" title="대기 라운지에서 쉬는 동료">
             <Coffee size={11} />

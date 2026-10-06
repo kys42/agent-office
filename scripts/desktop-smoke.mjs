@@ -113,7 +113,7 @@ try {
       return { ...b, area: screen.getDisplayMatching(b).workArea, visible: w.isVisible() };
     });
   const pet = await dockBounds();
-  assert.ok(pet.visible && pet.width < 200 && pet.height < 200, 'collapsed pet is small');
+  assert.ok(pet.visible && pet.width <= 240 && pet.height <= 240, 'collapsed pet is small');
   await dock.waitForTimeout(400); // entrance fade
   await dock.screenshot({ path: '.local/native-pet.png' });
   await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();

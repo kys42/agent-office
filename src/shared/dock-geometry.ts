@@ -7,7 +7,8 @@ export interface Rect {
 }
 export type Point = Pick<Rect, 'x' | 'y'>;
 
-export const PET_SIZE = { width: 132, height: 148 };
+/** The pet window leaves room above the pet for a speech bubble (transparent, click-through). */
+export const PET_SIZE = { width: 200, height: 236 };
 /**
  * The row draws the office's own 164×238 stations at a fixed scale: more colleagues never
  * shrink the desks, the row scrolls (arrows / trackpad) instead.

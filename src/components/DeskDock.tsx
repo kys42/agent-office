@@ -13,7 +13,7 @@ const initialMode = (): DockMode => (location.hash === '#mini=row' ? 'row' : 'pe
  */
 export function DeskDock() {
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
-  const { model, snapshot, error, receipt } = useOffice(demo);
+  const { model, snapshot, error, receipt, veil } = useOffice(demo);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const privacy = snapshot?.preferences.privacy ?? false;
   const reducedMotion = snapshot?.preferences.reducedMotion ?? false;
@@ -70,6 +70,8 @@ export function DeskDock() {
       {mode === 'pet' ? (
         <DeskPet
           model={model}
+          privacy={privacy}
+          onReceipt={receipt}
           status={snapshot ? null : error ? '연결 확인' : '연결 중'}
           onExpand={() => go('row')}
         />
@@ -82,6 +84,7 @@ export function DeskDock() {
           privacy={privacy}
           reducedMotion={reducedMotion}
           onReceipt={receipt}
+          onVeil={veil}
           onCollapse={() => go('pet')}
         />
       )}

@@ -22,6 +22,7 @@ const patchSchema = z
     pinned: z.boolean().optional(),
     archived: z.boolean().optional(),
     completed: z.boolean().optional(),
+    hiddenAt: z.number().int().min(0).nullable().optional(),
   })
   .strict();
 const prefsSchema = z

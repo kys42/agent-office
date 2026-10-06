@@ -13,6 +13,7 @@ import './styles/panel.css';
 import './styles/pages.css';
 import './styles/ux.css';
 import './styles/dock.css';
+import './styles/veil.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {

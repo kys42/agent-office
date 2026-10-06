@@ -8,6 +8,7 @@ import {
   buildOfficeModel,
   hasNews,
   petSummary,
+  PET_FRESH_MS,
   residentLabel,
 } from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
@@ -90,6 +91,8 @@ test('every view reads the same triage groups as the roster', () => {
 });
 
 test('the pet speaks for the most urgent colleague, falling back to seat order', () => {
+  // Old news: a just-arrived notice would take over the pet (covered in veil.test.ts).
+  const old = { receivedAt: now - PET_FRESH_MS - 1 };
   const quiet = buildOfficeModel(
     snap([make('b', { officeSeat: 1 }), make('a', { officeSeat: 0 })]),
     now,
@@ -106,7 +109,7 @@ test('the pet speaks for the most urgent colleague, falling back to seat order',
         make('w', { officeSeat: 1, status: 'work', updatedAt: now - 5_000 }),
         make('r', { officeSeat: 2 }),
       ],
-      [notice('r')],
+      [notice('r', old)],
     ),
     now,
   );
@@ -116,7 +119,7 @@ test('the pet speaks for the most urgent colleague, falling back to seat order',
   const calling = buildOfficeModel(
     snap(
       [make('r', { officeSeat: 0 }), make('c', { officeSeat: 1, status: 'call' })],
-      [notice('r')],
+      [notice('r', old)],
     ),
     now,
   );
