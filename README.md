@@ -38,6 +38,7 @@ npm run dev
 - 3종 에이전트의 실제 JSONL / SQLite 기록을 5초마다 확인
 - 프로젝트별 실제 가구 자동 배치. 모든 주/보조 동료를 한 화면에 맞추고 확대·전체 보기 지원. 상태·검색·정렬로 자리를 섞지 않음
 - 같은 프로젝트는 바닥 구역, 같은 브랜치·worktree는 긴 공동 책상, 모든 실제 서브에이전트는 부모 옆 낮은 책상
+- 모노레포용 사용자 지정 구역: 워크트리·폴더 하위·브랜치 패턴(`kys42/lab-*`)·세션 단위 규칙으로 직접 나눈 구역이나 기존 구역에 앉힘. 캐릭터를 다른 구역/빈 바닥으로 끌어 놓아도 됨. 새로 오는 동료도 자동 적용, 설정에서 이름 바꾸기·삭제
 - 책상에 기록 브랜치/커밋 표시. 현재 checkout을 별도 관측해 `main · 현재`, `HEAD · 커밋`을 구분
 - 4시간 후 대기 라운지, 7일 후 보관 공간으로 이동. 설정 변경·고정·사무실 복귀 지원
 - 실제 세션 이름을 먼저, 프로젝트를 그 아래 표시. 최근 활동 / 자주 찾은 순으로 탐색
@@ -71,7 +72,7 @@ npm run dev
 
 ## 로컬 데이터와 연결 경로
 
-앱 저장소: `~/Library/Application Support/Agent Office/office.sqlite`. 원본 세션은 수정하지 않습니다. 인증 설정을 앱에 복제하지 않습니다. PR·이슈 조회는 기존 gh 인증을 통해 GitHub에 읽기 요청을 보냅니다.
+앱 저장소: `~/Library/Application Support/Agent Office/office.sqlite`. 원본 세션은 수정하지 않습니다. 인증 설정을 앱 DB나 화면에 복제하지 않습니다. 사용량 버튼의 Claude 조회는 기존 OAuth credential을 메모리에서 읽어 Anthropic의 고정 사용량 API에만 전송하며, Codex는 설치된 CLI의 읽기 전용 한도 RPC를 사용합니다. PR·이슈 조회는 기존 gh 인증을 통해 GitHub에 읽기 요청을 보냅니다.
 
 환경 변수: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCLAW_STATE_DIR`, `AGENT_OFFICE_DATA_DIR`. 기본 소스는 `~/.claude/projects`, `~/.codex/sessions`, `~/.openclaw/agents`입니다. Codex threads DB와 OpenClaw agent DB는 readOnly로 엽니다.
 
@@ -124,3 +125,5 @@ npm audit
 UI 테스트의 실제 연결 smoke는 로컬 기록이 있는 개발 환경을 사용합니다. 나머지 테스트는 합성 데이터로 원본을 수정하지 않습니다. [검증 기록](docs/development/QA.md), [아키텍처](docs/development/ARCHITECTURE.md), [참고 저장소 및 재사용](docs/research/RESEARCH.md), [수집 모듈 비교·도입 근거](docs/research/INGESTION-REFERENCE-AUDIT.md), [구현 계획](docs/development/PLAN.md), [고지](THIRD_PARTY_NOTICES.md).
 
 실제 승인·세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 직원 성장, 원격 동기화, 서명·공증·자동 업데이트는 후속 범위입니다. 기능 카탈로그 140개 전체 구현이나 프로덕션 배포 완료를 주장하지 않습니다.
+
+사용량 버튼·세션별 API 환산 비용·실제 worktree 관측·서류/집중 연출의 의미와 제한은 [사용량과 실행 위치](docs/development/USAGE-AND-WORKSPACE.md)에 정리했습니다.

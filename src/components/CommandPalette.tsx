@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { zoneLabel } from '../shared/zones';
 import { CornerDownLeft, FileSearch, LoaderCircle, Search } from 'lucide-react';
 import type { OfficeNotice, SearchHit, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
@@ -93,7 +94,10 @@ export function CommandPalette({
       .filter(
         (s) =>
           !q ||
-          (!privacy && norm(`${sessionName(s)} ${s.project} ${s.title} ${s.alias}`).includes(q)) ||
+          (!privacy &&
+            norm(
+              `${sessionName(s)} ${s.project} ${s.area?.name ?? ''} ${s.title} ${s.alias}`,
+            ).includes(q)) ||
           norm(PROVIDERS[s.provider].name).includes(q),
       )
       .sort((a, b) => rank(a) - rank(b) || b.updatedAt - a.updatedAt)
@@ -237,7 +241,7 @@ export function CommandPalette({
                               : sessionName(item.session)}
                           </b>
                           <small>
-                            {privacy ? '내용 숨김' : item.session.project} ·{' '}
+                            {privacy ? '내용 숨김' : zoneLabel(item.session)} ·{' '}
                             {ago(item.session.updatedAt)}
                           </small>
                         </div>

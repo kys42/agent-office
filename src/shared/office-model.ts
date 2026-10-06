@@ -6,6 +6,7 @@ import { TRIAGE_ORDER, triageGroup, unreadInbox, type TriageGroup } from './tria
 import { isAttentionNotice, isFinalNotice, isInboxNotice, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
 import { isVeiled } from './veil';
+import { zoneLabel } from './zones';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -155,7 +156,8 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
 export function residentLabel(s: Session, privacy: boolean) {
   return {
     name: privacy ? s.provider : sessionName(s),
-    project: privacy ? '프로젝트' : s.project,
+    // A user-defined area (custom zone) names the place before the raw project.
+    project: privacy ? '프로젝트' : zoneLabel(s),
     detail: privacy ? undefined : `${activityLabel(s)} · ${sessionActivity(s).text}`,
   };
 }

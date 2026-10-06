@@ -1,5 +1,6 @@
 import type { Session } from './types';
 import { benchKey, projectKey } from './office';
+import { isCustomZone } from './zones';
 
 export const STATION_WIDTH = 164;
 export const STATION_HEIGHT = 238;
@@ -18,6 +19,8 @@ export interface StationPlacement {
 export interface ProjectArea {
   key: string;
   name: string;
+  /** Source projects behind a custom area, for its floor-mark tooltip. */
+  custom?: string[];
   x: number;
   y: number;
   width: number;
@@ -51,7 +54,13 @@ export function projectColor(key: string) {
  */
 export interface OfficeTopology {
   primary: Session[];
-  projects: { key: string; name: string; benches: { key: string; members: Session[] }[] }[];
+  projects: {
+    key: string;
+    name: string;
+    /** Source projects behind a custom area (user-defined zone), for its sign's tooltip. */
+    custom?: string[];
+    benches: { key: string; members: Session[] }[];
+  }[];
   children: Map<string, Session[]>;
 }
 export function officeTopology(sessions: Session[]): OfficeTopology {
@@ -66,7 +75,8 @@ export function officeTopology(sessions: Session[]): OfficeTopology {
     for (const s of members) benches.set(benchKey(s), [...(benches.get(benchKey(s)) ?? []), s]);
     return {
       key,
-      name: members[0].project,
+      name: members[0].area?.name ?? members[0].project,
+      custom: isCustomZone(key) ? [...new Set(members.map((s) => s.project))] : undefined,
       benches: [...benches].map(([key, members]) => ({ key, members })),
     };
   });
@@ -92,12 +102,13 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
     let x = PADDING,
       y = WALL,
       rowHeight = 0;
-    for (const { key, name, benches } of groups) {
+    for (const { key, name, custom, benches } of groups) {
       const ordered = benches.flatMap((b) => b.members);
       const cols = Math.min(columns, ordered.length);
       const area: ProjectArea = {
         key,
         name,
+        custom,
         x: 0,
         y: 0,
         width: cols * STATION_WIDTH + PADDING * 2,
@@ -172,6 +183,7 @@ const HELPER_WIDTH = 73;
 export interface RowZone {
   key: string;
   name: string;
+  custom?: string[];
   x: number;
   width: number;
   stations: { id: string; x: number }[];
@@ -192,8 +204,17 @@ export function layoutRow(sessions: Session[]): RowLayout {
   const { projects, children } = officeTopology(sessions);
   const zones: RowZone[] = [];
   let x = 0;
-  for (const { key, name, benches } of projects) {
-    const zone: RowZone = { key, name, x, width: 0, stations: [], helpers: [], benches: [] };
+  for (const { key, name, custom, benches } of projects) {
+    const zone: RowZone = {
+      key,
+      name,
+      custom,
+      x,
+      width: 0,
+      stations: [],
+      helpers: [],
+      benches: [],
+    };
     let cursor = ROW_PAD;
     for (const bench of benches) {
       zone.benches.push({

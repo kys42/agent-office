@@ -1,5 +1,6 @@
 import type { ExecutionPhase, Mood, RuntimeObservation, Session } from './types';
 
+import { taskStart } from './lifecycle';
 import { runtimeObservation } from './runtime';
 export { runtimeObservation } from './runtime';
 
@@ -69,3 +70,11 @@ export const PHASE_LABELS: Record<ExecutionPhase, string> = {
   quiet: '최근 실행 정보 없음',
   unknown: '미확인',
 };
+
+/** Decorative focus level, anchored to a known current request, never session age. */
+export function focusLevel(s: Session, now = Date.now()): 0 | 1 | 2 {
+  const start = taskStart(s);
+  if (!isWorking(s, now) || !start || start > now) return 0;
+  const minutes = (now - start) / 60_000;
+  return minutes >= 15 ? 2 : minutes >= 5 ? 1 : 0;
+}

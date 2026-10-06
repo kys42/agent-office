@@ -12,6 +12,7 @@ import './styles/office.css';
 import './styles/panel.css';
 import './styles/pages.css';
 import './styles/ux.css';
+import './styles/usage.css';
 import './styles/dock.css';
 import './styles/veil.css';
 import './styles/speech.css';

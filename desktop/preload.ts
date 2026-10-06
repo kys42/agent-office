@@ -3,6 +3,7 @@ import type { DockMode, OfficeAPI, Snapshot } from '../src/shared/types.js';
 const call = (method: string, ...args: unknown[]) =>
   ipcRenderer.invoke('office:call', method, args);
 const api: OfficeAPI = {
+  quotas: () => call('quotas'),
   snapshot: () => call('snapshot'),
   detail: (id) => call('detail', id),
   visit: (id) => call('visit', id),

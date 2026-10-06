@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { zoneLabel } from '../shared/zones';
 import { ArrowUpRight, Moon } from 'lucide-react';
 import type { Session } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
@@ -43,7 +44,7 @@ export function RestLounge({
           >
             <div className="lounge-project">
               <i />
-              {privacy ? '프로젝트' : group[0].project}
+              {privacy ? '프로젝트' : zoneLabel(group[0])}
               <small>{group.length}명 쉬는 중</small>
             </div>
             <div className="lounge-pods">
@@ -67,7 +68,7 @@ export function RestLounge({
                       </span>
                     </div>
                     <h3>{privacy ? '숨긴 동료' : sessionName(s)}</h3>
-                    <p>{privacy ? '프로젝트 숨김' : s.project}</p>
+                    <p>{privacy ? '프로젝트 숨김' : zoneLabel(s)}</p>
                     <small>
                       {ago(s.updatedAt)} 활동
                       {s.resident ? ` · 실행 기록 ${s.resident.sessionIds.length}개` : ''}

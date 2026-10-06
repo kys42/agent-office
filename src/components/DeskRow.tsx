@@ -171,8 +171,14 @@ export function DeskRow({
                   style={{ top: ROW_TOP + 96 }}
                 />
                 <div
-                  className="project-floor-mark row-zone-mark"
-                  title={privacy ? undefined : zone.name}
+                  className={`project-floor-mark row-zone-mark ${zone.custom ? 'custom-area' : ''}`}
+                  title={
+                    privacy
+                      ? undefined
+                      : zone.custom
+                        ? `${zone.name} · 직접 나눈 구역 (${zone.custom.join(', ')})`
+                        : zone.name
+                  }
                 >
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <b>{privacy ? '프로젝트' : zone.name}</b>

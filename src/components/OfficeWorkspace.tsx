@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { zoneLabel } from '../shared/zones';
 import {
   Archive,
   Armchair,
@@ -53,6 +54,7 @@ export function OfficeWorkspace({
   model,
   onVeil,
   onPin,
+  onZoneDrop,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -74,6 +76,7 @@ export function OfficeWorkspace({
   onVeil: (ids: string[], on: boolean) => void;
   /** Keep a colleague in the office however long it stays quiet (toggles `pinned`). */
   onPin: (s: Session) => void;
+  onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -104,7 +107,10 @@ export function OfficeWorkspace({
     .filter(
       (s) =>
         (filter === 'all' || s.provider === filter) &&
-        [sessionName(s), s.project].join(' ').toLowerCase().includes(query.toLowerCase()),
+        [sessionName(s), s.project, s.area?.name ?? '']
+          .join(' ')
+          .toLowerCase()
+          .includes(query.toLowerCase()),
     )
     .sort(
       (a, b) =>
@@ -192,6 +198,7 @@ export function OfficeWorkspace({
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
             canVeil={(s) => !model.view(s.id)?.needsPerson}
             onPin={onPin}
+            onZoneDrop={onZoneDrop}
             footer={
               <>
                 {model.veiled.length > 0 && (
@@ -294,7 +301,7 @@ export function OfficeWorkspace({
                         <div>
                           <span className="provider-label">{PROVIDERS[s.provider].name}</span>
                           <h3>{prefs.privacy ? '숨긴 세션' : sessionName(s)}</h3>
-                          <p>{prefs.privacy ? '프로젝트 숨김' : s.project}</p>
+                          <p>{prefs.privacy ? '프로젝트 숨김' : zoneLabel(s)}</p>
                           <small>
                             <Clock3 size={11} />
                             {ago(s.updatedAt)} 활동 · {s.openCount || 0}번 열어봄

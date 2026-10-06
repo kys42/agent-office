@@ -33,7 +33,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `completed`는 사용자가 결과를 확인한 별도 값이다. 턴의 done과 구분한다.
 - Codex thread 누적 사용량은 최신 snapshot으로 대체하며 합산하지 않는다. Claude는 동일 message.id의 최대 output 사용량으로 중복을 제거한다.
 - 최근 입력량 기반의 문맥 근사치와 세션 누적 사용량은 별도 필드다. OpenClaw의 contextTokens를 실제 사용량으로 오인하지 않는다.
-- 누락 값은 null이다. 큰 파일의 Claude 합계는 수집 구간 범위임을 표시한다. 금액 환산은 하지 않는다.
+- 누락 값은 null이다. 큰 파일의 Claude 합계는 수집 구간 범위임을 표시한다. 금액은 별도 관측 표본 장부의 API 기본 요금 환산으로 제공하며 실제 청구액과 구분한다. [사용량·작업 위치](USAGE-AND-WORKSPACE.md)를 따른다.
 
 ## 렌더러 코어와 표현
 
@@ -86,7 +86,7 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 
 ### 현재 Git과 기록 Git의 분리
 
-`Session.branch`/`gitCommit`은 원본 기록이다. `server/workspaces.ts`는 Git common-dir/worktree와 함께 symbolic-ref, rev-parse HEAD를 읽기 전용으로 조회하여 `WorkspaceIdentity.git`에 branch/commit/state/observedAt을 채운다(15초 캐시). `branchInfo`는 기록 이름/커밋을 우선하고, 없는 경우만 현재 checkout을 출처와 함께 표시한다. detached HEAD와 비 Git 폴더를 미확인 브랜치 하나로 뭉치지 않는다. 화면은 공급자에 무관한 공통 정보를 사용한다.
+`Session.branch`/`gitCommit`은 원본 기록이다. `server/workspaces.ts`는 Git common-dir/worktree와 함께 symbolic-ref, rev-parse HEAD를 읽기 전용으로 조회하여 `WorkspaceIdentity.git`에 branch/commit/state/observedAt을 채운다(15초 캐시). `branchInfo`는 검증된 최근 실행 위치가 있으면 그 worktree의 현재 브랜치를 먼저 표시한다. 그 외에는 기록 이름/커밋을 우선하고, 없는 경우만 현재 checkout을 출처와 함께 표시한다. detached HEAD와 비 Git 폴더를 미확인 브랜치 하나로 뭉치지 않는다. 화면은 공급자에 무관한 공통 정보를 사용한다.
 
 ### 대화와 소식 분류
 

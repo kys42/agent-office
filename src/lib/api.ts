@@ -17,6 +17,7 @@ const rpc = async (method: string, ...args: unknown[]) => {
 };
 export const isDesktop = !!window.office;
 export const api: OfficeAPI = window.office ?? {
+  quotas: () => rpc('quotas'),
   snapshot: () => rpc('snapshot'),
   detail: (id) => rpc('detail', id),
   visit: (id) => rpc('visit', id),

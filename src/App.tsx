@@ -1,5 +1,7 @@
+import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Gauge,
   Home,
   BookOpen,
   Clock3,
@@ -23,7 +25,7 @@ import {
   Coffee,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
-import { PROVIDERS, type Session } from './shared/types';
+import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
 import { useOffice } from './lib/useOffice';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
@@ -31,6 +33,7 @@ import { OfficeWorkspace } from './components/OfficeWorkspace';
 import { sessionName } from './shared/office';
 import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
+import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
 import { Settings } from './components/Settings';
 import { NewsInbox } from './components/News';
@@ -48,6 +51,7 @@ const tabs = [
 export default function App() {
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [inbox, setInbox] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
   const [selected, setSelected] = useState<string | null>(
@@ -95,6 +99,7 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [memoryQuery, setMemoryQuery] = useState('');
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
+  const [areaDrop, setAreaDrop] = useState<{ id: string; zone: string | null } | null>(null);
   const openSearch = () => setPalette(true);
   const closeHelp = useCallback(() => setHelp(false), []);
   const goZone = (zone: OfficeZone) => {
@@ -172,10 +177,15 @@ export default function App() {
     notices,
   ).flatMap((g) => g.sessions);
   const openInbox = () => {
+    setShowUsage(false);
     setInbox(true);
     setSelected(null);
   };
+  const saveZoneRules = async (zoneRules: ZoneRule[]) => {
+    if (await onPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
+  };
   const choose = (id: string) => {
+    setShowUsage(false);
     setInbox(false);
     setShowNews(null);
     setSelected(id);
@@ -356,7 +366,7 @@ export default function App() {
       run: () => setHelp(true),
     },
   ];
-  const docked = !!current || inbox;
+  const docked = !!current || inbox || showUsage;
   return (
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
@@ -383,6 +393,7 @@ export default function App() {
             aria-label="소식함 열기"
             title="동료가 남긴 최종 응답과 확인 요청"
             onClick={() => {
+              setShowUsage(false);
               setInbox((v) => !v);
               setSelected(null);
             }}
@@ -390,6 +401,18 @@ export default function App() {
             <Inbox size={16} />
             <span>소식함</span>
             <b>{unread}</b>
+          </button>
+          <button
+            className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
+            aria-label="사용량 열기"
+            title="사용 한도와 세션 비용"
+            onClick={() => {
+              setShowUsage((v) => !v);
+              setInbox(false);
+              setSelected(null);
+            }}
+          >
+            <Gauge size={17} />
           </button>
           <button
             className={`icon-btn ${prefs?.privacy ? 'is-on' : ''}`}
@@ -551,6 +574,7 @@ export default function App() {
               onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
+              onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />
           ) : view === 'memory' ? (
             <Memory
@@ -582,6 +606,15 @@ export default function App() {
             notify={notify}
             demo={demo}
             privacy={prefs?.privacy ?? false}
+            zoneRules={prefs?.zoneRules ?? []}
+            onZoneRules={saveZoneRules}
+          />
+        )}
+        {showUsage && (
+          <UsagePanel
+            demo={demo}
+            privacy={prefs?.privacy ?? false}
+            onClose={() => setShowUsage(false)}
           />
         )}
         {inbox && (
@@ -656,6 +689,22 @@ export default function App() {
           }}
         />
       )}
+      {areaDrop &&
+        (() => {
+          const moving = sessions.find((s) => s.id === areaDrop.id);
+          return moving ? (
+            <Modal title="사무실 구역 옮기기" onClose={() => setAreaDrop(null)}>
+              <ZoneEditor
+                session={moving}
+                sessions={sessions}
+                rules={prefs?.zoneRules ?? []}
+                onRules={saveZoneRules}
+                onClose={() => setAreaDrop(null)}
+                initialZone={areaDrop.zone}
+              />
+            </Modal>
+          ) : null;
+        })()}
       {help && (
         <Modal title="키보드 단축키" onClose={closeHelp}>
           <div className="shortcut-grid">
