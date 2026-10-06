@@ -199,6 +199,30 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await page.getByRole('button', { name: '사무실 펼치기' }).click();
   await expect(page.locator('.office-map')).toBeVisible();
 });
+test('A crowded desk row keeps the desk size and pages with side arrows', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.goto('/?demo#mini=row');
+  const desks = page.locator('.desk-row [data-station-id]');
+  await expect(desks).toHaveCount(6);
+  // Same 164px station as the big office at 100%: more colleagues scroll, never shrink.
+  expect(await desks.first().evaluate((e) => e.getBoundingClientRect().width)).toBe(164);
+  const prev = page.getByRole('button', { name: /왼쪽 동료/ });
+  const next = page.getByRole('button', { name: /오른쪽 동료/ });
+  await expect(prev).toHaveCount(0);
+  await expect(next).toBeVisible();
+  await next.click();
+  await expect(prev).toBeVisible();
+  await page.keyboard.press('ArrowLeft');
+  await expect(prev).toHaveCount(0);
+  // The tools band sits above the bubbles.
+  const tools = (await page.locator('.desk-row-tools').boundingBox())!;
+  const bubbleTop = Math.min(
+    ...(await page
+      .locator('.desk-row .speech-bubble')
+      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
+  );
+  expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
+});
 test('Real local collector reports all three providers without modifying source data', async ({
   request,
   page,

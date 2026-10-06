@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ChevronDown, Coffee, Expand, GitBranch, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Coffee, Expand, GitBranch, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
 import { branchInfo } from '../shared/branch';
-import { layoutRow, layoutSignature, projectColor, ROW_TOP } from '../shared/office-layout';
-import { ROW_SCENE_HEIGHT, rowScale } from '../shared/dock-geometry';
+import {
+  layoutRow,
+  layoutSignature,
+  projectColor,
+  ROW_TOP,
+  STATION_WIDTH,
+} from '../shared/office-layout';
+import { ROW_HEIGHT, ROW_SCALE, ROW_SCENE_HEIGHT } from '../shared/dock-geometry';
 import { residentLabel, type OfficeModel } from '../shared/office-model';
 import { stationSpeech } from '../shared/speech';
 import { isInboxNotice } from '../shared/notices';
@@ -14,8 +20,8 @@ import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 
-/** Width kept free for the end caps (title on the left, tools on the right). */
-const CAPS_W = 420;
+/** Breathing room before the first and after the last zone (the row is edge to edge). */
+const LANE_PAD = 16;
 /** Station-space rows, matching the big office's station (bench at 134 under the chair). */
 const BENCH_Y = ROW_TOP + 134;
 const HELPER_Y = ROW_TOP + 128;
@@ -41,13 +47,8 @@ export function DeskRow({
   onCollapse: () => void;
 }) {
   const track = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(window.innerWidth);
   const [hover, setHover] = useState<string | null>(null);
-  useEffect(() => {
-    const resize = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, []);
+  const [view, setView] = useState({ left: 0, width: 0, scroll: 0 });
   // A mouse wheel scrolls the row sideways when there are more desks than fit.
   useEffect(() => {
     const el = track.current;
@@ -63,45 +64,74 @@ export function DeskRow({
   const sessions = model.bySeat;
   const signature = layoutSignature(sessions);
   const layout = useMemo(() => layoutRow(sessions), [signature]);
-  const scale = rowScale(layout.width, width - CAPS_W);
+  // Track what is in view, so each arrow knows who is hidden on its side.
+  useEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() =>
+        setView({ left: el.scrollLeft, width: el.clientWidth, scroll: el.scrollWidth }),
+      );
+    };
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener('scroll', measure);
+      ro.disconnect();
+    };
+  }, [layout.width]);
+  /** One screenful at a time, keeping one desk of context. Desks never shrink. */
+  const page = (direction: -1 | 1) => {
+    const el = track.current;
+    if (!el) return;
+    const step = Math.max(STATION_WIDTH * ROW_SCALE, el.clientWidth - STATION_WIDTH * ROW_SCALE);
+    el.scrollBy({ left: direction * step, behavior: reducedMotion ? 'auto' : 'smooth' });
+  };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') page(-1);
+      if (e.key === 'ArrowRight') page(1);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  });
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const lounge = model.zones.waiting.filter((s) => !s.attachedTo).length;
   const open = (id: string) => api.window('main', id);
+  const desk = STATION_WIDTH * ROW_SCALE;
+  const stations = layout.zones.flatMap((z) =>
+    z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * ROW_SCALE })),
+  );
+  const hiddenLeft = stations.filter((st) => st.x + desk / 2 < view.left);
+  const hiddenRight = stations.filter((st) => st.x + desk / 2 > view.left + view.width);
+  const calling = (list: typeof stations) =>
+    list.some((st) => model.view(st.id)?.group === 'attention');
   return (
-    <div className="desk-row">
-      <div className="desk-row-cap desk-row-title" data-solid>
-        <button
-          className="desk-row-pet"
-          aria-label="펫으로 접기"
-          title="펫으로 접기"
-          onClick={onCollapse}
-        >
-          <Sprite
-            provider={model.lead?.session.provider ?? 'claude'}
-            mood={model.lead?.pose.mood ?? 'idle'}
-            size={36}
-          />
-        </button>
-        <span>
-          <b>
-            <span className="live-dot" />
-            우리 사무실
-          </b>
-          <small>
-            {layout.zones.length}개 구역 · 동료 {model.seats.length}명
-            {model.counts.attention ? ` · 기다려요 ${model.counts.attention}` : ''}
-            {model.counts.results ? ` · 새 소식 ${model.counts.results}` : ''}
-          </small>
-        </span>
-      </div>
-      <div className="desk-row-track" ref={track}>
+    <div className="desk-row" style={{ height: ROW_HEIGHT }}>
+      <div
+        className={`desk-row-track ${hiddenLeft.length ? 'fade-left' : ''} ${hiddenRight.length ? 'fade-right' : ''}`}
+        ref={track}
+      >
         <div
           className="desk-row-lane"
-          style={{ width: layout.width * scale, height: ROW_SCENE_HEIGHT * scale }}
+          style={{
+            width: layout.width * ROW_SCALE + LANE_PAD * 2,
+            height: ROW_SCENE_HEIGHT * ROW_SCALE,
+          }}
         >
           <div
             className={`desk-row-scene dynamic-office ${reducedMotion ? 'motion-paused' : ''}`}
-            style={{ width: layout.width, height: ROW_SCENE_HEIGHT, transform: `scale(${scale})` }}
+            style={{
+              left: LANE_PAD,
+              width: layout.width,
+              height: ROW_SCENE_HEIGHT,
+              transform: `scale(${ROW_SCALE})`,
+            }}
           >
             {layout.zones.map((zone, index) => (
               <div
@@ -256,11 +286,43 @@ export function DeskRow({
           </div>
         )}
       </div>
-      <div className="desk-row-cap desk-row-tools" data-solid>
+      {hiddenLeft.length > 0 && (
+        <button
+          className={`desk-row-arrow arrow-left ${calling(hiddenLeft) ? 'has-call' : ''}`}
+          data-solid
+          aria-label={`왼쪽 동료 ${hiddenLeft.length}명 보기`}
+          title="이전 책상 · ←"
+          onClick={() => page(-1)}
+        >
+          <ChevronLeft size={22} strokeWidth={2.4} />
+          <b>{hiddenLeft.length}</b>
+        </button>
+      )}
+      {hiddenRight.length > 0 && (
+        <button
+          className={`desk-row-arrow arrow-right ${calling(hiddenRight) ? 'has-call' : ''}`}
+          data-solid
+          aria-label={`오른쪽 동료 ${hiddenRight.length}명 보기`}
+          title="다음 책상 · →"
+          onClick={() => page(1)}
+        >
+          <ChevronRight size={22} strokeWidth={2.4} />
+          <b>{hiddenRight.length}</b>
+        </button>
+      )}
+      <div className="desk-row-tools" data-solid>
+        <span
+          className="desk-row-summary"
+          title={`${layout.zones.length}개 구역 · 동료 ${model.seats.length}명`}
+        >
+          <span className="live-dot" />
+          {model.seats.length}명
+          {model.counts.attention > 0 && <em>기다려요 {model.counts.attention}</em>}
+        </span>
         {lounge > 0 && (
           <span className="desk-row-lounge" title="대기 라운지에서 쉬는 동료">
-            <Coffee size={12} />
-            라운지 {lounge}
+            <Coffee size={11} />
+            {lounge}
           </span>
         )}
         <button
@@ -269,12 +331,12 @@ export function DeskRow({
           title="큰 사무실 열기"
           onClick={() => api.window('main')}
         >
-          <Expand size={15} />
+          <Expand size={14} />
         </button>
         <button
           className="icon-btn"
           aria-label="책상 줄 접기"
-          title="펫으로 접기"
+          title="펫으로 접기 · Esc"
           onClick={onCollapse}
         >
           <ChevronDown size={16} />
@@ -285,7 +347,7 @@ export function DeskRow({
           title="숨기기 · 트레이에서 다시 열 수 있어요"
           onClick={() => api.window('hide')}
         >
-          <X size={15} />
+          <X size={14} />
         </button>
       </div>
     </div>

@@ -8,12 +8,16 @@ export interface Rect {
 export type Point = Pick<Rect, 'x' | 'y'>;
 
 export const PET_SIZE = { width: 132, height: 148 };
-/** The row draws the office's own 164×238 stations, scaled between these factors. */
-export const ROW_SCALE_MAX = 0.86;
-export const ROW_SCALE_MIN = 0.62;
-/** Station-space height of the row scene (bubble headroom + station + zone label). */
-export const ROW_SCENE_HEIGHT = 292;
-export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE_MAX);
+/**
+ * The row draws the office's own 164×238 stations at a fixed scale: more colleagues never
+ * shrink the desks, the row scrolls (arrows / trackpad) instead.
+ */
+export const ROW_SCALE = 1;
+/** Station-space height of the row scene (tall-bubble headroom + station + zone label). */
+export const ROW_SCENE_HEIGHT = 328;
+/** A see-through band above the scene for the row's tools, so they never cover a bubble. */
+export const ROW_TOOLS_BAND = 44;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
 
 /** Keep a window fully inside a display's work area (shrinking it only if it cannot fit). */
 export function clampInto(b: Rect, area: Rect): Rect {
@@ -40,10 +44,4 @@ export function petBounds(saved: Point | null | undefined, area: Rect, size = PE
     y: area.y + area.height - size.height - 24,
   };
   return clampInto({ ...(saved ?? fallback), ...size }, area);
-}
-
-/** Shrink the row scene to fit the screen when it can, but never below a readable size. */
-export function rowScale(sceneWidth: number, available: number) {
-  if (sceneWidth <= 0 || available <= 0) return ROW_SCALE_MAX;
-  return Math.max(ROW_SCALE_MIN, Math.min(ROW_SCALE_MAX, available / sceneWidth));
 }

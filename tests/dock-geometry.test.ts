@@ -3,13 +3,12 @@ import assert from 'node:assert/strict';
 import {
   PET_SIZE,
   ROW_HEIGHT,
-  ROW_SCALE_MAX,
-  ROW_SCALE_MIN,
+  ROW_SCALE,
   ROW_SCENE_HEIGHT,
+  ROW_TOOLS_BAND,
   clampInto,
   petBounds,
   rowBounds,
-  rowScale,
 } from '../src/shared/dock-geometry.js';
 
 // A 1512×982 MacBook display: 25px menu bar on top, 70px Dock at the bottom.
@@ -46,10 +45,7 @@ test('a pet dragged past an edge or left on a removed display comes back inside'
   });
 });
 
-test('the row scene shrinks to fit the screen, but never below a readable size', () => {
-  assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE_MAX <= ROW_HEIGHT, 'the window holds the scene');
-  assert.equal(rowScale(800, 1092), ROW_SCALE_MAX);
-  assert.equal(rowScale(1400, 1092), 1092 / 1400);
-  assert.equal(rowScale(6000, 1092), ROW_SCALE_MIN, 'a big office scrolls instead');
-  assert.equal(rowScale(0, 1092), ROW_SCALE_MAX);
+test('the row keeps desks at a fixed readable scale and its window holds the scene', () => {
+  assert.equal(ROW_SCALE, 1, 'same size as the big office at 100%');
+  assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= ROW_HEIGHT, 'tools sit above bubbles');
 });

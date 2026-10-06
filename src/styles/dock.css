@@ -191,28 +191,34 @@ body.dock-mode {
 
 /* ───────── Row ─────────
    The scene reuses the big office's station classes (desk-station, team-bench, office-pet,
-   desk-name, speech-bubble, helper-desk, project-floor-mark) in station space, scaled from
-   the bottom-left corner. Only the zone floor rug is row specific. */
+   desk-name, speech-bubble, helper-desk, project-floor-mark) in station space at a fixed
+   scale (ROW_SCALE). Only the zone floor rug, arrows and tools are row specific. */
 .desk-row {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 252px;
+  /* height: ROW_HEIGHT (inline, from dock-geometry) */
   user-select: none;
 }
 .desk-row-track {
   position: absolute;
-  left: 224px;
-  right: 196px;
-  bottom: 0;
-  height: 100%;
+  inset: 0;
   display: flex;
   align-items: flex-end;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+}
+/* Fade only the side that hides more desks. */
+.desk-row-track.fade-left {
+  mask-image: linear-gradient(90deg, transparent, #000 64px);
+}
+.desk-row-track.fade-right {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 64px), transparent);
+}
+.desk-row-track.fade-left.fade-right {
+  mask-image: linear-gradient(90deg, transparent, #000 64px, #000 calc(100% - 64px), transparent);
 }
 .desk-row-track::-webkit-scrollbar {
   display: none;
@@ -235,7 +241,7 @@ body.dock-mode {
 }
 /* The zone rug starts at chair height so heads and bubbles float over the desktop. */
 .row-zone > .row-zone-floor {
-  top: 126px;
+  top: 152px;
   bottom: 0;
   width: 100%;
   background:
@@ -254,6 +260,59 @@ body.dock-mode {
 .row-speech {
   display: contents;
 }
+/* The row has headroom: let a bubble say more than the big map's two lines. */
+.desk-row .speech-copy b {
+  -webkit-line-clamp: 5;
+}
+.desk-row-arrow {
+  position: absolute;
+  bottom: 118px;
+  z-index: 8;
+  width: 46px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 14px;
+  color: var(--text);
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.7);
+  transition:
+    background 0.15s,
+    transform 0.15s var(--ease-out);
+}
+.desk-row-arrow:hover {
+  background: var(--bg-4);
+  transform: scale(1.05);
+}
+.desk-row-arrow b {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+}
+.desk-row-arrow.arrow-left {
+  left: 12px;
+}
+.desk-row-arrow.arrow-right {
+  right: 12px;
+}
+.desk-row-arrow.has-call {
+  border-color: rgba(255, 122, 138, 0.7);
+}
+.desk-row-arrow.has-call::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--st-call);
+  border: 2px solid #111216;
+}
 .row-empty {
   align-self: center;
   margin: 0 auto 72px;
@@ -263,73 +322,52 @@ body.dock-mode {
   color: var(--text-2);
   background: rgba(17, 18, 22, 0.92);
 }
-.desk-row-cap {
+.desk-row-tools {
   position: absolute;
-  bottom: 9px;
-  z-index: 5;
+  top: 8px;
+  right: 12px;
+  z-index: 9;
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 46px;
-  border-radius: 12px;
-  background: rgba(17, 18, 22, 0.95);
+  gap: 2px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-radius: 10px;
+  background: rgba(17, 18, 22, 0.94);
   border: 1px solid var(--line-2);
   box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.65);
+  opacity: 0.6;
+  transition: opacity 0.15s;
 }
-.desk-row-title {
-  left: 12px;
-  max-width: 204px;
-  padding: 0 12px 0 3px;
-}
-.desk-row-title > span {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.desk-row-title b {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 650;
-}
-.desk-row-title small {
-  font-size: 10.5px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.desk-row-pet {
-  width: 40px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  border-radius: 9px;
-  background: var(--bg-3);
-  transition: background 0.15s;
-}
-.desk-row-pet:hover {
-  background: var(--bg-5);
-}
-.desk-row-tools {
-  right: 12px;
-  gap: 2px;
-  padding: 0 6px;
+.desk-row:hover .desk-row-tools,
+.desk-row-tools:focus-within {
+  opacity: 1;
 }
 .desk-row-tools .icon-btn {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
+}
+.desk-row-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.desk-row-summary em {
+  font-style: normal;
+  color: var(--st-call);
 }
 .desk-row-lounge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 24px;
+  gap: 4px;
+  height: 22px;
   margin-right: 4px;
-  padding: 0 9px;
+  padding: 0 8px;
   border-radius: 99px;
   font-size: 10.5px;
   white-space: nowrap;
