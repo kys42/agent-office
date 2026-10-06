@@ -1,3 +1,4 @@
+import { QuotaService } from './quotas.js';
 import path from 'node:path';
 import os from 'node:os';
 import { stat } from 'node:fs/promises';
@@ -50,6 +51,7 @@ const prefsSchema = z
   })
   .strict();
 export class OfficeService extends EventEmitter {
+  private quotaService = new QuotaService();
   store: OfficeStore;
   connectors: Connector[] = [];
   syncing = false;
@@ -165,7 +167,7 @@ export class OfficeService extends EventEmitter {
           prefs.maxSessions,
         );
         for (const file of files) {
-          const stamp = `office-v9:${file.size}:${file.mtime}`;
+          const stamp = `office-v10:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
           if (!s) {
@@ -278,6 +280,10 @@ export class OfficeService extends EventEmitter {
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {
     switch (method) {
+      case 'quotas':
+        return Promise.all(
+          this.store.preferences().enabledProviders.map((p) => this.quotaService.read(p)),
+        );
       case 'snapshot':
         return this.snapshot();
       case 'refresh':

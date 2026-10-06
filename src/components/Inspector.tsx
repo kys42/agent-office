@@ -484,9 +484,27 @@ export function Inspector({
                   <Copy size={13} />
                 </button>
                 <p className="fine-print">
-                  기록에 남은 작업 위치예요. 현재 Git 상태는 다를 수 있어요.
+                  세션 시작 기록의 위치예요. 실제 실행 위치는 아래에서 구분해요.
                 </p>
               </section>
+              {s.workingLocation && (
+                <section className="detail-section working-location">
+                  <h3>최근 실제 작업 위치</h3>
+                  <code>{s.workingLocation.path}</code>
+                  <p>
+                    {s.workingLocation.source === 'tool-workdir'
+                      ? '도구 실행 폴더'
+                      : '명시적 cd 명령'}{' '}
+                    · {new Date(s.workingLocation.at).toLocaleString('ko-KR')}
+                  </p>
+                  <small>
+                    {s.workspace?.locationSource
+                      ? 'Git 저장소를 확인해 팀과 책상 브랜치에 반영해요.'
+                      : '위치 기록은 있지만 Git 저장소는 확인되지 않았어요.'}{' '}
+                    PR 링크나 단순 파일 읽기로는 자리를 옮기지 않아요.
+                  </small>
+                </section>
+              )}
               <section className="detail-section">
                 <div className="section-title">
                   <h3>작업의 크기</h3>
@@ -500,6 +518,50 @@ export function Inspector({
                     <b>{s.model || '모델 정보 미수집'}</b>
                     <small>{s.usage.source}</small>
                   </div>
+                </div>
+                <div className="cost-card">
+                  <span>이 동료가 쌓은 작업량</span>
+                  <strong>
+                    {s.cost?.usd != null
+                      ? `$${s.cost.usd.toLocaleString('en-US', { minimumFractionDigits: s.cost.usd < 0.01 ? 4 : 2, maximumFractionDigits: s.cost.usd < 0.01 ? 4 : 2 })}`
+                      : '비용 미확인'}
+                  </strong>
+                  <b>관측 누적 · API 기본 요금 환산</b>
+                  <small>
+                    {s.cost
+                      ? `${s.cost.priced}개 계산 · ${s.cost.unpriced}개 모델 요금 미확인 · ${compact(s.cost.tokens)} 토큰 관측`
+                      : '다음 수집부터 기록별 사용량을 쌓아요.'}
+                  </small>
+                  <p>
+                    구독료나 실제 청구액이 아니에요. 수집한 기록만 누적하며, Fast·긴 문맥 할증·도구
+                    비용은 제외해요.
+                  </p>
+                  <details>
+                    <summary>계산 기준 보기</summary>
+                    <p>
+                      메시지별 모델·입출력·캐시 사용량을 현재 표준 기본 단가로 환산해요. 같은 기록은
+                      중복 계산하지 않아요. 기록이 빠졌거나 요금표에 없는 모델은 합계에 포함하지
+                      않아요.
+                    </p>
+                    <small>{s.cost?.rateVersion}</small>
+                    <p>
+                      <a
+                        href="https://developers.openai.com/api/docs/pricing"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        OpenAI 요금표
+                      </a>{' '}
+                      ·{' '}
+                      <a
+                        href="https://platform.claude.com/docs/en/about-claude/pricing"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Claude 요금표
+                      </a>
+                    </p>
+                  </details>
                 </div>
                 <div className="usage-grid">
                   <div>

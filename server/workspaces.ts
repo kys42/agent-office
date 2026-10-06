@@ -86,7 +86,15 @@ export async function enrichWorkspaces(sessions: Session[]) {
     result.push(
       ...(await Promise.all(
         sessions.slice(i, i + 8).map(async (s) => {
-          const workspace = await resolveWorkspace(s.cwd, `${s.provider}:${s.project}`);
+          const base = await resolveWorkspace(s.cwd, `${s.provider}:${s.project}`);
+          const candidate = s.workingLocation
+            ? await resolveWorkspace(s.workingLocation.path, `${s.provider}:${s.project}`)
+            : null;
+          // Only a locally verified Git workspace can move a desk to a new team.
+          const workspace =
+            candidate?.evidence === 'git-common-dir'
+              ? { ...candidate, locationSource: s.workingLocation }
+              : base;
           return {
             ...s,
             workspace,

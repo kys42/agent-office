@@ -1,5 +1,7 @@
+import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Gauge,
   Home,
   BookOpen,
   Clock3,
@@ -59,6 +61,7 @@ export default function App() {
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? demoSnapshot() : null);
   const [inbox, setInbox] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
   const [selected, setSelected] = useState<string | null>(
@@ -209,6 +212,7 @@ export default function App() {
     notices,
   ).flatMap((g) => g.sessions);
   const openInbox = () => {
+    setShowUsage(false);
     setInbox(true);
     setSelected(null);
   };
@@ -279,6 +283,7 @@ export default function App() {
     }
   };
   const choose = (id: string) => {
+    setShowUsage(false);
     setInbox(false);
     setShowNews(null);
     setSelected(id);
@@ -519,7 +524,7 @@ export default function App() {
         reducedMotion={prefs?.reducedMotion ?? false}
       />
     );
-  const docked = !!current || inbox;
+  const docked = !!current || inbox || showUsage;
   return (
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
@@ -546,6 +551,7 @@ export default function App() {
             aria-label="소식함 열기"
             title="동료가 남긴 최종 응답과 확인 요청"
             onClick={() => {
+              setShowUsage(false);
               setInbox((v) => !v);
               setSelected(null);
             }}
@@ -553,6 +559,18 @@ export default function App() {
             <Inbox size={16} />
             <span>소식함</span>
             <b>{unread}</b>
+          </button>
+          <button
+            className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
+            aria-label="사용량 열기"
+            title="사용 한도와 세션 비용"
+            onClick={() => {
+              setShowUsage((v) => !v);
+              setInbox(false);
+              setSelected(null);
+            }}
+          >
+            <Gauge size={17} />
           </button>
           <button
             className={`icon-btn ${prefs?.privacy ? 'is-on' : ''}`}
@@ -734,6 +752,13 @@ export default function App() {
             privacy={prefs?.privacy ?? false}
             zoneRules={prefs?.zoneRules ?? []}
             onZoneRules={saveZoneRules}
+          />
+        )}
+        {showUsage && (
+          <UsagePanel
+            demo={demo}
+            privacy={prefs?.privacy ?? false}
+            onClose={() => setShowUsage(false)}
           />
         )}
         {inbox && (

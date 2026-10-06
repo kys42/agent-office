@@ -66,7 +66,7 @@ npm run dev
 
 ## 로컬 데이터와 연결 경로
 
-앱 저장소: `~/Library/Application Support/Agent Office/office.sqlite`. 원본 세션은 수정하지 않습니다. 인증 설정을 앱에 복제하지 않습니다. PR·이슈 조회는 기존 gh 인증을 통해 GitHub에 읽기 요청을 보냅니다.
+앱 저장소: `~/Library/Application Support/Agent Office/office.sqlite`. 원본 세션은 수정하지 않습니다. 인증 설정을 앱 DB나 화면에 복제하지 않습니다. 사용량 버튼의 Claude 조회는 기존 OAuth credential을 메모리에서 읽어 Anthropic의 고정 사용량 API에만 전송하며, Codex는 설치된 CLI의 읽기 전용 한도 RPC를 사용합니다. PR·이슈 조회는 기존 gh 인증을 통해 GitHub에 읽기 요청을 보냅니다.
 
 환경 변수: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCLAW_STATE_DIR`, `AGENT_OFFICE_DATA_DIR`. 기본 소스는 `~/.claude/projects`, `~/.codex/sessions`, `~/.openclaw/agents`입니다. Codex threads DB와 OpenClaw agent DB는 readOnly로 엽니다.
 
@@ -119,3 +119,5 @@ npm audit
 UI 테스트의 실제 연결 smoke는 로컬 기록이 있는 개발 환경을 사용합니다. 나머지 테스트는 합성 데이터로 원본을 수정하지 않습니다. [검증 기록](docs/development/QA.md), [아키텍처](docs/development/ARCHITECTURE.md), [참고 저장소 및 재사용](docs/research/RESEARCH.md), [수집 모듈 비교·도입 근거](docs/research/INGESTION-REFERENCE-AUDIT.md), [구현 계획](docs/development/PLAN.md), [고지](THIRD_PARTY_NOTICES.md).
 
 실제 승인·세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 직원 성장, 원격 동기화, 서명·공증·자동 업데이트는 후속 범위입니다. 기능 카탈로그 140개 전체 구현이나 프로덕션 배포 완료를 주장하지 않습니다.
+
+사용량 버튼·세션별 API 환산 비용·실제 worktree 관측·서류/집중 연출의 의미와 제한은 [사용량과 실행 위치](docs/development/USAGE-AND-WORKSPACE.md)에 정리했습니다.

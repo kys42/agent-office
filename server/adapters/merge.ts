@@ -36,6 +36,14 @@ export function mergeSessions(input: Session[]): Session[] {
       );
       return {
         ...latest,
+        workingLocation: group
+          .map((s) => s.workingLocation)
+          .filter((x) => !!x)
+          .sort((a, b) => a.at - b.at)
+          .at(-1),
+        usageEntries: [
+          ...new Map(group.flatMap((s) => s.usageEntries ?? []).map((e) => [e.id, e])).values(),
+        ],
         actor: [...group].reverse().find((s) => s.actor)?.actor,
         origin:
           [...group].reverse().find((s) => s.origin && s.origin.kind !== 'unknown')?.origin ??

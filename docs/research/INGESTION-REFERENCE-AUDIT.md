@@ -51,3 +51,8 @@ Native index / sidecar → titles and metadata                 ┘  → observat
 완전한 transcript 검색 엔진이나 플랫폼 전체 런타임을 도입한 것은 아니다. bounded sample, 최대 수집 개수, 프로세스 상태가 아닌 기록 기반 상태 추정은 유지한다. 외부 파서가 현재 로컬 SQLite와 paginated/new event 형식을 모두 지원한다고 가정하지 않는다. source schema가 바뀌면 해당 형식을 실제로 재현하는 fixture부터 추가한다.
 
 새 모듈은 (1) source read-only, (2) native/transport/event ID 구분, (3) 부모·분기 의미 보존, (4) 부분 기록/rotation 처리, (5) 의존성과 라이선스, (6) 기존 fixture와 로컬 replay 통과를 만족할 때 편입한다. 공급자 모듈이 UI 좌석/상태 정책을 직접 결정하지 못한다.
+
+
+## 2026-10-05 · 사용 한도/비용/실행 위치 확장
+
+기존 Orca/Agent Sessions checkout에서 OAuth usage, Codex app-server rateLimits, credential resolver와 종료 경계를 추가 확인했다. 전체 앱 의존성 대신 공통 ProviderQuota를 채우는 자체 TS 모듈로 구현했다. 새 vendor 복사는 없고 비용 장부/실행 위치 추적도 자체 로직이다. 비교한 파일·고정 SHA·공식 단가 출처·보안/범위 한계는 [상세 기록](../development/USAGE-AND-WORKSPACE.md#참고-코드와-재사용-결정)에 둔다.

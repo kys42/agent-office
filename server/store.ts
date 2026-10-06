@@ -1,3 +1,4 @@
+import { summarizeCost } from './pricing.js';
 import { validOfficeSchedule } from '../src/shared/lifecycle.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, chmodSync } from 'node:fs';
@@ -12,6 +13,7 @@ import type {
   SessionPatch,
   OfficeNotice,
   NoticeReceipt,
+  UsageEntry,
 } from '../src/shared/types.js';
 import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
@@ -43,7 +45,7 @@ export class OfficeStore {
     this.db.exec('PRAGMA busy_timeout=3000');
     if (!readOnly) {
       this.db.exec(
-        `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); PRAGMA user_version=2;`,
+        `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); PRAGMA user_version=3;`,
       );
       chmodSync(file, 0o600);
     } else this.db.exec('PRAGMA query_only=ON');
@@ -74,12 +76,64 @@ export class OfficeStore {
     try {
       for (const s of sessions) {
         const prior = get.get(s.id) as { data: string } | undefined;
+        const previous: Session | undefined = prior ? JSON.parse(prior.data) : undefined;
         this.ingestNotices(s);
         if (prior && JSON.parse(prior.data).revision === s.revision) continue;
         const taskStartedAt =
           Math.max(s.taskStartedAt ?? 0, prior ? (JSON.parse(prior.data).taskStartedAt ?? 0) : 0) ||
           undefined;
-        put.run(s.id, provider, s.project, s.updatedAt, JSON.stringify({ ...s, taskStartedAt }));
+        const ledgerPut = this.db.prepare('INSERT OR REPLACE INTO usage_ledger VALUES(?,?,?)');
+        const ledgerGet = this.db.prepare(
+          'SELECT data FROM usage_ledger WHERE session_id=? AND entry_id=?',
+        );
+        const hasNative =
+          (s.usageEntries ?? []).some((e) => e.id.startsWith('response:')) ||
+          !!this.db
+            .prepare(
+              "SELECT 1 FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'response:%' LIMIT 1",
+            )
+            .get(s.id);
+        if (hasNative)
+          this.db
+            .prepare("DELETE FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'codex:%'")
+            .run(s.id);
+        for (const entry of s.usageEntries ?? []) {
+          if (hasNative && entry.id.startsWith('codex:')) continue;
+          const old = ledgerGet.get(s.id, entry.id) as { data: string } | undefined;
+          const prev: UsageEntry | undefined = old ? JSON.parse(old.data) : undefined;
+          // Streaming snapshots sometimes regress; preserve the fullest message.
+          if (!prev || entry.output >= prev.output)
+            ledgerPut.run(
+              s.id,
+              entry.id,
+              JSON.stringify({ ...entry, model: entry.model ?? prev?.model ?? null }),
+            );
+        }
+        const entries = (
+          this.db.prepare('SELECT data FROM usage_ledger WHERE session_id=?').all(s.id) as {
+            data: string;
+          }[]
+        ).map((r) => JSON.parse(r.data) as UsageEntry);
+        const { usageEntries: _transient, ...stored } = s;
+        const retainLocation = !s.workingLocation && s.partial && previous?.workingLocation;
+        const location =
+          s.workingLocation ?? (retainLocation ? previous?.workingLocation : undefined);
+        const workspace = retainLocation ? previous?.workspace : s.workspace;
+        const project = retainLocation ? previous!.project : s.project;
+        put.run(
+          s.id,
+          provider,
+          project,
+          s.updatedAt,
+          JSON.stringify({
+            ...stored,
+            workingLocation: location,
+            workspace,
+            project,
+            cost: summarizeCost(entries),
+            taskStartedAt,
+          }),
+        );
         remove.run(s.id);
         index.run(
           s.id,
