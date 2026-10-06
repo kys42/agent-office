@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>모찌 플로트 데스크탑</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&amp;family=Gowun+Dodum&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#2E2A3B}a:hover{color:#000}
+.jua{font-family:'Jua','Apple SD Gothic Neo',sans-serif;font-weight:400}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.pet{position:absolute;padding:0;margin:0;border:0;background:none;cursor:pointer;animation:float 5.2s ease-in-out infinite;font:inherit;color:inherit}
+.pet:focus-visible{outline:3px solid #2F7FD0;outline-offset:6px;border-radius:50%}
+.pet.leave{animation:drift 7s ease-in-out infinite alternate}
+.pet.sleep{animation-duration:8s}
+.squish{position:absolute;inset:0}
+.pet.call .squish{animation:wobble 1.4s ease-in-out infinite}
+.pet.error .squish{animation:shake .5s linear infinite}
+.orb{position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 32% 26%,rgba(255,255,255,.95) 0 4%,rgba(255,255,255,.38) 5% 20%,rgba(255,255,255,.1) 44%,rgba(170,198,255,.2) 74%,rgba(255,168,214,.46) 100%);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.9),inset -10px -12px 26px rgba(140,160,255,.24),0 16px 32px rgba(58,66,120,.16)}
+.pet.sleep .orb{opacity:.7}
+.pet.call .orb{box-shadow:inset 0 0 0 2px rgba(255,255,255,.95),inset -10px -12px 26px rgba(255,120,160,.3),0 16px 36px rgba(214,58,94,.28)}
+.critter{position:absolute;left:12%;top:13%;width:76%;height:76%}
+.shine{position:absolute;left:17%;top:11%;width:30%;height:15%;border-radius:50%;background:rgba(255,255,255,.75);transform:rotate(-32deg)}
+.ring{position:absolute;inset:-8px;border-radius:50%;border:3px solid #E0466A;animation:ring 1.6s ease-out infinite}
+.chip{position:absolute;left:50%;bottom:calc(100% + 12px);transform:translateX(-50%);white-space:nowrap;display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;background:#fff;box-shadow:0 8px 20px rgba(58,66,120,.16);font-size:13.5px;line-height:1}
+.chip:after{content:'';position:absolute;left:50%;top:100%;width:10px;height:10px;background:#fff;transform:translate(-50%,-6px) rotate(45deg);border-radius:2px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.badge{position:absolute;right:2%;top:2%;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 0 3px #fff;font-family:'Jua',sans-serif;font-size:17px}
+.zz{position:absolute;right:6%;top:4%;font-family:'Jua',sans-serif;color:#5D6280;font-size:18px;animation:zz 3s ease-out infinite}
+.zz.b{animation-delay:1.5s;font-size:14px}
+.card{position:absolute;width:304px;box-sizing:border-box;border-radius:24px;background:rgba(255,255,255,.86);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 0 0 1px rgba(255,255,255,.9),0 22px 50px rgba(58,66,120,.22);padding:18px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:14px;border:0;font-family:'Jua',sans-serif;font-size:15px;cursor:pointer;text-decoration:none}
+.tapL{animation:tap .32s ease-in-out infinite alternate;transform-box:fill-box}
+.tapR{animation:tap .32s .16s ease-in-out infinite alternate;transform-box:fill-box}
+.blink{animation:blink 4.2s infinite;transform-box:fill-box;transform-origin:center}
+.wave{animation:wave .7s ease-in-out infinite;transform-box:fill-box;transform-origin:0% 100%}
+.led{animation:led 1.2s ease-in-out infinite}
+.twinkle{animation:twinkle 2.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.steam{animation:steam 2s ease-out infinite}
+@keyframes float{0%,100%{transform:translate(0,0)}25%{transform:translate(4px,-8px)}50%{transform:translate(0,-13px)}75%{transform:translate(-4px,-6px)}}
+@keyframes drift{0%{transform:translate(0,0) rotate(-3deg)}100%{transform:translate(70px,-18px) rotate(4deg)}}
+@keyframes wobble{0%,100%{transform:scale(1,1)}20%{transform:scale(1.07,.93)}40%{transform:scale(.95,1.05)}60%{transform:scale(1.03,.98)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}
+@keyframes ring{0%{transform:scale(.96);opacity:.85}100%{transform:scale(1.5);opacity:0}}
+@keyframes tap{from{transform:translateY(0)}to{transform:translateY(-4px)}}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+@keyframes wave{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(14deg)}}
+@keyframes led{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes twinkle{0%,100%{transform:scale(1) rotate(0)}50%{transform:scale(.72) rotate(25deg)}}
+@keyframes steam{0%{transform:translateY(6px);opacity:0}40%{opacity:.95}100%{transform:translateY(-10px);opacity:0}}
+@keyframes zz{0%{transform:translate(0,6px) scale(.7);opacity:0}30%{opacity:1}100%{transform:translate(16px,-34px) scale(1.15);opacity:0}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #CFE1EB; font-family: 'Gowun Dodum', 'Apple SD Gothic Neo', sans-serif; color: #2E2A3B">
+
+  <div aria-hidden="true" style="position: absolute; left: 980px; top: 40px; width: 380px; height: 120px; opacity: 0.6">
+    <div style="position: absolute; left: 0; top: 50px; width: 380px; height: 70px; border-radius: 999px; background: #FFFFFF"></div>
+    <div style="position: absolute; left: 70px; top: 6px; width: 130px; height: 110px; border-radius: 50%; background: #FFFFFF"></div>
+    <div style="position: absolute; left: 170px; top: 22px; width: 110px; height: 90px; border-radius: 50%; background: #FFFFFF"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; left: -60px; top: 640px; width: 460px; height: 150px; opacity: 0.5">
+    <div style="position: absolute; left: 0; top: 66px; width: 460px; height: 84px; border-radius: 999px; background: #FFFFFF"></div>
+    <div style="position: absolute; left: 120px; top: 6px; width: 150px; height: 130px; border-radius: 50%; background: #FFFFFF"></div>
+    <div style="position: absolute; left: 240px; top: 30px; width: 120px; height: 100px; border-radius: 50%; background: #FFFFFF"></div>
+  </div>
+
+  <div style="position: absolute; left: 96px; top: 84px; width: 720px; height: 476px; border-radius: 14px; background: #FBFCFE; box-shadow: 0 30px 60px rgba(46, 58, 92, 0.18), 0 0 0 1px rgba(46, 58, 92, 0.06); overflow: hidden; display: flex; flex-direction: column">
+    <div style="height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid #EDF0F5">
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: #E3E6ED"></span>
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: #E3E6ED"></span>
+      <span style="width: 11px; height: 11px; border-radius: 50%; background: #E3E6ED"></span>
+      <span style="margin-left: 14px; font-size: 12.5px; color: #6B7186">canvas.json — claude-skills</span>
+    </div>
+    <div style="flex: 1; display: flex">
+      <div style="width: 168px; background: #F3F5F9; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px">
+        <div style="width: 92px; height: 8px; border-radius: 4px; background: #D9DDE6"></div>
+        <div style="width: 120px; height: 8px; border-radius: 4px; background: #D9DDE6"></div>
+        <div style="width: 70px; height: 8px; border-radius: 4px; background: #BFD9F2"></div>
+        <div style="width: 104px; height: 8px; border-radius: 4px; background: #D9DDE6"></div>
+        <div style="width: 84px; height: 8px; border-radius: 4px; background: #D9DDE6"></div>
+      </div>
+      <div style="flex: 1; padding: 22px 26px; display: flex; flex-direction: column; gap: 13px">
+        <div style="display: flex; gap: 8px"><div style="width: 60px; height: 8px; border-radius: 4px; background: #C9B8F0"></div><div style="width: 140px; height: 8px; border-radius: 4px; background: #DADFE8"></div></div>
+        <div style="display: flex; gap: 8px; padding-left: 24px"><div style="width: 90px; height: 8px; border-radius: 4px; background: #F3C3A6"></div><div style="width: 200px; height: 8px; border-radius: 4px; background: #DADFE8"></div></div>
+        <div style="display: flex; gap: 8px; padding-left: 24px"><div style="width: 70px; height: 8px; border-radius: 4px; background: #F3C3A6"></div><div style="width: 120px; height: 8px; border-radius: 4px; background: #A9DCC6"></div></div>
+        <div style="display: flex; gap: 8px; padding-left: 48px"><div style="width: 160px; height: 8px; border-radius: 4px; background: #DADFE8"></div></div>
+        <div style="display: flex; gap: 8px; padding-left: 48px; background: #EEF8F3; margin-left: -26px; margin-right: -26px; padding-top: 4px; padding-bottom: 4px"><div style="margin-left: 74px; width: 220px; height: 8px; border-radius: 4px; background: #A9DCC6"></div></div>
+        <div style="display: flex; gap: 8px; padding-left: 48px; background: #EEF8F3; margin-left: -26px; margin-right: -26px; padding-top: 4px; padding-bottom: 4px"><div style="margin-left: 74px; width: 180px; height: 8px; border-radius: 4px; background: #A9DCC6"></div></div>
+        <div style="display: flex; gap: 8px; padding-left: 24px"><div style="width: 30px; height: 8px; border-radius: 4px; background: #C9B8F0"></div></div>
+        <div style="display: flex; gap: 8px"><div style="width: 40px; height: 8px; border-radius: 4px; background: #C9B8F0"></div><div style="width: 100px; height: 8px; border-radius: 4px; background: #DADFE8"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 880px; top: 600px; width: 440px; height: 236px; border-radius: 12px; background: #262A35; box-shadow: 0 30px 60px rgba(30, 36, 60, 0.28); overflow: hidden; display: flex; flex-direction: column">
+    <div style="height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 12px; background: #2E3340">
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #474D5E"></span>
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #474D5E"></span>
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #474D5E"></span>
+      <span style="margin-left: 12px; font-size: 12px; color: #9AA1B5">landing</span>
+    </div>
+    <div class="mono" style="flex: 1; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; color: #C9CEDB">
+      <div><span style="color: #8FE3C4">~/landing</span> git push origin main</div>
+      <div style="color: #8A91A6">Enumerating objects: 14, done.</div>
+      <div><span style="color: #8FE3C4">~/landing</span> gh pr create --fill</div>
+      <div style="color: #A9C8FF">https://github.com/me/landing/pull/31</div>
+    </div>
+  </div>
+
+  <sc-for list="{{pets}}" as="p" hint-placeholder-count="8">
+    <button class="{{p.cls}}" style="{{p.pos}}" onClick="{{p.pick}}" aria-label="{{p.aria}}">
+      <span class="chip">
+        <span class="dot" style="{{p.dotStyle}}"></span>
+        <span class="jua">{{p.name}}</span>
+        <span style="color: #5F5A70">{{p.say}}</span>
+      </span>
+      <span class="squish">
+        <sc-if value="{{p.isCall}}" hint-placeholder-val="{{false}}"><span class="ring"></span></sc-if>
+        <span class="orb"></span>
+        <span class="critter">
+          <svg viewBox="0 0 120 120" width="100%" height="100%" aria-hidden="true" style="overflow: visible">
+            <g display="{{p.m.armsSide}}">
+              <ellipse cx="21" cy="84" rx="8" ry="7" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+              <ellipse cx="99" cy="84" rx="8" ry="7" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+            </g>
+            <g display="{{p.m.armWave}}">
+              <ellipse cx="21" cy="84" rx="8" ry="7" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+              <g class="wave">
+                <path d="M92 72 Q104 58 106 38" fill="none" stroke="{{p.m.ink}}" stroke-width="16" stroke-linecap="round"></path>
+                <path d="M92 72 Q104 58 106 38" fill="none" stroke="{{p.m.body}}" stroke-width="10" stroke-linecap="round"></path>
+              </g>
+            </g>
+            <g display="{{p.m.feelers}}" fill="none" stroke="{{p.m.ink}}" stroke-width="3" stroke-linecap="round">
+              <path d="M48 38 Q44 28 40 22"></path>
+              <path d="M72 38 Q76 28 80 22"></path>
+              <circle cx="40" cy="20" r="4.5" fill="{{p.m.body}}"></circle>
+              <circle cx="80" cy="20" r="4.5" fill="{{p.m.body}}"></circle>
+            </g>
+            <g display="{{p.m.stars}}">
+              <path d="M50 37 Q46 28 44 22 M70 37 Q74 28 76 22" fill="none" stroke="{{p.m.ink}}" stroke-width="3" stroke-linecap="round"></path>
+              <g transform="translate(44 16)"><path class="twinkle" d="M0 -9 L2.6 -2.6 L9 0 L2.6 2.6 L0 9 L-2.6 2.6 L-9 0 L-2.6 -2.6 Z" fill="{{p.m.star}}" stroke="{{p.m.ink}}" stroke-width="2.4" stroke-linejoin="round"></path></g>
+              <g transform="translate(76 16)"><path class="twinkle" style="animation-delay: 1.2s" d="M0 -9 L2.6 -2.6 L9 0 L2.6 2.6 L0 9 L-2.6 2.6 L-9 0 L-2.6 -2.6 Z" fill="{{p.m.star}}" stroke="{{p.m.ink}}" stroke-width="2.4" stroke-linejoin="round"></path></g>
+            </g>
+            <g display="{{p.m.antenna}}">
+              <path d="M60 40 L60 24" stroke="{{p.m.ink}}" stroke-width="3.5" stroke-linecap="round"></path>
+              <rect class="led" x="52" y="11" width="16" height="13" rx="4.5" fill="{{p.m.eye}}" stroke="{{p.m.ink}}" stroke-width="3"></rect>
+            </g>
+            <g display="{{p.m.dome}}">
+              <path d="M60 34 C86 34 102 54 102 76 C102 94 86 102 60 102 C34 102 18 94 18 76 C18 54 34 34 60 34 Z" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3.2"></path>
+              <path d="M23 82 C30 95 90 95 97 82 C97 95 84 99.5 60 99.5 C36 99.5 23 95 23 82 Z" fill="{{p.m.shade}}" opacity="0.55"></path>
+              <ellipse cx="40" cy="52" rx="9" ry="5" fill="#FFFFFF" opacity="0.6" transform="rotate(-28 40 52)"></ellipse>
+              <circle cx="52" cy="44" r="2.4" fill="#FFFFFF" opacity="0.7"></circle>
+            </g>
+            <g display="{{p.m.box}}">
+              <rect x="20" y="38" width="80" height="64" rx="24" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3.2"></rect>
+              <rect x="31" y="50" width="58" height="38" rx="13" fill="{{p.m.plate}}"></rect>
+              <ellipse cx="33" cy="45" rx="6" ry="2.6" fill="#FFFFFF" opacity="0.3" transform="rotate(-25 33 45)"></ellipse>
+            </g>
+            <g display="{{p.m.beanie}}">
+              <path d="M21 64 C20 42 38 27 60 27 C82 27 100 42 99 64 C88 57 74 54 60 54 C46 54 32 57 21 64 Z" fill="{{p.m.hat}}" stroke="{{p.m.ink}}" stroke-width="3.2" stroke-linejoin="round"></path>
+              <path d="M42 35 L41 54 M51 31 L51 53 M60 30 L60 53 M69 31 L69 53 M78 35 L79 54" stroke="{{p.m.hat2}}" stroke-width="2.4" opacity="0.55" stroke-linecap="round"></path>
+              <path d="M20 64 C32 55 46 52 60 52 C74 52 88 55 100 64 L100 70 C88 62 74 59 60 59 C46 59 32 62 20 70 Z" fill="{{p.m.hat2}}" stroke="{{p.m.ink}}" stroke-width="3" stroke-linejoin="round"></path>
+              <circle cx="60" cy="24" r="7.5" fill="{{p.m.pom}}" stroke="{{p.m.ink}}" stroke-width="3"></circle>
+            </g>
+            <g transform="{{p.m.face}}">
+              <g display="{{p.m.cheeks}}">
+                <ellipse cx="35" cy="83" rx="6.5" ry="3.6" fill="{{p.m.cheek}}" opacity="0.6"></ellipse>
+                <ellipse cx="85" cy="83" rx="6.5" ry="3.6" fill="{{p.m.cheek}}" opacity="0.6"></ellipse>
+              </g>
+              <g display="{{p.m.eOpen}}">
+                <g class="blink">
+                  <ellipse cx="47" cy="73" rx="5" ry="6" fill="{{p.m.eye}}"></ellipse>
+                  <ellipse cx="73" cy="73" rx="5" ry="6" fill="{{p.m.eye}}"></ellipse>
+                  <circle cx="48.8" cy="70.4" r="1.9" fill="#FFFFFF"></circle>
+                  <circle cx="74.8" cy="70.4" r="1.9" fill="#FFFFFF"></circle>
+                </g>
+              </g>
+              <g display="{{p.m.eUp}}">
+                <ellipse cx="49" cy="70" rx="5" ry="6" fill="{{p.m.eye}}"></ellipse>
+                <ellipse cx="75" cy="70" rx="5" ry="6" fill="{{p.m.eye}}"></ellipse>
+                <circle cx="51" cy="67" r="1.9" fill="#FFFFFF"></circle>
+                <circle cx="77" cy="67" r="1.9" fill="#FFFFFF"></circle>
+              </g>
+              <g display="{{p.m.eBig}}">
+                <ellipse cx="47" cy="72" rx="6.2" ry="7.6" fill="{{p.m.eye}}"></ellipse>
+                <ellipse cx="73" cy="72" rx="6.2" ry="7.6" fill="{{p.m.eye}}"></ellipse>
+                <circle cx="49" cy="69" r="2.4" fill="#FFFFFF"></circle>
+                <circle cx="75" cy="69" r="2.4" fill="#FFFFFF"></circle>
+                <circle cx="45.5" cy="75.5" r="1.2" fill="#FFFFFF"></circle>
+                <circle cx="71.5" cy="75.5" r="1.2" fill="#FFFFFF"></circle>
+              </g>
+              <g display="{{p.m.eFocus}}" fill="{{p.m.eye}}">
+                <path d="M41.5 74 Q47 70.5 52.5 74 Q52.5 79 47 79 Q41.5 79 41.5 74 Z"></path>
+                <path d="M67.5 74 Q73 70.5 78.5 74 Q78.5 79 73 79 Q67.5 79 67.5 74 Z"></path>
+              </g>
+              <g display="{{p.m.eHappy}}" fill="none" stroke="{{p.m.eye}}" stroke-width="3.4" stroke-linecap="round">
+                <path d="M41 75 Q47 66 53 75"></path>
+                <path d="M67 75 Q73 66 79 75"></path>
+              </g>
+              <g display="{{p.m.eClosed}}" fill="none" stroke="{{p.m.eye}}" stroke-width="3.2" stroke-linecap="round">
+                <path d="M41 72 Q47 78 53 72"></path>
+                <path d="M67 72 Q73 78 79 72"></path>
+              </g>
+              <g display="{{p.m.eDizzy}}" fill="none" stroke="{{p.m.eye}}" stroke-width="3.2" stroke-linecap="round">
+                <path d="M42 68 L52 78 M52 68 L42 78"></path>
+                <path d="M68 68 L78 78 M78 68 L68 78"></path>
+              </g>
+              <path display="{{p.m.mSmile}}" d="M55 84 Q60 89 65 84" fill="none" stroke="{{p.m.eye}}" stroke-width="2.6" stroke-linecap="round"></path>
+              <path display="{{p.m.mCat}}" d="M53 83 Q56.5 88 60 83 Q63.5 88 67 83" fill="none" stroke="{{p.m.eye}}" stroke-width="2.6" stroke-linecap="round"></path>
+              <ellipse display="{{p.m.mO}}" cx="60" cy="87" rx="4.2" ry="5" fill="{{p.m.eye}}"></ellipse>
+              <path display="{{p.m.mFlat}}" d="M56 86 L64 86" fill="none" stroke="{{p.m.eye}}" stroke-width="2.6" stroke-linecap="round"></path>
+              <path display="{{p.m.mWave}}" d="M52 86 Q56 82 60 86 Q64 90 68 86" fill="none" stroke="{{p.m.eye}}" stroke-width="2.6" stroke-linecap="round"></path>
+            </g>
+            <g display="{{p.m.laptop}}">
+              <rect x="27" y="82" width="66" height="27" rx="6" fill="#EEF1F6" stroke="{{p.m.ink}}" stroke-width="3"></rect>
+              <circle cx="60" cy="95" r="4" fill="{{p.m.shade}}"></circle>
+              <rect x="16" y="107" width="88" height="7" rx="3.5" fill="#C9CFDB" stroke="{{p.m.ink}}" stroke-width="3"></rect>
+            </g>
+            <g display="{{p.m.hands}}">
+              <ellipse class="tapL" cx="31" cy="82" rx="7.5" ry="6" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+              <ellipse class="tapR" cx="89" cy="82" rx="7.5" ry="6" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+            </g>
+            <g display="{{p.m.mug}}">
+              <path class="steam" d="M100 64 Q96 58 100 52 Q104 46 100 40" fill="none" stroke="#FFFFFF" stroke-width="3.2" stroke-linecap="round"></path>
+              <path d="M110 80 Q119 80 119 87 Q119 94 110 94" fill="none" stroke="{{p.m.ink}}" stroke-width="3"></path>
+              <rect x="90" y="72" width="21" height="26" rx="5" fill="#FFFFFF" stroke="{{p.m.ink}}" stroke-width="3"></rect>
+              <rect x="93.5" y="75.5" width="14" height="5" rx="2" fill="#8A5A3C"></rect>
+              <ellipse cx="91" cy="89" rx="7.5" ry="6" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+            </g>
+            <g display="{{p.m.bag}}">
+              <path d="M5 82 C5 71 23 71 23 82" fill="none" stroke="{{p.m.ink}}" stroke-width="3"></path>
+              <rect x="-1" y="80" width="30" height="23" rx="5" fill="#C98B52" stroke="{{p.m.ink}}" stroke-width="3"></rect>
+              <rect x="11" y="87" width="6" height="5" rx="1.5" fill="#FFD36B"></rect>
+              <ellipse cx="24" cy="80" rx="7.5" ry="6" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></ellipse>
+            </g>
+            <g display="{{p.m.claws}}">
+              <path display="{{p.m.clawArm}}" d="M94 74 Q106 62 106 44" fill="none" stroke="{{p.m.ink}}" stroke-width="14" stroke-linecap="round"></path>
+              <path display="{{p.m.clawArm}}" d="M94 74 Q106 62 106 44" fill="none" stroke="{{p.m.body}}" stroke-width="8" stroke-linecap="round"></path>
+              <g transform="{{p.m.clawL}}">
+                <g class="{{p.m.clawAnimL}}">
+                  <circle r="11.5" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></circle>
+                  <path d="M-3 -11.5 L1 -2 L-11.5 -4" fill="{{p.m.shade}}" stroke="{{p.m.ink}}" stroke-width="3" stroke-linejoin="round"></path>
+                  <circle cx="-4" cy="4" r="2.4" fill="#FFFFFF" opacity="0.5"></circle>
+                </g>
+              </g>
+              <g transform="{{p.m.clawR}}">
+                <g class="{{p.m.clawAnimR}}">
+                  <circle r="11.5" fill="{{p.m.body}}" stroke="{{p.m.ink}}" stroke-width="3"></circle>
+                  <path d="M3 -11.5 L-1 -2 L11.5 -4" fill="{{p.m.shade}}" stroke="{{p.m.ink}}" stroke-width="3" stroke-linejoin="round"></path>
+                  <circle cx="4" cy="4" r="2.4" fill="#FFFFFF" opacity="0.5"></circle>
+                </g>
+              </g>
+            </g>
+          </svg>
+        </span>
+        <span class="shine"></span>
+        <sc-if value="{{p.badge}}" hint-placeholder-val="{{false}}">
+          <span class="badge" style="{{p.badgeStyle}}">{{p.badgeText}}</span>
+        </sc-if>
+        <sc-if value="{{p.isSleep}}" hint-placeholder-val="{{false}}">
+          <span class="zz">z</span><span class="zz b">z</span>
+        </sc-if>
+      </span>
+    </button>
+  </sc-for>
+
+  <sc-if value="{{showCall}}" hint-placeholder-val="{{true}}">
+    <div class="card" style="left: 716px; top: 124px; width: 312px">
+      <div style="display: flex; align-items: center; gap: 8px">
+        <span class="jua" style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: #FFE1E8; color: #B8264A; font-size: 13px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+          불러요 · 3분째
+        </span>
+        <span style="font-size: 13px; color: #5F5A70">{{callName}} · blog</span>
+      </div>
+      <p class="jua" style="margin: 12px 0 10px; font-size: 19px; line-height: 1.35; color: #2E2A3B">dist 폴더 지우고 다시 빌드해도 돼요?</p>
+      <div class="mono" style="padding: 10px 12px; border-radius: 12px; background: #2E2A3B; color: #F4E9FF; font-size: 12.5px">rm -rf dist &amp;&amp; npm run build</div>
+      <div style="display: flex; gap: 8px; margin-top: 14px">
+        <button class="btn" onClick="{{approve}}" style="flex: 1; background: #B8264A; color: #FFFFFF">허용</button>
+        <button class="btn" onClick="{{deny}}" style="background: #F1ECF7; color: #2E2A3B">거절</button>
+        <a class="btn" href="A-Office.dc.html" style="background: #F1ECF7; color: #2E2A3B" aria-label="작업실에서 보기">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V21h14V9.5"></path><path d="M10 21v-6h4v6"></path></svg>
+        </a>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{hasSel}}" hint-placeholder-val="{{true}}">
+    <div class="card" style="{{sel.cardPos}}">
+      <sc-if value="{{sel.viewing}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; align-items: flex-start; gap: 4px">
+          <div style="flex: 1; min-width: 0">
+            <div class="jua" style="font-size: 23px; line-height: 1.2">{{sel.name}}</div>
+            <div style="margin-top: 4px; font-size: 12.5px; color: #5F5A70">{{sel.subline}}</div>
+            <div style="margin-top: 2px; font-size: 13px; color: #5F5A70">{{sel.repo}} · {{sel.agent}} · <span class="mono" style="font-size: 12px">{{sel.branch}}</span></div>
+          </div>
+          <button onClick="{{sel.edit}}" aria-label="이름 바꾸기" style="width: 44px; height: 44px; margin-top: -8px; border: 0; border-radius: 50%; background: #F1ECF7; color: #2E2A3B; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+          </button>
+          <button onClick="{{close}}" aria-label="닫기" style="width: 44px; height: 44px; margin: -8px -8px 0 0; border: 0; border-radius: 50%; background: transparent; color: #5F5A70; cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+      </sc-if>
+      <sc-if value="{{sel.editing}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; flex-direction: column; gap: 8px">
+          <label for="nameInputA1" class="jua" style="font-size: 15px">이름표 달아주기</label>
+          <div style="display: flex; gap: 6px">
+            <input id="nameInputA1" value="{{sel.draft}}" onChange="{{sel.onDraft}}" placeholder="{{sel.title}}" style="flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 14px; border: 2px solid #2E2A3B; background: #FFFFFF; font-family: 'Jua', sans-serif; font-size: 18px; color: #2E2A3B; box-sizing: border-box">
+            <button class="btn" onClick="{{sel.save}}" style="background: #2E2A3B; color: #FFFFFF">달기</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+            <span style="font-size: 12px; color: #5F5A70">추천</span>
+            <sc-for list="{{sel.sugs}}" as="sg" hint-placeholder-count="3">
+              <button class="jua" onClick="{{sg.use}}" style="min-height: 34px; padding: 0 12px; border-radius: 999px; border: 0; background: #F1ECF7; color: #2E2A3B; font-size: 14px; cursor: pointer">{{sg.label}}</button>
+            </sc-for>
+          </div>
+          <span style="font-size: 12px; color: #5F5A70">비워두면 세션 제목 '{{sel.title}}'으로 보여요</span>
+        </div>
+      </sc-if>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px">
+        <span class="jua" style="{{sel.pillStyle}}">{{sel.stateLabel}}</span>
+        <span style="font-size: 13px; color: #5F5A70">{{sel.meta}}</span>
+      </div>
+      <p style="margin: 12px 0 0; font-size: 15px; line-height: 1.45">{{sel.say}}</p>
+      <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 7px">
+        <sc-for list="{{sel.steps}}" as="st" hint-placeholder-count="3">
+          <div class="mono" style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #4A4560">
+            <span style="width: 6px; height: 6px; border-radius: 50%; background: #B9B3CC; flex: none"></span>{{st}}
+          </div>
+        </sc-for>
+      </div>
+      <div style="margin-top: 14px">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5F5A70"><span>컨텍스트</span><span>{{sel.ctx}}%</span></div>
+        <div style="margin-top: 6px; height: 8px; border-radius: 99px; background: #ECE8F3; overflow: hidden"><div style="{{sel.ctxBar}}"></div></div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 16px">
+        <a class="btn" href="A-Office.dc.html" style="flex: 1; background: #2E2A3B; color: #FFFFFF">작업실에서 보기</a>
+        <button class="btn" style="background: #F1ECF7; color: #2E2A3B">터미널로</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <div style="position: absolute; right: 28px; bottom: 26px; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.82); backdrop-filter: blur(14px); box-shadow: 0 14px 34px rgba(58, 66, 120, 0.18)">
+    <a class="btn" href="A-Office.dc.html" style="min-height: 44px; border-radius: 999px; background: #2E2A3B; color: #FFFFFF; padding: 0 18px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V21h14V9.5"></path><path d="M10 21v-6h4v6"></path></svg>
+      작업실
+    </a>
+    <div style="display: flex; align-items: center; gap: 14px; padding: 0 14px 0 8px; font-size: 14px">
+      <span style="display: flex; align-items: center; gap: 6px"><span class="dot" style="background: #2F9E77"></span>일하는 중 <b class="jua" style="font-weight: 400">{{countWork}}</b></span>
+      <span style="display: flex; align-items: center; gap: 6px"><span class="dot" style="background: #E0466A"></span>불러요 <b class="jua" style="font-weight: 400">{{countCall}}</b></span>
+      <span style="display: flex; align-items: center; gap: 6px; color: #5F5A70"><span class="dot" style="background: #A3A8BA"></span>퇴근 <b class="jua" style="font-weight: 400">1</b></span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+const SPECIES = {
+  claude: { agent: 'Claude Code', sugs: ['코코', '당근', '모모'], body: '#FFAA80', shade: '#F08A5D', ink: '#6B3324', eye: '#2E2233', cheek: '#FF6F7F', hat: '#3E8C8F', hat2: '#8FD0CC', pom: '#FFF4E3', plate: 'none', star: 'none' },
+  codex: { agent: 'Codex', sugs: ['네모', '삑삑', '큐브'], body: '#5A6072', shade: '#434858', ink: '#22252F', eye: '#A5F7DC', cheek: 'none', hat: 'none', hat2: 'none', pom: 'none', plate: '#2A2E3A', star: 'none' },
+  openclaw: { agent: 'OpenClaw', sugs: ['집게', '꽃게', '가재'], body: '#FF8C82', shade: '#EC6A60', ink: '#6E2420', eye: '#2E2233', cheek: '#FFC2C8', hat: 'none', hat2: 'none', pom: 'none', plate: 'none', star: 'none' },
+  gemini: { agent: 'Gemini CLI', sugs: ['별이', '반짝', '쌍둥'], body: '#AAB5FF', shade: '#8593F0', ink: '#2D3480', eye: '#22264F', cheek: '#FF9ECB', hat: 'none', hat2: 'none', pom: 'none', plate: 'none', star: '#FFD54F' }
+};
+const STATES = {
+  work: { label: '일하는 중', dot: '#2F9E77', text: '#1E7A57', tint: '#DDF3EA' },
+  think: { label: '생각 중', dot: '#8A6FE0', text: '#5B41B8', tint: '#ECE6FF' },
+  call: { label: '불러요', dot: '#E0466A', text: '#B8264A', tint: '#FFE1E8' },
+  error: { label: '막혔어요', dot: '#E08A1E', text: '#9A5200', tint: '#FFEBD1' },
+  done: { label: '다 했어요', dot: '#3A8DDE', text: '#1F64AE', tint: '#DDEBFF' },
+  sleep: { label: '꾸벅꾸벅', dot: '#A3A8BA', text: '#555A6E', tint: '#E9EAF0' },
+  leave: { label: '퇴근', dot: '#A3A8BA', text: '#555A6E', tint: '#E9EAF0' },
+  idle: { label: '기다리는 중', dot: '#A3A8BA', text: '#555A6E', tint: '#E9EAF0' }
+};
+function mochi(sp, mood) {
+  const c = SPECIES[sp];
+  const on = (v) => (v ? 'inline' : 'none');
+  const crab = sp === 'openclaw';
+  const clawL = { work: 'translate(33 84) rotate(-12)', think: 'translate(40 92) rotate(-30)' }[mood] || 'translate(15 78) rotate(-18)';
+  const clawR = { work: 'translate(87 84) rotate(12)', call: 'translate(106 36) rotate(18)', done: 'translate(92 90) rotate(8)' }[mood] || 'translate(105 78) rotate(18)';
+  return Object.assign({}, c, {
+    dome: on(sp !== 'codex'), box: on(sp === 'codex'),
+    beanie: on(sp === 'claude'), antenna: on(sp === 'codex'), feelers: on(crab), stars: on(sp === 'gemini'), claws: on(crab),
+    cheeks: on(sp !== 'codex'),
+    face: sp === 'codex' ? 'translate(0 -5)' : 'translate(0 0)',
+    eOpen: on(mood === 'idle' || mood === 'leave'), eUp: on(mood === 'think'), eBig: on(mood === 'call'), eFocus: on(mood === 'work'),
+    eHappy: on(mood === 'done'), eClosed: on(mood === 'sleep'), eDizzy: on(mood === 'error'),
+    mSmile: on(mood === 'idle' || mood === 'leave' || mood === 'work'), mCat: on(mood === 'done'), mO: on(mood === 'call'),
+    mFlat: on(mood === 'think' || mood === 'sleep'), mWave: on(mood === 'error'),
+    armsSide: on(!crab && ['idle', 'think', 'error', 'sleep'].includes(mood)), armWave: on(!crab && mood === 'call'),
+    hands: on(!crab && mood === 'work'), laptop: on(mood === 'work'), mug: on(mood === 'done'), bag: on(mood === 'leave'),
+    clawL: clawL, clawR: clawR, clawArm: on(crab && mood === 'call'),
+    clawAnimL: mood === 'work' ? 'tapL' : '', clawAnimR: mood === 'work' ? 'tapR' : ''
+  });
+}
+const SESSIONS = [
+  { id: 's1', nick: '코코', title: '데스크탑 펫 디자인 시안', sp: 'claude', repo: 'claude-skills', branch: 'agent-desktop-pet', mood: 'work', say: 'canvas.json 고치는 중', meta: '12분째 · +128 −4', ctx: 62, steps: ['Read SKILL.md', 'Grep "sprite"', 'Edit canvas.json'], cx: 610, cy: 470, size: 108, dur: 5.2, delay: 0 },
+  { id: 's2', nick: '', title: '9월 회고 글 발행', sp: 'claude', repo: 'blog', branch: 'post/retro', mood: 'call', say: '저 좀 봐주세요!', meta: '3분째 기다리는 중', ctx: 41, steps: ['Edit astro.config.mjs', 'Bash npm run build', '권한 요청 · rm -rf dist'], cx: 1112, cy: 190, size: 128, dur: 4.4, delay: -1 },
+  { id: 's3', nick: '셜록', title: 'sync 버그 추적', sp: 'claude', repo: 'work-manager', branch: 'fix/sync', mood: 'think', say: '실패 원인 찾는 중…', meta: '4분째', ctx: 78, steps: ['Bash npm test', 'Read sync.ts', '생각 중'], cx: 380, cy: 668, size: 96, dur: 6, delay: -2 },
+  { id: 's4', nick: '', title: 'Rate limit 미들웨어', sp: 'codex', repo: 'api-server', branch: 'feat/rate-limit', mood: 'error', say: '테스트 3개 실패', meta: '1분 전 · 42/45 통과', ctx: 55, steps: ['Edit limiter.ts', 'Bash npm test', '실패 3건'], cx: 1278, cy: 548, size: 96, dur: 5.6, delay: -3 },
+  { id: 's5', nick: '랜디', title: '랜딩 히어로 개편', sp: 'codex', repo: 'landing', branch: 'main', mood: 'done', say: 'PR #31 올렸어요!', meta: '2분 전 완료', ctx: 34, steps: ['Bash git push', 'Bash gh pr create', '완료'], cx: 1100, cy: 720, size: 96, dur: 5, delay: -1.5 },
+  { id: 's6', nick: '집사', title: '받은편지함 정리', sp: 'openclaw', repo: '개인 비서', branch: 'telegram', mood: 'work', say: '메일 12통 분류 중', meta: '상시 근무', ctx: 23, steps: ['메일함 읽기', '라벨 붙이기 7/12', '요약 초안'], cx: 160, cy: 500, size: 96, dur: 6.4, delay: -4 },
+  { id: 's7', nick: '', title: 'ETL v2 마이그레이션', sp: 'gemini', repo: 'data-pipeline', branch: 'etl-v2', mood: 'sleep', say: '25분째 조용…', meta: '마지막 활동 25분 전', ctx: 71, steps: ['Bash python etl.py', '완료 보고', '대기'], cx: 520, cy: 820, size: 84, dur: 8, delay: -2.5 },
+  { id: 's8', nick: '긁적이', title: '뉴스 스크래퍼 정리', sp: 'codex', repo: 'scraper', branch: 'main', mood: 'leave', say: '퇴근!', meta: '3시간째 조용 · 17:02 퇴근', ctx: 88, steps: ['완료', '대기', '퇴근 처리'], cx: 1360, cy: 330, size: 72, dur: 7, delay: 0 }
+];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { selected: 's1', call: 'open', names: {}, editing: false, draft: '' };
+  }
+  renderVals() {
+    const { selected, call, names, editing, draft } = this.state;
+    const nickOf = (x) => (names[x.id] === undefined ? x.nick : names[x.id]);
+    const nameOf = (x) => nickOf(x) || x.title;
+    const sessions = SESSIONS.map((s) => {
+      if (s.id !== 's2' || call === 'open') return s;
+      return call === 'ok'
+        ? Object.assign({}, s, { mood: 'work', say: '다시 빌드 중…', meta: '방금 허용함' })
+        : Object.assign({}, s, { mood: 'idle', say: '다른 방법 찾아볼게요', meta: '방금 거절함' });
+    });
+    const pets = sessions.map((s) => {
+      const st = STATES[s.mood];
+      const badges = { call: ['!', '#E0466A'], error: ['×', '#E08A1E'], done: ['✓', '#3A8DDE'] };
+      const b = badges[s.mood];
+      return {
+        id: s.id,
+        cls: 'pet ' + s.mood,
+        pos: 'left:' + (s.cx - s.size / 2) + 'px;top:' + (s.cy - s.size / 2) + 'px;width:' + s.size + 'px;height:' + s.size + 'px;animation-duration:' + s.dur + 's;animation-delay:' + s.delay + 's',
+        say: s.say,
+        name: nameOf(s),
+        aria: nameOf(s) + ', ' + SPECIES[s.sp].agent + ', ' + st.label,
+        dotStyle: 'background:' + st.dot,
+        isCall: s.mood === 'call',
+        isSleep: s.mood === 'sleep',
+        badge: !!b,
+        badgeText: b ? b[0] : '',
+        badgeStyle: b ? 'background:' + b[1] : '',
+        m: mochi(s.sp, s.mood),
+        pick: () => this.setState({ selected: s.id, editing: false })
+      };
+    });
+    const s = sessions.find((x) => x.id === selected);
+    let sel = {};
+    if (s) {
+      const st = STATES[s.mood];
+      const right = s.cx < 900;
+      const left = right ? s.cx + s.size / 2 + 22 : s.cx - s.size / 2 - 22 - 304;
+      const top = Math.max(20, Math.min(900 - 470, s.cy - 90));
+      sel = {
+        repo: s.repo, agent: SPECIES[s.sp].agent, branch: s.branch, say: s.say, meta: s.meta, steps: s.steps, ctx: s.ctx,
+        name: nameOf(s), title: s.title,
+        subline: nickOf(s) ? '세션 제목 · ' + s.title : '이름표 없음 · 세션 제목으로 보여요',
+        viewing: !editing, editing, draft,
+        onDraft: (e) => this.setState({ draft: e.target.value }),
+        edit: () => this.setState({ editing: true, draft: nickOf(s) || '' }),
+        save: () => this.setState({ editing: false, names: Object.assign({}, names, { [s.id]: this.state.draft.trim() }) }),
+        sugs: SPECIES[s.sp].sugs.map((label) => ({ label, use: () => this.setState({ draft: label }) })),
+        stateLabel: st.label,
+        pillStyle: 'padding:5px 11px;border-radius:999px;font-size:13px;background:' + st.tint + ';color:' + st.text,
+        ctxBar: 'height:100%;border-radius:99px;width:' + s.ctx + '%;background:' + (s.ctx > 80 ? '#E08A1E' : '#8A6FE0'),
+        cardPos: 'left:' + left + 'px;top:' + top + 'px'
+      };
+    }
+    const count = (m) => sessions.filter((x) => x.mood === m).length;
+    return {
+      pets,
+      sel,
+      hasSel: !!s && !(selected === 's2' && call === 'open'),
+      showCall: call === 'open',
+      callName: nameOf(sessions[1]),
+      countWork: count('work') + count('think'),
+      countCall: count('call'),
+      approve: () => this.setState({ call: 'ok' }),
+      deny: () => this.setState({ call: 'no' }),
+      close: () => this.setState({ selected: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

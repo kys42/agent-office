@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>야근 빌딩 층별 안내</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&amp;family=IBM+Plex+Sans+KR:wght@400;600&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#3255A4}a:hover{color:#1E3A78}
+.bh{font-family:'Black Han Sans','Apple SD Gothic Neo',sans-serif;font-weight:400}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.mis{text-shadow:3px 2px 0 rgba(255,72,176,.75)}
+.room{position:absolute;padding:0;margin:0;border:2px solid #3255A4;cursor:pointer;text-align:left;font-family:inherit;color:#1E2A55;overflow:hidden;box-sizing:border-box}
+.room:focus-visible{outline:3px solid #FF48B0;outline-offset:2px}
+.room.sel{box-shadow:inset 0 0 0 4px #FF48B0}
+.wash{position:absolute;inset:0;mix-blend-mode:multiply}
+.wash.flash{animation:flash 1.1s steps(2) infinite}
+.who{position:absolute;bottom:6px;width:84px;height:84px}
+.bob{animation:bob 2.6s ease-in-out infinite}
+.dir{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;padding:3px 8px;border:0;background:transparent;color:#F2EDE1;cursor:pointer;text-align:left;font-family:'IBM Plex Mono',monospace;font-size:13px}
+.dir.sel{background:#FFE800;color:#1E2A55}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 14px;border:2px solid #3255A4;font-family:'Black Han Sans',sans-serif;font-size:15px;cursor:pointer;background:#FBF8F1;color:#1E2A55;text-decoration:none}
+.sug{min-height:32px;padding:0 10px;border:2px dashed #3255A4;background:#FBF8F1;color:#1E2A55;cursor:pointer;font-family:'Black Han Sans',sans-serif;font-size:14px}
+.blink{animation:blink 4s infinite;transform-box:fill-box;transform-origin:center}
+.car{animation:car 9s ease-in-out infinite}
+@keyframes flash{0%{opacity:.75}50%{opacity:.3}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+@keyframes car{0%,20%{transform:translateY(0)}45%,65%{transform:translateY(300px)}90%,100%{transform:translateY(0)}}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 900px; overflow: hidden; background: #F2EDE1; font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', sans-serif; color: #1E2A55">
+
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 0; width: 860px; height: 150px; background-image: radial-gradient(circle, #3255A4 2.6px, transparent 3px); background-size: 8px 8px; opacity: 0.7; mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 150px; width: 860px; height: 150px; background-image: radial-gradient(circle, #3255A4 1.7px, transparent 2.1px); background-size: 8px 8px; opacity: 0.6; mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 300px; width: 860px; height: 150px; background-image: radial-gradient(circle, #3255A4 1px, transparent 1.4px); background-size: 8px 8px; opacity: 0.5; mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: 690px; top: 40px; width: 92px; height: 92px; border-radius: 50%; background: #FFE800; mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: 696px; top: 44px; width: 92px; height: 92px; border-radius: 50%; background-image: radial-gradient(circle, #FF48B0 1.6px, transparent 2px); background-size: 7px 7px; opacity: 0.5; mix-blend-mode: multiply"></div>
+
+  <header style="position: absolute; left: 40px; top: 22px; display: flex; align-items: baseline; gap: 16px">
+    <h1 class="bh mis" style="margin: 0; font-size: 44px; color: #FBF8F1; -webkit-text-stroke: 2px #1E2A55">AGENT TOWER</h1>
+    <span class="mono" style="font-size: 13px; color: #FBF8F1; background: #1E2A55; padding: 3px 8px">21:30 · 야근 중</span>
+  </header>
+
+  <div aria-hidden="true" style="position: absolute; left: 140px; top: 104px; width: 4px; height: 46px; background: #3255A4"></div>
+  <div aria-hidden="true" style="position: absolute; left: 600px; top: 104px; width: 4px; height: 46px; background: #3255A4"></div>
+  <div class="bh" aria-hidden="true" style="position: absolute; left: 160px; top: 96px; padding: 2px 16px; border: 3px solid #3255A4; background: #FBF8F1; color: #FF48B0; font-size: 22px; letter-spacing: 6px; mix-blend-mode: multiply">일 하 는 중</div>
+  <div aria-hidden="true" style="position: absolute; left: 470px; top: 100px; width: 70px; height: 50px; border: 3px solid #3255A4; border-bottom: 0; border-radius: 10px 10px 0 0; background: #FBF8F1; box-sizing: border-box"></div>
+
+  <div aria-hidden="true" style="position: absolute; left: 36px; top: 148px; width: 820px; height: 616px; background: #FBF8F1; border: 3px solid #1E2A55; box-sizing: border-box"></div>
+
+  <sc-for list="{{floors}}" as="f" hint-placeholder-count="4">
+    <div style="{{f.labelPos}}">
+      <span class="bh" style="font-size: 34px; line-height: 1; color: #3255A4">{{f.no}}</span>
+      <span style="font-size: 12px; line-height: 1.3; color: #1E2A55">{{f.team}}</span>
+    </div>
+    <div aria-hidden="true" style="{{f.slab}}"></div>
+  </sc-for>
+
+  <sc-for list="{{rooms}}" as="r" hint-placeholder-count="10">
+    <button class="{{r.cls}}" style="{{r.pos}}" onClick="{{r.pick}}" aria-label="{{r.aria}}">
+      <span class="{{r.washCls}}" style="{{r.wash}}"></span>
+      <span style="position: absolute; left: 10px; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 2px">
+        <span class="bh" style="font-size: 16px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.name}}</span>
+        <span class="mono" style="font-size: 11px">{{r.sub}}</span>
+      </span>
+      <sc-if value="{{r.hasWho}}" hint-placeholder-val="{{true}}">
+        <span class="{{r.whoCls}}" style="{{r.whoPos}}">
+          <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="overflow: visible">
+            <g display="{{r.c.bag}}">
+              <path d="M5 64 Q11 54 17 64" fill="none" stroke="#3255A4" stroke-width="3"></path>
+              <rect x="-2" y="64" width="26" height="20" fill="#3255A4" style="mix-blend-mode: multiply"></rect>
+            </g>
+            <g transform="translate(3 2)" opacity="0.85" style="mix-blend-mode: multiply">
+              <path display="{{r.c.dome}}" d="M50 26 C72 26 86 44 86 64 C86 80 72 88 50 88 C28 88 14 80 14 64 C14 44 28 26 50 26 Z" fill="#FF48B0"></path>
+              <rect display="{{r.c.box}}" x="16" y="30" width="68" height="58" rx="20" fill="#FF48B0"></rect>
+            </g>
+            <g display="{{r.c.claws}}" style="mix-blend-mode: multiply">
+              <circle cx="13" cy="66" r="10" fill="#FF48B0"></circle>
+              <circle cx="87" cy="66" r="10" fill="#FF48B0"></circle>
+            </g>
+            <path display="{{r.c.dome}}" d="M50 26 C72 26 86 44 86 64 C86 80 72 88 50 88 C28 88 14 80 14 64 C14 44 28 26 50 26 Z" fill="{{r.c.body}}" style="mix-blend-mode: multiply"></path>
+            <rect display="{{r.c.box}}" x="16" y="30" width="68" height="58" rx="20" fill="{{r.c.body}}" style="mix-blend-mode: multiply"></rect>
+            <rect display="{{r.c.box}}" x="25" y="42" width="50" height="32" rx="10" fill="#FBF8F1"></rect>
+            <g display="{{r.c.beanie}}" style="mix-blend-mode: multiply">
+              <path d="M14 58 C14 38 30 22 50 22 C70 22 86 38 86 58 C74 50 62 48 50 48 C38 48 26 50 14 58 Z" fill="#3255A4"></path>
+              <circle cx="50" cy="18" r="6.5" fill="#FFE800"></circle>
+            </g>
+            <g display="{{r.c.antenna}}">
+              <path d="M50 30 L50 16" stroke="#3255A4" stroke-width="4" stroke-linecap="round"></path>
+              <rect x="43" y="7" width="14" height="10" rx="3" fill="#FF48B0" style="mix-blend-mode: multiply"></rect>
+            </g>
+            <g display="{{r.c.feelers}}" fill="none" stroke="#3255A4" stroke-width="3.5" stroke-linecap="round">
+              <path d="M40 30 L33 15"></path><path d="M60 30 L67 15"></path>
+            </g>
+            <g display="{{r.c.stars}}">
+              <path d="M40 30 L35 17 M60 30 L65 17" stroke="#3255A4" stroke-width="3.5" stroke-linecap="round"></path>
+              <path transform="translate(34 13)" d="M0 -7 L2 -2 L7 0 L2 2 L0 7 L-2 2 L-7 0 L-2 -2 Z" fill="#FF48B0" style="mix-blend-mode: multiply"></path>
+              <path transform="translate(66 13)" d="M0 -7 L2 -2 L7 0 L2 2 L0 7 L-2 2 L-7 0 L-2 -2 Z" fill="#FF48B0" style="mix-blend-mode: multiply"></path>
+            </g>
+            <ellipse display="{{r.c.cheeks}}" cx="30" cy="70" rx="6" ry="3.5" fill="#FFE800" style="mix-blend-mode: multiply"></ellipse>
+            <ellipse display="{{r.c.cheeks}}" cx="70" cy="70" rx="6" ry="3.5" fill="#FFE800" style="mix-blend-mode: multiply"></ellipse>
+            <g display="{{r.c.eOpen}}" class="blink">
+              <circle cx="40" cy="61" r="4.3" fill="{{r.c.eye}}"></circle>
+              <circle cx="60" cy="61" r="4.3" fill="{{r.c.eye}}"></circle>
+            </g>
+            <g display="{{r.c.eFocus}}">
+              <rect x="35" y="62" width="10" height="4" rx="2" fill="{{r.c.eye}}"></rect>
+              <rect x="55" y="62" width="10" height="4" rx="2" fill="{{r.c.eye}}"></rect>
+            </g>
+            <g display="{{r.c.eBig}}">
+              <circle cx="40" cy="60" r="5.6" fill="{{r.c.eye}}"></circle>
+              <circle cx="60" cy="60" r="5.6" fill="{{r.c.eye}}"></circle>
+              <circle cx="41.5" cy="58" r="1.6" fill="#FBF8F1"></circle>
+              <circle cx="61.5" cy="58" r="1.6" fill="#FBF8F1"></circle>
+            </g>
+            <g display="{{r.c.eHappy}}" fill="none" stroke="{{r.c.eye}}" stroke-width="3.4" stroke-linecap="round">
+              <path d="M35 63 Q40 56 45 63"></path><path d="M55 63 Q60 56 65 63"></path>
+            </g>
+            <g display="{{r.c.eClosed}}" fill="none" stroke="{{r.c.eye}}" stroke-width="3.2" stroke-linecap="round">
+              <path d="M35 60 Q40 65 45 60"></path><path d="M55 60 Q60 65 65 60"></path>
+            </g>
+            <g display="{{r.c.eDizzy}}" fill="none" stroke="{{r.c.eye}}" stroke-width="3.2" stroke-linecap="round">
+              <path d="M36 57 L44 65 M44 57 L36 65"></path><path d="M56 57 L64 65 M64 57 L56 65"></path>
+            </g>
+            <g display="{{r.c.eUp}}">
+              <circle cx="42" cy="57" r="4.3" fill="{{r.c.eye}}"></circle>
+              <circle cx="62" cy="57" r="4.3" fill="{{r.c.eye}}"></circle>
+            </g>
+            <path display="{{r.c.mSmile}}" d="M46 71 Q50 75 54 71" fill="none" stroke="{{r.c.eye}}" stroke-width="2.8" stroke-linecap="round"></path>
+            <ellipse display="{{r.c.mO}}" cx="50" cy="73" rx="3.6" ry="4.4" fill="{{r.c.eye}}"></ellipse>
+            <path display="{{r.c.mWave}}" d="M43 73 Q46.5 70 50 73 Q53.5 76 57 73" fill="none" stroke="{{r.c.eye}}" stroke-width="2.8" stroke-linecap="round"></path>
+            <g display="{{r.c.laptop}}">
+              <rect x="22" y="74" width="56" height="22" fill="#3255A4" style="mix-blend-mode: multiply"></rect>
+              <circle cx="50" cy="85" r="3.2" fill="#FBF8F1"></circle>
+            </g>
+            <g display="{{r.c.mug}}">
+              <path d="M95 68 Q102 68 102 74 Q102 80 95 80" fill="none" stroke="#3255A4" stroke-width="3"></path>
+              <rect x="80" y="64" width="16" height="20" fill="#FBF8F1" stroke="#3255A4" stroke-width="3"></rect>
+              <path d="M86 58 Q83 53 87 48" fill="none" stroke="#FF48B0" stroke-width="2.5" stroke-linecap="round"></path>
+            </g>
+            <g display="{{r.c.smoke}}" style="mix-blend-mode: multiply">
+              <circle cx="74" cy="22" r="9" fill="#FF48B0" opacity="0.7"></circle>
+              <circle cx="86" cy="12" r="6" fill="#FF48B0" opacity="0.55"></circle>
+              <circle cx="28" cy="18" r="6" fill="#FF48B0" opacity="0.55"></circle>
+            </g>
+            <g display="{{r.c.zz}}">
+              <text x="80" y="30" font-family="Black Han Sans, sans-serif" font-size="18" fill="#3255A4">z</text>
+              <text x="92" y="16" font-family="Black Han Sans, sans-serif" font-size="13" fill="#3255A4">z</text>
+            </g>
+            <g display="{{r.c.sign}}">
+              <path d="M90 40 L90 86" stroke="#3255A4" stroke-width="4" stroke-linecap="round"></path>
+              <rect x="74" y="10" width="34" height="30" fill="#FF48B0" style="mix-blend-mode: multiply"></rect>
+              <text x="91" y="34" text-anchor="middle" font-family="Black Han Sans, sans-serif" font-size="24" fill="#FBF8F1">!</text>
+            </g>
+          </svg>
+        </span>
+      </sc-if>
+      <sc-if value="{{r.hasDesk}}" hint-placeholder-val="{{true}}">
+        <span aria-hidden="true" style="{{r.desk}}"></span>
+      </sc-if>
+      <sc-if value="{{r.stamp}}" hint-placeholder-val="{{false}}">
+        <span aria-hidden="true" style="position: absolute; right: 16px; bottom: 16px; width: 70px; height: 70px; border-radius: 50%; border: 3px solid #FF48B0; color: #FF48B0; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-14deg); mix-blend-mode: multiply">
+          <span class="bh" style="font-size: 20px; line-height: 1">퇴근</span>
+          <span class="mono" style="font-size: 10px; margin-top: 3px">17:02</span>
+        </span>
+      </sc-if>
+      <sc-if value="{{r.hire}}" hint-placeholder-val="{{false}}">
+        <span style="position: absolute; left: 50%; top: 58%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px">
+          <span class="bh" style="width: 34px; height: 34px; border: 2px dashed #3255A4; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3255A4">+</span>
+          <span class="bh" style="font-size: 16px; color: #3255A4">신입 채용하기</span>
+        </span>
+      </sc-if>
+    </button>
+  </sc-for>
+
+  <div aria-hidden="true" style="position: absolute; left: 760px; top: 151px; width: 93px; height: 610px; background: #FBF8F1; border-left: 2px solid #3255A4; box-sizing: border-box">
+    <div style="position: absolute; left: 44px; top: 0; bottom: 0; width: 2px; background: #3255A4; opacity: 0.4"></div>
+    <div class="car" style="position: absolute; left: 14px; top: 26px; width: 62px; height: 96px; background: #3255A4; mix-blend-mode: multiply">
+      <div class="mono" style="margin: 8px auto 0; width: 40px; padding: 2px 0; background: #FF48B0; color: #FBF8F1; font-size: 11px; text-align: center">▲ 4F</div>
+    </div>
+  </div>
+
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 764px; width: 860px; height: 136px; background: #3255A4; opacity: 0.2; mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 858px; width: 860px; height: 4px; background: #1E2A55"></div>
+  <div aria-hidden="true" style="position: absolute; left: 300px; top: 772px; width: 8px; height: 88px; background: #1E2A55"></div>
+  <div aria-hidden="true" style="position: absolute; left: 286px; top: 766px; width: 36px; height: 10px; background: #1E2A55"></div>
+  <div aria-hidden="true" style="position: absolute; left: 216px; top: 776px; width: 176px; height: 84px; background: #FFE800; opacity: 0.6; mix-blend-mode: multiply; clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%)"></div>
+  <div style="position: absolute; left: 520px; top: 788px; display: flex; align-items: flex-end; gap: 10px">
+    <div style="display: flex; flex-direction: column; align-items: center">
+      <span class="bh" style="padding: 3px 8px; background: #FF48B0; color: #FBF8F1; font-size: 13px; mix-blend-mode: multiply">퇴근 버스</span>
+      <span style="width: 4px; height: 40px; background: #1E2A55"></span>
+    </div>
+    <span style="position: relative; width: 64px; height: 64px">
+      <svg viewBox="0 0 100 100" width="64" height="64" aria-hidden="true" style="overflow: visible">
+        <g transform="translate(3 2)" opacity="0.85" style="mix-blend-mode: multiply"><rect x="16" y="30" width="68" height="58" rx="20" fill="#FF48B0"></rect></g>
+        <rect x="16" y="30" width="68" height="58" rx="20" fill="#3255A4" style="mix-blend-mode: multiply"></rect>
+        <rect x="25" y="42" width="50" height="32" rx="10" fill="#FBF8F1"></rect>
+        <path d="M50 30 L50 16" stroke="#3255A4" stroke-width="4" stroke-linecap="round"></path>
+        <rect x="43" y="7" width="14" height="10" rx="3" fill="#FF48B0" style="mix-blend-mode: multiply"></rect>
+        <circle cx="42" cy="58" r="4" fill="#FF48B0"></circle><circle cx="60" cy="58" r="4" fill="#FF48B0"></circle>
+        <path d="M46 66 Q51 70 56 66" fill="none" stroke="#FF48B0" stroke-width="2.8" stroke-linecap="round"></path>
+        <path d="M-2 66 Q4 56 10 66" fill="none" stroke="#3255A4" stroke-width="3"></path>
+        <rect x="-8" y="66" width="24" height="18" fill="#3255A4" style="mix-blend-mode: multiply"></rect>
+      </svg>
+    </span>
+    <span class="mono" style="margin-bottom: 44px; padding: 3px 7px; background: #FBF8F1; border: 2px solid #3255A4; font-size: 11px">{{s8name}} · 내일 봐요</span>
+  </div>
+
+  <aside aria-label="층별 안내" style="position: absolute; left: 884px; top: 30px; width: 362px; padding: 16px 14px 14px; box-sizing: border-box; background: #1E2A55; background-image: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 2px, transparent 2px 10px); box-shadow: 8px 8px 0 rgba(255, 72, 176, 0.85); color: #F2EDE1">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 8px 10px">
+      <span class="bh" style="font-size: 24px">층별 안내</span>
+      <span class="mono" style="font-size: 11px; color: #C9C3B2">DIRECTORY</span>
+    </div>
+    <sc-for list="{{dir}}" as="g" hint-placeholder-count="4">
+      <div class="mono" style="display: flex; align-items: center; gap: 10px; padding: 8px 8px 4px; font-size: 12px; color: #FFE800; letter-spacing: 1px">
+        <span class="bh" style="font-size: 18px; letter-spacing: 0">{{g.no}}</span>{{g.team}}<span style="flex: 1; border-bottom: 2px dotted rgba(242, 237, 225, 0.4)"></span>{{g.count}}
+      </div>
+      <sc-for list="{{g.items}}" as="it" hint-placeholder-count="3">
+        <button class="{{it.cls}}" onClick="{{it.pick}}">
+          <span style="{{it.lamp}}"></span>
+          <span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{it.name}}</span>
+          <span style="font-size: 11.5px; opacity: 0.9">{{it.state}}</span>
+        </button>
+      </sc-for>
+    </sc-for>
+  </aside>
+
+  <article style="position: absolute; left: 884px; top: 560px; width: 362px; box-sizing: border-box; background: #FBF8F1; border: 2px solid #3255A4; box-shadow: 8px 8px 0 rgba(255, 72, 176, 0.85)">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 8px">
+      <span class="bh mis" style="font-size: 20px; color: #3255A4">근무 일지</span>
+      <span class="mono" style="font-size: 11px; color: #3255A4">{{t.room}}</span>
+    </div>
+    <div style="height: 0; border-top: 2px dashed #3255A4; margin: 0 10px"></div>
+    <sc-if value="{{t.editing}}" hint-placeholder-val="{{false}}">
+      <div style="padding: 12px 16px 10px; display: flex; flex-direction: column; gap: 8px">
+        <label for="nameInputC2" class="mono" style="font-size: 11px; color: #4D5A85">이름표 달기 · 비우면 세션 제목으로 보여요</label>
+        <div style="display: flex; gap: 6px">
+          <input id="nameInputC2" value="{{t.draft}}" onChange="{{t.onDraft}}" placeholder="{{t.title}}" style="flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; border: 2px solid #3255A4; background: #FFFFFF; font-family: 'Black Han Sans', sans-serif; font-size: 18px; color: #1E2A55; box-sizing: border-box">
+          <button class="btn" onClick="{{t.save}}" style="background: #3255A4; color: #FBF8F1">달기</button>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+          <span class="mono" style="font-size: 11px; color: #4D5A85">추천</span>
+          <sc-for list="{{t.sugs}}" as="sg" hint-placeholder-count="3">
+            <button class="sug" onClick="{{sg.use}}">{{sg.label}}</button>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{t.viewing}}" hint-placeholder-val="{{true}}">
+      <div style="padding: 12px 16px 4px; display: flex; align-items: flex-start; gap: 8px">
+        <div style="flex: 1; min-width: 0">
+          <div class="bh" style="font-size: 22px; line-height: 1.15">{{t.name}}</div>
+          <div class="mono" style="margin-top: 4px; font-size: 11.5px; color: #4D5A85">{{t.subline}}</div>
+        </div>
+        <button onClick="{{t.edit}}" aria-label="이름 바꾸기" style="width: 44px; height: 44px; flex: none; border: 2px solid #3255A4; background: #FBF8F1; color: #3255A4; cursor: pointer; display: flex; align-items: center; justify-content: center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+        </button>
+      </div>
+    </sc-if>
+    <dl style="margin: 0; padding: 8px 16px 10px; display: grid; grid-template-columns: 58px 1fr; row-gap: 6px; column-gap: 10px; font-size: 13px">
+      <dt style="color: #4D5A85">프로젝트</dt><dd class="mono" style="margin: 0; font-size: 12.5px">{{t.repo}} · {{t.branch}}</dd>
+      <dt style="color: #4D5A85">상태</dt><dd style="margin: 0">{{t.state}} · {{t.meta}}</dd>
+      <dt style="color: #4D5A85">출근</dt><dd class="mono" style="margin: 0; font-size: 12.5px">{{t.start}}</dd>
+    </dl>
+    <div style="display: flex; gap: 8px; padding: 0 14px 14px">
+      <button class="btn" style="flex: 1; background: #3255A4; color: #FBF8F1">터미널 열기</button>
+      <a class="btn" href="C-Desktop.dc.html">도크로</a>
+    </div>
+  </article>
+
+  <svg aria-hidden="true" width="1280" height="900" style="position: absolute; left: 0; top: 0; pointer-events: none; mix-blend-mode: multiply; opacity: 0.22">
+    <filter id="grainC2"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+    <rect width="1280" height="900" filter="url(#grainC2)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+const SPECIES = {
+  claude: { agent: 'Claude Code', body: '#FF48B0', eye: '#3255A4', sugs: ['코코', '당근', '모모'] },
+  codex: { agent: 'Codex', body: '#3255A4', eye: '#FF48B0', sugs: ['네모', '삑삑', '큐브'] },
+  openclaw: { agent: 'OpenClaw', body: '#FF48B0', eye: '#3255A4', sugs: ['집게', '꽃게', '가재'] },
+  gemini: { agent: 'Gemini CLI', body: '#FFE800', eye: '#3255A4', sugs: ['별이', '반짝', '쌍둥'] }
+};
+const STATES = {
+  call: ['불러요!', '#FF48B0', 0.75], error: ['막혔어요', '#FF9A3D', 0.55], done: ['다 했어요', '#FFE800', 0.55], work: ['일하는 중', '#FFE800', 0.8],
+  think: ['생각 중', '#FFE800', 0.55], sleep: ['꾸벅꾸벅', '#3255A4', 0.28], leave: ['퇴근', '#3255A4', 0.72], idle: ['대기', '#FFE800', 0.35]
+};
+const FLOORS = [
+  { no: '4F', team: 'Claude Code팀', top: 151 },
+  { no: '3F', team: 'Codex팀', top: 304 },
+  { no: '2F', team: 'Gemini팀', top: 457 },
+  { no: '1F', team: '로비 · 비서실', top: 610 }
+];
+const ROOM_X = [116, 330, 544];
+const ROOM_W = 210;
+const ROOM_H = 150;
+const SESSIONS = [
+  { id: 's1', floor: 0, slot: 0, sp: 'claude', nick: '코코', title: '데스크탑 펫 디자인 시안', repo: 'claude-skills', branch: 'agent-desktop-pet', mood: 'work', short: '편집 중 12분', meta: '12분째', start: '21:18' },
+  { id: 's2', floor: 0, slot: 1, sp: 'claude', nick: '', title: '9월 회고 글 발행', repo: 'blog', branch: 'post/retro', mood: 'call', short: '권한 요청 3분째', meta: '3분째 대기', start: '20:51' },
+  { id: 's3', floor: 0, slot: 2, sp: 'claude', nick: '셜록', title: 'sync 버그 추적', repo: 'work-manager', branch: 'fix/sync', mood: 'think', short: '원인 찾는 중', meta: '4분째', start: '19:12' },
+  { id: 's4', floor: 1, slot: 0, sp: 'codex', nick: '', title: 'Rate limit 미들웨어', repo: 'api-server', branch: 'feat/rate-limit', mood: 'error', short: '테스트 3개 실패', meta: '1분 전', start: '19:40' },
+  { id: 's5', floor: 1, slot: 1, sp: 'codex', nick: '랜디', title: '랜딩 히어로 개편', repo: 'landing', branch: 'main', mood: 'done', short: 'PR #31 올림', meta: '2분 전', start: '20:02' },
+  { id: 's8', floor: 1, slot: 2, sp: 'codex', nick: '긁적이', title: '뉴스 스크래퍼 정리', repo: 'scraper', branch: 'main', mood: 'leave', short: '17:02 퇴근', meta: '3시간째 조용', start: '13:20' },
+  { id: 's7', floor: 2, slot: 0, sp: 'gemini', nick: '', title: 'ETL v2 마이그레이션', repo: 'data-pipeline', branch: 'etl-v2', mood: 'sleep', short: '25분째 조용', meta: '25분', start: '18:30' },
+  { id: 's6', floor: 3, slot: 0, wide: true, sp: 'openclaw', nick: '집사', title: '받은편지함 정리', repo: '개인 비서', branch: 'telegram', mood: 'work', short: '메일 7/12 분류', meta: '상시 근무', start: '09:00' }
+];
+function riso(sp, mood) {
+  const on = (v) => (v ? 'inline' : 'none');
+  const c = SPECIES[sp];
+  return {
+    body: c.body, eye: c.eye,
+    dome: on(sp !== 'codex'), box: on(sp === 'codex'), beanie: on(sp === 'claude'), antenna: on(sp === 'codex'),
+    feelers: on(sp === 'openclaw'), claws: on(sp === 'openclaw'), stars: on(sp === 'gemini'), cheeks: on(sp !== 'codex'),
+    eOpen: on(mood === 'idle' || mood === 'leave'), eFocus: on(mood === 'work'), eBig: on(mood === 'call'), eHappy: on(mood === 'done'),
+    eClosed: on(mood === 'sleep'), eDizzy: on(mood === 'error'), eUp: on(mood === 'think'),
+    mSmile: on(['work', 'done', 'idle', 'think', 'leave'].includes(mood)), mO: on(mood === 'call'), mWave: on(mood === 'error'),
+    laptop: on(mood === 'work'), mug: on(mood === 'done'), smoke: on(mood === 'error'), zz: on(mood === 'sleep'), sign: on(mood === 'call'), bag: on(mood === 'leave')
+  };
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { selected: 's2', names: {}, editing: true, draft: '' };
+  }
+  nick(s) {
+    const n = this.state.names[s.id];
+    return n === undefined ? s.nick : n;
+  }
+  renderVals() {
+    const { selected, editing, draft } = this.state;
+    const nameOf = (s) => this.nick(s) || s.title;
+    const pick = (id) => () => this.setState({ selected: id, editing: false });
+    const rooms = SESSIONS.map((s) => {
+      const f = FLOORS[s.floor];
+      const st = STATES[s.mood];
+      const left = ROOM_X[s.slot];
+      const w = s.wide ? ROOM_W * 3 + 4 : ROOM_W;
+      const gone = s.mood === 'leave';
+      const whoLeft = s.wide ? 250 : 64;
+      return {
+        cls: 'room' + (s.id === selected ? ' sel' : ''),
+        pos: 'left:' + left + 'px;top:' + f.top + 'px;width:' + w + 'px;height:' + ROOM_H + 'px;background:#FBF8F1;color:' + (gone ? '#FBF8F1' : '#1E2A55'),
+        washCls: 'wash' + (s.mood === 'call' ? ' flash' : ''),
+        wash: 'background:' + st[1] + ';opacity:' + st[2],
+        name: nameOf(s),
+        sub: (s.mood === 'leave' ? '' : s.repo + ' · ') + s.short,
+        aria: nameOf(s) + ', ' + st[0],
+        hasWho: !gone,
+        whoCls: 'who' + (s.mood === 'call' ? ' bob' : ''),
+        whoPos: 'left:' + whoLeft + 'px',
+        c: riso(s.sp, s.mood),
+        hasDesk: true,
+        desk: 'position:absolute;left:' + (whoLeft - 14) + 'px;bottom:0;width:112px;height:16px;background:#3255A4;opacity:.85;mix-blend-mode:multiply',
+        stamp: gone,
+        hire: false,
+        pick: pick(s.id)
+      };
+    });
+    rooms.push({
+      cls: 'room', pos: 'left:' + ROOM_X[1] + 'px;top:' + FLOORS[2].top + 'px;width:' + (ROOM_W * 2 + 2) + 'px;height:' + ROOM_H + 'px;background:#FBF8F1;border-style:dashed',
+      washCls: 'wash', wash: 'background:transparent', name: '빈 방', sub: '새 세션이 출근하면 여기 앉아요', aria: '신입 채용하기',
+      hasWho: false, whoCls: 'who', whoPos: '', c: riso('claude', 'idle'), hasDesk: false, desk: '', stamp: false, hire: true, pick: () => {}
+    });
+    const floors = FLOORS.map((f) => ({
+      no: f.no, team: f.team,
+      labelPos: 'position:absolute;left:44px;top:' + (f.top + 10) + 'px;width:64px;display:flex;flex-direction:column;gap:4px',
+      slab: 'position:absolute;left:38px;top:' + (f.top + ROOM_H) + 'px;width:722px;height:3px;background:#1E2A55'
+    }));
+    const dir = FLOORS.map((f, i) => {
+      const list = SESSIONS.filter((s) => s.floor === i);
+      return {
+        no: f.no, team: f.team.toUpperCase(), count: list.length + '명',
+        items: list.map((s) => ({
+          cls: 'dir' + (s.id === selected ? ' sel' : ''),
+          name: nameOf(s),
+          state: STATES[s.mood][0],
+          lamp: 'width:9px;height:9px;flex:none;border-radius:50%;background:' + (s.mood === 'call' ? '#FF48B0' : s.mood === 'error' ? '#FF9A3D' : s.mood === 'leave' || s.mood === 'sleep' ? '#7D86A8' : '#FFE800'),
+          pick: pick(s.id)
+        }))
+      };
+    });
+    const s = SESSIONS.find((x) => x.id === selected) || SESSIONS[0];
+    const nk = this.nick(s);
+    const t = {
+      room: FLOORS[s.floor].no + '-' + (s.slot + 1) + '호',
+      name: nameOf(s),
+      title: s.title,
+      subline: nk ? '세션 제목 · ' + s.title : '세션 제목 그대로 · 이름표 없음',
+      repo: s.repo, branch: s.branch, state: STATES[s.mood][0], meta: s.meta, start: s.start + ' 출근',
+      editing, viewing: !editing, draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      edit: () => this.setState({ editing: true, draft: nk || '' }),
+      save: () => this.setState({ editing: false, names: Object.assign({}, this.state.names, { [s.id]: this.state.draft.trim() }) }),
+      sugs: SPECIES[s.sp].sugs.map((label) => ({ label, use: () => this.setState({ draft: label }) }))
+    };
+    const s8 = SESSIONS.find((x) => x.id === 's8');
+    return { rooms, floors, dir, t, s8name: nameOf(s8) };
+  }
+}
+</script>
+</body>
+</html>

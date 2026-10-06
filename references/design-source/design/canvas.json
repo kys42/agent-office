@@ -1,0 +1,130 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-03T06:40:00Z"
+  },
+  "title": "Agent Office — 데스크탑 펫 시안",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "A1 · 모찌 플로트 — 데스크탑",
+      "is_interactive": true,
+      "radius": 14
+    },
+    "A-Office.dc.html": {
+      "x": 1520,
+      "y": 0,
+      "w": 1280,
+      "h": 820,
+      "title": "A2 · 모찌 작업실",
+      "is_interactive": true,
+      "radius": 14
+    },
+    "B-Desktop.dc.html": {
+      "x": 0,
+      "y": 1320,
+      "w": 1440,
+      "h": 900,
+      "title": "B1 · 도트 오피스 — 데스크탑",
+      "radius": 6
+    },
+    "B-Office.dc.html": {
+      "x": 1520,
+      "y": 1320,
+      "w": 1280,
+      "h": 820,
+      "title": "B2 · 도트 오피스 — 야근 모드",
+      "is_interactive": true,
+      "radius": 6
+    },
+    "C-Desktop.dc.html": {
+      "x": 0,
+      "y": 2640,
+      "w": 1440,
+      "h": 900,
+      "title": "C1 · 야근 빌딩 — 빼꼼 도크",
+      "is_interactive": true
+    },
+    "C-Office.dc.html": {
+      "x": 1520,
+      "y": 2640,
+      "w": 1280,
+      "h": 900,
+      "title": "C2 · 야근 빌딩 — 층별 안내",
+      "is_interactive": true
+    },
+    "Spec.dc.html": {
+      "x": 0,
+      "y": 3980,
+      "w": 1440,
+      "h": 1280,
+      "title": "D · 펫 스킨 규격 & 상태 규칙",
+      "is_interactive": true
+    },
+    "E-Office.dc.html": {
+      "x": 0,
+      "y": -1240,
+      "w": 1320,
+      "h": 800,
+      "title": "E · 탑뷰 오피스 — 걸어 다니는 에이전트들",
+      "is_interactive": true,
+      "radius": 14
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "A-Office.dc.html",
+    "B-Desktop.dc.html",
+    "B-Office.dc.html",
+    "C-Desktop.dc.html",
+    "C-Office.dc.html",
+    "Spec.dc.html",
+    "E-Office.dc.html"
+  ],
+  "notes": {
+    "tA": {
+      "x": 0,
+      "y": -270,
+      "text": "A · 모찌 플로트 — 비눗방울 속 말랑 펫",
+      "kind": "title1",
+      "maxW": 2800
+    },
+    "tB": {
+      "x": 0,
+      "y": 1050,
+      "text": "B · 도트 오피스 — 창틀 위를 걷는 픽셀 직원들",
+      "kind": "title1",
+      "maxW": 2800
+    },
+    "tC": {
+      "x": 0,
+      "y": 2370,
+      "text": "C · 야근 빌딩 — 화면 끝 빼꼼 + 리소 인쇄 빌딩",
+      "kind": "title1",
+      "maxW": 2800
+    },
+    "tD": {
+      "x": 0,
+      "y": 3710,
+      "text": "D · 스킨 규격 — 시트만 갈아 끼우면 새 직원",
+      "kind": "title1",
+      "maxW": 1440
+    },
+    "tE": {
+      "x": 0,
+      "y": -1510,
+      "text": "E · 탑뷰 오피스 — 출근해서 앉고, 돌아다니고, 부를 땐 걸어와요",
+      "kind": "title1",
+      "maxW": 1320
+    }
+  },
+  "designSystems": []
+}

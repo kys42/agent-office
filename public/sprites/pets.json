@@ -1,0 +1,190 @@
+{
+  "claude": {
+    "id": "dot-claude",
+    "label": "Claude Code",
+    "match": {
+      "agent": "claude-code"
+    },
+    "sheet": "claude.png",
+    "frame": {
+      "w": 32,
+      "h": 32
+    },
+    "scale": 2,
+    "fps": 6,
+    "anchor": {
+      "x": 16,
+      "y": 30
+    },
+    "bubbleAnchor": {
+      "x": 16,
+      "y": 2
+    },
+    "states": {
+      "idle": 0,
+      "work": 1,
+      "think": 2,
+      "call": 3,
+      "done": 4,
+      "error": 5,
+      "sleep": 6,
+      "leave": {
+        "row": 7,
+        "loop": false
+      }
+    },
+    "names": [
+      "코코",
+      "당근",
+      "모모"
+    ],
+    "walk": {
+      "sheet": "claude_walk.png",
+      "down": 0,
+      "up": 1,
+      "side": 2,
+      "flipLeft": true
+    }
+  },
+  "codex": {
+    "id": "dot-codex",
+    "label": "Codex",
+    "match": {
+      "agent": "codex"
+    },
+    "sheet": "codex.png",
+    "frame": {
+      "w": 32,
+      "h": 32
+    },
+    "scale": 2,
+    "fps": 6,
+    "anchor": {
+      "x": 16,
+      "y": 30
+    },
+    "bubbleAnchor": {
+      "x": 16,
+      "y": 2
+    },
+    "states": {
+      "idle": 0,
+      "work": 1,
+      "think": 2,
+      "call": 3,
+      "done": 4,
+      "error": 5,
+      "sleep": 6,
+      "leave": {
+        "row": 7,
+        "loop": false
+      }
+    },
+    "names": [
+      "네모",
+      "삑삑",
+      "큐브"
+    ],
+    "walk": {
+      "sheet": "codex_walk.png",
+      "down": 0,
+      "up": 1,
+      "side": 2,
+      "flipLeft": true
+    }
+  },
+  "openclaw": {
+    "id": "dot-openclaw",
+    "label": "OpenClaw",
+    "match": {
+      "agent": "openclaw"
+    },
+    "sheet": "openclaw.png",
+    "frame": {
+      "w": 32,
+      "h": 32
+    },
+    "scale": 2,
+    "fps": 6,
+    "anchor": {
+      "x": 16,
+      "y": 30
+    },
+    "bubbleAnchor": {
+      "x": 16,
+      "y": 2
+    },
+    "states": {
+      "idle": 0,
+      "work": 1,
+      "think": 2,
+      "call": 3,
+      "done": 4,
+      "error": 5,
+      "sleep": 6,
+      "leave": {
+        "row": 7,
+        "loop": false
+      }
+    },
+    "names": [
+      "집게",
+      "꽃게",
+      "가재"
+    ],
+    "walk": {
+      "sheet": "openclaw_walk.png",
+      "down": 0,
+      "up": 1,
+      "side": 2,
+      "flipLeft": true
+    }
+  },
+  "gemini": {
+    "id": "dot-gemini",
+    "label": "Gemini CLI",
+    "match": {
+      "agent": "gemini-cli"
+    },
+    "sheet": "gemini.png",
+    "frame": {
+      "w": 32,
+      "h": 32
+    },
+    "scale": 2,
+    "fps": 6,
+    "anchor": {
+      "x": 16,
+      "y": 30
+    },
+    "bubbleAnchor": {
+      "x": 16,
+      "y": 2
+    },
+    "states": {
+      "idle": 0,
+      "work": 1,
+      "think": 2,
+      "call": 3,
+      "done": 4,
+      "error": 5,
+      "sleep": 6,
+      "leave": {
+        "row": 7,
+        "loop": false
+      }
+    },
+    "names": [
+      "별이",
+      "반짝",
+      "쌍둥"
+    ],
+    "walk": {
+      "sheet": "gemini_walk.png",
+      "down": 0,
+      "up": 1,
+      "side": 2,
+      "flipLeft": true
+    }
+  }
+}

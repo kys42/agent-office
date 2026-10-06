@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-desktop/
+release/
+.research/
+.local/
+playwright-report/
+test-results/
+.DS_Store
+*.log
+*.sqlite*
+.env
+.env.*
+!.env.example

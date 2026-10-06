@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>도트 오피스 야근 모드</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&amp;family=Nanum+Gothic+Coding:wght@700&amp;family=Do+Hyeon&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#FFD166}a:hover{color:#FFE29A}
+.sk{font-family:'Silkscreen',monospace}
+.ng{font-family:'Nanum Gothic Coding',monospace;font-weight:700}
+.dh{font-family:'Do Hyeon',sans-serif}
+.spr{position:absolute;--s:3;--row:0;width:calc(32px * var(--s));height:calc(32px * var(--s));background-repeat:no-repeat;background-size:calc(128px * var(--s)) calc(256px * var(--s));background-position:0 calc(var(--row) * -32px * var(--s));image-rendering:pixelated;animation:frames .72s steps(4) infinite}
+.sp-claude{background-image:url(/_blob/c79a539ecd7e7fa927d4ae6e705efac8)}
+.sp-codex{background-image:url(/_blob/3769435b50d08e3c8f5546798260ebe5)}
+.sp-openclaw{background-image:url(/_blob/2ca9c52fb72c2230ac27f2f2abf32e65)}
+.sp-gemini{background-image:url(/_blob/7a40edd2b988df5350e5062af9824933)}
+.st-idle{--row:0}.st-work{--row:1}.st-think{--row:2;animation-duration:1.4s}.st-call{--row:3;animation-duration:.6s}.st-done{--row:4;animation-duration:1.2s}.st-error{--row:5;animation-duration:.5s}.st-sleep{--row:6;animation-duration:2.4s}.st-leave{--row:7}
+.s15{--s:1.5}.s4{--s:4}
+.actor{position:absolute;padding:0;margin:0;border:0;background:none;cursor:pointer}
+.actor:focus-visible{outline:3px dashed #FFD166;outline-offset:2px}
+.walker{animation:walk 5s steps(20) infinite}
+.pb{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% - 14px);background:#FFF8E7;color:#14173A;padding:6px 8px 7px;box-shadow:0 -3px 0 0 #0B0D22,0 3px 0 0 #0B0D22,-3px 0 0 0 #0B0D22,3px 0 0 0 #0B0D22,3px 6px 0 0 rgba(5,6,20,.45);white-space:nowrap;font-family:'Nanum Gothic Coding',monospace;font-weight:700;font-size:12.5px;line-height:1;z-index:8}
+.pb.hot{background:#FF5FA2;color:#14173A}
+.pix{box-shadow:0 -3px 0 0 #0B0D22,0 3px 0 0 #0B0D22,-3px 0 0 0 #0B0D22,3px 0 0 0 #0B0D22}
+.cursor{position:absolute;left:50%;top:-18px;margin-left:-9px;width:18px;height:12px;animation:bob .5s steps(2) infinite;z-index:9}
+.row{display:flex;align-items:center;gap:10px;width:100%;min-height:56px;padding:4px 10px 4px 6px;border:0;background:transparent;color:#F1EEFF;cursor:pointer;text-align:left;box-sizing:border-box}
+.row.sel{background:#262B66}
+.choice{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 12px;border:0;background:transparent;color:#F1EEFF;cursor:pointer;font-family:'Nanum Gothic Coding',monospace;font-weight:700;font-size:16px;text-align:left}
+.choice:hover,.choice:focus-visible{background:#262B66;outline:none}
+.blinkc{animation:blinkc 1s steps(1) infinite}
+.neon{animation:neon 3s steps(1) infinite}
+@keyframes frames{from{background-position-x:0}to{background-position-x:calc(-128px * var(--s))}}
+@keyframes walk{0%{transform:translateX(-20px)}100%{transform:translateX(40px)}}
+@keyframes bob{0%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes blinkc{0%{opacity:1}50%{opacity:0}}
+@keyframes neon{0%,100%{opacity:1}92%{opacity:.35}94%{opacity:1}96%{opacity:.5}}
+</style>
+</helmet>
+<div style="position: relative; width: 1280px; height: 820px; overflow: hidden; background: #0B0D22; color: #F1EEFF; font-family: 'Nanum Gothic Coding', monospace">
+
+  <header style="position: absolute; left: 0; top: 0; width: 1280px; height: 56px; display: flex; align-items: center; gap: 18px; padding: 0 20px; box-sizing: border-box; background: #0B0D22; border-bottom: 3px solid #2B2F5E">
+    <span class="sk neon" style="font-size: 18px; color: #FF5FA2">AGENT OFFICE</span>
+    <span class="dh" style="font-size: 18px; color: #C9C6F0">야근 모드</span>
+    <span style="flex: 1"></span>
+    <span class="sk" style="font-size: 14px; color: #FFD166">FRI 23:14</span>
+    <span style="width: 3px; height: 24px; background: #2B2F5E"></span>
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 13px"><span style="width: 10px; height: 10px; background: #5BE7C4"></span>근무 <span class="sk">{{countWork}}</span></span>
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 13px"><span style="width: 10px; height: 10px; background: #FF5FA2"></span>호출 <span class="sk">{{countCall}}</span></span>
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 13px"><span style="width: 10px; height: 10px; background: #FFB066"></span>오류 <span class="sk">1</span></span>
+    <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: #A9A6D6"><span style="width: 10px; height: 10px; background: #6A6EA8"></span>퇴근 <span class="sk">1</span></span>
+  </header>
+
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 59px; width: 900px; height: 557px; background: #101330"></div>
+  <div aria-hidden="true">
+    <div style="position: absolute; left: 140px; top: 74px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 230px; top: 88px; width: 3px; height: 3px; background: #FFE9A8"></div>
+    <div style="position: absolute; left: 690px; top: 70px; width: 6px; height: 6px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 800px; top: 86px; width: 3px; height: 3px; background: #C9C8FF"></div>
+    <div style="position: absolute; left: 860px; top: 66px; width: 3px; height: 3px; background: #FFE9A8"></div>
+  </div>
+  <svg aria-hidden="true" width="44" height="44" viewBox="0 0 11 11" shape-rendering="crispEdges" style="position: absolute; left: 34px; top: 64px">
+    <rect x="3" y="0" width="5" height="1" fill="#FFF2C4"></rect><rect x="2" y="1" width="7" height="1" fill="#FFF2C4"></rect><rect x="1" y="2" width="9" height="2" fill="#FFF2C4"></rect><rect x="0" y="4" width="11" height="3" fill="#FFF2C4"></rect><rect x="1" y="7" width="9" height="2" fill="#FFF2C4"></rect><rect x="2" y="9" width="7" height="1" fill="#FFF2C4"></rect><rect x="3" y="10" width="5" height="1" fill="#FFF2C4"></rect><rect x="3" y="3" width="2" height="2" fill="#E8D49A"></rect>
+  </svg>
+  <div class="sk pix neon" style="position: absolute; left: 330px; top: 72px; padding: 4px 14px; background: #1A0F2E; color: #FF5FA2; font-size: 16px; letter-spacing: 2px">AGENT OFFICE</div>
+
+  <div aria-hidden="true" class="pix" style="position: absolute; left: 20px; top: 104px; width: 860px; height: 488px; background: #3A3F78"></div>
+  <div aria-hidden="true" style="position: absolute; left: 32px; top: 116px; width: 836px; height: 220px; background: #262A55"></div>
+  <div aria-hidden="true" style="position: absolute; left: 32px; top: 300px; width: 836px; height: 36px; background: #20244A"></div>
+  <div aria-hidden="true" style="position: absolute; left: 20px; top: 336px; width: 860px; height: 14px; background: #4A4F8F; border-top: 3px solid #6A70B8; box-sizing: border-box"></div>
+  <div aria-hidden="true" style="position: absolute; left: 32px; top: 350px; width: 836px; height: 230px; background: #1F2348"></div>
+  <div aria-hidden="true" style="position: absolute; left: 20px; top: 580px; width: 860px; height: 12px; background: #4A4F8F; border-top: 3px solid #6A70B8; box-sizing: border-box"></div>
+  <div aria-hidden="true" style="position: absolute; left: 0; top: 592px; width: 900px; height: 24px; background: #2E3260; border-top: 3px solid #0B0D22; box-sizing: border-box"></div>
+  <div class="sk" style="position: absolute; left: 40px; top: 124px; font-size: 11px; color: #8C8FD6">2F DEV ROOM</div>
+  <div class="sk" style="position: absolute; left: 40px; top: 358px; font-size: 11px; color: #8C8FD6">1F LOUNGE</div>
+
+  <div aria-hidden="true">
+    <div class="pix" style="position: absolute; left: 172px; top: 150px; width: 52px; height: 64px; background: #1A1F4A"><div style="position: absolute; left: 8px; top: 34px; width: 6px; height: 6px; background: #FFD166"></div><div style="position: absolute; left: 26px; top: 44px; width: 6px; height: 6px; background: #FFD166"></div><div style="position: absolute; left: 36px; top: 12px; width: 3px; height: 3px; background: #C9C8FF"></div><div style="position: absolute; left: 24px; top: 0; width: 4px; height: 64px; background: #0B0D22"></div></div>
+    <div class="pix" style="position: absolute; left: 332px; top: 150px; width: 52px; height: 64px; background: #1A1F4A"><div style="position: absolute; left: 6px; top: 44px; width: 6px; height: 6px; background: #FFD166"></div><div style="position: absolute; left: 34px; top: 30px; width: 6px; height: 6px; background: #5BE7C4"></div><div style="position: absolute; left: 24px; top: 0; width: 4px; height: 64px; background: #0B0D22"></div></div>
+    <div class="pix" style="position: absolute; left: 492px; top: 150px; width: 52px; height: 64px; background: #1A1F4A"><div style="position: absolute; left: 10px; top: 40px; width: 6px; height: 6px; background: #FFD166"></div><div style="position: absolute; left: 36px; top: 48px; width: 6px; height: 6px; background: #FFD166"></div><div style="position: absolute; left: 12px; top: 10px; width: 3px; height: 3px; background: #C9C8FF"></div><div style="position: absolute; left: 24px; top: 0; width: 4px; height: 64px; background: #0B0D22"></div></div>
+    <div class="pix" style="position: absolute; left: 652px; top: 150px; width: 52px; height: 64px; background: #1A1F4A"><div style="position: absolute; left: 6px; top: 36px; width: 6px; height: 6px; background: #FF8FB8"></div><div style="position: absolute; left: 34px; top: 46px; width: 6px; height: 6px; background: #FFD166"></div><div style="position: absolute; left: 24px; top: 0; width: 4px; height: 64px; background: #0B0D22"></div></div>
+  </div>
+
+  <sc-for list="{{desks}}" as="d" hint-placeholder-count="5">
+    <div aria-hidden="true" style="{{d.cone}}"></div>
+  </sc-for>
+
+  <div aria-hidden="true">
+    <div class="pix" style="position: absolute; left: 52px; top: 466px; width: 72px; height: 114px; background: #D94A7A">
+      <div style="position: absolute; left: 8px; top: 10px; width: 40px; height: 62px; background: #5BE7C4; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 5px; box-sizing: border-box">
+        <div style="background: #FFD166"></div><div style="background: #FF5FA2"></div><div style="background: #F1EEFF"></div>
+        <div style="background: #F1EEFF"></div><div style="background: #FFD166"></div><div style="background: #FF5FA2"></div>
+        <div style="background: #FF5FA2"></div><div style="background: #F1EEFF"></div><div style="background: #FFD166"></div>
+      </div>
+      <div style="position: absolute; left: 54px; top: 18px; width: 10px; height: 18px; background: #0B0D22"></div>
+      <div style="position: absolute; left: 12px; top: 86px; width: 34px; height: 12px; background: #0B0D22"></div>
+    </div>
+    <div style="position: absolute; left: 40px; top: 440px; width: 100px; height: 150px; background: rgba(91, 231, 196, 0.07)"></div>
+    <div class="pix" style="position: absolute; left: 222px; top: 518px; width: 166px; height: 34px; background: #5B4BC0"></div>
+    <div class="pix" style="position: absolute; left: 210px; top: 540px; width: 190px; height: 40px; background: #7262D8; z-index: 4"></div>
+    <div style="position: absolute; left: 228px; top: 546px; width: 154px; height: 6px; background: #8A7CE8; z-index: 4"></div>
+    <div style="position: absolute; left: 416px; top: 538px; width: 30px; height: 42px">
+      <div style="position: absolute; left: 4px; bottom: 0; width: 22px; height: 16px; background: #B0603C; box-shadow: 0 -3px 0 #0B0D22"></div>
+      <div style="position: absolute; left: 0; top: 0; width: 12px; height: 24px; background: #3FAF7F"></div>
+      <div style="position: absolute; left: 15px; top: 6px; width: 12px; height: 20px; background: #5BE7C4"></div>
+    </div>
+    <div class="pix" style="position: absolute; left: 520px; top: 466px; width: 84px; height: 114px; background: #8C8FD6">
+      <div style="position: absolute; left: 6px; top: 6px; width: 34px; height: 108px; background: #B9BBEA"></div>
+      <div style="position: absolute; left: 44px; top: 6px; width: 34px; height: 108px; background: #B9BBEA"></div>
+    </div>
+    <div class="sk pix" style="position: absolute; left: 538px; top: 438px; padding: 2px 8px; background: #0B0D22; color: #FFD166; font-size: 11px">2F ▲</div>
+    <div class="pix" style="position: absolute; left: 772px; top: 466px; width: 76px; height: 114px; background: #FFE9A8">
+      <div style="position: absolute; left: 14px; top: 0; width: 62px; height: 114px; background: #4A3B7A"></div>
+      <div style="position: absolute; left: 22px; top: 56px; width: 6px; height: 6px; background: #FFD166"></div>
+    </div>
+    <div class="sk pix" style="position: absolute; left: 782px; top: 438px; padding: 2px 8px; background: #1F7A4A; color: #E9FFF3; font-size: 11px">EXIT</div>
+    <div class="pix" style="position: absolute; left: 640px; top: 384px; padding: 6px 10px; background: #14173A; display: flex; flex-direction: column; align-items: center; gap: 2px">
+      <span class="sk" style="font-size: 16px; color: #FF5FA2">23:14</span>
+      <span style="font-size: 10px; color: #A9A6D6">퇴근 시간 지남</span>
+    </div>
+  </div>
+
+  <sc-for list="{{actors}}" as="a" hint-placeholder-count="8">
+    <button class="{{a.btnCls}}" style="{{a.pos}}" onClick="{{a.pick}}" aria-label="{{a.aria}}">
+      <span class="{{a.sprCls}}" style="left: 0; top: 0"></span>
+      <sc-if value="{{a.showBubble}}" hint-placeholder-val="{{true}}">
+        <span class="{{a.bubbleCls}}">{{a.short}}</span>
+      </sc-if>
+      <sc-if value="{{a.sel}}" hint-placeholder-val="{{false}}">
+        <svg class="cursor" viewBox="0 0 6 4" shape-rendering="crispEdges" aria-hidden="true"><rect x="0" y="0" width="6" height="1" fill="#FFD166"></rect><rect x="1" y="1" width="4" height="1" fill="#FFD166"></rect><rect x="2" y="2" width="2" height="1" fill="#FFD166"></rect></svg>
+      </sc-if>
+    </button>
+  </sc-for>
+
+  <sc-for list="{{desks}}" as="d" hint-placeholder-count="5">
+    <div aria-hidden="true" style="{{d.desk}}">
+      <div style="height: 6px; background: #C98E5C; border-bottom: 3px solid #0B0D22"></div>
+      <div style="height: 24px; margin: 0 8px; background: #8B5E3C; box-shadow: -3px 0 0 #0B0D22, 3px 0 0 #0B0D22; display: flex; align-items: center; justify-content: center">
+        <span class="ng" style="font-size: 11px; color: #F7E2C8; display: inline-block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 108px">{{d.tag}}</span>
+      </div>
+    </div>
+    <div aria-hidden="true" style="{{d.lamp}}">
+      <div style="position: absolute; left: 0; top: 0; width: 16px; height: 8px; background: #FFD166; box-shadow: 0 -3px 0 #0B0D22, -3px 0 0 #0B0D22, 3px 0 0 #0B0D22"></div>
+      <div style="position: absolute; left: 10px; top: 8px; width: 3px; height: 14px; background: #0B0D22"></div>
+      <div style="position: absolute; left: 4px; top: 21px; width: 14px; height: 3px; background: #0B0D22"></div>
+    </div>
+  </sc-for>
+
+  <aside aria-label="출근부" style="position: absolute; left: 900px; top: 59px; width: 380px; height: 557px; background: #14173A; border-left: 3px solid #2B2F5E; box-sizing: border-box; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; padding: 0 6px 6px">
+      <span class="dh" style="font-size: 22px">출근부</span>
+      <span class="sk" style="font-size: 10px; color: #A9A6D6">HP = 남은 컨텍스트</span>
+    </div>
+    <sc-for list="{{actors}}" as="a" hint-placeholder-count="8">
+      <button class="{{a.rowCls}}" onClick="{{a.pick}}">
+        <span style="width: 14px; flex: none; color: #FFD166" class="sk">{{a.mark}}</span>
+        <span style="position: relative; width: 48px; height: 48px; flex: none; background: #1E2350">
+          <span class="{{a.miniCls}}" style="left: 0; top: 0"></span>
+        </span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <span class="dh" style="font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{a.name}}</span>
+          <span style="font-size: 11.5px; color: #A9A6D6; white-space: nowrap">{{a.agent}} · <span style="{{a.stateColor}}">{{a.stateLabel}}</span></span>
+        </span>
+        <span style="width: 92px; flex: none; display: flex; flex-direction: column; gap: 4px; align-items: flex-end">
+          <span class="sk" style="font-size: 10px; color: #A9A6D6">HP {{a.hp}}</span>
+          <span style="width: 92px; height: 9px; background: #0B0D22; padding: 2px; box-sizing: border-box; display: block"><span style="{{a.hpBar}}"></span></span>
+        </span>
+      </button>
+    </sc-for>
+  </aside>
+
+  <section aria-label="대화" style="position: absolute; left: 12px; top: 632px; width: 1256px; height: 176px; background: #14173A; box-shadow: 0 0 0 3px #E8E6FF, 0 0 0 6px #5A5FB0, 0 0 0 9px #0B0D22; display: flex; gap: 22px; padding: 14px 16px; box-sizing: border-box">
+    <div style="position: relative; width: 148px; height: 148px; flex: none; background: #262B66; box-shadow: inset 0 -40px 0 #1E2350">
+      <span class="{{dlg.portraitCls}}" style="left: 10px; top: 4px"></span>
+    </div>
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding-top: 2px">
+      <div style="display: flex; align-items: center; gap: 10px">
+        <span class="dh" style="font-size: 22px; color: #FFD166">{{dlg.name}}</span>
+        <span class="ng" style="font-size: 12px; color: #A9A6D6">{{dlg.agent}}</span>
+      </div>
+      <sc-if value="{{dlg.talking}}" hint-placeholder-val="{{true}}">
+        <p class="ng" style="margin: 0; font-size: 17px; line-height: 1.6; white-space: pre-line">{{dlg.text}}</p>
+        <sc-if value="{{dlg.hasCode}}" hint-placeholder-val="{{true}}">
+          <span class="ng" style="align-self: flex-start; padding: 4px 10px; background: #0B0D22; color: #5BE7C4; font-size: 14px">{{dlg.code}}</span>
+        </sc-if>
+      </sc-if>
+      <sc-if value="{{dlg.naming}}" hint-placeholder-val="{{false}}">
+        <p class="ng" style="margin: 0; font-size: 17px; line-height: 1.5">{{dlg.ask}}</p>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <label for="nameInputB2" class="sk" style="font-size: 11px; color: #A9A6D6">NAME</label>
+          <input id="nameInputB2" class="ng pix" value="{{dlg.draft}}" onChange="{{dlg.onDraft}}" placeholder="{{dlg.title}}" style="width: 300px; min-height: 40px; padding: 0 12px; border: 0; background: #FFF8E7; color: #14173A; font-size: 18px; box-sizing: border-box">
+          <div style="display: flex; gap: 8px">
+            <sc-for list="{{dlg.sugs}}" as="sg" hint-placeholder-count="3">
+              <button class="ng pix" onClick="{{sg.use}}" style="min-height: 34px; padding: 0 10px; border: 0; background: #262B66; color: #F1EEFF; font-size: 14px; cursor: pointer">{{sg.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+      <span class="sk blinkc" style="position: absolute; left: 896px; bottom: 16px; color: #FFD166; font-size: 14px">▼</span>
+    </div>
+    <div class="pix" style="width: 300px; flex: none; align-self: center; background: #0B0D22; padding: 6px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px">
+      <sc-for list="{{dlg.choices}}" as="c" hint-placeholder-count="4">
+        <button class="choice" onClick="{{c.act}}" style="font-size: 15px; padding: 0 8px"><span class="sk" style="{{c.markStyle}}">▶</span>{{c.label}}</button>
+      </sc-for>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":820}}'>
+const AGENT = { claude: 'CLAUDE CODE', codex: 'CODEX', openclaw: 'OPENCLAW', gemini: 'GEMINI CLI' };
+const SUGS = { claude: ['코코', '당근', '모모'], codex: ['네모', '삑삑', '큐브'], openclaw: ['집게', '꽃게', '가재'], gemini: ['별이', '반짝', '쌍둥'] };
+const KIND = { claude: '모자 쓴 콩', codex: '네모 로봇', openclaw: '집게 친구', gemini: '별 유령' };
+const STATE = {
+  work: ['일하는 중', '#5BE7C4'], think: ['생각 중', '#B9A6FF'], call: ['호출!', '#FF5FA2'], error: ['오류', '#FFB066'],
+  done: ['완료', '#9CC8FF'], sleep: ['졸음', '#A9A6D6'], leave: ['퇴근 중', '#A9A6D6'], idle: ['대기', '#A9A6D6']
+};
+const SESSIONS = [
+  { id: 's2', nick: '', title: '9월 회고 글 발행', sp: 'claude', repo: 'blog', st: 'call', short: '!!', hp: 59, desk: 752,
+    text: 'dist 폴더에 예전 빌드가 남아서 빌드가 깨져요.\n지우고 다시 빌드해도 될까요?', code: '$ rm -rf dist && npm run build',
+    choices: ['허용한다', '거절한다', '터미널 열기'] },
+  { id: 's1', nick: '코코', title: '데스크탑 펫 디자인 시안', sp: 'claude', repo: 'claude-skills', st: 'work', short: '편집 중', hp: 38, desk: 272,
+    text: 'canvas.json 고치는 중이에요.\n스프라이트 시트 규격을 반영하고 있어요. (+128 −4)', code: 'Edit canvas.json', choices: ['터미널 열기', '계속 부탁해!'] },
+  { id: 's3', nick: '셜록', title: 'sync 버그 추적', sp: 'claude', repo: 'work-manager', st: 'think', short: '음…', hp: 22, desk: 432,
+    text: '테스트가 왜 실패하는지 sync.ts 를 읽어보는 중…\n컨텍스트가 얼마 안 남았어요.', code: 'Read src/sync.ts', choices: ['터미널 열기', '요약하고 새로 시작'] },
+  { id: 's4', nick: '', title: 'Rate limit 미들웨어', sp: 'codex', repo: 'api-server', st: 'error', short: '3 FAIL', hp: 45, desk: 592,
+    text: 'limiter.test.ts 에서 3개가 실패했어요.\n토큰 버킷 리필 타이밍이 어긋나는 것 같아요.', code: 'npm test · 42/45', choices: ['로그 보기', '다시 시도해 줘'] },
+  { id: 's6', nick: '집사', title: '받은편지함 정리', sp: 'openclaw', repo: '개인 비서', st: 'work', short: '메일 7/12', hp: 77, desk: 112,
+    text: '메일 12통 중 7통 분류했어요.\n중요한 2통은 따로 모아둘게요.', code: '', choices: ['요약 보기', '계속 부탁해!'] },
+  { id: 's5', nick: '랜디', title: '랜딩 히어로 개편', sp: 'codex', repo: 'landing', st: 'done', short: 'PR #31!', hp: 66, at: { cx: 168, foot: 580 },
+    text: 'PR #31 올렸어요! 리뷰 부탁해요.\n커피 한 잔 하면서 기다릴게요.', code: 'gh pr create', choices: ['PR 열기', '새 일 주기'] },
+  { id: 's7', nick: '', title: 'ETL v2 마이그레이션', sp: 'gemini', repo: 'data-pipeline', st: 'sleep', short: 'zzz', hp: 29, at: { cx: 304, foot: 556 },
+    text: '(꾸벅…) 25분째 아무 일도 없어요.\n퇴근시킬까요?', code: '', choices: ['깨우기', '퇴근시키기'] },
+  { id: 's8', nick: '긁적이', title: '뉴스 스크래퍼 정리', sp: 'codex', repo: 'scraper', st: 'leave', short: '퇴근~', hp: 12, at: { cx: 700, foot: 580 }, walk: true,
+    text: '오늘 일 다 했어요! 3시간째 조용해서 퇴근할게요.\n내일 봐요~', code: '', choices: ['잘 가!', '세션 다시 열기'] }
+];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { selected: 's2', call: 'open', names: {}, naming: false, draft: '' };
+  }
+  renderVals() {
+    const { selected, call, names, naming, draft } = this.state;
+    const nickOf = (x) => (names[x.id] === undefined ? x.nick : names[x.id]);
+    const nameOf = (x) => nickOf(x) || x.title;
+    const sessions = SESSIONS.map((s) => {
+      if (s.id !== 's2' || call === 'open') return s;
+      return call === 'ok'
+        ? Object.assign({}, s, { st: 'work', short: '빌드 중', text: '고마워요! 지우고 다시 빌드할게요.', code: '$ npm run build', choices: ['터미널 열기'] })
+        : Object.assign({}, s, { st: 'idle', short: '…', text: '알겠어요. dist 는 두고 다른 방법을 찾아볼게요.', code: '', choices: ['터미널 열기'] });
+    });
+    const S = 3;
+    const actors = sessions.map((s) => {
+      let cx, top;
+      if (s.desk) {
+        cx = s.desk;
+        top = s.st === 'work' || s.st === 'call' ? 300 - 30 * S : 300 - 26 * S;
+      } else {
+        cx = s.at.cx;
+        top = s.at.foot - 30 * S;
+      }
+      const isSel = s.id === selected;
+      const hpColor = s.hp < 25 ? '#FF5A5F' : s.hp < 50 ? '#FFD166' : '#5BE7C4';
+      return {
+        btnCls: 'actor' + (s.walk ? ' walker' : ''),
+        pos: 'left:' + (cx - 16 * S) + 'px;top:' + top + 'px;width:' + 32 * S + 'px;height:' + 32 * S + 'px;z-index:2',
+        sprCls: 'spr sp-' + s.sp + ' st-' + s.st,
+        miniCls: 'spr s15 sp-' + s.sp + ' st-' + s.st,
+        aria: s.repo + ' ' + STATE[s.st][0],
+        short: s.short,
+        showBubble: true,
+        bubbleCls: 'pb' + (s.st === 'call' ? ' hot' : ''),
+        sel: isSel,
+        name: nameOf(s),
+        agent: AGENT[s.sp],
+        stateLabel: STATE[s.st][0],
+        stateColor: 'color:' + STATE[s.st][1],
+        hp: s.hp,
+        hpBar: 'display:block;height:100%;width:' + s.hp + '%;background:' + hpColor,
+        mark: isSel ? '▶' : '',
+        rowCls: 'row' + (isSel ? ' sel' : ''),
+        pick: () => this.setState({ selected: s.id, naming: false })
+      };
+    });
+    const desks = sessions.filter((s) => s.desk).map((s) => ({
+      tag: nameOf(s),
+      desk: 'position:absolute;left:' + (s.desk - 66) + 'px;top:300px;width:132px;z-index:3',
+      lamp: 'position:absolute;left:' + (s.desk + 40) + 'px;top:276px;width:20px;height:24px;z-index:3',
+      cone: 'position:absolute;left:' + (s.desk - 70) + 'px;top:284px;width:150px;height:52px;background:rgba(255,209,102,.13);clip-path:polygon(70% 0,84% 0,100% 100%,0 100%)'
+    }));
+    const s = sessions.find((x) => x.id === selected) || sessions[0];
+    const setNick = (v) => this.setState({ naming: false, names: Object.assign({}, names, { [s.id]: v }) });
+    const acts = {
+      '허용한다': () => this.setState({ call: 'ok' }),
+      '거절한다': () => this.setState({ call: 'no' }),
+      '이름 짓기': () => this.setState({ naming: true, draft: nickOf(s) || '' }),
+      '이걸로 할래': () => setNick(this.state.draft.trim()),
+      '제목 그대로': () => setNick(''),
+      '취소': () => this.setState({ naming: false })
+    };
+    const labels = naming ? ['이걸로 할래', '제목 그대로', '취소'] : s.choices.concat(['이름 짓기']);
+    const dlg = {
+      portraitCls: 'spr s4 sp-' + s.sp + ' st-' + s.st,
+      name: nameOf(s),
+      title: s.title,
+      agent: AGENT[s.sp] + ' · ' + STATE[s.st][0] + ' · ' + s.repo + (nickOf(s) ? ' · 「' + s.title + '」' : ''),
+      text: s.text,
+      code: s.code,
+      hasCode: !!s.code,
+      talking: !naming,
+      naming,
+      ask: KIND[s.sp] + '의 새 이름을 지어 주세요! 비우면 세션 제목으로 불러요.',
+      draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      sugs: SUGS[s.sp].map((label) => ({ label, use: () => this.setState({ draft: label }) })),
+      choices: labels.map((label, i) => ({
+        label,
+        markStyle: 'font-size:12px;color:#FFD166;opacity:' + (i === 0 ? 1 : 0),
+        act: acts[label] || (() => {})
+      }))
+    };
+    const count = (m) => sessions.filter((x) => x.st === m).length;
+    return { actors, desks, dlg, countWork: count('work') + count('think'), countCall: count('call') };
+  }
+}
+</script>
+</body>
+</html>

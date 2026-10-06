@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>야근 빌딩 빼꼼 도크</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&amp;family=IBM+Plex+Sans+KR:wght@400;600&amp;family=IBM+Plex+Mono:wght@500;600&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#3255A4}a:hover{color:#1E3A78}
+.bh{font-family:'Black Han Sans','Apple SD Gothic Neo',sans-serif;font-weight:400}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace}
+.mis{text-shadow:3px 2px 0 rgba(255,72,176,.75)}
+.peek{position:absolute;padding:0;margin:0;border:0;background:none;cursor:pointer;transform-origin:100% 80%;animation:peek 4s ease-in-out infinite}
+.peek:focus-visible{outline:3px solid #FF48B0;outline-offset:2px}
+.peek.call{animation:lean 1.2s ease-in-out infinite}
+.tag{position:absolute;display:flex;align-items:center;gap:8px;padding:8px 12px;background:#FBF8F1;border:2px solid #3255A4;box-shadow:4px 4px 0 rgba(255,72,176,.8);white-space:nowrap;font-size:13.5px;color:#1E2A55;cursor:pointer;font-family:inherit}
+.tag.sel{background:#3255A4;color:#FBF8F1;box-shadow:4px 4px 0 #FF48B0}
+.lamp{width:10px;height:10px;border-radius:50%;flex:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 16px;border:2px solid #3255A4;font-family:'Black Han Sans',sans-serif;font-size:15px;cursor:pointer;background:#FBF8F1;color:#1E2A55}
+.blink{animation:blink 4s infinite;transform-box:fill-box;transform-origin:center}
+@keyframes peek{0%,100%{transform:translateX(0) rotate(-6deg)}50%{transform:translateX(-6px) rotate(-10deg)}}
+@keyframes lean{0%,100%{transform:translateX(0) rotate(-4deg)}50%{transform:translateX(-10px) rotate(-12deg)}}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+</style>
+</helmet>
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #F2EDE1; font-family: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', sans-serif; color: #1E2A55">
+
+  <div aria-hidden="true" style="position: absolute; left: 180px; top: 70px; width: 560px; height: 560px; border-radius: 50%; background-image: radial-gradient(circle, #FF48B0 2.2px, transparent 2.6px); background-size: 9px 9px; opacity: 0.55; mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: 610px; top: 420px; width: 440px; height: 300px; background: #3255A4; opacity: 0.16; transform: rotate(-8deg); mix-blend-mode: multiply"></div>
+  <div aria-hidden="true" style="position: absolute; left: -40px; top: 690px; width: 900px; height: 90px; background: #FFE800; opacity: 0.7; transform: rotate(-3deg); mix-blend-mode: multiply"></div>
+
+  <div style="position: absolute; left: 110px; top: 150px; width: 640px; height: 450px; background: rgba(251, 248, 241, 0.94); border: 2px solid #3255A4; box-shadow: 8px 8px 0 rgba(50, 85, 164, 0.18); display: flex; flex-direction: column">
+    <div style="height: 34px; border-bottom: 2px solid #3255A4; display: flex; align-items: center; gap: 8px; padding: 0 12px">
+      <span style="width: 10px; height: 10px; border: 2px solid #3255A4; border-radius: 50%"></span>
+      <span style="width: 10px; height: 10px; border: 2px solid #3255A4; border-radius: 50%"></span>
+      <span class="mono" style="margin-left: 8px; font-size: 12px; color: #3255A4">canvas.json — claude-skills</span>
+    </div>
+    <div style="flex: 1; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; gap: 8px"><div style="width: 60px; height: 7px; background: #FF48B0; opacity: 0.8"></div><div style="width: 160px; height: 7px; background: #3255A4; opacity: 0.35"></div></div>
+      <div style="display: flex; gap: 8px; padding-left: 24px"><div style="width: 90px; height: 7px; background: #3255A4; opacity: 0.8"></div><div style="width: 220px; height: 7px; background: #3255A4; opacity: 0.35"></div></div>
+      <div style="display: flex; gap: 8px; padding-left: 24px"><div style="width: 70px; height: 7px; background: #3255A4; opacity: 0.8"></div><div style="width: 120px; height: 7px; background: #FF48B0; opacity: 0.6"></div></div>
+      <div style="display: flex; gap: 8px; padding-left: 48px; background: rgba(255, 232, 0, 0.45); margin: 0 -28px; padding-top: 5px; padding-bottom: 5px"><div style="margin-left: 76px; width: 230px; height: 7px; background: #3255A4; opacity: 0.6"></div></div>
+      <div style="display: flex; gap: 8px; padding-left: 48px; background: rgba(255, 232, 0, 0.45); margin: 0 -28px; padding-top: 5px; padding-bottom: 5px"><div style="margin-left: 76px; width: 180px; height: 7px; background: #3255A4; opacity: 0.6"></div></div>
+      <div style="display: flex; gap: 8px; padding-left: 24px"><div style="width: 30px; height: 7px; background: #FF48B0; opacity: 0.8"></div></div>
+      <div style="display: flex; gap: 8px"><div style="width: 40px; height: 7px; background: #FF48B0; opacity: 0.8"></div><div style="width: 100px; height: 7px; background: #3255A4; opacity: 0.35"></div></div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 1150px; top: 26px; width: 270px; display: flex; align-items: center; justify-content: flex-end; gap: 10px">
+    <span class="bh mis" style="font-size: 22px; color: #3255A4">빼꼼 도크</span>
+    <span class="mono" style="font-size: 12px; color: #3255A4">21:30 · 자리 7</span>
+  </div>
+  <div aria-hidden="true" style="position: absolute; left: 1052px; top: 14px; width: 82px; height: 82px; border-radius: 50%; border: 3px solid #FF48B0; color: #FF48B0; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: rotate(-14deg); mix-blend-mode: multiply; opacity: 0.9">
+    <span class="bh" style="font-size: 22px; line-height: 1">퇴근</span>
+    <span class="mono" style="font-size: 10px; margin-top: 3px">scraper 17:02</span>
+  </div>
+
+  <sc-for list="{{peeks}}" as="p" hint-placeholder-count="7">
+    <button class="{{p.tagCls}}" style="{{p.tagPos}}" onClick="{{p.pick}}">
+      <span class="lamp" style="{{p.lamp}}"></span>
+      <span class="bh" style="font-size: 15px">{{p.name}}</span>
+      <span>{{p.say}}</span>
+    </button>
+    <button class="{{p.peekCls}}" style="{{p.peekPos}}" onClick="{{p.pick}}" aria-label="{{p.aria}}">
+      <svg viewBox="0 0 100 100" width="100%" height="100%" aria-hidden="true" style="overflow: visible">
+        <g transform="translate(3 2)" opacity="0.85" style="mix-blend-mode: multiply">
+          <path display="{{p.c.dome}}" d="M50 26 C72 26 86 44 86 64 C86 80 72 88 50 88 C28 88 14 80 14 64 C14 44 28 26 50 26 Z" fill="#FF48B0"></path>
+          <rect display="{{p.c.box}}" x="16" y="30" width="68" height="58" rx="20" fill="#FF48B0"></rect>
+        </g>
+        <g display="{{p.c.claws}}" style="mix-blend-mode: multiply">
+          <circle cx="13" cy="66" r="10" fill="#FF48B0"></circle>
+          <path d="M7 58 L13 65 L4 64" fill="none" stroke="#3255A4" stroke-width="3" stroke-linejoin="round"></path>
+        </g>
+        <path display="{{p.c.dome}}" d="M50 26 C72 26 86 44 86 64 C86 80 72 88 50 88 C28 88 14 80 14 64 C14 44 28 26 50 26 Z" fill="{{p.c.body}}" style="mix-blend-mode: multiply"></path>
+        <rect display="{{p.c.box}}" x="16" y="30" width="68" height="58" rx="20" fill="{{p.c.body}}" style="mix-blend-mode: multiply"></rect>
+        <rect display="{{p.c.box}}" x="25" y="42" width="50" height="32" rx="10" fill="#FBF8F1"></rect>
+        <g display="{{p.c.beanie}}" style="mix-blend-mode: multiply">
+          <path d="M14 58 C14 38 30 22 50 22 C70 22 86 38 86 58 C74 50 62 48 50 48 C38 48 26 50 14 58 Z" fill="#3255A4"></path>
+          <circle cx="50" cy="18" r="6.5" fill="#FFE800"></circle>
+        </g>
+        <g display="{{p.c.antenna}}">
+          <path d="M50 30 L50 16" stroke="#3255A4" stroke-width="4" stroke-linecap="round"></path>
+          <rect x="43" y="7" width="14" height="10" rx="3" fill="#FF48B0" style="mix-blend-mode: multiply"></rect>
+        </g>
+        <g display="{{p.c.feelers}}" fill="none" stroke="#3255A4" stroke-width="3.5" stroke-linecap="round">
+          <path d="M40 30 L33 15"></path><path d="M60 30 L67 15"></path>
+        </g>
+        <g display="{{p.c.stars}}">
+          <path d="M40 30 L35 17 M60 30 L65 17" stroke="#3255A4" stroke-width="3.5" stroke-linecap="round"></path>
+          <path transform="translate(34 13)" d="M0 -7 L2 -2 L7 0 L2 2 L0 7 L-2 2 L-7 0 L-2 -2 Z" fill="#FF48B0" style="mix-blend-mode: multiply"></path>
+          <path transform="translate(66 13)" d="M0 -7 L2 -2 L7 0 L2 2 L0 7 L-2 2 L-7 0 L-2 -2 Z" fill="#FF48B0" style="mix-blend-mode: multiply"></path>
+        </g>
+        <g transform="{{p.c.look}}">
+          <ellipse display="{{p.c.cheeks}}" cx="30" cy="70" rx="6" ry="3.5" fill="#FFE800" style="mix-blend-mode: multiply"></ellipse>
+          <ellipse display="{{p.c.cheeks}}" cx="70" cy="70" rx="6" ry="3.5" fill="#FFE800" style="mix-blend-mode: multiply"></ellipse>
+          <g display="{{p.c.eOpen}}" class="blink">
+            <circle cx="40" cy="61" r="4.3" fill="{{p.c.eye}}"></circle>
+            <circle cx="60" cy="61" r="4.3" fill="{{p.c.eye}}"></circle>
+          </g>
+          <g display="{{p.c.eBig}}">
+            <circle cx="40" cy="60" r="5.6" fill="{{p.c.eye}}"></circle>
+            <circle cx="60" cy="60" r="5.6" fill="{{p.c.eye}}"></circle>
+            <circle cx="41.5" cy="58" r="1.6" fill="#FBF8F1"></circle>
+            <circle cx="61.5" cy="58" r="1.6" fill="#FBF8F1"></circle>
+          </g>
+          <g display="{{p.c.eHappy}}" fill="none" stroke="{{p.c.eye}}" stroke-width="3.4" stroke-linecap="round">
+            <path d="M35 63 Q40 56 45 63"></path><path d="M55 63 Q60 56 65 63"></path>
+          </g>
+          <g display="{{p.c.eClosed}}" fill="none" stroke="{{p.c.eye}}" stroke-width="3.2" stroke-linecap="round">
+            <path d="M35 60 Q40 65 45 60"></path><path d="M55 60 Q60 65 65 60"></path>
+          </g>
+          <g display="{{p.c.eDizzy}}" fill="none" stroke="{{p.c.eye}}" stroke-width="3.2" stroke-linecap="round">
+            <path d="M36 57 L44 65 M44 57 L36 65"></path><path d="M56 57 L64 65 M64 57 L56 65"></path>
+          </g>
+          <g display="{{p.c.eUp}}">
+            <circle cx="41" cy="58" r="4.3" fill="{{p.c.eye}}"></circle>
+            <circle cx="61" cy="58" r="4.3" fill="{{p.c.eye}}"></circle>
+          </g>
+          <path display="{{p.c.mSmile}}" d="M46 71 Q50 75 54 71" fill="none" stroke="{{p.c.eye}}" stroke-width="2.8" stroke-linecap="round"></path>
+          <ellipse display="{{p.c.mO}}" cx="50" cy="73" rx="3.6" ry="4.4" fill="{{p.c.eye}}"></ellipse>
+          <path display="{{p.c.mWave}}" d="M43 73 Q46.5 70 50 73 Q53.5 76 57 73" fill="none" stroke="{{p.c.eye}}" stroke-width="2.8" stroke-linecap="round"></path>
+        </g>
+        <g display="{{p.c.sign}}">
+          <path d="M8 40 L8 86" stroke="#3255A4" stroke-width="4" stroke-linecap="round"></path>
+          <rect x="-16" y="12" width="40" height="32" fill="#FF48B0" style="mix-blend-mode: multiply"></rect>
+          <text x="4" y="38" text-anchor="middle" font-family="Black Han Sans, sans-serif" font-size="26" fill="#FBF8F1">!</text>
+        </g>
+      </svg>
+    </button>
+  </sc-for>
+
+  <sc-if value="{{showCall}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; left: 1004px; top: 154px; width: 300px; display: flex; gap: 8px">
+      <button class="btn" onClick="{{approve}}" style="flex: 1; background: #3255A4; color: #FBF8F1">허용</button>
+      <button class="btn" onClick="{{deny}}" style="flex: 1">거절</button>
+      <button class="btn" onClick="{{pickCall}}">자세히</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{hasSel}}" hint-placeholder-val="{{true}}">
+    <article style="{{t.pos}}">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 10px">
+        <span class="bh mis" style="font-size: 22px; color: #3255A4">근무 일지</span>
+        <span class="mono" style="font-size: 11px; color: #3255A4">No. {{t.no}}</span>
+      </div>
+      <div style="height: 0; border-top: 2px dashed #3255A4; margin: 0 10px"></div>
+      <sc-if value="{{t.editing}}" hint-placeholder-val="{{false}}">
+        <div style="padding: 12px 18px 4px; display: flex; flex-direction: column; gap: 8px">
+          <label for="nameInputC1" class="mono" style="font-size: 11px; color: #4D5A85">이름표 달기 · 비우면 세션 제목으로 보여요</label>
+          <div style="display: flex; gap: 6px">
+            <input id="nameInputC1" value="{{t.draft}}" onChange="{{t.onDraft}}" placeholder="{{t.title}}" style="flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; border: 2px solid #3255A4; background: #FFFFFF; font-family: 'Black Han Sans', sans-serif; font-size: 18px; color: #1E2A55; box-sizing: border-box">
+            <button class="btn" onClick="{{t.save}}" style="background: #3255A4; color: #FBF8F1">달기</button>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+            <span class="mono" style="font-size: 11px; color: #4D5A85">추천</span>
+            <sc-for list="{{t.sugs}}" as="sg" hint-placeholder-count="3">
+              <button onClick="{{sg.use}}" style="min-height: 32px; padding: 0 10px; border: 2px dashed #3255A4; background: #FBF8F1; color: #1E2A55; cursor: pointer; font-family: 'Black Han Sans', sans-serif; font-size: 14px">{{sg.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{t.viewing}}" hint-placeholder-val="{{true}}">
+        <div style="padding: 12px 18px 0; display: flex; align-items: flex-start; gap: 8px">
+          <div style="flex: 1; min-width: 0">
+            <div class="bh" style="font-size: 24px; line-height: 1.15">{{t.name}}</div>
+            <div class="mono" style="margin-top: 4px; font-size: 11.5px; color: #4D5A85">{{t.subline}}</div>
+          </div>
+          <button onClick="{{t.edit}}" aria-label="이름 바꾸기" style="width: 44px; height: 44px; flex: none; border: 2px solid #3255A4; background: #FBF8F1; color: #3255A4; cursor: pointer; display: flex; align-items: center; justify-content: center">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+          </button>
+        </div>
+      </sc-if>
+      <dl style="margin: 0; padding: 12px 18px; display: grid; grid-template-columns: 64px 1fr; row-gap: 8px; column-gap: 10px; font-size: 13.5px">
+        <dt style="color: #4D5A85">프로젝트</dt><dd class="mono" style="margin: 0; font-size: 12.5px">{{t.repo}}</dd>
+        <dt style="color: #4D5A85">에이전트</dt><dd style="margin: 0">{{t.agent}}</dd>
+        <dt style="color: #4D5A85">브랜치</dt><dd class="mono" style="margin: 0; font-size: 12.5px">{{t.branch}}</dd>
+        <dt style="color: #4D5A85">상태</dt><dd style="margin: 0; display: flex; align-items: center; gap: 6px"><span class="lamp" style="{{t.lamp}}"></span>{{t.stateLabel}} · {{t.meta}}</dd>
+        <dt style="color: #4D5A85">출근</dt><dd class="mono" style="margin: 0; font-size: 12.5px">{{t.start}}</dd>
+      </dl>
+      <div style="padding: 0 18px 12px; display: flex; flex-direction: column; gap: 6px">
+        <sc-for list="{{t.steps}}" as="st" hint-placeholder-count="3">
+          <div class="mono" style="display: flex; gap: 8px; font-size: 12px; color: #1E2A55"><span style="color: #FF48B0">›</span>{{st}}</div>
+        </sc-for>
+      </div>
+      <div style="height: 0; border-top: 2px dashed #3255A4; margin: 0 10px"></div>
+      <div style="display: flex; gap: 8px; padding: 12px 14px 14px">
+        <button class="btn" style="flex: 1; background: #3255A4; color: #FBF8F1">터미널 열기</button>
+        <a class="btn" href="C-Office.dc.html" style="text-decoration: none">빌딩 보기</a>
+      </div>
+    </article>
+  </sc-if>
+
+  <svg aria-hidden="true" width="1440" height="900" style="position: absolute; left: 0; top: 0; pointer-events: none; mix-blend-mode: multiply; opacity: 0.22">
+    <filter id="grainC1"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"></feTurbulence><feColorMatrix type="saturate" values="0"></feColorMatrix></filter>
+    <rect width="1440" height="900" filter="url(#grainC1)"></rect>
+  </svg>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+const INK = { blue: '#3255A4', pink: '#FF48B0', yellow: '#FFE800' };
+const SPECIES = {
+  claude: { agent: 'Claude Code', body: '#FF48B0', eye: '#3255A4', sugs: ['코코', '당근', '모모'] },
+  codex: { agent: 'Codex', body: '#3255A4', eye: '#FF48B0', sugs: ['네모', '삑삑', '큐브'] },
+  openclaw: { agent: 'OpenClaw', body: '#FF48B0', eye: '#3255A4', sugs: ['집게', '꽃게', '가재'] },
+  gemini: { agent: 'Gemini CLI', body: '#FFE800', eye: '#3255A4', sugs: ['별이', '반짝', '쌍둥'] }
+};
+const STATES = {
+  call: { label: '불러요', lamp: '#FF48B0' }, error: { label: '막혔어요', lamp: '#E8590C' }, done: { label: '다 했어요', lamp: '#FFE800' },
+  work: { label: '일하는 중', lamp: '#3255A4' }, think: { label: '생각 중', lamp: '#8E6CCF' }, sleep: { label: '꾸벅꾸벅', lamp: '#B7B2A6' }, idle: { label: '대기', lamp: '#B7B2A6' }
+};
+function riso(sp, mood, look) {
+  const on = (v) => (v ? 'inline' : 'none');
+  const c = SPECIES[sp];
+  return {
+    body: c.body, eye: c.eye,
+    dome: on(sp !== 'codex'), box: on(sp === 'codex'), beanie: on(sp === 'claude'), antenna: on(sp === 'codex'),
+    feelers: on(sp === 'openclaw'), claws: on(sp === 'openclaw'), stars: on(sp === 'gemini'), cheeks: on(sp !== 'codex'),
+    eOpen: on(['work', 'idle'].includes(mood)), eBig: on(mood === 'call'), eHappy: on(mood === 'done'), eClosed: on(mood === 'sleep'),
+    eDizzy: on(mood === 'error'), eUp: on(mood === 'think'),
+    mSmile: on(['work', 'done', 'idle', 'think'].includes(mood)), mO: on(mood === 'call'), mWave: on(mood === 'error'),
+    sign: on(mood === 'call'),
+    look: look || 'translate(-5 0)'
+  };
+}
+const SESSIONS = [
+  { id: 's2', no: '0412', nick: '', title: '9월 회고 글 발행', sp: 'claude', repo: 'blog', branch: 'post/retro', mood: 'call', say: 'dist 지우고 다시 빌드해도 돼요?', meta: '3분째', start: '20:51 출근', steps: ['Edit astro.config.mjs', 'Bash npm run build', '권한 요청 · rm -rf dist'] },
+  { id: 's4', no: '0409', nick: '', title: 'Rate limit 미들웨어', sp: 'codex', repo: 'api-server', branch: 'feat/rate-limit', mood: 'error', say: '테스트 3개 실패', meta: '1분 전', start: '19:40 출근', steps: ['Edit limiter.ts', 'Bash npm test', '42/45 통과'] },
+  { id: 's5', no: '0410', nick: '랜디', title: '랜딩 히어로 개편', sp: 'codex', repo: 'landing', branch: 'main', mood: 'done', say: 'PR #31 올렸어요', meta: '2분 전', start: '20:02 출근', steps: ['git push', 'gh pr create', '완료'] },
+  { id: 's1', no: '0411', nick: '코코', title: '데스크탑 펫 디자인 시안', sp: 'claude', repo: 'claude-skills', branch: 'agent-desktop-pet', mood: 'work', say: 'canvas.json 편집 중', meta: '12분째', start: '21:18 출근', steps: ['Read SKILL.md', 'Grep "sprite"', 'Edit canvas.json +128 −4'] },
+  { id: 's6', no: '0401', nick: '집사', title: '받은편지함 정리', sp: 'openclaw', repo: '개인 비서', branch: 'telegram', mood: 'work', say: '메일 7/12 분류', meta: '상시', start: '09:00 출근', steps: ['메일함 읽기', '라벨 7/12', '요약 초안'] },
+  { id: 's3', no: '0408', nick: '셜록', title: 'sync 버그 추적', sp: 'claude', repo: 'work-manager', branch: 'fix/sync', mood: 'think', say: '원인 찾는 중…', meta: '4분째', start: '19:12 출근', steps: ['Bash npm test', 'Read sync.ts', '생각 중'] },
+  { id: 's7', no: '0405', nick: '', title: 'ETL v2 마이그레이션', sp: 'gemini', repo: 'data-pipeline', branch: 'etl-v2', mood: 'sleep', say: '25분째 조용', meta: '25분', start: '18:30 출근', steps: ['python etl.py', '완료 보고', '대기'] }
+];
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { selected: 's1', call: 'open', names: {}, editing: false, draft: '' };
+  }
+  renderVals() {
+    const { selected, call, names, editing, draft } = this.state;
+    const nickOf = (x) => (names[x.id] === undefined ? x.nick : names[x.id]);
+    const nameOf = (x) => nickOf(x) || x.title;
+    const sessions = SESSIONS.map((s) => {
+      if (s.id !== 's2' || call === 'open') return s;
+      return call === 'ok' ? Object.assign({}, s, { mood: 'work', say: '다시 빌드 중', meta: '방금 허용' }) : Object.assign({}, s, { mood: 'idle', say: '다른 방법 찾는 중', meta: '방금 거절' });
+    });
+    let y = 96;
+    const peeks = sessions.map((s) => {
+      const isCall = s.mood === 'call';
+      const size = isCall ? 104 : 86;
+      const vis = isCall ? 100 : 54;
+      const peekLeft = 1440 - vis;
+      const top = y;
+      y += isCall ? 176 : 96;
+      const st = STATES[s.mood];
+      const isSel = s.id === selected;
+      return {
+        id: s.id,
+        tagCls: 'tag' + (isSel ? ' sel' : ''),
+        tagPos: 'right:' + (vis + 14) + 'px;top:' + (top + (isCall ? 14 : 26)) + 'px' + (isCall ? ';font-size:15px;padding:12px 14px' : ''),
+        peekCls: 'peek' + (isCall ? ' call' : ''),
+        peekPos: 'left:' + peekLeft + 'px;top:' + top + 'px;width:' + size + 'px;height:' + size + 'px',
+        aria: s.repo + ', ' + st.label,
+        repo: s.repo,
+        name: nameOf(s),
+        say: s.say,
+        lamp: 'background:' + st.lamp + ';box-shadow:0 0 0 2px ' + (isSel ? '#FBF8F1' : '#3255A4'),
+        c: riso(s.sp, s.mood, isCall ? 'translate(-3 0)' : 'translate(-6 0)'),
+        top,
+        pick: () => this.setState({ selected: s.id, editing: false })
+      };
+    });
+    const s = sessions.find((x) => x.id === selected);
+    const p = peeks.find((x) => x.id === selected);
+    let t = {};
+    if (s && p) {
+      const st = STATES[s.mood];
+      const top = Math.max(110, Math.min(900 - 500, p.top - 40));
+      t = {
+        name: nameOf(s), title: s.title,
+        subline: nickOf(s) ? '세션 제목 · ' + s.title : '세션 제목 그대로 · 이름표 없음',
+        editing, viewing: !editing, draft,
+        onDraft: (e) => this.setState({ draft: e.target.value }),
+        edit: () => this.setState({ editing: true, draft: nickOf(s) || '' }),
+        save: () => this.setState({ editing: false, names: Object.assign({}, names, { [s.id]: this.state.draft.trim() }) }),
+        sugs: SPECIES[s.sp].sugs.map((label) => ({ label, use: () => this.setState({ draft: label }) })),
+        no: s.no, repo: s.repo, agent: SPECIES[s.sp].agent, branch: s.branch, stateLabel: st.label, meta: s.meta, start: s.start, steps: s.steps,
+        lamp: 'background:' + st.lamp + ';box-shadow:0 0 0 2px #3255A4',
+        pos: 'position:absolute;left:' + (s.id === 's2' ? 640 : 770) + 'px;top:' + top + 'px;width:320px;background:#FBF8F1;border:2px solid #3255A4;box-shadow:8px 8px 0 rgba(255,72,176,.85)'
+      };
+    }
+    return {
+      peeks, t,
+      hasSel: !!s,
+      showCall: call === 'open',
+      approve: () => this.setState({ call: 'ok' }),
+      deny: () => this.setState({ call: 'no' }),
+      pickCall: () => this.setState({ selected: 's2', editing: false })
+    };
+  }
+}
+</script>
+</body>
+</html>
