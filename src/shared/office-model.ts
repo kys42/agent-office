@@ -191,10 +191,15 @@ export function petSummary(model: OfficeModel) {
   let speaker: { view: ResidentView; notice: OfficeNotice } | undefined;
   for (const seat of model.seats)
     if (!seat.veiled)
-      for (const v of [seat, ...seat.helpers])
-        for (const notice of v.unread)
-          if (fresh(notice) && (!speaker || before(notice, speaker.notice) > 0))
-            speaker = { view: v, notice };
+      for (const v of [seat, ...seat.helpers]) {
+        // Only each colleague's latest arrival may speak: closing it never replays history.
+        const latest = v.unread.reduce<OfficeNotice | undefined>(
+          (a, n) => (!a || n.receivedAt > a.receivedAt ? n : a),
+          undefined,
+        );
+        if (latest && fresh(latest) && (!speaker || before(latest, speaker.notice) > 0))
+          speaker = { view: v, notice: latest };
+      }
   return {
     group,
     count,
