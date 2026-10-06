@@ -44,6 +44,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - 표현: App/OfficeWorkspace(큰 사무실), DeskPet(접힌 펫), DeskRow(책상 줄). `src/main.tsx`가 `#mini*` 해시로 루트를 고른다.
 - 배치: `officeTopology`(구역 → 긴 책상 → 보조 책상)가 좌표 이전의 공통 단계다. `layoutOffice`는 이를 2D 격자로, `layoutRow`는 1D 줄로 투영한다. 말풍선 판단 `stationSpeech`(src/shared/speech.ts)와 `SpeechBubble`·`HelperDesk`·`Furniture`·`Sprite` 컴포넌트, 큰 사무실의 책상 CSS를 두 장면이 함께 쓴다.
 - 가리기: `Session.hiddenAt`(`personal` 테이블, 서비스 `veil(ids, on)` 요청이 한 트랜잭션·서비스 시각으로 기록) + `isVeiled`(src/shared/veil.ts). 모델이 `ResidentView.veiled`, `scene`(장면 입력), `veiled`(되돌리기 목록)를 만들고, 액션은 `useOffice.veil(ids, on)`로 공유한다. 펫 말풍선은 `petSummary().speaker`(`PET_FRESH_MS` 2분).
+- 말풍선 원문: `snapshotEvents`가 snapshot의 최근 4개 이벤트에 말하는 메시지(activity.eventId)를 더한다. `stationSpeech().markdown`이 원문(코드 블록 제외)을 주고, `InlineMarkdown`(remark-gfm singleTilde off, 인라인 요소만)이 그린다.
 - 책상 줄은 `ROW_SCALE`(기본 1, 큰 사무실 100%) 고정 축척이며 넘치면 스크롤한다. 창 높이 `ROW_HEIGHT` = 장면 높이 × 축척 + 도구 띠.
 - 창 모드(펫/줄)·위치·클릭 통과는 표현 상태라 코어에 넣지 않는다. Electron main이 소유하고 `office:dock` IPC로 렌더러와 맞춘다. 창 기하는 `src/shared/dock-geometry.ts`(순수). 펫 위치만 데이터 디렉터리의 `desk-pet.json`에 저장한다.
 - Office.tsx와 Roster.tsx는 애니메이션 시계와 명단 필터 때문에 아직 같은 shared 헬퍼를 직접 호출한다. 결과는 모델과 같다. `ResidentView`로 옮기는 일과 책상 한 칸(`DeskStation`)을 컴포넌트로 묶는 일은 후속이다.

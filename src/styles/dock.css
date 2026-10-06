@@ -60,6 +60,17 @@ body.dock-mode {
 .dock-pet-anchor:hover .dock-pet-speech .speech-detail {
   display: flex;
 }
+.dock-pet-speech {
+  --bubble-wide: 280px;
+}
+.dock-pet-anchor:hover .dock-pet-speech .speech-bubble {
+  width: max-content;
+  min-width: 158px;
+  max-width: var(--bubble-wide);
+}
+.dock-pet-anchor:hover .dock-pet-speech .md-p {
+  display: block;
+}
 .dock-pet-name {
   position: relative;
   z-index: 3;

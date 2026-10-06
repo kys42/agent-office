@@ -289,3 +289,30 @@ test('Bubbles draw read state instead of writing it, and unfold long text in pla
   await bubble.getByRole('button', { name: '말풍선 짧게 보기' }).click();
   await expect(bubble).not.toHaveClass(/is-expanded/);
 });
+
+test('Bubbles show the original message: "~" survives and inline style renders', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const s = snapshot.sessions.find((x) => x.id === 'demo:0')!;
+  const text =
+    '지난주(9/28~10/2) 데일리 중 **9/28~9/30** 세 개는 `업무시간`이 들어 있고, 10/1은 오전 일부만 잡혀 있고, 10/2는 데일리가 없습니다. 10/1과 10/2는 세션 로그에서 직접 다시 뽑았습니다.';
+  Object.assign(s, {
+    status: 'work',
+    updatedAt: Date.now(),
+    events: [{ id: 'md1', kind: 'assistant', text, at: Date.now(), phase: 'commentary' }],
+    activity: { text: '요약본', kind: 'progress', at: Date.now(), eventId: 'md1' },
+  });
+  snapshot.notices = snapshot.notices!.filter((n) => n.sessionId !== s.id);
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/');
+  const bubble = page.locator('.office-map [data-station-id="demo:0"] .speech-bubble');
+  await expect(bubble).toContainText('9/28~10/2');
+  await expect(bubble.locator('strong')).toHaveText('9/28~9/30');
+  await expect(bubble.locator('code')).toHaveText('업무시간');
+  const narrow = (await bubble.boundingBox())!.width;
+  await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  // Unfolded, it grows sideways with the text, not only downwards.
+  expect((await bubble.boundingBox())!.width).toBeGreaterThan(narrow + 20);
+  await bubble.screenshot({ path: '.local/bubble-markdown.png' });
+});

@@ -18,6 +18,7 @@ import { deriveState } from '../src/shared/runtime.js';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
+import { snapshotEvents } from '../src/shared/speech.js';
 export const defaultDataDir = () =>
   process.env.AGENT_OFFICE_DATA_DIR ??
   path.join(os.homedir(), 'Library', 'Application Support', 'Agent Office');
@@ -311,7 +312,7 @@ export class OfficeStore {
         .filter((s) => this.visible(s, prefs))
         .map((s) => {
           const d = { ...this.decorate(s), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
-          return full ? d : { ...d, events: d.events.slice(-4) };
+          return full ? d : { ...d, events: snapshotEvents(d) };
         }),
     );
   }

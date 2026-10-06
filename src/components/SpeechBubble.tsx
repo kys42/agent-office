@@ -6,6 +6,7 @@ import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
 import type { StationSpeech } from '../shared/speech';
 import { ago } from '../lib/format';
+import { InlineMarkdown } from './InlineMarkdown';
 
 /**
  * A desk's speech bubble. The scene decides where it sits and what opening it does.
@@ -28,14 +29,14 @@ export function SpeechBubble({
   /** Extra facts shown when the bubble is unfolded (or hovered, where the scene allows). */
   detail?: ReactNode;
 }) {
-  const { bubble, activity, text, label } = speech;
+  const { bubble, activity, text, label, markdown } = speech;
   const body = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
   useLayoutEffect(() => {
     const el = body.current;
     if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
-  }, [text, open, privacy]);
+  }, [text, markdown, open, privacy]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div
@@ -55,7 +56,9 @@ export function SpeechBubble({
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}
             </em>
           </small>
-          <b ref={body}>{privacy ? MOODS[s.status].label : text}</b>
+          <b ref={body}>
+            {privacy ? MOODS[s.status].label : markdown ? <InlineMarkdown text={markdown} /> : text}
+          </b>
           {detail && <span className="speech-detail">{detail}</span>}
         </span>
       </button>

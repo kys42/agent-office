@@ -73,3 +73,40 @@
 .speech-bubble.is-expanded .speech-detail {
   display: flex;
 }
+
+/* Original message style inside bubbles: inline only, small and quiet. */
+.speech-copy .md-p {
+  display: inline;
+}
+.speech-copy strong {
+  font-weight: 800;
+}
+.speech-copy em {
+  font-style: italic;
+}
+.speech-copy del {
+  opacity: 0.65;
+}
+.speech-copy code {
+  padding: 0 3px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: rgba(42, 33, 40, 0.08);
+}
+/* Unfolded (or hovered on the pet), a bubble grows sideways with its text, then down;
+   paragraphs get their own lines. */
+.speech-bubble.is-expanded {
+  width: max-content;
+  min-width: 158px;
+  max-width: var(--bubble-wide, 240px);
+}
+.desk-row {
+  --bubble-wide: 260px;
+}
+.speech-bubble.is-expanded .md-p {
+  display: block;
+}
+.speech-bubble.is-expanded .md-p + .md-p {
+  margin-top: 4px;
+}

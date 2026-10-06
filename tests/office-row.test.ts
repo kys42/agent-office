@@ -7,7 +7,7 @@ import {
   officeTopology,
   STATION_WIDTH,
 } from '../src/shared/office-layout.js';
-import { stationSpeech } from '../src/shared/speech.js';
+import { snapshotEvents, stationSpeech } from '../src/shared/speech.js';
 import type { OfficeNotice, Session } from '../src/shared/types.js';
 const now = Date.now();
 const base = demoSnapshot().sessions[0];
@@ -129,4 +129,46 @@ test('the pet can speak the notice that woke it, not just the desk’s latest on
   assert.equal(focused.bubble?.id, reply.id);
   assert.equal(focused.text, reply.text);
   assert.equal(focused.label, '최종 응답');
+});
+
+test('bubbles speak the original wording, keeping "~" and inline style, never code blocks', () => {
+  const text = '지난주(9/28~10/2) **데일리** 중 `9/28~9/30`\n```sh\nsecret\n```';
+  const s = session(0, 'team', {
+    status: 'work',
+    events: [{ id: 'm1', kind: 'assistant', text, at: now, phase: 'final', sourceRef: 'fixture' }],
+    activity: {
+      text: '지난주(9/2810/2) 데일리 중 9/289/30',
+      kind: 'reply',
+      at: now,
+      eventId: 'm1',
+    },
+  });
+  const live = stationSpeech(s, [], 3, now);
+  assert.equal(live.markdown, '지난주(9/28~10/2) **데일리** 중 `9/28~9/30`');
+  const reply = notice(s.id, { eventId: 'm1' });
+  assert.equal(stationSpeech(s, [reply], 3, now).markdown, live.markdown);
+  const asks = notice(s.id, { kind: 'attention', phase: undefined, eventId: 'm1' });
+  assert.equal(stationSpeech(s, [asks], 3, now).markdown, null, 'questions keep their sentence');
+  const gone = notice(s.id, { eventId: 'elsewhere' });
+  assert.equal(stationSpeech(s, [gone], 3, now).markdown, null, 'falls back to the excerpt');
+});
+
+test('the compact snapshot keeps the message a desk is speaking', () => {
+  const events = Array.from({ length: 10 }, (_, i) => ({
+    id: `e${i}`,
+    kind: i === 2 ? ('assistant' as const) : ('tool' as const),
+    text: i === 2 ? '최종 답변' : 'tool',
+    at: now - (10 - i) * 1000,
+    sourceRef: 'fixture',
+  }));
+  const s = session(0, 'team', {
+    events,
+    activity: { text: '최종 답변', kind: 'reply', at: now, eventId: 'e2' },
+  });
+  assert.deepEqual(
+    snapshotEvents(s).map((e) => e.id),
+    ['e2', 'e6', 'e7', 'e8', 'e9'],
+  );
+  const recentOnly = session(0, 'team', { events, activity: { ...s.activity!, eventId: 'e9' } });
+  assert.equal(snapshotEvents(recentOnly).length, 4);
 });

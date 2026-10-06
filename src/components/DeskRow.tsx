@@ -31,7 +31,7 @@ import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
-const LANE_PAD = 16;
+const LANE_PAD = 48;
 /** Station-space rows, matching the big office's station (bench at 134 under the chair). */
 const BENCH_Y = ROW_TOP + 134;
 const HELPER_Y = ROW_TOP + 128;
