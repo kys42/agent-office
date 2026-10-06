@@ -308,6 +308,12 @@ export class OfficeService extends EventEmitter {
       case 'patch':
         this.store.patch(z.string().max(400).parse(args[0]), patchSchema.parse(args[1]));
         return this.emitSnapshot();
+      case 'veil':
+        this.store.veil(
+          z.array(z.string().max(400)).max(500).parse(args[0]),
+          z.boolean().parse(args[1]),
+        );
+        return this.emitSnapshot();
       case 'preferences':
         this.store.preferences(prefsSchema.parse(args[0]));
         return this.emitSnapshot();

@@ -153,11 +153,79 @@ test('Desktop viewport fits the room and narrow viewport does not overflow', asy
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: '.local/office-mobile.png', fullPage: true });
 });
-test('Mini office has interactive desks and expands', async ({ page }) => {
-  await page.goto('/?demo#mini');
-  await expect(page.locator('.mini-station')).toHaveCount(6);
+test('Desk pet unfolds into a one-line office with zones, benches and bubbles', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  await page.getByRole('button', { name: '데스크 펫', exact: true }).click();
+  const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
+  await expect(pet).toBeVisible();
+  await expect(pet).toContainText('기다려요');
+  const desks = page.locator('.desk-row [data-station-id]');
+  await expect(desks).toHaveCount(0);
+  await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });
+  await pet.click();
+  await expect(desks).toHaveCount(6);
+  const tops = await desks.evaluateAll((els) =>
+    els.map((e) => Math.round(e.getBoundingClientRect().top)),
+  );
+  expect(new Set(tops).size, 'every desk stands in the same single row').toBe(1);
+  // The row slides in; measure where it settles.
+  await expect
+    .poll(async () => {
+      const row = (await page.locator('.desk-row').boundingBox())!;
+      return [row.x, row.width, Math.round(row.y + row.height)];
+    })
+    .toEqual([0, 1440, 970]);
+  // Same office semantics as the big map: project zones, a shared bench, live bubbles.
+  expect(await page.locator('.desk-row .row-zone').count()).toBeGreaterThan(1);
+  await expect(page.locator('.desk-row .shared-bench').first()).toBeVisible();
+  await expect(page.locator('.desk-row .speech-bubble').first()).toBeVisible();
+  await expect(page.locator('.desk-row .desk-name em').first()).toContainText('소식');
+  await page.locator('.desk-row').screenshot({ path: '.local/desk-row.png' });
+  await page.keyboard.press('Escape');
+  await expect(desks).toHaveCount(0);
+  await pet.click();
+  await page.getByRole('button', { name: '책상 줄 접기' }).click();
+  await expect(pet).toBeVisible();
+  await pet.click();
+  await page.locator('.desk-row .office-pet').nth(1).click();
+  await expect(page.locator('.office-map')).toBeVisible();
+  await expect(page.locator('.inspector')).toBeVisible();
+  // A hash-only goto stays in the same document; the dock window always loads fresh.
+  await page.goto('/?demo#mini=row');
+  await page.reload();
+  await expect(desks).toHaveCount(6);
   await page.getByRole('button', { name: '사무실 펼치기' }).click();
   await expect(page.locator('.office-map')).toBeVisible();
+});
+test('A crowded desk row keeps the desk size and pages with side arrows', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  await page.goto('/?demo#mini=row');
+  const desks = page.locator('.desk-row [data-station-id]');
+  await expect(desks).toHaveCount(6);
+  // Same 164px station as the big office at 100%: more colleagues scroll, never shrink.
+  expect(await desks.first().evaluate((e) => e.getBoundingClientRect().width)).toBe(164);
+  const prev = page.getByRole('button', { name: /왼쪽 동료/ });
+  const next = page.getByRole('button', { name: /오른쪽 동료/ });
+  await expect(prev).toHaveCount(0);
+  await expect(next).toBeVisible();
+  await next.click();
+  await expect(prev).toBeVisible();
+  await page.keyboard.press('ArrowLeft');
+  await expect(prev).toHaveCount(0);
+  // The tools band sits above the bubbles.
+  const tools = (await page.locator('.desk-row-tools').boundingBox())!;
+  const bubbleTop = Math.min(
+    ...(await page
+      .locator('.desk-row .speech-bubble')
+      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
+  );
+  expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
+  // …also when a long bubble is unfolded.
+  const long = page.locator('.desk-row .speech-bubble').first();
+  await long.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  expect((await long.boundingBox())!.y).toBeGreaterThanOrEqual(tools.y + tools.height);
 });
 test('Real local collector reports all three providers without modifying source data', async ({
   request,

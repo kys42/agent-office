@@ -24,8 +24,12 @@ export function unreadInbox(s: Session, notices: OfficeNotice[]) {
     .sort((a, b) => b.at - a.at);
 }
 
-export function triageGroup(s: Session, notices: OfficeNotice[], now = Date.now()): TriageGroup {
-  const unread = unreadInbox(s, notices);
+export function triageGroup(
+  s: Session,
+  notices: OfficeNotice[],
+  now = Date.now(),
+  unread = unreadInbox(s, notices),
+): TriageGroup {
   if (needsAttention(s) || unread.some(isAttentionNotice)) return 'attention';
   if (unread.length) return 'results';
   if (isWorking(s, now)) return 'working';

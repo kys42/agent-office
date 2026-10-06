@@ -25,29 +25,20 @@ import {
   Coffee,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
-import {
-  PROVIDERS,
-  type Preferences,
-  type Session,
-  type SessionPatch,
-  type ZoneRule,
-  type Snapshot,
-} from './shared/types';
-import { demoSnapshot, reconcileDemo } from './lib/demo';
+import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
+import { useOffice } from './lib/useOffice';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
-import { officeZone, allocateSeats, seatKey, sessionName } from './shared/office';
+import { sessionName } from './shared/office';
 import { messageExcerpt } from './shared/activity';
-import { officeResidents } from './shared/residents';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
 import { Settings } from './components/Settings';
-import { MiniOffice } from './components/MiniOffice';
 import { NewsInbox } from './components/News';
-import { applyNoticeReceipt, isAttentionNotice, unreadNoticeCount } from './shared/notices';
-import type { NoticeReceipt, OfficeZone } from './shared/types';
+import { isAttentionNotice } from './shared/notices';
+import type { OfficeZone } from './shared/types';
 import { CommandPalette, type PaletteAction } from './components/CommandPalette';
 import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
@@ -59,7 +50,6 @@ const tabs = [
 ] as const;
 export default function App() {
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? demoSnapshot() : null);
   const [inbox, setInbox] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
@@ -77,46 +67,26 @@ export default function App() {
       else localStorage.removeItem('office:last-session');
     }
   }, [selected, demo]);
-  const [error, setError] = useState('');
   const [toast, setToast] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mini = location.hash === '#mini';
   const notify = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 4200);
   }, []);
-  useEffect(() => {
-    if (demo) {
-      setSnapshot(demoSnapshot());
-      setError('');
-      return;
-    }
-    let active = true;
-    setSnapshot(null);
-    api
-      .snapshot()
-      .then((s) => {
-        if (active) {
-          setSnapshot(s);
-          setError('');
-        }
-      })
-      .catch((e) => {
-        if (active) setError(e.message);
-      });
-    const unsubscribe = api.subscribe((s) => {
-      if (active) {
-        setSnapshot(s);
-        setError('');
-      }
-    });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [demo]);
+  const {
+    snapshot,
+    error,
+    refreshing,
+    model,
+    refresh,
+    setPrefs: onPrefs,
+    patch: onPatch,
+    receipt: onReceipt,
+    visit,
+    veil,
+    returnToOffice,
+  } = useOffice(demo, notify);
   useEffect(
     () =>
       api.onSelect?.((id) => {
@@ -168,18 +138,15 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
-    document.body.classList.toggle('mini-mode', mini);
     document.body.classList.toggle('is-desktop', isDesktop);
-    return () => document.body.classList.remove('mini-mode');
-  }, [mini]);
+  }, []);
   const sessions = snapshot?.sessions ?? [];
-  const ordered = officeResidents(sessions)
-    .sessions.filter((s) => (s.zone || officeZone(s, snapshot?.preferences || {})) === 'office')
-    .sort((a, b) => (a.officeSeat ?? 0) - (b.officeSeat ?? 0));
+  // J/K walks what the office shows: hidden colleagues stay out until they talk again.
+  const ordered = model.scene;
   const current = sessions.find((s) => s.id === selected);
   const prefs = snapshot?.preferences;
   const notices = snapshot?.notices ?? [];
-  const unread = unreadNoticeCount(notices);
+  const unread = model.unread;
   useEffect(() => {
     document.title = unread ? `(${unread}) Agent Office` : 'Agent Office · 우리 사무실';
   }, [unread]);
@@ -191,9 +158,7 @@ export default function App() {
     const t = setTimeout(() => setAway(null), Math.max(0, away.back + 15_000 - Date.now()));
     return () => clearTimeout(t);
   }, [away, digestEmpty]);
-  const residents = officeResidents(sessions).sessions;
-  const ownerOf = (id: string | null) =>
-    id ? residents.find((r) => r.id === id || r.resident?.sessionIds.includes(id)) : undefined;
+  const ownerOf = (id: string | null) => (id ? model.ownerOf(id) : undefined);
   // Same in-group order as the roster: pinned first, then the saved sort preference.
   const rosterSort = (() => {
     try {
@@ -216,131 +181,15 @@ export default function App() {
     setInbox(true);
     setSelected(null);
   };
-  const refresh = async () => {
-    if (demo) {
-      notify('데모 화면이에요. 실제 연결을 보려면 데모를 종료해 주세요.');
-      return;
-    }
-    setRefreshing(true);
-    try {
-      const s = await api.refresh();
-      setSnapshot(s);
-      setError('');
-      notify('동료들의 최신 기록을 확인했어요');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-  const onPrefs = async (p: Partial<Preferences>) => {
-    if (demo) {
-      setSnapshot((s) =>
-        s ? reconcileDemo({ ...s, preferences: { ...s.preferences, ...p } }) : s,
-      );
-      return true;
-    }
-    try {
-      setSnapshot(await api.preferences(p));
-      return true;
-    } catch (e) {
-      notify((e as Error).message);
-      return false;
-    }
-  };
   const saveZoneRules = async (zoneRules: ZoneRule[]) => {
     if (await onPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
-  };
-  const onPatch = async (id: string, p: SessionPatch) => {
-    if (demo) {
-      setSnapshot((s) =>
-        s
-          ? reconcileDemo({
-              ...s,
-              sessions: s.sessions.map((x) => (x.id === id ? { ...x, ...p } : x)),
-            })
-          : s,
-      );
-      return;
-    }
-    setSnapshot(await api.patch(id, p));
-  };
-  const onReceipt = async (
-    receipts: NoticeReceipt[],
-    action: 'read' | 'dismiss' | 'unread' | 'view',
-  ) => {
-    if (demo) {
-      setSnapshot((s) =>
-        s ? { ...s, notices: applyNoticeReceipt(s.notices ?? [], receipts, action) } : s,
-      );
-      return;
-    }
-    try {
-      for (let i = 0; i < receipts.length; i += 1000)
-        setSnapshot(await api.notices(receipts.slice(i, i + 1000), action));
-    } catch (e) {
-      notify((e as Error).message);
-    }
   };
   const choose = (id: string) => {
     setShowUsage(false);
     setInbox(false);
     setShowNews(null);
     setSelected(id);
-    if (!demo)
-      void api
-        .visit(id)
-        .then(setSnapshot)
-        .catch((e) => notify(e.message));
-    else
-      setSnapshot((s) =>
-        s
-          ? {
-              ...s,
-              sessions: s.sessions.map((x) =>
-                x.id === id
-                  ? { ...x, openCount: (x.openCount || 0) + 1, lastViewedAt: Date.now() }
-                  : x,
-              ),
-            }
-          : s,
-      );
-  };
-  const returnToOffice = async (id: string) => {
-    if (!demo) {
-      try {
-        setSnapshot(await api.returnToOffice(id));
-        notify('사무실에 자리를 마련했어요');
-      } catch (e) {
-        notify((e as Error).message);
-      }
-      return;
-    }
-    setSnapshot((s) => {
-      if (!s) return s;
-      const sessions = s.sessions.map((x) =>
-        x.id === id
-          ? { ...x, archived: false, returnedAt: Date.now(), zone: 'office' as const }
-          : x,
-      );
-      const active = officeResidents(sessions).sessions.filter(
-        (x) => officeZone(x, s.preferences) === 'office',
-      );
-      const seats = allocateSeats(
-        active,
-        Object.fromEntries(
-          active.filter((x) => x.officeSeat !== undefined).map((x) => [seatKey(x), x.officeSeat!]),
-        ),
-      );
-      return {
-        ...s,
-        sessions: sessions.map((x) => ({
-          ...x,
-          officeSeat: seats[seatKey(x)],
-          zone: officeZone(x, s.preferences),
-        })),
-      };
-    });
+    visit(id);
   };
   const markRead = (id: string) => {
     const s = ownerOf(id);
@@ -382,7 +231,7 @@ export default function App() {
     choose(ids[(next + ids.length) % ids.length]);
   };
   keyHandler.current = (e) => {
-    if (mini || !snapshot || e.isComposing) return;
+    if (!snapshot || e.isComposing) return;
     if ((e.metaKey || e.ctrlKey) && e.code === 'KeyK') {
       e.preventDefault();
       setPalette((v) => !v);
@@ -503,7 +352,9 @@ export default function App() {
     },
     {
       id: 'mini',
-      label: '미니 오피스로 전환',
+      label: '데스크 펫으로 전환',
+      hint: '바탕화면에 작게 띄우고, 누르면 책상 줄로 펼쳐져요',
+      keywords: '미니 펫 책상 줄 독',
       icon: <PictureInPicture2 size={15} />,
       run: () => api.window('mini'),
     },
@@ -515,15 +366,6 @@ export default function App() {
       run: () => setHelp(true),
     },
   ];
-  if (mini)
-    return (
-      <MiniOffice
-        sessions={ordered}
-        notices={snapshot?.notices ?? []}
-        privacy={prefs?.privacy ?? false}
-        reducedMotion={prefs?.reducedMotion ?? false}
-      />
-    );
   const docked = !!current || inbox || showUsage;
   return (
     <div
@@ -582,8 +424,8 @@ export default function App() {
           </button>
           <button
             className="icon-btn mini-button"
-            aria-label="미니 오피스"
-            title="미니 오피스 · 화면 아래에 작게 띄우기"
+            aria-label="데스크 펫"
+            title="데스크 펫 · 바탕화면에 작게 띄우고 누르면 책상 줄로 펼쳐져요"
             onClick={() => api.window('mini')}
           >
             <PictureInPicture2 size={17} />
@@ -702,6 +544,20 @@ export default function App() {
             <OfficeWorkspace
               key={demo ? 'demo' : 'live'}
               snapshot={snapshot}
+              model={model}
+              onVeil={(ids, on) => {
+                void veil(ids, on);
+                notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
+              }}
+              onPin={(s) =>
+                onPatch(s.id, { pinned: !s.pinned })
+                  .then(() =>
+                    notify(
+                      s.pinned ? '고정을 풀었어요' : '고정했어요 · 오래 지나도 사무실에 남아요',
+                    ),
+                  )
+                  .catch((e) => notify(e.message))
+              }
               onSettings={() => setView('settings')}
               selected={selected}
               onSelect={choose}
@@ -817,7 +673,7 @@ export default function App() {
       </footer>
       {palette && snapshot && (
         <CommandPalette
-          sessions={officeResidents(sessions).sessions}
+          sessions={model.residents}
           notices={notices}
           actions={actions}
           demo={demo}

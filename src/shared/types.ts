@@ -240,6 +240,8 @@ export interface Session {
   lastViewedAt?: number;
   openCount?: number;
   returnedAt?: number;
+  /** The person hid this colleague at this time; shown again on their next conversation. */
+  hiddenAt?: number | null;
 }
 export interface Connector {
   provider: Provider;
@@ -286,6 +288,9 @@ export interface Handoff {
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
+/** Desk pet window: a small floating pet, or a full-width row of desks. */
+export type DockMode = 'pet' | 'row';
+export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
   detail: (id: string) => Promise<Session>;
@@ -297,6 +302,8 @@ export interface OfficeAPI {
   snapshot: () => Promise<Snapshot>;
   refresh: () => Promise<Snapshot>;
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;
+  /** Hide colleagues until their next conversation (`on`), or bring them back. */
+  veil: (ids: string[], on: boolean) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
@@ -306,6 +313,9 @@ export interface OfficeAPI {
   resume: (id: string) => Promise<string>;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
+  /** Desktop only. Browser previews switch the dock layout locally. */
+  dock?: (action: DockAction) => Promise<void>;
+  onDock?: (callback: (mode: DockMode) => void) => () => void;
 }
 export const PROVIDERS: Record<
   Provider,
