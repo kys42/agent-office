@@ -1,43 +1,60 @@
+/* ───────────────────────── Usage dock, session cost, focus & arrival ───────────────────────── */
 .usage-dock {
-  width: 370px;
-  flex: 0 0 370px;
-  min-width: 0;
   overflow-y: auto;
-  padding: 25px 23px;
-  background: #fbf9f5;
-  border-left: 1px solid #e4dfd7;
-  color: #514c46;
 }
-.usage-dock header {
+.usage-dock > header {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
+  padding: 16px 16px 0;
 }
-.usage-dock header small {
-  color: #929078;
+.usage-dock > header small {
+  font-family: var(--font-mono);
   font-size: 10px;
-  letter-spacing: 2px;
+  letter-spacing: 0.16em;
+  color: var(--text-4);
 }
 .usage-dock h2 {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-top: 6px;
   font-size: 18px;
-  margin: 8px 0;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.usage-dock h2 svg {
+  color: var(--accent);
+}
+.usage-dock > p,
+.usage-dock > .button,
+.usage-dock > .quota-card {
+  margin-left: 16px;
+  margin-right: 16px;
+}
+.usage-dock > .button {
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+.usage-dock > p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
 }
 .usage-intro {
-  font-size: 12px;
-  line-height: 1.9;
-  color: #81796e;
-  margin: 15px 0 20px;
+  margin: 8px 0 14px;
+}
+.usage-dock .fine-print {
+  margin: 4px 16px 18px;
 }
 .quota-card {
-  background: #fffdf9;
-  padding: 18px;
-  border: 1px solid #e4dfd7;
-  border-radius: 14px;
-  margin: 18px 0;
+  margin: 12px 16px 0;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
 }
 .quota-title,
 .quota-window > div {
@@ -47,107 +64,119 @@
   gap: 10px;
 }
 .quota-title b {
-  font-size: 14px;
+  font-size: 13.5px;
 }
 .quota-title span {
-  font-size: 10px;
-  color: #867964;
-  background: #f3ede3;
-  padding: 4px 7px;
+  padding: 3px 7px;
   border-radius: 5px;
+  font-size: 10px;
+  color: var(--text-3);
+  background: var(--bg-4);
 }
 .quota-window {
-  margin-top: 20px;
-}
-.quota-window strong {
-  color: #66816a;
-  font-size: 16px;
+  margin-top: 14px;
 }
 .quota-window span {
   font-size: 12px;
+  color: var(--text-2);
+}
+.quota-window strong {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--st-work);
 }
 .quota-window progress {
   appearance: none;
   display: block;
   width: 100%;
-  height: 8px;
-  margin: 9px 0;
+  height: 6px;
+  margin: 8px 0 6px;
   border: 0;
-  border-radius: 5px;
+  border-radius: 99px;
   overflow: hidden;
-  background: #eeeae2;
+  background: var(--bg-4);
 }
 .quota-window progress::-webkit-progress-bar {
-  background: #eeeae2;
+  background: var(--bg-4);
 }
 .quota-window progress::-webkit-progress-value {
-  background: #9ab596;
-  border-radius: 5px;
+  background: var(--st-work);
+  border-radius: 99px;
 }
 .quota-window progress::-moz-progress-bar {
-  background: #9ab596;
+  background: var(--st-work);
 }
 .quota-card small {
-  color: #9b9285;
-  font-size: 10px;
+  font-size: 10.5px;
+  color: var(--text-4);
   overflow-wrap: anywhere;
 }
 .quota-card p {
-  font-size: 11px;
-  line-height: 1.8;
-  color: #867964;
+  margin: 10px 0 2px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-3);
 }
+
+/* Session cost in the inspector */
 .cost-card {
   display: grid;
-  gap: 7px;
-  padding: 19px;
-  margin: 14px 0;
-  background: linear-gradient(140deg, #f0f4e8, #faf3e8);
-  border: 1px solid #dce3cf;
-  border-radius: 12px;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(140deg, var(--accent-soft), transparent 70%), var(--bg-2);
+  border: 1px solid var(--accent-line);
 }
 .cost-card > span {
-  color: #88836d;
   font-size: 11px;
+  color: var(--text-3);
 }
 .cost-card > strong {
-  font-size: 30px;
-  color: #657759;
-  letter-spacing: -1px;
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--accent-2);
 }
 .cost-card > b {
-  font-size: 12px;
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 .cost-card small,
 .cost-card p,
 .cost-card summary {
   font-size: 11px;
-  line-height: 1.8;
-}
-.cost-card p {
-  margin: 2px 0;
-  color: #8d8373;
+  line-height: 1.6;
+  color: var(--text-3);
 }
 .cost-card summary {
   cursor: pointer;
 }
 .cost-card a {
-  color: #627953;
+  color: var(--accent);
 }
 .working-location code {
   display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
   overflow-wrap: anywhere;
-  font-size: 12px;
-  padding: 10px;
-  background: #f1eee7;
-  border-radius: 6px;
+  background: var(--bg-3);
+  color: var(--text-2);
 }
 .working-location p,
 .working-location small {
+  display: block;
+  margin-top: 6px;
   font-size: 11px;
-  line-height: 1.8;
-  color: #8d8373;
+  line-height: 1.6;
+  color: var(--text-3);
 }
+
+/* New request arrival: a small stack of papers lands beside the desk */
 .paper-stack {
   position: absolute;
   width: 37px;
@@ -177,6 +206,8 @@
   top: -10px;
   transform: rotate(-4deg);
 }
+
+/* Focus: 5분+ warm aura, 15분+ stronger */
 .focus-aura {
   position: absolute;
   inset: -7px 2px 0;
@@ -211,8 +242,8 @@
   background: linear-gradient(0deg, #f28c6199, #ffd684aa, transparent);
 }
 .focus-level-2 .working-beacon {
-  color: #b26739;
-  background: #fff1d2;
+  color: #ffd29a;
+  border-color: rgba(240, 139, 94, 0.55);
 }
 @keyframes papers-arrive {
   from {
@@ -248,40 +279,4 @@
   .focus-aura i {
     animation: none;
   }
-}
-@media (max-width: 800px) {
-  .usage-dock {
-    width: 320px;
-    flex-basis: 320px;
-    padding: 18px;
-  }
-  .usage-button {
-    padding: 7px;
-  }
-  .usage-button span {
-    display: none;
-  }
-}
-@media (max-width: 600px) {
-  .usage-dock {
-    position: fixed;
-    right: 0;
-    top: 68px;
-    bottom: 28px;
-    width: min(360px, 94vw);
-    z-index: 40;
-    box-shadow: -12px 0 40px #30281720;
-  }
-}
-
-.usage-dock .button {
-  background: #e8eedf;
-  color: #52634b;
-  border: 1px solid #d3ddc7;
-}
-.usage-dock .button:disabled {
-  opacity: 0.65;
-}
-.usage-dock .icon-btn {
-  color: #817764;
 }

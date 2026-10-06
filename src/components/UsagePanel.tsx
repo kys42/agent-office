@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, X, Gauge } from 'lucide-react';
 import { api } from '../lib/api';
 import { PROVIDERS, type ProviderQuota } from '../shared/types';
@@ -33,6 +33,12 @@ export function UsagePanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [refresh, setRefresh] = useState(0);
+  const panelRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // On phones the dock follows the room in the page flow; bring it into view like the inspector.
+    if (window.matchMedia('(max-width: 860px)').matches)
+      panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
   useEffect(() => {
     let alive = true;
     if (privacy) return;
@@ -53,7 +59,7 @@ export function UsagePanel({
     };
   }, [demo, privacy, refresh]);
   return (
-    <aside className="usage-dock" aria-label="사용량과 잔여 한도">
+    <aside className="inspector usage-dock" aria-label="사용량과 잔여 한도" ref={panelRef}>
       <header>
         <div>
           <small>OFFICE ENERGY</small>

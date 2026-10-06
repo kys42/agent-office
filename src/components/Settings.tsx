@@ -10,11 +10,15 @@ import {
   Eye,
   Pause,
   Sparkles,
+  LayoutGrid,
+  X,
 } from 'lucide-react';
 import type { Preferences, Snapshot, Provider } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { Sprite } from './Sprite';
 import { shortPath, ago } from '../lib/format';
+import { ZONE_MATCH_LABELS, isCustomZone, ruleZoneKey } from '../shared/zones';
+import { projectKey } from '../shared/office';
 function Toggle({
   checked,
   onChange,
@@ -51,13 +55,23 @@ export function Settings({
   const projects = [
     ...new Set([...snapshot.sessions.map((s) => s.project), ...p.excludedProjects]),
   ].sort();
+  const zoneRules = p.zoneRules ?? [];
+  const zones = [...new Set(zoneRules.map(ruleZoneKey))].sort(
+    (a, b) => Number(isCustomZone(b)) - Number(isCustomZone(a)) || a.localeCompare(b),
+  );
+  const members = (key: string) =>
+    snapshot.sessions.filter(
+      (s) => s.area && projectKey(s) === key && s.zone === 'office' && !s.attachedTo,
+    ).length;
   return (
-    <div className="settings-page">
-      <div className="page-intro">
-        <span className="eyebrow">MAKE YOURSELF AT HOME</span>
-        <h1>편안하게 함께 일하려면.</h1>
-        <p>어떤 동료를 만나고, 어떤 기록을 남길지 직접 정하세요.</p>
-      </div>
+    <div className="settings-page page">
+      <header className="page-head">
+        <div>
+          <span className="eyebrow">Settings</span>
+          <h1>연결과 설정</h1>
+          <p>어떤 동료를 만나고, 어떤 기록을 남길지 직접 정하세요.</p>
+        </div>
+      </header>
       <div className="settings-grid">
         <section className="settings-section">
           <div className="section-title">
@@ -69,12 +83,19 @@ export function Settings({
           {snapshot.connectors.map((c) => (
             <div className="connector-card" key={c.provider}>
               <div className="connector-title">
-                <div className={`avatar avatar-${c.provider}`}>
-                  <Sprite provider={c.provider} size={48} />
+                <div className={`face face-lg face-${c.provider}`}>
+                  <Sprite
+                    provider={c.provider}
+                    mood={c.state === 'connected' ? 'idle' : 'sleep'}
+                    size={40}
+                  />
                 </div>
                 <div>
-                  <h3>{PROVIDERS[c.provider].name}</h3>
-                  <span className={`connection-${c.state}`}>
+                  <h3>
+                    {PROVIDERS[c.provider].name}
+                    <em>{c.count}개</em>
+                  </h3>
+                  <span className={`connection-state connection-${c.state}`}>
                     {c.state === 'connected'
                       ? '기록 연결됨'
                       : c.state === 'paused'
@@ -244,6 +265,76 @@ export function Settings({
               <option value={120}>최근 120개</option>
               <option value={300}>최근 300개</option>
             </select>
+          </section>
+          <section className="settings-section zone-settings">
+            <h2>
+              <LayoutGrid size={16} /> 직접 나눈 사무실 구역
+            </h2>
+            <p>
+              모노레포처럼 한 프로젝트에 동료가 몰릴 때 워크트리·폴더·브랜치별로 구역을 나눠요. 동료
+              업무 카드의 프로젝트 옆 ‘구역’에서 만들 수 있어요.
+            </p>
+            {zones.length === 0 ? (
+              <small>아직 나눈 구역이 없어요. 모두 프로젝트 기준으로 모여 있어요.</small>
+            ) : (
+              <ul className="zone-list">
+                {zones.map((key) => {
+                  const rules = zoneRules.filter((r) => ruleZoneKey(r) === key);
+                  const name = rules[0].name;
+                  return (
+                    <li key={key}>
+                      <div className="zone-list-head">
+                        {isCustomZone(key) ? (
+                          <input
+                            aria-label={`${name} 구역 이름`}
+                            defaultValue={name}
+                            maxLength={40}
+                            onBlur={(e) => {
+                              const next = e.target.value.trim();
+                              if (!next) e.target.value = name;
+                              else if (next !== name)
+                                onPrefs({
+                                  zoneRules: zoneRules.map((r) =>
+                                    ruleZoneKey(r) === key ? { ...r, name: next } : r,
+                                  ),
+                                });
+                            }}
+                            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                          />
+                        ) : (
+                          <b title="자동 프로젝트 구역에 합류시킨 규칙이에요">
+                            {p.privacy ? '프로젝트' : name}
+                            <em>프로젝트 구역</em>
+                          </b>
+                        )}
+                        <small>보낸 동료 {members(key)}명</small>
+                      </div>
+                      <div className="project-chips">
+                        {rules.map((r) => (
+                          <button
+                            key={r.id}
+                            title={`${r.value} · 눌러서 규칙 삭제`}
+                            onClick={() =>
+                              onPrefs({ zoneRules: zoneRules.filter((x) => x.id !== r.id) })
+                            }
+                          >
+                            {ZONE_MATCH_LABELS[r.match]} ·{' '}
+                            {p.privacy
+                              ? '숨김'
+                              : r.match === 'session'
+                                ? '세션 1개'
+                                : r.match === 'branch'
+                                  ? r.value
+                                  : shortPath(r.value)}
+                            <X size={11} />
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </section>
           <section className="settings-section scope-settings">
             <h2>기록에서 제외할 프로젝트</h2>

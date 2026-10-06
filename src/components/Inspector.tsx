@@ -17,8 +17,9 @@ import {
   FileText,
   Download,
   Terminal,
+  LayoutGrid,
 } from 'lucide-react';
-import type { Session, SessionPatch, Handoff, OfficeNotice } from '../shared/types';
+import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -28,14 +29,17 @@ import { api, isDesktop } from '../lib/api';
 import { Conversation } from './Conversation';
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
-import { ActivitySummary } from './ActivitySummary';
+import { NowCard, nowState } from './NowCard';
 import { unreadNoticeCount } from '../shared/notices';
 import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
+import { zoneLabel } from '../shared/zones';
+import { ZoneEditor } from './ZoneEditor';
 export function Inspector({
   session,
   sessions,
   notices,
+  memberIds,
   onReceipt,
   onSelect,
   showNews,
@@ -45,10 +49,14 @@ export function Inspector({
   notify,
   demo,
   privacy,
+  zoneRules,
+  onZoneRules,
 }: {
   session: Session;
   sessions: Session[];
   notices: OfficeNotice[];
+  /** All runs of the colleague in the room, so the now card matches the roster. */
+  memberIds?: string[];
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
   showNews?: string | null;
@@ -58,6 +66,8 @@ export function Inspector({
   notify: (s: string) => void;
   demo: boolean;
   privacy: boolean;
+  zoneRules?: ZoneRule[];
+  onZoneRules?: (rules: ZoneRule[]) => Promise<void>;
 }) {
   const [s, setS] = useState(session);
   const panelRef = useRef<HTMLElement>(null);
@@ -65,6 +75,9 @@ export function Inspector({
     const previous = document.activeElement as HTMLElement | null;
     const el = panelRef.current!;
     el.focus({ preventScroll: true });
+    // On phones the card follows the room in the page flow; bring it into view.
+    if (window.matchMedia('(max-width: 860px)').matches)
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return () => {
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
@@ -78,6 +91,7 @@ export function Inspector({
   }, [tab, session.id]);
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
+  const [zoneOpen, setZoneOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
   const [notesDirty, setNotesDirty] = useState(false);
   const [packet, setPacket] = useState<Handoff | null>(null);
@@ -120,6 +134,8 @@ export function Inspector({
     session.pinned,
     session.archived,
     session.completed,
+    session.area?.ruleId,
+    session.area?.name,
     demo,
   ]);
   useEffect(() => {
@@ -127,6 +143,7 @@ export function Inspector({
     setNotes(session.notes);
     setNotesDirty(false);
     setEditing(false);
+    setZoneOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
@@ -180,84 +197,130 @@ export function Inspector({
     ? sessions.filter((x) => x.actor?.id === s.actor!.id).sort((a, b) => b.updatedAt - a.updatedAt)
     : [];
   const news = notices.filter((n) => n.sessionId === s.id);
+  const members = new Set(memberIds ?? [s.id]);
+  const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
+  const state = nowState(s, colleagueNews);
+  const resumeLabel = s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 명령 복사';
+  const resume = async () => {
+    try {
+      const value = await api.resume(s.id);
+      if (s.provider !== 'codex' || !isDesktop) await copy(value);
+      else notify(value);
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const presentation = presentSession(s);
   return (
     <>
       <aside className="inspector" aria-label="동료의 업무 카드" ref={panelRef} tabIndex={-1}>
         <div className="inspector-top">
-          <span>동료의 이야기</span>
+          <span className="inspector-crumb">
+            <i style={{ background: PROVIDERS[s.provider].color }} />
+            {PROVIDERS[s.provider].name}
+            {s.agentName && !privacy ? <em> · {s.agentName}</em> : ''}
+          </span>
           <div>
             <button
               className={`icon-btn ${s.pinned ? 'gold' : ''}`}
               aria-label={s.pinned ? '고정 해제' : '사무실에 고정'}
+              title={s.pinned ? '고정 해제' : '사무실에 고정 · 자리를 지켜요'}
               onClick={() => patch({ pinned: !s.pinned })}
             >
-              <Pin size={17} />
+              <Pin size={15} />
             </button>
-            <button className="icon-btn" aria-label="업무 카드 닫기" onClick={onClose}>
-              <X size={20} />
+            <button
+              className="icon-btn"
+              aria-label="업무 카드 닫기"
+              title="닫기 · Esc"
+              onClick={onClose}
+            >
+              <X size={17} />
             </button>
           </div>
         </div>
         <div className="inspector-heading">
-          <div className={`profile-avatar avatar-${s.provider}`}>
-            <Sprite provider={s.provider} mood={s.status} size={72} />
+          <div className={`profile-avatar face-${s.provider} status-${s.status}`}>
+            <Sprite provider={s.provider} mood={s.status} size={64} />
           </div>
-          <span className="provider-label" style={{ color: PROVIDERS[s.provider].color }}>
-            {PROVIDERS[s.provider].name}
-            {s.agentName && !privacy ? ` · ${s.agentName}` : ''}
-          </span>
-          {editing ? (
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                await patch({ alias });
-                setEditing(false);
-              }}
-              className="name-editor"
-            >
-              <label className="sr-only" htmlFor="nickname">
-                새 별명
-              </label>
-              <input
-                autoFocus
-                id="nickname"
-                value={alias}
-                maxLength={60}
-                onChange={(e) => setAlias(e.target.value)}
-                placeholder="별명을 붙여 주세요"
-              />
-              <button className="icon-btn" type="submit" aria-label="별명 저장">
-                <Check size={20} />
-              </button>
-            </form>
-          ) : (
-            <h2>
-              {privacy ? '내용을 숨긴 동료' : sessionName(s)}
-              <button
-                className="icon-btn"
-                aria-label="이름 바꾸기"
-                onClick={() => setEditing(true)}
+          <div className="inspector-title">
+            {editing ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await patch({ alias });
+                  setEditing(false);
+                }}
+                className="name-editor"
               >
-                <Pencil size={14} />
-              </button>
-            </h2>
-          )}
-          <p className="inspector-project">
-            <Folder size={13} />
-            {privacy ? '프로젝트 숨김' : s.project}
-            {s.alias && !privacy && <span title={s.title}>원래 이름 · {s.title}</span>}
-          </p>
-          <div className="status-line">
-            <span className={`status-pill pill-${s.status}`}>
-              <i style={{ background: MOODS[s.status].color }} />
-              {MOODS[s.status].label}
-            </span>
-            <span>
-              {ago(s.updatedAt)} · {s.statusEvidence === 'derived' ? '기록 기반 추정' : '관측 기록'}
-            </span>
+                <label className="sr-only" htmlFor="nickname">
+                  새 별명
+                </label>
+                <input
+                  autoFocus
+                  id="nickname"
+                  value={alias}
+                  maxLength={60}
+                  onChange={(e) => setAlias(e.target.value)}
+                  placeholder="별명을 붙여 주세요"
+                />
+                <button className="icon-btn" type="submit" aria-label="별명 저장">
+                  <Check size={17} />
+                </button>
+              </form>
+            ) : (
+              <h2>
+                {privacy ? '내용을 숨긴 동료' : sessionName(s)}
+                <button
+                  className="icon-btn"
+                  aria-label="이름 바꾸기"
+                  title="별명 붙이기"
+                  onClick={() => setEditing(true)}
+                >
+                  <Pencil size={12} />
+                </button>
+              </h2>
+            )}
+            <p className="inspector-project">
+              <Folder size={12} />
+              <span>
+                {privacy ? '프로젝트 숨김' : s.area ? `${s.area.name} · ${s.project}` : s.project}
+              </span>
+              {!privacy && onZoneRules && (
+                <button
+                  className={`zone-trigger ${zoneOpen ? 'active' : ''}`}
+                  aria-expanded={zoneOpen}
+                  title="이 동료를 직접 나눈 사무실 구역으로 보내요"
+                  onClick={() => setZoneOpen((v) => !v)}
+                >
+                  <LayoutGrid size={11} />
+                  구역
+                </button>
+              )}
+              {s.alias && !privacy && <span title={s.title}>원래 이름 · {s.title}</span>}
+            </p>
+            <div className="status-line">
+              <span className={`status-pill pill-${s.status}`}>
+                <i style={{ background: MOODS[s.status].color }} />
+                {MOODS[s.status].label}
+              </span>
+              <span>
+                {ago(s.updatedAt)} ·{' '}
+                {s.statusEvidence === 'derived' ? '기록 기반 추정' : '관측 기록'}
+              </span>
+            </div>
           </div>
         </div>
+        {zoneOpen && !privacy && onZoneRules && (
+          <ZoneEditor
+            key={s.id}
+            session={s}
+            sessions={sessions}
+            rules={zoneRules ?? []}
+            onRules={onZoneRules}
+            onClose={() => setZoneOpen(false)}
+          />
+        )}
         {!privacy && (
           <div className="relation-strip">
             <span title={branchInfo(s).detail}>
@@ -291,6 +354,19 @@ export function Inspector({
             </select>
           </label>
         )}
+        <div className="inspector-now">
+          <NowCard
+            key={s.id}
+            session={s}
+            notices={colleagueNews}
+            privacy={privacy}
+            onReceipt={onReceipt}
+            onResume={resume}
+            resumeLabel={resumeLabel}
+            canResume={!demo}
+            onShowNews={() => setTab('news')}
+          />
+        </div>
         <div className="inspector-tabs" role="tablist" aria-label="업무 카드 항목">
           {(['history', 'news', 'overview', 'notes'] as const).map((t) => (
             <button
@@ -324,7 +400,7 @@ export function Inspector({
             </details>
           )}
           {loadError && <div className="inline-error">{loadError}</div>}
-          {!privacy && (tab === 'history' || tab === 'overview') && <ActivitySummary session={s} />}
+
           {(tab === 'history' || tab === 'overview') && (
             <ArtifactCards
               id={s.id}
@@ -371,6 +447,15 @@ export function Inspector({
                       프로젝트
                     </dt>
                     <dd>{s.project}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      <LayoutGrid size={14} />
+                      구역
+                    </dt>
+                    <dd>
+                      {s.area ? `${zoneLabel(s)} · 직접 나눔` : `${s.project} · 프로젝트 기준`}
+                    </dd>
                   </div>
                   <div>
                     <dt>
@@ -575,28 +660,31 @@ export function Inspector({
               사무실에 자리 마련하기 <ArrowRight size={14} />
             </button>
           )}
-          <button className="button primary" onClick={handoff} disabled={busy || privacy}>
-            <PackageOpen size={17} />
-            {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
-            <ArrowRight size={16} />
-          </button>
-          <div>
-            <button
-              className="button subtle"
-              disabled={demo}
-              onClick={async () => {
-                try {
-                  const value = await api.resume(s.id);
-                  if (s.provider !== 'codex' || !isDesktop) await copy(value);
-                  else notify(value);
-                } catch (e) {
-                  notify((e as Error).message);
-                }
-              }}
-            >
-              <Terminal size={14} />
-              {s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 정보 복사'}
+          {state === 'attention' ? (
+            <button className="button primary" onClick={resume} disabled={demo}>
+              <Terminal size={16} />
+              {resumeLabel}
+              <ArrowRight size={16} />
             </button>
+          ) : (
+            <button className="button primary" onClick={handoff} disabled={busy || privacy}>
+              <PackageOpen size={17} />
+              {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
+              <ArrowRight size={16} />
+            </button>
+          )}
+          <div>
+            {state === 'attention' ? (
+              <button className="button subtle" onClick={handoff} disabled={busy || privacy}>
+                <PackageOpen size={14} />
+                {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
+              </button>
+            ) : (
+              <button className="button subtle" disabled={demo} onClick={resume}>
+                <Terminal size={14} />
+                {resumeLabel}
+              </button>
+            )}
             <button
               className="icon-btn"
               aria-label="원본 위치 열기"

@@ -31,6 +31,24 @@ export interface WorkspaceIdentity {
     observedAt: number;
   };
 }
+/** User-defined office area. Explicit only: path prefixes are never grouped automatically. */
+export interface ZoneRule {
+  id: string;
+  name: string;
+  match: 'session' | 'worktree' | 'path' | 'branch';
+  /** Session id, worktree path, folder path or branch name (`prefix*` matches a prefix). */
+  value: string;
+  /** Workspace key the rule was made from, so other repositories never join by accident. */
+  repo?: string;
+  /** Join an existing project zone (its `projectKey`) instead of a custom area. */
+  target?: string;
+}
+export interface SessionArea {
+  key: string;
+  name: string;
+  ruleId: string;
+  match: ZoneRule['match'];
+}
 export interface SessionRelation {
   kind: 'root' | 'subagent' | 'fork' | 'child' | 'unknown';
   parentNativeId: string | null;
@@ -209,6 +227,8 @@ export interface Session {
   runtime?: RuntimeObservation;
   workspace?: WorkspaceIdentity;
   attachedTo?: string;
+  /** Custom office area from preferences; replaces the project zone only in the office view. */
+  area?: SessionArea;
   usage: Usage;
   events: OfficeEvent[];
   artifacts: string[];
@@ -240,6 +260,7 @@ export interface Preferences {
   archiveDays?: number;
   autoArchive?: boolean;
   bubbleHours?: number;
+  zoneRules?: ZoneRule[];
 }
 export interface Snapshot {
   sessions: Session[];
@@ -293,24 +314,24 @@ export const PROVIDERS: Record<
   claude: {
     name: 'Claude Code',
     short: 'Claude',
-    color: '#efa67d',
+    color: '#ec9a6c',
     description: '프로젝트 세션 기록',
   },
-  codex: { name: 'Codex', short: 'Codex', color: '#9ddac9', description: '세션 로그 · 제목 DB' },
+  codex: { name: 'Codex', short: 'Codex', color: '#7fd6c0', description: '세션 로그 · 제목 DB' },
   openclaw: {
     name: 'OpenClaw',
     short: 'OpenClaw',
-    color: '#f18d94',
+    color: '#f2878f',
     description: '에이전트 DB · JSONL',
   },
 };
 export const MOODS: Record<Mood, { label: string; color: string; rank: number }> = {
-  call: { label: '불러요', color: '#ff859d', rank: 0 },
-  error: { label: '확인 필요', color: '#f5ba6a', rank: 1 },
-  work: { label: '일하는 중', color: '#8bd3ac', rank: 2 },
-  think: { label: '생각 중', color: '#b9a4e8', rank: 3 },
-  done: { label: '응답 완료', color: '#91bdee', rank: 4 },
-  idle: { label: '쉬는 중', color: '#b7aec5', rank: 5 },
-  sleep: { label: '대기 중', color: '#9990a8', rank: 6 },
-  leave: { label: '보관됨', color: '#847b91', rank: 7 },
+  call: { label: '불러요', color: '#ff7a8a', rank: 0 },
+  error: { label: '확인 필요', color: '#f6b24f', rank: 1 },
+  work: { label: '일하는 중', color: '#5fd69b', rank: 2 },
+  think: { label: '생각 중', color: '#ab9cff', rank: 3 },
+  done: { label: '응답 완료', color: '#78b6ff', rank: 4 },
+  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 5 },
+  sleep: { label: '대기 중', color: '#85818d', rank: 6 },
+  leave: { label: '보관됨', color: '#6d6975', rank: 7 },
 };

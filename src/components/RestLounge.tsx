@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+import { zoneLabel } from '../shared/zones';
 import { ArrowUpRight, Moon } from 'lucide-react';
 import type { Session } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
@@ -27,17 +29,22 @@ export function RestLounge({
     >
       <div className="lounge-wall">
         <span className="lounge-window" />
-        <span>
-          <Moon size={16} /> 잠시, 느긋하게
+        <span className="lounge-neon">
+          <Moon size={14} /> 잠시, 느긋하게
         </span>
         <span className="lounge-window" />
+        <p>새 활동이 생기면 사무실로 돌아와요. 직접 자리를 마련해 줄 수도 있어요.</p>
       </div>
       <div className="lounge-floor">
         {[...groups].map(([key, group], index) => (
-          <section className="lounge-group" key={key}>
+          <section
+            className="lounge-group"
+            key={key}
+            style={{ '--rug': `hsl(${(index * 67 + 260) % 360} 42% 62%)` } as CSSProperties}
+          >
             <div className="lounge-project">
               <i />
-              {privacy ? '프로젝트' : group[0].project}
+              {privacy ? '프로젝트' : zoneLabel(group[0])}
               <small>{group.length}명 쉬는 중</small>
             </div>
             <div className="lounge-pods">
@@ -61,7 +68,7 @@ export function RestLounge({
                       </span>
                     </div>
                     <h3>{privacy ? '숨긴 동료' : sessionName(s)}</h3>
-                    <p>{privacy ? '프로젝트 숨김' : s.project}</p>
+                    <p>{privacy ? '프로젝트 숨김' : zoneLabel(s)}</p>
                     <small>
                       {ago(s.updatedAt)} 활동
                       {s.resident ? ` · 실행 기록 ${s.resident.sessionIds.length}개` : ''}

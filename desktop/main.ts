@@ -76,7 +76,7 @@ function createMain() {
     minWidth: 1050,
     minHeight: 740,
     title: 'Agent Office',
-    backgroundColor: '#292431',
+    backgroundColor: '#0d0e11',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 20, y: 20 },
     webPreferences: {

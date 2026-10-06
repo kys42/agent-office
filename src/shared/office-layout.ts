@@ -1,5 +1,6 @@
 import type { Session } from './types';
 import { benchKey, projectKey } from './office';
+import { isCustomZone } from './zones';
 
 export const STATION_WIDTH = 164;
 export const STATION_HEIGHT = 238;
@@ -18,6 +19,8 @@ export interface StationPlacement {
 export interface ProjectArea {
   key: string;
   name: string;
+  /** Source projects behind a custom area, for its floor-mark tooltip. */
+  custom?: string[];
   x: number;
   y: number;
   width: number;
@@ -67,7 +70,8 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
       const cols = Math.min(columns, ordered.length);
       const area: ProjectArea = {
         key,
-        name: members[0].project,
+        name: members[0].area?.name ?? members[0].project,
+        custom: isCustomZone(key) ? [...new Set(members.map((s) => s.project))] : undefined,
         x: 0,
         y: 0,
         width: cols * STATION_WIDTH + PADDING * 2,

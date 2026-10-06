@@ -8,7 +8,7 @@ Agent Office itself is private/unlicensed. User-provided design assets are reuse
 
 ## Packaged dependencies
 
-React, React DOM, Lucide, Zod, MCP TypeScript SDK, Do Hyeon, and IBM Plex Sans KR are used under their package licenses. Copies are in `public/licenses/` and shipped to `dist/licenses/`. Electron includes its own LICENSE and Chromium notices in the application distribution. The package lock records exact resolved versions.
+React, React DOM, Lucide, Zod, MCP TypeScript SDK, Pretendard (OFL-1.1, UI typeface), Galmuri (OFL-1.1, pixel lettering inside the office scene), and JetBrains Mono (OFL-1.1, numerals and code) are used under their package licenses. Copies are in `public/licenses/` and shipped to `dist/licenses/`. Electron includes its own LICENSE and Chromium notices in the application distribution. The package lock records exact resolved versions.
 
 Research checkouts under `.research/` are not shipped or added to Git. Claude-Mem was inspected for architecture and format comparison; its implementation code was not copied. CASS and MCP Agent Mail include additional license riders and no implementation from those repositories is incorporated.
 
