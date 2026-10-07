@@ -162,6 +162,13 @@ try {
   await dock.waitForTimeout(400);
   await checkMacDock('desk row');
   await dock.screenshot({ path: '.local/native-row.png' });
+  // Keep this test's card open if someone uses another app during local QA. Production still
+  // closes it on blur; we test its panel focus/keyboard without racing the user's desktop.
+  await app.evaluate(({ app }) =>
+    app.once('browser-window-created', (_event, window) =>
+      window.webContents.once('did-finish-load', () => window.removeAllListeners('blur')),
+    ),
+  );
   const [card] = await Promise.all([
     app.waitForEvent('window'),
     dock.evaluate(() =>
