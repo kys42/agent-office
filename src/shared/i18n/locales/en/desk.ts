@@ -43,6 +43,9 @@ export const desk = {
     collapseLabel: 'Collapse speech bubble',
     expand: 'Expand',
     collapse: 'Collapse',
+    copyAll: 'Copy all',
+    copyAllLabel: "Copy the bubble's full text",
+    copied: 'Copied',
     dismiss: (name?: string) =>
       name ? `Dismiss ${name}'s speech bubble` : 'Dismiss speech bubble',
     dismissTitle: 'Dismiss just the bubble · unread updates stay in the Inbox',

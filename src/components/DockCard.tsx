@@ -39,7 +39,7 @@ export function DockCard() {
         setTarget(next);
         if (!next) return;
         setOpened(Date.now());
-        reload(); // the opt-in may have changed in the big office meanwhile
+        reload(); // the setting may have changed in the big office meanwhile
       }),
     [reload],
   );

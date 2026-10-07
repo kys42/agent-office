@@ -40,7 +40,7 @@ export function DeskDock() {
     demo,
     notify,
   );
-  // Replies from unfolded bubbles; the opt-in may change in the big office, so re-read it
+  // Replies from unfolded bubbles; the setting may change in the big office, so re-read it
   // whenever the dock comes back into use.
   const send = useTerminalSend(demo, notify);
   const { reload } = send;

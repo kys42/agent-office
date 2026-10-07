@@ -22,7 +22,7 @@ export function targetPlaceholder(target: TerminalTarget) {
 
 /**
  * A follow-up typed into the colleague's live terminal, exactly as if typed there.
- * Desktop only and opt-in; the main process re-checks the terminal and its idle state.
+ * Desktop only, on unless turned off in Settings; the main process re-checks the terminal and its idle state.
  */
 export function TerminalSend({
   target,

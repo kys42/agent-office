@@ -95,7 +95,7 @@ export function DeskRow({
   onCollapse: () => void;
   /** Switch between the office row and the floor desks. */
   onSwitch: () => void;
-  /** Desktop opt-in: an unfolded bubble whose session can take a follow-up offers a reply. */
+  /** Desktop, with Send to terminal on: an unfolded bubble whose session can take a follow-up offers a reply. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
   /** Short results and failures, shown by the dock. */
   notify: (message: string) => void;

@@ -355,6 +355,10 @@ export interface OfficeAPI {
   notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
+  /** Open a web page (http/https only) from session text in the default browser. */
+  openLink?: (url: string) => Promise<void>;
+  /** Put text on the clipboard (desktop: through the main process, no permission prompt). */
+  copyText?: (text: string) => Promise<void>;
   snapshot: () => Promise<Snapshot>;
   refresh: () => Promise<Snapshot>;
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;
@@ -373,11 +377,12 @@ export interface OfficeAPI {
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
   /** Desktop only: focus the live terminal, or fall back to resume. */
   jump?: (id: string) => Promise<JumpResult>;
-  /** Desktop only, opt-in: type into an idle Claude terminal, or queue into a Codex CLI session. */
+  /** Desktop only, on by default: type into an idle Claude terminal, or queue into Codex CLI. */
   send?: (id: string, text: string) => Promise<string>;
   /**
-   * Desktop only: read, or change, the opt-in for `send`. Kept in the desktop profile, outside
-   * the preferences shared with the web preview; turning it on asks for native confirmation.
+   * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
+   * profile, outside the preferences shared with the web preview; turning it back on asks for
+   * native confirmation.
    */
   terminalSend?: (enable?: boolean) => Promise<boolean>;
   /**

@@ -7,8 +7,18 @@ export const desktop = {
     floor: 'Unfold floor desks',
     quit: 'Quit',
   },
+  /** Right-click menu in every window. */
+  menu: {
+    openLink: 'Open Link',
+    copyLink: 'Copy Link Address',
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+    selectAll: 'Select All',
+  },
   untrustedWindow: 'This window is not allowed.',
   unsupportedLink: 'Unsupported result link.',
+  webLinksOnly: 'Only web links (http or https) can be opened.',
   badRequest: 'Invalid request',
   badFile: 'Invalid file request',
   codexOpened: 'Asked Codex to open the session',

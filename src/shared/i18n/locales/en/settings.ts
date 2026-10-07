@@ -53,7 +53,7 @@ export const settings = {
     privacyHint: 'Masks titles, projects and conversations.',
     terminal: 'Send to terminal',
     terminalHint:
-      "Keep talking to a resting Claude Code session in Orca or tmux, right from its work card. It's just like typing into that terminal yourself, so a session started without permission prompts runs it as-is. If there's a draft in its input box, your message is added after it. Only available in this desktop app.",
+      "Keep talking to a resting Claude Code session in Orca or tmux, right from its work card. It's just like typing into that terminal yourself, so a session started without permission prompts runs it as-is. If there's a draft in its input box, your message is added after it. Only available in this desktop app. On by default — turn it off here; turning it back on asks you to confirm.",
   },
   records: {
     title: 'Recent records per tool',
@@ -79,7 +79,7 @@ export const settings = {
   },
   local: {
     title: 'Only on this computer.',
-    body: "No auth files are imported and no models are called. Common token patterns in logs are masked, and sources are only ever read. Only when ‘Send to terminal’ is on does what you write get typed into that terminal. Hide screen content only changes the display; it doesn't block OS screen capture.",
+    body: "No auth files are imported and no models are called. Common token patterns in logs are masked, and sources are only ever read. What you write is typed into a terminal only when you send it with ‘Send to terminal’ (on by default, and you can turn it off). Hide screen content only changes the display; it doesn't block OS screen capture.",
   },
   mcp: {
     title: 'Bring back memories with MCP',
