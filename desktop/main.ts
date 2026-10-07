@@ -599,11 +599,15 @@ function setupIPC() {
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+/**
+ * On unless the person turned it off (the file records that choice). Turning it back on asks
+ * for confirmation again.
+ */
 async function terminalSendEnabled() {
   try {
-    return JSON.parse(await readFile(terminalSendFile(), 'utf8')).enabled === true;
+    return JSON.parse(await readFile(terminalSendFile(), 'utf8')).enabled !== false;
   } catch {
-    return false;
+    return true;
   }
 }
 async function resume(s: Session): Promise<JumpResult> {
