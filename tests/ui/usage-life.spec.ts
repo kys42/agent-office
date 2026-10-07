@@ -102,7 +102,7 @@ test('Focus and incoming paperwork follow normalized observations; details show 
     w.fixture.sessions[0].taskStartedAt = at;
     w.publish(structuredClone(w.fixture));
   });
-  await expect(page.locator('.paper-stack')).toBeVisible();
+  await expect(page.locator('.arrival-burst')).toBeVisible();
   await expect(page.locator('.speech-bubble')).toContainText('서류에 담긴 새로운 요청');
   await expect(page.locator('.focus-level-2')).toHaveCount(0);
   await page.locator('.office-pet').click();

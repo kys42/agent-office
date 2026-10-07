@@ -256,6 +256,7 @@ test('Focus follows known current request and live work, never session lifetime,
   };
   assert.equal(focusLevel(s, now), 1);
   assert.equal(focusLevel({ ...s, taskStartedAt: now - 16 * 60_000 }, now), 2);
+  assert.equal(focusLevel({ ...s, taskStartedAt: now - 31 * 60_000 }, now), 3);
   assert.equal(focusLevel({ ...s, status: 'done' }, now), 0);
   assert.equal(focusLevel({ ...s, updatedAt: now - 3 * 60_000 }, now), 0);
   assert.equal(

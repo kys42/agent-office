@@ -6,6 +6,8 @@ import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
 import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
+import { useWakeAt } from './useWakeAt';
+import { arrivalEnds } from '../shared/speech';
 
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
@@ -63,6 +65,8 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       document.removeEventListener('visibilitychange', tick);
     };
   }, []);
+  // A just-arrived request ends on time even between the coarse ticks.
+  useWakeAt(arrivalEnds(snapshot?.notices ?? []), () => setClock(Date.now()));
   // `clock` only re-derives time-based state between snapshots; the model always uses now.
   const model = useMemo(() => buildOfficeModel(snapshot, Date.now()), [snapshot, clock]);
 

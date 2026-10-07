@@ -828,34 +828,6 @@
   color: #e4dcf4;
   text-shadow: 1px 1px 0 #3a2b40;
 }
-.arrival-envelope {
-  position: absolute;
-  right: -14px;
-  top: 2px;
-  color: #ffd88a;
-  filter: drop-shadow(0 2px 0 #4a352d);
-  animation: mail-arrived 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.arrival-envelope b {
-  position: absolute;
-  bottom: -20px;
-  right: -6px;
-  width: 92px;
-  padding: 3px 5px;
-  border-radius: 4px;
-  font-family: var(--font-pixel);
-  font-size: 10px;
-  font-weight: 400;
-  color: #2b1f18;
-  background: #ffe0a3;
-  box-shadow: 0 2px 0 #4a352d;
-}
-@keyframes mail-arrived {
-  from {
-    transform: translateY(-10px) scale(0.8);
-    opacity: 0;
-  }
-}
 .desk-equipment {
   position: absolute;
   inset: 0;
@@ -1487,8 +1459,6 @@
 /* Motion budget */
 .motion-paused .office-pet,
 .reduce-motion .office-pet,
-.motion-paused .arrival-envelope,
-.reduce-motion .arrival-envelope,
 .motion-paused .pet-shadow,
 .reduce-motion .pet-shadow,
 .motion-paused .working-beacon i,

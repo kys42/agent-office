@@ -490,7 +490,7 @@ test('Same branch shares a table and true children use accessible small desks', 
   await panel.getByRole('button', { name: '부모 작업 · 코코', exact: true }).click();
   await expect(panel.getByRole('heading', { name: /^코코/ })).toBeVisible();
 });
-test('New work effect is only triggered by a newly observed request, not bootstrap or polling', async ({
+test('New work effect plays for 15 seconds after a request arrives, never for bootstrap history, and survives re-publishing', async ({
   page,
 }) => {
   const fixture = demoSnapshot();
@@ -506,7 +506,7 @@ test('New work effect is only triggered by a newly observed request, not bootstr
     };
   }, fixture);
   await page.goto('/');
-  await expect(page.locator('.arrival-envelope')).toHaveCount(0);
+  await expect(page.locator('.arrival-burst')).toHaveCount(0);
   await page.evaluate(() => {
     const w = window as any;
     const n = {
@@ -521,13 +521,13 @@ test('New work effect is only triggered by a newly observed request, not bootstr
     w.fixture.notices = [n, ...w.fixture.notices];
     w.publish(structuredClone(w.fixture));
   });
-  await expect(page.locator('.arrival-envelope')).toHaveCount(1);
+  await expect(page.locator('.arrival-burst')).toHaveCount(1);
   await page.evaluate(() => {
     const w = window as any;
     w.publish(structuredClone(w.fixture));
   });
-  await expect(page.locator('.arrival-envelope')).toHaveCount(1);
-  await expect(page.locator('.arrival-envelope')).toHaveCount(0, { timeout: 18_000 });
+  await expect(page.locator('.arrival-burst')).toHaveCount(1);
+  await expect(page.locator('.arrival-burst')).toHaveCount(0, { timeout: 18_000 });
 });
 
 test('Sparse old seats become one fitted room with movable furniture, project zones and every helper', async ({

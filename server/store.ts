@@ -22,6 +22,9 @@ import { officeResidents, isBackground, isHelper } from '../src/shared/residents
 import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
+
+/** A session first seen this soon after its start is a live one, not history. */
+export const NEW_SESSION_MS = 2 * 60_000;
 export const defaultDataDir = () =>
   process.env.AGENT_OFFICE_DATA_DIR ??
   path.join(os.homedir(), 'Library', 'Application Support', 'Agent Office');
@@ -175,7 +178,10 @@ export class OfficeStore {
     const now = Date.now();
     const cursor = this.db.prepare('SELECT at FROM notice_cursors WHERE session_id=?').get(s.id) as
       { at: number } | undefined;
-    const all = noticeCandidates(s, now, !cursor);
+    // A conversation first seen within minutes of its start is live, not history: its first
+    // request and replies are news (the arrival plays), unlike an old session found on scan.
+    const born = !cursor && now - s.startedAt < NEW_SESSION_MS;
+    const all = noticeCandidates(s, now, !cursor && !born);
     const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
     const observed = this.db.prepare(
       'SELECT version FROM notice_observed WHERE session_id=? AND event_id=?',
@@ -226,12 +232,13 @@ export class OfficeStore {
           .run(JSON.stringify({ ...old, kind: n.kind, phase: n.phase, version: n.version }), n.id);
       }
     }
-    const recent = cursor
-      ? all.filter((n) => {
-          const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
-          return !prior || prior.version !== n.version;
-        })
-      : all.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
+    const recent =
+      cursor || born
+        ? all.filter((n) => {
+            const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
+            return !prior || prior.version !== n.version;
+          })
+        : all.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
     for (const n of all) remember.run(s.id, n.eventId, n.version);
     const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
     for (const n of recent) {

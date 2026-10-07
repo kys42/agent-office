@@ -34,4 +34,4 @@
 
 ### 요청/집중 장식
 
-`usage-life.css`의 paper-stack과 focus-aura는 원본 펫/책상 좌표를 바꾸지 않는 CSS 장식이다. Office의 요청 ID+version 도착 표시와 shared/presentation.focusLevel을 사용한다. 모션 감소·background에서는 정지하며, 실제 명령 실행 성공이나 연속 작업 시간을 보장하지 않는다.
+`effects.css`(공통 부품 `DeskEffects.tsx`)의 불꽃·땀·김·불똥·서류 더미·날아오는 서류는 원본 펫/책상 좌표를 바꾸지 않는 CSS 장식이다. `stationSpeech().arrival`, `focusLevel`, `deskPapers`를 사용한다. 애니메이션은 transform·opacity만 쓴다(항상 떠 있는 독의 다시 그리기 비용). 모션 감소·background에서는 정지하며, 실제 명령 실행 성공이나 연속 작업 시간을 보장하지 않는다.

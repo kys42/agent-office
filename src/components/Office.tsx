@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Mail, Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
+import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import { MOODS, type Session, type OfficeNotice, type TerminalTarget } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
@@ -10,9 +10,11 @@ import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
-import { stationSpeech } from '../shared/speech';
+import { arrivalEnds, deskSpeech, hopping } from '../shared/speech';
+import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
-import { presentSession, focusLevel, POSTURE_LABELS } from '../shared/presentation';
+import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
+import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import type { ReceiptHandler } from './News';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
@@ -74,8 +76,6 @@ export function Office({
   const [hover, setHover] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
   const [hidden, setHidden] = useState(document.hidden);
-  const [arrivals, setArrivals] = useState<Record<string, number>>({});
-  const seen = useRef<Set<string> | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropKey, setDropKey] = useState<string | null | undefined>(undefined);
   const draggable = !!onZoneDrop && !privacy;
@@ -120,24 +120,7 @@ export function Office({
       document.removeEventListener('visibilitychange', visibility);
     };
   }, []);
-  useEffect(() => {
-    const ids = new Set(notices.map((n) => `${n.id}:${n.version}`));
-    if (seen.current) {
-      const fresh = notices.filter(
-        (n) =>
-          n.kind === 'request' &&
-          !n.bootstrap &&
-          !seen.current!.has(`${n.id}:${n.version}`) &&
-          Date.now() - n.receivedAt < 30_000,
-      );
-      if (fresh.length && !document.hidden)
-        setArrivals((old) => ({
-          ...old,
-          ...Object.fromEntries(fresh.map((n) => [n.sessionId, Date.now() + 12_000])),
-        }));
-    }
-    seen.current = ids;
-  }, [notices]);
+  useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
   const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect]);
   const scale =
@@ -148,9 +131,8 @@ export function Office({
     );
   const byId = new Map(sessions.map((s) => [s.id, s]));
   // A reply goes to the session whose news the bubble shows, else the desk's own session.
-  // A reply goes to the session whose news the bubble shows, else the desk's own session.
   const replyFor = (s: Session) =>
-    stationSpeech(s, notices, bubbleHours, clock).bubble?.sessionId ?? s.id;
+    deskSpeech(s, notices, bubbleHours, clock).bubble?.sessionId ?? s.id;
   const quick = !!onReply && !privacy;
   // Helper desks carry no bubble; only the stations' own sessions can be replied to.
   const replyable = quick
@@ -335,21 +317,9 @@ export function Office({
                   const members = s.resident?.sessionIds ?? [s.id];
                   const active = members.includes(selected ?? '');
                   const pose = presentSession(s, clock);
-                  const arrival = members.some((id) => (arrivals[id] ?? 0) > clock);
-                  // A just-arrived request speaks first — the person's own words — then the
-                  // desk's usual bubble.
-                  const usual = stationSpeech(s, notices, bubbleHours, clock);
-                  const latestRequest = arrival
-                    ? usual.news
-                        .filter((n) => n.kind === 'request')
-                        .sort((a, b) => b.at - a.at)
-                        .at(0)
-                    : undefined;
-                  const request = latestRequest?.dismissedAt ? undefined : latestRequest;
-                  const speech = request
-                    ? stationSpeech(s, notices, bubbleHours, clock, request)
-                    : usual;
-                  const { bubble, unread } = speech;
+                  // A just-arrived request plays on the desk and speaks first.
+                  const speech = deskSpeech(s, notices, bubbleHours, clock);
+                  const { bubble, unread, arrival, hop } = speech;
                   const replyId = bubble?.sessionId ?? s.id;
                   const replyTarget = quick ? replyTargets[replyId] : null;
                   const canReply = !!replyTarget?.canSend;
@@ -367,7 +337,7 @@ export function Office({
                       <Furniture kind="chair" />
                       <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                       <button
-                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !arrival ? pose.posture : 'still'} ${arrival ? 'work-arrival' : ''}`}
+                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
                         aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}
@@ -394,25 +364,8 @@ export function Office({
                           onHover?.(null);
                         }}
                       >
-                        {focus > 0 && (
-                          <span className="focus-aura" aria-hidden="true">
-                            <i />
-                            <i />
-                            <i />
-                          </span>
-                        )}
+                        <FocusEffects level={focus} />
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
-                        {arrival && (
-                          <span className="arrival-envelope">
-                            <span className="paper-stack" aria-hidden="true">
-                              <i />
-                              <i />
-                              <i />
-                            </span>
-                            <Mail size={16} />
-                            <b>일이 도착했어요!</b>
-                          </span>
-                        )}
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
                       {onVeil && canVeil(s) && (
@@ -429,18 +382,9 @@ export function Office({
                         />
                       )}
                       <Furniture kind="equipment" />
-                      {pose.working && (
-                        <span className="working-beacon">
-                          <i />
-                          <i />
-                          <i />{' '}
-                          {focus === 2
-                            ? '몰입 중 · 15분+'
-                            : focus === 1
-                              ? '집중 중 · 5분+'
-                              : '작업 중'}
-                        </span>
-                      )}
+                      <PaperPile count={deskPapers(s, clock)} level={focus} />
+                      {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
+                      {pose.working && <WorkingBeacon level={focus} />}
                       <button
                         className={`desk-branch branch-${branch.kind}`}
                         title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
