@@ -4,6 +4,7 @@ import { useOffice } from '../lib/useOffice';
 import { useTerminalSend } from '../lib/useTerminalSend';
 import type { CardTarget, ZoneRule } from '../shared/types';
 import { Inspector } from './Inspector';
+import { useI18n } from '../lib/i18n';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
@@ -12,6 +13,7 @@ import { Inspector } from './Inspector';
  * big office on that colleague.
  */
 export function DockCard() {
+  const { t } = useI18n();
   const [toast, setToast] = useState('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notify = useCallback((message: string) => {
@@ -79,15 +81,15 @@ export function DockCard() {
           privacy={prefs?.privacy ?? false}
           zoneRules={prefs?.zoneRules ?? []}
           onZoneRules={async (zoneRules: ZoneRule[]) => {
-            if (await setPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
+            if (await setPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
           }}
           terminalSend={send.enabled}
         />
       ) : (
         <div className="dock-card-empty">
-          <p>{snapshot ? '이 동료를 찾지 못했어요' : '업무 카드를 여는 중…'}</p>
+          <p>{snapshot ? t.dock.card.missing : t.dock.card.opening}</p>
           <button className="button subtle" onClick={close}>
-            닫기
+            {t.app.close}
           </button>
         </div>
       )}

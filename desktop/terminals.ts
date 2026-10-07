@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import type { TerminalTarget } from '../src/shared/types.js';
+import { intlLocale, m } from '../src/shared/i18n/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
 // never reachable through OfficeService.call (shared with the web preview).
@@ -396,9 +397,9 @@ export async function focusTerminal(
     } catch {
       /* An older Orca without JSON focus details still switched. */
     }
-    if (navigated === false) throw new TerminalInputError('Orca가 그 터미널로 이동하지 못했어요.');
+    if (navigated === false) throw new TerminalInputError(m().desktop.terminal.orcaNoSwitch);
     await deps.run('/usr/bin/open', ['-a', 'Orca']).catch(() => '');
-    return 'Orca의 해당 터미널로 이동했어요';
+    return m().desktop.terminal.orcaFocused;
   }
   const tmux = deps.bin('tmux');
   await deps.run(tmux, ['-S', host.socket, 'select-window', '-t', host.pane]);
@@ -406,7 +407,7 @@ export async function focusTerminal(
   // A client looking at another tmux session needs switching; with no attached client this
   // fails harmlessly and the pane is simply the active one.
   await deps.run(tmux, ['-S', host.socket, 'switch-client', '-t', host.pane]).catch(() => '');
-  return `tmux ${host.label} 패널을 선택했어요`;
+  return m().desktop.terminal.tmuxFocused(host.label);
 }
 
 /**
@@ -427,18 +428,18 @@ export class TerminalInputError extends Error {}
 
 /** Plain typed text only: escape sequences and other control characters never reach the pty. */
 export function cleanInput(text: unknown): string {
-  if (typeof text !== 'string') throw new TerminalInputError('보낼 내용을 입력해 주세요.');
+  if (typeof text !== 'string') throw new TerminalInputError(m().desktop.terminal.empty);
   const value = text
     .replace(/\r\n?/g, '\n')
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
     .trim();
-  if (!value) throw new TerminalInputError('보낼 내용을 입력해 주세요.');
+  if (!value) throw new TerminalInputError(m().desktop.terminal.empty);
   if (value.length > MAX_SEND_LENGTH)
-    throw new TerminalInputError(`${MAX_SEND_LENGTH.toLocaleString()}자 이하로 보내 주세요.`);
+    throw new TerminalInputError(
+      m().desktop.terminal.tooLong(MAX_SEND_LENGTH.toLocaleString(intlLocale())),
+    );
   return value;
 }
-
-const notOwner = 'Claude가 지금 터미널 앞에 있지 않아요(일시정지 등). 터미널을 확인해 주세요.';
 
 export async function sendToTerminal(
   live: LiveTerminal,
@@ -446,9 +447,9 @@ export async function sendToTerminal(
   deps = defaultTerminalDeps(),
 ): Promise<string> {
   const text = cleanInput(input);
-  if (live.process.status !== 'idle')
-    throw new TerminalInputError('작업 중이에요. 끝나면 다시 보내 주세요.');
-  if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(notOwner);
+  if (live.process.status !== 'idle') throw new TerminalInputError(m().desktop.terminal.busy);
+  if (!(await ownsTerminal(live.process.pid, deps)))
+    throw new TerminalInputError(m().desktop.terminal.notOwner);
   const { host } = live;
   if (host.kind === 'orca') {
     // `--flag=value` is the only form Orca reads for a value that starts with `--`.
@@ -475,12 +476,12 @@ export async function sendToTerminal(
     const send = JSON.parse(out)?.result?.send;
     if (send?.accepted !== true) {
       const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
-      throw new TerminalInputError(`Orca가 입력을 받지 않았어요${reason}.`);
+      throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
     }
     const stages: unknown = send.prompt?.stages;
     return Array.isArray(stages) && stages.includes('turn_started')
-      ? 'Orca 터미널에 보냈고 작업이 시작됐어요'
-      : 'Orca 터미널에 보냈어요';
+      ? m().desktop.terminal.orcaStarted
+      : m().desktop.terminal.orcaSent;
   }
   const tmux = deps.bin('tmux');
   const buffer = `agent-office-${randomUUID()}`;
@@ -512,9 +513,7 @@ export async function sendToTerminal(
     again.status !== 'idle' ||
     !(await ownsTerminal(again.pid, deps))
   )
-    throw new TerminalInputError(
-      '입력창에 넣었지만 그사이 상태가 바뀌어 제출하지 않았어요. 터미널을 확인해 주세요.',
-    );
+    throw new TerminalInputError(m().desktop.terminal.stateChanged);
   await deps.run(tmux, ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
-  return `tmux ${host.label}에 보냈어요`;
+  return m().desktop.terminal.tmuxSent(host.label);
 }

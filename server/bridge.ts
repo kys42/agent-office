@@ -1,5 +1,6 @@
 import { Worker } from 'node:worker_threads';
 import { EventEmitter } from 'node:events';
+import { m } from '../src/shared/i18n/index.js';
 export class ServiceBridge extends EventEmitter {
   worker!: Worker;
   nextId = 0;
@@ -43,7 +44,7 @@ export class ServiceBridge extends EventEmitter {
       if (!this.closing) this.emit('failure', message);
     };
     worker.on('error', (e) => fail(e.message));
-    worker.on('exit', () => fail('수집기가 멈췄어요. 새로고침하면 다시 시작해요.'));
+    worker.on('exit', () => fail(m().server.rpc.stopped));
   }
   call(method: string, args: unknown[] = []): Promise<any> {
     if (this.dead && !this.closing) this.start();
@@ -51,7 +52,7 @@ export class ServiceBridge extends EventEmitter {
       const id = ++this.nextId;
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error('수집기의 응답이 늦어요. 다시 시도해 주세요.'));
+        reject(new Error(m().server.rpc.timeout));
       }, 45000);
       this.pending.set(id, { resolve, reject, timer });
       this.worker.postMessage({ id, method, args });
@@ -61,7 +62,7 @@ export class ServiceBridge extends EventEmitter {
     this.closing = true;
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
-      p.reject(new Error('앱이 종료되었습니다.'));
+      p.reject(new Error(m().server.rpc.closed));
     }
     this.pending.clear();
     await this.worker.terminate();

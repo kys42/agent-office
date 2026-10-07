@@ -4,6 +4,7 @@ import type { Session, ZoneRule } from '../shared/types';
 import { projectKey } from '../shared/office';
 import { ZONE_MATCH_LABELS, sendToZone, zoneCandidates, zoneOptions } from '../shared/zones';
 import { shortPath } from '../lib/format';
+import { useI18n } from '../lib/i18n';
 
 /** Explicit office areas: pick an existing zone or name a new one, then choose who follows. */
 export function ZoneEditor({
@@ -22,6 +23,8 @@ export function ZoneEditor({
   /** Zone key preselected by a drop; `null` opens a new zone. */
   initialZone?: string | null;
 }) {
+  const { t } = useI18n();
+  const z = t.zoneEditor;
   const here = projectKey(session);
   const zones = useMemo(() => zoneOptions(sessions, rules), [sessions, rules]);
   const candidates = useMemo(() => zoneCandidates(session), [session]);
@@ -64,22 +67,22 @@ export function ZoneEditor({
     >
       <div className="zone-editor-head">
         <LayoutGrid size={13} />
-        <b>사무실 구역 나누기</b>
-        <small>같은 구역의 동료는 한 바닥에 모여요</small>
+        <b>{z.title}</b>
+        <small>{z.subtitle}</small>
       </div>
       <fieldset className="zone-picker">
-        <legend>보낼 구역</legend>
+        <legend>{z.destination}</legend>
         <div>
-          {zones.map((z) => (
+          {zones.map((o) => (
             <button
               type="button"
-              key={z.key}
-              aria-pressed={zone === z.key}
-              className={`${z.custom ? 'custom' : ''} ${zone === z.key ? 'active' : ''}`}
-              onClick={() => setZone(z.key)}
+              key={o.key}
+              aria-pressed={zone === o.key}
+              className={`${o.custom ? 'custom' : ''} ${zone === o.key ? 'active' : ''}`}
+              onClick={() => setZone(o.key)}
             >
-              <span>{z.name}</span>
-              <small>{z.key === here ? '지금' : z.custom ? `${z.count}명` : '프로젝트'}</small>
+              <span>{o.name}</span>
+              <small>{o.key === here ? z.here : o.custom ? z.members(o.count) : z.project}</small>
             </button>
           ))}
           <button
@@ -88,24 +91,24 @@ export function ZoneEditor({
             className={`new ${zone === null ? 'active' : ''}`}
             onClick={() => setZone(null)}
           >
-            <Plus size={11} /> 새 구역
+            <Plus size={11} /> {z.newZone}
           </button>
         </div>
       </fieldset>
       {zone === null && (
         <label>
-          새 구역 이름
+          {z.newZoneName}
           <input
             autoFocus
             value={name}
             maxLength={40}
-            placeholder="예: agent-lab"
+            placeholder={z.placeholder}
             onChange={(e) => setName(e.target.value)}
           />
         </label>
       )}
       <fieldset>
-        <legend>어떤 동료를 보낼까요</legend>
+        <legend>{z.who}</legend>
         {candidates.map((c, i) => (
           <label key={c.match} className={scope === i ? 'active' : ''}>
             <input
@@ -120,7 +123,7 @@ export function ZoneEditor({
             <span>{ZONE_MATCH_LABELS[c.match]}</span>
             <code title={c.value}>
               {c.match === 'session'
-                ? '지금 보는 세션'
+                ? z.thisSession
                 : c.match === 'branch'
                   ? c.value
                   : shortPath(c.value)}
@@ -130,18 +133,14 @@ export function ZoneEditor({
       </fieldset>
       {editable && (
         <label>
-          {target.match === 'branch' ? '브랜치 패턴' : '폴더 경로'}
+          {target.match === 'branch' ? z.branchPattern : z.folderPath}
           <input value={value} onChange={(e) => setValue(e.target.value)} spellCheck={false} />
-          <small>
-            {target.match === 'branch'
-              ? '끝에 *를 붙이면 앞부분이 같은 브랜치를 모두 보내요 (예: kys42/lab-*)'
-              : '이 폴더와 하위 폴더에서 일하는 동료를 보내요'}
-          </small>
+          <small>{target.match === 'branch' ? z.branchHint : z.folderHint}</small>
         </label>
       )}
       <p className="fine-print">
-        {target.repo ? '같은 저장소 안에서만 적용돼요. ' : ''}앞으로 새로 오는 동료에게도 적용돼요.
-        여러 규칙이 겹치면 세션 → 워크트리 → 더 깊은 폴더 → 더 긴 브랜치 순으로 우선해요.
+        {target.repo ? z.sameRepo : ''}
+        {z.fine}
       </p>
       <div className="zone-editor-actions">
         {current && (
@@ -150,19 +149,19 @@ export function ZoneEditor({
             className="button subtle"
             disabled={busy}
             onClick={() => void save(rules.filter((r) => r.id !== current.id))}
-            title={`${ZONE_MATCH_LABELS[current.match]} 규칙을 지워요`}
+            title={z.removeTitle(ZONE_MATCH_LABELS[current.match])}
           >
-            <Undo2 size={13} /> 프로젝트 구역으로
+            <Undo2 size={13} /> {z.backToProject}
           </button>
         )}
         <button type="button" className="button subtle" onClick={onClose}>
-          취소
+          {z.cancel}
         </button>
         <button
           className="button primary"
           disabled={busy || !destination || !target.value || unchanged}
         >
-          {destination ? `${destination.name} 구역으로 보내기` : '구역 지정'}
+          {destination ? z.sendTo(destination.name) : z.assign}
         </button>
       </div>
     </form>

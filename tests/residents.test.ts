@@ -19,6 +19,11 @@ import { mergeSessions } from '../server/adapters/merge.js';
 import { readOpenClawDatabases } from '../server/adapters/openclaw.js';
 import { OfficeStore } from '../server/store.js';
 import type { Session, OfficeNotice } from '../src/shared/types.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const now = Date.now();
 const make = (id: string, patch: Partial<Session> = {}): Session => ({
   ...demoSnapshot().sessions[0],

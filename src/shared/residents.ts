@@ -2,6 +2,7 @@ import type { Session } from './types';
 import { attachSessions, parentSession } from './office';
 import { isWorking } from './presentation';
 import { taskStart } from './lifecycle';
+import { m } from './i18n';
 
 export const isHelper = (s: Session) => ['subagent', 'child'].includes(s.relation?.kind ?? '');
 export const isBackground = (s: Session) =>
@@ -29,14 +30,16 @@ export function helperPresence(s: Session, sessions: Session[], now = Date.now()
   // Unknown relationships are not grounds for disappearing a recently observed helper.
   return { visible: (host?.zone ?? s.zone) === 'office' || (!host?.zone && !s.zone), host };
 }
-export const sessionScopeLabel = (s: Session) =>
-  s.origin?.kind === 'scheduled'
-    ? '자동 실행'
+export const sessionScopeLabel = (s: Session) => {
+  const t = m().shared.residents;
+  return s.origin?.kind === 'scheduled'
+    ? t.scheduled
     : s.origin?.kind === 'internal'
-      ? '내부 보조'
+      ? t.internal
       : isHelper(s)
-        ? '보조 작업'
-        : '대화';
+        ? t.helper
+        : t.conversation;
+};
 
 /** Canonical sessions remain intact in the store/MCP. Only office occupancy is projected. */
 export function officeResidents(sessions: Session[], now = Date.now()) {

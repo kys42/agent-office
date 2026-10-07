@@ -6,6 +6,7 @@ import { sessionName, projectKey } from '../shared/office';
 import { ago } from '../lib/format';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
+import { useI18n } from '../lib/i18n';
 
 export function RestLounge({
   sessions,
@@ -20,20 +21,21 @@ export function RestLounge({
   onSelect: (id: string) => void;
   onReturn: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const groups = new Map<string, Session[]>();
   for (const s of sessions) groups.set(projectKey(s), [...(groups.get(projectKey(s)) ?? []), s]);
   return (
     <div
       className={`rest-lounge ${reducedMotion ? 'motion-paused' : ''}`}
-      aria-label="동료들의 휴식 공간"
+      aria-label={t.lounge.label}
     >
       <div className="lounge-wall">
         <span className="lounge-window" />
         <span className="lounge-neon">
-          <Moon size={14} /> 잠시, 느긋하게
+          <Moon size={14} /> {t.lounge.neon}
         </span>
         <span className="lounge-window" />
-        <p>새 활동이 생기면 사무실로 돌아와요. 직접 자리를 마련해 줄 수도 있어요.</p>
+        <p>{t.lounge.intro}</p>
       </div>
       <div className="lounge-floor">
         {[...groups].map(([key, group], index) => (
@@ -44,8 +46,8 @@ export function RestLounge({
           >
             <div className="lounge-project">
               <i />
-              {privacy ? '프로젝트' : zoneLabel(group[0])}
-              <small>{group.length}명 퇴근</small>
+              {privacy ? t.lounge.project : zoneLabel(group[0])}
+              <small>{t.lounge.offDuty(group.length)}</small>
             </div>
             <div className="lounge-pods">
               {group.map((s, i) => (
@@ -53,7 +55,7 @@ export function RestLounge({
                   <button
                     className="room-session-main rest-pod-open"
                     onClick={() => onSelect(s.id)}
-                    aria-label={`${privacy ? '동료' : sessionName(s)} 업무 보기`}
+                    aria-label={t.lounge.open(privacy ? undefined : sessionName(s))}
                   >
                     <div className="rest-scene">
                       <Furniture
@@ -67,15 +69,15 @@ export function RestLounge({
                         z<span>z</span>
                       </span>
                     </div>
-                    <h3>{privacy ? '숨긴 동료' : sessionName(s)}</h3>
-                    <p>{privacy ? '프로젝트 숨김' : zoneLabel(s)}</p>
+                    <h3>{privacy ? t.lounge.hiddenTeammate : sessionName(s)}</h3>
+                    <p>{privacy ? t.lounge.hiddenProject : zoneLabel(s)}</p>
                     <small>
-                      {ago(s.updatedAt)} 활동
-                      {s.resident ? ` · 실행 기록 ${s.resident.sessionIds.length}개` : ''}
+                      {t.lounge.active(ago(s.updatedAt))}
+                      {s.resident ? ` · ${t.lounge.runs(s.resident.sessionIds.length)}` : ''}
                     </small>
                   </button>
                   <button className="lounge-return" onClick={() => onReturn(s.id)}>
-                    사무실로 데려오기 <ArrowUpRight size={12} />
+                    {t.lounge.bringBack} <ArrowUpRight size={12} />
                   </button>
                 </article>
               ))}

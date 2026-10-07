@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseRecords } from '../server/adapters/normalize.js';
 import { activityLabel, messageExcerpt, toolLabel } from '../src/shared/activity.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const now = Date.parse('2026-10-04T10:00:00Z');
 const opts = { provider: 'codex' as const, sourcePath: '/test/progress.jsonl', mtime: now, now };
 const record = (payload: object, offset = 0) => ({

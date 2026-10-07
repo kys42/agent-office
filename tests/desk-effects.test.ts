@@ -13,6 +13,11 @@ import {
 import { deskPapers, FOCUS_LABELS, focusLevel, MAX_PAPERS } from '../src/shared/presentation.js';
 import { buildOfficeModel, petSummary } from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 
 const now = Date.now();
 const min = 60_000;

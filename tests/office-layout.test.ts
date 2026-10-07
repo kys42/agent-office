@@ -17,6 +17,11 @@ import { branchInfo } from '../src/shared/branch.js';
 import { resolveWorkspace, enrichWorkspaces } from '../server/workspaces.js';
 import { parseRecords } from '../server/adapters/normalize.js';
 import type { Session } from '../src/shared/types.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const base = demoSnapshot().sessions[0];
 function session(i: number, project = 'team'): Session {
   return {

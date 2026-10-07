@@ -1,3 +1,4 @@
+import { m, type LocalePreference } from './i18n';
 export type Provider = 'claude' | 'codex' | 'openclaw';
 /**
  * Office status. Observed (work/think/call/error/done) or derived from time since the last
@@ -271,6 +272,8 @@ export interface Preferences {
   /** Minutes a colleague stands by ('대기 중') after its last activity before resting. */
   readyMinutes?: number;
   zoneRules?: ZoneRule[];
+  /** UI and collector language. Missing means `auto` (system language, else English). */
+  locale?: LocalePreference;
 }
 export interface Snapshot {
   sessions: Session[];
@@ -382,32 +385,38 @@ export interface OfficeAPI {
   dock?: (action: DockAction) => Promise<void>;
   onDock?: (callback: (mode: DockMode) => void) => () => void;
 }
+// Labels are getters: they read the active language at use time, never at import time.
+const provider = (key: Provider, name: string, short: string, color: string) => ({
+  name,
+  short,
+  color,
+  get description() {
+    return m().shared.provider[key];
+  },
+});
 export const PROVIDERS: Record<
   Provider,
   { name: string; short: string; color: string; description: string }
 > = {
-  claude: {
-    name: 'Claude Code',
-    short: 'Claude',
-    color: '#ec9a6c',
-    description: '프로젝트 세션 기록',
-  },
-  codex: { name: 'Codex', short: 'Codex', color: '#7fd6c0', description: '세션 로그 · 제목 DB' },
-  openclaw: {
-    name: 'OpenClaw',
-    short: 'OpenClaw',
-    color: '#f2878f',
-    description: '에이전트 DB · JSONL',
-  },
+  claude: provider('claude', 'Claude Code', 'Claude', '#ec9a6c'),
+  codex: provider('codex', 'Codex', 'Codex', '#7fd6c0'),
+  openclaw: provider('openclaw', 'OpenClaw', 'OpenClaw', '#f2878f'),
 };
+const mood = (key: Mood, color: string, rank: number) => ({
+  get label() {
+    return m().shared.mood[key];
+  },
+  color,
+  rank,
+});
 export const MOODS: Record<Mood, { label: string; color: string; rank: number }> = {
-  call: { label: '불러요', color: '#ff7a8a', rank: 0 },
-  error: { label: '확인 필요', color: '#f6b24f', rank: 1 },
-  work: { label: '일하는 중', color: '#5fd69b', rank: 2 },
-  think: { label: '생각 중', color: '#ab9cff', rank: 3 },
-  done: { label: '응답 완료', color: '#78b6ff', rank: 4 },
-  ready: { label: '대기 중', color: '#7fc4d9', rank: 5 },
-  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 6 },
-  sleep: { label: '퇴근', color: '#85818d', rank: 7 },
-  leave: { label: '보관됨', color: '#6d6975', rank: 8 },
+  call: mood('call', '#ff7a8a', 0),
+  error: mood('error', '#f6b24f', 1),
+  work: mood('work', '#5fd69b', 2),
+  think: mood('think', '#ab9cff', 3),
+  done: mood('done', '#78b6ff', 4),
+  ready: mood('ready', '#7fc4d9', 5),
+  idle: mood('idle', '#a7a3ad', 6),
+  sleep: mood('sleep', '#85818d', 7),
+  leave: mood('leave', '#6d6975', 8),
 };

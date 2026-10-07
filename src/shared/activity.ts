@@ -1,4 +1,5 @@
 import type { Activity, Mood, OfficeEvent, Session } from './types.js';
+import { m } from './i18n/index.js';
 
 // Display an excerpt of public messages; never turn tool names into invented task descriptions.
 export function messageExcerpt(text: string, limit = 220): string {
@@ -24,19 +25,10 @@ export function summarizeActivity(
   const request = current.findLast((e) => e.kind === 'user' && messageExcerpt(e.text));
   const tool = current.findLast((e) => e.kind === 'tool' && e.tool);
   const source = assistant ?? request;
-  const fallback: Partial<Record<Mood, string>> = {
-    call: '원래 앱에서 질문이나 입력 요청을 확인해 주세요',
-    done: '이번 응답을 마쳤어요',
-    ready: '다음 요청을 기다리고 있어요',
-    idle: '새 활동 기록을 기다리고 있어요',
-    sleep: '한동안 새 활동 기록이 없어요',
-    leave: '보관된 작업 기록이에요',
-    error: '원래 앱에서 작업 상태를 확인해 주세요',
-  };
+  const t = m().shared.activity;
+  const fallback: Partial<Record<Mood, string>> = t.fallback;
   return {
-    text: source
-      ? messageExcerpt(source.text)
-      : (fallback[status] ?? '작업 기록은 있지만 진행 설명은 아직 없어요'),
+    text: source ? messageExcerpt(source.text) : (fallback[status] ?? t.noProgress),
     kind: assistant
       ? assistant.phase === 'commentary'
         ? 'progress'
@@ -57,21 +49,23 @@ export const sessionActivity = (s: Session): Activity =>
 
 export function activityLabel(s: Session, now = Date.now()): string {
   const a = sessionActivity(s);
-  if (a.kind === 'request') return '받은 요청';
-  if (a.kind === 'status') return '기록 상태';
-  if (a.kind === 'reply') return '최근 응답';
+  const t = m().shared.activity.label;
+  if (a.kind === 'request') return t.request;
+  if (a.kind === 'status') return t.status;
+  if (a.kind === 'reply') return t.reply;
   const old = now - a.at > 120_000 || !['work', 'think', 'call'].includes(s.status);
-  return a.kind === 'progress' ? (old ? '마지막 진행 메시지' : '진행 메시지') : '최근 메시지';
+  return a.kind === 'progress' ? (old ? t.lastProgress : t.progress) : t.message;
 }
 
 export function toolLabel(name: string): string {
   const short = name.replace(/^.*[._]{2}/, '');
-  if (/^(exec|exec_command|Bash|bash|shell_command|shell)$/i.test(short)) return '터미널';
-  if (/^(apply_patch|Edit|MultiEdit|Write)$/i.test(short)) return '파일 수정';
-  if (/^(Read|read_file|read_files)$/i.test(short)) return '파일 읽기';
-  if (/^(Grep|Glob|search_files)$/i.test(short)) return '파일 검색';
-  if (/^(web|web_search|webfetch|web__run)$/i.test(short)) return '웹 조회';
-  if (/request_user_input|AskUserQuestion/i.test(short)) return '입력 요청';
-  if (/^(wait|write_stdin|sleep)$/i.test(short)) return '결과 확인';
+  const t = m().shared.activity.tool;
+  if (/^(exec|exec_command|Bash|bash|shell_command|shell)$/i.test(short)) return t.terminal;
+  if (/^(apply_patch|Edit|MultiEdit|Write)$/i.test(short)) return t.edit;
+  if (/^(Read|read_file|read_files)$/i.test(short)) return t.read;
+  if (/^(Grep|Glob|search_files)$/i.test(short)) return t.search;
+  if (/^(web|web_search|webfetch|web__run)$/i.test(short)) return t.web;
+  if (/request_user_input|AskUserQuestion/i.test(short)) return t.input;
+  if (/^(wait|write_stdin|sleep)$/i.test(short)) return t.check;
   return short.length > 26 ? short.slice(0, 25) + '…' : short;
 }

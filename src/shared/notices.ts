@@ -1,19 +1,32 @@
 import type { NoticeAction, NoticeKind, OfficeEvent, OfficeNotice, Session } from './types';
 import { conversationKind } from './conversation';
 import { messageExcerpt, sessionActivity } from './activity';
-export const NOTICE_LABELS: Record<NoticeKind, string> = {
-  request: '새 요청',
-  progress: '진행 소식',
-  reply: '최종 응답',
-  message: '기타 응답',
-  attention: '응답 필요',
-  error: '확인 필요',
-};
+import { LOCALES, m, messagesFor, type Locale } from './i18n';
+import { liveLabels } from './labels';
+export const NOTICE_LABELS: Record<NoticeKind, string> = liveLabels((t) => t.shared.notice.label);
 export const noticeVersion = (text: string) => {
   let n = 2166136261;
   for (let i = 0; i < text.length; i++) n = Math.imul(n ^ text.charCodeAt(i), 16777619);
   return (n >>> 0).toString(16) + ':' + text.length;
 };
+// Versions hash the original (Korean) wording of text the office generates itself, so a
+// language switch or an upgrade never turns an already-read notice into a new one.
+const ORIGIN: Locale = 'ko';
+function versionText(kind: NoticeKind, text: string) {
+  const origin = messagesFor(ORIGIN).shared;
+  if (kind === 'attention') return origin.notice.attention;
+  let out = text;
+  for (const locale of Object.keys(LOCALES) as Locale[]) {
+    if (locale === ORIGIN) continue;
+    const redaction = messagesFor(locale).shared.redaction;
+    for (const key of Object.keys(redaction) as (keyof typeof redaction)[])
+      out = out.replaceAll(redaction[key], origin.redaction[key]);
+  }
+  return out;
+}
+/** Content version of a notice; independent of the display language. */
+export const noticeContentVersion = (kind: NoticeKind, text: string, at: number) =>
+  noticeVersion(`${kind}:${versionText(kind, text)}:${at}`);
 export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false): OfficeNotice[] {
   const events = [...s.events];
   const a = sessionActivity(s);
@@ -36,10 +49,7 @@ export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false
           ? 'attention'
           : null;
     if (!kind) continue;
-    const text =
-      kind === 'attention'
-        ? '원래 앱에서 질문이나 입력 요청을 확인해 주세요.'
-        : messageExcerpt(e.text, 800);
+    const text = kind === 'attention' ? m().shared.notice.attention : messageExcerpt(e.text, 800);
     if (!text) continue;
     // Some sources expose both public message and public event forms.
     if (candidates.some((n) => n.kind === kind && n.text === text && Math.abs(n.at - e.at) < 3000))
@@ -54,7 +64,7 @@ export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false
       text,
       at: e.at,
       receivedAt: now,
-      version: noticeVersion(`${kind}:${text}:${e.at}`),
+      version: noticeContentVersion(kind, text, e.at),
       seenAt: null,
       viewedAt: null,
       dismissedAt: null,
@@ -107,6 +117,13 @@ export const isInboxNotice = (n: OfficeNotice) =>
 export const unreadNoticeCount = (notices: OfficeNotice[]) =>
   notices.filter((n) => !n.seenAt && isInboxNotice(n)).length;
 export const noticeLabel = (n: OfficeNotice) =>
-  n.kind === 'reply' && !isFinalNotice(n) ? '응답 · 구분 없음' : NOTICE_LABELS[n.kind];
-export const noticeExposure = (n: OfficeNotice) =>
-  n.seenAt ? '읽음' : n.viewedAt ? '열어봄' : '처음 도착';
+  n.kind === 'reply' && !isFinalNotice(n)
+    ? m().shared.notice.unclassifiedReply
+    : NOTICE_LABELS[n.kind];
+export const noticeExposure = (n: OfficeNotice) => {
+  const t = m().shared.notice;
+  return n.seenAt ? t.read : n.viewedAt ? t.viewed : t.fresh;
+};
+/** Text the office wrote itself is shown in the active language, whenever it was stored. */
+export const localizeNotice = (n: OfficeNotice): OfficeNotice =>
+  n.kind === 'attention' ? { ...n, text: m().shared.notice.attention } : n;

@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import { useI18n, useLocalePreference } from './i18n';
+import { getLocale, m } from '../shared/i18n';
 import { demoSnapshot, reconcileDemo } from './demo';
 import { applyNoticeReceipt } from '../shared/notices';
 import { officeResidents } from '../shared/residents';
@@ -20,13 +22,22 @@ const VEIL_BATCH = 500;
  * same mutations. Presentations (big office, desk pet, desk row) only draw `model`.
  */
 export function useOffice(demo: boolean, notify: (message: string) => void = () => {}) {
+  const { locale } = useI18n();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? demoSnapshot() : null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  // Demo content is written in the language it was generated in.
+  const demoLocale = useRef(locale);
   useEffect(() => {
     if (demo) {
-      setSnapshot(demoSnapshot());
+      demoLocale.current = getLocale();
+      // Carry the chosen language into the demo so entering it doesn't switch languages.
+      setSnapshot((prev) => {
+        const next = demoSnapshot();
+        const chosen = prev?.preferences.locale;
+        return chosen ? { ...next, preferences: { ...next.preferences, locale: chosen } } : next;
+      });
       setError('');
       return;
     }
@@ -54,6 +65,15 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       unsubscribe();
     };
   }, [demo]);
+  // Every window (big office, desk pet / row, dock card) follows the saved language.
+  useLocalePreference(snapshot?.preferences.locale, !!snapshot);
+  // On a language switch, rewrite the demo in the new language but keep its preferences:
+  // the language choice itself lives there, so resetting them would bounce the switch back.
+  useEffect(() => {
+    if (!demo || demoLocale.current === locale) return;
+    demoLocale.current = locale;
+    setSnapshot((s) => (s ? reconcileDemo({ ...demoSnapshot(), preferences: s.preferences }) : s));
+  }, [demo, locale]);
   useEffect(() => {
     const tick = () => {
       if (!document.hidden) setClock(Date.now());
@@ -72,7 +92,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
 
   const refresh = async () => {
     if (demo) {
-      notify('데모 화면이에요. 실제 연결을 보려면 데모를 종료해 주세요.');
+      notify(m().app.toast.demoRefresh);
       return;
     }
     setRefreshing(true);
@@ -80,7 +100,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       const s = await api.refresh();
       setSnapshot(s);
       setError('');
-      notify('동료들의 최신 기록을 확인했어요');
+      notify(m().app.toast.refreshed);
     } catch (e) {
       setError((e as Error).message);
       notify((e as Error).message);
@@ -190,7 +210,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     if (!demo) {
       try {
         setSnapshot(await api.returnToOffice(id));
-        notify('사무실에 자리를 마련했어요');
+        notify(m().app.toast.returned);
       } catch (e) {
         notify((e as Error).message);
       }

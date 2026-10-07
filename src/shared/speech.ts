@@ -1,6 +1,7 @@
 import type { OfficeEvent, OfficeNotice, Session } from './types';
 import { bubbleNotice, isFinalNotice, noticeLabel, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
+import { liveLabels } from './labels';
 
 const LIVE = ['work', 'think', 'call', 'error'];
 /**
@@ -10,15 +11,7 @@ const LIVE = ['work', 'think', 'call', 'error'];
  */
 export type BubbleTone =
   'mine' | 'thought' | 'progress' | 'reply' | 'attention' | 'error' | 'message';
-export const TONE_LABELS: Record<BubbleTone, string> = {
-  mine: '내 요청',
-  thought: '생각 중',
-  progress: '진행 중',
-  reply: '최종 응답',
-  attention: '응답 필요',
-  error: '확인 필요',
-  message: '응답',
-};
+export const TONE_LABELS: Record<BubbleTone, string> = liveLabels((t) => t.shared.tone);
 
 /** How long a just-sent request plays its arrival (papers landing, envelope). */
 export const ARRIVAL_MS = 15_000;

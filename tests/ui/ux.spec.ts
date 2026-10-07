@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { OfficeNotice } from '../../src/shared/types';
 

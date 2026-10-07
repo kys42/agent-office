@@ -1,23 +1,23 @@
 import { useState } from 'react';
 import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
 import type { TerminalTarget } from '../shared/types';
+import { m } from '../shared/i18n';
+import { useI18n } from '../lib/i18n';
 
 export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {
   const host = HOSTS[target.kind];
-  if (target.queues) return `${host} · 세션 대기열`;
+  if (target.queues) return m().terminal.queueLine(host);
   return privacy || !target.label ? host : `${host} · ${target.label}`;
 }
 
 export function targetPlaceholder(target: TerminalTarget) {
-  if (target.queues) return 'Codex 세션에 바로 전달돼요 · 작업 중이면 끝난 뒤 처리돼요';
-  if (!target.canSend)
-    return target.status === 'busy'
-      ? '작업 중이에요 · 끝나면 보낼 수 있어요'
-      : '지금은 입력을 기다리지 않아요';
-  return `${HOSTS[target.kind]} 터미널에 바로 입력돼요`;
+  const text = m().terminal.placeholder;
+  if (target.queues) return text.queues;
+  if (!target.canSend) return target.status === 'busy' ? text.busy : text.notWaiting;
+  return text.direct(HOSTS[target.kind]);
 }
 
 /**
@@ -35,6 +35,7 @@ export function TerminalSend({
   privacy: boolean;
   onSend: (text: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -43,8 +44,7 @@ export function TerminalSend({
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
-        {target.queues ? 'Codex CLI에서 실행 중이에요' : `${host} 터미널에서 실행 중이에요`}.
-        설정에서 ‘터미널로 보내기’를 켜면 여기서 바로 이어서 말할 수 있어요.
+        {t.terminal.offHint(target.queues ? t.terminal.runningCodex : t.terminal.runningIn(host))}
       </p>
     );
   const waiting = !target.canSend;
@@ -70,12 +70,14 @@ export function TerminalSend({
       }}
     >
       <textarea
-        aria-label={`${host} 터미널로 보낼 내용`}
+        aria-label={t.terminal.messageLabel(host)}
         rows={2}
         maxLength={4000}
         value={text}
         placeholder={
-          waiting ? targetPlaceholder(target) : `${targetPlaceholder(target)} · ⌘↵ 보내기`
+          waiting
+            ? targetPlaceholder(target)
+            : `${targetPlaceholder(target)} · ${t.terminal.sendShortcut}`
         }
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -89,7 +91,7 @@ export function TerminalSend({
         <small>
           <Terminal size={11} />
           {targetLine(target, privacy)}
-          {waiting && target.status === 'busy' ? ' · 작업 중' : ''}
+          {waiting && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
         </small>
         <button
           className="button primary"
@@ -97,7 +99,7 @@ export function TerminalSend({
           disabled={waiting || sending || !text.trim()}
         >
           {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}
-          보내기
+          {t.terminal.send}
         </button>
       </div>
       {error && (

@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import type { Session } from '../../src/shared/types.js';
 import { hash, num, parseRecords, redact, timestamp, deriveState } from './normalize.js';
 import { runtimeObservation } from '../../src/shared/runtime.js';
+import { getLocale, m } from '../../src/shared/i18n/index.js';
 export async function readOpenClawDatabases(
   root: string,
   limit: number,
@@ -67,8 +68,9 @@ export async function readOpenClawDatabases(
           const nativeId = n.current_session_id;
           const last = (tip.get(nativeId) as any)?.seq ?? 0;
           const watermark = rewrite?.get(nativeId);
+          // The language is part of the revision: parsed text (reasons, fallbacks) is localized.
           const revision = hash(
-            `office-v10:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
+            `office-v10:${getLocale()}:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
           );
           const key = `${file}:${nativeId}`;
           const prior = cache.get(key);
@@ -157,7 +159,7 @@ export async function readOpenClawDatabases(
           if (n.archived_at) {
             s.status = 'leave';
             s.archived = true;
-            s.statusReason = 'OpenClaw 보관 기록';
+            s.statusReason = m().server.session.openclawArchived;
           }
           s.runtime = runtimeObservation(s.observedStatus ?? s.status, s.updatedAt, s.statusReason);
           s.title = redact(s.title);

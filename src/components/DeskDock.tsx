@@ -5,6 +5,7 @@ import { useTerminalSend } from '../lib/useTerminalSend';
 import type { DockMode } from '../shared/types';
 import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
+import { useI18n } from '../lib/i18n';
 
 const initialMode = (): DockMode =>
   location.hash === '#mini=row' ? 'row' : location.hash === '#mini=floor' ? 'floor' : 'pet';
@@ -24,6 +25,7 @@ function lastExpanded(): Expanded {
  * decides the presentation: a small pet, or the office laid out as one row of desks.
  */
 export function DeskDock() {
+  const { t } = useI18n();
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
   // Results and failures (pin, hide, send, refresh) show here instead of failing silently.
   const [toast, setToast] = useState('');
@@ -121,7 +123,7 @@ export function DeskDock() {
           model={model}
           privacy={privacy}
           onReceipt={receipt}
-          status={snapshot ? null : error ? '연결 확인' : '연결 중'}
+          status={snapshot ? null : error ? t.dock.status.check : t.dock.status.connecting}
           onExpand={() => go(expanded)}
           onFloor={() => go('floor')}
           onReply={send.sendReply}
@@ -131,19 +133,17 @@ export function DeskDock() {
         <DeskRow
           variant={mode === 'floor' ? 'floor' : 'office'}
           model={model}
-          status={
-            snapshot ? null : error ? `연결을 확인해 주세요 · ${error}` : '사무실 문을 여는 중…'
-          }
+          status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}
           reducedMotion={reducedMotion}
           onReceipt={receipt}
           onVeil={(ids, on) => {
             void veil(ids, on);
-            notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
+            notify(on ? t.app.toast.hidden : t.app.toast.shown);
           }}
           onPin={(s) =>
             void pin(s)
-              .then((on) => notify(on ? '고정했어요' : '고정을 풀었어요'))
+              .then((on) => notify(on ? t.dock.pinned : t.app.toast.unpinned))
               .catch((e) => notify((e as Error).message))
           }
           notify={notify}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useI18n } from '../lib/i18n';
 export function Modal({
   title,
   children,
@@ -11,6 +12,7 @@ export function Modal({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   // Keep the latest handler without re-running focus setup on every parent render.
   const close = useRef(onClose);
@@ -64,7 +66,7 @@ export function Modal({
       >
         <header>
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="닫기">
+          <button className="icon-btn" onClick={onClose} aria-label={t.app.close}>
             <X size={20} />
           </button>
         </header>

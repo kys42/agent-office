@@ -13,6 +13,8 @@ import {
 } from '../shared/conversation';
 import { time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
+import { useI18n } from '../lib/i18n';
+import { intlLocale } from '../shared/i18n';
 function Message({
   event,
   provider,
@@ -26,6 +28,7 @@ function Message({
   expanded: boolean;
   onExpand: () => void;
 }) {
+  const { t } = useI18n();
   const work = event.kind === 'tool' || event.kind === 'result';
   const limit = work ? 200 : 300;
   const long = event.text.length > limit || event.text.split('\n').length > 12;
@@ -35,14 +38,14 @@ function Message({
       : event.text.slice(0, limit).split('\n').slice(0, 12).join('\n') + '…';
   const label =
     event.kind === 'user'
-      ? '나'
+      ? t.conversation.you
       : event.kind === 'assistant'
         ? PROVIDERS[provider].name
         : event.kind === 'tool'
-          ? '도구 사용'
+          ? t.conversation.toolUse
           : event.kind === 'result'
-            ? '작업 결과'
-            : '진행 소식';
+            ? t.conversation.toolResult
+            : t.conversation.progressUpdate;
   return (
     <article
       className={`conversation-message message-${event.kind} category-${conversationKind(event)}`}
@@ -55,12 +58,12 @@ function Message({
         </span>
         <time title={date(event.at)}>{time(event.at)}</time>
         <button
-          aria-label="메시지 복사"
+          aria-label={t.conversation.copyMessage}
           onClick={() =>
             navigator.clipboard
               .writeText(event.text)
-              .then(() => notify('메시지를 복사했어요'))
-              .catch(() => notify('복사 권한을 확인해 주세요'))
+              .then(() => notify(t.conversation.copied))
+              .catch(() => notify(t.conversation.copyFailed))
           }
         >
           <Copy size={12} />
@@ -68,11 +71,8 @@ function Message({
       </div>
       <div className="message-bubble">
         {event.excerpt && (
-          <small
-            className="retained-excerpt"
-            title="현재 원문 수집 구간 밖의 메시지예요. 저장해 둔 공개 발췌를 표시합니다."
-          >
-            보관된 발췌 · 원문 일부
+          <small className="retained-excerpt" title={t.conversation.excerptTitle}>
+            {t.conversation.excerpt}
           </small>
         )}
         <div className="message-text">
@@ -107,7 +107,9 @@ function Message({
         </div>
         {long && (
           <button className="message-expand" aria-expanded={expanded} onClick={onExpand}>
-            {expanded ? '접기' : `더 보기 · ${event.text.length.toLocaleString()}자`}
+            {expanded
+              ? t.conversation.showLess
+              : t.conversation.showMore(event.text.length.toLocaleString(intlLocale()))}
             <ChevronDown size={13} />
           </button>
         )}
@@ -124,6 +126,7 @@ export function Conversation({
   notices: OfficeNotice[];
   notify: (s: string) => void;
 }) {
+  const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
@@ -233,7 +236,7 @@ export function Conversation({
       }}
     >
       <div className="conversation-toolbar">
-        <div className="conversation-filters" role="group" aria-label="대화 종류">
+        <div className="conversation-filters" role="group" aria-label={t.conversation.filtersLabel}>
           {(
             [
               'all',
@@ -254,7 +257,7 @@ export function Conversation({
                 setFilter(kind);
               }}
             >
-              {kind === 'all' ? '전체' : CONVERSATION_LABELS[kind]}
+              {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
               <span>
                 {kind === 'all'
                   ? events.filter((e) => conversationKind(e) !== 'work').length
@@ -270,13 +273,14 @@ export function Conversation({
             disabled={filter !== 'all'}
             onChange={(e) => setTools(e.target.checked)}
           />
-          도구 기록 포함<span>{counts.work}</span>
+          {t.conversation.includeTools}
+          <span>{counts.work}</span>
         </label>
       </div>
       <div className="conversation-range">
         <Clock3 size={12} />
-        {session.partial ? '처음·최근 구간에서 가져온 대화' : '이 세션에 남은 대화'}
-        <span>읽기 전용</span>
+        {session.partial ? t.conversation.rangePartial : t.conversation.rangeFull}
+        <span>{t.conversation.readOnly}</span>
       </div>
       {groups.length > count && (
         <button
@@ -286,7 +290,7 @@ export function Conversation({
             setCount(count + 24);
           }}
         >
-          이전 대화 {Math.min(24, groups.length - count)}개 더 보기
+          {t.conversation.older(Math.min(24, groups.length - count))}
         </button>
       )}
       {groups.slice(-count).map((g) =>
@@ -296,9 +300,9 @@ export function Conversation({
               <Terminal size={14} />
               <span>
                 {g.events.find((e) => e.kind === 'tool')?.tool?.replace(/^.*__/, '') ||
-                  '작업 진행 기록'}
+                  t.conversation.workLog}
               </span>
-              <small>{g.events.length}개 기록</small>
+              <small>{t.conversation.entries(g.events.length)}</small>
               <ChevronDown size={13} />
             </summary>
             <div>
@@ -330,12 +334,10 @@ export function Conversation({
           <MessageSquare size={26} />
           <p>
             {filter === 'all'
-              ? '아직 읽을 수 있는 대화가 없어요.'
-              : `${CONVERSATION_LABELS[filter]} 기록이 아직 없어요.`}
+              ? t.conversation.empty
+              : t.conversation.emptyFiltered(CONVERSATION_LABELS[filter])}
           </p>
-          {filter === 'reply' && (
-            <small>진행 메시지나 구분 없는 응답은 완료로 표시하지 않아요.</small>
-          )}
+          {filter === 'reply' && <small>{t.conversation.replyHint}</small>}
         </div>
       )}
       <div className="conversation-end" ref={bottom}>
@@ -346,10 +348,12 @@ export function Conversation({
               <i />
               <i />
             </span>{' '}
-            동료가 작업하고 있어요
+            {t.conversation.working}
           </>
         ) : (
-          <>마지막 기록 · {time(session.updatedAt)}</>
+          <>
+            {t.conversation.lastEntry} · {time(session.updatedAt)}
+          </>
         )}
       </div>
       {newBelow && (
@@ -361,7 +365,7 @@ export function Conversation({
             setNewBelow(false);
           }}
         >
-          새 기록 보기 <ArrowDown size={14} />
+          {t.conversation.newEntries} <ArrowDown size={14} />
         </button>
       )}
     </div>

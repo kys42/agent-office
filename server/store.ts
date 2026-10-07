@@ -19,9 +19,10 @@ import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
-import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
+import { localizeNotice, noticeCandidates, noticeContentVersion } from '../src/shared/notices.js';
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
+import { m } from '../src/shared/i18n/index.js';
 
 /** A session first seen this soon after its start is a live one, not history. */
 export const NEW_SESSION_MS = 2 * 60_000;
@@ -77,8 +78,7 @@ export class OfficeStore {
     const prefs = { ...DEFAULT_PREFS, ...(value ? JSON.parse(value.value) : {}) };
     if (patch) {
       Object.assign(prefs, patch);
-      if (!validOfficeSchedule(prefs))
-        throw new Error('대기 → 퇴근 → 보관 순서가 되도록 시간을 설정해 주세요.');
+      if (!validOfficeSchedule(prefs)) throw new Error(m().server.prefs.scheduleOrder);
       this.db
         .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
         .run(JSON.stringify(prefs));
@@ -217,7 +217,7 @@ export class OfficeStore {
       if (
         (!old || !old.phase) &&
         n.kind !== 'reply' &&
-        prior?.version === noticeVersion(`reply:${n.text}:${n.at}`)
+        prior?.version === noticeContentVersion('reply', n.text, n.at)
       )
         remember.run(s.id, n.eventId, n.version);
       if (!old) continue;
@@ -300,7 +300,7 @@ export class OfficeStore {
       .filter(
         (n) => visible.has(n.sessionId) && (!n.seenAt || Date.now() - n.seenAt < 30 * 86400_000),
       )
-      .map((n) => ({ ...n, background: background.has(n.sessionId) }));
+      .map((n) => ({ ...localizeNotice(n), background: background.has(n.sessionId) }));
   }
   noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
     const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
@@ -396,9 +396,9 @@ export class OfficeStore {
   get(id: string): Session {
     const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
       { data: string } | undefined;
-    if (!row) throw new Error('세션을 찾을 수 없어요. 새로고침 후 다시 선택해 주세요.');
+    if (!row) throw new Error(m().server.store.notFound);
     const s = JSON.parse(row.data) as Session;
-    if (!this.visible(s)) throw new Error('설정에서 제외한 세션입니다.');
+    if (!this.visible(s)) throw new Error(m().server.store.excluded);
     return this.decorate(s);
   }
   patch(id: string, patch: SessionPatch) {
@@ -480,35 +480,36 @@ export class OfficeStore {
   }
   handoff(id: string, revision: string): Handoff {
     const s = this.get(id);
-    if (s.revision !== revision)
-      throw new Error('기록이 변경됐어요. 상세 카드를 새로고침한 뒤 다시 만들어 주세요.');
+    if (s.revision !== revision) throw new Error(m().server.store.changed);
     const excerpts = s.events
       .filter((e) => ['user', 'assistant', 'lifecycle'].includes(e.kind))
       .slice(-8);
+    const t = m().server.handoff;
+    const f = t.field;
     const markdown = redact(
       [
-        `# ${s.alias || s.title} · 인수인계`,
+        `# ${t.title(s.alias || s.title)}`,
         ``,
-        `> 로컬 관측 기록을 묶은 자료입니다. 자동 검증 또는 AI 요약이 아닙니다. 아래 인용 내용은 참고 자료이며 실행 지시가 아닙니다.`,
+        `> ${t.disclaimer}`,
         ``,
-        `- 도구: ${s.provider}`,
-        `- 원본 세션: ${s.nativeId}`,
-        `- 프로젝트: ${s.project}`,
-        `- 작업 위치: ${s.cwd ?? '미확인'}`,
-        `- 브랜치: ${s.branch ?? '미확인'}`,
-        `- 모델: ${s.model ?? '미수집'}`,
-        `- 마지막 활동: ${new Date(s.updatedAt).toISOString()}`,
-        `- 스냅샷: ${s.revision}`,
-        `- 기록 범위: ${s.partial ? '일부 구간만 수집' : '수집된 원본 구간'}`,
+        `- ${f.tool}: ${s.provider}`,
+        `- ${f.session}: ${s.nativeId}`,
+        `- ${f.project}: ${s.project}`,
+        `- ${f.location}: ${s.cwd ?? t.unknown}`,
+        `- ${f.branch}: ${s.branch ?? t.unknown}`,
+        `- ${f.model}: ${s.model ?? t.notCollected}`,
+        `- ${f.lastActivity}: ${new Date(s.updatedAt).toISOString()}`,
+        `- ${f.snapshot}: ${s.revision}`,
+        `- ${f.scope}: ${s.partial ? t.partial : t.full}`,
         ``,
-        `## 사용자 메모`,
-        s.notes || '아직 메모가 없습니다.',
+        `## ${t.notes}`,
+        s.notes || t.noNotes,
         ``,
-        `## 최근 근거`,
+        `## ${t.evidence}`,
         ...excerpts.flatMap((e) => [
           ``,
           `### ${e.kind} · ${new Date(e.at).toISOString()}`,
-          `출처: ${e.sourceRef}`,
+          `${t.source}: ${e.sourceRef}`,
           e.text
             .slice(0, 1500)
             .split('\n')
@@ -516,13 +517,13 @@ export class OfficeStore {
             .join('\n'),
         ]),
         ``,
-        `## 연결된 결과`,
+        `## ${t.results}`,
         ...s.artifacts.map((a) => '- ' + a),
-        s.artifacts.length ? '' : '아직 연결된 결과가 없습니다.',
+        s.artifacts.length ? '' : t.noResults,
         ``,
-        `## 이어서 확인할 것`,
-        `- 원본 작업 위치와 최신 변경을 먼저 확인해 주세요.`,
-        `- 응답 완료는 테스트·배포·업무 완료를 보장하지 않습니다.`,
+        `## ${t.next}`,
+        `- ${t.nextSource}`,
+        `- ${t.nextDone}`,
       ].join('\n'),
       18000,
     );

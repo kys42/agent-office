@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Mail } from 'lucide-react';
 import { ARRIVAL_MS } from '../shared/speech';
 import { FOCUS_LABELS, FOCUS_MINUTES, MAX_PAPERS, type FocusLevel } from '../shared/presentation';
+import { useI18n } from '../lib/i18n';
 
 /**
  * Decorative desk effects shared by every view (big office, office row, floor desks, pet).
@@ -69,12 +70,13 @@ export function FocusEffects({ level }: { level: FocusLevel }) {
 
 /** The "작업 중" tag over the desk; its words and colour follow the focus level. */
 export function WorkingBeacon({ level }: { level: FocusLevel }) {
+  const { t } = useI18n();
   return (
     <span className={`working-beacon beacon-level-${level}`}>
       <i />
       <i />
       <i /> {FOCUS_LABELS[level]}
-      {level > 0 && <small>{FOCUS_MINUTES[level - 1]}분+</small>}
+      {level > 0 && <small>{t.desk.focusMinutes(FOCUS_MINUTES[level - 1])}</small>}
     </span>
   );
 }
@@ -107,6 +109,7 @@ export function PaperPile({ count, level = 0 }: { count: number; level?: FocusLe
  * a puff where they land, and the envelope tag. Key it by the notice so a new one replays.
  */
 export function ArrivalBurst({ receivedAt }: { receivedAt: number }) {
+  const { t } = useI18n();
   const age = useAge(receivedAt);
   if (!useUntil(receivedAt + ARRIVAL_MS)) return null;
   return (
@@ -124,7 +127,7 @@ export function ArrivalBurst({ receivedAt }: { receivedAt: number }) {
       </span>
       <span className="arrival-tag">
         <Mail size={13} />
-        <b>일이 도착했어요!</b>
+        <b>{t.desk.arrival}</b>
       </span>
     </span>
   );
@@ -132,6 +135,7 @@ export function ArrivalBurst({ receivedAt }: { receivedAt: number }) {
 
 /** The collapsed pet: sheets land beside it with a "새 요청" chip (the pet stays who it is). */
 export function PetArrival({ receivedAt, count }: { receivedAt: number; count: number }) {
+  const { t } = useI18n();
   const age = useAge(receivedAt);
   if (!useUntil(receivedAt + ARRIVAL_MS)) return null;
   return (
@@ -142,7 +146,8 @@ export function PetArrival({ receivedAt, count }: { receivedAt: number; count: n
         <i />
       </span>
       <span className="pet-arrival-chip">
-        <Mail size={11} />새 요청{count > 1 ? ` ${count}` : ''}
+        <Mail size={11} />
+        {t.desk.newRequests(count)}
       </span>
     </span>
   );

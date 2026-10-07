@@ -35,6 +35,3 @@ export function isVeiled(members: Session[], notices: OfficeNotice[]): boolean {
     return (a.kind === 'request' || a.kind === 'reply') && a.at > hiddenAt;
   });
 }
-
-export const VEIL_HINT =
-  '다음 대화(새 요청·최종 응답)가 올 때까지 가려요. 확인 요청이나 오류가 생기면 바로 다시 보여요.';

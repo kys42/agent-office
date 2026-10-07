@@ -2,6 +2,7 @@ import type { ExecutionPhase, Mood, RuntimeObservation, Session } from './types'
 
 import { taskStart } from './lifecycle';
 import { DEFAULT_READY_MINUTES, QUIET_MS, runtimeObservation } from './runtime';
+import { liveLabels, liveList } from './labels';
 export { runtimeObservation } from './runtime';
 
 export const isWorking = (s: Session, now = Date.now()) =>
@@ -72,29 +73,13 @@ export function presentSession(s: Session, now = Date.now()) {
           : s.status;
   return { runtime, stale, posture, mood, decorative: resting, seed, working: isWorking(s, now) };
 }
-export const POSTURE_LABELS: Record<string, string> = {
-  stored: '보관 중',
-  calling: '응답을 기다려요',
-  attention: '확인이 필요해요',
-  dozing: '잠깐 졸고 있어요',
-  strolling: '자리 옆에서 기지개',
-  resting: '자리에서 쉬는 중',
-  standby: '자리에서 다음 요청을 기다려요',
-  typing: '작업 기록이 이어져요',
-  thinking: '응답을 준비하는 중',
-  result: '응답이 도착했어요',
-};
+export const POSTURE_LABELS: Record<string, string> = liveLabels(
+  (t) => t.shared.presentation.posture,
+);
 
-export const PHASE_LABELS: Record<ExecutionPhase, string> = {
-  working: '작업 중',
-  thinking: '응답 준비',
-  'needs-input': '입력 필요',
-  responded: '응답 완료',
-  interrupted: '중단됨',
-  error: '오류 관측',
-  quiet: '최근 실행 정보 없음',
-  unknown: '미확인',
-};
+export const PHASE_LABELS: Record<ExecutionPhase, string> = liveLabels(
+  (t) => t.shared.presentation.phase,
+);
 
 /**
  * How long the current observed task has kept going (decorative intensity only): 1 focused
@@ -104,7 +89,13 @@ export const PHASE_LABELS: Record<ExecutionPhase, string> = {
 export type FocusLevel = 0 | 1 | 2 | 3;
 /** Minutes into the task where each focus level starts (1, 2, 3). */
 export const FOCUS_MINUTES = [5, 15, 30] as const;
-export const FOCUS_LABELS = ['작업 중', '집중 중', '몰입 중', '불타는 중'] as const;
+/** Per focus level, in the active language (read at use time). */
+export const FOCUS_LABELS = liveList((t) => t.shared.presentation.focus) as unknown as readonly [
+  string,
+  string,
+  string,
+  string,
+];
 export function focusLevel(s: Session, now = Date.now()): FocusLevel {
   const start = taskStart(s);
   if (!isWorking(s, now) || !start || start > now) return 0;

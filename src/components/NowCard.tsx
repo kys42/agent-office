@@ -6,6 +6,7 @@ import { needsAttention } from '../shared/residents';
 import { isStandingBy } from '../shared/presentation';
 import { durationShort, workingFor } from '../shared/triage';
 import { ago } from '../lib/format';
+import { useI18n } from '../lib/i18n';
 import { ActivitySummary } from './ActivitySummary';
 import type { ReceiptHandler } from './News';
 
@@ -48,6 +49,7 @@ export function NowCard({
   typeQueues?: boolean;
   onShowNews: () => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const state = nowState(s, notices);
   const unread = notices.filter((n) => !n.seenAt && isInboxNotice(n)).sort((a, b) => b.at - a.at);
@@ -57,14 +59,14 @@ export function NowCard({
   const receipts = (list: OfficeNotice[]) => list.map(({ id, version }) => ({ id, version }));
   if (privacy)
     return (
-      <section className={`now-card tone-${state}`} aria-label="지금 상태">
+      <section className={`now-card tone-${state}`} aria-label={t.now.region}>
         <div className="now-title">
-          <b>내용을 숨기고 있어요</b>
+          <b>{t.now.hidden}</b>
         </div>
       </section>
     );
   return (
-    <section className={`now-card tone-${state}`} aria-label="지금 상태">
+    <section className={`now-card tone-${state}`} aria-label={t.now.region}>
       <div className="now-title">
         {state === 'attention' ? (
           s.status === 'error' && !ask ? (
@@ -84,15 +86,15 @@ export function NowCard({
         <b>
           {state === 'attention'
             ? s.status === 'error' && !ask
-              ? '확인이 필요해요'
-              : '답변을 기다리고 있어요'
+              ? t.now.needsLook
+              : t.now.waitingReply
             : state === 'result'
-              ? `새 결과가 도착했어요${unread.length > 1 ? ` · ${unread.length}건` : ''}`
+              ? t.now.newResult(unread.length)
               : state === 'working'
-                ? `작업 중 · ${elapsed !== null ? durationShort(elapsed) : '진행 중'}`
+                ? t.now.working(elapsed !== null ? durationShort(elapsed) : t.now.inProgress)
                 : state === 'standby'
-                  ? '대기 중 · 방금 일을 마쳤어요'
-                  : '지금은 조용해요'}
+                  ? t.now.standby
+                  : t.now.quiet}
         </b>
         <time>{ago(state === 'result' && result ? result.at : s.updatedAt)}</time>
       </div>
@@ -107,21 +109,19 @@ export function NowCard({
                 setOpen(!open);
               }}
             >
-              {open ? '접기' : '더 보기'}
+              {open ? t.now.less : t.now.more}
             </button>
           )}
           <div className="now-actions">
             <button className="button primary" onClick={() => onReceipt(receipts(unread), 'read')}>
               <Check size={14} />
-              {unread.length > 1 ? `${unread.length}건 모두 읽음` : '읽음으로 표시'}
+              {unread.length > 1 ? t.now.markAllRead(unread.length) : t.now.markRead}
             </button>
             <button className="button subtle" onClick={onShowNews}>
-              소식에서 보기
+              {t.now.viewUpdate}
             </button>
           </div>
-          <small className="now-note">
-            최종 응답은 이번 답변의 끝이에요. 업무 전체의 성공과는 달라요.
-          </small>
+          <small className="now-note">{t.now.finalNote}</small>
         </>
       ) : (
         <>
@@ -139,16 +139,12 @@ export function NowCard({
                     onClick={() => onReceipt(receipts([ask]), 'read')}
                   >
                     <Check size={14} />
-                    확인했어요
+                    {t.now.ack}
                   </button>
                 )}
               </div>
               <small className="now-note">
-                {canType
-                  ? typeQueues
-                    ? '승인 요청은 원래 앱에서 답해 주세요. 아래에서 보낸 말은 지금 작업이 끝난 뒤 처리돼요.'
-                    : '승인 요청은 원래 앱에서 답해 주세요. 쉬는 중이면 아래에서 바로 이어서 말할 수 있어요.'
-                  : '답변과 승인은 원래 앱에서 해 주세요. Agent Office는 기록을 읽기만 해요.'}
+                {canType ? (typeQueues ? t.now.typeQueuedNote : t.now.typeNote) : t.now.replyNote}
               </small>
             </>
           )}

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 
 test('Usage dock preserves office, shows demo limits, closes and masks account data', async ({

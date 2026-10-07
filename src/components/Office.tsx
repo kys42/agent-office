@@ -19,12 +19,12 @@ import type { ReceiptHandler } from './News';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
+import { useI18n } from '../lib/i18n';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
   return h >= 6 && h < 8 ? 'dawn' : h >= 8 && h < 17 ? 'day' : h >= 17 && h < 19 ? 'dusk' : 'night';
 }
-const PHASE_COPY = { dawn: '이른 아침', day: '낮', dusk: '해질녘', night: '밤' } as const;
 export function Office({
   sessions,
   notices,
@@ -69,6 +69,7 @@ export function Office({
   /** Desktop opt-in: a bubble whose session can take a follow-up gets a quick reply. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
+  const { t, locale } = useI18n();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
@@ -122,7 +123,7 @@ export function Office({
   }, []);
   useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
-  const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect]);
+  const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect, locale]);
   const scale =
     zoom ??
     Math.max(
@@ -192,7 +193,7 @@ export function Office({
   return (
     <section
       className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''} ${dragging ? 'is-dragging' : ''}`}
-      aria-label="픽셀 사무실"
+      aria-label={t.office.region}
     >
       <div className="map-holder scene-viewport" ref={holder} data-scale={scale.toFixed(3)}>
         <div
@@ -292,15 +293,17 @@ export function Office({
                     privacy
                       ? undefined
                       : area.custom
-                        ? `${area.name} · 직접 나눈 구역 (${area.custom.join(', ')})`
+                        ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}`
                         : area.name
                   }
                 >
                   <span>{String(index + 1).padStart(2, '0')}</span>
-                  <b>{privacy ? '프로젝트' : area.name}</b>
+                  <b>{privacy ? t.desk.project : area.name}</b>
                   <small>
-                    {area.stations.length}명
-                    {area.stations.some((s) => s.children.length) ? ' + 보조' : ''}
+                    {t.desk.headcount(
+                      area.stations.length,
+                      area.stations.some((s) => s.children.length > 0),
+                    )}
                   </small>
                 </div>
                 {area.benches.map((bench, i) => (
@@ -340,10 +343,13 @@ export function Office({
                         className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
-                        aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}
+                        aria-label={t.office.station(
+                          privacy ? s.provider : sessionName(s),
+                          MOODS[s.status].label,
+                        )}
                         title={
                           draggable
-                            ? `${POSTURE_LABELS[pose.posture]} · 끌어서 다른 구역으로`
+                            ? t.office.dragToZone(POSTURE_LABELS[pose.posture])
                             : POSTURE_LABELS[pose.posture]
                         }
                         draggable={draggable}
@@ -391,7 +397,7 @@ export function Office({
                         onClick={() => onSelect(s.id)}
                       >
                         <GitBranch size={9} />
-                        <span>{privacy ? '내용 숨김' : branch.label}</span>
+                        <span>{privacy ? t.desk.hidden : branch.label}</span>
                       </button>
                       <button
                         className={`desk-name ${active ? 'selected' : ''}`}
@@ -407,11 +413,11 @@ export function Office({
                           <span>
                             {pose.working
                               ? s.resident && s.resident.activeCount > 1
-                                ? `${s.resident.activeCount}개 작업 중`
-                                : '일하는 중'
+                                ? t.desk.runningTasks(s.resident.activeCount)
+                                : t.desk.working
                               : MOODS[s.status].label}
                           </span>
-                          {unread > 0 && <em>소식 {unread}</em>}
+                          {unread > 0 && <em>{t.desk.unread(unread)}</em>}
                         </small>
                       </button>
                       {speech.shows(hover === s.id || active) && (
@@ -433,7 +439,7 @@ export function Office({
                           reply={
                             canReply
                               ? {
-                                  title: `바로 답장 · ${targetLine(replyTarget!, false)}`,
+                                  title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
                                   open: replying?.station === s.id,
                                   onClick: () =>
                                     setReplying(
@@ -494,9 +500,9 @@ export function Office({
             {!primary.length && (
               <div className="scene-empty">
                 <Armchair size={30} />
-                <h3>다음 동료를 기다리고 있어요</h3>
-                <p>새 활동이 생기면 책상이 놓여요.</p>
-                <button onClick={onShowWaiting}>라운지 동료 보기</button>
+                <h3>{t.office.empty.title}</h3>
+                <p>{t.office.empty.body}</p>
+                <button onClick={onShowWaiting}>{t.office.empty.action}</button>
               </div>
             )}
           </div>
@@ -505,32 +511,32 @@ export function Office({
       {dragging && (
         <div className="stage-hud drag-hint" role="status">
           {dropKey === null
-            ? '여기에 놓으면 새 구역을 만들어요'
+            ? t.office.drop.newZone
             : dropKey && dragFrom && dropKey !== projectKey(dragFrom)
-              ? `${layout.projects.find((p) => p.key === dropKey)?.name ?? '이'} 구역으로 옮겨요`
-              : '다른 구역 바닥이나 빈 바닥에 놓아 주세요'}
+              ? t.office.drop.moveTo(layout.projects.find((p) => p.key === dropKey)?.name)
+              : t.office.drop.elsewhere}
         </div>
       )}
       <div className="stage-hud hud-bottom-left office-card-bottom">
         <span className="hud-pill">
           {phase === 'night' || phase === 'dusk' ? <Moon size={12} /> : <Sun size={12} />}
-          {PHASE_COPY[phase]}
+          {t.office.phase[phase]}
           <i />
-          {layout.projects.length}개 프로젝트 · {primary.length}개 책상
+          {t.office.hud.counts(layout.projects.length, primary.length)}
           {sessions.length - primary.length > 0
-            ? ` · 보조 ${sessions.length - primary.length}`
+            ? ` · ${t.office.hud.helpers(sessions.length - primary.length)}`
             : ''}
           {working > 0 && (
             <>
               <i />
-              <em>{working}명 작업 중</em>
+              <em>{t.office.hud.working(working)}</em>
             </>
           )}
         </span>
         {callers.length > 0 && (
           <button
             className="hud-pill hud-call"
-            title="기다리는 동료에게 가기"
+            title={t.office.hud.callTitle}
             onClick={() => {
               const i = callers.findIndex(
                 (s) => s.id === selected || s.resident?.sessionIds.includes(selected ?? ''),
@@ -539,15 +545,15 @@ export function Office({
             }}
           >
             <i className="hud-call-dot" />
-            불러요 {callers.length}
+            {t.office.hud.calling(callers.length)}
           </button>
         )}
         {footer}
       </div>
       <div className="stage-hud hud-bottom-right scene-controls">
         <button
-          aria-label="사무실 축소"
-          title="축소"
+          aria-label={t.office.zoom.outLabel}
+          title={t.office.zoom.outTitle}
           disabled={scale < 0.2}
           onClick={() => zoomBy(-0.15)}
         >
@@ -555,16 +561,16 @@ export function Office({
         </button>
         <button
           className={`zoom-readout ${zoom === null ? 'is-fit' : ''}`}
-          aria-label="사무실 모두 보기"
-          title="모든 동료를 한눈에"
+          aria-label={t.office.zoom.fitLabel}
+          title={t.office.zoom.fitTitle}
           onClick={fit}
         >
           {zoom === null ? <Maximize2 size={12} /> : null}
-          <span>{zoom === null ? '모두 보기' : `${Math.round(scale * 100)}%`}</span>
+          <span>{zoom === null ? t.office.zoom.fit : `${Math.round(scale * 100)}%`}</span>
         </button>
         <button
-          aria-label="사무실 확대"
-          title="확대 · 화면을 스크롤해 둘러보기"
+          aria-label={t.office.zoom.inLabel}
+          title={t.office.zoom.inTitle}
           disabled={scale >= 2}
           onClick={() => zoomBy(0.2)}
         >

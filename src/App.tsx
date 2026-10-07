@@ -43,13 +43,16 @@ import type { OfficeZone } from './shared/types';
 import { CommandPalette, type PaletteAction } from './components/CommandPalette';
 import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
+import { useI18n } from './lib/i18n';
+// Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
-  { id: 'office', title: '우리 사무실', short: '사무실', icon: Home },
-  { id: 'memory', title: '기억 서랍', short: '기억', icon: BookOpen },
-  { id: 'activity', title: '활동 기록', short: '활동', icon: Clock3 },
-  { id: 'settings', title: '연결과 설정', short: '설정', icon: Settings2 },
+  { id: 'office', icon: Home },
+  { id: 'memory', icon: BookOpen },
+  { id: 'activity', icon: Clock3 },
+  { id: 'settings', icon: Settings2 },
 ] as const;
 export default function App() {
+  const { locale, t } = useI18n();
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [inbox, setInbox] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
@@ -150,15 +153,15 @@ export default function App() {
   const notices = snapshot?.notices ?? [];
   const unread = model.unread;
   useEffect(() => {
-    document.title = unread ? `(${unread}) Agent Office` : 'Agent Office · 우리 사무실';
-  }, [unread]);
+    document.title = unread ? t.app.docTitleUnread(unread) : t.app.docTitle;
+  }, [unread, locale]);
   // Snapshots poll every 5s, so allow a short grace after returning; later news is not "away".
   const digest = away ? awayDigest(notices, away.from, away.back + 15_000) : null;
   const digestEmpty = !digest || digest.results + digest.attention === 0;
   useEffect(() => {
     if (!away || !digestEmpty) return;
-    const t = setTimeout(() => setAway(null), Math.max(0, away.back + 15_000 - Date.now()));
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setAway(null), Math.max(0, away.back + 15_000 - Date.now()));
+    return () => clearTimeout(timer);
   }, [away, digestEmpty]);
   const ownerOf = (id: string | null) => (id ? model.ownerOf(id) : undefined);
   // Same in-group order as the roster: pinned first, then the saved sort preference.
@@ -191,7 +194,7 @@ export default function App() {
     sendReply,
   } = useTerminalSend(demo, notify);
   const saveZoneRules = async (zoneRules: ZoneRule[]) => {
-    if (await onPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
+    if (await onPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
   };
   const choose = (id: string) => {
     setShowUsage(false);
@@ -205,17 +208,12 @@ export default function App() {
     const all = s ? unreadInbox(s, notices) : [];
     // Questions stay until explicitly acknowledged ('확인했어요'); R only reads results.
     const list = all.filter((n) => !isAttentionNotice(n));
-    if (!list.length)
-      return notify(
-        all.length
-          ? '확인 요청은 업무 카드의 ‘확인했어요’로 처리해 주세요'
-          : '이 동료에게 읽지 않은 결과가 없어요',
-      );
+    if (!list.length) return notify(all.length ? t.app.toast.attentionOnly : t.app.toast.noUnread);
     void onReceipt(
       list.map(({ id, version }) => ({ id, version })),
       'read',
     );
-    notify(`소식 ${list.length}건을 읽음으로 표시했어요`);
+    notify(t.app.toast.markedRead(list.length));
   };
   // Keep the order stable during a burst of J/K so reading an item doesn't reshuffle the cursor.
   const navOrder = useRef<{ ids: string[]; at: number }>({ ids: [], at: 0 });
@@ -285,91 +283,91 @@ export default function App() {
   const actions: PaletteAction[] = [
     {
       id: 'inbox',
-      label: '소식함 열기',
-      hint: `확인할 소식 ${unread}건`,
+      label: t.palette.actions.inbox,
+      hint: t.palette.actions.inboxHint(unread),
       keys: 'I',
       icon: <Inbox size={15} />,
-      keywords: '알림 결과 응답',
+      keywords: t.palette.actions.inboxKeywords,
       run: openInbox,
     },
     {
       id: 'office',
-      label: '사무실 보기',
+      label: t.palette.actions.office,
       keys: '1',
       icon: <Building2 size={15} />,
       run: () => goZone('office'),
     },
     {
       id: 'waiting',
-      label: '대기 라운지 보기',
+      label: t.palette.actions.lounge,
       keys: '2',
       icon: <Armchair size={15} />,
-      keywords: '쉬는 퇴근',
+      keywords: t.palette.actions.loungeKeywords,
       run: () => goZone('waiting'),
     },
     {
       id: 'archive',
-      label: '보관 공간 보기',
+      label: t.palette.actions.archive,
       keys: '3',
       icon: <Archive size={15} />,
-      keywords: '오래된',
+      keywords: t.palette.actions.archiveKeywords,
       run: () => goZone('archive'),
     },
     {
       id: 'memory',
-      label: '기억 서랍',
-      hint: '모든 도구의 기록 검색',
+      label: t.palette.actions.memory,
+      hint: t.palette.actions.memoryHint,
       icon: <BookOpen size={15} />,
       run: () => setView('memory'),
     },
     {
       id: 'activity',
-      label: '활동 기록',
+      label: t.palette.actions.activity,
       icon: <Clock3 size={15} />,
-      keywords: '타임라인',
+      keywords: t.palette.actions.activityKeywords,
       run: () => setView('activity'),
     },
     {
       id: 'settings',
-      label: '연결과 설정',
+      label: t.palette.actions.settings,
       icon: <Settings2 size={15} />,
-      keywords: '퇴근 보관 수집 연결',
+      keywords: t.palette.actions.settingsKeywords,
       run: () => setView('settings'),
     },
     {
       id: 'privacy',
-      label: prefs?.privacy ? '화면 내용 다시 보기' : '화면 내용 숨기기',
-      hint: '화면 공유할 때',
+      label: prefs?.privacy ? t.palette.actions.showContent : t.palette.actions.hideContent,
+      hint: t.palette.actions.privacyHint,
       icon: prefs?.privacy ? <Eye size={15} /> : <EyeOff size={15} />,
-      keywords: '개인정보 프라이버시',
+      keywords: t.palette.actions.privacyKeywords,
       run: () => onPrefs({ privacy: !prefs?.privacy }),
     },
     {
       id: 'motion',
-      label: prefs?.reducedMotion ? '움직임 다시 켜기' : '움직임 줄이기',
+      label: prefs?.reducedMotion ? t.palette.actions.motionOn : t.palette.actions.motionOff,
       icon: <Wind size={15} />,
-      keywords: '애니메이션',
+      keywords: t.palette.actions.motionKeywords,
       run: () => onPrefs({ reducedMotion: !prefs?.reducedMotion }),
     },
     {
       id: 'refresh',
-      label: '지금 다시 확인',
-      hint: '로컬 기록을 바로 읽어요',
+      label: t.palette.actions.refresh,
+      hint: t.palette.actions.refreshHint,
       icon: <RotateCw size={15} />,
-      keywords: '새로고침',
+      keywords: t.palette.actions.refreshKeywords,
       run: refresh,
     },
     {
       id: 'mini',
-      label: '데스크 펫으로 전환',
-      hint: '바탕화면에 작게 띄우고, 누르면 책상 줄로 펼쳐져요',
-      keywords: '미니 펫 책상 줄 독',
+      label: t.palette.actions.mini,
+      hint: t.palette.actions.miniHint,
+      keywords: t.palette.actions.miniKeywords,
       icon: <PictureInPicture2 size={15} />,
       run: () => api.window('mini'),
     },
     {
       id: 'keys',
-      label: '키보드 단축키',
+      label: t.palette.actions.keys,
       keys: '?',
       icon: <Keyboard size={15} />,
       run: () => setHelp(true),
@@ -393,14 +391,14 @@ export default function App() {
         </div>
         <button className="global-search" onClick={openSearch}>
           <Search size={15} />
-          <span>동료, 기록, 명령 찾기</span>
+          <span>{t.palette.search}</span>
           <kbd>⌘K</kbd>
         </button>
         <div className="header-actions">
           <button
             className={`inbox-button ${inbox ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-            aria-label="소식함 열기"
-            title="동료가 남긴 최종 응답과 확인 요청"
+            aria-label={t.app.header.openInbox}
+            title={t.app.header.inboxTitle}
             onClick={() => {
               setShowUsage(false);
               setInbox((v) => !v);
@@ -408,13 +406,13 @@ export default function App() {
             }}
           >
             <Inbox size={16} />
-            <span>소식함</span>
+            <span>{t.app.header.inbox}</span>
             <b>{unread}</b>
           </button>
           <button
             className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
-            aria-label="사용량 열기"
-            title="사용 한도와 세션 비용"
+            aria-label={t.app.header.openUsage}
+            title={t.app.header.usageTitle}
             onClick={() => {
               setShowUsage((v) => !v);
               setInbox(false);
@@ -425,16 +423,16 @@ export default function App() {
           </button>
           <button
             className={`icon-btn ${prefs?.privacy ? 'is-on' : ''}`}
-            aria-label={prefs?.privacy ? '내용 다시 보기' : '화면 내용 숨기기'}
-            title={prefs?.privacy ? '내용 다시 보기' : '화면 내용 숨기기 · 화면 공유할 때'}
+            aria-label={prefs?.privacy ? t.app.header.showContent : t.app.header.hideContent}
+            title={prefs?.privacy ? t.app.header.showContent : t.app.header.hideContentTitle}
             onClick={() => onPrefs({ privacy: !prefs?.privacy })}
           >
             {prefs?.privacy ? <EyeOff size={17} /> : <Eye size={17} />}
           </button>
           <button
             className="icon-btn mini-button"
-            aria-label="데스크 펫"
-            title="데스크 펫 · 바탕화면에 작게 띄우고 누르면 책상 줄로 펼쳐져요"
+            aria-label={t.app.header.mini}
+            title={t.app.header.miniTitle}
             onClick={() => api.window('mini')}
           >
             <PictureInPicture2 size={17} />
@@ -442,37 +440,37 @@ export default function App() {
         </div>
       </header>
       <div className="app-body">
-        <nav className="side-nav" aria-label="주 메뉴">
+        <nav className="side-nav" aria-label={t.app.mainMenu}>
           <div>
-            {tabs.slice(0, 3).map((t) => (
+            {tabs.slice(0, 3).map((tab) => (
               <button
-                key={t.id}
-                className={view === t.id ? 'active' : ''}
-                aria-label={t.title}
-                title={t.title}
+                key={tab.id}
+                className={view === tab.id ? 'active' : ''}
+                aria-label={t.app.tabs[tab.id].title}
+                title={t.app.tabs[tab.id].title}
                 onClick={() => {
-                  setView(t.id);
+                  setView(tab.id);
                   setSelected(null);
-                  if (t.id === 'memory') setMemoryQuery('');
+                  if (tab.id === 'memory') setMemoryQuery('');
                 }}
               >
-                <t.icon size={19} strokeWidth={1.8} />
-                <span>{t.short}</span>
+                <tab.icon size={19} strokeWidth={1.8} />
+                <span>{t.app.tabs[tab.id].short}</span>
               </button>
             ))}
           </div>
           <div className="nav-bottom">
             <button
               className={view === 'settings' ? 'active' : ''}
-              aria-label="연결과 설정"
-              title="연결과 설정"
+              aria-label={t.app.tabs.settings.title}
+              title={t.app.tabs.settings.title}
               onClick={() => {
                 setView('settings');
                 setSelected(null);
               }}
             >
               <Settings2 size={19} strokeWidth={1.8} />
-              <span>설정</span>
+              <span>{t.app.tabs.settings.short}</span>
             </button>
           </div>
         </nav>
@@ -480,7 +478,7 @@ export default function App() {
           {demo && (
             <div className="demo-banner">
               <Sparkles size={14} />
-              <span>구경하는 사무실 · 모든 기록은 예시 데이터예요</span>
+              <span>{t.app.demoBanner.text}</span>
               <button
                 onClick={() => {
                   setDemo(false);
@@ -488,7 +486,7 @@ export default function App() {
                   history.replaceState(null, '', location.pathname);
                 }}
               >
-                실제 동료 만나기 <ArrowUpRight size={13} />
+                {t.app.demoBanner.exit} <ArrowUpRight size={13} />
               </button>
             </div>
           )}
@@ -496,7 +494,7 @@ export default function App() {
             <div className="error-banner">
               <AlertCircle size={16} />
               <span>{error}</span>
-              <button onClick={refresh}>다시 연결</button>
+              <button onClick={refresh}>{t.app.reconnect}</button>
             </div>
           )}
           {digest && digest.results + digest.attention > 0 && (
@@ -504,12 +502,14 @@ export default function App() {
               <Coffee size={15} />
               <span>
                 <b>
-                  자리 비운 {Math.max(1, Math.round((away!.back - away!.from) / 60_000))}분 동안
+                  {t.app.away.title(Math.max(1, Math.round((away!.back - away!.from) / 60_000)))}
                 </b>
                 {digest.attention > 0 && (
-                  <em className="tone-attention">확인 필요 {digest.attention}건</em>
+                  <em className="tone-attention">{t.app.away.attention(digest.attention)}</em>
                 )}
-                {digest.results > 0 && <em className="tone-result">새 결과 {digest.results}건</em>}
+                {digest.results > 0 && (
+                  <em className="tone-result">{t.app.away.results(digest.results)}</em>
+                )}
               </span>
               <button
                 onClick={() => {
@@ -520,9 +520,13 @@ export default function App() {
                   } else openInbox();
                 }}
               >
-                {digest.sessionIds.length === 1 ? '바로 보기' : '소식함에서 보기'}
+                {digest.sessionIds.length === 1 ? t.app.away.viewOne : t.app.away.viewInbox}
               </button>
-              <button className="icon-btn" aria-label="요약 닫기" onClick={() => setAway(null)}>
+              <button
+                className="icon-btn"
+                aria-label={t.app.away.close}
+                onClick={() => setAway(null)}
+              >
                 <X size={14} />
               </button>
             </div>
@@ -532,20 +536,20 @@ export default function App() {
               <div className="loading-pet">
                 <Sprite provider="claude" mood="work" size={96} />
               </div>
-              <h2>사무실 문을 열고 있어요</h2>
-              <p>이 컴퓨터의 동료들을 만나러 가는 중…</p>
+              <h2>{t.app.loading.title}</h2>
+              <p>{t.app.loading.body}</p>
             </div>
           ) : !snapshot ? (
             <div className="empty-state">
               <Sprite provider="codex" mood="error" size={96} />
-              <h2>잠깐, 연결을 확인해 볼까요</h2>
-              <p>데스크탑 앱을 실행하거나 로컬 수집기를 시작해 주세요.</p>
+              <h2>{t.app.offline.title}</h2>
+              <p>{t.app.offline.body}</p>
               <div className="empty-actions">
                 <button className="button primary" onClick={refresh}>
-                  다시 연결
+                  {t.app.reconnect}
                 </button>
                 <button className="button subtle" onClick={() => setDemo(true)}>
-                  예시 사무실 구경하기
+                  {t.app.offline.tour}
                 </button>
               </div>
             </div>
@@ -556,13 +560,11 @@ export default function App() {
               model={model}
               onVeil={(ids, on) => {
                 void veil(ids, on);
-                notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
+                notify(on ? t.app.toast.hidden : t.app.toast.shown);
               }}
               onPin={(s) =>
                 pin(s)
-                  .then((on) =>
-                    notify(on ? '고정했어요 · 오래 지나도 사무실에 남아요' : '고정을 풀었어요'),
-                  )
+                  .then((on) => notify(on ? t.app.toast.pinned : t.app.toast.unpinned))
                   .catch((e) => notify(e.message))
               }
               onSettings={() => setView('settings')}
@@ -650,7 +652,8 @@ export default function App() {
       <footer className="app-footer">
         <div>
           <span className="footer-local">
-            <ShieldCheck size={12} />이 컴퓨터 안에서만
+            <ShieldCheck size={12} />
+            {t.app.footer.local}
           </span>
           {snapshot?.connectors.map((c) => (
             <button
@@ -668,13 +671,13 @@ export default function App() {
           <span className={`sync-state ${prefs?.paused ? 'paused' : ''}`}>
             <i />
             {prefs?.paused
-              ? '수집 쉬는 중'
+              ? t.app.footer.paused
               : snapshot?.lastSync
-                ? `${time(snapshot.lastSync)} 확인 · 5초마다`
-                : '연결 확인 중'}
+                ? t.app.footer.synced(time(snapshot.lastSync))
+                : t.app.footer.connecting}
           </span>
-          <button className="footer-keys" onClick={() => setHelp(true)} title="키보드 단축키">
-            <kbd>⌘K</kbd> 찾기 <kbd>?</kbd> 단축키
+          <button className="footer-keys" onClick={() => setHelp(true)} title={t.app.help.title}>
+            <kbd>⌘K</kbd> {t.app.footer.find} <kbd>?</kbd> {t.app.footer.shortcuts}
           </button>
           <span className="version">v0.1</span>
           <button
@@ -683,7 +686,7 @@ export default function App() {
               setSelected(null);
             }}
           >
-            {demo ? '실제 연결로' : '데모 둘러보기'}
+            {demo ? t.app.footer.toLive : t.app.footer.toDemo}
           </button>
         </div>
       </footer>
@@ -709,7 +712,7 @@ export default function App() {
         (() => {
           const moving = sessions.find((s) => s.id === areaDrop.id);
           return moving ? (
-            <Modal title="사무실 구역 옮기기" onClose={() => setAreaDrop(null)}>
+            <Modal title={t.app.moveZone} onClose={() => setAreaDrop(null)}>
               <ZoneEditor
                 session={moving}
                 sessions={sessions}
@@ -722,25 +725,27 @@ export default function App() {
           ) : null;
         })()}
       {help && (
-        <Modal title="키보드 단축키" onClose={closeHelp}>
+        <Modal title={t.app.help.title} onClose={closeHelp}>
           <div className="shortcut-grid">
-            {[
-              ['찾기', [['⌘', 'K'], ['/']], '동료·기록·명령을 한곳에서'],
-              ['다음 할 일', [['J']], '기다리는 동료 → 새 결과 → 작업 중 순서'],
-              ['이전 할 일', [['K']], ''],
-              ['읽음으로 표시', [['R']], '선택한 동료의 미확인 소식'],
-              ['소식함', [['I']], '열기 / 닫기'],
-              ['사무실 · 라운지 · 보관', [['1'], ['2'], ['3']], ''],
-              ['전체 보기 · 확대 · 축소', [['F'], ['+'], ['−']], '사무실에서'],
-              ['닫기', [['Esc']], '업무 카드 · 소식함 · 창'],
-            ].map(([label, combos, hint]) => (
-              <div key={label as string}>
+            {(
+              [
+                ['find', [['⌘', 'K'], ['/']]],
+                ['next', [['J']]],
+                ['previous', [['K']]],
+                ['markRead', [['R']]],
+                ['inbox', [['I']]],
+                ['zones', [['1'], ['2'], ['3']]],
+                ['zoom', [['F'], ['+'], ['−']]],
+                ['close', [['Esc']]],
+              ] as const
+            ).map(([id, combos]) => (
+              <div key={id}>
                 <span>
-                  <b>{label as string}</b>
-                  {hint && <small>{hint as string}</small>}
+                  <b>{t.app.help[id].label}</b>
+                  {t.app.help[id].hint && <small>{t.app.help[id].hint}</small>}
                 </span>
                 <span className="shortcut-keys">
-                  {(combos as string[][]).map((combo, i) => (
+                  {combos.map((combo, i) => (
                     <span key={i}>
                       {combo.map((k) => (
                         <kbd key={k}>{k}</kbd>
@@ -751,14 +756,18 @@ export default function App() {
               </div>
             ))}
           </div>
-          <p className="shortcut-note">입력 중에는 한 글자 단축키가 동작하지 않아요.</p>
+          <p className="shortcut-note">{t.app.help.note}</p>
         </Modal>
       )}
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />
           {toast}
-          <button className="icon-btn" aria-label="알림 닫기" onClick={() => setToast('')}>
+          <button
+            className="icon-btn"
+            aria-label={t.app.toast.dismiss}
+            onClick={() => setToast('')}
+          >
             <X size={14} />
           </button>
         </div>
@@ -766,13 +775,6 @@ export default function App() {
     </div>
   );
 }
-const KIND_LABEL: Record<string, string> = {
-  tool: '도구 사용',
-  assistant: '응답',
-  user: '요청',
-  result: '도구 결과',
-  lifecycle: '작업 흐름',
-};
 function Activity({
   sessions,
   onSelect,
@@ -782,6 +784,7 @@ function Activity({
   onSelect: (id: string) => void;
   privacy: boolean;
 }) {
+  const { t } = useI18n();
   const [kind, setKind] = useState<'talk' | 'all'>('talk');
   const events = sessions
     .flatMap((s) => s.events.map((event) => ({ s, event })))
@@ -799,22 +802,22 @@ function Activity({
     <div className="activity-page page">
       <header className="page-head">
         <div>
-          <span className="eyebrow">Activity</span>
-          <h1>활동 기록</h1>
-          <p>동료들이 남긴 최근 발자국. 완료 여부는 업무 카드에서 직접 확인해요.</p>
+          <span className="eyebrow">{t.app.activity.eyebrow}</span>
+          <h1>{t.app.activity.title}</h1>
+          <p>{t.app.activity.intro}</p>
         </div>
-        <div className="segmented" role="group" aria-label="기록 종류">
+        <div className="segmented" role="group" aria-label={t.app.activity.kindLabel}>
           <button aria-pressed={kind === 'talk'} onClick={() => setKind('talk')}>
-            대화만
+            {t.app.activity.talkOnly}
           </button>
           <button aria-pressed={kind === 'all'} onClick={() => setKind('all')}>
-            도구 포함
+            {t.app.activity.withTools}
           </button>
         </div>
       </header>
       <div className="activity-summary">
         <div>
-          <span>오늘 움직인 세션</span>
+          <span>{t.app.activity.touchedToday}</span>
           <strong>{touched.length}</strong>
           <div className="activity-faces">
             {touched.slice(0, 6).map((s) => (
@@ -825,14 +828,14 @@ function Activity({
           </div>
         </div>
         <div>
-          <span>기억을 남긴 업무</span>
+          <span>{t.app.activity.withNotes}</span>
           <strong>{sessions.filter((s) => s.notes).length}</strong>
-          <small>메모는 인수인계에 함께 담겨요</small>
+          <small>{t.app.activity.withNotesHint}</small>
         </div>
         <div>
-          <span>직접 확인한 결과</span>
+          <span>{t.app.activity.checked}</span>
           <strong>{sessions.filter((s) => s.completed).length}</strong>
-          <small>응답 완료와 별개로 내가 남긴 확인</small>
+          <small>{t.app.activity.checkedHint}</small>
         </div>
       </div>
       <div className="activity-list">
@@ -840,7 +843,7 @@ function Activity({
           <section key={day} className="activity-day">
             <h2>
               {day}
-              <span>{items.length}개</span>
+              <span>{t.app.activity.dayCount(items.length)}</span>
             </h2>
             <ol>
               {items.map(({ s, event }, i) => (
@@ -858,12 +861,12 @@ function Activity({
                         <b>{privacy ? PROVIDERS[s.provider].name : sessionName(s)}</b>
                         <i className={`kind-chip kind-${event.kind}`}>
                           {event.kind === 'assistant' && event.phase === 'final'
-                            ? '최종 응답'
-                            : KIND_LABEL[event.kind]}
+                            ? t.app.activity.finalReply
+                            : t.app.activity.kinds[event.kind]}
                         </i>
                         {!privacy && <small>{s.project}</small>}
                       </span>
-                      <p>{privacy ? '기록 내용 숨김' : messageExcerpt(event.text, 280)}</p>
+                      <p>{privacy ? t.app.activity.hidden : messageExcerpt(event.text, 280)}</p>
                     </div>
                     <span className="activity-ago">{ago(event.at)}</span>
                   </button>
@@ -876,7 +879,7 @@ function Activity({
       {events.length === 0 && (
         <div className="empty-state">
           <Clock3 size={30} />
-          <h3>첫 발자국을 기다려요</h3>
+          <h3>{t.app.activity.empty}</h3>
         </div>
       )}
     </div>

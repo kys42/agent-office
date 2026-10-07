@@ -1,0 +1,25 @@
+export const now = {
+  region: 'Current status',
+  hidden: 'Content hidden',
+  needsLook: 'Needs a look',
+  waitingReply: 'Waiting on your reply',
+  newResult: (n: number) => (n > 1 ? `${n} new results are in` : 'A new result is in'),
+  working: (elapsed: string) => `Working · ${elapsed}`,
+  inProgress: 'in progress',
+  standby: 'Standing by · just wrapped up',
+  quiet: 'All quiet for now',
+  less: 'Show less',
+  more: 'Show more',
+  markAllRead: (n: number) => `Mark all ${n} read`,
+  markRead: 'Mark as read',
+  viewUpdate: 'View in updates',
+  finalNote: 'A final reply marks the end of this response, not that the whole task succeeded.',
+  ack: 'Got it',
+  replyNote: 'Reply and approve in the original app. Agent Office only reads records.',
+  typeNote:
+    'Answer approval requests in the original app. When your teammate is resting, you can keep talking right below.',
+  typeQueuedNote:
+    'Answer approval requests in the original app. Anything you send below is handled once the current work wraps up.',
+  progress: 'Recent progress',
+  lastTool: (tool: string) => `Last tool · ${tool}`,
+};

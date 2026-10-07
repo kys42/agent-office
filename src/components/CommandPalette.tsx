@@ -9,6 +9,7 @@ import { messageExcerpt } from '../shared/activity';
 import { triageGroup, TRIAGE_LABELS, TRIAGE_ORDER, type TriageGroup } from '../shared/triage';
 import { ago } from '../lib/format';
 import { Sprite } from './Sprite';
+import { useI18n } from '../lib/i18n';
 
 export interface PaletteAction {
   id: string;
@@ -47,6 +48,7 @@ export function CommandPalette({
   onSelect: (id: string) => void;
   onDeepSearch: (query: string) => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -69,7 +71,7 @@ export function CommandPalette({
     }
     let live = true;
     setLoading(true);
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         const result = demo
           ? sessions
@@ -85,7 +87,7 @@ export function CommandPalette({
     }, 180);
     return () => {
       live = false;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
   }, [q, demo, privacy]);
   const sections = useMemo(() => {
@@ -107,7 +109,7 @@ export function CommandPalette({
     const out: { title: string; items: Item[] }[] = [];
     if (people.length)
       out.push({
-        title: q ? '동료' : '지금 볼 동료',
+        title: q ? t.palette.sections.teammates : t.palette.sections.suggested,
         items: people.map((session) => ({
           kind: 'session',
           session,
@@ -120,20 +122,20 @@ export function CommandPalette({
     // A matching command beats a full-text search; record search stays reachable below.
     if (acts.length)
       out.push({
-        title: '이동 · 설정',
+        title: t.palette.sections.actions,
         items: acts.map((action) => ({ kind: 'action', action })),
       });
     const extra = hits.filter((h) => !shownIds.has(h.session.id) || h.snippet);
     if (q.length >= 2 && !privacy)
       out.push({
-        title: '기록에서 찾기',
+        title: t.palette.sections.records,
         items: [
           ...extra.map((hit) => ({ kind: 'hit' as const, hit })),
           { kind: 'deep' as const, query },
         ],
       });
     return out;
-  }, [sessions, notices, hits, actions, q, privacy, query]);
+  }, [sessions, notices, hits, actions, q, privacy, query, t]);
   const flat = sections.flatMap((s) => s.items);
   useEffect(() => setActive(0), [q, hits.length]);
   useEffect(() => {
@@ -161,7 +163,7 @@ export function CommandPalette({
         className="palette"
         role="dialog"
         aria-modal="true"
-        aria-label="명령 팔레트"
+        aria-label={t.palette.dialog}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.stopPropagation();
@@ -187,8 +189,8 @@ export function CommandPalette({
             aria-expanded="true"
             aria-controls="palette-list"
             aria-activedescendant={flat.length ? `palette-${active}` : undefined}
-            aria-label="동료, 기록, 명령 찾기"
-            placeholder="동료 이름, 프로젝트, 기억하는 단어, 할 일…"
+            aria-label={t.palette.search}
+            placeholder={t.palette.placeholder}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -241,7 +243,7 @@ export function CommandPalette({
                               : sessionName(item.session)}
                           </b>
                           <small>
-                            {privacy ? '내용 숨김' : zoneLabel(item.session)} ·{' '}
+                            {privacy ? t.palette.hidden : zoneLabel(item.session)} ·{' '}
                             {ago(item.session.updatedAt)}
                           </small>
                         </div>
@@ -267,8 +269,8 @@ export function CommandPalette({
                           <FileSearch size={15} />
                         </span>
                         <div>
-                          <b>기억 서랍에서 ‘{item.query}’ 전체 검색</b>
-                          <small>모든 도구의 기록을 넓게 찾아요</small>
+                          <b>{t.palette.deep(item.query)}</b>
+                          <small>{t.palette.deepHint}</small>
                         </div>
                       </>
                     ) : (
@@ -287,18 +289,18 @@ export function CommandPalette({
               })}
             </div>
           ))}
-          {!flat.length && <div className="empty-small">찾는 항목이 없어요.</div>}
+          {!flat.length && <div className="empty-small">{t.palette.empty}</div>}
         </div>
         <div className="palette-foot">
           <span>
             <kbd>↑</kbd>
-            <kbd>↓</kbd> 이동
+            <kbd>↓</kbd> {t.palette.foot.move}
           </span>
           <span>
-            <kbd>↵</kbd> 열기
+            <kbd>↵</kbd> {t.palette.foot.open}
           </span>
           <span>
-            <kbd>?</kbd> 모든 단축키
+            <kbd>?</kbd> {t.palette.foot.all}
           </span>
         </div>
       </div>

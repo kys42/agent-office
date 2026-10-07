@@ -20,6 +20,11 @@ import {
   type TerminalDeps,
 } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 
 const SESSION = '6dfc48fb-f723-4025-aab6-eaa73f743e5b';
 const START = 'Tue Oct  6 13:05:12 2026';
