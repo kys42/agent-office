@@ -125,6 +125,15 @@ try {
   assert.equal(row.y + row.height, row.area.y + row.area.height, 'row rests on the bottom edge');
   await dock.waitForTimeout(400);
   await dock.screenshot({ path: '.local/native-row.png' });
+  // The floor version: same width and bottom edge, a shorter strip.
+  await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await dock.waitForSelector('.desk-row.desk-floor');
+  const floor = await dockBounds();
+  assert.equal(floor.width, floor.area.width, 'floor desks span the work area');
+  assert.equal(floor.y + floor.height, floor.area.y + floor.area.height, 'standing on the bottom');
+  assert.ok(floor.height < row.height, 'no rugs: a shorter strip than the office row');
+  await dock.waitForTimeout(400);
+  await dock.screenshot({ path: '.local/native-floor.png' });
   await dock.getByRole('button', { name: '책상 줄 접기' }).click();
   await dock.waitForSelector('.desk-pet');
   const back = await dockBounds();
@@ -156,6 +165,7 @@ try {
       providers: 3,
       deskPet: true,
       deskRow: true,
+      deskFloor: true,
       ipcPersistence: true,
       rendererIsolation: true,
     }),

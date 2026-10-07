@@ -177,6 +177,12 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
 
 /** Station-space geometry of the desk row (the same 164×238 station as the big office). */
 export const ROW_TOP = 104;
+/** Floor version: same bubble headroom; desks stand on the scene's bottom edge. */
+export const FLOOR_TOP = 104;
+/** Where the desk legs meet the floor, in station space (bench at 134, legs to 188). */
+export const DESK_FOOT = 188;
+/** Floor version leaves room between zones for a flag pole. */
+export const FLOOR_ZONE_GAP = 56;
 const ROW_PAD = 12;
 const ROW_ZONE_GAP = 18;
 const HELPER_WIDTH = 73;
@@ -200,7 +206,10 @@ export interface RowLayout {
  * The office as one line: zones side by side, a bench's members joined at one long desk,
  * and helper desks right after the bench they belong to (benches stay unbroken).
  */
-export function layoutRow(sessions: Session[]): RowLayout {
+export function layoutRow(
+  sessions: Session[],
+  { zoneGap = ROW_ZONE_GAP }: { zoneGap?: number } = {},
+): RowLayout {
   const { projects, children } = officeTopology(sessions);
   const zones: RowZone[] = [];
   let x = 0;
@@ -235,7 +244,7 @@ export function layoutRow(sessions: Session[]): RowLayout {
     }
     zone.width = cursor + ROW_PAD;
     zones.push(zone);
-    x += zone.width + ROW_ZONE_GAP;
+    x += zone.width + zoneGap;
   }
-  return { width: Math.max(0, x - ROW_ZONE_GAP), zones, count: sessions.length };
+  return { width: Math.max(0, x - zoneGap), zones, count: sessions.length };
 }

@@ -57,7 +57,17 @@ try {
     omitBackground: true,
     animations: 'disabled',
   });
-  console.log('Saved office, detail, desk pet and desk row screenshots using demo data only.');
+  await dock.goto('http://127.0.0.1:5173/?demo#mini=floor');
+  await dock.reload();
+  await dock.waitForSelector('.desk-floor [data-station-id]');
+  await dock.locator('.desk-row').screenshot({
+    path: 'docs/images/desk-floor.png',
+    omitBackground: true,
+    animations: 'disabled',
+  });
+  console.log(
+    'Saved office, detail, desk pet, desk row and floor screenshots using demo data only.',
+  );
 } finally {
   await browser.close();
 }

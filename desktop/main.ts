@@ -17,6 +17,8 @@ import type { DockAction, DockMode, Session } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import {
   clampInto,
+  FLOOR_HEIGHT,
+  ROW_HEIGHT,
   petBounds,
   petFeet,
   readPetSpot,
@@ -60,6 +62,7 @@ else {
         { label: '사무실 열기', click: () => showMain() },
         { label: '데스크 펫', click: () => showDock('pet') },
         { label: '책상 줄 펼치기', click: () => showDock('row') },
+        { label: '바닥 책상 펼치기', click: () => showDock('floor') },
         { type: 'separator' },
         {
           label: '종료',
@@ -151,8 +154,8 @@ function dockBounds(mode: DockMode): Rect {
     ? workAreaFor({ x: petSpot.x - 1, y: petSpot.y - 1, width: 2, height: 2 })
     : screen.getPrimaryDisplay().workArea;
   const pet = petBounds(petSpot, area);
-  // The row opens along the bottom of whichever display the pet is on.
-  return mode === 'pet' ? pet : rowBounds(area);
+  // The row (or the floor desks) opens along the bottom of whichever display the pet is on.
+  return mode === 'pet' ? pet : rowBounds(area, mode === 'floor' ? FLOOR_HEIGHT : ROW_HEIGHT);
 }
 function setDockMode(mode: DockMode) {
   stopDrag(false);
@@ -193,7 +196,7 @@ function showDock(mode: DockMode = 'pet') {
     });
     // The renderer follows the main process; tell it the mode it may have missed while loading.
     dock.webContents.on('did-finish-load', () => dock?.webContents.send('office:dock', dockMode));
-    void dock.loadFile(index, { hash: mode === 'row' ? 'mini=row' : 'mini' });
+    void dock.loadFile(index, { hash: mode === 'pet' ? 'mini' : `mini=${mode}` });
   } else setDockMode(mode);
   dock.showInactive();
   main?.hide();
@@ -263,7 +266,7 @@ function setupIPC() {
   ipcMain.handle('office:dock', (e, action: DockAction) => {
     trusted(e);
     if (!dock || e.sender !== dock.webContents) throw new Error('허용되지 않은 창입니다.');
-    if (action === 'pet' || action === 'row') setDockMode(action);
+    if (action === 'pet' || action === 'row' || action === 'floor') setDockMode(action);
     else if (action === 'drag-start') startDrag();
     else if (action === 'drag-end') stopDrag(true);
     else if (action === 'solid') dock.setIgnoreMouseEvents(false);

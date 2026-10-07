@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  FLOOR_HEIGHT,
+  FLOOR_SCENE_HEIGHT,
   PET_SIZE,
   ROW_HEIGHT,
   ROW_SCALE,
@@ -12,6 +14,7 @@ import {
   readPetSpot,
   rowBounds,
 } from '../src/shared/dock-geometry.js';
+import { DESK_FOOT, FLOOR_TOP } from '../src/shared/office-layout.js';
 
 // A 1512×982 MacBook display: 25px menu bar on top, 70px Dock at the bottom.
 const area = { x: 0, y: 25, width: 1512, height: 887 };
@@ -67,4 +70,14 @@ test('desk-pet.json: the standing spot, and the first format converted in place'
 test('the row keeps desks at a fixed readable scale and its window holds the scene', () => {
   assert.equal(ROW_SCALE, 1, 'same size as the big office at 100%');
   assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= ROW_HEIGHT, 'tools sit above bubbles');
+});
+
+test('floor desks: the scene ends at the desk feet, and the window holds it under the tools', () => {
+  assert.ok(FLOOR_SCENE_HEIGHT >= FLOOR_TOP + DESK_FOOT, 'desk legs fit in the scene');
+  assert.ok(FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT) <= 12, 'and stand right on its bottom');
+  assert.ok(FLOOR_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= FLOOR_HEIGHT);
+  assert.ok(FLOOR_HEIGHT < ROW_HEIGHT, 'no rugs or name cards: a shorter strip');
+  const floor = rowBounds(area, FLOOR_HEIGHT);
+  assert.equal(floor.y + floor.height, area.y + area.height);
+  assert.equal(floor.width, area.width);
 });

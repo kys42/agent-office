@@ -288,8 +288,11 @@ export interface Handoff {
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
-/** Desk pet window: a small floating pet, or a full-width row of desks. */
-export type DockMode = 'pet' | 'row';
+/**
+ * Desk pet window: a small floating pet, the office as one row (zones on rugs), or the
+ * floor version (desks standing right on the screen's bottom edge, zones marked by flags).
+ */
+export type DockMode = 'pet' | 'row' | 'floor';
 export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;

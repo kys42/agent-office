@@ -179,6 +179,8 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
     .toEqual([0, 1440, 970]);
   // Same office semantics as the big map: project zones, a shared bench, live bubbles.
   expect(await page.locator('.desk-row .row-zone').count()).toBeGreaterThan(1);
+  // A zone sign takes the mouse (its tooltip) and keeps the click in the dock.
+  await expect(page.locator('.desk-row .row-zone-mark').first()).toHaveAttribute('data-solid');
   await expect(page.locator('.desk-row .shared-bench').first()).toBeVisible();
   await expect(page.locator('.desk-row .speech-bubble').first()).toBeVisible();
   await expect(page.locator('.desk-row .desk-name em').first()).toContainText('소식');
@@ -227,6 +229,99 @@ test('A crowded desk row keeps the desk size and pages with side arrows', async 
   await long.getByRole('button', { name: '말풍선 전체 보기' }).click();
   expect((await long.boundingBox())!.y).toBeGreaterThanOrEqual(tools.y + tools.height);
 });
+test('Floor desks stand on the bottom edge with flags for zones, switchable from the row', async ({
+  page,
+}) => {
+  await page.goto('/?demo#mini=floor');
+  await page.reload();
+  const strip = page.locator('.desk-row.desk-floor');
+  await expect(strip.locator('[data-station-id]')).toHaveCount(6);
+  // No rugs or name cards: flags mark zones, plates name the desks.
+  await expect(strip.locator('.row-zone-floor')).toHaveCount(0);
+  await expect(strip.locator('.desk-name')).toHaveCount(0);
+  const zones = await strip.locator('.row-zone').count();
+  await expect(strip.locator('.zone-flag')).toHaveCount(zones);
+  await expect(strip.locator('.zone-flag').first()).toContainText('agent-office');
+  await expect(strip.locator('.floor-plate').first()).toContainText('코코');
+  // Desk legs reach the window's bottom edge.
+  await expect
+    .poll(async () => {
+      const bench = (await strip.locator('.team-bench').first().boundingBox())!;
+      return Math.round(970 - (bench.y + bench.height));
+    })
+    .toBeLessThanOrEqual(8);
+  const tools = (await strip.locator('.desk-row-tools').boundingBox())!;
+  const tops = await strip
+    .locator('.speech-bubble')
+    .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+  expect(tops.length).toBeGreaterThan(0);
+  expect(tools.y + tools.height).toBeLessThanOrEqual(Math.min(...tops));
+  // Only the flag itself takes the mouse: below its cloth, clicks reach the desktop.
+  const below = await strip
+    .locator('.zone-flag')
+    .first()
+    .evaluate((flag) => {
+      const cloth = flag.querySelector('.zone-flag-cloth')!.getBoundingClientRect();
+      const hit = document.elementFromPoint(cloth.left + cloth.width / 2, cloth.bottom + 30);
+      return !!hit?.closest('[data-solid]');
+    });
+  expect(below).toBe(false);
+  await strip.screenshot({ path: '.local/desk-floor.png' });
+  // Hide and pin work the same on the floor.
+  const desk = strip.locator('[data-station-id="demo:4"]');
+  await desk.hover();
+  await desk.getByRole('button', { name: /고정$/ }).click();
+  await expect(desk.locator('.floor-plate svg')).toHaveCount(1);
+  await desk.hover();
+  await desk.getByRole('button', { name: /가리기$/ }).click();
+  await expect(strip.locator('[data-station-id]')).toHaveCount(5);
+  // Switch looks; the pet reopens the last one used.
+  await page.getByRole('button', { name: '사무실 줄로 보기' }).click();
+  await expect(page.locator('.desk-row:not(.desk-floor) .row-zone-floor').first()).toBeVisible();
+  await page.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+  await page.keyboard.press('Escape');
+  const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
+  await pet.click();
+  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+  await page.getByRole('button', { name: '책상 줄 접기' }).click();
+  await page.locator('.dock-pet-anchor').hover();
+  await page.getByRole('button', { name: '바닥 책상 펼치기' }).click();
+  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+});
+
+test('Floor desks: helpers stand on the floor and screen sharing hides zone and desk names', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const host = snapshot.sessions.find((s) => s.id === 'demo:0')!;
+  snapshot.sessions.push({
+    ...host,
+    id: 'demo:helper',
+    nativeId: 'demo-helper',
+    alias: '',
+    title: '보조 조사',
+    status: 'work',
+    updatedAt: Date.now(),
+    officeSeat: undefined,
+    relation: { kind: 'subagent', parentNativeId: host.nativeId, role: '조사', source: 'demo' },
+    parentId: host.nativeId,
+  });
+  snapshot.preferences = { ...snapshot.preferences, privacy: true };
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini=floor');
+  const strip = page.locator('.desk-row.desk-floor');
+  const helper = strip.locator('.helper-desk');
+  await expect(helper).toHaveCount(1);
+  const table = (await helper.locator('.helper-table').boundingBox())!;
+  const bench = (await strip.locator('.team-bench').first().boundingBox())!;
+  expect(Math.abs(table.y + table.height - (bench.y + bench.height))).toBeLessThanOrEqual(3);
+  // Privacy: flags and plates never show real names.
+  await expect(strip.locator('.zone-flag-cloth span').first()).toHaveText('프로젝트');
+  await expect(strip.locator('.floor-plate').first()).not.toContainText('코코');
+  expect(await strip.locator('.zone-flag').first().getAttribute('title')).toBeNull();
+});
+
 test('Real local collector reports all three providers without modifying source data', async ({
   request,
   page,

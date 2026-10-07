@@ -3,9 +3,11 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Building2,
   Coffee,
   Expand,
   EyeOff,
+  Flag,
   GitBranch,
   Pin,
   X,
@@ -15,13 +17,22 @@ import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt, type Session } from '../shared/types';
 import { branchInfo } from '../shared/branch';
 import {
+  DESK_FOOT,
+  FLOOR_TOP,
+  FLOOR_ZONE_GAP,
   layoutRow,
   layoutSignature,
   projectColor,
   ROW_TOP,
   STATION_WIDTH,
 } from '../shared/office-layout';
-import { ROW_HEIGHT, ROW_SCALE, ROW_SCENE_HEIGHT } from '../shared/dock-geometry';
+import {
+  FLOOR_HEIGHT,
+  FLOOR_SCENE_HEIGHT,
+  ROW_HEIGHT,
+  ROW_SCALE,
+  ROW_SCENE_HEIGHT,
+} from '../shared/dock-geometry';
 import { residentLabel, type OfficeModel } from '../shared/office-model';
 import { stationSpeech } from '../shared/speech';
 import { isInboxNotice } from '../shared/notices';
@@ -34,16 +45,19 @@ import { PinButton } from './PinButton';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
-/** Station-space rows, matching the big office's station (bench at 134 under the chair). */
-const BENCH_Y = ROW_TOP + 134;
-const HELPER_Y = ROW_TOP + 128;
+/** A helper desk's table bottom, from the top of its 68px box (.helper-table: top 32 + 14). */
+const HELPER_TABLE_FOOT = 46;
 
 /**
  * The office as one line along the screen edge: the same project zones, shared benches,
  * helper desks and speech bubbles as the big office, drawn with its own furniture.
+ * Two looks share everything but the ground: `office` lays each zone on a rug with name
+ * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a
+ * name plate on each desk front and a flag between zones.
  * Only drawn things are `[data-solid]`; the transparent rest lets clicks through.
  */
 export function DeskRow({
+  variant = 'office',
   model,
   status,
   privacy,
@@ -52,7 +66,9 @@ export function DeskRow({
   onVeil,
   onPin,
   onCollapse,
+  onSwitch,
 }: {
+  variant?: 'office' | 'floor';
   model: OfficeModel;
   status: string | null;
   privacy: boolean;
@@ -61,7 +77,16 @@ export function DeskRow({
   onVeil: (ids: string[], on: boolean) => void;
   onPin: (s: Session) => void;
   onCollapse: () => void;
+  /** Switch between the office row and the floor desks. */
+  onSwitch: () => void;
 }) {
+  const floor = variant === 'floor';
+  // Station-space rows, matching the big office's station (bench at 134 under the chair).
+  const top = floor ? FLOOR_TOP : ROW_TOP;
+  const sceneHeight = floor ? FLOOR_SCENE_HEIGHT : ROW_SCENE_HEIGHT;
+  const benchY = top + 134;
+  // Office: helpers beside the bench on the rug. Floor: their table stands on the floor.
+  const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + 128;
   const track = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [view, setView] = useState({ left: 0, width: 0, scroll: 0 });
@@ -81,13 +106,19 @@ export function DeskRow({
   }, []);
   const sessions = model.scene;
   const signature = layoutSignature(sessions);
-  const layout = useMemo(() => layoutRow(sessions), [signature]);
+  const layout = useMemo(
+    () => layoutRow(sessions, floor ? { zoneGap: FLOOR_ZONE_GAP } : {}),
+    [signature, floor],
+  );
   // Track what is in view, so each arrow knows who is hidden on its side.
   useEffect(() => {
     const el = track.current;
     if (!el) return;
     let frame = 0;
     const measure = () => {
+      // Boxes may reach below the scene (desk glow, 238px stations on the floor version);
+      // focus must never lift the strip off the screen's edge.
+      if (el.scrollTop) el.scrollTop = 0;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() =>
         setView({ left: el.scrollLeft, width: el.clientWidth, scroll: el.scrollWidth }),
@@ -130,7 +161,10 @@ export function DeskRow({
   const calling = (list: typeof stations) =>
     list.some((st) => model.view(st.id)?.group === 'attention');
   return (
-    <div className="desk-row" style={{ height: ROW_HEIGHT }}>
+    <div
+      className={`desk-row ${floor ? 'desk-floor' : ''}`}
+      style={{ height: floor ? FLOOR_HEIGHT : ROW_HEIGHT }}
+    >
       <div
         className={`desk-row-track ${hiddenLeft.length ? 'fade-left' : ''} ${hiddenRight.length ? 'fade-right' : ''}`}
         ref={track}
@@ -139,7 +173,7 @@ export function DeskRow({
           className="desk-row-lane"
           style={{
             width: layout.width * ROW_SCALE + LANE_PAD * 2,
-            height: ROW_SCENE_HEIGHT * ROW_SCALE,
+            height: sceneHeight * ROW_SCALE,
           }}
         >
           <div
@@ -147,7 +181,7 @@ export function DeskRow({
             style={{
               left: LANE_PAD,
               width: layout.width,
-              height: ROW_SCENE_HEIGHT,
+              height: sceneHeight,
               transform: `scale(${ROW_SCALE})`,
             }}
           >
@@ -164,35 +198,75 @@ export function DeskRow({
                   } as CSSProperties
                 }
               >
-                {/* The rug starts at chair height so heads and bubbles float over the desktop. */}
-                <div
-                  className="project-area row-zone-floor"
-                  data-solid
-                  style={{ top: ROW_TOP + 96 }}
-                />
-                <div
-                  className={`project-floor-mark row-zone-mark ${zone.custom ? 'custom-area' : ''}`}
-                  title={
-                    privacy
-                      ? undefined
-                      : zone.custom
-                        ? `${zone.name} · 직접 나눈 구역 (${zone.custom.join(', ')})`
-                        : zone.name
-                  }
-                >
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <b>{privacy ? '프로젝트' : zone.name}</b>
-                  <small>
-                    {zone.stations.length}명{zone.helpers.length ? ' + 보조' : ''}
-                  </small>
-                </div>
+                {floor ? (
+                  // A flag between zones: the pole stands on the floor, the cloth names the zone.
+                  // Only the pole, cloth and base take the mouse; the box around them lets clicks
+                  // through like the rest of the strip. The flag stands on the desks' floor line.
+                  <div
+                    className={`zone-flag ${zone.custom ? 'custom-area' : ''}`}
+                    style={{
+                      left: -FLOOR_ZONE_GAP / 2,
+                      bottom: FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT),
+                    }}
+                    title={
+                      privacy
+                        ? undefined
+                        : `${zone.name} · ${zone.stations.length}명${zone.helpers.length ? ' + 보조' : ''}${zone.custom ? ` · 직접 나눈 구역 (${zone.custom.join(', ')})` : ''}`
+                    }
+                  >
+                    <i className="zone-flag-pole" data-solid />
+                    <span className="zone-flag-cloth" data-solid>
+                      <b>{String(index + 1).padStart(2, '0')}</b>
+                      <span>{privacy ? '프로젝트' : zone.name}</span>
+                    </span>
+                    <i className="zone-flag-base" data-solid />
+                  </div>
+                ) : (
+                  <>
+                    {/* The rug starts at chair height so heads and bubbles float over the desktop. */}
+                    <div
+                      className="project-area row-zone-floor"
+                      data-solid
+                      style={{ top: top + 96 }}
+                    />
+                    <div
+                      className={`project-floor-mark row-zone-mark ${zone.custom ? 'custom-area' : ''}`}
+                      data-solid
+                      title={
+                        privacy
+                          ? undefined
+                          : zone.custom
+                            ? `${zone.name} · 직접 나눈 구역 (${zone.custom.join(', ')})`
+                            : zone.name
+                      }
+                    >
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <b>{privacy ? '프로젝트' : zone.name}</b>
+                      <small>
+                        {zone.stations.length}명{zone.helpers.length ? ' + 보조' : ''}
+                      </small>
+                    </div>
+                  </>
+                )}
+                {floor &&
+                  zone.benches.map((bench, i) => (
+                    <i
+                      className="floor-shadow"
+                      key={`shadow:${bench.key}:${i}`}
+                      style={{
+                        left: bench.x - 6,
+                        width: bench.width + 12,
+                        top: top + DESK_FOOT - 6,
+                      }}
+                    />
+                  ))}
                 {zone.benches.map((bench, i) => (
                   <Furniture
                     kind="desk"
                     key={`${bench.key}:${i}`}
                     shared={bench.members.length > 1}
                     assetKey={privacy ? undefined : bench.key}
-                    style={{ left: bench.x, top: BENCH_Y, width: bench.width }}
+                    style={{ left: bench.x, top: benchY, width: bench.width }}
                   />
                 ))}
                 {zone.stations.map((station) => {
@@ -208,7 +282,7 @@ export function DeskRow({
                       className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'}`}
                       key={s.id}
                       data-station-id={s.id}
-                      style={{ transform: `translate(${station.x}px, ${ROW_TOP}px)` }}
+                      style={{ transform: `translate(${station.x}px, ${top}px)` }}
                       onMouseEnter={() => setHover(s.id)}
                       onMouseLeave={() => setHover((h) => (h === s.id ? null : h))}
                     >
@@ -242,37 +316,62 @@ export function DeskRow({
                           <i /> 작업 중
                         </span>
                       )}
-                      <button
-                        className={`desk-branch branch-${branch.kind}`}
-                        data-solid
-                        title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                        onClick={() => open(s.id)}
-                      >
-                        <GitBranch size={9} />
-                        <span>{privacy ? '내용 숨김' : branch.label}</span>
-                      </button>
-                      <button
-                        className="desk-name"
-                        data-solid
-                        title={privacy ? undefined : label.name}
-                        onClick={() => open(s.id)}
-                      >
-                        <strong>
+                      {floor ? (
+                        // A name plate on the desk front instead of a card on the rug.
+                        <button
+                          className="floor-plate"
+                          data-solid
+                          title={
+                            privacy
+                              ? undefined
+                              : `${label.name} · ${
+                                  pose.working && s.resident && s.resident.activeCount > 1
+                                    ? `${s.resident.activeCount}개 작업 중`
+                                    : MOODS[s.status].label
+                                }`
+                          }
+                          onClick={() => open(s.id)}
+                        >
                           <i style={{ background: MOODS[s.status].color }} />
                           <span>{label.name}</span>
-                          {s.pinned && <Pin size={9} />}
-                        </strong>
-                        <small>
-                          <span>
-                            {pose.working
-                              ? s.resident && s.resident.activeCount > 1
-                                ? `${s.resident.activeCount}개 작업 중`
-                                : '일하는 중'
-                              : MOODS[s.status].label}
-                          </span>
-                          {speech.unread > 0 && <em>소식 {speech.unread}</em>}
-                        </small>
-                      </button>
+                          {s.pinned && <Pin size={8} />}
+                          {speech.unread > 0 && <em>{speech.unread}</em>}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            className={`desk-branch branch-${branch.kind}`}
+                            data-solid
+                            title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                            onClick={() => open(s.id)}
+                          >
+                            <GitBranch size={9} />
+                            <span>{privacy ? '내용 숨김' : branch.label}</span>
+                          </button>
+                          <button
+                            className="desk-name"
+                            data-solid
+                            title={privacy ? undefined : label.name}
+                            onClick={() => open(s.id)}
+                          >
+                            <strong>
+                              <i style={{ background: MOODS[s.status].color }} />
+                              <span>{label.name}</span>
+                              {s.pinned && <Pin size={9} />}
+                            </strong>
+                            <small>
+                              <span>
+                                {pose.working
+                                  ? s.resident && s.resident.activeCount > 1
+                                    ? `${s.resident.activeCount}개 작업 중`
+                                    : '일하는 중'
+                                  : MOODS[s.status].label}
+                              </span>
+                              {speech.unread > 0 && <em>소식 {speech.unread}</em>}
+                            </small>
+                          </button>
+                        </>
+                      )}
                       {speech.shows(hover === s.id) && (
                         <div className="row-speech" data-solid>
                           <SpeechBubble
@@ -294,6 +393,14 @@ export function DeskRow({
                     </div>
                   );
                 })}
+                {floor &&
+                  zone.helpers.map((helper) => (
+                    <i
+                      className="floor-shadow"
+                      key={`shadow:${helper.id}`}
+                      style={{ left: helper.x + 2, width: 64, top: top + DESK_FOOT - 6 }}
+                    />
+                  ))}
                 {zone.helpers.map((helper) => {
                   const s = byId.get(helper.id)!;
                   const pose = model.view(s.id)!.pose;
@@ -302,7 +409,7 @@ export function DeskRow({
                       key={s.id}
                       session={s}
                       parentId={helper.parent}
-                      at={{ x: helper.x, y: HELPER_Y }}
+                      at={{ x: helper.x, y: helperY }}
                       mood={pose.mood}
                       working={pose.working}
                       news={model.notices.some(
@@ -372,6 +479,18 @@ export function DeskRow({
             {lounge}
           </span>
         )}
+        <button
+          className="icon-btn"
+          aria-label={floor ? '사무실 줄로 보기' : '바닥 책상으로 보기'}
+          title={
+            floor
+              ? '사무실 줄로 · 구역 바닥과 이름표'
+              : '바닥 책상으로 · 화면 맨 아래에 책상만, 구역은 깃발'
+          }
+          onClick={onSwitch}
+        >
+          {floor ? <Building2 size={14} /> : <Flag size={14} />}
+        </button>
         <button
           className="icon-btn"
           aria-label="사무실 펼치기"

@@ -19,6 +19,12 @@ export const ROW_SCENE_HEIGHT = 376;
 /** A see-through band above the scene for the row's tools, so they never cover a bubble. */
 export const ROW_TOOLS_BAND = 44;
 export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+/**
+ * Floor version: no zone rugs or name cards under the desks, so the scene ends where the desk
+ * legs meet the work area's bottom edge (FLOOR_TOP + 188) plus their contact shadow.
+ */
+export const FLOOR_SCENE_HEIGHT = 296;
+export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
 
 /** Keep a window fully inside a display's work area (shrinking it only if it cannot fit). */
 export function clampInto(b: Rect, area: Rect): Rect {

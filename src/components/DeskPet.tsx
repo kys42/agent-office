@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Expand, X } from 'lucide-react';
+import { Expand, Flag, X } from 'lucide-react';
 import { api } from '../lib/api';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
@@ -22,13 +22,17 @@ export function DeskPet({
   privacy,
   onReceipt,
   onExpand,
+  onFloor,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
   status: string | null;
   privacy: boolean;
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
+  /** Unfold in the last used look (office row or floor desks). */
   onExpand: () => void;
+  /** Unfold the floor desks: desks on the screen's bottom edge, zones marked by flags. */
+  onFloor: () => void;
 }) {
   const pet = petSummary(model);
   const total = model.seats.length;
@@ -102,6 +106,14 @@ export function DeskPet({
           </button>
           <button
             className="icon-btn"
+            aria-label="바닥 책상 펼치기"
+            title="바닥 책상 · 화면 맨 아래에 책상만, 구역은 깃발"
+            onClick={onFloor}
+          >
+            <Flag size={12} />
+          </button>
+          <button
+            className="icon-btn"
             aria-label="데스크 펫 숨기기"
             title="숨기기 · 트레이에서 다시 열 수 있어요"
             onClick={() => api.window('hide')}
@@ -112,8 +124,8 @@ export function DeskPet({
         <button
           className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaker ? 'is-speaking' : ''}`}
           data-solid
-          aria-label={`데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 책상 줄 펼치기`}
-          title={`우리 사무실 · 동료 ${total}명\n누르면 책상 줄로 펼쳐지고, 끌어서 옮길 수 있어요`}
+          aria-label={`데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 펼치기`}
+          title={`우리 사무실 · 동료 ${total}명\n누르면 마지막에 쓴 모습(책상 줄·바닥 책상)으로 펼쳐지고, 끌어서 옮길 수 있어요`}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             e.currentTarget.setPointerCapture(e.pointerId);
