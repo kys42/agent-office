@@ -140,7 +140,9 @@ npm run package
 open "release/Agent Office-darwin-arm64/Agent Office.app"
 ```
 
-> The package is for local use — it isn't signed or notarized yet.
+> The preview uses ad-hoc signing; it is not Developer ID signed or Apple-notarized.
+
+Create an installer with `npm run package:dmg`, then verify the app installed from it with `npm run test:package`. The DMG includes an Applications shortcut and installation instructions. Manual builds and version tags produce arm64 / Intel artifacts through [macOS DMG Preview](.github/workflows/macos-dmg.yml); see the [release guide](docs/development/MACOS-RELEASE.md).
 
 Just want to look around? Run the browser preview with **synthetic demo data** — nothing on your machine is read:
 

@@ -1,3 +1,9 @@
+# 2026-10-07 · macOS DMG와 초기 preview 배포 파이프라인
+
+- 최신 main 501fe72 기준 별도 worktree에서 설치용 DMG, Applications 바로가기·설치 안내·라이선스 고지, 버전/SHA/아키텍처/서명 상태 및 SHA-256 기록을 추가했다. 사용자 실행 앱과 미커밋 변경은 보존했다.
+- 일반 PR의 Linux CI는 유지하고 수동 실행·버전 태그에서만 native Mac runner를 사용한다. 양쪽 아키텍처별 최종 DMG 설치본 검증 후 artifact로 전달하며 공개 Release/OTA는 후속이다.
+- private-agent-skills의 my-service-management 배포·CI·application golden 기준을 적용했다. Apple Silicon에서 DMG 생성·실제 설치본의 3종 수집/IPC/펫·책상 모드/격리 검증과 단위 227개·format 통과. 구체적인 원격 결과와 최종 검수는 PR/Actions 및 QA 기록 참조.
+
 # 2026-10-07 · 보조 책상 ×N 묶음, 닫은 말풍선 다시 보기 (PR #22, Issue #21)
 
 - 보조 묶음: 한 동료의 보조가 4명 이상(`HELPER_STACK_AT`)이면 레이아웃(`helperSlots`)이 보조 책상 한 칸에 `stack`을 넣는다. 큰 사무실은 보조 줄이 늘지 않고, 책상 줄은 73px 한 칸이다

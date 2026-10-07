@@ -1,3 +1,13 @@
+# macOS DMG preview · 2026-10-07
+
+- 기준: origin/main 501fe72 위 별도 `feat/macos-release` worktree. 기존 실행 앱과 사용자 checkout은 보존했다.
+- macOS 26.6.2 / Apple Silicon / Node 24.5.0에서 build·package·DMG 생성·hdiutil verify·ad-hoc codesign deep/strict 검증 통과. 첫 개발 빌드는 메타데이터에 sourceDirty=true로 표시했다.
+- DMG를 읽기 전용으로 mount하고 임시 경로에 복사한 실제 앱 실행 통과: 합성 3종 연결, 언어 변경, IPC 저장, 데스크 펫·책상 줄·바닥 책상, renderer 격리. 원본 사용자 데이터는 검수에 사용하지 않았다.
+- 단위 227/227, format 통과. 배포 파일 이름의 버전·아키텍처·SHA 유효성과 정확한 파일 hash·누락 파일 실패를 추가 검증했다.
+- 최종 전달본은 커밋 뒤 깨끗한 checkout에서 재생성하고 같은 설치본 검증을 수행한다. 원격 CI·Intel 검수는 workflow 실행 결과로 별도 확인한다.
+- 현재 Mac에 Developer ID 인증서가 없어 preview는 ad-hoc 서명·미공증이다. 인터넷 전달 Gatekeeper 검수, 실제 개인 DB 업그레이드, 공개 Release 게시·자동 업데이트는 이번 합성 설치본 검증에 포함하지 않는다.
+- 절차와 복구: [macOS 배포](MACOS-RELEASE.md).
+
 # 보조 묶음·닫은 말풍선 다시 보기 · 2026-10-07 (Issue #21)
 - 단위(`tests/office-row.test.ts`): `helperSlots` 경계(3명 각자·4명 묶음), 두 레이아웃에서 묶음 한 칸(줄 너비·사무실 높이), 닫음·만료 말풍선은 평소 없음·가리키면 peek(최신 소식, 원래 모양), 살아 있는 말풍선은 peek 아님, 소식 없으면 진행 문구. 기존 'Every desk and helper' 레이아웃 테스트는 묶음 안의 id까지 센다
 - UI(`tests/ui/helpers-peek.spec.ts`): 보조 5명 → 큰 사무실·책상 줄·바닥 책상에 묶음 1개·×5·부르는 보조가 대표·명단 5개·항목 열기·Esc 닫기. 보조 3명 → 각자 책상. 닫은 말풍선 → 평소 없음, 가리키면 '닫은 말풍선'(접기 없음), 말풍선 위로 옮겨도 유지, 떠나면 사라짐(큰 사무실·책상 줄)

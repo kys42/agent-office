@@ -140,7 +140,9 @@ npm run package
 open "release/Agent Office-darwin-arm64/Agent Office.app"
 ```
 
-> 로컬 실행용 패키지이며 서명·공증은 아직 적용하지 않았습니다.
+> preview는 ad-hoc 서명입니다. Apple Developer ID 서명·공증은 아직 적용하지 않았습니다.
+
+`npm run package:dmg`로 설치용 DMG를 만들고 `npm run test:package`로 DMG에서 꺼낸 실제 앱을 검증합니다. Applications 바로가기와 설치 안내가 포함됩니다. [macOS DMG Preview](.github/workflows/macos-dmg.yml)를 수동 실행하거나 버전 태그를 push하면 arm64 / Intel 산출물을 만듭니다. 절차와 배포 범위는 [배포 가이드](docs/development/MACOS-RELEASE.md)를 확인하세요.
 
 둘러보기만 하려면 **합성 데모 데이터**로 브라우저 미리보기를 띄우세요. 내 컴퓨터의 기록은 읽지 않습니다.
 

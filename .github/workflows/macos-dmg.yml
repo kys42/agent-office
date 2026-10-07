@@ -1,0 +1,96 @@
+name: macOS DMG Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Mac architecture
+        required: true
+        default: arm64
+        type: choice
+        options: [arm64, x64, both]
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-dmg-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Check tag version and main ancestry
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module -e "import fs from 'node:fs'; const pkg=JSON.parse(fs.readFileSync('package.json')); if(process.env.RELEASE_TAG !== 'v'+pkg.version) throw new Error('Tag must match package.json version');"
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD origin/main
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:mcp
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+        env:
+          AGENT_OFFICE_DATA_DIR: ${{ runner.temp }}/agent-office-ui-data
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: dmg-verification-failure
+          path: test-results/
+
+  package:
+    needs: verify
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON((github.event_name == 'push' || inputs.architecture == 'both') && '[{"arch":"arm64","runner":"macos-15"},{"arch":"x64","runner":"macos-15-intel"}]' || inputs.architecture == 'x64' && '[{"arch":"x64","runner":"macos-15-intel"}]' || '[{"arch":"arm64","runner":"macos-15"}]') }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      AGENT_OFFICE_ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run package:dmg
+      - name: Install from DMG and test the packaged app
+        run: npm run test:package
+      - name: Verify published checksums
+        working-directory: release
+        run: shasum -a 256 -c "SHA256SUMS-${AGENT_OFFICE_ARCH}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-office-macos-${{ matrix.arch }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            release/*.dmg
+            release/*.json
+            release/SHA256SUMS-*.txt
+      - name: Record preview distribution boundary
+        run: |
+          printf '%s\n' \
+            '### Verified macOS DMG preview' \
+            'Architecture: ${{ matrix.arch }} · Source: ${{ github.sha }}' \
+            'Ad-hoc signed; not Developer ID signed or Apple-notarized. Download the workflow artifact. Public release publication and automatic updates require a separate promotion.' >> "$GITHUB_STEP_SUMMARY"
