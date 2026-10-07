@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Expand, Flag, PanelRightOpen, X } from 'lucide-react';
+import { Expand, Flag, PanelRightOpen, RotateCw, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { openColleague } from '../lib/dockCard';
 import { useSendTargets } from '../lib/useSendTargets';
@@ -28,6 +28,7 @@ export function DeskPet({
   onExpand,
   onFloor,
   onReply,
+  onRefresh,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
@@ -40,6 +41,8 @@ export function DeskPet({
   onFloor: () => void;
   /** Desktop opt-in: the speaking colleague can be answered right under its bubble. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
+  /** Look at the session records again now (and restart a stopped collector). */
+  onRefresh: () => void;
 }) {
   const pet = petSummary(model);
   const total = model.seats.length;
@@ -162,6 +165,14 @@ export function DeskPet({
             onClick={() => api.window('main')}
           >
             <Expand size={12} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="새로고침"
+            title="새로고침 · 지금 기록을 다시 확인해요"
+            onClick={onRefresh}
+          >
+            <RotateCw size={12} />
           </button>
           <button
             className="icon-btn"

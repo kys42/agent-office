@@ -11,6 +11,7 @@ import {
   GitBranch,
   PanelRightOpen,
   Pin,
+  RotateCw,
   Terminal,
   X,
 } from 'lucide-react';
@@ -75,6 +76,9 @@ export function DeskRow({
   onCollapse,
   onSwitch,
   onReply,
+  notify,
+  onRefresh,
+  refreshing = false,
 }: {
   variant?: 'office' | 'floor';
   model: OfficeModel;
@@ -89,6 +93,11 @@ export function DeskRow({
   onSwitch: () => void;
   /** Desktop opt-in: an unfolded bubble whose session can take a follow-up offers a reply. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
+  /** Short results and failures, shown by the dock. */
+  notify: (message: string) => void;
+  /** Look at the session records again now (and restart a stopped collector). */
+  onRefresh: () => void;
+  refreshing?: boolean;
 }) {
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
@@ -106,12 +115,7 @@ export function DeskRow({
     id: string;
     target: TerminalTarget;
   } | null>(null);
-  const [notice, setNotice] = useState('');
-  useEffect(() => {
-    if (!notice) return;
-    const t = setTimeout(() => setNotice(''), 3200);
-    return () => clearTimeout(t);
-  }, [notice]);
+
   const [view, setView] = useState({ left: 0, width: 0, scroll: 0 });
   // A mouse wheel scrolls the row sideways when there are more desks than fit.
   useEffect(() => {
@@ -200,9 +204,9 @@ export function DeskRow({
   const jump = async (id: string) => {
     try {
       const result = await api.jump!(id);
-      setNotice(result.text);
+      notify(result.text);
     } catch (e) {
-      setNotice((e as Error).message);
+      notify((e as Error).message);
     }
   };
   const lounge = model.zones.waiting.filter((s) => !s.attachedTo).length;
@@ -595,6 +599,15 @@ export function DeskRow({
             {lounge}
           </span>
         )}
+        <button
+          className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
+          aria-label="새로고침"
+          title="새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)"
+          disabled={refreshing}
+          onClick={onRefresh}
+        >
+          <RotateCw size={14} />
+        </button>
         <button
           className="icon-btn"
           aria-label={floor ? '사무실 줄로 보기' : '바닥 책상으로 보기'}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
 import { useTerminalSend } from '../lib/useTerminalSend';
@@ -25,10 +25,21 @@ function lastExpanded(): Expanded {
  */
 export function DeskDock() {
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
-  const { model, snapshot, error, receipt, veil, patch } = useOffice(demo);
+  // Results and failures (pin, hide, send, refresh) show here instead of failing silently.
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 3600);
+  }, []);
+  const { model, snapshot, error, receipt, veil, pin, refresh, refreshing } = useOffice(
+    demo,
+    notify,
+  );
   // Replies from unfolded bubbles; the opt-in may change in the big office, so re-read it
   // whenever the dock comes back into use.
-  const send = useTerminalSend(demo, () => {});
+  const send = useTerminalSend(demo, notify);
   const { reload } = send;
   useEffect(() => {
     window.addEventListener('focus', reload);
@@ -114,6 +125,7 @@ export function DeskDock() {
           onExpand={() => go(expanded)}
           onFloor={() => go('floor')}
           onReply={send.sendReply}
+          onRefresh={() => void refresh()}
         />
       ) : (
         <DeskRow
@@ -125,12 +137,27 @@ export function DeskDock() {
           privacy={privacy}
           reducedMotion={reducedMotion}
           onReceipt={receipt}
-          onVeil={veil}
-          onPin={(s) => void patch(s.id, { pinned: !s.pinned }).catch(() => {})}
+          onVeil={(ids, on) => {
+            void veil(ids, on);
+            notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
+          }}
+          onPin={(s) =>
+            void pin(s)
+              .then((on) => notify(on ? '고정했어요' : '고정을 풀었어요'))
+              .catch((e) => notify((e as Error).message))
+          }
+          notify={notify}
+          onRefresh={() => void refresh()}
+          refreshing={refreshing}
           onCollapse={() => go('pet')}
           onSwitch={() => go(mode === 'floor' ? 'row' : 'floor')}
           onReply={send.sendReply}
         />
+      )}
+      {toast && (
+        <div className="dock-toast" role="status">
+          {toast}
+        </div>
       )}
     </div>
   );
