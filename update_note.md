@@ -8,6 +8,7 @@
 - 리뷰 반영(독립 리뷰 + Codex)
   - **⚠ 스타일 순서**: `main.tsx`가 speech.css를 dock.css보다 나중에 불러오므로, 같은 구체성의 dock 규칙은 진다. 펫 인용이 늘 보이던 원인
   - 인용은 '그 말풍선이 답하는 요청'(말풍선보다 늦지 않은 요청, 같은 실행 우선). 백그라운드 실행의 말 위에는 인용하지 않는다
+  - 인용 툴팁은 원문(`requestText`): snapshot이 최근 내 요청 2개를 함께 남긴다(`snapshotEvents`). 저장된 소식 요약(`messageExcerpt`)은 그대로다
   - **⚠ 하네스 메모**: Claude Code가 user 역할로 남기는 `<task-notification>`과 "[Request interrupted by user]"가 '내 요청'으로 분류되고 있었다(기존 문제). `cleanPrompt`에서 걸러 낸다
 
 # 2026-10-07 · 보조 책상 ×N 묶음, 닫은 말풍선 다시 보기 (PR #22, Issue #21)

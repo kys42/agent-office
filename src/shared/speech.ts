@@ -53,14 +53,21 @@ const MARKDOWN_LIMIT = 1500;
 
 /**
  * The compact snapshot keeps the last few events plus the message the desk is speaking, so
- * a bubble can show the original wording and style instead of the stored plain excerpt.
+ * a bubble can show the original wording and style instead of the stored plain excerpt — and
+ * the person's last two requests, so a quoted request can show its full original text.
  */
 export function snapshotEvents(s: Session, recent = 4): OfficeEvent[] {
   const tail = s.events.slice(-recent);
   const id = s.activity?.eventId;
-  const spoken =
-    id && !tail.some((e) => e.id === id) ? s.events.find((e) => e.id === id) : undefined;
-  return spoken ? [spoken, ...tail] : tail;
+  const kept = new Set(tail.map((e) => e.id));
+  const extra: OfficeEvent[] = [];
+  const asked = s.events.filter((e) => e.kind === 'user').slice(-2);
+  for (const e of [...asked, ...(id ? s.events.filter((e) => e.id === id) : [])])
+    if (!kept.has(e.id)) {
+      kept.add(e.id);
+      extra.push(e);
+    }
+  return [...extra.sort((a, b) => a.at - b.at), ...tail];
 }
 
 /** The original public message for a bubble, when the desk still has it. */
@@ -157,6 +164,10 @@ export function stationSpeech(
      */
     request:
       lastRequest && lastRequest.id !== bubble?.id && tone !== 'mine' ? lastRequest : undefined,
+    /** The quoted request's full original words when the desk still has them (else the excerpt). */
+    requestText: lastRequest
+      ? (s.events.find((e) => e.id === lastRequest.eventId)?.text ?? lastRequest.text)
+      : undefined,
     tone,
     activity,
     unread: unreadNoticeCount(news),

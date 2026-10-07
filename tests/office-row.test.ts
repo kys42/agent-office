@@ -407,3 +407,36 @@ test('the quote is the request a bubble answers, never over a background run', (
   assert.equal(stationSpeech(resident, [first, cronOut], 3, now).bubble?.id, cronOut.id);
   assert.equal(stationSpeech(resident, [first, cronOut], 3, now).request, undefined);
 });
+
+test('the snapshot keeps the last requests so a quote can show its full original words', () => {
+  const long =
+    '로그인 화면을 다듬어 줘.\n```css\n.login { padding: 8px; }\n```\n' + '자세히 '.repeat(200);
+  const events = [
+    { id: 'u1', at: now - 9000, kind: 'user' as const, text: long, sourceRef: 'f' },
+    ...Array.from({ length: 6 }, (_, i) => ({
+      id: `a${i}`,
+      at: now - 8000 + i * 1000,
+      kind: 'assistant' as const,
+      text: `진행 ${i}`,
+      sourceRef: 'f',
+    })),
+  ];
+  const s = session(0, 'team', { status: 'idle', events });
+  const kept = snapshotEvents(s);
+  assert.ok(
+    kept.some((e) => e.id === 'u1'),
+    'the request survives the compact snapshot',
+  );
+  const asked = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    eventId: 'u1',
+    text: '로그인 화면을 다듬어 줘.',
+    at: now - 9000,
+  });
+  const reply = notice(s.id, { text: '다듬었어요', at: now - 1000 });
+  const speech = stationSpeech({ ...s, events: kept }, [asked, reply], 3, now);
+  assert.equal(speech.request?.id, asked.id);
+  assert.equal(speech.requestText, long, 'the tooltip gets the original, not the excerpt');
+  assert.equal(stationSpeech({ ...s, events: [] }, [asked, reply], 3, now).requestText, asked.text);
+});

@@ -108,7 +108,7 @@ export function SpeechBubble({
               title={
                 privacy
                   ? t.desk.bubble.requestTitle
-                  : `${t.desk.bubble.requestTitle}\n${request.text}`
+                  : `${t.desk.bubble.requestTitle}\n${speech.requestText ?? request.text}`
               }
             >
               <small>
