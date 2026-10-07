@@ -20,6 +20,7 @@ import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
+import { isPageHidden, onPageVisibility } from '../lib/visibility';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -78,7 +79,7 @@ export function Office({
   // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
   const [closed, setClosed] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
-  const [hidden, setHidden] = useState(document.hidden);
+  const [hidden, setHidden] = useState(isPageHidden);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropKey, setDropKey] = useState<string | null | undefined>(undefined);
   const draggable = !!onZoneDrop && !privacy;
@@ -111,16 +112,16 @@ export function Office({
   }, []);
   useEffect(() => {
     const visibility = () => {
-      setHidden(document.hidden);
+      setHidden(isPageHidden());
       setClock(Date.now());
     };
     const timer = setInterval(() => {
-      if (!document.hidden) setClock(Date.now());
+      if (!isPageHidden()) setClock(Date.now());
     }, 5000);
-    document.addEventListener('visibilitychange', visibility);
+    const stop = onPageVisibility(visibility);
     return () => {
       clearInterval(timer);
-      document.removeEventListener('visibilitychange', visibility);
+      stop();
     };
   }, []);
   useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));

@@ -11,6 +11,7 @@ import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from
 import { useWakeAt } from './useWakeAt';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
+import { isPageHidden, onPageVisibility } from './visibility';
 
 /**
  * The demo rewritten in the active language, carrying over what the viewer did in it: preferences
@@ -105,7 +106,11 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       });
     const unsubscribe = api.subscribe((s) => {
       if (active) {
-        setSnapshot(s);
+        // The same version of the same collector run again (a push after the reply to our own
+        // change) changes nothing. Snapshots without a run (demo, fixtures) always apply.
+        setSnapshot((prev) =>
+          prev && s.epoch && prev.epoch === s.epoch && prev.version === s.version ? prev : s,
+        );
         setError('');
       }
     });
@@ -133,13 +138,13 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   }, [demo, locale]);
   useEffect(() => {
     const tick = () => {
-      if (!document.hidden) setClock(Date.now());
+      if (!isPageHidden()) setClock(Date.now());
     };
     const timer = setInterval(tick, CLOCK_MS);
-    document.addEventListener('visibilitychange', tick);
+    const stop = onPageVisibility(tick);
     return () => {
       clearInterval(timer);
-      document.removeEventListener('visibilitychange', tick);
+      stop();
     };
   }, []);
   // A just-arrived request ends on time even between the coarse ticks.

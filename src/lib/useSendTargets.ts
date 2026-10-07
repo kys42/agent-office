@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TerminalTarget } from '../shared/types';
 import { api, isDesktop } from './api';
+import { isPageHidden, onPageVisibility } from './visibility';
 
 type Targets = Record<string, TerminalTarget | null>;
 const BATCH = 60;
@@ -48,13 +49,13 @@ export function useSendTargets(
   useEffect(() => {
     if (!active) return;
     const check = () => {
-      if (!document.hidden) setTick((n) => n + 1);
+      if (!isPageHidden()) setTick((n) => n + 1);
     };
     const timer = setInterval(check, waiting ? 4000 : 15_000);
-    document.addEventListener('visibilitychange', check);
+    const stop = onPageVisibility(check);
     return () => {
       clearInterval(timer);
-      document.removeEventListener('visibilitychange', check);
+      stop();
     };
   }, [active, waiting]);
   /** After sending, show the turn as started until the session reports idle again. */

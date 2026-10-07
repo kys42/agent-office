@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { stat } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Connector, Provider, Session, Snapshot } from '../src/shared/types.js';
 import { OfficeStore } from './store.js';
@@ -21,7 +22,7 @@ import {
 } from './adapters/claude-live.js';
 import { mergeSessions } from './adapters/merge.js';
 import { unreadNoticeCount } from '../src/shared/notices.js';
-import { enrichWorkspaces } from './workspaces.js';
+import { enrichWorkspaces, workspaceSignature } from './workspaces.js';
 import { syncLocale } from './locale.js';
 import {
   LOCALES,
@@ -95,6 +96,8 @@ const prefsSchema = z
       .optional(),
   })
   .strict();
+/** A quiet office still reports that it checked, at this pace. */
+const HEALTH_MS = 60_000;
 export class OfficeService extends EventEmitter {
   private quotaService = new QuotaService();
   store: OfficeStore;
@@ -103,6 +106,10 @@ export class OfficeService extends EventEmitter {
   lastSync: number | null = null;
   error: string | null = null;
   version = 0;
+  /** This collector's run: a client holding another run's version must take a full snapshot. */
+  readonly epoch = randomUUID();
+  /** What was last sent, so a cycle that changed nothing sends nothing. */
+  private sent: { content: string; at: number; snapshot: Snapshot } | null = null;
   cache = new Map<string, { stamp: string; session: Session }>();
   clawCache = new Map<string, Session>();
   timer: ReturnType<typeof setTimeout> | null = null;
@@ -147,25 +154,40 @@ export class OfficeService extends EventEmitter {
     for (const c of this.connectors) c.message = this.phrasing.get(c.provider)?.() ?? c.message;
   }
   snapshot(): Snapshot {
-    this.store.assignSeats();
     const locale: Locale = getLocale();
-    const notices = this.store.noticeList(locale);
+    const { sessions, notices } = this.store.officeView(locale);
     return {
       notices,
       noticeStats: { unread: unreadNoticeCount(notices), total: notices.length },
-      sessions: this.store.list(false, locale),
+      sessions,
       connectors: this.connectors,
       preferences: localizePreferences(this.store.preferences(), locale),
       syncing: this.syncing,
       lastSync: this.lastSync,
       error: this.error,
       version: this.version,
+      epoch: this.epoch,
       locale,
     };
   }
-  emitSnapshot() {
-    this.version++;
+  /**
+   * Sends the office out only when something in it changed: colleagues, notices, settings or a
+   * connector's state. Time-driven changes (a colleague going quiet, moving to waiting) show up
+   * as changed content on the next pass. The check times alone go out once a minute.
+   */
+  emitSnapshot(): Snapshot {
     const s = this.snapshot();
+    const content = JSON.stringify({
+      ...s,
+      version: 0,
+      lastSync: 0,
+      connectors: s.connectors.map((c) => ({ ...c, lastSync: 0 })),
+    });
+    const now = Date.now();
+    if (this.sent && this.sent.content === content && now - this.sent.at < HEALTH_MS)
+      return { ...s, version: this.sent.snapshot.version };
+    s.version = ++this.version;
+    this.sent = { content, at: now, snapshot: s };
     this.emit('snapshot', s);
     return s;
   }
@@ -314,7 +336,7 @@ export class OfficeService extends EventEmitter {
         sessions = await enrichWorkspaces(sessions);
         sessions = sessions.map((s) => ({
           ...s,
-          revision: hash(`${s.revision}:${JSON.stringify(s.workspace)}`),
+          revision: hash(`${s.revision}:${workspaceSignature(s.workspace)}`),
         }));
         if (provider === 'claude') sessions = await this.liveWaits(sessions);
         if (errors && sessions.length === 0) throw new Error(m().server.connector.unreadable);
@@ -376,8 +398,13 @@ export class OfficeService extends EventEmitter {
         return Promise.all(
           this.store.preferences().enabledProviders.map((p) => this.quotaService.read(p)),
         );
-      case 'snapshot':
-        return this.snapshot();
+      case 'snapshot': {
+        // A poller that already holds the latest version of this run gets a short answer.
+        const [epoch, version] = args;
+        if (this.sent && epoch === this.epoch && version === this.sent.snapshot.version)
+          return { unchanged: true, epoch, version };
+        return this.sent && epoch === this.epoch ? this.sent.snapshot : this.snapshot();
+      }
       case 'refresh':
         return this.refresh();
       case 'detail':

@@ -30,6 +30,12 @@ const api: OfficeAPI = {
     ipcRenderer.on('office:snapshot', f);
     return () => ipcRenderer.removeListener('office:snapshot', f);
   },
+  visible: () => ipcRenderer.invoke('office:visible'),
+  onVisibility: (cb) => {
+    const f = (_: unknown, shown: boolean) => cb(shown);
+    ipcRenderer.on('office:visibility', f);
+    return () => ipcRenderer.removeListener('office:visibility', f);
+  },
   window: (action, id) => ipcRenderer.invoke('office:window', action, id),
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
   resume: (id) => ipcRenderer.invoke('office:resume', id),

@@ -130,6 +130,9 @@ export function Inspector({
   const [packet, setPacket] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
+  // The few latest events the office carries, by content: a fresh snapshot with the same events
+  // (a new array each time) must not fetch the whole conversation again.
+  const latestEvents = JSON.stringify(session.events);
   useEffect(() => {
     let valid = true;
     setS((previous) =>
@@ -161,7 +164,7 @@ export function Inspector({
   }, [
     session.id,
     session.revision,
-    session.events,
+    latestEvents,
     session.alias,
     session.notes,
     session.pinned,

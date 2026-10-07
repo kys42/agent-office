@@ -140,7 +140,7 @@ test('Only explicit finals and unresolved attention contribute to notification c
 });
 test('Legacy classification migration preserves receipts; stale unknown replies stay out of the important inbox', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-news-classify-'));
-  const store = new OfficeStore(dir);
+  let store = new OfficeStore(dir);
   try {
     const s = session([event('final', 'assistant', 'final'), event('unknown', 'assistant')]);
     store.upsert([s], 'claude');
@@ -168,6 +168,9 @@ test('Legacy classification migration preserves receipts; stale unknown replies 
     store.db
       .prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)')
       .run(orphan.id, s.id, orphan.at, JSON.stringify(orphan));
+    // A newer collector starts on rows an older version wrote, and takes every session in once.
+    store.close();
+    store = new OfficeStore(dir);
     store.upsert([s], 'claude');
     const rows = store.noticeList();
     assert.equal(rows.find((n) => n.eventId === 'final')?.phase, 'final');
