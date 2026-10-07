@@ -49,6 +49,7 @@ export function SpeechBubble({
   reply,
   expanded,
   onExpandedChange,
+  quote = false,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -65,13 +66,17 @@ export function SpeechBubble({
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /** While pointed at: quote the person's latest request above, to recall what was asked. */
+  quote?: boolean;
 }) {
   const { t } = useI18n();
   const { bubble, activity, text, label, markdown, tone } = speech;
+  const request = quote ? speech.request : undefined;
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
   const body = useRef<HTMLElement>(null);
+  const asked = useRef<HTMLElement>(null);
   const [ownOpen, setOwnOpen] = useState(false);
   const open = expanded ?? ownOpen;
   const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
@@ -81,9 +86,10 @@ export function SpeechBubble({
   };
   const [long, setLong] = useState(false);
   useLayoutEffect(() => {
-    const el = body.current;
-    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
-  }, [text, markdown, open, privacy]);
+    if (open) return;
+    const clipped = (el: HTMLElement | null) => !!el && el.scrollHeight > el.clientHeight + 1;
+    setLong(clipped(body.current) || clipped(asked.current));
+  }, [text, markdown, open, privacy, request?.id]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div
@@ -96,6 +102,18 @@ export function SpeechBubble({
         title={privacy ? t.desk.hidden : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
         <span className="speech-copy">
+          {request && (
+            <span className="speech-request" title={t.desk.bubble.requestTitle}>
+              <small>
+                <User size={9} strokeWidth={2.6} aria-hidden="true" />
+                {t.desk.bubble.request}
+                <em>{ago(request.at)}</em>
+              </small>
+              <span className="speech-request-text" ref={asked}>
+                {privacy ? t.desk.hidden : request.text}
+              </span>
+            </span>
+          )}
           <small>
             <span className="bubble-label">
               <Icon size={9} strokeWidth={2.6} aria-hidden="true" />

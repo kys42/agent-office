@@ -228,3 +228,73 @@ test('Closing a bubble does not bring it straight back; it peeks again once the 
   await desk.locator('.office-pet').hover();
   await expect(desk.locator('.speech-bubble.is-peek')).toContainText('어제 맡긴 정리');
 });
+
+/** demo:0 answered a request the person sent five minutes ago (the reply bubble is up). */
+function answered(prefs: Record<string, unknown> = {}): Snapshot {
+  const snapshot = fixture(0);
+  const now = Date.now();
+  snapshot.preferences = { ...snapshot.preferences, ...prefs };
+  snapshot.notices = [
+    {
+      id: 'asked',
+      sessionId: 'demo:0',
+      eventId: 'asked',
+      kind: 'request',
+      text: '로그인 화면 여백을 다듬어 줘',
+      at: now - 5 * 60_000,
+      receivedAt: now - 5 * 60_000,
+      version: 'v1',
+      seenAt: null,
+      viewedAt: null,
+      dismissedAt: null,
+      resolvedAt: null,
+      bootstrap: false,
+    },
+    {
+      ...snapshot.notices![0],
+      id: 'answer',
+      eventId: 'answer',
+      text: '여백을 8px로 맞췄어요.',
+      at: now - 60_000,
+      receivedAt: now - 60_000,
+      dismissedAt: null,
+    },
+  ];
+  return snapshot;
+}
+
+test('Pointing at a desk quotes what the person asked, only while pointed at', async ({ page }) => {
+  await bridge(page, answered());
+  await page.goto('/');
+  const desk = page.locator('.desk-station[data-station-id="demo:0"]');
+  const bubble = desk.locator('.speech-bubble');
+  await expect(bubble).toContainText('여백을 8px로 맞췄어요.');
+  await expect(bubble.locator('.speech-request')).toHaveCount(0);
+  await desk.locator('.office-pet').hover();
+  await expect(bubble.locator('.speech-request')).toContainText('내 요청');
+  await expect(bubble.locator('.speech-request')).toContainText('로그인 화면 여백을 다듬어 줘');
+  await page.mouse.move(5, 5);
+  await expect(bubble).toBeVisible();
+  await expect(bubble.locator('.speech-request')).toHaveCount(0);
+});
+
+test('The row quotes the request when its desk is pointed at, and screen sharing hides it', async ({
+  page,
+}) => {
+  for (const privacy of [false, true]) {
+    const snapshot = answered({ privacy });
+    await page.unroute('**/api/rpc');
+    await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+    await page.goto('/#mini=row');
+    await page.reload();
+    const desk = page.locator('.desk-station[data-station-id="demo:0"]');
+    await expect(desk.locator('.speech-bubble')).toBeVisible();
+    await expect(desk.locator('.speech-request')).toHaveCount(0);
+    await desk.locator('.office-pet').hover();
+    const quote = desk.locator('.speech-request');
+    await expect(quote).toBeVisible();
+    if (privacy) await expect(quote).not.toContainText('로그인 화면');
+    else await expect(quote).toContainText('로그인 화면 여백을 다듬어 줘');
+    await page.mouse.move(5, 5);
+  }
+});

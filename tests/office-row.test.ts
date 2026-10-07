@@ -321,3 +321,53 @@ test('an answered call comes back settled, not calling again', () => {
   assert.equal(shown?.speech.tone, 'message');
   assert.match(shown!.speech.label, /해결됨$/);
 });
+
+test('pointing at a desk quotes the latest request the person sent it', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const asked = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '로그인 화면 다듬어 줘',
+    at: now - 5 * 60_000,
+    receivedAt: now - 5 * 60_000,
+    dismissedAt: now - 4 * 60_000,
+  });
+  const older = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '예전 부탁',
+    at: now - 60 * 60_000,
+  });
+  const scheduled = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '정기 실행',
+    at: now - 60_000,
+    background: true,
+  });
+  const reply = notice(s.id, { text: '다듬었어요', at: now - 1000 });
+  // The latest own request (closed ones too), never a background run.
+  const speech = stationSpeech(s, [older, asked, scheduled, reply], 3, now);
+  assert.equal(speech.bubble?.id, reply.id);
+  assert.equal(speech.request?.id, asked.id);
+  // A peek carries it too.
+  const closedReply = { ...reply, dismissedAt: now };
+  const quiet = stationSpeech(s, [asked, closedReply], 3, now);
+  assert.equal(
+    shownSpeech(s, [asked, closedReply], 3, now, quiet, true)?.speech.request?.id,
+    asked.id,
+  );
+  // When the bubble already is the person's request, nothing is quoted twice.
+  const fresh = notice(s.id, { kind: 'request', phase: undefined, text: '새 부탁', at: now });
+  const mine = stationSpeech(s, [asked, fresh], 3, now);
+  assert.equal(mine.tone, 'mine');
+  assert.equal(mine.request, undefined);
+  // A resident desk hears requests sent to any of its runs.
+  const resident = session(0, 'team', {
+    status: 'idle',
+    resident: { sessionIds: [s.id, 'fixture:other'] } as Session['resident'],
+  });
+  const viaOther = notice('fixture:other', { kind: 'request', phase: undefined, at: now - 2000 });
+  assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request?.id, viaOther.id);
+  assert.equal(stationSpeech(s, [reply], 3, now).request, undefined, 'nothing asked yet');
+});

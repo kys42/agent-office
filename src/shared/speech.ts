@@ -127,6 +127,9 @@ export function stationSpeech(
               : activity.kind === 'reply'
                 ? 'reply'
                 : 'message';
+  const lastRequest = news
+    .filter((n) => n.kind === 'request' && !n.background)
+    .sort((a, b) => b.at - a.at || b.receivedAt - a.receivedAt)[0];
   return {
     members,
     news,
@@ -140,6 +143,12 @@ export function stationSpeech(
     peek: bubble
       ? undefined
       : [...news].sort((a, b) => b.at - a.at || b.receivedAt - a.receivedAt)[0],
+    /**
+     * The person's latest own request to this desk (closed ones too; not background runs),
+     * quoted above the bubble while pointed at — unless the bubble already is that request.
+     */
+    request:
+      lastRequest && lastRequest.id !== bubble?.id && tone !== 'mine' ? lastRequest : undefined,
     tone,
     activity,
     unread: unreadNoticeCount(news),

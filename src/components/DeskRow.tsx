@@ -366,6 +366,10 @@ export function DeskRow({
                   const speech = speeches.get(s.id)!;
                   const { arrival, hop } = speech;
                   // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                  // An unfolded or replying bubble (a peek too) stays without the cursor.
+                  const pointing =
+                    (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
+                    closed !== s.id;
                   const shown = shownSpeech(
                     s,
                     model.notices,
@@ -373,9 +377,7 @@ export function DeskRow({
                     model.now,
                     speech,
                     hover === s.id || expanded === s.id || replying?.station === s.id,
-                    // An unfolded or replying bubble (a peek too) stays without the cursor.
-                    (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
-                      closed !== s.id,
+                    pointing,
                   );
                   const bubble = shown?.speech.bubble;
                   const focus = focusLevel(s, model.now);
@@ -507,6 +509,7 @@ export function DeskRow({
                             session={s}
                             speech={shown.speech}
                             peek={shown.peek}
+                            quote={pointing}
                             privacy={privacy}
                             expanded={expanded === s.id}
                             onExpandedChange={(on) => setExpanded(on ? s.id : null)}
