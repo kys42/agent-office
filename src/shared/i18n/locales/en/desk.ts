@@ -39,6 +39,8 @@ export const desk = {
   },
   bubble: {
     peek: 'Earlier bubble',
+    request: 'My request',
+    requestTitle: 'Your latest request',
     expandLabel: 'Expand speech bubble',
     collapseLabel: 'Collapse speech bubble',
     expand: 'Expand',

@@ -1,6 +1,7 @@
 import type { OfficeEvent, OfficeNotice, Session } from './types';
 import { bubbleNotice, isFinalNotice, noticeLabel, unreadNoticeCount } from './notices';
-import { activityLabel, sessionActivity } from './activity';
+import { activityLabel, messageExcerpt, sessionActivity } from './activity';
+import { isBackground, isHelper } from './residents';
 import { liveLabels } from './labels';
 import { m } from './i18n';
 
@@ -48,19 +49,34 @@ export const arrivalEnds = (notices: OfficeNotice[], now = Date.now()) =>
     .filter((n) => n.kind === 'request' && !n.bootstrap && n.receivedAt + ARRIVAL_MS > now)
     .map((n) => n.receivedAt + ARRIVAL_MS);
 
+/** The person's request quoted above a bubble (from a request notice or a retained event). */
+export interface QuotedRequest {
+  id: string;
+  eventId: string;
+  at: number;
+  text: string;
+}
+
 /** Bubbles render this much of the original message (code blocks dropped). */
 const MARKDOWN_LIMIT = 1500;
 
 /**
  * The compact snapshot keeps the last few events plus the message the desk is speaking, so
- * a bubble can show the original wording and style instead of the stored plain excerpt.
+ * a bubble can show the original wording and style instead of the stored plain excerpt — and
+ * the person's last two requests, so a quoted request can show its full original text.
  */
 export function snapshotEvents(s: Session, recent = 4): OfficeEvent[] {
   const tail = s.events.slice(-recent);
   const id = s.activity?.eventId;
-  const spoken =
-    id && !tail.some((e) => e.id === id) ? s.events.find((e) => e.id === id) : undefined;
-  return spoken ? [spoken, ...tail] : tail;
+  const kept = new Set(tail.map((e) => e.id));
+  const extra: OfficeEvent[] = [];
+  const asked = s.events.filter((e) => e.kind === 'user').slice(-2);
+  for (const e of [...asked, ...(id ? s.events.filter((e) => e.id === id) : [])])
+    if (!kept.has(e.id)) {
+      kept.add(e.id);
+      extra.push(e);
+    }
+  return [...extra.sort((a, b) => a.at - b.at), ...tail];
 }
 
 /** The original public message for a bubble, when the desk still has it. */
@@ -127,6 +143,33 @@ export function stationSpeech(
               : activity.kind === 'reply'
                 ? 'reply'
                 : 'message';
+  // The request a bubble answers: the latest one sent no later than it, in the run that speaks
+  // (the desk's own run when nothing does). Another run's request is never quoted instead — a
+  // resident's other runs answer their own requests. Candidates are request notices plus the
+  // requests the snapshot retained (a conversation first collected as history keeps only its
+  // last notice; nothing is stored or notified for these). Nothing is quoted over a background
+  // run's words, nor from a background run or a helper.
+  const run = bubble?.sessionId ?? s.id;
+  const answered = (at: number) => !bubble || at <= bubble.at;
+  // One pass (desks can hold thousands of old requests): keep the latest so far.
+  let best: { id: string; eventId: string; at: number; text: () => string } | undefined;
+  for (const n of news)
+    if (n.kind === 'request' && n.sessionId === run && !n.background && answered(n.at))
+      if (!best || n.at > best.at)
+        best = { id: n.id, eventId: n.eventId, at: n.at, text: () => n.text };
+  if (run === s.id && !isBackground(s) && !isHelper(s))
+    for (const e of s.events)
+      if (e.kind === 'user' && answered(e.at) && (!best || e.at > best.at))
+        best = {
+          id: `${s.id}::${e.id}`,
+          eventId: e.id,
+          at: e.at,
+          text: () => messageExcerpt(e.text, 800),
+        };
+  const quoted: QuotedRequest | undefined =
+    best && !bubble?.background
+      ? { id: best.id, eventId: best.eventId, at: best.at, text: best.text() }
+      : undefined;
   return {
     members,
     news,
@@ -140,6 +183,15 @@ export function stationSpeech(
     peek: bubble
       ? undefined
       : [...news].sort((a, b) => b.at - a.at || b.receivedAt - a.receivedAt)[0],
+    /**
+     * The person's latest own request to this desk (closed ones too; not background runs),
+     * quoted above the bubble while pointed at — unless the bubble already is that request.
+     */
+    request: quoted && quoted.id !== bubble?.id && tone !== 'mine' ? quoted : undefined,
+    /** The quoted request's full original words when the desk still has them (else the excerpt). */
+    requestText: quoted
+      ? (s.events.find((e) => e.id === quoted.eventId)?.text ?? quoted.text)
+      : undefined,
     tone,
     activity,
     unread: unreadNoticeCount(news),

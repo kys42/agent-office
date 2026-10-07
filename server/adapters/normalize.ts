@@ -66,19 +66,24 @@ export function contentText(c: unknown): string {
     .join('\n');
 }
 export function cleanPrompt(t: string): string {
-  return t
-    .replace(
-      /<(?:environment_context|permissions instructions|system-reminder|user_instructions|INSTRUCTIONS|available_skills|system)[^>]*>[\s\S]*?<\/(?:environment_context|permissions instructions|system-reminder|user_instructions|INSTRUCTIONS|available_skills|system)>/gi,
-      '',
-    )
-    .replace(/<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-app-browser-context>/gi, '')
-    .replace(
-      /<external_codex_apps_open_page\b[^>]*>[\s\S]*?<\/external_codex_apps_open_page>/gi,
-      '',
-    )
-    .replace(/^# AGENTS\.md instructions[\s\S]*/, '')
-    .replace(/^\s*## My request:\s*/i, '')
-    .trim();
+  return (
+    t
+      .replace(
+        /<(?:environment_context|permissions instructions|system-reminder|user_instructions|INSTRUCTIONS|available_skills|system)[^>]*>[\s\S]*?<\/(?:environment_context|permissions instructions|system-reminder|user_instructions|INSTRUCTIONS|available_skills|system)>/gi,
+        '',
+      )
+      .replace(/<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-app-browser-context>/gi, '')
+      // Harness notes recorded in the user role are not the person's words.
+      .replace(/<task-notification\b[^>]*>[\s\S]*?<\/task-notification>/gi, '')
+      .replace(/^\s*\[Request interrupted by user[^\]\n]*\]\s*$/i, '')
+      .replace(
+        /<external_codex_apps_open_page\b[^>]*>[\s\S]*?<\/external_codex_apps_open_page>/gi,
+        '',
+      )
+      .replace(/^# AGENTS\.md instructions[\s\S]*/, '')
+      .replace(/^\s*## My request:\s*/i, '')
+      .trim()
+  );
 }
 export function cleanTitle(value: unknown): string {
   const text = cleanPrompt(String(value ?? ''));

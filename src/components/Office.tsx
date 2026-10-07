@@ -439,6 +439,7 @@ export function Office({
                           session={s}
                           speech={shown.speech}
                           peek={shown.peek}
+                          quote={hover === s.id && closed !== s.id}
                           privacy={privacy}
                           onOpen={() => {
                             if (bubble) {

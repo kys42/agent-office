@@ -343,3 +343,83 @@
   color: #e8dccb;
   background: rgba(255, 255, 255, 0.14);
 }
+
+/* While pointed at: the person's own request as its own bubble right above (what was asked).
+   Same width as the bubble below, the person's dark style with a tail; long requests scroll
+   inside it instead of being cut. Heights fit the headroom: first-row office desk 164px above
+   the bubble's bottom, desk row 206px to the window top, pet 216px. */
+.speech-bubble > .speech-request-bubble {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 9px);
+  z-index: 1;
+  padding: 4px 8px 6px;
+  border: 2px solid #2a2128;
+  border-radius: 8px;
+  color: #f4ead8;
+  background: #2f2530;
+  box-shadow: 0 3px 0 #2a2128;
+  text-align: left;
+  cursor: default;
+}
+.speech-bubble > .speech-request-bubble::before {
+  /* An invisible bridge over the gap, so moving up from the answer keeps the desk pointed at. */
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -13px;
+  height: 13px;
+}
+.speech-bubble > .speech-request-bubble::after {
+  content: '';
+  position: absolute;
+  right: 18px;
+  bottom: -7px;
+  width: 10px;
+  height: 10px;
+  background: #2f2530;
+  border-right: 2px solid #2a2128;
+  border-bottom: 2px solid #2a2128;
+  transform: rotate(45deg);
+}
+.speech-request-bubble small {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #ffd37f;
+}
+.speech-request-bubble small em {
+  margin-left: auto;
+  font-style: normal;
+  font-weight: 400;
+  color: #b9a58c;
+}
+.speech-request-text {
+  margin: 2px 0 0;
+  /* Whole lines only (11px × 1.4): office 3, row 4, pet 2. */
+  max-height: 46px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* The row has more headroom: its bubbles share it (answer 3 lines, request up to ~4.5). */
+.desk-row .speech-request-text {
+  max-height: 62px;
+}
+.speech-request-bubble.has-more .speech-request-text {
+  mask-image: linear-gradient(#000 65%, transparent);
+}
+.desk-row .speech-bubble:has(> .speech-request-bubble) .speech-copy b {
+  -webkit-line-clamp: 3;
+}
+/* Unfolded, the answer takes the headroom: the request bubble steps aside until folded. */
+.speech-bubble.is-expanded > .speech-request-bubble {
+  display: none;
+}
