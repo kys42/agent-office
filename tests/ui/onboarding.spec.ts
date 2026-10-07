@@ -81,8 +81,13 @@ test('demo guide is optional and never completes the live onboarding', async ({ 
   await page.getByRole('button', { name: '사무실 사용 가이드', exact: true }).click();
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => localStorage.getItem('office:onboarding:v1:live'))).toBeNull();
-  await page.goto('/?lang=ko');
+  await page.locator('.demo-banner button').click();
   await expect(page.locator('.office-guide')).toBeVisible();
+  await page.keyboard.press('Escape');
+  // Returning to the sample and back does not repeat a completed live tour.
+  await page.locator('.app-footer').getByRole('button', { name: '데모 둘러보기' }).click();
+  await page.locator('.demo-banner button').click();
+  await expect(page.locator('.office-guide')).toHaveCount(0);
 });
 
 test('empty office explains connections and routes setup without a fake work card', async ({
@@ -134,6 +139,10 @@ test('setup actions reach the matching settings section and work cards and pets 
     await expect(page.locator(`[data-guide-section="${section}"]`)).toBeInViewport();
     await expect(page.locator(`[data-guide-section="${section}"]`)).toBeFocused();
   }
+  await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await expect(page.locator('[data-guide-section="rhythm"]')).not.toBeFocused();
+  await expect(page.locator('.settings-page .page-head')).toBeInViewport();
   await menu.click();
   await page
     .getByRole('dialog')

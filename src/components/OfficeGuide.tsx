@@ -78,11 +78,13 @@ export function OfficeGuide({
   const blocked = (id: GuideAction) =>
     id === 'card' && !hasColleague
       ? g.needsColleague
-      : id === 'terminal' && (!desktop || demo)
+      : id === 'terminal' && !desktop
         ? g.desktopOnly
-        : id === 'pet' && desktop && demo
+        : id === 'terminal' && demo
           ? g.liveOnly
-          : null;
+          : id === 'pet' && desktop && demo
+            ? g.liveOnly
+            : null;
   return (
     <Modal title={g.title} onClose={onClose} wide>
       <div className="office-guide">

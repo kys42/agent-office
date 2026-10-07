@@ -57,6 +57,7 @@ export function Settings({
   terminalSend,
   onTerminalSend,
   focusSection,
+  onSectionFocused,
 }: {
   snapshot: Snapshot;
   onPrefs: (p: Partial<Preferences>) => Promise<boolean>;
@@ -66,6 +67,7 @@ export function Settings({
   terminalSend?: boolean;
   onTerminalSend?: () => void;
   focusSection?: { section: SettingsSection; at: number };
+  onSectionFocused?: () => void;
 }) {
   const { t } = useI18n();
   const s = t.settings;
@@ -79,7 +81,8 @@ export function Settings({
     );
     section?.scrollIntoView({ block: 'start' });
     section?.focus({ preventScroll: true });
-  }, [focusSection]);
+    onSectionFocused?.();
+  }, [focusSection, onSectionFocused]);
   const projects = [
     ...new Set([...snapshot.sessions.map((s) => s.project), ...p.excludedProjects]),
   ].sort();

@@ -66,6 +66,10 @@ export default function App() {
     rememberOnboarding(demo);
     setGuide(null);
   }, [demo]);
+  useEffect(() => {
+    // A sample-office visit never consumes the first tour of the live office.
+    if (!demo && !hasSeenOnboarding(false)) setGuide('tour');
+  }, [demo]);
   const [inbox, setInbox] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
@@ -116,6 +120,7 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [memoryQuery, setMemoryQuery] = useState('');
   const [settingsFocus, setSettingsFocus] = useState<{ section: SettingsSection; at: number }>();
+  const clearSettingsFocus = useCallback(() => setSettingsFocus(undefined), []);
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
   const [areaDrop, setAreaDrop] = useState<{ id: string; zone: string | null } | null>(null);
   const openSearch = () => setPalette(true);
@@ -664,6 +669,7 @@ export default function App() {
               terminalSend={terminalSendAvailable ? terminalSend : undefined}
               onTerminalSend={toggleTerminalSend}
               focusSection={settingsFocus}
+              onSectionFocused={clearSettingsFocus}
             />
           ) : (
             <Activity sessions={sessions} onSelect={choose} privacy={prefs?.privacy ?? false} />
