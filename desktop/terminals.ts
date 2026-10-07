@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -18,10 +18,12 @@ export interface RunOptions {
 
 export interface TerminalDeps {
   sessionsDir: string;
+  /** `${CODEX_HOME:-~/.codex}`: shared daemon state for Codex CLI sessions. */
+  codexHome: string;
   /** Rejections carry the command's stdout, e.g. a JSON refusal with a non-zero exit. */
   run: (file: string, args: string[], options?: RunOptions) => Promise<string>;
   alive: (pid: number) => boolean;
-  bin: (name: 'orca' | 'tmux') => string;
+  bin: (name: 'orca' | 'tmux' | 'codex') => string;
   wait: (ms: number) => Promise<void>;
 }
 
@@ -46,13 +48,35 @@ export interface LiveTerminal {
 const BINARIES = {
   orca: ['/usr/local/bin/orca', '/opt/homebrew/bin/orca'],
   tmux: ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux'],
+  // Native binaries only: the npm launcher is a node script, and Finder-launched apps lack node.
+  codex: [
+    '/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex',
+    '/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex',
+    '/usr/local/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-x64/vendor/x86_64-apple-darwin/bin/codex',
+  ],
 };
+
+/** The binary the shared daemon itself runs speaks its protocol best; then installed CLIs. */
+function codexBinary(codexHome: string) {
+  const releases = path.join(codexHome, 'packages', 'app-server-daemon', 'releases');
+  try {
+    const newest = readdirSync(releases)
+      .filter((name) => existsSync(path.join(releases, name, 'bin', 'codex')))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .at(-1);
+    if (newest) return path.join(releases, newest, 'bin', 'codex');
+  } catch {
+    /* no managed daemon installed */
+  }
+  return BINARIES.codex.find(existsSync) ?? 'codex';
+}
 
 export const defaultTerminalDeps = (): TerminalDeps => ({
   sessionsDir: path.join(
     process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'),
     'sessions',
   ),
+  codexHome: process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'),
   run: (file, args, options = {}) =>
     new Promise((resolve, reject) => {
       const child = execFile(
@@ -72,11 +96,15 @@ export const defaultTerminalDeps = (): TerminalDeps => ({
       return false;
     }
   },
-  bin: (name) => BINARIES[name].find(existsSync) ?? name,
+  bin(name) {
+    return name === 'codex'
+      ? codexBinary(this.codexHome)
+      : (BINARIES[name].find(existsSync) ?? name);
+  },
   wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 });
 
-const spaces = (value: string) => value.trim().replace(/\s+/g, ' ');
+export const spaces = (value: string) => value.trim().replace(/\s+/g, ' ');
 
 export function parseClaudeProcess(file: string, text: string): ClaudeProcess | null {
   try {
@@ -99,18 +127,33 @@ export function parseClaudeProcess(file: string, text: string): ClaudeProcess | 
 }
 
 /** The live interactive Claude Code process for a session, verified against PID reuse. */
+async function readClaudeProcesses(dir: string): Promise<ClaudeProcess[]> {
+  const files = await readdir(dir).catch(() => [] as string[]);
+  const records = await Promise.all(
+    files
+      .filter((name) => /^\d+\.json$/.test(name))
+      .map(async (name) =>
+        parseClaudeProcess(name, await readFile(path.join(dir, name), 'utf8').catch(() => '')),
+      ),
+  );
+  return records.filter((r): r is ClaudeProcess => !!r);
+}
+
+// One directory read serves a burst of lookups (e.g. every bubble on the office floor).
+let recent: { at: number; dir: string; value: Promise<ClaudeProcess[]> } | undefined;
+
 export async function findClaudeProcess(
   sessionId: string,
   deps: TerminalDeps,
+  fresh = false,
 ): Promise<ClaudeProcess | null> {
-  const files = await readdir(deps.sessionsDir).catch(() => [] as string[]);
-  const candidates: ClaudeProcess[] = [];
-  for (const name of files) {
-    if (!/^\d+\.json$/.test(name)) continue;
-    const text = await readFile(path.join(deps.sessionsDir, name), 'utf8').catch(() => '');
-    const record = parseClaudeProcess(name, text);
-    if (record?.sessionId === sessionId) candidates.push(record);
-  }
+  if (fresh || !recent || recent.dir !== deps.sessionsDir || Date.now() - recent.at > 1000)
+    recent = {
+      at: Date.now(),
+      dir: deps.sessionsDir,
+      value: readClaudeProcesses(deps.sessionsDir),
+    };
+  const candidates = (await recent.value).filter((r) => r.sessionId === sessionId);
   candidates.sort((a, b) => b.updatedAt - a.updatedAt);
   for (const record of candidates) {
     if (!deps.alive(record.pid)) continue;
@@ -251,32 +294,45 @@ export async function findHost(
   return null;
 }
 
+// A short window only merges concurrent lookups; the process record itself is cheap to read.
 const cache = new Map<string, { at: number; value: Promise<LiveTerminal | null> }>();
 // Keyed by pid and start time, so a recycled pid never reuses another process's view.
 const views = new Map<string, Promise<ProcessView>>();
+// Host verification runs a CLI (Orca ~0.5s); it rarely changes, so cheap polls reuse it.
+const hosts = new Map<string, { at: number; value: Promise<TerminalHost | null> }>();
+const trim = <K, V>(map: Map<K, V>) => {
+  if (map.size > 200) map.delete(map.keys().next().value!);
+};
 
 export function locateTerminal(
   sessionId: string,
   options: { fresh?: boolean; deps?: TerminalDeps } = {},
 ): Promise<LiveTerminal | null> {
   const hit = cache.get(sessionId);
-  if (!options.fresh && hit && Date.now() - hit.at < 3000) return hit.value;
+  if (!options.fresh && hit && Date.now() - hit.at < 1500) return hit.value;
   const deps = options.deps ?? defaultTerminalDeps();
   const value = (async () => {
-    const proc = await findClaudeProcess(sessionId, deps);
+    const proc = await findClaudeProcess(sessionId, deps, options.fresh);
     if (!proc) return null;
     const key = `${proc.pid}:${proc.procStart}`;
     let view = views.get(key);
     if (!view || options.deps) {
       view = inspectProcess(proc.pid, deps);
       views.set(key, view);
-      if (views.size > 200) views.delete(views.keys().next().value!);
+      trim(views);
     }
-    const host = await findHost(proc.pid, deps, view);
-    return host ? { process: proc, host } : null;
+    const known = hosts.get(key);
+    let host = known?.value;
+    if (!host || options.fresh || options.deps || Date.now() - known!.at > 15_000) {
+      host = findHost(proc.pid, deps, view);
+      hosts.set(key, { at: Date.now(), value: host });
+      trim(hosts);
+    }
+    const found = await host;
+    return found ? { process: proc, host: found } : null;
   })();
   cache.set(sessionId, { at: Date.now(), value });
-  if (cache.size > 200) cache.delete(cache.keys().next().value!);
+  trim(cache);
   return value;
 }
 
@@ -292,6 +348,7 @@ export function terminalTarget(live: LiveTerminal): TerminalTarget {
     label: live.host.kind === 'orca' ? live.host.title : live.host.label,
     status: live.process.status,
     canSend: live.process.status === 'idle',
+    canFocus: true,
   };
 }
 
@@ -423,7 +480,7 @@ export async function sendToTerminal(
   await deps.wait(150);
   // A turn may have started meanwhile (a background task, a wake-up); Enter would then land
   // in it or pick a default choice. Look once more before submitting.
-  const again = await findClaudeProcess(live.process.sessionId, deps);
+  const again = await findClaudeProcess(live.process.sessionId, deps, true);
   if (
     again?.pid !== live.process.pid ||
     again.status !== 'idle' ||

@@ -23,6 +23,7 @@ import {
   terminalTarget,
   TerminalInputError,
 } from './terminals.js';
+import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 let main: BrowserWindow | null = null,
   mini: BrowserWindow | null = null,
   tray: Tray | null = null,
@@ -186,21 +187,46 @@ function setupIPC() {
     return (await resume(await bridge.call('detail', [id]))).text;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
-  const identities = new Map<string, { provider: Provider; nativeId: string }>();
-  const live = async (id: unknown, fresh = false) => {
+  const identities = new Map<
+    string,
+    { provider: Provider; nativeId: string; sourcePath: string }
+  >();
+  const identity = async (id: unknown) => {
     let known = typeof id === 'string' ? identities.get(id) : undefined;
     if (!known) {
       const s: Session = await bridge.call('detail', [id]);
-      known = { provider: s.provider, nativeId: s.nativeId };
+      known = { provider: s.provider, nativeId: s.nativeId, sourcePath: s.sourcePath };
       identities.set(s.id, known);
       if (identities.size > 500) identities.delete(identities.keys().next().value!);
     }
+    return known;
+  };
+  const live = async (id: unknown, fresh = false) => {
+    const known = await identity(id);
     return known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
   };
-  ipcMain.handle('office:terminal', async (e, id) => {
+  const codex = async (id: unknown, fresh = false) => {
+    const known = await identity(id);
+    return known.provider === 'codex'
+      ? findCodexThread(known.nativeId, known.sourcePath, { fresh })
+      : null;
+  };
+  ipcMain.handle('office:terminals', async (e, ids) => {
     trusted(e);
-    const terminal = await live(id);
-    return terminal ? terminalTarget(terminal) : null;
+    if (!Array.isArray(ids) || ids.length > 60 || ids.some((id) => typeof id !== 'string'))
+      throw new Error('잘못된 요청');
+    const entries = await Promise.all(
+      [...new Set(ids as string[])].map(async (id) => {
+        try {
+          const terminal = await live(id);
+          if (terminal) return [id, terminalTarget(terminal)] as const;
+          return [id, (await codex(id)) ? codexTarget() : null] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }),
+    );
+    return Object.fromEntries(entries);
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
@@ -227,7 +253,7 @@ function setupIPC() {
         cancelId: 1,
         message: '터미널로 보내기를 켤까요?',
         detail:
-          'Orca·tmux에서 쉬고 있는 Claude Code 세션에, 업무 카드에서 쓴 글을 그 터미널에 직접 입력해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
+          'Orca·tmux에서 쉬고 있는 Claude Code 세션에는 업무 카드에서 쓴 글을 그 터미널에 직접 입력하고, 실행 중인 Codex CLI 세션에는 Codex 대기열로 전달해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
       };
       const { response } = owner
         ? await dialog.showMessageBox(owner, options)
@@ -241,8 +267,19 @@ function setupIPC() {
     trusted(e);
     if (typeof text !== 'string' || text.length > 20000) throw new Error('잘못된 요청');
     if (!(await terminalSendEnabled())) throw new Error('설정에서 ‘터미널로 보내기’를 켜 주세요.');
+    const thread = await codex(id, true);
+    if (thread)
+      try {
+        return await queueToCodex(thread, text);
+      } catch (error) {
+        if (error instanceof TerminalInputError) throw error;
+        throw new Error(
+          'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
+        );
+      }
     const terminal = await live(id, true);
-    if (!terminal) throw new Error('지금 열려 있는 Orca·tmux 터미널을 찾지 못했어요.');
+    if (!terminal)
+      throw new Error('지금 보낼 수 있는 Orca·tmux 터미널이나 Codex 세션을 찾지 못했어요.');
     try {
       return await sendToTerminal(terminal, text);
     } catch (error) {

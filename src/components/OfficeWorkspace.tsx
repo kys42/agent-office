@@ -50,6 +50,7 @@ export function OfficeWorkspace({
   zoneRequest,
   onZoneHandled,
   onZoneDrop,
+  onReply,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -66,6 +67,7 @@ export function OfficeWorkspace({
   zoneRequest?: { zone: OfficeZone; at: number } | null;
   onZoneHandled?: () => void;
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -202,6 +204,7 @@ export function OfficeWorkspace({
             spotlight={listHover}
             onHover={setDeskHover}
             onZoneDrop={onZoneDrop}
+            onReply={onReply}
             footer={
               hidden.length > 0 && (
                 <details className="background-records">

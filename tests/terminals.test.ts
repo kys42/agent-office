@@ -73,6 +73,7 @@ function fakeDeps(
   const calls: { file: string; args: string[]; options?: RunOptions }[] = [];
   const deps: TerminalDeps = {
     sessionsDir,
+    codexHome: '/nonexistent/codex-home',
     alive: (pid) => (options.alive ?? [4242]).includes(pid),
     bin: (name) => `/bin/${name}`,
     wait: async () => {},
@@ -283,6 +284,7 @@ test('Locating combines process and host; the renderer view never carries a hand
       label: '✳ ao-send-test',
       status: 'busy',
       canSend: false,
+      canFocus: true,
     });
     assert.ok(!JSON.stringify(view).includes(HANDLE));
   });

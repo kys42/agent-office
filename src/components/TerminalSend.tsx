@@ -2,7 +2,23 @@ import { useState } from 'react';
 import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
 import type { TerminalTarget } from '../shared/types';
 
-const HOSTS = { orca: 'Orca', tmux: 'tmux' } as const;
+export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
+
+/** One line naming where the text goes, shared by the card and the bubble quick reply. */
+export function targetLine(target: TerminalTarget, privacy: boolean) {
+  const host = HOSTS[target.kind];
+  if (target.queues) return `${host} · 세션 대기열`;
+  return privacy || !target.label ? host : `${host} · ${target.label}`;
+}
+
+export function targetPlaceholder(target: TerminalTarget) {
+  if (target.queues) return 'Codex 세션에 바로 전달돼요 · 작업 중이면 끝난 뒤 처리돼요';
+  if (!target.canSend)
+    return target.status === 'busy'
+      ? '작업 중이에요 · 끝나면 보낼 수 있어요'
+      : '지금은 입력을 기다리지 않아요';
+  return `${HOSTS[target.kind]} 터미널에 바로 입력돼요`;
+}
 
 /**
  * A follow-up typed into the colleague's live terminal, exactly as if typed there.
@@ -27,8 +43,8 @@ export function TerminalSend({
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
-        {host} 터미널에서 실행 중이에요. 설정에서 ‘터미널로 보내기’를 켜면 여기서 바로 이어서 말할
-        수 있어요.
+        {target.queues ? 'Codex CLI에서 실행 중이에요' : `${host} 터미널에서 실행 중이에요`}.
+        설정에서 ‘터미널로 보내기’를 켜면 여기서 바로 이어서 말할 수 있어요.
       </p>
     );
   const waiting = !target.canSend;
@@ -59,11 +75,7 @@ export function TerminalSend({
         maxLength={4000}
         value={text}
         placeholder={
-          waiting
-            ? target.status === 'busy'
-              ? '작업 중이에요 · 끝나면 보낼 수 있어요'
-              : '지금은 입력을 기다리지 않아요'
-            : `${host} 터미널에 바로 입력돼요 · ⌘↵ 보내기`
+          waiting ? targetPlaceholder(target) : `${targetPlaceholder(target)} · ⌘↵ 보내기`
         }
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -76,7 +88,7 @@ export function TerminalSend({
       <div className="terminal-send-bar">
         <small>
           <Terminal size={11} />
-          {privacy || !target.label ? host : `${host} · ${target.label}`}
+          {targetLine(target, privacy)}
           {waiting && target.status === 'busy' ? ' · 작업 중' : ''}
         </small>
         <button

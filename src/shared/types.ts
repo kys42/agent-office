@@ -286,13 +286,21 @@ export interface Handoff {
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
-/** Live terminal hosting a session, observed by the desktop app only. Never carries a handle. */
+/**
+ * Where a follow-up can go, observed by the desktop app only. Never carries a handle.
+ * Orca/tmux type into the live terminal of a Claude Code session; `codex` hands the message
+ * to the shared Codex CLI daemon (`codex queue`), which every attached screen shows.
+ */
 export interface TerminalTarget {
-  kind: 'orca' | 'tmux';
+  kind: 'orca' | 'tmux' | 'codex';
   label: string;
   /** Agent CLI process state, e.g. idle, busy, shell. */
   status: string;
   canSend: boolean;
+  /** The app can bring the session's terminal to the front. */
+  canFocus: boolean;
+  /** Text sent while a turn runs waits for it instead of being refused. */
+  queues?: boolean;
 }
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
@@ -316,11 +324,11 @@ export interface OfficeAPI {
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
-  /** Desktop only: the live terminal of a session, if one can be verified. */
-  terminal?: (id: string) => Promise<TerminalTarget | null>;
+  /** Desktop only: where each session can take a follow-up, if that can be verified. */
+  terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
   /** Desktop only: focus the live terminal, or fall back to resume. */
   jump?: (id: string) => Promise<JumpResult>;
-  /** Desktop only, opt-in: type text into the live terminal of an idle session. */
+  /** Desktop only, opt-in: type into an idle Claude terminal, or queue into a Codex CLI session. */
   send?: (id: string, text: string) => Promise<string>;
   /**
    * Desktop only: read, or change, the opt-in for `send`. Kept in the desktop profile, outside

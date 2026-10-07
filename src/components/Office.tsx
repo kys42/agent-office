@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Mail, Pin, X, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
+import {
+  Mail,
+  Pin,
+  X,
+  GitBranch,
+  Plus,
+  Minus,
+  Maximize2,
+  Armchair,
+  Moon,
+  Sun,
+  Reply,
+} from 'lucide-react';
 import { MOODS, type Session, type OfficeNotice } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature } from '../shared/office-layout';
@@ -12,6 +24,9 @@ import { bubbleNotice, noticeLabel, unreadNoticeCount, isInboxNotice } from '../
 import { presentSession, focusLevel, POSTURE_LABELS } from '../shared/presentation';
 import type { ReceiptHandler } from './News';
 import { ago } from '../lib/format';
+import { useSendTargets } from '../lib/useSendTargets';
+import { QuickReply } from './QuickReply';
+import { targetLine } from './TerminalSend';
 const colors = ['#7fae86', '#d39a62', '#a48fd0', '#6fa9bd', '#d08497', '#b8ad5d'];
 function projectColor(key: string) {
   let n = 0;
@@ -39,6 +54,7 @@ export function Office({
   spotlight = null,
   onHover,
   onZoneDrop,
+  onReply,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -55,6 +71,8 @@ export function Office({
   onHover?: (id: string | null) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  /** Desktop opt-in: a bubble whose session can take a follow-up gets a quick reply. */
+  onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -136,6 +154,18 @@ export function Office({
       Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
     );
   const byId = new Map(sessions.map((s) => [s.id, s]));
+  // A reply goes to the session whose news the bubble shows, else the desk's own session.
+  const replyFor = (s: Session) => {
+    const members = s.resident?.sessionIds ?? [s.id];
+    const news = notices.filter((n) => members.includes(n.sessionId));
+    return bubbleNotice(news, bubbleHours, clock)?.sessionId ?? s.id;
+  };
+  const quick = !!onReply && !privacy;
+  const replyIds = quick
+    ? sessions.filter((s) => s.provider === 'claude' || s.provider === 'codex').map(replyFor)
+    : [];
+  const { targets: replyTargets, markSent } = useSendTargets(replyIds, quick);
+  const [replying, setReplying] = useState<string | null>(null);
   const primary = sessions.filter((s) => !s.attachedTo);
   const working = sessions.filter((s) => presentSession(s, clock).working).length;
   const phase = dayPhase(clock);
@@ -315,6 +345,9 @@ export function Office({
                     : undefined;
                   const request = latestRequest?.dismissedAt ? undefined : latestRequest;
                   const displayedBubble = request ?? bubble;
+                  const replyId = displayedBubble?.sessionId ?? s.id;
+                  const replyTarget = quick ? replyTargets[replyId] : null;
+                  const canReply = !!replyTarget?.canSend;
                   const focus = focusLevel(s, clock);
                   const text = displayedBubble?.text ?? activity.text;
                   const label = displayedBubble ? noticeLabel(displayedBubble) : activityLabel(s);
@@ -463,6 +496,28 @@ export function Office({
                               <b>{privacy ? MOODS[s.status].label : text}</b>
                             </span>
                           </button>
+                          {canReply && (
+                            <button
+                              className={`bubble-reply ${replying === replyId ? 'open' : ''}`}
+                              aria-label={`${sessionName(s)}에게 바로 답장`}
+                              aria-expanded={replying === replyId}
+                              title={`바로 답장 · ${targetLine(replyTarget!, false)}`}
+                              onClick={() => setReplying(replying === replyId ? null : replyId)}
+                            >
+                              <Reply size={11} strokeWidth={2.6} />
+                            </button>
+                          )}
+                          {canReply && replying === replyId && (
+                            <QuickReply
+                              target={replyTarget!}
+                              name={sessionName(s)}
+                              onClose={() => setReplying(null)}
+                              onSend={async (text) => {
+                                await onReply!(replyId, text);
+                                markSent(replyId);
+                              }}
+                            />
+                          )}
                           {displayedBubble && (
                             <button
                               className="bubble-dismiss"

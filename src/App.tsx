@@ -248,6 +248,11 @@ export default function App() {
       notify((e as Error).message);
     }
   };
+  // Bubble quick replies use the same desktop send as the colleague card.
+  const sendReply =
+    terminalSend && !demo && api.send
+      ? async (id: string, text: string) => notify(await api.send!(id, text))
+      : undefined;
   const onPrefs = async (p: Partial<Preferences>) => {
     if (demo) {
       setSnapshot((s) =>
@@ -733,6 +738,7 @@ export default function App() {
               onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
+              onReply={sendReply}
               onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />
           ) : view === 'memory' ? (
