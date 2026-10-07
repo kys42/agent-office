@@ -8,6 +8,7 @@ import {
   screen,
   shell,
   dialog,
+  clipboard,
 } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -25,6 +26,7 @@ import type {
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
+import { webLink } from '../src/shared/links.js';
 import {
   cardBounds,
   clampInto,
@@ -122,9 +124,38 @@ function buildTray() {
   );
 }
 function secure(w: BrowserWindow) {
-  w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // A web page link (target=_blank) opens in the browser; nothing opens inside the app.
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    const link = webLink(url);
+    if (link) void shell.openExternal(link);
+    return { action: 'deny' };
+  });
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
+  // Electron has no right-click menu of its own: copy what is selected, and handle links.
+  // Built on each click, so the labels follow the current language.
+  w.webContents.on('context-menu', (_e, params) => {
+    const t = m().desktop.menu;
+    const link = webLink(params.linkURL);
+    const items: Electron.MenuItemConstructorOptions[] = [];
+    if (link)
+      items.push(
+        { label: t.openLink, click: () => void shell.openExternal(link) },
+        { label: t.copyLink, click: () => clipboard.writeText(link) },
+        { type: 'separator' },
+      );
+    if (params.isEditable)
+      items.push(
+        { label: t.cut, role: 'cut', enabled: params.editFlags.canCut },
+        { label: t.copy, role: 'copy', enabled: params.editFlags.canCopy },
+        { label: t.paste, role: 'paste', enabled: params.editFlags.canPaste },
+        { label: t.selectAll, role: 'selectAll' },
+      );
+    else if (params.selectionText.trim())
+      items.push({ label: t.copy, role: 'copy' }, { label: t.selectAll, role: 'selectAll' });
+    while (items.at(-1)?.type === 'separator') items.pop();
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: w });
+  });
 }
 function createMain() {
   main = new BrowserWindow({
@@ -366,6 +397,17 @@ function setupIPC() {
     if (!artifact) throw new Error(m().desktop.unsupportedLink);
     await shell.openExternal(artifact.url);
   });
+  ipcMain.handle('office:open-link', async (e, url) => {
+    trusted(e);
+    const link = webLink(url);
+    if (!link) throw new Error(m().desktop.webLinksOnly);
+    await shell.openExternal(link);
+  });
+  ipcMain.handle('office:copy', (e, text) => {
+    trusted(e);
+    if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
+    clipboard.writeText(text);
+  });
   ipcMain.handle('office:call', async (e, method, args) => {
     trusted(e);
     if (typeof method !== 'string' || !Array.isArray(args) || args.length > 3)
@@ -514,8 +556,9 @@ function setupIPC() {
       throw new Error(m().desktop.terminal.jumpFailed(hostName(terminal.host)));
     }
   });
-  // The opt-in lives in the desktop profile, not in the shared preferences, so the web preview
-  // can never turn it on. Turning it on always goes through a native confirmation.
+  // The setting lives in the desktop profile, not in the shared preferences, so the web preview
+  // can never turn it on. It is on by default; turning it back on always goes through a
+  // native confirmation.
   ipcMain.handle('office:terminal-send', async (e, enable) => {
     trusted(e);
     if (typeof enable !== 'boolean') return terminalSendEnabled();
@@ -591,9 +634,20 @@ function setupIPC() {
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+/**
+ * On unless the person turned it off: no file means the default (on), and the file records
+ * their choice. A file that can't be read counts as off. Turning it back on asks for
+ * confirmation again.
+ */
 async function terminalSendEnabled() {
+  let saved: string;
   try {
-    return JSON.parse(await readFile(terminalSendFile(), 'utf8')).enabled === true;
+    saved = await readFile(terminalSendFile(), 'utf8');
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+  try {
+    return JSON.parse(saved).enabled !== false;
   } catch {
     return false;
   }

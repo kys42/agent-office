@@ -9,7 +9,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `server/store.ts`: 앱의 별명·메모·핀·보관·업무 확인과 원본 관측을 분리한다.
 - `server/service.ts`: 5초 폴링, 공급자 오류 격리, 설정·조회 입력 검증.
 - `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고, 다음 호출(새로고침 등)에서 다시 시작한다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
-- `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다.
+- `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다. 새 창 요청 중 http·https 웹 링크만 기본 브라우저로 넘기고(`webLink`, IPC `office:open-link`도 같은 검사), 그 밖의 주소는 열지 않는다.
 - `server/mcp.ts`: 같은 SQLite를 readOnly로 열어 4개 조회 도구만 노출한다. 추가 수집기·모델 실행·외부 전송을 시작하지 않는다.
 
 ## 지원 소스
@@ -68,7 +68,7 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 ## 배포와 경계
 
-원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: 맡은 프로세스가 있는 세션에 `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 데스크 독의 업무 카드는 별도 창(`#card`, `DockCard`)으로 같은 코어(`useOffice`)와 같은 Inspector를 그리며, IPC `office:card`(열기는 독 창에서만, 닫기·전체 모드는 카드 창에서만)로 연다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기는 데스크탑 프로필에만 저장되는 opt-in(켤 때 네이티브 확인창), 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
+원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: 맡은 프로세스가 있는 세션에 `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 데스크 독의 업무 카드는 별도 창(`#card`, `DockCard`)으로 같은 코어(`useOffice`)와 같은 Inspector를 그리며, IPC `office:card`(열기는 독 창에서만, 닫기·전체 모드는 카드 창에서만)로 연다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기 설정은 데스크탑 프로필에만 저장되고 기본 켜짐이다(끄면 그 선택을 남기고, 다시 켤 때 네이티브 확인창). 보내기는 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
 
 패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
 

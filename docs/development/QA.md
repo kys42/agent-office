@@ -8,6 +8,13 @@
 - 재생성한 clean 10b1ae4 DMG의 실제 설치본에서도 Dock 모드별 유지·팝업 입력·3종·IPC·격리 검증을 통과했다.
 - 팝업을 포함하도록 smoke를 확장하면서 기하 검수 대상도 `alwaysOnTop` 첫 창이 아니라 mini URL의 책상 창으로 특정했다.
 
+# 터미널로 보내기 기본 켜짐 · 2026-10-07
+
+- 변경: 데스크탑 프로필의 `terminal-send.json`이 없으면 켜짐, 사용자가 끈 선택은 `{"enabled":false}`로 남김. 파일을 읽을 수 없거나 깨져 있으면 꺼짐으로 봄(끈 선택이 실수로 풀리지 않게). 다시 켤 때는 지금처럼 네이티브 확인창
+- 임시 Electron 검증(별도 프로필, 확인창은 가로채 응답): 새 프로필 → 켜짐(파일은 만들지 않음), 끄기 → `{"enabled":false}`(0600), 다시 켜기 취소 → 꺼짐 유지, 확인 → 켜짐(확인창 두 번 모두 거침), 끈 뒤 재시작 → 꺼짐, 깨진 파일 → 꺼짐, 파일 삭제 → 켜짐
+- 문구: 설정의 터미널 안내와 '이 컴퓨터 안에서만' 문구(영어·한국어), README 두 언어, TERMINAL·ARCHITECTURE·기능 정책서·골든 정책·프로젝트 맥락
+- 단위 228, Playwright 72, desktop·MCP 스모크 통과
+
 # macOS DMG preview · 2026-10-07
 
 - 기준: origin/main 501fe72 위 별도 `feat/macos-release` worktree. 기존 실행 앱과 사용자 checkout은 보존했다.
@@ -51,6 +58,18 @@
 - UI(`tests/ui/effects.spec.ts`, RPC 가로채기): 35분 작업 → 큰 사무실·책상 줄·바닥 책상 모두 `focus-level-3`, 불꽃 7·땀 3·김 3·불똥 6, 서류 7장, '불타는 중'. 2초 전 요청 → 세 화면 도착 연출과 '내 요청' 말풍선, 펫 "새 요청". 16초 전 요청 → 연출 없음. 움직임 줄이기 → 연출 애니메이션 0개
 - 스크린샷: `.local/effects-*.png`
 - 리뷰 반영 검증: 늦게 수집된 오래된 요청·백그라운드 실행은 연출 없음, 부르는 중·오류는 말풍선·자세 유지(단위). 시작 직후 처음 수집된 세션은 bootstrap이 아니고 첫 요청이 도착으로 잡힘, 오래된 세션의 첫 수집은 그대로 bootstrap(`office-policy`). 책상 줄 도착이 15초에 사라짐·개인정보 모드에서 요청 내용 숨김·펫 움직임 줄이기(UI)
+
+# 말풍선 선택·복사·링크 · 2026-10-07
+
+- 말풍선 본문을 `<button>`에서 role=button 영역으로 바꿔 글 선택 가능. 드래그·더블클릭 선택 중에는 열거나 펼치지 않음
+- 링크: 마크다운 링크·평문 URL → http·https만 기본 브라우저로(`webLink`, IPC `office:open-link`). `setWindowOpenHandler`도 웹 링크는 외부로 열어, 막혀 있던 기존 `target=_blank` 링크(요금표 등)도 동작
+- 오른쪽 클릭 메뉴(복사·모두 선택·잘라내기·붙여넣기, 링크 열기·주소 복사), 펼친 말풍선 전체 복사(IPC `office:copy`)
+- 테스트
+  - 단위: `tests/links.test.ts`(file:·앱 주소·javascript:·자격 증명 포함 주소·초장문 거부)
+  - UI: `tests/ui/bubble-text.spec.ts`(드래그 선택은 열지 않음, 링크는 브라우저로 열고 카드는 안 엶, 일반 클릭은 엶)
+  - Electron: 복사 IPC가 클립보드에 기록(테스트 후 원래 클립보드 복원), file:·vscode:·javascript: 거부, file: `target=_blank` 링크로 새 창 안 생김
+- **주의(검증 환경):** 같은 기기의 다른 워크트리가 5173·4318 포트를 쓰고 있었다. 기본 Playwright 설정(`reuseExistingServer`)이 그 서버를 재사용해서, 이날 앞서 기록한 "Playwright 47 통과" 중 팝업 카드 이후 결과는 다른 코드 기준이었다. 이 브랜치 코드를 5181 포트로 다시 돌린 결과는 46 통과다. 실패 1개는 실제 수집기 연결 테스트로, 4318 포트를 다른 수집기가 쓰고 있어서였다
+- **main 이식(다국어 이후)**: 오른쪽 클릭 메뉴·전체 복사 버튼·링크 거부 문구를 카탈로그로 옮김(`desktop.menu`, `desktop.webLinksOnly`, `desk.bubble.copyAll`·`copyAllLabel`·`copied`, 내용 숨김은 기존 `desk.hidden`). 5173·4318이 비어 있는 상태에서 단위 228, Playwright 72, desktop·MCP 스모크 통과. 임시 Electron 검증: 복사 IPC가 클립보드에 기록(원래 클립보드 복원)·20만 자 초과는 거부, file:·vscode:·javascript:는 열지 않음(영어·한국어 오류 문구), `window.open`은 http·https만 외부 브라우저로 넘기고 새 창은 생기지 않음, 오른쪽 클릭 메뉴 글자가 언어 변경을 따름
 
 # 상태 보존·DB 잠김·새로고침 · 2026-10-07
 

@@ -45,7 +45,7 @@ Agent Office isn't another window to keep checking. It docks to your desktop, st
 
 - 🐾 **A pet that knows the news** — when a session finishes or asks you something, the pet becomes that teammate: name tag, speech bubble, and a **!** when someone's calling. Drag it anywhere.
 - 🪑 **The real office, in one row** — the same project zones, long shared desks for a branch, little helper desks for sub-agents. Arrows appear when the team outgrows the screen.
-- 💬 **Bubbles you can act on** — live progress in plain words. Expand a bubble in place to read the whole update, open the work card as a popup right there, or reply from the bubble (opt-in).
+- 💬 **Bubbles you can act on** — live progress in plain words. Expand a bubble in place to read and copy the whole update, open its links in your browser, open the work card as a popup right there, or reply from the bubble (desktop, on by default).
 - 🔥 **Alive, not a status light** — papers fly onto the desk when a request lands, the pile grows while it works, and long runs heat up from *Focused* to *In the zone* to *On fire*.
 - 🫥 **Never in your way** — clicks on the transparent parts pass straight through to your editor. Hover a desk to pin it, or hide it until its next conversation.
 
@@ -58,7 +58,7 @@ When three agents are running in five terminals across two worktrees, the hard p
 - ⌨️ **Working** — live progress shows up in speech bubbles, in plain words rather than raw tool names.
 - ☕ **Standing by → Off duty** — after a reply a teammate stands by for 30 minutes, then rests. Four quiet hours later they clock off to the Lounge, and after a week to the Archive.
 
-No hooks to install, no wrappers around your CLI, no cloud. Your sources are opened **read-only** — replying to a session is a separate, opt-in feature.
+No hooks to install, no wrappers around your CLI, no cloud. Your sources are opened **read-only** — replying to a session is a separate desktop feature that you can turn off in Settings, and it only ever types what you send.
 
 <div align="center">
   <img src="docs/images/en/office-map.png" alt="Projects as floor zones, sessions as pixel teammates at their desks" width="72%" /><br/>
@@ -101,7 +101,7 @@ When you want the whole picture, open the full office: every project on its own 
 ### 💬 Jump in and reply
 
 - Claude Code sessions running in **Orca** or **tmux** get a *Jump to Orca / tmux* button on their work card.
-- Turn on **Send to terminal** (desktop only, off by default, confirmed with a native dialog) to follow up from the work card or a speech bubble's reply button. Idle Claude Code sessions get your text typed into their own terminal; live Codex CLI sessions receive it through `codex queue`.
+- **Send to terminal** (desktop only, on by default) lets you follow up from the work card or a speech bubble's reply button. Turn it off in Settings any time; turning it back on asks you to confirm in a native dialog. Idle Claude Code sessions get your text typed into their own terminal; live Codex CLI sessions receive it through `codex queue`.
 - It never approves permission prompts, only types into an idle session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
 
 ### Everything else
@@ -113,6 +113,7 @@ When you want the whole picture, open the full office: every project on its own 
 | 🌿 **Git-aware desks** | Each desk shows the recorded branch/commit and, separately, what's checked out right now (`main · now`, `HEAD · commit`). |
 | 🫥 **Hide a teammate** | The eye button hides a desk until their next real conversation. Questions and errors still break through. |
 | 💭 **Bubbles with meaning** | My request, thinking, progress, final reply, needs your reply, needs a look — each has its own shape and expands in place. |
+| 📋 **Select, copy & open links** | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
@@ -186,7 +187,7 @@ Choose each tool's default character in Settings, or personalize one colleague f
 - App data lives in `~/Library/Application Support/Agent Office/office.sqlite` (directory `0700`, DB `0600`). Your source sessions are **never modified**.
 - Credentials are never copied into the app's database or UI. The **Usage** button sends your existing Claude OAuth credential — read in memory only — to Anthropic's fixed usage endpoint; Codex limits come from the installed CLI's read-only RPC.
 - PR/issue lookups go through your existing `gh` login as read-only requests, and are skipped in demo and privacy modes.
-- **Send to terminal** is off by default, stored in the desktop profile (not the shared settings), and never exposed to the web preview.
+- **Send to terminal** is on by default in the desktop app and can be turned off in Settings (turning it back on asks for confirmation). The choice is stored in the desktop profile (not the shared settings), and it is never exposed to the web preview or MCP.
 - Excluding a project applies everywhere — office, search, handoff and MCP. It is a view policy, not deletion.
 - *Hide screen content* masks what's on screen; it isn't OS-level capture blocking or encryption.
 

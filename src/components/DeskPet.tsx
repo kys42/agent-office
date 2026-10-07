@@ -41,7 +41,7 @@ export function DeskPet({
   onExpand: () => void;
   /** Unfold the floor desks: desks on the screen's bottom edge, zones marked by flags. */
   onFloor: () => void;
-  /** Desktop opt-in: the speaking colleague can be answered right under its bubble. */
+  /** Desktop, with Send to terminal on: the speaking colleague can be answered right under its bubble. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
   /** Look at the session records again now (and restart a stopped collector). */
   onRefresh: () => void;
