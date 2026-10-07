@@ -137,7 +137,7 @@ export function DeskRow({
       // Unfolded bubbles and a helper list scroll themselves.
       if (
         e.target instanceof Element &&
-        e.target.closest('.speech-bubble.is-expanded, .helper-stack-list')
+        e.target.closest('.speech-bubble.is-expanded, .helper-stack-list, .speech-request-bubble')
       )
         return;
       el.scrollLeft += e.deltaY;

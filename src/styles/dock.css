@@ -727,15 +727,21 @@ body.card-mode {
   animation: spin 1s linear infinite;
 }
 
-/* The pet quotes the request only while hovered, with the other details (more specific than
-   speech.css, which loads later). */
-.dock-pet-speech .speech-bubble .speech-request {
+/* The pet shows the request bubble only while hovered, with the other details; the hovered
+   answer makes room for it (more specific than speech.css, which loads later). */
+.dock-pet-speech .speech-bubble > .speech-request-bubble {
   display: none;
 }
-.dock-pet-anchor:hover .dock-pet-speech .speech-bubble .speech-request {
+.dock-pet-anchor:hover .dock-pet-speech .speech-bubble > .speech-request-bubble {
   display: block;
 }
-/* …and the hovered text gives the quote its room (the pet window is 216px above the bubble). */
-.dock-pet-anchor:hover .dock-pet-speech .speech-bubble:has(.speech-request) .speech-copy b {
-  max-height: 60px;
+.dock-pet-speech .speech-request-text {
+  max-height: 31px;
+}
+.dock-pet-anchor:hover
+  .dock-pet-speech
+  .speech-bubble:has(> .speech-request-bubble)
+  .speech-copy
+  b {
+  max-height: 40px;
 }

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { Snapshot } from '../../src/shared/types';
 
@@ -242,7 +242,7 @@ function answered(prefs: Record<string, unknown> = {}): Snapshot {
       sessionId: 'demo:0',
       eventId: 'asked',
       kind: 'request',
-      text: '로그인 화면 여백을 다듬어 줘',
+      text: '로그인 화면 여백을 다듬어 줘. 버튼 색은 브랜드 컬러로 바꾸고, 바뀐 화면은 스크린샷으로 남겨 줘. 마지막으로 어두운 모드에서도 대비가 충분한지 확인해 줘.',
       at: now - 5 * 60_000,
       receivedAt: now - 5 * 60_000,
       version: 'v1',
@@ -265,42 +265,60 @@ function answered(prefs: Record<string, unknown> = {}): Snapshot {
   return snapshot;
 }
 
-test('Pointing at a desk quotes what the person asked, only while pointed at', async ({ page }) => {
+/** The request bubble sits right above the answer, inside `top` (map, window or pet). */
+async function sitsAbove(request: Locator, answer: Locator, top: number) {
+  const r = (await request.boundingBox())!;
+  const a = (await answer.boundingBox())!;
+  expect(r.y + r.height).toBeLessThanOrEqual(a.y + 1);
+  expect(r.y).toBeGreaterThanOrEqual(top);
+}
+
+test('Pointing at a desk shows what the person asked as its own bubble above', async ({ page }) => {
   await bridge(page, answered());
   await page.goto('/');
   const desk = page.locator('.desk-station[data-station-id="demo:0"]');
   const bubble = desk.locator('.speech-bubble');
+  const request = desk.locator('.speech-request-bubble');
   await expect(bubble).toContainText('여백을 8px로 맞췄어요.');
-  await expect(bubble.locator('.speech-request')).toHaveCount(0);
+  await expect(request).toHaveCount(0);
   await desk.locator('.office-pet').hover();
-  await expect(bubble.locator('.speech-request')).toContainText('내 요청');
-  await expect(bubble.locator('.speech-request')).toContainText('로그인 화면 여백을 다듬어 줘');
-  // Unfolded on a first-row desk, the quote and the answer stay inside the office map.
+  await expect(request).toContainText('내 요청');
+  // Not cut: the whole request is there (it scrolls inside its bubble).
+  await expect(request).toContainText('대비가 충분한지 확인해 줘.');
+  // Right above the answer, inside the first-row headroom of the office map.
+  await sitsAbove(
+    request,
+    bubble.locator('.speech-open'),
+    (await page.locator('.office-map').boundingBox())!.y,
+  );
+  // Unfolding the answer gives it the headroom; the request bubble steps aside.
   await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
-  const map = (await page.locator('.office-map').boundingBox())!;
-  expect((await bubble.boundingBox())!.y).toBeGreaterThanOrEqual(map.y);
+  await expect(request).toBeHidden();
   await page.mouse.move(5, 5);
   await expect(bubble).toBeVisible();
-  await expect(bubble.locator('.speech-request')).toHaveCount(0);
+  await expect(request).toHaveCount(0);
 });
 
-test('The pet quotes the request only while hovered', async ({ page }) => {
+test('The pet shows the request bubble only while hovered, inside its window', async ({ page }) => {
   const snapshot = answered();
   await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
   await page.goto('/#mini');
   await page.reload();
   const speech = page.locator('.dock-pet-speech');
+  const request = speech.locator('.speech-request-bubble');
   await expect(speech).toContainText('여백을 8px로 맞췄어요.');
-  await expect(speech.locator('.speech-request')).toBeHidden();
+  await expect(request).toBeHidden();
   await page.locator('.dock-pet-anchor').hover();
-  await expect(speech.locator('.speech-request')).toBeVisible();
-  await expect(speech.locator('.speech-request')).toContainText('로그인 화면 여백을 다듬어 줘');
-  // The hovered bubble, quote included, stays inside the pet window.
-  const stage = (await page.locator('.desk-pet-stage').boundingBox())!;
-  expect((await speech.locator('.speech-bubble').boundingBox())!.y).toBeGreaterThanOrEqual(stage.y);
+  await expect(request).toBeVisible();
+  await expect(request).toContainText('로그인 화면 여백을 다듬어 줘');
+  await sitsAbove(
+    request,
+    speech.locator('.speech-open'),
+    (await page.locator('.desk-pet-stage').boundingBox())!.y,
+  );
 });
 
-test('The row quotes the request when its desk is pointed at, and screen sharing hides it', async ({
+test('The row shows the request bubble above when its desk is pointed at; screen sharing hides it', async ({
   page,
 }) => {
   for (const privacy of [false, true]) {
@@ -311,12 +329,13 @@ test('The row quotes the request when its desk is pointed at, and screen sharing
     await page.reload();
     const desk = page.locator('.desk-station[data-station-id="demo:0"]');
     await expect(desk.locator('.speech-bubble')).toBeVisible();
-    await expect(desk.locator('.speech-request')).toHaveCount(0);
+    await expect(desk.locator('.speech-request-bubble')).toHaveCount(0);
     await desk.locator('.office-pet').hover();
-    const quote = desk.locator('.speech-request');
-    await expect(quote).toBeVisible();
-    if (privacy) await expect(quote).not.toContainText('로그인 화면');
-    else await expect(quote).toContainText('로그인 화면 여백을 다듬어 줘');
+    const request = desk.locator('.speech-request-bubble');
+    await expect(request).toBeVisible();
+    await sitsAbove(request, desk.locator('.speech-open'), 0);
+    if (privacy) await expect(request).not.toContainText('로그인 화면');
+    else await expect(request).toContainText('로그인 화면 여백을 다듬어 줘');
     await page.mouse.move(5, 5);
   }
 });

@@ -66,7 +66,7 @@ export function SpeechBubble({
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
-  /** While pointed at: quote the person's latest request above, to recall what was asked. */
+  /** While pointed at: the person's request as its own bubble right above, to recall what was asked. */
   quote?: boolean;
 }) {
   const { t } = useI18n();
@@ -76,7 +76,6 @@ export function SpeechBubble({
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
   const body = useRef<HTMLElement>(null);
-  const asked = useRef<HTMLElement>(null);
   const [ownOpen, setOwnOpen] = useState(false);
   const open = expanded ?? ownOpen;
   const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
@@ -85,10 +84,17 @@ export function SpeechBubble({
     onExpandedChange?.(value);
   };
   const [long, setLong] = useState(false);
+  // The request bubble scrolls: a fade says there's more until its end is reached.
+  const asked = useRef<HTMLParagraphElement>(null);
+  const [more, setMore] = useState(false);
+  const measure = () => {
+    const el = asked.current;
+    setMore(!!el && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  };
+  useLayoutEffect(measure, [request?.id, speech.requestText, privacy]);
   useLayoutEffect(() => {
-    if (open) return;
-    const clipped = (el: HTMLElement | null) => !!el && el.scrollHeight > el.clientHeight + 1;
-    setLong(clipped(body.current) || clipped(asked.current));
+    const el = body.current;
+    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
   }, [text, markdown, open, privacy, request?.id]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
@@ -96,31 +102,32 @@ export function SpeechBubble({
       data-tone={tone}
       className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
+      {request && (
+        // Its own bubble, never cut: long requests scroll inside it.
+        <div
+          className={`speech-request-bubble ${more ? 'has-more' : ''}`}
+          title={
+            privacy
+              ? t.desk.bubble.requestTitle
+              : `${t.desk.bubble.requestTitle}\n${speech.requestText ?? request.text}`
+          }
+        >
+          <small>
+            <User size={9} strokeWidth={2.6} aria-hidden="true" />
+            {t.desk.bubble.request}
+            <em>{ago(request.at)}</em>
+          </small>
+          <p className="speech-request-text" ref={asked} onScroll={measure}>
+            {privacy ? t.desk.hidden : (speech.requestText ?? request.text)}
+          </p>
+        </div>
+      )}
       <button
         className="speech-open"
         onClick={(e) => onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!)}
         title={privacy ? t.desk.hidden : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
         <span className="speech-copy">
-          {request && (
-            <span
-              className="speech-request"
-              title={
-                privacy
-                  ? t.desk.bubble.requestTitle
-                  : `${t.desk.bubble.requestTitle}\n${speech.requestText ?? request.text}`
-              }
-            >
-              <small>
-                <User size={9} strokeWidth={2.6} aria-hidden="true" />
-                {t.desk.bubble.request}
-                <em>{ago(request.at)}</em>
-              </small>
-              <span className="speech-request-text" ref={asked}>
-                {privacy ? t.desk.hidden : request.text}
-              </span>
-            </span>
-          )}
           <small>
             <span className="bubble-label">
               <Icon size={9} strokeWidth={2.6} aria-hidden="true" />
