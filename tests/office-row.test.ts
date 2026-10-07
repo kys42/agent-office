@@ -323,7 +323,7 @@ test('an answered call comes back settled, not calling again', () => {
 });
 
 test('pointing at a desk quotes the latest request the person sent it', () => {
-  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000, events: [] });
   const asked = notice(s.id, {
     kind: 'request',
     phase: undefined,
@@ -365,19 +365,16 @@ test('pointing at a desk quotes the latest request the person sent it', () => {
   // A resident desk hears requests sent to any of its runs.
   const resident = session(0, 'team', {
     status: 'idle',
+    events: [],
     resident: { sessionIds: [s.id, 'fixture:other'] } as Session['resident'],
   });
   const viaOther = notice('fixture:other', { kind: 'request', phase: undefined, at: now - 2000 });
   assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request?.id, viaOther.id);
-  assert.equal(
-    stationSpeech({ ...s, events: [] }, [reply], 3, now).request,
-    undefined,
-    'nothing asked yet',
-  );
+  assert.equal(stationSpeech(s, [reply], 3, now).request, undefined, 'nothing asked yet');
 });
 
 test('the quote is the request a bubble answers, never over a background run', () => {
-  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000, events: [] });
   const first = notice(s.id, {
     kind: 'request',
     phase: undefined,
@@ -398,6 +395,7 @@ test('the quote is the request a bubble answers, never over a background run', (
   // A resident desk prefers the run that is speaking.
   const resident = session(0, 'team', {
     status: 'idle',
+    events: [],
     resident: { sessionIds: [s.id, 'fixture:cron'] } as Session['resident'],
   });
   const elsewhere = notice('fixture:cron', {
@@ -462,4 +460,23 @@ test('a conversation found as history still quotes the request its snapshot kept
     { relation: { kind: 'subagent', parentNativeId: 'p', source: 'f' } },
   ] as Partial<Session>[])
     assert.equal(stationSpeech({ ...s, ...patch }, [reply], 3, now).request, undefined);
+});
+
+test("a resident's speaking run quotes its own retained request before another run's", () => {
+  const events = [
+    { id: 'u1', at: now - 9000, kind: 'user' as const, text: '내 실행의 부탁', sourceRef: 'f' },
+  ];
+  const s = session(0, 'team', {
+    status: 'idle',
+    events,
+    resident: { sessionIds: ['fixture:0', 'fixture:other'] } as Session['resident'],
+  });
+  const other = notice('fixture:other', {
+    kind: 'request',
+    phase: undefined,
+    text: '다른 실행의 부탁',
+    at: now - 5000,
+  });
+  const reply = notice(s.id, { eventId: 'a1', text: '끝냈어요', at: now - 1000, bootstrap: true });
+  assert.equal(stationSpeech(s, [other, reply], 3, now).request?.text, '내 실행의 부탁');
 });

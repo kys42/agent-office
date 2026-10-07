@@ -143,33 +143,40 @@ export function stationSpeech(
               : activity.kind === 'reply'
                 ? 'reply'
                 : 'message';
-  // The request a bubble answers: sent no later than it, from the same run first. Nothing is
-  // quoted over a background run's words (a scheduled or internal run isn't answering the person).
-  const asked = news
-    .filter((n) => n.kind === 'request' && !n.background && (!bubble || n.at <= bubble.at))
-    .sort(
-      (a, b) =>
-        Number(b.sessionId === bubble?.sessionId) - Number(a.sessionId === bubble?.sessionId) ||
-        b.at - a.at ||
-        b.receivedAt - a.receivedAt,
-    );
-  const noticed = bubble?.background ? undefined : asked[0];
-  // A conversation first collected as history keeps only its last notice; the snapshot still has
-  // the person's last requests, so quote from those (nothing is stored or notified).
-  const retained =
-    noticed || bubble?.background || isBackground(s) || isHelper(s)
-      ? undefined
-      : s.events
-          .filter((e) => e.kind === 'user' && (!bubble || e.at <= bubble.at))
-          .sort((a, b) => b.at - a.at)[0];
-  const quoted: QuotedRequest | undefined = noticed
-    ? { id: noticed.id, eventId: noticed.eventId, at: noticed.at, text: noticed.text }
-    : retained && {
-        id: `${s.id}::${retained.id}`,
-        eventId: retained.id,
-        at: retained.at,
-        text: messageExcerpt(retained.text, 800),
-      };
+  // The request a bubble answers: sent no later than it, from the speaking run first. Candidates
+  // are request notices plus the requests the snapshot retained (a conversation first collected
+  // as history keeps only its last notice; nothing is stored or notified for these). Nothing is
+  // quoted over a background run's words, nor from a background run or a helper.
+  const answered = (at: number) => !bubble || at <= bubble.at;
+  const candidates: (QuotedRequest & { sessionId: string })[] = [
+    ...news
+      .filter((n) => n.kind === 'request' && !n.background && answered(n.at))
+      .map((n) => ({
+        id: n.id,
+        eventId: n.eventId,
+        at: n.at,
+        text: n.text,
+        sessionId: n.sessionId,
+      })),
+    ...(isBackground(s) || isHelper(s) ? [] : s.events)
+      .filter((e) => e.kind === 'user' && answered(e.at))
+      .map((e) => ({
+        id: `${s.id}::${e.id}`,
+        eventId: e.id,
+        at: e.at,
+        text: messageExcerpt(e.text, 800),
+        sessionId: s.id,
+      })),
+  ].filter((c, i, all) => all.findIndex((o) => o.id === c.id) === i);
+  const best = candidates.sort(
+    (a, b) =>
+      Number(b.sessionId === bubble?.sessionId) - Number(a.sessionId === bubble?.sessionId) ||
+      b.at - a.at,
+  )[0];
+  const quoted: QuotedRequest | undefined =
+    best && !bubble?.background
+      ? { id: best.id, eventId: best.eventId, at: best.at, text: best.text }
+      : undefined;
   return {
     members,
     news,

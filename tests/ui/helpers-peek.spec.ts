@@ -233,6 +233,8 @@ test('Closing a bubble does not bring it straight back; it peeks again once the 
 function answered(prefs: Record<string, unknown> = {}): Snapshot {
   const snapshot = fixture(0);
   const now = Date.now();
+  // Only the notices below speak for this desk (no older demo messages to quote instead).
+  snapshot.sessions.find((x) => x.id === 'demo:0')!.events = [];
   snapshot.preferences = { ...snapshot.preferences, ...prefs };
   snapshot.notices = [
     {
