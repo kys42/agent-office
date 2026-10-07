@@ -342,6 +342,10 @@ export interface OfficeAPI {
   notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
+  /** Open a web page (http/https only) from session text in the default browser. */
+  openLink?: (url: string) => Promise<void>;
+  /** Put text on the clipboard (desktop: through the main process, no permission prompt). */
+  copyText?: (text: string) => Promise<void>;
   snapshot: () => Promise<Snapshot>;
   refresh: () => Promise<Snapshot>;
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;

@@ -1,5 +1,6 @@
 import type { OfficeAPI, Snapshot } from '../shared/types';
 import { parseArtifact } from '../shared/office';
+import { webLink } from '../shared/links';
 declare global {
   interface Window {
     office?: OfficeAPI;
@@ -28,6 +29,11 @@ export const api: OfficeAPI = window.office ?? {
     const artifact = parseArtifact(url);
     if (artifact) window.open(artifact.url, '_blank', 'noopener,noreferrer');
   },
+  openLink: async (url) => {
+    const link = webLink(url);
+    if (link) window.open(link, '_blank', 'noopener,noreferrer');
+  },
+  copyText: (text) => navigator.clipboard.writeText(text),
   refresh: () => rpc('refresh'),
   patch: (id, p) => rpc('patch', id, p),
   veil: (ids, on) => rpc('veil', ids, on),

@@ -1,10 +1,12 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BellRing,
+  Check,
   ChevronDown,
   ChevronUp,
   CircleCheck,
   Cloud,
+  Copy,
   MessageSquare,
   PenLine,
   Reply,
@@ -20,6 +22,20 @@ import { toolLabel } from '../shared/activity';
 import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/speech';
 import { ago } from '../lib/format';
 import { InlineMarkdown } from './InlineMarkdown';
+import { LinkifiedText } from './WebLink';
+import { api } from '../lib/api';
+
+/** A non-empty text selection inside this element (the person is selecting, not clicking). */
+function selectionWithin(el: HTMLElement) {
+  const selection = window.getSelection();
+  return (
+    !!selection &&
+    !selection.isCollapsed &&
+    selection.toString().trim() !== '' &&
+    !!selection.anchorNode &&
+    el.contains(selection.anchorNode)
+  );
+}
 
 const TONE_ICONS: Record<BubbleTone, LucideIcon> = {
   mine: User,
@@ -68,6 +84,7 @@ export function SpeechBubble({
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
   const body = useRef<HTMLElement>(null);
   const [ownOpen, setOwnOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
   const open = expanded ?? ownOpen;
   const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
     const value = typeof next === 'function' ? next(open) : next;
@@ -85,9 +102,21 @@ export function SpeechBubble({
       data-tone={tone}
       className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''}`}
     >
-      <button
+      {/* Not a <button>: its words can be selected and copied, and links inside open. */}
+      <div
         className="speech-open"
-        onClick={(e) => onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!)}
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          // Dragging (or double-clicking) to select words is reading, not opening.
+          if (e.detail > 1 || selectionWithin(e.currentTarget)) return;
+          onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!);
+        }}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+          e.preventDefault();
+          onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!);
+        }}
         title={privacy ? '내용 숨김' : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
         <span className="speech-copy">
@@ -110,11 +139,36 @@ export function SpeechBubble({
             </em>
           </small>
           <b ref={body}>
-            {privacy ? MOODS[s.status].label : markdown ? <InlineMarkdown text={markdown} /> : text}
+            {privacy ? (
+              MOODS[s.status].label
+            ) : markdown ? (
+              <InlineMarkdown text={markdown} />
+            ) : (
+              <LinkifiedText text={text} />
+            )}
           </b>
           {detail && <span className="speech-detail">{detail}</span>}
         </span>
-      </button>
+      </div>
+      {open && !privacy && (
+        <button
+          className="bubble-copy"
+          aria-label="말풍선 내용 전체 복사"
+          title={copied ? '복사했어요' : '전체 복사'}
+          onClick={(e) => {
+            e.stopPropagation();
+            const words = markdown ?? text;
+            void (api.copyText ?? ((t: string) => navigator.clipboard.writeText(t)))(words)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              })
+              .catch(() => {});
+          }}
+        >
+          {copied ? <Check size={10} strokeWidth={2.8} /> : <Copy size={10} strokeWidth={2.6} />}
+        </button>
+      )}
       {(long || open || detail) && (
         <button
           className="bubble-expand"

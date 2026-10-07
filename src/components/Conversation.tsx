@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
 import { ChevronDown, Copy, Terminal, Clock3, MessageSquare, ArrowDown } from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
@@ -96,7 +97,8 @@ function Message({
                     {children}
                   </a>
                 ) : (
-                  <span>{children}</span>
+                  // Any other web page opens in the browser; other schemes stay text.
+                  <WebLink href={href}>{children}</WebLink>
                 );
               },
               img: () => null,

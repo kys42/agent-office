@@ -320,3 +320,56 @@
     animation: none;
   }
 }
+
+/* Bubble words can be selected and copied; links open in the browser. */
+.speech-open {
+  cursor: pointer;
+}
+.speech-copy b {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.speech-copy b::selection,
+.speech-copy b *::selection {
+  background: rgba(244, 184, 108, 0.55);
+}
+.speech-copy .web-link {
+  color: #1f5fbf;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.tone-mine .speech-copy .web-link {
+  color: #b9d4ff;
+}
+.bubble-copy {
+  position: absolute;
+  right: 6px;
+  bottom: 2px;
+  z-index: 2;
+  width: 20px;
+  height: 13px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: #2a2128;
+  background: rgba(42, 33, 40, 0.08);
+  transition: background 0.15s;
+}
+.bubble-copy:hover {
+  background: rgba(42, 33, 40, 0.18);
+}
+.tone-mine .bubble-copy {
+  color: #f7ecdc;
+  background: rgba(255, 255, 255, 0.12);
+}
+.speech-bubble.is-expanded .speech-open {
+  padding-bottom: 16px;
+}
+/* Session text links in the conversation panel. */
+.message-text .web-link {
+  color: var(--accent-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

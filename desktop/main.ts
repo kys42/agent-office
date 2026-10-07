@@ -8,6 +8,7 @@ import {
   screen,
   shell,
   dialog,
+  clipboard,
 } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -22,6 +23,7 @@ import type {
   Session,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
+import { webLink } from '../src/shared/links.js';
 import {
   cardBounds,
   clampInto,
@@ -107,9 +109,36 @@ else {
   });
 }
 function secure(w: BrowserWindow) {
-  w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // A web page link (target=_blank) opens in the browser; nothing opens inside the app.
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    const link = webLink(url);
+    if (link) void shell.openExternal(link);
+    return { action: 'deny' };
+  });
   w.webContents.on('will-navigate', (e) => e.preventDefault());
   w.webContents.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
+  // Electron has no right-click menu of its own: copy what is selected, and handle links.
+  w.webContents.on('context-menu', (_e, params) => {
+    const link = webLink(params.linkURL);
+    const items: Electron.MenuItemConstructorOptions[] = [];
+    if (link)
+      items.push(
+        { label: '링크 열기', click: () => void shell.openExternal(link) },
+        { label: '링크 주소 복사', click: () => clipboard.writeText(link) },
+        { type: 'separator' },
+      );
+    if (params.isEditable)
+      items.push(
+        { label: '잘라내기', role: 'cut', enabled: params.editFlags.canCut },
+        { label: '복사', role: 'copy', enabled: params.editFlags.canCopy },
+        { label: '붙여넣기', role: 'paste', enabled: params.editFlags.canPaste },
+        { label: '모두 선택', role: 'selectAll' },
+      );
+    else if (params.selectionText.trim())
+      items.push({ label: '복사', role: 'copy' }, { label: '모두 선택', role: 'selectAll' });
+    while (items.at(-1)?.type === 'separator') items.pop();
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: w });
+  });
 }
 function createMain() {
   main = new BrowserWindow({
@@ -341,6 +370,17 @@ function setupIPC() {
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;
     if (!artifact) throw new Error('지원하지 않는 결과 링크입니다.');
     await shell.openExternal(artifact.url);
+  });
+  ipcMain.handle('office:open-link', async (e, url) => {
+    trusted(e);
+    const link = webLink(url);
+    if (!link) throw new Error('웹 링크(http·https)만 열 수 있어요.');
+    await shell.openExternal(link);
+  });
+  ipcMain.handle('office:copy', (e, text) => {
+    trusted(e);
+    if (typeof text !== 'string' || text.length > 200_000) throw new Error('잘못된 요청');
+    clipboard.writeText(text);
   });
   ipcMain.handle('office:call', async (e, m, args) => {
     trusted(e);
