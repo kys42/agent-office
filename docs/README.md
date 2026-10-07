@@ -12,6 +12,7 @@ docs/
 ├── development/                  # 구현·연결·검증·개발 이력
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
 │   ├── SESSION-INGESTION.md       # 수집 흐름·자체/외부 모듈·장애 분석
+│   ├── PERFORMANCE-DESIGN.md      # 경량화 측정·단계별 제안 (미구현)
 │   ├── OFFICE-ASSETS.md          # 가구·펫·소품 확장 계약
 │   ├── MCP.md                    # 읽기 전용 도구 연결
 │   ├── QA.md                     # 날짜별 검증 결과·한계
@@ -32,6 +33,7 @@ docs/
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
+| CPU·메모리 경량화 계획 | [측정과 경량화 설계 — 제안](development/PERFORMANCE-DESIGN.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
 | 실행과 검증 | [루트 README](../README.md), [검증 기록](development/QA.md), [MCP 연결](development/MCP.md) |
 | 시각 방향 비교 | [테마 시안](research/design/office-themes-2026-10-04.md) |
