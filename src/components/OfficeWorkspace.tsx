@@ -55,6 +55,7 @@ export function OfficeWorkspace({
   onVeil,
   onPin,
   onZoneDrop,
+  onReply,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -77,6 +78,7 @@ export function OfficeWorkspace({
   /** Keep a colleague in the office however long it stays quiet (toggles `pinned`). */
   onPin: (s: Session) => void;
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
@@ -199,6 +201,7 @@ export function OfficeWorkspace({
             canVeil={(s) => !model.view(s.id)?.needsPerson}
             onPin={onPin}
             onZoneDrop={onZoneDrop}
+            onReply={onReply}
             footer={
               <>
                 {model.veiled.length > 0 && (

@@ -72,18 +72,23 @@ export function officeResidents(sessions: Session[], now = Date.now()) {
     });
     const current = ordered[0];
     const seats = group.flatMap((s) => (s.officeSeat === undefined ? [] : [s.officeSeat]));
+    // Pinning belongs to the colleague, not to whichever run speaks for it right now.
+    const pinned = group.some((s) => s.pinned);
     residents.push({
       ...current,
+      pinned,
       attachedTo: undefined,
       zone:
-        !isWorking(current, now) &&
-        !needsAttention(current) &&
-        !current.pinned &&
-        !current.returnedAt &&
-        isBackground(current) &&
-        current.zone === 'office'
-          ? 'waiting'
-          : current.zone,
+        pinned && !current.archived && current.zone === 'waiting'
+          ? 'office'
+          : !isWorking(current, now) &&
+              !needsAttention(current) &&
+              !pinned &&
+              !current.returnedAt &&
+              isBackground(current) &&
+              current.zone === 'office'
+            ? 'waiting'
+            : current.zone,
       officeSeat: seats.length ? Math.min(...seats) : undefined,
       resident: {
         key: `actor:${current.actor!.id}`,

@@ -69,3 +69,42 @@ export function readPetSpot(raw: unknown): Point | null {
   if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
   return p.v === 2 ? { x: p.x, y: p.y } : { x: p.x + 66, y: p.y + 148 };
 }
+
+/** The dock card: the colleague card (same as the big office's right panel) in its own window. */
+export const CARD_SIZE = { width: 420, height: 680 };
+/** Shorter than this, the card would be cramped above a desk; it opens beside it instead. */
+export const CARD_MIN_HEIGHT = 420;
+const CARD_GAP = 10;
+const CARD_MARGIN = 12;
+
+/**
+ * Where the dock card opens for a clicked desk or bubble (`anchor`, screen coordinates): above
+ * it and centred — shortened to the room there — or beside it when there is not even room for
+ * a short card above; always inside the work area.
+ */
+export function cardBounds(anchor: Rect, area: Rect, size = CARD_SIZE): Rect {
+  const inside: Rect = {
+    x: area.x + CARD_MARGIN,
+    y: area.y + CARD_MARGIN,
+    width: area.width - CARD_MARGIN * 2,
+    height: area.height - CARD_MARGIN * 2,
+  };
+  const width = Math.min(size.width, inside.width);
+  const room = anchor.y - CARD_GAP - inside.y;
+  if (room >= Math.min(CARD_MIN_HEIGHT, size.height)) {
+    const height = Math.min(size.height, room);
+    return clampInto(
+      {
+        x: anchor.x + anchor.width / 2 - width / 2,
+        y: anchor.y - CARD_GAP - height,
+        width,
+        height,
+      },
+      inside,
+    );
+  }
+  const height = Math.min(size.height, inside.height);
+  const right = anchor.x + anchor.width + CARD_GAP;
+  const x = right + width <= inside.x + inside.width ? right : anchor.x - CARD_GAP - width;
+  return clampInto({ x, y: anchor.y + anchor.height / 2 - height / 2, width, height }, inside);
+}

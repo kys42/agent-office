@@ -6,6 +6,7 @@ import '@fontsource/jetbrains-mono/latin-500.css';
 import './styles/fonts.css';
 import App from './App';
 import { DeskDock } from './components/DeskDock';
+import { DockCard } from './components/DockCard';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
@@ -35,8 +36,10 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
     );
   }
 }
-// Same office core, two presentations: the big office window or the floating desk pet.
+// Same office core, three presentations: the big office window, the floating desk pet, and
+// the colleague card the pet opens at a desk.
 const dock = location.hash.startsWith('#mini');
+const card = location.hash === '#card';
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <Boundary>{dock ? <DeskDock /> : <App />}</Boundary>,
+  <Boundary>{card ? <DockCard /> : dock ? <DeskDock /> : <App />}</Boundary>,
 );

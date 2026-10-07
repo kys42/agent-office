@@ -11,6 +11,7 @@ import {
   Pause,
   Sparkles,
   LayoutGrid,
+  Terminal,
   X,
 } from 'lucide-react';
 import type { Preferences, Snapshot, Provider } from '../shared/types';
@@ -45,11 +46,16 @@ export function Settings({
   onPrefs,
   onRefresh,
   notify,
+  terminalSend,
+  onTerminalSend,
 }: {
   snapshot: Snapshot;
   onPrefs: (p: Partial<Preferences>) => void;
   onRefresh: () => void;
   notify: (s: string) => void;
+  /** Desktop only; undefined hides the setting (web preview, demo). */
+  terminalSend?: boolean;
+  onTerminalSend?: () => void;
 }) {
   const p = snapshot.preferences;
   const projects = [
@@ -271,6 +277,21 @@ export function Settings({
                 onChange={() => onPrefs({ privacy: !p.privacy })}
               />
             </div>
+            {terminalSend !== undefined && onTerminalSend && (
+              <div className="setting-row">
+                <Terminal size={18} />
+                <div>
+                  <b>터미널로 보내기</b>
+                  <p>
+                    Orca·tmux에서 쉬고 있는 Claude Code 세션에 업무 카드에서 바로 이어서 말해요. 그
+                    터미널에 직접 친 것과 같아서, 권한 확인 없이 띄운 세션이면 그대로 실행돼요.
+                    입력창에 써 둔 초안이 있으면 그 뒤에 이어 붙어요. 이 데스크탑 앱에서만 켤 수
+                    있어요.
+                  </p>
+                </div>
+                <Toggle checked={terminalSend} label="터미널로 보내기" onChange={onTerminalSend} />
+              </div>
+            )}
           </section>
           <section className="settings-section">
             <h2>도구마다 불러올 최근 기록</h2>
@@ -386,7 +407,8 @@ export function Settings({
               <h3>이 컴퓨터 안에서만.</h3>
               <p>
                 인증 파일을 가져오거나 모델을 호출하지 않아요. 로그 속 흔한 토큰 패턴은 가리고,
-                원본은 읽기만 해요. 내용 숨기기는 화면 표시만 바꾸며 OS의 캡처 차단 기능은 아니에요.
+                원본은 읽기만 해요. ‘터미널로 보내기’를 켠 경우에만 내가 쓴 내용을 그 터미널에
+                입력해요. 내용 숨기기는 화면 표시만 바꾸며 OS의 캡처 차단 기능은 아니에요.
               </p>
             </div>
           </section>

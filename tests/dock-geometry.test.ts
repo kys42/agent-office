@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CARD_MIN_HEIGHT,
+  CARD_SIZE,
+  cardBounds,
   FLOOR_HEIGHT,
   FLOOR_SCENE_HEIGHT,
   PET_SIZE,
@@ -80,4 +83,46 @@ test('floor desks: the scene ends at the desk feet, and the window holds it unde
   const floor = rowBounds(area, FLOOR_HEIGHT);
   assert.equal(floor.y + floor.height, area.y + area.height);
   assert.equal(floor.width, area.width);
+});
+
+const inside = (b: { x: number; y: number; width: number; height: number }, a: typeof area) =>
+  b.x >= a.x && b.y >= a.y && b.x + b.width <= a.x + a.width && b.y + b.height <= a.y + a.height;
+
+test('the dock card opens above the clicked desk, centred, inside the work area', () => {
+  // A row desk near the bottom middle of the screen.
+  const desk = { x: 700, y: 700, width: 164, height: 160 };
+  const b = cardBounds(desk, area);
+  assert.equal(b.width, CARD_SIZE.width);
+  assert.ok(b.y + b.height <= desk.y, 'the card does not cover the desk');
+  // A laptop screen has less room than the full card: it shortens rather than move aside.
+  assert.ok(b.height < CARD_SIZE.height && b.height >= CARD_MIN_HEIGHT);
+  // A tall screen gets the full card.
+  const tall = { x: 0, y: 0, width: 2560, height: 1415 };
+  assert.equal(
+    cardBounds({ x: 1200, y: 1100, width: 164, height: 160 }, tall).height,
+    CARD_SIZE.height,
+  );
+  assert.equal(Math.round(b.x + b.width / 2), Math.round(desk.x + desk.width / 2));
+  assert.ok(inside(b, area));
+});
+
+test('the dock card stays on screen at the edges and beside a desk with no room above', () => {
+  // At the far right of the row: shifted left, still above the desk.
+  const right = cardBounds({ x: 1450, y: 760, width: 60, height: 80 }, area);
+  assert.ok(inside(right, area));
+  assert.ok(right.y + right.height <= 760);
+  // A pet bubble near the top: no room above, so it opens beside, never over it.
+  const high = { x: 300, y: 120, width: 160, height: 90 };
+  const side = cardBounds(high, area);
+  assert.ok(inside(side, area));
+  assert.ok(side.x >= high.x + high.width || side.x + side.width <= high.x);
+  // Near the right edge with no room above: it opens on the left side instead.
+  const corner = { x: 1300, y: 100, width: 150, height: 90 };
+  const left = cardBounds(corner, area);
+  assert.ok(left.x + left.width <= corner.x);
+  // On a second display, and on a short screen the card shrinks to fit.
+  assert.ok(inside(cardBounds({ x: 2400, y: 900, width: 164, height: 160 }, second), second));
+  const short = { x: 0, y: 0, width: 1280, height: 600 };
+  const fitted = cardBounds({ x: 600, y: 500, width: 164, height: 90 }, short);
+  assert.ok(fitted.height < CARD_SIZE.height && inside(fitted, short));
 });
