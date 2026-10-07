@@ -19,9 +19,14 @@ const lines = (from: number, count: number, pad?: number) =>
   Array.from({ length: count }, (_, i) => line(from + i, pad)).join('');
 
 /** The cache must return exactly what the bounded reader returns for the same bytes. */
-async function same(cache: RecordWindowCache, file: string, mode?: 'append' | 'full') {
+async function same(
+  cache: RecordWindowCache,
+  file: string,
+  mode?: 'append' | 'full',
+  verify = false,
+) {
   const src = await source(file);
-  const got = await cache.read(src);
+  const got = await (verify ? cache.verify(src) : cache.read(src));
   const want = await readRecords(src);
   assert.deepEqual(got.records, want.records);
   assert.equal(got.partial, want.partial);
@@ -237,7 +242,7 @@ test('A window built by appends asks for a full re-verification and reports drif
     assert.equal(cache.stale(file), false);
     now += 11 * 60_000;
     assert.equal(cache.stale(file), true);
-    const quiet = await same(cache, file, 'full');
+    const quiet = await same(cache, file, 'full', true);
     assert.equal(quiet.drifted, false);
     assert.equal(cache.stale(file), false);
     // An in-place rewrite outside the guard that the append path could not see.
@@ -248,9 +253,14 @@ test('A window built by appends asks for a full re-verification and reports drif
     await fh.close();
     now += 11 * 60_000;
     assert.equal(cache.stale(file), true);
-    const drift = await same(cache, file, 'full');
+    const drift = await same(cache, file, 'full', true);
     assert.equal(drift.drifted, true);
     assert.equal(drift.records[0].id, 9);
+    // Ordinary fallbacks re-parse anyway and never pay for the comparison.
+    await appendFile(file, line(8));
+    await same(cache, file, 'append');
+    now += 11 * 60_000;
+    assert.equal((await same(cache, file, 'full')).drifted, undefined);
   } finally {
     await rm(dir, { recursive: true });
   }
@@ -273,7 +283,7 @@ test('An appended window evicted before verification is still re-verified', asyn
     assert.equal(cache.stale(a), false);
     now += 11 * 60_000;
     assert.equal(cache.stale(a), true);
-    assert.equal((await same(cache, a, 'full')).drifted, true);
+    assert.equal((await same(cache, a, 'full', true)).drifted, true);
     assert.equal(cache.stale(a), false);
     cache.prune(new Set());
     assert.equal(cache.stale(a), false);

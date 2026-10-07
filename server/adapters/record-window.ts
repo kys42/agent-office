@@ -47,7 +47,7 @@ export interface WindowRead {
   records: Record<string, any>[];
   partial: boolean;
   mode: 'append' | 'full';
-  /** A full re-verification found other records than the append path had kept. */
+  /** Set by `verify` only: the full read found other records than the append path had kept. */
   drifted?: boolean;
 }
 
@@ -90,7 +90,14 @@ export class RecordWindowCache {
       const appended = await this.append(file.path, entry);
       if (appended) return appended;
     }
-    return this.full(file.path, entry);
+    return this.full(file.path);
+  }
+  /**
+   * The scheduled full re-verification of a `stale` window. Only this path compares the old
+   * window with the fresh read; ordinary fallbacks re-parse anyway and skip that cost.
+   */
+  async verify(file: SourceFile): Promise<WindowRead> {
+    return this.full(file.path, this.entries.get(file.path) ?? null);
   }
   /**
    * Appended windows rely on the guard alone; once their last full read is older than the
@@ -119,10 +126,11 @@ export class RecordWindowCache {
     this.total -= entry.approxBytes;
     this.entries.delete(filePath);
   }
-  private async full(filePath: string, previous?: Entry): Promise<WindowRead> {
+  /** `previous` (verify only): the entry to compare with; null when there is none. */
+  private async full(filePath: string, previous?: Entry | null): Promise<WindowRead> {
     this.drop(filePath);
     // Evicted before its verification: what it had kept is gone, so report a drift to be safe.
-    const evicted = !previous && this.due.has(filePath);
+    const evicted = previous === null && this.due.has(filePath);
     this.due.delete(filePath);
     const w = await readWindow(filePath, this.maxBytes);
     if (w.resumable) this.store(filePath, w);

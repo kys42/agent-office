@@ -249,7 +249,7 @@ export class OfficeService extends EventEmitter {
           // A window built by appends trusts its guard bytes; re-verify it in full on schedule
           // even when the file has gone quiet, and re-parse only if that found other records.
           if (s && this.windows.stale(file.path)) {
-            const check = await this.windows.read(file).catch(() => null);
+            const check = await this.windows.verify(file).catch(() => null);
             if (check?.drifted) {
               s = null;
               key = `${stamp}:verified:${Date.now()}`;
