@@ -44,6 +44,7 @@ export function SpeechBubble({
   onOpen,
   onDismiss,
   detail,
+  peek = false,
   reply,
   expanded,
   onExpandedChange,
@@ -56,6 +57,8 @@ export function SpeechBubble({
   onDismiss: () => void;
   /** Extra facts shown when the bubble is unfolded (or hovered, where the scene allows). */
   detail?: ReactNode;
+  /** A closed or expired bubble shown again while pointed at: muted, nothing to close. */
+  peek?: boolean;
   /** Quick reply, offered only when the session can take a follow-up right now. */
   reply?: { title: string; open: boolean; onClick: () => void };
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
@@ -83,7 +86,7 @@ export function SpeechBubble({
   return (
     <div
       data-tone={tone}
-      className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''}`}
+      className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
       <button
         className="speech-open"
@@ -104,6 +107,7 @@ export function SpeechBubble({
               )}
             </span>
             <em>
+              {peek && <span className="bubble-peek">지난 말풍선</span>}
               {exposure && <span className="bubble-exposure">{exposure}</span>}
               {ago(bubble?.at ?? activity.at)}
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}
@@ -153,7 +157,7 @@ export function SpeechBubble({
           <Reply size={11} strokeWidth={2.6} />
         </button>
       )}
-      {bubble && (
+      {bubble && !peek && (
         <button
           className="bubble-dismiss"
           aria-label={`${privacy ? '동료' : sessionName(s)} 말풍선 접기`}
