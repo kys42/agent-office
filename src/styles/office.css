@@ -1383,12 +1383,14 @@
   background: var(--st-call);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
 }
+/* One desk wide and anchored to the colleague's column (the stack is always its first slot),
+   so the list never runs off the map; long names ellipsize. */
 .helper-stack-list {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 50%;
+  left: -10px;
   z-index: 30;
-  min-width: 156px;
+  width: 164px;
   max-height: 200px;
   overflow-y: auto;
   margin: 0;
@@ -1400,7 +1402,6 @@
   box-shadow:
     0 4px 0 rgba(0, 0, 0, 0.3),
     0 12px 24px -10px rgba(0, 0, 0, 0.7);
-  transform: translateX(-50%);
 }
 .helper-stack-list button {
   position: relative;
@@ -1419,6 +1420,11 @@
 .helper-stack-list button:hover,
 .helper-stack-list button:focus-visible {
   background: rgba(255, 227, 166, 0.16);
+}
+.helper-stack-name small {
+  margin-right: 4px;
+  font-size: 9px;
+  color: #b9a58c;
 }
 .helper-stack-name {
   flex: 1;

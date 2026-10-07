@@ -111,7 +111,10 @@ export function HelperStack({
   const responded = (s: Session) => s.runtime?.phase === 'responded' && !pose(s).working;
   const anyCalling = members.some(calling);
   const anyNews = members.some(news);
-  const name = (s: Session) => (privacy ? '보조 동료' : s.relation?.role || sessionName(s));
+  // Helpers often share a role (e.g. "explorer"): keep each one's own name next to it.
+  const role = (s: Session) => (privacy ? '' : (s.relation?.role ?? ''));
+  const name = (s: Session) => (privacy ? '보조 동료' : sessionName(s));
+  const label = (s: Session) => (role(s) ? `${role(s)} · ${name(s)}` : name(s));
   const count = members.length;
   return (
     <div
@@ -133,7 +136,7 @@ export function HelperStack({
         data-solid
         aria-expanded={open}
         aria-label={`보조 동료 ${count}명${anyCalling ? ', 부르는 보조 있음' : ''} · 명단 보기`}
-        title={privacy ? undefined : members.map(name).join('\n')}
+        title={privacy ? undefined : members.map(label).join('\n')}
         onClick={() => setOpen((v) => !v)}
       >
         <span className="helper-stack-back" aria-hidden="true">
@@ -160,7 +163,10 @@ export function HelperStack({
                 }}
               >
                 <Sprite provider={s.provider} mood={pose(s).mood} size={22} />
-                <span className="helper-stack-name">{name(s)}</span>
+                <span className="helper-stack-name" title={privacy ? undefined : label(s)}>
+                  {role(s) && <small>{role(s)}</small>}
+                  {name(s)}
+                </span>
                 <i style={{ background: MOODS[s.status].color }} title={MOODS[s.status].label} />
                 {responded(s) && (
                   <b className="helper-stack-done" title="응답을 남겼어요">
