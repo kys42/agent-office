@@ -28,7 +28,10 @@ export function DockCard() {
   useEffect(
     () =>
       api.onCard?.((next) => {
+        // null: the card was put away. Showing nothing stops background detail polling and
+        // keeps the next open from flashing the previous colleague.
         setTarget(next);
+        if (!next) return;
         setOpened(Date.now());
         reload(); // the opt-in may have changed in the big office meanwhile
       }),
@@ -58,7 +61,8 @@ export function DockCard() {
     <div className="dock-card">
       {session && target ? (
         <Inspector
-          key={session.id}
+          // A fresh card per open: a desk opens on the conversation even after a bubble chose news.
+          key={`${session.id}:${opened}`}
           session={session}
           sessions={sessions}
           notices={snapshot?.notices ?? []}

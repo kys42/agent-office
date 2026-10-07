@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
+import { useTerminalSend } from '../lib/useTerminalSend';
 import type { DockMode } from '../shared/types';
 import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
@@ -25,6 +26,14 @@ function lastExpanded(): Expanded {
 export function DeskDock() {
   const [demo] = useState(() => new URLSearchParams(location.search).has('demo'));
   const { model, snapshot, error, receipt, veil, patch } = useOffice(demo);
+  // Replies from unfolded bubbles; the opt-in may change in the big office, so re-read it
+  // whenever the dock comes back into use.
+  const send = useTerminalSend(demo, () => {});
+  const { reload } = send;
+  useEffect(() => {
+    window.addEventListener('focus', reload);
+    return () => window.removeEventListener('focus', reload);
+  }, [reload]);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
   // Remember only looks the person (or the main process) actually switched to — not the
@@ -57,8 +66,9 @@ export function DeskDock() {
         solid.current = null;
         remember(next);
         setMode(next);
+        reload();
       }),
-    [],
+    [reload],
   );
   useEffect(() => {
     document.body.classList.add('dock-mode');
@@ -67,7 +77,8 @@ export function DeskDock() {
   useEffect(() => {
     if (mode === 'pet') return;
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') go('pet');
+      // The row folds an open bubble or reply first and marks the key handled.
+      if (e.key === 'Escape' && !e.defaultPrevented) go('pet');
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
@@ -102,6 +113,7 @@ export function DeskDock() {
           status={snapshot ? null : error ? '연결 확인' : '연결 중'}
           onExpand={() => go(expanded)}
           onFloor={() => go('floor')}
+          onReply={send.sendReply}
         />
       ) : (
         <DeskRow
@@ -117,6 +129,7 @@ export function DeskDock() {
           onPin={(s) => void patch(s.id, { pinned: !s.pinned }).catch(() => {})}
           onCollapse={() => go('pet')}
           onSwitch={() => go(mode === 'floor' ? 'row' : 'floor')}
+          onReply={send.sendReply}
         />
       )}
     </div>

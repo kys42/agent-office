@@ -36,7 +36,7 @@ const api: OfficeAPI = {
   terminalSend: (enable) => action('office:terminal-send', enable),
   card: (what, target, anchor) => ipcRenderer.invoke('office:card', what, target, anchor),
   onCard: (cb) => {
-    const f = (_: unknown, target: CardTarget) => cb(target);
+    const f = (_: unknown, target: CardTarget | null) => cb(target);
     ipcRenderer.on('office:card', f);
     return () => ipcRenderer.removeListener('office:card', f);
   },

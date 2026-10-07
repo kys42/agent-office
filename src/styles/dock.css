@@ -701,3 +701,7 @@ body.card-mode {
   border: 1px solid var(--line-2);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
+/* A dialog inside the card dims only the card, inside its rounded corners. */
+.dock-card .modal-backdrop {
+  border-radius: 14px;
+}

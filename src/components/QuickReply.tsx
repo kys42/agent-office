@@ -39,6 +39,7 @@ export function QuickReply({
   return (
     <form
       className="quick-reply"
+      data-solid
       aria-label={`${name}에게 바로 답장`}
       onSubmit={(e) => {
         e.preventDefault();

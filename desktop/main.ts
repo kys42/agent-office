@@ -50,6 +50,8 @@ let main: BrowserWindow | null = null,
   card: BrowserWindow | null = null,
   cardHide: ReturnType<typeof setTimeout> | null = null,
   cardShownAt = 0,
+  // A save or confirm sheet on the card takes focus; that is not a click elsewhere.
+  cardDialogs = 0,
   tray: Tray | null = null,
   bridge: ServiceBridge,
   quitting = false;
@@ -280,11 +282,14 @@ function showCard(target: CardTarget, anchor: Rect) {
     // Clicking anywhere else puts the card away. A short delay lets a click on another desk
     // reopen it in place instead of flickering.
     card.on('blur', () => {
-      // Opening shifts focus between the dock and the card for a moment; that is not a
-      // click elsewhere.
-      if (Date.now() - cardShownAt < 500) return;
+      // Opening shifts focus between the dock and the card for a moment; that is not a click
+      // elsewhere. A blur during that moment is checked again once it has passed.
+      if (cardDialogs > 0) return;
+      const settle = Math.max(150, cardShownAt + 500 - Date.now());
       if (cardHide) clearTimeout(cardHide);
-      cardHide = setTimeout(() => hideCard(), 150);
+      cardHide = setTimeout(() => {
+        if (card && !card.isDestroyed() && !card.isFocused()) hideCard();
+      }, settle);
     });
     card.on('closed', () => {
       card = null;
@@ -315,7 +320,11 @@ function showCard(target: CardTarget, anchor: Rect) {
 function hideCard() {
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
-  if (card && !card.isDestroyed() && card.isVisible()) card.hide();
+  if (card && !card.isDestroyed() && card.isVisible()) {
+    // A put-away card shows nothing: no background polling, no stale flash on the next open.
+    card.webContents.send('office:card', null);
+    card.hide();
+  }
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
@@ -529,10 +538,20 @@ function setupIPC() {
     if (typeof content !== 'string' || content.length > 30000 || typeof name !== 'string')
       throw new Error('잘못된 파일 요청');
     const win = BrowserWindow.fromWebContents(e.sender)!;
-    const result = await dialog.showSaveDialog(win, {
-      defaultPath: path.basename(name).replace(/[^\p{L}\p{N}._ -]/gu, '_'),
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    });
+    const fromCard = win === card;
+    if (fromCard) cardDialogs++;
+    let result: Electron.SaveDialogReturnValue;
+    try {
+      result = await dialog.showSaveDialog(win, {
+        defaultPath: path.basename(name).replace(/[^\p{L}\p{N}._ -]/gu, '_'),
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      });
+    } finally {
+      if (fromCard) {
+        cardDialogs--;
+        if (!win.isDestroyed()) win.focus();
+      }
+    }
     if (result.canceled || !result.filePath) return false;
     await writeFile(result.filePath, content, { mode: 0o600 });
     return true;

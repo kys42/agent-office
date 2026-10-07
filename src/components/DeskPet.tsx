@@ -1,7 +1,10 @@
-import { useRef } from 'react';
-import { Expand, Flag, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Expand, Flag, PanelRightOpen, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { openColleague } from '../lib/dockCard';
+import { useSendTargets } from '../lib/useSendTargets';
+import { QuickReply } from './QuickReply';
+import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
 import { petSummary, residentLabel, type OfficeModel } from '../shared/office-model';
@@ -24,6 +27,7 @@ export function DeskPet({
   onReceipt,
   onExpand,
   onFloor,
+  onReply,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
@@ -34,6 +38,8 @@ export function DeskPet({
   onExpand: () => void;
   /** Unfold the floor desks: desks on the screen's bottom edge, zones marked by flags. */
   onFloor: () => void;
+  /** Desktop opt-in: the speaking colleague can be answered right under its bubble. */
+  onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
   const pet = petSummary(model);
   const total = model.seats.length;
@@ -51,6 +57,19 @@ export function DeskPet({
     : undefined;
   const bubble = speech?.bubble;
   const who = speaker && residentLabel(speaker.view.session, privacy);
+  // Clicking the bubble unfolds it here; a reply opens under it when the session can take one.
+  // Both reset when the pet starts saying something else.
+  const said = speaker?.notice.id ?? null;
+  const [unfolded, setUnfolded] = useState<string | null>(null);
+  const [replyFor, setReplyFor] = useState<string | null>(null);
+  const expanded = !!said && unfolded === said;
+  const replying = !!said && replyFor === said;
+  const { targets, markSent } = useSendTargets(bubble ? [bubble.sessionId] : [], {
+    enabled: !!onReply && !privacy,
+    pollBusy: false,
+  });
+  const target = bubble ? targets[bubble.sessionId] : undefined;
+  const canReply = !!onReply && !privacy && !!target?.canSend;
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
@@ -68,10 +87,22 @@ export function DeskPet({
               session={speaker.view.session}
               speech={speech}
               privacy={privacy}
-              onOpen={(el) => {
-                if (!privacy) onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                void openColleague(bubble.sessionId, { anchor: el, news: true });
+              expanded={expanded}
+              onExpandedChange={(on) => setUnfolded(on ? said : null)}
+              onOpen={() => {
+                if (!privacy && !expanded)
+                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                setUnfolded(expanded ? null : said);
               }}
+              reply={
+                canReply
+                  ? {
+                      title: `바로 답장 · ${targetLine(target!, false)}`,
+                      open: replying,
+                      onClick: () => setReplyFor(replying ? null : said),
+                    }
+                  : undefined
+              }
               onDismiss={() => onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')}
               detail={
                 who && (
@@ -88,15 +119,42 @@ export function DeskPet({
                       {speaker.view.unread.length > 1
                         ? `읽지 않은 소식 ${speaker.view.unread.length}건 · `
                         : ''}
-                      누르면 큰 사무실에서 열려요
+                      누르면 크게 보여요 · 업무 카드는 위 도구에서
                     </span>
                   </>
                 )
               }
             />
+            {canReply && replying && (
+              <QuickReply
+                key={said}
+                target={target!}
+                name={who?.name ?? '동료'}
+                onClose={() => setReplyFor(null)}
+                onSend={async (text) => {
+                  await onReply!(bubble.sessionId, text);
+                  markSent(bubble.sessionId);
+                }}
+              />
+            )}
           </div>
         )}
         <div className="dock-pet-tools" data-solid>
+          {speaker && (
+            <button
+              className="icon-btn"
+              aria-label="업무 카드 열기"
+              title="팝업으로 보기 · 말하는 동료의 업무 카드"
+              onClick={(e) =>
+                void openColleague(bubble?.sessionId ?? speaker.view.session.id, {
+                  anchor: e.currentTarget.closest('.dock-pet-anchor'),
+                  news: !!bubble,
+                })
+              }
+            >
+              <PanelRightOpen size={12} />
+            </button>
+          )}
           <button
             className="icon-btn"
             aria-label="사무실 펼치기"

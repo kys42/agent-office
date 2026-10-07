@@ -375,7 +375,7 @@ export interface OfficeAPI {
     anchor?: ScreenRect,
   ) => Promise<void>;
   /** The dock card window: which colleague to show. */
-  onCard?: (callback: (target: CardTarget) => void) => () => void;
+  onCard?: (callback: (target: CardTarget | null) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
   /** Desktop only. Browser previews switch the dock layout locally. */

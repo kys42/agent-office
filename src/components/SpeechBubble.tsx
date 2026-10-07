@@ -45,6 +45,8 @@ export function SpeechBubble({
   onDismiss,
   detail,
   reply,
+  expanded,
+  onExpandedChange,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -56,13 +58,22 @@ export function SpeechBubble({
   detail?: ReactNode;
   /** Quick reply, offered only when the session can take a follow-up right now. */
   reply?: { title: string; open: boolean; onClick: () => void };
+  /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const { bubble, activity, text, label, markdown, tone } = speech;
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
   const body = useRef<HTMLElement>(null);
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = expanded ?? ownOpen;
+  const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(open) : next;
+    if (expanded === undefined) setOwnOpen(value);
+    onExpandedChange?.(value);
+  };
   const [long, setLong] = useState(false);
   useLayoutEffect(() => {
     const el = body.current;
