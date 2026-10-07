@@ -1,0 +1,345 @@
+.pet-settings {
+  margin-bottom: 16px;
+}
+.pet-settings .section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.pet-settings .eyebrow {
+  display: block;
+  margin-bottom: 5px;
+}
+.pet-settings-count {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 5px 10px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.pet-provider-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.pet-provider-card {
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+  transition: border-color 0.16s;
+}
+.pet-provider-card:hover {
+  border-color: var(--accent);
+}
+.pet-provider-card > svg {
+  margin-left: auto;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+.pet-provider-card > div:nth-child(2) {
+  min-width: 0;
+}
+.pet-provider-card b {
+  display: block;
+  margin: 4px 0;
+  font-size: 16px;
+}
+.pet-provider-card span,
+.pet-provider-card small {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.pet-provider-portrait {
+  border-radius: 12px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.pet-edit-button {
+  color: var(--accent);
+}
+.pet-customizer {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 26px;
+  margin-top: 14px;
+}
+.pet-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border-radius: 14px;
+  padding: 20px 15px;
+  background: radial-gradient(ellipse at 50% 35%, #354338 0%, #222a2b 44%, #191d23 90%);
+  border: 1px solid #ffffff0b;
+}
+.pet-preview .eyebrow {
+  font-size: 9px;
+  color: #cbdcc2;
+}
+.pet-preview-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 198px;
+  width: 100%;
+}
+.pet-preview-stage > .sprite-window {
+  z-index: 1;
+}
+.pet-preview-shadow {
+  position: absolute;
+  width: 86px;
+  height: 11px;
+  background: #0005;
+  border-radius: 50%;
+  bottom: 21px;
+}
+.pet-preview-spark {
+  position: absolute;
+  color: #d7d3a9;
+  font-size: 15px;
+}
+.spark-one {
+  left: 8px;
+  top: 62px;
+}
+.spark-two {
+  right: 12px;
+  top: 39px;
+  font-size: 22px;
+}
+.pet-preview h3 {
+  font-size: 21px;
+  color: #f4eedf;
+  margin: 5px 0;
+}
+.pet-preview > p {
+  color: #bbbdb6;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.pet-preview-moods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  margin-top: 18px;
+}
+.pet-preview-moods button {
+  font-size: 10px;
+  color: #bec4bc;
+  border: 1px solid #ffffff15;
+  padding: 5px 7px;
+  border-radius: 6px;
+}
+.pet-preview-moods button[aria-pressed='true'] {
+  background: #d9e4c71c;
+  color: #e9f2db;
+  border-color: #cedfc45a;
+}
+.pet-scope-note {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: auto;
+  padding-top: 22px;
+  color: #aebaae;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: left;
+}
+.pet-scope-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.pet-options fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0 0 20px;
+  min-width: 0;
+}
+.pet-options legend {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  margin-bottom: 10px;
+}
+.pet-options legend b {
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 550;
+  margin-left: 8px;
+}
+.pet-character-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.pet-character {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 101px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+.pet-character b {
+  margin: 2px 0 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.pet-character.selected {
+  border-color: var(--accent);
+  background: #ffb96810;
+}
+.pet-character:hover {
+  background: var(--bg-3);
+}
+.pet-new {
+  position: absolute;
+  left: 6px;
+  top: 6px;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  letter-spacing: 0.04em;
+  color: #99c7af;
+}
+.pet-check {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  color: var(--accent);
+}
+.pet-color-grid {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.pet-color-grid button {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-3);
+  font-size: 10px;
+  padding: 3px;
+}
+.pet-color-grid button > span {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #343340;
+  outline: 1px solid #ffffff20;
+  outline-offset: 3px;
+}
+.pet-color-grid button[aria-pressed='true'] {
+  color: var(--text);
+}
+.pet-color-grid button[aria-pressed='true'] > span {
+  outline: 2px solid var(--accent);
+}
+.pet-accessory-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.pet-accessory-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-3);
+  font-size: 10px;
+  background: var(--bg-2);
+}
+.pet-accessory-grid button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.pet-customizer-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.pet-customizer-footer .button:first-child {
+  margin-right: auto;
+}
+.pet-save-error {
+  font-size: 11px;
+  color: #f3a2a2;
+}
+.pet-options button:focus-visible,
+.pet-preview button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.pet-options fieldset:disabled {
+  opacity: 0.65;
+}
+@media (max-width: 1000px) {
+  .pet-provider-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  .pet-provider-card > svg {
+    display: none;
+  }
+}
+@media (max-width: 650px) {
+  .pet-customizer {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .pet-preview {
+    padding: 14px;
+  }
+  .pet-preview-stage {
+    min-height: 165px;
+  }
+  .pet-preview-moods {
+    margin-top: 8px;
+  }
+  .pet-scope-note {
+    padding-top: 12px;
+  }
+  .pet-customizer-footer {
+    flex-wrap: wrap;
+  }
+  .pet-provider-grid {
+    gap: 6px;
+  }
+  .pet-provider-card {
+    padding: 8px;
+  }
+  .pet-provider-card small {
+    font-size: 10px;
+  }
+}
+
+.modal:has(.pet-customizer) {
+  overflow-y: auto;
+}
+.modal:has(.pet-customizer) > * {
+  flex-shrink: 0;
+}

@@ -19,8 +19,17 @@ import {
   Terminal,
   LayoutGrid,
   Maximize2,
+  Sparkles,
 } from 'lucide-react';
-import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
+import type {
+  Session,
+  SessionPatch,
+  Handoff,
+  OfficeNotice,
+  ZoneRule,
+  Preferences,
+} from '../shared/types';
+import { PetCustomizer } from './PetCustomizer';
 import { MOODS, PROVIDERS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -58,6 +67,7 @@ export function Inspector({
   onZoneRules,
   terminalSend = false,
   onExpand,
+  onPrefs,
 }: {
   session: Session;
   sessions: Session[];
@@ -78,6 +88,7 @@ export function Inspector({
   terminalSend?: boolean;
   /** Shown in the dock card: open this colleague in the big office. */
   onExpand?: () => void;
+  onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
 }) {
   const { t } = useI18n();
   const [s, setS] = useState(session);
@@ -103,6 +114,7 @@ export function Inspector({
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
+  const [petOpen, setPetOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
   const [notesDirty, setNotesDirty] = useState(false);
   const [packet, setPacket] = useState<Handoff | null>(null);
@@ -155,6 +167,7 @@ export function Inspector({
     setNotesDirty(false);
     setEditing(false);
     setZoneOpen(false);
+    setPetOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
@@ -253,6 +266,14 @@ export function Inspector({
           </span>
           <div>
             <button
+              className="icon-btn pet-edit-button"
+              aria-label={t.pets.individualTitle}
+              title={t.pets.editTitle}
+              onClick={() => setPetOpen(true)}
+            >
+              <Sparkles size={15} />
+            </button>
+            <button
               className={`icon-btn ${s.pinned ? 'gold' : ''}`}
               aria-label={s.pinned ? t.inspector.unpin : t.inspector.pin}
               title={s.pinned ? t.inspector.unpin : t.inspector.pinTitle}
@@ -282,7 +303,7 @@ export function Inspector({
         </div>
         <div className="inspector-heading">
           <div className={`profile-avatar face-${s.provider} status-${s.status}`}>
-            <Sprite provider={s.provider} mood={s.status} size={64} />
+            <Sprite session={s} provider={s.provider} mood={s.status} size={64} />
           </div>
           <div className="inspector-title">
             {editing ? (
@@ -362,6 +383,15 @@ export function Inspector({
             </div>
           </div>
         </div>
+        {petOpen && (
+          <PetCustomizer
+            key={session.id}
+            provider={session.provider}
+            session={session}
+            onPrefs={onPrefs}
+            onClose={() => setPetOpen(false)}
+          />
+        )}
         {zoneOpen && !privacy && onZoneRules && (
           <ZoneEditor
             key={s.id}

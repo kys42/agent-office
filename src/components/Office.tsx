@@ -371,7 +371,7 @@ export function Office({
                         }}
                       >
                         <FocusEffects level={focus} />
-                        <Sprite provider={s.provider} mood={pose.mood} size={80} />
+                        <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
                       {onVeil && canVeil(s) && (

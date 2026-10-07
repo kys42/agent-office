@@ -165,6 +165,8 @@ Raw provider formats end at the adapters; the office only ever reads one shared 
 - **Observed, not assumed.** Status comes from what the logs show. A finished reply is never reported as “task done”, and a quiet session isn't declared dead.
 - **Bounded by design.** The latest 120 sessions per tool by default (60–300 in Settings). Large files keep their head and tail plus the latest 180 events, and are marked as partial.
 
+Choose each tool's default character in Settings, or personalize one colleague from its card: eight characters (including a slime, developer cat, pebble, retro robot and cloud), six colors, and small accessories.
+
 ## 🔒 Local-first by design
 
 - App data lives in `~/Library/Application Support/Agent Office/office.sqlite` (directory `0700`, DB `0600`). Your source sessions are **never modified**.

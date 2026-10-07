@@ -219,7 +219,7 @@ export function OfficeWorkspace({
                             onClick={() => onVeil(s.resident?.sessionIds ?? [s.id], false)}
                           >
                             <span className={`face face-${s.provider}`}>
-                              <Sprite provider={s.provider} mood="idle" size={22} />
+                              <Sprite session={s} provider={s.provider} mood="idle" size={22} />
                             </span>
                             <span>{prefs.privacy ? t.office.records.hidden : sessionName(s)}</span>
                             <small className="veil-row-hint">{t.office.veiled.again}</small>
@@ -251,7 +251,7 @@ export function OfficeWorkspace({
                           .map((s) => (
                             <button key={s.id} onClick={() => onSelect(s.id)}>
                               <span className={`face face-${s.provider}`}>
-                                <Sprite provider={s.provider} mood="idle" size={22} />
+                                <Sprite session={s} provider={s.provider} mood="idle" size={22} />
                               </span>
                               <span>
                                 {prefs.privacy ? t.office.records.hidden : sessionName(s)}
@@ -300,7 +300,7 @@ export function OfficeWorkspace({
                     <article key={s.id} className="room-session">
                       <button className="room-session-main" onClick={() => onSelect(s.id)}>
                         <div className={`face face-lg face-${s.provider}`}>
-                          <Sprite provider={s.provider} mood="leave" size={48} />
+                          <Sprite session={s} provider={s.provider} mood="leave" size={48} />
                         </div>
                         <div>
                           <span className="provider-label">{PROVIDERS[s.provider].name}</span>

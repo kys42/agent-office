@@ -78,7 +78,12 @@ export function NewsList({
                 }}
               >
                 <span className={`face face-${session.provider}`}>
-                  <Sprite provider={session.provider} mood={session.status} size={22} />
+                  <Sprite
+                    session={session}
+                    provider={session.provider}
+                    mood={session.status}
+                    size={22}
+                  />
                 </span>
                 <span>{privacy ? l.hiddenTeammate : sessionName(session)}</span>
                 <ArrowUpRight size={13} />

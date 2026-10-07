@@ -270,7 +270,7 @@ export function Roster({
                         onMouseEnter={() => onHover(s.id)}
                       >
                         <div className={`face face-${s.provider}`}>
-                          <Sprite provider={s.provider} mood={s.status} size={36} />
+                          <Sprite session={s} provider={s.provider} mood={s.status} size={36} />
                           <i style={{ background: MOODS[s.status].color }} />
                         </div>
                         <div className="session-copy">

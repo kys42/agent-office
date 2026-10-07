@@ -63,7 +63,7 @@ export function RestLounge({
                         appearance={{ palette: (index + i) % 2 ? 'sea' : 'lilac' }}
                       />
                       <span className="rest-pet">
-                        <Sprite provider={s.provider} mood="sleep" size={64} />
+                        <Sprite session={s} provider={s.provider} mood="sleep" size={64} />
                       </span>
                       <span className="rest-zzz" aria-hidden="true">
                         z<span>z</span>

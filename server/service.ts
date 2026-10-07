@@ -17,6 +17,15 @@ import { unreadNoticeCount } from '../src/shared/notices.js';
 import { enrichWorkspaces } from './workspaces.js';
 import { syncLocale } from './locale.js';
 import { getLocale, m } from '../src/shared/i18n/index.js';
+import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
+import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
+const petLookSchema = z
+  .object({
+    character: z.enum(Object.keys(PET_CHARACTERS) as [PetCharacter, ...PetCharacter[]]),
+    color: z.enum(Object.keys(PET_COLORS) as [PetColor, ...PetColor[]]),
+    accessory: z.enum(Object.keys(PET_ACCESSORIES) as [PetAccessory, ...PetAccessory[]]),
+  })
+  .strict();
 const providerSchema = z.enum(['claude', 'codex', 'openclaw']);
 const patchSchema = z
   .object({
@@ -52,6 +61,22 @@ const prefsSchema = z
     readyMinutes: z.number().int().min(5).max(240).optional(),
     zoneRules: z.array(zoneRuleSchema).max(200).optional(),
     locale: z.enum(['auto', 'en', 'ko']).optional(),
+    petAppearance: z
+      .object({
+        version: z.literal(1),
+        providers: z
+          .object({
+            claude: petLookSchema.nullable().optional(),
+            codex: petLookSchema.nullable().optional(),
+            openclaw: petLookSchema.nullable().optional(),
+          })
+          .strict(),
+        colleagues: z
+          .record(z.string().min(1).max(500), petLookSchema.nullable())
+          .refine((value) => Object.keys(value).length <= 3000, { error: () => m().pets.tooMany }),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export class OfficeService extends EventEmitter {

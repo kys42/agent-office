@@ -10,6 +10,7 @@ import { buildOfficeModel } from '../shared/office-model';
 import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
 import { arrivalEnds } from '../shared/speech';
+import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
 
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
@@ -21,9 +22,21 @@ const VEIL_BATCH = 500;
  * The office core every window shares: the same snapshot, the same derived model and the
  * same mutations. Presentations (big office, desk pet, desk row) only draw `model`.
  */
+function customizedDemo() {
+  const snapshot = demoSnapshot();
+  try {
+    snapshot.preferences.petAppearance = normalizePetCustomization(
+      JSON.parse(localStorage.getItem('office:demo-pets') || 'null'),
+    );
+  } catch {
+    // An invalid demo setting falls back to the original characters.
+  }
+  return snapshot;
+}
+
 export function useOffice(demo: boolean, notify: (message: string) => void = () => {}) {
   const { locale } = useI18n();
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? demoSnapshot() : null);
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? customizedDemo() : null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clock, setClock] = useState(Date.now());
@@ -34,7 +47,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       demoLocale.current = getLocale();
       // Carry the chosen language into the demo so entering it doesn't switch languages.
       setSnapshot((prev) => {
-        const next = demoSnapshot();
+        const next = customizedDemo();
         const chosen = prev?.preferences.locale;
         return chosen ? { ...next, preferences: { ...next.preferences, locale: chosen } } : next;
       });
@@ -65,6 +78,14 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       unsubscribe();
     };
   }, [demo]);
+  useEffect(() => {
+    if (!demo || !snapshot?.preferences.petAppearance) return;
+    try {
+      localStorage.setItem('office:demo-pets', JSON.stringify(snapshot.preferences.petAppearance));
+    } catch {
+      // Demo still works when local storage is unavailable.
+    }
+  }, [demo, snapshot?.preferences.petAppearance]);
   // Every window (big office, desk pet / row, dock card) follows the saved language.
   useLocalePreference(snapshot?.preferences.locale, !!snapshot);
   // On a language switch, rewrite the demo in the new language but keep its preferences:
@@ -112,7 +133,18 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const setPrefs = async (p: Partial<Preferences>) => {
     if (demo) {
       setSnapshot((s) =>
-        s ? reconcileDemo({ ...s, preferences: { ...s.preferences, ...p } }) : s,
+        s
+          ? reconcileDemo({
+              ...s,
+              preferences: {
+                ...s.preferences,
+                ...p,
+                petAppearance: p.petAppearance
+                  ? mergePetCustomization(s.preferences.petAppearance, p.petAppearance)
+                  : s.preferences.petAppearance,
+              },
+            })
+          : s,
       );
       return true;
     }

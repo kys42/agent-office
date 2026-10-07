@@ -1,3 +1,4 @@
+import { PetAppearanceContext } from './PetAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -116,7 +117,7 @@ export function DeskDock() {
       document.documentElement.removeEventListener('mouseleave', leave);
     };
   }, []);
-  return (
+  const content = (
     <div key={mode} className={`desk-dock mode-${mode} ${reducedMotion ? 'reduce-motion' : ''}`}>
       {mode === 'pet' ? (
         <DeskPet
@@ -160,5 +161,11 @@ export function DeskDock() {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <PetAppearanceContext.Provider value={snapshot?.preferences.petAppearance}>
+      {content}
+    </PetAppearanceContext.Provider>
   );
 }

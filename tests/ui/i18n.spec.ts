@@ -15,11 +15,19 @@ test.describe('English system', () => {
     expect(await visibleText(page)).not.toMatch(hangul);
 
     await page.getByRole('button', { name: 'Connections & Settings' }).click();
+    expect((await visibleText(page)).replace('한국어', '')).not.toMatch(hangul);
+    await page.getByRole('button', { name: 'Customize Claude character' }).click();
+    const editor = page.getByRole('dialog', { name: 'Claude default character' });
+    await expect(editor).toBeVisible();
+    expect(await editor.innerText()).not.toMatch(hangul);
+    await editor.getByRole('button', { name: 'Character Mallow', exact: true }).click();
+    await editor.getByRole('button', { name: 'Save this look' }).click();
     const language = page.getByRole('combobox', { name: 'Language' });
     await expect(language).toHaveValue('auto');
     await language.selectOption('ko');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ko');
     await expect(page.getByRole('combobox', { name: '언어' })).toHaveValue('ko');
+    await expect(page.getByRole('button', { name: 'Claude 캐릭터 꾸미기' })).toContainText('말랑');
 
     // Demo teammates follow the language without losing the saved preference.
     await page.getByRole('button', { name: '우리 사무실' }).click();

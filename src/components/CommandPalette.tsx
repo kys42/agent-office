@@ -231,6 +231,7 @@ export function CommandPalette({
                       <>
                         <span className={`face face-${item.session.provider}`}>
                           <Sprite
+                            session={item.session}
                             provider={item.session.provider}
                             mood={item.session.status}
                             size={24}
@@ -254,7 +255,12 @@ export function CommandPalette({
                     ) : item.kind === 'hit' ? (
                       <>
                         <span className={`face face-${item.hit.session.provider}`}>
-                          <Sprite provider={item.hit.session.provider} mood="idle" size={24} />
+                          <Sprite
+                            session={item.hit.session}
+                            provider={item.hit.session.provider}
+                            mood="idle"
+                            size={24}
+                          />
                         </span>
                         <div>
                           <b>{sessionName(item.hit.session)}</b>

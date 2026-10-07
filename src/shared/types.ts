@@ -1,4 +1,5 @@
 import { m, type LocalePreference } from './i18n';
+import type { PetCustomization } from './pets';
 export type Provider = 'claude' | 'codex' | 'openclaw';
 /**
  * Office status. Observed (work/think/call/error/done) or derived from time since the last
@@ -274,6 +275,7 @@ export interface Preferences {
   zoneRules?: ZoneRule[];
   /** UI and collector language. Missing means `auto` (system language, else English). */
   locale?: LocalePreference;
+  petAppearance?: PetCustomization;
 }
 export interface Snapshot {
   sessions: Session[];
