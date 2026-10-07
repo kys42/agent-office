@@ -45,3 +45,30 @@ test('Newest activity wins when two rollout files describe the same session', as
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+test('Stopping the collector ends polling without touching the closed store', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-stop-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  const missing = path.join(temp, 'missing');
+  service.roots = { claude: missing, codex: missing, openclaw: missing };
+  const refresh = t.mock.method(service, 'refresh');
+  try {
+    service.start();
+    await service.pending;
+    // Stopped while a polling pass is under way: it ends without emitting from the closed
+    // store, nothing is rescheduled and no rejection escapes the timer.
+    t.mock.timers.tick(5000);
+    assert.equal(refresh.mock.callCount(), 2);
+    const inflight = service.pending!;
+    service.stop();
+    await assert.rejects(inflight);
+    await new Promise((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(5000);
+    t.mock.timers.tick(5000);
+    assert.equal(refresh.mock.callCount(), 2);
+    await assert.rejects(service.refresh());
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
-import { useI18n, useLocalePreference } from './i18n';
+import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
 import { demoSnapshot, reconcileDemo } from './demo';
 import { applyNoticeReceipt } from '../shared/notices';
@@ -12,6 +12,42 @@ import { useWakeAt } from './useWakeAt';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
 
+/**
+ * The demo rewritten in the active language, carrying over what the viewer did in it: preferences
+ * (the language choice lives there), pins, hides, archive/return and notice receipts.
+ */
+function relocalizedDemo(prev: Snapshot): Snapshot {
+  const fresh = demoSnapshot();
+  const sessions = new Map(prev.sessions.map((s) => [s.id, s]));
+  const notices = new Map((prev.notices ?? []).map((n) => [n.id, n]));
+  return reconcileDemo({
+    ...fresh,
+    preferences: prev.preferences,
+    sessions: fresh.sessions.map((s) => {
+      const was = sessions.get(s.id);
+      if (!was) return s;
+      const { pinned, archived, completed, notes, hiddenAt, openCount, lastViewedAt, returnedAt } =
+        was;
+      return {
+        ...s,
+        pinned,
+        archived,
+        completed,
+        notes,
+        hiddenAt,
+        openCount,
+        lastViewedAt,
+        returnedAt,
+      };
+    }),
+    notices: fresh.notices?.map((n) => {
+      const was = notices.get(n.id);
+      return was
+        ? { ...n, seenAt: was.seenAt, viewedAt: was.viewedAt, dismissedAt: was.dismissedAt }
+        : n;
+    }),
+  });
+}
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
 const CLOCK_MS = 15_000;
@@ -48,7 +84,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       // Carry the chosen language into the demo so entering it doesn't switch languages.
       setSnapshot((prev) => {
         const next = customizedDemo();
-        const chosen = prev?.preferences.locale;
+        const chosen = prev?.preferences.locale ?? savedLocalePreference();
         return chosen ? { ...next, preferences: { ...next.preferences, locale: chosen } } : next;
       });
       setError('');
@@ -87,13 +123,13 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     }
   }, [demo, snapshot?.preferences.petAppearance]);
   // Every window (big office, desk pet / row, dock card) follows the saved language.
-  useLocalePreference(snapshot?.preferences.locale, !!snapshot);
+  useLocalePreference(snapshot?.preferences.locale, !!snapshot, snapshot?.locale);
   // On a language switch, rewrite the demo in the new language but keep its preferences:
   // the language choice itself lives there, so resetting them would bounce the switch back.
   useEffect(() => {
     if (!demo || demoLocale.current === locale) return;
     demoLocale.current = locale;
-    setSnapshot((s) => (s ? reconcileDemo({ ...demoSnapshot(), preferences: s.preferences }) : s));
+    setSnapshot((s) => (s ? relocalizedDemo(s) : s));
   }, [demo, locale]);
   useEffect(() => {
     const tick = () => {

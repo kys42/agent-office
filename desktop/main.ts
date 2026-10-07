@@ -24,7 +24,7 @@ import type {
   Snapshot,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
-import { m } from '../src/shared/i18n/index.js';
+import { m, setLocale } from '../src/shared/i18n/index.js';
 import {
   cardBounds,
   clampInto,
@@ -75,7 +75,8 @@ else {
     syncLocale(undefined);
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
     bridge.on('snapshot', (s: Snapshot) => {
-      if (syncLocale(s.preferences?.locale)) buildTray();
+      // Follow the language the collector actually resolved, so tray and windows always agree.
+      if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
       for (const w of [main, dock, card])
         if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
     });

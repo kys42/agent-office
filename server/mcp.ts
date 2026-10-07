@@ -2,14 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { OfficeStore } from './store.js';
-import { syncLocale } from './locale.js';
-import { setLocale } from '../src/shared/i18n/index.js';
-// Agents read this server: tool descriptions and its own errors are always English.
+import { systemLanguages } from './locale.js';
+import { resolveLocale, setLocale } from '../src/shared/i18n/index.js';
+// Agents read this server: tool descriptions, errors and session records are always English.
 // Only the handoff Markdown follows the language saved in the office preferences.
+setLocale('en');
 const server = new McpServer({ name: 'agent-office', version: '0.1.0' });
 function read(fn: (s: OfficeStore) => unknown) {
   let s: OfficeStore | undefined;
-  setLocale('en');
   try {
     s = new OfficeStore(undefined, true);
     return { content: [{ type: 'text' as const, text: JSON.stringify(fn(s)) }] };
@@ -24,7 +24,6 @@ function read(fn: (s: OfficeStore) => unknown) {
       ],
     };
   } finally {
-    setLocale('en');
     s?.close();
   }
 }
@@ -93,14 +92,6 @@ server.registerTool(
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   async ({ id, revision }) =>
-    read((s) => {
-      // Validate first so failures stay in English, then write the packet in the office language.
-      if (s.get(id).revision !== revision)
-        throw new Error(
-          'The session record has changed. Fetch the session again and use its current revision.',
-        );
-      syncLocale(s.preferences().locale);
-      return s.handoff(id, revision);
-    }),
+    read((s) => s.handoff(id, revision, resolveLocale(s.preferences().locale, systemLanguages()))),
 );
 void server.connect(new StdioServerTransport());

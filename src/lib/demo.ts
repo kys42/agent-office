@@ -1,5 +1,5 @@
 import type { Session, Snapshot, Mood, Provider } from '../shared/types';
-import { noticeCandidates } from '../shared/notices';
+import { localizeNotice, noticeCandidates } from '../shared/notices';
 import { runtimeObservation } from '../shared/presentation';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../shared/office';
@@ -138,7 +138,9 @@ export function demoSnapshot(): Snapshot {
   };
   snapshot.notices = snapshot.sessions
     .filter((s) => s.zone === 'office')
+    // Candidates are canonical, like stored notices: show them in the active language.
     .flatMap((s) => noticeCandidates(s, now, true).slice(-1))
+    .map((n) => localizeNotice(n))
     .sort((a, b) => b.at - a.at);
   return snapshot;
 }

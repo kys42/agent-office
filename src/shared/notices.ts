@@ -1,32 +1,22 @@
 import type { NoticeAction, NoticeKind, OfficeEvent, OfficeNotice, Session } from './types';
 import { conversationKind } from './conversation';
 import { messageExcerpt, sessionActivity } from './activity';
-import { LOCALES, m, messagesFor, type Locale } from './i18n';
+import { getLocale, m, messagesFor, type Locale } from './i18n';
 import { liveLabels } from './labels';
+import { CANONICAL, canonical, localizeText } from './canonical';
 export const NOTICE_LABELS: Record<NoticeKind, string> = liveLabels((t) => t.shared.notice.label);
 export const noticeVersion = (text: string) => {
   let n = 2166136261;
   for (let i = 0; i < text.length; i++) n = Math.imul(n ^ text.charCodeAt(i), 16777619);
   return (n >>> 0).toString(16) + ':' + text.length;
 };
-// Versions hash the original (Korean) wording of text the office generates itself, so a
-// language switch or an upgrade never turns an already-read notice into a new one.
-const ORIGIN: Locale = 'ko';
-function versionText(kind: NoticeKind, text: string) {
-  const origin = messagesFor(ORIGIN).shared;
-  if (kind === 'attention') return origin.notice.attention;
-  let out = text;
-  for (const locale of Object.keys(LOCALES) as Locale[]) {
-    if (locale === ORIGIN) continue;
-    const redaction = messagesFor(locale).shared.redaction;
-    for (const key of Object.keys(redaction) as (keyof typeof redaction)[])
-      out = out.replaceAll(redaction[key], origin.redaction[key]);
-  }
-  return out;
-}
-/** Content version of a notice; independent of the display language. */
+/**
+ * Content version of a notice. Notices are built from canonical session text and stored
+ * canonical (localized on read), so versions never depend on the display language.
+ */
 export const noticeContentVersion = (kind: NoticeKind, text: string, at: number) =>
-  noticeVersion(`${kind}:${versionText(kind, text)}:${at}`);
+  noticeVersion(`${kind}:${text}:${at}`);
+/** Notice candidates in canonical wording; readers show them through `localizeNotice`. */
 export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false): OfficeNotice[] {
   const events = [...s.events];
   const a = sessionActivity(s);
@@ -49,7 +39,8 @@ export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false
           ? 'attention'
           : null;
     if (!kind) continue;
-    const text = kind === 'attention' ? m().shared.notice.attention : messageExcerpt(e.text, 800);
+    const text =
+      kind === 'attention' ? canonical().shared.notice.attention : messageExcerpt(e.text, 800);
     if (!text) continue;
     // Some sources expose both public message and public event forms.
     if (candidates.some((n) => n.kind === kind && n.text === text && Math.abs(n.at - e.at) < 3000))
@@ -124,6 +115,10 @@ export const noticeExposure = (n: OfficeNotice) => {
   const t = m().shared.notice;
   return n.seenAt ? t.read : n.viewedAt ? t.viewed : t.fresh;
 };
-/** Text the office wrote itself is shown in the active language, whenever it was stored. */
-export const localizeNotice = (n: OfficeNotice): OfficeNotice =>
-  n.kind === 'attention' ? { ...n, text: m().shared.notice.attention } : n;
+/** A stored (canonical) notice in `locale`: its own cue text, or placeholders in an excerpt. */
+export const localizeNotice = (n: OfficeNotice, locale: Locale = getLocale()): OfficeNotice =>
+  n.kind === 'attention'
+    ? { ...n, text: messagesFor(locale).shared.notice.attention }
+    : locale === CANONICAL
+      ? n
+      : { ...n, text: localizeText(n.text, locale) };

@@ -14,7 +14,8 @@ import type {
 } from '../../src/shared/types.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
 import { runtimeObservation, deriveState } from '../../src/shared/runtime.js';
-import { m, messagesFor } from '../../src/shared/i18n/index.js';
+import { messagesFor, type Locale } from '../../src/shared/i18n/index.js';
+import { CANONICAL, canonical } from '../../src/shared/canonical.js';
 export { deriveState } from '../../src/shared/runtime.js';
 
 type Obj = Record<string, any>;
@@ -26,8 +27,12 @@ const publicPhase = (value: unknown): OfficeEvent['phase'] =>
       : undefined;
 export const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex').slice(0, 20);
-export function redact(value: unknown, limit = 6000): string {
-  const t = m().shared.redaction;
+/**
+ * Removes secrets. Collected records use the canonical placeholders (localized on read);
+ * text written straight for a reader (notes, handoff) passes that reader's language.
+ */
+export function redact(value: unknown, limit = 6000, locale: Locale = CANONICAL): string {
+  const t = messagesFor(locale).shared.redaction;
   return String(value ?? '')
     .replace(/\x1b\[[0-9;]*m/g, '')
     .replace(
@@ -92,7 +97,7 @@ export const emptyUsage = (): Usage => ({
   contextUsed: null,
   contextWindow: null,
   scope: 'session',
-  source: m().server.session.usageNotCollected,
+  source: canonical().server.session.usageNotCollected,
 });
 export interface ParseOptions {
   provider: Provider;
@@ -108,12 +113,10 @@ export interface ParseOptions {
   model?: string;
   sourceKind?: 'jsonl' | 'sqlite';
 }
-// Fallback event IDs hash the original (Korean) wording of generated text, so IDs never
-// depend on the display language and stay stable across upgrades.
-const origin = () => messagesFor('ko').server.event;
+/** Parsed sessions are canonical (see src/shared/canonical.ts), whatever the display language. */
 export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   const now = opt.now ?? Date.now();
-  const t = m().server;
+  const t = canonical().server;
   const resolved = resolveIdentity(raw, opt);
   const { owner, relation } = resolved;
   const isSubagent = relation.kind === 'subagent';
@@ -164,12 +167,11 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     tool?: string,
     suffix = '',
     metadata: Pick<OfficeEvent, 'phase' | 'lifecycle'> = {},
-    seed = text,
   ) => {
     if (!text.trim()) return;
     // An ordinal is local to a transport page, not a native event ID. Using it
     // across continuation files silently overwrites different turns.
-    const fallback = hash(`${at}:${kind}:${seed}`);
+    const fallback = hash(`${at}:${kind}:${text}`);
     const id = String(r.uuid ?? r.id ?? fallback) + suffix;
     const legacyId = String(r.uuid ?? r.id ?? r.ordinal ?? fallback) + suffix;
     const index = seen.get(id) ?? events.length;
@@ -314,43 +316,16 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       }
       if (type === 'task_started') {
         set('think', t.reason.taskStarted);
-        add(
-          r,
-          at,
-          'lifecycle',
-          t.event.turnStarted,
-          undefined,
-          '',
-          { lifecycle: 'started' },
-          origin().turnStarted,
-        );
+        add(r, at, 'lifecycle', t.event.turnStarted, undefined, '', { lifecycle: 'started' });
         usage.contextWindow = num(p.model_context_window) ?? usage.contextWindow;
       }
       if (type === 'task_complete') {
         set('done', t.reason.taskComplete);
-        add(
-          r,
-          at,
-          'lifecycle',
-          t.event.turnCompleted,
-          undefined,
-          '',
-          { lifecycle: 'completed' },
-          origin().turnCompleted,
-        );
+        add(r, at, 'lifecycle', t.event.turnCompleted, undefined, '', { lifecycle: 'completed' });
       }
       if (type === 'turn_aborted') {
         set('idle', t.reason.turnAborted);
-        add(
-          r,
-          at,
-          'lifecycle',
-          t.event.turnAborted,
-          undefined,
-          '',
-          { lifecycle: 'aborted' },
-          origin().turnAborted,
-        );
+        add(r, at, 'lifecycle', t.event.turnAborted, undefined, '', { lifecycle: 'aborted' });
       }
       if (type === 'user_message') {
         const text = cleanPrompt(String(p.message ?? ''));
@@ -377,16 +352,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
         const tool = String(p.name ?? 'tool');
-        add(
-          { ...r, id: p.call_id ?? p.id },
-          at,
-          'tool',
-          t.event.toolRun(tool),
-          tool,
-          '',
-          {},
-          origin().toolRun(tool),
-        );
+        add({ ...r, id: p.call_id ?? p.id }, at, 'tool', t.event.toolRun(tool), tool);
         set(
           tool.includes('request_user_input') ? 'call' : 'work',
           tool.includes('request_user_input') ? t.reason.inputTool : t.reason.toolCall,
@@ -480,8 +446,6 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               t.event.toolRun(tool),
               tool,
               `:tool${i}`,
-              {},
-              origin().toolRun(tool),
             );
             set(
               /AskUserQuestion|request_user_input/.test(tool) ? 'call' : 'work',
@@ -501,16 +465,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           }
         }
       if (role === 'toolResult') {
-        add(
-          r,
-          at,
-          'result',
-          text || t.event.toolResult(m.toolName ?? t.event.tool),
-          m.toolName,
-          '',
-          {},
-          text || origin().toolResult(m.toolName ?? origin().tool),
-        );
+        add(r, at, 'result', text || t.event.toolResult(m.toolName ?? t.event.tool), m.toolName);
         set('work', t.reason.toolResult);
       }
     }
@@ -529,9 +484,9 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   }
   nativeId = authoritativeId ?? nativeId;
   updatedAt = updatedAt || opt.mtime;
-  const state = deriveState(status, updatedAt, now);
+  const state = deriveState(status, updatedAt, now, false, undefined, undefined, CANONICAL);
   const project = cwd ? path.basename(cwd) : (opt.agentName ?? t.session.unknownWorkspace);
-  const activity = summarizeActivity(events, status, updatedAt);
+  const activity = summarizeActivity(events, status, updatedAt, CANONICAL);
   const action = activity.text;
   const artifacts = [
     ...new Set(

@@ -16,7 +16,14 @@ import { mergeSessions } from './adapters/merge.js';
 import { unreadNoticeCount } from '../src/shared/notices.js';
 import { enrichWorkspaces } from './workspaces.js';
 import { syncLocale } from './locale.js';
-import { getLocale, m } from '../src/shared/i18n/index.js';
+import {
+  LOCALES,
+  getLocale,
+  m,
+  type Locale,
+  type LocalePreference,
+} from '../src/shared/i18n/index.js';
+import { CANONICAL, localizePreferences } from '../src/shared/canonical.js';
 import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
 import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
 const petLookSchema = z
@@ -60,7 +67,9 @@ const prefsSchema = z
     bubbleHours: z.number().int().min(1).max(24).optional(),
     readyMinutes: z.number().int().min(5).max(240).optional(),
     zoneRules: z.array(zoneRuleSchema).max(200).optional(),
-    locale: z.enum(['auto', 'en', 'ko']).optional(),
+    locale: z
+      .enum(['auto', ...Object.keys(LOCALES)] as [LocalePreference, ...LocalePreference[]])
+      .optional(),
     petAppearance: z
       .object({
         version: z.literal(1),
@@ -119,35 +128,28 @@ export class OfficeService extends EventEmitter {
     connector.message = message();
   }
   /**
-   * After a language switch, everything the collector wrote must be written again: the parse
-   * cache stamp and OpenClaw revisions include the language, so the next pass re-parses every
-   * session (new revisions); connector messages are re-phrased now. Notice versions are
-   * language-independent, so this never produces new or duplicate notices.
+   * After a language switch only the connector messages are phrased again. Collected records
+   * are canonical (src/shared/canonical.ts) and localized on every read, so nothing is re-parsed
+   * and revisions, event ids and notice versions stay the same.
    */
   private relocalize() {
     for (const c of this.connectors) c.message = this.phrasing.get(c.provider)?.() ?? c.message;
-    this.cache.clear();
-    this.clawCache.clear();
-    if (this.stopped) return;
-    const again = () => {
-      if (!this.stopped) this.refresh().catch(() => {});
-    };
-    if (this.pending) this.pending.then(again, again);
-    else again();
   }
   snapshot(): Snapshot {
     this.store.assignSeats();
-    const notices = this.store.noticeList();
+    const locale: Locale = getLocale();
+    const notices = this.store.noticeList(locale);
     return {
       notices,
       noticeStats: { unread: unreadNoticeCount(notices), total: notices.length },
-      sessions: this.store.list(),
+      sessions: this.store.list(false, locale),
       connectors: this.connectors,
-      preferences: this.store.preferences(),
+      preferences: localizePreferences(this.store.preferences(), locale),
       syncing: this.syncing,
       lastSync: this.lastSync,
       error: this.error,
       version: this.version,
+      locale,
     };
   }
   emitSnapshot() {
@@ -157,16 +159,16 @@ export class OfficeService extends EventEmitter {
     return s;
   }
   start() {
-    void this.refresh();
+    // Polling never outlives stop(): no new timer, no refresh on a closed store.
     const tick = () => {
+      if (this.stopped) return;
       this.timer = setTimeout(async () => {
-        try {
-          await this.refresh();
-        } finally {
-          tick();
-        }
+        if (this.stopped) return;
+        await this.refresh().catch(() => {});
+        tick();
       }, 5000);
     };
+    this.refresh().catch(() => {});
     tick();
   }
   stop() {
@@ -175,6 +177,7 @@ export class OfficeService extends EventEmitter {
     this.store.close();
   }
   async refresh(): Promise<Snapshot> {
+    if (this.stopped) throw new Error(m().server.rpc.stopped);
     if (this.pending) return this.pending;
     this.pending = this.collect().finally(() => {
       this.pending = null;
@@ -191,6 +194,7 @@ export class OfficeService extends EventEmitter {
     this.syncing = true;
     this.error = null;
     for (const provider of ['claude', 'codex', 'openclaw'] as Provider[]) {
+      if (this.stopped) break;
       const connector = this.connectors.find((c) => c.provider === provider)!;
       if (!prefs.enabledProviders.includes(provider)) {
         connector.state = 'paused';
@@ -221,8 +225,7 @@ export class OfficeService extends EventEmitter {
           prefs.maxSessions,
         );
         for (const file of files) {
-          // The language is part of the stamp: parsed text (reasons, fallbacks) is localized.
-          const stamp = `office-v10:${getLocale()}:${file.size}:${file.mtime}`;
+          const stamp = `office-v10:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
           if (!s) {
@@ -307,7 +310,9 @@ export class OfficeService extends EventEmitter {
         if (errors) {
           const ids = new Set(sessions.map((s) => s.id));
           sessions.push(
-            ...this.store.list(true).filter((s) => s.provider === provider && !ids.has(s.id)),
+            ...this.store
+              .list(true, CANONICAL)
+              .filter((s) => s.provider === provider && !ids.has(s.id)),
           );
         }
         this.store.upsert(sessions, provider);
@@ -332,6 +337,7 @@ export class OfficeService extends EventEmitter {
     }
     this.syncing = false;
     this.lastSync = Date.now();
+    if (this.stopped) throw new Error(m().server.rpc.stopped);
     return this.emitSnapshot();
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {

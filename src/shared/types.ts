@@ -1,4 +1,4 @@
-import { m, type LocalePreference } from './i18n';
+import { m, type Locale, type LocalePreference } from './i18n';
 import type { PetCustomization } from './pets';
 export type Provider = 'claude' | 'codex' | 'openclaw';
 /**
@@ -287,6 +287,12 @@ export interface Snapshot {
   version: number;
   notices?: OfficeNotice[];
   noticeStats?: { unread: number; total: number };
+  /**
+   * The collector's resolved language: its sessions, notices and messages are written in it.
+   * With the `auto` preference the UI follows it, so both sides always agree. Demo snapshots
+   * may omit it.
+   */
+  locale?: Locale;
 }
 export interface SearchHit {
   session: Session;

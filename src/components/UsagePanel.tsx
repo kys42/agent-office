@@ -33,7 +33,7 @@ export function UsagePanel({
   privacy: boolean;
   onClose: () => void;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const u = t.usage;
   const [data, setData] = useState<ProviderQuota[]>([]);
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,8 @@ export function UsagePanel({
     if (window.matchMedia('(max-width: 860px)').matches)
       panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
-  // Window labels and messages arrive in the active language, so a language switch re-reads them.
+  // Limits are checked only when the panel opens or on refresh — never just because the language
+  // changed. Demo numbers are local, so they are rebuilt at render and follow the language.
   useEffect(() => {
     let alive = true;
     if (privacy) return;
@@ -64,7 +65,8 @@ export function UsagePanel({
     return () => {
       alive = false;
     };
-  }, [demo, privacy, refresh, locale]);
+  }, [demo, privacy, refresh]);
+  const quotas = demo && data.length ? demoQuotas() : data;
   return (
     <aside className="inspector usage-dock" aria-label={u.title} ref={panelRef}>
       <header>
@@ -91,10 +93,10 @@ export function UsagePanel({
             <RefreshCw size={14} className={busy ? 'spin' : ''} />
             {busy ? u.checking : u.recheck}
           </button>
-          {busy && !data.length && <p role="status">{u.loading}</p>}
+          {busy && !quotas.length && <p role="status">{u.loading}</p>}
           {error && <p role="alert">{u.error}</p>}
-          {!busy && !error && !data.length && <p>{u.empty}</p>}
-          {data.map((q) => (
+          {!busy && !error && !quotas.length && <p>{u.empty}</p>}
+          {quotas.map((q) => (
             <section className="quota-card" key={q.provider}>
               <div className="quota-title">
                 <b>{PROVIDERS[q.provider].name}</b>

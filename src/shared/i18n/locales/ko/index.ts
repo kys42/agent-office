@@ -4,7 +4,6 @@ import { common } from './common';
 import { app } from './app';
 import { palette } from './palette';
 import { now } from './now';
-import { mini } from './mini';
 import { inspector } from './inspector';
 import { conversation } from './conversation';
 import { memory } from './memory';
@@ -29,7 +28,6 @@ export const ko: Messages = {
   app,
   palette,
   now,
-  mini,
   inspector,
   conversation,
   memory,

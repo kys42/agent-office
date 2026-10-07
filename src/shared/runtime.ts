@@ -1,5 +1,5 @@
 import type { ExecutionPhase, Mood, RuntimeObservation } from './types';
-import { m } from './i18n';
+import { getLocale, messagesFor, type Locale } from './i18n';
 // Office Observation Protocol v1. Provider adapters emit evidence; time policy is shared.
 const phases: Record<Mood, ExecutionPhase> = {
   work: 'working',
@@ -38,8 +38,9 @@ export function deriveState(
   archived = false,
   standbyHours = 4,
   readyMinutes = DEFAULT_READY_MINUTES,
+  locale: Locale = getLocale(),
 ): { status: Mood; reason?: string } {
-  const t = m().shared.runtime;
+  const t = messagesFor(locale).shared.runtime;
   if (archived) return { status: 'leave', reason: t.archived };
   const age = now - updatedAt;
   if (age >= standbyHours * 3600_000 && status !== 'leave')

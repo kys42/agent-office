@@ -1,5 +1,5 @@
 import type { Activity, Mood, OfficeEvent, Session } from './types.js';
-import { m } from './i18n/index.js';
+import { getLocale, m, messagesFor, type Locale } from './i18n/index.js';
 
 // Display an excerpt of public messages; never turn tool names into invented task descriptions.
 export function messageExcerpt(text: string, limit = 220): string {
@@ -17,6 +17,7 @@ export function summarizeActivity(
   events: OfficeEvent[],
   status: Mood,
   updatedAt: number,
+  locale: Locale = getLocale(),
 ): Activity {
   // A new turn must not inherit an old answer as its current intention.
   const boundary = events.findLastIndex((e) => e.kind === 'user' || e.lifecycle === 'started');
@@ -25,7 +26,7 @@ export function summarizeActivity(
   const request = current.findLast((e) => e.kind === 'user' && messageExcerpt(e.text));
   const tool = current.findLast((e) => e.kind === 'tool' && e.tool);
   const source = assistant ?? request;
-  const t = m().shared.activity;
+  const t = messagesFor(locale).shared.activity;
   const fallback: Partial<Record<Mood, string>> = t.fallback;
   return {
     text: source ? messageExcerpt(source.text) : (fallback[status] ?? t.noProgress),

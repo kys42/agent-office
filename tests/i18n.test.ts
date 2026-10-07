@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { readdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import {
   getLocale,
   messagesFor,
@@ -13,7 +14,9 @@ import {
 } from '../src/shared/i18n/index.js';
 import { MOODS, PROVIDERS } from '../src/shared/types.js';
 import { summarizeActivity } from '../src/shared/activity.js';
-import { NOTICE_LABELS, noticeCandidates } from '../src/shared/notices.js';
+import { NOTICE_LABELS, localizeNotice, noticeCandidates } from '../src/shared/notices.js';
+import { localizeSession, localizeText } from '../src/shared/canonical.js';
+import type { Session, Snapshot } from '../src/shared/types.js';
 import { TRIAGE_LABELS, durationShort } from '../src/shared/triage.js';
 import { officeSchedule } from '../src/shared/lifecycle.js';
 import { deriveState } from '../src/shared/runtime.js';
@@ -22,6 +25,7 @@ import { TONE_LABELS } from '../src/shared/speech.js';
 import { PET_LABELS, residentLabel } from '../src/shared/office-model.js';
 import { cleanInput } from '../desktop/terminals.js';
 import { parseRecords, redact } from '../server/adapters/normalize.js';
+import { readOpenClawDatabases } from '../server/adapters/openclaw.js';
 import { normalizeQuota } from '../server/quotas.js';
 import { OfficeStore } from '../server/store.js';
 import { OfficeService } from '../server/service.js';
@@ -183,16 +187,21 @@ test('The demo office is written in the active language with the same desks', ()
   );
 });
 
-test('Notice versions and event ids do not depend on the display language', () => {
+const ko = messagesFor('ko');
+const en = messagesFor('en');
+const secret = `OPENAI_API_KEY=sk-proj-${'a1B2'.repeat(6)}`;
+
+test('Parsing is canonical: the same session, ids and versions in every display language', () => {
   const records = [
     {
       type: 'event_msg',
+      timestamp: new Date(now - 3000).toISOString(),
+      payload: { type: 'task_started' },
+    },
+    {
+      type: 'event_msg',
       timestamp: new Date(now - 2000).toISOString(),
-      payload: {
-        type: 'agent_message',
-        message: 'Deploy with api_key=abcdef123456 now',
-        phase: 'final',
-      },
+      payload: { type: 'agent_message', message: `Deploy with ${secret} now`, phase: 'final' },
     },
     {
       type: 'event_msg',
@@ -210,21 +219,149 @@ test('Notice versions and event ids do not depend on the display language', () =
     const s = parseRecords(records, opts);
     return { s, notices: noticeCandidates(s, now) };
   };
-  const en = parse('en');
-  const ko = parse('ko');
+  const inEnglish = parse('en');
+  const inKorean = parse('ko');
   setLocale('en');
+  // Byte-identical, including text the collector writes itself (the original Korean wording).
+  assert.deepEqual(inEnglish, inKorean);
+  const { s, notices } = inEnglish;
+  assert.equal(s.project, ko.server.session.unknownWorkspace);
+  assert.equal(s.statusReason, ko.server.reason.inputTool);
+  assert.ok(s.events.some((e) => e.text === ko.server.event.turnStarted));
+  assert.ok(notices.some((n) => n.kind === 'attention' && n.text === ko.shared.notice.attention));
+  // Readers localize: English shows English, Korean is the stored text itself.
+  const shown = localizeSession(s, 'en');
+  assert.equal(localizeSession(s, 'ko'), s);
+  assert.equal(shown.project, 'Unknown workspace');
+  assert.equal(shown.title, 'Unknown workspace work');
+  assert.equal(shown.statusReason, en.server.reason.inputTool);
+  assert.equal(shown.runtime?.reason, en.server.reason.inputTool);
+  assert.equal(shown.usage.source, en.server.session.usageNotCollected);
   assert.deepEqual(
-    en.s.events.map((e) => e.id),
-    ko.s.events.map((e) => e.id),
+    shown.events.map((e) => e.text),
+    [
+      en.server.event.turnStarted,
+      'Deploy with OPENAI_API_KEY=[hidden] hidden] now',
+      en.server.event.turnCompleted,
+      en.server.event.toolRun('request_user_input'),
+    ],
   );
-  assert.notEqual(en.s.statusReason, ko.s.statusReason);
   assert.deepEqual(
-    en.notices.map((n) => [n.id, n.kind, n.version]),
-    ko.notices.map((n) => [n.id, n.kind, n.version]),
+    shown.events.map((e) => e.id),
+    s.events.map((e) => e.id),
   );
-  assert.ok(en.notices.some((n) => n.kind === 'attention'));
-  assert.notEqual(en.notices.at(-1)!.text, ko.notices.at(-1)!.text);
-  assert.match(redact('password=hunter2'), /\[숨김\]|\[hidden\]/);
+  assert.ok(!hangul.test(JSON.stringify(shown)));
+  const attention = localizeNotice(
+    notices.find((n) => n.kind === 'attention')!,
+    'en',
+  );
+  assert.equal(attention.text, en.shared.notice.attention);
+  assert.equal(redact('password=hunter2'), `password=${ko.shared.redaction.hidden}`);
+  assert.equal(redact('password=hunter2', 6000, 'en'), 'password=[hidden]');
+});
+
+test('Localized placeholders read exactly as that language would redact them', () => {
+  const samples = [
+    secret,
+    'token=ghp_abcdefghijklmnopqrstu and Bearer abc.def',
+    'secret: -----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY----- done',
+    '-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY----- xoxb-1-2 sk-1234567890abcdefghij',
+    'authorization: Bearer abc password="p" api_key=sk-abcdefghijklmnopqrstuv',
+  ];
+  for (const text of samples) {
+    assert.equal(localizeText(redact(text), 'en'), redact(text, 6000, 'en'), text);
+    assert.equal(localizeText(redact(text), 'ko'), redact(text), text);
+  }
+});
+
+test('Fallback titles, activity fallbacks and archived reasons are localized on read', () => {
+  const s = parseRecords(
+    [
+      {
+        type: 'session_meta',
+        timestamp: new Date(now - 9 * 3600_000).toISOString(),
+        payload: { id: 'untitled', cwd: '/work/repo/packages/web' },
+      },
+    ],
+    { ...opts, mtime: now - 9 * 3600_000 },
+  );
+  assert.equal(s.title, ko.server.session.untitled('web'));
+  assert.equal(s.statusReason, ko.shared.runtime.offDuty(4));
+  assert.equal(s.action, ko.shared.activity.fallback.idle);
+  const moved = localizeSession({ ...s, project: 'repo' }, 'en');
+  assert.equal(moved.title, 'web work');
+  assert.equal(moved.statusReason, en.shared.runtime.offDuty(4));
+  assert.equal(moved.action, en.shared.activity.fallback.idle);
+  assert.equal(moved.activity?.text, en.shared.activity.fallback.idle);
+  assert.equal(moved.usage.source, en.server.session.usageNotCollected);
+  // A native title that merely looks like a fallback is the person's own text.
+  const native = localizeSession({ ...s, nativeTitle: true }, 'en');
+  assert.equal(native.title, s.title);
+  // Tool results without a tool name keep the structured fallback word.
+  const result = parseRecords(
+    [
+      {
+        type: 'message',
+        id: 'r1',
+        timestamp: new Date(now).toISOString(),
+        message: { role: 'toolResult', content: [] },
+      },
+    ],
+    { ...opts, provider: 'openclaw', agentName: 'butler' },
+  );
+  assert.equal(result.events[0].text, ko.server.event.toolResult(ko.server.event.tool));
+  assert.equal(localizeSession(result, 'en').events[0].text, 'Tool result');
+  assert.equal(localizeSession(result, 'en').project, 'butler');
+});
+
+test('OpenClaw revisions and records do not depend on the display language', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-claw-i18n-'));
+  try {
+    const agent = path.join(dir, 'butler', 'agent');
+    await mkdir(agent, { recursive: true });
+    const db = new DatabaseSync(path.join(agent, 'openclaw-agent.sqlite'));
+    db.exec(
+      'CREATE TABLE session_nodes(current_session_id TEXT,entry_json TEXT,updated_at INTEGER,status TEXT,label TEXT,display_name TEXT,parent_session_key TEXT,archived_at INTEGER);CREATE TABLE transcript_events(session_id TEXT,seq INTEGER,event_json TEXT)',
+    );
+    db.prepare('INSERT INTO session_nodes VALUES (?,?,?,?,?,?,?,?)').run(
+      's1',
+      '{}',
+      now,
+      'done',
+      null,
+      null,
+      null,
+      now,
+    );
+    db.prepare('INSERT INTO transcript_events VALUES (?,?,?)').run(
+      's1',
+      1,
+      JSON.stringify({
+        type: 'message',
+        id: 'e1',
+        timestamp: now,
+        message: { role: 'assistant', content: [{ type: 'text', text: `Set ${secret}` }] },
+      }),
+    );
+    db.close();
+    const read = async (locale: Locale) => {
+      setLocale(locale);
+      return (await readOpenClawDatabases(dir, 10, new Map())).sessions;
+    };
+    const stable = (list: Session[]) => list.map(({ observedAt: _, ...rest }) => rest);
+    const inEnglish = await read('en');
+    const inKorean = await read('ko');
+    setLocale('en');
+    assert.deepEqual(stable(inEnglish), stable(inKorean));
+    assert.equal(inEnglish[0].statusReason, ko.server.session.openclawArchived);
+    const shown = localizeSession(inEnglish[0], 'en');
+    assert.equal(shown.statusReason, en.server.session.openclawArchived);
+    assert.equal(shown.title, 'butler work');
+    assert.ok(shown.events[0].text.includes('[hidden]'));
+  } finally {
+    setLocale('en');
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('Handoff Markdown is written in English when English is active', async () => {
@@ -248,67 +385,186 @@ test('Handoff Markdown is written in English when English is active', async () =
     assert.match(markdown, /^# .+ · Handoff\n/);
     assert.ok(markdown.includes('## Recent evidence'));
     assert.ok(markdown.includes('- Model: Not collected'));
+    assert.ok(markdown.includes('- Project: Unknown workspace'));
     assert.ok(!hangul.test(markdown));
+    // The MCP server: errors in the active language (English), the packet in the office language.
+    assert.throws(() => store.handoff(s.id, 'old', 'ko'), /record has changed/);
+    const korean = store.handoff(s.id, s.revision, 'ko').markdown;
+    assert.ok(korean.includes(ko.server.handoff.title('Tidy up the login form')));
+    assert.ok(
+      korean.includes(
+        `- ${ko.server.handoff.field.project}: ${ko.server.session.unknownWorkspace}`,
+      ),
+    );
   } finally {
     store.close();
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('Switching language re-writes collected text without new or duplicate notices', async () => {
-  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-switch-'));
+const rollout = async (root: string, id: string, lines: object[]) =>
+  writeFile(
+    path.join(root, `rollout-${id}.jsonl`),
+    lines.map((x) => JSON.stringify(x)).join('\n') + '\n',
+  );
+const at = (offset: number) => new Date(now - offset).toISOString();
+async function office(prefix: string) {
+  const temp = await mkdtemp(path.join(os.tmpdir(), prefix));
   const root = path.join(temp, 'sessions');
   await mkdir(root);
-  const id = '01a102c7-f8f8-71a0-82a0-bbbb4defdf64';
-  const at = (offset: number) => new Date(now - offset).toISOString();
-  await writeFile(
-    path.join(root, `rollout-${id}.jsonl`),
-    [
-      { type: 'session_meta', timestamp: at(5000), payload: { id } },
-      { type: 'event_msg', timestamp: at(4000), payload: { type: 'user_message', message: 'Hi' } },
-      {
-        type: 'event_msg',
-        timestamp: at(3000),
-        payload: { type: 'agent_message', message: 'Done with token=abc123', phase: 'final' },
-      },
-      {
-        type: 'response_item',
-        timestamp: at(2000),
-        payload: { type: 'function_call', name: 'request_user_input', call_id: 'ask' },
-      },
-    ]
-      .map((x) => JSON.stringify(x))
-      .join('\n') + '\n',
-  );
   const service = new OfficeService(path.join(temp, 'data'), temp);
   service.roots.codex = root;
   service.store.preferences({ enabledProviders: ['codex'] });
+  return {
+    root,
+    service,
+    language: (locale: 'auto' | Locale) =>
+      service.call('preferences', [{ locale }]) as Promise<Snapshot>,
+    async close() {
+      service.stop();
+      setLocale('en');
+      await rm(temp, { recursive: true, force: true });
+    },
+  };
+}
+
+test('Switching language re-renders on read: same revisions, notices stay read', async () => {
+  const o = await office('office-switch-');
+  const id = '01a102c7-f8f8-71a0-82a0-bbbb4defdf64';
+  const long = `Rotated ghp_${'k'.repeat(24)} for you. ${'Details follow. '.repeat(70)}`;
+  await rollout(o.root, id, [
+    { type: 'session_meta', timestamp: at(6000), payload: { id } },
+    { type: 'event_msg', timestamp: at(5000), payload: { type: 'user_message', message: 'Hi' } },
+    {
+      type: 'event_msg',
+      timestamp: at(4000),
+      payload: { type: 'agent_message', message: `Set ${secret} in .env`, phase: 'final' },
+    },
+    {
+      type: 'event_msg',
+      timestamp: at(3000),
+      payload: { type: 'agent_message', message: long, phase: 'final' },
+    },
+    {
+      type: 'response_item',
+      timestamp: at(2000),
+      payload: { type: 'function_call', name: 'request_user_input', call_id: 'ask' },
+    },
+  ]);
   try {
-    assert.equal(getLocale(), 'en');
-    const before = await service.refresh();
+    assert.equal((await o.language('ko')).locale, 'ko');
+    const before = await o.service.refresh();
     const session = before.sessions[0];
-    assert.ok(!hangul.test(session.statusReason));
-    assert.ok(!hangul.test(before.connectors.find((c) => c.provider === 'codex')!.message));
+    assert.ok(hangul.test(session.statusReason));
     const notices = before.notices!;
-    assert.ok(notices.length > 0);
-    service.store.noticeReceipt(notices, 'read');
-    const switched = (await service.call('preferences', [{ locale: 'ko' }])) as typeof before;
-    assert.equal(getLocale(), 'ko');
-    assert.ok(hangul.test(switched.connectors.find((c) => c.provider === 'codex')!.message));
-    const after = await service.refresh();
-    assert.notEqual(after.sessions[0].revision, session.revision);
-    assert.ok(hangul.test(after.sessions[0].statusReason));
+    const replies = notices.filter((n) => n.kind === 'reply');
+    assert.equal(replies.length, 2);
+    assert.ok(
+      replies.every(
+        (n) =>
+          n.text.includes(ko.shared.redaction.hidden) || n.text.includes(ko.shared.redaction.token),
+      ),
+    );
+    assert.ok(replies.some((n) => n.text.endsWith('…')));
+    assert.ok(before.noticeStats!.unread > 0);
+    o.service.store.noticeReceipt(notices, 'read');
+    const read = await o.service.refresh();
+    assert.equal(read.noticeStats?.unread, 0);
+
+    const switched = await o.language('en');
+    assert.equal(switched.locale, 'en');
+    assert.ok(!hangul.test(switched.connectors.find((c) => c.provider === 'codex')!.message));
+    const after = await o.service.refresh();
+    // Nothing is re-parsed or re-ingested: same revision, ids, versions and receipts.
+    assert.equal(after.sessions[0].revision, session.revision);
     assert.deepEqual(
-      after.notices!.map((n) => [n.id, n.version]),
-      notices.map((n) => [n.id, n.version]),
+      after.notices!.map((n) => [n.id, n.version, n.seenAt]),
+      read.notices!.map((n) => [n.id, n.version, n.seenAt]),
     );
     assert.equal(after.noticeStats?.unread, 0);
-    const attention = after.notices!.find((n) => n.kind === 'attention');
-    assert.ok(attention && hangul.test(attention.text));
+    assert.equal(after.noticeStats?.total, read.noticeStats?.total);
+    // ...and everything reads in English.
+    assert.ok(!hangul.test(after.sessions[0].statusReason));
+    assert.ok(!hangul.test(JSON.stringify(after.notices)));
+    const shown = after.notices!.filter((n) => n.kind === 'reply').map((n) => n.text);
+    assert.ok(shown.some((t) => t.includes('[hidden] hidden]')));
+    assert.ok(shown.some((t) => t.includes('[token hidden]') && t.endsWith('…')));
+    assert.equal(
+      after.notices!.find((n) => n.kind === 'attention')?.text,
+      en.shared.notice.attention,
+    );
+    const detail = o.service.store.get(session.id);
+    assert.ok(!hangul.test(detail.events.map((e) => e.text).join('\n')));
+    assert.equal(o.service.store.search('[hidden]')[0]?.session.id, session.id);
+
+    const back = await o.language('ko');
+    assert.equal(back.sessions[0].revision, session.revision);
+    assert.deepEqual(
+      back.notices!.map((n) => [n.id, n.version, n.seenAt]),
+      read.notices!.map((n) => [n.id, n.version, n.seenAt]),
+    );
+    assert.ok(back.notices!.some((n) => n.text.includes(ko.shared.redaction.hidden)));
   } finally {
-    service.stop();
-    setLocale('en');
-    await rm(temp, { recursive: true, force: true });
+    await o.close();
+  }
+});
+
+test('An excluded unknown workspace stays excluded in every language', async () => {
+  const o = await office('office-exclude-');
+  const id = '01a102c7-f8f8-71a0-82a0-cccc4defdf64';
+  const sid = `codex:${id}`;
+  await rollout(o.root, id, [
+    { type: 'session_meta', timestamp: at(3000), payload: { id } },
+    { type: 'event_msg', timestamp: at(2000), payload: { type: 'user_message', message: 'Hi' } },
+  ]);
+  const hidden = (s: Snapshot) => {
+    assert.equal(s.sessions.length, 0);
+    assert.equal(s.notices?.length, 0);
+    assert.deepEqual(o.service.store.list(), []);
+    assert.deepEqual(o.service.store.search('Hi'), []);
+    assert.throws(() => o.service.store.get(sid));
+  };
+  try {
+    const first = await o.service.refresh();
+    assert.equal(first.locale, 'en');
+    assert.equal(first.sessions[0].project, 'Unknown workspace');
+    // Excluded in English: stored canonical, shown in the display language.
+    const excluded = (await o.service.call('preferences', [
+      { excludedProjects: ['Unknown workspace'] },
+    ])) as Snapshot;
+    assert.deepEqual(o.service.store.preferences().excludedProjects, [
+      ko.server.session.unknownWorkspace,
+    ]);
+    assert.deepEqual(excluded.preferences.excludedProjects, ['Unknown workspace']);
+    hidden(excluded);
+    const korean = await o.language('ko');
+    assert.equal(korean.locale, 'ko');
+    assert.deepEqual(korean.preferences.excludedProjects, [ko.server.session.unknownWorkspace]);
+    hidden(await o.service.refresh());
+
+    // Excluded in Korean, then English.
+    await o.service.call('preferences', [{ excludedProjects: [] }]);
+    assert.equal(
+      (await o.service.refresh()).sessions[0].project,
+      ko.server.session.unknownWorkspace,
+    );
+    await o.service.call('preferences', [
+      { excludedProjects: [ko.server.session.unknownWorkspace] },
+    ]);
+    const english = await o.language('auto');
+    assert.equal(english.locale, 'en');
+    hidden(english);
+
+    // Rows saved by a build that stored the display name still match.
+    o.service.store.db.prepare("UPDATE settings SET value=? WHERE key='preferences'").run(
+      JSON.stringify({
+        ...o.service.store.preferences(),
+        excludedProjects: ['Unknown workspace'],
+      }),
+    );
+    hidden(await o.language('ko'));
+  } finally {
+    await o.close();
   }
 });
 
@@ -323,11 +579,7 @@ test('No Korean copy outside the Korean catalog', () => {
     ['server', /\.ts$/],
     ['desktop', /\.ts$/],
   ];
-  const skip = [
-    /^src\/shared\/i18n\/locales\/ko\//,
-    // Pending deletion: replaced by the desk dock.
-    /^src\/components\/MiniOffice\.tsx$/,
-  ];
+  const skip = [/^src\/shared\/i18n\/locales\/ko\//];
   // [file, line pattern]: language names are written in their own language.
   const allowed: [string, RegExp][] = [['src/shared/i18n/index.ts', /label: '한국어'/]];
   const hangul = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]/;

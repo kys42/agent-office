@@ -10,6 +10,7 @@ import {
   type LocalePreference,
 } from '../shared/i18n';
 const STORAGE_KEY = 'office:locale';
+const PREFERENCE_KEY = 'office:locale-preference';
 // `?lang=en|ko` pins the language for previews, screenshots and tests without touching settings.
 const pinned = (): Locale | null => {
   const lang = new URLSearchParams(location.search).get('lang');
@@ -31,11 +32,38 @@ export function bootLocale() {
   } catch {}
   apply(pinned() ?? resolveLocale(isLocale(stored) ? stored : 'auto', navigator.languages));
 }
-/** Follows the saved language preference; `auto` uses the system language, falling back to English. */
-export function useLocalePreference(preference: LocalePreference | undefined, ready: boolean) {
+/** The last language choice seen in a snapshot, so a demo opened later starts in the same language. */
+export function savedLocalePreference(): LocalePreference | undefined {
+  try {
+    const value = localStorage.getItem(PREFERENCE_KEY);
+    return value === 'auto' || isLocale(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+/**
+ * Follows the saved language preference. For `auto` the collector's resolved language wins, so the
+ * window and the collector (status reasons, connector messages, tray) never disagree; the browser's
+ * own languages are only the fallback (demo, before the collector answers).
+ */
+export function useLocalePreference(
+  preference: LocalePreference | undefined,
+  ready: boolean,
+  resolved?: Locale,
+) {
   useEffect(() => {
-    if (ready) apply(pinned() ?? resolveLocale(preference, navigator.languages));
-  }, [preference, ready]);
+    if (!ready) return;
+    apply(
+      pinned() ??
+        (isLocale(preference)
+          ? preference
+          : (resolved ?? resolveLocale('auto', navigator.languages))),
+    );
+    if (pinned() || !preference) return;
+    try {
+      localStorage.setItem(PREFERENCE_KEY, preference);
+    } catch {}
+  }, [preference, ready, resolved]);
 }
 /** Re-renders on a language switch. `t` is the active catalog: `t.app.title`, `t.common.minutesAgo(3)`. */
 export function useI18n() {
