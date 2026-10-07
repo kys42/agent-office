@@ -83,3 +83,10 @@
   font-size: 10.5px;
   color: var(--text-3);
 }
+/* Desk row: open the colleague card here, and go straight to its terminal (only when it can). */
+.card-button {
+  top: 130px;
+}
+.jump-button {
+  top: 160px;
+}

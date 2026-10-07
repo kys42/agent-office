@@ -5,7 +5,7 @@ import { applyNoticeReceipt } from '../shared/notices';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
-import type { NoticeReceipt, Preferences, SessionPatch, Snapshot } from '../shared/types';
+import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
 import { arrivalEnds } from '../shared/speech';
 
@@ -83,6 +83,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       notify('동료들의 최신 기록을 확인했어요');
     } catch (e) {
       setError((e as Error).message);
+      notify((e as Error).message);
     } finally {
       setRefreshing(false);
     }
@@ -116,6 +117,16 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return;
     }
     setSnapshot(await api.patch(id, p));
+  };
+  /**
+   * Pin or unpin a colleague. A persona colleague pins all of its runs, so the pin stays when
+   * another run starts speaking for it. Resolves to the new state; rejects so callers can tell.
+   */
+  const pin = async (s: Session) => {
+    const next = !s.pinned;
+    const ids = s.resident?.key.startsWith('actor:') ? s.resident.sessionIds : [s.id];
+    for (const id of ids) await patch(id, { pinned: next });
+    return next;
   };
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
     if (demo) {
@@ -219,6 +230,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     refresh,
     setPrefs,
     patch,
+    pin,
     receipt,
     visit,
     veil,

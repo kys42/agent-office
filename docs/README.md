@@ -15,6 +15,7 @@ docs/
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
 │   ├── SESSION-INGESTION.md       # 수집 흐름·자체/외부 모듈·장애 분석
 │   ├── OFFICE-ASSETS.md          # 가구·펫·소품 확장 계약
+│   ├── TERMINAL.md               # 원래 터미널로 이동·바로 보내기
 │   ├── MCP.md                    # 읽기 전용 도구 연결
 │   ├── QA.md                     # 날짜별 검증 결과·한계
 │   └── PLAN.md                   # 초기 구현 계획 이력
@@ -34,6 +35,7 @@ docs/
 | 플랫폼 추가·공통 필드 변경 | [관측 규격](golden/OFFICE-OBSERVATION-PROTOCOL.md) |
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
+| 원래 터미널 이동·바로 보내기 | [터미널 연결](development/TERMINAL.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |

@@ -27,6 +27,7 @@ import {
 import { api, isDesktop } from './lib/api';
 import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
 import { useOffice } from './lib/useOffice';
+import { useTerminalSend } from './lib/useTerminalSend';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
@@ -82,6 +83,7 @@ export default function App() {
     refresh,
     setPrefs: onPrefs,
     patch: onPatch,
+    pin,
     receipt: onReceipt,
     visit,
     veil,
@@ -181,6 +183,13 @@ export default function App() {
     setInbox(true);
     setSelected(null);
   };
+  // Desktop-only opt-in and the quick-reply send, shared with the dock card.
+  const {
+    enabled: terminalSend,
+    available: terminalSendAvailable,
+    toggle: toggleTerminalSend,
+    sendReply,
+  } = useTerminalSend(demo, notify);
   const saveZoneRules = async (zoneRules: ZoneRule[]) => {
     if (await onPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
   };
@@ -550,11 +559,9 @@ export default function App() {
                 notify(on ? '다음 대화가 올 때까지 가렸어요' : '다시 보이게 했어요');
               }}
               onPin={(s) =>
-                onPatch(s.id, { pinned: !s.pinned })
-                  .then(() =>
-                    notify(
-                      s.pinned ? '고정을 풀었어요' : '고정했어요 · 오래 지나도 사무실에 남아요',
-                    ),
+                pin(s)
+                  .then((on) =>
+                    notify(on ? '고정했어요 · 오래 지나도 사무실에 남아요' : '고정을 풀었어요'),
                   )
                   .catch((e) => notify(e.message))
               }
@@ -574,6 +581,7 @@ export default function App() {
               onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
+              onReply={sendReply}
               onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />
           ) : view === 'memory' ? (
@@ -586,7 +594,14 @@ export default function App() {
               privacy={prefs?.privacy ?? false}
             />
           ) : view === 'settings' ? (
-            <Settings snapshot={snapshot} onPrefs={onPrefs} onRefresh={refresh} notify={notify} />
+            <Settings
+              snapshot={snapshot}
+              onPrefs={onPrefs}
+              onRefresh={refresh}
+              notify={notify}
+              terminalSend={terminalSendAvailable ? terminalSend : undefined}
+              onTerminalSend={toggleTerminalSend}
+            />
           ) : (
             <Activity sessions={sessions} onSelect={choose} privacy={prefs?.privacy ?? false} />
           )}
@@ -608,6 +623,7 @@ export default function App() {
             privacy={prefs?.privacy ?? false}
             zoneRules={prefs?.zoneRules ?? []}
             onZoneRules={saveZoneRules}
+            terminalSend={terminalSend}
           />
         )}
         {showUsage && (

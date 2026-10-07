@@ -7,6 +7,7 @@ import {
   Cloud,
   MessageSquare,
   PenLine,
+  Reply,
   TriangleAlert,
   User,
   X,
@@ -44,23 +45,38 @@ export function SpeechBubble({
   onDismiss,
   detail,
   peek = false,
+  reply,
+  expanded,
+  onExpandedChange,
 }: {
   session: Session;
   speech: StationSpeech;
   privacy: boolean;
-  onOpen: () => void;
+  /** Gets the bubble element, so a scene can open things right where it was clicked. */
+  onOpen: (bubble: HTMLElement) => void;
   onDismiss: () => void;
   /** Extra facts shown when the bubble is unfolded (or hovered, where the scene allows). */
   detail?: ReactNode;
   /** A closed or expired bubble shown again while pointed at: muted, nothing to close. */
   peek?: boolean;
+  /** Quick reply, offered only when the session can take a follow-up right now. */
+  reply?: { title: string; open: boolean; onClick: () => void };
+  /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const { bubble, activity, text, label, markdown, tone } = speech;
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
   const body = useRef<HTMLElement>(null);
-  const [open, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = expanded ?? ownOpen;
+  const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
+    const value = typeof next === 'function' ? next(open) : next;
+    if (expanded === undefined) setOwnOpen(value);
+    onExpandedChange?.(value);
+  };
   const [long, setLong] = useState(false);
   useLayoutEffect(() => {
     const el = body.current;
@@ -74,7 +90,7 @@ export function SpeechBubble({
     >
       <button
         className="speech-open"
-        onClick={onOpen}
+        onClick={(e) => onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!)}
         title={privacy ? '내용 숨김' : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
         <span className="speech-copy">
@@ -126,6 +142,20 @@ export function SpeechBubble({
           <i />
           <i />
         </span>
+      )}
+      {reply && (
+        <button
+          className={`bubble-reply ${reply.open ? 'open' : ''}`}
+          aria-label={`${sessionName(s)}에게 바로 답장`}
+          aria-expanded={reply.open}
+          title={reply.title}
+          onClick={(e) => {
+            e.stopPropagation();
+            reply.onClick();
+          }}
+        >
+          <Reply size={11} strokeWidth={2.6} />
+        </button>
       )}
       {bubble && !peek && (
         <button

@@ -11,11 +11,19 @@ import {
 } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
-import type { DockAction, DockMode, Session } from '../src/shared/types.js';
+import type {
+  CardTarget,
+  DockAction,
+  DockMode,
+  JumpResult,
+  Provider,
+  Session,
+} from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import {
+  cardBounds,
   clampInto,
   FLOOR_HEIGHT,
   ROW_HEIGHT,
@@ -26,8 +34,24 @@ import {
   type Point,
   type Rect,
 } from '../src/shared/dock-geometry.js';
+import {
+  focusTerminal,
+  forgetTerminal,
+  hostName,
+  locateTerminal,
+  sendToTerminal,
+  terminalTarget,
+  TerminalInputError,
+} from './terminals.js';
+import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
+  // The dock card: a colleague's card opened at a desk in the dock (presentation only).
+  card: BrowserWindow | null = null,
+  cardHide: ReturnType<typeof setTimeout> | null = null,
+  cardShownAt = 0,
+  // A save or confirm sheet on the card takes focus; that is not a click elsewhere.
+  cardDialogs = 0,
   tray: Tray | null = null,
   bridge: ServiceBridge,
   quitting = false;
@@ -44,7 +68,7 @@ else {
   app.whenReady().then(() => {
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
     bridge.on('snapshot', (s) => {
-      for (const w of [main, dock])
+      for (const w of [main, dock, card])
         if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
     });
     bridge.on('failure', (message) => console.error('Collector worker:', message));
@@ -228,9 +252,85 @@ function stopDrag(save: boolean) {
   petSpot = feet;
   void savePetSpot();
 }
+/**
+ * The colleague card for the dock: the same card as the big office's right panel, in a small
+ * focusable window above the clicked desk. The dock itself stays see-through and unfocused.
+ */
+function showCard(target: CardTarget, anchor: Rect) {
+  if (cardHide) clearTimeout(cardHide);
+  cardHide = null;
+  if (!card || card.isDestroyed()) {
+    card = new BrowserWindow({
+      ...cardBounds(anchor, workAreaFor(anchor)),
+      show: false,
+      resizable: false,
+      frame: false,
+      transparent: true,
+      fullscreenable: false,
+      skipTaskbar: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    secure(card);
+    // Above the dock, which is itself always on top.
+    card.setAlwaysOnTop(true, 'pop-up-menu');
+    card.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // Clicking anywhere else puts the card away. A short delay lets a click on another desk
+    // reopen it in place instead of flickering.
+    card.on('blur', () => {
+      // Opening shifts focus between the dock and the card for a moment; that is not a click
+      // elsewhere. A blur during that moment is checked again once it has passed.
+      if (cardDialogs > 0) return;
+      const settle = Math.max(150, cardShownAt + 500 - Date.now());
+      if (cardHide) clearTimeout(cardHide);
+      cardHide = setTimeout(() => {
+        if (card && !card.isDestroyed() && !card.isFocused()) hideCard();
+      }, settle);
+    });
+    card.on('closed', () => {
+      card = null;
+    });
+    void card.loadFile(index, { hash: 'card' });
+  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor)));
+  const window = card;
+  const send = () => {
+    if (!window.isDestroyed()) window.webContents.send('office:card', target);
+  };
+  const reveal = () => {
+    if (window.isDestroyed()) return;
+    cardShownAt = Date.now();
+    window.show();
+    window.focus();
+  };
+  // A new card window shows once its page is ready, so it never flashes empty.
+  if (window.webContents.isLoadingMainFrame()) {
+    window.webContents.once('did-finish-load', () => {
+      send();
+      reveal();
+    });
+  } else {
+    send();
+    reveal();
+  }
+}
+function hideCard() {
+  if (cardHide) clearTimeout(cardHide);
+  cardHide = null;
+  if (card && !card.isDestroyed() && card.isVisible()) {
+    // A put-away card shows nothing: no background polling, no stale flash on the next open.
+    card.webContents.send('office:card', null);
+    card.hide();
+  }
+}
+const finite = (n: unknown, max = 100_000) =>
+  typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
 function trusted(e: Electron.IpcMainInvokeEvent) {
   if (
-    ![main?.webContents, dock?.webContents].includes(e.sender) ||
+    ![main?.webContents, dock?.webContents, card?.webContents].includes(e.sender) ||
     e.senderFrame !== e.sender.mainFrame
   )
     throw new Error('허용되지 않은 창입니다.');
@@ -273,6 +373,43 @@ function setupIPC() {
     else if (action === 'through') dock.setIgnoreMouseEvents(true, { forward: true });
     else throw new Error('잘못된 요청');
   });
+  ipcMain.handle('office:card', (e, action, target, anchor) => {
+    trusted(e);
+    if (action === 'close') {
+      if (e.sender !== card?.webContents) throw new Error('허용되지 않은 창입니다.');
+      return hideCard();
+    }
+    const valid =
+      target &&
+      typeof target.id === 'string' &&
+      target.id.length > 0 &&
+      target.id.length <= 400 &&
+      typeof target.news === 'boolean';
+    if (!valid) throw new Error('잘못된 요청');
+    const chosen: CardTarget = { id: target.id, news: target.news };
+    if (action === 'expand') {
+      if (e.sender !== card?.webContents) throw new Error('허용되지 않은 창입니다.');
+      hideCard();
+      return showMain(chosen.id);
+    }
+    if (action !== 'open' || e.sender !== dock?.webContents) throw new Error('잘못된 요청');
+    if (
+      !anchor ||
+      !finite(anchor.x) ||
+      !finite(anchor.y) ||
+      !finite(anchor.width, 10_000) ||
+      !finite(anchor.height, 10_000) ||
+      anchor.width < 0 ||
+      anchor.height < 0
+    )
+      throw new Error('잘못된 요청');
+    showCard(chosen, {
+      x: Math.round(anchor.x),
+      y: Math.round(anchor.y),
+      width: Math.round(anchor.width),
+      height: Math.round(anchor.height),
+    });
+  });
   ipcMain.handle('office:reveal', async (e, id) => {
     trusted(e);
     const s: Session = await bridge.call('detail', [id]);
@@ -280,27 +417,167 @@ function setupIPC() {
   });
   ipcMain.handle('office:resume', async (e, id) => {
     trusted(e);
-    const s: Session = await bridge.call('detail', [id]);
-    if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
-      await shell.openExternal(`codex://threads/${s.nativeId}`);
-      return 'Codex에서 세션 열기를 요청했어요';
+    return (await resume(await bridge.call('detail', [id]))).text;
+  });
+  // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
+  const identities = new Map<
+    string,
+    { provider: Provider; nativeId: string; sourcePath: string }
+  >();
+  const identity = async (id: unknown) => {
+    let known = typeof id === 'string' ? identities.get(id) : undefined;
+    if (!known) {
+      const s: Session = await bridge.call('detail', [id]);
+      known = { provider: s.provider, nativeId: s.nativeId, sourcePath: s.sourcePath };
+      identities.set(s.id, known);
+      if (identities.size > 500) identities.delete(identities.keys().next().value!);
     }
-    const quoted = "'" + s.nativeId.replace(/'/g, "'\\''") + "'";
-    return s.provider === 'claude' ? `claude --resume ${quoted}` : `OpenClaw 세션: ${s.nativeId}`;
+    return known;
+  };
+  const live = async (id: unknown, fresh = false) => {
+    const known = await identity(id);
+    return known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
+  };
+  const codex = async (id: unknown, fresh = false) => {
+    const known = await identity(id);
+    return known.provider === 'codex'
+      ? findCodexThread(known.nativeId, known.sourcePath, { fresh })
+      : null;
+  };
+  ipcMain.handle('office:terminals', async (e, ids) => {
+    trusted(e);
+    if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
+      throw new Error('잘못된 요청');
+    const entries = await Promise.all(
+      [...new Set(ids as string[])].map(async (id) => {
+        try {
+          const terminal = await live(id);
+          if (terminal) return [id, terminalTarget(terminal)] as const;
+          return [id, (await codex(id)) ? codexTarget() : null] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }),
+    );
+    return Object.fromEntries(entries);
+  });
+  ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
+    trusted(e);
+    // A terminal Codex session lives in the CLI daemon, not the desktop app: hand back the command.
+    const thread = await codex(id, true);
+    if (thread) return { action: 'copy', text: `codex resume ${shellQuote(thread.threadId)}` };
+    const terminal = await live(id, true);
+    if (!terminal) return resume(await bridge.call('detail', [id]));
+    try {
+      const text = await focusTerminal(terminal);
+      // From the dock card, the terminal is where the person goes next.
+      if (e.sender === card?.webContents) hideCard();
+      return { action: 'focused', text };
+    } catch (error) {
+      if (error instanceof TerminalInputError) throw error;
+      throw new Error(`${hostName(terminal.host)} 터미널로 이동하지 못했어요.`);
+    }
+  });
+  // The opt-in lives in the desktop profile, not in the shared preferences, so the web preview
+  // can never turn it on. Turning it on always goes through a native confirmation.
+  ipcMain.handle('office:terminal-send', async (e, enable) => {
+    trusted(e);
+    if (typeof enable !== 'boolean') return terminalSendEnabled();
+    if (enable) {
+      const owner = BrowserWindow.fromWebContents(e.sender);
+      const options: Electron.MessageBoxOptions = {
+        type: 'warning',
+        buttons: ['켜기', '취소'],
+        defaultId: 1,
+        cancelId: 1,
+        message: '터미널로 보내기를 켤까요?',
+        detail:
+          'Orca·tmux에서 쉬고 있는 Claude Code 세션에는 업무 카드에서 쓴 글을 그 터미널에 직접 입력하고, 실행 중인 Codex CLI 세션에는 Codex 대기열로 전달해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
+      };
+      const { response } = owner
+        ? await dialog.showMessageBox(owner, options)
+        : await dialog.showMessageBox(options);
+      if (response !== 0) return terminalSendEnabled();
+    }
+    await writeFile(terminalSendFile(), JSON.stringify({ enabled: enable }), { mode: 0o600 });
+    return enable;
+  });
+  ipcMain.handle('office:send', async (e, id, text) => {
+    trusted(e);
+    if (typeof text !== 'string' || text.length > 20000) throw new Error('잘못된 요청');
+    if (!(await terminalSendEnabled())) throw new Error('설정에서 ‘터미널로 보내기’를 켜 주세요.');
+    const thread = await codex(id, true);
+    if (thread)
+      try {
+        return await queueToCodex(thread, text);
+      } catch (error) {
+        if (error instanceof TerminalInputError) throw error;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+          throw new Error('Codex CLI를 찾지 못해 보내지 않았어요.');
+        throw new Error(
+          'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
+        );
+      }
+    const terminal = await live(id, true);
+    if (!terminal)
+      throw new Error('지금 보낼 수 있는 Orca·tmux 터미널이나 Codex 세션을 찾지 못했어요.');
+    try {
+      return await sendToTerminal(terminal, text);
+    } catch (error) {
+      if (error instanceof TerminalInputError) throw error;
+      // The text may already be in the terminal; never invite a blind resend.
+      throw new Error(
+        `${hostName(terminal.host)}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
+      );
+    } finally {
+      forgetTerminal(terminal.process.sessionId);
+    }
   });
   ipcMain.handle('office:export', async (e, name, content) => {
     trusted(e);
     if (typeof content !== 'string' || content.length > 30000 || typeof name !== 'string')
       throw new Error('잘못된 파일 요청');
     const win = BrowserWindow.fromWebContents(e.sender)!;
-    const result = await dialog.showSaveDialog(win, {
-      defaultPath: path.basename(name).replace(/[^\p{L}\p{N}._ -]/gu, '_'),
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    });
+    const fromCard = win === card;
+    if (fromCard) cardDialogs++;
+    let result: Electron.SaveDialogReturnValue;
+    try {
+      result = await dialog.showSaveDialog(win, {
+        defaultPath: path.basename(name).replace(/[^\p{L}\p{N}._ -]/gu, '_'),
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      });
+    } finally {
+      if (fromCard) {
+        cardDialogs--;
+        if (!win.isDestroyed()) win.focus();
+      }
+    }
     if (result.canceled || !result.filePath) return false;
     await writeFile(result.filePath, content, { mode: 0o600 });
     return true;
   });
+}
+const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+async function terminalSendEnabled() {
+  try {
+    return JSON.parse(await readFile(terminalSendFile(), 'utf8')).enabled === true;
+  } catch {
+    return false;
+  }
+}
+async function resume(s: Session): Promise<JumpResult> {
+  if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
+    await shell.openExternal(`codex://threads/${s.nativeId}`);
+    return { action: 'opened', text: 'Codex에서 세션 열기를 요청했어요' };
+  }
+  return {
+    action: 'copy',
+    text:
+      s.provider === 'claude'
+        ? `claude --resume ${shellQuote(s.nativeId)}`
+        : `OpenClaw 세션: ${s.nativeId}`,
+  };
 }
 app.on('activate', () => showMain());
 app.on('before-quit', () => {
