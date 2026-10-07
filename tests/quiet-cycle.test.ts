@@ -232,3 +232,50 @@ test('Hidden windows get nothing; on showing they get the latest once', () => {
   delivery.publish(office(4), viewers);
   assert.deepEqual(got[2], [3, 4]);
 });
+
+test('Unchanged rows are not parsed again; a failed pass is taken in again', async (t) => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-reuse-'));
+  const store = new OfficeStore(dir);
+  const record = (id: string) =>
+    parseRecords(
+      [
+        { type: 'session_meta', payload: { id, cwd: '/test/p' } },
+        {
+          type: 'response_item',
+          payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: id }] },
+        },
+      ],
+      { provider: 'codex', sourcePath: `/test/${id}.jsonl`, mtime: Date.now() },
+    );
+  try {
+    const a = record('a'),
+      b = record('b');
+    store.upsert([a, b], 'codex');
+    const first = store.list(true, CANONICAL);
+    const parse = t.mock.method(JSON, 'parse');
+    const second = store.list(true, CANONICAL);
+    // Same parsed record (its events array) and no session row parsed again.
+    assert.equal(second[0].events, first[0].events);
+    assert.ok(
+      !parse.mock.calls.some(
+        (c) => typeof c.arguments[0] === 'string' && c.arguments[0].includes('"events"'),
+      ),
+    );
+    parse.mock.restore();
+    // Taken in this run: a quiet pass skips notice work entirely.
+    const ingest = t.mock.method(store as any, 'ingestNotices');
+    store.upsert([a, b], 'codex');
+    assert.equal(ingest.mock.callCount(), 0);
+    // A pass that fails is rolled back, so everything is taken in again next time.
+    ingest.mock.mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    assert.throws(() => store.upsert([a, { ...b, revision: 'changed' }], 'codex'));
+    ingest.mock.mockImplementation(() => {});
+    store.upsert([a, b], 'codex');
+    assert.equal(ingest.mock.callCount(), 3, 'one failed call, then both sessions again');
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true });
+  }
+});

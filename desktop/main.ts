@@ -449,6 +449,7 @@ function setupIPC() {
   });
   // Whether this page's window is on screen right now (the page also hears each change).
   ipcMain.handle('office:visible', (e) => {
+    trusted(e);
     const w = BrowserWindow.fromWebContents(e.sender);
     return w ? onScreen(w) : true;
   });

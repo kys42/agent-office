@@ -160,7 +160,8 @@ export class OfficeService extends EventEmitter {
       notices,
       noticeStats: { unread: unreadNoticeCount(notices), total: notices.length },
       sessions,
-      connectors: this.connectors,
+      // A copy: the snapshot keeps describing its own version after the connectors move on.
+      connectors: this.connectors.map((c) => ({ ...c })),
       preferences: localizePreferences(this.store.preferences(), locale),
       syncing: this.syncing,
       lastSync: this.lastSync,

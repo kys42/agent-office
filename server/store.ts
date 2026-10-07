@@ -61,7 +61,8 @@ export class OfficeStore {
    * Writer only: stored sessions already parsed, by id. Our own writes drop their ids (upsert),
    * a commit from another connection (a dev server or second app on the same data) drops all of
    * them (`PRAGMA data_version`, compared on this one connection). A read-only store (MCP) has
-   * no cache and always reads what is on disk.
+   * no cache and always reads what is on disk. Returned sessions share these objects (and their
+   * events, workspace, usage): callers treat what `list`/`officeView` return as read-only.
    */
   private cached: Map<string, Session> | null = null;
   private dataVersion = -1;
