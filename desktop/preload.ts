@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { CardTarget, DockMode, OfficeAPI, Snapshot } from '../src/shared/types.js';
+import type { CardTarget, DockMode, OfficeAPI } from '../src/shared/types.js';
+import type { SnapshotMessage } from '../src/shared/snapshot-patch.js';
 const call = (method: string, ...args: unknown[]) =>
   ipcRenderer.invoke('office:call', method, args);
 // Electron prefixes main-process errors; terminal actions show their message to the person.
@@ -26,7 +27,7 @@ const api: OfficeAPI = {
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),
   subscribe: (callback) => {
-    const f = (_: unknown, s: Snapshot) => callback(s);
+    const f = (_: unknown, s: SnapshotMessage) => callback(s);
     ipcRenderer.on('office:snapshot', f);
     return () => ipcRenderer.removeListener('office:snapshot', f);
   },

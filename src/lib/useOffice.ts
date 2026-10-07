@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
 import { demoSnapshot, reconcileDemo } from './demo';
 import { applyNoticeReceipt } from '../shared/notices';
+import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
@@ -77,6 +78,33 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  // The office as last accepted, read synchronously so back-to-back patches chain correctly.
+  const held = useRef<Snapshot | null>(snapshot);
+  useEffect(() => {
+    held.current = snapshot;
+  }, [snapshot]);
+  /**
+   * Takes a whole office or a patch. A patch applies only on the version it starts from; on
+   * any gap the whole office is fetched again. Colleagues that did not change keep their
+   * objects, so only what moved is drawn again. Older versions of the same run are dropped.
+   */
+  const accept = useCallback((message: SnapshotMessage) => {
+    const prev = held.current;
+    let next: Snapshot;
+    if (isPatch(message)) {
+      if (prev?.epoch === message.epoch && message.version <= prev.version) return;
+      if (!prev || prev.epoch !== message.epoch || prev.version !== message.base) {
+        void api.snapshot().then(accept, () => {});
+        return;
+      }
+      next = applyPatch(prev, message);
+    } else {
+      next = adoptSnapshot(prev, message);
+      if (next === prev) return;
+    }
+    held.current = next;
+    setSnapshot(next);
+  }, []);
   // Demo content is written in the language it was generated in.
   const demoLocale = useRef(locale);
   useEffect(() => {
@@ -92,28 +120,28 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return;
     }
     let active = true;
+    held.current = null;
     setSnapshot(null);
     api
       .snapshot()
       .then((s) => {
         if (active) {
-          setSnapshot(s);
+          accept(s);
           setError('');
         }
       })
       .catch((e) => {
         if (active) setError(e.message);
       });
-    const unsubscribe = api.subscribe((s) => {
-      if (active) {
-        // The same version of the same collector run again (a push after the reply to our own
-        // change) changes nothing. Snapshots without a run (demo, fixtures) always apply.
-        setSnapshot((prev) =>
-          prev && s.epoch && prev.epoch === s.epoch && prev.version === s.version ? prev : s,
-        );
-        setError('');
-      }
-    });
+    const unsubscribe = api.subscribe(
+      (message) => {
+        if (active) {
+          accept(message);
+          setError('');
+        }
+      },
+      () => held.current && { epoch: held.current.epoch, version: held.current.version },
+    );
     return () => {
       active = false;
       unsubscribe();
@@ -159,8 +187,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     }
     setRefreshing(true);
     try {
-      const s = await api.refresh();
-      setSnapshot(s);
+      accept(await api.refresh());
       setError('');
       notify(m().app.toast.refreshed);
     } catch (e) {
@@ -190,7 +217,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return true;
     }
     try {
-      setSnapshot(await api.preferences(p));
+      accept(await api.preferences(p));
       return true;
     } catch (e) {
       notify((e as Error).message);
@@ -209,7 +236,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       );
       return;
     }
-    setSnapshot(await api.patch(id, p));
+    accept(await api.patch(id, p));
   };
   /**
    * Pin or unpin a colleague. A persona colleague pins all of its runs, so the pin stays when
@@ -232,7 +259,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     // One request and one transaction (and one snapshot): a persona is pinned whole or not at
     // all. Only a persona of more than 500 runs would need a second request.
     for (let i = 0; i < ids.length; i += BATCH)
-      setSnapshot(await api.pin(ids.slice(i, i + BATCH), next));
+      accept(await api.pin(ids.slice(i, i + BATCH), next));
     return next;
   };
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
@@ -244,7 +271,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     }
     try {
       for (let i = 0; i < receipts.length; i += 1000)
-        setSnapshot(await api.notices(receipts.slice(i, i + 1000), action));
+        accept(await api.notices(receipts.slice(i, i + 1000), action));
     } catch (e) {
       notify((e as Error).message);
     }
@@ -288,7 +315,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     try {
       // The service takes up to 500 ids per request; "bring everyone back" can be more.
       for (let i = 0; i < ids.length; i += BATCH)
-        setSnapshot(await api.veil(ids.slice(i, i + BATCH), on));
+        accept(await api.veil(ids.slice(i, i + BATCH), on));
     } catch (e) {
       notify((e as Error).message);
     }
@@ -296,7 +323,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const returnToOffice = async (id: string) => {
     if (!demo) {
       try {
-        setSnapshot(await api.returnToOffice(id));
+        accept(await api.returnToOffice(id));
         notify(m().app.toast.returned);
       } catch (e) {
         notify((e as Error).message);

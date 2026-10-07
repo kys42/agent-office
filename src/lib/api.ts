@@ -1,4 +1,5 @@
-import type { OfficeAPI, Snapshot } from '../shared/types';
+import type { OfficeAPI } from '../shared/types';
+import type { SnapshotMessage } from '../shared/snapshot-patch';
 import { parseArtifact } from '../shared/office';
 import { m } from '../shared/i18n';
 import { webLink } from '../shared/links';
@@ -43,25 +44,22 @@ export const api: OfficeAPI = window.office ?? {
   search: (q, p) => rpc('search', q, p),
   handoff: (id, r) => rpc('handoff', id, r),
   preferences: (p) => rpc('preferences', p),
-  subscribe: (cb) => {
+  subscribe: (cb, since) => {
     // Polls only while the tab is visible, and says which version it holds: an office that did
-    // not change answers in a few bytes instead of the whole snapshot.
+    // not change answers in a few bytes, one that did sends only what changed.
     let active = true,
-      running = false,
-      known: Pick<Snapshot, 'epoch' | 'version'> | null = null;
+      running = false;
     const poll = async () => {
       if (running || isPageHidden()) return;
       running = true;
       try {
-        const s: Snapshot | { unchanged: true } = await rpc(
+        const held = since?.();
+        const m: SnapshotMessage | { unchanged: true } = await rpc(
           'snapshot',
-          known?.epoch ?? null,
-          known?.version ?? null,
+          held?.epoch ?? null,
+          held?.version ?? null,
         );
-        if (active && !('unchanged' in s)) {
-          known = { epoch: s.epoch, version: s.version };
-          cb(s);
-        }
+        if (active && !('unchanged' in m)) cb(m);
       } catch {
         /* initial fetch and refresh expose failures */
       } finally {

@@ -1,3 +1,4 @@
+import type { SnapshotMessage } from './snapshot-patch';
 import { m, type Locale, type LocalePreference } from './i18n';
 import type { PetCustomization } from './pets';
 export type Provider = 'claude' | 'codex' | 'openclaw';
@@ -377,7 +378,14 @@ export interface OfficeAPI {
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
-  subscribe: (callback: (s: Snapshot) => void) => () => void;
+  /**
+   * The office as it changes: a whole snapshot or a patch on the version held. `since` tells a
+   * poller (the web preview) what is held, so it can ask for only what changed.
+   */
+  subscribe: (
+    callback: (message: SnapshotMessage) => void,
+    since?: () => Pick<Snapshot, 'epoch' | 'version'> | null,
+  ) => () => void;
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;

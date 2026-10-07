@@ -17,7 +17,13 @@
   - Electron은 화면에 보이는 창에만 전송하고, 창이 다시 보일 때 최신본을 1회 보낸다.
   - 렌더러 시계·폴링은 창 가시성(`office:visibility`)을 따른다.
   - Inspector는 이벤트 내용이 바뀔 때만 상세를 다시 조회한다.
-- 변경분 전송(3.3의 2번)과 증분 수집(3.4)은 후속 PR에서 진행한다.
+- 변경분 전송(3.3의 2번) 구현:
+  - 수집기는 바뀐 동료·소식·필드만 담은 patch(`src/shared/snapshot-patch.ts`, `epoch+base→version`)를 보낸다.
+  - Electron main은 최신본을 유지하면서, 시작 version을 가진 창에는 patch를, 나머지 창에는 전체를 보낸다.
+  - 렌더러(`useOffice`)는 patch를 적용하거나, version 틈이 있으면 전체를 다시 받는다. 안 바뀐 객체는 그대로 재사용한다.
+  - 웹은 가진 version을 보내 `unchanged`, 합성 patch(최근 64개), 전체 중 하나를 받는다.
+  - 요약 테이블(3.2 다음 단계)은 범위 밖이다.
+- 증분 수집(3.4)은 별도 PR이다.
 
 핵심은 **변경 없는 기록을 다시 처리하지 않고, 필요한 화면에 필요한 요약만 전달하는 것**이다. 캐릭터 수를 줄이거나 실시간 소식을 늦추는 방식을 첫 해결책으로 삼지 않는다. 기존 [골든 정책](../golden/GOLDEN-OFFICE-POLICY.md), [관측 규격](../golden/OFFICE-OBSERVATION-PROTOCOL.md), [수집 계약](SESSION-INGESTION.md)을 유지한다.
 

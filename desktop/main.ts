@@ -50,6 +50,7 @@ import {
 } from './terminals.js';
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
+import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
   // The dock card: a colleague's card opened at a desk in the dock (presentation only).
@@ -77,13 +78,21 @@ else {
     // System language until the first snapshot brings the saved preference.
     syncLocale(undefined);
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
-    bridge.on('snapshot', (s: Snapshot) => {
-      // Follow the language the collector actually resolved, so tray and windows always agree.
+    const windows = () =>
+      [main, dock, card].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map(viewer);
+    // Follow the language the collector actually resolved, so tray and windows always agree.
+    const followLanguage = (s: Snapshot) => {
       if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
-      delivery.publish(
-        s,
-        [main, dock, card].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map(viewer),
-      );
+    };
+    const publish = (s: Snapshot) => {
+      followLanguage(s);
+      delivery.publish(s, windows());
+    };
+    bridge.on('snapshot', publish);
+    bridge.on('patch', (patch: SnapshotPatch) => {
+      if (delivery.update(patch, windows())) followLanguage(delivery.latest!);
+      // A change that does not start from what is held here (e.g. the collector restarted).
+      else void bridge.call('snapshot').then(publish, () => {});
     });
     bridge.on('failure', (message) => console.error('Collector worker:', message));
     petSpot = loadPetSpot();
