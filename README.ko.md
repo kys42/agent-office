@@ -1,13 +1,14 @@
 <div align="center">
 
-<img src="docs/images/ko/hero.gif" alt="Agent Office — 책상에서 일하는 픽셀 동료들" width="100%" />
+<img src="docs/images/ko/desktop.gif" alt="바탕화면 구석의 데스크 펫을 누르면 에디터와 터미널 위로 픽셀 책상들이 화면 아래에 한 줄로 펼쳐진다" width="100%" />
 
 # Agent Office
 
-### 내 AI 코딩 에이전트들이 일하는 작은 픽셀 사무실
+### 내 AI 코딩 에이전트들이 바탕화면 위 작은 책상에서 일해요
 
-Claude Code · Codex · OpenClaw의 **실제 로컬 세션**을 책상에 앉은 픽셀 동료로 보여줍니다.<br/>
-누가 일하고 있는지, 누가 나를 기다리는지, 방금 무엇이 끝났는지 한눈에.
+Claude Code · Codex · OpenClaw의 **실제 로컬 세션**을 픽셀 동료로 보여줍니다.<br/>
+화면 구석의 데스크 펫을 누르면 모든 동료의 책상이 화면 아래로 쫙 펼쳐져서,<br/>
+누가 일하는지, 누가 나를 기다리는지, 방금 무엇이 끝났는지 에디터를 떠나지 않고 볼 수 있어요.
 
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-111?style=flat-square&logo=apple&logoColor=white)](#-빠르게-시작하기)
 [![Electron](https://img.shields.io/badge/Electron-44-2b2e3a?style=flat-square&logo=electron&logoColor=9feaf9)](https://www.electronjs.org/)
@@ -22,13 +23,38 @@ Claude Code · Codex · OpenClaw의 **실제 로컬 세션**을 책상에 앉은
 
 ---
 
+## 🖥️ 바탕화면에 사는 팀
+
+Agent Office는 계속 들여다봐야 하는 또 하나의 창이 아니에요. 바탕화면에 붙어 있다가, 나를 찾을 일이 생기면 알려줘요.
+
+<table>
+  <tr>
+    <td width="24%" align="center" valign="middle">
+      <img src="docs/images/ko/desk-pet.png" alt="데스크 펫" /><br/>
+      <sub><b>데스크 펫</b><br/>구석에서 기다리다 소식이 온 동료로 바뀌어요</sub>
+    </td>
+    <td width="76%" valign="middle">
+      <img src="docs/images/ko/desk-row.png" alt="한 줄 사무실" /><br/>
+      <sub><b>한 줄 사무실</b> — 한 번 누르면 팀 전체가 실제 크기로 화면 아래에 쫙 펼쳐져요.</sub><br/><br/>
+      <img src="docs/images/ko/desk-floor.png" alt="바닥 책상" /><br/>
+      <sub><b>바닥 책상</b> — 더 낮게: 화면 맨 아래에 책상만 세우고, 구역은 깃발로.</sub>
+    </td>
+  </tr>
+</table>
+
+- 🐾 **소식을 아는 펫** — 세션이 끝나거나 질문하면 펫이 그 동료로 바뀌어 이름표와 말풍선으로 알려주고, 부르는 동료가 있으면 **!** 를 띄워요. 원하는 곳으로 끌어다 놓으면 돼요.
+- 🪑 **큰 사무실 그대로, 한 줄로** — 같은 프로젝트 구역, 브랜치를 함께 쓰는 긴 책상, 서브에이전트의 작은 보조 책상까지. 화면보다 팀이 커지면 양옆 화살표로 넘겨요.
+- 💬 **바로 쓸 수 있는 말풍선** — 진행 상황이 사람이 읽는 문장으로 떠요. 그 자리에서 펼쳐 전문을 보고, 업무 카드를 팝업으로 열고, 말풍선에서 바로 답장도 해요(선택 기능).
+- 🔥 **상태 표시등이 아니라 살아 있는 책상** — 새 요청이 오면 서류가 날아와 쌓이고, 오래 일할수록 *집중 중 → 몰입 중 → 불타는 중*으로 달아올라요.
+- 🫥 **방해하지 않아요** — 투명한 곳의 클릭은 뒤의 에디터로 그대로 통과해요. 책상에 마우스를 올리면 고정하거나, 다음 대화까지 가릴 수 있어요.
+
 ## 왜 Agent Office인가요?
 
 에이전트 셋이 워크트리 둘에 걸친 터미널 다섯 개에서 돌고 있을 때, 어려운 건 코드가 아니라 **지금 나를 기다리는 게 뭔지 아는 것**입니다. Agent Office는 도구들이 이미 남기고 있는 세션 기록을 읽어서 세션마다 책상을 하나씩 내어줍니다.
 
 - 🙋 **나를 기다려요** — 질문하거나 입력을 기다리는 세션은 동료가 손을 들어요.
 - 📬 **확인할 결과** — 최종 응답은 터미널에서 흘러가지 않고 소식함에 쌓여요.
-- ⌨️ **일하는 중** — 진행 상황이 도구 이름 대신 사람이 읽는 문장으로 말풍선에 떠요. 새 요청이 오면 서류가 책상으로 날아오고, 오래 일할수록 *집중 중 → 몰입 중 → 불타는 중*으로 달아올라요.
+- ⌨️ **일하는 중** — 진행 상황이 도구 이름 대신 사람이 읽는 문장으로 말풍선에 떠요.
 - ☕ **대기 중 → 퇴근** — 응답을 마친 동료는 30분 동안 대기하다 쉬고, 4시간 조용하면 대기 라운지로 퇴근, 일주일 뒤 보관 공간으로 옮겨가요.
 
 설치할 hook도, CLI를 감싸는 래퍼도, 클라우드도 없습니다. 원본은 **읽기 전용**으로만 열고, 세션에 답장하는 건 따로 켜는 기능이에요.
@@ -38,7 +64,11 @@ Claude Code · Codex · OpenClaw의 **실제 로컬 세션**을 책상에 앉은
   <sub>프로젝트는 바닥 구역, 같은 브랜치·worktree는 긴 공동 책상, 서브에이전트는 부모 옆 낮은 책상에 앉아요.</sub>
 </div>
 
-## ✨ 주요 기능
+## 🏢 큰 사무실
+
+전체 그림이 필요할 땐 큰 사무실을 열어요. 프로젝트마다 바닥 구역이 있고, 명단은 나를 기다리는 순서로, 동료마다 업무 카드가 있어요.
+
+<img src="docs/images/ko/hero.gif" alt="큰 사무실 둘러보기: 업무 카드 열기, 명령 팔레트 검색, 소식함" width="100%" />
 
 <table>
   <tr>
@@ -66,25 +96,6 @@ Claude Code · Codex · OpenClaw의 **실제 로컬 세션**을 책상에 앉은
     </td>
   </tr>
 </table>
-
-### 🖥️ 바탕화면에 붙는 사무실
-
-<table>
-  <tr>
-    <td width="24%" align="center" valign="middle">
-      <img src="docs/images/ko/desk-pet.png" alt="데스크 펫" /><br/>
-      <sub><b>데스크 펫</b><br/>조용히 떠 있다가 소식이 온 동료로 바뀌어요</sub>
-    </td>
-    <td width="76%" valign="middle">
-      <img src="docs/images/ko/desk-row.png" alt="한 줄 사무실" /><br/>
-      <sub><b>한 줄 사무실</b> — 펫을 누르면 큰 사무실과 같은 구역·긴 책상·보조 책상·말풍선이 화면 아래 전체 폭으로 펼쳐져요.</sub><br/><br/>
-      <img src="docs/images/ko/desk-floor.png" alt="바닥 책상" /><br/>
-      <sub><b>바닥 책상</b> — 구역 바닥 없이 화면 맨 아래에 책상만, 구역은 깃발로.</sub>
-    </td>
-  </tr>
-</table>
-
-투명한 곳의 클릭은 뒤 앱으로 통과해요. 말풍선이나 책상을 누르면 그 자리에 업무 카드가 뜨고, 큰 사무실로도 바로 갈 수 있어요.
 
 ### 💬 바로 이동하고 답장하기
 
@@ -233,7 +244,8 @@ npm run test:ui                  # Playwright (필요하면 npm run dev 자동 �
 npm run test:desktop             # build 후 Electron/IPC/데스크 펫·책상 줄 창, 합성 fixture
 npm run test:mcp                 # build 후 MCP stdio 계약
 node scripts/screenshots.mjs     # 데모 데이터로 README 캡처 재생성, 영/한 (npm run dev 필요)
-node scripts/readme-hero.mjs ko  # 히어로 투어 GIF (npm run dev + ffmpeg 필요)
+node scripts/readme-hero.mjs ko  # 큰 사무실 투어 GIF (npm run dev + ffmpeg 필요)
+node scripts/readme-desktop.mjs ko  # 바탕화면 장면 PNG·GIF (npm run dev + ffmpeg 필요)
 ```
 
 테스트는 합성 데이터만 쓰고 원본을 수정하지 않아요. 실제 연결 UI smoke만 로컬 기록을 읽어요.

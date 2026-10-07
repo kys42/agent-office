@@ -1,13 +1,14 @@
 <div align="center">
 
-<img src="docs/images/en/hero.gif" alt="Agent Office — pixel teammates working at their desks" width="100%" />
+<img src="docs/images/en/desktop.gif" alt="A desk pet in the corner of the desktop unfolds into a row of pixel desks along the bottom of the screen, right over the editor and terminal" width="100%" />
 
 # Agent Office
 
-### Your AI coding agents, working in a tiny pixel office.
+### Your AI coding agents, working at tiny desks right on your desktop.
 
-Agent Office turns the **real local sessions** of Claude Code, Codex and OpenClaw into pixel teammates at their desks —<br/>
-so you can see at a glance who's working, who's waiting on you, and what just finished.
+Agent Office turns the **real local sessions** of Claude Code, Codex and OpenClaw into pixel teammates.<br/>
+A desk pet waits in the corner of your screen — click it and every teammate's desk rolls out along the bottom,<br/>
+so you can see who's working, who's waiting on you, and what just finished without leaving your editor.
 
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-111?style=flat-square&logo=apple&logoColor=white)](#quick-start)
 [![Electron](https://img.shields.io/badge/Electron-44-2b2e3a?style=flat-square&logo=electron&logoColor=9feaf9)](https://www.electronjs.org/)
@@ -22,13 +23,38 @@ so you can see at a glance who's working, who's waiting on you, and what just fi
 
 ---
 
+## 🖥️ A team that lives on your desktop
+
+Agent Office isn't another window to keep checking. It docks to your desktop, stays out of the way, and speaks up when something needs you.
+
+<table>
+  <tr>
+    <td width="24%" align="center" valign="middle">
+      <img src="docs/images/en/desk-pet.png" alt="Desk pet" /><br/>
+      <sub><b>Desk pet</b><br/>waits in a corner and turns into whoever has news</sub>
+    </td>
+    <td width="76%" valign="middle">
+      <img src="docs/images/en/desk-row.png" alt="Desk row" /><br/>
+      <sub><b>Desk row</b> — one click and the whole team rolls out along the bottom of your screen, at real size.</sub><br/><br/>
+      <img src="docs/images/en/desk-floor.png" alt="Floor desks" /><br/>
+      <sub><b>Floor desks</b> — even lower: just the desks standing on the screen edge, zones as flags.</sub>
+    </td>
+  </tr>
+</table>
+
+- 🐾 **A pet that knows the news** — when a session finishes or asks you something, the pet becomes that teammate: name tag, speech bubble, and a **!** when someone's calling. Drag it anywhere.
+- 🪑 **The real office, in one row** — the same project zones, long shared desks for a branch, little helper desks for sub-agents. Arrows appear when the team outgrows the screen.
+- 💬 **Bubbles you can act on** — live progress in plain words. Expand a bubble in place to read the whole update, open the work card as a popup right there, or reply from the bubble (opt-in).
+- 🔥 **Alive, not a status light** — papers fly onto the desk when a request lands, the pile grows while it works, and long runs heat up from *Focused* to *In the zone* to *On fire*.
+- 🫥 **Never in your way** — clicks on the transparent parts pass straight through to your editor. Hover a desk to pin it, or hide it until its next conversation.
+
 ## Why Agent Office?
 
 When three agents are running in five terminals across two worktrees, the hard part isn't the code — it's **knowing what needs you right now**. Agent Office reads the session logs your tools already write, and gives every session a desk:
 
 - 🙋 **Waiting on you** — a teammate raises a hand when a session asks a question or needs input.
 - 📬 **Results to review** — final replies land in an Inbox instead of scrolling away in a terminal.
-- ⌨️ **Working** — live progress shows up in speech bubbles, in plain words rather than raw tool names. Papers fly onto the desk when a new request lands, and long runs build up from *Focused* to *In the zone* to *On fire*.
+- ⌨️ **Working** — live progress shows up in speech bubbles, in plain words rather than raw tool names.
 - ☕ **Standing by → Off duty** — after a reply a teammate stands by for 30 minutes, then rests. Four quiet hours later they clock off to the Lounge, and after a week to the Archive.
 
 No hooks to install, no wrappers around your CLI, no cloud. Your sources are opened **read-only** — replying to a session is a separate, opt-in feature.
@@ -38,7 +64,11 @@ No hooks to install, no wrappers around your CLI, no cloud. Your sources are ope
   <sub>Projects become floor zones, branches and worktrees share long desks, sub-agents sit at small desks beside their parent.</sub>
 </div>
 
-## ✨ Highlights
+## 🏢 The big office
+
+When you want the whole picture, open the full office: every project on its own floor, a roster ordered by what needs you, and a work card for each teammate.
+
+<img src="docs/images/en/hero.gif" alt="Tour of the big office: opening a work card, searching with the command palette, and the Inbox" width="100%" />
 
 <table>
   <tr>
@@ -66,25 +96,6 @@ No hooks to install, no wrappers around your CLI, no cloud. Your sources are ope
     </td>
   </tr>
 </table>
-
-### 🖥️ The office, docked to your desktop
-
-<table>
-  <tr>
-    <td width="24%" align="center" valign="middle">
-      <img src="docs/images/en/desk-pet.png" alt="Desk pet" /><br/>
-      <sub><b>Desk pet</b><br/>floats quietly and turns into whoever has news</sub>
-    </td>
-    <td width="76%" valign="middle">
-      <img src="docs/images/en/desk-row.png" alt="Desk row" /><br/>
-      <sub><b>Desk row</b> — click the pet and the same zones, long desks, helper desks and bubbles unfold full-width along the bottom of your screen.</sub><br/><br/>
-      <img src="docs/images/en/desk-floor.png" alt="Floor desks" /><br/>
-      <sub><b>Floor desks</b> — just the desks standing on the screen edge, zones as flags.</sub>
-    </td>
-  </tr>
-</table>
-
-Clicks on the transparent parts pass through to the app behind. Click a bubble or a desk to open its work card right there, or jump to the full office.
 
 ### 💬 Jump in and reply
 
@@ -235,7 +246,8 @@ npm run test:ui                  # Playwright (starts npm run dev if needed)
 npm run test:desktop             # after build: Electron / IPC / desk pet & desk row windows, synthetic fixture
 npm run test:mcp                 # after build: MCP stdio contract
 node scripts/screenshots.mjs     # README screenshots from demo data, en + ko (needs npm run dev)
-node scripts/readme-hero.mjs en  # animated hero tour GIF (needs npm run dev + ffmpeg)
+node scripts/readme-hero.mjs en  # big-office tour GIF (needs npm run dev + ffmpeg)
+node scripts/readme-desktop.mjs en  # desktop scene PNG + GIF (needs npm run dev + ffmpeg)
 ```
 
 Tests use synthetic data and never modify your sources; only the live-connection UI smoke test reads local history.
