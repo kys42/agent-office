@@ -12,7 +12,7 @@ import {
   Sun,
   Reply,
 } from 'lucide-react';
-import { MOODS, type Session, type OfficeNotice } from '../shared/types';
+import { MOODS, type Session, type OfficeNotice, type TerminalTarget } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
@@ -161,11 +161,23 @@ export function Office({
     return bubbleNotice(news, bubbleHours, clock)?.sessionId ?? s.id;
   };
   const quick = !!onReply && !privacy;
-  const replyIds = quick
-    ? sessions.filter((s) => s.provider === 'claude' || s.provider === 'codex').map(replyFor)
+  // Helper desks carry no bubble; only the stations' own sessions can be replied to.
+  const replyable = quick
+    ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
     : [];
-  const { targets: replyTargets, markSent } = useSendTargets(replyIds, quick);
-  const [replying, setReplying] = useState<string | null>(null);
+  const { targets: replyTargets, markSent } = useSendTargets(replyable.map(replyFor), {
+    enabled: quick,
+    // Asks again when a record moves (a turn ended); no 4s polling across the whole floor.
+    stamp: Math.max(0, ...replyable.map((s) => s.updatedAt)),
+    pollBusy: false,
+  });
+  // The open reply keeps the session and target it was opened for, so new bubbles or a
+  // refreshing target list never replace or close a draft in progress.
+  const [replying, setReplying] = useState<{
+    station: string;
+    id: string;
+    target: TerminalTarget;
+  } | null>(null);
   const primary = sessions.filter((s) => !s.attachedTo);
   const working = sessions.filter((s) => presentSession(s, clock).working).length;
   const phase = dayPhase(clock);
@@ -498,25 +510,20 @@ export function Office({
                           </button>
                           {canReply && (
                             <button
-                              className={`bubble-reply ${replying === replyId ? 'open' : ''}`}
+                              className={`bubble-reply ${replying?.station === s.id ? 'open' : ''}`}
                               aria-label={`${sessionName(s)}에게 바로 답장`}
-                              aria-expanded={replying === replyId}
+                              aria-expanded={replying?.station === s.id}
                               title={`바로 답장 · ${targetLine(replyTarget!, false)}`}
-                              onClick={() => setReplying(replying === replyId ? null : replyId)}
+                              onClick={() =>
+                                setReplying(
+                                  replying?.station === s.id
+                                    ? null
+                                    : { station: s.id, id: replyId, target: replyTarget! },
+                                )
+                              }
                             >
                               <Reply size={11} strokeWidth={2.6} />
                             </button>
-                          )}
-                          {canReply && replying === replyId && (
-                            <QuickReply
-                              target={replyTarget!}
-                              name={sessionName(s)}
-                              onClose={() => setReplying(null)}
-                              onSend={async (text) => {
-                                await onReply!(replyId, text);
-                                markSent(replyId);
-                              }}
-                            />
                           )}
                           {displayedBubble && (
                             <button
@@ -534,6 +541,24 @@ export function Office({
                             </button>
                           )}
                         </div>
+                      )}
+                      {quick && replying?.station === s.id && (
+                        <QuickReply
+                          key={replying.id}
+                          target={
+                            replyTargets[replying.id] ?? {
+                              ...replying.target,
+                              status: 'gone',
+                              canSend: false,
+                            }
+                          }
+                          name={sessionName(byId.get(replying.id) ?? s)}
+                          onClose={() => setReplying(null)}
+                          onSend={async (text) => {
+                            await onReply!(replying.id, text);
+                            markSent(replying.id);
+                          }}
+                        />
                       )}
                     </div>
                   );

@@ -53,7 +53,7 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 ## 배포와 경계
 
-원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기는 데스크탑 프로필에만 저장되는 opt-in(켤 때 네이티브 확인창), 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
+원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: 맡은 프로세스가 있는 세션에 `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기는 데스크탑 프로필에만 저장되는 opt-in(켤 때 네이티브 확인창), 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
 
 패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 미니 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 알림 업데이트는 focus를 호출하지 않는다.
 

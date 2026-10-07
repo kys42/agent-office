@@ -1,24 +1,26 @@
-import { access, open, readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
 import {
   cleanInput,
   defaultTerminalDeps,
-  spaces,
   TerminalInputError,
   type TerminalDeps,
 } from './terminals.js';
 
 /**
- * Codex CLI sessions run inside one shared app-server daemon; a terminal screen is only a
- * client. `codex queue` hands a message to that daemon, which runs it now or after the current
- * turn, and every attached screen shows it — no terminal typing involved.
+ * Codex CLI sessions are served by an app-server: the shared background daemon, or the TUI's
+ * own embedded server (e.g. when started with `-c` overrides). `codex queue` puts a message in
+ * Codex's shared queue; whichever server has the thread loaded takes it — now, or after the
+ * current turn — and every attached screen shows it. No terminal typing is involved.
  *
- * Only threads the daemon has loaded are targets. For an unloaded thread the daemon accepts the
- * message but keeps it until the session is reopened, which would look like nothing happened.
- * Desktop-app (`Codex Desktop`) and headless (`codex_exec`) sessions are excluded: the app runs
- * its own server, and exec runs have no one to read the answer.
+ * Only threads some live Codex process holds open are targets: the serving process keeps
+ * `thread-writer-locks/<id>.lock` open. A lock file alone proves nothing — it outlives its
+ * session — and a message for a thread nobody serves just waits until the session is reopened,
+ * which would look like nothing happened. Desktop-app (`Codex Desktop`) and headless
+ * (`codex_exec`) sessions are excluded: the app runs its own server, and exec runs have no one
+ * to read the answer.
  */
 export interface CodexThread {
   threadId: string;
@@ -72,25 +74,24 @@ export async function readCodexOrigin(file: string): Promise<CodexOrigin | null>
 }
 
 const origins = new Map<string, Promise<CodexOrigin | null>>();
-let daemon: { at: number; home: string; value: Promise<boolean> } | undefined;
+let loaded: { at: number; home: string; value: Promise<Set<string>> } | undefined;
 
-/** `daemon.pid` names the running daemon; a stale file or a recycled pid fails the start time. */
-export async function codexDaemonAlive(deps: TerminalDeps): Promise<boolean> {
-  try {
-    const record = JSON.parse(
-      await readFile(path.join(deps.codexHome, 'app-server-daemon', 'daemon.pid'), 'utf8'),
-    );
-    const pid = record?.pid;
-    if (!Number.isInteger(pid) || pid <= 1 || typeof record.processStartTime !== 'string')
-      return false;
-    if (!deps.alive(pid)) return false;
-    const started = await deps.run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
-      env: { ...process.env, LC_ALL: 'C' },
-    });
-    return spaces(started) === spaces(record.processStartTime);
-  } catch {
-    return false;
+/** Threads whose lock a live Codex process holds open: one `lsof` over the lock folder (~0.1s). */
+export async function codexLoadedThreads(deps: TerminalDeps): Promise<Set<string>> {
+  const out = await deps
+    .run('/usr/sbin/lsof', ['-Fcn', '+d', path.join(deps.codexHome, 'thread-writer-locks')])
+    .catch((error: { stdout?: string }) => error.stdout ?? ''); // exit 1 when nothing is open
+  const threads = new Set<string>();
+  let command = '';
+  for (const line of out.split('\n')) {
+    if (line.startsWith('p')) command = '';
+    else if (line.startsWith('c')) command = line.slice(1);
+    else if (line.startsWith('n') && command === 'codex') {
+      const m = /\/([0-9a-f-]{36})\.lock$/i.exec(line);
+      if (m && THREAD.test(m[1])) threads.add(m[1].toLowerCase());
+    }
   }
+  return threads;
 }
 
 export async function findCodexThread(
@@ -100,27 +101,29 @@ export async function findCodexThread(
 ): Promise<CodexThread | null> {
   if (!THREAD.test(nativeId) || !sourcePath) return null;
   const deps = options.deps ?? defaultTerminalDeps();
-  const loaded = await access(path.join(deps.codexHome, 'thread-writer-locks', `${nativeId}.lock`))
-    .then(() => true)
-    .catch(() => false);
-  if (!loaded) return null;
-  let origin = origins.get(sourcePath);
-  if (!origin || options.deps) {
+  let origin = options.deps ? undefined : origins.get(sourcePath);
+  if (!origin) {
     origin = readCodexOrigin(sourcePath);
-    origins.set(sourcePath, origin);
-    if (origins.size > 500) origins.delete(origins.keys().next().value!);
+    // A failed read (file still being written, too many open files) is retried next time.
+    if (!options.deps)
+      origin.then((known) => {
+        if (known) {
+          origins.set(sourcePath, Promise.resolve(known));
+          if (origins.size > 500) origins.delete(origins.keys().next().value!);
+        }
+      });
   }
   const known = await origin;
   if (known?.originator !== 'codex-tui' || known.subagent) return null;
   if (
-    !daemon ||
+    !loaded ||
     options.fresh ||
     options.deps ||
-    daemon.home !== deps.codexHome ||
-    Date.now() - daemon.at > 10_000
+    loaded.home !== deps.codexHome ||
+    Date.now() - loaded.at > 3000
   )
-    daemon = { at: Date.now(), home: deps.codexHome, value: codexDaemonAlive(deps) };
-  return (await daemon.value) ? { threadId: nativeId } : null;
+    loaded = { at: Date.now(), home: deps.codexHome, value: codexLoadedThreads(deps) };
+  return (await loaded.value).has(nativeId.toLowerCase()) ? { threadId: nativeId } : null;
 }
 
 export function codexTarget(): TerminalTarget {
@@ -147,6 +150,9 @@ export async function queueToCodex(
     { timeout: 20_000 },
   );
   if (!out.includes(`for thread ${thread.threadId}`))
-    throw new TerminalInputError('Codex가 메시지를 받았는지 확인하지 못했어요.');
+    // The command succeeded, so the message is likely queued; never invite a blind resend.
+    throw new TerminalInputError(
+      'Codex 응답을 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
+    );
   return 'Codex 세션에 전달했어요';
 }

@@ -23,8 +23,9 @@ export function QuickReply({
   const [error, setError] = useState('');
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => field.current?.focus({ preventScroll: true }), []);
+  const blocked = !target.canSend;
   const submit = async () => {
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sending || blocked) return;
     setSending(true);
     setError('');
     try {
@@ -46,7 +47,7 @@ export function QuickReply({
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && !e.nativeEvent.isComposing) {
           e.stopPropagation();
           onClose();
         }
@@ -81,7 +82,7 @@ export function QuickReply({
           type="submit"
           className="quick-reply-send"
           aria-label="보내기"
-          disabled={sending || !text.trim()}
+          disabled={sending || blocked || !text.trim()}
         >
           {sending ? <Loader size={12} className="now-spin" /> : <CornerDownLeft size={12} />}
         </button>

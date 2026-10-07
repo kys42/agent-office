@@ -71,38 +71,67 @@ function codexBinary(codexHome: string) {
   return BINARIES.codex.find(existsSync) ?? 'codex';
 }
 
-export const defaultTerminalDeps = (): TerminalDeps => ({
-  sessionsDir: path.join(
-    process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'),
-    'sessions',
-  ),
-  codexHome: process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'),
-  run: (file, args, options = {}) =>
-    new Promise((resolve, reject) => {
-      const child = execFile(
-        file,
-        args,
-        { timeout: options.timeout ?? 8000, maxBuffer: 1_000_000, env: options.env ?? process.env },
-        (error, stdout) =>
-          error ? reject(Object.assign(error, { stdout: String(stdout ?? '') })) : resolve(stdout),
-      );
-      if (options.input !== undefined) child.stdin?.end(options.input);
-    }),
-  alive: (pid) => {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  bin(name) {
-    return name === 'codex'
-      ? codexBinary(this.codexHome)
-      : (BINARIES[name].find(existsSync) ?? name);
-  },
-  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-});
+let shared: TerminalDeps | undefined;
+/** One shared instance, so the per-deps caches below persist between calls. */
+export const defaultTerminalDeps = (): TerminalDeps =>
+  (shared ??= {
+    sessionsDir: path.join(
+      process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude'),
+      'sessions',
+    ),
+    codexHome: process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'),
+    run: (file, args, options = {}) =>
+      new Promise((resolve, reject) => {
+        const child = execFile(
+          file,
+          args,
+          {
+            timeout: options.timeout ?? 8000,
+            maxBuffer: 1_000_000,
+            env: options.env ?? process.env,
+          },
+          (error, stdout) =>
+            error
+              ? reject(Object.assign(error, { stdout: String(stdout ?? '') }))
+              : resolve(stdout),
+        );
+        if (options.input !== undefined) child.stdin?.end(options.input);
+      }),
+    alive: (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    bin(name) {
+      return name === 'codex'
+        ? codexBinary(this.codexHome)
+        : (BINARIES[name].find(existsSync) ?? name);
+    },
+    wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  });
+
+// Caches live per deps object: the app shares one, and every test brings its own.
+const memos = new WeakMap<TerminalDeps, Map<string, { at: number; value: Promise<unknown> }>>();
+export function remember<T>(
+  deps: TerminalDeps,
+  key: string,
+  ttl: number,
+  fresh: boolean,
+  make: () => Promise<T>,
+): Promise<T> {
+  let byKey = memos.get(deps);
+  if (!byKey) memos.set(deps, (byKey = new Map()));
+  const hit = byKey.get(key);
+  if (!fresh && hit && Date.now() - hit.at < ttl) return hit.value as Promise<T>;
+  const value = make();
+  byKey.set(key, { at: Date.now(), value });
+  if (byKey.size > 500) byKey.delete(byKey.keys().next().value!);
+  return value;
+}
+const forget = (deps: TerminalDeps, key: string) => memos.get(deps)?.delete(key);
 
 export const spaces = (value: string) => value.trim().replace(/\s+/g, ' ');
 
@@ -139,30 +168,32 @@ async function readClaudeProcesses(dir: string): Promise<ClaudeProcess[]> {
   return records.filter((r): r is ClaudeProcess => !!r);
 }
 
-// One directory read serves a burst of lookups (e.g. every bubble on the office floor).
-let recent: { at: number; dir: string; value: Promise<ClaudeProcess[]> } | undefined;
-
 export async function findClaudeProcess(
   sessionId: string,
   deps: TerminalDeps,
   fresh = false,
 ): Promise<ClaudeProcess | null> {
-  if (fresh || !recent || recent.dir !== deps.sessionsDir || Date.now() - recent.at > 1000)
-    recent = {
-      at: Date.now(),
-      dir: deps.sessionsDir,
-      value: readClaudeProcesses(deps.sessionsDir),
-    };
-  const candidates = (await recent.value).filter((r) => r.sessionId === sessionId);
+  // One directory read serves a burst of lookups (e.g. every bubble on the office floor).
+  const records = await remember(deps, `records:${deps.sessionsDir}`, 1000, fresh, () =>
+    readClaudeProcesses(deps.sessionsDir),
+  );
+  const candidates = records.filter((r) => r.sessionId === sessionId);
   candidates.sort((a, b) => b.updatedAt - a.updatedAt);
   for (const record of candidates) {
     if (!deps.alive(record.pid)) continue;
     // procStart is written in UTC with the C locale; a recycled PID starts at another time.
-    const started = await deps
-      .run('/bin/ps', ['-o', 'lstart=', '-p', String(record.pid)], {
-        env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
-      })
-      .catch(() => '');
+    const started = await remember(
+      deps,
+      `lstart:${record.pid}:${record.procStart}`,
+      30_000,
+      fresh,
+      () =>
+        deps
+          .run('/bin/ps', ['-o', 'lstart=', '-p', String(record.pid)], {
+            env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+          })
+          .catch(() => ''),
+    );
     if (started && spaces(started) === spaces(record.procStart)) return record;
   }
   return null;
@@ -235,16 +266,35 @@ export async function inspectProcess(pid: number, deps: TerminalDeps): Promise<P
   const [full, args, table] = await Promise.all([
     ps(['-wwE', '-o', 'command=']),
     ps(['-ww', '-o', 'command=']),
-    deps.run('/bin/ps', ['-axo', 'pid=,ppid=,tty=,comm=']),
+    // The whole process table is shared by every lookup in the same second.
+    remember(deps, 'process-table', 1000, false, () =>
+      deps.run('/bin/ps', ['-axo', 'pid=,ppid=,tty=,comm=']),
+    ),
   ]).catch(() => ['', '', '']);
   return { env: parseProcessEnv(full.trim(), args.trim()), owner: ptyOwner(table, pid) };
 }
 
 /** Finds the terminal pane that hosts the process. tmux is the direct host when present. */
+/** All live Orca terminals by handle: one CLI call (~0.5s) instead of one per session. */
+function orcaTerminals(deps: TerminalDeps, fresh: boolean) {
+  return remember(deps, 'orca-terminals', 5000, fresh, async () => {
+    const byHandle = new Map<string, Record<string, unknown>>();
+    try {
+      const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json']);
+      for (const t of JSON.parse(out)?.result?.terminals ?? [])
+        if (typeof t?.handle === 'string') byHandle.set(t.handle, t);
+    } catch {
+      /* Orca is not running. */
+    }
+    return byHandle;
+  });
+}
+
 export async function findHost(
   pid: number,
   deps: TerminalDeps,
   inspected?: Promise<ProcessView>,
+  fresh = false,
 ): Promise<TerminalHost | null> {
   const { env, owner } = await (inspected ?? inspectProcess(pid, deps));
   if (!owner) return null;
@@ -270,74 +320,50 @@ export async function findHost(
       : null;
   }
   if (env.orcaHandle && isOrca(owner.command)) {
-    const shown = await deps
-      .run(deps.bin('orca'), ['terminal', 'show', `--terminal=${env.orcaHandle}`, '--json'])
-      .catch(() => '');
-    try {
-      const t = JSON.parse(shown)?.result?.terminal;
-      if (
-        t?.handle === env.orcaHandle &&
-        t.connected === true &&
-        t.writable !== false &&
-        t.orphaned !== true &&
-        (!env.orcaTab || t.tabId === env.orcaTab)
-      )
-        return {
-          kind: 'orca',
-          handle: env.orcaHandle,
-          title: typeof t.title === 'string' ? t.title.slice(0, 120) : '',
-        };
-    } catch {
-      /* Orca is not running or the handle is gone. */
-    }
+    const t = (await orcaTerminals(deps, fresh)).get(env.orcaHandle);
+    if (
+      t &&
+      t.connected === true &&
+      t.writable !== false &&
+      t.orphaned !== true &&
+      (!env.orcaTab || t.tabId === env.orcaTab)
+    )
+      return {
+        kind: 'orca',
+        handle: env.orcaHandle,
+        title: typeof t.title === 'string' ? t.title.slice(0, 120) : '',
+      };
   }
   return null;
 }
-
-// A short window only merges concurrent lookups; the process record itself is cheap to read.
-const cache = new Map<string, { at: number; value: Promise<LiveTerminal | null> }>();
-// Keyed by pid and start time, so a recycled pid never reuses another process's view.
-const views = new Map<string, Promise<ProcessView>>();
-// Host verification runs a CLI (Orca ~0.5s); it rarely changes, so cheap polls reuse it.
-const hosts = new Map<string, { at: number; value: Promise<TerminalHost | null> }>();
-const trim = <K, V>(map: Map<K, V>) => {
-  if (map.size > 200) map.delete(map.keys().next().value!);
-};
 
 export function locateTerminal(
   sessionId: string,
   options: { fresh?: boolean; deps?: TerminalDeps } = {},
 ): Promise<LiveTerminal | null> {
-  const hit = cache.get(sessionId);
-  if (!options.fresh && hit && Date.now() - hit.at < 1500) return hit.value;
   const deps = options.deps ?? defaultTerminalDeps();
-  const value = (async () => {
-    const proc = await findClaudeProcess(sessionId, deps, options.fresh);
+  const fresh = !!options.fresh;
+  // A short window only merges concurrent lookups; the process record itself is cheap to read.
+  return remember(deps, `locate:${sessionId}`, 1500, fresh, async () => {
+    const proc = await findClaudeProcess(sessionId, deps, fresh);
     if (!proc) return null;
     const key = `${proc.pid}:${proc.procStart}`;
-    let view = views.get(key);
-    if (!view || options.deps) {
-      view = inspectProcess(proc.pid, deps);
-      views.set(key, view);
-      trim(views);
-    }
-    const known = hosts.get(key);
-    let host = known?.value;
-    if (!host || options.fresh || options.deps || Date.now() - known!.at > 15_000) {
-      host = findHost(proc.pid, deps, view);
-      hosts.set(key, { at: Date.now(), value: host });
-      trim(hosts);
-    }
-    const found = await host;
-    return found ? { process: proc, host: found } : null;
-  })();
-  cache.set(sessionId, { at: Date.now(), value });
-  trim(cache);
-  return value;
+    // Environment and pty owner are fixed for the process's life; a failed read is retried.
+    const view = remember(deps, `view:${key}`, Infinity, false, () =>
+      inspectProcess(proc.pid, deps),
+    );
+    if (!(await view).owner) forget(deps, `view:${key}`);
+    // Host verification rarely changes; cheap polls reuse it, actions always re-check.
+    const host = await remember(deps, `host:${key}`, 15_000, fresh, () =>
+      findHost(proc.pid, deps, view, fresh),
+    );
+    return host ? { process: proc, host } : null;
+  });
 }
 
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */
-export const forgetTerminal = (sessionId: string) => cache.delete(sessionId);
+export const forgetTerminal = (sessionId: string) =>
+  forget(defaultTerminalDeps(), `locate:${sessionId}`);
 
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 

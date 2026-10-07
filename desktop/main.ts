@@ -213,7 +213,7 @@ function setupIPC() {
   };
   ipcMain.handle('office:terminals', async (e, ids) => {
     trusted(e);
-    if (!Array.isArray(ids) || ids.length > 60 || ids.some((id) => typeof id !== 'string'))
+    if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error('잘못된 요청');
     const entries = await Promise.all(
       [...new Set(ids as string[])].map(async (id) => {
@@ -230,6 +230,9 @@ function setupIPC() {
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
+    // A terminal Codex session lives in the CLI daemon, not the desktop app: hand back the command.
+    const thread = await codex(id, true);
+    if (thread) return { action: 'copy', text: `codex resume ${shellQuote(thread.threadId)}` };
     const terminal = await live(id, true);
     if (!terminal) return resume(await bridge.call('detail', [id]));
     try {
@@ -273,6 +276,8 @@ function setupIPC() {
         return await queueToCodex(thread, text);
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+          throw new Error('Codex CLI를 찾지 못해 보내지 않았어요.');
         throw new Error(
           'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
         );
@@ -306,6 +311,7 @@ function setupIPC() {
     return true;
   });
 }
+const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
 async function terminalSendEnabled() {
   try {
@@ -319,10 +325,12 @@ async function resume(s: Session): Promise<JumpResult> {
     await shell.openExternal(`codex://threads/${s.nativeId}`);
     return { action: 'opened', text: 'Codex에서 세션 열기를 요청했어요' };
   }
-  const quoted = "'" + s.nativeId.replace(/'/g, "'\\''") + "'";
   return {
     action: 'copy',
-    text: s.provider === 'claude' ? `claude --resume ${quoted}` : `OpenClaw 세션: ${s.nativeId}`,
+    text:
+      s.provider === 'claude'
+        ? `claude --resume ${shellQuote(s.nativeId)}`
+        : `OpenClaw 세션: ${s.nativeId}`,
   };
 }
 app.on('activate', () => showMain());

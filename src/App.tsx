@@ -251,7 +251,15 @@ export default function App() {
   // Bubble quick replies use the same desktop send as the colleague card.
   const sendReply =
     terminalSend && !demo && api.send
-      ? async (id: string, text: string) => notify(await api.send!(id, text))
+      ? async (id: string, text: string) => {
+          try {
+            notify(await api.send!(id, text));
+          } catch (e) {
+            // Also shown in the reply box; the toast survives if the box is gone.
+            notify((e as Error).message);
+            throw e;
+          }
+        }
       : undefined;
   const onPrefs = async (p: Partial<Preferences>) => {
     if (demo) {

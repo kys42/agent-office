@@ -90,7 +90,10 @@ function fakeDeps(
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg ?? 'S+ 4242 4242'}\n`;
       }
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
-      if (file === '/bin/orca' && args[1] === 'show') return JSON.stringify(options.orcaShow ?? {});
+      if (file === '/bin/orca' && args[1] === 'list') {
+        const t = (options.orcaShow as { result?: { terminal?: unknown } })?.result?.terminal;
+        return JSON.stringify({ ok: true, result: { terminals: t ? [t] : [] } });
+      }
       if (file === '/bin/orca' && args[1] === 'switch')
         return JSON.stringify(
           options.orcaSwitch ?? { ok: true, result: { focus: { navigated: true } } },
@@ -249,7 +252,11 @@ test('Orca is accepted only when Orca holds the pty, for a live writable termina
     handle: HANDLE,
     title: '✳ ao-send-test',
   });
-  assert.ok(ok.calls.some((c) => c.args.includes(`--terminal=${HANDLE}`)));
+  // One list call covers every Orca terminal; no per-handle CLI call.
+  assert.deepEqual(
+    ok.calls.filter((c) => c.file === '/bin/orca').map((c) => c.args),
+    [['terminal', 'list', '--json']],
+  );
   for (const over of [
     { connected: false },
     { writable: false },
@@ -452,4 +459,35 @@ test('The shared service (also the web preview RPC) can neither reach terminals 
     service.stop();
     await rm(temp, { recursive: true, force: true });
   }
+});
+
+test('Cheap polls reuse host checks, while actions always look again', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { env: ORCA_ENV, orcaShow: orcaShow() });
+    const orcaCalls = () => calls.filter((c) => c.file === '/bin/orca').length;
+    assert.ok(await locateTerminal(SESSION, { deps }));
+    await new Promise((r) => setTimeout(r, 1600)); // past the merge window
+    assert.ok(await locateTerminal(SESSION, { deps }));
+    assert.equal(orcaCalls(), 1, 'a poll within 15s reuses the host check');
+    assert.ok(await locateTerminal(SESSION, { deps, fresh: true }));
+    assert.equal(orcaCalls(), 2, 'a fresh lookup (send/jump) asks Orca again');
+    // The process record is re-read by a fresh lookup too: a session that started working is seen.
+    await writeFile(path.join(dir, '4242.json'), record(4242, { status: 'busy' }));
+    assert.equal((await locateTerminal(SESSION, { deps, fresh: true }))?.process.status, 'busy');
+  });
+});
+
+test('A failed process inspection is not remembered', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let broken = true;
+    const { deps } = fakeDeps(dir, {
+      env: ORCA_ENV,
+      orcaShow: orcaShow(),
+      fail: (file, args) => (broken && args.includes('-axo') ? new Error('ps failed') : undefined),
+    });
+    assert.equal(await locateTerminal(SESSION, { deps, fresh: true }), null);
+    broken = false;
+    await new Promise((r) => setTimeout(r, 1100)); // the shared process table expires
+    assert.ok(await locateTerminal(SESSION, { deps, fresh: true }));
+  });
 });

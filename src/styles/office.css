@@ -1283,10 +1283,13 @@
   transform: scale(1.12);
   background: var(--accent-2);
 }
+.desk-station:has(.quick-reply) {
+  z-index: 25;
+}
 .quick-reply {
   position: absolute;
-  left: 50%;
-  top: calc(100% + 12px);
+  left: 82px;
+  top: 70px;
   z-index: 30;
   width: 250px;
   transform: translateX(-50%);

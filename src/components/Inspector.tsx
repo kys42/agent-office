@@ -163,11 +163,10 @@ export function Inspector({
   // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
   // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
   const locatable = !demo && (session.provider === 'claude' || session.provider === 'codex');
-  const { targets, markSent } = useSendTargets(
-    locatable ? [session.id] : [],
-    locatable,
-    session.updatedAt,
-  );
+  const { targets, markSent } = useSendTargets(locatable ? [session.id] : [], {
+    enabled: locatable,
+    stamp: session.updatedAt,
+  });
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
   const patch = async (p: SessionPatch) => {
@@ -215,9 +214,11 @@ export function Inspector({
   const state = nowState(s, colleagueNews);
   const resumeLabel = live?.canFocus
     ? `${live.kind === 'orca' ? 'Orca' : 'tmux'}로 이동`
-    : s.provider === 'codex' && isDesktop
-      ? 'Codex에서 열기'
-      : '재개 명령 복사';
+    : live?.kind === 'codex'
+      ? '재개 명령 복사'
+      : s.provider === 'codex' && isDesktop
+        ? 'Codex에서 열기'
+        : '재개 명령 복사';
   const resume = async () => {
     try {
       if (api.jump) {
@@ -388,6 +389,7 @@ export function Inspector({
             resumeLabel={resumeLabel}
             canResume={!demo}
             canType={!!live && terminalSend}
+            typeQueues={!!live?.queues}
             onShowNews={() => setTab('news')}
           />
           {live && (
