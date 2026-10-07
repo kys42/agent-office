@@ -362,14 +362,16 @@ test('pointing at a desk quotes the latest request the person sent it', () => {
   const mine = stationSpeech(s, [asked, fresh], 3, now);
   assert.equal(mine.tone, 'mine');
   assert.equal(mine.request, undefined);
-  // A resident desk hears requests sent to any of its runs.
+  // A resident desk quotes the request of the run that speaks — never another run's instead.
   const resident = session(0, 'team', {
     status: 'idle',
     events: [],
     resident: { sessionIds: [s.id, 'fixture:other'] } as Session['resident'],
   });
   const viaOther = notice('fixture:other', { kind: 'request', phase: undefined, at: now - 2000 });
-  assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request?.id, viaOther.id);
+  const otherReply = notice('fixture:other', { text: '다른 실행의 답', at: now - 500 });
+  assert.equal(stationSpeech(resident, [viaOther, otherReply], 3, now).request?.id, viaOther.id);
+  assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request, undefined);
   assert.equal(stationSpeech(s, [reply], 3, now).request, undefined, 'nothing asked yet');
 });
 

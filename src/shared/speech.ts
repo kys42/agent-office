@@ -143,40 +143,29 @@ export function stationSpeech(
               : activity.kind === 'reply'
                 ? 'reply'
                 : 'message';
-  // The request a bubble answers: sent no later than it, from the speaking run first. Candidates
-  // are request notices plus the requests the snapshot retained (a conversation first collected
-  // as history keeps only its last notice; nothing is stored or notified for these). Nothing is
-  // quoted over a background run's words, nor from a background run or a helper.
+  // The request a bubble answers: the latest one sent no later than it, in the run that speaks
+  // (the desk's own run when nothing does). Another run's request is never quoted instead — a
+  // resident's other runs answer their own requests. Candidates are request notices plus the
+  // requests the snapshot retained (a conversation first collected as history keeps only its
+  // last notice; nothing is stored or notified for these). Nothing is quoted over a background
+  // run's words, nor from a background run or a helper.
+  const run = bubble?.sessionId ?? s.id;
   const answered = (at: number) => !bubble || at <= bubble.at;
-  // One pass (desks can hold thousands of old requests): skip repeats, keep the best so far.
-  let best:
-    { id: string; eventId: string; at: number; sessionId: string; text: () => string } | undefined;
-  const seen = new Set<string>();
-  const consider = (c: NonNullable<typeof best>) => {
-    if (seen.has(c.id)) return;
-    seen.add(c.id);
-    const same = (x: typeof c) => Number(x.sessionId === bubble?.sessionId);
-    if (!best || same(c) - same(best) > 0 || (same(c) === same(best) && c.at > best.at)) best = c;
-  };
+  // One pass (desks can hold thousands of old requests): keep the latest so far.
+  let best: { id: string; eventId: string; at: number; text: () => string } | undefined;
   for (const n of news)
-    if (n.kind === 'request' && !n.background && answered(n.at))
-      consider({
-        id: n.id,
-        eventId: n.eventId,
-        at: n.at,
-        sessionId: n.sessionId,
-        text: () => n.text,
-      });
-  if (!isBackground(s) && !isHelper(s))
+    if (n.kind === 'request' && n.sessionId === run && !n.background && answered(n.at))
+      if (!best || n.at > best.at)
+        best = { id: n.id, eventId: n.eventId, at: n.at, text: () => n.text };
+  if (run === s.id && !isBackground(s) && !isHelper(s))
     for (const e of s.events)
-      if (e.kind === 'user' && answered(e.at))
-        consider({
+      if (e.kind === 'user' && answered(e.at) && (!best || e.at > best.at))
+        best = {
           id: `${s.id}::${e.id}`,
           eventId: e.id,
           at: e.at,
-          sessionId: s.id,
           text: () => messageExcerpt(e.text, 800),
-        });
+        };
   const quoted: QuotedRequest | undefined =
     best && !bubble?.background
       ? { id: best.id, eventId: best.eventId, at: best.at, text: best.text() }
