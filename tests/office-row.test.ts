@@ -369,7 +369,11 @@ test('pointing at a desk quotes the latest request the person sent it', () => {
   });
   const viaOther = notice('fixture:other', { kind: 'request', phase: undefined, at: now - 2000 });
   assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request?.id, viaOther.id);
-  assert.equal(stationSpeech(s, [reply], 3, now).request, undefined, 'nothing asked yet');
+  assert.equal(
+    stationSpeech({ ...s, events: [] }, [reply], 3, now).request,
+    undefined,
+    'nothing asked yet',
+  );
 });
 
 test('the quote is the request a bubble answers, never over a background run', () => {
@@ -439,4 +443,23 @@ test('the snapshot keeps the last requests so a quote can show its full original
   assert.equal(speech.request?.id, asked.id);
   assert.equal(speech.requestText, long, 'the tooltip gets the original, not the excerpt');
   assert.equal(stationSpeech({ ...s, events: [] }, [asked, reply], 3, now).requestText, asked.text);
+});
+
+test('a conversation found as history still quotes the request its snapshot kept', () => {
+  // First collected late: only the reply became a notice, but the user event is retained.
+  const events = [
+    { id: 'u1', at: now - 9000, kind: 'user' as const, text: '테스트를 고쳐 줘', sourceRef: 'f' },
+    { id: 'a1', at: now - 1000, kind: 'assistant' as const, text: '고쳤어요', sourceRef: 'f' },
+  ];
+  const s = session(0, 'team', { status: 'idle', events });
+  const reply = notice(s.id, { eventId: 'a1', text: '고쳤어요', at: now - 1000, bootstrap: true });
+  const speech = stationSpeech(s, [reply], 3, now);
+  assert.equal(speech.request?.text, '테스트를 고쳐 줘');
+  assert.equal(speech.request?.at, now - 9000);
+  // Not for a scheduled/internal run or a helper (their prompts aren't the person's words).
+  for (const patch of [
+    { origin: { kind: 'scheduled' } },
+    { relation: { kind: 'subagent', parentNativeId: 'p', source: 'f' } },
+  ] as Partial<Session>[])
+    assert.equal(stationSpeech({ ...s, ...patch }, [reply], 3, now).request, undefined);
 });

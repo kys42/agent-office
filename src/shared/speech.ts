@@ -1,6 +1,7 @@
 import type { OfficeEvent, OfficeNotice, Session } from './types';
 import { bubbleNotice, isFinalNotice, noticeLabel, unreadNoticeCount } from './notices';
-import { activityLabel, sessionActivity } from './activity';
+import { activityLabel, messageExcerpt, sessionActivity } from './activity';
+import { isBackground, isHelper } from './residents';
 import { liveLabels } from './labels';
 import { m } from './i18n';
 
@@ -47,6 +48,14 @@ export const arrivalEnds = (notices: OfficeNotice[], now = Date.now()) =>
   notices
     .filter((n) => n.kind === 'request' && !n.bootstrap && n.receivedAt + ARRIVAL_MS > now)
     .map((n) => n.receivedAt + ARRIVAL_MS);
+
+/** The person's request quoted above a bubble (from a request notice or a retained event). */
+export interface QuotedRequest {
+  id: string;
+  eventId: string;
+  at: number;
+  text: string;
+}
 
 /** Bubbles render this much of the original message (code blocks dropped). */
 const MARKDOWN_LIMIT = 1500;
@@ -144,7 +153,23 @@ export function stationSpeech(
         b.at - a.at ||
         b.receivedAt - a.receivedAt,
     );
-  const lastRequest = bubble?.background ? undefined : asked[0];
+  const noticed = bubble?.background ? undefined : asked[0];
+  // A conversation first collected as history keeps only its last notice; the snapshot still has
+  // the person's last requests, so quote from those (nothing is stored or notified).
+  const retained =
+    noticed || bubble?.background || isBackground(s) || isHelper(s)
+      ? undefined
+      : s.events
+          .filter((e) => e.kind === 'user' && (!bubble || e.at <= bubble.at))
+          .sort((a, b) => b.at - a.at)[0];
+  const quoted: QuotedRequest | undefined = noticed
+    ? { id: noticed.id, eventId: noticed.eventId, at: noticed.at, text: noticed.text }
+    : retained && {
+        id: `${s.id}::${retained.id}`,
+        eventId: retained.id,
+        at: retained.at,
+        text: messageExcerpt(retained.text, 800),
+      };
   return {
     members,
     news,
@@ -162,11 +187,10 @@ export function stationSpeech(
      * The person's latest own request to this desk (closed ones too; not background runs),
      * quoted above the bubble while pointed at — unless the bubble already is that request.
      */
-    request:
-      lastRequest && lastRequest.id !== bubble?.id && tone !== 'mine' ? lastRequest : undefined,
+    request: quoted && quoted.id !== bubble?.id && tone !== 'mine' ? quoted : undefined,
     /** The quoted request's full original words when the desk still has them (else the excerpt). */
-    requestText: lastRequest
-      ? (s.events.find((e) => e.id === lastRequest.eventId)?.text ?? lastRequest.text)
+    requestText: quoted
+      ? (s.events.find((e) => e.id === quoted.eventId)?.text ?? quoted.text)
       : undefined,
     tone,
     activity,
