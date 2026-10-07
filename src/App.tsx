@@ -1,3 +1,5 @@
+import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
+import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -37,7 +39,7 @@ import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
-import { Settings } from './components/Settings';
+import { Settings, type SettingsSection } from './components/Settings';
 import { NewsInbox } from './components/News';
 import { isAttentionNotice } from './shared/notices';
 import type { OfficeZone } from './shared/types';
@@ -55,6 +57,19 @@ const tabs = [
 export default function App() {
   const { locale, t } = useI18n();
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
+  const [guide, setGuide] = useState<'tour' | 'features' | null>(() =>
+    new URLSearchParams(location.search).has('onboarding') || (!demo && !hasSeenOnboarding(false))
+      ? 'tour'
+      : null,
+  );
+  const closeGuide = useCallback(() => {
+    rememberOnboarding(demo);
+    setGuide(null);
+  }, [demo]);
+  useEffect(() => {
+    // A sample-office visit never consumes the first tour of the live office.
+    if (!demo && !hasSeenOnboarding(false)) setGuide('tour');
+  }, [demo]);
   const [inbox, setInbox] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
@@ -104,6 +119,8 @@ export default function App() {
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
   const [memoryQuery, setMemoryQuery] = useState('');
+  const [settingsFocus, setSettingsFocus] = useState<{ section: SettingsSection; at: number }>();
+  const clearSettingsFocus = useCallback(() => setSettingsFocus(undefined), []);
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
   const [areaDrop, setAreaDrop] = useState<{ id: string; zone: string | null } | null>(null);
   const openSearch = () => setPalette(true);
@@ -244,7 +261,7 @@ export default function App() {
     choose(ids[(next + ids.length) % ids.length]);
   };
   keyHandler.current = (e) => {
-    if (!snapshot || e.isComposing || e.defaultPrevented) return;
+    if (!snapshot || guide || e.isComposing || e.defaultPrevented) return;
     if ((e.metaKey || e.ctrlKey) && e.code === 'KeyK') {
       e.preventDefault();
       setPalette((v) => !v);
@@ -286,7 +303,45 @@ export default function App() {
     else if (['Digit1', 'Digit2', 'Digit3'].includes(code))
       run(() => goZone((['office', 'waiting', 'archive'] as const)[Number(code.slice(-1)) - 1]));
   };
+  const guideAction = (action: GuideAction) => {
+    closeGuide();
+    setSelected(null);
+    setInbox(false);
+    setShowUsage(false);
+    if (action === 'inbox') openInbox();
+    else if (action === 'usage') setShowUsage(true);
+    else if (action === 'card') {
+      setView('office');
+      if (model.scene[0]) choose(model.scene[0].id);
+    } else if (action === 'pet') void api.window('mini');
+    else if (action === 'memory' || action === 'activity') {
+      if (action === 'memory') setMemoryQuery('');
+      setView(action);
+    } else if (action === 'keys') setHelp(true);
+    else if (action === 'office' || action === 'demo') {
+      setView('office');
+      if (action === 'demo') setDemo(true);
+    } else {
+      const section: SettingsSection =
+        action === 'appearance'
+          ? 'appearance'
+          : action === 'space'
+            ? 'office'
+            : action === 'privacy' || action === 'terminal'
+              ? 'rhythm'
+              : 'connections';
+      setSettingsFocus({ section, at: Date.now() });
+      setView('settings');
+    }
+  };
   const actions: PaletteAction[] = [
+    {
+      id: 'guide',
+      label: t.guide.title,
+      keywords: `${t.guide.tour} ${t.guide.features} onboarding help`,
+      icon: <BookOpen size={15} />,
+      run: () => setGuide('features'),
+    },
     {
       id: 'inbox',
       label: t.palette.actions.inbox,
@@ -467,6 +522,14 @@ export default function App() {
           </div>
           <div className="nav-bottom">
             <button
+              aria-label={t.guide.title}
+              title={t.guide.title}
+              onClick={() => setGuide('features')}
+            >
+              <BookOpen size={19} strokeWidth={1.8} />
+              <span>{t.guide.menu}</span>
+            </button>
+            <button
               className={view === 'settings' ? 'active' : ''}
               aria-label={t.app.tabs.settings.title}
               title={t.app.tabs.settings.title}
@@ -605,6 +668,8 @@ export default function App() {
               notify={notify}
               terminalSend={terminalSendAvailable ? terminalSend : undefined}
               onTerminalSend={toggleTerminalSend}
+              focusSection={settingsFocus}
+              onSectionFocused={clearSettingsFocus}
             />
           ) : (
             <Activity sessions={sessions} onSelect={choose} privacy={prefs?.privacy ?? false} />
@@ -729,6 +794,17 @@ export default function App() {
             </Modal>
           ) : null;
         })()}
+      {guide && (
+        <OfficeGuide
+          initialMode={guide}
+          snapshot={snapshot}
+          demo={demo}
+          desktop={isDesktop}
+          hasColleague={model.scene.length > 0}
+          onAction={guideAction}
+          onClose={closeGuide}
+        />
+      )}
       {help && (
         <Modal title={t.app.help.title} onClose={closeHelp}>
           <div className="shortcut-grid">

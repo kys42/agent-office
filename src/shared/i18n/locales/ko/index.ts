@@ -1,3 +1,4 @@
+import { guide } from './guide';
 import { pets } from './pets';
 import type { Messages } from '../en';
 import { common } from './common';
@@ -47,4 +48,5 @@ export const ko: Messages = {
   desk,
   terminal,
   pets,
+  guide,
 };
