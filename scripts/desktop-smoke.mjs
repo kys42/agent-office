@@ -78,9 +78,18 @@ try {
     },
   });
   const page = await app.firstWindow();
+  const checkMacDock = async (stage) => {
+    if (process.platform === 'darwin')
+      assert.equal(
+        await app.evaluate(({ app }) => app.dock.isVisible()),
+        true,
+        `macOS Dock icon remains visible: ${stage}`,
+      );
+  };
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.waitForSelector('.office-pet');
+  await checkMacDock('startup');
   const s = await page.evaluate(() => window.office.snapshot());
   assert.equal(s.sessions.length, 3);
   assert.deepEqual(
@@ -134,13 +143,14 @@ try {
   await dock.waitForSelector('.desk-pet');
   const dockBounds = () =>
     app.evaluate(({ BrowserWindow, screen }) => {
-      const w = BrowserWindow.getAllWindows().find((w) => w.isAlwaysOnTop());
+      const w = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('#mini'));
       const b = w.getBounds();
       return { ...b, area: screen.getDisplayMatching(b).workArea, visible: w.isVisible() };
     });
   const pet = await dockBounds();
   assert.ok(pet.visible && pet.width <= 320 && pet.height <= 360, 'collapsed pet is small');
   await dock.waitForTimeout(400); // entrance fade
+  await checkMacDock('desk pet');
   await dock.screenshot({ path: '.local/native-pet.png' });
   await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
   await dock.waitForSelector('.desk-row [data-station-id]');
@@ -150,7 +160,40 @@ try {
   assert.equal(row.x, row.area.x);
   assert.equal(row.y + row.height, row.area.y + row.area.height, 'row rests on the bottom edge');
   await dock.waitForTimeout(400);
+  await checkMacDock('desk row');
   await dock.screenshot({ path: '.local/native-row.png' });
+  // Keep this test's card open if someone uses another app during local QA. Production still
+  // closes it on blur; we test its panel focus/keyboard without racing the user's desktop.
+  await app.evaluate(({ app }) =>
+    app.once('browser-window-created', (_event, window) =>
+      window.webContents.once('did-finish-load', () => window.removeAllListeners('blur')),
+    ),
+  );
+  const [card] = await Promise.all([
+    app.waitForEvent('window'),
+    dock.evaluate(() =>
+      window.office.card(
+        'open',
+        { id: 'codex:codex-test', news: false },
+        {
+          x: 400,
+          y: 600,
+          width: 200,
+          height: 100,
+        },
+      ),
+    ),
+  ]);
+  await card.waitForSelector('.inspector');
+  await card.bringToFront();
+  await card.waitForFunction(() => document.hasFocus());
+  await checkMacDock('popup work card');
+  await card.getByRole('tab', { name: '기억 메모', exact: true }).click();
+  const notes = card.locator('#notes');
+  await notes.fill('');
+  await notes.pressSequentially('Panel keyboard input');
+  assert.equal(await notes.inputValue(), 'Panel keyboard input', 'popup panel accepts keyboard');
+  await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
   await dock.waitForSelector('.desk-row.desk-floor');
@@ -159,12 +202,14 @@ try {
   assert.equal(floor.y + floor.height, floor.area.y + floor.area.height, 'standing on the bottom');
   assert.ok(floor.height < row.height, 'no rugs: a shorter strip than the office row');
   await dock.waitForTimeout(400);
+  await checkMacDock('floor desks');
   await dock.screenshot({ path: '.local/native-floor.png' });
   await dock.getByRole('button', { name: '책상 줄 접기' }).click();
   await dock.waitForSelector('.desk-pet');
   const back = await dockBounds();
   assert.deepEqual([back.x, back.y, back.width], [pet.x, pet.y, pet.width], 'pet returns home');
   await dock.getByRole('button', { name: '사무실 펼치기' }).click();
+  await checkMacDock('return to main office');
   const native = await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().map((w) => ({
       transparent: w.getBackgroundColor(),
@@ -194,6 +239,7 @@ try {
       deskFloor: true,
       ipcPersistence: true,
       rendererIsolation: true,
+      macDockIcon: process.platform === 'darwin',
     }),
   );
 } finally {

@@ -1,3 +1,13 @@
+# macOS Dock 아이콘 유지 회귀 · 2026-10-07
+
+- 사용자 재현: 아이콘이 잠깐 나타난 뒤 사라졌지만 설치 앱 프로세스는 살아 있었고 Launch Services 타입은 UIElement였다. 실행 직후 Foreground 확인만으로 모드 전환 뒤 아이콘 유지를 검증하지 못했다.
+- Electron 44.5.1의 `setVisibleOnAllWorkspaces({ visibleOnFullScreen: true })` 기본 동작은 앱 전체 `DockHide()`를 호출한다. 데스크 펫과 팝업 카드 모두 해당 호출을 사용했다. [공식 구현](https://github.com/electron/electron/blob/v44.5.1/shell/browser/native_window_mac.mm), [API](https://www.electronjs.org/docs/latest/api/browser-window#winsetvisibleonallworkspacesvisible-options).
+- macOS 보조 창을 panel로 만들고 `skipTransformProcessType: true`로 전체 화면/Spaces 설정에서 앱의 타입을 바꾸지 않는다. Windows의 창 타입은 그대로 유지한다.
+- native 회귀 검수는 실제 `app.dock.isVisible()`를 시작·펫·책상 줄·바닥 책상·팝업 카드·전체 복귀마다 확인한다. 기존 빌드에서는 desk pet 단계에서 false로 실패해 재현했고 수정 빌드의 모드 전환은 통과했다. 팝업 panel의 포커스와 키보드 입력도 검증한다.
+- 팝업 QA에서는 사용자 다른 앱의 포커스 전환과 경쟁하지 않도록 테스트 창의 blur 자동 닫기만 해제한다. 제품의 blur 닫기 동작은 유지하며 테스트는 실제 panel 포커스·키보드 입력을 확인한다.
+- 재생성한 clean 10b1ae4 DMG의 실제 설치본에서도 Dock 모드별 유지·팝업 입력·3종·IPC·격리 검증을 통과했다.
+- 팝업을 포함하도록 smoke를 확장하면서 기하 검수 대상도 `alwaysOnTop` 첫 창이 아니라 mini URL의 책상 창으로 특정했다.
+
 # 터미널로 보내기 기본 켜짐 · 2026-10-07
 
 - 변경: 데스크탑 프로필의 `terminal-send.json`이 없으면 켜짐, 사용자가 끈 선택은 `{"enabled":false}`로 남김. 파일을 읽을 수 없거나 깨져 있으면 꺼짐으로 봄(끈 선택이 실수로 풀리지 않게). 다시 켤 때는 지금처럼 네이티브 확인창

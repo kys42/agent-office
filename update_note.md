@@ -1,3 +1,9 @@
+# 2026-10-07 · macOS Dock 아이콘 사라짐 수정
+
+- 앱이 종료된 것이 아니라 fullscreen 보조 창 설정이 앱 전체 Dock 아이콘을 숨겼다. 최초 설치 직후 실행 확인에서 놓친 모드 전환 회귀를 native smoke에 추가했다.
+- 펫/팝업 창은 macOS panel과 skipTransformProcessType을 사용해 Foreground 앱 타입을 유지한다. 전체·펫·책상 줄·바닥·팝업을 확인하고 팝업 포커스/키보드 입력도 검증한다.
+- 설치본 및 새 DMG는 커밋 확정 후 다시 생성·설치 검수하고 기존 개인 DB를 보존해 교체한다.
+
 # 2026-10-07 · macOS DMG와 초기 preview 배포 파이프라인
 
 - 최신 main 501fe72 기준 별도 worktree에서 설치용 DMG, Applications 바로가기·설치 안내·라이선스 고지, 버전/SHA/아키텍처/서명 상태 및 SHA-256 기록을 추가했다. 사용자 실행 앱과 미커밋 변경은 보존했다.

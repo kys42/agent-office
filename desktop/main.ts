@@ -249,6 +249,8 @@ function showDock(mode: DockMode = 'pet') {
       hasShadow: false,
       alwaysOnTop: true,
       skipTaskbar: true,
+      // A macOS panel can float over fullscreen apps without hiding the app's Dock icon.
+      type: process.platform === 'darwin' ? 'panel' : undefined,
       acceptFirstMouse: true,
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
@@ -258,7 +260,10 @@ function showDock(mode: DockMode = 'pet') {
       },
     });
     secure(dock);
-    dock.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    dock.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    });
     dock.setIgnoreMouseEvents(true, { forward: true });
     dock.on('closed', () => {
       stopDrag(false);
@@ -314,6 +319,7 @@ function showCard(target: CardTarget, anchor: Rect) {
       transparent: true,
       fullscreenable: false,
       skipTaskbar: true,
+      type: process.platform === 'darwin' ? 'panel' : undefined,
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
@@ -324,7 +330,10 @@ function showCard(target: CardTarget, anchor: Rect) {
     secure(card);
     // Above the dock, which is itself always on top.
     card.setAlwaysOnTop(true, 'pop-up-menu');
-    card.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    card.setVisibleOnAllWorkspaces(true, {
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    });
     // Clicking anywhere else puts the card away. A short delay lets a click on another desk
     // reopen it in place instead of flickering.
     card.on('blur', () => {
