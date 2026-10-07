@@ -43,6 +43,7 @@ export const shared: Messages['shared'] = {
       search: '파일 검색',
       web: '웹 조회',
       input: '입력 요청',
+      plan: '플랜 승인',
       check: '결과 확인',
     },
   },

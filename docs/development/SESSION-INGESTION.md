@@ -15,6 +15,8 @@ OfficeService (5초 폴링, 읽기 범위·오류 격리)
         ↓
   enrichWorkspaces (Git common-dir/worktree/현재 Git 관측)
         ↓
+  Claude 실행 기록 overlay (sessions/<pid>.json의 waiting → 호출, 파싱 캐시 뒤 매 수집)
+        ↓
   OfficeStore (원본 캐시 / 사용자 설정 / 소식과 receipt 분리)
         ↓
   공통 관측·제품 정책 → 사무실 / 상세 / 검색 / 인수인계 / 읽기 MCP
@@ -61,7 +63,7 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 
 | 소스 | 경로 / 형식 | 주요 보완과 경계 |
 | --- | --- | --- |
-| Claude Code | `$CLAUDE_CONFIG_DIR/projects`, 기본 `~/.claude/projects`; JSONL, sessions-index, `.meta.json` | custom/AI/agent title 우선순위와 sidecar 역할. tool-use는 진행, end_turn/stop은 최종 근거 |
+| Claude Code | `$CLAUDE_CONFIG_DIR/projects`, 기본 `~/.claude/projects`; JSONL, sessions-index, `.meta.json`. 실행 중 상태는 `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` | custom/AI/agent title 우선순위와 sidecar 역할. tool-use는 진행, end_turn/stop은 최종 근거. AskUserQuestion·ExitPlanMode는 결과 전까지 호출. 실행 기록은 권한 확인 대기만 읽음([아래](#claude-실행-기록과-호출-office-v11)) |
 | Codex | `$CODEX_HOME/sessions`, 기본 `~/.codex/sessions`; `session_index.jsonl`, `state_N.sqlite`의 threads | 표시 이름은 threads.name → index → 정제된 threads.title. 명시 commentary/final 및 lifecycle; native metadata 우선 |
 | OpenClaw | `$OPENCLAW_STATE_DIR/agents`, 기본 `~/.openclaw/agents`; agent별 sessions와 `agent/openclaw-agent.sqlite` | JSONL이 이관되어 없어도 DB 수집. DB는 최근 180개 + 초기 12개 표본. seq 외 rewrite watermark로 변경 감지 |
 
@@ -76,7 +78,7 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 3. 같은 native 이벤트의 새 snapshot은 이전 값을 갱신한다. 옛 ordinal 키는 `legacyId`로 제공하되 동일 내용·시각 버전에서만 receipt를 옮긴다. ID 없는 동일 시각·종류·본문은 구별할 수 없다는 한계가 있다.
 4. `activity.ts`는 현재 턴의 공개 진행/응답 → 요청 → 기록 상태 순으로 발췌한다. 도구 이름은 별도 보조 정보다. 전체 원문 대신 짧은 발췌가 쓰였음을 유지한다.
 5. `conversation.ts`는 request/progress/reply/message/work로 분류한다. 원본 phase가 없으면 기타 응답이다. 원본 구간 밖 소식으로 보완한 메시지는 `excerpt=true`와 발췌 라벨을 갖는다.
-6. `notices.ts`와 `store.ts`는 소식 저장과 중요 배지 범위를 분리한다. 기본 배지는 확인된 final과 미해결 입력 요청이다. 사용자의 read/dismiss는 ID+version에만 적용한다.
+6. `notices.ts`와 `store.ts`는 소식 저장과 중요 배지 범위를 분리한다. 기본 배지는 확인된 final과 미해결 입력 요청이다. 입력 요청은 아직 결과가 없는 열린 요청만 소식 후보다(`isOpenRequest`). 사용자의 read/dismiss는 ID+version에만 적용한다.
 
 사용량은 session 누적과 수집 표본 범위, 현재 문맥 근사치를 구분한다. Codex cumulative snapshot을 합산하지 않고, Claude streaming usage는 메시지 ID별 중복을 제거한다. 값이 없으면 null이며 0으로 만들어내지 않는다.
 
@@ -97,6 +99,8 @@ JSONL 읽기 캐시는 size+mtime+파서 버전, OpenClaw DB 캐시는 행 갱�
 | 중간 도구 호출이 공개 설명을 밀어냄 | tool 명칭을 주 행동으로 사용. 공개 activity와 tool을 분리 | `activity.test.ts`, UI public progress |
 | OpenClaw 이관 뒤 사라짐 / 재작성 내용이 안 바뀜 | JSONL만 읽거나 seq만 캐시. DB 어댑터·rewrite watermark 적용 | `adapters.test.ts`, `service.test.ts` |
 | 지난 소식이 분류 변경 후 다시 미확인으로 생김 | observed-only cursor의 버전 전환 누락. receipt와 관측 cursor 모두 재분류 | `conversation-news.test.ts`, `store.test.ts` |
+| 플랜 승인·권한 확인을 기다리는데 부르지 않음 | ExitPlanMode를 일반 도구로 봄, 권한 확인은 transcript에 없음. ExitPlanMode를 입력 요청으로, 실행 기록 `waiting`을 호출로 | `live-calls.test.ts` |
+| 업그레이드 뒤 지난 플랜 승인이 한꺼번에 '응답 필요'로 | 결과가 있는 지난 요청까지 소식 후보로 봄. 열린 요청만 후보, 퇴근 시간보다 오래된 요청은 소식으로 만들지 않음 | `live-calls.test.ts` |
 | 큰 첫 metadata를 읽다가 EBADF / 잘못된 ID | stream iterator가 공유 fd를 닫음. bounded generator가 fd를 소유 | `ingestion-conformance.test.ts` |
 | 모든 브랜치가 미확인 또는 main으로 오표시 | 기록 Git과 현재 Git 혼동. detached/비 Git/null을 별도 표시 | `office-layout.test.ts`, `office-policy.test.ts` |
 
@@ -126,3 +130,18 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
 ### office-v10 · 사용 표본과 실행 경로
 
 새 optional UsageEntry/WorkingLocation을 채우기 위해 JSONL/OpenClaw SQLite 캐시 버전을 올렸다. native Codex response 사용량을 token_count보다 우선하고, 메시지별 streaming 비용과 별도 ledger를 추가했다. 실제 shell workdir/cwd와 literal cd는 어댑터에서 읽고 Codex wrapper는 Acorn 구문만 분석한다. 값에 따라 실행하거나 UI에서 원본을 재분석하지 않는다. [사용량·실행 위치와 레퍼런스 근거](USAGE-AND-WORKSPACE.md).
+
+## Claude 실행 기록과 호출 (office-v11)
+
+플랜 승인과 권한 확인은 사람이 답해야 넘어가는 순간이지만 transcript만으로는 일부만 보인다. 판단 규칙은 [상태 정책서](../golden/STATUS-POLICY.md#호출call의-근거)가 정본이고, 여기서는 수집 경계를 적는다.
+
+- **플랜 승인(transcript)**: Claude 플랜 모드는 `ExitPlanMode` 도구 호출로 승인을 묻는다. `parseRecords`는 이를 AskUserQuestion처럼 `intent: request-input`, 상태 `call`, 이유 `planApproval`로 정규화한다. 결과(`tool_result`)가 기록되면 이전처럼 작업으로 돌아간다. 파서 의미가 바뀌어 JSONL 캐시 키를 office-v11로 올렸다.
+- **호출과 결과 짝짓기**: Claude 이벤트 ID는 레코드 uuid라 호출과 결과의 ID가 다르다. 그래서 tool/result 이벤트에 원본 호출 ID를 optional `OfficeEvent.callId`로 남긴다(Claude `tool_use.id`/`tool_use_id`, Codex `call_id`). 이벤트 ID·소식 ID·버전은 바꾸지 않는다. `callId`가 없는 옛 기록은 `<call id>:result` 이벤트 ID로만 짝짓는다.
+- **권한 확인(실행 기록)**: 일반 권한 확인(Bash 승인 등)은 transcript에서 실행 중인 도구와 같아 보인다. Claude Code가 대화형 프로세스마다 쓰는 `$CLAUDE_CONFIG_DIR/sessions/<pid>.json`(기본 `~/.claude/sessions`)의 `status: "waiting"`·`waitingFor`(예: `permission prompt`)만 근거로 쓴다.
+  - **비공개·미문서 형식**이다. 읽는 필드는 `pid`, `sessionId`, `procStart`, `status`, `kind`, `updatedAt`, `statusUpdatedAt`, `waitingFor`뿐이다. 파일 이름과 같은 pid, `^[\w-]{8,80}$` sessionId, `kind` 없음 또는 `interactive`, 64 KiB 이하, 양수 시각, 80자 이하 `waitingFor`만 받는다. 모르는 모양·깨진 JSON·없는 폴더는 아무것도 바꾸지 않는다(transcript 근거만 남음). 이 폴더에는 절대 쓰지 않는다.
+  - **같은 프로세스 확인**: `waiting`이고 이번 수집 목록에 있는 세션의 기록만 확인한다. PID가 살아 있고 `ps -o lstart=`(UTC·C 로케일)가 `procStart`와 같아야 한다. 확인 결과는 PID·procStart별로 30초 기억하고, 실패한 확인은 기억하지 않는다. 평소 비용은 수집당 폴더 읽기 한 번이다.
+  - **최신 확인**: `statusUpdatedAt`(없으면 `updatedAt`) 뒤에 결과·메시지·턴 경계 이벤트가 있으면 지난 기록으로 보고 무시한다.
+  - **적용 위치**: `OfficeService.collect`에서 병합·작업 위치 보완 뒤, 저장 직전에 매 수집 적용한다(`applyLiveWait`). 파싱 캐시에는 넣지 않는다: 대기는 transcript가 그대로여도 바뀐다. 적용하면 상태 `call`, 이유(권한 확인/플랜 승인/일반 대기), 현재 턴에서 결과가 없는 마지막 도구 호출을 `request-input`으로 표시하고 revision에 반영한다. 대기가 끝나면 다음 수집에서 overlay가 사라지고 revision이 다시 바뀌어 저장소와 화면이 갱신된다.
+  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`일 때만 입력한다(`waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
+- **소식**: 열린 요청만 '응답 필요' 후보다. 결과·이후 메시지·턴 경계가 기록되거나 대기 overlay가 사라지면 해당 소식을 해결한다. 퇴근 시간보다 오래된 미응답 요청은 관측으로만 기억하고 소식을 만들지 않는다. 그래서 업그레이드 뒤 재파싱해도 지난 플랜 승인은 새 미확인 소식이 되지 않는다.
+- **Codex 한계**: Codex rollout에는 승인·권한 요청 이벤트가 없다. `request_user_input`만 호출로 보이고, 명령 승인 대기는 보이지 않는다. 근거가 생기기 전에는 추측하지 않는다.

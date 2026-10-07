@@ -16,7 +16,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 | 공급자 | 입력 | 확인하는 정보 |
 |---|---|---|
-| Claude Code | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`, 기본 `~/.claude/projects` | sessionId, message.content, model, cwd, gitBranch, message.usage, 도구 호출·결과, custom-title와 sessions-index 이름 |
+| Claude Code | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`, 기본 `~/.claude/projects`; 실행 중 상태 `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` | sessionId, message.content, model, cwd, gitBranch, message.usage, 도구 호출·결과, custom-title와 sessions-index 이름; 실행 기록은 권한 확인 대기(`waiting`)만 |
 | Codex | `$CODEX_HOME/sessions/**/*.jsonl`, session_index.jsonl, state_N.sqlite의 threads(readOnly) | session_meta, turn_context, response_item, task_started/complete, token_count, token_usage_record, 실제 제목 |
 | OpenClaw | `$OPENCLAW_STATE_DIR/agents/*/sessions/*.jsonl`, `agents/*/agent/openclaw-agent.sqlite` | JSONL v3; SQLite session_nodes + transcript_events, rewrite watermark |
 

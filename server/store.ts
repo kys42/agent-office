@@ -20,7 +20,12 @@ import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
-import { localizeNotice, noticeCandidates, noticeContentVersion } from '../src/shared/notices.js';
+import {
+  localizeNotice,
+  noticeCandidates,
+  noticeContentVersion,
+  requestClosedAt,
+} from '../src/shared/notices.js';
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
 import { getLocale, m, messagesFor, type Locale } from '../src/shared/i18n/index.js';
@@ -99,12 +104,13 @@ export class OfficeStore {
     const get = this.db.prepare('SELECT data FROM sessions WHERE id=?');
     const remove = this.db.prepare('DELETE FROM session_search WHERE id=?');
     const index = this.db.prepare('INSERT INTO session_search(id,title,body) VALUES (?,?,?)');
+    const standbyHours = this.preferences().standbyHours ?? DEFAULT_PREFS.standbyHours!;
     this.db.exec('BEGIN');
     try {
       for (const s of sessions) {
         const prior = get.get(s.id) as { data: string } | undefined;
         const previous: Session | undefined = prior ? JSON.parse(prior.data) : undefined;
-        this.ingestNotices(s);
+        this.ingestNotices(s, standbyHours);
         if (prior && JSON.parse(prior.data).revision === s.revision) continue;
         const taskStartedAt =
           Math.max(s.taskStartedAt ?? 0, prior ? (JSON.parse(prior.data).taskStartedAt ?? 0) : 0) ||
@@ -183,7 +189,7 @@ export class OfficeStore {
       throw e;
     }
   }
-  private ingestNotices(s: Session) {
+  private ingestNotices(s: Session, standbyHours = DEFAULT_PREFS.standbyHours!) {
     const now = Date.now();
     const cursor = this.db.prepare('SELECT at FROM notice_cursors WHERE session_id=?').get(s.id) as
       { at: number } | undefined;
@@ -241,13 +247,17 @@ export class OfficeStore {
           .run(JSON.stringify({ ...old, kind: n.kind, phase: n.phase, version: n.version }), n.id);
       }
     }
+    // An unanswered request older than the off-duty time belongs to a colleague who has gone
+    // home (STATUS-POLICY §3): history, not news. E.g. a plan approval abandoned days ago that a
+    // newer collector recognizes for the first time. It is remembered below, never notified.
+    const news = all.filter((n) => n.kind !== 'attention' || now - n.at < standbyHours * 3600_000);
     const recent =
       cursor || born
-        ? all.filter((n) => {
+        ? news.filter((n) => {
             const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
             return !prior || prior.version !== n.version;
           })
-        : all.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
+        : news.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
     for (const n of all) remember.run(s.id, n.eventId, n.version);
     const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
     for (const n of recent) {
@@ -291,6 +301,21 @@ export class OfficeStore {
         if (!n.resolvedAt && ['attention', 'error'].includes(n.kind))
           put.run(n.id, n.sessionId, n.at, JSON.stringify({ ...n, resolvedAt: resumed }));
       }
+    // A request that is no longer open resolves its own cue: answered (its result), moved past,
+    // or no longer waiting live (a permission prompt that was approved). Requests outside the
+    // read window are left to the rule above.
+    const open = new Set(all.filter((n) => n.kind === 'attention').map((n) => n.eventId));
+    for (const row of this.db
+      .prepare(
+        "SELECT data FROM notices WHERE session_id=? AND json_extract(data,'$.kind')='attention' AND json_extract(data,'$.resolvedAt') IS NULL",
+      )
+      .all(s.id) as { data: string }[]) {
+      const n: OfficeNotice = JSON.parse(row.data);
+      const request = s.events.find((e) => e.id === n.eventId);
+      if (!request || open.has(n.eventId)) continue;
+      const resolvedAt = requestClosedAt(s.events, request) ?? now;
+      put.run(n.id, n.sessionId, n.at, JSON.stringify({ ...n, resolvedAt }));
+    }
     this.db
       .prepare('INSERT OR REPLACE INTO notice_cursors VALUES(?,?)')
       .run(s.id, Math.max(cursor?.at ?? 0, s.updatedAt));

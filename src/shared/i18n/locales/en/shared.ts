@@ -43,6 +43,7 @@ export const shared = {
       search: 'File search',
       web: 'Web lookup',
       input: 'Input request',
+      plan: 'Plan approval',
       check: 'Checking results',
     },
   },

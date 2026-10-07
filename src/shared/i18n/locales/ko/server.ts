@@ -81,6 +81,9 @@ export const server: Messages['server'] = {
     replyEnded: '응답 종료 기록 · 업무 완료 여부는 미확인',
     toolResultRecovering: '도구 결과 기록 · 오류가 있어도 자동 복구 중일 수 있음',
     toolResult: '도구 결과 기록',
+    planApproval: '플랜 승인 요청 기록 · 원래 앱에서 확인',
+    permissionPrompt: '권한 확인 대기 · 원래 앱에서 승인해 주세요',
+    liveWaiting: '사용자 응답 대기 · 원래 앱에서 확인해 주세요',
   },
   event: {
     turnStarted: '새 턴을 시작했어요',

@@ -67,6 +67,7 @@ export function toolLabel(name: string): string {
   if (/^(Grep|Glob|search_files)$/i.test(short)) return t.search;
   if (/^(web|web_search|webfetch|web__run)$/i.test(short)) return t.web;
   if (/request_user_input|AskUserQuestion/i.test(short)) return t.input;
+  if (/^ExitPlanMode$/i.test(short)) return t.plan;
   if (/^(wait|write_stdin|sleep)$/i.test(short)) return t.check;
   return short.length > 26 ? short.slice(0, 25) + '…' : short;
 }

@@ -16,7 +16,38 @@ export const noticeVersion = (text: string) => {
  */
 export const noticeContentVersion = (kind: NoticeKind, text: string, at: number) =>
   noticeVersion(`${kind}:${text}:${at}`);
-/** Notice candidates in canonical wording; readers show them through `localizeNotice`. */
+/**
+ * Whether `e` is the result of the tool call `call`: the same native call id, or, for records
+ * keyed by the call id itself (Codex), the `<call id>:result` event.
+ */
+export const isResultOf = (e: OfficeEvent, call: OfficeEvent) =>
+  e.kind === 'result' &&
+  ((!!call.callId && e.callId === call.callId) ||
+    e.id === `${call.id.replace(/:tool\d+$/, '')}:result`);
+/**
+ * When a request for input stopped waiting: its own result (the answer, or a refusal), or a later
+ * message or turn boundary. Calls and results of other tools in the same reply do not close it.
+ * Undefined while the request is still open.
+ */
+export function requestClosedAt(events: OfficeEvent[], request: OfficeEvent): number | undefined {
+  let closed: number | undefined;
+  for (const e of events)
+    if (
+      e !== request &&
+      (isResultOf(e, request) ||
+        (e.at > request.at && (e.kind === 'user' || e.kind === 'assistant' || !!e.lifecycle)))
+    )
+      closed = Math.min(closed ?? e.at, e.at);
+  return closed;
+}
+/** A request for input that nobody has answered yet: the only kind that calls for attention. */
+export const isOpenRequest = (events: OfficeEvent[], e: OfficeEvent) =>
+  e.kind === 'tool' && e.intent === 'request-input' && requestClosedAt(events, e) === undefined;
+/**
+ * Notice candidates in canonical wording; readers show them through `localizeNotice`. A request
+ * for input is a candidate only while it is open: an answered one (e.g. every past plan approval
+ * in a transcript) is history, never a new call.
+ */
 export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false): OfficeNotice[] {
   const events = [...s.events];
   const a = sessionActivity(s);
@@ -33,11 +64,7 @@ export function noticeCandidates(s: Session, now = Date.now(), bootstrap = false
   for (const e of events.sort((a, b) => a.at - b.at)) {
     const category = conversationKind(e);
     const kind: NoticeKind | null =
-      category !== 'work'
-        ? category
-        : e.kind === 'tool' && e.intent === 'request-input'
-          ? 'attention'
-          : null;
+      category !== 'work' ? category : isOpenRequest(s.events, e) ? 'attention' : null;
     if (!kind) continue;
     const text =
       kind === 'attention' ? canonical().shared.notice.attention : messageExcerpt(e.text, 800);

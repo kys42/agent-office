@@ -125,6 +125,12 @@ export interface OfficeEvent {
   text: string;
   tool?: string;
   intent?: 'request-input' | 'tool-use';
+  /**
+   * Native id of the tool call a tool or result event belongs to (Claude `tool_use.id` /
+   * `tool_use_id`, Codex `call_id`), pairing a call with its answer. Optional: absent in older
+   * records and in sources that do not provide it.
+   */
+  callId?: string;
   phase?: 'commentary' | 'final';
   /** Locally retained public notice excerpt, not the complete source message. */
   excerpt?: boolean;
