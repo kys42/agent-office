@@ -1,4 +1,7 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
+import { useState } from 'react';
+import { PetCustomizer } from './PetCustomizer';
+import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
   Plug,
   ShieldCheck,
@@ -14,6 +17,7 @@ import {
   Terminal,
   Languages,
   X,
+  Pencil,
 } from 'lucide-react';
 import type { Preferences, Snapshot, Provider } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
@@ -53,7 +57,7 @@ export function Settings({
   onTerminalSend,
 }: {
   snapshot: Snapshot;
-  onPrefs: (p: Partial<Preferences>) => void;
+  onPrefs: (p: Partial<Preferences>) => Promise<boolean>;
   onRefresh: () => void;
   notify: (s: string) => void;
   /** Desktop only; undefined hides the setting (web preview, demo). */
@@ -63,6 +67,7 @@ export function Settings({
   const { t } = useI18n();
   const s = t.settings;
   const p = snapshot.preferences;
+  const [customizing, setCustomizing] = useState<Provider | null>(null);
   const projects = [
     ...new Set([...snapshot.sessions.map((s) => s.project), ...p.excludedProjects]),
   ].sort();
@@ -83,6 +88,48 @@ export function Settings({
           <p>{s.subtitle}</p>
         </div>
       </header>
+      <section className="pet-settings settings-section">
+        <div className="section-title">
+          <div>
+            <span className="eyebrow">Little colleagues</span>
+            <h2>{t.pets.settingsTitle}</h2>
+          </div>
+          <span className="pet-settings-count">{t.pets.newFriends}</span>
+        </div>
+        <p>{t.pets.settingsHint}</p>
+        <div className="pet-provider-grid">
+          {(['claude', 'codex', 'openclaw'] as const).map((provider) => {
+            const look = petLook(provider, p.petAppearance);
+            return (
+              <button
+                className="pet-provider-card"
+                key={provider}
+                onClick={() => setCustomizing(provider)}
+                aria-label={t.pets.providerLabel(PROVIDERS[provider].short)}
+              >
+                <div className={`pet-provider-portrait face-${provider}`}>
+                  <Sprite provider={provider} size={80} />
+                </div>
+                <div>
+                  <span>{PROVIDERS[provider].short}</span>
+                  <b>{PET_CHARACTERS[look.character].name}</b>
+                  <small>
+                    {PET_ACCESSORIES[look.accessory]} · {t.pets.changeCharacter}
+                  </small>
+                </div>
+                <Pencil size={15} />
+              </button>
+            );
+          })}
+        </div>
+      </section>
+      {customizing && (
+        <PetCustomizer
+          provider={customizing}
+          onPrefs={onPrefs}
+          onClose={() => setCustomizing(null)}
+        />
+      )}
       <div className="settings-grid">
         <section className="settings-section">
           <div className="section-title">

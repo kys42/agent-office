@@ -1,3 +1,4 @@
+import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -374,7 +375,7 @@ export default function App() {
     },
   ];
   const docked = !!current || inbox || showUsage;
-  return (
+  const content = (
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
     >
@@ -610,6 +611,7 @@ export default function App() {
         </main>
         {current && (
           <Inspector
+            onPrefs={onPrefs}
             session={current}
             sessions={sessions}
             notices={snapshot?.notices ?? []}
@@ -774,6 +776,12 @@ export default function App() {
       )}
     </div>
   );
+
+  return (
+    <PetAppearanceContext.Provider value={prefs?.petAppearance}>
+      {content}
+    </PetAppearanceContext.Provider>
+  );
 }
 function Activity({
   sessions,
@@ -822,7 +830,7 @@ function Activity({
           <div className="activity-faces">
             {touched.slice(0, 6).map((s) => (
               <span key={s.id} className={`face face-${s.provider}`}>
-                <Sprite provider={s.provider} mood="idle" size={26} />
+                <Sprite session={s} provider={s.provider} mood="idle" size={26} />
               </span>
             ))}
           </div>
@@ -854,7 +862,7 @@ function Activity({
                   >
                     <time>{time(event.at)}</time>
                     <span className={`face face-${s.provider}`}>
-                      <Sprite provider={s.provider} mood={s.status} size={32} />
+                      <Sprite session={s} provider={s.provider} mood={s.status} size={32} />
                     </span>
                     <div>
                       <span className="activity-meta">

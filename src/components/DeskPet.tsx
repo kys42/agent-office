@@ -227,6 +227,7 @@ export function DeskPet({
           {/* Re-keyed per notice so a new arrival replays the hop. */}
           <span className="dock-pet-body" key={speaker?.notice.id ?? 'pet'}>
             <Sprite
+              session={pet.lead?.session}
               provider={pet.lead?.session.provider ?? 'claude'}
               mood={status ? 'think' : (pet.lead?.pose.mood ?? 'idle')}
               size={72}

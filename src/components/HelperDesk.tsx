@@ -40,7 +40,7 @@ export function HelperDesk({
       title={privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`}
       onClick={onClick}
     >
-      <Sprite provider={s.provider} mood={mood} size={44} />
+      <Sprite session={s} provider={s.provider} mood={mood} size={44} />
       <Furniture kind="helper" />
       {responded && (
         <span className="helper-result" title={t.desk.helper.result}>

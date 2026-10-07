@@ -1,3 +1,4 @@
+import { PetAppearanceContext } from './PetAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -59,10 +60,11 @@ export function DockCard() {
   const session = target ? sessions.find((s) => s.id === target.id) : undefined;
   const prefs = snapshot?.preferences;
   const close = () => void api.card?.('close');
-  return (
+  const content = (
     <div className="dock-card">
       {session && target ? (
         <Inspector
+          onPrefs={setPrefs}
           // A fresh card per open: a desk opens on the conversation even after a bubble chose news.
           key={`${session.id}:${opened}`}
           session={session}
@@ -99,5 +101,11 @@ export function DockCard() {
         </div>
       )}
     </div>
+  );
+
+  return (
+    <PetAppearanceContext.Provider value={prefs?.petAppearance}>
+      {content}
+    </PetAppearanceContext.Provider>
   );
 }

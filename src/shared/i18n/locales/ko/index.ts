@@ -1,3 +1,4 @@
+import { pets } from './pets';
 import type { Messages } from '../en';
 import { common } from './common';
 import { app } from './app';
@@ -47,4 +48,5 @@ export const ko: Messages = {
   dock,
   desk,
   terminal,
+  pets,
 };

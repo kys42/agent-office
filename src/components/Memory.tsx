@@ -133,7 +133,7 @@ export function Memory({
         {results.map(({ session: s, snippet }) => (
           <button className="memory-card" key={s.id} onClick={() => onSelect(s.id)}>
             <div className={`face face-lg face-${s.provider}`}>
-              <Sprite provider={s.provider} mood="idle" size={40} />
+              <Sprite session={s} provider={s.provider} mood="idle" size={40} />
             </div>
             <div className="memory-card-body">
               <div className="memory-card-top">

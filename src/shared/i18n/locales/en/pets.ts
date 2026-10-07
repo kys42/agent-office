@@ -1,0 +1,80 @@
+export const pets = {
+  characters: {
+    claude: {
+      name: 'Coco',
+      description: 'A cozy colleague in a knitted hat',
+    },
+    codex: {
+      name: 'Nemo',
+      description: 'A small, dependable terminal robot',
+    },
+    openclaw: {
+      name: 'Claw',
+      description: 'A crab with busy hands',
+    },
+    slime: {
+      name: 'Mallow',
+      description: 'A soft, bouncy slime',
+    },
+    devcat: {
+      name: 'Code Cat',
+      description: 'A thoughtful developer in glasses',
+    },
+    pebble: {
+      name: 'Pebble',
+      description: 'An easygoing little stone',
+    },
+    retrobot: {
+      name: 'Pico',
+      description: 'A friendly retro monitor robot',
+    },
+    cloud: {
+      name: 'Nimbus',
+      description: 'A cloud spirit full of ideas',
+    },
+  },
+  colors: {
+    original: 'Original',
+    mint: 'Mint',
+    peach: 'Peach',
+    lavender: 'Lavender',
+    sky: 'Sky',
+    butter: 'Butter',
+  },
+  accessories: {
+    none: 'Default look',
+    beret: 'Beret',
+    crown: 'Crown',
+    sprout: 'Sprout',
+    ribbon: 'Ribbon',
+    glasses: 'Glasses',
+  },
+  saveError: 'Could not save. Please try again.',
+  individualTitle: 'Customize this teammate',
+  editTitle: 'Customize this teammate · character · color · accessory',
+  preview: 'Animation preview',
+  walk: 'Walk',
+  actorScope: 'This look follows this teammate across conversations.',
+  sessionScope: 'Applies only to this teammate.',
+  chooseCharacter: 'Choose your little colleague',
+  chooseColor: 'Pick a favorite color',
+  chooseAccessory: 'Add a little detail',
+  resetColleague: 'Use tool default',
+  resetProvider: 'Original look',
+  cancel: 'Cancel',
+  saving: 'Saving…',
+  save: 'Save this look',
+  settingsTitle: 'Your little colleagues',
+  newFriends: '5 new friends',
+  settingsHint:
+    'Pick a default character for each tool. Customize one teammate from their work card.',
+  changeCharacter: 'Change character',
+  tooMany: 'Too many customization entries',
+  providerTitle: (name: string) => `${name} default character`,
+  providerScope: (name: string) =>
+    `The default look for ${name} teammates. Individually customized teammates keep their own looks.`,
+  characterLabel: (name: string) => `Character ${name}`,
+  colorLabel: (name: string) => `Color ${name}`,
+  accessoryLabel: (name: string) => `Accessory ${name}`,
+  providerLabel: (name: string) => `Customize ${name} character`,
+};

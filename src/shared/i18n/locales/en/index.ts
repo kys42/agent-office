@@ -1,3 +1,4 @@
+import { pets } from './pets';
 import { common } from './common';
 import { app } from './app';
 import { palette } from './palette';
@@ -47,6 +48,7 @@ export const en = {
   dock,
   desk,
   terminal,
+  pets,
 };
 
 export type Messages = typeof en;

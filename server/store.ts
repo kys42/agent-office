@@ -23,6 +23,7 @@ import { localizeNotice, noticeCandidates, noticeContentVersion } from '../src/s
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
 import { m } from '../src/shared/i18n/index.js';
+import { mergePetCustomization, normalizePetCustomization } from '../src/shared/pets.js';
 
 /** A session first seen this soon after its start is a live one, not history. */
 export const NEW_SESSION_MS = 2 * 60_000;
@@ -77,12 +78,16 @@ export class OfficeStore {
       { value: string } | undefined;
     const prefs = { ...DEFAULT_PREFS, ...(value ? JSON.parse(value.value) : {}) };
     if (patch) {
-      Object.assign(prefs, patch);
+      const petAppearance = patch.petAppearance
+        ? mergePetCustomization(prefs.petAppearance, patch.petAppearance)
+        : prefs.petAppearance;
+      Object.assign(prefs, patch, { petAppearance });
       if (!validOfficeSchedule(prefs)) throw new Error(m().server.prefs.scheduleOrder);
       this.db
         .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
         .run(JSON.stringify(prefs));
     }
+    if (prefs.petAppearance) prefs.petAppearance = normalizePetCustomization(prefs.petAppearance);
     return prefs;
   }
   upsert(sessions: Session[], provider: Provider) {
