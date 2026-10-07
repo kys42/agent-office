@@ -15,6 +15,7 @@ so you can see at a glance who's working, who's waiting on you, and what just fi
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-1e3a5f?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-read--only-3b2f63?style=flat-square)](#-let-your-agents-read-the-office-mcp)
 [![Local-first](https://img.shields.io/badge/data-stays%20on%20your%20Mac-1f4d3a?style=flat-square)](#-local-first-by-design)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-5b3a8c?style=flat-square)](#-license)
 
 **English** · [한국어](README.ko.md)
 
@@ -243,6 +244,12 @@ Tests use synthetic data and never modify your sources; only the live-connection
 ## 🗺️ Roadmap
 
 Not built yet, and deliberately not faked in the UI: approving permission prompts or controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, remote sync, and signing / notarization / auto-update.
+
+## 📄 License
+
+Agent Office is **source-available for noncommercial use only**, under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Personal projects, study, research, hobby use and noncommercial organizations are welcome. **Commercial use is not permitted.**
+
+Third-party code, fonts and assets bundled with the app keep their own licenses — see [Third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## 📚 Docs
 

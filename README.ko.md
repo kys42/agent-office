@@ -15,6 +15,7 @@ Claude Code · Codex · OpenClaw의 **실제 로컬 세션**을 책상에 앉은
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-1e3a5f?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-read--only-3b2f63?style=flat-square)](#-에이전트가-사무실-기억을-읽게-하기-mcp)
 [![Local-first](https://img.shields.io/badge/data-stays%20on%20your%20Mac-1f4d3a?style=flat-square)](#-로컬-우선-설계)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-5b3a8c?style=flat-square)](#-라이선스)
 
 [English](README.md) · **한국어**
 
@@ -241,6 +242,12 @@ node scripts/readme-hero.mjs ko  # 히어로 투어 GIF (npm run dev + ffmpeg �
 ## 🗺️ 로드맵
 
 아직 만들지 않았고, 화면에서 된 것처럼 꾸미지도 않는 것들: 권한 승인 전달·Orca/tmux 밖 터미널의 세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 동료 성장, 원격 동기화, 서명·공증·자동 업데이트.
+
+## 📄 라이선스
+
+Agent Office는 [PolyForm Noncommercial License 1.0.0](LICENSE.md)에 따라 **비상업적 이용에 한해** 소스를 공개합니다. 개인 프로젝트·학습·연구·취미, 비영리 기관의 사용은 자유롭게 할 수 있지만 **상업적 이용은 허용하지 않습니다.**
+
+앱에 포함된 서드파티 코드·폰트·에셋은 각자의 라이선스를 따릅니다 — [서드파티 고지](THIRD_PARTY_NOTICES.md).
 
 ## 📚 문서
 
