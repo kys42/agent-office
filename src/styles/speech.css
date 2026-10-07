@@ -382,6 +382,13 @@
 .speech-bubble.is-expanded .speech-request-text {
   display: block;
   -webkit-line-clamp: unset;
-  max-height: 72px;
+  max-height: 34px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* With a quote the unfolded bubble shares the same headroom (first-row office desk 164px, desk
+   row 162px under the tools band): header ≈46 + quote ≈26+34 + text 56. */
+.speech-bubble.is-expanded:has(.speech-request) .speech-copy b,
+.desk-row .speech-bubble.is-expanded:has(.speech-request) .speech-copy b {
+  max-height: 56px;
 }

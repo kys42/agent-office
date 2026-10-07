@@ -254,7 +254,7 @@ function answered(prefs: Record<string, unknown> = {}): Snapshot {
       ...snapshot.notices![0],
       id: 'answer',
       eventId: 'answer',
-      text: '여백을 8px로 맞췄어요.',
+      text: '여백을 8px로 맞췄어요. 버튼 색도 브랜드 컬러로 바꾸고, 바뀐 화면은 스크린샷으로 남겼어요. 다음으로 어두운 모드도 확인해 둘게요.',
       at: now - 60_000,
       receivedAt: now - 60_000,
       dismissedAt: null,
@@ -273,9 +273,26 @@ test('Pointing at a desk quotes what the person asked, only while pointed at', a
   await desk.locator('.office-pet').hover();
   await expect(bubble.locator('.speech-request')).toContainText('내 요청');
   await expect(bubble.locator('.speech-request')).toContainText('로그인 화면 여백을 다듬어 줘');
+  // Unfolded on a first-row desk, the quote and the answer stay inside the office map.
+  await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  const map = (await page.locator('.office-map').boundingBox())!;
+  expect((await bubble.boundingBox())!.y).toBeGreaterThanOrEqual(map.y);
   await page.mouse.move(5, 5);
   await expect(bubble).toBeVisible();
   await expect(bubble.locator('.speech-request')).toHaveCount(0);
+});
+
+test('The pet quotes the request only while hovered', async ({ page }) => {
+  const snapshot = answered();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini');
+  await page.reload();
+  const speech = page.locator('.dock-pet-speech');
+  await expect(speech).toContainText('여백을 8px로 맞췄어요.');
+  await expect(speech.locator('.speech-request')).toBeHidden();
+  await page.locator('.dock-pet-anchor').hover();
+  await expect(speech.locator('.speech-request')).toBeVisible();
+  await expect(speech.locator('.speech-request')).toContainText('로그인 화면 여백을 다듬어 줘');
 });
 
 test('The row quotes the request when its desk is pointed at, and screen sharing hides it', async ({

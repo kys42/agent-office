@@ -727,10 +727,11 @@ body.card-mode {
   animation: spin 1s linear infinite;
 }
 
-/* The pet quotes the request only while hovered, with the other details. */
-.dock-pet-speech .speech-request {
+/* The pet quotes the request only while hovered, with the other details (more specific than
+   speech.css, which loads later). */
+.dock-pet-speech .speech-bubble .speech-request {
   display: none;
 }
-.dock-pet-anchor:hover .dock-pet-speech .speech-request {
+.dock-pet-anchor:hover .dock-pet-speech .speech-bubble .speech-request {
   display: block;
 }
