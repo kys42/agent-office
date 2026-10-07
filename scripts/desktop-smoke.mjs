@@ -78,6 +78,12 @@ try {
     },
   });
   const page = await app.firstWindow();
+  await page.locator('.office-guide').waitFor();
+  await page.getByRole('button', { name: /^(Explore on my own|직접 둘러볼게요)$/ }).click();
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('office:onboarding:v1:live')),
+    'seen',
+  );
   const checkMacDock = async (stage) => {
     if (process.platform === 'darwin')
       assert.equal(
@@ -239,6 +245,7 @@ try {
       deskFloor: true,
       ipcPersistence: true,
       rendererIsolation: true,
+      firstRunGuide: true,
       macDockIcon: process.platform === 'darwin',
     }),
   );
