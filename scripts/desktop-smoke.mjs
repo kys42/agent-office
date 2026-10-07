@@ -64,7 +64,11 @@ let app;
 try {
   app = await electron.launch({
     // Own profile: a running Agent Office holds the single-instance lock on the default one.
-    args: ['.', `--user-data-dir=${path.join(temp, 'profile')}`],
+    executablePath: process.env.AGENT_OFFICE_EXECUTABLE,
+    args: [
+      ...(process.env.AGENT_OFFICE_EXECUTABLE ? [] : ['.']),
+      `--user-data-dir=${path.join(temp, 'profile')}`,
+    ],
     env: {
       ...process.env,
       AGENT_OFFICE_DATA_DIR: path.join(temp, 'data'),
