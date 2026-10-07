@@ -1,3 +1,11 @@
+# 보조 묶음·닫은 말풍선 다시 보기 · 2026-10-07 (Issue #21)
+- 단위(`tests/office-row.test.ts`): `helperSlots` 경계(3명 각자·4명 묶음), 두 레이아웃에서 묶음 한 칸(줄 너비·사무실 높이), 닫음·만료 말풍선은 평소 없음·가리키면 peek(최신 소식, 원래 모양), 살아 있는 말풍선은 peek 아님, 소식 없으면 진행 문구. 기존 'Every desk and helper' 레이아웃 테스트는 묶음 안의 id까지 센다
+- UI(`tests/ui/helpers-peek.spec.ts`): 보조 5명 → 큰 사무실·책상 줄·바닥 책상에 묶음 1개·×5·부르는 보조가 대표·명단 5개·항목 열기·Esc 닫기. 보조 3명 → 각자 책상. 닫은 말풍선 → 평소 없음, 가리키면 '닫은 말풍선'(접기 없음), 말풍선 위로 옮겨도 유지, 떠나면 사라짐(큰 사무실·책상 줄)
+- 스크린샷: `.local/helper-stack-*.png`
+- 닫기 직후 다시 보기가 곧바로 되살아나던 문제를 기존 UI 테스트가 잡아 수정. 닫은 뒤 커서가 떠났다 돌아오면 다시 보기(UI)
+- 실행 메모: `test:ui`가 띄우는 `npm run dev`(수집기 4318 + vite 5173)는 다른 세션이 같은 포트를 쓰면 중간에 꺼져 `ERR_CONNECTION_REFUSED`가 연달아 난다. 이 작업 폴더에서 dev 서버를 따로 띄워 두고 다시 돌리면 59개 모두 통과
+- 주의: 명단 이름에 `span` 선택자를 쓰면 캐릭터 그림(`span.sprite-window`)까지 늘어난다. 이름은 전용 클래스(`.helper-stack-name`)
+
 # 최신 UI 통합 · 2026-10-07
 
 - 기준: kys42/global 864d94b, 별도 detached worktree `agent-office-pets-latest`.

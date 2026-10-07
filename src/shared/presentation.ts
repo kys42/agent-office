@@ -103,6 +103,20 @@ export function focusLevel(s: Session, now = Date.now()): FocusLevel {
   return FOCUS_MINUTES.filter((m) => minutes >= m).length as FocusLevel;
 }
 
+/**
+ * Who sits in front of a stacked helper desk: one waiting for the person (call/error) first,
+ * then one at work, then the most recently active.
+ */
+export function stackLead(members: Session[], working: (s: Session) => boolean) {
+  const calling = (s: Session) => s.status === 'call' || s.status === 'error';
+  return [...members].sort(
+    (a, b) =>
+      Number(calling(b)) - Number(calling(a)) ||
+      Number(working(b)) - Number(working(a)) ||
+      b.updatedAt - a.updatedAt,
+  )[0];
+}
+
 /** One sheet per five minutes of the current task (at least one), up to eight. */
 export const PAPER_MINUTES = 5;
 export const MAX_PAPERS = 8;

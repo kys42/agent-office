@@ -5,6 +5,8 @@ import { isCustomZone } from './zones';
 export const STATION_WIDTH = 164;
 export const STATION_HEIGHT = 238;
 export const HELPER_ROW_HEIGHT = 72;
+/** From this many helpers on one colleague, they share one stacked desk ("×N"). */
+export const HELPER_STACK_AT = 4;
 const PADDING = 14;
 const LABEL = 38;
 const GAP = 22;
@@ -14,7 +16,8 @@ export interface StationPlacement {
   id: string;
   x: number;
   y: number;
-  children: { id: string; x: number; y: number }[];
+  /** Helper desks; a `stack` slot holds every helper id behind one stacked desk. */
+  children: { id: string; x: number; y: number; stack?: string[] }[];
 }
 export interface ProjectArea {
   key: string;
@@ -83,6 +86,15 @@ export function officeTopology(sessions: Session[]): OfficeTopology {
   return { primary, projects, children };
 }
 
+/**
+ * A colleague's helper desks: one each, or — from HELPER_STACK_AT helpers — one stacked desk
+ * that keeps every helper reachable through its list.
+ */
+export function helperSlots(helpers: Session[]): { id: string; stack?: string[] }[] {
+  if (helpers.length < HELPER_STACK_AT) return helpers.map((c) => ({ id: c.id }));
+  return [{ id: helpers[0].id, stack: helpers.map((c) => c.id) }];
+}
+
 /** Only topology/ordering changes furniture. Activity, selection and recent-use sorting do not. */
 export function layoutSignature(sessions: Session[]) {
   return sessions
@@ -125,8 +137,8 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
             id: s.id,
             x: stationX,
             y: stationY,
-            children: (children.get(s.id) ?? []).map((c, i) => ({
-              id: c.id,
+            children: helperSlots(children.get(s.id) ?? []).map((c, i) => ({
+              ...c,
               x: stationX + 10 + (i % 2) * 73,
               y: stationY + STATION_HEIGHT + Math.floor(i / 2) * HELPER_ROW_HEIGHT - 4,
             })),
@@ -146,7 +158,7 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
         });
         const helpers = Math.max(
           0,
-          ...row.map((s) => Math.ceil((children.get(s.id)?.length ?? 0) / 2)),
+          ...row.map((s) => Math.ceil(helperSlots(children.get(s.id) ?? []).length / 2)),
         );
         stationY += STATION_HEIGHT + helpers * HELPER_ROW_HEIGHT;
       }
@@ -193,7 +205,7 @@ export interface RowZone {
   x: number;
   width: number;
   stations: { id: string; x: number }[];
-  helpers: { id: string; parent: string; x: number }[];
+  helpers: { id: string; parent: string; x: number; stack?: string[] }[];
   benches: { key: string; members: string[]; x: number; width: number }[];
 }
 export interface RowLayout {
@@ -237,8 +249,8 @@ export function layoutRow(
         cursor += STATION_WIDTH;
       }
       for (const s of bench.members)
-        for (const c of children.get(s.id) ?? []) {
-          zone.helpers.push({ id: c.id, parent: s.id, x: cursor });
+        for (const c of helperSlots(children.get(s.id) ?? [])) {
+          zone.helpers.push({ ...c, parent: s.id, x: cursor });
           cursor += HELPER_WIDTH;
         }
     }

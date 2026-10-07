@@ -42,13 +42,13 @@ import {
   ROW_SCENE_HEIGHT,
 } from '../shared/dock-geometry';
 import { residentLabel, type OfficeModel } from '../shared/office-model';
-import { deskSpeech, hopping } from '../shared/speech';
+import { deskSpeech, hopping, shownSpeech } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
-import { HelperDesk } from './HelperDesk';
+import { HelperDesk, HelperStack } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
@@ -112,6 +112,11 @@ export function DeskRow({
   const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + 128;
   const track = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
+  // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
+  const [closed, setClosed] = useState<string | null>(null);
+  // The dock is see-through: a peek starts only on something drawn (pet, plate, buttons),
+  // not when the cursor merely crosses a desk's transparent box on its way elsewhere.
+  const [pointed, setPointed] = useState<string | null>(null);
   // Clicking a bubble unfolds it in place; a reply opens under it when the session can take one.
   const [expanded, setExpanded] = useState<string | null>(null);
   const [replying, setReplying] = useState<{
@@ -128,7 +133,12 @@ export function DeskRow({
     const wheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
       // An unfolded bubble scrolls its own text.
-      if (e.target instanceof Element && e.target.closest('.speech-bubble.is-expanded')) return;
+      // Unfolded bubbles and a helper list scroll themselves.
+      if (
+        e.target instanceof Element &&
+        e.target.closest('.speech-bubble.is-expanded, .helper-stack-list')
+      )
+        return;
       el.scrollLeft += e.deltaY;
       e.preventDefault();
     };
@@ -342,7 +352,20 @@ export function DeskRow({
                   const branch = branchInfo(s);
                   // A just-arrived request plays on the desk and speaks first.
                   const speech = deskSpeech(s, model.notices, model.bubbleHours, model.now);
-                  const { bubble, arrival, hop } = speech;
+                  const { arrival, hop } = speech;
+                  // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                  const shown = shownSpeech(
+                    s,
+                    model.notices,
+                    model.bubbleHours,
+                    model.now,
+                    speech,
+                    hover === s.id || expanded === s.id || replying?.station === s.id,
+                    // An unfolded or replying bubble (a peek too) stays without the cursor.
+                    (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
+                      closed !== s.id,
+                  );
+                  const bubble = shown?.speech.bubble;
                   const focus = focusLevel(s, model.now);
                   const replyId = bubble?.sessionId ?? s.id;
                   const replyTarget = targets[replyId];
@@ -355,7 +378,15 @@ export function DeskRow({
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${top}px)` }}
                       onMouseEnter={() => setHover(s.id)}
-                      onMouseLeave={() => setHover((h) => (h === s.id ? null : h))}
+                      onMouseOver={(e) => {
+                        if (e.target instanceof Element && e.target.closest('[data-solid]'))
+                          setPointed(s.id);
+                      }}
+                      onMouseLeave={() => {
+                        setHover((h) => (h === s.id ? null : h));
+                        setPointed((p) => (p === s.id ? null : p));
+                        setClosed((c) => (c === s.id ? null : c));
+                      }}
                     >
                       <i className="desk-glow" aria-hidden="true" />
                       <Furniture kind="chair" />
@@ -458,13 +489,12 @@ export function DeskRow({
                           </button>
                         </>
                       )}
-                      {(speech.shows(hover === s.id) ||
-                        expanded === s.id ||
-                        replying?.station === s.id) && (
+                      {shown && (
                         <div className="row-speech" data-solid>
                           <SpeechBubble
                             session={s}
-                            speech={speech}
+                            speech={shown.speech}
+                            peek={shown.peek}
                             privacy={privacy}
                             expanded={expanded === s.id}
                             onExpandedChange={(on) => setExpanded(on ? s.id : null)}
@@ -488,10 +518,11 @@ export function DeskRow({
                                   }
                                 : undefined
                             }
-                            onDismiss={() =>
-                              bubble &&
-                              onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
-                            }
+                            onDismiss={() => {
+                              setClosed(s.id);
+                              if (bubble)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
+                            }}
                           />
                         </div>
                       )}
@@ -525,6 +556,23 @@ export function DeskRow({
                     />
                   ))}
                 {zone.helpers.map((helper) => {
+                  const hasNews = (h: Session) =>
+                    model.notices.some(
+                      (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                    );
+                  if (helper.stack)
+                    return (
+                      <HelperStack
+                        key={`stack:${helper.parent}`}
+                        members={helper.stack.map((id) => byId.get(id)!)}
+                        parentId={helper.parent}
+                        at={{ x: helper.x, y: helperY }}
+                        pose={(h) => model.view(h.id)!.pose}
+                        news={hasNews}
+                        privacy={privacy}
+                        onOpen={open}
+                      />
+                    );
                   const s = byId.get(helper.id)!;
                   const pose = model.view(s.id)!.pose;
                   return (

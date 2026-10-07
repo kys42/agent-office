@@ -134,6 +134,7 @@ export const shared: Messages['shared'] = {
     },
     focus: ['작업 중', '집중 중', '몰입 중', '불타는 중'],
   },
+  settled: (label) => `${label} · 해결됨`,
   tone: {
     mine: '내 요청',
     thought: '생각 중',

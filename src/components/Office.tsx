@@ -7,10 +7,10 @@ import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
-import { HelperDesk } from './HelperDesk';
+import { HelperDesk, HelperStack } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
-import { arrivalEnds, deskSpeech, hopping } from '../shared/speech';
+import { arrivalEnds, deskSpeech, hopping, shownSpeech } from '../shared/speech';
 import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
@@ -75,6 +75,8 @@ export function Office({
   const [aspect, setAspect] = useState(1.6);
   const [zoom, setZoom] = useState<number | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
+  const [closed, setClosed] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
   const [hidden, setHidden] = useState(document.hidden);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -178,7 +180,8 @@ export function Office({
       (s) => s.id === selected || s.resident?.sessionIds.includes(selected),
     );
     const el = holder.current.querySelector<HTMLElement>(
-      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"]`,
+      // A stacked helper is found through the shared desk's member list.
+      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"], .helper-desk[data-members~="${CSS.escape(selected)}"]`,
     );
     if (!el) return;
     const box = el.getBoundingClientRect(),
@@ -322,7 +325,18 @@ export function Office({
                   const pose = presentSession(s, clock);
                   // A just-arrived request plays on the desk and speaks first.
                   const speech = deskSpeech(s, notices, bubbleHours, clock);
-                  const { bubble, unread, arrival, hop } = speech;
+                  const { unread, arrival, hop } = speech;
+                  // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                  const shown = shownSpeech(
+                    s,
+                    notices,
+                    bubbleHours,
+                    clock,
+                    speech,
+                    hover === s.id || active,
+                    hover === s.id && closed !== s.id,
+                  );
+                  const bubble = shown?.speech.bubble;
                   const replyId = bubble?.sessionId ?? s.id;
                   const replyTarget = quick ? replyTargets[replyId] : null;
                   const canReply = !!replyTarget?.canSend;
@@ -335,6 +349,12 @@ export function Office({
                       key={s.id}
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
+                      // The whole desk (bubble included) is what the person points at.
+                      onMouseEnter={() => setHover(s.id)}
+                      onMouseLeave={() => {
+                        setHover((h) => (h === s.id ? null : h));
+                        setClosed((c) => (c === s.id ? null : c));
+                      }}
                     >
                       <i className="desk-glow" aria-hidden="true" />
                       <Furniture kind="chair" />
@@ -361,14 +381,8 @@ export function Office({
                         }}
                         onDragEnd={endDrag}
                         onClick={() => onSelect(s.id)}
-                        onMouseEnter={() => {
-                          setHover(s.id);
-                          onHover?.(s.id);
-                        }}
-                        onMouseLeave={() => {
-                          setHover(null);
-                          onHover?.(null);
-                        }}
+                        onMouseEnter={() => onHover?.(s.id)}
+                        onMouseLeave={() => onHover?.(null)}
                       >
                         <FocusEffects level={focus} />
                         <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
@@ -420,10 +434,11 @@ export function Office({
                           {unread > 0 && <em>{t.desk.unread(unread)}</em>}
                         </small>
                       </button>
-                      {speech.shows(hover === s.id || active) && (
+                      {shown && (
                         <SpeechBubble
                           session={s}
-                          speech={speech}
+                          speech={shown.speech}
+                          peek={shown.peek}
                           privacy={privacy}
                           onOpen={() => {
                             if (bubble) {
@@ -432,10 +447,11 @@ export function Office({
                               onNews(bubble.sessionId);
                             } else onSelect(s.id);
                           }}
-                          onDismiss={() =>
-                            bubble &&
-                            onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
-                          }
+                          onDismiss={() => {
+                            setClosed(s.id);
+                            if (bubble)
+                              onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
+                          }}
                           reply={
                             canReply
                               ? {
@@ -475,6 +491,27 @@ export function Office({
                 })}
                 {area.stations.flatMap((station) =>
                   station.children.map((child) => {
+                    if (child.stack) {
+                      const members = child.stack.map((id) => byId.get(id)!);
+                      return (
+                        <HelperStack
+                          key={`stack:${station.id}`}
+                          members={members}
+                          parentId={station.id}
+                          at={child}
+                          pose={(h) => presentSession(h, clock)}
+                          news={(h) =>
+                            notices.some(
+                              (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                            )
+                          }
+                          privacy={privacy}
+                          className={`${members.some((h) => h.id === selected) ? 'chosen' : ''} ${members.some((h) => h.id === spotlight) ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                          selected={selected}
+                          onOpen={onSelect}
+                        />
+                      );
+                    }
                     const s = byId.get(child.id)!;
                     const childPose = presentSession(s, clock);
                     return (

@@ -73,7 +73,8 @@ test('Every desk and helper stays in a nonoverlapping project area at dense and 
       const all = [...roots, ...helpers],
         l = layoutOffice(all, aspect);
       const ids = l.projects.flatMap((p) =>
-        p.stations.flatMap((s) => [s.id, ...s.children.map((c) => c.id)]),
+        // A stacked helper desk still accounts for every helper behind it.
+        p.stations.flatMap((s) => [s.id, ...s.children.flatMap((c) => c.stack ?? [c.id])]),
       );
       assert.deepEqual(ids.sort(), all.map((s) => s.id).sort());
       for (const p of l.projects) {

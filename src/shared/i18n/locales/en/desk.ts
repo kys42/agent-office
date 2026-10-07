@@ -28,11 +28,17 @@ export const desk = {
   },
   helper: {
     name: 'Helper',
+    stackLabel: (count: number, calling: boolean) =>
+      `${count} helpers${calling ? ', one is calling' : ''} · show list`,
+    stackCount: (count: number) => `${count} helpers`,
+    stackList: 'Helper roster',
+    responded: 'Left a reply',
     label: (name: string, responded: boolean) =>
       `${name}, helper${responded ? ', left a result' : ''}`,
     result: "Left a response · stays until the main session's next request",
   },
   bubble: {
+    peek: 'Earlier bubble',
     expandLabel: 'Expand speech bubble',
     collapseLabel: 'Collapse speech bubble',
     expand: 'Expand',

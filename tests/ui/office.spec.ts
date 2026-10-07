@@ -585,7 +585,9 @@ test('Sparse old seats become one fitted room with movable furniture, project zo
   }, fixture);
   await page.goto('/');
   await expect(page.locator('.office-pet')).toHaveCount(18);
-  await expect(page.locator('.helper-desk')).toHaveCount(4);
+  // Four helpers on one colleague share one stacked desk (every one is in its list).
+  await expect(page.locator('.helper-desk')).toHaveCount(1);
+  await expect(page.locator('.helper-stack-count')).toHaveText('×4');
   await expect(page.locator('.office-chair')).toHaveCount(18);
   await expect(page.locator('.floor-navigation, .empty-desk, .map-bg')).toHaveCount(0);
   await expect(page.locator('.project-area')).toHaveCount(4);
@@ -594,7 +596,7 @@ test('Sparse old seats become one fitted room with movable furniture, project zo
   );
   const positions = () =>
     page
-      .locator('.project-area, .desk-station, .helper-desk')
+      .locator('.project-area, .desk-station, .helper-desk, .helper-stack')
       .evaluateAll((els) => els.map((el) => (el as HTMLElement).style.transform));
   const before = await positions();
   const assertFit = async () => {

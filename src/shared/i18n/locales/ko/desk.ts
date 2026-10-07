@@ -26,10 +26,16 @@ export const desk: Messages['desk'] = {
   },
   helper: {
     name: '보조 동료',
+    stackLabel: (count, calling) =>
+      `보조 동료 ${count}명${calling ? ', 부르는 보조 있음' : ''} · 명단 보기`,
+    stackCount: (count) => `보조 ${count}명`,
+    stackList: '보조 동료 명단',
+    responded: '응답을 남겼어요',
     label: (name, responded) => `${name}, 보조 동료${responded ? ', 결과 남김' : ''}`,
     result: '응답을 남겼어요 · 메인의 다음 요청까지 머물러요',
   },
   bubble: {
+    peek: '지난 말풍선',
     expandLabel: '말풍선 전체 보기',
     collapseLabel: '말풍선 짧게 보기',
     expand: '전체 보기',

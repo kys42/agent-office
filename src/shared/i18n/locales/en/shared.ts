@@ -139,6 +139,8 @@ export const shared = {
     focus: ['Working', 'Focused', 'In the zone', 'On fire'],
   },
   /** Bubble headings per kind of speech. */
+  /** A peeked call or error that was already answered. */
+  settled: (label: string) => `${label} · resolved`,
   tone: {
     mine: 'My request',
     thought: 'Thinking',

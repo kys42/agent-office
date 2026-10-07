@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import { demoSnapshot } from '../src/lib/demo.js';
 import {
   FLOOR_ZONE_GAP,
+  HELPER_STACK_AT,
+  helperSlots,
   layoutOffice,
   layoutRow,
   officeTopology,
   STATION_WIDTH,
 } from '../src/shared/office-layout.js';
-import { snapshotEvents, stationSpeech } from '../src/shared/speech.js';
+import { shownSpeech, snapshotEvents, stationSpeech } from '../src/shared/speech.js';
+import { stackLead } from '../src/shared/presentation.js';
 import type { OfficeNotice, Session } from '../src/shared/types.js';
 import { setLocale } from '../src/shared/i18n/index.js';
 // These tests assert the original Korean copy: pin the language so results never depend on the
@@ -222,4 +225,99 @@ test('the floor version keeps the same topology with room for a flag between zon
       'a flag pole fits between zones',
     );
   assert.equal(floor.width - row.width, (FLOOR_ZONE_GAP - 18) * (floor.zones.length - 1));
+});
+
+test('from four helpers a colleague gets one stacked desk in both layouts; three keep their own', () => {
+  const host = session(0);
+  const helpers = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      session(10 + i, 'team', { attachedTo: host.id, officeSeat: undefined }),
+    );
+  assert.equal(HELPER_STACK_AT, 4);
+  assert.deepEqual(
+    helperSlots(helpers(3)).map((slot) => slot.stack),
+    [undefined, undefined, undefined],
+  );
+  assert.deepEqual(
+    helperSlots(helpers(4)).map((slot) => slot.stack?.length),
+    [4],
+  );
+  const five = helpers(5);
+  // Row: one helper slot right after the bench, holding all five.
+  const row = layoutRow([host, ...five]);
+  assert.equal(row.zones[0].helpers.length, 1);
+  assert.equal(row.zones[0].helpers[0].parent, host.id);
+  assert.deepEqual(
+    row.zones[0].helpers[0].stack,
+    five.map((h) => h.id),
+  );
+  assert.ok(row.width < layoutRow([host, ...helpers(3)]).width, 'narrower than three desks');
+  // Big office: one slot and one helper row under the colleague.
+  const office = layoutOffice([host, ...five]);
+  const station = office.projects[0].stations[0];
+  assert.equal(station.children.length, 1);
+  assert.deepEqual(
+    station.children[0].stack,
+    five.map((h) => h.id),
+  );
+  assert.equal(office.projects[0].height, layoutOffice([host, ...helpers(1)]).projects[0].height);
+});
+
+test('a closed or expired bubble comes back only while the desk is pointed at', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const closed = notice(s.id, { dismissedAt: now - 1000 });
+  const speech = stationSpeech(s, [closed], 3, now);
+  assert.equal(speech.bubble, undefined);
+  assert.equal(speech.peek?.id, closed.id);
+  assert.equal(shownSpeech(s, [closed], 3, now, speech, false), undefined, 'hidden by default');
+  const shown = shownSpeech(s, [closed], 3, now, speech, true);
+  assert.equal(shown?.peek, true);
+  assert.equal(shown?.speech.bubble?.id, closed.id);
+  assert.equal(shown?.speech.tone, 'reply', 'in its own shape');
+  // Expired (older than the bubble hours) comes back the same way.
+  const old = notice(s.id, { at: now - 4 * 3600_000, receivedAt: now - 4 * 3600_000 });
+  const expired = stationSpeech(s, [old], 3, now);
+  assert.equal(expired.bubble, undefined);
+  assert.equal(shownSpeech(s, [old], 3, now, expired, true)?.speech.bubble?.id, old.id);
+  // The newest notice is what comes back, not an older one.
+  const older = notice(s.id, { at: now - 60_000, dismissedAt: now - 30_000, text: '예전 말' });
+  assert.equal(stationSpeech(s, [older, closed], 3, now).peek?.id, closed.id);
+  // A live bubble is never a peek, and a desk with no news still shows progress on hover.
+  const live = notice(s.id);
+  assert.equal(
+    shownSpeech(s, [live], 3, now, stationSpeech(s, [live], 3, now), false)?.peek,
+    false,
+  );
+  const quiet = stationSpeech(s, [], 3, now);
+  assert.equal(quiet.peek, undefined);
+  assert.equal(shownSpeech(s, [], 3, now, quiet, true)?.peek, false);
+});
+
+test('the stacked desk shows the helper that most needs the person, then one at work', () => {
+  const host = session(0);
+  const helper = (i: number, patch: Partial<Session>) =>
+    session(10 + i, 'team', { attachedTo: host.id, officeSeat: undefined, ...patch });
+  const idle = helper(0, { status: 'idle', updatedAt: now });
+  const busy = helper(1, { status: 'work', updatedAt: now - 60_000 });
+  const asking = helper(2, { status: 'call', updatedAt: now - 120_000 });
+  const working = (s: Session) => s.status === 'work';
+  assert.equal(stackLead([idle, busy, asking], working).id, asking.id);
+  assert.equal(stackLead([idle, busy], working).id, busy.id);
+  assert.equal(stackLead([helper(3, { updatedAt: now - 5000 }), idle], () => false).id, idle.id);
+});
+
+test('an answered call comes back settled, not calling again', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const ask = notice(s.id, {
+    kind: 'attention',
+    phase: undefined,
+    text: '원래 앱에서 질문이나 입력 요청을 확인해 주세요.',
+    resolvedAt: now - 60_000,
+  });
+  const speech = stationSpeech(s, [ask], 3, now);
+  assert.equal(speech.bubble, undefined, 'a resolved call has no bubble');
+  const shown = shownSpeech(s, [ask], 3, now, speech, true);
+  assert.equal(shown?.peek, true);
+  assert.equal(shown?.speech.tone, 'message');
+  assert.match(shown!.speech.label, /해결됨$/);
 });
