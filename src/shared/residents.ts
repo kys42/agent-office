@@ -2,6 +2,7 @@ import type { Session } from './types';
 import { attachSessions, parentSession } from './office';
 import { isWorking } from './presentation';
 import { taskStart } from './lifecycle';
+import { m } from './i18n';
 
 export const isHelper = (s: Session) => ['subagent', 'child'].includes(s.relation?.kind ?? '');
 export const isBackground = (s: Session) =>
@@ -29,14 +30,16 @@ export function helperPresence(s: Session, sessions: Session[], now = Date.now()
   // Unknown relationships are not grounds for disappearing a recently observed helper.
   return { visible: (host?.zone ?? s.zone) === 'office' || (!host?.zone && !s.zone), host };
 }
-export const sessionScopeLabel = (s: Session) =>
-  s.origin?.kind === 'scheduled'
-    ? '자동 실행'
+export const sessionScopeLabel = (s: Session) => {
+  const t = m().shared.residents;
+  return s.origin?.kind === 'scheduled'
+    ? t.scheduled
     : s.origin?.kind === 'internal'
-      ? '내부 보조'
+      ? t.internal
       : isHelper(s)
-        ? '보조 작업'
-        : '대화';
+        ? t.helper
+        : t.conversation;
+};
 
 /** Canonical sessions remain intact in the store/MCP. Only office occupancy is projected. */
 export function officeResidents(sessions: Session[], now = Date.now()) {
@@ -72,18 +75,25 @@ export function officeResidents(sessions: Session[], now = Date.now()) {
     });
     const current = ordered[0];
     const seats = group.flatMap((s) => (s.officeSeat === undefined ? [] : [s.officeSeat]));
+    // Pinning belongs to the colleague, not to whichever run speaks for it right now.
+    const pinned = group.some((s) => s.pinned);
     residents.push({
       ...current,
+      pinned,
       attachedTo: undefined,
+      // As for a single session (officeZone): pinned stays in the office whatever the age,
+      // only a manual archive takes it out.
       zone:
-        !isWorking(current, now) &&
-        !needsAttention(current) &&
-        !current.pinned &&
-        !current.returnedAt &&
-        isBackground(current) &&
-        current.zone === 'office'
-          ? 'waiting'
-          : current.zone,
+        pinned && !current.archived
+          ? 'office'
+          : !isWorking(current, now) &&
+              !needsAttention(current) &&
+              !pinned &&
+              !current.returnedAt &&
+              isBackground(current) &&
+              current.zone === 'office'
+            ? 'waiting'
+            : current.zone,
       officeSeat: seats.length ? Math.min(...seats) : undefined,
       resident: {
         key: `actor:${current.actor!.id}`,

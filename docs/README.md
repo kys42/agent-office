@@ -7,13 +7,16 @@ docs/
 ├── README.md                     # 전체 문서 지도
 ├── golden/                       # 제품과 플랫폼의 공통 정본
 │   ├── PROJECT-CONTEXT.md         # 사용자 요구·채택/대체된 결정
-│   ├── GOLDEN-OFFICE-POLICY.md     # 공간·동료·상태·대화·소식 정책
+│   ├── GOLDEN-OFFICE-POLICY.md     # 공간·동료·그룹·대화·소식 정책
+│   ├── STATUS-POLICY.md           # 상태 정책서: 상태 사다리·라벨·할 일 그룹
+│   ├── FEATURE-POLICY.md          # 기능 정책서: 데스크 펫·책상 줄·말풍선·가리기·고정
 │   └── OFFICE-OBSERVATION-PROTOCOL.md # 플랫폼 독립 관측 계약
 ├── development/                  # 구현·연결·검증·개발 이력
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
 │   ├── SESSION-INGESTION.md       # 수집 흐름·자체/외부 모듈·장애 분석
 │   ├── PERFORMANCE-DESIGN.md      # 경량화 측정·단계별 제안 (미구현)
 │   ├── OFFICE-ASSETS.md          # 가구·펫·소품 확장 계약
+│   ├── TERMINAL.md               # 원래 터미널로 이동·바로 보내기
 │   ├── MCP.md                    # 읽기 전용 도구 연결
 │   ├── QA.md                     # 날짜별 검증 결과·한계
 │   └── PLAN.md                   # 초기 구현 계획 이력
@@ -21,20 +24,24 @@ docs/
 │   ├── RESEARCH.md               # 참고 레포·포맷·기능 후보 조사
 │   ├── INGESTION-REFERENCE-AUDIT.md # 모듈별 도입/이식/제외 근거
 │   └── design/                   # 날짜별 디자인 시안 카탈로그
-└── images/                       # 문서 공용 합성 데모 캡처
+└── images/{en,ko}/               # README·문서용 합성 데모 캡처 (scripts/screenshots.mjs, readme-hero.mjs)
 ```
 
 | 목적 | 시작 문서 |
 | --- | --- |
 | 제품 방향·사용자 요구 이해 | [프로젝트 맥락](golden/PROJECT-CONTEXT.md) |
-| UI나 상태의 의미 변경 | [골든 정책](golden/GOLDEN-OFFICE-POLICY.md) |
+| 공간·그룹·소식의 의미 변경 | [골든 정책](golden/GOLDEN-OFFICE-POLICY.md) |
+| 상태(일하는 중·대기 중·쉬는 중·퇴근) 규칙 변경 | [상태 정책서](golden/STATUS-POLICY.md) |
+| 데스크 펫·책상 줄·말풍선·가리기·고정 변경 | [기능 정책서](golden/FEATURE-POLICY.md) |
 | 플랫폼 추가·공통 필드 변경 | [관측 규격](golden/OFFICE-OBSERVATION-PROTOCOL.md) |
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
+| 원래 터미널 이동·바로 보내기 | [터미널 연결](development/TERMINAL.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
 | CPU·메모리 경량화 계획 | [측정과 경량화 설계 — 제안](development/PERFORMANCE-DESIGN.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
+| macOS 설치·DMG·배포 파이프라인 | [macOS 배포](development/MACOS-RELEASE.md) |
 | 실행과 검증 | [루트 README](../README.md), [검증 기록](development/QA.md), [MCP 연결](development/MCP.md) |
 | 시각 방향 비교 | [테마 시안](research/design/office-themes-2026-10-04.md) |
 

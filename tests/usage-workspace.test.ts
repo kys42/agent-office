@@ -13,6 +13,11 @@ import { entryCost } from '../server/pricing.js';
 import { branchInfo } from '../src/shared/branch.js';
 import { focusLevel } from '../src/shared/presentation.js';
 import { demoSnapshot } from '../src/lib/demo.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const now = Date.now();
 const parse = (raw: any[], provider: 'claude' | 'codex' = 'claude', partial = false) =>
   parseRecords(raw, { provider, sourcePath: '/fixture/session.jsonl', mtime: now, now, partial });
@@ -256,6 +261,7 @@ test('Focus follows known current request and live work, never session lifetime,
   };
   assert.equal(focusLevel(s, now), 1);
   assert.equal(focusLevel({ ...s, taskStartedAt: now - 16 * 60_000 }, now), 2);
+  assert.equal(focusLevel({ ...s, taskStartedAt: now - 31 * 60_000 }, now), 3);
   assert.equal(focusLevel({ ...s, status: 'done' }, now), 0);
   assert.equal(focusLevel({ ...s, updatedAt: now - 3 * 60_000 }, now), 0);
   assert.equal(

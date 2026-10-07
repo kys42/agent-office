@@ -6,7 +6,7 @@
   "type": "module",
   "description": "A small office for your real AI sessions",
   "author": "kys42",
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "dist-desktop/main.cjs",
   "engines": {
     "node": ">=24"
@@ -25,7 +25,9 @@
     "test:desktop": "node scripts/desktop-smoke.mjs",
     "test:mcp": "tsx scripts/mcp-smoke.ts",
     "format": "prettier --write \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
-    "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json"
+    "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
+    "package:dmg": "npm run package && node scripts/dmg.mjs",
+    "test:package": "node scripts/dmg-smoke.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",

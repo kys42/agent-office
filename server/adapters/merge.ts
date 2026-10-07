@@ -2,6 +2,7 @@ import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import type { Session } from '../../src/shared/types.js';
 import { hash } from './normalize.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
+import { CANONICAL } from '../../src/shared/canonical.js';
 
 // Platform-independent: multiple transport fragments may describe one native conversation.
 export function mergeSessions(input: Session[]): Session[] {
@@ -33,6 +34,7 @@ export function mergeSessions(input: Session[]): Session[] {
         events,
         latest.observedStatus ?? latest.status,
         latest.updatedAt,
+        CANONICAL,
       );
       return {
         ...latest,

@@ -5,7 +5,9 @@
 | 문서 | 책임 |
 | --- | --- |
 | [프로젝트 맥락과 의사결정](PROJECT-CONTEXT.md) | 사용자 요구, 채택·대체된 방향, 후속 작업 경계 |
-| [사무실 정책](GOLDEN-OFFICE-POLICY.md) | 그룹·가구·상태·대화·소식의 제품 의미 |
+| [사무실 정책](GOLDEN-OFFICE-POLICY.md) | 그룹·가구·공간·대화·소식의 제품 의미 |
+| [상태 정책서](STATUS-POLICY.md) | 관측 → 파생 → 표현, 상태 사다리(일하는 중 → 대기 중 → 쉬는 중 → 퇴근 → 보관)와 라벨·그룹 매핑 |
+| [기능 정책서](FEATURE-POLICY.md) | 데스크 펫·한 줄 사무실·바닥 책상·말풍선·가리기·고정·창 입력 규칙 |
 | [공통 관측 규격](OFFICE-OBSERVATION-PROTOCOL.md) | 플랫폼과 무관한 세션·관계·실행·이벤트 계약 |
 
 기능을 바꿀 때 먼저 확인하는 정본이다. 구현 세부와 검증 결과는 [development](../development/README.md), 선택 근거와 미확정 후보는 [research](../research/README.md)로 연결한다. 과거 시안이나 작업 일지에 다른 규칙이 남아 있어도 현재 계약을 대체하지 않는다.

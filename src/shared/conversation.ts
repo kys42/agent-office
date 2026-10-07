@@ -1,15 +1,12 @@
 import { messageExcerpt } from './activity';
 import type { OfficeEvent, OfficeNotice } from './types';
+import { liveLabels } from './labels';
 
 export type ConversationKind = 'request' | 'progress' | 'reply' | 'message' | 'work';
 export type ConversationFilter = 'all' | Exclude<ConversationKind, 'work'>;
-export const CONVERSATION_LABELS: Record<ConversationKind, string> = {
-  request: '내 요청',
-  progress: '진행 상황',
-  reply: '최종 응답',
-  message: '기타 응답',
-  work: '도구 기록',
-};
+export const CONVERSATION_LABELS: Record<ConversationKind, string> = liveLabels(
+  (t) => t.shared.conversation,
+);
 /** A public assistant message is final only when its source provides completion evidence. */
 export function conversationKind(e: OfficeEvent): ConversationKind {
   if (e.kind === 'user') return 'request';

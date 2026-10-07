@@ -1,5 +1,6 @@
 import http from 'node:http';
 import { OfficeService } from './service.js';
+import { m } from '../src/shared/i18n/index.js';
 const service = new OfficeService();
 service.start();
 const allowed = new Set([
@@ -42,14 +43,14 @@ const server = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) {
       body += chunk;
-      if (body.length > 30000) throw new Error('요청이 너무 큽니다.');
+      if (body.length > 30000) throw new Error(m().server.rpc.tooLarge);
     }
     const { method, args } = JSON.parse(body);
     const result = await service.call(method, args);
     res.end(JSON.stringify({ result }));
   } catch (e) {
     res.writeHead(400);
-    res.end(JSON.stringify({ error: e instanceof Error ? e.message : '요청 실패' }));
+    res.end(JSON.stringify({ error: e instanceof Error ? e.message : m().server.rpc.failed }));
   }
 });
 server.listen(4318, '127.0.0.1', () =>

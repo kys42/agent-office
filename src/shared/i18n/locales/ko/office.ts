@@ -1,0 +1,71 @@
+import type { Messages } from '../en';
+
+export const office: Messages['office'] = {
+  region: '픽셀 사무실',
+  phase: { dawn: '이른 아침', day: '낮', dusk: '해질녘', night: '밤' },
+  station: (name, status) => `${name}, ${status}`,
+  dragToZone: (posture) => `${posture} · 끌어서 다른 구역으로`,
+  empty: {
+    title: '다음 동료를 기다리고 있어요',
+    body: '새 활동이 생기면 책상이 놓여요.',
+    action: '라운지 동료 보기',
+  },
+  drop: {
+    newZone: '여기에 놓으면 새 구역을 만들어요',
+    moveTo: (zone) => `${zone ?? '이'} 구역으로 옮겨요`,
+    elsewhere: '다른 구역 바닥이나 빈 바닥에 놓아 주세요',
+  },
+  hud: {
+    counts: (projects, desks) => `${projects}개 프로젝트 · ${desks}개 책상`,
+    helpers: (n) => `보조 ${n}`,
+    working: (n) => `${n}명 작업 중`,
+    callTitle: '기다리는 동료에게 가기',
+    calling: (n) => `불러요 ${n}`,
+  },
+  zoom: {
+    outLabel: '사무실 축소',
+    outTitle: '축소',
+    fitLabel: '사무실 모두 보기',
+    fitTitle: '모든 동료를 한눈에',
+    fit: '모두 보기',
+    inLabel: '사무실 확대',
+    inTitle: '확대 · 화면을 스크롤해 둘러보기',
+  },
+  spaces: '사무실 공간',
+  zones: { office: '사무실', waiting: '대기 라운지', archive: '보관 공간' },
+  live: {
+    demo: '예시 데이터',
+    paused: '수집을 쉬고 있어요',
+    live: '5초마다 로컬 기록을 확인해요',
+  },
+  settingsLabel: '사무실 설정 열기',
+  settingsTitle: '퇴근·보관 기준 바꾸기',
+  refreshLabel: '세션 새로고침',
+  refreshTitle: '지금 다시 확인',
+  veiled: {
+    summary: '가린 동료',
+    body: '다음 대화가 오면 저절로 돌아와요. 지금 다시 보려면 고르세요.',
+    again: '다시 보기',
+    all: '모두 다시 보기',
+  },
+  records: {
+    summary: '보조·자동 작업 기록',
+    body: '이전 작업의 보조 동료와 내부 실행은 여기에 접어 둬요.',
+    hidden: '숨긴 기록',
+    more: '기록 더 보기',
+  },
+  archive: {
+    title: '보관 공간',
+    body: '오래된 기록을 모아두었어요. 원본과 메모는 그대로 남아 있어요.',
+    hiddenSession: '숨긴 세션',
+    hiddenProject: '프로젝트 숨김',
+    activity: (ago, opens) => `${ago} 활동 · ${opens}번 열어봄`,
+    byYou: '직접 보관함',
+    aged: '오래된 기록',
+    bringBack: '사무실로 데려오기',
+  },
+  emptyRoom: {
+    title: '이 공간은 비어 있어요',
+    body: '동료들의 활동에 맞춰 자연스럽게 채워집니다.',
+  },
+};

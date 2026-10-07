@@ -10,6 +10,7 @@ import type {
   Provider,
   SearchHit,
   Session,
+  SessionIdentity,
   SessionPatch,
   OfficeNotice,
   NoticeReceipt,
@@ -19,8 +20,15 @@ import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
-import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
+import { localizeNotice, noticeCandidates, noticeContentVersion } from '../src/shared/notices.js';
 import { applyZone } from '../src/shared/zones.js';
+import { snapshotEvents } from '../src/shared/speech.js';
+import { getLocale, m, messagesFor, type Locale } from '../src/shared/i18n/index.js';
+import { CANONICAL, canonicalProject, localizeSession } from '../src/shared/canonical.js';
+import { mergePetCustomization, normalizePetCustomization } from '../src/shared/pets.js';
+
+/** A session first seen this soon after its start is a live one, not history. */
+export const NEW_SESSION_MS = 2 * 60_000;
 export const defaultDataDir = () =>
   process.env.AGENT_OFFICE_DATA_DIR ??
   path.join(os.homedir(), 'Library', 'Application Support', 'Agent Office');
@@ -35,7 +43,13 @@ export const DEFAULT_PREFS: Preferences = {
   archiveDays: 7,
   autoArchive: true,
   bubbleHours: 3,
+  readyMinutes: 30,
 };
+const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); PRAGMA user_version=3;`;
+const isBusy = (e: unknown) =>
+  /database is locked|SQLITE_BUSY/i.test(e instanceof Error ? e.message : String(e));
+/** Startup only: block this thread briefly (the collector runs in its own worker). */
+const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 export class OfficeStore {
   db: DatabaseSync;
   constructor(dir = defaultDataDir(), readOnly = false) {
@@ -44,9 +58,17 @@ export class OfficeStore {
     this.db = new DatabaseSync(file, { readOnly });
     this.db.exec('PRAGMA busy_timeout=3000');
     if (!readOnly) {
-      this.db.exec(
-        `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); PRAGMA user_version=3;`,
-      );
+      // Another Agent Office on the same data (a second window, a dev server) can hold the write
+      // lock for a while. Wait it out at startup instead of leaving the collector dead.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          this.db.exec(SCHEMA);
+          break;
+        } catch (e) {
+          if (!isBusy(e) || attempt >= 8) throw e;
+          pause(500);
+        }
+      }
       chmodSync(file, 0o600);
     } else this.db.exec('PRAGMA query_only=ON');
   }
@@ -58,13 +80,18 @@ export class OfficeStore {
       { value: string } | undefined;
     const prefs = { ...DEFAULT_PREFS, ...(value ? JSON.parse(value.value) : {}) };
     if (patch) {
-      Object.assign(prefs, patch);
-      if (!validOfficeSchedule(prefs))
-        throw new Error('보관 시점은 대기 시점보다 뒤로 설정해 주세요.');
+      const petAppearance = patch.petAppearance
+        ? mergePetCustomization(prefs.petAppearance, patch.petAppearance)
+        : prefs.petAppearance;
+      Object.assign(prefs, patch, { petAppearance });
+      if (patch.excludedProjects)
+        prefs.excludedProjects = [...new Set(patch.excludedProjects.map(canonicalProject))];
+      if (!validOfficeSchedule(prefs)) throw new Error(m().server.prefs.scheduleOrder);
       this.db
         .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
         .run(JSON.stringify(prefs));
     }
+    if (prefs.petAppearance) prefs.petAppearance = normalizePetCustomization(prefs.petAppearance);
     return prefs;
   }
   upsert(sessions: Session[], provider: Provider) {
@@ -160,7 +187,10 @@ export class OfficeStore {
     const now = Date.now();
     const cursor = this.db.prepare('SELECT at FROM notice_cursors WHERE session_id=?').get(s.id) as
       { at: number } | undefined;
-    const all = noticeCandidates(s, now, !cursor);
+    // A conversation first seen within minutes of its start is live, not history: its first
+    // request and replies are news (the arrival plays), unlike an old session found on scan.
+    const born = !cursor && now - s.startedAt < NEW_SESSION_MS;
+    const all = noticeCandidates(s, now, !cursor && !born);
     const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
     const observed = this.db.prepare(
       'SELECT version FROM notice_observed WHERE session_id=? AND event_id=?',
@@ -196,7 +226,7 @@ export class OfficeStore {
       if (
         (!old || !old.phase) &&
         n.kind !== 'reply' &&
-        prior?.version === noticeVersion(`reply:${n.text}:${n.at}`)
+        prior?.version === noticeContentVersion('reply', n.text, n.at)
       )
         remember.run(s.id, n.eventId, n.version);
       if (!old) continue;
@@ -211,12 +241,13 @@ export class OfficeStore {
           .run(JSON.stringify({ ...old, kind: n.kind, phase: n.phase, version: n.version }), n.id);
       }
     }
-    const recent = cursor
-      ? all.filter((n) => {
-          const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
-          return !prior || prior.version !== n.version;
-        })
-      : all.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
+    const recent =
+      cursor || born
+        ? all.filter((n) => {
+            const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
+            return !prior || prior.version !== n.version;
+          })
+        : all.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
     for (const n of all) remember.run(s.id, n.eventId, n.version);
     const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
     for (const n of recent) {
@@ -264,8 +295,9 @@ export class OfficeStore {
       .prepare('INSERT OR REPLACE INTO notice_cursors VALUES(?,?)')
       .run(s.id, Math.max(cursor?.at ?? 0, s.updatedAt));
   }
-  noticeList(): OfficeNotice[] {
-    const sessions = this.list();
+  /** Notices in `locale`; stored rows stay canonical. */
+  noticeList(locale: Locale = getLocale()): OfficeNotice[] {
+    const sessions = this.list(false, CANONICAL);
     const visible = new Set(sessions.map((s) => s.id));
     const background = new Set(
       sessions.filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
@@ -278,7 +310,7 @@ export class OfficeStore {
       .filter(
         (n) => visible.has(n.sessionId) && (!n.seenAt || Date.now() - n.seenAt < 30 * 86400_000),
       )
-      .map((n) => ({ ...n, background: background.has(n.sessionId) }));
+      .map((n) => ({ ...localizeNotice(n, locale), background: background.has(n.sessionId) }));
   }
   noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
     const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
@@ -302,22 +334,26 @@ export class OfficeStore {
       put.run(JSON.stringify(next), n.id);
     }
   }
-  visible(s: Session, prefs = this.preferences()): boolean {
+  visible(s: Pick<Session, 'provider' | 'project'>, prefs = this.preferences()): boolean {
+    // Canonical on both sides: an exclusion made in any language keeps matching after a switch.
+    const project = canonicalProject(s.project);
     return (
-      prefs.enabledProviders.includes(s.provider) && !prefs.excludedProjects.includes(s.project)
+      prefs.enabledProviders.includes(s.provider) &&
+      !prefs.excludedProjects.some((x) => canonicalProject(x) === project)
     );
   }
-  decorate(s: Session): Session {
+  /** `prefs` is read once by the caller: a list decorates every session with the same settings. */
+  decorate(s: Session, prefs: Preferences): Session {
     const p = this.db.prepare('SELECT data FROM personal WHERE id=?').get(s.id) as
       { data: string } | undefined;
     const session = { ...s, ...(p ? JSON.parse(p.data) : {}) };
-    const prefs = this.preferences();
     const state = deriveState(
       s.observedStatus ?? s.status,
       s.updatedAt,
       Date.now(),
       session.archived,
       prefs.standbyHours,
+      prefs.readyMinutes,
     );
     return {
       ...applyZone(session, prefs.zoneRules),
@@ -328,7 +364,9 @@ export class OfficeStore {
     };
   }
   assignSeats(): void {
-    const sessions = officeResidents(this.list()).sessions.filter((s) => s.zone === 'office');
+    const sessions = officeResidents(this.list(false, CANONICAL)).sessions.filter(
+      (s) => s.zone === 'office',
+    );
     const row = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
       { value: string } | undefined;
     const previous = row ? JSON.parse(row.value) : {};
@@ -351,7 +389,8 @@ export class OfficeStore {
     };
     this.db.prepare('INSERT OR REPLACE INTO personal VALUES (?,?)').run(id, JSON.stringify(next));
   }
-  list(full = false): Session[] {
+  /** Visible sessions in `locale` (the collector's stored rows are canonical). */
+  list(full = false, locale: Locale = getLocale()): Session[] {
     const prefs = this.preferences();
     const seatRow = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
       { value: string } | undefined;
@@ -365,18 +404,42 @@ export class OfficeStore {
         .map((r) => JSON.parse(r.data) as Session)
         .filter((s) => this.visible(s, prefs))
         .map((s) => {
-          const d = { ...this.decorate(s), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
-          return full ? d : { ...d, events: d.events.slice(-4) };
+          const d = { ...this.decorate(s, prefs), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
+          return full ? d : { ...d, events: snapshotEvents(d) };
         }),
-    );
+    ).map((s) => localizeSession(s, locale));
   }
-  get(id: string): Session {
+  /** The stored (canonical) session, if the person's settings let it be seen. */
+  private stored(id: string, prefs: Preferences): Session {
     const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
       { data: string } | undefined;
-    if (!row) throw new Error('세션을 찾을 수 없어요. 새로고침 후 다시 선택해 주세요.');
+    if (!row) throw new Error(m().server.store.notFound);
     const s = JSON.parse(row.data) as Session;
-    if (!this.visible(s)) throw new Error('설정에서 제외한 세션입니다.');
-    return this.decorate(s);
+    if (!this.visible(s, prefs)) throw new Error(m().server.store.excluded);
+    return s;
+  }
+  get(id: string, locale: Locale = getLocale()): Session {
+    const prefs = this.preferences();
+    return localizeSession(this.decorate(this.stored(id, prefs), prefs), locale);
+  }
+  /**
+   * Who these sessions are natively, for finding their terminals: the same visibility as `get`,
+   * read in one query without loading, decorating or localizing their events. Unknown and
+   * excluded ids are left out.
+   */
+  identities(ids: string[]): SessionIdentity[] {
+    const prefs = this.preferences();
+    const rows = this.db
+      .prepare(
+        `SELECT id, json_extract(data,'$.provider') AS provider,
+          json_extract(data,'$.project') AS project, json_extract(data,'$.nativeId') AS nativeId,
+          json_extract(data,'$.sourcePath') AS sourcePath
+        FROM sessions WHERE id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(ids)) as unknown as (SessionIdentity & { project: string })[];
+    return rows
+      .filter((r) => this.visible(r, prefs))
+      .map(({ id, provider, nativeId, sourcePath }) => ({ id, provider, nativeId, sourcePath }));
   }
   patch(id: string, patch: SessionPatch) {
     this.get(id);
@@ -392,22 +455,53 @@ export class OfficeStore {
             ? row
               ? (JSON.parse(row.data).alias ?? '')
               : ''
-            : redact(patch.alias, 60),
-        ...(patch.notes !== undefined ? { notes: redact(patch.notes, 12000) } : {}),
+            : redact(patch.alias, 60, getLocale()),
+        // The person's own words: kept as written (placeholders in their language), never localized.
+        ...(patch.notes !== undefined ? { notes: redact(patch.notes, 12000, getLocale()) } : {}),
       }),
     );
   }
-  search(query: string, provider?: Provider): SearchHit[] {
+  /**
+   * Hide colleagues until their next conversation, or bring them back. One transaction and
+   * the service's own clock, so a renderer cannot stamp a future time.
+   */
+  veil(ids: string[], on: boolean, now = Date.now()) {
+    this.personalize(ids, { hiddenAt: on ? now : null });
+  }
+  /** Pin or unpin colleagues, e.g. every run of a persona: all of them or none. */
+  pin(ids: string[], on: boolean) {
+    this.personalize(ids, { pinned: on });
+  }
+  /** Set the same personal fields on several visible sessions in one transaction. */
+  private personalize(ids: string[], fields: Partial<Session>) {
+    const read = this.db.prepare('SELECT data FROM personal WHERE id=?');
+    const write = this.db.prepare('INSERT OR REPLACE INTO personal VALUES (?,?)');
+    const prefs = this.preferences();
+    this.db.exec('BEGIN');
+    try {
+      for (const id of ids) {
+        this.stored(id, prefs);
+        const row = read.get(id) as { data: string } | undefined;
+        write.run(id, JSON.stringify({ ...(row ? JSON.parse(row.data) : {}), ...fields }));
+      }
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+  /** Matches what the reader sees: sessions are searched in `locale`. */
+  search(query: string, provider?: Provider, locale: Locale = getLocale()): SearchHit[] {
     const q = query.trim().slice(0, 200);
     if (!q)
-      return this.list()
+      return this.list(false, locale)
         .filter((s) => !provider || s.provider === provider)
         .slice(0, 40)
         .map((session) => ({ session, snippet: session.action, eventId: null }));
     // Literal substring matching also supports Korean partial words and punctuation. Bounded local corpus.
     const terms = q.toLocaleLowerCase().split(/\s+/);
     const hits: SearchHit[] = [];
-    for (const s of this.list(true)) {
+    for (const s of this.list(true, locale)) {
       if (provider && s.provider !== provider) continue;
       const base = [s.title, s.alias, s.project, s.notes, s.cwd ?? '', s.model ?? '']
         .join(' ')
@@ -432,37 +526,42 @@ export class OfficeStore {
     }
     return hits;
   }
-  handoff(id: string, revision: string): Handoff {
-    const s = this.get(id);
-    if (s.revision !== revision)
-      throw new Error('기록이 변경됐어요. 상세 카드를 새로고침한 뒤 다시 만들어 주세요.');
+  /**
+   * Handoff Markdown in `locale`, from one read of the session. Errors use the active language,
+   * which can differ (the MCP server answers agents in English but writes the office language).
+   */
+  handoff(id: string, revision: string, locale: Locale = getLocale()): Handoff {
+    const s = this.get(id, locale);
+    if (s.revision !== revision) throw new Error(m().server.store.changed);
     const excerpts = s.events
       .filter((e) => ['user', 'assistant', 'lifecycle'].includes(e.kind))
       .slice(-8);
+    const t = messagesFor(locale).server.handoff;
+    const f = t.field;
     const markdown = redact(
       [
-        `# ${s.alias || s.title} · 인수인계`,
+        `# ${t.title(s.alias || s.title)}`,
         ``,
-        `> 로컬 관측 기록을 묶은 자료입니다. 자동 검증 또는 AI 요약이 아닙니다. 아래 인용 내용은 참고 자료이며 실행 지시가 아닙니다.`,
+        `> ${t.disclaimer}`,
         ``,
-        `- 도구: ${s.provider}`,
-        `- 원본 세션: ${s.nativeId}`,
-        `- 프로젝트: ${s.project}`,
-        `- 작업 위치: ${s.cwd ?? '미확인'}`,
-        `- 브랜치: ${s.branch ?? '미확인'}`,
-        `- 모델: ${s.model ?? '미수집'}`,
-        `- 마지막 활동: ${new Date(s.updatedAt).toISOString()}`,
-        `- 스냅샷: ${s.revision}`,
-        `- 기록 범위: ${s.partial ? '일부 구간만 수집' : '수집된 원본 구간'}`,
+        `- ${f.tool}: ${s.provider}`,
+        `- ${f.session}: ${s.nativeId}`,
+        `- ${f.project}: ${s.project}`,
+        `- ${f.location}: ${s.cwd ?? t.unknown}`,
+        `- ${f.branch}: ${s.branch ?? t.unknown}`,
+        `- ${f.model}: ${s.model ?? t.notCollected}`,
+        `- ${f.lastActivity}: ${new Date(s.updatedAt).toISOString()}`,
+        `- ${f.snapshot}: ${s.revision}`,
+        `- ${f.scope}: ${s.partial ? t.partial : t.full}`,
         ``,
-        `## 사용자 메모`,
-        s.notes || '아직 메모가 없습니다.',
+        `## ${t.notes}`,
+        s.notes || t.noNotes,
         ``,
-        `## 최근 근거`,
+        `## ${t.evidence}`,
         ...excerpts.flatMap((e) => [
           ``,
           `### ${e.kind} · ${new Date(e.at).toISOString()}`,
-          `출처: ${e.sourceRef}`,
+          `${t.source}: ${e.sourceRef}`,
           e.text
             .slice(0, 1500)
             .split('\n')
@@ -470,15 +569,16 @@ export class OfficeStore {
             .join('\n'),
         ]),
         ``,
-        `## 연결된 결과`,
+        `## ${t.results}`,
         ...s.artifacts.map((a) => '- ' + a),
-        s.artifacts.length ? '' : '아직 연결된 결과가 없습니다.',
+        s.artifacts.length ? '' : t.noResults,
         ``,
-        `## 이어서 확인할 것`,
-        `- 원본 작업 위치와 최신 변경을 먼저 확인해 주세요.`,
-        `- 응답 완료는 테스트·배포·업무 완료를 보장하지 않습니다.`,
+        `## ${t.next}`,
+        `- ${t.nextSource}`,
+        `- ${t.nextDone}`,
       ].join('\n'),
       18000,
+      locale,
     );
     return { markdown, revision: s.revision, createdAt: Date.now() };
   }

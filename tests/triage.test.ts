@@ -35,19 +35,21 @@ const notice = (sessionId: string, patch: Partial<OfficeNotice> = {}): OfficeNot
   ...patch,
 });
 
-test('triage puts calls first, then unread finals, then live work, then the rest', () => {
+test('triage puts calls first, then unread finals, then live work, standing by, then the rest', () => {
   const call = make('call', { status: 'call' });
   const result = make('result');
   const busy = make('busy', { status: 'work', updatedAt: now - 5_000 });
+  const ready = make('ready', { status: 'ready', updatedAt: now - 10 * 60_000 });
   const stale = make('stale', { status: 'work', updatedAt: now - 30 * 60_000 });
   const notices = [notice('result')];
-  const groups = triage([stale, busy, result, call], notices, now);
+  const groups = triage([stale, ready, busy, result, call], notices, now);
   assert.deepEqual(
     groups.map((g) => [g.group, g.sessions.map((s) => s.id)]),
     [
       ['attention', ['call']],
       ['results', ['result']],
       ['working', ['busy']],
+      ['standby', ['ready']],
       ['resting', ['stale']],
     ],
   );

@@ -14,6 +14,8 @@ import type {
 } from '../../src/shared/types.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
 import { runtimeObservation, deriveState } from '../../src/shared/runtime.js';
+import { messagesFor, type Locale } from '../../src/shared/i18n/index.js';
+import { CANONICAL, canonical } from '../../src/shared/canonical.js';
 export { deriveState } from '../../src/shared/runtime.js';
 
 type Obj = Record<string, any>;
@@ -25,22 +27,27 @@ const publicPhase = (value: unknown): OfficeEvent['phase'] =>
       : undefined;
 export const hash = (value: string) =>
   createHash('sha256').update(value).digest('hex').slice(0, 20);
-export function redact(value: unknown, limit = 6000): string {
+/**
+ * Removes secrets. Collected records use the canonical placeholders (localized on read);
+ * text written straight for a reader (notes, handoff) passes that reader's language.
+ */
+export function redact(value: unknown, limit = 6000, locale: Locale = CANONICAL): string {
+  const t = messagesFor(locale).shared.redaction;
   return String(value ?? '')
     .replace(/\x1b\[[0-9;]*m/g, '')
     .replace(
       /-----BEGIN [\w ]*PRIVATE KEY-----[\s\S]*?-----END [\w ]*PRIVATE KEY-----/g,
-      '[비공개 키 숨김]',
+      t.privateKey,
     )
     .replace(
       /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]+)\b/g,
-      '[토큰 숨김]',
+      t.token,
     )
     .replace(
       /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)\s*["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}&]+/gi,
-      '$1[숨김]',
+      (_, prefix: string) => prefix + t.hidden,
     )
-    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, 'Bearer [숨김]')
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, () => `Bearer ${t.hidden}`)
     .slice(0, limit);
 }
 export const num = (v: unknown): number | null =>
@@ -90,7 +97,7 @@ export const emptyUsage = (): Usage => ({
   contextUsed: null,
   contextWindow: null,
   scope: 'session',
-  source: '아직 수집되지 않음',
+  source: canonical().server.session.usageNotCollected,
 });
 export interface ParseOptions {
   provider: Provider;
@@ -106,8 +113,10 @@ export interface ParseOptions {
   model?: string;
   sourceKind?: 'jsonl' | 'sqlite';
 }
+/** Parsed sessions are canonical (see src/shared/canonical.ts), whatever the display language. */
 export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   const now = opt.now ?? Date.now();
+  const t = canonical().server;
   const resolved = resolveIdentity(raw, opt);
   const { owner, relation } = resolved;
   const isSubagent = relation.kind === 'subagent';
@@ -131,7 +140,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   let startedAt = opt.mtime,
     updatedAt = 0,
     status: Mood = 'idle',
-    reason = '저장된 기록 · 실행 여부는 미확인',
+    reason = t.reason.saved,
     usage = emptyUsage();
   const events: OfficeEvent[] = [];
   const seen = new Map<string, number>();
@@ -263,8 +272,8 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       }
     }
     if (r.type === 'event_msg') {
-      const t = p.type;
-      if (t === 'token_count' && p.info) {
+      const type = p.type;
+      if (type === 'token_count' && p.info) {
         const u = p.info.total_token_usage;
         const last = p.info.last_token_usage;
         const totalKey =
@@ -305,28 +314,26 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         usage.contextWindow = num(p.info.model_context_window) ?? usage.contextWindow;
         usage.contextUsed = num(p.info.last_token_usage?.input_tokens) ?? usage.contextUsed;
       }
-      if (t === 'task_started') {
-        set('think', 'task_started 이벤트');
-        add(r, at, 'lifecycle', '새 턴을 시작했어요', undefined, '', { lifecycle: 'started' });
+      if (type === 'task_started') {
+        set('think', t.reason.taskStarted);
+        add(r, at, 'lifecycle', t.event.turnStarted, undefined, '', { lifecycle: 'started' });
         usage.contextWindow = num(p.model_context_window) ?? usage.contextWindow;
       }
-      if (t === 'task_complete') {
-        set('done', 'task_complete 이벤트 · 업무 전체 완료와는 다름');
-        add(r, at, 'lifecycle', '이번 턴의 응답이 완료됐어요', undefined, '', {
-          lifecycle: 'completed',
-        });
+      if (type === 'task_complete') {
+        set('done', t.reason.taskComplete);
+        add(r, at, 'lifecycle', t.event.turnCompleted, undefined, '', { lifecycle: 'completed' });
       }
-      if (t === 'turn_aborted') {
-        set('idle', 'turn_aborted 이벤트');
-        add(r, at, 'lifecycle', '턴이 중단됐어요', undefined, '', { lifecycle: 'aborted' });
+      if (type === 'turn_aborted') {
+        set('idle', t.reason.turnAborted);
+        add(r, at, 'lifecycle', t.event.turnAborted, undefined, '', { lifecycle: 'aborted' });
       }
-      if (t === 'user_message') {
+      if (type === 'user_message') {
         const text = cleanPrompt(String(p.message ?? ''));
         if (!title && text) title = text.slice(0, 140);
         add(r, at, 'user', text);
-        if (text) set('think', '사용자 메시지 이후 기록');
+        if (text) set('think', t.reason.afterUser);
       }
-      if (t === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel))
+      if (type === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel))
         add(r, at, 'assistant', String(p.message ?? ''), undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
@@ -341,16 +348,14 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         add({ ...r, id: p.id ?? r.id }, at, p.role, text, undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
-        if (p.role === 'user' && text) set('think', '사용자 메시지 이후 기록');
+        if (p.role === 'user' && text) set('think', t.reason.afterUser);
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
         const tool = String(p.name ?? 'tool');
-        add({ ...r, id: p.call_id ?? p.id }, at, 'tool', `${tool} 실행`, tool);
+        add({ ...r, id: p.call_id ?? p.id }, at, 'tool', t.event.toolRun(tool), tool);
         set(
           tool.includes('request_user_input') ? 'call' : 'work',
-          tool.includes('request_user_input')
-            ? '입력 요청 도구 호출 기록 · 원래 앱에서 확인'
-            : '도구 호출 기록',
+          tool.includes('request_user_input') ? t.reason.inputTool : t.reason.toolCall,
         );
       }
       if (['function_call_output', 'custom_tool_call_output'].includes(p.type)) {
@@ -363,7 +368,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             1800,
           ),
         );
-        set('work', '도구 결과 기록 · 다음 응답 대기');
+        set('work', t.reason.toolResultWaiting);
       }
     }
     if (['assistant', 'user', 'message'].includes(r.type) && m.role) {
@@ -372,7 +377,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       if (role === 'user' && !r.isMeta && text) {
         if (!title) title = text.slice(0, 140);
         add(r, at, 'user', text);
-        set('think', '사용자 메시지 이후 기록');
+        set('think', t.reason.afterUser);
       }
       if (role === 'assistant') {
         model = m.model ?? model;
@@ -388,7 +393,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
                   ? 'commentary'
                   : undefined),
           });
-        if (text) set('think', '최근 응답 기록');
+        if (text) set('think', t.reason.recentReply);
         const u = m.usage;
         if (u) {
           const input = num(u.input_tokens ?? u.input),
@@ -427,7 +432,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           if (!prev || (value.output ?? 0) >= (prev.output ?? 0)) usageByMessage.set(key, value);
         }
         if (['end_turn', 'stop'].includes(m.stop_reason ?? m.stopReason)) {
-          set('done', '응답 종료 기록 · 업무 완료 여부는 미확인');
+          set('done', t.reason.replyEnded);
         }
       }
       if (Array.isArray(m.content))
@@ -438,13 +443,13 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               { ...r, id: b.id ?? r.id ?? r.uuid },
               at,
               'tool',
-              `${tool} 실행`,
+              t.event.toolRun(tool),
               tool,
               `:tool${i}`,
             );
             set(
               /AskUserQuestion|request_user_input/.test(tool) ? 'call' : 'work',
-              '도구 호출 기록',
+              t.reason.toolCall,
             );
           }
           if (b.type === 'tool_result') {
@@ -456,12 +461,12 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               undefined,
               ':result',
             );
-            set('work', '도구 결과 기록 · 오류가 있어도 자동 복구 중일 수 있음');
+            set('work', t.reason.toolResultRecovering);
           }
         }
       if (role === 'toolResult') {
-        add(r, at, 'result', text || `${m.toolName ?? '도구'} 결과`, m.toolName);
-        set('work', '도구 결과 기록');
+        add(r, at, 'result', text || t.event.toolResult(m.toolName ?? t.event.tool), m.toolName);
+        set('work', t.reason.toolResult);
       }
     }
   }
@@ -479,9 +484,9 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   }
   nativeId = authoritativeId ?? nativeId;
   updatedAt = updatedAt || opt.mtime;
-  const state = deriveState(status, updatedAt, now);
-  const project = cwd ? path.basename(cwd) : (opt.agentName ?? '작업 공간 미확인');
-  const activity = summarizeActivity(events, status, updatedAt);
+  const state = deriveState(status, updatedAt, now, false, undefined, undefined, CANONICAL);
+  const project = cwd ? path.basename(cwd) : (opt.agentName ?? t.session.unknownWorkspace);
+  const activity = summarizeActivity(events, status, updatedAt, CANONICAL);
   const action = activity.text;
   const artifacts = [
     ...new Set(
@@ -507,7 +512,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           }
         : undefined,
     origin: resolved.origin,
-    title: redact(title || `${project} 작업`, 160),
+    title: redact(title || t.session.untitled(project), 160),
     nativeTitle,
     alias: '',
     project: redact(project, 120),

@@ -19,6 +19,11 @@ import { mergeSessions } from '../server/adapters/merge.js';
 import { readOpenClawDatabases } from '../server/adapters/openclaw.js';
 import { OfficeStore } from '../server/store.js';
 import type { Session, OfficeNotice } from '../src/shared/types.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const now = Date.now();
 const make = (id: string, patch: Partial<Session> = {}): Session => ({
   ...demoSnapshot().sessions[0],
@@ -111,6 +116,32 @@ test('Persona projection keeps one resident per namespace and raw run identities
   assert.equal(after.find((s) => s.actor?.name === 'aki')?.id, 'manual');
   assert.equal(allocateSeats(after, seats)[seatKey(a)], seats[seatKey(aki)]);
   assert.equal(officeResidents([{ ...cron, status: 'done' }], now).sessions[0].zone, 'waiting');
+});
+test('A pinned persona stays in the office even when the run speaking for it aged into the archive', () => {
+  const day = 86400_000;
+  // The pinned run sits in the office; an older unanswered call outranks it as the current run.
+  const kept = persona('kept', 'aki', { pinned: true, updatedAt: now - 10 * day });
+  const asking = persona('asking', 'aki', {
+    status: 'call',
+    updatedAt: now - 9 * day,
+    zone: 'archive',
+  });
+  const aki = officeResidents([kept, asking], now).sessions[0];
+  assert.equal(aki.id, 'asking');
+  assert.equal(aki.pinned, true);
+  assert.equal(aki.zone, 'office');
+  // Same for the lounge, and an unpinned persona still follows its run's age.
+  assert.equal(
+    officeResidents([kept, { ...asking, zone: 'waiting' }], now).sessions[0].zone,
+    'office',
+  );
+  assert.equal(
+    officeResidents([{ ...kept, pinned: false, zone: 'archive' }, asking], now).sessions[0].zone,
+    'archive',
+  );
+  // A manual archive wins over the pin, as for a single session.
+  const shelved = persona('shelved', 'aki', { pinned: true, archived: true, zone: 'archive' });
+  assert.equal(officeResidents([shelved], now).sessions[0].zone, 'archive');
 });
 test('Previous-task helpers and internal runs fold away; working helpers, forks and attention stay visible', () => {
   const root = make('root', { taskStartedAt: now }),

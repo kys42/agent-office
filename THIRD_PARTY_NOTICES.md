@@ -1,6 +1,6 @@
 # Third-party notices
 
-Agent Office itself is private/unlicensed. User-provided design assets are reused with the user's explicit instruction from kys42/claude-skills, commit 9a644d65.
+Agent Office itself is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md) — noncommercial use only. The third-party components below keep their own licenses, which this does not change. User-provided design assets are reused with the user's explicit instruction from kys42/claude-skills, commit 9a644d65.
 
 ## Pixel Agents
 

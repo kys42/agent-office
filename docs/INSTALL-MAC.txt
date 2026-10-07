@@ -1,0 +1,29 @@
+Agent Office — macOS preview
+
+1. Drag Agent Office.app to Applications.
+2. Open Agent Office from Applications.
+3. Existing settings and local session history stay in
+   ~/Library/Application Support/Agent Office.
+
+This preview is ad-hoc signed, not Developer ID signed or Apple-notarized.
+If macOS blocks an Internet download, inspect its source and use System
+Settings > Privacy & Security > Open Anyway to allow this app.
+Do not disable Gatekeeper or delete your app data.
+
+To update: quit Agent Office from its tray menu first, then replace the app
+in Applications. Closing its office window leaves the tray/pet running.
+To roll back: quit and replace the app with the previous verified version.
+Keep a backup of the data directory before rolling back across DB changes.
+
+Apple Silicon (M-series) uses arm64. Intel Macs use x64.
+Version, source commit and signing status are in
+Agent Office.app/Contents/Resources/release.json.
+
+설치: Agent Office.app을 Applications로 끌어 놓고 실행하세요.
+업데이트: 트레이 메뉴에서 앱을 종료한 뒤 Applications의 앱을 교체하세요.
+기존 설정과 기록은 유지됩니다. 창 닫기와 앱 종료는 다릅니다.
+초기 테스트 배포본이며 Apple Developer ID 서명·공증은 아직 없습니다.
+차단되면 출처를 확인하고 시스템 설정 > 개인정보 보호 및 보안에서
+이 앱의 실행을 허용하세요. Gatekeeper를 끄거나 앱 데이터를 지우지 마세요.
+
+https://github.com/kys42/agent-office

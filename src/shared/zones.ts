@@ -1,12 +1,10 @@
 import type { Session, ZoneRule } from './types';
 import { nativeProjectKey, projectKey } from './office';
+import { liveLabels } from './labels';
 
-export const ZONE_MATCH_LABELS: Record<ZoneRule['match'], string> = {
-  worktree: '같은 워크트리',
-  path: '이 폴더 하위',
-  branch: '브랜치',
-  session: '이 세션만',
-};
+export const ZONE_MATCH_LABELS: Record<ZoneRule['match'], string> = liveLabels(
+  (t) => t.shared.zones,
+);
 // Narrower evidence wins, so one session or worktree can be pulled out of a broader rule.
 const RANK: Record<ZoneRule['match'], number> = { session: 0, worktree: 1, path: 2, branch: 3 };
 const trimSlash = (p: string) => p.replace(/\/+$/, '') || '/';

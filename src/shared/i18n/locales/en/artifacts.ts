@@ -1,0 +1,16 @@
+export const artifacts = {
+  label: 'Linked PRs and issues',
+  title: 'Linked work',
+  checking: 'Checking GitHub',
+  sample: 'Sample links',
+  verified: 'Verified on GitHub',
+  found: 'Found in the chat',
+  pull: 'PR',
+  issue: 'Issue',
+  state: { open: 'Open', closed: 'Closed', merged: 'Merged', draft: 'Draft' },
+  stateUnknown: 'Status unknown',
+  demoPull: 'Steady seating and chat cards',
+  demoIssue: 'Desks stay put when new records arrive',
+  showLess: 'Show less',
+  more: (n: number) => `Show ${n} more`,
+};

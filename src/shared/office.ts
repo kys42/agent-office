@@ -1,8 +1,9 @@
 import type { OfficeZone, Preferences, Session, Artifact } from './types';
 import { branchInfo } from './branch';
+import { m } from './i18n';
 
 export const sessionName = (s: Session) =>
-  (s.resident?.name || s.alias || s.title || '이름 없는 세션').replace(/\s+/g, ' ').trim();
+  (s.resident?.name || s.alias || s.title || m().shared.office.unnamed).replace(/\s+/g, ' ').trim();
 export const seatKey = (s: Session) => (s.actor ? `actor:${s.actor.id}` : s.id);
 /** The zone a session's own workspace evidence gives it, before any user rule. */
 export const nativeProjectKey = (s: Session) =>

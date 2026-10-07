@@ -403,6 +403,7 @@ span.face {
   animation-duration: 0.65s;
 }
 .sprite.mood-idle,
+.sprite.mood-ready,
 .sprite.mood-leave,
 .sprite.mood-done {
   animation-duration: 1.8s;

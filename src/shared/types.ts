@@ -1,5 +1,13 @@
+import { m, type Locale, type LocalePreference } from './i18n';
+import type { PetCustomization } from './pets';
 export type Provider = 'claude' | 'codex' | 'openclaw';
-export type Mood = 'work' | 'think' | 'call' | 'error' | 'done' | 'idle' | 'sleep' | 'leave';
+/**
+ * Office status. Observed (work/think/call/error/done) or derived from time since the last
+ * activity: ready (just finished, standing by) → idle → sleep (gone home, lounge) → leave.
+ * See docs/golden/STATUS-POLICY.md.
+ */
+export type Mood =
+  'work' | 'think' | 'call' | 'error' | 'done' | 'ready' | 'idle' | 'sleep' | 'leave';
 export type Evidence = 'observed' | 'derived';
 export type OfficeZone = 'office' | 'waiting' | 'archive';
 export type ExecutionPhase =
@@ -240,6 +248,8 @@ export interface Session {
   lastViewedAt?: number;
   openCount?: number;
   returnedAt?: number;
+  /** The person hid this colleague at this time; shown again on their next conversation. */
+  hiddenAt?: number | null;
 }
 export interface Connector {
   provider: Provider;
@@ -260,7 +270,12 @@ export interface Preferences {
   archiveDays?: number;
   autoArchive?: boolean;
   bubbleHours?: number;
+  /** Minutes a colleague stands by ('대기 중') after its last activity before resting. */
+  readyMinutes?: number;
   zoneRules?: ZoneRule[];
+  /** UI and collector language. Missing means `auto` (system language, else English). */
+  locale?: LocalePreference;
+  petAppearance?: PetCustomization;
 }
 export interface Snapshot {
   sessions: Session[];
@@ -272,6 +287,12 @@ export interface Snapshot {
   version: number;
   notices?: OfficeNotice[];
   noticeStats?: { unread: number; total: number };
+  /**
+   * The collector's resolved language: its sessions, notices and messages are written in it.
+   * With the `auto` preference the UI follows it, so both sides always agree. Demo snapshots
+   * may omit it.
+   */
+  locale?: Locale;
 }
 export interface SearchHit {
   session: Session;
@@ -283,9 +304,49 @@ export interface Handoff {
   revision: string;
   createdAt: number;
 }
+/** Who a session is natively: enough for the desktop app to find its terminal. */
+export type SessionIdentity = Pick<Session, 'id' | 'provider' | 'nativeId' | 'sourcePath'>;
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
+/**
+ * Where a follow-up can go, observed by the desktop app only. Never carries a handle.
+ * Orca/tmux type into the live terminal of a Claude Code session; `codex` hands the message
+ * to the shared Codex CLI daemon (`codex queue`), which every attached screen shows.
+ */
+export interface TerminalTarget {
+  kind: 'orca' | 'tmux' | 'codex';
+  label: string;
+  /** Agent CLI process state, e.g. idle, busy, shell. */
+  status: string;
+  canSend: boolean;
+  /** The app can bring the session's terminal to the front. */
+  canFocus: boolean;
+  /** Text sent while a turn runs waits for it instead of being refused. */
+  queues?: boolean;
+}
+export interface JumpResult {
+  action: 'focused' | 'opened' | 'copy';
+  text: string;
+}
+/**
+ * Desk pet window: a small floating pet, the office as one row (zones on rugs), or the
+ * floor version (desks standing right on the screen's bottom edge, zones marked by flags).
+ */
+export type DockMode = 'pet' | 'row' | 'floor';
+/** A rectangle in screen coordinates (CSS pixels on the desktop). */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+/** What the dock card shows: a colleague, opened from its bubble (news first) or its desk. */
+export interface CardTarget {
+  id: string;
+  news: boolean;
+}
+export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
   detail: (id: string) => Promise<Session>;
@@ -297,6 +358,10 @@ export interface OfficeAPI {
   snapshot: () => Promise<Snapshot>;
   refresh: () => Promise<Snapshot>;
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;
+  /** Hide colleagues until their next conversation (`on`), or bring them back. */
+  veil: (ids: string[], on: boolean) => Promise<Snapshot>;
+  /** Pin or unpin colleagues (e.g. all runs of a persona) in one step: all of them or none. */
+  pin: (ids: string[], on: boolean) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
@@ -304,34 +369,66 @@ export interface OfficeAPI {
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
+  /** Desktop only: where each session can take a follow-up, if that can be verified. */
+  terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
+  /** Desktop only: focus the live terminal, or fall back to resume. */
+  jump?: (id: string) => Promise<JumpResult>;
+  /** Desktop only, opt-in: type into an idle Claude terminal, or queue into a Codex CLI session. */
+  send?: (id: string, text: string) => Promise<string>;
+  /**
+   * Desktop only: read, or change, the opt-in for `send`. Kept in the desktop profile, outside
+   * the preferences shared with the web preview; turning it on asks for native confirmation.
+   */
+  terminalSend?: (enable?: boolean) => Promise<boolean>;
+  /**
+   * Desktop dock only: open the colleague card at a clicked desk or bubble, or (from the card)
+   * close it or go to the full office.
+   */
+  card?: (
+    action: 'open' | 'close' | 'expand',
+    target?: CardTarget,
+    anchor?: ScreenRect,
+  ) => Promise<void>;
+  /** The dock card window: which colleague to show. */
+  onCard?: (callback: (target: CardTarget | null) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
+  /** Desktop only. Browser previews switch the dock layout locally. */
+  dock?: (action: DockAction) => Promise<void>;
+  onDock?: (callback: (mode: DockMode) => void) => () => void;
 }
+// Labels are getters: they read the active language at use time, never at import time.
+const provider = (key: Provider, name: string, short: string, color: string) => ({
+  name,
+  short,
+  color,
+  get description() {
+    return m().shared.provider[key];
+  },
+});
 export const PROVIDERS: Record<
   Provider,
   { name: string; short: string; color: string; description: string }
 > = {
-  claude: {
-    name: 'Claude Code',
-    short: 'Claude',
-    color: '#ec9a6c',
-    description: '프로젝트 세션 기록',
-  },
-  codex: { name: 'Codex', short: 'Codex', color: '#7fd6c0', description: '세션 로그 · 제목 DB' },
-  openclaw: {
-    name: 'OpenClaw',
-    short: 'OpenClaw',
-    color: '#f2878f',
-    description: '에이전트 DB · JSONL',
-  },
+  claude: provider('claude', 'Claude Code', 'Claude', '#ec9a6c'),
+  codex: provider('codex', 'Codex', 'Codex', '#7fd6c0'),
+  openclaw: provider('openclaw', 'OpenClaw', 'OpenClaw', '#f2878f'),
 };
+const mood = (key: Mood, color: string, rank: number) => ({
+  get label() {
+    return m().shared.mood[key];
+  },
+  color,
+  rank,
+});
 export const MOODS: Record<Mood, { label: string; color: string; rank: number }> = {
-  call: { label: '불러요', color: '#ff7a8a', rank: 0 },
-  error: { label: '확인 필요', color: '#f6b24f', rank: 1 },
-  work: { label: '일하는 중', color: '#5fd69b', rank: 2 },
-  think: { label: '생각 중', color: '#ab9cff', rank: 3 },
-  done: { label: '응답 완료', color: '#78b6ff', rank: 4 },
-  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 5 },
-  sleep: { label: '대기 중', color: '#85818d', rank: 6 },
-  leave: { label: '보관됨', color: '#6d6975', rank: 7 },
+  call: mood('call', '#ff7a8a', 0),
+  error: mood('error', '#f6b24f', 1),
+  work: mood('work', '#5fd69b', 2),
+  think: mood('think', '#ab9cff', 3),
+  done: mood('done', '#78b6ff', 4),
+  ready: mood('ready', '#7fc4d9', 5),
+  idle: mood('idle', '#a7a3ad', 6),
+  sleep: mood('sleep', '#85818d', 7),
+  leave: mood('leave', '#6d6975', 8),
 };

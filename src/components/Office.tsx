@@ -1,29 +1,30 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Mail, Pin, X, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
-import { MOODS, type Session, type OfficeNotice } from '../shared/types';
+import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
+import { MOODS, type Session, type OfficeNotice, type TerminalTarget } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
-import { layoutOffice, layoutSignature } from '../shared/office-layout';
+import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
-import { noticeExposure } from '../shared/notices';
 import { Sprite } from './Sprite';
-import { sessionActivity, activityLabel, toolLabel } from '../shared/activity';
-import { bubbleNotice, noticeLabel, unreadNoticeCount, isInboxNotice } from '../shared/notices';
-import { presentSession, focusLevel, POSTURE_LABELS } from '../shared/presentation';
+import { SpeechBubble } from './SpeechBubble';
+import { HelperDesk, HelperStack } from './HelperDesk';
+import { VeilButton } from './VeilButton';
+import { PinButton } from './PinButton';
+import { arrivalEnds, deskSpeech, hopping, shownSpeech } from '../shared/speech';
+import { useWakeAt } from '../lib/useWakeAt';
+import { isInboxNotice } from '../shared/notices';
+import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
+import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import type { ReceiptHandler } from './News';
-import { ago } from '../lib/format';
-const colors = ['#7fae86', '#d39a62', '#a48fd0', '#6fa9bd', '#d08497', '#b8ad5d'];
-function projectColor(key: string) {
-  let n = 0;
-  for (const c of key) n = (n * 31 + c.charCodeAt(0)) >>> 0;
-  return colors[n % colors.length];
-}
+import { useSendTargets } from '../lib/useSendTargets';
+import { QuickReply } from './QuickReply';
+import { targetLine } from './TerminalSend';
+import { useI18n } from '../lib/i18n';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
   return h >= 6 && h < 8 ? 'dawn' : h >= 8 && h < 17 ? 'day' : h >= 17 && h < 19 ? 'dusk' : 'night';
 }
-const PHASE_COPY = { dawn: '이른 아침', day: '낮', dusk: '해질녘', night: '밤' } as const;
 export function Office({
   sessions,
   notices,
@@ -38,7 +39,11 @@ export function Office({
   footer,
   spotlight = null,
   onHover,
+  onVeil,
+  canVeil = () => true,
+  onPin,
   onZoneDrop,
+  onReply,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -53,18 +58,27 @@ export function Office({
   footer?: ReactNode;
   spotlight?: string | null;
   onHover?: (id: string | null) => void;
+  /** Hide a colleague until their next conversation. */
+  onVeil?: (s: Session) => void;
+  /** Someone waiting for the person cannot be hidden. */
+  canVeil?: (s: Session) => boolean;
+  /** Keep a colleague in the office however long it stays quiet (or let go). */
+  onPin?: (s: Session) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  /** Desktop opt-in: a bubble whose session can take a follow-up gets a quick reply. */
+  onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
+  const { t, locale } = useI18n();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
   const [zoom, setZoom] = useState<number | null>(null);
   const [hover, setHover] = useState<string | null>(null);
+  // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
+  const [closed, setClosed] = useState<string | null>(null);
   const [clock, setClock] = useState(Date.now());
   const [hidden, setHidden] = useState(document.hidden);
-  const [arrivals, setArrivals] = useState<Record<string, number>>({});
-  const seen = useRef<Set<string> | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropKey, setDropKey] = useState<string | null | undefined>(undefined);
   const draggable = !!onZoneDrop && !privacy;
@@ -109,26 +123,9 @@ export function Office({
       document.removeEventListener('visibilitychange', visibility);
     };
   }, []);
-  useEffect(() => {
-    const ids = new Set(notices.map((n) => `${n.id}:${n.version}`));
-    if (seen.current) {
-      const fresh = notices.filter(
-        (n) =>
-          n.kind === 'request' &&
-          !n.bootstrap &&
-          !seen.current!.has(`${n.id}:${n.version}`) &&
-          Date.now() - n.receivedAt < 30_000,
-      );
-      if (fresh.length && !document.hidden)
-        setArrivals((old) => ({
-          ...old,
-          ...Object.fromEntries(fresh.map((n) => [n.sessionId, Date.now() + 12_000])),
-        }));
-    }
-    seen.current = ids;
-  }, [notices]);
+  useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
-  const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect]);
+  const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect, locale]);
   const scale =
     zoom ??
     Math.max(
@@ -136,6 +133,27 @@ export function Office({
       Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
     );
   const byId = new Map(sessions.map((s) => [s.id, s]));
+  // A reply goes to the session whose news the bubble shows, else the desk's own session.
+  const replyFor = (s: Session) =>
+    deskSpeech(s, notices, bubbleHours, clock).bubble?.sessionId ?? s.id;
+  const quick = !!onReply && !privacy;
+  // Helper desks carry no bubble; only the stations' own sessions can be replied to.
+  const replyable = quick
+    ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
+    : [];
+  const { targets: replyTargets, markSent } = useSendTargets(replyable.map(replyFor), {
+    enabled: quick,
+    // Asks again when a record moves (a turn ended); no 4s polling across the whole floor.
+    stamp: Math.max(0, ...replyable.map((s) => s.updatedAt)),
+    pollBusy: false,
+  });
+  // The open reply keeps the session and target it was opened for, so new bubbles or a
+  // refreshing target list never replace or close a draft in progress.
+  const [replying, setReplying] = useState<{
+    station: string;
+    id: string;
+    target: TerminalTarget;
+  } | null>(null);
   const primary = sessions.filter((s) => !s.attachedTo);
   const working = sessions.filter((s) => presentSession(s, clock).working).length;
   const phase = dayPhase(clock);
@@ -162,7 +180,8 @@ export function Office({
       (s) => s.id === selected || s.resident?.sessionIds.includes(selected),
     );
     const el = holder.current.querySelector<HTMLElement>(
-      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"]`,
+      // A stacked helper is found through the shared desk's member list.
+      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"], .helper-desk[data-members~="${CSS.escape(selected)}"]`,
     );
     if (!el) return;
     const box = el.getBoundingClientRect(),
@@ -177,7 +196,7 @@ export function Office({
   return (
     <section
       className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''} ${dragging ? 'is-dragging' : ''}`}
-      aria-label="픽셀 사무실"
+      aria-label={t.office.region}
     >
       <div className="map-holder scene-viewport" ref={holder} data-scale={scale.toFixed(3)}>
         <div
@@ -277,15 +296,17 @@ export function Office({
                     privacy
                       ? undefined
                       : area.custom
-                        ? `${area.name} · 직접 나눈 구역 (${area.custom.join(', ')})`
+                        ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}`
                         : area.name
                   }
                 >
                   <span>{String(index + 1).padStart(2, '0')}</span>
-                  <b>{privacy ? '프로젝트' : area.name}</b>
+                  <b>{privacy ? t.desk.project : area.name}</b>
                   <small>
-                    {area.stations.length}명
-                    {area.stations.some((s) => s.children.length) ? ' + 보조' : ''}
+                    {t.desk.headcount(
+                      area.stations.length,
+                      area.stations.some((s) => s.children.length > 0),
+                    )}
                   </small>
                 </div>
                 {area.benches.map((bench, i) => (
@@ -301,23 +322,25 @@ export function Office({
                   const s = byId.get(station.id)!;
                   const members = s.resident?.sessionIds ?? [s.id];
                   const active = members.includes(selected ?? '');
-                  const news = notices.filter((n) => members.includes(n.sessionId));
-                  const bubble = bubbleNotice(news, bubbleHours, clock);
-                  const unread = unreadNoticeCount(news);
-                  const activity = sessionActivity(s);
                   const pose = presentSession(s, clock);
-                  const arrival = members.some((id) => (arrivals[id] ?? 0) > clock);
-                  const latestRequest = arrival
-                    ? news
-                        .filter((n) => n.kind === 'request')
-                        .sort((a, b) => b.at - a.at)
-                        .at(0)
-                    : undefined;
-                  const request = latestRequest?.dismissedAt ? undefined : latestRequest;
-                  const displayedBubble = request ?? bubble;
+                  // A just-arrived request plays on the desk and speaks first.
+                  const speech = deskSpeech(s, notices, bubbleHours, clock);
+                  const { unread, arrival, hop } = speech;
+                  // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                  const shown = shownSpeech(
+                    s,
+                    notices,
+                    bubbleHours,
+                    clock,
+                    speech,
+                    hover === s.id || active,
+                    hover === s.id && closed !== s.id,
+                  );
+                  const bubble = shown?.speech.bubble;
+                  const replyId = bubble?.sessionId ?? s.id;
+                  const replyTarget = quick ? replyTargets[replyId] : null;
+                  const canReply = !!replyTarget?.canSend;
                   const focus = focusLevel(s, clock);
-                  const text = displayedBubble?.text ?? activity.text;
-                  const label = displayedBubble ? noticeLabel(displayedBubble) : activityLabel(s);
                   const branch = branchInfo(s);
                   return (
                     <div
@@ -326,18 +349,27 @@ export function Office({
                       key={s.id}
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
+                      // The whole desk (bubble included) is what the person points at.
+                      onMouseEnter={() => setHover(s.id)}
+                      onMouseLeave={() => {
+                        setHover((h) => (h === s.id ? null : h));
+                        setClosed((c) => (c === s.id ? null : c));
+                      }}
                     >
                       <i className="desk-glow" aria-hidden="true" />
                       <Furniture kind="chair" />
                       <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                       <button
-                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !arrival ? pose.posture : 'still'} ${arrival ? 'work-arrival' : ''}`}
+                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
-                        aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}
+                        aria-label={t.office.station(
+                          privacy ? s.provider : sessionName(s),
+                          MOODS[s.status].label,
+                        )}
                         title={
                           draggable
-                            ? `${POSTURE_LABELS[pose.posture]} · 끌어서 다른 구역으로`
+                            ? t.office.dragToZone(POSTURE_LABELS[pose.posture])
                             : POSTURE_LABELS[pose.posture]
                         }
                         draggable={draggable}
@@ -349,56 +381,37 @@ export function Office({
                         }}
                         onDragEnd={endDrag}
                         onClick={() => onSelect(s.id)}
-                        onMouseEnter={() => {
-                          setHover(s.id);
-                          onHover?.(s.id);
-                        }}
-                        onMouseLeave={() => {
-                          setHover(null);
-                          onHover?.(null);
-                        }}
+                        onMouseEnter={() => onHover?.(s.id)}
+                        onMouseLeave={() => onHover?.(null)}
                       >
-                        {focus > 0 && (
-                          <span className="focus-aura" aria-hidden="true">
-                            <i />
-                            <i />
-                            <i />
-                          </span>
-                        )}
-                        <Sprite provider={s.provider} mood={pose.mood} size={80} />
-                        {arrival && (
-                          <span className="arrival-envelope">
-                            <span className="paper-stack" aria-hidden="true">
-                              <i />
-                              <i />
-                              <i />
-                            </span>
-                            <Mail size={16} />
-                            <b>일이 도착했어요!</b>
-                          </span>
-                        )}
+                        <FocusEffects level={focus} />
+                        <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
-                      <Furniture kind="equipment" />
-                      {pose.working && (
-                        <span className="working-beacon">
-                          <i />
-                          <i />
-                          <i />{' '}
-                          {focus === 2
-                            ? '몰입 중 · 15분+'
-                            : focus === 1
-                              ? '집중 중 · 5분+'
-                              : '작업 중'}
-                        </span>
+                      {onVeil && canVeil(s) && (
+                        <VeilButton
+                          name={privacy ? s.provider : sessionName(s)}
+                          onVeil={() => onVeil(s)}
+                        />
                       )}
+                      {onPin && (
+                        <PinButton
+                          name={privacy ? s.provider : sessionName(s)}
+                          pinned={s.pinned}
+                          onPin={() => onPin(s)}
+                        />
+                      )}
+                      <Furniture kind="equipment" />
+                      <PaperPile count={deskPapers(s, clock)} level={focus} />
+                      {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
+                      {pose.working && <WorkingBeacon level={focus} />}
                       <button
                         className={`desk-branch branch-${branch.kind}`}
                         title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
                         onClick={() => onSelect(s.id)}
                       >
                         <GitBranch size={9} />
-                        <span>{privacy ? '내용 숨김' : branch.label}</span>
+                        <span>{privacy ? t.desk.hidden : branch.label}</span>
                       </button>
                       <button
                         className={`desk-name ${active ? 'selected' : ''}`}
@@ -414,110 +427,108 @@ export function Office({
                           <span>
                             {pose.working
                               ? s.resident && s.resident.activeCount > 1
-                                ? `${s.resident.activeCount}개 작업 중`
-                                : '일하는 중'
+                                ? t.desk.runningTasks(s.resident.activeCount)
+                                : t.desk.working
                               : MOODS[s.status].label}
                           </span>
-                          {unread > 0 && <em>소식 {unread}</em>}
+                          {unread > 0 && <em>{t.desk.unread(unread)}</em>}
                         </small>
                       </button>
-                      {(displayedBubble ||
-                        (!news.length &&
-                          (hover === s.id ||
-                            active ||
-                            ['work', 'think', 'call', 'error'].includes(s.status)))) && (
-                        <div
-                          className={`speech-bubble bubble-${s.status} ${displayedBubble ? `bubble-kind-${displayedBubble.kind === 'reply' && displayedBubble.phase !== 'final' ? 'message' : displayedBubble.kind}` : 'bubble-live'} ${displayedBubble && !displayedBubble.seenAt ? 'unread' : ''} ${displayedBubble?.viewedAt || displayedBubble?.seenAt ? 'bubble-opened' : 'bubble-new'}`}
-                        >
-                          <button
-                            className="speech-open"
-                            onClick={() => {
-                              if (displayedBubble) {
-                                if (!privacy)
-                                  onReceipt(
-                                    [{ id: displayedBubble.id, version: displayedBubble.version }],
-                                    'view',
-                                  );
-                                onNews(displayedBubble.sessionId);
-                              } else onSelect(s.id);
-                            }}
-                            title={privacy ? '내용 숨김' : text}
-                          >
-                            <span className="speech-copy">
-                              <small>
-                                <span className="bubble-label">
-                                  {privacy ? '내용 숨김' : label}
-                                </span>
-                                <em>
-                                  {displayedBubble && (
-                                    <span className="bubble-exposure">
-                                      {noticeExposure(displayedBubble)}
-                                    </span>
-                                  )}
-                                  {ago(displayedBubble?.at ?? activity.at)}
-                                  {!privacy && activity.tool
-                                    ? ` · ${toolLabel(activity.tool.name)}`
-                                    : ''}
-                                </em>
-                              </small>
-                              <b>{privacy ? MOODS[s.status].label : text}</b>
-                            </span>
-                          </button>
-                          {displayedBubble && (
-                            <button
-                              className="bubble-dismiss"
-                              aria-label={`${privacy ? '동료' : sessionName(s)} 말풍선 접기`}
-                              title="말풍선만 접기 · 미확인 소식은 남아요"
-                              onClick={() =>
-                                onReceipt(
-                                  [{ id: displayedBubble.id, version: displayedBubble.version }],
-                                  'dismiss',
-                                )
-                              }
-                            >
-                              <X size={11} strokeWidth={2.6} />
-                            </button>
-                          )}
-                        </div>
+                      {shown && (
+                        <SpeechBubble
+                          session={s}
+                          speech={shown.speech}
+                          peek={shown.peek}
+                          privacy={privacy}
+                          onOpen={() => {
+                            if (bubble) {
+                              if (!privacy)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                              onNews(bubble.sessionId);
+                            } else onSelect(s.id);
+                          }}
+                          onDismiss={() => {
+                            setClosed(s.id);
+                            if (bubble)
+                              onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
+                          }}
+                          reply={
+                            canReply
+                              ? {
+                                  title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
+                                  open: replying?.station === s.id,
+                                  onClick: () =>
+                                    setReplying(
+                                      replying?.station === s.id
+                                        ? null
+                                        : { station: s.id, id: replyId, target: replyTarget! },
+                                    ),
+                                }
+                              : undefined
+                          }
+                        />
+                      )}
+                      {quick && replying?.station === s.id && (
+                        <QuickReply
+                          key={replying.id}
+                          target={
+                            replyTargets[replying.id] ?? {
+                              ...replying.target,
+                              status: 'gone',
+                              canSend: false,
+                            }
+                          }
+                          name={sessionName(byId.get(replying.id) ?? s)}
+                          onClose={() => setReplying(null)}
+                          onSend={async (text) => {
+                            await onReply!(replying.id, text);
+                            markSent(replying.id);
+                          }}
+                        />
                       )}
                     </div>
                   );
                 })}
                 {area.stations.flatMap((station) =>
                   station.children.map((child) => {
+                    if (child.stack) {
+                      const members = child.stack.map((id) => byId.get(id)!);
+                      return (
+                        <HelperStack
+                          key={`stack:${station.id}`}
+                          members={members}
+                          parentId={station.id}
+                          at={child}
+                          pose={(h) => presentSession(h, clock)}
+                          news={(h) =>
+                            notices.some(
+                              (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                            )
+                          }
+                          privacy={privacy}
+                          className={`${members.some((h) => h.id === selected) ? 'chosen' : ''} ${members.some((h) => h.id === spotlight) ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                          selected={selected}
+                          onOpen={onSelect}
+                        />
+                      );
+                    }
                     const s = byId.get(child.id)!;
                     const childPose = presentSession(s, clock);
                     return (
-                      <button
-                        className={`helper-desk ${selected === s.id ? 'chosen' : ''} ${childPose.working ? 'helper-working' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                      <HelperDesk
                         key={s.id}
-                        data-session-id={s.id}
-                        data-parent-id={station.id}
-                        data-furniture="helper-desk"
-                        style={{ transform: `translate(${child.x}px, ${child.y}px)` }}
-                        aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료${s.runtime?.phase === 'responded' && !childPose.working ? ', 결과 남김' : ''}`}
-                        title={
-                          privacy
-                            ? undefined
-                            : `${sessionName(s)} · ${s.relation?.role || '보조 동료'}`
-                        }
-                        onClick={() => onSelect(s.id)}
-                      >
-                        <Sprite provider={s.provider} mood={childPose.mood} size={44} />
-                        <Furniture kind="helper" />
-                        {s.runtime?.phase === 'responded' && !childPose.working && (
-                          <span
-                            className="helper-result"
-                            title="응답을 남겼어요 · 메인의 다음 요청까지 머물러요"
-                          >
-                            ✓
-                          </span>
-                        )}
-                        <b>{privacy ? '보조 동료' : s.relation?.role || sessionName(s)}</b>
-                        {notices.some(
+                        session={s}
+                        parentId={station.id}
+                        at={child}
+                        mood={childPose.mood}
+                        working={childPose.working}
+                        news={notices.some(
                           (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
-                        ) && <i className="helper-news" />}
-                      </button>
+                        )}
+                        privacy={privacy}
+                        className={`${selected === s.id ? 'chosen' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                        onClick={() => onSelect(s.id)}
+                      />
                     );
                   }),
                 )}
@@ -526,9 +537,9 @@ export function Office({
             {!primary.length && (
               <div className="scene-empty">
                 <Armchair size={30} />
-                <h3>다음 동료를 기다리고 있어요</h3>
-                <p>새 활동이 생기면 책상이 놓여요.</p>
-                <button onClick={onShowWaiting}>대기 중인 동료 보기</button>
+                <h3>{t.office.empty.title}</h3>
+                <p>{t.office.empty.body}</p>
+                <button onClick={onShowWaiting}>{t.office.empty.action}</button>
               </div>
             )}
           </div>
@@ -537,32 +548,32 @@ export function Office({
       {dragging && (
         <div className="stage-hud drag-hint" role="status">
           {dropKey === null
-            ? '여기에 놓으면 새 구역을 만들어요'
+            ? t.office.drop.newZone
             : dropKey && dragFrom && dropKey !== projectKey(dragFrom)
-              ? `${layout.projects.find((p) => p.key === dropKey)?.name ?? '이'} 구역으로 옮겨요`
-              : '다른 구역 바닥이나 빈 바닥에 놓아 주세요'}
+              ? t.office.drop.moveTo(layout.projects.find((p) => p.key === dropKey)?.name)
+              : t.office.drop.elsewhere}
         </div>
       )}
       <div className="stage-hud hud-bottom-left office-card-bottom">
         <span className="hud-pill">
           {phase === 'night' || phase === 'dusk' ? <Moon size={12} /> : <Sun size={12} />}
-          {PHASE_COPY[phase]}
+          {t.office.phase[phase]}
           <i />
-          {layout.projects.length}개 프로젝트 · {primary.length}개 책상
+          {t.office.hud.counts(layout.projects.length, primary.length)}
           {sessions.length - primary.length > 0
-            ? ` · 보조 ${sessions.length - primary.length}`
+            ? ` · ${t.office.hud.helpers(sessions.length - primary.length)}`
             : ''}
           {working > 0 && (
             <>
               <i />
-              <em>{working}명 작업 중</em>
+              <em>{t.office.hud.working(working)}</em>
             </>
           )}
         </span>
         {callers.length > 0 && (
           <button
             className="hud-pill hud-call"
-            title="기다리는 동료에게 가기"
+            title={t.office.hud.callTitle}
             onClick={() => {
               const i = callers.findIndex(
                 (s) => s.id === selected || s.resident?.sessionIds.includes(selected ?? ''),
@@ -571,15 +582,15 @@ export function Office({
             }}
           >
             <i className="hud-call-dot" />
-            불러요 {callers.length}
+            {t.office.hud.calling(callers.length)}
           </button>
         )}
         {footer}
       </div>
       <div className="stage-hud hud-bottom-right scene-controls">
         <button
-          aria-label="사무실 축소"
-          title="축소"
+          aria-label={t.office.zoom.outLabel}
+          title={t.office.zoom.outTitle}
           disabled={scale < 0.2}
           onClick={() => zoomBy(-0.15)}
         >
@@ -587,16 +598,16 @@ export function Office({
         </button>
         <button
           className={`zoom-readout ${zoom === null ? 'is-fit' : ''}`}
-          aria-label="사무실 모두 보기"
-          title="모든 동료를 한눈에"
+          aria-label={t.office.zoom.fitLabel}
+          title={t.office.zoom.fitTitle}
           onClick={fit}
         >
           {zoom === null ? <Maximize2 size={12} /> : null}
-          <span>{zoom === null ? '모두 보기' : `${Math.round(scale * 100)}%`}</span>
+          <span>{zoom === null ? t.office.zoom.fit : `${Math.round(scale * 100)}%`}</span>
         </button>
         <button
-          aria-label="사무실 확대"
-          title="확대 · 화면을 스크롤해 둘러보기"
+          aria-label={t.office.zoom.inLabel}
+          title={t.office.zoom.inTitle}
           disabled={scale >= 2}
           onClick={() => zoomBy(0.2)}
         >

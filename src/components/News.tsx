@@ -12,6 +12,7 @@ import { sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Sprite } from './Sprite';
 import { PanelTabs } from './PanelTabs';
+import { useI18n } from '../lib/i18n';
 export type ReceiptHandler = (
   receipts: NoticeReceipt[],
   action: 'read' | 'dismiss' | 'unread' | 'view',
@@ -23,8 +24,8 @@ export function NewsList({
   privacy,
   onReceipt,
   onSelect,
-  emptyText = '놓친 소식이 없어요',
-  emptyDetail = '진행 상황은 대화에서 볼 수 있어요.',
+  emptyText,
+  emptyDetail,
 }: {
   notices: OfficeNotice[];
   sessions: Session[];
@@ -34,6 +35,8 @@ export function NewsList({
   emptyText?: string;
   emptyDetail?: string;
 }) {
+  const { t } = useI18n();
+  const l = t.news.list;
   const [limit, setLimit] = useState(30);
   const [expanded, setExpanded] = useState(new Set<string>());
   return (
@@ -41,8 +44,8 @@ export function NewsList({
       {!notices.length && (
         <div className="news-empty">
           <Mail size={28} />
-          <h3>{emptyText}</h3>
-          <p>{emptyDetail}</p>
+          <h3>{emptyText ?? l.emptyTitle}</h3>
+          <p>{emptyDetail ?? l.emptyDetail}</p>
         </div>
       )}
       {notices.slice(0, limit).map((n) => {
@@ -62,7 +65,7 @@ export function NewsList({
               </span>
               <span className="notice-exposure">
                 {noticeExposure(n)}
-                {n.background ? ' · 보조·자동' : ''}
+                {n.background ? ` · ${l.background}` : ''}
               </span>
               <time>{ago(n.at)}</time>
             </div>
@@ -75,13 +78,18 @@ export function NewsList({
                 }}
               >
                 <span className={`face face-${session.provider}`}>
-                  <Sprite provider={session.provider} mood={session.status} size={22} />
+                  <Sprite
+                    session={session}
+                    provider={session.provider}
+                    mood={session.status}
+                    size={22}
+                  />
                 </span>
-                <span>{privacy ? '숨긴 동료' : sessionName(session)}</span>
+                <span>{privacy ? l.hiddenTeammate : sessionName(session)}</span>
                 <ArrowUpRight size={13} />
               </button>
             )}
-            <p className={open ? 'expanded' : ''}>{privacy ? '소식 내용을 숨겼어요.' : n.text}</p>
+            <p className={open ? 'expanded' : ''}>{privacy ? l.hiddenText : n.text}</p>
             {!privacy && n.text.length > 160 && (
               <button
                 className="news-more"
@@ -94,31 +102,28 @@ export function NewsList({
                   });
                 }}
               >
-                {open ? '접기' : '더 보기'}
+                {open ? l.less : l.more}
               </button>
             )}
             <div className="news-actions">
               <button onClick={() => onReceipt(receipt, n.seenAt ? 'unread' : 'read')}>
                 <Check size={13} />
-                {n.seenAt ? '다시 미확인' : '읽음으로 표시'}
+                {n.seenAt ? l.markUnread : l.markRead}
               </button>
               {!n.dismissedAt && (
-                <button
-                  onClick={() => onReceipt(receipt, 'dismiss')}
-                  title="소식과 미확인 상태는 남아요"
-                >
+                <button onClick={() => onReceipt(receipt, 'dismiss')} title={l.dismissTitle}>
                   <X size={13} />
-                  말풍선 접기
+                  {l.dismiss}
                 </button>
               )}
-              {n.dismissedAt && <small>말풍선 접힘</small>}
+              {n.dismissedAt && <small>{l.dismissed}</small>}
             </div>
           </article>
         );
       })}
       {notices.length > limit && (
         <button className="button news-load" onClick={() => setLimit((n) => n + 30)}>
-          소식 더 보기 · {notices.length - limit}건
+          {l.loadMore(notices.length - limit)}
         </button>
       )}
     </div>
@@ -141,6 +146,8 @@ export function NewsFeed({
   initialFilter?: 'final' | 'attention' | 'all';
   includeBackground?: boolean;
 }) {
+  const { t } = useI18n();
+  const f = t.news.feed;
   const [filter, setFilter] = useState(initialFilter);
   const [includeRead, setIncludeRead] = useState(false);
   const matches = (n: OfficeNotice, kind = filter) =>
@@ -155,7 +162,7 @@ export function NewsFeed({
   const unread = selected.filter((n) => !n.seenAt);
   return (
     <div className="news-feed">
-      <div className="news-filter-bar" role="group" aria-label="소식 종류">
+      <div className="news-filter-bar" role="group" aria-label={f.kinds}>
         {(['final', 'attention', 'all'] as const).map((kind) => (
           <button
             key={kind}
@@ -163,14 +170,14 @@ export function NewsFeed({
             className={kind === filter ? 'active' : ''}
             onClick={() => setFilter(kind)}
           >
-            {kind === 'final' ? '최종 응답' : kind === 'attention' ? '확인 필요' : '전체 기록'}
+            {f[kind]}
             <span>{counts(kind)}</span>
           </button>
         ))}
       </div>
       {filter === 'final' && counts('attention') > 0 && (
         <button className="news-attention-link" onClick={() => setFilter('attention')}>
-          답변이나 확인을 기다리는 소식 {counts('attention')}건 <ArrowUpRight size={13} />
+          {f.waiting(counts('attention'))} <ArrowUpRight size={13} />
         </button>
       )}
       <div className="news-review-bar">
@@ -180,11 +187,11 @@ export function NewsFeed({
             checked={includeRead}
             onChange={(e) => setIncludeRead(e.target.checked)}
           />
-          읽은 소식 포함
+          {f.includeRead}
         </label>
         <button
           disabled={!unread.length}
-          title="선택한 분류의 미확인 소식 전체를 읽음으로 표시"
+          title={f.markAllTitle}
           onClick={() =>
             onReceipt(
               unread.map(({ id, version }) => ({ id, version })),
@@ -193,7 +200,7 @@ export function NewsFeed({
           }
         >
           <Check size={12} />
-          미확인 {unread.length}건 읽음
+          {f.markAll(unread.length)}
         </button>
       </div>
       <div className="news-feed-scroll">
@@ -204,20 +211,8 @@ export function NewsFeed({
           privacy={privacy}
           onReceipt={onReceipt}
           onSelect={onSelect}
-          emptyText={
-            filter === 'final'
-              ? '새 최종 응답이 없어요'
-              : filter === 'attention'
-                ? '지금 확인할 요청이 없어요'
-                : '놓친 기록이 없어요'
-          }
-          emptyDetail={
-            filter === 'final'
-              ? '진행 상황은 대화에서, 지난 소식은 전체 기록에서 볼 수 있어요.'
-              : filter === 'attention'
-                ? '답변이 필요한 질문과 오류는 여기에 따로 모아요.'
-                : '읽은 소식 포함을 켜면 확인한 기록도 볼 수 있어요.'
-          }
+          emptyText={f.empty[filter]}
+          emptyDetail={f.emptyDetail[filter]}
         />
       </div>
     </div>
@@ -238,23 +233,26 @@ export function NewsInbox({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
+  const i = t.news.inbox;
   const unread = unreadNoticeCount(notices);
+  const [before, after] = i.unread(unread);
   return (
-    <aside className="inspector news-inbox" aria-label="소식함">
+    <aside className="inspector news-inbox" aria-label={i.label}>
       <PanelTabs active="inbox" unread={unread} onRoster={onClose} onClose={onClose} />
       <div className="inbox-heading">
         <h2>
           {unread ? (
             <>
-              확인할 소식 <b>{unread}</b>건
+              {before}
+              <b>{unread}</b>
+              {after}
             </>
           ) : (
-            '모두 확인했어요'
+            i.allClear
           )}
         </h2>
-        <p>
-          동료가 남긴 최종 응답과 나를 기다리는 요청만 모아요. 진행 상황은 대화에서 볼 수 있어요.
-        </p>
+        <p>{i.body}</p>
       </div>
       <NewsFeed
         notices={notices}
@@ -263,7 +261,7 @@ export function NewsInbox({
         onReceipt={onReceipt}
         onSelect={onSelect}
       />
-      <p className="news-footnote">말풍선 접기와 읽음은 별개예요. 접어도 미확인 소식은 남아요.</p>
+      <p className="news-footnote">{i.footnote}</p>
     </aside>
   );
 }

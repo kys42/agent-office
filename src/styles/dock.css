@@ -1,0 +1,728 @@
+/* ───────────────────────── Desk pet & desk row (floating dock window) ─────────────────────────
+   The window is transparent: only the pet, the desks, the floor and the caps are drawn, so the
+   row reads as desks standing on the bottom edge of the desktop. Geometry mirrors
+   src/shared/dock-geometry.ts (PET_SIZE, ROW_HEIGHT). */
+body.dock-mode {
+  background: transparent;
+  overflow: hidden;
+}
+.dock-mode #root {
+  background: transparent;
+}
+/* Animate the fixed layers themselves: a transform on a wrapper would re-anchor them. */
+.desk-pet-stage,
+.desk-row {
+  animation: dock-enter 0.18s var(--ease-out);
+}
+@keyframes dock-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ───────── Pet ───────── */
+.desk-pet-stage {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  /* width/height: PET_SIZE (inline, from dock-geometry) */
+  display: grid;
+  place-items: end center;
+  user-select: none;
+}
+.dock-pet-anchor {
+  position: relative;
+  width: 116px;
+  height: 148px;
+  margin-bottom: 4px;
+}
+/* A 164px box like a desk station, so the shared bubble sits over the pet's head. */
+.dock-pet-speech {
+  position: absolute;
+  left: -24px;
+  top: -40px;
+  width: 164px;
+  height: 0;
+  z-index: 6;
+}
+.dock-pet-speech .speech-copy b {
+  -webkit-line-clamp: 3;
+}
+/* Hovering the pet unfolds what it says, with who said it. */
+.dock-pet-anchor:hover .dock-pet-speech .speech-copy b,
+.dock-pet-speech .speech-bubble.is-expanded .speech-copy b {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.dock-pet-anchor:hover .dock-pet-speech .speech-detail {
+  display: flex;
+}
+.dock-pet-speech {
+  --bubble-wide: 280px;
+}
+.dock-pet-anchor:hover .dock-pet-speech .speech-bubble {
+  width: max-content;
+  min-width: 158px;
+  max-width: var(--bubble-wide);
+}
+.dock-pet-anchor:hover .dock-pet-speech .md-p {
+  display: block;
+}
+.dock-pet-name {
+  position: relative;
+  z-index: 3;
+  max-width: 112px;
+  margin-top: 2px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  font-weight: 700;
+  color: #f7ecdc;
+  background: rgba(28, 21, 19, 0.92);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.desk-pet.is-speaking .dock-pet-body {
+  animation:
+    dock-pet-arrive 0.5s var(--ease-out),
+    dock-pet-bob 2.8s ease-in-out 0.5s infinite;
+}
+@keyframes dock-pet-arrive {
+  0% {
+    transform: translateY(10px) scale(0.85);
+    opacity: 0.4;
+  }
+  60% {
+    transform: translateY(-8px) scale(1.04);
+    opacity: 1;
+  }
+}
+.desk-pet {
+  position: relative;
+  width: 116px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+  border-radius: 18px;
+  cursor: grab;
+  touch-action: none;
+}
+.desk-pet:active {
+  cursor: grabbing;
+}
+.desk-pet:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.dock-pet-body {
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.35));
+  animation: dock-pet-bob 2.8s ease-in-out infinite;
+  transition: scale 0.15s var(--ease-out);
+}
+.desk-pet:hover .dock-pet-body {
+  scale: 1.07;
+}
+@keyframes dock-pet-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.dock-pet-shadow {
+  width: 46px;
+  height: 8px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.3);
+  animation: dock-pet-shadow 2.8s ease-in-out infinite;
+}
+@keyframes dock-pet-shadow {
+  50% {
+    transform: scaleX(0.82);
+    opacity: 0.7;
+  }
+}
+.dock-pet-pill {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  margin-top: 5px;
+  padding: 0 4px 0 8px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text);
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.7);
+}
+.dock-pet-pill:not(:has(b)) {
+  padding-right: 9px;
+}
+.dock-pet-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-idle);
+}
+.dock-pet-pill b {
+  min-width: 17px;
+  padding: 1px 5px;
+  border-radius: 99px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-align: center;
+  background: var(--bg-5);
+}
+.tone-attention .dock-pet-pill {
+  border-color: rgba(255, 122, 138, 0.55);
+}
+.tone-attention .dock-pet-pill i {
+  background: var(--st-call);
+}
+.tone-attention .dock-pet-pill b {
+  color: #2a0a0f;
+  background: var(--st-call);
+}
+.tone-results .dock-pet-pill i {
+  background: var(--accent);
+}
+.tone-results .dock-pet-pill b {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.tone-standby .dock-pet-pill i {
+  background: #7fc4d9;
+}
+.tone-working .dock-pet-pill i {
+  background: var(--st-work);
+  box-shadow: 0 0 0 3px rgba(95, 214, 155, 0.16);
+}
+.dock-pet-bang {
+  position: absolute;
+  top: 6px;
+  right: 22px;
+  z-index: 4;
+  width: 18px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  font-family: var(--font-pixel);
+  font-size: 14px;
+  font-weight: 700;
+  color: #2a0a0f;
+  background: var(--st-call);
+  box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.6);
+  animation: dock-pet-bang 1.2s steps(2) infinite;
+}
+@keyframes dock-pet-bang {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.dock-pet-tools {
+  position: absolute;
+  top: 4px;
+  left: -4px;
+  z-index: 7;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-2);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.dock-pet-anchor:hover .dock-pet-tools,
+.dock-pet-tools:focus-within {
+  opacity: 1;
+}
+.dock-pet-tools .icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* ───────── Row ─────────
+   The scene reuses the big office's station classes (desk-station, team-bench, office-pet,
+   desk-name, speech-bubble, helper-desk, project-floor-mark) in station space at a fixed
+   scale (ROW_SCALE). Only the zone floor rug, arrows and tools are row specific. */
+.desk-row {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* height: ROW_HEIGHT (inline, from dock-geometry) */
+  user-select: none;
+}
+.desk-row-track {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+/* Fade only the side that hides more desks. */
+.desk-row-track.fade-left {
+  mask-image: linear-gradient(90deg, transparent, #000 64px);
+}
+.desk-row-track.fade-right {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 64px), transparent);
+}
+.desk-row-track.fade-left.fade-right {
+  mask-image: linear-gradient(90deg, transparent, #000 64px, #000 calc(100% - 64px), transparent);
+}
+.desk-row-track::-webkit-scrollbar {
+  display: none;
+}
+.desk-row-lane {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto;
+}
+.desk-row-scene {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  transform-origin: 0 100%;
+}
+.row-zone {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+.row-zone > .row-zone-floor {
+  /* top: ROW_TOP + 96 (inline, chair height) */
+  bottom: 0;
+  width: 100%;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.05) 0 6px, transparent 6px 12px),
+    color-mix(in srgb, var(--project-color) 30%, #c9996a);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--project-color) 62%, #4a2e1c),
+    0 4px 0 rgba(70, 40, 20, 0.35),
+    0 10px 24px -10px rgba(0, 0, 0, 0.55);
+}
+.row-zone > .row-zone-mark {
+  top: auto;
+  bottom: 7px;
+  z-index: 5;
+}
+.row-speech {
+  display: contents;
+}
+/* The row has headroom: let a bubble say more than the big map's two lines. */
+.desk-row .speech-copy b {
+  -webkit-line-clamp: 5;
+}
+.desk-row-arrow {
+  position: absolute;
+  bottom: 118px;
+  z-index: 8;
+  width: 46px;
+  height: 58px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 14px;
+  color: var(--text);
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.7);
+  transition:
+    background 0.15s,
+    transform 0.15s var(--ease-out);
+}
+.desk-row-arrow:hover {
+  background: var(--bg-4);
+  transform: scale(1.05);
+}
+.desk-row-arrow b {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-2);
+}
+.desk-row-arrow.arrow-left {
+  left: 12px;
+}
+.desk-row-arrow.arrow-right {
+  right: 12px;
+}
+.desk-row-arrow.has-call {
+  border-color: rgba(255, 122, 138, 0.7);
+}
+.desk-row-arrow.has-call::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--st-call);
+  border: 2px solid #111216;
+}
+.row-empty {
+  align-self: center;
+  margin: 0 auto 72px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: rgba(17, 18, 22, 0.92);
+}
+.desk-row-tools {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-radius: 10px;
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.65);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.desk-row:hover .desk-row-tools,
+.desk-row-tools:focus-within {
+  opacity: 1;
+}
+.desk-row-tools .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+.desk-row-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.desk-row-summary em {
+  font-style: normal;
+  color: var(--st-call);
+}
+.desk-row-lounge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0 8px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+
+/* ───────── Floor desks (variant of the row) ─────────
+   No rugs or name cards: the desk legs stand on the window's bottom edge (the work area's
+   floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
+   on a pole marks where each zone begins. */
+.desk-floor .desk-row-arrow {
+  bottom: 96px;
+}
+.desk-floor .helper-desk > b {
+  display: none;
+}
+/* Zone signs carry their own tooltip (the office CSS makes floor marks see-through). */
+.row-zone-mark {
+  pointer-events: auto;
+}
+.floor-shadow {
+  position: absolute;
+  z-index: 1;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(0, 0, 0, 0.42),
+    rgba(0, 0, 0, 0.14) 70%,
+    transparent
+  );
+  pointer-events: none;
+}
+.floor-plate {
+  position: absolute;
+  left: 82px;
+  /* The desk's front edge (bench 134 + 29…40), below the keyboard and cup. */
+  top: 159px;
+  z-index: 4;
+  max-width: 138px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: #f7ecdc;
+  background: linear-gradient(#3a2a22, #2a1d17);
+  border: 1px solid #1a110d;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 200, 0.18),
+    0 1px 0 rgba(0, 0, 0, 0.35);
+}
+.floor-plate:hover {
+  color: var(--accent-2);
+}
+.floor-plate i {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.floor-plate span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.floor-plate em {
+  flex-shrink: 0;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-style: normal;
+  text-align: center;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.zone-flag {
+  position: absolute;
+  z-index: 2;
+  width: 34px;
+  height: 214px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.zone-flag > * {
+  pointer-events: auto;
+}
+.zone-flag-pole {
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8a6a52, #4a342a);
+}
+.zone-flag-pole::before {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: -5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f2c887;
+  box-shadow: 0 0 0 1px #6e4a3a;
+}
+.zone-flag-base {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 15px;
+  height: 6px;
+  border-radius: 3px 3px 1px 1px;
+  background: #3a2820;
+  box-shadow: 0 3px 6px -2px rgba(0, 0, 0, 0.5);
+}
+/* A tall vertical banner (nobori) in the zone colour, swallow-tailed at the bottom. */
+.zone-flag-cloth {
+  position: absolute;
+  left: 9px;
+  top: 6px;
+  width: 24px;
+  max-height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 0 14px;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d1410;
+  background: var(--project-color);
+  border: 2px solid color-mix(in srgb, var(--project-color) 55%, #2a1a10);
+  border-left-width: 1px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% calc(100% - 9px), 0 100%);
+  transform-origin: left top;
+  animation: zone-flag-wave 4.5s ease-in-out infinite;
+  overflow: hidden;
+}
+.zone-flag-cloth b {
+  padding: 1px 2px;
+  border-radius: 2px;
+  font-family: 'Galmuri9', var(--font-pixel);
+  font-size: 9px;
+  color: var(--project-color);
+  background: #1d1410;
+}
+.zone-flag-cloth span {
+  /* Only the name runs top to bottom; a long one ends in an ellipsis. */
+  writing-mode: vertical-rl;
+  max-height: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.zone-flag.custom-area .zone-flag-cloth {
+  border-style: dashed;
+}
+@keyframes zone-flag-wave {
+  50% {
+    transform: skewY(2deg) scaleX(0.94);
+  }
+}
+
+.reduce-motion .desk-pet-stage,
+.reduce-motion .desk-row,
+.reduce-motion .zone-flag-cloth,
+.motion-paused .zone-flag-cloth,
+.reduce-motion .dock-pet-body,
+.reduce-motion .desk-pet.is-speaking .dock-pet-body,
+.reduce-motion .dock-pet-shadow,
+.reduce-motion .dock-pet-bang {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-pet-stage,
+  .desk-row,
+  .zone-flag-cloth,
+  .dock-pet-body,
+  .desk-pet.is-speaking .dock-pet-body,
+  .dock-pet-shadow,
+  .dock-pet-bang {
+    animation: none;
+  }
+}
+
+/* ───────────────────────── Dock card (colleague card above a desk) ─────────────────────────
+   Its own small window, opened from the desk pet / row: the same card as the big office's
+   right panel, framed as a rounded floating card. The window is transparent around it. */
+body.card-mode {
+  background: transparent;
+  overflow: hidden;
+}
+.card-mode #root {
+  height: 100vh;
+  background: transparent;
+}
+.dock-card {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+}
+.dock-card > .inspector {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  outline: none;
+  overflow: hidden;
+  animation: card-in 0.16s var(--ease-out);
+}
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.dock-card-empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.dock-card-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 50;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(36, 39, 46, 0.96);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+/* A dialog inside the card dims only the card, inside its rounded corners. */
+.dock-card .modal-backdrop {
+  border-radius: 14px;
+}
+/* Short results and failures in the dock (pin, hide, send, refresh). */
+.dock-toast {
+  position: fixed;
+  left: 50%;
+  top: 8px;
+  z-index: 40;
+  max-width: min(420px, calc(100% - 24px));
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text);
+  background: rgba(17, 18, 22, 0.94);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+.desk-row-tools .icon-btn.is-busy svg {
+  animation: spin 1s linear infinite;
+}
