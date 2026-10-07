@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { demoSnapshot } from '../src/lib/demo.js';
-import { ARRIVAL_MS, deskSpeech, freshRequest, stationSpeech } from '../src/shared/speech.js';
+import {
+  ARRIVAL_LAG_MS,
+  ARRIVAL_MS,
+  arrivalEnds,
+  deskSpeech,
+  freshRequest,
+  stationSpeech,
+} from '../src/shared/speech.js';
 import { deskPapers, FOCUS_LABELS, focusLevel, MAX_PAPERS } from '../src/shared/presentation.js';
 import { buildOfficeModel, petSummary } from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
@@ -62,6 +69,11 @@ test('a request plays its arrival for 15 seconds after it reaches the office, fr
   assert.equal(freshRequest([request('a', { bootstrap: true })], now), undefined);
   assert.equal(freshRequest([request('a', { dismissedAt: now })], now), undefined);
   assert.equal(freshRequest([request('a', { kind: 'reply' })], now), undefined);
+  assert.equal(freshRequest([request('a', { background: true })], now), undefined, 'scheduled');
+  // Collected late (restart, paused collector): received just now, but sent long ago.
+  const late = request('a', { at: now - ARRIVAL_MS - ARRIVAL_LAG_MS - 1 });
+  assert.equal(freshRequest([late], now), undefined);
+  assert.ok(freshRequest([request('a', { at: now - 30_000 })], now), 'a normal scan delay');
   // A desk only hears its own (or its resident sessions') requests.
   assert.equal(stationSpeech(s, [request('b')], 3, now).arrival, undefined);
   const resident = make('a', { resident: { sessionIds: ['a', 'a2'] } as Session['resident'] });
@@ -74,6 +86,12 @@ test('a request plays its arrival for 15 seconds after it reaches the office, fr
   assert.equal(speech.arrival?.id, newer.id);
   assert.equal(speech.bubble?.id, newer.id);
   assert.equal(speech.tone, 'mine');
+  assert.equal(speech.hop, true);
+  // Every view re-renders when it ends.
+  assert.deepEqual(arrivalEnds([older, newer, reply], now), [
+    older.receivedAt + ARRIVAL_MS,
+    newer.receivedAt + ARRIVAL_MS,
+  ]);
   // Once the window ends the desk's usual bubble comes back.
   assert.equal(deskSpeech(s, [older, newer, reply], 3, now + ARRIVAL_MS).bubble?.text, '답장');
 });
@@ -131,4 +149,25 @@ test('the pet catches the newest arrival across visible desks without changing w
   assert.equal(pet.arrivals, 2, 'a veiled desk does not count');
   assert.equal(pet.arrival?.id, second.id);
   assert.equal(petSummary(buildOfficeModel(snap([a, b]), now)).arrival, undefined);
+});
+
+test('a desk waiting for the person keeps saying so through an arrival', () => {
+  const fresh = request('a', { receivedAt: now - 2000, at: now - 2000 });
+  const ask = {
+    ...request('a'),
+    kind: 'attention' as const,
+    text: '확인해 주세요',
+    at: now - 1000,
+  };
+  // A question that came right after the request outranks it (the papers still land).
+  const asking = deskSpeech(make('a', { status: 'call' }), [fresh, ask], 3, now);
+  assert.equal(asking.arrival?.id, fresh.id);
+  assert.equal(asking.bubble?.kind, 'attention');
+  assert.equal(asking.tone, 'attention');
+  assert.equal(asking.hop, false);
+  // An erroring desk keeps its usual bubble and pose (no hop).
+  const erroring = make('a', { status: 'error' });
+  const failed = deskSpeech(erroring, [fresh], 3, now);
+  assert.equal(failed.bubble?.id, stationSpeech(erroring, [fresh], 3, now).bubble?.id);
+  assert.equal(failed.hop, false);
 });

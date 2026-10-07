@@ -279,7 +279,7 @@ export function DeskRow({
                   const branch = branchInfo(s);
                   // A just-arrived request plays on the desk and speaks first.
                   const speech = deskSpeech(s, model.notices, model.bubbleHours, model.now);
-                  const { bubble, arrival } = speech;
+                  const { bubble, arrival, hop } = speech;
                   const focus = focusLevel(s, model.now);
                   return (
                     <div
@@ -294,7 +294,7 @@ export function DeskRow({
                       <Furniture kind="chair" />
                       <div className="pet-shadow" />
                       <button
-                        className={`office-pet pose-${arrival ? 'still' : pose.posture} ${arrival ? 'work-arrival' : ''}`}
+                        className={`office-pet pose-${hop ? 'still' : pose.posture} ${hop ? 'work-arrival' : ''}`}
                         data-solid
                         data-session-id={s.id}
                         data-seat={s.officeSeat}

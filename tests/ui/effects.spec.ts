@@ -4,10 +4,12 @@ import { demoSnapshot } from '../../src/lib/demo';
 const min = 60_000;
 /**
  * The first demo desk has been on one task for 35 minutes (full heat); optionally a request
- * reached the office `requestAge` ms before each snapshot is served.
+ * reached the office `requestAge` ms ago. The request keeps that arrival time across polls;
+ * `resend()` sends it again (now − requestAge).
  */
-function serve(page: Page, requestAge?: number, prefs: Record<string, unknown> = {}) {
-  return page.route('**/api/rpc', (route) => {
+async function serve(page: Page, requestAge?: number, prefs: Record<string, unknown> = {}) {
+  let sentAt = requestAge === undefined ? undefined : Date.now() - requestAge;
+  await page.route('**/api/rpc', (route) => {
     const now = Date.now();
     const snapshot = demoSnapshot();
     const s = snapshot.sessions[0];
@@ -21,7 +23,7 @@ function serve(page: Page, requestAge?: number, prefs: Record<string, unknown> =
       hiddenAt: undefined,
     });
     snapshot.preferences = { ...snapshot.preferences, ...prefs };
-    if (requestAge !== undefined)
+    if (sentAt !== undefined)
       snapshot.notices = [
         {
           id: 'just-sent',
@@ -29,8 +31,8 @@ function serve(page: Page, requestAge?: number, prefs: Record<string, unknown> =
           eventId: 'req',
           kind: 'request',
           text: '서류 더미 위로 날아온 요청이에요.',
-          at: now - requestAge,
-          receivedAt: now - requestAge,
+          at: sentAt,
+          receivedAt: sentAt,
           version: 'v1',
           seenAt: null,
           viewedAt: null,
@@ -42,6 +44,7 @@ function serve(page: Page, requestAge?: number, prefs: Record<string, unknown> =
       ];
     return route.fulfill({ json: { result: snapshot } });
   });
+  return { resend: () => (sentAt = Date.now() - (requestAge ?? 0)) };
 }
 
 test('A long task heats the desk in every view: flames, sweat, embers, a paper pile and 불타는 중', async ({
@@ -70,8 +73,9 @@ test('A long task heats the desk in every view: flames, sweat, embers, a paper p
 test('A just-sent request lands on the desk in the office, row and floor, and the pet catches it', async ({
   page,
 }) => {
-  await serve(page, 2000);
+  const request = await serve(page, 2000);
   for (const hash of ['', '#mini=row', '#mini=floor']) {
+    request.resend();
     await page.goto(`/${hash}`);
     if (hash) await page.reload();
     const desk = page.locator('.desk-station[data-station-id="demo:0"]');
@@ -86,6 +90,7 @@ test('A just-sent request lands on the desk in the office, row and floor, and th
       path: `.local/effects-arrival${hash.replace('#mini=', '-') || '-office'}.png`,
     });
   }
+  request.resend();
   await page.goto('/#mini');
   await page.reload();
   await expect(page.locator('.pet-arrival-chip')).toContainText('새 요청');
@@ -108,8 +113,9 @@ test('A request older than 15 seconds plays nothing, even on a fresh window', as
 });
 
 test('Reduced motion keeps the picture but stops every effect animation', async ({ page }) => {
-  await serve(page, 2000, { reducedMotion: true });
+  const request = await serve(page, 2000, { reducedMotion: true });
   for (const hash of ['', '#mini=row']) {
+    request.resend();
     await page.goto(`/${hash}`);
     if (hash) await page.reload();
     const desk = page.locator('.desk-station[data-station-id="demo:0"]');
@@ -122,4 +128,34 @@ test('Reduced motion keeps the picture but stops every effect animation', async 
     );
     expect(running).toEqual([]);
   }
+});
+
+test('The row drops the arrival on time, and screen sharing hides the request words', async ({
+  page,
+}) => {
+  await serve(page, 1000, { privacy: true });
+  await page.goto('/#mini=row');
+  await page.reload();
+  const desk = page.locator('.desk-station[data-station-id="demo:0"]');
+  await expect(desk.locator('.arrival-burst')).toBeVisible();
+  await expect(desk.locator('.speech-bubble')).toBeVisible();
+  await expect(desk.locator('.speech-bubble')).not.toContainText('서류 더미 위로');
+  // The dock's model clock is coarse; the arrival still ends at 15 seconds.
+  await expect(desk.locator('.arrival-burst')).toHaveCount(0, { timeout: 16_000 });
+  await expect(desk.locator('.office-pet')).not.toHaveClass(/work-arrival/, { timeout: 2_000 });
+});
+
+test('The pet arrival also holds still under reduced motion', async ({ page }) => {
+  await serve(page, 2000, { reducedMotion: true });
+  await page.goto('/#mini');
+  await page.reload();
+  await expect(page.locator('.pet-arrival-chip')).toBeVisible();
+  const running = await page
+    .locator('.pet-arrival')
+    .evaluate((el) =>
+      [el, ...el.querySelectorAll('*')]
+        .map((e) => getComputedStyle(e).animationName)
+        .filter((name) => name !== 'none'),
+    );
+  expect(running).toEqual([]);
 });

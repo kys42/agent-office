@@ -96,10 +96,10 @@ export const PHASE_LABELS: Record<ExecutionPhase, string> = {
   unknown: '미확인',
 };
 
-/** Decorative focus level, anchored to a known current request, never session age. */
 /**
  * How long the current observed task has kept going (decorative intensity only): 1 focused
- * (5 min), 2 deep (15 min), 3 on fire (30 min). Needs live work evidence and a task start.
+ * (5 min), 2 deep (15 min), 3 on fire (30 min). Anchored to a known current task, never
+ * session age, and needs live work evidence.
  */
 export type FocusLevel = 0 | 1 | 2 | 3;
 /** Minutes into the task where each focus level starts (1, 2, 3). */

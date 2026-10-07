@@ -13,6 +13,13 @@
 - 공통 부품 `src/components/DeskEffects.tsx`(`FocusEffects`·`PaperPile`·`ArrivalBurst`·`WorkingBeacon`·`PetArrival`)와 `src/styles/effects.css`. 큰 사무실·한 줄 사무실·바닥 책상·펫이 같이 쓴다. 예전 `usage.css`의 `.focus-aura`·`.paper-stack`과 `office.css`의 `.arrival-envelope`는 지웠다
 - **⚠ 시계**: 펫·책상 줄의 모델 시계는 15초마다 돈다. 도착 부품은 스스로 끝 시각에 한 번 다시 그려 15초에 맞춰 사라진다(`useUntil`). 동료의 '뛰기' 클래스와 '내 요청' 말풍선은 다음 시계 틱까지 남을 수 있다
 - 정책서: 상태 정책서 4절에 '집중 단계' 표와 서류 더미 기준, 기능 정책서에 '도착·집중 연출' 절
+- 리뷰 반영(독립 리뷰 P2·P3):
+  - **⚠ 받은 시각만 보면 안 된다**: 서버는 소식을 넣거나 버전이 바뀔 때 `receivedAt`을 지금으로 덮는다. 그래서 앱을 다시 켜면 몇 시간 전 요청도 '방금 도착'이 됐다. 요청 자체 시각(`at`)도 75초 안이어야 한다(`ARRIVAL_LAG_MS`)
+  - **새 세션의 첫 요청**: 커서 없는 세션의 첫 수집은 전부 bootstrap이라 연출이 안 나왔다. 시작 2분 안에 처음 수집된 세션(`NEW_SESSION_MS`, `server/store.ts`)은 과거 기록이 아니라 최근 소식을 모두 받는다. 세션 시작 시각은 큰 파일도 앞부분을 읽어서 믿을 수 있다
+  - 부르는 중·오류·응답 필요 말풍선은 도착 동안에도 유지(`needsPerson`, `deskSpeech().hop`). 백그라운드 실행은 도착에서 제외
+  - 15초가 되면 시계를 깨워(`arrivalEnds`, `useWakeAt`) 모든 화면이 함께 끝내고, 늦게 열린 화면은 `--age`만큼 애니메이션을 건너뛴다
+  - 항상 떠 있는 독의 다시 그리기 비용: 애니메이션되는 `filter`·`box-shadow`를 정적 그라데이션과 opacity 애니메이션으로 바꿨다
+  - 지나간 문서(사무실 정책 8·12절, USAGE-AND-WORKSPACE, OFFICE-ASSETS) 정리
 - 함께 찾은 문제(별도 이슈):
   - #18: Claude Code 권한 요청·플랜 승인 대기가 '불러요'로 안 보임
   - #19: 다른 폴더로 잠깐 `cd`하면 작업 위치가 굳어 엉뚱한 구역(`.claude`)에 앉음

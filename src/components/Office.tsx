@@ -10,7 +10,8 @@ import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
-import { deskSpeech } from '../shared/speech';
+import { arrivalEnds, deskSpeech } from '../shared/speech';
+import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
@@ -113,6 +114,7 @@ export function Office({
       document.removeEventListener('visibilitychange', visibility);
     };
   }, []);
+  useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
   const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect]);
   const scale =
@@ -290,7 +292,7 @@ export function Office({
                   const pose = presentSession(s, clock);
                   // A just-arrived request plays on the desk and speaks first.
                   const speech = deskSpeech(s, notices, bubbleHours, clock);
-                  const { bubble, unread, arrival } = speech;
+                  const { bubble, unread, arrival, hop } = speech;
                   const focus = focusLevel(s, clock);
                   const branch = branchInfo(s);
                   return (
@@ -305,7 +307,7 @@ export function Office({
                       <Furniture kind="chair" />
                       <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                       <button
-                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !arrival ? pose.posture : 'still'} ${arrival ? 'work-arrival' : ''}`}
+                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hop ? 'work-arrival' : ''}`}
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
                         aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}

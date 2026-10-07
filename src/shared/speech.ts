@@ -23,9 +23,14 @@ export const TONE_LABELS: Record<BubbleTone, string> = {
 /** How long a just-sent request plays its arrival (papers landing, envelope). */
 export const ARRIVAL_MS = 15_000;
 
+/** Collection may trail the request itself (scan interval, a busy collector) by this much. */
+export const ARRIVAL_LAG_MS = 60_000;
+
 /**
- * The request that just landed on a desk, if any: the newest non-history, not-closed request
- * received within ARRIVAL_MS. Pure — no "already seen" memory — so every view, a hidden
+ * The request that just landed on a desk, if any: the newest of the person's own requests
+ * (not history, not a background run, not closed) that the office received within ARRIVAL_MS
+ * and that was itself sent recently — so requests collected late (after a restart or a paused
+ * collector) never replay as new. Pure — no "already seen" memory — so every view, a hidden
  * window or a re-render all agree.
  */
 export function freshRequest(news: OfficeNotice[], now = Date.now()) {
@@ -34,12 +39,19 @@ export function freshRequest(news: OfficeNotice[], now = Date.now()) {
       (n) =>
         n.kind === 'request' &&
         !n.bootstrap &&
+        !n.background &&
         !n.dismissedAt &&
-        now - n.receivedAt < ARRIVAL_MS &&
-        n.receivedAt - now < ARRIVAL_MS,
+        Math.abs(now - n.receivedAt) < ARRIVAL_MS &&
+        now - n.at < ARRIVAL_MS + ARRIVAL_LAG_MS,
     )
     .sort((a, b) => b.receivedAt - a.receivedAt)[0];
 }
+
+/** When the current arrivals end (re-render then so every view drops them together). */
+export const arrivalEnds = (notices: OfficeNotice[], now = Date.now()) =>
+  notices
+    .filter((n) => n.kind === 'request' && !n.bootstrap && n.receivedAt + ARRIVAL_MS > now)
+    .map((n) => n.receivedAt + ARRIVAL_MS);
 
 /** Bubbles render this much of the original message (code blocks dropped). */
 const MARKDOWN_LIMIT = 1500;
@@ -143,11 +155,23 @@ export function stationSpeech(
 }
 export type StationSpeech = ReturnType<typeof stationSpeech>;
 
+/** A desk waiting for the person: a call or error outranks any arrival (bubble and pose). */
+export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =>
+  s.status === 'call' ||
+  s.status === 'error' ||
+  speech.bubble?.kind === 'attention' ||
+  speech.bubble?.kind === 'error';
+
 /**
  * What a desk says right now: a just-arrived request speaks first — the person's own words —
- * then the desk's usual bubble. Every desk view (big office, row, floor) uses this.
+ * then the desk's usual bubble. A desk that needs the person keeps saying so (the papers still
+ * land). Every desk view (big office, row, floor) uses this.
  */
 export function deskSpeech(s: Session, notices: OfficeNotice[], bubbleHours = 3, now = Date.now()) {
   const usual = stationSpeech(s, notices, bubbleHours, now);
-  return usual.arrival ? stationSpeech(s, notices, bubbleHours, now, usual.arrival) : usual;
+  const urgent = needsPerson(s, usual);
+  const speech =
+    usual.arrival && !urgent ? stationSpeech(s, notices, bubbleHours, now, usual.arrival) : usual;
+  /** The colleague hops for the papers unless it is waiting for the person. */
+  return { ...speech, hop: !!usual.arrival && !urgent };
 }

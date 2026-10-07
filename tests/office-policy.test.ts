@@ -11,6 +11,7 @@ import { OfficeStore } from '../server/store.js';
 import { attachSessions, allocateSeats, benchKey, projectKey } from '../src/shared/office.js';
 import { bubbleNotice, noticeCandidates, applyNoticeReceipt } from '../src/shared/notices.js';
 import { presentSession } from '../src/shared/presentation.js';
+import { freshRequest } from '../src/shared/speech.js';
 import type { Session, Provider } from '../src/shared/types.js';
 const now = Date.now();
 const root = '01a102c7-f8f8-71a0-82a0-aaaa4defdf64';
@@ -189,11 +190,20 @@ test('Read is version-specific; dismiss does not mean read; expired unread remai
   assert.equal(n.seenAt, null);
   assert.ok(bubbleNotice([{ ...n, kind: 'attention' }], 3, now + 4 * 3600_000));
 });
+/** The same conversation, as if it had happened `ms` earlier. */
+const aged = (s: Session, ms: number): Session => ({
+  ...s,
+  startedAt: s.startedAt - ms,
+  updatedAt: s.updatedAt - ms,
+  events: s.events.map((e) => ({ ...e, at: e.at - ms })),
+  activity: s.activity && { ...s.activity, at: s.activity.at - ms },
+});
 test('Notice store bootstraps once, tracks only public changes, and persists receipts through restart', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-news-'));
   let store = new OfficeStore(dir);
   try {
-    const s = make();
+    // An older conversation found on the first scan is history.
+    const s = aged(make(), 10 * 60_000);
     store.upsert([s], 'codex');
     assert.equal(store.noticeList().length, 1);
     assert.equal(store.noticeList()[0].bootstrap, true);
@@ -236,6 +246,27 @@ test('Notice store bootstraps once, tracks only public changes, and persists rec
     assert.ok(store.noticeList()[0].dismissedAt);
     store.preferences({ excludedProjects: ['team'] });
     assert.equal(store.noticeList().length, 0);
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test('A conversation first seen right after it starts is live: its first request is news and arrives', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-born-'));
+  const store = new OfficeStore(dir);
+  try {
+    store.upsert([make()], 'codex');
+    const notices = store.noticeList();
+    assert.ok(notices.length >= 2, 'every recent notice is kept, not only the last one');
+    assert.ok(notices.every((n) => !n.bootstrap));
+    const request = notices.find((n) => n.kind === 'request');
+    assert.ok(request);
+    assert.equal(freshRequest(notices, Date.now())?.id, request.id, 'the first request plays');
+    // A request written long before it was collected never replays as new.
+    assert.equal(
+      freshRequest([{ ...request, at: Date.now() - 10 * 60_000 }], Date.now()),
+      undefined,
+    );
   } finally {
     store.close();
     await rm(dir, { recursive: true, force: true });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Mail } from 'lucide-react';
 import { ARRIVAL_MS } from '../shared/speech';
 import { FOCUS_LABELS, FOCUS_MINUTES, MAX_PAPERS, type FocusLevel } from '../shared/presentation';
@@ -19,6 +19,15 @@ function useUntil(until: number) {
     return () => clearTimeout(timer);
   }, [until]);
   return left > 0;
+}
+
+/**
+ * How far into the arrival this view joined (a window shown or opened late): the CSS delays
+ * subtract it, so a late view skips what already played instead of restarting the flight.
+ */
+function useAge(receivedAt: number) {
+  const [age] = useState(() => Math.min(ARRIVAL_MS, Math.max(0, Date.now() - receivedAt)));
+  return { '--age': `${age}ms` } as CSSProperties;
 }
 
 /** Heat behind and around the colleague, inside the pet button (level 1–3). */
@@ -98,9 +107,10 @@ export function PaperPile({ count, level = 0 }: { count: number; level?: FocusLe
  * a puff where they land, and the envelope tag. Key it by the notice so a new one replays.
  */
 export function ArrivalBurst({ receivedAt }: { receivedAt: number }) {
+  const age = useAge(receivedAt);
   if (!useUntil(receivedAt + ARRIVAL_MS)) return null;
   return (
-    <span className="arrival-burst">
+    <span className="arrival-burst" style={age}>
       <span className="arrival-sheets" aria-hidden="true">
         <i />
         <i />
@@ -122,9 +132,10 @@ export function ArrivalBurst({ receivedAt }: { receivedAt: number }) {
 
 /** The collapsed pet: sheets land beside it with a "새 요청" chip (the pet stays who it is). */
 export function PetArrival({ receivedAt, count }: { receivedAt: number; count: number }) {
+  const age = useAge(receivedAt);
   if (!useUntil(receivedAt + ARRIVAL_MS)) return null;
   return (
-    <span className="pet-arrival">
+    <span className="pet-arrival" style={age}>
       <span className="arrival-sheets" aria-hidden="true">
         <i />
         <i />
