@@ -128,7 +128,10 @@ export function Settings({
         <div>
           <section className="settings-section">
             <h2>사무실 설정</h2>
-            <p>두 시점 모두 마지막 활동부터 계산해요. 고정한 동료는 자리를 지켜요.</p>
+            <p>
+              모든 시점은 마지막 활동부터 계산해요. 일을 마치면 대기 중 → 쉬는 중 → 퇴근 순으로
+              바뀌어요. 고정한 동료는 자리를 지켜요.
+            </p>
             <div className="setting-row">
               <div>
                 <b>보관 공간 자동 이동</b>
@@ -164,15 +167,34 @@ export function Settings({
                 </select>
               </label>
               <label>
+                일을 마친 뒤 대기 중
+                <select
+                  aria-label="대기 중으로 보여 줄 시간"
+                  value={p.readyMinutes ?? 30}
+                  onChange={(e) => onPrefs({ readyMinutes: Number(e.target.value) })}
+                >
+                  {[...new Set([10, 20, 30, 60, p.readyMinutes ?? 30])]
+                    .sort((a, b) => a - b)
+                    .map((m) => (
+                      <option key={m} value={m} disabled={m >= (p.standbyHours ?? 4) * 60}>
+                        {m}분 동안
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
                 퇴근 · 대기 라운지로
                 <select
                   aria-label="대기까지 시간"
                   value={p.standbyHours ?? 4}
                   onChange={(e) => {
                     const standbyHours = Number(e.target.value);
+                    const ready = p.readyMinutes ?? 30;
                     onPrefs({
                       standbyHours,
                       archiveDays: Math.max(p.archiveDays ?? 7, Math.floor(standbyHours / 24) + 1),
+                      // Standing by must end before going home.
+                      ...(ready >= standbyHours * 60 ? { readyMinutes: 30 } : {}),
                     });
                   }}
                 >

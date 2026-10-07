@@ -28,6 +28,7 @@ const HINTS: Record<TriageGroup, string> = {
   attention: '원래 앱에서 답해 주세요',
   results: '최종 응답이 도착했어요',
   working: '작업 기록이 이어지는 중',
+  standby: '방금 일을 마치고 자리에서 대기 중',
   resting: '새 기록을 기다리는 중',
 };
 function saved(key: string) {

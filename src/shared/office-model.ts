@@ -168,6 +168,7 @@ export const PET_LABELS: Record<TriageGroup, string> = {
   attention: '기다려요',
   results: '새 소식',
   working: '일하는 중',
+  standby: '대기 중',
   resting: '쉬는 중',
 };
 

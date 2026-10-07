@@ -52,7 +52,7 @@ Session {
 
 `runtime.phase`는 working, thinking, needs-input, responded, interrupted, error, quiet, unknown 중 하나다. `at/evidence/reason`을 항상 함께 다룬다. `status`는 기존 캐릭터와 호환하는 표시 값이며, `zone`은 사무실/대기/보관 위치다. 어느 것도 다른 축을 덮어쓰지 않는다.
 
-예: 마지막 관측이 `working`이지만 5분간 새 기록이 없으면 runtime은 working으로 보존한다. 사무실 표시만 idle, 장식 동작은 resting/strolling/dozing이 된다. “프로세스가 종료됐다”, “성공했다”는 결론을 만들지 않는다. 중단 이벤트는 runtime의 interrupted로 남는다. 오래된 needs-input의 소식 확인과 원래 앱에서 실제 답변하는 동작도 별개다.
+예: 마지막 관측이 `working`이지만 5분간 새 기록이 없으면 runtime은 working으로 보존한다. 사무실 표시는 대기 중(ready, 자리에서 바르게 대기)이고, 대기 시간(기본 30분)이 지나면 쉬는 중(idle, 장식 동작은 resting/strolling/dozing)이 된다. 단계와 시간은 [상태 정책서](STATUS-POLICY.md)를 따른다. “프로세스가 종료됐다”, “성공했다”는 결론을 만들지 않는다. 중단 이벤트는 runtime의 interrupted로 남는다. 오래된 needs-input의 소식 확인과 원래 앱에서 실제 답변하는 동작도 별개다.
 
 기본 시간 정책은 `deriveState`/`officeZone`에서만 바꾼다. 공급자별로 Codex는 2분, Claude는 30초처럼 임의의 다른 휴식 규칙을 넣지 않는다. paused/missing/error는 Connector의 수집 상태이며 개별 동료의 실패를 뜻하지 않는다.
 
