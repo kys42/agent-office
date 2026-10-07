@@ -39,7 +39,7 @@ shasum -a 256 -c SHA256SUMS-arm64.txt
 
 ## 설치본 검증과 복구
 
-`npm run test:package`는 DMG hash와 설치본 메타데이터를 비교하고 `codesign --verify --deep --strict`를 실행한다. 임시 Claude·Codex·OpenClaw 합성 기록과 별도 앱 프로필·DB로 실행해 세 공급자 수집, 설정 저장, 언어 전환, 데스크 펫·책상 줄·바닥 책상, renderer 격리를 확인한다. 개발 Electron이나 브라우저 결과만으로 DMG 검증을 대신하지 않는다.
+`npm run test:package`는 DMG hash와 설치본 메타데이터를 비교하고 `codesign --verify --deep --strict`를 실행한다. 임시 Claude·Codex·OpenClaw 합성 기록과 별도 앱 프로필·DB로 실행해 세 공급자 수집, 설정 저장, 언어 전환, 데스크 펫·책상 줄·바닥 책상, renderer 격리를 확인한다. macOS Dock 아이콘이 시작·펫·책상 줄·바닥·팝업·전체 복귀에서 유지되고 팝업이 키보드 입력을 받는지도 검증한다. 개발 Electron이나 브라우저 결과만으로 DMG 검증을 대신하지 않는다.
 
 사용자 설치 뒤 첫 실행에서는 전체 사무실·트레이·펫 모드와 기존 세션 수집을 확인한다. 인터넷 다운로드의 Gatekeeper 검수와 Intel 검수는 해당 전달 경로 및 기기에서 별도로 확인한다. 테스트가 합성 DB에서 통과했다는 근거를 실제 개인 DB 업그레이드 검증으로 확대하지 않는다.
 
