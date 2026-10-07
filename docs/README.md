@@ -23,7 +23,7 @@ docs/
 │   ├── RESEARCH.md               # 참고 레포·포맷·기능 후보 조사
 │   ├── INGESTION-REFERENCE-AUDIT.md # 모듈별 도입/이식/제외 근거
 │   └── design/                   # 날짜별 디자인 시안 카탈로그
-└── images/                       # 문서 공용 합성 데모 캡처
+└── images/{en,ko}/               # README·문서용 합성 데모 캡처 (scripts/screenshots.mjs, readme-hero.mjs)
 ```
 
 | 목적 | 시작 문서 |

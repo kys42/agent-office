@@ -295,7 +295,7 @@
 - 390×844: 가로 넘침 없음.
 - 840×218: 투명 미니 창, 6개 책상, 원래 사무실로 복귀.
 - 이름 편집, 메모 저장, 검색, 도구 필터, 내용 숨기기, 수집 중지, 움직임 줄이기, 인수인계 미리보기 검증.
-- 문서 이미지에는 합성 데모 기록만 사용했다. [사무실](../images/office.png), [업무 카드](../images/detail.png), [미니](../images/mini.png), [대기 라운지](../images/waiting.png).
+- 문서 이미지에는 합성 데모 기록만 사용했다. [사무실](../images/ko/office.png), [업무 카드](../images/ko/detail.png), [미니](../images/ko/mini.png), [대기 라운지](../images/ko/lounge.png). 2026-10-07부터 `scripts/screenshots.mjs`가 `docs/images/{en,ko}/`에 언어별로 생성한다.
 
 ## 독립 리뷰에서 보강한 부분
 
