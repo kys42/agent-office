@@ -6,7 +6,7 @@
 
 ```text
 OfficeService (5초 폴링, 읽기 범위·오류 격리)
-  ├─ JSONL 탐색 → readRecords → Orca byte reader
+  ├─ JSONL 탐색 → RecordWindowCache(append 증분 / readRecords) → Orca byte reader
   │                            → resolveIdentity + parseRecords
   ├─ Codex/Claude index·DB·sidecar → 이름·작업 위치 보완
   └─ OpenClaw read-only SQLite → resolveIdentity + parseRecords + DB 상태
@@ -86,7 +86,7 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 
 원본 JSONL/SQLite는 읽기 전용이다. 앱 자체 SQLite에는 세션 관측 캐시, 별명·메모·핀, 설정/좌석 순서, notices/notice_observed를 분리해 저장한다. 관측 갱신은 사용자 메모나 읽음 처리를 덮어쓰지 않는다.
 
-JSONL 읽기 캐시는 size+mtime+파서 버전, OpenClaw DB 캐시는 행 갱신 시각/seq/rewrite watermark/이름·관계 등으로 무효화한다. 파서 의미가 바뀌면 service와 OpenClaw의 캐시 버전도 검토한다. Git 위치 관측은 별도 15초 캐시다. metadata/sidecar 이름 갱신은 파일 본문 변경이 없더라도 반영한다.
+JSONL 읽기 캐시는 size+mtime+파서 버전([증분 읽기](#jsonl-증분-읽기-45)는 그 아래 단계), OpenClaw DB 캐시는 행 갱신 시각/seq/rewrite watermark/이름·관계 등으로 무효화한다. 파서 의미가 바뀌면 service와 OpenClaw의 캐시 버전도 검토한다. Git 위치 관측은 별도 15초 캐시다. metadata/sidecar 이름 갱신은 파일 본문 변경이 없더라도 반영한다.
 
 한 파일/노드의 손상은 다른 정상 세션 수집을 중단하지 않는다. 일부 실패 시 해당 공급자의 마지막 정상 기록을 유지하고 connector에 오류를 표시한다. 원본이 사라진 경우와 일시 읽기 실패를 같은 삭제 신호로 취급하지 않는다. 새 플랫폼의 스키마가 달라졌을 때 조용히 다른 ID를 만들어 우회하지 않는다.
 
@@ -145,3 +145,16 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
   - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`일 때만 입력한다(`waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
 - **소식**: 열린 요청만 '응답 필요' 후보다. 결과·이후 메시지·턴 경계가 기록되거나 대기 overlay가 사라지면 해당 소식을 해결한다. 퇴근 시간보다 오래된 미응답 요청은 관측으로만 기억하고 소식을 만들지 않는다. 그래서 업그레이드 뒤 재파싱해도 지난 플랜 승인은 새 미확인 소식이 되지 않는다.
 - **Codex 한계**: Codex rollout에는 승인·권한 요청 이벤트가 없다. `request_user_input`만 호출로 보이고, 명령 승인 대기는 보이지 않는다. 근거가 생기기 전에는 추측하지 않는다.
+
+## JSONL 증분 읽기 (#45)
+
+활성 대화는 몇 초마다 줄이 붙는다. 바뀐 파일마다 3 MiB 창을 다시 읽고 전부 `JSON.parse`하던 비용을 줄이려고 `server/adapters/record-window.ts`의 `RecordWindowCache`가 파일별 읽기 창을 기억한다. **결과 계약은 그대로다**: 같은 바이트에 대해 `readRecords`와 같은 레코드 목록·`partial`을 돌려준다. 파서는 증분으로 바꾸지 않았다. 바뀐 파일은 여전히 메모리의 전체 창으로 `parseRecords`를 다시 실행하므로 usage 중복 제거, 제목 순위, 스트리밍 덮어쓰기, 첫 metadata의 정체성, 시각 정렬이 이전과 같다.
+
+- **append 경로**: 열린 handle의 dev/ino가 같고, 크기가 마지막 완결 줄 끝(`consumedThrough`) 이상이며, 그 앞 최대 64바이트(guard)가 디스크와 같을 때만 `[consumedThrough, size)`를 Orca fold로 읽는다. 끝의 미완결 줄(UTF-8 중간 포함)은 소비하지 않고 다음 읽기에서 다시 읽는다.
+- **창 규칙**: `readRecords`와 같다. 3 MiB 이하이면 전부, 넘으면 앞 768 KiB 안에서 끝나는 줄(head)과 시작 위치가 `size - (3 MiB - 768 KiB)` 이상인 줄(tail)만 남긴다. 그래서 각 레코드의 바이트 시작/끝을 함께 기억한다. `readRecords`는 이 위치를 함께 내는 `readWindow`의 얇은 래퍼다.
+- **전체 경로(기존 bounded reader)**: 처음 읽기, inode/dev 변경(교체·rotation), 축소, guard 불일치, 마지막 전체 확인 후 10분 경과, 한 번에 2.25 MiB를 넘는 증가, 큰 첫 metadata 복구(head 창 안에 완결 줄 없음), 상한 초과 레코드, 예산으로 밀려난 항목. 복구 경로를 거친 파일은 캐시하지 않고 매번 전체 경로로 읽는다.
+- **한계**: guard 밖의 같은 크기 덮어쓰기는 다음 10분 대조까지 놓칠 수 있다. 원본 JSONL은 append-only라는 전제이며, 그 밖의 변경은 위 조건이 전체 경로로 돌린다.
+- **예산**: 남긴 원문 줄 바이트 합계 기준 32 MiB(파싱된 객체의 실제 heap은 더 크다). 넘으면 가장 오래 읽지 않은 파일부터 버리고, 버린 파일은 다음에 전체 경로로 읽는다. 수집마다 공급자별로 이번에 발견한 파일만 남기고(`prune`), 꺼진 공급자의 항목은 비운다. 파싱 캐시(`OfficeService.cache`)도 같은 기준으로 정리하고 4000개 상한을 둔다. OpenClaw DB 캐시는 이번 수집에서 읽지 않은 노드 키를 버린다. revision은 같은 값으로 다시 계산되므로 축출은 의미를 바꾸지 않는다.
+- **metadata 캐시**: Codex `session_index.jsonl`·가장 최신 `state_N.sqlite`·`-wal`의 mtime+size와 선택된 DB 이름이 같으면 지난 결과를 그대로 쓴다. DB 읽기가 실패한 결과는 기억하지 않는다. Claude는 프로젝트 목록은 매번 읽고 `sessions-index.json`을 파일별 mtime+size로, subagent `.meta.json`은 mtime+size(없음 포함)로 기억한다. 테스트는 `resetCodexMetadataCache`/`resetClaudeMetadataCache`로 초기화한다.
+
+검증은 `tests/record-window.test.ts`(단계별 append·3 MiB 경계·미완결 줄·UTF-8 분할·CRLF·무작위 분할이 `readRecords`와 같음, 축소/교체/guard/10분 대조/큰 첫 줄, 예산·prune)와 `tests/incremental-collect.test.ts`(서비스 append 수집과 revision, metadata 캐시)다.

@@ -14,6 +14,9 @@ export async function readOpenClawDatabases(
   const agents = await readdir(root, { withFileTypes: true });
   const sessions: Session[] = [];
   let errors = 0;
+  // Nodes not read this pass (removed, archived out of the query, a DB that failed) leave the
+  // cache; a later read recomputes the same revision, so this only bounds memory.
+  const seen = new Set<string>();
   for (const agent of agents.filter((x) => x.isDirectory())) {
     const file = path.join(root, agent.name, 'agent', 'openclaw-agent.sqlite');
     if (!existsSync(file)) continue;
@@ -72,6 +75,7 @@ export async function readOpenClawDatabases(
             `office-v10:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
           );
           const key = `${file}:${nativeId}`;
+          seen.add(key);
           const prior = cache.get(key);
           if (prior?.revision === revision) {
             sessions.push(prior);
@@ -175,5 +179,6 @@ export async function readOpenClawDatabases(
       db?.close();
     }
   }
+  for (const key of [...cache.keys()]) if (!seen.has(key)) cache.delete(key);
   return { sessions: sessions.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit), errors };
 }

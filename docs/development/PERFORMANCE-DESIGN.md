@@ -139,6 +139,8 @@ watcher는 변경 힌트로만 쓴다. 파일 교체·inode·filename 누락·�
 
 파일 cursor는 `(source identity, dev/ino, generation, completeOffset, parserVersion)`을 포함한다. append 여부가 확실할 때만 증분 처리하고, 축소·교체·재작성 감지 시 기존 bounded reader로 복귀한다. 마지막 미완결 UTF-8/JSONL은 다음 append까지 보존하되 byte 상한을 둔다. 같은 크기 덮어쓰기까지 검출하도록 재검증 fingerprint와 주기적 대조를 둔다. offset과 파싱 상태는 저장 성공과 함께 반영해 crash 뒤 이벤트를 놓치지 않는다.
 
+> **구현됨 (#45)**: 폴링은 그대로 두고 JSONL append 증분 읽기(dev/ino·64바이트 guard·축소/교체/10분 대조 시 bounded reader 복귀)와 Codex index·DB/WAL, Claude index·sidecar의 mtime+size 캐시를 넣었다. cursor는 메모리에만 두므로 재시작 뒤에는 전체 경로로 읽어 누락이 없다. watcher·SQLite `data_version`·Git 무효화는 아직이다. 계약은 [세션 수집 문서](SESSION-INGESTION.md#jsonl-증분-읽기-45).
+
 SQLite `PRAGMA data_version`은 **같은 연결에서 관측한 값끼리만** 비교한다. 매번 새 연결에서 읽은 값을 비교하는 캐시는 잘못이다. DB 연결을 유지하더라도 장시간 read transaction은 유지하지 않는다. 연결 수/메모리를 제한하고 DB/WAL 교체를 처리한다. [SQLite data_version](https://www.sqlite.org/pragma.html#pragma_data_version)
 
 OpenClaw의 seq는 계속 증가한다고만 가정하지 않는다. rewrite watermark, status/name/parent/actor 변경은 별도 revision이며 JSONL/SQLite 조각 병합과 페르소나 투영도 기존 계약을 따른다. 상한으로 잘린 목록이나 일부 read 오류를 source 삭제로 오인하지 않는다. cursor만 잘못 진전시켜 누락을 영구화하지 않도록 bounded 복구 경로를 남긴다.
@@ -147,8 +149,8 @@ OpenClaw의 seq는 계속 증가한다고만 가정하지 않는다. rewrite wat
 
 ### 3.5 메모리와 실행 예산
 
-- 파싱 캐시: entry 수와 추정 byte의 이중 상한. 초기 제안 총 48MiB, 상세 LRU 16MiB. 실제 heap/RSS를 보고 조정하며 숫자를 보장치로 표현하지 않는다.
-- active/selected source를 우선하고 제거된 경로·비활성 공급자 항목을 정리한다. 큰 단일 레코드는 처리 후 장기 캐시에 넣지 않는다. 캐시 축출은 사용자 데이터 삭제가 아니다.
+- 파싱 캐시: entry 수와 추정 byte의 이중 상한. 초기 제안 총 48MiB, 상세 LRU 16MiB. 실제 heap/RSS를 보고 조정하며 숫자를 보장치로 표현하지 않는다. — **구현됨 (#45)**: JSONL 읽기 창 원문 32 MiB LRU, 파싱 캐시 4000개 상한.
+- active/selected source를 우선하고 제거된 경로·비활성 공급자 항목을 정리한다. 큰 단일 레코드는 처리 후 장기 캐시에 넣지 않는다. 캐시 축출은 사용자 데이터 삭제가 아니다. — **구현됨 (#45)**: 수집마다 발견되지 않은 경로·꺼진 공급자·읽지 않은 OpenClaw 노드를 정리, 큰 첫 metadata 복구 파일은 창을 캐시하지 않음.
 - source queue는 dedupe하고 동시 읽기 2개, Git 조회 2개를 시작값으로 검증한다. 기다리는 동안 변경이 겹치면 최신 dirty 표시를 남겨 다시 읽는다. 동시성을 줄여 지연이 늘면 조정한다.
 - archive/lounging 세션의 원문은 SQLite에 남기고 요약만 상주한다. 영구 ledger/receipt의 디스크 보존 정책은 메모리 예산과 분리한다.
 - 생산 실행은 `tsx + concurrently + Vite preview` 대신 빌드된 collector와 정적 파일 제공 경로를 검토한다. Electron은 이미 worker 분리가 있으므로 동일 수집기를 다시 추가하지 않는다.
