@@ -209,6 +209,9 @@ body.dock-mode {
   color: var(--accent-ink);
   background: var(--accent);
 }
+.tone-standby .dock-pet-pill i {
+  background: #7fc4d9;
+}
 .tone-working .dock-pet-pill i {
   background: var(--st-work);
   box-shadow: 0 0 0 3px rgba(95, 214, 155, 0.16);

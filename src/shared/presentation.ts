@@ -29,8 +29,10 @@ export function presentSession(s: Session, now = Date.now()) {
   const stale = now - s.updatedAt > QUIET_MS;
   // Standing by is upright at the desk — never the decorative stroll or doze.
   const standby = isStandingBy(s, now) && (s.status !== 'done' || stale);
+  // Quiet work past the standing-by window (no fresh snapshot yet) rests like idle.
   const resting =
-    ['idle', 'sleep', 'done', 'leave'].includes(s.status) &&
+    (['idle', 'sleep', 'done', 'leave'].includes(s.status) ||
+      (stale && ['work', 'think'].includes(s.status))) &&
     !standby &&
     !['needs-input', 'error'].includes(runtime.phase);
   const seed = [...s.id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);

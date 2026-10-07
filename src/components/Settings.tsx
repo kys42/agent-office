@@ -185,7 +185,7 @@ export function Settings({
               <label>
                 퇴근 · 대기 라운지로
                 <select
-                  aria-label="대기까지 시간"
+                  aria-label="퇴근까지 시간"
                   value={p.standbyHours ?? 4}
                   onChange={(e) => {
                     const standbyHours = Number(e.target.value);

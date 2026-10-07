@@ -41,9 +41,11 @@ test('the status ladder: live → standing by (30 min) → resting → gone home
   assert.equal(at('work', 2 * hour, false, 1), 'sleep', 'custom standby hours');
   assert.equal(at('work', 10 * min, false, 4, 5), 'idle', 'a 5-minute window');
   assert.equal(at('work', 45 * min, false, 4, 60), 'ready', 'a 60-minute window');
-  // Calls and errors never time out into standing by or resting.
+  // Calls and errors never fall to standing by or resting…
   assert.equal(at('call', 1 * hour), 'call');
   assert.equal(at('error', 1 * hour), 'error');
+  // …but, like everyone, they go home once the standby hours pass (existing behaviour).
+  assert.equal(at('call', 5 * hour), 'sleep');
   assert.equal(at('work', 5 * min, true), 'leave', 'archived wins');
   assert.equal(MOODS.ready.label, '대기 중');
   assert.equal(MOODS.sleep.label, '퇴근');
@@ -63,10 +65,11 @@ test('standing by is upright at the desk and its own to-do group', () => {
     presentSession(make({ status: 'work', updatedAt: now - 5 * min }), now).posture,
     'standby',
   );
-  assert.equal(
-    triageGroup(make({ status: 'work', updatedAt: now - 40 * min }), [], now),
-    'resting',
-  );
+  const old = make({ status: 'work', updatedAt: now - 40 * min });
+  assert.equal(triageGroup(old, [], now), 'resting');
+  // …and it looks like it: no typing once the standing-by window has passed.
+  assert.ok(['resting', 'strolling', 'dozing'].includes(presentSession(old, now).posture));
+  assert.notEqual(presentSession(old, now).mood, 'work');
   assert.equal(triageGroup(make({ status: 'work', updatedAt: now - 10_000 }), [], now), 'working');
   assert.equal(isStandingBy(make({ status: 'ready', archived: true }), now), false);
   // A fresh answer keeps its "result" pose for the first two minutes.
@@ -98,6 +101,13 @@ test('the service keeps the standing-by window with the other schedule preferenc
     await assert.rejects(service.call('preferences', [{ readyMinutes: 300 }]));
     await assert.rejects(service.call('preferences', [{ standbyHours: 1, readyMinutes: 60 }]));
     assert.equal(service.store.preferences().readyMinutes, 10, 'a rejected change is not saved');
+    // Saved preferences from before this setting existed still save other changes.
+    service.store.db
+      .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
+      .run(JSON.stringify({ standbyHours: 1, archiveDays: 7 }));
+    await service.call('preferences', [{ bubbleHours: 6 }]);
+    assert.equal(service.store.preferences().bubbleHours, 6);
+    assert.equal(service.store.preferences().readyMinutes, 30, 'the default fills in');
     // The stored status follows the window: a 12-minute-old finished turn.
     const s = parseRecords(
       [

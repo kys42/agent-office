@@ -152,7 +152,9 @@ export function Roster({
       ? `확인할 결과가 ${resultCount}건 있어요`
       : tiles[2].ids.length
         ? `${tiles[2].ids.length}명이 일하고 있어요`
-        : '모두 조용히 쉬고 있어요';
+        : byGroup.standby?.length
+          ? `${byGroup.standby.length}명이 방금 일을 마치고 대기 중이에요`
+          : '모두 조용히 쉬고 있어요';
   return (
     <aside className="roster" aria-label="동료 목록">
       <PanelTabs active="roster" unread={unread} onInbox={onInbox} />

@@ -521,6 +521,12 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
   await expect(page.locator('.office-schedule-preview')).toHaveText(
     '마지막 활동 → 10분 대기 · 4시간 후 퇴근 · 7일 후 보관',
   );
+  // Standing by must end before going home: shortening going home pulls it back.
+  await ready.selectOption('60');
+  await page.getByLabel('퇴근까지 시간').selectOption('1');
+  await expect(ready).toHaveValue('30');
+  await expect(ready.locator('option[value="60"]')).toHaveJSProperty('disabled', true);
+  await page.getByLabel('퇴근까지 시간').selectOption('4');
   await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
   await page.getByRole('tab', { name: /대기 라운지/ }).click();
   await expect(page.locator('.session-room')).toContainText('퇴근');

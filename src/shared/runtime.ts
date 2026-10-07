@@ -16,7 +16,8 @@ export function runtimeObservation(mood: Mood, at: number, reason: string): Runt
     phase: reason.includes('turn_aborted') ? 'interrupted' : phases[mood],
     at,
     reason,
-    evidence: mood === 'idle' && !reason.includes('turn_aborted') ? 'unknown' : 'observed',
+    evidence:
+      ['idle', 'ready'].includes(mood) && !reason.includes('turn_aborted') ? 'unknown' : 'observed',
   };
 }
 /** After this much silence, observed work is no longer shown as live (provider-agnostic). */
@@ -26,7 +27,8 @@ export const DEFAULT_READY_MINUTES = 30;
 /**
  * The status ladder (docs/golden/STATUS-POLICY.md). From the last activity: observed work for
  * 2 minutes → standing by ('ready') until `readyMinutes` → resting ('idle') until
- * `standbyHours` → gone home ('sleep', lounge). Calls and errors never time out here.
+ * `standbyHours` → gone home ('sleep', lounge). Calls and errors never fall to standing by or
+ * resting; like everyone, they go home once `standbyHours` pass.
  */
 export function deriveState(
   status: Mood,
