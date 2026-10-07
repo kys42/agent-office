@@ -179,7 +179,8 @@ export function normalizePetCustomization(value: unknown): PetCustomization {
     empty.colleagues = Object.fromEntries(
       Object.entries(input.colleagues)
         .filter(([key, look]) => key.length > 0 && key.length <= 500 && validPetLook(look))
-        .slice(0, 3000)
+        // Oldest first: at the cap the oldest looks go, never the one just chosen.
+        .slice(-3000)
         .map(([key, look]) => [key, { ...look! }]),
     );
   }
@@ -187,10 +188,17 @@ export function normalizePetCustomization(value: unknown): PetCustomization {
 }
 export function mergePetCustomization(current: unknown, patch: PetCustomization): PetCustomization {
   const previous = normalizePetCustomization(current);
+  // Patched colleagues move to the newest end (a plain spread keeps a changed key in its old
+  // place), so the cap drops the oldest untouched looks instead of what was just saved.
+  const patched = Object.entries(patch.colleagues ?? {});
+  const changed = new Set(patched.map(([key]) => key));
   return normalizePetCustomization({
     version: 1,
     providers: { ...previous.providers, ...patch.providers },
-    colleagues: { ...previous.colleagues, ...patch.colleagues },
+    colleagues: Object.fromEntries([
+      ...Object.entries(previous.colleagues).filter(([key]) => !changed.has(key)),
+      ...patched,
+    ]),
   });
 }
 export function petLook(

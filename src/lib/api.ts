@@ -32,6 +32,7 @@ export const api: OfficeAPI = window.office ?? {
   refresh: () => rpc('refresh'),
   patch: (id, p) => rpc('patch', id, p),
   veil: (ids, on) => rpc('veil', ids, on),
+  pin: (ids, on) => rpc('pin', ids, on),
   search: (q, p) => rpc('search', q, p),
   handoff: (id, r) => rpc('handoff', id, r),
   preferences: (p) => rpc('preferences', p),

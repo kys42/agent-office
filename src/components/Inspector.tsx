@@ -36,6 +36,7 @@ import { Sprite } from './Sprite';
 import { Modal } from './Modal';
 import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
+import { copyText, jumpOrCopy } from '../lib/resume';
 import { Conversation } from './Conversation';
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
@@ -54,11 +55,13 @@ export function Inspector({
   sessions,
   notices,
   memberIds,
+  resident,
   onReceipt,
   onSelect,
   showNews,
   onClose,
   onPatch,
+  onPin,
   onReturn,
   notify,
   demo,
@@ -74,12 +77,19 @@ export function Inspector({
   notices: OfficeNotice[];
   /** All runs of the colleague in the room, so the now card matches the roster. */
   memberIds?: string[];
+  /**
+   * The office colleague this run belongs to (a persona speaks for all of its runs), so the
+   * pin shows and changes what the desk shows. Absent for sessions outside the office.
+   */
+  resident?: Session;
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
   showNews?: string | null;
   onClose: () => void;
   onReturn: (id: string) => void;
   onPatch: (id: string, p: SessionPatch) => Promise<void>;
+  /** Pin or unpin a colleague, the same way its desk pin does. */
+  onPin: (s: Session) => void;
   notify: (s: string) => void;
   demo: boolean;
   privacy: boolean;
@@ -215,14 +225,7 @@ export function Inspector({
       setBusy(false);
     }
   };
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      notify(t.inspector.copied);
-    } catch {
-      notify(t.inspector.copyDenied);
-    }
-  };
+  const copy = (text: string) => copyText(text, notify);
   const parent = parentSession(s, sessions);
   const children = sessions.filter((x) => parentSession(x, sessions)?.id === s.id);
   const personaRuns = s.actor
@@ -242,9 +245,7 @@ export function Inspector({
   const resume = async () => {
     try {
       if (api.jump) {
-        const result = await api.jump(s.id);
-        if (result.action === 'copy') await copy(result.text);
-        else notify(result.text);
+        await jumpOrCopy(s.id, notify);
         return;
       }
       const value = await api.resume(s.id);
@@ -255,6 +256,8 @@ export function Inspector({
     }
   };
   const presentation = presentSession(s);
+  // Pinning belongs to the colleague: a persona is pinned when any of its runs is.
+  const colleague = resident ?? s;
   return (
     <>
       <aside className="inspector" aria-label={t.inspector.label} ref={panelRef} tabIndex={-1}>
@@ -274,10 +277,10 @@ export function Inspector({
               <Sparkles size={15} />
             </button>
             <button
-              className={`icon-btn ${s.pinned ? 'gold' : ''}`}
-              aria-label={s.pinned ? t.inspector.unpin : t.inspector.pin}
-              title={s.pinned ? t.inspector.unpin : t.inspector.pinTitle}
-              onClick={() => patch({ pinned: !s.pinned })}
+              className={`icon-btn ${colleague.pinned ? 'gold' : ''}`}
+              aria-label={colleague.pinned ? t.inspector.unpin : t.inspector.pin}
+              title={colleague.pinned ? t.inspector.unpin : t.inspector.pinTitle}
+              onClick={() => onPin(colleague)}
             >
               <Pin size={15} />
             </button>

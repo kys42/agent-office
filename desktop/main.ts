@@ -19,8 +19,8 @@ import type {
   DockAction,
   DockMode,
   JumpResult,
-  Provider,
   Session,
+  SessionIdentity,
   Snapshot,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
@@ -436,40 +436,50 @@ function setupIPC() {
     return (await resume(await bridge.call('detail', [id]))).text;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
-  const identities = new Map<
-    string,
-    { provider: Provider; nativeId: string; sourcePath: string }
-  >();
-  const identity = async (id: unknown) => {
-    let known = typeof id === 'string' ? identities.get(id) : undefined;
-    if (!known) {
-      const s: Session = await bridge.call('detail', [id]);
-      known = { provider: s.provider, nativeId: s.nativeId, sourcePath: s.sourcePath };
-      identities.set(s.id, known);
-      if (identities.size > 500) identities.delete(identities.keys().next().value!);
+  const identities = new Map<string, SessionIdentity>();
+  /** Who these sessions are: one light read (no events) for all of those not known yet. */
+  const identify = async (ids: string[]) => {
+    const found = new Map<string, SessionIdentity>();
+    const unknown: string[] = [];
+    for (const id of ids) {
+      const known = identities.get(id);
+      if (known) found.set(id, known);
+      else if (id.length <= 400) unknown.push(id); // longer ones are no session's id
     }
+    if (unknown.length)
+      for (const known of (await bridge.call('identities', [unknown])) as SessionIdentity[]) {
+        found.set(known.id, known);
+        identities.set(known.id, known);
+        if (identities.size > 500) identities.delete(identities.keys().next().value!);
+      }
+    return found;
+  };
+  const identity = async (id: unknown) => {
+    if (typeof id !== 'string') throw new Error(m().desktop.badRequest);
+    const known = (await identify([id])).get(id);
+    if (!known) throw new Error(m().server.store.notFound);
     return known;
   };
-  const live = async (id: unknown, fresh = false) => {
-    const known = await identity(id);
-    return known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
-  };
-  const codex = async (id: unknown, fresh = false) => {
-    const known = await identity(id);
-    return known.provider === 'codex'
+  const live = (known: SessionIdentity, fresh = false) =>
+    known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
+  const codex = (known: SessionIdentity, fresh = false) =>
+    known.provider === 'codex'
       ? findCodexThread(known.nativeId, known.sourcePath, { fresh })
       : null;
-  };
   ipcMain.handle('office:terminals', async (e, ids) => {
     trusted(e);
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error(m().desktop.badRequest);
+    const unique = [...new Set(ids as string[])];
+    const found = await identify(unique).catch(() => new Map<string, SessionIdentity>());
     const entries = await Promise.all(
-      [...new Set(ids as string[])].map(async (id) => {
+      unique.map(async (id) => {
         try {
-          const terminal = await live(id);
+          const known = found.get(id);
+          if (!known) return [id, null] as const;
+          const terminal = await live(known);
           if (terminal) return [id, terminalTarget(terminal)] as const;
-          return [id, (await codex(id)) ? codexTarget() : null] as const;
+          return [id, (await codex(known)) ? codexTarget() : null] as const;
         } catch {
           return [id, null] as const;
         }
@@ -479,11 +489,12 @@ function setupIPC() {
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
+    const known = await identity(id);
     // A terminal Codex session lives in the CLI daemon, not the desktop app: hand back the command.
-    const thread = await codex(id, true);
+    const thread = await codex(known, true);
     if (thread) return { action: 'copy', text: `codex resume ${shellQuote(thread.threadId)}` };
-    const terminal = await live(id, true);
-    if (!terminal) return resume(await bridge.call('detail', [id]));
+    const terminal = await live(known, true);
+    if (!terminal) return resume(known);
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.
@@ -522,7 +533,8 @@ function setupIPC() {
     trusted(e);
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
-    const thread = await codex(id, true);
+    const known = await identity(id);
+    const thread = await codex(known, true);
     if (thread)
       try {
         return await queueToCodex(thread, text);
@@ -532,7 +544,7 @@ function setupIPC() {
           throw new Error(m().desktop.terminal.codexMissing);
         throw new Error(m().desktop.terminal.codexUnconfirmed);
       }
-    const terminal = await live(id, true);
+    const terminal = await live(known, true);
     if (!terminal) throw new Error(m().desktop.terminal.noTarget);
     try {
       return await sendToTerminal(terminal, text);
@@ -577,7 +589,7 @@ async function terminalSendEnabled() {
     return false;
   }
 }
-async function resume(s: Session): Promise<JumpResult> {
+async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpResult> {
   if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
     await shell.openExternal(`codex://threads/${s.nativeId}`);
     return { action: 'opened', text: m().desktop.codexOpened };

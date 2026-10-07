@@ -304,6 +304,8 @@ export interface Handoff {
   revision: string;
   createdAt: number;
 }
+/** Who a session is natively: enough for the desktop app to find its terminal. */
+export type SessionIdentity = Pick<Session, 'id' | 'provider' | 'nativeId' | 'sourcePath'>;
 export type SessionPatch = Partial<
   Pick<Session, 'alias' | 'notes' | 'pinned' | 'archived' | 'completed'>
 >;
@@ -358,6 +360,8 @@ export interface OfficeAPI {
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;
   /** Hide colleagues until their next conversation (`on`), or bring them back. */
   veil: (ids: string[], on: boolean) => Promise<Snapshot>;
+  /** Pin or unpin colleagues (e.g. all runs of a persona) in one step: all of them or none. */
+  pin: (ids: string[], on: boolean) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;

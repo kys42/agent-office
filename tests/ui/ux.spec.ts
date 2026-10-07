@@ -532,3 +532,60 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
   await page.getByRole('tab', { name: /대기 라운지/ }).click();
   await expect(page.locator('.session-room')).toContainText('퇴근');
 });
+
+test('Esc in the desk row folds an unfolded bubble first; only an Esc with nothing open folds the dock', async ({
+  page,
+}) => {
+  await page.goto('/?demo#mini');
+  await page.locator('.desk-pet').click();
+  const row = page.locator('.desk-row');
+  await expect(row).toBeVisible();
+  const bubble = row.locator('[data-station-id="demo:0"] .speech-bubble');
+  await bubble.locator('.speech-open').click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  // Re-renders (pointing at another desk) must not put the dock's own Esc ahead of the row's.
+  await row.locator('[data-station-id="demo:1"] .office-pet').hover();
+  await page.keyboard.press('Escape');
+  await expect(row.locator('.speech-bubble.is-expanded')).toHaveCount(0);
+  await expect(row).toBeVisible();
+  await expect(page.locator('.desk-pet')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(row).toHaveCount(0);
+  await expect(page.locator('.desk-pet')).toBeVisible();
+});
+
+test('A desk-row jump to a terminal that is gone copies the resume command instead', async ({
+  page,
+}) => {
+  await page.addInitScript((snapshot) => {
+    const w = window as any;
+    w.copied = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async (text: string) => void w.copied.push(text) },
+    });
+    w.office = {
+      snapshot: async () => structuredClone(snapshot),
+      detail: async (id: string) => structuredClone(snapshot.sessions.find((x) => x.id === id)),
+      visit: async () => structuredClone(snapshot),
+      artifacts: async () => [],
+      notices: async () => structuredClone(snapshot),
+      subscribe: () => () => {},
+      terminals: async (ids: string[]) =>
+        Object.fromEntries(
+          ids.map((id) => [
+            id,
+            { kind: 'tmux', label: 'work:1', status: 'idle', canSend: false, canFocus: true },
+          ]),
+        ),
+      // The terminal closed after the lookup: main hands back the resume command.
+      jump: async (id: string) => ({ action: 'copy', text: `claude --resume ${id}` }),
+    };
+  }, demoSnapshot());
+  await page.goto('/#mini=row');
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  await desk.locator('.office-pet').hover();
+  await desk.locator('.jump-button').click();
+  await expect(page.locator('.dock-toast')).toHaveText('클립보드에 복사했어요');
+  expect(await page.evaluate(() => (window as any).copied)).toEqual(['claude --resume demo:0']);
+});
