@@ -68,6 +68,10 @@ test('a request plays its arrival for 15 seconds after it reaches the office, fr
   // History found at start-up, closed requests and other kinds never play.
   assert.equal(freshRequest([request('a', { bootstrap: true })], now), undefined);
   assert.equal(freshRequest([request('a', { dismissedAt: now })], now), undefined);
+  // Closing the newer of two never brings back the earlier one.
+  const earlier = request('a', { receivedAt: now - 6000 });
+  const closed = request('a', { receivedAt: now - 1000, dismissedAt: now });
+  assert.equal(freshRequest([earlier, closed], now), undefined);
   assert.equal(freshRequest([request('a', { kind: 'reply' })], now), undefined);
   assert.equal(freshRequest([request('a', { background: true })], now), undefined, 'scheduled');
   // Collected late (restart, paused collector): received just now, but sent long ago.

@@ -34,17 +34,18 @@ export const ARRIVAL_LAG_MS = 60_000;
  * window or a re-render all agree.
  */
 export function freshRequest(news: OfficeNotice[], now = Date.now()) {
-  return news
+  const latest = news
     .filter(
       (n) =>
         n.kind === 'request' &&
         !n.bootstrap &&
         !n.background &&
-        !n.dismissedAt &&
         Math.abs(now - n.receivedAt) < ARRIVAL_MS &&
         now - n.at < ARRIVAL_MS + ARRIVAL_LAG_MS,
     )
     .sort((a, b) => b.receivedAt - a.receivedAt)[0];
+  // Closing the newest one ends the arrival; it never brings back an earlier request.
+  return latest?.dismissedAt ? undefined : latest;
 }
 
 /** When the current arrivals end (re-render then so every view drops them together). */

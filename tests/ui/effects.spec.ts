@@ -127,6 +127,14 @@ test('Reduced motion keeps the picture but stops every effect animation', async 
         .filter((name) => name !== 'none'),
     );
     expect(running).toEqual([]);
+    // Pseudo-element glows (the 불타는 중 tag, the heat behind the flames) hold still too.
+    const glows = await desk.evaluate((el) =>
+      [
+        getComputedStyle(el.querySelector('.working-beacon')!, '::after').animationName,
+        getComputedStyle(el.querySelector('.fx-flames')!, '::before').animationName,
+      ].filter((name) => name !== 'none'),
+    );
+    expect(glows).toEqual([]);
   }
 });
 

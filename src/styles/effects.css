@@ -668,8 +668,10 @@
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
 .motion-paused :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
-.motion-paused :is(.office-pet.work-arrival, .working-beacon, .working-beacon::after),
-.reduce-motion :is(.office-pet.work-arrival, .working-beacon, .working-beacon::after) {
+.motion-paused :is(.office-pet.work-arrival, .working-beacon),
+.reduce-motion :is(.office-pet.work-arrival, .working-beacon),
+.motion-paused .working-beacon::after,
+.reduce-motion .working-beacon::after {
   animation: none !important;
 }
 /* Without motion, moving bits sit still where they read best (drops on, puffs and embers off). */
