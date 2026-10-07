@@ -148,34 +148,38 @@ export function stationSpeech(
   // as history keeps only its last notice; nothing is stored or notified for these). Nothing is
   // quoted over a background run's words, nor from a background run or a helper.
   const answered = (at: number) => !bubble || at <= bubble.at;
-  const candidates: (QuotedRequest & { sessionId: string })[] = [
-    ...news
-      .filter((n) => n.kind === 'request' && !n.background && answered(n.at))
-      .map((n) => ({
+  // One pass (desks can hold thousands of old requests): skip repeats, keep the best so far.
+  let best:
+    { id: string; eventId: string; at: number; sessionId: string; text: () => string } | undefined;
+  const seen = new Set<string>();
+  const consider = (c: NonNullable<typeof best>) => {
+    if (seen.has(c.id)) return;
+    seen.add(c.id);
+    const same = (x: typeof c) => Number(x.sessionId === bubble?.sessionId);
+    if (!best || same(c) - same(best) > 0 || (same(c) === same(best) && c.at > best.at)) best = c;
+  };
+  for (const n of news)
+    if (n.kind === 'request' && !n.background && answered(n.at))
+      consider({
         id: n.id,
         eventId: n.eventId,
         at: n.at,
-        text: n.text,
         sessionId: n.sessionId,
-      })),
-    ...(isBackground(s) || isHelper(s) ? [] : s.events)
-      .filter((e) => e.kind === 'user' && answered(e.at))
-      .map((e) => ({
-        id: `${s.id}::${e.id}`,
-        eventId: e.id,
-        at: e.at,
-        text: messageExcerpt(e.text, 800),
-        sessionId: s.id,
-      })),
-  ].filter((c, i, all) => all.findIndex((o) => o.id === c.id) === i);
-  const best = candidates.sort(
-    (a, b) =>
-      Number(b.sessionId === bubble?.sessionId) - Number(a.sessionId === bubble?.sessionId) ||
-      b.at - a.at,
-  )[0];
+        text: () => n.text,
+      });
+  if (!isBackground(s) && !isHelper(s))
+    for (const e of s.events)
+      if (e.kind === 'user' && answered(e.at))
+        consider({
+          id: `${s.id}::${e.id}`,
+          eventId: e.id,
+          at: e.at,
+          sessionId: s.id,
+          text: () => messageExcerpt(e.text, 800),
+        });
   const quoted: QuotedRequest | undefined =
     best && !bubble?.background
-      ? { id: best.id, eventId: best.eventId, at: best.at, text: best.text }
+      ? { id: best.id, eventId: best.eventId, at: best.at, text: best.text() }
       : undefined;
   return {
     members,
