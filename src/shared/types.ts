@@ -377,11 +377,12 @@ export interface OfficeAPI {
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
   /** Desktop only: focus the live terminal, or fall back to resume. */
   jump?: (id: string) => Promise<JumpResult>;
-  /** Desktop only, opt-in: type into an idle Claude terminal, or queue into a Codex CLI session. */
+  /** Desktop only, on by default: type into an idle Claude terminal, or queue into Codex CLI. */
   send?: (id: string, text: string) => Promise<string>;
   /**
-   * Desktop only: read, or change, the opt-in for `send`. Kept in the desktop profile, outside
-   * the preferences shared with the web preview; turning it on asks for native confirmation.
+   * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
+   * profile, outside the preferences shared with the web preview; turning it back on asks for
+   * native confirmation.
    */
   terminalSend?: (enable?: boolean) => Promise<boolean>;
   /**

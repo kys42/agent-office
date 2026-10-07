@@ -187,7 +187,7 @@ export default function App() {
     setInbox(true);
     setSelected(null);
   };
-  // Desktop-only opt-in and the quick-reply send, shared with the dock card.
+  // Desktop-only Send to terminal setting and the quick-reply send, shared with the dock card.
   const {
     enabled: terminalSend,
     available: terminalSendAvailable,

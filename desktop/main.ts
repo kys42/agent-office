@@ -547,8 +547,9 @@ function setupIPC() {
       throw new Error(m().desktop.terminal.jumpFailed(hostName(terminal.host)));
     }
   });
-  // The opt-in lives in the desktop profile, not in the shared preferences, so the web preview
-  // can never turn it on. Turning it on always goes through a native confirmation.
+  // The setting lives in the desktop profile, not in the shared preferences, so the web preview
+  // can never turn it on. It is on by default; turning it back on always goes through a
+  // native confirmation.
   ipcMain.handle('office:terminal-send', async (e, enable) => {
     trusted(e);
     if (typeof enable !== 'boolean') return terminalSendEnabled();
@@ -624,9 +625,20 @@ function setupIPC() {
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+/**
+ * On unless the person turned it off: no file means the default (on), and the file records
+ * their choice. A file that can't be read counts as off. Turning it back on asks for
+ * confirmation again.
+ */
 async function terminalSendEnabled() {
+  let saved: string;
   try {
-    return JSON.parse(await readFile(terminalSendFile(), 'utf8')).enabled === true;
+    saved = await readFile(terminalSendFile(), 'utf8');
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+  try {
+    return JSON.parse(saved).enabled !== false;
   } catch {
     return false;
   }

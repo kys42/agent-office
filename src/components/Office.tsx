@@ -66,7 +66,7 @@ export function Office({
   onPin?: (s: Session) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
-  /** Desktop opt-in: a bubble whose session can take a follow-up gets a quick reply. */
+  /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
   const { t, locale } = useI18n();

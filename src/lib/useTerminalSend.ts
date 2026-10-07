@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 
 /**
- * The desktop opt-in for typing into terminals, and the send used by quick replies. Shared by
+ * The desktop setting (on by default) for typing into terminals, and the send used by quick replies. Shared by
  * the big office and the dock card so both read the same setting the same way. The setting
  * lives in the desktop profile (office:terminal-send), never in the shared preferences.
  */
