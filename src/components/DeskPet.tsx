@@ -9,6 +9,7 @@ import { PET_SIZE } from '../shared/dock-geometry';
 import { stationSpeech } from '../shared/speech';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
+import { PetArrival } from './DeskEffects';
 
 const DRAG_SLOP = 4;
 
@@ -94,6 +95,14 @@ export function DeskPet({
               }
             />
           </div>
+        )}
+        {/* Someone just got a request: papers land beside the pet (it stays who it is). */}
+        {!status && pet.arrival && (
+          <PetArrival
+            key={pet.arrival.id}
+            receivedAt={pet.arrival.receivedAt}
+            count={pet.arrivals}
+          />
         )}
         <div className="dock-pet-tools" data-solid>
           <button

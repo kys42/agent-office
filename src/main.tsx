@@ -16,6 +16,7 @@ import './styles/usage.css';
 import './styles/dock.css';
 import './styles/veil.css';
 import './styles/speech.css';
+import './styles/effects.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {

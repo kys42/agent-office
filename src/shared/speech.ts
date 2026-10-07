@@ -20,6 +20,27 @@ export const TONE_LABELS: Record<BubbleTone, string> = {
   message: '응답',
 };
 
+/** How long a just-sent request plays its arrival (papers landing, envelope). */
+export const ARRIVAL_MS = 15_000;
+
+/**
+ * The request that just landed on a desk, if any: the newest non-history, not-closed request
+ * received within ARRIVAL_MS. Pure — no "already seen" memory — so every view, a hidden
+ * window or a re-render all agree.
+ */
+export function freshRequest(news: OfficeNotice[], now = Date.now()) {
+  return news
+    .filter(
+      (n) =>
+        n.kind === 'request' &&
+        !n.bootstrap &&
+        !n.dismissedAt &&
+        now - n.receivedAt < ARRIVAL_MS &&
+        n.receivedAt - now < ARRIVAL_MS,
+    )
+    .sort((a, b) => b.receivedAt - a.receivedAt)[0];
+}
+
 /** Bubbles render this much of the original message (code blocks dropped). */
 const MARKDOWN_LIMIT = 1500;
 
@@ -103,6 +124,8 @@ export function stationSpeech(
     members,
     news,
     bubble,
+    /** A request that just arrived (plays the arrival on the desk). */
+    arrival: freshRequest(news, now),
     tone,
     activity,
     unread: unreadNoticeCount(news),
@@ -119,3 +142,12 @@ export function stationSpeech(
   };
 }
 export type StationSpeech = ReturnType<typeof stationSpeech>;
+
+/**
+ * What a desk says right now: a just-arrived request speaks first — the person's own words —
+ * then the desk's usual bubble. Every desk view (big office, row, floor) uses this.
+ */
+export function deskSpeech(s: Session, notices: OfficeNotice[], bubbleHours = 3, now = Date.now()) {
+  const usual = stationSpeech(s, notices, bubbleHours, now);
+  return usual.arrival ? stationSpeech(s, notices, bubbleHours, now, usual.arrival) : usual;
+}

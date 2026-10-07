@@ -97,9 +97,32 @@ export const PHASE_LABELS: Record<ExecutionPhase, string> = {
 };
 
 /** Decorative focus level, anchored to a known current request, never session age. */
-export function focusLevel(s: Session, now = Date.now()): 0 | 1 | 2 {
+/**
+ * How long the current observed task has kept going (decorative intensity only): 1 focused
+ * (5 min), 2 deep (15 min), 3 on fire (30 min). Needs live work evidence and a task start.
+ */
+export type FocusLevel = 0 | 1 | 2 | 3;
+/** Minutes into the task where each focus level starts (1, 2, 3). */
+export const FOCUS_MINUTES = [5, 15, 30] as const;
+export const FOCUS_LABELS = ['작업 중', '집중 중', '몰입 중', '불타는 중'] as const;
+export function focusLevel(s: Session, now = Date.now()): FocusLevel {
   const start = taskStart(s);
   if (!isWorking(s, now) || !start || start > now) return 0;
   const minutes = (now - start) / 60_000;
-  return minutes >= 15 ? 2 : minutes >= 5 ? 1 : 0;
+  return FOCUS_MINUTES.filter((m) => minutes >= m).length as FocusLevel;
+}
+
+/** One sheet per five minutes of the current task (at least one), up to eight. */
+export const PAPER_MINUTES = 5;
+export const MAX_PAPERS = 8;
+/**
+ * Papers piled on the desk: they build up while the task runs and stay while the colleague
+ * stands by; once resting (or with no observed task start) the desk is cleared.
+ */
+export function deskPapers(s: Session, now = Date.now()) {
+  if (s.archived || !['work', 'think', 'done', 'ready'].includes(s.status)) return 0;
+  const start = taskStart(s);
+  if (!start || start > now) return 0;
+  const end = isWorking(s, now) ? now : Math.max(start, s.updatedAt);
+  return Math.min(MAX_PAPERS, Math.max(1, Math.floor((end - start) / (PAPER_MINUTES * 60_000))));
 }

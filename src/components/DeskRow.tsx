@@ -34,7 +34,8 @@ import {
   ROW_SCENE_HEIGHT,
 } from '../shared/dock-geometry';
 import { residentLabel, type OfficeModel } from '../shared/office-model';
-import { stationSpeech } from '../shared/speech';
+import { deskSpeech } from '../shared/speech';
+import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
@@ -42,6 +43,7 @@ import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
+import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -275,11 +277,13 @@ export function DeskRow({
                   const pose = v.pose;
                   const label = residentLabel(s, privacy);
                   const branch = branchInfo(s);
-                  const speech = stationSpeech(s, model.notices, model.bubbleHours, model.now);
-                  const { bubble } = speech;
+                  // A just-arrived request plays on the desk and speaks first.
+                  const speech = deskSpeech(s, model.notices, model.bubbleHours, model.now);
+                  const { bubble, arrival } = speech;
+                  const focus = focusLevel(s, model.now);
                   return (
                     <div
-                      className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'}`}
+                      className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus}`}
                       key={s.id}
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${top}px)` }}
@@ -290,7 +294,7 @@ export function DeskRow({
                       <Furniture kind="chair" />
                       <div className="pet-shadow" />
                       <button
-                        className={`office-pet pose-${pose.posture}`}
+                        className={`office-pet pose-${arrival ? 'still' : pose.posture} ${arrival ? 'work-arrival' : ''}`}
                         data-solid
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
@@ -298,6 +302,7 @@ export function DeskRow({
                         title={label.detail}
                         onClick={() => open(s.id)}
                       >
+                        <FocusEffects level={focus} />
                         <Sprite provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
@@ -309,13 +314,9 @@ export function DeskRow({
                       )}
                       <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
                       <Furniture kind="equipment" />
-                      {pose.working && (
-                        <span className="working-beacon">
-                          <i />
-                          <i />
-                          <i /> 작업 중
-                        </span>
-                      )}
+                      <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                      {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
+                      {pose.working && <WorkingBeacon level={focus} />}
                       {floor ? (
                         // A name plate on the desk front instead of a card on the rug.
                         <button

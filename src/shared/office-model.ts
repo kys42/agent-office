@@ -6,6 +6,7 @@ import { TRIAGE_ORDER, triageGroup, unreadInbox, type TriageGroup } from './tria
 import { isAttentionNotice, isFinalNotice, isInboxNotice, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
 import { isVeiled } from './veil';
+import { freshRequest } from './speech';
 import { zoneLabel } from './zones';
 
 /**
@@ -223,9 +224,24 @@ export function petSummary(model: OfficeModel) {
         )
           speaker = { view: v, notice: latest };
       }
+  // Someone just got a request: the pet catches the papers too (it stays who it is).
+  const arrivals = model.seats
+    .filter((v) => !v.veiled)
+    .map((v) => {
+      const members = v.session.resident?.sessionIds ?? [v.session.id];
+      return freshRequest(
+        model.notices.filter((n) => members.includes(n.sessionId)),
+        model.now,
+      );
+    })
+    .filter((n) => !!n)
+    .sort((a, b) => b.receivedAt - a.receivedAt);
   return {
     group,
     count,
+    /** The newest just-arrived request across visible desks, and how many desks got one. */
+    arrival: arrivals[0],
+    arrivals: arrivals.length,
     lead: speaker?.view ?? model.lead,
     speaker,
     label: PET_LABELS[group],
