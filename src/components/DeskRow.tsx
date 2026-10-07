@@ -34,13 +34,13 @@ import {
   ROW_SCENE_HEIGHT,
 } from '../shared/dock-geometry';
 import { residentLabel, type OfficeModel } from '../shared/office-model';
-import { deskSpeech, hopping } from '../shared/speech';
+import { deskSpeech, hopping, shownSpeech } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
-import { HelperDesk } from './HelperDesk';
+import { HelperDesk, HelperStack } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
@@ -91,6 +91,8 @@ export function DeskRow({
   const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + 128;
   const track = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
+  // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
+  const [closed, setClosed] = useState<string | null>(null);
   const [view, setView] = useState({ left: 0, width: 0, scroll: 0 });
   // A mouse wheel scrolls the row sideways when there are more desks than fit.
   useEffect(() => {
@@ -279,7 +281,18 @@ export function DeskRow({
                   const branch = branchInfo(s);
                   // A just-arrived request plays on the desk and speaks first.
                   const speech = deskSpeech(s, model.notices, model.bubbleHours, model.now);
-                  const { bubble, arrival, hop } = speech;
+                  const { arrival, hop } = speech;
+                  // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                  const shown = shownSpeech(
+                    s,
+                    model.notices,
+                    model.bubbleHours,
+                    model.now,
+                    speech,
+                    hover === s.id,
+                    hover === s.id && closed !== s.id,
+                  );
+                  const bubble = shown?.speech.bubble;
                   const focus = focusLevel(s, model.now);
                   return (
                     <div
@@ -288,7 +301,10 @@ export function DeskRow({
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${top}px)` }}
                       onMouseEnter={() => setHover(s.id)}
-                      onMouseLeave={() => setHover((h) => (h === s.id ? null : h))}
+                      onMouseLeave={() => {
+                        setHover((h) => (h === s.id ? null : h));
+                        setClosed((c) => (c === s.id ? null : c));
+                      }}
                     >
                       <i className="desk-glow" aria-hidden="true" />
                       <Furniture kind="chair" />
@@ -373,21 +389,23 @@ export function DeskRow({
                           </button>
                         </>
                       )}
-                      {speech.shows(hover === s.id) && (
+                      {shown && (
                         <div className="row-speech" data-solid>
                           <SpeechBubble
                             session={s}
-                            speech={speech}
+                            speech={shown.speech}
+                            peek={shown.peek}
                             privacy={privacy}
                             onOpen={() => {
                               if (bubble && !privacy)
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
                               open(bubble?.sessionId ?? s.id);
                             }}
-                            onDismiss={() =>
-                              bubble &&
-                              onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
-                            }
+                            onDismiss={() => {
+                              setClosed(s.id);
+                              if (bubble)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
+                            }}
                           />
                         </div>
                       )}
@@ -403,6 +421,23 @@ export function DeskRow({
                     />
                   ))}
                 {zone.helpers.map((helper) => {
+                  const hasNews = (h: Session) =>
+                    model.notices.some(
+                      (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                    );
+                  if (helper.stack)
+                    return (
+                      <HelperStack
+                        key={`stack:${helper.parent}`}
+                        members={helper.stack.map((id) => byId.get(id)!)}
+                        parentId={helper.parent}
+                        at={{ x: helper.x, y: helperY }}
+                        pose={(h) => model.view(h.id)!.pose}
+                        news={hasNews}
+                        privacy={privacy}
+                        onOpen={open}
+                      />
+                    );
                   const s = byId.get(helper.id)!;
                   const pose = model.view(s.id)!.pose;
                   return (

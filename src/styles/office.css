@@ -1319,6 +1319,125 @@
   background: #c7f2d9;
   box-shadow: 0 0 0 1.5px #2b6b47;
 }
+/* Many helpers share one stacked desk ("×N"); its list keeps every helper reachable. */
+.helper-stack {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 68px;
+  height: 68px;
+  z-index: 4;
+}
+.helper-stack.is-open {
+  z-index: 30;
+}
+.helper-stack-back i {
+  position: absolute;
+  top: 32px;
+  left: 3px;
+  z-index: 0;
+  width: 62px;
+  height: 14px;
+  background: #a07c58;
+  border-top: 3px solid #d9ae74;
+  border-bottom: 4px solid #4f382c;
+  border-radius: 2px;
+  transform: translate(5px, -6px);
+}
+.helper-stack-back i + i {
+  background: #8a6a4b;
+  border-top-color: #c39a63;
+  transform: translate(10px, -12px);
+}
+.helper-stack-count {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  z-index: 5;
+  padding: 0 4px;
+  border: 2px solid #2a1a10;
+  border-radius: 6px;
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 14px;
+  color: #2a1a10;
+  background: #ffd37f;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+.helper-stack-bang {
+  position: absolute;
+  top: -4px;
+  left: -2px;
+  z-index: 5;
+  width: 15px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  font-family: var(--font-pixel);
+  font-size: 12px;
+  font-weight: 700;
+  color: #2a0a0f;
+  background: var(--st-call);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+.helper-stack-list {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 30;
+  min-width: 156px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 2px solid #2a1a10;
+  border-radius: 8px;
+  background: rgba(28, 21, 19, 0.97);
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.3),
+    0 12px 24px -10px rgba(0, 0, 0, 0.7);
+  transform: translateX(-50%);
+}
+.helper-stack-list button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 6px 2px 2px;
+  border-radius: 5px;
+  font-family: 'Galmuri9', var(--font-pixel);
+  font-size: 11px;
+  color: #f2e4cf;
+  text-align: left;
+}
+.helper-stack-list button:hover,
+.helper-stack-list button:focus-visible {
+  background: rgba(255, 227, 166, 0.16);
+}
+.helper-stack-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.helper-stack-list button > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.helper-stack-list .helper-news {
+  position: static;
+  flex: none;
+}
 .scene-empty {
   position: absolute;
   left: 50%;

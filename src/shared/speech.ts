@@ -139,6 +139,13 @@ export function stationSpeech(
     bubble,
     /** A request that just arrived (plays the arrival on the desk). */
     arrival: freshRequest(news, now),
+    /**
+     * With no bubble (closed, expired or resolved), the last thing the desk said — shown only
+     * while the person points at the desk (`shownSpeech`).
+     */
+    peek: bubble
+      ? undefined
+      : [...news].sort((a, b) => b.at - a.at || b.receivedAt - a.receivedAt)[0],
     tone,
     activity,
     unread: unreadNoticeCount(news),
@@ -155,6 +162,25 @@ export function stationSpeech(
   };
 }
 export type StationSpeech = ReturnType<typeof stationSpeech>;
+
+/**
+ * The bubble a desk shows: its current one (live progress too when `revealed`), or — while the
+ * cursor is on the desk (`pointing`) — the last thing it said, even if that bubble was closed
+ * or has expired.
+ */
+export function shownSpeech(
+  s: Session,
+  notices: OfficeNotice[],
+  bubbleHours: number,
+  now: number,
+  speech: StationSpeech,
+  revealed: boolean,
+  pointing = revealed,
+): { speech: StationSpeech; peek: boolean } | undefined {
+  if (speech.shows(revealed)) return { speech, peek: false };
+  if (pointing && speech.peek)
+    return { speech: stationSpeech(s, notices, bubbleHours, now, speech.peek), peek: true };
+}
 
 /** A desk waiting for the person: a call or error outranks any arrival (bubble and pose). */
 export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =>

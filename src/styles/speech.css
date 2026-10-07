@@ -320,3 +320,21 @@
     animation: none;
   }
 }
+
+/* A closed or expired bubble shown again while the desk is pointed at: muted, no close. */
+.speech-bubble.is-peek {
+  opacity: 0.9;
+  filter: saturate(0.7);
+}
+.speech-bubble .bubble-peek {
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-style: normal;
+  color: #6f6259;
+  background: rgba(42, 33, 40, 0.1);
+}
+.speech-bubble.tone-mine .bubble-peek {
+  color: #e8dccb;
+  background: rgba(255, 255, 255, 0.14);
+}

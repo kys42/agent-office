@@ -43,6 +43,7 @@ export function SpeechBubble({
   onOpen,
   onDismiss,
   detail,
+  peek = false,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -51,6 +52,8 @@ export function SpeechBubble({
   onDismiss: () => void;
   /** Extra facts shown when the bubble is unfolded (or hovered, where the scene allows). */
   detail?: ReactNode;
+  /** A closed or expired bubble shown again while pointed at: muted, nothing to close. */
+  peek?: boolean;
 }) {
   const { bubble, activity, text, label, markdown, tone } = speech;
   const Icon = TONE_ICONS[tone];
@@ -67,7 +70,7 @@ export function SpeechBubble({
   return (
     <div
       data-tone={tone}
-      className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''}`}
+      className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
       <button
         className="speech-open"
@@ -88,6 +91,7 @@ export function SpeechBubble({
               )}
             </span>
             <em>
+              {peek && <span className="bubble-peek">닫은 말풍선</span>}
               {exposure && <span className="bubble-exposure">{exposure}</span>}
               {ago(bubble?.at ?? activity.at)}
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}
@@ -123,7 +127,7 @@ export function SpeechBubble({
           <i />
         </span>
       )}
-      {bubble && (
+      {bubble && !peek && (
         <button
           className="bubble-dismiss"
           aria-label={`${privacy ? '동료' : sessionName(s)} 말풍선 접기`}
