@@ -45,7 +45,7 @@ Agent Office isn't another window to keep checking. It docks to your desktop, st
 
 - 🐾 **A pet that knows the news** — when a session finishes or asks you something, the pet becomes that teammate: name tag, speech bubble, and a **!** when someone's calling. Drag it anywhere.
 - 🪑 **The real office, in one row** — the same project zones, long shared desks for a branch, little helper desks for sub-agents. Arrows appear when the team outgrows the screen.
-- 💬 **Bubbles you can act on** — live progress in plain words. Expand a bubble in place to read the whole update, open the work card as a popup right there, or reply from the bubble (opt-in).
+- 💬 **Bubbles you can act on** — live progress in plain words. Expand a bubble in place to read and copy the whole update, open its links in your browser, open the work card as a popup right there, or reply from the bubble (opt-in).
 - 🔥 **Alive, not a status light** — papers fly onto the desk when a request lands, the pile grows while it works, and long runs heat up from *Focused* to *In the zone* to *On fire*.
 - 🫥 **Never in your way** — clicks on the transparent parts pass straight through to your editor. Hover a desk to pin it, or hide it until its next conversation.
 
@@ -113,6 +113,7 @@ When you want the whole picture, open the full office: every project on its own 
 | 🌿 **Git-aware desks** | Each desk shows the recorded branch/commit and, separately, what's checked out right now (`main · now`, `HEAD · commit`). |
 | 🫥 **Hide a teammate** | The eye button hides a desk until their next real conversation. Questions and errors still break through. |
 | 💭 **Bubbles with meaning** | My request, thinking, progress, final reply, needs your reply, needs a look — each has its own shape and expands in place. |
+| 📋 **Select, copy & open links** | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |

@@ -9,7 +9,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `server/store.ts`: 앱의 별명·메모·핀·보관·업무 확인과 원본 관측을 분리한다.
 - `server/service.ts`: 5초 폴링, 공급자 오류 격리, 설정·조회 입력 검증.
 - `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고, 다음 호출(새로고침 등)에서 다시 시작한다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
-- `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다.
+- `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다. 새 창 요청 중 http·https 웹 링크만 기본 브라우저로 넘기고(`webLink`, IPC `office:open-link`도 같은 검사), 그 밖의 주소는 열지 않는다.
 - `server/mcp.ts`: 같은 SQLite를 readOnly로 열어 4개 조회 도구만 노출한다. 추가 수집기·모델 실행·외부 전송을 시작하지 않는다.
 
 ## 지원 소스

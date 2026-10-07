@@ -42,6 +42,18 @@
 - 스크린샷: `.local/effects-*.png`
 - 리뷰 반영 검증: 늦게 수집된 오래된 요청·백그라운드 실행은 연출 없음, 부르는 중·오류는 말풍선·자세 유지(단위). 시작 직후 처음 수집된 세션은 bootstrap이 아니고 첫 요청이 도착으로 잡힘, 오래된 세션의 첫 수집은 그대로 bootstrap(`office-policy`). 책상 줄 도착이 15초에 사라짐·개인정보 모드에서 요청 내용 숨김·펫 움직임 줄이기(UI)
 
+# 말풍선 선택·복사·링크 · 2026-10-07
+
+- 말풍선 본문을 `<button>`에서 role=button 영역으로 바꿔 글 선택 가능. 드래그·더블클릭 선택 중에는 열거나 펼치지 않음
+- 링크: 마크다운 링크·평문 URL → http·https만 기본 브라우저로(`webLink`, IPC `office:open-link`). `setWindowOpenHandler`도 웹 링크는 외부로 열어, 막혀 있던 기존 `target=_blank` 링크(요금표 등)도 동작
+- 오른쪽 클릭 메뉴(복사·모두 선택·잘라내기·붙여넣기, 링크 열기·주소 복사), 펼친 말풍선 전체 복사(IPC `office:copy`)
+- 테스트
+  - 단위: `tests/links.test.ts`(file:·앱 주소·javascript:·자격 증명 포함 주소·초장문 거부)
+  - UI: `tests/ui/bubble-text.spec.ts`(드래그 선택은 열지 않음, 링크는 브라우저로 열고 카드는 안 엶, 일반 클릭은 엶)
+  - Electron: 복사 IPC가 클립보드에 기록(테스트 후 원래 클립보드 복원), file:·vscode:·javascript: 거부, file: `target=_blank` 링크로 새 창 안 생김
+- **주의(검증 환경):** 같은 기기의 다른 워크트리가 5173·4318 포트를 쓰고 있었다. 기본 Playwright 설정(`reuseExistingServer`)이 그 서버를 재사용해서, 이날 앞서 기록한 "Playwright 47 통과" 중 팝업 카드 이후 결과는 다른 코드 기준이었다. 이 브랜치 코드를 5181 포트로 다시 돌린 결과는 46 통과다. 실패 1개는 실제 수집기 연결 테스트로, 4318 포트를 다른 수집기가 쓰고 있어서였다
+- **main 이식(다국어 이후)**: 오른쪽 클릭 메뉴·전체 복사 버튼·링크 거부 문구를 카탈로그로 옮김(`desktop.menu`, `desktop.webLinksOnly`, `desk.bubble.copyAll`·`copyAllLabel`·`copied`, 내용 숨김은 기존 `desk.hidden`). 5173·4318이 비어 있는 상태에서 단위 228, Playwright 72, desktop·MCP 스모크 통과. 임시 Electron 검증: 복사 IPC가 클립보드에 기록(원래 클립보드 복원)·20만 자 초과는 거부, file:·vscode:·javascript:는 열지 않음(영어·한국어 오류 문구), `window.open`은 http·https만 외부 브라우저로 넘기고 새 창은 생기지 않음, 오른쪽 클릭 메뉴 글자가 언어 변경을 따름
+
 # 상태 보존·DB 잠김·새로고침 · 2026-10-07
 
 - 계기: 같은 데이터를 쓰는 인스턴스가 하나 더 떠 있을 때 앱 시작이 "database is locked"로 실패(수집기 워커 사망, 이후 모든 호출 실패). 사용자는 고정·가리기가 껐다 켜면 사라지는 것처럼 느낌
