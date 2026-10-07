@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MOODS, type Mood, type Session } from '../shared/types';
 import { sessionName } from '../shared/office';
+import { stackLead } from '../shared/presentation';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 
@@ -63,6 +64,7 @@ export function HelperStack({
   pose,
   news,
   privacy,
+  selected,
   className = '',
   onOpen,
 }: {
@@ -72,31 +74,41 @@ export function HelperStack({
   pose: (s: Session) => { mood: Mood; working: boolean };
   news: (s: Session) => boolean;
   privacy: boolean;
+  /** The selected session, marked in the list. */
+  selected?: string | null;
   className?: string;
   onOpen: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
       if (!box.current?.contains(e.target as Node)) setOpen(false);
     };
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    // Esc closes only the list: it must not also fold the dock or clear the selection.
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+    };
+    // Clicks on a dock's see-through area go to the app behind it, so leaving also closes.
+    const blur = () => setOpen(false);
     document.addEventListener('pointerdown', away);
     document.addEventListener('keydown', key);
+    window.addEventListener('blur', blur);
     return () => {
       document.removeEventListener('pointerdown', away);
       document.removeEventListener('keydown', key);
+      window.removeEventListener('blur', blur);
+      clearTimeout(leaving.current);
     };
   }, [open]);
   const calling = (s: Session) => s.status === 'call' || s.status === 'error';
-  const lead = [...members].sort(
-    (a, b) =>
-      Number(calling(b)) - Number(calling(a)) ||
-      Number(pose(b).working) - Number(pose(a).working) ||
-      b.updatedAt - a.updatedAt,
-  )[0];
+  const lead = stackLead(members, (s) => pose(s).working);
+  const responded = (s: Session) => s.runtime?.phase === 'responded' && !pose(s).working;
   const anyCalling = members.some(calling);
   const anyNews = members.some(news);
   const name = (s: Session) => (privacy ? '보조 동료' : s.relation?.role || sessionName(s));
@@ -107,10 +119,16 @@ export function HelperStack({
       className={`helper-stack ${open ? 'is-open' : ''}`}
       data-parent-id={parentId}
       style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
+      // A short grace period lets the pointer cross the gap to the list.
+      onMouseLeave={() => {
+        if (open) leaving.current = setTimeout(() => setOpen(false), 700);
+      }}
+      onMouseEnter={() => clearTimeout(leaving.current)}
     >
       <button
         className={`helper-desk helper-stack-desk ${members.some((s) => pose(s).working) ? 'helper-working' : ''} ${className}`}
         data-session-id={lead.id}
+        data-members={members.map((s) => s.id).join(' ')}
         data-furniture="helper-desk"
         data-solid
         aria-expanded={open}
@@ -135,6 +153,7 @@ export function HelperStack({
             <li key={s.id}>
               <button
                 data-session-id={s.id}
+                aria-current={s.id === selected || undefined}
                 onClick={() => {
                   setOpen(false);
                   onOpen(s.id);
@@ -143,6 +162,11 @@ export function HelperStack({
                 <Sprite provider={s.provider} mood={pose(s).mood} size={22} />
                 <span className="helper-stack-name">{name(s)}</span>
                 <i style={{ background: MOODS[s.status].color }} title={MOODS[s.status].label} />
+                {responded(s) && (
+                  <b className="helper-stack-done" title="응답을 남겼어요">
+                    ✓
+                  </b>
+                )}
                 {news(s) && <em className="helper-news" />}
               </button>
             </li>

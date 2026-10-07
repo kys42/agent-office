@@ -178,8 +178,14 @@ export function shownSpeech(
   pointing = revealed,
 ): { speech: StationSpeech; peek: boolean } | undefined {
   if (speech.shows(revealed)) return { speech, peek: false };
-  if (pointing && speech.peek)
-    return { speech: stationSpeech(s, notices, bubbleHours, now, speech.peek), peek: true };
+  if (!pointing || !speech.peek) return;
+  const last = stationSpeech(s, notices, bubbleHours, now, speech.peek);
+  // A call or error that was already answered reads as settled, not as calling again.
+  const settled = ['attention', 'error'].includes(speech.peek.kind) && !!speech.peek.resolvedAt;
+  return {
+    speech: settled ? { ...last, tone: 'message', label: `${last.label} · 해결됨` } : last,
+    peek: true,
+  };
 }
 
 /** A desk waiting for the person: a call or error outranks any arrival (bubble and pose). */

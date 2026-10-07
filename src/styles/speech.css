@@ -321,10 +321,15 @@
   }
 }
 
-/* A closed or expired bubble shown again while the desk is pointed at: muted, no close. */
+/* A closed or expired bubble shown again while the desk is pointed at: muted, still (no
+   pulse or typing dots — it is the past), no close. */
 .speech-bubble.is-peek {
-  opacity: 0.9;
-  filter: saturate(0.7);
+  opacity: 0.88;
+  filter: saturate(0.6);
+}
+.speech-bubble.is-peek,
+.speech-bubble.is-peek * {
+  animation: none !important;
 }
 .speech-bubble .bubble-peek {
   margin-right: 4px;

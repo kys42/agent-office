@@ -595,7 +595,7 @@ test('Sparse old seats become one fitted room with movable furniture, project zo
   );
   const positions = () =>
     page
-      .locator('.project-area, .desk-station, .helper-desk')
+      .locator('.project-area, .desk-station, .helper-desk, .helper-stack')
       .evaluateAll((els) => els.map((el) => (el as HTMLElement).style.transform));
   const before = await positions();
   const assertFit = async () => {

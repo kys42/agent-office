@@ -11,6 +11,7 @@ import {
   STATION_WIDTH,
 } from '../src/shared/office-layout.js';
 import { shownSpeech, snapshotEvents, stationSpeech } from '../src/shared/speech.js';
+import { stackLead } from '../src/shared/presentation.js';
 import type { OfficeNotice, Session } from '../src/shared/types.js';
 const now = Date.now();
 const base = demoSnapshot().sessions[0];
@@ -285,4 +286,33 @@ test('a closed or expired bubble comes back only while the desk is pointed at', 
   const quiet = stationSpeech(s, [], 3, now);
   assert.equal(quiet.peek, undefined);
   assert.equal(shownSpeech(s, [], 3, now, quiet, true)?.peek, false);
+});
+
+test('the stacked desk shows the helper that most needs the person, then one at work', () => {
+  const host = session(0);
+  const helper = (i: number, patch: Partial<Session>) =>
+    session(10 + i, 'team', { attachedTo: host.id, officeSeat: undefined, ...patch });
+  const idle = helper(0, { status: 'idle', updatedAt: now });
+  const busy = helper(1, { status: 'work', updatedAt: now - 60_000 });
+  const asking = helper(2, { status: 'call', updatedAt: now - 120_000 });
+  const working = (s: Session) => s.status === 'work';
+  assert.equal(stackLead([idle, busy, asking], working).id, asking.id);
+  assert.equal(stackLead([idle, busy], working).id, busy.id);
+  assert.equal(stackLead([helper(3, { updatedAt: now - 5000 }), idle], () => false).id, idle.id);
+});
+
+test('an answered call comes back settled, not calling again', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const ask = notice(s.id, {
+    kind: 'attention',
+    phase: undefined,
+    text: '원래 앱에서 질문이나 입력 요청을 확인해 주세요.',
+    resolvedAt: now - 60_000,
+  });
+  const speech = stationSpeech(s, [ask], 3, now);
+  assert.equal(speech.bubble, undefined, 'a resolved call has no bubble');
+  const shown = shownSpeech(s, [ask], 3, now, speech, true);
+  assert.equal(shown?.peek, true);
+  assert.equal(shown?.speech.tone, 'message');
+  assert.match(shown!.speech.label, /해결됨$/);
 });

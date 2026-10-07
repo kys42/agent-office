@@ -91,7 +91,7 @@ export function SpeechBubble({
               )}
             </span>
             <em>
-              {peek && <span className="bubble-peek">닫은 말풍선</span>}
+              {peek && <span className="bubble-peek">지난 말풍선</span>}
               {exposure && <span className="bubble-exposure">{exposure}</span>}
               {ago(bubble?.at ?? activity.at)}
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}

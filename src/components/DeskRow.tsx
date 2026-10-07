@@ -93,6 +93,9 @@ export function DeskRow({
   const [hover, setHover] = useState<string | null>(null);
   // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
   const [closed, setClosed] = useState<string | null>(null);
+  // The dock is see-through: a peek starts only on something drawn (pet, plate, buttons),
+  // not when the cursor merely crosses a desk's transparent box on its way elsewhere.
+  const [pointed, setPointed] = useState<string | null>(null);
   const [view, setView] = useState({ left: 0, width: 0, scroll: 0 });
   // A mouse wheel scrolls the row sideways when there are more desks than fit.
   useEffect(() => {
@@ -101,7 +104,12 @@ export function DeskRow({
     const wheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return;
       // An unfolded bubble scrolls its own text.
-      if (e.target instanceof Element && e.target.closest('.speech-bubble.is-expanded')) return;
+      // Unfolded bubbles and a helper list scroll themselves.
+      if (
+        e.target instanceof Element &&
+        e.target.closest('.speech-bubble.is-expanded, .helper-stack-list')
+      )
+        return;
       el.scrollLeft += e.deltaY;
       e.preventDefault();
     };
@@ -290,7 +298,7 @@ export function DeskRow({
                     model.now,
                     speech,
                     hover === s.id,
-                    hover === s.id && closed !== s.id,
+                    pointed === s.id && closed !== s.id,
                   );
                   const bubble = shown?.speech.bubble;
                   const focus = focusLevel(s, model.now);
@@ -301,8 +309,13 @@ export function DeskRow({
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${top}px)` }}
                       onMouseEnter={() => setHover(s.id)}
+                      onMouseOver={(e) => {
+                        if (e.target instanceof Element && e.target.closest('[data-solid]'))
+                          setPointed(s.id);
+                      }}
                       onMouseLeave={() => {
                         setHover((h) => (h === s.id ? null : h));
+                        setPointed((p) => (p === s.id ? null : p));
                         setClosed((c) => (c === s.id ? null : c));
                       }}
                     >

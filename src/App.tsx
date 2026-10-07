@@ -231,7 +231,7 @@ export default function App() {
     choose(ids[(next + ids.length) % ids.length]);
   };
   keyHandler.current = (e) => {
-    if (!snapshot || e.isComposing) return;
+    if (!snapshot || e.isComposing || e.defaultPrevented) return;
     if ((e.metaKey || e.ctrlKey) && e.code === 'KeyK') {
       e.preventDefault();
       setPalette((v) => !v);

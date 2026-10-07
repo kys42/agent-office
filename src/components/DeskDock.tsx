@@ -67,7 +67,7 @@ export function DeskDock() {
   useEffect(() => {
     if (mode === 'pet') return;
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') go('pet');
+      if (e.key === 'Escape' && !e.defaultPrevented) go('pet');
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);

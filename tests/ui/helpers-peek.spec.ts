@@ -86,6 +86,11 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
     'demo:helper-2',
   );
   await expect(stack.locator('.helper-stack-bang')).toBeVisible();
+  // Every member resolves to this desk (e.g. bringing a selected helper into view).
+  await expect(stack.locator('.helper-stack-desk')).toHaveAttribute(
+    'data-members',
+    'demo:helper-0 demo:helper-1 demo:helper-2 demo:helper-3 demo:helper-4',
+  );
   await stack.locator('.helper-stack-desk').click();
   const list = stack.getByRole('list', { name: '보조 동료 명단' });
   await expect(list.getByRole('button')).toHaveCount(5);
@@ -93,11 +98,13 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
   await expect(list).toHaveCount(0);
   await expect(page.locator('.inspector-heading h2')).toHaveText(/보조 조사 4/);
   await expect(stack.locator('.helper-stack-desk')).toHaveClass(/chosen/);
-  // Escape closes the list.
+  // Escape closes only the list: the chosen helper stays open in the inspector.
   await stack.locator('.helper-stack-desk').click();
   await expect(list).toBeVisible();
+  await expect(list.locator('[aria-current]')).toContainText('조사 4');
   await page.keyboard.press('Escape');
   await expect(list).toHaveCount(0);
+  await expect(page.locator('.inspector-heading h2')).toHaveText(/보조 조사 4/);
   await page.locator('.office-card').screenshot({ path: '.local/helper-stack-office.png' });
 });
 
@@ -122,6 +129,11 @@ test('The row and floor stack helpers too, and the list opens the helper in the 
     await stack.locator('.helper-stack-desk').click();
     await expect(stack.getByRole('list', { name: '보조 동료 명단' })).toBeVisible();
     await expect(stack.locator('.helper-stack-list')).toHaveAttribute('data-solid');
+    // Escape closes the list without folding the dock back into the pet.
+    await page.keyboard.press('Escape');
+    await expect(stack.locator('.helper-stack-list')).toHaveCount(0);
+    await expect(page.locator('.desk-row')).toBeVisible();
+    await stack.locator('.helper-stack-desk').click();
     await page.locator('.desk-row').screenshot({ path: `.local/helper-stack${hash.slice(5)}.png` });
   }
   await page
@@ -142,7 +154,7 @@ test('A closed bubble comes back while the desk is pointed at, and leaves with t
   await desk.locator('.office-pet').hover();
   const peek = desk.locator('.speech-bubble.is-peek');
   await expect(peek).toContainText('어제 맡긴 정리를 끝내 두었어요.');
-  await expect(peek).toContainText('닫은 말풍선');
+  await expect(peek).toContainText('지난 말풍선');
   await expect(peek.locator('.bubble-dismiss')).toHaveCount(0);
   // Moving onto the bubble keeps it (the whole desk is what is pointed at).
   await peek.hover();
@@ -159,6 +171,12 @@ test('The row peeks the closed bubble on hover too', async ({ page }) => {
   const desk = page.locator('.desk-station[data-station-id="demo:0"]');
   await expect(desk).toBeVisible();
   await expect(desk.locator('.speech-bubble')).toHaveCount(0);
+  // Crossing the desk's see-through top (where the bubble would grow) peeks nothing…
+  const box = (await desk.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 20);
+  await page.waitForTimeout(150);
+  await expect(desk.locator('.speech-bubble')).toHaveCount(0);
+  // …only something drawn does.
   await desk.locator('.office-pet').hover();
   await expect(desk.locator('.speech-bubble.is-peek')).toContainText('어제 맡긴 정리');
   await page.mouse.move(5, 5);

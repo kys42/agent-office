@@ -1434,6 +1434,21 @@
   height: 7px;
   border-radius: 50%;
 }
+/* On the stack the news dot sits bottom-left, clear of the ×N badge. */
+.helper-stack-desk > .helper-news {
+  top: auto;
+  right: auto;
+  bottom: 20px;
+  left: 0;
+}
+.helper-stack-list button[aria-current] {
+  background: rgba(255, 211, 127, 0.22);
+}
+.helper-stack-done {
+  flex: none;
+  font-size: 10px;
+  color: #8fe0b0;
+}
 .helper-stack-list .helper-news {
   position: static;
   flex: none;

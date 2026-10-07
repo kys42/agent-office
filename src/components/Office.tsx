@@ -152,7 +152,8 @@ export function Office({
       (s) => s.id === selected || s.resident?.sessionIds.includes(selected),
     );
     const el = holder.current.querySelector<HTMLElement>(
-      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"]`,
+      // A stacked helper is found through the shared desk's member list.
+      `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"], .helper-desk[data-members~="${CSS.escape(selected)}"]`,
     );
     if (!el) return;
     const box = el.getBoundingClientRect(),
@@ -438,6 +439,7 @@ export function Office({
                           }
                           privacy={privacy}
                           className={`${members.some((h) => h.id === selected) ? 'chosen' : ''} ${members.some((h) => h.id === spotlight) ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                          selected={selected}
                           onOpen={onSelect}
                         />
                       );
