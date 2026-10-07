@@ -1,0 +1,92 @@
+/* ───────── Desk hover controls (big office + desk row): hide · pin ───────── */
+.desk-hover-btn {
+  position: absolute;
+  left: 14px;
+  top: 70px;
+  z-index: 7;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #f7ecdc;
+  background: rgba(28, 21, 19, 0.92);
+  box-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    transform 0.15s var(--ease-out);
+}
+.desk-station:hover .desk-hover-btn,
+.desk-hover-btn:focus-visible {
+  opacity: 1;
+}
+/* Lift the desk so neighbours' tags never draw over the explanation. */
+.desk-station:has(.desk-hover-btn:hover),
+.desk-station:has(.desk-hover-btn:focus-visible) {
+  z-index: 8;
+}
+.desk-hover-btn:hover {
+  transform: scale(1.1);
+  color: var(--accent-2);
+}
+.pin-button {
+  top: 100px;
+}
+/* A pinned desk shows its pin without hovering. */
+.pin-button.is-pinned {
+  opacity: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.pin-button.is-pinned:hover {
+  color: var(--accent-ink);
+}
+.veil-tip {
+  position: absolute;
+  left: -4px;
+  top: calc(100% + 7px);
+  z-index: 8;
+  width: 188px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  word-break: keep-all;
+  color: var(--text-2);
+  background: rgba(17, 18, 22, 0.97);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.veil-tip b {
+  font-size: 11.5px;
+  color: var(--text);
+}
+.desk-hover-btn:hover .veil-tip,
+.desk-hover-btn:focus-visible .veil-tip {
+  opacity: 1;
+  visibility: visible;
+}
+.veiled-records .veil-row-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+/* Desk row: open the colleague card here, and go straight to its terminal (only when it can). */
+.card-button {
+  top: 130px;
+}
+.jump-button {
+  top: 160px;
+}

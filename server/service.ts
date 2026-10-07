@@ -15,6 +15,24 @@ import { claudeMetadata, claudeSubagentMetadata } from './adapters/claude.js';
 import { mergeSessions } from './adapters/merge.js';
 import { unreadNoticeCount } from '../src/shared/notices.js';
 import { enrichWorkspaces } from './workspaces.js';
+import { syncLocale } from './locale.js';
+import {
+  LOCALES,
+  getLocale,
+  m,
+  type Locale,
+  type LocalePreference,
+} from '../src/shared/i18n/index.js';
+import { CANONICAL, localizePreferences } from '../src/shared/canonical.js';
+import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
+import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
+const petLookSchema = z
+  .object({
+    character: z.enum(Object.keys(PET_CHARACTERS) as [PetCharacter, ...PetCharacter[]]),
+    color: z.enum(Object.keys(PET_COLORS) as [PetColor, ...PetColor[]]),
+    accessory: z.enum(Object.keys(PET_ACCESSORIES) as [PetAccessory, ...PetAccessory[]]),
+  })
+  .strict();
 const providerSchema = z.enum(['claude', 'codex', 'openclaw']);
 const patchSchema = z
   .object({
@@ -47,7 +65,27 @@ const prefsSchema = z
     autoArchive: z.boolean().optional(),
     archiveDays: z.number().int().min(1).max(365).optional(),
     bubbleHours: z.number().int().min(1).max(24).optional(),
+    readyMinutes: z.number().int().min(5).max(240).optional(),
     zoneRules: z.array(zoneRuleSchema).max(200).optional(),
+    locale: z
+      .enum(['auto', ...Object.keys(LOCALES)] as [LocalePreference, ...LocalePreference[]])
+      .optional(),
+    petAppearance: z
+      .object({
+        version: z.literal(1),
+        providers: z
+          .object({
+            claude: petLookSchema.nullable().optional(),
+            codex: petLookSchema.nullable().optional(),
+            openclaw: petLookSchema.nullable().optional(),
+          })
+          .strict(),
+        colleagues: z
+          .record(z.string().min(1).max(500), petLookSchema.nullable())
+          .refine((value) => Object.keys(value).length <= 3000, { error: () => m().pets.tooMany }),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export class OfficeService extends EventEmitter {
@@ -62,10 +100,14 @@ export class OfficeService extends EventEmitter {
   clawCache = new Map<string, Session>();
   timer: ReturnType<typeof setTimeout> | null = null;
   pending: Promise<Snapshot> | null = null;
+  stopped = false;
   roots: Record<Provider, string>;
+  /** How each connector's message is phrased, so a language switch can re-phrase it in place. */
+  private phrasing = new Map<Provider, () => string>();
   constructor(dir?: string, home = os.homedir()) {
     super();
     this.store = new OfficeStore(dir);
+    syncLocale(this.store.preferences().locale);
     this.roots = {
       claude: path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(home, '.claude'), 'projects'),
       codex: path.join(process.env.CODEX_HOME ?? path.join(home, '.codex'), 'sessions'),
@@ -77,22 +119,37 @@ export class OfficeService extends EventEmitter {
       path: this.roots[provider],
       count: 0,
       lastSync: null,
-      message: '첫 연결을 확인하고 있어요',
+      message: '',
     }));
+    for (const c of this.connectors) this.say(c, () => m().server.connector.checking);
+  }
+  private say(connector: Connector, message: () => string) {
+    this.phrasing.set(connector.provider, message);
+    connector.message = message();
+  }
+  /**
+   * After a language switch only the connector messages are phrased again. Collected records
+   * are canonical (src/shared/canonical.ts) and localized on every read, so nothing is re-parsed
+   * and revisions, event ids and notice versions stay the same.
+   */
+  private relocalize() {
+    for (const c of this.connectors) c.message = this.phrasing.get(c.provider)?.() ?? c.message;
   }
   snapshot(): Snapshot {
     this.store.assignSeats();
-    const notices = this.store.noticeList();
+    const locale: Locale = getLocale();
+    const notices = this.store.noticeList(locale);
     return {
       notices,
       noticeStats: { unread: unreadNoticeCount(notices), total: notices.length },
-      sessions: this.store.list(),
+      sessions: this.store.list(false, locale),
       connectors: this.connectors,
-      preferences: this.store.preferences(),
+      preferences: localizePreferences(this.store.preferences(), locale),
       syncing: this.syncing,
       lastSync: this.lastSync,
       error: this.error,
       version: this.version,
+      locale,
     };
   }
   emitSnapshot() {
@@ -102,23 +159,25 @@ export class OfficeService extends EventEmitter {
     return s;
   }
   start() {
-    void this.refresh();
+    // Polling never outlives stop(): no new timer, no refresh on a closed store.
     const tick = () => {
+      if (this.stopped) return;
       this.timer = setTimeout(async () => {
-        try {
-          await this.refresh();
-        } finally {
-          tick();
-        }
+        if (this.stopped) return;
+        await this.refresh().catch(() => {});
+        tick();
       }, 5000);
     };
+    this.refresh().catch(() => {});
     tick();
   }
   stop() {
+    this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.store.close();
   }
   async refresh(): Promise<Snapshot> {
+    if (this.stopped) throw new Error(m().server.rpc.stopped);
     if (this.pending) return this.pending;
     this.pending = this.collect().finally(() => {
       this.pending = null;
@@ -128,19 +187,18 @@ export class OfficeService extends EventEmitter {
   private async collect(): Promise<Snapshot> {
     const prefs = this.store.preferences();
     if (prefs.paused) {
-      this.connectors = this.connectors.map((c) => ({
-        ...c,
-        state: 'paused',
-        message: '수집을 잠시 쉬고 있어요',
-      }));
+      this.connectors = this.connectors.map((c) => ({ ...c, state: 'paused' }));
+      for (const c of this.connectors) this.say(c, () => m().server.connector.paused);
       return this.emitSnapshot();
     }
     this.syncing = true;
     this.error = null;
     for (const provider of ['claude', 'codex', 'openclaw'] as Provider[]) {
+      if (this.stopped) break;
       const connector = this.connectors.find((c) => c.provider === provider)!;
       if (!prefs.enabledProviders.includes(provider)) {
-        Object.assign(connector, { state: 'paused', message: '설정에서 연결을 껐어요' });
+        connector.state = 'paused';
+        this.say(connector, () => m().server.connector.disabled);
         continue;
       }
       try {
@@ -247,12 +305,14 @@ export class OfficeService extends EventEmitter {
           ...s,
           revision: hash(`${s.revision}:${JSON.stringify(s.workspace)}`),
         }));
-        if (errors && sessions.length === 0) throw new Error('이 버전의 기록을 읽지 못했어요');
+        if (errors && sessions.length === 0) throw new Error(m().server.connector.unreadable);
         // On partial source failure, retain existing records instead of silently deleting their history.
         if (errors) {
           const ids = new Set(sessions.map((s) => s.id));
           sessions.push(
-            ...this.store.list(true).filter((s) => s.provider === provider && !ids.has(s.id)),
+            ...this.store
+              .list(true, CANONICAL)
+              .filter((s) => s.provider === provider && !ids.has(s.id)),
           );
         }
         this.store.upsert(sessions, provider);
@@ -260,22 +320,24 @@ export class OfficeService extends EventEmitter {
           state: errors ? 'error' : 'connected',
           count: sessions.length,
           lastSync: Date.now(),
-          message: errors
-            ? `일부 기록 ${errors}개를 읽지 못했어요`
-            : `읽기 전용 · ${sessions.length}개 기록${provider === 'openclaw' ? ' · SQLite / JSONL' : ''}`,
         });
+        const count = sessions.length;
+        this.say(connector, () =>
+          errors
+            ? m().server.connector.partial(errors)
+            : `${m().server.connector.connected(count)}${provider === 'openclaw' ? ' · SQLite / JSONL' : ''}`,
+        );
       } catch (e) {
         const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
-        Object.assign(connector, {
-          state: missing ? 'missing' : 'error',
-          message: missing
-            ? '기록 폴더를 찾지 못했어요'
-            : '읽기 실패 · 마지막 관측 기록을 유지해요',
-        });
+        connector.state = missing ? 'missing' : 'error';
+        this.say(connector, () =>
+          missing ? m().server.connector.missing : m().server.connector.failed,
+        );
       }
     }
     this.syncing = false;
     this.lastSync = Date.now();
+    if (this.stopped) throw new Error(m().server.rpc.stopped);
     return this.emitSnapshot();
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {
@@ -308,8 +370,24 @@ export class OfficeService extends EventEmitter {
       case 'patch':
         this.store.patch(z.string().max(400).parse(args[0]), patchSchema.parse(args[1]));
         return this.emitSnapshot();
+      case 'veil':
+        this.store.veil(
+          z.array(z.string().max(400)).max(500).parse(args[0]),
+          z.boolean().parse(args[1]),
+        );
+        return this.emitSnapshot();
+      case 'pin':
+        this.store.pin(
+          z.array(z.string().max(400)).max(500).parse(args[0]),
+          z.boolean().parse(args[1]),
+        );
+        return this.emitSnapshot();
+      case 'identities':
+        // Read-only and no more than `detail` already returns, for the desktop's terminal lookup.
+        return this.store.identities(z.array(z.string().max(400)).max(500).parse(args[0]));
       case 'preferences':
-        this.store.preferences(prefsSchema.parse(args[0]));
+        if (syncLocale(this.store.preferences(prefsSchema.parse(args[0])).locale))
+          this.relocalize();
         return this.emitSnapshot();
       case 'search':
         return this.store.search(
@@ -322,7 +400,7 @@ export class OfficeService extends EventEmitter {
           z.string().max(100).parse(args[1]),
         );
       default:
-        throw new Error('지원하지 않는 요청입니다.');
+        throw new Error(m().server.rpc.unsupported);
     }
   }
 }

@@ -1,0 +1,23 @@
+export const memory = {
+  eyebrow: 'Memory',
+  title: 'Memory Drawer',
+  intro: 'Whatever tool you used, pull out the context of work you want to find again.',
+  placeholder: 'Projects, decisions, errors, any word you remember…',
+  searchLabel: 'Search records',
+  clear: 'Clear search',
+  allTools: 'All tools',
+  withNotes: 'With notes',
+  suggestLabel: 'Popular searches',
+  suggestions: ['error', 'decision', 'test', 'refactor', 'PR'],
+  searching: 'Searching records…',
+  results: (n: number) =>
+    `${n} ${n === 1 ? 'memory' : 'memories'}${n >= 50 ? ' · showing up to 50' : ''}`,
+  sort: 'Most recent first',
+  hiddenProject: 'Project',
+  hiddenTitle: 'Hidden record',
+  hiddenBody: 'Content is hidden.',
+  hasNotes: 'Has notes',
+  emptyTitle: 'No memories to pull out yet',
+  emptyBody: 'Try another word or change the tool filter.',
+  note: 'Searches what was collected locally. Large records may include only their beginning and latest parts.',
+};

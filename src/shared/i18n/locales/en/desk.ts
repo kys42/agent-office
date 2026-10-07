@@ -1,0 +1,81 @@
+// Desk pieces shared by every view that draws desks: the big office, the office row,
+// the floor desks and the desk pet. Plates, chips and tags are tight, so keep them short.
+export const desk = {
+  hidden: 'Hidden',
+  project: 'Project',
+  headcount: (n: number, helpers: boolean) =>
+    `${n} ${n === 1 ? 'teammate' : 'teammates'}${helpers ? ' + helpers' : ''}`,
+  customZone: (projects: string) => `Custom zone (${projects})`,
+  openWork: (name: string) => `View ${name}'s work`,
+  working: 'Working',
+  runningTasks: (n: number) => `${n} ${n === 1 ? 'task' : 'tasks'} running`,
+  unread: (n: number) => `${n} new`,
+  // Effects: the arrival tag, the minutes on the working beacon, the pet's chip.
+  arrival: "Work's here!",
+  focusMinutes: (minutes: number) => `${minutes}m+`,
+  newRequests: (n: number) => (n > 1 ? `${n} new requests` : 'New request'),
+  pin: {
+    label: (name: string) => `Pin ${name}`,
+    unpinLabel: (name: string) => `Unpin ${name}`,
+    title: 'Pin',
+    pinnedTitle: 'Pinned · click to unpin',
+    hint: "Stays at this desk no matter how long it's quiet. Never sent to the Lounge or Archive.",
+  },
+  veil: {
+    label: (name: string) => `Hide ${name}`,
+    title: 'Hide',
+    hint: 'Hidden until their next conversation (a new request or final response). Shows up again right away if they need you or hit an error.',
+  },
+  helper: {
+    name: 'Helper',
+    stackLabel: (count: number, calling: boolean) =>
+      `${count} helpers${calling ? ', one is calling' : ''} · show list`,
+    stackCount: (count: number) => `${count} helpers`,
+    stackList: 'Helper roster',
+    responded: 'Left a reply',
+    label: (name: string, responded: boolean) =>
+      `${name}, helper${responded ? ', left a result' : ''}`,
+    result: "Left a response · stays until the main session's next request",
+  },
+  bubble: {
+    peek: 'Earlier bubble',
+    expandLabel: 'Expand speech bubble',
+    collapseLabel: 'Collapse speech bubble',
+    expand: 'Expand',
+    collapse: 'Collapse',
+    dismiss: (name?: string) =>
+      name ? `Dismiss ${name}'s speech bubble` : 'Dismiss speech bubble',
+    dismissTitle: 'Dismiss just the bubble · unread updates stay in the Inbox',
+  },
+  // The office row and floor desks along the screen edge.
+  row: {
+    refresh: 'Refresh',
+    refreshTitle: 'Refresh · check the records again now (restarts a stalled collector too)',
+    openCard: (name: string) => `Open ${name}'s work card`,
+    cardTitle: 'Open as popup',
+    cardHint: "Opens the work card right here. The card's full mode takes you to the big office.",
+    empty: 'Waiting for teammate activity.',
+    left: (n: number) => `Show ${n} ${n === 1 ? 'teammate' : 'teammates'} to the left`,
+    leftTitle: 'Previous desks · ←',
+    right: (n: number) => `Show ${n} ${n === 1 ? 'teammate' : 'teammates'} to the right`,
+    rightTitle: 'Next desks · →',
+    summaryTitle: (zones: number, seats: number) =>
+      `${zones} ${zones === 1 ? 'zone' : 'zones'} · ${seats} ${seats === 1 ? 'teammate' : 'teammates'}`,
+    seats: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
+    waiting: (n: number) => `${n} waiting`,
+    veiledTitle: (n: number) =>
+      `${n} hidden ${n === 1 ? 'teammate' : 'teammates'} · Click to show them all\nThey come back on their own with their next conversation`,
+    veiled: (n: number) => `${n} hidden`,
+    lounge: 'Lounge · Off-duty teammates',
+    toRow: 'Show as office row',
+    toFloor: 'Show as floor desks',
+    toRowTitle: 'Office row · zone rugs and name cards',
+    toFloorTitle: 'Floor desks · just desks along the bottom edge, flags for zones',
+    expand: 'Expand the office',
+    expandTitle: 'Open the big office',
+    collapse: 'Collapse the desk row',
+    collapseTitle: 'Collapse to pet · Esc',
+    hide: 'Hide the desk pet',
+    hideTitle: 'Hide · reopen it from the tray',
+  },
+};

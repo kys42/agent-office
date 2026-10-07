@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import os from 'node:os';
 import type { Provider, ProviderQuota, QuotaWindow } from '../src/shared/types.js';
+import { m } from '../src/shared/i18n/index.js';
 const exec = promisify(execFile);
 const percent = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 function reset(v: unknown): number | null {
@@ -25,13 +26,14 @@ function windowValue(key: string, label: string, value: any): QuotaWindow | null
 }
 export function normalizeQuota(provider: 'codex' | 'claude', data: any): QuotaWindow[] {
   const windows: (QuotaWindow | null)[] = [];
+  const t = m().server.quota;
   if (provider === 'claude') {
     for (const [key, label] of Object.entries({
-      five_hour: '5시간',
-      seven_day: '일주일',
-      seven_day_sonnet: 'Sonnet · 일주일',
-      seven_day_opus: 'Opus · 일주일',
-      seven_day_fable: 'Fable · 일주일',
+      five_hour: t.fiveHours,
+      seven_day: t.week,
+      seven_day_sonnet: `Sonnet · ${t.week}`,
+      seven_day_opus: `Opus · ${t.week}`,
+      seven_day_fable: `Fable · ${t.week}`,
     }))
       windows.push(windowValue(key, label, data?.[key]));
   } else {
@@ -46,12 +48,14 @@ export function normalizeQuota(provider: 'codex' | 'claude', data: any): QuotaWi
         const mins = w.windowDurationMins;
         const duration =
           mins === 300
-            ? '5시간'
+            ? t.fiveHours
             : mins === 10080
-              ? '일주일'
+              ? t.week
               : typeof mins === 'number' && mins > 0
-                ? `${mins >= 60 ? mins / 60 : mins}${mins >= 60 ? '시간' : '분'}`
-                : '기간 미확인';
+                ? mins >= 60
+                  ? t.hours(mins / 60)
+                  : t.minutes(mins)
+                : t.unknownWindow;
         windows.push(
           windowValue(`${id}:${key}`, `${id === 'codex' ? '' : `${id} · `}${duration}`, w),
         );
@@ -84,23 +88,19 @@ export function codexUsage(
       if (error) reject(new Error(error));
       else resolve(value);
     };
-    const timer = setTimeout(
-      () => finish(undefined, 'Codex 한도 조회 시간이 초과됐어요.'),
-      timeout,
-    );
+    const t = m().server.quota;
+    const timer = setTimeout(() => finish(undefined, t.codexTimeout), timeout);
     const send = (message: object) => {
       if (!done) child.stdin.write(JSON.stringify(message) + '\n');
     };
-    child.on('error', () =>
-      finish(undefined, 'Codex CLI를 실행할 수 없어요. 설치와 로그인을 확인해 주세요.'),
-    );
-    child.stdin.on('error', () => finish(undefined, 'Codex 조회 연결이 종료됐어요.'));
-    child.on('close', () => finish(undefined, 'Codex 조회 연결이 종료됐어요.'));
+    child.on('error', () => finish(undefined, t.codexMissing));
+    child.stdin.on('error', () => finish(undefined, t.codexClosed));
+    child.on('close', () => finish(undefined, t.codexClosed));
     child.stderr.on('data', () => {}); // Never return raw diagnostics or authentication material.
     child.stdout.on('data', (chunk) => {
       if (done) return;
       bytes += chunk.length;
-      if (bytes > 1024 * 1024) return finish(undefined, 'Codex 조회 응답이 너무 커요.');
+      if (bytes > 1024 * 1024) return finish(undefined, t.codexTooLarge);
       buffer += chunk.toString();
       let end: number;
       while (!done && (end = buffer.indexOf('\n')) >= 0) {
@@ -113,11 +113,7 @@ export function codexUsage(
           continue;
         }
         if (msg.id !== 1 && msg.id !== 2) continue;
-        if (msg.error)
-          return finish(
-            undefined,
-            'Codex 한도를 확인할 수 없어요. 원래 앱의 계정 로그인을 확인해 주세요.',
-          );
+        if (msg.error) return finish(undefined, t.codexUnavailable);
         if (msg.id === 1) {
           send({ method: 'initialized', params: {} });
           send({ id: 2, method: 'account/rateLimits/read', params: {} });
@@ -154,8 +150,8 @@ async function claudeUsage(): Promise<unknown> {
     } catch {}
   }
   const token = credential?.claudeAiOauth?.accessToken;
-  if (typeof token !== 'string' || !token)
-    throw new Error('Claude Code의 구독 계정 로그인이 필요해요. API 키 계정은 구독 한도가 없어요.');
+  const t = m().server.quota;
+  if (typeof token !== 'string' || !token) throw new Error(t.claudeLogin);
   const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -166,15 +162,17 @@ async function claudeUsage(): Promise<unknown> {
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok)
-    throw new Error(
-      response.status === 429
-        ? 'Claude 조회가 잠시 제한됐어요. 잠시 후 다시 확인해 주세요.'
-        : 'Claude 한도를 확인할 수 없어요. Claude Code에서 로그인 상태를 확인해 주세요.',
-    );
+    throw new Error(response.status === 429 ? t.claudeRateLimited : t.claudeUnavailable);
   return response.json();
 }
+/** What a provider returned; labels are built per read so a language switch never needs a refetch. */
+interface QuotaOutcome {
+  checkedAt: number;
+  kind: 'data' | 'unsupported' | 'error';
+  data?: unknown;
+}
 export class QuotaService {
-  private cache = new Map<Provider, ProviderQuota>();
+  private cache = new Map<Provider, QuotaOutcome>();
   private pending = new Map<Provider, Promise<ProviderQuota>>();
   constructor(
     private readers: Partial<Record<Provider, () => Promise<unknown>>> = {
@@ -182,45 +180,53 @@ export class QuotaService {
       codex: codexUsage,
     },
   ) {}
+  private present(provider: Provider, outcome: QuotaOutcome): ProviderQuota {
+    const t = m().server.quota;
+    const result: ProviderQuota = {
+      provider,
+      state: 'unavailable',
+      windows: [],
+      checkedAt: outcome.checkedAt,
+      source:
+        provider === 'codex'
+          ? 'Codex CLI · account/rateLimits/read'
+          : provider === 'claude'
+            ? 'Claude OAuth usage'
+            : 'OpenClaw',
+      message: '',
+    };
+    if (outcome.kind === 'unsupported') result.message = t.openclaw;
+    else if (outcome.kind === 'error') {
+      result.state = 'error';
+      result.message = t.failed;
+    } else {
+      result.windows = normalizeQuota(provider as 'codex' | 'claude', outcome.data);
+      result.state = result.windows.length ? 'ok' : 'unavailable';
+      result.message = result.windows.length ? t.ok : t.empty;
+    }
+    return result;
+  }
   async read(provider: Provider): Promise<ProviderQuota> {
     const cached = this.cache.get(provider);
-    if (cached && Date.now() - cached.checkedAt < 60_000) return cached;
+    if (cached && Date.now() - cached.checkedAt < 60_000) return this.present(provider, cached);
     const pending = this.pending.get(provider);
     if (pending) return pending;
     const promise = (async (): Promise<ProviderQuota> => {
-      const result: ProviderQuota = {
-        provider,
-        state: 'unavailable',
-        windows: [],
-        checkedAt: Date.now(),
-        source:
-          provider === 'codex'
-            ? 'Codex CLI · account/rateLimits/read'
-            : provider === 'claude'
-              ? 'Claude OAuth usage'
-              : 'OpenClaw',
-        message: '',
-      };
+      let outcome: Omit<QuotaOutcome, 'checkedAt'>;
       try {
         const reader = this.readers[provider];
-        if (!reader || provider === 'openclaw')
-          result.message =
-            'OpenClaw는 연결 모델별 한도를 사용해요. 통합 구독 한도는 제공하지 않아요.';
+        if (!reader || provider === 'openclaw') outcome = { kind: 'unsupported' };
         else {
-          result.windows = normalizeQuota(provider, await reader());
-          result.state = result.windows.length ? 'ok' : 'unavailable';
-          result.message = result.windows.length
-            ? '현재 로그인 계정 전체의 한도 · 개별 세션의 잔여량이 아니에요.'
-            : '현재 계정에서 한도 정보를 제공하지 않았어요.';
+          const data = await reader();
+          normalizeQuota(provider, data); // malformed data is a failed read, not an empty one
+          outcome = { kind: 'data', data };
         }
       } catch {
-        result.state = 'error';
-        result.message =
-          '조회하지 못했어요. 원래 앱의 로그인·네트워크를 확인하고 1분 후 다시 눌러 주세요.';
+        outcome = { kind: 'error' };
       }
-      result.checkedAt = Date.now();
+      const result = { ...outcome, checkedAt: Date.now() };
       this.cache.set(provider, result);
-      return result;
+      return this.present(provider, result);
     })();
     this.pending.set(provider, promise);
     try {

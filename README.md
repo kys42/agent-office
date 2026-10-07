@@ -1,94 +1,192 @@
+<div align="center">
+
+<img src="docs/images/en/hero.gif" alt="Agent Office — pixel teammates working at their desks" width="100%" />
+
 # Agent Office
 
-**작은 사무실, 이어지는 업무 기억.**
+### Your AI coding agents, working in a tiny pixel office.
 
-Claude Code · Codex · OpenClaw의 실제 로컬 세션을 픽셀 동료로 만나는 macOS 데스크탑 앱. 시안 E의 사무실·캐릭터 에셋을 그대로 살리고, 기록을 읽고 검색하고 다음 작업에 건네는 경험을 연결했습니다.
+Agent Office turns the **real local sessions** of Claude Code, Codex and OpenClaw into pixel teammates at their desks —<br/>
+so you can see at a glance who's working, who's waiting on you, and what just finished.
 
-![데모 사무실](docs/images/office.png)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-111?style=flat-square&logo=apple&logoColor=white)](#quick-start)
+[![Electron](https://img.shields.io/badge/Electron-44-2b2e3a?style=flat-square&logo=electron&logoColor=9feaf9)](https://www.electronjs.org/)
+[![React](https://img.shields.io/badge/React-19-20232a?style=flat-square&logo=react&logoColor=61dafb)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-1e3a5f?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MCP](https://img.shields.io/badge/MCP-read--only-3b2f63?style=flat-square)](#-let-your-agents-read-the-office-mcp)
+[![Local-first](https://img.shields.io/badge/data-stays%20on%20your%20Mac-1f4d3a?style=flat-square)](#-local-first-by-design)
 
-## 실행
+**English** · [한국어](README.ko.md)
 
-Apple Silicon macOS와 Node.js 24 이상을 기준으로 개발했습니다.
+</div>
+
+---
+
+## Why Agent Office?
+
+When three agents are running in five terminals across two worktrees, the hard part isn't the code — it's **knowing what needs you right now**. Agent Office reads the session logs your tools already write, and gives every session a desk:
+
+- 🙋 **Waiting on you** — a teammate raises a hand when a session asks a question or needs input.
+- 📬 **Results to review** — final replies land in an Inbox instead of scrolling away in a terminal.
+- ⌨️ **Working** — live progress shows up in speech bubbles, in plain words rather than raw tool names. Papers fly onto the desk when a new request lands, and long runs build up from *Focused* to *In the zone* to *On fire*.
+- ☕ **Standing by → Off duty** — after a reply a teammate stands by for 30 minutes, then rests. Four quiet hours later they clock off to the Lounge, and after a week to the Archive.
+
+No hooks to install, no wrappers around your CLI, no cloud. Your sources are opened **read-only** — replying to a session is a separate, opt-in feature.
+
+<div align="center">
+  <img src="docs/images/en/office-map.png" alt="Projects as floor zones, sessions as pixel teammates at their desks" width="72%" /><br/>
+  <sub>Projects become floor zones, branches and worktrees share long desks, sub-agents sit at small desks beside their parent.</sub>
+</div>
+
+## ✨ Highlights
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/en/detail.png" alt="Work card" /><br/>
+      <b>Work card</b><br/>
+      Click any teammate for a side panel that never covers the office: what you asked, live progress, the final reply, tool history on demand, branch & worktree, tokens and API-equivalent cost, PR/issue cards and your own notes.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/en/inbox.png" alt="Inbox" /><br/>
+      <b>Inbox</b><br/>
+      Final replies first. Questions are split out as <i>needs a look</i>, everything else stays in the full history. Read state survives restarts, and bubbles stay up for 3 hours by default.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/images/en/palette.png" alt="Command palette" /><br/>
+      <b>⌘K command palette & keyboard triage</b><br/>
+      Jump to any teammate, record or command. <kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>R</kbd> to read, <kbd>I</kbd> for the Inbox, <kbd>?</kbd> for every shortcut — plus a “while you were away” digest when you come back.
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/images/en/lounge.png" alt="Lounge" /><br/>
+      <b>Lounge & Archive</b><br/>
+      Teammates with no new activity clock off to the sofas after 4 hours and move to the Archive after 7 days — both configurable. Pin anyone to keep them at their desk.
+    </td>
+  </tr>
+</table>
+
+### 🖥️ The office, docked to your desktop
+
+<table>
+  <tr>
+    <td width="24%" align="center" valign="middle">
+      <img src="docs/images/en/desk-pet.png" alt="Desk pet" /><br/>
+      <sub><b>Desk pet</b><br/>floats quietly and turns into whoever has news</sub>
+    </td>
+    <td width="76%" valign="middle">
+      <img src="docs/images/en/desk-row.png" alt="Desk row" /><br/>
+      <sub><b>Desk row</b> — click the pet and the same zones, long desks, helper desks and bubbles unfold full-width along the bottom of your screen.</sub><br/><br/>
+      <img src="docs/images/en/desk-floor.png" alt="Floor desks" /><br/>
+      <sub><b>Floor desks</b> — just the desks standing on the screen edge, zones as flags.</sub>
+    </td>
+  </tr>
+</table>
+
+Clicks on the transparent parts pass through to the app behind. Click a bubble or a desk to open its work card right there, or jump to the full office.
+
+### 💬 Jump in and reply
+
+- Claude Code sessions running in **Orca** or **tmux** get a *Jump to Orca / tmux* button on their work card.
+- Turn on **Send to terminal** (desktop only, off by default, confirmed with a native dialog) to follow up from the work card or a speech bubble's reply button. Idle Claude Code sessions get your text typed into their own terminal; live Codex CLI sessions receive it through `codex queue`.
+- It never approves permission prompts, only types into an idle session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
+
+### Everything else
+
+| | |
+| --- | --- |
+| 🧭 **Real sessions, real names** | Native session titles first, project second. Continuations are merged; real forks and sub-agents keep their relationship. |
+| 🗂️ **Custom zones for monorepos** | Split the floor by worktree, folder, branch pattern (`team/lab-*`) or a single session — or just drag a teammate to another zone. |
+| 🌿 **Git-aware desks** | Each desk shows the recorded branch/commit and, separately, what's checked out right now (`main · now`, `HEAD · commit`). |
+| 🫥 **Hide a teammate** | The eye button hides a desk until their next real conversation. Questions and errors still break through. |
+| 💭 **Bubbles with meaning** | My request, thinking, progress, final reply, needs your reply, needs a look — each has its own shape and expands in place. |
+| 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
+| 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
+| 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
+| 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |
+| 🔗 **PR & issue cards** | GitHub links found in a session become cards with live title and state via your existing `gh` login. |
+| 🙈 **Privacy controls** | Hide screen content for screen sharing, exclude projects, pause collection per tool, reduce motion. |
+| 🌐 **English & 한국어** | Follows your system language (English fallback). Switch any time in Settings. |
+
+## 🚀 Quick start
+
+> Built and tested on **Apple Silicon macOS** with **Node.js 24+**.
 
 ```bash
+git clone https://github.com/kys42/agent-office.git
+cd agent-office
 npm ci
 npm run build
 npm start
 ```
 
-macOS 앱 만들기:
+Package it as a macOS app:
 
 ```bash
 npm run package
 open "release/Agent Office-darwin-arm64/Agent Office.app"
 ```
 
-패키지는 로컬 실행용이며 배포용 서명·공증은 아직 적용하지 않았습니다. 이 컴퓨터에서 원본 로그를 읽습니다. PR·이슈 제목과 상태는 설치된 GitHub CLI의 기존 연결로 확인하며, 연결이 없어도 기록과 링크를 볼 수 있습니다.
+> The package is for local use — it isn't signed or notarized yet.
 
-브라우저 개발 미리보기:
+Just want to look around? Run the browser preview with **synthetic demo data** — nothing on your machine is read:
 
 ```bash
 npm run dev
-# http://127.0.0.1:5173 — 실제 기록
-# http://127.0.0.1:5173/?demo — 명시적으로 분리된 예시 데이터
+# http://127.0.0.1:5173/?demo          demo office
+# http://127.0.0.1:5173/?demo&lang=ko  demo office in Korean
+# http://127.0.0.1:5173                your real sessions
 ```
 
-## 여기서 할 수 있는 일
+## 🧩 How it works
 
-- 3종 에이전트의 실제 JSONL / SQLite 기록을 5초마다 확인
-- 프로젝트별 실제 가구 자동 배치. 모든 주/보조 동료를 한 화면에 맞추고 확대·전체 보기 지원. 상태·검색·정렬로 자리를 섞지 않음
-- 같은 프로젝트는 바닥 구역, 같은 브랜치·worktree는 긴 공동 책상, 모든 실제 서브에이전트는 부모 옆 낮은 책상
-- 모노레포용 사용자 지정 구역: 워크트리·폴더 하위·브랜치 패턴(`kys42/lab-*`)·세션 단위 규칙으로 직접 나눈 구역이나 기존 구역에 앉힘. 캐릭터를 다른 구역/빈 바닥으로 끌어 놓아도 됨. 새로 오는 동료도 자동 적용, 설정에서 이름 바꾸기·삭제
-- 책상에 기록 브랜치/커밋 표시. 현재 checkout을 별도 관측해 `main · 현재`, `HEAD · 커밋`을 구분
-- 4시간 후 대기 라운지, 7일 후 보관 공간으로 이동. 설정 변경·고정·사무실 복귀 지원
-- 실제 세션 이름을 먼저, 프로젝트를 그 아래 표시. 최근 활동 / 자주 찾은 순으로 탐색
-- 명단은 할 일 순서: 나를 기다려요 → 확인할 결과 → 일하는 중 → 쉬는 중. 행에 올리면 해당 책상 스포트라이트
-- 업무 카드 상단 ‘지금’ 카드: 호출이면 원래 앱 재개, 새 결과면 그 자리에서 읽기, 작업 중이면 경과 시간
-- ⌘K 명령 팔레트(동료·기록·명령), J/K/R/I 키보드 처리와 `?` 단축키 도움말, 자리 비운 사이 요약
-- 세션 클릭 → 오른쪽 상세 패널. 대화는 내 요청/진행 상황/최종 응답별 선택, 더 보기, 선택해서 포함하는 도구 기록
-- 소식함은 최종 응답 중심. 질문은 확인 필요, 나머지는 전체 기록으로 분리하고 분류별 일괄 읽음 지원
-- 기본 3시간 말풍선과 미확인 소식함. 읽음·말풍선 접기를 분리해 재시작 후에도 저장
-- 플랫폼 공통 실행 관측과 장식 행동 분리, 새 요청 봉투 효과·자리 옆 휴식
-- PR·이슈의 실제 링크 카드와 GitHub에서 확인한 제목·상태
-- 별명, 고정, 업무 메모, 결과 확인, 기록 보관
-- 도구를 넘나드는 키워드 검색과 인수인계 Markdown 미리보기·복사·저장
-- 투명한 미니 오피스와 트레이에서 큰 사무실로 복귀
-- 프로젝트 제외, 도구별 수집 중단, 움직임 줄이기, 화면 내용 숨기기
-- 읽기 전용 MCP로 같은 기억에 접근
-
-기본 최근 120개/도구를 불러옵니다. 연결 설정에서 60~300개로 바꿀 수 있습니다. 큰 파일의 처음·최근 구간, 최근 180개 이벤트를 보존하고 부분 기록임을 표시합니다. 사용량 미지원은 `—`, 오래된 기록은 대기·보관 공간에서 확인합니다. ‘자주 찾은 순’은 이 앱에서 세션을 열어 본 횟수입니다. 응답 완료는 업무 완료로 단정하지 않습니다.
-
-## 제품과 구현 정본
-
-[전체 문서 지도](docs/README.md) · [프로젝트 맥락과 결정](docs/golden/PROJECT-CONTEXT.md) · [골든 사무실 정책](docs/golden/GOLDEN-OFFICE-POLICY.md) · [세션 분석·모듈 출처](docs/development/SESSION-INGESTION.md) · [공통 관측 규격 v1](docs/golden/OFFICE-OBSERVATION-PROTOCOL.md)
-
-원본 어댑터 → 공통 관측 → 제품 정책 → 사무실 표현을 분리합니다. 공급자별 데이터 근거, 그룹/관계, 실행 상태, 소식 수명, 후보 기능과 아직 지원하지 않는 범위를 함께 기록합니다.
-
-## 로컬 데이터와 연결 경로
-
-앱 저장소: `~/Library/Application Support/Agent Office/office.sqlite`. 원본 세션은 수정하지 않습니다. 인증 설정을 앱 DB나 화면에 복제하지 않습니다. 사용량 버튼의 Claude 조회는 기존 OAuth credential을 메모리에서 읽어 Anthropic의 고정 사용량 API에만 전송하며, Codex는 설치된 CLI의 읽기 전용 한도 RPC를 사용합니다. PR·이슈 조회는 기존 gh 인증을 통해 GitHub에 읽기 요청을 보냅니다.
-
-환경 변수: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `OPENCLAW_STATE_DIR`, `AGENT_OFFICE_DATA_DIR`. 기본 소스는 `~/.claude/projects`, `~/.codex/sessions`, `~/.openclaw/agents`입니다. Codex threads DB와 OpenClaw agent DB는 readOnly로 엽니다.
-
-프로젝트 제외는 앱·검색·인수인계·MCP 조회에 함께 적용됩니다. 원본이나 기존 저장 데이터 삭제 기능은 아닙니다. 화면 내용 숨기기는 OS 캡처 차단이나 암호화를 의미하지 않습니다.
-
-## Tailscale 미리보기
-
-빌드 후 `npm run preview`로 [로컬 미리보기](http://127.0.0.1:4319/)를 실행합니다. `?demo`를 붙이면 예시 사무실입니다.
-
-Tailscale을 사용할 경우 본인 장치의 HTTPS 주소를 `AGENT_OFFICE_WEB_ORIGIN`에 지정하고, 같은 포트의 로컬 서버로 Serve를 연결합니다.
-
-```bash
-AGENT_OFFICE_WEB_ORIGIN=https://your-device.your-tailnet.ts.net:4319 npm run preview
-tailscale serve --bg --https=4319 http://127.0.0.1:4319
-# 프록시 중지: tailscale serve --https=4319 off
+```mermaid
+flowchart LR
+  subgraph SRC["Your machine · read-only"]
+    direction TB
+    CC["Claude Code<br/>~/.claude/projects"]
+    CX["Codex<br/>~/.codex/sessions + threads DB"]
+    OC["OpenClaw<br/>~/.openclaw/agents SQLite / JSONL"]
+  end
+  subgraph WK["Collector · worker thread · every 5 s"]
+    direction TB
+    AD["Provider adapters"] --> OP["Office Observation<br/>Protocol v1"] --> PO["Office policy<br/>zones · status · inbox · lifecycle"]
+  end
+  CC & CX & OC --> AD
+  PO --> DB[("office.sqlite<br/>+ FTS5")]
+  PO --> UI["Pixel office<br/>Electron · browser"]
+  DB --> MCP["Read-only MCP server"] --> AG["Your agents"]
 ```
 
-실제 세션 내용을 제공하므로 접속 범위는 본인의 tailnet 설정에 따라 관리합니다.
+Raw provider formats end at the adapters; the office only ever reads one shared protocol. Provider evidence, grouping and relationships, run state, inbox lifetime, and what isn't supported yet are documented separately — see [Docs](#-docs).
 
-## MCP 연결
+- **Electron main → sandboxed preload IPC → worker thread.** The renderer never touches files, processes or Node APIs.
+- **Observed, not assumed.** Status comes from what the logs show. A finished reply is never reported as “task done”, and a quiet session isn't declared dead.
+- **Bounded by design.** The latest 120 sessions per tool by default (60–300 in Settings). Large files keep their head and tail plus the latest 180 events, and are marked as partial.
 
-먼저 앱을 실행해 기록을 수집하고 빌드를 완료한 뒤, 사용할 도구의 MCP 설정에 직접 추가합니다.
+Choose each tool's default character in Settings, or personalize one colleague from its card: eight characters (including a slime, developer cat, pebble, retro robot and cloud), six colors, and small accessories.
+
+## 🔒 Local-first by design
+
+- App data lives in `~/Library/Application Support/Agent Office/office.sqlite` (directory `0700`, DB `0600`). Your source sessions are **never modified**.
+- Credentials are never copied into the app's database or UI. The **Usage** button sends your existing Claude OAuth credential — read in memory only — to Anthropic's fixed usage endpoint; Codex limits come from the installed CLI's read-only RPC.
+- PR/issue lookups go through your existing `gh` login as read-only requests, and are skipped in demo and privacy modes.
+- **Send to terminal** is off by default, stored in the desktop profile (not the shared settings), and never exposed to the web preview.
+- Excluding a project applies everywhere — office, search, handoff and MCP. It is a view policy, not deletion.
+- *Hide screen content* masks what's on screen; it isn't OS-level capture blocking or encryption.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code sessions (`/projects`) |
+| `CODEX_HOME` | `~/.codex` | Codex sessions (`/sessions`) and threads DB |
+| `OPENCLAW_STATE_DIR` | `~/.openclaw` | OpenClaw agents (`/agents`) |
+| `AGENT_OFFICE_DATA_DIR` | `~/Library/Application Support/Agent Office` | App database |
+| `AGENT_OFFICE_LOCALE` | system language | Force the collector language (`en` / `ko`) |
+
+## 🤖 Let your agents read the office (MCP)
+
+Agent Office ships a **read-only** MCP server over the same database, so an agent can look up what another agent did. Launch the app once to collect sessions, build, then add it to your tool's MCP config:
 
 ```json
 {
@@ -101,23 +199,58 @@ tailscale serve --bg --https=4319 http://127.0.0.1:4319
 }
 ```
 
-Node 24 이상. 사용자 데이터 위치를 바꾼 경우 `AGENT_OFFICE_DATA_DIR`도 같은 값으로 설정하세요. Codex TOML 예시는 [연결 가이드](docs/development/MCP.md)에 있습니다. 자동 등록이나 기존 설정 덮어쓰기는 하지 않습니다.
+| Tool | What it does |
+| --- | --- |
+| `office_list_sessions` | List recorded sessions (records, not a guarantee they're running) |
+| `office_search` | Keyword search across allowed session history |
+| `office_get_session` | Session detail with evidence and partial-collection flags |
+| `office_prepare_handoff` | Handoff Markdown for a given snapshot |
 
-도구: `office_list_sessions`, `office_search`, `office_get_session`, `office_prepare_handoff`. 모두 readOnly입니다. 검색된 원문은 자료로 취급해야 하며 에이전트의 새 실행 지시가 아닙니다.
+Requires Node 24+. If you moved the data directory, set `AGENT_OFFICE_DATA_DIR` for the MCP server too. Nothing is registered automatically, and existing configs are never overwritten. Search results are untrusted reference material — not instructions. A Codex TOML example lives in the [MCP guide](docs/development/MCP.md).
 
-## 검증과 개발
+## 📡 Remote preview over Tailscale
+
+After building, `npm run preview` serves a [local preview](http://127.0.0.1:4319/) (`?demo` for the demo office). To reach it from your own devices over Tailscale:
 
 ```bash
-npm test                   # 공급자 파서·상태·사용량·정책·저장·경로 탐색
-npm run typecheck
-npm run test:ui            # Playwright — npm run dev 또는 자동 실행
-node scripts/desktop-smoke.mjs # build 후 Electron/IPC/미니 창, 임시 합성 fixture
-npx tsx scripts/mcp-smoke.ts    # build 후 MCP stdio 계약
-npm audit
+AGENT_OFFICE_WEB_ORIGIN=https://your-device.your-tailnet.ts.net:4319 npm run preview
+tailscale serve --bg --https=4319 http://127.0.0.1:4319
+# stop: tailscale serve --https=4319 off
 ```
 
-UI 테스트의 실제 연결 smoke는 로컬 기록이 있는 개발 환경을 사용합니다. 나머지 테스트는 합성 데이터로 원본을 수정하지 않습니다. [검증 기록](docs/development/QA.md), [아키텍처](docs/development/ARCHITECTURE.md), [참고 저장소 및 재사용](docs/research/RESEARCH.md), [수집 모듈 비교·도입 근거](docs/research/INGESTION-REFERENCE-AUDIT.md), [구현 계획](docs/development/PLAN.md), [고지](THIRD_PARTY_NOTICES.md).
+This serves your real session content — scope access with your tailnet ACLs.
 
-실제 승인·세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 직원 성장, 원격 동기화, 서명·공증·자동 업데이트는 후속 범위입니다. 기능 카탈로그 140개 전체 구현이나 프로덕션 배포 완료를 주장하지 않습니다.
+## 🌐 Languages
 
-사용량 버튼·세션별 API 환산 비용·실제 worktree 관측·서류/집중 연출의 의미와 제한은 [사용량과 실행 위치](docs/development/USAGE-AND-WORKSPACE.md)에 정리했습니다.
+English is the default and the fallback; Korean is fully supported. With **System language** (the default setting) the app follows your OS, and you can switch under **Settings → Language** at any time. Add `?lang=en` or `?lang=ko` to a preview URL to pin a language.
+
+All copy lives in typed catalogs under [`src/shared/i18n/locales`](src/shared/i18n/locales) — English is the source of truth and TypeScript enforces that every other language has exactly the same keys. Adding a language is one new folder plus one line in [`src/shared/i18n/index.ts`](src/shared/i18n/index.ts).
+
+## 🧪 Development
+
+```bash
+npm test                         # parsers, status, usage, policy, storage, i18n
+npm run typecheck
+npm run test:ui                  # Playwright (starts npm run dev if needed)
+npm run test:desktop             # after build: Electron / IPC / desk pet & desk row windows, synthetic fixture
+npm run test:mcp                 # after build: MCP stdio contract
+node scripts/screenshots.mjs     # README screenshots from demo data, en + ko (needs npm run dev)
+node scripts/readme-hero.mjs en  # animated hero tour GIF (needs npm run dev + ffmpeg)
+```
+
+Tests use synthetic data and never modify your sources; only the live-connection UI smoke test reads local history.
+
+## 🗺️ Roadmap
+
+Not built yet, and deliberately not faked in the UI: approving permission prompts or controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, remote sync, and signing / notarization / auto-update.
+
+## 📚 Docs
+
+The design docs are currently written in Korean.
+
+[Docs map](docs/README.md) · [Project context & decisions](docs/golden/PROJECT-CONTEXT.md) · [Golden office policy](docs/golden/GOLDEN-OFFICE-POLICY.md) · [Status policy](docs/golden/STATUS-POLICY.md) · [Feature policy](docs/golden/FEATURE-POLICY.md) · [Observation protocol v1](docs/golden/OFFICE-OBSERVATION-PROTOCOL.md) · [Session ingestion](docs/development/SESSION-INGESTION.md) · [Architecture](docs/development/ARCHITECTURE.md) · [Terminal connection](docs/development/TERMINAL.md) · [Usage & workspace](docs/development/USAGE-AND-WORKSPACE.md) · [QA log](docs/development/QA.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+<div align="center">
+<br/>
+<sub>Made with 🧡 for everyone running more agents than they have monitors.</sub>
+</div>

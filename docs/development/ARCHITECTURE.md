@@ -8,7 +8,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `server/adapters/`: 원본 형식의 차이와 상태 근거를 해석한다.
 - `server/store.ts`: 앱의 별명·메모·핀·보관·업무 확인과 원본 관측을 분리한다.
 - `server/service.ts`: 5초 폴링, 공급자 오류 격리, 설정·조회 입력 검증.
-- `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다.
+- `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고, 다음 호출(새로고침 등)에서 다시 시작한다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
 - `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다.
 - `server/mcp.ts`: 같은 SQLite를 readOnly로 열어 4개 조회 도구만 노출한다. 추가 수집기·모델 실행·외부 전송을 시작하지 않는다.
 
@@ -28,12 +28,27 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 - 세션은 공급자 + 원본 세션 ID, OpenClaw는 agent 이름까지 포함한 ID로 구분한다.
 - 실행 여부를 PID나 CLI 설치 여부로 꾸미지 않는다. 신규 tool call / task_started / task_complete 등은 기록에서 관측한 근거다.
-- 최근 실행성 기록이 2분 이상 조용하면 idle, 설정한 대기 시간(기본 4시간) 이후 sleep으로 파생한다. 무응답으로 원본 세션 종료를 확정하지 않는다.
+- 최근 실행성 기록이 2분 이상 조용하면 ready(대기 중), 설정한 대기 시간(기본 30분) 이후 idle(쉬는 중), 퇴근 시간(기본 4시간) 이후 sleep(퇴근)으로 파생한다([상태 정책서](../golden/STATUS-POLICY.md)). 무응답으로 원본 세션 종료를 확정하지 않는다.
 - 요청 입력 도구의 관측은 `call`; 앱은 승인·답변을 대신 전송하지 않는다.
 - `completed`는 사용자가 결과를 확인한 별도 값이다. 턴의 done과 구분한다.
 - Codex thread 누적 사용량은 최신 snapshot으로 대체하며 합산하지 않는다. Claude는 동일 message.id의 최대 output 사용량으로 중복을 제거한다.
 - 최근 입력량 기반의 문맥 근사치와 세션 누적 사용량은 별도 필드다. OpenClaw의 contextTokens를 실제 사용량으로 오인하지 않는다.
 - 누락 값은 null이다. 큰 파일의 Claude 합계는 수집 구간 범위임을 표시한다. 금액은 별도 관측 표본 장부의 API 기본 요금 환산으로 제공하며 실제 청구액과 구분한다. [사용량·작업 위치](USAGE-AND-WORKSPACE.md)를 따른다.
+
+## 렌더러 코어와 표현
+
+큰 사무실 창과 데스크 펫 창은 같은 코드로 같은 코어를 쓰고 표현만 다르다.
+
+- `src/lib/useOffice.ts`: snapshot 구독, 데모 분기, 변경 액션(refresh / setPrefs / patch / receipt / visit / returnToOffice), 15초 시계. `setPrefs`는 저장 성공 여부를 돌려준다.
+- `src/shared/office-model.ts`: `buildOfficeModel(snapshot, now)`이 동료 투영, 구역, 좌석 순서, 동료별 `ResidentView`(자세·할 일 그룹·미확인 소식·보조 소식), 그룹별 수, 대표 동료를 한 번에 파생한다. 개인정보 가림과 프로젝트 라벨은 `residentLabel` 한 곳에서 정한다.
+- 표현: App/OfficeWorkspace(큰 사무실), DeskPet(접힌 펫), DeskRow(책상 줄). `src/main.tsx`가 `#mini*` 해시로 루트를 고른다.
+- 배치: `officeTopology`(구역 → 긴 책상 → 보조 책상)가 좌표 이전의 공통 단계다. `layoutOffice`는 이를 2D 격자로, `layoutRow`는 1D 줄로 투영한다. 말풍선 판단 `stationSpeech`(src/shared/speech.ts)와 `SpeechBubble`·`HelperDesk`·`Furniture`·`Sprite` 컴포넌트, 큰 사무실의 책상 CSS를 두 장면이 함께 쓴다.
+- 가리기: `Session.hiddenAt`(`personal` 테이블, 서비스 `veil(ids, on)` 요청이 한 트랜잭션·서비스 시각으로 기록) + `isVeiled`(src/shared/veil.ts). 모델이 `ResidentView.veiled`, `scene`(장면 입력), `veiled`(되돌리기 목록)를 만들고, 액션은 `useOffice.veil(ids, on)`로 공유한다. 펫 말풍선은 `petSummary().speaker`(`PET_FRESH_MS` 2분).
+- 말풍선 원문: `snapshotEvents`가 snapshot의 최근 4개 이벤트에 말하는 메시지(activity.eventId)를 더한다. `stationSpeech().markdown`이 원문(코드 블록 제외)을 주고, `InlineMarkdown`(remark-gfm singleTilde off, 인라인 요소만)이 그린다.
+- 바닥 책상: `DeskRow variant="floor"`. 같은 `layoutRow`에 `zoneGap: FLOOR_ZONE_GAP`(깃발 자리)을 주고, 장면 높이는 `FLOOR_SCENE_HEIGHT`(책상 발 `DESK_FOOT` + 그림자), 창 높이는 `FLOOR_HEIGHT`. main이 `floor` 모드의 bounds를 정하고, 마지막 펼침 모습은 렌더러 localStorage(`office:dock-expand`)에 둔다.
+- 책상 줄은 `ROW_SCALE`(기본 1, 큰 사무실 100%) 고정 축척이며 넘치면 스크롤한다. 창 높이 `ROW_HEIGHT` = 장면 높이 × 축척 + 도구 띠.
+- 창 모드(펫/줄)·위치·클릭 통과는 표현 상태라 코어에 넣지 않는다. Electron main이 소유하고 `office:dock` IPC로 렌더러와 맞춘다. 창 기하는 `src/shared/dock-geometry.ts`(순수). 펫 위치만 데이터 디렉터리의 `desk-pet.json`에 저장한다.
+- Office.tsx와 Roster.tsx는 애니메이션 시계와 명단 필터 때문에 아직 같은 shared 헬퍼를 직접 호출한다. 결과는 모델과 같다. `ResidentView`로 옮기는 일과 책상 한 칸(`DeskStation`)을 컴포넌트로 묶는 일은 후속이다.
 
 ## 보관과 조회
 
@@ -53,7 +68,9 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 ## 배포와 경계
 
-패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 미니 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 알림 업데이트는 focus를 호출하지 않는다.
+원래 터미널로 이동·바로 보내기는 `desktop/terminals.ts`(Claude: Orca/tmux)·`desktop/codex-queue.ts`(Codex CLI: 맡은 프로세스가 있는 세션에 `codex queue`)와 main 전용 IPC(`office:terminals`·`office:jump`·`office:send`·`office:terminal-send`)에만 있다. 업무 카드와 말풍선은 같은 훅 `useSendTargets`로 대상을 받는다. 데스크 독의 업무 카드는 별도 창(`#card`, `DockCard`)으로 같은 코어(`useOffice`)와 같은 Inspector를 그리며, IPC `office:card`(열기는 독 창에서만, 닫기·전체 모드는 카드 창에서만)로 연다. 수집기 `OfficeService.call`은 개발 HTTP와 공유되므로 여기에 넣지 않는다. 렌더러는 handle 없는 `TerminalTarget`만 받고, main이 동작마다 다시 찾는다. 보내기는 데스크탑 프로필에만 저장되는 opt-in(켤 때 네이티브 확인창), 쉬는 세션, 터미널 전면을 가진 Claude 프로세스에만 허용한다. 자세한 연결 고리와 경계는 [터미널 연결](TERMINAL.md).
+
+패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
 
 서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
 

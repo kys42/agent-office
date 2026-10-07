@@ -2,11 +2,13 @@ import { MessageSquare, Terminal } from 'lucide-react';
 import type { Session } from '../shared/types';
 import { sessionActivity, activityLabel, toolLabel } from '../shared/activity';
 import { ago, date, time } from '../lib/format';
+import { useI18n } from '../lib/i18n';
 
 export function ActivitySummary({ session }: { session: Session }) {
+  const { t } = useI18n();
   const activity = sessionActivity(session);
   return (
-    <section className="progress-summary" aria-label="최근 진행 설명">
+    <section className="progress-summary" aria-label={t.now.progress}>
       <div className="progress-summary-label">
         <MessageSquare size={12} />
         <b>{activityLabel(session)}</b>
@@ -16,7 +18,7 @@ export function ActivitySummary({ session }: { session: Session }) {
       {activity.tool && (
         <div className="activity-tool" title={activity.tool.name}>
           <Terminal size={12} />
-          <span>최근 도구 · {toolLabel(activity.tool.name)}</span>
+          <span>{t.now.lastTool(toolLabel(activity.tool.name))}</span>
           <time>{ago(activity.tool.at)}</time>
         </div>
       )}

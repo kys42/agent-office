@@ -6,6 +6,8 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:5173',
     viewport: { width: 1440, height: 970 },
+    // Existing specs assert Korean copy; English coverage lives in i18n.spec.ts.
+    locale: 'ko-KR',
     screenshot: 'only-on-failure',
   },
   webServer: { command: 'npm run dev', url: 'http://127.0.0.1:5173', reuseExistingServer: true },

@@ -618,6 +618,61 @@
 .inspector-now .now-note {
   margin-top: 6px;
 }
+/* Follow-up typed into the live terminal, under the now card */
+.terminal-send {
+  margin: -4px 0 12px;
+  padding: 8px;
+  border-radius: 11px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+}
+.terminal-send textarea {
+  width: 100%;
+  min-height: 52px;
+  max-height: 160px;
+  resize: vertical;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.terminal-send-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.terminal-send-bar small,
+.terminal-send-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+.terminal-send-bar small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.terminal-send-bar .button {
+  margin-left: auto;
+  flex-shrink: 0;
+  height: 28px;
+  font-size: 12px;
+}
+.terminal-send-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--st-call);
+}
+.terminal-send-hint {
+  margin: -4px 0 12px;
+  line-height: 1.5;
+}
+.terminal-send-hint svg {
+  flex-shrink: 0;
+}
 .inspector-now .tone-resting .activity-tool,
 .inspector-now .tone-working .activity-tool {
   margin-top: 7px;

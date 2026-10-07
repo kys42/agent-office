@@ -17,6 +17,11 @@ import { branchInfo } from '../src/shared/branch.js';
 import { resolveWorkspace, enrichWorkspaces } from '../server/workspaces.js';
 import { parseRecords } from '../server/adapters/normalize.js';
 import type { Session } from '../src/shared/types.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const base = demoSnapshot().sessions[0];
 function session(i: number, project = 'team'): Session {
   return {
@@ -68,7 +73,8 @@ test('Every desk and helper stays in a nonoverlapping project area at dense and 
       const all = [...roots, ...helpers],
         l = layoutOffice(all, aspect);
       const ids = l.projects.flatMap((p) =>
-        p.stations.flatMap((s) => [s.id, ...s.children.map((c) => c.id)]),
+        // A stacked helper desk still accounts for every helper behind it.
+        p.stations.flatMap((s) => [s.id, ...s.children.flatMap((c) => c.stack ?? [c.id])]),
       );
       assert.deepEqual(ids.sort(), all.map((s) => s.id).sort());
       for (const p of l.projects) {

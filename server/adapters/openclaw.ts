@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs';
 import type { Session } from '../../src/shared/types.js';
 import { hash, num, parseRecords, redact, timestamp, deriveState } from './normalize.js';
 import { runtimeObservation } from '../../src/shared/runtime.js';
+import { canonical } from '../../src/shared/canonical.js';
 export async function readOpenClawDatabases(
   root: string,
   limit: number,
@@ -157,7 +158,7 @@ export async function readOpenClawDatabases(
           if (n.archived_at) {
             s.status = 'leave';
             s.archived = true;
-            s.statusReason = 'OpenClaw 보관 기록';
+            s.statusReason = canonical().server.session.openclawArchived;
           }
           s.runtime = runtimeObservation(s.observedStatus ?? s.status, s.updatedAt, s.statusReason);
           s.title = redact(s.title);

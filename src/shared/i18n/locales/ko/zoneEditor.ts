@@ -1,0 +1,26 @@
+import type { Messages } from '../en';
+
+export const zoneEditor: Messages['zoneEditor'] = {
+  title: '사무실 구역 나누기',
+  subtitle: '같은 구역의 동료는 한 바닥에 모여요',
+  destination: '보낼 구역',
+  here: '지금',
+  members: (n) => `${n}명`,
+  project: '프로젝트',
+  newZone: '새 구역',
+  newZoneName: '새 구역 이름',
+  placeholder: '예: agent-lab',
+  who: '어떤 동료를 보낼까요',
+  thisSession: '지금 보는 세션',
+  branchPattern: '브랜치 패턴',
+  folderPath: '폴더 경로',
+  branchHint: '끝에 *를 붙이면 앞부분이 같은 브랜치를 모두 보내요 (예: kys42/lab-*)',
+  folderHint: '이 폴더와 하위 폴더에서 일하는 동료를 보내요',
+  sameRepo: '같은 저장소 안에서만 적용돼요. ',
+  fine: '앞으로 새로 오는 동료에게도 적용돼요. 여러 규칙이 겹치면 세션 → 워크트리 → 더 깊은 폴더 → 더 긴 브랜치 순으로 우선해요.',
+  removeTitle: (rule) => `${rule} 규칙을 지워요`,
+  backToProject: '프로젝트 구역으로',
+  cancel: '취소',
+  sendTo: (zone) => `${zone} 구역으로 보내기`,
+  assign: '구역 지정',
+};
