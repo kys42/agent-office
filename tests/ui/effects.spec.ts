@@ -82,7 +82,8 @@ test('A just-sent request lands on the desk in the office, row and floor, and th
     await expect(desk.locator('.arrival-burst')).toBeVisible();
     await expect(desk.locator('.arrival-sheets i')).toHaveCount(4);
     await expect(desk.locator('.arrival-tag')).toContainText('일이 도착했어요!');
-    await expect(desk.locator('.office-pet')).toHaveClass(/work-arrival/);
+    // Still at the desk for the papers (the hop itself only plays as they land).
+    await expect(desk.locator('.office-pet')).toHaveClass(/pose-still/);
     // The person's own words speak first.
     await expect(desk.locator('.speech-bubble')).toContainText('서류 더미 위로 날아온 요청');
     await page.waitForTimeout(1300);

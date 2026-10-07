@@ -10,7 +10,7 @@ import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
-import { arrivalEnds, deskSpeech } from '../shared/speech';
+import { arrivalEnds, deskSpeech, hopping } from '../shared/speech';
 import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
@@ -307,7 +307,7 @@ export function Office({
                       <Furniture kind="chair" />
                       <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                       <button
-                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hop ? 'work-arrival' : ''}`}
+                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
                         aria-label={`${privacy ? s.provider : sessionName(s)}, ${MOODS[s.status].label}`}

@@ -7,6 +7,7 @@ import {
   arrivalEnds,
   deskSpeech,
   freshRequest,
+  hopping,
   stationSpeech,
 } from '../src/shared/speech.js';
 import { deskPapers, FOCUS_LABELS, focusLevel, MAX_PAPERS } from '../src/shared/presentation.js';
@@ -91,6 +92,9 @@ test('a request plays its arrival for 15 seconds after it reaches the office, fr
   assert.equal(speech.bubble?.id, newer.id);
   assert.equal(speech.tone, 'mine');
   assert.equal(speech.hop, true);
+  // Only a view that is there as the papers land hops (newer arrived 1 s ago).
+  assert.equal(hopping(speech, now), true);
+  assert.equal(hopping(speech, now + 2000), false);
   // Every view re-renders when it ends.
   assert.deepEqual(arrivalEnds([older, newer, reply], now), [
     older.receivedAt + ARRIVAL_MS,

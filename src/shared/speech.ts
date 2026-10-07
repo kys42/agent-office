@@ -176,3 +176,8 @@ export function deskSpeech(s: Session, notices: OfficeNotice[], bubbleHours = 3,
   /** The colleague hops for the papers unless it is waiting for the person. */
   return { ...speech, hop: !!usual.arrival && !urgent };
 }
+
+/** The hop plays only for a view that is there as the papers land (late views stay still). */
+export const HOP_MS = 2500;
+export const hopping = (speech: { hop: boolean; arrival?: OfficeNotice }, now = Date.now()) =>
+  speech.hop && !!speech.arrival && now - speech.arrival.receivedAt < HOP_MS;

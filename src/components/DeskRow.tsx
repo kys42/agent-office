@@ -34,7 +34,7 @@ import {
   ROW_SCENE_HEIGHT,
 } from '../shared/dock-geometry';
 import { residentLabel, type OfficeModel } from '../shared/office-model';
-import { deskSpeech } from '../shared/speech';
+import { deskSpeech, hopping } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
@@ -294,7 +294,7 @@ export function DeskRow({
                       <Furniture kind="chair" />
                       <div className="pet-shadow" />
                       <button
-                        className={`office-pet pose-${hop ? 'still' : pose.posture} ${hop ? 'work-arrival' : ''}`}
+                        className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}
                         data-solid
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
