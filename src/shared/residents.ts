@@ -81,8 +81,10 @@ export function officeResidents(sessions: Session[], now = Date.now()) {
       ...current,
       pinned,
       attachedTo: undefined,
+      // As for a single session (officeZone): pinned stays in the office whatever the age,
+      // only a manual archive takes it out.
       zone:
-        pinned && !current.archived && current.zone === 'waiting'
+        pinned && !current.archived
           ? 'office'
           : !isWorking(current, now) &&
               !needsAttention(current) &&

@@ -108,6 +108,29 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
   await page.locator('.office-card').screenshot({ path: '.local/helper-stack-office.png' });
 });
 
+test('A stacked desk draws each helper in its own look', async ({ page }) => {
+  const snapshot = fixture(5);
+  snapshot.preferences.petAppearance = {
+    version: 1,
+    providers: {},
+    colleagues: {
+      'demo:helper-2': { character: 'slime', color: 'mint', accessory: 'crown' },
+      'demo:helper-4': { character: 'devcat', color: 'peach', accessory: 'beret' },
+    },
+  };
+  await bridge(page, snapshot);
+  await page.goto('/');
+  const stack = page.locator('.helper-stack');
+  // The calling helper sits in front, in its own look.
+  const lead = stack.locator('.helper-stack-desk .sprite-window');
+  await expect(lead).toHaveAttribute('data-asset-id', 'pet.slime.v1');
+  await expect(lead).toHaveAttribute('data-pet-color', 'mint');
+  await stack.locator('.helper-stack-desk').click();
+  const item = stack.locator('.helper-stack-list [data-session-id="demo:helper-4"] .sprite-window');
+  await expect(item).toHaveAttribute('data-asset-id', 'pet.devcat.v1');
+  await expect(item).toHaveAttribute('data-pet-accessory', 'beret');
+});
+
 test('Three helpers keep their own desks', async ({ page }) => {
   await bridge(page, fixture(3));
   await page.goto('/');

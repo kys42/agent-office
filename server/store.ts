@@ -10,6 +10,7 @@ import type {
   Provider,
   SearchHit,
   Session,
+  SessionIdentity,
   SessionPatch,
   OfficeNotice,
   NoticeReceipt,
@@ -333,7 +334,7 @@ export class OfficeStore {
       put.run(JSON.stringify(next), n.id);
     }
   }
-  visible(s: Session, prefs = this.preferences()): boolean {
+  visible(s: Pick<Session, 'provider' | 'project'>, prefs = this.preferences()): boolean {
     // Canonical on both sides: an exclusion made in any language keeps matching after a switch.
     const project = canonicalProject(s.project);
     return (
@@ -341,11 +342,11 @@ export class OfficeStore {
       !prefs.excludedProjects.some((x) => canonicalProject(x) === project)
     );
   }
-  decorate(s: Session): Session {
+  /** `prefs` is read once by the caller: a list decorates every session with the same settings. */
+  decorate(s: Session, prefs: Preferences): Session {
     const p = this.db.prepare('SELECT data FROM personal WHERE id=?').get(s.id) as
       { data: string } | undefined;
     const session = { ...s, ...(p ? JSON.parse(p.data) : {}) };
-    const prefs = this.preferences();
     const state = deriveState(
       s.observedStatus ?? s.status,
       s.updatedAt,
@@ -403,18 +404,42 @@ export class OfficeStore {
         .map((r) => JSON.parse(r.data) as Session)
         .filter((s) => this.visible(s, prefs))
         .map((s) => {
-          const d = { ...this.decorate(s), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
+          const d = { ...this.decorate(s, prefs), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
           return full ? d : { ...d, events: snapshotEvents(d) };
         }),
     ).map((s) => localizeSession(s, locale));
   }
-  get(id: string, locale: Locale = getLocale()): Session {
+  /** The stored (canonical) session, if the person's settings let it be seen. */
+  private stored(id: string, prefs: Preferences): Session {
     const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
       { data: string } | undefined;
     if (!row) throw new Error(m().server.store.notFound);
     const s = JSON.parse(row.data) as Session;
-    if (!this.visible(s)) throw new Error(m().server.store.excluded);
-    return localizeSession(this.decorate(s), locale);
+    if (!this.visible(s, prefs)) throw new Error(m().server.store.excluded);
+    return s;
+  }
+  get(id: string, locale: Locale = getLocale()): Session {
+    const prefs = this.preferences();
+    return localizeSession(this.decorate(this.stored(id, prefs), prefs), locale);
+  }
+  /**
+   * Who these sessions are natively, for finding their terminals: the same visibility as `get`,
+   * read in one query without loading, decorating or localizing their events. Unknown and
+   * excluded ids are left out.
+   */
+  identities(ids: string[]): SessionIdentity[] {
+    const prefs = this.preferences();
+    const rows = this.db
+      .prepare(
+        `SELECT id, json_extract(data,'$.provider') AS provider,
+          json_extract(data,'$.project') AS project, json_extract(data,'$.nativeId') AS nativeId,
+          json_extract(data,'$.sourcePath') AS sourcePath
+        FROM sessions WHERE id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(ids)) as unknown as (SessionIdentity & { project: string })[];
+    return rows
+      .filter((r) => this.visible(r, prefs))
+      .map(({ id, provider, nativeId, sourcePath }) => ({ id, provider, nativeId, sourcePath }));
   }
   patch(id: string, patch: SessionPatch) {
     this.get(id);
@@ -441,17 +466,23 @@ export class OfficeStore {
    * the service's own clock, so a renderer cannot stamp a future time.
    */
   veil(ids: string[], on: boolean, now = Date.now()) {
+    this.personalize(ids, { hiddenAt: on ? now : null });
+  }
+  /** Pin or unpin colleagues, e.g. every run of a persona: all of them or none. */
+  pin(ids: string[], on: boolean) {
+    this.personalize(ids, { pinned: on });
+  }
+  /** Set the same personal fields on several visible sessions in one transaction. */
+  private personalize(ids: string[], fields: Partial<Session>) {
     const read = this.db.prepare('SELECT data FROM personal WHERE id=?');
     const write = this.db.prepare('INSERT OR REPLACE INTO personal VALUES (?,?)');
+    const prefs = this.preferences();
     this.db.exec('BEGIN');
     try {
       for (const id of ids) {
-        this.get(id);
+        this.stored(id, prefs);
         const row = read.get(id) as { data: string } | undefined;
-        write.run(
-          id,
-          JSON.stringify({ ...(row ? JSON.parse(row.data) : {}), hiddenAt: on ? now : null }),
-        );
+        write.run(id, JSON.stringify({ ...(row ? JSON.parse(row.data) : {}), ...fields }));
       }
       this.db.exec('COMMIT');
     } catch (e) {

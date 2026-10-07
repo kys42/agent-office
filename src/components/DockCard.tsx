@@ -22,7 +22,10 @@ export function DockCard() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { snapshot, model, setPrefs, patch, receipt, returnToOffice } = useOffice(false, notify);
+  const { snapshot, model, setPrefs, patch, pin, receipt, returnToOffice } = useOffice(
+    false,
+    notify,
+  );
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
   // Bumped on every open so the card jumps to news again even for the same colleague.
@@ -71,12 +74,18 @@ export function DockCard() {
           sessions={sessions}
           notices={snapshot?.notices ?? []}
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
+          resident={model.ownerOf(session.id)}
           onReceipt={receipt}
           onSelect={(id) => setTarget({ id, news: false })}
           showNews={target.news ? `${session.id}:${opened}` : null}
           onClose={close}
           onExpand={() => void api.card?.('expand', { id: session.id, news: false })}
           onPatch={patch}
+          onPin={(s) =>
+            void pin(s)
+              .then((on) => notify(on ? t.app.toast.pinned : t.app.toast.unpinned))
+              .catch((e) => notify((e as Error).message))
+          }
           onReturn={returnToOffice}
           notify={notify}
           demo={false}

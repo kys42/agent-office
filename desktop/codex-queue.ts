@@ -1,4 +1,4 @@
-import { open } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
@@ -34,8 +34,18 @@ export interface CodexOrigin {
   subagent: boolean;
 }
 
-/** The rollout's `session_meta`: who started the session. Fixed for its life. */
-export async function readCodexOrigin(file: string): Promise<CodexOrigin | null> {
+/** What the start of a rollout says about its origin. */
+export interface CodexOriginScan {
+  origin: CodexOrigin | null;
+  /**
+   * The answer can no longer change. A rollout only grows, so once the header is found, or the
+   * first lines (or 8 MiB) went by without it, it never will; a file that ends sooner may still.
+   */
+  final: boolean;
+}
+
+/** The rollout's `session_meta`: who started the session. Null when the file cannot be read. */
+export async function scanCodexOrigin(file: string): Promise<CodexOriginScan | null> {
   const handle = await open(file, 'r').catch(() => null);
   if (!handle) return null;
   try {
@@ -46,27 +56,35 @@ export async function readCodexOrigin(file: string): Promise<CodexOrigin | null>
     // The meta line carries base instructions and can be large; stop after a few lines or 8 MiB.
     for (let offset = 0; offset < 8 << 20;) {
       const { bytesRead } = await handle.read(chunk, 0, chunk.length, offset);
-      if (!bytesRead) break;
+      if (!bytesRead) return { origin: null, final: false };
       offset += bytesRead;
       text += decoder.write(chunk.subarray(0, bytesRead));
       for (let nl = text.indexOf('\n'); nl !== -1; nl = text.indexOf('\n')) {
         const line = text.slice(0, nl).trim();
         text = text.slice(nl + 1);
         if (!line) continue;
-        if (++lines > 5) return null;
-        const d = JSON.parse(line);
+        if (++lines > 5) return { origin: null, final: true };
+        let d;
+        try {
+          d = JSON.parse(line);
+        } catch {
+          return { origin: null, final: true }; // a complete line never changes
+        }
         if (d?.type !== 'session_meta') continue;
         const p = d.payload ?? {};
         const source = p.source;
         return {
-          originator: typeof p.originator === 'string' ? p.originator : undefined,
-          subagent:
-            source === 'subagent' ||
-            (typeof source === 'object' && source !== null && 'subagent' in source),
+          origin: {
+            originator: typeof p.originator === 'string' ? p.originator : undefined,
+            subagent:
+              source === 'subagent' ||
+              (typeof source === 'object' && source !== null && 'subagent' in source),
+          },
+          final: true,
         };
       }
     }
-    return null;
+    return { origin: null, final: true };
   } catch {
     return null;
   } finally {
@@ -74,7 +92,49 @@ export async function readCodexOrigin(file: string): Promise<CodexOrigin | null>
   }
 }
 
-const origins = new Map<string, Promise<CodexOrigin | null>>();
+/** The rollout's `session_meta`: who started the session. Fixed for its life. */
+export async function readCodexOrigin(file: string): Promise<CodexOrigin | null> {
+  return (await scanCodexOrigin(file))?.origin ?? null;
+}
+
+/**
+ * Origins by rollout path, for the terminal lookups every window repeats. Lookups at the same
+ * time share one read; a final answer is kept, one that may still change (the header is not
+ * written yet) only while the file's size and mtime stay the same, and a file that could not be
+ * read (missing, too many open files) is asked again next time.
+ */
+export function codexOriginCache(scan = scanCodexOrigin, limit = 500) {
+  const entries = new Map<
+    string,
+    { stamp?: string; scanned?: CodexOriginScan; pending?: Promise<CodexOrigin | null> }
+  >();
+  return (file: string): Promise<CodexOrigin | null> => {
+    let entry = entries.get(file);
+    if (entry?.scanned?.final) return Promise.resolve(entry.scanned.origin);
+    if (entry?.pending) return entry.pending;
+    if (!entry) {
+      entry = {};
+      entries.set(file, entry);
+      if (entries.size > limit) entries.delete(entries.keys().next().value!);
+    }
+    const e = entry;
+    e.pending = (async () => {
+      const info = await stat(file).catch(() => null);
+      if (!info) return null;
+      const stamp = `${info.size}:${info.mtimeMs}`;
+      if (e.scanned && e.stamp === stamp) return e.scanned.origin;
+      const scanned = await scan(file);
+      e.stamp = scanned ? stamp : undefined;
+      e.scanned = scanned ?? undefined;
+      return scanned?.origin ?? null;
+    })().finally(() => {
+      e.pending = undefined;
+    });
+    return e.pending;
+  };
+}
+
+const cachedOrigin = codexOriginCache();
 let loaded: { at: number; home: string; value: Promise<Set<string>> } | undefined;
 
 /** Threads whose lock a live Codex process holds open: one `lsof` over the lock folder (~0.1s). */
@@ -102,19 +162,7 @@ export async function findCodexThread(
 ): Promise<CodexThread | null> {
   if (!THREAD.test(nativeId) || !sourcePath) return null;
   const deps = options.deps ?? defaultTerminalDeps();
-  let origin = options.deps ? undefined : origins.get(sourcePath);
-  if (!origin) {
-    origin = readCodexOrigin(sourcePath);
-    // A failed read (file still being written, too many open files) is retried next time.
-    if (!options.deps)
-      origin.then((known) => {
-        if (known) {
-          origins.set(sourcePath, Promise.resolve(known));
-          if (origins.size > 500) origins.delete(origins.keys().next().value!);
-        }
-      });
-  }
-  const known = await origin;
+  const known = await (options.deps ? readCodexOrigin(sourcePath) : cachedOrigin(sourcePath));
   if (known?.originator !== 'codex-tui' || known.subagent) return null;
   if (
     !loaded ||
@@ -150,7 +198,8 @@ export async function queueToCodex(
     ['queue', `--thread=${thread.threadId}`, `--message=${text}`],
     { timeout: 20_000 },
   );
-  if (!out.includes(`for thread ${thread.threadId}`))
+  // Thread ids are matched case-insensitively everywhere; the daemon may echo another case.
+  if (!out.toLowerCase().includes(`for thread ${thread.threadId.toLowerCase()}`))
     // The command succeeded, so the message is likely queued; never invite a blind resend.
     throw new TerminalInputError(m().desktop.terminal.codexNoReply);
   return m().desktop.terminal.codexQueued;

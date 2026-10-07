@@ -146,7 +146,7 @@ export function HelperStack({
           <i />
           <i />
         </span>
-        <Sprite provider={lead.provider} mood={pose(lead).mood} size={44} />
+        <Sprite session={lead} provider={lead.provider} mood={pose(lead).mood} size={44} />
         <Furniture kind="helper" />
         <em className="helper-stack-count">×{count}</em>
         {anyCalling && <span className="helper-stack-bang">!</span>}
@@ -165,7 +165,7 @@ export function HelperStack({
                   onOpen(s.id);
                 }}
               >
-                <Sprite provider={s.provider} mood={pose(s).mood} size={22} />
+                <Sprite session={s} provider={s.provider} mood={pose(s).mood} size={22} />
                 <span className="helper-stack-name" title={privacy ? undefined : label(s)}>
                   {role(s) && <small>{role(s)}</small>}
                   {name(s)}

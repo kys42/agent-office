@@ -194,6 +194,11 @@ export default function App() {
     toggle: toggleTerminalSend,
     sendReply,
   } = useTerminalSend(demo, notify);
+  // The desk pin and the card pin are one switch on the colleague.
+  const onPin = (s: Session) =>
+    void pin(s)
+      .then((on) => notify(on ? t.app.toast.pinned : t.app.toast.unpinned))
+      .catch((e) => notify((e as Error).message));
   const saveZoneRules = async (zoneRules: ZoneRule[]) => {
     if (await onPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
   };
@@ -563,11 +568,7 @@ export default function App() {
                 void veil(ids, on);
                 notify(on ? t.app.toast.hidden : t.app.toast.shown);
               }}
-              onPin={(s) =>
-                pin(s)
-                  .then((on) => notify(on ? t.app.toast.pinned : t.app.toast.unpinned))
-                  .catch((e) => notify(e.message))
-              }
+              onPin={onPin}
               onSettings={() => setView('settings')}
               selected={selected}
               onSelect={choose}
@@ -616,11 +617,13 @@ export default function App() {
             sessions={sessions}
             notices={snapshot?.notices ?? []}
             memberIds={ownerOf(current.id)?.resident?.sessionIds ?? [current.id]}
+            resident={ownerOf(current.id)}
             onReceipt={onReceipt}
             onSelect={choose}
             showNews={showNews}
             onClose={() => setSelected(null)}
             onPatch={onPatch}
+            onPin={onPin}
             onReturn={returnToOffice}
             notify={notify}
             demo={demo}

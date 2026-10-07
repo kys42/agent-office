@@ -87,6 +87,34 @@ test('Small appearance patches preserve unrelated windows and null resets resume
   assert.deepEqual(petLook('claude', reset, { id: 'one' }), slime);
   assert.deepEqual(petLook('claude', reset, { id: 'two' }), slime);
 });
+test('At the colleague cap a new or changed look is kept and the oldest untouched one goes', () => {
+  const full = mergePetCustomization(undefined, {
+    version: 1,
+    providers: {},
+    colleagues: Object.fromEntries(Array.from({ length: 3000 }, (_, i) => [`c${i}`, slime])),
+  });
+  assert.equal(Object.keys(full.colleagues).length, 3000);
+  const added = mergePetCustomization(full, {
+    version: 1,
+    providers: {},
+    colleagues: { new: cat },
+  });
+  assert.equal(Object.keys(added.colleagues).length, 3000);
+  assert.deepEqual(petLook('claude', added, { id: 'new' }), cat);
+  assert.equal(Object.hasOwn(added.colleagues, 'c0'), false);
+  assert.ok(Object.hasOwn(added.colleagues, 'c1'));
+  // Changing the oldest colleague while adding another keeps both.
+  const both = mergePetCustomization(added, {
+    version: 1,
+    providers: {},
+    colleagues: { c1: cat, other: cat },
+  });
+  assert.equal(Object.keys(both.colleagues).length, 3000);
+  assert.deepEqual(petLook('claude', both, { id: 'c1' }), cat);
+  assert.deepEqual(petLook('claude', both, { id: 'other' }), cat);
+  assert.deepEqual(petLook('claude', both, { id: 'new' }), cat);
+  assert.equal(Object.hasOwn(both.colleagues, 'c2'), false);
+});
 test('Unknown versions, assets, inherited object keys and malformed colors recover to original characters', () => {
   const bad = { ...slime, character: '../../remote.png' };
   const recovered = normalizePetCustomization({

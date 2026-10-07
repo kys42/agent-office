@@ -12,6 +12,16 @@ async function fixture(page: Page, snapshot: Snapshot) {
         structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
       visit: async () => structuredClone(w.fixture),
       artifacts: async () => [],
+      patch: async (id: string, p: any) => {
+        w.fixture.sessions = w.fixture.sessions.map((x: any) => (x.id === id ? { ...x, ...p } : x));
+        return structuredClone(w.fixture);
+      },
+      pin: async (ids: string[], on: boolean) => {
+        w.fixture.sessions = w.fixture.sessions.map((x: any) =>
+          ids.includes(x.id) ? { ...x, pinned: on } : x,
+        );
+        return structuredClone(w.fixture);
+      },
       notices: async (receipts: any[], action: string) => {
         w.fixture.notices = w.fixture.notices.map((n: any) => {
           if (!receipts.some((r) => r.id === n.id && r.version === n.version)) return n;
@@ -161,6 +171,53 @@ test('Persona uses one seat, selects individual runs and retains internal histor
     .click();
   await expect(page.locator('.inspector-heading h2')).toHaveText('내부 보조 기록');
   await page.screenshot({ path: '.local/persona-and-history.png', fullPage: true });
+});
+test('The card pin is the colleague pin: a persona pinned on any run reads pinned and unpins whole', async ({
+  page,
+}) => {
+  const s = demoSnapshot(),
+    base = s.sessions[2];
+  const actor = { id: 'openclaw:butler', name: '집사', source: 'fixture' };
+  const manual = {
+    ...base,
+    id: 'manual',
+    alias: '',
+    title: '오늘의 요청',
+    actor,
+    status: 'idle' as const,
+    officeSeat: 0,
+    pinned: true,
+  };
+  // The working run speaks for the persona, but only the other run carries the pin.
+  const cron = {
+    ...manual,
+    id: 'cron',
+    title: '정기 브리핑',
+    status: 'work' as const,
+    pinned: false,
+  };
+  s.sessions = [manual, cron];
+  s.notices = [];
+  await fixture(page, s);
+  await page.goto('/');
+  const desk = page.locator('.office-map .desk-station');
+  await expect(desk.locator('.pin-button')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('.office-pet').click();
+  await expect(page.getByLabel('페르소나의 실행 기록')).toHaveValue('cron');
+  const card = page.locator('.inspector-top');
+  await expect(card.getByRole('button', { name: '고정 해제' })).toHaveClass(/gold/);
+  await card.getByRole('button', { name: '고정 해제' }).click();
+  await expect(card.getByRole('button', { name: '사무실에 고정' })).not.toHaveClass(/gold/);
+  await expect(desk.locator('.pin-button')).toHaveAttribute('aria-pressed', 'false');
+  expect(
+    await page.evaluate(() => (window as any).fixture.sessions.map((x: any) => x.pinned)),
+  ).toEqual([false, false]);
+  // Pinning from the card pins the whole persona, like the desk pin.
+  await card.getByRole('button', { name: '사무실에 고정' }).click();
+  await expect(desk.locator('.pin-button')).toHaveAttribute('aria-pressed', 'true');
+  expect(
+    await page.evaluate(() => (window as any).fixture.sessions.map((x: any) => x.pinned)),
+  ).toEqual([true, true]);
 });
 test('Lounge has independent furniture and pet assets with readable names on narrow screens', async ({
   page,

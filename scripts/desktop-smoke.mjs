@@ -101,6 +101,19 @@ try {
   const d = await page.evaluate(() => window.office.detail('codex:codex-test'));
   assert.equal(d.alias, '네이티브 네모');
   assert.equal(d.notes, 'IPC 영속성 확인');
+  // Pinning a persona is one IPC step for all of its runs.
+  const ids = s.sessions.map((x) => x.id);
+  const pinned = await page.evaluate((ids) => window.office.pin(ids, true), ids);
+  assert.ok(ids.every((id) => pinned.sessions.find((x) => x.id === id)?.pinned));
+  const unpinned = await page.evaluate((ids) => window.office.pin(ids, false), ids);
+  assert.ok(unpinned.sessions.every((x) => !x.pinned));
+  // Terminal lookups name every colleague asked for, from one light identity read.
+  const targets = await page.evaluate(
+    (ids) => window.office.terminals(ids),
+    [...ids, 'codex:missing'],
+  );
+  assert.deepEqual(Object.keys(targets).sort(), [...ids, 'codex:missing'].sort());
+  assert.equal(targets['codex:missing'], null);
   // The collector re-localizes its own copy with the renderer: switch to English and check, then
   // pin Korean so the rest of the run doesn't depend on the machine's language.
   const english = await page.evaluate(() => window.office.preferences({ locale: 'en' }));

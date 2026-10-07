@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
 import { useSendTargets } from '../lib/useSendTargets';
 import { DeskActionButton } from './DeskActionButton';
@@ -182,31 +183,43 @@ export function DeskRow({
     const step = Math.max(STATION_WIDTH * ROW_SCALE, el.clientWidth - STATION_WIDTH * ROW_SCALE);
     el.scrollBy({ left: direction * step, behavior: reducedMotion ? 'auto' : 'smooth' });
   };
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    const field =
+      e.target instanceof Element && e.target.closest('input, textarea, select') !== null;
+    if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
+      // Fold what is open before the dock itself folds (DeskDock skips handled keys).
+      e.preventDefault();
+      if (field && e.target instanceof HTMLElement) e.target.blur();
+      if (replying) setReplying(null);
+      else setExpanded(null);
+      return;
+    }
+    if (field) return;
+    if (e.key === 'ArrowLeft') page(-1);
+    if (e.key === 'ArrowRight') page(1);
+  });
+  // Registered once, on mount, so it stays ahead of DeskDock's Esc listener on the window
+  // (children's effects run before their parent's, and the dock remounts the row whenever it
+  // registers its own). Re-adding it per render would put it last and let Esc fold the dock.
   useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      const field =
-        e.target instanceof Element && e.target.closest('input, textarea, select') !== null;
-      if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
-        // Fold what is open before the dock itself folds (DeskDock skips handled keys).
-        e.preventDefault();
-        if (field && e.target instanceof HTMLElement) e.target.blur();
-        if (replying) setReplying(null);
-        else setExpanded(null);
-        return;
-      }
-      if (field) return;
-      if (e.key === 'ArrowLeft') page(-1);
-      if (e.key === 'ArrowRight') page(1);
-    };
+    const key = (e: KeyboardEvent) => onKey(e);
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  });
+  }, []);
   const byId = new Map(sessions.map((s) => [s.id, s]));
   // Who can be reached from here: desks (go to terminal) and the sessions their bubbles speak for.
   const primary = sessions.filter((s) => !s.attachedTo);
-  const speaking = primary.map(
-    (s) => deskSpeech(s, model.notices, model.bubbleHours, model.now).bubble?.sessionId ?? s.id,
+  // Each desk's speech, once per change of what it is made of (not per hover or pointer move).
+  const speeches = useMemo(
+    () =>
+      new Map(
+        sessions
+          .filter((s) => !s.attachedTo)
+          .map((s) => [s.id, deskSpeech(s, model.notices, model.bubbleHours, model.now)]),
+      ),
+    [sessions, model.notices, model.bubbleHours, model.now],
   );
+  const speaking = primary.map((s) => speeches.get(s.id)!.bubble?.sessionId ?? s.id);
   const { targets, markSent } = useSendTargets(
     privacy ? [] : [...primary.map((s) => s.id), ...speaking],
     {
@@ -217,8 +230,7 @@ export function DeskRow({
   );
   const jump = async (id: string) => {
     try {
-      const result = await api.jump!(id);
-      notify(result.text);
+      await jumpOrCopy(id, notify);
     } catch (e) {
       notify((e as Error).message);
     }
@@ -351,7 +363,7 @@ export function DeskRow({
                   const label = residentLabel(s, privacy);
                   const branch = branchInfo(s);
                   // A just-arrived request plays on the desk and speaks first.
-                  const speech = deskSpeech(s, model.notices, model.bubbleHours, model.now);
+                  const speech = speeches.get(s.id)!;
                   const { arrival, hop } = speech;
                   // Pointing at a desk shows its bubble — or the last thing it said, if closed.
                   const shown = shownSpeech(

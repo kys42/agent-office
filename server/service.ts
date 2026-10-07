@@ -376,6 +376,15 @@ export class OfficeService extends EventEmitter {
           z.boolean().parse(args[1]),
         );
         return this.emitSnapshot();
+      case 'pin':
+        this.store.pin(
+          z.array(z.string().max(400)).max(500).parse(args[0]),
+          z.boolean().parse(args[1]),
+        );
+        return this.emitSnapshot();
+      case 'identities':
+        // Read-only and no more than `detail` already returns, for the desktop's terminal lookup.
+        return this.store.identities(z.array(z.string().max(400)).max(500).parse(args[0]));
       case 'preferences':
         if (syncLocale(this.store.preferences(prefsSchema.parse(args[0])).locale))
           this.relocalize();

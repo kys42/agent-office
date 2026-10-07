@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
   codexLoadedThreads,
+  codexOriginCache,
   codexTarget,
   findCodexThread,
   queueToCodex,
   readCodexOrigin,
+  scanCodexOrigin,
 } from '../desktop/codex-queue.js';
 import { TerminalInputError, type RunOptions, type TerminalDeps } from '../desktop/terminals.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -102,6 +104,78 @@ test('The rollout header tells a terminal Codex session from the desktop app and
   }
 });
 
+test('A rollout header answer is final once found or ruled out, open while the file is short', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-codex-scan-'));
+  try {
+    const file = path.join(dir, 'a.jsonl');
+    await writeFile(file, meta('codex-tui'));
+    assert.deepEqual(await scanCodexOrigin(file), {
+      origin: { originator: 'codex-tui', subagent: false },
+      final: true,
+    });
+    // Still being written: the header may yet arrive.
+    await writeFile(file, '');
+    assert.deepEqual(await scanCodexOrigin(file), { origin: null, final: false });
+    await writeFile(file, meta('codex-tui').slice(0, 500));
+    assert.deepEqual(await scanCodexOrigin(file), { origin: null, final: false });
+    // A rollout only grows: complete first lines without the header never gain one.
+    await writeFile(file, '{"type":"event_msg"}\n'.repeat(8));
+    assert.deepEqual(await scanCodexOrigin(file), { origin: null, final: true });
+    await writeFile(file, '{broken\n');
+    assert.deepEqual(await scanCodexOrigin(file), { origin: null, final: true });
+    assert.equal(await scanCodexOrigin(path.join(dir, 'missing.jsonl')), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Origin lookups share one read and re-read only a rollout that may still change', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-codex-cache-'));
+  try {
+    let scans = 0;
+    const lookup = codexOriginCache(async (file) => {
+      scans++;
+      return scanCodexOrigin(file);
+    });
+    const known = path.join(dir, 'known.jsonl');
+    await writeFile(known, meta('codex-tui'));
+    // Several windows asking at once: one read.
+    const answers = await Promise.all([lookup(known), lookup(known), lookup(known)]);
+    assert.equal(scans, 1);
+    for (const a of answers) assert.deepEqual(a, { originator: 'codex-tui', subagent: false });
+    await lookup(known);
+    assert.equal(scans, 1, 'a found header is kept');
+
+    // No header in the first lines (or a first line over 8 MiB): kept as no, even as it grows.
+    const headless = path.join(dir, 'headless.jsonl');
+    await writeFile(headless, '{"type":"event_msg"}\n'.repeat(8));
+    assert.equal(await lookup(headless), null);
+    await appendFile(headless, '{"type":"event_msg"}\n');
+    assert.equal(await lookup(headless), null);
+    assert.equal(scans, 2, 'a final no is not read again');
+
+    // The header is not written yet: asked again only once the file changed.
+    const young = path.join(dir, 'young.jsonl');
+    await writeFile(young, '');
+    assert.equal(await lookup(young), null);
+    assert.equal(await lookup(young), null);
+    assert.equal(scans, 3, 'an unchanged file is not read again');
+    await writeFile(young, meta('Codex Desktop'));
+    assert.deepEqual(await lookup(young), { originator: 'Codex Desktop', subagent: false });
+    assert.equal(scans, 4);
+    await lookup(young);
+    assert.equal(scans, 4);
+
+    // A file that cannot be read is asked again next time, without a cached answer.
+    const missing = path.join(dir, 'missing.jsonl');
+    assert.equal(await lookup(missing), null);
+    await writeFile(missing, meta('codex-tui'));
+    assert.deepEqual(await lookup(missing), { originator: 'codex-tui', subagent: false });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('Only a terminal Codex thread that a live Codex process holds open is a target', async () => {
   const ok = await codexHome();
   try {
@@ -174,6 +248,28 @@ test('Queueing passes text as one flag value and checks the daemon answer', asyn
     return true;
   });
   await assert.rejects(queueToCodex({ threadId: THREAD }, ' \u0007 ', deps), TerminalInputError);
+});
+
+test('The daemon answer is matched to the thread in any letter case', async () => {
+  const upper = THREAD.toUpperCase();
+  // A session whose id is written in capitals, answered in lower case, and the other way round.
+  const lower = fakeDeps('/x');
+  assert.equal(
+    await queueToCodex({ threadId: upper }, 'hi', lower.deps),
+    'Codex 세션에 전달했어요',
+  );
+  assert.deepEqual(lower.calls[0].args.slice(0, 2), ['queue', `--thread=${upper}`]);
+  const capital = fakeDeps('/x', {
+    queueOut: `Queued message 01A111AA-5761 for thread ${upper}.\n`,
+  });
+  assert.equal(
+    await queueToCodex({ threadId: THREAD }, 'hi', capital.deps),
+    'Codex 세션에 전달했어요',
+  );
+  const other = fakeDeps('/x', {
+    queueOut: 'Queued message x for thread 01a1144c-f9c2-7a32-8e9b-ffcbb8663796.',
+  });
+  await assert.rejects(queueToCodex({ threadId: upper }, 'hi', other.deps), TerminalInputError);
 });
 
 test('A Codex target queues instead of refusing a working session, and cannot be focused', () => {

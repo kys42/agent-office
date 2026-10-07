@@ -51,8 +51,8 @@ function relocalizedDemo(prev: Snapshot): Snapshot {
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
 const CLOCK_MS = 15_000;
-/** Matches the service's per-request limit for `veil`. */
-const VEIL_BATCH = 500;
+/** Matches the service's per-request limit for `veil` and `pin`. */
+const BATCH = 500;
 
 /**
  * The office core every window shares: the same snapshot, the same derived model and the
@@ -213,7 +213,21 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const pin = async (s: Session) => {
     const next = !s.pinned;
     const ids = s.resident?.key.startsWith('actor:') ? s.resident.sessionIds : [s.id];
-    for (const id of ids) await patch(id, { pinned: next });
+    if (demo) {
+      setSnapshot((snap) =>
+        snap
+          ? reconcileDemo({
+              ...snap,
+              sessions: snap.sessions.map((x) => (ids.includes(x.id) ? { ...x, pinned: next } : x)),
+            })
+          : snap,
+      );
+      return next;
+    }
+    // One request and one transaction (and one snapshot): a persona is pinned whole or not at
+    // all. Only a persona of more than 500 runs would need a second request.
+    for (let i = 0; i < ids.length; i += BATCH)
+      setSnapshot(await api.pin(ids.slice(i, i + BATCH), next));
     return next;
   };
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
@@ -268,8 +282,8 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     }
     try {
       // The service takes up to 500 ids per request; "bring everyone back" can be more.
-      for (let i = 0; i < ids.length; i += VEIL_BATCH)
-        setSnapshot(await api.veil(ids.slice(i, i + VEIL_BATCH), on));
+      for (let i = 0; i < ids.length; i += BATCH)
+        setSnapshot(await api.veil(ids.slice(i, i + BATCH), on));
     } catch (e) {
       notify((e as Error).message);
     }

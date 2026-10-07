@@ -19,6 +19,7 @@ const api: OfficeAPI = {
   refresh: () => call('refresh'),
   patch: (id, p) => call('patch', id, p),
   veil: (ids, on) => call('veil', ids, on),
+  pin: (ids, on) => call('pin', ids, on),
   search: (q, p) => call('search', q, p),
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),

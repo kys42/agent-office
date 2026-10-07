@@ -117,6 +117,32 @@ test('Persona projection keeps one resident per namespace and raw run identities
   assert.equal(allocateSeats(after, seats)[seatKey(a)], seats[seatKey(aki)]);
   assert.equal(officeResidents([{ ...cron, status: 'done' }], now).sessions[0].zone, 'waiting');
 });
+test('A pinned persona stays in the office even when the run speaking for it aged into the archive', () => {
+  const day = 86400_000;
+  // The pinned run sits in the office; an older unanswered call outranks it as the current run.
+  const kept = persona('kept', 'aki', { pinned: true, updatedAt: now - 10 * day });
+  const asking = persona('asking', 'aki', {
+    status: 'call',
+    updatedAt: now - 9 * day,
+    zone: 'archive',
+  });
+  const aki = officeResidents([kept, asking], now).sessions[0];
+  assert.equal(aki.id, 'asking');
+  assert.equal(aki.pinned, true);
+  assert.equal(aki.zone, 'office');
+  // Same for the lounge, and an unpinned persona still follows its run's age.
+  assert.equal(
+    officeResidents([kept, { ...asking, zone: 'waiting' }], now).sessions[0].zone,
+    'office',
+  );
+  assert.equal(
+    officeResidents([{ ...kept, pinned: false, zone: 'archive' }, asking], now).sessions[0].zone,
+    'archive',
+  );
+  // A manual archive wins over the pin, as for a single session.
+  const shelved = persona('shelved', 'aki', { pinned: true, archived: true, zone: 'archive' });
+  assert.equal(officeResidents([shelved], now).sessions[0].zone, 'archive');
+});
 test('Previous-task helpers and internal runs fold away; working helpers, forks and attention stay visible', () => {
   const root = make('root', { taskStartedAt: now }),
     child = make('child', {
