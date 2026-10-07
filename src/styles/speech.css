@@ -379,16 +379,16 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Two lines on a collapsed office bubble; one line on the docks and on unfolded bubbles, where
+   the answer needs the headroom (the full request is in the quote's tooltip). */
+.desk-row .speech-bubble .speech-request-text,
+.dock-pet-speech .speech-bubble .speech-request-text,
 .speech-bubble.is-expanded .speech-request-text {
-  display: block;
-  -webkit-line-clamp: unset;
-  max-height: 34px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  -webkit-line-clamp: 1;
 }
-/* With a quote the unfolded bubble shares the same headroom (first-row office desk 164px, desk
-   row 162px under the tools band): header ≈46 + quote ≈26+34 + text 56. */
+/* A one-line quote is ≈39px: unfolded text gives that back within the headroom (first-row office
+   desk 164px, desk row 162px under the tools band; header ≈46). */
 .speech-bubble.is-expanded:has(.speech-request) .speech-copy b,
 .desk-row .speech-bubble.is-expanded:has(.speech-request) .speech-copy b {
-  max-height: 56px;
+  max-height: 76px;
 }

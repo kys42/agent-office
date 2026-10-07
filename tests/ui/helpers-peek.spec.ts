@@ -293,6 +293,9 @@ test('The pet quotes the request only while hovered', async ({ page }) => {
   await page.locator('.dock-pet-anchor').hover();
   await expect(speech.locator('.speech-request')).toBeVisible();
   await expect(speech.locator('.speech-request')).toContainText('로그인 화면 여백을 다듬어 줘');
+  // The hovered bubble, quote included, stays inside the pet window.
+  const stage = (await page.locator('.desk-pet-stage').boundingBox())!;
+  expect((await speech.locator('.speech-bubble').boundingBox())!.y).toBeGreaterThanOrEqual(stage.y);
 });
 
 test('The row quotes the request when its desk is pointed at, and screen sharing hides it', async ({

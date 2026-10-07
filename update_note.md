@@ -4,7 +4,11 @@
   - 코어: `stationSpeech().request`(멤버 소식 중 최신 `request`, 백그라운드 제외, 닫은 것 포함, 말풍선이 '내 요청'이면 없음)
   - `SpeechBubble`의 `quote`: 큰 사무실은 `hover`, 책상 줄·바닥 책상은 다시 보기와 같은 `pointing`, 펫은 CSS 호버
   - 다국어: `desk.bubble.request`/`requestTitle`(ko·en)
-- 기본 2줄, 펼치면 전문(잘림 판단에 인용 길이 포함)
+- 높이 예산: 큰 사무실 접힌 말풍선은 2줄, 책상 줄·펫·펼친 말풍선은 1줄(전문은 툴팁). 펼친 본문은 76px, 펫 호버 본문은 60px로 인용 자리를 내준다
+- 리뷰 반영(독립 리뷰 + Codex)
+  - **⚠ 스타일 순서**: `main.tsx`가 speech.css를 dock.css보다 나중에 불러오므로, 같은 구체성의 dock 규칙은 진다. 펫 인용이 늘 보이던 원인
+  - 인용은 '그 말풍선이 답하는 요청'(말풍선보다 늦지 않은 요청, 같은 실행 우선). 백그라운드 실행의 말 위에는 인용하지 않는다
+  - **⚠ 하네스 메모**: Claude Code가 user 역할로 남기는 `<task-notification>`과 "[Request interrupted by user]"가 '내 요청'으로 분류되고 있었다(기존 문제). `cleanPrompt`에서 걸러 낸다
 
 # 2026-10-07 · 보조 책상 ×N 묶음, 닫은 말풍선 다시 보기 (PR #22, Issue #21)
 

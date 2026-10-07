@@ -103,7 +103,14 @@ export function SpeechBubble({
       >
         <span className="speech-copy">
           {request && (
-            <span className="speech-request" title={t.desk.bubble.requestTitle}>
+            <span
+              className="speech-request"
+              title={
+                privacy
+                  ? t.desk.bubble.requestTitle
+                  : `${t.desk.bubble.requestTitle}\n${request.text}`
+              }
+            >
               <small>
                 <User size={9} strokeWidth={2.6} aria-hidden="true" />
                 {t.desk.bubble.request}

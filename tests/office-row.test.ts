@@ -371,3 +371,39 @@ test('pointing at a desk quotes the latest request the person sent it', () => {
   assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request?.id, viaOther.id);
   assert.equal(stationSpeech(s, [reply], 3, now).request, undefined, 'nothing asked yet');
 });
+
+test('the quote is the request a bubble answers, never over a background run', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000 });
+  const first = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '첫 부탁',
+    at: now - 10 * 60_000,
+  });
+  const reply = notice(s.id, { text: '첫 부탁 끝', at: now - 5 * 60_000 });
+  // A follow-up sent after the answer (e.g. while the pet still speaks the answer).
+  const followUp = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '후속',
+    at: now - 1000,
+  });
+  const answered = stationSpeech(s, [first, reply, followUp], 3, now, reply);
+  assert.equal(answered.bubble?.id, reply.id);
+  assert.equal(answered.request?.id, first.id, 'the request this answer is for');
+  // A resident desk prefers the run that is speaking.
+  const resident = session(0, 'team', {
+    status: 'idle',
+    resident: { sessionIds: [s.id, 'fixture:cron'] } as Session['resident'],
+  });
+  const elsewhere = notice('fixture:cron', {
+    kind: 'request',
+    phase: undefined,
+    at: now - 6 * 60_000,
+  });
+  assert.equal(stationSpeech(resident, [first, elsewhere, reply], 3, now).request?.id, first.id);
+  // A scheduled run's output is not answering the person: nothing is quoted over it.
+  const cronOut = notice('fixture:cron', { text: '정기 보고', at: now - 30_000, background: true });
+  assert.equal(stationSpeech(resident, [first, cronOut], 3, now).bubble?.id, cronOut.id);
+  assert.equal(stationSpeech(resident, [first, cronOut], 3, now).request, undefined);
+});

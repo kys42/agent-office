@@ -735,3 +735,7 @@ body.card-mode {
 .dock-pet-anchor:hover .dock-pet-speech .speech-bubble .speech-request {
   display: block;
 }
+/* …and the hovered text gives the quote its room (the pet window is 216px above the bubble). */
+.dock-pet-anchor:hover .dock-pet-speech .speech-bubble:has(.speech-request) .speech-copy b {
+  max-height: 60px;
+}

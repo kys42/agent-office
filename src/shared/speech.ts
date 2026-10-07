@@ -127,9 +127,17 @@ export function stationSpeech(
               : activity.kind === 'reply'
                 ? 'reply'
                 : 'message';
-  const lastRequest = news
-    .filter((n) => n.kind === 'request' && !n.background)
-    .sort((a, b) => b.at - a.at || b.receivedAt - a.receivedAt)[0];
+  // The request a bubble answers: sent no later than it, from the same run first. Nothing is
+  // quoted over a background run's words (a scheduled or internal run isn't answering the person).
+  const asked = news
+    .filter((n) => n.kind === 'request' && !n.background && (!bubble || n.at <= bubble.at))
+    .sort(
+      (a, b) =>
+        Number(b.sessionId === bubble?.sessionId) - Number(a.sessionId === bubble?.sessionId) ||
+        b.at - a.at ||
+        b.receivedAt - a.receivedAt,
+    );
+  const lastRequest = bubble?.background ? undefined : asked[0];
   return {
     members,
     news,
