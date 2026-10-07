@@ -80,9 +80,14 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const [clock, setClock] = useState(Date.now());
   // The office as last accepted, read synchronously so back-to-back patches chain correctly.
   const held = useRef<Snapshot | null>(snapshot);
+  // Bumped when the live subscription starts or ends, so a late resync cannot land in the demo.
+  const generation = useRef(0);
+  // Live, only `accept` moves it (an effect could step it back behind a newer patch); the demo
+  // changes its snapshot directly, so there it follows the state.
+  const resyncing = useRef(false);
   useEffect(() => {
-    held.current = snapshot;
-  }, [snapshot]);
+    if (demo) held.current = snapshot;
+  }, [demo, snapshot]);
   /**
    * Takes a whole office or a patch. A patch applies only on the version it starts from; on
    * any gap the whole office is fetched again. Colleagues that did not change keep their
@@ -94,7 +99,20 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     if (isPatch(message)) {
       if (prev?.epoch === message.epoch && message.version <= prev.version) return;
       if (!prev || prev.epoch !== message.epoch || prev.version !== message.base) {
-        void api.snapshot().then(accept, () => {});
+        // One resync at a time, and only while the same live subscription lasts (not after
+        // switching to the demo).
+        if (resyncing.current) return;
+        resyncing.current = true;
+        const live = generation.current;
+        void api
+          .snapshot()
+          .then(
+            (s) => live === generation.current && accept(s),
+            () => {},
+          )
+          .finally(() => {
+            resyncing.current = false;
+          });
         return;
       }
       next = applyPatch(prev, message);
@@ -120,6 +138,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       return;
     }
     let active = true;
+    const live = ++generation.current;
     held.current = null;
     setSnapshot(null);
     api
@@ -144,6 +163,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     );
     return () => {
       active = false;
+      if (generation.current === live) generation.current++;
       unsubscribe();
     };
   }, [demo]);
@@ -281,7 +301,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     if (!demo) {
       void api
         .visit(id)
-        .then(setSnapshot)
+        .then(accept)
         .catch((e) => notify(e.message));
       return;
     }

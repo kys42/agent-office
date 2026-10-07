@@ -107,6 +107,8 @@ const prefsSchema = z
 const HEALTH_MS = 60_000;
 /** Changes kept for pollers that fell behind; further back they get the whole office. */
 const PATCH_HISTORY = 64;
+/** Changes are kept only while a poller has asked recently (the desktop app never asks). */
+const POLLER_MS = 60_000;
 /** Whether a change is more than the check times moving on. */
 function meaningful(change: ReturnType<typeof diffSnapshot>, before: Snapshot, after: Snapshot) {
   const { fields, ...parts } = change;
@@ -130,6 +132,7 @@ export class OfficeService extends EventEmitter {
   private sent: { index: SnapshotIndex; at: number; snapshot: Snapshot } | null = null;
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
+  private polledAt = 0;
   cache = new Map<string, { stamp: string; session: Session }>();
   clawCache = new Map<string, Session>();
   timer: ReturnType<typeof setTimeout> | null = null;
@@ -204,7 +207,8 @@ export class OfficeService extends EventEmitter {
     const sent = this.sent;
     const change = sent ? diffSnapshot(sent.index, s, index) : null;
     if (sent && change && !meaningful(change, sent.snapshot, s) && now - sent.at < HEALTH_MS)
-      return { ...s, version: sent.snapshot.version };
+      // Nothing to publish: answer with what was published, the baseline of the next patch.
+      return sent.snapshot;
     s.version = ++this.version;
     const patch: SnapshotPatch | null =
       sent && change
@@ -217,15 +221,24 @@ export class OfficeService extends EventEmitter {
           }
         : null;
     this.sent = { index, at: now, snapshot: s };
-    if (patch) this.patches = [...this.patches.slice(-(PATCH_HISTORY - 1)), patch];
+    if (patch && now - this.polledAt < POLLER_MS)
+      this.patches = [...this.patches.slice(-(PATCH_HISTORY - 1)), patch];
     else this.patches = [];
     this.emit('snapshot', s, patch);
     return s;
   }
+  /**
+   * The office as last published. Every client must hold exactly what a version was published
+   * as, since patches are made against that; a mid-collection read could differ (e.g. `syncing`).
+   */
+  private published(): Snapshot {
+    return this.sent?.snapshot ?? this.emitSnapshot();
+  }
   /** What a client holding `version` of run `epoch` needs: nothing, a patch, or the office. */
   private catchUp(epoch: unknown, version: unknown) {
+    this.polledAt = Date.now();
     const sent = this.sent;
-    if (!sent || epoch !== this.epoch || typeof version !== 'number') return this.snapshot();
+    if (!sent || epoch !== this.epoch || typeof version !== 'number') return this.published();
     if (version === sent.snapshot.version) return { unchanged: true, epoch, version };
     const from = this.patches.findIndex((p) => p.base === version);
     return from < 0 ? sent.snapshot : composePatches(this.patches.slice(from));
@@ -439,7 +452,7 @@ export class OfficeService extends EventEmitter {
         );
       case 'snapshot':
         // A poller says what it holds: it gets nothing new, what changed, or the whole office.
-        return args.length ? this.catchUp(args[0], args[1]) : this.snapshot();
+        return args.length ? this.catchUp(args[0], args[1]) : this.published();
       case 'refresh':
         return this.refresh();
       case 'detail':

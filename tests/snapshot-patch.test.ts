@@ -147,6 +147,12 @@ test('The collector sends a changed colleague as a patch and catches a poller up
   );
   try {
     const first = (await service.refresh()) as Snapshot;
+    // Without a poller nothing is kept: one who asks first gets the whole office back.
+    assert.equal(
+      ((await service.call('snapshot', [first.epoch, first.version])) as { unchanged?: boolean })
+        .unchanged,
+      true,
+    );
     const touch = async (n: number) => {
       const file = path.join(project, `${ids[0]}.jsonl`);
       await appendFile(file, line(ids[0], n, `요청 ${n}`));
@@ -172,6 +178,12 @@ test('The collector sends a changed colleague as a patch and catches a poller up
       epoch: third.epoch,
       version: third.version,
     });
+    // Mid-collection, a new client still gets exactly what was published as this version.
+    service.syncing = true;
+    const boot = (await service.call('snapshot')) as Snapshot;
+    service.syncing = false;
+    assert.equal(boot.syncing, false);
+    assert.deepEqual(boot, third);
     // A version it no longer has the changes for: the whole office.
     const whole = (await service.call('snapshot', [first.epoch, -5])) as Snapshot;
     assert.equal(whole.version, third.version);
