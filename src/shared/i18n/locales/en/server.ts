@@ -85,6 +85,9 @@ export const server = {
     toolResultRecovering:
       'Tool result recorded · may still be recovering on its own after an error',
     toolResult: 'Tool result recorded',
+    planApproval: 'Plan approval requested · check the original app',
+    permissionPrompt: 'Waiting for your permission · approve it in the original app',
+    liveWaiting: 'Waiting for you · check the original app',
   },
   event: {
     turnStarted: 'Started a new turn',

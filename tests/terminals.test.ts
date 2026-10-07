@@ -413,6 +413,8 @@ test('A failed tmux paste removes the buffer holding the text', async () => {
 
 test('A working or shell-mode session never receives input', async () => {
   for (const status of ['busy', 'shell', 'waiting']) {
+    // A permission prompt or plan approval on screen would take the text as its answer.
+    assert.equal(terminalTarget(orcaLive(status)).canSend, false, status);
     const { deps, calls } = fakeDeps('/x');
     await assert.rejects(sendToTerminal(orcaLive(status), 'hi', deps), TerminalInputError);
     await assert.rejects(sendToTerminal(tmuxLive(status), 'hi', deps), TerminalInputError);

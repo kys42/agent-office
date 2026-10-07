@@ -19,6 +19,16 @@ import { CANONICAL, canonical } from '../../src/shared/canonical.js';
 export { deriveState } from '../../src/shared/runtime.js';
 
 type Obj = Record<string, any>;
+/**
+ * Tools that wait for the person: a question (AskUserQuestion, Codex request_user_input) or a
+ * plan to approve (Claude Code plan mode ends with ExitPlanMode). Until their result arrives the
+ * colleague is calling.
+ */
+export const REQUEST_INPUT_TOOL = /AskUserQuestion|request_user_input|ExitPlanMode/;
+export const PLAN_APPROVAL_TOOL = /ExitPlanMode/;
+/** The native tool-call id that pairs a call with its result, when the source provides one. */
+const call = (value: unknown): Pick<OfficeEvent, 'callId'> =>
+  typeof value === 'string' && value && value.length <= 200 ? { callId: value } : {};
 const publicPhase = (value: unknown): OfficeEvent['phase'] =>
   value === 'commentary'
     ? 'commentary'
@@ -166,7 +176,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     text: string,
     tool?: string,
     suffix = '',
-    metadata: Pick<OfficeEvent, 'phase' | 'lifecycle'> = {},
+    metadata: Pick<OfficeEvent, 'phase' | 'lifecycle' | 'callId'> = {},
   ) => {
     if (!text.trim()) return;
     // An ordinal is local to a transport page, not a native event ID. Using it
@@ -185,7 +195,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       tool,
       intent:
         kind === 'tool'
-          ? /AskUserQuestion|request_user_input/.test(tool ?? '')
+          ? REQUEST_INPUT_TOOL.test(tool ?? '')
             ? 'request-input'
             : 'tool-use'
           : undefined,
@@ -352,7 +362,15 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
         const tool = String(p.name ?? 'tool');
-        add({ ...r, id: p.call_id ?? p.id }, at, 'tool', t.event.toolRun(tool), tool);
+        add(
+          { ...r, id: p.call_id ?? p.id },
+          at,
+          'tool',
+          t.event.toolRun(tool),
+          tool,
+          '',
+          call(p.call_id),
+        );
         set(
           tool.includes('request_user_input') ? 'call' : 'work',
           tool.includes('request_user_input') ? t.reason.inputTool : t.reason.toolCall,
@@ -367,6 +385,9 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             0,
             1800,
           ),
+          undefined,
+          '',
+          call(p.call_id),
         );
         set('work', t.reason.toolResultWaiting);
       }
@@ -446,10 +467,11 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               t.event.toolRun(tool),
               tool,
               `:tool${i}`,
+              call(b.id),
             );
             set(
-              /AskUserQuestion|request_user_input/.test(tool) ? 'call' : 'work',
-              t.reason.toolCall,
+              REQUEST_INPUT_TOOL.test(tool) ? 'call' : 'work',
+              PLAN_APPROVAL_TOOL.test(tool) ? t.reason.planApproval : t.reason.toolCall,
             );
           }
           if (b.type === 'tool_result') {
@@ -460,6 +482,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               contentText(b.content) || String(b.content ?? '').slice(0, 1800),
               undefined,
               ':result',
+              call(b.tool_use_id),
             );
             set('work', t.reason.toolResultRecovering);
           }

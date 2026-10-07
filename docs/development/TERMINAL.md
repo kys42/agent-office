@@ -12,7 +12,7 @@
 
 정본 `desktop/terminals.ts`. 모든 단계는 검증에 실패하면 "터미널 없음"으로 끝나고 기존 동작(재개 명령 복사)을 쓴다.
 
-1. **세션 → 프로세스.** Claude Code가 쓰는 `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`에서 `sessionId`가 같은 기록을 찾는다. 문서화되지 않은 CLI 상태라 `pid`·파일명 일치, `sessionId` 형식, `procStart`/`status` 존재, `kind: interactive`를 모두 확인한다. 살아 있는 pid라도 `TZ=UTC LC_ALL=C ps -o lstart=`가 `procStart`와 다르면 재사용된 PID로 보고 버린다. 같은 세션 기록이 여럿이면 최근 `updatedAt`부터 본다.
+1. **세션 → 프로세스.** Claude Code가 쓰는 `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`에서 `sessionId`가 같은 기록을 찾는다. 문서화되지 않은 CLI 상태라 `pid`·파일명 일치, `sessionId` 형식, `procStart`/`status` 존재, `kind: interactive`를 모두 확인한다. 살아 있는 pid라도 `TZ=UTC LC_ALL=C ps -o lstart=`가 `procStart`와 다르면 재사용된 PID로 보고 버린다. 같은 세션 기록이 여럿이면 최근 `updatedAt`부터 본다. 이 읽기·검증은 `server/adapters/claude-live.ts`에 있고, 수집기도 같은 코드로 권한 확인 대기(`waiting`)를 호출로 보여 준다([세션 수집](SESSION-INGESTION.md#claude-실행-기록과-호출-office-v11)).
 2. **프로세스 → 호스트.** `ps -wwE`(인수+환경)에서 `ps -ww`(인수)를 잘라낸 나머지만 환경으로 읽는다. 인수 속 `ORCA_TERMINAL_HANDLE=…` 같은 글자는 무시된다. 값은 엄격한 정규식(`term_…`, `%숫자`, 절대 경로 소켓)만 허용한다. 환경변수는 상속되므로 **pty 소유자**로 진짜 호스트를 정한다. 부모를 따라 올라가며 같은 tty를 쓰는 동안 계속 오르고, 처음으로 다른 tty(또는 없음)에 있는 조상이 그 pty를 연 프로그램이다(`ps -axo pid,ppid,tty,comm`). 환경과 소유자는 프로세스 수명 동안 바뀌지 않아 `pid:procStart`로 캐시한다.
    - **tmux**(`TMUX`, `TMUX_PANE`)가 직접 호스트이므로 먼저 본다. 소유자가 tmux 서버이고 `tmux -S <socket> display-message -t <pane> '#{pane_tty}…'`의 tty가 같아야 인정한다. tmux 표식이 있는데 확인이 안 되면 **대상 없음**이다. Orca 안에서 띄운 tmux는 바깥 Orca 핸들을 물려받지만, 그 탭은 다른 패널이나 셸을 보여 줄 수 있다.
    - **Orca**(`ORCA_TERMINAL_HANDLE`, `ORCA_TAB_ID`)는 소유자가 `Orca.app` 프로세스이고 `orca terminal show --json`이 connected·writable·not orphaned·같은 `tabId`여야 인정한다. Orca 탭 안의 screen·zellij·nvim `:terminal`에서 띄운 Claude는 핸들을 물려받아도 소유자가 달라 제외된다. 라벨은 탭 제목이다. 탭 제목만으로 매칭하지 않는다(실측에서 제목과 세션 이름이 다른 경우가 있었다).
@@ -61,7 +61,7 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 
 - 아래는 Claude(Orca/tmux) 경로의 규칙이다. Codex는 위 데몬 대기열 규칙을 따른다.
 - **입력 그대로.** 그 터미널에 사용자가 직접 친 것과 같다. 기록에 실제 사용자 메시지로 남고 수집기가 그대로 다시 읽는다. 권한 확인 없이 띄운 세션이면 그대로 실행된다는 점을 설정에 적었다.
-- **쉬는 중일 때만.** 프로세스 `status === 'idle'`일 때만 보낸다. `busy`(작업 중)·`shell` 등에서는 거부한다. 승인 프롬프트에 글자가 들어가 승인으로 처리되는 일을 막는다. 보낸 직후 카드는 작업 중으로 표시하고, 쉬는 상태로 돌아올 때까지 화면에 보이는 동안만 4초마다 다시 확인한다.
+- **쉬는 중일 때만.** 프로세스 `status === 'idle'`일 때만 보낸다. `busy`(작업 중)·`shell`·`waiting`(권한 확인·플랜 승인 화면) 등에서는 거부한다. 승인 프롬프트에 글자가 들어가 승인으로 처리되는 일을 막는다. 보낸 직후 카드는 작업 중으로 표시하고, 쉬는 상태로 돌아올 때까지 화면에 보이는 동안만 4초마다 다시 확인한다.
 - **터미널 앞에 있을 때만.** Ctrl+Z로 멈춘 Claude는 기록이 `idle`로 남은 채 셸이 앞으로 나온다. 보내기 직전 `ps -o stat,pgid,tpgid`로 멈춤(`T`)이 아니고 Claude의 프로세스 그룹이 터미널 전면 그룹인지 확인한다. 그렇지 않으면 셸 명령으로 실행될 수 있어 거부한다(실측: Ctrl+Z → 거부, `fg` → 다시 보내기 가능).
 - **평문만.** `\n`·`\t` 외 제어문자(ESC, BEL, C1 등)를 제거하고 trim, 1~4000자.
 - Orca: `orca terminal send --terminal=… --text=… --enter --wait-submit=5 --json`. `--flag=값` 형식이어야 `--`로 시작하는 글도 값으로 읽힌다. `result.send.accepted`가 아니면 `refusedReason`과 함께 알리고(거부 시 CLI가 0이 아닌 코드로 끝나도 출력을 읽음), `prompt.stages`에 `turn_started`가 있으면 "작업이 시작됐어요"로 알린다.

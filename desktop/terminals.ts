@@ -1,40 +1,36 @@
-import { execFile } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
-import { readdir, readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import type { TerminalTarget } from '../src/shared/types.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
+import {
+  findClaudeProcess,
+  forget,
+  processAlive,
+  remember,
+  runCommand,
+  type ClaudeLiveDeps,
+  type ClaudeProcess,
+} from '../server/adapters/claude-live.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
-// never reachable through OfficeService.call (shared with the web preview).
+// never reachable through OfficeService.call (shared with the web preview). Reading the
+// process records themselves is shared with the collector (server/adapters/claude-live.ts).
+export {
+  findClaudeProcess,
+  parseClaudeProcess,
+  remember,
+  spaces,
+  type ClaudeProcess,
+  type RunOptions,
+} from '../server/adapters/claude-live.js';
 
-export interface RunOptions {
-  env?: NodeJS.ProcessEnv;
-  /** Written to stdin, for text that must not pass through argv parsing. */
-  input?: string;
-  timeout?: number;
-}
-
-export interface TerminalDeps {
-  sessionsDir: string;
+export interface TerminalDeps extends ClaudeLiveDeps {
   /** `${CODEX_HOME:-~/.codex}`: shared daemon state for Codex CLI sessions. */
   codexHome: string;
-  /** Rejections carry the command's stdout, e.g. a JSON refusal with a non-zero exit. */
-  run: (file: string, args: string[], options?: RunOptions) => Promise<string>;
-  alive: (pid: number) => boolean;
   bin: (name: 'orca' | 'tmux' | 'codex') => string;
   wait: (ms: number) => Promise<void>;
-}
-
-/** One record of `<claude config>/sessions/<pid>.json`. Undocumented CLI state; validate everything. */
-export interface ClaudeProcess {
-  pid: number;
-  sessionId: string;
-  procStart: string;
-  status: string;
-  updatedAt: number;
 }
 
 export type TerminalHost =
@@ -81,31 +77,8 @@ export const defaultTerminalDeps = (): TerminalDeps =>
       'sessions',
     ),
     codexHome: process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex'),
-    run: (file, args, options = {}) =>
-      new Promise((resolve, reject) => {
-        const child = execFile(
-          file,
-          args,
-          {
-            timeout: options.timeout ?? 8000,
-            maxBuffer: 1_000_000,
-            env: options.env ?? process.env,
-          },
-          (error, stdout) =>
-            error
-              ? reject(Object.assign(error, { stdout: String(stdout ?? '') }))
-              : resolve(stdout),
-        );
-        if (options.input !== undefined) child.stdin?.end(options.input);
-      }),
-    alive: (pid) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    run: runCommand,
+    alive: processAlive,
     bin(name) {
       return name === 'codex'
         ? codexBinary(this.codexHome)
@@ -113,92 +86,6 @@ export const defaultTerminalDeps = (): TerminalDeps =>
     },
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   });
-
-// Caches live per deps object: the app shares one, and every test brings its own.
-const memos = new WeakMap<TerminalDeps, Map<string, { at: number; value: Promise<unknown> }>>();
-export function remember<T>(
-  deps: TerminalDeps,
-  key: string,
-  ttl: number,
-  fresh: boolean,
-  make: () => Promise<T>,
-): Promise<T> {
-  let byKey = memos.get(deps);
-  if (!byKey) memos.set(deps, (byKey = new Map()));
-  const hit = byKey.get(key);
-  if (!fresh && hit && Date.now() - hit.at < ttl) return hit.value as Promise<T>;
-  const value = make();
-  byKey.set(key, { at: Date.now(), value });
-  if (byKey.size > 500) byKey.delete(byKey.keys().next().value!);
-  return value;
-}
-const forget = (deps: TerminalDeps, key: string) => memos.get(deps)?.delete(key);
-
-export const spaces = (value: string) => value.trim().replace(/\s+/g, ' ');
-
-export function parseClaudeProcess(file: string, text: string): ClaudeProcess | null {
-  try {
-    const d = JSON.parse(text);
-    const pid = Number(path.basename(file, '.json'));
-    if (!Number.isInteger(pid) || pid <= 1 || d.pid !== pid) return null;
-    if (typeof d.sessionId !== 'string' || !/^[\w-]{8,80}$/.test(d.sessionId)) return null;
-    if (typeof d.procStart !== 'string' || typeof d.status !== 'string') return null;
-    if (d.kind !== undefined && d.kind !== 'interactive') return null;
-    return {
-      pid,
-      sessionId: d.sessionId,
-      procStart: d.procStart,
-      status: d.status,
-      updatedAt: typeof d.updatedAt === 'number' ? d.updatedAt : 0,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** The live interactive Claude Code process for a session, verified against PID reuse. */
-async function readClaudeProcesses(dir: string): Promise<ClaudeProcess[]> {
-  const files = await readdir(dir).catch(() => [] as string[]);
-  const records = await Promise.all(
-    files
-      .filter((name) => /^\d+\.json$/.test(name))
-      .map(async (name) =>
-        parseClaudeProcess(name, await readFile(path.join(dir, name), 'utf8').catch(() => '')),
-      ),
-  );
-  return records.filter((r): r is ClaudeProcess => !!r);
-}
-
-export async function findClaudeProcess(
-  sessionId: string,
-  deps: TerminalDeps,
-  fresh = false,
-): Promise<ClaudeProcess | null> {
-  // One directory read serves a burst of lookups (e.g. every bubble on the office floor).
-  const records = await remember(deps, `records:${deps.sessionsDir}`, 1000, fresh, () =>
-    readClaudeProcesses(deps.sessionsDir),
-  );
-  const candidates = records.filter((r) => r.sessionId === sessionId);
-  candidates.sort((a, b) => b.updatedAt - a.updatedAt);
-  for (const record of candidates) {
-    if (!deps.alive(record.pid)) continue;
-    // procStart is written in UTC with the C locale; a recycled PID starts at another time.
-    const started = await remember(
-      deps,
-      `lstart:${record.pid}:${record.procStart}`,
-      30_000,
-      fresh,
-      () =>
-        deps
-          .run('/bin/ps', ['-o', 'lstart=', '-p', String(record.pid)], {
-            env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
-          })
-          .catch(() => ''),
-    );
-    if (started && spaces(started) === spaces(record.procStart)) return record;
-  }
-  return null;
-}
 
 export interface ProcessEnv {
   /** Any tmux marker, valid or not: such a process is never routed to an outer terminal. */
@@ -368,7 +255,11 @@ export const forgetTerminal = (sessionId: string) =>
 
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 
-/** What the renderer may know: never the handle or socket, which main re-resolves per action. */
+/**
+ * What the renderer may know: never the handle or socket, which main re-resolves per action.
+ * Only an idle prompt takes typed text; `waiting` (a permission prompt or plan approval on
+ * screen) would turn the text into an answer.
+ */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
   return {
     kind: live.host.kind,

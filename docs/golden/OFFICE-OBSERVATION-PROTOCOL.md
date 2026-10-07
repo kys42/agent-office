@@ -44,7 +44,7 @@ Session {
 - **미관측**: null/unknown. 0 토큰, 기본 main 브랜치, 부모 없음의 확정 증거로 채우지 않는다. root는 현재 관측된 부모 관계가 없다는 뜻이다.
 - **안정 이벤트 ID**: 원본 message/UUID/call ID를 우선한다. 없을 때 시간·종류·내용 hash. 후자는 원본이 스트리밍 ID를 제공하지 않으면 같은 메시지 업데이트를 완벽히 식별할 수 없다.
 - **이벤트 역할**: user=사람의 요청, assistant=공개 설명/답변, tool=호출 사실, result=도구 반환, lifecycle=명시된 턴 시작/응답 완료/중단. tool/result는 기본 소식으로 승격하지 않는다.
-- **도구 의미**: `intent=request-input|tool-use`. 어댑터가 AskUserQuestion/request_user_input 같은 원본 이름을 번역한다. 소식·확인 정책은 원본 도구명 정규식 대신 intent를 읽는다.
+- **도구 의미**: `intent=request-input|tool-use`. 어댑터가 AskUserQuestion/request_user_input/ExitPlanMode(플랜 승인) 같은 원본 이름을 번역한다. 소식·확인 정책은 원본 도구명 정규식 대신 intent를 읽는다. 원본 호출 ID가 있으면 tool/result 이벤트에 optional `callId`로 남겨 호출과 답을 짝짓는다. 답이 기록된 요청은 다시 부르지 않는다.
 - **공개 단계**: commentary와 final을 구분. final도 업무 전체 성공의 보증이 아니다. analysis/reasoning은 저장·대화·소식 후보에서 제외한다.
 - **관련 결과물**: 링크가 대화에 나타났다는 사실만 보장. PR을 실제로 만들었는지/머지했는지는 별도 근거가 필요하다.
 
@@ -63,7 +63,7 @@ Session {
 | 정체성 | JSONL sessionId; subagent는 agentId+subagents 경로 | session_meta 대화 ID; continuation 병합 | agent namespace + current_session_id/JSONL ID |
 | 이름 | custom-title, optional session index | threads.name / session index / 정제된 title | session_nodes label/display_name 또는 공개 요청 |
 | 진행 설명 | 공개 assistant text | 공개 commentary/final message 및 event | 공개 assistant text |
-| 상태 | 사용자·도구·stop_reason | task_started/complete/aborted, 도구·입력 요청 | transcript와 session_nodes status |
+| 상태 | 사용자·도구·stop_reason, 플랜 승인(ExitPlanMode), 실행 기록 `sessions/<pid>.json`의 권한 확인 대기 | task_started/complete/aborted, 도구·입력 요청 (승인 대기 근거 없음) | transcript와 session_nodes status |
 | 부모 | subagents 경로; parentUuid는 메시지 포인터 | 명시적 subagent/parent/fork 메타데이터 | parent_session_key의 정확한 key 매치; 같은 agent native ID fallback |
 | 브랜치 | gitBranch | session_meta.git.branch 및 metadata | 기록에 없는 경우 null 유지 |
 | 사용량 | message usage, streaming message ID 중복 방지 | cumulative token record, 문맥 한도 별도 | fresh session total 또는 수집한 message sample |

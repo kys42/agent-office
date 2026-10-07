@@ -12,6 +12,13 @@ import { codexMetadata } from './adapters/codex.js';
 import { readOpenClawDatabases } from './adapters/openclaw.js';
 import { artifactDetails } from './artifacts.js';
 import { claudeMetadata, claudeSubagentMetadata } from './adapters/claude.js';
+import {
+  applyLiveWait,
+  defaultLiveDeps,
+  waitingClaudeProcesses,
+  type ClaudeLiveDeps,
+  type ClaudeProcess,
+} from './adapters/claude-live.js';
 import { mergeSessions } from './adapters/merge.js';
 import { unreadNoticeCount } from '../src/shared/notices.js';
 import { enrichWorkspaces } from './workspaces.js';
@@ -102,14 +109,18 @@ export class OfficeService extends EventEmitter {
   pending: Promise<Snapshot> | null = null;
   stopped = false;
   roots: Record<Provider, string>;
+  /** Live Claude Code process records (`<claude config>/sessions`): permission prompts. */
+  live: ClaudeLiveDeps;
   /** How each connector's message is phrased, so a language switch can re-phrase it in place. */
   private phrasing = new Map<Provider, () => string>();
   constructor(dir?: string, home = os.homedir()) {
     super();
     this.store = new OfficeStore(dir);
     syncLocale(this.store.preferences().locale);
+    const claudeHome = process.env.CLAUDE_CONFIG_DIR ?? path.join(home, '.claude');
+    this.live = defaultLiveDeps(path.join(claudeHome, 'sessions'));
     this.roots = {
-      claude: path.join(process.env.CLAUDE_CONFIG_DIR ?? path.join(home, '.claude'), 'projects'),
+      claude: path.join(claudeHome, 'projects'),
       codex: path.join(process.env.CODEX_HOME ?? path.join(home, '.codex'), 'sessions'),
       openclaw: path.join(process.env.OPENCLAW_STATE_DIR ?? path.join(home, '.openclaw'), 'agents'),
     };
@@ -225,7 +236,7 @@ export class OfficeService extends EventEmitter {
           prefs.maxSessions,
         );
         for (const file of files) {
-          const stamp = `office-v10:${file.size}:${file.mtime}`;
+          const stamp = `office-v11:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
           if (!s) {
@@ -305,6 +316,7 @@ export class OfficeService extends EventEmitter {
           ...s,
           revision: hash(`${s.revision}:${JSON.stringify(s.workspace)}`),
         }));
+        if (provider === 'claude') sessions = await this.liveWaits(sessions);
         if (errors && sessions.length === 0) throw new Error(m().server.connector.unreadable);
         // On partial source failure, retain existing records instead of silently deleting their history.
         if (errors) {
@@ -339,6 +351,24 @@ export class OfficeService extends EventEmitter {
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);
     return this.emitSnapshot();
+  }
+  /**
+   * A permission prompt shows only in the live process record, never in the transcript. Applied
+   * after the parse cache on every pass, so the overlay appears and disappears with the record
+   * (its revision changes either way). Unreadable or unexpected records change nothing.
+   */
+  private async liveWaits(sessions: Session[]): Promise<Session[]> {
+    const wanted = new Set(sessions.map((s) => s.nativeId));
+    const waiting: Map<string, ClaudeProcess> = await waitingClaudeProcesses(
+      this.live,
+      wanted,
+    ).catch(() => new Map());
+    if (!waiting.size) return sessions;
+    const now = Date.now();
+    return sessions.map((s) => {
+      const live = waiting.get(s.nativeId);
+      return (live && applyLiveWait(s, live, now)) || s;
+    });
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {
     switch (method) {
