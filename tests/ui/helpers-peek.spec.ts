@@ -291,6 +291,12 @@ test('Pointing at a desk shows what the person asked as its own bubble above', a
     bubble.locator('.speech-open'),
     (await page.locator('.office-map').boundingBox())!.y,
   );
+  // Moving up across the gap between the bubbles keeps it (a bridge covers the gap).
+  const answer = (await bubble.locator('.speech-open').boundingBox())!;
+  const above = (await request.boundingBox())!;
+  await page.mouse.move(answer.x + answer.width / 2, answer.y + 4);
+  await page.mouse.move(answer.x + answer.width / 2, above.y + above.height - 4, { steps: 12 });
+  await expect(request).toBeVisible();
   // Unfolding the answer gives it the headroom; the request bubble steps aside.
   await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
   await expect(request).toBeHidden();
@@ -316,6 +322,11 @@ test('The pet shows the request bubble only while hovered, inside its window', a
     speech.locator('.speech-open'),
     (await page.locator('.desk-pet-stage').boundingBox())!.y,
   );
+  // Unfolding the answer gives it the reading space; the request steps aside. (The hover tools
+  // sit over the expand tab, so unfold from the keyboard.)
+  await speech.getByRole('button', { name: '말풍선 전체 보기' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(request).toBeHidden();
 });
 
 test('The row shows the request bubble above when its desk is pointed at; screen sharing hides it', async ({

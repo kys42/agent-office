@@ -363,6 +363,15 @@
   text-align: left;
   cursor: default;
 }
+.speech-bubble > .speech-request-bubble::before {
+  /* An invisible bridge over the gap, so moving up from the answer keeps the desk pointed at. */
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -13px;
+  height: 13px;
+}
 .speech-bubble > .speech-request-bubble::after {
   content: '';
   position: absolute;
