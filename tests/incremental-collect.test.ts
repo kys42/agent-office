@@ -1,10 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { appendFile, mkdir, mkdtemp, rm, unlink, utimes, writeFile } from 'node:fs/promises';
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  open,
+  readFile,
+  rm,
+  unlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { OfficeService } from '../server/service.js';
+import { RecordWindowCache } from '../server/adapters/record-window.js';
 import { codexMetadata, resetCodexMetadataCache } from '../server/adapters/codex.js';
 import {
   claudeMetadata,
@@ -88,6 +99,54 @@ test('A Claude transcript that grows is collected by reading only its appended l
     await service.refresh();
     assert.equal(service.cache.size, 0);
     assert.equal(service.windows.size, 0);
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test('A quiet transcript rewritten in place after appends is re-verified on schedule', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-reverify-'));
+  const project = path.join(temp, 'claude', 'projects', 'demo');
+  await mkdir(project, { recursive: true });
+  const id = 'ffff6666-0000-0000-0000-000000000006';
+  const file = path.join(project, `${id}.jsonl`);
+  const at = Date.now() - 120_000;
+  await writeFile(file, reply(id, 'm-1', at, '처음 답장입니다'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  service.roots.claude = path.join(temp, 'claude', 'projects');
+  service.store.preferences({ enabledProviders: ['claude'] });
+  let now = Date.now();
+  service.windows = new RecordWindowCache({ now: () => now });
+  const session = (s: Snapshot) => s.sessions.find((x) => x.nativeId === id)!;
+  try {
+    await service.refresh();
+    await appendFile(file, reply(id, 'm-2', at + 1000, '덧붙인 답장'));
+    const mtime = new Date(Date.now() + 1000);
+    await utimes(file, mtime, mtime);
+    const appended = session(await service.refresh());
+    assert.ok(JSON.stringify(appended).includes('덧붙인 답장'));
+
+    // Same-size rewrite of the first line, mtime put back: the stamp still matches.
+    const text = await readFile(file, 'utf8');
+    const fh = await open(file, 'r+');
+    await fh.write(
+      Buffer.from('바뀐'),
+      0,
+      6,
+      Buffer.byteLength(text.slice(0, text.indexOf('처음'))),
+    );
+    await fh.close();
+    await utimes(file, mtime, mtime);
+    assert.equal(session(await service.refresh()).revision, appended.revision);
+
+    now += 11 * 60_000;
+    const verified = session(await service.refresh());
+    assert.ok(JSON.stringify(verified).includes('바뀐 답장입니다'));
+    assert.notEqual(verified.revision, appended.revision);
+    // The verified window is trusted again: no further re-reads or revision changes.
+    now += 11 * 60_000;
+    assert.equal(session(await service.refresh()).revision, verified.revision);
   } finally {
     service.stop();
     await rm(temp, { recursive: true, force: true });

@@ -42,6 +42,8 @@ export async function discover(root: string, depth = 5): Promise<SourceFile[]> {
   return result.sort((a, b) => b.mtime - a.mtime);
 }
 export const READ_BUDGET_BYTES = 3 * 1024 * 1024;
+/** Bytes before the resume point kept to confirm an append left the prefix alone. */
+export const GUARD_BYTES = 64;
 /** Bytes of the bounded head window once a file outgrows the read budget. */
 export const headWindowBytes = (maxBytes: number) => Math.min(768 * 1024, Math.floor(maxBytes / 2));
 export interface WindowRecord {
@@ -64,6 +66,8 @@ export interface RecordWindow {
   malformed: boolean;
   /** Offsets and line boundaries are exact, so appends may resume from `consumedThrough`. */
   resumable: boolean;
+  /** Up to `GUARD_BYTES` before `consumedThrough`, read from the same handle (resumable only). */
+  guard: Buffer;
 }
 // Read bounded beginning + end. Preserve complete lines; never parse a half-written tail.
 export async function readRecords(
@@ -86,6 +90,7 @@ export async function readWindow(
     let partial = size > maxBytes;
     let malformed = false;
     let resumable = true;
+    let guard = Buffer.alloc(0);
     const window = (consumedThrough: number, headEnd: number): RecordWindow => ({
       records,
       partial,
@@ -96,6 +101,7 @@ export async function readWindow(
       consumedThrough,
       malformed,
       resumable,
+      guard,
     });
     if (!size) return window(0, 0);
     const parseLine = (line: string, start: number, end: number) => {
@@ -168,6 +174,12 @@ export async function readWindow(
       // Still inside the dropped leading line: no line boundary to resume from.
       if (skip || tail.skippedRecords.length) resumable = false;
       consumedThrough = tail.consumedThrough;
+    }
+    if (resumable) {
+      const from = Math.max(0, consumedThrough - GUARD_BYTES);
+      guard = Buffer.alloc(consumedThrough - from);
+      const { bytesRead } = await fh.read(guard, 0, guard.length, from);
+      if (bytesRead !== guard.length) resumable = false;
     }
     return window(consumedThrough, headEnd);
   } finally {

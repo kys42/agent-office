@@ -217,3 +217,151 @@ test('Random append splits match the bounded reader with a small budget', async 
     await rm(dir, { recursive: true });
   }
 });
+
+test('A window built by appends asks for a full re-verification and reports drift', async () => {
+  const dir = await temp();
+  try {
+    const file = path.join(dir, 'a.jsonl');
+    let now = 1_000_000;
+    const cache = new RecordWindowCache({ now: () => now });
+    await writeFile(file, lines(0, 5));
+    await same(cache, file, 'full');
+    assert.equal(cache.stale(file), false);
+    now += 11 * 60_000;
+    // Only appended windows are due: a full-read window stays trusted until the file changes.
+    assert.equal(cache.stale(file), false);
+    await appendFile(file, line(5));
+    await same(cache, file, 'full');
+    await appendFile(file, line(6));
+    await same(cache, file, 'append');
+    assert.equal(cache.stale(file), false);
+    now += 11 * 60_000;
+    assert.equal(cache.stale(file), true);
+    const quiet = await same(cache, file, 'full');
+    assert.equal(quiet.drifted, false);
+    assert.equal(cache.stale(file), false);
+    // An in-place rewrite outside the guard that the append path could not see.
+    await appendFile(file, line(7));
+    await same(cache, file, 'append');
+    const fh = await open(file, 'r+');
+    await fh.write(Buffer.from('9'), 0, 1, Buffer.byteLength('{"type":"event","id":'));
+    await fh.close();
+    now += 11 * 60_000;
+    assert.equal(cache.stale(file), true);
+    const drift = await same(cache, file, 'full');
+    assert.equal(drift.drifted, true);
+    assert.equal(drift.records[0].id, 9);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test('An appended window evicted before verification is still re-verified', async () => {
+  const dir = await temp();
+  try {
+    const [a, b] = ['a', 'b'].map((n) => path.join(dir, `${n}.jsonl`));
+    let now = 1_000_000;
+    const one = Buffer.byteLength(lines(0, 200));
+    const cache = new RecordWindowCache({ now: () => now, budgetBytes: one * 1.5 });
+    await writeFile(a, lines(0, 200));
+    await same(cache, a, 'full');
+    await appendFile(a, line(200));
+    await same(cache, a, 'append');
+    await writeFile(b, lines(0, 200));
+    await same(cache, b, 'full');
+    assert.equal(cache.has(a), false);
+    assert.equal(cache.stale(a), false);
+    now += 11 * 60_000;
+    assert.equal(cache.stale(a), true);
+    assert.equal((await same(cache, a, 'full')).drifted, true);
+    assert.equal(cache.stale(a), false);
+    cache.prune(new Set());
+    assert.equal(cache.stale(a), false);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test('Long lines, large jumps and unfinished lines wider than the tail match the bounded reader', async () => {
+  const dir = await temp();
+  try {
+    const file = path.join(dir, 'a.jsonl');
+    // A single growth beyond the tail window falls back to the bounded reader.
+    const maxBytes = 16 * 1024;
+    let cache = new RecordWindowCache({ maxBytes });
+    const check = async (bytes: number, mode?: 'append' | 'full') => {
+      const src = await source(file);
+      assert.equal(src.size, bytes);
+      const got = await cache.read(src);
+      const want = await readRecords(src, maxBytes);
+      assert.deepEqual(got.records, want.records);
+      assert.equal(got.partial, want.partial);
+      if (mode) assert.equal(got.mode, mode);
+    };
+    await writeFile(file, lines(0, 10, 30));
+    let size = Buffer.byteLength(lines(0, 10, 30));
+    await check(size, 'full');
+    const jump = lines(10, 120, 30);
+    await appendFile(file, jump);
+    await check((size += Buffer.byteLength(jump)), 'full');
+    await appendFile(file, line(500, 30));
+    await check((size += Buffer.byteLength(line(500, 30))), 'append');
+    // An unfinished line longer than the tail window, then its end.
+    const unfinished = `{"type":"event","id":501,"t":"${'z'.repeat(maxBytes)}`;
+    await appendFile(file, unfinished);
+    await check((size += Buffer.byteLength(unfinished)), 'full');
+    await appendFile(file, '"}\n');
+    await check((size += 3), 'full');
+    await appendFile(file, line(502, 30));
+    await check((size += Buffer.byteLength(line(502, 30))), 'append');
+
+    // Seeded fuzz: lines up to twice the budget straddle the head and tail cuts.
+    let seed = 11;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed % n;
+    };
+    let appends = 0;
+    let fulls = 0;
+    for (let iter = 0; iter < 10; iter++) {
+      const budget = 8 * 1024 + rand(8192);
+      cache = new RecordWindowCache({ maxBytes: budget, budgetBytes: 1e9 });
+      await writeFile(file, '');
+      let id = 0;
+      for (let step = 0; step < 90; step++) {
+        const r = rand(100);
+        let chunk: string;
+        if (r < 4) chunk = JSON.stringify({ id: id++, big: 'x'.repeat(rand(budget * 2)) }) + '\n';
+        else if (r < 7) chunk = 'garbage' + (rand(2) ? '\n' : '');
+        else if (r < 10) chunk = '\r\n';
+        else if (r < 13)
+          chunk = Array.from(
+            { length: 50 + rand(300) },
+            () => JSON.stringify({ id: id++, t: '가✓'.repeat(rand(30)) }) + '\n',
+          ).join('');
+        else
+          chunk = Array.from(
+            { length: 1 + rand(6) },
+            () =>
+              JSON.stringify({ id: id++, t: '가✓'.repeat(rand(60)) }) + (rand(5) ? '\n' : '\r\n'),
+          ).join('');
+        const buf = Buffer.from(chunk);
+        const cut = rand(buf.length + 1);
+        for (const part of [buf.subarray(0, cut), buf.subarray(cut)]) {
+          if (!part.length) continue;
+          await appendFile(file, part);
+          const src = await source(file);
+          const got = await cache.read(src);
+          const want = await readRecords(src, budget);
+          assert.deepEqual(got.records, want.records, `iter ${iter} step ${step}`);
+          assert.equal(got.partial, want.partial, `iter ${iter} step ${step}`);
+          if (got.mode === 'append') appends++;
+          else fulls++;
+        }
+      }
+    }
+    assert.ok(appends > 500 && fulls > 50, `${appends} appends, ${fulls} full reads`);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});

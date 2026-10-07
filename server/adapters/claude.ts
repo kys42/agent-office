@@ -29,7 +29,12 @@ export async function claudeSubagentMetadata(sourcePath: string): Promise<Sideca
     /* no sidecar: remembered as missing until one appears */
   }
   const cached = sidecarCache.get(file);
-  if (cached?.fingerprint === fingerprint) return cached.value;
+  if (cached?.fingerprint === fingerprint) {
+    // Refresh recency so the cap drops the least recently used sidecars.
+    sidecarCache.delete(file);
+    sidecarCache.set(file, cached);
+    return cached.value;
+  }
   let value: Sidecar = null;
   if (fingerprint !== 'missing' && size <= 64 * 1024) {
     try {

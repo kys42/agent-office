@@ -1,5 +1,7 @@
 import { open } from 'node:fs/promises';
+import { isDeepStrictEqual } from 'node:util';
 import {
+  GUARD_BYTES,
   READ_BUDGET_BYTES,
   foldLines,
   headWindowBytes,
@@ -9,7 +11,6 @@ import {
   type WindowRecord,
 } from './files.js';
 
-const GUARD_BYTES = 64;
 const VERIFY_MS = 10 * 60_000;
 const DEFAULT_BUDGET_BYTES = 32 * 1024 * 1024;
 
@@ -36,12 +37,16 @@ interface Entry {
   approxBytes: number;
   lastUsed: number;
   verifiedAt: number;
+  /** Took the append path since its last full read, so it relies on the guard alone. */
+  appended: boolean;
 }
 
 export interface WindowRead {
   records: Record<string, any>[];
   partial: boolean;
   mode: 'append' | 'full';
+  /** A full re-verification found other records than the append path had kept. */
+  drifted?: boolean;
 }
 
 /**
@@ -53,6 +58,8 @@ export interface WindowRead {
  */
 export class RecordWindowCache {
   private entries = new Map<string, Entry>();
+  /** Appended entries evicted before their full re-verification: path → last full read. */
+  private due = new Map<string, number>();
   private total = 0;
   readonly maxBytes: number;
   readonly budgetBytes: number;
@@ -81,12 +88,28 @@ export class RecordWindowCache {
       const appended = await this.append(file.path, entry);
       if (appended) return appended;
     }
-    return this.full(file.path);
+    return this.full(file.path, entry);
+  }
+  /**
+   * Appended windows rely on the guard alone; once their last full read is older than the
+   * verification interval they are due for one, even if the file has gone quiet since.
+   */
+  stale(filePath: string) {
+    const entry = this.entries.get(filePath);
+    const verifiedAt = entry
+      ? entry.appended
+        ? entry.verifiedAt
+        : undefined
+      : this.due.get(filePath);
+    return verifiedAt !== undefined && this.now() - verifiedAt >= this.verifyMs;
   }
   /** Drop entries for paths no longer discovered (optionally only those under `root`). */
   prune(keepPaths: Set<string>, root?: string) {
-    for (const key of [...this.entries.keys()])
-      if (!keepPaths.has(key) && (!root || isUnder(key, root))) this.drop(key);
+    for (const key of [...this.entries.keys(), ...this.due.keys()])
+      if (!keepPaths.has(key) && (!root || isUnder(key, root))) {
+        this.drop(key);
+        this.due.delete(key);
+      }
   }
   private drop(filePath: string) {
     const entry = this.entries.get(filePath);
@@ -94,16 +117,24 @@ export class RecordWindowCache {
     this.total -= entry.approxBytes;
     this.entries.delete(filePath);
   }
-  private async full(filePath: string): Promise<WindowRead> {
+  private async full(filePath: string, previous?: Entry): Promise<WindowRead> {
     this.drop(filePath);
+    // Evicted before its verification: what it had kept is gone, so report a drift to be safe.
+    const evicted = !previous && this.due.has(filePath);
+    this.due.delete(filePath);
     const w = await readWindow(filePath, this.maxBytes);
-    if (w.resumable) await this.store(filePath, w);
-    return { records: w.records.map((r) => r.record), partial: w.partial, mode: 'full' };
+    if (w.resumable) this.store(filePath, w);
+    const records = w.records.map((r) => r.record);
+    const read: WindowRead = { records, partial: w.partial, mode: 'full' };
+    if (evicted) read.drifted = true;
+    else if (previous?.appended)
+      read.drifted = !(
+        w.partial === (previous.split || previous.malformed || previous.trailing) &&
+        isDeepStrictEqual(records, windowRecords(previous))
+      );
+    return read;
   }
-  private async store(filePath: string, w: RecordWindow) {
-    // Reopens the path, so it also confirms the window still describes the same file.
-    const guard = await readGuard(filePath, w);
-    if (!guard) return;
+  private store(filePath: string, w: RecordWindow) {
     const split = w.size > this.maxBytes;
     const headSize = headWindowBytes(this.maxBytes);
     const head = split ? w.records.filter((r) => r.end <= headSize) : [];
@@ -116,13 +147,14 @@ export class RecordWindowCache {
       headEnd: w.headEnd,
       tail,
       tailFrom: 0,
-      guard,
+      guard: w.guard,
       split,
       malformed: w.malformed,
       trailing: w.consumedThrough < w.size,
       approxBytes: 0,
       lastUsed: this.now(),
       verifiedAt: this.now(),
+      appended: false,
     };
     this.remember(filePath, entry);
   }
@@ -135,6 +167,8 @@ export class RecordWindowCache {
     // Map order is recency order: evict from the least recently read.
     for (const key of this.entries.keys()) {
       if (this.total <= this.budgetBytes) break;
+      const evicted = this.entries.get(key)!;
+      if (evicted.appended) this.due.set(key, evicted.verifiedAt);
       this.drop(key);
     }
   }
@@ -188,6 +222,7 @@ export class RecordWindowCache {
         tailFrom: 0,
         malformed: entry.malformed || malformed,
         trailing: !!read.trailingPartialLine,
+        appended: true,
       };
       if (size > this.maxBytes) {
         if (!next.split) {
@@ -211,7 +246,7 @@ export class RecordWindowCache {
       }
       this.remember(filePath, next);
       return {
-        records: next.head.concat(next.tail.slice(next.tailFrom)).map((r) => r.record),
+        records: windowRecords(next),
         partial: next.split || next.malformed || next.trailing,
         mode: 'append',
       };
@@ -221,23 +256,8 @@ export class RecordWindowCache {
   }
 }
 
-async function readGuard(filePath: string, w: RecordWindow) {
-  const from = Math.max(0, w.consumedThrough - GUARD_BYTES);
-  const guard = Buffer.alloc(w.consumedThrough - from);
-  try {
-    const fh = await open(filePath, 'r');
-    try {
-      const { dev, ino } = await fh.stat();
-      if (dev !== w.dev || ino !== w.ino) return null;
-      if (!guard.length) return guard;
-      const { bytesRead } = await fh.read(guard, 0, guard.length, from);
-      return bytesRead === guard.length ? guard : null;
-    } finally {
-      await fh.close();
-    }
-  } catch {
-    return null;
-  }
+function windowRecords(entry: Entry) {
+  return entry.head.concat(entry.tail.slice(entry.tailFrom)).map((r) => r.record);
 }
 
 async function* range(fh: import('node:fs/promises').FileHandle, start: number, end: number) {

@@ -150,10 +150,11 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
 
 활성 대화는 몇 초마다 줄이 붙는다. 바뀐 파일마다 3 MiB 창을 다시 읽고 전부 `JSON.parse`하던 비용을 줄이려고 `server/adapters/record-window.ts`의 `RecordWindowCache`가 파일별 읽기 창을 기억한다. **결과 계약은 그대로다**: 같은 바이트에 대해 `readRecords`와 같은 레코드 목록·`partial`을 돌려준다. 파서는 증분으로 바꾸지 않았다. 바뀐 파일은 여전히 메모리의 전체 창으로 `parseRecords`를 다시 실행하므로 usage 중복 제거, 제목 순위, 스트리밍 덮어쓰기, 첫 metadata의 정체성, 시각 정렬이 이전과 같다.
 
-- **append 경로**: 열린 handle의 dev/ino가 같고, 크기가 마지막 완결 줄 끝(`consumedThrough`) 이상이며, 그 앞 최대 64바이트(guard)가 디스크와 같을 때만 `[consumedThrough, size)`를 Orca fold로 읽는다. 끝의 미완결 줄(UTF-8 중간 포함)은 소비하지 않고 다음 읽기에서 다시 읽는다.
+- **append 경로**: 열린 handle의 dev/ino가 같고, 크기가 마지막 완결 줄 끝(`consumedThrough`) 이상이며, 그 앞 최대 64바이트(guard, 전체 읽기 때 같은 handle에서 함께 읽어 둠)가 디스크와 같을 때만 `[consumedThrough, size)`를 Orca fold로 읽는다. 끝의 미완결 줄(UTF-8 중간 포함)은 소비하지 않고 다음 읽기에서 다시 읽는다.
 - **창 규칙**: `readRecords`와 같다. 3 MiB 이하이면 전부, 넘으면 앞 768 KiB 안에서 끝나는 줄(head)과 시작 위치가 `size - (3 MiB - 768 KiB)` 이상인 줄(tail)만 남긴다. 그래서 각 레코드의 바이트 시작/끝을 함께 기억한다. `readRecords`는 이 위치를 함께 내는 `readWindow`의 얇은 래퍼다.
 - **전체 경로(기존 bounded reader)**: 처음 읽기, inode/dev 변경(교체·rotation), 축소, guard 불일치, 마지막 전체 확인 후 10분 경과, 한 번에 2.25 MiB를 넘는 증가, 큰 첫 metadata 복구(head 창 안에 완결 줄 없음), 상한 초과 레코드, 예산으로 밀려난 항목. 복구 경로를 거친 파일은 캐시하지 않고 매번 전체 경로로 읽는다.
-- **한계**: guard 밖의 같은 크기 덮어쓰기는 다음 10분 대조까지 놓칠 수 있다. 원본 JSONL은 append-only라는 전제이며, 그 밖의 변경은 위 조건이 전체 경로로 돌린다.
+- **주기적 재확인**: append로 이어 붙인 창은 guard만 믿고 있으므로, 마지막 전체 읽기 후 10분이 지나면 파일이 그 뒤로 조용해서 stamp(size+mtime)가 그대로여도 `OfficeService.collect`가 전체 경로로 한 번 다시 읽는다(`RecordWindowCache.stale`). 대상은 창 캐시에 있는 append 항목과 확인 전에 예산으로 밀려난 append 항목뿐이다. 다시 읽은 레코드·`partial`이 append로 쌓은 것과 같으면 파싱 캐시를 그대로 쓰고 revision도 바꾸지 않는다. 다르면(`drifted`) 다시 파싱하고 revision 키에 확인 표시를 더해 저장소와 화면이 갱신되게 한다. 그 사이 최대 10분은 guard 밖의 같은 크기 덮어쓰기를 놓칠 수 있다. 원본 JSONL은 append-only라는 전제이며, 그 밖의 변경은 위 조건이 전체 경로로 돌린다.
+- **mtime 해상도**: 전체 경로로만 읽은 파일은 이전처럼 stamp가 같으면 다시 읽지 않는다. mtime 해상도가 거친 파일시스템에서 같은 크기로 다시 쓰면 다음 변경 전까지 반영되지 않는 기존 한계는 그대로다.
 - **예산**: 남긴 원문 줄 바이트 합계 기준 32 MiB(파싱된 객체의 실제 heap은 더 크다). 넘으면 가장 오래 읽지 않은 파일부터 버리고, 버린 파일은 다음에 전체 경로로 읽는다. 수집마다 공급자별로 이번에 발견한 파일만 남기고(`prune`), 꺼진 공급자의 항목은 비운다. 파싱 캐시(`OfficeService.cache`)도 같은 기준으로 정리하고 4000개 상한을 둔다. OpenClaw DB 캐시는 이번 수집에서 읽지 않은 노드 키를 버린다. revision은 같은 값으로 다시 계산되므로 축출은 의미를 바꾸지 않는다.
 - **metadata 캐시**: Codex `session_index.jsonl`·가장 최신 `state_N.sqlite`·`-wal`의 mtime+size와 선택된 DB 이름이 같으면 지난 결과를 그대로 쓴다. DB 읽기가 실패한 결과는 기억하지 않는다. Claude는 프로젝트 목록은 매번 읽고 `sessions-index.json`을 파일별 mtime+size로, subagent `.meta.json`은 mtime+size(없음 포함)로 기억한다. 테스트는 `resetCodexMetadataCache`/`resetClaudeMetadataCache`로 초기화한다.
 

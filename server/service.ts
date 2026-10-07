@@ -104,7 +104,8 @@ export class OfficeService extends EventEmitter {
   lastSync: number | null = null;
   error: string | null = null;
   version = 0;
-  cache = new Map<string, { stamp: string; session: Session }>();
+  /** `key` feeds revisions: the stamp, plus a marker once a re-verification found drift. */
+  cache = new Map<string, { stamp: string; key?: string; session: Session }>();
   /** JSONL read windows: changed files read only their appended lines. */
   windows = new RecordWindowCache();
   clawCache = new Map<string, Session>();
@@ -244,6 +245,16 @@ export class OfficeService extends EventEmitter {
           const stamp = `office-v11:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
+          let key = (s && cached?.key) || stamp;
+          // A window built by appends trusts its guard bytes; re-verify it in full on schedule
+          // even when the file has gone quiet, and re-parse only if that found other records.
+          if (s && this.windows.stale(file.path)) {
+            const check = await this.windows.read(file).catch(() => null);
+            if (check?.drifted) {
+              s = null;
+              key = `${stamp}:verified:${Date.now()}`;
+            }
+          }
           if (!s) {
             try {
               const { records, partial } = await this.windows.read(file);
@@ -277,8 +288,8 @@ export class OfficeService extends EventEmitter {
                 };
                 s.project = s.cwd ? path.basename(s.cwd) : s.project;
               }
-              s.revision = hash(`${stamp}:${s.title}`);
-              this.remember(file.path, { stamp, session: s });
+              s.revision = hash(`${key}:${s.title}`);
+              this.remember(file.path, { stamp, key, session: s });
             } catch {
               errors++;
               continue;
@@ -296,7 +307,7 @@ export class OfficeService extends EventEmitter {
               model: latestMeta.model ?? s.model,
             };
             s.project = s.cwd ? path.basename(s.cwd) : s.project;
-            s.revision = hash(`${stamp}:${s.title}:${s.cwd}:${s.model}:${s.branch}:${s.gitCommit}`);
+            s.revision = hash(`${key}:${s.title}:${s.cwd}:${s.model}:${s.branch}:${s.gitCommit}`);
           }
           if (provider === 'claude') {
             const sidecar = await claudeSubagentMetadata(file.path);
@@ -359,7 +370,7 @@ export class OfficeService extends EventEmitter {
     return this.emitSnapshot();
   }
   /** Parse cache with a size cap as a safety net; pruning to discovered files keeps it far below. */
-  private remember(file: string, entry: { stamp: string; session: Session }) {
+  private remember(file: string, entry: { stamp: string; key: string; session: Session }) {
     this.cache.delete(file);
     this.cache.set(file, entry);
     for (const key of this.cache.keys()) {
