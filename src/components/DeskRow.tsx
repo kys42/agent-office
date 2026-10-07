@@ -9,12 +9,20 @@ import {
   EyeOff,
   Flag,
   GitBranch,
+  PanelRightOpen,
   Pin,
+  RotateCw,
+  Terminal,
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { openColleague } from '../lib/dockCard';
+import { useSendTargets } from '../lib/useSendTargets';
+import { DeskActionButton } from './DeskActionButton';
+import { QuickReply } from './QuickReply';
+import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
-import { MOODS, type NoticeReceipt, type Session } from '../shared/types';
+import { MOODS, type NoticeReceipt, type Session, type TerminalTarget } from '../shared/types';
 import { branchInfo } from '../shared/branch';
 import {
   DESK_FOOT,
@@ -69,6 +77,10 @@ export function DeskRow({
   onPin,
   onCollapse,
   onSwitch,
+  onReply,
+  notify,
+  onRefresh,
+  refreshing = false,
 }: {
   variant?: 'office' | 'floor';
   model: OfficeModel;
@@ -81,6 +93,13 @@ export function DeskRow({
   onCollapse: () => void;
   /** Switch between the office row and the floor desks. */
   onSwitch: () => void;
+  /** Desktop opt-in: an unfolded bubble whose session can take a follow-up offers a reply. */
+  onReply?: (sessionId: string, text: string) => Promise<void>;
+  /** Short results and failures, shown by the dock. */
+  notify: (message: string) => void;
+  /** Look at the session records again now (and restart a stopped collector). */
+  onRefresh: () => void;
+  refreshing?: boolean;
 }) {
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
@@ -91,6 +110,14 @@ export function DeskRow({
   const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + 128;
   const track = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
+  // Clicking a bubble unfolds it in place; a reply opens under it when the session can take one.
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [replying, setReplying] = useState<{
+    station: string;
+    id: string;
+    target: TerminalTarget;
+  } | null>(null);
+
   const [view, setView] = useState({ left: 0, width: 0, scroll: 0 });
   // A mouse wheel scrolls the row sideways when there are more desks than fit.
   useEffect(() => {
@@ -145,6 +172,17 @@ export function DeskRow({
   };
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      const field =
+        e.target instanceof Element && e.target.closest('input, textarea, select') !== null;
+      if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
+        // Fold what is open before the dock itself folds (DeskDock skips handled keys).
+        e.preventDefault();
+        if (field && e.target instanceof HTMLElement) e.target.blur();
+        if (replying) setReplying(null);
+        else setExpanded(null);
+        return;
+      }
+      if (field) return;
       if (e.key === 'ArrowLeft') page(-1);
       if (e.key === 'ArrowRight') page(1);
     };
@@ -152,8 +190,31 @@ export function DeskRow({
     return () => window.removeEventListener('keydown', key);
   });
   const byId = new Map(sessions.map((s) => [s.id, s]));
+  // Who can be reached from here: desks (go to terminal) and the sessions their bubbles speak for.
+  const primary = sessions.filter((s) => !s.attachedTo);
+  const speaking = primary.map(
+    (s) => deskSpeech(s, model.notices, model.bubbleHours, model.now).bubble?.sessionId ?? s.id,
+  );
+  const { targets, markSent } = useSendTargets(
+    privacy ? [] : [...primary.map((s) => s.id), ...speaking],
+    {
+      enabled: !privacy,
+      stamp: Math.max(0, ...primary.map((s) => s.updatedAt)),
+      pollBusy: false,
+    },
+  );
+  const jump = async (id: string) => {
+    try {
+      const result = await api.jump!(id);
+      notify(result.text);
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const lounge = model.zones.waiting.filter((s) => !s.attachedTo).length;
-  const open = (id: string) => api.window('main', id);
+  // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
+  const open = (id: string, anchor?: Element | null, news = false) =>
+    openColleague(id, { anchor, news });
   const desk = STATION_WIDTH * ROW_SCALE;
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * ROW_SCALE })),
@@ -281,6 +342,10 @@ export function DeskRow({
                   const speech = deskSpeech(s, model.notices, model.bubbleHours, model.now);
                   const { bubble, arrival, hop } = speech;
                   const focus = focusLevel(s, model.now);
+                  const replyId = bubble?.sessionId ?? s.id;
+                  const replyTarget = targets[replyId];
+                  const canReply = !!onReply && !privacy && !!replyTarget?.canSend;
+                  const deskTarget = targets[s.id];
                   return (
                     <div
                       className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus}`}
@@ -313,6 +378,24 @@ export function DeskRow({
                         />
                       )}
                       <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
+                      <DeskActionButton
+                        className="card-button"
+                        label={`${label.name} 업무 카드 열기`}
+                        title="팝업으로 보기"
+                        hint="이 자리에서 업무 카드를 열어요. 큰 사무실로는 카드의 전체 모드로 가요."
+                        icon={<PanelRightOpen size={13} strokeWidth={2.4} />}
+                        onClick={(el) => void open(s.id, el)}
+                      />
+                      {deskTarget?.canFocus && api.jump && (
+                        <DeskActionButton
+                          className="jump-button"
+                          label={`${label.name} 터미널로 이동`}
+                          title={`${deskTarget.kind === 'orca' ? 'Orca' : 'tmux'}로 이동`}
+                          hint={`이 동료가 실행 중인 ${targetLine(deskTarget, privacy)} 터미널을 앞으로 가져와요.`}
+                          icon={<Terminal size={13} strokeWidth={2.4} />}
+                          onClick={() => void jump(s.id)}
+                        />
+                      )}
                       <Furniture kind="equipment" />
                       <PaperPile count={deskPapers(s, model.now)} level={focus} />
                       {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
@@ -373,23 +456,60 @@ export function DeskRow({
                           </button>
                         </>
                       )}
-                      {speech.shows(hover === s.id) && (
+                      {(speech.shows(hover === s.id) ||
+                        expanded === s.id ||
+                        replying?.station === s.id) && (
                         <div className="row-speech" data-solid>
                           <SpeechBubble
                             session={s}
                             speech={speech}
                             privacy={privacy}
+                            expanded={expanded === s.id}
+                            onExpandedChange={(on) => setExpanded(on ? s.id : null)}
                             onOpen={() => {
-                              if (bubble && !privacy)
+                              // Opening a bubble reads it in place; the card is one hover away.
+                              if (bubble && !privacy && expanded !== s.id)
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                              open(bubble?.sessionId ?? s.id);
+                              setExpanded(expanded === s.id ? null : s.id);
                             }}
+                            reply={
+                              canReply
+                                ? {
+                                    title: `바로 답장 · ${targetLine(replyTarget!, false)}`,
+                                    open: replying?.station === s.id,
+                                    onClick: () =>
+                                      setReplying(
+                                        replying?.station === s.id
+                                          ? null
+                                          : { station: s.id, id: replyId, target: replyTarget! },
+                                      ),
+                                  }
+                                : undefined
+                            }
                             onDismiss={() =>
                               bubble &&
                               onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
                             }
                           />
                         </div>
+                      )}
+                      {onReply && !privacy && replying?.station === s.id && (
+                        <QuickReply
+                          key={replying.id}
+                          target={
+                            targets[replying.id] ?? {
+                              ...replying.target,
+                              status: 'gone',
+                              canSend: false,
+                            }
+                          }
+                          name={label.name}
+                          onClose={() => setReplying(null)}
+                          onSend={async (text) => {
+                            await onReply(replying.id, text);
+                            markSent(replying.id);
+                          }}
+                        />
                       )}
                     </div>
                   );
@@ -480,6 +600,15 @@ export function DeskRow({
             {lounge}
           </span>
         )}
+        <button
+          className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
+          aria-label="새로고침"
+          title="새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)"
+          disabled={refreshing}
+          onClick={onRefresh}
+        >
+          <RotateCw size={14} />
+        </button>
         <button
           className="icon-btn"
           aria-label={floor ? '사무실 줄로 보기' : '바닥 책상으로 보기'}

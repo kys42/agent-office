@@ -31,6 +31,8 @@ export function NowCard({
   onResume,
   resumeLabel,
   canResume,
+  canType = false,
+  typeQueues = false,
   onShowNews,
 }: {
   session: Session;
@@ -40,6 +42,10 @@ export function NowCard({
   onResume: () => void;
   resumeLabel: string;
   canResume: boolean;
+  /** The live terminal accepts follow-ups typed from this card. */
+  canType?: boolean;
+  /** Follow-ups wait for the current turn instead of needing an idle session (Codex CLI). */
+  typeQueues?: boolean;
   onShowNews: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -138,7 +144,11 @@ export function NowCard({
                 )}
               </div>
               <small className="now-note">
-                답변과 승인은 원래 앱에서 해 주세요. Agent Office는 기록을 읽기만 해요.
+                {canType
+                  ? typeQueues
+                    ? '승인 요청은 원래 앱에서 답해 주세요. 아래에서 보낸 말은 지금 작업이 끝난 뒤 처리돼요.'
+                    : '승인 요청은 원래 앱에서 답해 주세요. 쉬는 중이면 아래에서 바로 이어서 말할 수 있어요.'
+                  : '답변과 승인은 원래 앱에서 해 주세요. Agent Office는 기록을 읽기만 해요.'}
               </small>
             </>
           )}

@@ -18,6 +18,7 @@ import {
   Download,
   Terminal,
   LayoutGrid,
+  Maximize2,
 } from 'lucide-react';
 import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
@@ -35,6 +36,8 @@ import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
+import { TerminalSend } from './TerminalSend';
+import { useSendTargets } from '../lib/useSendTargets';
 export function Inspector({
   session,
   sessions,
@@ -51,6 +54,8 @@ export function Inspector({
   privacy,
   zoneRules,
   onZoneRules,
+  terminalSend = false,
+  onExpand,
 }: {
   session: Session;
   sessions: Session[];
@@ -68,6 +73,9 @@ export function Inspector({
   privacy: boolean;
   zoneRules?: ZoneRule[];
   onZoneRules?: (rules: ZoneRule[]) => Promise<void>;
+  terminalSend?: boolean;
+  /** Shown in the dock card: open this colleague in the big office. */
+  onExpand?: () => void;
 }) {
   const [s, setS] = useState(session);
   const panelRef = useRef<HTMLElement>(null);
@@ -156,6 +164,14 @@ export function Inspector({
   useEffect(() => {
     if (!editing) setAlias(session.alias);
   }, [session.alias, editing]);
+  // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
+  // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
+  const locatable = !demo && (session.provider === 'claude' || session.provider === 'codex');
+  const { targets, markSent } = useSendTargets(locatable ? [session.id] : [], {
+    enabled: locatable,
+    stamp: session.updatedAt,
+  });
+  const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
   const patch = async (p: SessionPatch) => {
     try {
@@ -200,9 +216,21 @@ export function Inspector({
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
-  const resumeLabel = s.provider === 'codex' && isDesktop ? 'Codex에서 열기' : '재개 명령 복사';
+  const resumeLabel = live?.canFocus
+    ? `${live.kind === 'orca' ? 'Orca' : 'tmux'}로 이동`
+    : live?.kind === 'codex'
+      ? '재개 명령 복사'
+      : s.provider === 'codex' && isDesktop
+        ? 'Codex에서 열기'
+        : '재개 명령 복사';
   const resume = async () => {
     try {
+      if (api.jump) {
+        const result = await api.jump(s.id);
+        if (result.action === 'copy') await copy(result.text);
+        else notify(result.text);
+        return;
+      }
       const value = await api.resume(s.id);
       if (s.provider !== 'codex' || !isDesktop) await copy(value);
       else notify(value);
@@ -229,6 +257,16 @@ export function Inspector({
             >
               <Pin size={15} />
             </button>
+            {onExpand && (
+              <button
+                className="icon-btn"
+                aria-label="큰 사무실에서 보기"
+                title="전체 모드 · 큰 사무실에서 보기"
+                onClick={onExpand}
+              >
+                <Maximize2 size={15} />
+              </button>
+            )}
             <button
               className="icon-btn"
               aria-label="업무 카드 닫기"
@@ -364,8 +402,23 @@ export function Inspector({
             onResume={resume}
             resumeLabel={resumeLabel}
             canResume={!demo}
+            canType={!!live && terminalSend}
+            typeQueues={!!live?.queues}
             onShowNews={() => setTab('news')}
           />
+          {live && (
+            <TerminalSend
+              key={s.id}
+              target={live}
+              enabled={terminalSend}
+              privacy={privacy}
+              onSend={async (text) => {
+                const id = s.id;
+                notify(await api.send!(id, text));
+                markSent(id);
+              }}
+            />
+          )}
         </div>
         <div className="inspector-tabs" role="tablist" aria-label="업무 카드 항목">
           {(['history', 'news', 'overview', 'notes'] as const).map((t) => (

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
-import { MOODS, type Session, type OfficeNotice } from '../shared/types';
+import { MOODS, type Session, type OfficeNotice, type TerminalTarget } from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
@@ -16,6 +16,9 @@ import { isInboxNotice } from '../shared/notices';
 import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import type { ReceiptHandler } from './News';
+import { useSendTargets } from '../lib/useSendTargets';
+import { QuickReply } from './QuickReply';
+import { targetLine } from './TerminalSend';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -40,6 +43,7 @@ export function Office({
   canVeil = () => true,
   onPin,
   onZoneDrop,
+  onReply,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -62,6 +66,8 @@ export function Office({
   onPin?: (s: Session) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  /** Desktop opt-in: a bubble whose session can take a follow-up gets a quick reply. */
+  onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
@@ -124,6 +130,27 @@ export function Office({
       Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
     );
   const byId = new Map(sessions.map((s) => [s.id, s]));
+  // A reply goes to the session whose news the bubble shows, else the desk's own session.
+  const replyFor = (s: Session) =>
+    deskSpeech(s, notices, bubbleHours, clock).bubble?.sessionId ?? s.id;
+  const quick = !!onReply && !privacy;
+  // Helper desks carry no bubble; only the stations' own sessions can be replied to.
+  const replyable = quick
+    ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
+    : [];
+  const { targets: replyTargets, markSent } = useSendTargets(replyable.map(replyFor), {
+    enabled: quick,
+    // Asks again when a record moves (a turn ended); no 4s polling across the whole floor.
+    stamp: Math.max(0, ...replyable.map((s) => s.updatedAt)),
+    pollBusy: false,
+  });
+  // The open reply keeps the session and target it was opened for, so new bubbles or a
+  // refreshing target list never replace or close a draft in progress.
+  const [replying, setReplying] = useState<{
+    station: string;
+    id: string;
+    target: TerminalTarget;
+  } | null>(null);
   const primary = sessions.filter((s) => !s.attachedTo);
   const working = sessions.filter((s) => presentSession(s, clock).working).length;
   const phase = dayPhase(clock);
@@ -293,6 +320,9 @@ export function Office({
                   // A just-arrived request plays on the desk and speaks first.
                   const speech = deskSpeech(s, notices, bubbleHours, clock);
                   const { bubble, unread, arrival, hop } = speech;
+                  const replyId = bubble?.sessionId ?? s.id;
+                  const replyTarget = quick ? replyTargets[replyId] : null;
+                  const canReply = !!replyTarget?.canSend;
                   const focus = focusLevel(s, clock);
                   const branch = branchInfo(s);
                   return (
@@ -400,6 +430,38 @@ export function Office({
                             bubble &&
                             onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')
                           }
+                          reply={
+                            canReply
+                              ? {
+                                  title: `바로 답장 · ${targetLine(replyTarget!, false)}`,
+                                  open: replying?.station === s.id,
+                                  onClick: () =>
+                                    setReplying(
+                                      replying?.station === s.id
+                                        ? null
+                                        : { station: s.id, id: replyId, target: replyTarget! },
+                                    ),
+                                }
+                              : undefined
+                          }
+                        />
+                      )}
+                      {quick && replying?.station === s.id && (
+                        <QuickReply
+                          key={replying.id}
+                          target={
+                            replyTargets[replying.id] ?? {
+                              ...replying.target,
+                              status: 'gone',
+                              canSend: false,
+                            }
+                          }
+                          name={sessionName(byId.get(replying.id) ?? s)}
+                          onClose={() => setReplying(null)}
+                          onSend={async (text) => {
+                            await onReply!(replying.id, text);
+                            markSent(replying.id);
+                          }}
                         />
                       )}
                     </div>
