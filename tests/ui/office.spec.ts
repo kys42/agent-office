@@ -179,6 +179,8 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
     .toEqual([0, 1440, 970]);
   // Same office semantics as the big map: project zones, a shared bench, live bubbles.
   expect(await page.locator('.desk-row .row-zone').count()).toBeGreaterThan(1);
+  // A zone sign takes the mouse (its tooltip) and keeps the click in the dock.
+  await expect(page.locator('.desk-row .row-zone-mark').first()).toHaveAttribute('data-solid');
   await expect(page.locator('.desk-row .shared-bench').first()).toBeVisible();
   await expect(page.locator('.desk-row .speech-bubble').first()).toBeVisible();
   await expect(page.locator('.desk-row .desk-name em').first()).toContainText('소식');

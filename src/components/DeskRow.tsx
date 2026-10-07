@@ -231,6 +231,7 @@ export function DeskRow({
                     />
                     <div
                       className={`project-floor-mark row-zone-mark ${zone.custom ? 'custom-area' : ''}`}
+                      data-solid
                       title={
                         privacy
                           ? undefined
