@@ -494,3 +494,40 @@ test('Dragging a colleague onto another zone asks who follows, then moves the de
   ).toHaveAttribute('aria-pressed', 'true');
   await dialog.getByRole('button', { name: '취소' }).click();
 });
+
+test('Just-finished colleagues stand by before resting; the lounge says they went home', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const s = snapshot.sessions.find((x) => x.id === 'demo:2')!;
+  Object.assign(s, { status: 'ready', updatedAt: Date.now() - 10 * 60_000 });
+  snapshot.notices = snapshot.notices!.filter((n) => n.sessionId !== s.id);
+  await page.route('**/api/rpc', async (route) => {
+    const { method, args } = route.request().postDataJSON();
+    if (method === 'preferences') Object.assign(snapshot.preferences, args[0]);
+    await route.fulfill({ json: { result: snapshot } });
+  });
+  await page.goto('/');
+  const desk = page.locator('.office-map [data-station-id="demo:2"]');
+  await expect(desk.locator('.desk-name')).toContainText('대기 중');
+  await expect(desk.locator('.office-pet')).toHaveClass(/pose-standby/);
+  await expect(page.locator('.roster-group[data-group="standby"]')).toContainText('대기 중');
+  await expect(page.locator('.roster-group[data-group="standby"]')).toContainText('집사');
+  // Settings: how long to stand by, read in order with going home and archiving.
+  await page.getByRole('button', { name: '사무실 설정 열기' }).click();
+  const ready = page.getByLabel('대기 중으로 보여 줄 시간');
+  await expect(ready).toHaveValue('30');
+  await ready.selectOption('10');
+  await expect(page.locator('.office-schedule-preview')).toHaveText(
+    '마지막 활동 → 10분 대기 · 4시간 후 퇴근 · 7일 후 보관',
+  );
+  // Standing by must end before going home: shortening going home pulls it back.
+  await ready.selectOption('60');
+  await page.getByLabel('퇴근까지 시간').selectOption('1');
+  await expect(ready).toHaveValue('30');
+  await expect(ready.locator('option[value="60"]')).toHaveJSProperty('disabled', true);
+  await page.getByLabel('퇴근까지 시간').selectOption('4');
+  await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
+  await page.getByRole('tab', { name: /대기 라운지/ }).click();
+  await expect(page.locator('.session-room')).toContainText('퇴근');
+});

@@ -1,19 +1,21 @@
 import { useState } from 'react';
-import { Check, CircleAlert, Hand, Inbox, Loader, Moon, Terminal } from 'lucide-react';
+import { Check, CircleAlert, Hand, Hourglass, Inbox, Loader, Moon, Terminal } from 'lucide-react';
 import type { OfficeNotice, Session } from '../shared/types';
 import { isAttentionNotice, isFinalNotice, isInboxNotice } from '../shared/notices';
 import { needsAttention } from '../shared/residents';
+import { isStandingBy } from '../shared/presentation';
 import { durationShort, workingFor } from '../shared/triage';
 import { ago } from '../lib/format';
 import { ActivitySummary } from './ActivitySummary';
 import type { ReceiptHandler } from './News';
 
-export type NowState = 'attention' | 'result' | 'working' | 'resting';
+export type NowState = 'attention' | 'result' | 'working' | 'standby' | 'resting';
 export function nowState(s: Session, notices: OfficeNotice[]): NowState {
   const unread = notices.filter((n) => !n.seenAt && isInboxNotice(n));
   if (needsAttention(s) || unread.some(isAttentionNotice)) return 'attention';
   if (unread.some(isFinalNotice)) return 'result';
   if (workingFor(s) !== null) return 'working';
+  if (isStandingBy(s)) return 'standby';
   return 'resting';
 }
 
@@ -68,6 +70,8 @@ export function NowCard({
           <Inbox size={15} />
         ) : state === 'working' ? (
           <Loader size={15} className="now-spin" />
+        ) : state === 'standby' ? (
+          <Hourglass size={15} />
         ) : (
           <Moon size={15} />
         )}
@@ -80,7 +84,9 @@ export function NowCard({
               ? `새 결과가 도착했어요${unread.length > 1 ? ` · ${unread.length}건` : ''}`
               : state === 'working'
                 ? `작업 중 · ${elapsed !== null ? durationShort(elapsed) : '진행 중'}`
-                : '지금은 조용해요'}
+                : state === 'standby'
+                  ? '대기 중 · 방금 일을 마쳤어요'
+                  : '지금은 조용해요'}
         </b>
         <time>{ago(state === 'result' && result ? result.at : s.updatedAt)}</time>
       </div>

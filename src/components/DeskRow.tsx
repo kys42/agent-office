@@ -474,7 +474,7 @@ export function DeskRow({
           </button>
         )}
         {lounge > 0 && (
-          <span className="desk-row-lounge" title="대기 라운지에서 쉬는 동료">
+          <span className="desk-row-lounge" title="대기 라운지 · 퇴근한 동료">
             <Coffee size={11} />
             {lounge}
           </span>

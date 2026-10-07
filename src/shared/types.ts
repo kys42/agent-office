@@ -1,5 +1,11 @@
 export type Provider = 'claude' | 'codex' | 'openclaw';
-export type Mood = 'work' | 'think' | 'call' | 'error' | 'done' | 'idle' | 'sleep' | 'leave';
+/**
+ * Office status. Observed (work/think/call/error/done) or derived from time since the last
+ * activity: ready (just finished, standing by) → idle → sleep (gone home, lounge) → leave.
+ * See docs/golden/STATUS-POLICY.md.
+ */
+export type Mood =
+  'work' | 'think' | 'call' | 'error' | 'done' | 'ready' | 'idle' | 'sleep' | 'leave';
 export type Evidence = 'observed' | 'derived';
 export type OfficeZone = 'office' | 'waiting' | 'archive';
 export type ExecutionPhase =
@@ -262,6 +268,8 @@ export interface Preferences {
   archiveDays?: number;
   autoArchive?: boolean;
   bubbleHours?: number;
+  /** Minutes a colleague stands by ('대기 중') after its last activity before resting. */
+  readyMinutes?: number;
   zoneRules?: ZoneRule[];
 }
 export interface Snapshot {
@@ -344,7 +352,8 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
   work: { label: '일하는 중', color: '#5fd69b', rank: 2 },
   think: { label: '생각 중', color: '#ab9cff', rank: 3 },
   done: { label: '응답 완료', color: '#78b6ff', rank: 4 },
-  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 5 },
-  sleep: { label: '대기 중', color: '#85818d', rank: 6 },
-  leave: { label: '보관됨', color: '#6d6975', rank: 7 },
+  ready: { label: '대기 중', color: '#7fc4d9', rank: 5 },
+  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 6 },
+  sleep: { label: '퇴근', color: '#85818d', rank: 7 },
+  leave: { label: '보관됨', color: '#6d6975', rank: 8 },
 };

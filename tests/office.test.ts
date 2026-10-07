@@ -54,7 +54,10 @@ test('Lifecycle moves after hours and days; pinning and explicit return keep a d
     'office',
   );
   assert.equal(officeZone({ ...session('a'), archived: true, pinned: true }, p, now), 'archive');
-  assert.equal(deriveState('work', now - 20 * 60_000, now).status, 'idle');
+  // The ladder: live work → standing by (30 min by default) → resting.
+  assert.equal(deriveState('work', now - 60_000, now).status, 'work');
+  assert.equal(deriveState('work', now - 20 * 60_000, now).status, 'ready');
+  assert.equal(deriveState('work', now - 40 * 60_000, now).status, 'idle');
 });
 test('Seat persistence and frequency survive restart without altering source recency', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-seats-'));

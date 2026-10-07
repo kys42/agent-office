@@ -489,7 +489,7 @@ export function Office({
                 <Armchair size={30} />
                 <h3>다음 동료를 기다리고 있어요</h3>
                 <p>새 활동이 생기면 책상이 놓여요.</p>
-                <button onClick={onShowWaiting}>대기 중인 동료 보기</button>
+                <button onClick={onShowWaiting}>라운지 동료 보기</button>
               </div>
             )}
           </div>

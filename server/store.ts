@@ -36,6 +36,7 @@ export const DEFAULT_PREFS: Preferences = {
   archiveDays: 7,
   autoArchive: true,
   bubbleHours: 3,
+  readyMinutes: 30,
 };
 export class OfficeStore {
   db: DatabaseSync;
@@ -61,7 +62,7 @@ export class OfficeStore {
     if (patch) {
       Object.assign(prefs, patch);
       if (!validOfficeSchedule(prefs))
-        throw new Error('보관 시점은 대기 시점보다 뒤로 설정해 주세요.');
+        throw new Error('대기 → 퇴근 → 보관 순서가 되도록 시간을 설정해 주세요.');
       this.db
         .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
         .run(JSON.stringify(prefs));
@@ -319,6 +320,7 @@ export class OfficeStore {
       Date.now(),
       session.archived,
       prefs.standbyHours,
+      prefs.readyMinutes,
     );
     return {
       ...applyZone(session, prefs.zoneRules),

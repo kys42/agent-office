@@ -87,7 +87,7 @@ test('every view reads the same triage groups as the roster', () => {
     triage(sessions, notices, now).flatMap((g) => g.sessions.map((s) => [s.id, g.group])),
   );
   for (const v of model.seats) assert.equal(v.group, roster[v.session.id]);
-  assert.deepEqual(model.counts, { attention: 1, results: 1, working: 1, resting: 1 });
+  assert.deepEqual(model.counts, { attention: 1, results: 1, working: 1, standby: 0, resting: 1 });
 });
 
 test('the pet speaks for the most urgent colleague, falling back to seat order', () => {

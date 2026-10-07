@@ -28,7 +28,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 - 세션은 공급자 + 원본 세션 ID, OpenClaw는 agent 이름까지 포함한 ID로 구분한다.
 - 실행 여부를 PID나 CLI 설치 여부로 꾸미지 않는다. 신규 tool call / task_started / task_complete 등은 기록에서 관측한 근거다.
-- 최근 실행성 기록이 2분 이상 조용하면 idle, 설정한 대기 시간(기본 4시간) 이후 sleep으로 파생한다. 무응답으로 원본 세션 종료를 확정하지 않는다.
+- 최근 실행성 기록이 2분 이상 조용하면 ready(대기 중), 설정한 대기 시간(기본 30분) 이후 idle(쉬는 중), 퇴근 시간(기본 4시간) 이후 sleep(퇴근)으로 파생한다([상태 정책서](../golden/STATUS-POLICY.md)). 무응답으로 원본 세션 종료를 확정하지 않는다.
 - 요청 입력 도구의 관측은 `call`; 앱은 승인·답변을 대신 전송하지 않는다.
 - `completed`는 사용자가 결과를 확인한 별도 값이다. 턴의 done과 구분한다.
 - Codex thread 누적 사용량은 최신 snapshot으로 대체하며 합산하지 않는다. Claude는 동일 message.id의 최대 output 사용량으로 중복을 제거한다.

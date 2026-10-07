@@ -45,7 +45,7 @@ export function RestLounge({
             <div className="lounge-project">
               <i />
               {privacy ? '프로젝트' : zoneLabel(group[0])}
-              <small>{group.length}명 쉬는 중</small>
+              <small>{group.length}명 퇴근</small>
             </div>
             <div className="lounge-pods">
               {group.map((s, i) => (

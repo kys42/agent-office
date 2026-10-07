@@ -40,9 +40,9 @@ npm run dev
 - 같은 프로젝트는 바닥 구역, 같은 브랜치·worktree는 긴 공동 책상, 모든 실제 서브에이전트는 부모 옆 낮은 책상
 - 모노레포용 사용자 지정 구역: 워크트리·폴더 하위·브랜치 패턴(`kys42/lab-*`)·세션 단위 규칙으로 직접 나눈 구역이나 기존 구역에 앉힘. 캐릭터를 다른 구역/빈 바닥으로 끌어 놓아도 됨. 새로 오는 동료도 자동 적용, 설정에서 이름 바꾸기·삭제
 - 책상에 기록 브랜치/커밋 표시. 현재 checkout을 별도 관측해 `main · 현재`, `HEAD · 커밋`을 구분
-- 4시간 후 대기 라운지, 7일 후 보관 공간으로 이동. 설정 변경·고정·사무실 복귀 지원
+- 일을 마치면 대기 중(기본 30분) → 쉬는 중 → 4시간 후 퇴근(대기 라운지) → 7일 후 보관. 설정 변경·고정·사무실 복귀 지원
 - 실제 세션 이름을 먼저, 프로젝트를 그 아래 표시. 최근 활동 / 자주 찾은 순으로 탐색
-- 명단은 할 일 순서: 나를 기다려요 → 확인할 결과 → 일하는 중 → 쉬는 중. 행에 올리면 해당 책상 스포트라이트
+- 명단은 할 일 순서: 나를 기다려요 → 확인할 결과 → 일하는 중 → 대기 중 → 쉬는 중. 행에 올리면 해당 책상 스포트라이트
 - 업무 카드 상단 ‘지금’ 카드: 호출이면 원래 앱 재개, 새 결과면 그 자리에서 읽기, 작업 중이면 경과 시간
 - ⌘K 명령 팔레트(동료·기록·명령), J/K/R/I 키보드 처리와 `?` 단축키 도움말, 자리 비운 사이 요약
 - 세션 클릭 → 오른쪽 상세 패널. 대화는 내 요청/진행 상황/최종 응답별 선택, 더 보기, 선택해서 포함하는 도구 기록
@@ -67,7 +67,7 @@ npm run dev
 
 ## 제품과 구현 정본
 
-[전체 문서 지도](docs/README.md) · [프로젝트 맥락과 결정](docs/golden/PROJECT-CONTEXT.md) · [골든 사무실 정책](docs/golden/GOLDEN-OFFICE-POLICY.md) · [세션 분석·모듈 출처](docs/development/SESSION-INGESTION.md) · [공통 관측 규격 v1](docs/golden/OFFICE-OBSERVATION-PROTOCOL.md)
+[전체 문서 지도](docs/README.md) · [프로젝트 맥락과 결정](docs/golden/PROJECT-CONTEXT.md) · [골든 사무실 정책](docs/golden/GOLDEN-OFFICE-POLICY.md) · [상태 정책서](docs/golden/STATUS-POLICY.md) · [기능 정책서](docs/golden/FEATURE-POLICY.md) · [세션 분석·모듈 출처](docs/development/SESSION-INGESTION.md) · [공통 관측 규격 v1](docs/golden/OFFICE-OBSERVATION-PROTOCOL.md)
 
 원본 어댑터 → 공통 관측 → 제품 정책 → 사무실 표현을 분리합니다. 공급자별 데이터 근거, 그룹/관계, 실행 상태, 소식 수명, 후보 기능과 아직 지원하지 않는 범위를 함께 기록합니다.
 
