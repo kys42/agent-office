@@ -638,3 +638,66 @@ body.dock-mode {
     animation: none;
   }
 }
+
+/* ───────────────────────── Dock card (colleague card above a desk) ─────────────────────────
+   Its own small window, opened from the desk pet / row: the same card as the big office's
+   right panel, framed as a rounded floating card. The window is transparent around it. */
+body.card-mode {
+  background: transparent;
+  overflow: hidden;
+}
+.card-mode #root {
+  height: 100vh;
+  background: transparent;
+}
+.dock-card {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+}
+.dock-card > .inspector {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  outline: none;
+  overflow: hidden;
+  animation: card-in 0.16s var(--ease-out);
+}
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.dock-card-empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-3);
+}
+.dock-card-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 50;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(36, 39, 46, 0.96);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}

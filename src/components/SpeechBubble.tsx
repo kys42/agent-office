@@ -49,7 +49,8 @@ export function SpeechBubble({
   session: Session;
   speech: StationSpeech;
   privacy: boolean;
-  onOpen: () => void;
+  /** Gets the bubble element, so a scene can open things right where it was clicked. */
+  onOpen: (bubble: HTMLElement) => void;
   onDismiss: () => void;
   /** Extra facts shown when the bubble is unfolded (or hovered, where the scene allows). */
   detail?: ReactNode;
@@ -75,7 +76,7 @@ export function SpeechBubble({
     >
       <button
         className="speech-open"
-        onClick={onOpen}
+        onClick={(e) => onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!)}
         title={privacy ? '내용 숨김' : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
         <span className="speech-copy">

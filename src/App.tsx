@@ -27,6 +27,7 @@ import {
 import { api, isDesktop } from './lib/api';
 import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
 import { useOffice } from './lib/useOffice';
+import { useTerminalSend } from './lib/useTerminalSend';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
@@ -181,34 +182,13 @@ export default function App() {
     setInbox(true);
     setSelected(null);
   };
-  // Desktop-only opt-in, kept outside the shared preferences (see office:terminal-send).
-  const [terminalSend, setTerminalSend] = useState(false);
-  useEffect(() => {
-    api
-      .terminalSend?.()
-      .then(setTerminalSend)
-      .catch(() => setTerminalSend(false));
-  }, []);
-  const toggleTerminalSend = async () => {
-    try {
-      setTerminalSend(await api.terminalSend!(!terminalSend));
-    } catch (e) {
-      notify((e as Error).message);
-    }
-  };
-  // Bubble quick replies use the same desktop send as the colleague card.
-  const sendReply =
-    terminalSend && !demo && api.send
-      ? async (id: string, text: string) => {
-          try {
-            notify(await api.send!(id, text));
-          } catch (e) {
-            // Also shown in the reply box; the toast survives if the box is gone.
-            notify((e as Error).message);
-            throw e;
-          }
-        }
-      : undefined;
+  // Desktop-only opt-in and the quick-reply send, shared with the dock card.
+  const {
+    enabled: terminalSend,
+    available: terminalSendAvailable,
+    toggle: toggleTerminalSend,
+    sendReply,
+  } = useTerminalSend(demo, notify);
   const saveZoneRules = async (zoneRules: ZoneRule[]) => {
     if (await onPrefs({ zoneRules })) notify('사무실 구역을 다시 나눴어요');
   };
@@ -620,7 +600,7 @@ export default function App() {
               onPrefs={onPrefs}
               onRefresh={refresh}
               notify={notify}
-              terminalSend={api.terminalSend && !demo ? terminalSend : undefined}
+              terminalSend={terminalSendAvailable ? terminalSend : undefined}
               onTerminalSend={toggleTerminalSend}
             />
           ) : (
@@ -644,7 +624,7 @@ export default function App() {
             privacy={prefs?.privacy ?? false}
             zoneRules={prefs?.zoneRules ?? []}
             onZoneRules={saveZoneRules}
-            terminalSend={terminalSend && !demo}
+            terminalSend={terminalSend}
           />
         )}
         {showUsage && (

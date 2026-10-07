@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DockMode, OfficeAPI, Snapshot } from '../src/shared/types.js';
+import type { CardTarget, DockMode, OfficeAPI, Snapshot } from '../src/shared/types.js';
 const call = (method: string, ...args: unknown[]) =>
   ipcRenderer.invoke('office:call', method, args);
 // Electron prefixes main-process errors; terminal actions show their message to the person.
@@ -34,6 +34,12 @@ const api: OfficeAPI = {
   jump: (id) => action('office:jump', id),
   send: (id, text) => action('office:send', id, text),
   terminalSend: (enable) => action('office:terminal-send', enable),
+  card: (what, target, anchor) => ipcRenderer.invoke('office:card', what, target, anchor),
+  onCard: (cb) => {
+    const f = (_: unknown, target: CardTarget) => cb(target);
+    ipcRenderer.on('office:card', f);
+    return () => ipcRenderer.removeListener('office:card', f);
+  },
   exportFile: (name, content) => ipcRenderer.invoke('office:export', name, content),
   onSelect: (cb) => {
     const f = (_: unknown, id: string) => cb(id);

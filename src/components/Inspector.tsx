@@ -18,6 +18,7 @@ import {
   Download,
   Terminal,
   LayoutGrid,
+  Maximize2,
 } from 'lucide-react';
 import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
@@ -54,6 +55,7 @@ export function Inspector({
   zoneRules,
   onZoneRules,
   terminalSend = false,
+  onExpand,
 }: {
   session: Session;
   sessions: Session[];
@@ -72,6 +74,8 @@ export function Inspector({
   zoneRules?: ZoneRule[];
   onZoneRules?: (rules: ZoneRule[]) => Promise<void>;
   terminalSend?: boolean;
+  /** Shown in the dock card: open this colleague in the big office. */
+  onExpand?: () => void;
 }) {
   const [s, setS] = useState(session);
   const panelRef = useRef<HTMLElement>(null);
@@ -253,6 +257,16 @@ export function Inspector({
             >
               <Pin size={15} />
             </button>
+            {onExpand && (
+              <button
+                className="icon-btn"
+                aria-label="큰 사무실에서 보기"
+                title="전체 모드 · 큰 사무실에서 보기"
+                onClick={onExpand}
+              >
+                <Maximize2 size={15} />
+              </button>
+            )}
             <button
               className="icon-btn"
               aria-label="업무 카드 닫기"

@@ -321,6 +321,18 @@ export interface JumpResult {
  * floor version (desks standing right on the screen's bottom edge, zones marked by flags).
  */
 export type DockMode = 'pet' | 'row' | 'floor';
+/** A rectangle in screen coordinates (CSS pixels on the desktop). */
+export interface ScreenRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+/** What the dock card shows: a colleague, opened from its bubble (news first) or its desk. */
+export interface CardTarget {
+  id: string;
+  news: boolean;
+}
 export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
@@ -353,6 +365,17 @@ export interface OfficeAPI {
    * the preferences shared with the web preview; turning it on asks for native confirmation.
    */
   terminalSend?: (enable?: boolean) => Promise<boolean>;
+  /**
+   * Desktop dock only: open the colleague card at a clicked desk or bubble, or (from the card)
+   * close it or go to the full office.
+   */
+  card?: (
+    action: 'open' | 'close' | 'expand',
+    target?: CardTarget,
+    anchor?: ScreenRect,
+  ) => Promise<void>;
+  /** The dock card window: which colleague to show. */
+  onCard?: (callback: (target: CardTarget) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
   /** Desktop only. Browser previews switch the dock layout locally. */

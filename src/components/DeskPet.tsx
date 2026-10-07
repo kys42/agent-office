@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Expand, Flag, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { openColleague } from '../lib/dockCard';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
 import { petSummary, residentLabel, type OfficeModel } from '../shared/office-model';
@@ -67,9 +68,9 @@ export function DeskPet({
               session={speaker.view.session}
               speech={speech}
               privacy={privacy}
-              onOpen={() => {
+              onOpen={(el) => {
                 if (!privacy) onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                void api.window('main', bubble.sessionId);
+                void openColleague(bubble.sessionId, { anchor: el, news: true });
               }}
               onDismiss={() => onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss')}
               detail={

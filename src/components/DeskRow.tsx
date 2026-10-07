@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { openColleague } from '../lib/dockCard';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt, type Session } from '../shared/types';
 import { branchInfo } from '../shared/branch';
@@ -151,7 +152,9 @@ export function DeskRow({
   });
   const byId = new Map(sessions.map((s) => [s.id, s]));
   const lounge = model.zones.waiting.filter((s) => !s.attachedTo).length;
-  const open = (id: string) => api.window('main', id);
+  // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
+  const open = (id: string, anchor?: Element | null, news = false) =>
+    openColleague(id, { anchor, news });
   const desk = STATION_WIDTH * ROW_SCALE;
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * ROW_SCALE })),
@@ -378,10 +381,10 @@ export function DeskRow({
                             session={s}
                             speech={speech}
                             privacy={privacy}
-                            onOpen={() => {
+                            onOpen={(el) => {
                               if (bubble && !privacy)
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                              open(bubble?.sessionId ?? s.id);
+                              void open(bubble?.sessionId ?? s.id, el, !!bubble);
                             }}
                             onDismiss={() =>
                               bubble &&

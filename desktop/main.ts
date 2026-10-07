@@ -13,9 +13,17 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
-import type { DockAction, DockMode, JumpResult, Provider, Session } from '../src/shared/types.js';
+import type {
+  CardTarget,
+  DockAction,
+  DockMode,
+  JumpResult,
+  Provider,
+  Session,
+} from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import {
+  cardBounds,
   clampInto,
   FLOOR_HEIGHT,
   ROW_HEIGHT,
@@ -38,6 +46,10 @@ import {
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
+  // The dock card: a colleague's card opened at a desk in the dock (presentation only).
+  card: BrowserWindow | null = null,
+  cardHide: ReturnType<typeof setTimeout> | null = null,
+  cardShownAt = 0,
   tray: Tray | null = null,
   bridge: ServiceBridge,
   quitting = false;
@@ -54,7 +66,7 @@ else {
   app.whenReady().then(() => {
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
     bridge.on('snapshot', (s) => {
-      for (const w of [main, dock])
+      for (const w of [main, dock, card])
         if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
     });
     bridge.on('failure', (message) => console.error('Collector worker:', message));
@@ -238,9 +250,78 @@ function stopDrag(save: boolean) {
   petSpot = feet;
   void savePetSpot();
 }
+/**
+ * The colleague card for the dock: the same card as the big office's right panel, in a small
+ * focusable window above the clicked desk. The dock itself stays see-through and unfocused.
+ */
+function showCard(target: CardTarget, anchor: Rect) {
+  if (cardHide) clearTimeout(cardHide);
+  cardHide = null;
+  if (!card || card.isDestroyed()) {
+    card = new BrowserWindow({
+      ...cardBounds(anchor, workAreaFor(anchor)),
+      show: false,
+      resizable: false,
+      frame: false,
+      transparent: true,
+      fullscreenable: false,
+      skipTaskbar: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    secure(card);
+    // Above the dock, which is itself always on top.
+    card.setAlwaysOnTop(true, 'pop-up-menu');
+    card.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // Clicking anywhere else puts the card away. A short delay lets a click on another desk
+    // reopen it in place instead of flickering.
+    card.on('blur', () => {
+      // Opening shifts focus between the dock and the card for a moment; that is not a
+      // click elsewhere.
+      if (Date.now() - cardShownAt < 500) return;
+      if (cardHide) clearTimeout(cardHide);
+      cardHide = setTimeout(() => hideCard(), 150);
+    });
+    card.on('closed', () => {
+      card = null;
+    });
+    void card.loadFile(index, { hash: 'card' });
+  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor)));
+  const window = card;
+  const send = () => {
+    if (!window.isDestroyed()) window.webContents.send('office:card', target);
+  };
+  const reveal = () => {
+    if (window.isDestroyed()) return;
+    cardShownAt = Date.now();
+    window.show();
+    window.focus();
+  };
+  // A new card window shows once its page is ready, so it never flashes empty.
+  if (window.webContents.isLoadingMainFrame()) {
+    window.webContents.once('did-finish-load', () => {
+      send();
+      reveal();
+    });
+  } else {
+    send();
+    reveal();
+  }
+}
+function hideCard() {
+  if (cardHide) clearTimeout(cardHide);
+  cardHide = null;
+  if (card && !card.isDestroyed() && card.isVisible()) card.hide();
+}
+const finite = (n: unknown, max = 100_000) =>
+  typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
 function trusted(e: Electron.IpcMainInvokeEvent) {
   if (
-    ![main?.webContents, dock?.webContents].includes(e.sender) ||
+    ![main?.webContents, dock?.webContents, card?.webContents].includes(e.sender) ||
     e.senderFrame !== e.sender.mainFrame
   )
     throw new Error('허용되지 않은 창입니다.');
@@ -282,6 +363,43 @@ function setupIPC() {
     else if (action === 'solid') dock.setIgnoreMouseEvents(false);
     else if (action === 'through') dock.setIgnoreMouseEvents(true, { forward: true });
     else throw new Error('잘못된 요청');
+  });
+  ipcMain.handle('office:card', (e, action, target, anchor) => {
+    trusted(e);
+    if (action === 'close') {
+      if (e.sender !== card?.webContents) throw new Error('허용되지 않은 창입니다.');
+      return hideCard();
+    }
+    const valid =
+      target &&
+      typeof target.id === 'string' &&
+      target.id.length > 0 &&
+      target.id.length <= 400 &&
+      typeof target.news === 'boolean';
+    if (!valid) throw new Error('잘못된 요청');
+    const chosen: CardTarget = { id: target.id, news: target.news };
+    if (action === 'expand') {
+      if (e.sender !== card?.webContents) throw new Error('허용되지 않은 창입니다.');
+      hideCard();
+      return showMain(chosen.id);
+    }
+    if (action !== 'open' || e.sender !== dock?.webContents) throw new Error('잘못된 요청');
+    if (
+      !anchor ||
+      !finite(anchor.x) ||
+      !finite(anchor.y) ||
+      !finite(anchor.width, 10_000) ||
+      !finite(anchor.height, 10_000) ||
+      anchor.width < 0 ||
+      anchor.height < 0
+    )
+      throw new Error('잘못된 요청');
+    showCard(chosen, {
+      x: Math.round(anchor.x),
+      y: Math.round(anchor.y),
+      width: Math.round(anchor.width),
+      height: Math.round(anchor.height),
+    });
   });
   ipcMain.handle('office:reveal', async (e, id) => {
     trusted(e);
@@ -342,7 +460,10 @@ function setupIPC() {
     const terminal = await live(id, true);
     if (!terminal) return resume(await bridge.call('detail', [id]));
     try {
-      return { action: 'focused', text: await focusTerminal(terminal) };
+      const text = await focusTerminal(terminal);
+      // From the dock card, the terminal is where the person goes next.
+      if (e.sender === card?.webContents) hideCard();
+      return { action: 'focused', text };
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
       throw new Error(`${hostName(terminal.host)} 터미널로 이동하지 못했어요.`);
