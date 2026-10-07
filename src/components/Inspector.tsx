@@ -19,8 +19,17 @@ import {
   Terminal,
   LayoutGrid,
   Maximize2,
+  Sparkles,
 } from 'lucide-react';
-import type { Session, SessionPatch, Handoff, OfficeNotice, ZoneRule } from '../shared/types';
+import type {
+  Session,
+  SessionPatch,
+  Handoff,
+  OfficeNotice,
+  ZoneRule,
+  Preferences,
+} from '../shared/types';
+import { PetCustomizer } from './PetCustomizer';
 import { MOODS, PROVIDERS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -38,6 +47,8 @@ import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
 import { TerminalSend } from './TerminalSend';
 import { useSendTargets } from '../lib/useSendTargets';
+import { useI18n } from '../lib/i18n';
+import { intlLocale } from '../shared/i18n';
 export function Inspector({
   session,
   sessions,
@@ -56,6 +67,7 @@ export function Inspector({
   onZoneRules,
   terminalSend = false,
   onExpand,
+  onPrefs,
 }: {
   session: Session;
   sessions: Session[];
@@ -76,7 +88,9 @@ export function Inspector({
   terminalSend?: boolean;
   /** Shown in the dock card: open this colleague in the big office. */
   onExpand?: () => void;
+  onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
 }) {
+  const { t } = useI18n();
   const [s, setS] = useState(session);
   const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -100,6 +114,7 @@ export function Inspector({
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
+  const [petOpen, setPetOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
   const [notesDirty, setNotesDirty] = useState(false);
   const [packet, setPacket] = useState<Handoff | null>(null);
@@ -152,6 +167,7 @@ export function Inspector({
     setNotesDirty(false);
     setEditing(false);
     setZoneOpen(false);
+    setPetOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
@@ -177,7 +193,7 @@ export function Inspector({
     try {
       await onPatch(s.id, p);
       if (p.notes !== undefined) setNotesDirty(false);
-      notify('기록해 두었어요');
+      notify(t.inspector.saved);
     } catch (e) {
       notify((e as Error).message);
     }
@@ -187,7 +203,7 @@ export function Inspector({
     try {
       const result = demo
         ? {
-            markdown: `# ${s.title}\n\n데모 인수인계입니다. 실제 세션에서 업무 근거를 묶어 보세요.\n\n${s.notes}`,
+            markdown: t.inspector.demoHandoff(s.title, s.notes),
             revision: s.revision,
             createdAt: Date.now(),
           }
@@ -202,9 +218,9 @@ export function Inspector({
   const copy = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      notify('클립보드에 복사했어요');
+      notify(t.inspector.copied);
     } catch {
-      notify('복사 권한이 없어요. 파일로 저장해 주세요.');
+      notify(t.inspector.copyDenied);
     }
   };
   const parent = parentSession(s, sessions);
@@ -217,12 +233,12 @@ export function Inspector({
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
   const resumeLabel = live?.canFocus
-    ? `${live.kind === 'orca' ? 'Orca' : 'tmux'}로 이동`
+    ? t.terminal.jumpTo(live.kind === 'orca' ? 'Orca' : 'tmux')
     : live?.kind === 'codex'
-      ? '재개 명령 복사'
+      ? t.inspector.copyResume
       : s.provider === 'codex' && isDesktop
-        ? 'Codex에서 열기'
-        : '재개 명령 복사';
+        ? t.inspector.openInCodex
+        : t.inspector.copyResume;
   const resume = async () => {
     try {
       if (api.jump) {
@@ -241,7 +257,7 @@ export function Inspector({
   const presentation = presentSession(s);
   return (
     <>
-      <aside className="inspector" aria-label="동료의 업무 카드" ref={panelRef} tabIndex={-1}>
+      <aside className="inspector" aria-label={t.inspector.label} ref={panelRef} tabIndex={-1}>
         <div className="inspector-top">
           <span className="inspector-crumb">
             <i style={{ background: PROVIDERS[s.provider].color }} />
@@ -250,9 +266,17 @@ export function Inspector({
           </span>
           <div>
             <button
+              className="icon-btn pet-edit-button"
+              aria-label={t.pets.individualTitle}
+              title={t.pets.editTitle}
+              onClick={() => setPetOpen(true)}
+            >
+              <Sparkles size={15} />
+            </button>
+            <button
               className={`icon-btn ${s.pinned ? 'gold' : ''}`}
-              aria-label={s.pinned ? '고정 해제' : '사무실에 고정'}
-              title={s.pinned ? '고정 해제' : '사무실에 고정 · 자리를 지켜요'}
+              aria-label={s.pinned ? t.inspector.unpin : t.inspector.pin}
+              title={s.pinned ? t.inspector.unpin : t.inspector.pinTitle}
               onClick={() => patch({ pinned: !s.pinned })}
             >
               <Pin size={15} />
@@ -260,8 +284,8 @@ export function Inspector({
             {onExpand && (
               <button
                 className="icon-btn"
-                aria-label="큰 사무실에서 보기"
-                title="전체 모드 · 큰 사무실에서 보기"
+                aria-label={t.inspector.expand}
+                title={t.inspector.expandTitle}
                 onClick={onExpand}
               >
                 <Maximize2 size={15} />
@@ -269,8 +293,8 @@ export function Inspector({
             )}
             <button
               className="icon-btn"
-              aria-label="업무 카드 닫기"
-              title="닫기 · Esc"
+              aria-label={t.inspector.close}
+              title={t.inspector.closeTitle}
               onClick={onClose}
             >
               <X size={17} />
@@ -279,7 +303,7 @@ export function Inspector({
         </div>
         <div className="inspector-heading">
           <div className={`profile-avatar face-${s.provider} status-${s.status}`}>
-            <Sprite provider={s.provider} mood={s.status} size={64} />
+            <Sprite session={s} provider={s.provider} mood={s.status} size={64} />
           </div>
           <div className="inspector-title">
             {editing ? (
@@ -292,7 +316,7 @@ export function Inspector({
                 className="name-editor"
               >
                 <label className="sr-only" htmlFor="nickname">
-                  새 별명
+                  {t.inspector.nicknameLabel}
                 </label>
                 <input
                   autoFocus
@@ -300,19 +324,19 @@ export function Inspector({
                   value={alias}
                   maxLength={60}
                   onChange={(e) => setAlias(e.target.value)}
-                  placeholder="별명을 붙여 주세요"
+                  placeholder={t.inspector.nicknamePlaceholder}
                 />
-                <button className="icon-btn" type="submit" aria-label="별명 저장">
+                <button className="icon-btn" type="submit" aria-label={t.inspector.saveNickname}>
                   <Check size={17} />
                 </button>
               </form>
             ) : (
               <h2>
-                {privacy ? '내용을 숨긴 동료' : sessionName(s)}
+                {privacy ? t.inspector.hiddenTeammate : sessionName(s)}
                 <button
                   className="icon-btn"
-                  aria-label="이름 바꾸기"
-                  title="별명 붙이기"
+                  aria-label={t.inspector.rename}
+                  title={t.inspector.renameTitle}
                   onClick={() => setEditing(true)}
                 >
                   <Pencil size={12} />
@@ -322,20 +346,28 @@ export function Inspector({
             <p className="inspector-project">
               <Folder size={12} />
               <span>
-                {privacy ? '프로젝트 숨김' : s.area ? `${s.area.name} · ${s.project}` : s.project}
+                {privacy
+                  ? t.inspector.projectHidden
+                  : s.area
+                    ? `${s.area.name} · ${s.project}`
+                    : s.project}
               </span>
               {!privacy && onZoneRules && (
                 <button
                   className={`zone-trigger ${zoneOpen ? 'active' : ''}`}
                   aria-expanded={zoneOpen}
-                  title="이 동료를 직접 나눈 사무실 구역으로 보내요"
+                  title={t.inspector.zoneTitle}
                   onClick={() => setZoneOpen((v) => !v)}
                 >
                   <LayoutGrid size={11} />
-                  구역
+                  {t.inspector.zone}
                 </button>
               )}
-              {s.alias && !privacy && <span title={s.title}>원래 이름 · {s.title}</span>}
+              {s.alias && !privacy && (
+                <span title={s.title}>
+                  {t.inspector.originalName} · {s.title}
+                </span>
+              )}
             </p>
             <div className="status-line">
               <span className={`status-pill pill-${s.status}`}>
@@ -344,11 +376,22 @@ export function Inspector({
               </span>
               <span>
                 {ago(s.updatedAt)} ·{' '}
-                {s.statusEvidence === 'derived' ? '기록 기반 추정' : '관측 기록'}
+                {s.statusEvidence === 'derived'
+                  ? t.inspector.evidenceDerived
+                  : t.inspector.evidenceObserved}
               </span>
             </div>
           </div>
         </div>
+        {petOpen && (
+          <PetCustomizer
+            key={session.id}
+            provider={session.provider}
+            session={session}
+            onPrefs={onPrefs}
+            onClose={() => setPetOpen(false)}
+          />
+        )}
         {zoneOpen && !privacy && onZoneRules && (
           <ZoneEditor
             key={s.id}
@@ -367,26 +410,28 @@ export function Inspector({
             </span>
             {parent && (
               <button onClick={() => onSelect(parent.id)}>
-                {s.relation?.kind === 'fork' ? '분기 원본' : '부모 작업'} · {sessionName(parent)}
+                {s.relation?.kind === 'fork' ? t.inspector.forkSource : t.inspector.parentTask} ·{' '}
+                {sessionName(parent)}
               </button>
             )}
-            {!parent && s.relation?.parentNativeId && <span>부모 작업 미수집</span>}
+            {!parent && s.relation?.parentNativeId && <span>{t.inspector.parentMissing}</span>}
           </div>
         )}
         {personaRuns.length > 0 && (
           <label className="persona-run-picker">
             <span>
-              {privacy ? '페르소나' : s.actor?.name} · 실행 기록 {personaRuns.length}개
+              {privacy ? t.inspector.persona : s.actor?.name} ·{' '}
+              {t.inspector.personaRuns(personaRuns.length)}
             </span>
             <select
-              aria-label="페르소나의 실행 기록"
+              aria-label={t.inspector.personaRunsLabel}
               value={s.id}
               onChange={(e) => onSelect(e.target.value)}
             >
               {personaRuns.map((run) => (
                 <option value={run.id} key={run.id}>
-                  {sessionScopeLabel(run)} · {privacy ? '숨긴 기록' : sessionName(run)} ·{' '}
-                  {ago(run.updatedAt)}
+                  {sessionScopeLabel(run)} · {privacy ? t.inspector.hiddenRecord : sessionName(run)}{' '}
+                  · {ago(run.updatedAt)}
                 </option>
               ))}
             </select>
@@ -420,33 +465,29 @@ export function Inspector({
             />
           )}
         </div>
-        <div className="inspector-tabs" role="tablist" aria-label="업무 카드 항목">
-          {(['history', 'news', 'overview', 'notes'] as const).map((t) => (
+        <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
+          {(['history', 'news', 'overview', 'notes'] as const).map((key) => (
             <button
-              key={t}
+              key={key}
               role="tab"
-              aria-selected={tab === t}
-              className={tab === t ? 'active' : ''}
-              onClick={() => setTab(t)}
+              aria-selected={tab === key}
+              className={tab === key ? 'active' : ''}
+              onClick={() => setTab(key)}
             >
-              {t === 'overview'
-                ? '작업 정보'
-                : t === 'history'
-                  ? '대화'
-                  : t === 'news'
-                    ? `소식 ${unreadNoticeCount(news) || ''}`
-                    : '기억 메모'}
-              {t === 'notes' && s.notes && <i />}
+              {key === 'news'
+                ? t.inspector.tabs.news(unreadNoticeCount(news))
+                : t.inspector.tabs[key]}
+              {key === 'notes' && s.notes && <i />}
             </button>
           ))}
         </div>
         <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
           {!privacy && children.length > 0 && (
             <details className="related-runs">
-              <summary>연결된 보조·분기 작업 {children.length}개</summary>
+              <summary>{t.inspector.linkedRuns(children.length)}</summary>
               {children.map((child) => (
                 <button key={child.id} onClick={() => onSelect(child.id)}>
-                  {child.relation?.kind === 'fork' ? '분기' : sessionScopeLabel(child)} ·{' '}
+                  {child.relation?.kind === 'fork' ? t.inspector.fork : sessionScopeLabel(child)} ·{' '}
                   {sessionName(child)}
                 </button>
               ))}
@@ -467,8 +508,8 @@ export function Inspector({
           {privacy ? (
             <div className="privacy-placeholder">
               <Folder size={28} />
-              <h3>공유할 땐, 잠시 숨겨요</h3>
-              <p>상단의 눈 아이콘을 누르면 내용을 다시 볼 수 있어요.</p>
+              <h3>{t.inspector.privacy.title}</h3>
+              <p>{t.inspector.privacy.body}</p>
             </div>
           ) : tab === 'news' ? (
             <NewsFeed
@@ -482,45 +523,53 @@ export function Inspector({
             />
           ) : tab === 'overview' ? (
             <>
-              <p className="activity-evidence">현재 표시 · {s.statusReason}</p>
               <p className="activity-evidence">
-                마지막 실행 관측 · {PHASE_LABELS[presentation.runtime.phase]} ·{' '}
+                {t.inspector.overview.currentStatus} · {s.statusReason}
+              </p>
+              <p className="activity-evidence">
+                {t.inspector.overview.lastRun} · {PHASE_LABELS[presentation.runtime.phase]} ·{' '}
                 {ago(presentation.runtime.at)}
-                {presentation.stale ? ' (현재 실행 여부는 미확인)' : ''}
+                {presentation.stale ? t.inspector.overview.staleRun : ''}
                 <br />
                 {presentation.runtime.reason}
               </p>
-              {s.relation?.role && <p className="activity-evidence">역할 · {s.relation.role}</p>}
+              {s.relation?.role && (
+                <p className="activity-evidence">
+                  {t.inspector.overview.role} · {s.relation.role}
+                </p>
+              )}
               <section className="detail-section">
-                <h3>일하고 있는 곳</h3>
+                <h3>{t.inspector.overview.whereTitle}</h3>
                 <dl>
                   <div>
                     <dt>
                       <Folder size={14} />
-                      프로젝트
+                      {t.inspector.overview.project}
                     </dt>
                     <dd>{s.project}</dd>
                   </div>
                   <div>
                     <dt>
                       <LayoutGrid size={14} />
-                      구역
+                      {t.inspector.overview.zone}
                     </dt>
                     <dd>
-                      {s.area ? `${zoneLabel(s)} · 직접 나눔` : `${s.project} · 프로젝트 기준`}
+                      {s.area
+                        ? t.inspector.overview.zoneCustom(zoneLabel(s))
+                        : t.inspector.overview.zoneByProject(s.project)}
                     </dd>
                   </div>
                   <div>
                     <dt>
                       <GitBranch size={14} />
-                      브랜치
+                      {t.inspector.overview.branch}
                     </dt>
                     <dd title={branchInfo(s).detail}>{branchInfo(s).label}</dd>
                   </div>
                   <div>
                     <dt>
                       <Clock size={14} />
-                      마지막 활동
+                      {t.inspector.overview.lastActive}
                     </dt>
                     <dd>
                       {date(s.updatedAt)} {time(s.updatedAt)}
@@ -536,66 +585,63 @@ export function Inspector({
                   <code>{shortPath(s.cwd)}</code>
                   <Copy size={13} />
                 </button>
-                <p className="fine-print">
-                  세션 시작 기록의 위치예요. 실제 실행 위치는 아래에서 구분해요.
-                </p>
+                <p className="fine-print">{t.inspector.overview.startPathNote}</p>
               </section>
               {s.workingLocation && (
                 <section className="detail-section working-location">
-                  <h3>최근 실제 작업 위치</h3>
+                  <h3>{t.inspector.overview.workingTitle}</h3>
                   <code>{s.workingLocation.path}</code>
                   <p>
                     {s.workingLocation.source === 'tool-workdir'
-                      ? '도구 실행 폴더'
-                      : '명시적 cd 명령'}{' '}
-                    · {new Date(s.workingLocation.at).toLocaleString('ko-KR')}
+                      ? t.inspector.overview.toolWorkdir
+                      : t.inspector.overview.explicitCd}{' '}
+                    · {new Date(s.workingLocation.at).toLocaleString(intlLocale())}
                   </p>
                   <small>
                     {s.workspace?.locationSource
-                      ? 'Git 저장소를 확인해 팀과 책상 브랜치에 반영해요.'
-                      : '위치 기록은 있지만 Git 저장소는 확인되지 않았어요.'}{' '}
-                    PR 링크나 단순 파일 읽기로는 자리를 옮기지 않아요.
+                      ? t.inspector.overview.repoFound
+                      : t.inspector.overview.repoMissing}{' '}
+                    {t.inspector.overview.noMoveHint}
                   </small>
                 </section>
               )}
               <section className="detail-section">
                 <div className="section-title">
-                  <h3>작업의 크기</h3>
+                  <h3>{t.inspector.usage.title}</h3>
                   <span className="small-badge">
-                    {s.usage.scope === 'sample' ? '수집 구간' : '세션 누적'}
+                    {s.usage.scope === 'sample'
+                      ? t.inspector.usage.scopeSample
+                      : t.inspector.usage.scopeSession}
                   </span>
                 </div>
                 <div className="model-line">
                   <span className="model-symbol">✳</span>
                   <div>
-                    <b>{s.model || '모델 정보 미수집'}</b>
+                    <b>{s.model || t.inspector.usage.modelMissing}</b>
                     <small>{s.usage.source}</small>
                   </div>
                 </div>
                 <div className="cost-card">
-                  <span>이 동료가 쌓은 작업량</span>
+                  <span>{t.inspector.usage.costLabel}</span>
                   <strong>
                     {s.cost?.usd != null
                       ? `$${s.cost.usd.toLocaleString('en-US', { minimumFractionDigits: s.cost.usd < 0.01 ? 4 : 2, maximumFractionDigits: s.cost.usd < 0.01 ? 4 : 2 })}`
-                      : '비용 미확인'}
+                      : t.inspector.usage.costUnknown}
                   </strong>
-                  <b>관측 누적 · API 기본 요금 환산</b>
+                  <b>{t.inspector.usage.costBasis}</b>
                   <small>
                     {s.cost
-                      ? `${s.cost.priced}개 계산 · ${s.cost.unpriced}개 모델 요금 미확인 · ${compact(s.cost.tokens)} 토큰 관측`
-                      : '다음 수집부터 기록별 사용량을 쌓아요.'}
+                      ? t.inspector.usage.costDetail(
+                          s.cost.priced,
+                          s.cost.unpriced,
+                          compact(s.cost.tokens),
+                        )
+                      : t.inspector.usage.costPending}
                   </small>
-                  <p>
-                    구독료나 실제 청구액이 아니에요. 수집한 기록만 누적하며, Fast·긴 문맥 할증·도구
-                    비용은 제외해요.
-                  </p>
+                  <p>{t.inspector.usage.costDisclaimer}</p>
                   <details>
-                    <summary>계산 기준 보기</summary>
-                    <p>
-                      메시지별 모델·입출력·캐시 사용량을 현재 표준 기본 단가로 환산해요. 같은 기록은
-                      중복 계산하지 않아요. 기록이 빠졌거나 요금표에 없는 모델은 합계에 포함하지
-                      않아요.
-                    </p>
+                    <summary>{t.inspector.usage.costHowTitle}</summary>
+                    <p>{t.inspector.usage.costHowBody}</p>
                     <small>{s.cost?.rateVersion}</small>
                     <p>
                       <a
@@ -603,7 +649,7 @@ export function Inspector({
                         target="_blank"
                         rel="noreferrer"
                       >
-                        OpenAI 요금표
+                        {t.inspector.usage.openaiPricing}
                       </a>{' '}
                       ·{' '}
                       <a
@@ -611,22 +657,22 @@ export function Inspector({
                         target="_blank"
                         rel="noreferrer"
                       >
-                        Claude 요금표
+                        {t.inspector.usage.claudePricing}
                       </a>
                     </p>
                   </details>
                 </div>
                 <div className="usage-grid">
                   <div>
-                    <span>입력 토큰</span>
+                    <span>{t.inspector.usage.inputTokens}</span>
                     <strong>{compact(s.usage.input)}</strong>
                   </div>
                   <div>
-                    <span>출력 토큰</span>
+                    <span>{t.inspector.usage.outputTokens}</span>
                     <strong>{compact(s.usage.output)}</strong>
                   </div>
                   <div>
-                    <span>전체 토큰</span>
+                    <span>{t.inspector.usage.totalTokens}</span>
                     <strong>{compact(s.usage.total)}</strong>
                   </div>
                 </div>
@@ -635,7 +681,7 @@ export function Inspector({
                 s.usage.contextWindow > 0 ? (
                   <div className="context">
                     <div>
-                      <span>최근 입력 / 문맥 한도</span>
+                      <span>{t.inspector.usage.contextTitle}</span>
                       <b>
                         {Math.min(
                           100,
@@ -645,10 +691,10 @@ export function Inspector({
                       </b>
                     </div>
                     <progress value={s.usage.contextUsed} max={s.usage.contextWindow} />
-                    <small>최근 입력 기준의 근사치 · 누적 사용량과 달라요</small>
+                    <small>{t.inspector.usage.contextNote}</small>
                   </div>
                 ) : (
-                  <p className="fine-print">현재 문맥 사용량은 이 기록에서 확인되지 않았어요.</p>
+                  <p className="fine-print">{t.inspector.usage.contextMissing}</p>
                 )}
               </section>
               <section className="source-note">
@@ -656,17 +702,13 @@ export function Inspector({
                 <div>
                   <b>
                     {s.sourceKind === 'sqlite'
-                      ? '로컬 데이터베이스'
+                      ? t.inspector.source.sqlite
                       : s.sourceKind === 'demo'
-                        ? '데모 데이터'
-                        : '로컬 세션 기록'}
+                        ? t.inspector.source.demo
+                        : t.inspector.source.log}
                   </b>
-                  <p>
-                    {s.partial
-                      ? '용량을 제한해 처음과 최근 구간을 읽었어요.'
-                      : '수집된 원본 구간을 바탕으로 보여드려요.'}
-                  </p>
-                  <p>원본은 읽기 전용으로 연결돼 있어요.</p>
+                  <p>{s.partial ? t.inspector.source.partial : t.inspector.source.full}</p>
+                  <p>{t.inspector.source.readOnly}</p>
                 </div>
               </section>
             </>
@@ -674,11 +716,11 @@ export function Inspector({
             <Conversation key={s.id} session={s} notices={news} notify={notify} />
           ) : (
             <div className="notes-editor">
-              <span className="eyebrow">다음의 나에게</span>
-              <h3>기억하고 싶은 맥락을 남겨요.</h3>
-              <p>결정한 이유, 남은 일, 다음에 확인할 것을 적어두면 인수인계에 함께 담겨요.</p>
+              <span className="eyebrow">{t.inspector.notes.eyebrow}</span>
+              <h3>{t.inspector.notes.title}</h3>
+              <p>{t.inspector.notes.body}</p>
               <label className="sr-only" htmlFor="notes">
-                업무 메모
+                {t.inspector.notes.label}
               </label>
               <textarea
                 id="notes"
@@ -688,11 +730,11 @@ export function Inspector({
                   setNotesDirty(true);
                 }}
                 maxLength={12000}
-                placeholder="예: 캐시는 5분으로 정했어요. 다음 작업에서는 네트워크가 끊겼을 때를 확인해 주세요."
+                placeholder={t.inspector.notes.placeholder}
               />
               <button className="button primary" onClick={() => patch({ notes })}>
                 <Check size={16} />
-                메모 저장
+                {t.inspector.notes.save}
               </button>
               <button
                 className={`completion-button ${s.completed ? 'checked' : ''}`}
@@ -700,8 +742,8 @@ export function Inspector({
               >
                 <span>{s.completed && <Check size={14} />}</span>
                 <div>
-                  <b>이 업무의 결과를 확인했어요</b>
-                  <small>응답 상태와 별도로, 내가 직접 남기는 확인이에요.</small>
+                  <b>{t.inspector.notes.completedTitle}</b>
+                  <small>{t.inspector.notes.completedBody}</small>
                 </div>
               </button>
             </div>
@@ -710,7 +752,7 @@ export function Inspector({
         <div className="inspector-actions">
           {s.zone && s.zone !== 'office' && (
             <button className="return-office" onClick={() => onReturn(s.id)}>
-              사무실에 자리 마련하기 <ArrowRight size={14} />
+              {t.inspector.returnToOffice} <ArrowRight size={14} />
             </button>
           )}
           {state === 'attention' ? (
@@ -722,7 +764,7 @@ export function Inspector({
           ) : (
             <button className="button primary" onClick={handoff} disabled={busy || privacy}>
               <PackageOpen size={17} />
-              {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
+              {busy ? t.inspector.gathering : t.inspector.packHandoff}
               <ArrowRight size={16} />
             </button>
           )}
@@ -730,7 +772,7 @@ export function Inspector({
             {state === 'attention' ? (
               <button className="button subtle" onClick={handoff} disabled={busy || privacy}>
                 <PackageOpen size={14} />
-                {busy ? '기록을 모으는 중…' : '인수인계 꾸리기'}
+                {busy ? t.inspector.gathering : t.inspector.packHandoff}
               </button>
             ) : (
               <button className="button subtle" disabled={demo} onClick={resume}>
@@ -740,7 +782,7 @@ export function Inspector({
             )}
             <button
               className="icon-btn"
-              aria-label="원본 위치 열기"
+              aria-label={t.inspector.revealSource}
               disabled={demo || !isDesktop}
               onClick={() => api.reveal(s.id).catch((e) => notify(e.message))}
             >
@@ -748,7 +790,7 @@ export function Inspector({
             </button>
             <button
               className="icon-btn"
-              aria-label={s.archived ? '보관 해제' : '세션 보관'}
+              aria-label={s.archived ? t.inspector.unarchive : t.inspector.archive}
               onClick={() => patch({ archived: !s.archived })}
             >
               <Archive size={16} />
@@ -757,39 +799,39 @@ export function Inspector({
         </div>
       </aside>
       {packet && (
-        <Modal title="다음 동료에게 건네는 기록" onClose={closePacket} wide>
+        <Modal title={t.inspector.handoff.title} onClose={closePacket} wide>
           <div className="handoff-intro">
             <PackageOpen size={24} />
             <div>
-              <b>맥락을 이어서, 설명은 짧게.</b>
-              <p>내용을 확인한 뒤 복사하거나 파일로 저장하세요.</p>
+              <b>{t.inspector.handoff.introTitle}</b>
+              <p>{t.inspector.handoff.introBody}</p>
             </div>
           </div>
           <textarea
             className="handoff-text"
-            aria-label="인수인계 내용"
+            aria-label={t.inspector.handoff.textLabel}
             value={packet.markdown}
             onChange={(e) => setPacket({ ...packet, markdown: e.target.value })}
           />
           <div className="modal-footer">
-            <span>다른 세션으로 자동 전송되지 않아요.</span>
+            <span>{t.inspector.handoff.notSent}</span>
             <button
               className="button subtle"
               onClick={async () => {
                 try {
                   if (await api.exportFile('agent-office-handoff.md', packet.markdown))
-                    notify('인수인계 파일을 저장했어요');
+                    notify(t.inspector.handoff.savedFile);
                 } catch (e) {
                   notify((e as Error).message);
                 }
               }}
             >
               <Download size={15} />
-              파일 저장
+              {t.inspector.handoff.saveFile}
             </button>
             <button className="button primary" onClick={() => copy(packet.markdown)}>
               <Copy size={15} />
-              복사하기
+              {t.inspector.handoff.copy}
             </button>
           </div>
         </Modal>

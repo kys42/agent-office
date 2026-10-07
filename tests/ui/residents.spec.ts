@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { Snapshot } from '../../src/shared/types';
 async function fixture(page: Page, snapshot: Snapshot) {

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 
 const min = 60_000;

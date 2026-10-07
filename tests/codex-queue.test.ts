@@ -11,6 +11,11 @@ import {
   readCodexOrigin,
 } from '../desktop/codex-queue.js';
 import { TerminalInputError, type RunOptions, type TerminalDeps } from '../desktop/terminals.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 
 const THREAD = '01a111a3-931f-7c31-9b3c-b73c30079654';
 

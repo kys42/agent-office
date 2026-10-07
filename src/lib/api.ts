@@ -1,5 +1,6 @@
 import type { OfficeAPI, Snapshot } from '../shared/types';
 import { parseArtifact } from '../shared/office';
+import { m } from '../shared/i18n';
 declare global {
   interface Window {
     office?: OfficeAPI;
@@ -12,7 +13,7 @@ const rpc = async (method: string, ...args: unknown[]) => {
     body: JSON.stringify({ method, args }),
   });
   const data = await r.json();
-  if (!r.ok || data.error) throw new Error(data.error ?? '연결을 확인해 주세요');
+  if (!r.ok || data.error) throw new Error(data.error ?? m().shared.api.checkConnection);
   return data.result;
 };
 export const isDesktop = !!window.office;
@@ -64,7 +65,7 @@ export const api: OfficeAPI = window.office ?? {
     }
   },
   reveal: async () => {
-    throw new Error('원본 위치 열기는 데스크탑 앱에서 사용할 수 있어요.');
+    throw new Error(m().shared.api.revealDesktopOnly);
   },
   resume: async (id) => {
     const s = await rpc('detail', id);

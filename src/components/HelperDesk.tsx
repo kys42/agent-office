@@ -4,6 +4,7 @@ import { sessionName } from '../shared/office';
 import { stackLead } from '../shared/presentation';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
+import { useI18n } from '../lib/i18n';
 
 /** A real subagent/child at its own low desk beside the colleague it works for. */
 export function HelperDesk({
@@ -27,6 +28,7 @@ export function HelperDesk({
   className?: string;
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   const responded = s.runtime?.phase === 'responded' && !working;
   return (
     <button
@@ -36,18 +38,18 @@ export function HelperDesk({
       data-furniture="helper-desk"
       data-solid
       style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
-      aria-label={`${privacy ? s.provider : sessionName(s)}, 보조 동료${responded ? ', 결과 남김' : ''}`}
-      title={privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || '보조 동료'}`}
+      aria-label={t.desk.helper.label(privacy ? s.provider : sessionName(s), responded)}
+      title={privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`}
       onClick={onClick}
     >
-      <Sprite provider={s.provider} mood={mood} size={44} />
+      <Sprite session={s} provider={s.provider} mood={mood} size={44} />
       <Furniture kind="helper" />
       {responded && (
-        <span className="helper-result" title="응답을 남겼어요 · 메인의 다음 요청까지 머물러요">
+        <span className="helper-result" title={t.desk.helper.result}>
           ✓
         </span>
       )}
-      <b>{privacy ? '보조 동료' : s.relation?.role || sessionName(s)}</b>
+      <b>{privacy ? t.desk.helper.name : s.relation?.role || sessionName(s)}</b>
       {news && <i className="helper-news" />}
     </button>
   );
@@ -79,6 +81,7 @@ export function HelperStack({
   className?: string;
   onOpen: (id: string) => void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -113,7 +116,7 @@ export function HelperStack({
   const anyNews = members.some(news);
   // Helpers often share a role (e.g. "explorer"): keep each one's own name next to it.
   const role = (s: Session) => (privacy ? '' : (s.relation?.role ?? ''));
-  const name = (s: Session) => (privacy ? '보조 동료' : sessionName(s));
+  const name = (s: Session) => (privacy ? t.desk.helper.name : sessionName(s));
   const label = (s: Session) => (role(s) ? `${role(s)} · ${name(s)}` : name(s));
   const count = members.length;
   return (
@@ -135,7 +138,7 @@ export function HelperStack({
         data-furniture="helper-desk"
         data-solid
         aria-expanded={open}
-        aria-label={`보조 동료 ${count}명${anyCalling ? ', 부르는 보조 있음' : ''} · 명단 보기`}
+        aria-label={t.desk.helper.stackLabel(count, anyCalling)}
         title={privacy ? undefined : members.map(label).join('\n')}
         onClick={() => setOpen((v) => !v)}
       >
@@ -147,11 +150,11 @@ export function HelperStack({
         <Furniture kind="helper" />
         <em className="helper-stack-count">×{count}</em>
         {anyCalling && <span className="helper-stack-bang">!</span>}
-        <b>보조 {count}명</b>
+        <b>{t.desk.helper.stackCount(count)}</b>
         {anyNews && <i className="helper-news" />}
       </button>
       {open && (
-        <ul className="helper-stack-list" data-solid aria-label="보조 동료 명단">
+        <ul className="helper-stack-list" data-solid aria-label={t.desk.helper.stackList}>
           {members.map((s) => (
             <li key={s.id}>
               <button
@@ -169,7 +172,7 @@ export function HelperStack({
                 </span>
                 <i style={{ background: MOODS[s.status].color }} title={MOODS[s.status].label} />
                 {responded(s) && (
-                  <b className="helper-stack-done" title="응답을 남겼어요">
+                  <b className="helper-stack-done" title={t.desk.helper.responded}>
                     ✓
                   </b>
                 )}

@@ -3,6 +3,8 @@ import { isAttentionNotice, isInboxNotice } from './notices';
 import { isStandingBy, isWorking } from './presentation';
 import { needsAttention } from './residents';
 import { taskStart } from './lifecycle';
+import { m } from './i18n';
+import { liveLabels } from './labels';
 
 /** What the person should do next, not how the session feels. Seats never depend on this. */
 export type TriageGroup = 'attention' | 'results' | 'working' | 'standby' | 'resting';
@@ -13,13 +15,7 @@ export const TRIAGE_ORDER: TriageGroup[] = [
   'standby',
   'resting',
 ];
-export const TRIAGE_LABELS: Record<TriageGroup, string> = {
-  attention: '나를 기다려요',
-  results: '확인할 결과',
-  working: '일하는 중',
-  standby: '대기 중',
-  resting: '쉬는 중',
-};
+export const TRIAGE_LABELS: Record<TriageGroup, string> = liveLabels((t) => t.shared.triage.group);
 
 export const memberIds = (s: Session) => s.resident?.sessionIds ?? [s.id];
 
@@ -59,8 +55,13 @@ export function workingFor(s: Session, now = Date.now()): number | null {
 }
 
 export const durationShort = (ms: number) => {
-  const m = Math.floor(ms / 60_000);
-  return m < 1 ? '방금 시작' : m < 60 ? `${m}분째` : `${Math.floor(m / 60)}시간 ${m % 60}분째`;
+  const t = m().shared.triage;
+  const min = Math.floor(ms / 60_000);
+  return min < 1
+    ? t.justStarted
+    : min < 60
+      ? t.minutesIn(min)
+      : t.hoursIn(Math.floor(min / 60), min % 60);
 };
 
 /**

@@ -1,4 +1,5 @@
 import type { ExecutionPhase, Mood, RuntimeObservation } from './types';
+import { getLocale, messagesFor, type Locale } from './i18n';
 // Office Observation Protocol v1. Provider adapters emit evidence; time policy is shared.
 const phases: Record<Mood, ExecutionPhase> = {
   work: 'working',
@@ -37,20 +38,16 @@ export function deriveState(
   archived = false,
   standbyHours = 4,
   readyMinutes = DEFAULT_READY_MINUTES,
+  locale: Locale = getLocale(),
 ): { status: Mood; reason?: string } {
-  if (archived) return { status: 'leave', reason: '사용자가 보관한 기록' };
+  const t = messagesFor(locale).shared.runtime;
+  if (archived) return { status: 'leave', reason: t.archived };
   const age = now - updatedAt;
   if (age >= standbyHours * 3600_000 && status !== 'leave')
-    return {
-      status: 'sleep',
-      reason: `${standbyHours}시간 이상 새 기록 없음 · 실행 종료 여부는 미확인`,
-    };
+    return { status: 'sleep', reason: t.offDuty(standbyHours) };
   if (age > QUIET_MS && ['work', 'think', 'done', 'ready'].includes(status))
     return age < readyMinutes * 60_000
-      ? {
-          status: 'ready',
-          reason: `일을 마치고 대기 중 · ${readyMinutes}분 동안 새 기록을 기다려요`,
-        }
-      : { status: 'idle', reason: '최근 새 기록 없음 · 실행 여부는 미확인' };
+      ? { status: 'ready', reason: t.ready(readyMinutes) }
+      : { status: 'idle', reason: t.quiet };
   return { status };
 }

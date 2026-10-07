@@ -3,23 +3,27 @@ import { RefreshCw, X, Gauge } from 'lucide-react';
 import { api } from '../lib/api';
 import { PROVIDERS, type ProviderQuota } from '../shared/types';
 import { ago } from '../lib/format';
-const demoQuotas = (): ProviderQuota[] =>
-  ['claude', 'codex'].map((p, i) => ({
+import { intlLocale, m } from '../shared/i18n';
+import { useI18n } from '../lib/i18n';
+const demoQuotas = (): ProviderQuota[] => {
+  const t = m().usage.demo;
+  return ['claude', 'codex'].map((p, i) => ({
     provider: p as 'claude' | 'codex',
     state: 'ok',
-    source: '합성 데모',
+    source: t.source,
     checkedAt: Date.now(),
-    message: '데모 수치 · 실제 계정을 조회하지 않아요.',
+    message: t.message,
     windows: [
-      { key: '5h', label: '5시간', usedPercent: 27 + i * 16, resetsAt: Date.now() + 7200_000 },
+      { key: '5h', label: t.fiveHours, usedPercent: 27 + i * 16, resetsAt: Date.now() + 7200_000 },
       {
         key: 'week',
-        label: '일주일',
+        label: t.week,
         usedPercent: 61 - i * 15,
         resetsAt: Date.now() + 86400_000 * 3,
       },
     ],
   }));
+};
 export function UsagePanel({
   demo,
   privacy,
@@ -29,9 +33,11 @@ export function UsagePanel({
   privacy: boolean;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
+  const u = t.usage;
   const [data, setData] = useState<ProviderQuota[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -39,17 +45,19 @@ export function UsagePanel({
     if (window.matchMedia('(max-width: 860px)').matches)
       panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
+  // Limits are checked only when the panel opens or on refresh — never just because the language
+  // changed. Demo numbers are local, so they are rebuilt at render and follow the language.
   useEffect(() => {
     let alive = true;
     if (privacy) return;
     setBusy(true);
-    setError('');
+    setError(false);
     (demo ? Promise.resolve(demoQuotas()) : api.quotas())
       .then((value) => {
         if (alive) setData(value);
       })
       .catch(() => {
-        if (alive) setError('사용량에 연결하지 못했어요. 다시 확인해 주세요.');
+        if (alive) setError(true);
       })
       .finally(() => {
         if (alive) setBusy(false);
@@ -58,41 +66,42 @@ export function UsagePanel({
       alive = false;
     };
   }, [demo, privacy, refresh]);
+  const quotas = demo && data.length ? demoQuotas() : data;
   return (
-    <aside className="inspector usage-dock" aria-label="사용량과 잔여 한도" ref={panelRef}>
+    <aside className="inspector usage-dock" aria-label={u.title} ref={panelRef}>
       <header>
         <div>
           <small>OFFICE ENERGY</small>
           <h2>
-            <Gauge size={21} /> 사용량과 잔여 한도
+            <Gauge size={21} /> {u.title}
           </h2>
         </div>
-        <button className="icon-btn" onClick={onClose} aria-label="사용량 닫기">
+        <button className="icon-btn" onClick={onClose} aria-label={u.close}>
           <X size={19} />
         </button>
       </header>
       {privacy ? (
-        <p>화면 내용 숨기기가 켜져 있어요.</p>
+        <p>{u.privacy}</p>
       ) : (
         <>
           <p className="usage-intro">
-            동료들이 함께 쓰는 계정의 여유를 확인해요.
+            {u.intro}
             <br />
-            세션별 작업량과 비용은 동료를 눌러 볼 수 있어요.
+            {u.introDetail}
           </p>
           <button className="button" disabled={busy} onClick={() => setRefresh((n) => n + 1)}>
             <RefreshCw size={14} className={busy ? 'spin' : ''} />
-            {busy ? '확인하는 중…' : '한도 새로 확인'}
+            {busy ? u.checking : u.recheck}
           </button>
-          {busy && !data.length && <p role="status">연결된 계정에서 한도를 읽고 있어요.</p>}
-          {error && <p role="alert">{error}</p>}
-          {!busy && !error && !data.length && <p>연결과 설정에서 공급자를 켜 주세요.</p>}
-          {data.map((q) => (
+          {busy && !quotas.length && <p role="status">{u.loading}</p>}
+          {error && <p role="alert">{u.error}</p>}
+          {!busy && !error && !quotas.length && <p>{u.empty}</p>}
+          {quotas.map((q) => (
             <section className="quota-card" key={q.provider}>
               <div className="quota-title">
                 <b>{PROVIDERS[q.provider].name}</b>
                 <span>
-                  {q.state === 'ok' ? '계정 전체' : q.state === 'error' ? '조회 실패' : '정보 없음'}
+                  {q.state === 'ok' ? u.account : q.state === 'error' ? u.failed : u.unavailable}
                 </span>
               </div>
               {q.windows.map((w) => {
@@ -102,34 +111,36 @@ export function UsagePanel({
                     <div>
                       <span>{w.label}</span>
                       <strong>
-                        {expired
-                          ? '재확인 필요'
-                          : `${Math.round((100 - w.usedPercent) * 10) / 10}% 남음`}
+                        {expired ? u.expired : u.left(Math.round((100 - w.usedPercent) * 10) / 10)}
                       </strong>
                     </div>
                     <progress
-                      aria-label={`${PROVIDERS[q.provider].name} ${w.label} 잔여량`}
+                      aria-label={u.remainingAria(PROVIDERS[q.provider].name, w.label)}
                       value={expired ? 0 : 100 - w.usedPercent}
                       max={100}
                     />
                     <small>
                       {w.resetsAt
-                        ? `${new Date(w.resetsAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 갱신 예정`
-                        : '갱신 시각 미제공'}
+                        ? u.resets(
+                            new Date(w.resetsAt).toLocaleString(intlLocale(), {
+                              month: 'numeric',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            }),
+                          )
+                        : u.noReset}
                     </small>
                   </div>
                 );
               })}
               <p>{q.message}</p>
               <small>
-                {q.source} · {ago(q.checkedAt)} 확인
+                {q.source} · {u.checked(ago(q.checkedAt))}
               </small>
             </section>
           ))}
-          <p className="fine-print">
-            버튼을 눌렀을 때만 조회해요. 1분 안에 다시 열면 최근 조회를 사용해요. 조회 실패를 잔여량
-            0으로 해석하지 않아요.
-          </p>
+          <p className="fine-print">{u.fine}</p>
         </>
       )}
     </aside>

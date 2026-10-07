@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
+import { getLocale, m } from '../shared/i18n';
 import { demoSnapshot, reconcileDemo } from './demo';
 import { applyNoticeReceipt } from '../shared/notices';
 import { officeResidents } from '../shared/residents';
@@ -8,7 +10,44 @@ import { buildOfficeModel } from '../shared/office-model';
 import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
 import { arrivalEnds } from '../shared/speech';
+import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
 
+/**
+ * The demo rewritten in the active language, carrying over what the viewer did in it: preferences
+ * (the language choice lives there), pins, hides, archive/return and notice receipts.
+ */
+function relocalizedDemo(prev: Snapshot): Snapshot {
+  const fresh = demoSnapshot();
+  const sessions = new Map(prev.sessions.map((s) => [s.id, s]));
+  const notices = new Map((prev.notices ?? []).map((n) => [n.id, n]));
+  return reconcileDemo({
+    ...fresh,
+    preferences: prev.preferences,
+    sessions: fresh.sessions.map((s) => {
+      const was = sessions.get(s.id);
+      if (!was) return s;
+      const { pinned, archived, completed, notes, hiddenAt, openCount, lastViewedAt, returnedAt } =
+        was;
+      return {
+        ...s,
+        pinned,
+        archived,
+        completed,
+        notes,
+        hiddenAt,
+        openCount,
+        lastViewedAt,
+        returnedAt,
+      };
+    }),
+    notices: fresh.notices?.map((n) => {
+      const was = notices.get(n.id);
+      return was
+        ? { ...n, seenAt: was.seenAt, viewedAt: was.viewedAt, dismissedAt: was.dismissedAt }
+        : n;
+    }),
+  });
+}
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
 const CLOCK_MS = 15_000;
@@ -19,14 +58,35 @@ const VEIL_BATCH = 500;
  * The office core every window shares: the same snapshot, the same derived model and the
  * same mutations. Presentations (big office, desk pet, desk row) only draw `model`.
  */
+function customizedDemo() {
+  const snapshot = demoSnapshot();
+  try {
+    snapshot.preferences.petAppearance = normalizePetCustomization(
+      JSON.parse(localStorage.getItem('office:demo-pets') || 'null'),
+    );
+  } catch {
+    // An invalid demo setting falls back to the original characters.
+  }
+  return snapshot;
+}
+
 export function useOffice(demo: boolean, notify: (message: string) => void = () => {}) {
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? demoSnapshot() : null);
+  const { locale } = useI18n();
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? customizedDemo() : null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  // Demo content is written in the language it was generated in.
+  const demoLocale = useRef(locale);
   useEffect(() => {
     if (demo) {
-      setSnapshot(demoSnapshot());
+      demoLocale.current = getLocale();
+      // Carry the chosen language into the demo so entering it doesn't switch languages.
+      setSnapshot((prev) => {
+        const next = customizedDemo();
+        const chosen = prev?.preferences.locale ?? savedLocalePreference();
+        return chosen ? { ...next, preferences: { ...next.preferences, locale: chosen } } : next;
+      });
       setError('');
       return;
     }
@@ -55,6 +115,23 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     };
   }, [demo]);
   useEffect(() => {
+    if (!demo || !snapshot?.preferences.petAppearance) return;
+    try {
+      localStorage.setItem('office:demo-pets', JSON.stringify(snapshot.preferences.petAppearance));
+    } catch {
+      // Demo still works when local storage is unavailable.
+    }
+  }, [demo, snapshot?.preferences.petAppearance]);
+  // Every window (big office, desk pet / row, dock card) follows the saved language.
+  useLocalePreference(snapshot?.preferences.locale, !!snapshot, snapshot?.locale);
+  // On a language switch, rewrite the demo in the new language but keep its preferences:
+  // the language choice itself lives there, so resetting them would bounce the switch back.
+  useEffect(() => {
+    if (!demo || demoLocale.current === locale) return;
+    demoLocale.current = locale;
+    setSnapshot((s) => (s ? relocalizedDemo(s) : s));
+  }, [demo, locale]);
+  useEffect(() => {
     const tick = () => {
       if (!document.hidden) setClock(Date.now());
     };
@@ -72,7 +149,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
 
   const refresh = async () => {
     if (demo) {
-      notify('데모 화면이에요. 실제 연결을 보려면 데모를 종료해 주세요.');
+      notify(m().app.toast.demoRefresh);
       return;
     }
     setRefreshing(true);
@@ -80,7 +157,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       const s = await api.refresh();
       setSnapshot(s);
       setError('');
-      notify('동료들의 최신 기록을 확인했어요');
+      notify(m().app.toast.refreshed);
     } catch (e) {
       setError((e as Error).message);
       notify((e as Error).message);
@@ -92,7 +169,18 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const setPrefs = async (p: Partial<Preferences>) => {
     if (demo) {
       setSnapshot((s) =>
-        s ? reconcileDemo({ ...s, preferences: { ...s.preferences, ...p } }) : s,
+        s
+          ? reconcileDemo({
+              ...s,
+              preferences: {
+                ...s.preferences,
+                ...p,
+                petAppearance: p.petAppearance
+                  ? mergePetCustomization(s.preferences.petAppearance, p.petAppearance)
+                  : s.preferences.petAppearance,
+              },
+            })
+          : s,
       );
       return true;
     }
@@ -190,7 +278,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     if (!demo) {
       try {
         setSnapshot(await api.returnToOffice(id));
-        notify('사무실에 자리를 마련했어요');
+        notify(m().app.toast.returned);
       } catch (e) {
         notify((e as Error).message);
       }

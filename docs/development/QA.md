@@ -6,6 +6,25 @@
 - 실행 메모: `test:ui`가 띄우는 `npm run dev`(수집기 4318 + vite 5173)는 다른 세션이 같은 포트를 쓰면 중간에 꺼져 `ERR_CONNECTION_REFUSED`가 연달아 난다. 이 작업 폴더에서 dev 서버를 따로 띄워 두고 다시 돌리면 59개 모두 통과
 - 주의: 명단 이름에 `span` 선택자를 쓰면 캐릭터 그림(`span.sprite-window`)까지 늘어난다. 이름은 전용 클래스(`.helper-stack-name`)
 
+# 최신 UI 통합 · 2026-10-07
+
+- 기준: kys42/global 864d94b, 별도 detached worktree `agent-office-pets-latest`.
+- 단위 207개, TypeScript, Prettier, production/desktop build, MCP, 기존 Electron smoke 통과.
+- Playwright 최신 office/effects/i18n + pets 35개: 첫 실행 34개 통과; 신규 저장/모드 테스트의 중복 navigation을 제거한 후 8개(pets 3 + i18n 5) 재확인. 확장한 영어 편집/저장/한국어 변경 확인도 통과.
+- App·DeskDock·DockCard context, shared useOffice prefs merge/persistence, individual Sprite 전파 및 locale 카탈로그를 독립 리뷰에서 확인.
+- 추가 Electron 검증: 설정 화면에서 민트 슬라임+새싹 저장, 한 줄 사무실 반영, 팝업 카드에서 개별 조약돌 저장 후 카드·전체·데스크 방송 반영, 바닥 모드 및 IPC/격리 통과. 이 QA만 카드 blur 자동 닫기를 끄고 사용자 preview의 포커스 이동 영향을 배제했다. 제품 코드의 blur 동작은 유지. 스크립트와 로그는 `.local/latest-pet-desktop.mjs`, `.local/latest-pet-desktop.log`.
+- 최신 데모 꾸미기 캡처 `docs/images/pet-customizer.png`. 실제 앱은 별도 userData의 preview로 실행 중. 사용자 개발 서버/실행 앱은 보존했다.
+
+# 캐릭터 선택·꾸미기 · 2026-10-07
+
+- 단위 128개 통과. 새 6개 테스트는 모든 캐릭터·색·장식 에셋의 RGBA/프레임 계약, provider/actor 우선순위, 키 단위 병합과 초기화, 잘못된 값 복구, 재수집·SQLite 재시작 유지 및 원본 분리, RPC 입력 검증을 확인한다.
+- UI 전체 40개 중 38개가 첫 실행 통과. 기존 실연결 테스트는 QA 포트가 dev collector 허용 Host와 달라 실패했고 독립 collector 5190 + changeOrigin QA proxy에서 재검증했다. 기존 짧은 창 대화 높이 테스트는 추가 버튼 행으로 240px 미만이 되어 버튼을 기존 헤더 영역으로 옮긴 뒤 통과했다.
+- 실패 2개와 새 꾸미기 3개를 함께 재실행해 5개 통과. 새 테스트는 저장/재열기/미니/라운지, 개별 꾸미기와 도구 기본 변경·복구, 취소/390px/모션 감소/포커스 복귀를 검증하며, 장식 선택 후 몸·모자의 실제 CSS animation startTime 및 backgroundPositionX 일치를 검사한다.
+- TypeScript, Prettier, diff whitespace, production/desktop build, MCP 읽기 4개 계약 통과. 기존 5173 서버와 실행 중 사용자 앱을 보존하며 QA 환경은 .local에만 둔다.
+- Electron은 실행 중 사용자 앱의 single-instance lock 때문에 기본 smoke가 바로 종료되어, 임시 엔트리에서 별도 userData를 설정한 동일 빌드로 검증했다. 3종 연결·IPC·renderer 격리·미니 smoke 통과에 더해 실제 preload preferences 저장으로 Claude를 민트 슬라임+새싹으로 바꾸고 전체/미니 창 반영을 확인했다. 제품 main의 lock이나 사용자 앱은 변경하지 않았다.
+- 독립 리뷰 통과. 장식 처음 선택 시 서로 다른 animation timeline을 쓰던 P2를 수정했고 실제 Chromium에서 동기화를 재확인했다.
+- 합성 데모 [꾸미기 화면](../images/pet-customizer.png), [캐릭터 비교](../../public/sprites/character-preview.png). 실제 세션 원문·개인 캡처는 Git에 포함하지 않는다.
+
 # 도착·집중 연출 · 2026-10-07 (Issue #17)
 - 원인: 도착 연출이 큰 사무실에만 있었고, '이전 snapshot에 없던 요청' 비교라서 창이 숨겨져 있거나 화면을 다시 그리면 놓쳤다. 집중 연출은 반투명 불꽃 2단계뿐이라 잘 안 보였다
 - 단위(`tests/desk-effects.test.ts`): 도착 15초 경계·bootstrap/접음/다른 종류 제외·상주 세션·최신 우선·'내 요청' 말풍선, 집중 4단계 경계(4·6·16·29·31분)와 대기/완료/오래된 기록 0, 서류 더미(1·9·12·35분, 최대 8, 대기 중 유지, 쉬는 중·호출·보관 0), 펫 도착 수(가린 책상 제외)
@@ -303,7 +322,7 @@
 - 390×844: 가로 넘침 없음.
 - 840×218: 투명 미니 창, 6개 책상, 원래 사무실로 복귀.
 - 이름 편집, 메모 저장, 검색, 도구 필터, 내용 숨기기, 수집 중지, 움직임 줄이기, 인수인계 미리보기 검증.
-- 문서 이미지에는 합성 데모 기록만 사용했다. [사무실](../images/office.png), [업무 카드](../images/detail.png), [미니](../images/mini.png), [대기 라운지](../images/waiting.png).
+- 문서 이미지에는 합성 데모 기록만 사용했다. [사무실](../images/ko/office.png), [업무 카드](../images/ko/detail.png), [데스크 펫](../images/ko/desk-pet.png), [대기 라운지](../images/ko/lounge.png). 2026-10-07부터 `scripts/screenshots.mjs`가 `docs/images/{en,ko}/`에 언어별로 생성한다.
 
 ## 독립 리뷰에서 보강한 부분
 

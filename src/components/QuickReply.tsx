@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CornerDownLeft, Loader, X } from 'lucide-react';
 import type { TerminalTarget } from '../shared/types';
 import { targetLine, targetPlaceholder } from './TerminalSend';
+import { useI18n } from '../lib/i18n';
 
 /**
  * A short follow-up straight from a desk bubble, without opening the colleague card.
@@ -18,6 +19,7 @@ export function QuickReply({
   onSend: (text: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -40,7 +42,7 @@ export function QuickReply({
     <form
       className="quick-reply"
       data-solid
-      aria-label={`${name}에게 바로 답장`}
+      aria-label={t.terminal.replyTo(name)}
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
@@ -59,7 +61,7 @@ export function QuickReply({
         rows={2}
         maxLength={4000}
         value={text}
-        aria-label="답장 내용"
+        aria-label={t.terminal.replyLabel}
         placeholder={targetPlaceholder(target)}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
@@ -70,11 +72,13 @@ export function QuickReply({
         }}
       />
       <div className="quick-reply-bar">
-        <small>{targetLine(target, false)} · ↵ 보내기 · ⇧↵ 줄바꿈</small>
+        <small>
+          {targetLine(target, false)} · {t.terminal.replyKeys}
+        </small>
         <button
           type="button"
           className="quick-reply-close"
-          aria-label="답장 닫기"
+          aria-label={t.terminal.closeReply}
           onClick={onClose}
         >
           <X size={12} />
@@ -82,7 +86,7 @@ export function QuickReply({
         <button
           type="submit"
           className="quick-reply-send"
-          aria-label="보내기"
+          aria-label={t.terminal.send}
           disabled={sending || blocked || !text.trim()}
         >
           {sending ? <Loader size={12} className="now-spin" /> : <CornerDownLeft size={12} />}

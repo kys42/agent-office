@@ -7,6 +7,7 @@ import './styles/fonts.css';
 import App from './App';
 import { DeskDock } from './components/DeskDock';
 import { DockCard } from './components/DockCard';
+import { bootLocale, useI18n } from './lib/i18n';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
@@ -18,25 +19,29 @@ import './styles/dock.css';
 import './styles/veil.css';
 import './styles/speech.css';
 import './styles/effects.css';
+import './styles/pets.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   render() {
-    return this.state.failed ? (
-      <div className="empty-state">
-        <h1>사무실을 다시 열어볼까요?</h1>
-        <p>표시 중 문제가 생겼어요. 원본 세션은 안전하게 보관되어 있어요.</p>
-        <button className="button primary" onClick={() => location.reload()}>
-          다시 열기
-        </button>
-      </div>
-    ) : (
-      this.props.children
-    );
+    return this.state.failed ? <Crashed /> : this.props.children;
   }
 }
+function Crashed() {
+  const { t } = useI18n();
+  return (
+    <div className="empty-state">
+      <h1>{t.common.crash.title}</h1>
+      <p>{t.common.crash.body}</p>
+      <button className="button primary" onClick={() => location.reload()}>
+        {t.common.crash.reload}
+      </button>
+    </div>
+  );
+}
+bootLocale();
 // Same office core, three presentations: the big office window, the floating desk pet, and
 // the colleague card the pet opens at a desk.
 const dock = location.hash.startsWith('#mini');

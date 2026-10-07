@@ -1,6 +1,8 @@
 import type { OfficeEvent, OfficeNotice, Session } from './types';
 import { bubbleNotice, isFinalNotice, noticeLabel, unreadNoticeCount } from './notices';
 import { activityLabel, sessionActivity } from './activity';
+import { liveLabels } from './labels';
+import { m } from './i18n';
 
 const LIVE = ['work', 'think', 'call', 'error'];
 /**
@@ -10,15 +12,7 @@ const LIVE = ['work', 'think', 'call', 'error'];
  */
 export type BubbleTone =
   'mine' | 'thought' | 'progress' | 'reply' | 'attention' | 'error' | 'message';
-export const TONE_LABELS: Record<BubbleTone, string> = {
-  mine: '내 요청',
-  thought: '생각 중',
-  progress: '진행 중',
-  reply: '최종 응답',
-  attention: '응답 필요',
-  error: '확인 필요',
-  message: '응답',
-};
+export const TONE_LABELS: Record<BubbleTone, string> = liveLabels((t) => t.shared.tone);
 
 /** How long a just-sent request plays its arrival (papers landing, envelope). */
 export const ARRIVAL_MS = 15_000;
@@ -183,7 +177,7 @@ export function shownSpeech(
   // A call or error that was already answered reads as settled, not as calling again.
   const settled = ['attention', 'error'].includes(speech.peek.kind) && !!speech.peek.resolvedAt;
   return {
-    speech: settled ? { ...last, tone: 'message', label: `${last.label} · 해결됨` } : last,
+    speech: settled ? { ...last, tone: 'message', label: m().shared.settled(last.label) } : last,
     peek: true,
   };
 }

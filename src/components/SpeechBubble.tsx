@@ -20,6 +20,7 @@ import { toolLabel } from '../shared/activity';
 import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/speech';
 import { ago } from '../lib/format';
 import { InlineMarkdown } from './InlineMarkdown';
+import { useI18n } from '../lib/i18n';
 
 const TONE_ICONS: Record<BubbleTone, LucideIcon> = {
   mine: User,
@@ -65,6 +66,7 @@ export function SpeechBubble({
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const { t } = useI18n();
   const { bubble, activity, text, label, markdown, tone } = speech;
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
@@ -91,13 +93,13 @@ export function SpeechBubble({
       <button
         className="speech-open"
         onClick={(e) => onOpen(e.currentTarget.closest<HTMLElement>('.speech-bubble')!)}
-        title={privacy ? '내용 숨김' : `${exposure ? `${exposure} · ` : ''}${text}`}
+        title={privacy ? t.desk.hidden : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
         <span className="speech-copy">
           <small>
             <span className="bubble-label">
               <Icon size={9} strokeWidth={2.6} aria-hidden="true" />
-              {privacy ? '내용 숨김' : heading}
+              {privacy ? t.desk.hidden : heading}
               {tone === 'progress' && (
                 <i className="bubble-typing" aria-hidden="true">
                   <i />
@@ -107,7 +109,7 @@ export function SpeechBubble({
               )}
             </span>
             <em>
-              {peek && <span className="bubble-peek">지난 말풍선</span>}
+              {peek && <span className="bubble-peek">{t.desk.bubble.peek}</span>}
               {exposure && <span className="bubble-exposure">{exposure}</span>}
               {ago(bubble?.at ?? activity.at)}
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}
@@ -122,9 +124,9 @@ export function SpeechBubble({
       {(long || open || detail) && (
         <button
           className="bubble-expand"
-          aria-label={open ? '말풍선 짧게 보기' : '말풍선 전체 보기'}
+          aria-label={open ? t.desk.bubble.collapseLabel : t.desk.bubble.expandLabel}
           aria-expanded={open}
-          title={open ? '짧게 보기' : '전체 보기'}
+          title={open ? t.desk.bubble.collapse : t.desk.bubble.expand}
           onClick={(e) => {
             e.stopPropagation();
             setOpen((v) => !v);
@@ -146,7 +148,7 @@ export function SpeechBubble({
       {reply && (
         <button
           className={`bubble-reply ${reply.open ? 'open' : ''}`}
-          aria-label={`${sessionName(s)}에게 바로 답장`}
+          aria-label={t.terminal.replyTo(sessionName(s))}
           aria-expanded={reply.open}
           title={reply.title}
           onClick={(e) => {
@@ -160,8 +162,8 @@ export function SpeechBubble({
       {bubble && !peek && (
         <button
           className="bubble-dismiss"
-          aria-label={`${privacy ? '동료' : sessionName(s)} 말풍선 접기`}
-          title="말풍선만 접기 · 미확인 소식은 남아요"
+          aria-label={t.desk.bubble.dismiss(privacy ? undefined : sessionName(s))}
+          title={t.desk.bubble.dismissTitle}
           onClick={onDismiss}
         >
           <X size={11} strokeWidth={2.6} />

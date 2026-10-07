@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import type { Artifact } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { redact } from './adapters/normalize.js';
+import { localizeText } from '../src/shared/canonical.js';
 const exec = promisify(execFile);
 const cache = new Map<string, { at: number; value: Artifact }>();
 export async function artifactDetails(urls: string[]): Promise<Artifact[]> {
@@ -46,5 +47,6 @@ export async function artifactDetails(urls: string[]): Promise<Artifact[]> {
     cache.set(item.url, { at: Date.now(), value });
     result.push(value);
   }
-  return result;
+  // Cached canonical (like collected records); shown in the active language.
+  return result.map((a) => (a.title ? { ...a, title: localizeText(a.title) } : a));
 }

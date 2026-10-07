@@ -14,6 +14,7 @@ import { stationSpeech } from '../shared/speech';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { PetArrival } from './DeskEffects';
+import { useI18n } from '../lib/i18n';
 
 const DRAG_SLOP = 4;
 
@@ -45,6 +46,8 @@ export function DeskPet({
   /** Look at the session records again now (and restart a stopped collector). */
   onRefresh: () => void;
 }) {
+  const { t } = useI18n();
+  const d = t.dock.pet;
   const pet = petSummary(model);
   const total = model.seats.length;
   const label = status ?? pet.label;
@@ -101,7 +104,7 @@ export function DeskPet({
               reply={
                 canReply
                   ? {
-                      title: `바로 답장 · ${targetLine(target!, false)}`,
+                      title: t.terminal.replyTitle(targetLine(target!, false)),
                       open: replying,
                       onClick: () => setReplyFor(replying ? null : said),
                     }
@@ -120,10 +123,8 @@ export function DeskPet({
                       </span>
                     )}
                     <span>
-                      {speaker.view.unread.length > 1
-                        ? `읽지 않은 소식 ${speaker.view.unread.length}건 · `
-                        : ''}
-                      누르면 크게 보여요 · 업무 카드는 위 도구에서
+                      {speaker.view.unread.length > 1 ? d.unread(speaker.view.unread.length) : ''}
+                      {d.detailHint}
                     </span>
                   </>
                 )
@@ -133,7 +134,7 @@ export function DeskPet({
               <QuickReply
                 key={said}
                 target={target!}
-                name={who?.name ?? '동료'}
+                name={who?.name ?? d.someone}
                 onClose={() => setReplyFor(null)}
                 onSend={async (text) => {
                   await onReply!(bubble.sessionId, text);
@@ -155,8 +156,8 @@ export function DeskPet({
           {speaker && (
             <button
               className="icon-btn"
-              aria-label="업무 카드 열기"
-              title="팝업으로 보기 · 말하는 동료의 업무 카드"
+              aria-label={d.openCard}
+              title={d.openCardTitle}
               onClick={(e) =>
                 void openColleague(bubble?.sessionId ?? speaker.view.session.id, {
                   anchor: e.currentTarget.closest('.dock-pet-anchor'),
@@ -169,32 +170,27 @@ export function DeskPet({
           )}
           <button
             className="icon-btn"
-            aria-label="사무실 펼치기"
-            title="큰 사무실 열기"
+            aria-label={d.expand}
+            title={d.expandTitle}
             onClick={() => api.window('main')}
           >
             <Expand size={12} />
           </button>
           <button
             className="icon-btn"
-            aria-label="새로고침"
-            title="새로고침 · 지금 기록을 다시 확인해요"
+            aria-label={d.refresh}
+            title={d.refreshTitle}
             onClick={onRefresh}
           >
             <RotateCw size={12} />
           </button>
-          <button
-            className="icon-btn"
-            aria-label="바닥 책상 펼치기"
-            title="바닥 책상 · 화면 맨 아래에 책상만, 구역은 깃발"
-            onClick={onFloor}
-          >
+          <button className="icon-btn" aria-label={d.floor} title={d.floorTitle} onClick={onFloor}>
             <Flag size={12} />
           </button>
           <button
             className="icon-btn"
-            aria-label="데스크 펫 숨기기"
-            title="숨기기 · 트레이에서 다시 열 수 있어요"
+            aria-label={d.hide}
+            title={d.hideTitle}
             onClick={() => api.window('hide')}
           >
             <X size={12} />
@@ -203,8 +199,8 @@ export function DeskPet({
         <button
           className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaker ? 'is-speaking' : ''}`}
           data-solid
-          aria-label={`데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 펼치기`}
-          title={`우리 사무실 · 동료 ${total}명\n누르면 마지막에 쓴 모습(책상 줄·바닥 책상)으로 펼쳐지고, 끌어서 옮길 수 있어요`}
+          aria-label={d.aria(label, count)}
+          title={d.title(total)}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -231,6 +227,7 @@ export function DeskPet({
           {/* Re-keyed per notice so a new arrival replays the hop. */}
           <span className="dock-pet-body" key={speaker?.notice.id ?? 'pet'}>
             <Sprite
+              session={pet.lead?.session}
               provider={pet.lead?.session.provider ?? 'claude'}
               mood={status ? 'think' : (pet.lead?.pose.mood ?? 'idle')}
               size={72}

@@ -12,6 +12,11 @@ import { demoSnapshot } from '../src/lib/demo.js';
 import { OfficeService } from '../server/service.js';
 import { OfficeStore } from '../server/store.js';
 import { parseRecords } from '../server/adapters/normalize.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 const now = Date.now();
 const min = 60_000;
 const hour = 3600_000;

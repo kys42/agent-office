@@ -8,6 +8,8 @@ import { activityLabel, sessionActivity } from './activity';
 import { isVeiled } from './veil';
 import { freshRequest } from './speech';
 import { zoneLabel } from './zones';
+import { m } from './i18n';
+import { liveLabels } from './labels';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -158,20 +160,14 @@ export function residentLabel(s: Session, privacy: boolean) {
   return {
     name: privacy ? s.provider : sessionName(s),
     // A user-defined area (custom zone) names the place before the raw project.
-    project: privacy ? '프로젝트' : zoneLabel(s),
+    project: privacy ? m().shared.office.project : zoneLabel(s),
     detail: privacy ? undefined : `${activityLabel(s)} · ${sessionActivity(s).text}`,
   };
 }
 
 export const hasNews = (v: ResidentView) => v.unread.length + v.helperUnread.length > 0;
 
-export const PET_LABELS: Record<TriageGroup, string> = {
-  attention: '기다려요',
-  results: '새 소식',
-  working: '일하는 중',
-  standby: '대기 중',
-  resting: '쉬는 중',
-};
+export const PET_LABELS: Record<TriageGroup, string> = liveLabels((t) => t.shared.pet);
 
 /** How long a just-arrived result or question takes over the collapsed pet. */
 export const PET_FRESH_MS = 2 * 60_000;

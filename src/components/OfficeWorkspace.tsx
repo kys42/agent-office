@@ -24,6 +24,7 @@ import { sessionScopeLabel } from '../shared/residents';
 import { RestLounge } from './RestLounge';
 import { Sprite } from './Sprite';
 import type { ReceiptHandler } from './News';
+import { useI18n } from '../lib/i18n';
 function saved<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback;
@@ -31,10 +32,11 @@ function saved<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
+// Labels come from the active catalog at render time (`t.office.zones[id]`).
 const ZONES = [
-  { id: 'office', label: '사무실', icon: Building2 },
-  { id: 'waiting', label: '대기 라운지', icon: Armchair },
-  { id: 'archive', label: '보관 공간', icon: Archive },
+  { id: 'office', icon: Building2 },
+  { id: 'waiting', icon: Armchair },
+  { id: 'archive', icon: Archive },
 ] as const;
 export function OfficeWorkspace({
   snapshot,
@@ -80,6 +82,7 @@ export function OfficeWorkspace({
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
   onReply?: (sessionId: string, text: string) => Promise<void>;
 }) {
+  const { t } = useI18n();
   const key = `office:view:${demo ? 'demo' : 'live'}`;
   const [zone, setZone] = useState<OfficeZone>(
     () => saved(key, { zone: 'office' }).zone as OfficeZone,
@@ -131,7 +134,7 @@ export function OfficeWorkspace({
     <div className="office-layout">
       <div className="office-column">
         <div className="stage-toolbar">
-          <div className="zone-tabs" role="tablist" aria-label="사무실 공간">
+          <div className="zone-tabs" role="tablist" aria-label={t.office.spaces}>
             {ZONES.map((z) => (
               <button
                 key={z.id}
@@ -144,7 +147,7 @@ export function OfficeWorkspace({
                 }}
               >
                 <z.icon size={15} strokeWidth={1.9} />
-                {z.label}
+                {t.office.zones[z.id]}
                 <span>{zones[z.id].length}</span>
               </button>
             ))}
@@ -153,11 +156,7 @@ export function OfficeWorkspace({
             <span
               className={`live-badge ${demo ? 'demo' : prefs.paused ? 'paused' : ''}`}
               title={
-                demo
-                  ? '예시 데이터'
-                  : prefs.paused
-                    ? '수집을 쉬고 있어요'
-                    : '5초마다 로컬 기록을 확인해요'
+                demo ? t.office.live.demo : prefs.paused ? t.office.live.paused : t.office.live.live
               }
             >
               <i />
@@ -166,16 +165,16 @@ export function OfficeWorkspace({
             <button
               className="office-policy"
               onClick={onSettings}
-              aria-label="사무실 설정 열기"
-              title="퇴근·보관 기준 바꾸기"
+              aria-label={t.office.settingsLabel}
+              title={t.office.settingsTitle}
             >
               <SlidersHorizontal size={13} />
               {officeSchedule(prefs)}
             </button>
             <button
               className={`icon-btn ${refreshing ? 'spin' : ''}`}
-              aria-label="세션 새로고침"
-              title="지금 다시 확인"
+              aria-label={t.office.refreshLabel}
+              title={t.office.refreshTitle}
               onClick={onRefresh}
               disabled={refreshing}
             >
@@ -208,11 +207,11 @@ export function OfficeWorkspace({
                   <details className="background-records veiled-records">
                     <summary>
                       <EyeOff size={13} />
-                      가린 동료 <b>{model.veiled.length}</b>
+                      {t.office.veiled.summary} <b>{model.veiled.length}</b>
                       <ChevronUp size={13} className="chev" />
                     </summary>
                     <div className="background-pop">
-                      <p>다음 대화가 오면 저절로 돌아와요. 지금 다시 보려면 고르세요.</p>
+                      <p>{t.office.veiled.body}</p>
                       <div>
                         {model.veiled.map(({ session: s }) => (
                           <button
@@ -220,10 +219,10 @@ export function OfficeWorkspace({
                             onClick={() => onVeil(s.resident?.sessionIds ?? [s.id], false)}
                           >
                             <span className={`face face-${s.provider}`}>
-                              <Sprite provider={s.provider} mood="idle" size={22} />
+                              <Sprite session={s} provider={s.provider} mood="idle" size={22} />
                             </span>
-                            <span>{prefs.privacy ? '숨긴 기록' : sessionName(s)}</span>
-                            <small className="veil-row-hint">다시 보기</small>
+                            <span>{prefs.privacy ? t.office.records.hidden : sessionName(s)}</span>
+                            <small className="veil-row-hint">{t.office.veiled.again}</small>
                           </button>
                         ))}
                       </div>
@@ -231,7 +230,7 @@ export function OfficeWorkspace({
                         className="button subtle"
                         onClick={() => onVeil(model.hiddenSessionIds, false)}
                       >
-                        모두 다시 보기
+                        {t.office.veiled.all}
                       </button>
                     </div>
                   </details>
@@ -240,11 +239,11 @@ export function OfficeWorkspace({
                   <details className="background-records">
                     <summary>
                       <Layers size={13} />
-                      보조·자동 작업 기록 <b>{hidden.length}</b>
+                      {t.office.records.summary} <b>{hidden.length}</b>
                       <ChevronUp size={13} className="chev" />
                     </summary>
                     <div className="background-pop">
-                      <p>이전 작업의 보조 동료와 내부 실행은 여기에 접어 둬요.</p>
+                      <p>{t.office.records.body}</p>
                       <div>
                         {[...hidden]
                           .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -252,9 +251,11 @@ export function OfficeWorkspace({
                           .map((s) => (
                             <button key={s.id} onClick={() => onSelect(s.id)}>
                               <span className={`face face-${s.provider}`}>
-                                <Sprite provider={s.provider} mood="idle" size={22} />
+                                <Sprite session={s} provider={s.provider} mood="idle" size={22} />
                               </span>
-                              <span>{prefs.privacy ? '숨긴 기록' : sessionName(s)}</span>
+                              <span>
+                                {prefs.privacy ? t.office.records.hidden : sessionName(s)}
+                              </span>
                               <small>
                                 {sessionScopeLabel(s)} · {ago(s.updatedAt)}
                               </small>
@@ -266,7 +267,7 @@ export function OfficeWorkspace({
                           className="button subtle"
                           onClick={() => setHistoryLimit((n) => n + 20)}
                         >
-                          기록 더 보기
+                          {t.office.records.more}
                         </button>
                       )}
                     </div>
@@ -290,8 +291,8 @@ export function OfficeWorkspace({
                 <div className="room-intro">
                   <Archive size={18} />
                   <div>
-                    <h2>보관 공간</h2>
-                    <p>오래된 기록을 모아두었어요. 원본과 메모는 그대로 남아 있어요.</p>
+                    <h2>{t.office.archive.title}</h2>
+                    <p>{t.office.archive.body}</p>
                   </div>
                 </div>
                 <div className="room-sessions">
@@ -299,22 +300,22 @@ export function OfficeWorkspace({
                     <article key={s.id} className="room-session">
                       <button className="room-session-main" onClick={() => onSelect(s.id)}>
                         <div className={`face face-lg face-${s.provider}`}>
-                          <Sprite provider={s.provider} mood="leave" size={48} />
+                          <Sprite session={s} provider={s.provider} mood="leave" size={48} />
                         </div>
                         <div>
                           <span className="provider-label">{PROVIDERS[s.provider].name}</span>
-                          <h3>{prefs.privacy ? '숨긴 세션' : sessionName(s)}</h3>
-                          <p>{prefs.privacy ? '프로젝트 숨김' : zoneLabel(s)}</p>
+                          <h3>{prefs.privacy ? t.office.archive.hiddenSession : sessionName(s)}</h3>
+                          <p>{prefs.privacy ? t.office.archive.hiddenProject : zoneLabel(s)}</p>
                           <small>
                             <Clock3 size={11} />
-                            {ago(s.updatedAt)} 활동 · {s.openCount || 0}번 열어봄
+                            {t.office.archive.activity(ago(s.updatedAt), s.openCount || 0)}
                           </small>
                         </div>
                       </button>
                       <div className="room-session-bottom">
-                        <span>{s.archived ? '직접 보관함' : '오래된 기록'}</span>
+                        <span>{s.archived ? t.office.archive.byYou : t.office.archive.aged}</span>
                         <button onClick={() => bring(s.id)}>
-                          사무실로 데려오기 <ArrowUpRight size={13} />
+                          {t.office.archive.bringBack} <ArrowUpRight size={13} />
                         </button>
                       </div>
                     </article>
@@ -325,8 +326,8 @@ export function OfficeWorkspace({
             {!rows.length && (
               <div className="empty-state room-empty">
                 {zone === 'waiting' ? <Armchair size={30} /> : <Archive size={30} />}
-                <h3>이 공간은 비어 있어요</h3>
-                <p>동료들의 활동에 맞춰 자연스럽게 채워집니다.</p>
+                <h3>{t.office.emptyRoom.title}</h3>
+                <p>{t.office.emptyRoom.body}</p>
               </div>
             )}
           </section>

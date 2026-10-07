@@ -2,6 +2,7 @@ import { open } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
+import { m } from '../src/shared/i18n/index.js';
 import {
   cleanInput,
   defaultTerminalDeps,
@@ -151,8 +152,6 @@ export async function queueToCodex(
   );
   if (!out.includes(`for thread ${thread.threadId}`))
     // The command succeeded, so the message is likely queued; never invite a blind resend.
-    throw new TerminalInputError(
-      'Codex 응답을 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
-    );
-  return 'Codex 세션에 전달했어요';
+    throw new TerminalInputError(m().desktop.terminal.codexNoReply);
+  return m().desktop.terminal.codexQueued;
 }

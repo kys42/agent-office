@@ -1,0 +1,30 @@
+import type { Messages } from '../en';
+
+export const usage: Messages['usage'] = {
+  title: '사용량과 잔여 한도',
+  close: '사용량 닫기',
+  demo: {
+    source: '합성 데모',
+    message: '데모 수치 · 실제 계정을 조회하지 않아요.',
+    fiveHours: '5시간',
+    week: '일주일',
+  },
+  privacy: '화면 내용 숨기기가 켜져 있어요.',
+  intro: '동료들이 함께 쓰는 계정의 여유를 확인해요.',
+  introDetail: '세션별 작업량과 비용은 동료를 눌러 볼 수 있어요.',
+  checking: '확인하는 중…',
+  recheck: '한도 새로 확인',
+  loading: '연결된 계정에서 한도를 읽고 있어요.',
+  error: '사용량에 연결하지 못했어요. 다시 확인해 주세요.',
+  empty: '연결과 설정에서 공급자를 켜 주세요.',
+  account: '계정 전체',
+  failed: '조회 실패',
+  unavailable: '정보 없음',
+  expired: '재확인 필요',
+  left: (percent) => `${percent}% 남음`,
+  remainingAria: (provider, window) => `${provider} ${window} 잔여량`,
+  resets: (when) => `${when} 갱신 예정`,
+  noReset: '갱신 시각 미제공',
+  checked: (ago) => `${ago} 확인`,
+  fine: '버튼을 눌렀을 때만 조회해요. 1분 안에 다시 열면 최근 조회를 사용해요. 조회 실패를 잔여량 0으로 해석하지 않아요.',
+};

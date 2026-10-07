@@ -13,6 +13,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
+import { syncLocale } from '../server/locale.js';
 import type {
   CardTarget,
   DockAction,
@@ -20,8 +21,10 @@ import type {
   JumpResult,
   Provider,
   Session,
+  Snapshot,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
+import { m, setLocale } from '../src/shared/i18n/index.js';
 import {
   cardBounds,
   clampInto,
@@ -66,8 +69,14 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => showMain());
   app.whenReady().then(() => {
+    // The collector worker inherits this: `auto` then follows the OS language list, not just LANG.
+    process.env.AGENT_OFFICE_SYSTEM_LANGUAGES ??= app.getPreferredSystemLanguages().join(',');
+    // System language until the first snapshot brings the saved preference.
+    syncLocale(undefined);
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
-    bridge.on('snapshot', (s) => {
+    bridge.on('snapshot', (s: Snapshot) => {
+      // Follow the language the collector actually resolved, so tray and windows always agree.
+      if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
       for (const w of [main, dock, card])
         if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
     });
@@ -80,23 +89,7 @@ else {
     );
     icon.setTemplateImage(true);
     tray = new Tray(icon);
-    tray.setToolTip('Agent Office · 우리 사무실');
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: '사무실 열기', click: () => showMain() },
-        { label: '데스크 펫', click: () => showDock('pet') },
-        { label: '책상 줄 펼치기', click: () => showDock('row') },
-        { label: '바닥 책상 펼치기', click: () => showDock('floor') },
-        { type: 'separator' },
-        {
-          label: '종료',
-          click: () => {
-            quitting = true;
-            app.quit();
-          },
-        },
-      ]),
-    );
+    buildTray();
     tray.on('click', () => showMain());
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
@@ -105,6 +98,28 @@ else {
     screen.on('display-removed', reseat);
     screen.on('display-metrics-changed', reseat);
   });
+}
+/** Tray labels are rebuilt whenever the office language changes. */
+function buildTray() {
+  if (!tray || tray.isDestroyed()) return;
+  const t = m().desktop.tray;
+  tray.setToolTip(t.tooltip);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: t.open, click: () => showMain() },
+      { label: t.pet, click: () => showDock('pet') },
+      { label: t.row, click: () => showDock('row') },
+      { label: t.floor, click: () => showDock('floor') },
+      { type: 'separator' },
+      {
+        label: t.quit,
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
 }
 function secure(w: BrowserWindow) {
   w.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -333,20 +348,20 @@ function trusted(e: Electron.IpcMainInvokeEvent) {
     ![main?.webContents, dock?.webContents, card?.webContents].includes(e.sender) ||
     e.senderFrame !== e.sender.mainFrame
   )
-    throw new Error('허용되지 않은 창입니다.');
+    throw new Error(m().desktop.untrustedWindow);
 }
 function setupIPC() {
   ipcMain.handle('office:open-artifact', async (e, url) => {
     trusted(e);
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;
-    if (!artifact) throw new Error('지원하지 않는 결과 링크입니다.');
+    if (!artifact) throw new Error(m().desktop.unsupportedLink);
     await shell.openExternal(artifact.url);
   });
-  ipcMain.handle('office:call', async (e, m, args) => {
+  ipcMain.handle('office:call', async (e, method, args) => {
     trusted(e);
-    if (typeof m !== 'string' || !Array.isArray(args) || args.length > 3)
-      throw new Error('잘못된 요청');
-    return bridge.call(m, args);
+    if (typeof method !== 'string' || !Array.isArray(args) || args.length > 3)
+      throw new Error(m().desktop.badRequest);
+    return bridge.call(method, args);
   });
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
@@ -365,18 +380,18 @@ function setupIPC() {
   });
   ipcMain.handle('office:dock', (e, action: DockAction) => {
     trusted(e);
-    if (!dock || e.sender !== dock.webContents) throw new Error('허용되지 않은 창입니다.');
+    if (!dock || e.sender !== dock.webContents) throw new Error(m().desktop.untrustedWindow);
     if (action === 'pet' || action === 'row' || action === 'floor') setDockMode(action);
     else if (action === 'drag-start') startDrag();
     else if (action === 'drag-end') stopDrag(true);
     else if (action === 'solid') dock.setIgnoreMouseEvents(false);
     else if (action === 'through') dock.setIgnoreMouseEvents(true, { forward: true });
-    else throw new Error('잘못된 요청');
+    else throw new Error(m().desktop.badRequest);
   });
   ipcMain.handle('office:card', (e, action, target, anchor) => {
     trusted(e);
     if (action === 'close') {
-      if (e.sender !== card?.webContents) throw new Error('허용되지 않은 창입니다.');
+      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
       return hideCard();
     }
     const valid =
@@ -385,14 +400,15 @@ function setupIPC() {
       target.id.length > 0 &&
       target.id.length <= 400 &&
       typeof target.news === 'boolean';
-    if (!valid) throw new Error('잘못된 요청');
+    if (!valid) throw new Error(m().desktop.badRequest);
     const chosen: CardTarget = { id: target.id, news: target.news };
     if (action === 'expand') {
-      if (e.sender !== card?.webContents) throw new Error('허용되지 않은 창입니다.');
+      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
       hideCard();
       return showMain(chosen.id);
     }
-    if (action !== 'open' || e.sender !== dock?.webContents) throw new Error('잘못된 요청');
+    if (action !== 'open' || e.sender !== dock?.webContents)
+      throw new Error(m().desktop.badRequest);
     if (
       !anchor ||
       !finite(anchor.x) ||
@@ -402,7 +418,7 @@ function setupIPC() {
       anchor.width < 0 ||
       anchor.height < 0
     )
-      throw new Error('잘못된 요청');
+      throw new Error(m().desktop.badRequest);
     showCard(chosen, {
       x: Math.round(anchor.x),
       y: Math.round(anchor.y),
@@ -447,7 +463,7 @@ function setupIPC() {
   ipcMain.handle('office:terminals', async (e, ids) => {
     trusted(e);
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
-      throw new Error('잘못된 요청');
+      throw new Error(m().desktop.badRequest);
     const entries = await Promise.all(
       [...new Set(ids as string[])].map(async (id) => {
         try {
@@ -475,7 +491,7 @@ function setupIPC() {
       return { action: 'focused', text };
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
-      throw new Error(`${hostName(terminal.host)} 터미널로 이동하지 못했어요.`);
+      throw new Error(m().desktop.terminal.jumpFailed(hostName(terminal.host)));
     }
   });
   // The opt-in lives in the desktop profile, not in the shared preferences, so the web preview
@@ -485,14 +501,14 @@ function setupIPC() {
     if (typeof enable !== 'boolean') return terminalSendEnabled();
     if (enable) {
       const owner = BrowserWindow.fromWebContents(e.sender);
+      const t = m().desktop.terminal.confirm;
       const options: Electron.MessageBoxOptions = {
         type: 'warning',
-        buttons: ['켜기', '취소'],
+        buttons: [t.enable, t.cancel],
         defaultId: 1,
         cancelId: 1,
-        message: '터미널로 보내기를 켤까요?',
-        detail:
-          'Orca·tmux에서 쉬고 있는 Claude Code 세션에는 업무 카드에서 쓴 글을 그 터미널에 직접 입력하고, 실행 중인 Codex CLI 세션에는 Codex 대기열로 전달해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
+        message: t.message,
+        detail: t.detail,
       };
       const { response } = owner
         ? await dialog.showMessageBox(owner, options)
@@ -504,8 +520,8 @@ function setupIPC() {
   });
   ipcMain.handle('office:send', async (e, id, text) => {
     trusted(e);
-    if (typeof text !== 'string' || text.length > 20000) throw new Error('잘못된 요청');
-    if (!(await terminalSendEnabled())) throw new Error('설정에서 ‘터미널로 보내기’를 켜 주세요.');
+    if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+    if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
     const thread = await codex(id, true);
     if (thread)
       try {
@@ -513,22 +529,17 @@ function setupIPC() {
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
         if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-          throw new Error('Codex CLI를 찾지 못해 보내지 않았어요.');
-        throw new Error(
-          'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
-        );
+          throw new Error(m().desktop.terminal.codexMissing);
+        throw new Error(m().desktop.terminal.codexUnconfirmed);
       }
     const terminal = await live(id, true);
-    if (!terminal)
-      throw new Error('지금 보낼 수 있는 Orca·tmux 터미널이나 Codex 세션을 찾지 못했어요.');
+    if (!terminal) throw new Error(m().desktop.terminal.noTarget);
     try {
       return await sendToTerminal(terminal, text);
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
       // The text may already be in the terminal; never invite a blind resend.
-      throw new Error(
-        `${hostName(terminal.host)}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
-      );
+      throw new Error(m().desktop.terminal.unconfirmed(hostName(terminal.host)));
     } finally {
       forgetTerminal(terminal.process.sessionId);
     }
@@ -536,7 +547,7 @@ function setupIPC() {
   ipcMain.handle('office:export', async (e, name, content) => {
     trusted(e);
     if (typeof content !== 'string' || content.length > 30000 || typeof name !== 'string')
-      throw new Error('잘못된 파일 요청');
+      throw new Error(m().desktop.badFile);
     const win = BrowserWindow.fromWebContents(e.sender)!;
     const fromCard = win === card;
     if (fromCard) cardDialogs++;
@@ -569,14 +580,14 @@ async function terminalSendEnabled() {
 async function resume(s: Session): Promise<JumpResult> {
   if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {
     await shell.openExternal(`codex://threads/${s.nativeId}`);
-    return { action: 'opened', text: 'Codex에서 세션 열기를 요청했어요' };
+    return { action: 'opened', text: m().desktop.codexOpened };
   }
   return {
     action: 'copy',
     text:
       s.provider === 'claude'
         ? `claude --resume ${shellQuote(s.nativeId)}`
-        : `OpenClaw 세션: ${s.nativeId}`,
+        : m().desktop.openclawSession(s.nativeId),
   };
 }
 app.on('activate', () => showMain());

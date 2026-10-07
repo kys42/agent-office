@@ -3,7 +3,7 @@ import { GitPullRequest, CircleDot, ArrowUpRight, LoaderCircle, ChevronDown } fr
 import type { Artifact } from '../shared/types';
 import { parseArtifact } from '../shared/office';
 import { api, isDesktop } from '../lib/api';
-const labels = { open: '열림', closed: '닫힘', merged: '병합됨', draft: '초안' };
+import { useI18n } from '../lib/i18n';
 export function ArtifactCards({
   id,
   urls,
@@ -17,6 +17,7 @@ export function ArtifactCards({
   privacy: boolean;
   notify: (s: string) => void;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -42,22 +43,22 @@ export function ArtifactCards({
   }, [id, key, demo, privacy]);
   if (privacy || !items.length) return null;
   return (
-    <section className="artifact-tray" aria-label="연결된 PR과 이슈">
+    <section className="artifact-tray" aria-label={t.artifacts.label}>
       <div className="artifact-tray-title">
         <b>
-          연결된 작업 <span>{items.length}</span>
+          {t.artifacts.title} <span>{items.length}</span>
         </b>
         {loading ? (
           <span>
-            <LoaderCircle className="spin" size={12} /> GitHub 확인 중
+            <LoaderCircle className="spin" size={12} /> {t.artifacts.checking}
           </span>
         ) : (
           <span>
             {demo
-              ? '예시 링크'
+              ? t.artifacts.sample
               : items.some((x) => x.verifiedAt)
-                ? 'GitHub 상태 확인됨'
-                : '대화에서 발견한 링크'}
+                ? t.artifacts.verified
+                : t.artifacts.found}
           </span>
         )}
       </div>
@@ -81,16 +82,16 @@ export function ArtifactCards({
             </span>
             <div>
               <span>
-                {a.kind === 'pull' ? 'PR' : '이슈'} #{a.number}
+                {a.kind === 'pull' ? t.artifacts.pull : t.artifacts.issue} #{a.number}
                 <i>·</i>
-                {a.state ? labels[a.state] : '상태 미확인'}
+                {a.state ? t.artifacts.state[a.state] : t.artifacts.stateUnknown}
               </span>
               <strong>
                 {a.title ||
                   (demo
                     ? a.kind === 'pull'
-                      ? '안정적인 좌석 배치와 대화 카드'
-                      : '새 기록이 와도 자리는 그대로'
+                      ? t.artifacts.demoPull
+                      : t.artifacts.demoIssue
                     : a.repo)}
               </strong>
               <small>{a.repo}</small>
@@ -101,7 +102,7 @@ export function ArtifactCards({
       </div>
       {items.length > 2 && (
         <button className="artifact-more" onClick={() => setExpanded(!expanded)}>
-          {expanded ? '접기' : `${items.length - 2}개 더 보기`}
+          {expanded ? t.artifacts.showLess : t.artifacts.more(items.length - 2)}
           <ChevronDown size={13} />
         </button>
       )}

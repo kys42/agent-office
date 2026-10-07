@@ -52,6 +52,7 @@ import { HelperDesk, HelperStack } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
+import { useI18n } from '../lib/i18n';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -101,6 +102,7 @@ export function DeskRow({
   onRefresh: () => void;
   refreshing?: boolean;
 }) {
+  const { t, locale } = useI18n();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
   const top = floor ? FLOOR_TOP : ROW_TOP;
@@ -147,7 +149,7 @@ export function DeskRow({
   const signature = layoutSignature(sessions);
   const layout = useMemo(
     () => layoutRow(sessions, floor ? { zoneGap: FLOOR_ZONE_GAP } : {}),
-    [signature, floor],
+    [signature, floor, locale],
   );
   // Track what is in view, so each arrow knows who is hidden on its side.
   useEffect(() => {
@@ -284,13 +286,13 @@ export function DeskRow({
                     title={
                       privacy
                         ? undefined
-                        : `${zone.name} · ${zone.stations.length}명${zone.helpers.length ? ' + 보조' : ''}${zone.custom ? ` · 직접 나눈 구역 (${zone.custom.join(', ')})` : ''}`
+                        : `${zone.name} · ${t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}${zone.custom ? ` · ${t.desk.customZone(zone.custom.join(', '))}` : ''}`
                     }
                   >
                     <i className="zone-flag-pole" data-solid />
                     <span className="zone-flag-cloth" data-solid>
                       <b>{String(index + 1).padStart(2, '0')}</b>
-                      <span>{privacy ? '프로젝트' : zone.name}</span>
+                      <span>{privacy ? t.desk.project : zone.name}</span>
                     </span>
                     <i className="zone-flag-base" data-solid />
                   </div>
@@ -309,14 +311,14 @@ export function DeskRow({
                         privacy
                           ? undefined
                           : zone.custom
-                            ? `${zone.name} · 직접 나눈 구역 (${zone.custom.join(', ')})`
+                            ? `${zone.name} · ${t.desk.customZone(zone.custom.join(', '))}`
                             : zone.name
                       }
                     >
                       <span>{String(index + 1).padStart(2, '0')}</span>
-                      <b>{privacy ? '프로젝트' : zone.name}</b>
+                      <b>{privacy ? t.desk.project : zone.name}</b>
                       <small>
-                        {zone.stations.length}명{zone.helpers.length ? ' + 보조' : ''}
+                        {t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}
                       </small>
                     </div>
                   </>
@@ -394,12 +396,12 @@ export function DeskRow({
                         data-solid
                         data-session-id={s.id}
                         data-seat={s.officeSeat}
-                        aria-label={`${label.name} 업무 보기`}
+                        aria-label={t.desk.openWork(label.name)}
                         title={label.detail}
                         onClick={() => open(s.id)}
                       >
                         <FocusEffects level={focus} />
-                        <Sprite provider={s.provider} mood={pose.mood} size={80} />
+                        <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
                         {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                       </button>
                       {!v.needsPerson && (
@@ -411,18 +413,18 @@ export function DeskRow({
                       <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
                       <DeskActionButton
                         className="card-button"
-                        label={`${label.name} 업무 카드 열기`}
-                        title="팝업으로 보기"
-                        hint="이 자리에서 업무 카드를 열어요. 큰 사무실로는 카드의 전체 모드로 가요."
+                        label={t.desk.row.openCard(label.name)}
+                        title={t.desk.row.cardTitle}
+                        hint={t.desk.row.cardHint}
                         icon={<PanelRightOpen size={13} strokeWidth={2.4} />}
                         onClick={(el) => void open(s.id, el)}
                       />
                       {deskTarget?.canFocus && api.jump && (
                         <DeskActionButton
                           className="jump-button"
-                          label={`${label.name} 터미널로 이동`}
-                          title={`${deskTarget.kind === 'orca' ? 'Orca' : 'tmux'}로 이동`}
-                          hint={`이 동료가 실행 중인 ${targetLine(deskTarget, privacy)} 터미널을 앞으로 가져와요.`}
+                          label={t.terminal.jumpToTerminal(label.name)}
+                          title={t.terminal.jumpTo(deskTarget.kind === 'orca' ? 'Orca' : 'tmux')}
+                          hint={t.terminal.jumpHint(targetLine(deskTarget, privacy))}
                           icon={<Terminal size={13} strokeWidth={2.4} />}
                           onClick={() => void jump(s.id)}
                         />
@@ -441,7 +443,7 @@ export function DeskRow({
                               ? undefined
                               : `${label.name} · ${
                                   pose.working && s.resident && s.resident.activeCount > 1
-                                    ? `${s.resident.activeCount}개 작업 중`
+                                    ? t.desk.runningTasks(s.resident.activeCount)
                                     : MOODS[s.status].label
                                 }`
                           }
@@ -461,7 +463,7 @@ export function DeskRow({
                             onClick={() => open(s.id)}
                           >
                             <GitBranch size={9} />
-                            <span>{privacy ? '내용 숨김' : branch.label}</span>
+                            <span>{privacy ? t.desk.hidden : branch.label}</span>
                           </button>
                           <button
                             className="desk-name"
@@ -478,11 +480,11 @@ export function DeskRow({
                               <span>
                                 {pose.working
                                   ? s.resident && s.resident.activeCount > 1
-                                    ? `${s.resident.activeCount}개 작업 중`
-                                    : '일하는 중'
+                                    ? t.desk.runningTasks(s.resident.activeCount)
+                                    : t.desk.working
                                   : MOODS[s.status].label}
                               </span>
-                              {speech.unread > 0 && <em>소식 {speech.unread}</em>}
+                              {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
                             </small>
                           </button>
                         </>
@@ -505,7 +507,7 @@ export function DeskRow({
                             reply={
                               canReply
                                 ? {
-                                    title: `바로 답장 · ${targetLine(replyTarget!, false)}`,
+                                    title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
                                     open: replying?.station === s.id,
                                     onClick: () =>
                                       setReplying(
@@ -595,7 +597,7 @@ export function DeskRow({
         </div>
         {!model.seats.length && (
           <div className="row-empty" data-solid>
-            {status ?? '동료들의 기록을 기다리고 있어요.'}
+            {status ?? t.desk.row.empty}
           </div>
         )}
       </div>
@@ -603,8 +605,8 @@ export function DeskRow({
         <button
           className={`desk-row-arrow arrow-left ${calling(hiddenLeft) ? 'has-call' : ''}`}
           data-solid
-          aria-label={`왼쪽 동료 ${hiddenLeft.length}명 보기`}
-          title="이전 책상 · ←"
+          aria-label={t.desk.row.left(hiddenLeft.length)}
+          title={t.desk.row.leftTitle}
           onClick={() => page(-1)}
         >
           <ChevronLeft size={22} strokeWidth={2.4} />
@@ -615,8 +617,8 @@ export function DeskRow({
         <button
           className={`desk-row-arrow arrow-right ${calling(hiddenRight) ? 'has-call' : ''}`}
           data-solid
-          aria-label={`오른쪽 동료 ${hiddenRight.length}명 보기`}
-          title="다음 책상 · →"
+          aria-label={t.desk.row.right(hiddenRight.length)}
+          title={t.desk.row.rightTitle}
           onClick={() => page(1)}
         >
           <ChevronRight size={22} strokeWidth={2.4} />
@@ -626,32 +628,32 @@ export function DeskRow({
       <div className="desk-row-tools" data-solid>
         <span
           className="desk-row-summary"
-          title={`${layout.zones.length}개 구역 · 동료 ${model.seats.length}명`}
+          title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
         >
           <span className="live-dot" />
-          {model.seats.length}명
-          {model.counts.attention > 0 && <em>기다려요 {model.counts.attention}</em>}
+          {t.desk.row.seats(model.seats.length)}
+          {model.counts.attention > 0 && <em>{t.desk.row.waiting(model.counts.attention)}</em>}
         </span>
         {model.veiled.length > 0 && (
           <button
             className="desk-row-veiled"
-            title={`가린 동료 ${model.veiled.length}명 · 누르면 모두 다시 보여요\n다음 대화가 오면 저절로 돌아와요`}
+            title={t.desk.row.veiledTitle(model.veiled.length)}
             onClick={() => onVeil(model.hiddenSessionIds, false)}
           >
             <EyeOff size={11} />
-            가림 {model.veiled.length}
+            {t.desk.row.veiled(model.veiled.length)}
           </button>
         )}
         {lounge > 0 && (
-          <span className="desk-row-lounge" title="대기 라운지 · 퇴근한 동료">
+          <span className="desk-row-lounge" title={t.desk.row.lounge}>
             <Coffee size={11} />
             {lounge}
           </span>
         )}
         <button
           className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
-          aria-label="새로고침"
-          title="새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)"
+          aria-label={t.desk.row.refresh}
+          title={t.desk.row.refreshTitle}
           disabled={refreshing}
           onClick={onRefresh}
         >
@@ -659,36 +661,32 @@ export function DeskRow({
         </button>
         <button
           className="icon-btn"
-          aria-label={floor ? '사무실 줄로 보기' : '바닥 책상으로 보기'}
-          title={
-            floor
-              ? '사무실 줄로 · 구역 바닥과 이름표'
-              : '바닥 책상으로 · 화면 맨 아래에 책상만, 구역은 깃발'
-          }
+          aria-label={floor ? t.desk.row.toRow : t.desk.row.toFloor}
+          title={floor ? t.desk.row.toRowTitle : t.desk.row.toFloorTitle}
           onClick={onSwitch}
         >
           {floor ? <Building2 size={14} /> : <Flag size={14} />}
         </button>
         <button
           className="icon-btn"
-          aria-label="사무실 펼치기"
-          title="큰 사무실 열기"
+          aria-label={t.desk.row.expand}
+          title={t.desk.row.expandTitle}
           onClick={() => api.window('main')}
         >
           <Expand size={14} />
         </button>
         <button
           className="icon-btn"
-          aria-label="책상 줄 접기"
-          title="펫으로 접기 · Esc"
+          aria-label={t.desk.row.collapse}
+          title={t.desk.row.collapseTitle}
           onClick={onCollapse}
         >
           <ChevronDown size={16} />
         </button>
         <button
           className="icon-btn"
-          aria-label="데스크 펫 숨기기"
-          title="숨기기 · 트레이에서 다시 열 수 있어요"
+          aria-label={t.desk.row.hide}
+          title={t.desk.row.hideTitle}
           onClick={() => api.window('hide')}
         >
           <X size={14} />

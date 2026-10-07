@@ -1,0 +1,723 @@
+{
+  "schemaVersion": 1,
+  "image": "/generated/slime-ai-atlas.png",
+  "palettes": {
+    "leaf": "/generated/slime-ai-atlas-leaf.png",
+    "sky": "/generated/slime-ai-atlas-sky.png",
+    "coral": "/generated/slime-ai-atlas-coral.png",
+    "honey": "/generated/slime-ai-atlas-honey.png",
+    "violet": "/generated/slime-ai-atlas-violet.png",
+    "mint": "/generated/slime-ai-atlas-mint.png",
+    "berry": "/generated/slime-ai-atlas-berry.png",
+    "apricot": "/generated/slime-ai-atlas-apricot.png"
+  },
+  "source": {
+    "image": "assets/generated/slime-master-sheet-v1-alpha.png",
+    "width": 1254,
+    "height": 1254,
+    "grid": {
+      "columns": 4,
+      "rows": 4,
+      "splitRule": "floor(index * dimension / 4) to floor((index + 1) * dimension / 4)"
+    },
+    "alphaThreshold": 8
+  },
+  "atlas": {
+    "width": 2048,
+    "height": 128,
+    "layout": "horizontal",
+    "frameWidth": 128,
+    "frameHeight": 128,
+    "frameCount": 16,
+    "frameOrder": [
+      "idle_a",
+      "idle_b",
+      "blink",
+      "happy",
+      "anticipate",
+      "takeoff",
+      "airborne",
+      "land",
+      "cheer_a",
+      "cheer_b",
+      "cheer_c",
+      "neutral",
+      "sad",
+      "droop",
+      "sleep_a",
+      "sleep_b"
+    ]
+  },
+  "alignment": {
+    "globalScale": 0.451064,
+    "groundY": 116,
+    "defaultAnchor": {
+      "x": 0.5,
+      "y": 0.90625
+    },
+    "elevatedFrames": {
+      "takeoff": 4,
+      "airborne": 14,
+      "cheer_b": 8,
+      "cheer_c": 16
+    },
+    "note": "All poses use one global nearest-neighbor scale. Grounded poses end at groundY; takeoff, airborne, cheer_b, and cheer_c retain a small authored lift. Add world-space arcs in the renderer for larger hops."
+  },
+  "animations": {
+    "idle": [
+      "idle_a",
+      "idle_b",
+      "blink",
+      "idle_b"
+    ],
+    "hop": [
+      "anticipate",
+      "takeoff",
+      "airborne",
+      "land"
+    ],
+    "happy": [
+      "happy",
+      "cheer_a",
+      "cheer_b",
+      "cheer_c",
+      "cheer_b",
+      "happy"
+    ],
+    "sad": [
+      "sad",
+      "droop",
+      "sad"
+    ],
+    "sleep": [
+      "sleep_a",
+      "sleep_b"
+    ]
+  },
+  "frames": {
+    "idle_a": {
+      "index": 0,
+      "duration": 460,
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 18,
+        "y": 32,
+        "width": 92,
+        "height": 84
+      },
+      "badge": {
+        "x": 64,
+        "y": 89,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 0,
+        "y": 0,
+        "width": 313,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 57,
+        "y": 91,
+        "width": 205,
+        "height": 186,
+        "pixelCount": 29809
+      }
+    },
+    "idle_b": {
+      "index": 1,
+      "duration": 420,
+      "frame": {
+        "x": 128,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 17,
+        "y": 27,
+        "width": 93,
+        "height": 89
+      },
+      "badge": {
+        "x": 63,
+        "y": 96,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 313,
+        "y": 0,
+        "width": 314,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 368,
+        "y": 70,
+        "width": 206,
+        "height": 198,
+        "pixelCount": 30990
+      }
+    },
+    "blink": {
+      "index": 2,
+      "duration": 110,
+      "frame": {
+        "x": 256,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 17,
+        "y": 32,
+        "width": 93,
+        "height": 84
+      },
+      "badge": {
+        "x": 64,
+        "y": 97,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 627,
+        "y": 0,
+        "width": 313,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 679,
+        "y": 91,
+        "width": 206,
+        "height": 187,
+        "pixelCount": 30203
+      }
+    },
+    "happy": {
+      "index": 3,
+      "duration": 240,
+      "frame": {
+        "x": 384,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 18,
+        "y": 27,
+        "width": 92,
+        "height": 89
+      },
+      "badge": {
+        "x": 63,
+        "y": 96,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 940,
+        "y": 0,
+        "width": 314,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 994,
+        "y": 80,
+        "width": 205,
+        "height": 197,
+        "pixelCount": 31334
+      }
+    },
+    "anticipate": {
+      "index": 4,
+      "duration": 110,
+      "frame": {
+        "x": 512,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 15,
+        "y": 43,
+        "width": 98,
+        "height": 73
+      },
+      "badge": {
+        "x": 64,
+        "y": 100,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 0,
+        "y": 313,
+        "width": 313,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 48,
+        "y": 427,
+        "width": 218,
+        "height": 162,
+        "pixelCount": 27429
+      }
+    },
+    "takeoff": {
+      "index": 5,
+      "duration": 90,
+      "frame": {
+        "x": 640,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 22,
+        "y": 6,
+        "width": 84,
+        "height": 106
+      },
+      "badge": {
+        "x": 64,
+        "y": 88,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 4,
+      "sourceCell": {
+        "x": 313,
+        "y": 313,
+        "width": 314,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 377,
+        "y": 354,
+        "width": 186,
+        "height": 235,
+        "pixelCount": 32132
+      }
+    },
+    "airborne": {
+      "index": 6,
+      "duration": 170,
+      "frame": {
+        "x": 768,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 14,
+        "y": 13,
+        "width": 100,
+        "height": 89
+      },
+      "badge": {
+        "x": 64,
+        "y": 77,
+        "detected": false
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 14,
+      "sourceCell": {
+        "x": 627,
+        "y": 313,
+        "width": 313,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 670,
+        "y": 363,
+        "width": 222,
+        "height": 198,
+        "pixelCount": 30596
+      }
+    },
+    "land": {
+      "index": 7,
+      "duration": 130,
+      "frame": {
+        "x": 896,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 8,
+        "y": 56,
+        "width": 111,
+        "height": 60
+      },
+      "badge": {
+        "x": 63,
+        "y": 103,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 940,
+        "y": 313,
+        "width": 314,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 974,
+        "y": 460,
+        "width": 245,
+        "height": 133,
+        "pixelCount": 25165
+      }
+    },
+    "cheer_a": {
+      "index": 8,
+      "duration": 110,
+      "frame": {
+        "x": 1024,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 18,
+        "y": 30,
+        "width": 92,
+        "height": 86
+      },
+      "badge": {
+        "x": 64,
+        "y": 97,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 0,
+        "y": 627,
+        "width": 313,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 57,
+        "y": 691,
+        "width": 205,
+        "height": 191,
+        "pixelCount": 30508
+      }
+    },
+    "cheer_b": {
+      "index": 9,
+      "duration": 120,
+      "frame": {
+        "x": 1152,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 16,
+        "y": 17,
+        "width": 96,
+        "height": 91
+      },
+      "badge": {
+        "x": 64,
+        "y": 86,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 8,
+      "sourceCell": {
+        "x": 313,
+        "y": 627,
+        "width": 314,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 364,
+        "y": 673,
+        "width": 212,
+        "height": 202,
+        "pixelCount": 31753
+      }
+    },
+    "cheer_c": {
+      "index": 10,
+      "duration": 150,
+      "frame": {
+        "x": 1280,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 16,
+        "y": 8,
+        "width": 96,
+        "height": 92
+      },
+      "badge": {
+        "x": 64,
+        "y": 75,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 16,
+      "sourceCell": {
+        "x": 627,
+        "y": 627,
+        "width": 313,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 674,
+        "y": 666,
+        "width": 212,
+        "height": 204,
+        "pixelCount": 32407
+      }
+    },
+    "neutral": {
+      "index": 11,
+      "duration": 210,
+      "frame": {
+        "x": 1408,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 15,
+        "y": 24,
+        "width": 97,
+        "height": 92
+      },
+      "badge": {
+        "x": 63,
+        "y": 88,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 940,
+        "y": 627,
+        "width": 314,
+        "height": 313
+      },
+      "sourceBounds": {
+        "x": 989,
+        "y": 680,
+        "width": 214,
+        "height": 204,
+        "pixelCount": 29277
+      }
+    },
+    "sad": {
+      "index": 12,
+      "duration": 300,
+      "frame": {
+        "x": 1536,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 18,
+        "y": 28,
+        "width": 91,
+        "height": 88
+      },
+      "badge": {
+        "x": 63,
+        "y": 86,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 0,
+        "y": 940,
+        "width": 313,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 53,
+        "y": 997,
+        "width": 202,
+        "height": 194,
+        "pixelCount": 30437
+      }
+    },
+    "droop": {
+      "index": 13,
+      "duration": 360,
+      "frame": {
+        "x": 1664,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 10,
+        "y": 45,
+        "width": 108,
+        "height": 71
+      },
+      "badge": {
+        "x": 62,
+        "y": 95,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 313,
+        "y": 940,
+        "width": 314,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 346,
+        "y": 1037,
+        "width": 239,
+        "height": 157,
+        "pixelCount": 27481
+      }
+    },
+    "sleep_a": {
+      "index": 14,
+      "duration": 620,
+      "frame": {
+        "x": 1792,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 18,
+        "y": 31,
+        "width": 91,
+        "height": 85
+      },
+      "badge": {
+        "x": 64,
+        "y": 98,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 627,
+        "y": 940,
+        "width": 313,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 679,
+        "y": 1005,
+        "width": 202,
+        "height": 189,
+        "pixelCount": 29813
+      }
+    },
+    "sleep_b": {
+      "index": 15,
+      "duration": 620,
+      "frame": {
+        "x": 1920,
+        "y": 0,
+        "width": 128,
+        "height": 128
+      },
+      "content": {
+        "x": 12,
+        "y": 55,
+        "width": 104,
+        "height": 61
+      },
+      "badge": {
+        "x": 63,
+        "y": 103,
+        "detected": true
+      },
+      "anchor": {
+        "x": 0.5,
+        "y": 0.90625
+      },
+      "lift": 0,
+      "sourceCell": {
+        "x": 940,
+        "y": 940,
+        "width": 314,
+        "height": 314
+      },
+      "sourceBounds": {
+        "x": 978,
+        "y": 1059,
+        "width": 231,
+        "height": 135,
+        "pixelCount": 23760
+      }
+    }
+  }
+}

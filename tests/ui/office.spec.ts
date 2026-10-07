@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 
 test('Public progress leads office, roster and inspector while tool names stay secondary', async ({

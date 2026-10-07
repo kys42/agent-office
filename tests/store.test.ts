@@ -5,6 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { OfficeStore } from '../server/store.js';
 import { parseRecords } from '../server/adapters/normalize.js';
+import { setLocale } from '../src/shared/i18n/index.js';
+// These tests assert the original Korean copy: pin the language so results never depend on the
+// machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
+process.env.AGENT_OFFICE_LOCALE = 'ko';
+setLocale('ko');
 async function fixture(fn: (s: OfficeStore) => void | Promise<void>) {
   const d = await mkdtemp(path.join(os.tmpdir(), 'office-store-'));
   const s = new OfficeStore(d);

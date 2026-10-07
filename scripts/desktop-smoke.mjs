@@ -101,6 +101,15 @@ try {
   const d = await page.evaluate(() => window.office.detail('codex:codex-test'));
   assert.equal(d.alias, '네이티브 네모');
   assert.equal(d.notes, 'IPC 영속성 확인');
+  // The collector re-localizes its own copy with the renderer: switch to English and check, then
+  // pin Korean so the rest of the run doesn't depend on the machine's language.
+  const english = await page.evaluate(() => window.office.preferences({ locale: 'en' }));
+  assert.equal(english.preferences.locale, 'en');
+  await page.waitForFunction(() => document.documentElement.lang === 'en');
+  assert.ok(english.connectors.every((c) => !/[가-힣]/.test(c.message)));
+  const korean = await page.evaluate(() => window.office.preferences({ locale: 'ko' }));
+  assert.ok(korean.connectors.every((c) => /[가-힣]/.test(c.message)));
+  await page.waitForFunction(() => document.documentElement.lang === 'ko');
   const [dock] = await Promise.all([
     app.waitForEvent('window'),
     page.getByRole('button', { name: '데스크 펫', exact: true }).click(),
