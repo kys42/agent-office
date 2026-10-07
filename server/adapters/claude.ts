@@ -25,8 +25,9 @@ export async function claudeSubagentMetadata(sourcePath: string): Promise<Sideca
     const s = await stat(file);
     fingerprint = `${s.mtimeMs}:${s.size}`;
     size = s.size;
-  } catch {
-    /* no sidecar: remembered as missing until one appears */
+  } catch (e) {
+    // Only a real absence is remembered (until one appears); other failures retry next time.
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return null;
   }
   const cached = sidecarCache.get(file);
   if (cached?.fingerprint === fingerprint) {
@@ -41,7 +42,9 @@ export async function claudeSubagentMetadata(sourcePath: string): Promise<Sideca
       const meta = JSON.parse(await readFile(file, 'utf8'));
       value = { title: cleanTitle(meta.description), role: cleanTitle(meta.agentType) };
     } catch {
-      value = null;
+      // Unreadable or mid-write: not remembered, so the next pass reads it again.
+      sidecarCache.delete(file);
+      return null;
     }
   }
   sidecarCache.delete(file);

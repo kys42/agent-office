@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import {
   appendFile,
+  chmod,
   mkdir,
   mkdtemp,
   open,
@@ -169,6 +170,13 @@ test('Codex metadata is reused until the index or threads DB changes', async () 
     assert.notEqual(renamed, first);
     assert.equal(renamed.get('one')?.title, 'Renamed');
 
+    // An index that exists but cannot be read is retried, not remembered as empty.
+    resetCodexMetadataCache();
+    await chmod(index, 0o000);
+    assert.equal((await codexMetadata(dir)).get('one'), undefined);
+    await chmod(index, 0o644);
+    assert.equal((await codexMetadata(dir)).get('one')?.title, 'Renamed');
+
     const db = new DatabaseSync(path.join(dir, 'state_2.sqlite'));
     db.exec('CREATE TABLE threads(id TEXT,title TEXT,name TEXT,cwd TEXT,updated_at INTEGER)');
     db.prepare('INSERT INTO threads VALUES(?,?,?,?,?)').run('two', 't', 'From DB', '/w', 1);
@@ -220,6 +228,12 @@ test('Claude indexes and subagent sidecars are re-read only when they change', a
       title: '검토 작업',
       role: 'reviewer',
     });
+    // A sidecar that exists but fails to read is not remembered as absent.
+    await writeFile(sidecar, JSON.stringify({ description: '다른 작업', agentType: 'worker' }));
+    await chmod(sidecar, 0o000);
+    assert.equal(await claudeSubagentMetadata(source), null);
+    await chmod(sidecar, 0o644);
+    assert.deepEqual(await claudeSubagentMetadata(source), { title: '다른 작업', role: 'worker' });
   } finally {
     resetClaudeMetadataCache();
     await rm(dir, { recursive: true, force: true });

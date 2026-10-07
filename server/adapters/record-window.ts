@@ -19,6 +19,8 @@ interface Entry {
   ino: number;
   /** End of the last complete line read; appends resume here. */
   consumedThrough: number;
+  /** File size at the last read: any shrink, even of an unfinished tail, is not an append. */
+  size: number;
   /** Records within the head window, fixed once the file outgrows the budget. */
   head: WindowRecord[];
   /** End of the last complete line within the head window. */
@@ -143,6 +145,7 @@ export class RecordWindowCache {
       dev: w.dev,
       ino: w.ino,
       consumedThrough: w.consumedThrough,
+      size: w.size,
       head,
       headEnd: w.headEnd,
       tail,
@@ -177,7 +180,9 @@ export class RecordWindowCache {
     if (!fh) return null;
     try {
       const { size, dev, ino } = await fh.stat();
-      if (dev !== entry.dev || ino !== entry.ino || size < entry.consumedThrough) return null;
+      // Shrinking only an unfinished tail keeps size ≥ consumedThrough, but readRecords' tail
+      // window would move back over records this entry already dropped.
+      if (dev !== entry.dev || ino !== entry.ino || size < entry.size) return null;
       const headSize = headWindowBytes(this.maxBytes);
       // A large jump costs no more through the bounded reader, which reads ≤ maxBytes.
       if (size - entry.consumedThrough > this.maxBytes - headSize) return null;
@@ -217,6 +222,7 @@ export class RecordWindowCache {
       const next: Entry = {
         ...entry,
         consumedThrough: read.consumedThrough,
+        size,
         headEnd,
         tail: entry.tail.slice(entry.tailFrom).concat(fresh),
         tailFrom: 0,

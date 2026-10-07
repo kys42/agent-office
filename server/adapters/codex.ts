@@ -58,8 +58,10 @@ export async function codexMetadata(root: string): Promise<Map<string, CodexMeta
         /* partial */
       }
     }
-  } catch {
-    /* optional */
+  } catch (e) {
+    /* optional; but an index that exists and failed to read is retried, not remembered */
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT' || !fingerprint.startsWith('-|'))
+      complete = false;
   }
   try {
     if (state) {

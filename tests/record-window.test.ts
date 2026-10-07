@@ -365,3 +365,31 @@ test('Long lines, large jumps and unfinished lines wider than the tail match the
     await rm(dir, { recursive: true });
   }
 });
+
+test('Shrinking only an unfinished tail of a large file is not treated as an append', async () => {
+  const dir = await temp();
+  try {
+    const file = path.join(dir, 'a.jsonl');
+    const maxBytes = 16 * 1024;
+    const cache = new RecordWindowCache({ maxBytes });
+    const unfinished = `{"type":"event","id":-1,"t":"${'z'.repeat(4000)}`;
+    await writeFile(file, lines(0, 200, 30) + unfinished);
+    const read = async (mode: 'append' | 'full') => {
+      const src = await source(file);
+      const got = await cache.read(src);
+      const want = await readRecords(src, maxBytes);
+      assert.deepEqual(got.records, want.records);
+      assert.equal(got.partial, want.partial);
+      assert.equal(got.mode, mode);
+    };
+    await read('full');
+    await read('append');
+    // Still past the last complete line, but the bounded tail window moves back.
+    await truncate(file, Buffer.byteLength(lines(0, 200, 30)) + 500);
+    await read('full');
+    await appendFile(file, '"}\n');
+    await read('append');
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
