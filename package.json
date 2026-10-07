@@ -6,7 +6,7 @@
   "type": "module",
   "description": "A small office for your real AI sessions",
   "author": "kys42",
-  "license": "UNLICENSED",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "dist-desktop/main.cjs",
   "engines": {
     "node": ">=24"
