@@ -490,7 +490,7 @@ test('Same branch shares a table and true children use accessible small desks', 
   await panel.getByRole('button', { name: '부모 작업 · 코코', exact: true }).click();
   await expect(panel.getByRole('heading', { name: /^코코/ })).toBeVisible();
 });
-test('New work effect is only triggered by a newly observed request, not bootstrap or polling', async ({
+test('New work effect plays for 15 seconds after a request arrives, never for bootstrap history, and survives re-publishing', async ({
   page,
 }) => {
   const fixture = demoSnapshot();
