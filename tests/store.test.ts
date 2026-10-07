@@ -99,3 +99,20 @@ test('Archiving preserves history; explicit completion is independent from mood'
     s.patch(a.id, { archived: false });
     assert.equal(s.get(a.id).archived, false);
   }));
+test('Hiding is stamped by the service, kept with personal metadata and all-or-nothing', () =>
+  fixture((s) => {
+    const a = session('a');
+    const b = session('b');
+    s.upsert([a, b], 'codex');
+    s.patch(a.id, { alias: '네모' });
+    s.veil([a.id, b.id], true, 1234);
+    assert.equal(s.get(a.id).hiddenAt, 1234);
+    assert.equal(s.get(a.id).alias, '네모', 'other personal fields survive');
+    s.upsert([a, b], 'codex');
+    assert.equal(s.get(a.id).hiddenAt, 1234, 'survives source updates');
+    assert.throws(() => s.veil([b.id, 'codex:missing'], false));
+    assert.equal(s.get(b.id).hiddenAt, 1234, 'a failed batch changes nothing');
+    s.veil([a.id, b.id], false);
+    assert.equal(s.get(a.id).hiddenAt, null);
+    assert.equal(s.get(b.id).hiddenAt, null);
+  }));

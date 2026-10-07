@@ -27,6 +27,7 @@ export function summarizeActivity(
   const fallback: Partial<Record<Mood, string>> = {
     call: '원래 앱에서 질문이나 입력 요청을 확인해 주세요',
     done: '이번 응답을 마쳤어요',
+    ready: '다음 요청을 기다리고 있어요',
     idle: '새 활동 기록을 기다리고 있어요',
     sleep: '한동안 새 활동 기록이 없어요',
     leave: '보관된 작업 기록이에요',

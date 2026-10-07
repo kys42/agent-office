@@ -21,6 +21,7 @@ import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/share
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import { noticeCandidates, noticeVersion } from '../src/shared/notices.js';
 import { applyZone } from '../src/shared/zones.js';
+import { snapshotEvents } from '../src/shared/speech.js';
 export const defaultDataDir = () =>
   process.env.AGENT_OFFICE_DATA_DIR ??
   path.join(os.homedir(), 'Library', 'Application Support', 'Agent Office');
@@ -35,6 +36,7 @@ export const DEFAULT_PREFS: Preferences = {
   archiveDays: 7,
   autoArchive: true,
   bubbleHours: 3,
+  readyMinutes: 30,
 };
 export class OfficeStore {
   db: DatabaseSync;
@@ -60,7 +62,7 @@ export class OfficeStore {
     if (patch) {
       Object.assign(prefs, patch);
       if (!validOfficeSchedule(prefs))
-        throw new Error('보관 시점은 대기 시점보다 뒤로 설정해 주세요.');
+        throw new Error('대기 → 퇴근 → 보관 순서가 되도록 시간을 설정해 주세요.');
       this.db
         .prepare("INSERT OR REPLACE INTO settings VALUES ('preferences',?)")
         .run(JSON.stringify(prefs));
@@ -318,6 +320,7 @@ export class OfficeStore {
       Date.now(),
       session.archived,
       prefs.standbyHours,
+      prefs.readyMinutes,
     );
     return {
       ...applyZone(session, prefs.zoneRules),
@@ -366,7 +369,7 @@ export class OfficeStore {
         .filter((s) => this.visible(s, prefs))
         .map((s) => {
           const d = { ...this.decorate(s), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
-          return full ? d : { ...d, events: d.events.slice(-4) };
+          return full ? d : { ...d, events: snapshotEvents(d) };
         }),
     );
   }
@@ -396,6 +399,29 @@ export class OfficeStore {
         ...(patch.notes !== undefined ? { notes: redact(patch.notes, 12000) } : {}),
       }),
     );
+  }
+  /**
+   * Hide colleagues until their next conversation, or bring them back. One transaction and
+   * the service's own clock, so a renderer cannot stamp a future time.
+   */
+  veil(ids: string[], on: boolean, now = Date.now()) {
+    const read = this.db.prepare('SELECT data FROM personal WHERE id=?');
+    const write = this.db.prepare('INSERT OR REPLACE INTO personal VALUES (?,?)');
+    this.db.exec('BEGIN');
+    try {
+      for (const id of ids) {
+        this.get(id);
+        const row = read.get(id) as { data: string } | undefined;
+        write.run(
+          id,
+          JSON.stringify({ ...(row ? JSON.parse(row.data) : {}), hiddenAt: on ? now : null }),
+        );
+      }
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
   search(query: string, provider?: Provider): SearchHit[] {
     const q = query.trim().slice(0, 200);

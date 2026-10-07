@@ -32,6 +32,8 @@ export const SPRITE_ASSETS: Record<Provider, { id: string; sheet: string; walk: 
 };
 export const SPRITE_ROWS: Record<Mood, number> = {
   idle: 0,
+  // Standing by shares the calm seated row; its posture (upright, no dozing) tells it apart.
+  ready: 0,
   work: 1,
   think: 2,
   call: 3,

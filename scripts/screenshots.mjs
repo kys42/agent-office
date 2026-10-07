@@ -35,19 +35,39 @@ try {
   await page.getByRole('button', { name: '소식함 닫기' }).click();
   await page.getByRole('tab', { name: /대기 라운지/ }).click();
   await page.screenshot({ path: 'docs/images/waiting.png', animations: 'disabled' });
-  const mini = await browser.newPage({
-    viewport: { width: 840, height: 218 },
+  const dock = await browser.newPage({
+    viewport: { width: 1440, height: 460 },
     deviceScaleFactor: 1,
     reducedMotion: 'reduce',
   });
-  await mini.goto('http://127.0.0.1:5173/?demo#mini');
-  await mini.waitForSelector('.mini-station');
-  await mini.screenshot({
-    path: 'docs/images/mini.png',
+  await dock.goto('http://127.0.0.1:5173/?demo#mini');
+  await dock.waitForSelector('.desk-pet');
+  await dock.evaluate(async () => {
+    await document.fonts.ready;
+  });
+  await dock.locator('.desk-pet-stage').screenshot({
+    path: 'docs/images/desk-pet.png',
     omitBackground: true,
     animations: 'disabled',
   });
-  console.log('Saved office, detail and mini screenshots using demo data only.');
+  await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
+  await dock.waitForSelector('.desk-row [data-station-id]');
+  await dock.locator('.desk-row').screenshot({
+    path: 'docs/images/desk-row.png',
+    omitBackground: true,
+    animations: 'disabled',
+  });
+  await dock.goto('http://127.0.0.1:5173/?demo#mini=floor');
+  await dock.reload();
+  await dock.waitForSelector('.desk-floor [data-station-id]');
+  await dock.locator('.desk-row').screenshot({
+    path: 'docs/images/desk-floor.png',
+    omitBackground: true,
+    animations: 'disabled',
+  });
+  console.log(
+    'Saved office, detail, desk pet, desk row and floor screenshots using demo data only.',
+  );
 } finally {
   await browser.close();
 }

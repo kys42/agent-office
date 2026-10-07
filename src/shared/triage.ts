@@ -1,16 +1,23 @@
 import type { OfficeNotice, Session } from './types';
 import { isAttentionNotice, isInboxNotice } from './notices';
-import { isWorking } from './presentation';
+import { isStandingBy, isWorking } from './presentation';
 import { needsAttention } from './residents';
 import { taskStart } from './lifecycle';
 
 /** What the person should do next, not how the session feels. Seats never depend on this. */
-export type TriageGroup = 'attention' | 'results' | 'working' | 'resting';
-export const TRIAGE_ORDER: TriageGroup[] = ['attention', 'results', 'working', 'resting'];
+export type TriageGroup = 'attention' | 'results' | 'working' | 'standby' | 'resting';
+export const TRIAGE_ORDER: TriageGroup[] = [
+  'attention',
+  'results',
+  'working',
+  'standby',
+  'resting',
+];
 export const TRIAGE_LABELS: Record<TriageGroup, string> = {
   attention: '나를 기다려요',
   results: '확인할 결과',
   working: '일하는 중',
+  standby: '대기 중',
   resting: '쉬는 중',
 };
 
@@ -24,11 +31,16 @@ export function unreadInbox(s: Session, notices: OfficeNotice[]) {
     .sort((a, b) => b.at - a.at);
 }
 
-export function triageGroup(s: Session, notices: OfficeNotice[], now = Date.now()): TriageGroup {
-  const unread = unreadInbox(s, notices);
+export function triageGroup(
+  s: Session,
+  notices: OfficeNotice[],
+  now = Date.now(),
+  unread = unreadInbox(s, notices),
+): TriageGroup {
   if (needsAttention(s) || unread.some(isAttentionNotice)) return 'attention';
   if (unread.length) return 'results';
   if (isWorking(s, now)) return 'working';
+  if (isStandingBy(s, now)) return 'standby';
   return 'resting';
 }
 

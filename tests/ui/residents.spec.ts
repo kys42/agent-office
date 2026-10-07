@@ -190,22 +190,22 @@ test('Office settings support days until standby and optional automatic archivin
   await page.goto('/?demo');
   await page.getByRole('button', { name: '사무실 설정 열기' }).click();
   await expect(page.getByRole('heading', { name: '사무실 설정', exact: true })).toBeVisible();
-  await page.getByLabel('대기까지 시간').selectOption('72');
+  await page.getByLabel('퇴근까지 시간').selectOption('72');
   await page.getByLabel('보관까지 기간').selectOption('14');
   await expect(page.locator('.office-schedule-preview')).toHaveText(
-    '마지막 활동 → 3일 후 대기 · 14일 후 보관',
+    '마지막 활동 → 30분 대기 · 3일 후 퇴근 · 14일 후 보관',
   );
   await page.getByRole('switch', { name: '보관 공간 자동 이동' }).click();
   await expect(page.getByLabel('보관까지 기간')).toBeDisabled();
   await expect(page.locator('.office-schedule-preview')).toContainText('자동 보관 안 함');
   await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
   await expect(page.getByRole('button', { name: '사무실 설정 열기' })).toContainText(
-    '3일 후 대기 · 자동 보관 안 함',
+    '3일 후 퇴근 · 자동 보관 안 함',
   );
   await page.getByRole('tab', { name: /대기 라운지/ }).click();
   await expect(page.locator('.lounge-pod h3')).toHaveText('꽃게');
   await page.getByRole('button', { name: '사무실 설정 열기' }).click();
-  await page.getByLabel('대기까지 시간').selectOption('2160');
+  await page.getByLabel('퇴근까지 시간').selectOption('2160');
   await page.getByRole('switch', { name: '보관 공간 자동 이동' }).click();
   await expect(page.getByLabel('보관까지 기간')).toHaveValue('91');
   await expect(page.getByLabel('보관까지 기간').locator('option[value="90"]')).toHaveJSProperty(

@@ -1,5 +1,11 @@
 export type Provider = 'claude' | 'codex' | 'openclaw';
-export type Mood = 'work' | 'think' | 'call' | 'error' | 'done' | 'idle' | 'sleep' | 'leave';
+/**
+ * Office status. Observed (work/think/call/error/done) or derived from time since the last
+ * activity: ready (just finished, standing by) → idle → sleep (gone home, lounge) → leave.
+ * See docs/golden/STATUS-POLICY.md.
+ */
+export type Mood =
+  'work' | 'think' | 'call' | 'error' | 'done' | 'ready' | 'idle' | 'sleep' | 'leave';
 export type Evidence = 'observed' | 'derived';
 export type OfficeZone = 'office' | 'waiting' | 'archive';
 export type ExecutionPhase =
@@ -240,6 +246,8 @@ export interface Session {
   lastViewedAt?: number;
   openCount?: number;
   returnedAt?: number;
+  /** The person hid this colleague at this time; shown again on their next conversation. */
+  hiddenAt?: number | null;
 }
 export interface Connector {
   provider: Provider;
@@ -260,6 +268,8 @@ export interface Preferences {
   archiveDays?: number;
   autoArchive?: boolean;
   bubbleHours?: number;
+  /** Minutes a colleague stands by ('대기 중') after its last activity before resting. */
+  readyMinutes?: number;
   zoneRules?: ZoneRule[];
 }
 export interface Snapshot {
@@ -306,6 +316,12 @@ export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
   text: string;
 }
+/**
+ * Desk pet window: a small floating pet, the office as one row (zones on rugs), or the
+ * floor version (desks standing right on the screen's bottom edge, zones marked by flags).
+ */
+export type DockMode = 'pet' | 'row' | 'floor';
+export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
   detail: (id: string) => Promise<Session>;
@@ -317,6 +333,8 @@ export interface OfficeAPI {
   snapshot: () => Promise<Snapshot>;
   refresh: () => Promise<Snapshot>;
   patch: (id: string, patch: SessionPatch) => Promise<Snapshot>;
+  /** Hide colleagues until their next conversation (`on`), or bring them back. */
+  veil: (ids: string[], on: boolean) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
@@ -337,6 +355,9 @@ export interface OfficeAPI {
   terminalSend?: (enable?: boolean) => Promise<boolean>;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
+  /** Desktop only. Browser previews switch the dock layout locally. */
+  dock?: (action: DockAction) => Promise<void>;
+  onDock?: (callback: (mode: DockMode) => void) => () => void;
 }
 export const PROVIDERS: Record<
   Provider,
@@ -362,7 +383,8 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
   work: { label: '일하는 중', color: '#5fd69b', rank: 2 },
   think: { label: '생각 중', color: '#ab9cff', rank: 3 },
   done: { label: '응답 완료', color: '#78b6ff', rank: 4 },
-  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 5 },
-  sleep: { label: '대기 중', color: '#85818d', rank: 6 },
-  leave: { label: '보관됨', color: '#6d6975', rank: 7 },
+  ready: { label: '대기 중', color: '#7fc4d9', rank: 5 },
+  idle: { label: '쉬는 중', color: '#a7a3ad', rank: 6 },
+  sleep: { label: '퇴근', color: '#85818d', rank: 7 },
+  leave: { label: '보관됨', color: '#6d6975', rank: 8 },
 };

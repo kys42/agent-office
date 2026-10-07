@@ -7,7 +7,9 @@ docs/
 ├── README.md                     # 전체 문서 지도
 ├── golden/                       # 제품과 플랫폼의 공통 정본
 │   ├── PROJECT-CONTEXT.md         # 사용자 요구·채택/대체된 결정
-│   ├── GOLDEN-OFFICE-POLICY.md     # 공간·동료·상태·대화·소식 정책
+│   ├── GOLDEN-OFFICE-POLICY.md     # 공간·동료·그룹·대화·소식 정책
+│   ├── STATUS-POLICY.md           # 상태 정책서: 상태 사다리·라벨·할 일 그룹
+│   ├── FEATURE-POLICY.md          # 기능 정책서: 데스크 펫·책상 줄·말풍선·가리기·고정
 │   └── OFFICE-OBSERVATION-PROTOCOL.md # 플랫폼 독립 관측 계약
 ├── development/                  # 구현·연결·검증·개발 이력
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
@@ -27,7 +29,9 @@ docs/
 | 목적 | 시작 문서 |
 | --- | --- |
 | 제품 방향·사용자 요구 이해 | [프로젝트 맥락](golden/PROJECT-CONTEXT.md) |
-| UI나 상태의 의미 변경 | [골든 정책](golden/GOLDEN-OFFICE-POLICY.md) |
+| 공간·그룹·소식의 의미 변경 | [골든 정책](golden/GOLDEN-OFFICE-POLICY.md) |
+| 상태(일하는 중·대기 중·쉬는 중·퇴근) 규칙 변경 | [상태 정책서](golden/STATUS-POLICY.md) |
+| 데스크 펫·책상 줄·말풍선·가리기·고정 변경 | [기능 정책서](golden/FEATURE-POLICY.md) |
 | 플랫폼 추가·공통 필드 변경 | [관측 규격](golden/OFFICE-OBSERVATION-PROTOCOL.md) |
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
