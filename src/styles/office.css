@@ -757,7 +757,7 @@
     0 0 0 6px rgba(255, 210, 120, 0.08),
     0 0 22px rgba(255, 210, 120, 0.35);
   opacity: 0;
-  animation: glow-pulse 2.2s ease-in-out infinite;
+  animation: glow-pulse 2.25s ease-in-out infinite;
 }
 .status-call .pet-shadow:not(.selected),
 .status-error .pet-shadow:not(.selected) {
@@ -772,7 +772,7 @@
   inset: -2px;
   border-radius: 50%;
   border: 2px solid var(--st-call);
-  animation: call-ring 1.2s ease-out infinite;
+  animation: call-ring 1.25s ease-out infinite;
 }
 .status-error .pet-shadow:not(.selected)::after {
   border-color: var(--st-error);
@@ -941,13 +941,13 @@
   width: 2px;
   height: 8px;
   background: #8ff0bd;
-  animation: work-meter 0.9s steps(3) infinite alternate;
+  animation: work-meter 0.75s steps(3) infinite alternate;
 }
 .working-beacon i:nth-child(2) {
-  animation-delay: -0.4s;
+  animation-delay: -0.375s;
 }
 .working-beacon i:nth-child(3) {
-  animation-delay: -0.7s;
+  animation-delay: -0.75s;
   margin-right: 3px;
 }
 @keyframes work-meter {
@@ -1207,7 +1207,7 @@
   border-radius: 50%;
   background: var(--st-call);
   border: 2px solid #2a2128;
-  animation: soft-pulse 1.6s ease-in-out infinite;
+  animation: soft-pulse 1.625s ease-in-out infinite;
 }
 .speech-bubble.bubble-opened {
   border-color: #9b8d80;

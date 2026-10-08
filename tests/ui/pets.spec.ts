@@ -20,13 +20,12 @@ test('Provider customization saves across reload and matches office, roster, lou
     .click();
   await expect
     .poll(() =>
-      dialog
-        .locator('.pet-preview .sprite-window')
-        .evaluate((element) =>
-          [...element.querySelectorAll('.sprite')].every(
-            (layer) => Number(layer.getAnimations()[0]?.currentTime ?? 0) > 100,
-          ),
-        ),
+      dialog.locator('.pet-preview .sprite-window').evaluate((element) => {
+        // Remember the running loop: choosing an accessory must not restart it.
+        const loop = element.querySelector('.sprite')?.getAnimations()[0];
+        (window as unknown as { sheetLoop?: Animation }).sheetLoop = loop;
+        return loop?.playState === 'running';
+      }),
     )
     .toBe(true);
   await dialog.getByRole('button', { name: '장식 왕관' }).click();
@@ -36,7 +35,12 @@ test('Provider customization saves across reload and matches office, roster, lou
         // Body and accessory are two backgrounds of one sheet: one animation, always in step.
         const sheets = [...element.querySelectorAll('.sprite')];
         const images = getComputedStyle(sheets[0]).backgroundImage;
-        return sheets.length === 1 && (images.match(/url\(/g) ?? []).length === 2;
+        const before = (window as unknown as { sheetLoop?: Animation }).sheetLoop;
+        return (
+          sheets.length === 1 &&
+          (images.match(/url\(/g) ?? []).length === 2 &&
+          sheets[0].getAnimations()[0] === before
+        );
       }),
     )
     .toBe(true);
