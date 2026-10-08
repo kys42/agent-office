@@ -182,9 +182,11 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         typeof args === 'string' &&
         /tools\.(?:exec_command|apply_patch)/.test(args));
     // Other shell tools start each call in the turn's cwd (unless the call names a workdir).
+    // A partial (head + tail) read may have lost a cd in the middle: then only a place named in
+    // the same command counts for Claude's Bash.
     const here =
       name === 'Bash'
-        ? shell === null
+        ? shell === null || opt.partial
           ? undefined
           : (shell ?? cwd ?? undefined)
         : (cwd ?? undefined);

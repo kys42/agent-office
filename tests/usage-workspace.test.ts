@@ -289,6 +289,42 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
     'commands after the heredoc still count',
   );
   assert.equal(where('Bash', { command: "echo 'a; git push'" }, '/work/repo'), undefined);
+  // Substitutions, pipelines and comments run elsewhere or not at all.
+  assert.equal(
+    where('Bash', { command: 'echo $(pwd; cd /work/other; pwd); git push' }, '/work/repo'),
+    '/work/repo',
+  );
+  assert.equal(
+    where('Bash', { command: 'echo `cd /work/other`; git push' }, '/work/repo'),
+    '/work/repo',
+  );
+  assert.equal(
+    where('Bash', { command: 'cd /work/other | cat; git push' }, '/work/repo'),
+    '/work/repo',
+  );
+  assert.equal(
+    where('Bash', { command: '# e.g. cd /work/other; git push\ngit status' }, '/work/repo'),
+    undefined,
+  );
+  assert.equal(where('Bash', { command: 'git status # then git push' }, '/work/repo'), undefined);
+  // A commit message written through a heredoc is still the commit it is.
+  assert.equal(
+    where(
+      'Bash',
+      { command: 'git commit -m "$(cat <<\'EOF\'\nfix: x\ncd /work/other\nEOF\n)"' },
+      '/work/repo',
+    ),
+    '/work/repo',
+  );
+  // An explicit workdir: relative ones read from the call's start, unreadable ones stay unknown.
+  assert.equal(
+    where('exec_command', { cmd: 'git push', workdir: '../other' }, '/work/base'),
+    '/work/other',
+  );
+  assert.equal(
+    where('exec_command', { cmd: 'git push', workdir: '$HOME/x' }, '/work/base'),
+    undefined,
+  );
   // What runs inside control flow or a function body isn't certain: no write is claimed.
   assert.equal(
     where('Bash', { command: 'if false; then\ncd /work/other\ngit push\nfi' }, '/work/repo'),
@@ -407,6 +443,14 @@ test('Claude keeps its shell directory between calls until Claude Code resets it
       .workingLocation?.path,
     '/work/repo2',
   );
+  // A head + tail read may have lost a cd in between: a bare commit isn't pinned anywhere,
+  // a commit that names its place still counts.
+  const partial = (...records: object[][]) => parse(records.flat(), 'claude', true);
+  assert.equal(partial(bash('b', 'git commit -m x')).workingLocation, undefined);
+  assert.equal(
+    partial(bash('b', 'cd /work/repo3 && git commit -m x')).workingLocation?.path,
+    '/work/repo3',
+  );
   // Looking around elsewhere leaves no location at all: the desk stays where the session started.
   assert.equal(
     claude(bash('a', `cd ${os.homedir()}/.claude/projects/x && grep -n foo a.jsonl`))
@@ -495,6 +539,16 @@ test('A partial reread keeps the last work evidence, never an old cd-based guess
       'claude',
     );
     store.upsert([reread], 'claude');
+    assert.equal(store.get(base.id).workingLocation, undefined);
+    // …also when the record itself didn't change since (same revision as the stored row).
+    const legacy = {
+      ...base,
+      revision: 'same',
+      workingLocation: { path: '/work/.claude', at: now, source: 'shell-cd' as const },
+    };
+    store.upsert([legacy], 'claude');
+    assert.equal(store.get(base.id).workingLocation?.source, 'shell-cd');
+    store.upsert([{ ...reread, revision: 'same' }], 'claude');
     assert.equal(store.get(base.id).workingLocation, undefined);
     // Real work evidence survives a tail that no longer shows it.
     const commit = { path: '/work/wt', at: now, source: 'git-write' as const };

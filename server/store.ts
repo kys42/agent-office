@@ -140,10 +140,15 @@ export class OfficeStore {
         // Unchanged since this run took it in: nothing about its notices can become new with time
         // alone (time only retires old requests), so a quiet cycle writes nothing.
         const seen = `${s.revision}\n${s.events.map((e) => e.id).join('\n')}`;
-        if (previous?.revision === s.revision && this.ingested.get(s.id) === seen) continue;
+        // A place stored by the old cd rule is rewritten even when the record didn't change.
+        const legacyPlace = ['shell-cd', 'tool-workdir'].includes(
+          previous?.workingLocation?.source ?? '',
+        );
+        if (previous?.revision === s.revision && this.ingested.get(s.id) === seen && !legacyPlace)
+          continue;
         this.ingestNotices(s, standbyHours);
         this.ingested.set(s.id, seen);
-        if (previous?.revision === s.revision) continue;
+        if (previous?.revision === s.revision && !legacyPlace) continue;
         this.cached?.delete(s.id);
         const taskStartedAt =
           Math.max(s.taskStartedAt ?? 0, previous?.taskStartedAt ?? 0) || undefined;

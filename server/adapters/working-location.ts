@@ -34,38 +34,79 @@ const resolveIn = (dir: string | undefined, target: string) =>
       : dir
         ? path.resolve(dir, target)
         : undefined;
+/** A simple command of a command line; `piped` ones run in a pipeline's subshell. */
+interface Segment {
+  text: string;
+  piped: boolean;
+}
 /**
- * Simple commands of one command line, split on &&, ||, ;, | and newlines only outside quotes.
- * Heredoc bodies and quoted text (a commit message, a script) are never read as commands.
+ * Simple commands of one command line, split on &&, ||, ;, | and newlines only at the top level.
+ * Quoted text, command substitutions ($(…), `…`), comments and heredoc bodies are never read as
+ * commands of this shell (a commit message, a script, an example).
  */
-function segments(command: string): string[] {
-  const out: string[] = [];
+function segments(command: string): Segment[] {
+  const out: Segment[] = [];
   const pending: { tag: string; strip: boolean }[] = [];
   let cur = '';
   let quote: string | null = null;
-  const push = () => {
-    const part = cur
+  let depth = 0; // inside $( … )
+  let tick = false; // inside ` … `
+  let piped = false;
+  const push = (next = false) => {
+    const text = cur
       .trim()
       .replace(/^(?:\w+=\S*\s+)*/, '')
       .replace(/^(?:rtk(?:\s+proxy)?|command|time)\s+/, '');
-    if (part) out.push(part);
+    if (text) out.push({ text, piped: piped || next });
     cur = '';
+    piped = next;
   };
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
-    if (quote) {
-      if (c === '\\' && quote === '"') cur += c + (command[++i] ?? '');
-      else {
-        if (c === quote) quote = null;
-        cur += c;
-      }
+    if (quote === "'") {
+      if (c === "'") quote = null;
+      cur += c;
+      continue;
+    }
+    if (c === '\\') {
+      cur += c + (command[++i] ?? '');
+      continue;
+    }
+    if (quote === '"' && c !== '"' && !command.startsWith('$(', i) && c !== '`') {
+      cur += c;
       continue;
     }
     if (c === "'" || c === '"') {
-      quote = c;
+      quote = quote === c ? null : quote ? quote : c;
       cur += c;
-    } else if (c === '\\') cur += c + (command[++i] ?? '');
-    else if (command.startsWith('<<', i) && command[i + 2] !== '<') {
+      continue;
+    }
+    // Command substitutions run in their own shell: keep them inside this command's text.
+    if (command.startsWith('$(', i)) {
+      depth++;
+      cur += '$(';
+      i++;
+      continue;
+    }
+    if (depth && c === ')') {
+      depth--;
+      cur += c;
+      continue;
+    }
+    if (c === '`') {
+      tick = !tick;
+      cur += c;
+      continue;
+    }
+    if (depth || tick || quote) {
+      cur += c;
+      continue;
+    }
+    if (c === '#' && (!cur || /\s$/.test(cur))) {
+      // A comment runs to the end of the line.
+      const next = command.indexOf('\n', i);
+      i = (next < 0 ? command.length : next) - 1;
+    } else if (command.startsWith('<<', i) && command[i + 2] !== '<') {
       const tag = command.slice(i + 2).match(/^(-?)\s*(?:'([^']+)'|"([^"]+)"|([\w.-]+))/);
       if (tag) {
         pending.push({ tag: tag[2] ?? tag[3] ?? tag[4], strip: tag[1] === '-' });
@@ -86,7 +127,8 @@ function segments(command: string): string[] {
     } else if ((c === '&' || c === '|') && command[i + 1] === c) {
       push();
       i++;
-    } else if (c === ';' || c === '|') push();
+    } else if (c === '|') push(true);
+    else if (c === ';') push();
     else cur += c;
   }
   push();
@@ -101,19 +143,18 @@ const GIT_WRITES = new Set(['commit', 'push', 'merge', 'rebase', 'cherry-pick', 
  */
 export function readCommand(command: string, base: string | undefined, at: number) {
   const parts = segments(command);
+  const cds = parts.some(({ text }) => /^cd\b/.test(text));
   // Control flow and function definitions decide at run time what actually executes: claim no
   // write, and if a cd is inside, the shell's place afterwards is unknown.
-  if (parts.some((part) => CONTROL.test(part)))
-    return {
-      dir: parts.some((part) => /^cd\b/.test(part)) ? undefined : base,
-      moved: parts.some((part) => /^cd\b/.test(part)),
-      write: undefined,
-    };
+  if (parts.some(({ text }) => CONTROL.test(text)))
+    return { dir: cds ? undefined : base, moved: cds, write: undefined };
   let dir = base;
   let moved = false;
   let write: WorkingLocation | undefined;
-  for (const part of parts) {
+  for (const { text: part, piped } of parts) {
     const [head, ...rest] = tokens(part);
+    // A cd inside a pipeline changes only that pipeline's subshell.
+    if (head === 'cd' && piped) continue;
     if (head === 'cd') {
       dir = rest[0] ? resolveIn(dir, rest[0]) : undefined;
       moved = true;
@@ -195,10 +236,20 @@ export function toolLocation(
     }
   }
   if (!args || typeof args !== 'object') return;
-  const explicit = args.workdir ?? args.cwd;
+  const given = args.workdir ?? args.cwd;
   const command = args.cmd ?? args.command;
   if (typeof command !== 'string') return;
-  return readCommand(command, safe(explicit) ? explicit : shell, at).write;
+  // An explicit workdir wins; a relative one is read from where the call starts; one that can't
+  // be read literally leaves the place unknown (never the default).
+  const base =
+    given === undefined || given === null
+      ? shell
+      : safe(given)
+        ? given
+        : typeof given === 'string' && given && !/[$`~\x00-\x1f]/.test(given)
+          ? resolveIn(shell, given)
+          : undefined;
+  return readCommand(command, base, at).write;
 }
 // Inspect syntax only; never evaluate log text. Dynamic expressions are unknown.
 export function wrappedLocations(code: unknown, at: number, cwd?: string): WorkingLocation[] {
