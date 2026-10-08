@@ -317,6 +317,8 @@ test('The pet shows the request bubble only while hovered, inside its window', a
   await page.locator('.dock-pet-anchor').hover();
   await expect(request).toBeVisible();
   await expect(request).toContainText('로그인 화면 여백을 다듬어 줘');
+  // Revealed on hover, a long request still says there's more.
+  await expect(request).toHaveClass(/has-more/);
   await sitsAbove(
     request,
     speech.locator('.speech-open'),

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BellRing,
   Check,
@@ -109,6 +109,14 @@ export function SpeechBubble({
     setMore(!!el && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
   };
   useLayoutEffect(measure, [request?.id, speech.requestText, privacy]);
+  // Shown later (the pet reveals it on hover) or resized: measure again.
+  useEffect(() => {
+    const el = asked.current;
+    if (!el) return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [request?.id]);
   useLayoutEffect(() => {
     const el = body.current;
     if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
