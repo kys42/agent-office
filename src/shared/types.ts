@@ -291,6 +291,8 @@ export interface Snapshot {
   lastSync: number | null;
   error: string | null;
   version: number;
+  /** The collector run `version` counts in; a new run starts its versions again. */
+  epoch?: string;
   notices?: OfficeNotice[];
   noticeStats?: { unread: number; total: number };
   /**
@@ -402,6 +404,9 @@ export interface OfficeAPI {
   ) => Promise<void>;
   /** The dock card window: which colleague to show. */
   onCard?: (callback: (target: CardTarget | null) => void) => () => void;
+  /** Desktop: whether this window is on screen, and each time that changes. */
+  visible?: () => Promise<boolean>;
+  onVisibility?: (callback: (shown: boolean) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
   /** Desktop only. Browser previews switch the dock layout locally. */

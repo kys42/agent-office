@@ -2,6 +2,23 @@
 
 상태: **제안 / 미구현** · 조사: 2026-10-07 KST. 이번 변경은 최신 코드 수신, 읽기 중심 측정, 설계 문서화다. 실행 서버 교체·최적화 적용·데이터 삭제는 하지 않았다.
 
+**구현 현황 ([#45](https://github.com/kys42/agent-office/issues/45))**
+
+- P0-A 구현:
+  - workspace 의미 해시: `workspaceSignature`가 `git.observedAt`을 제외한다.
+  - 같은 revision은 이번 실행에서 이미 받아들였다면 notice·세션·ledger·FTS 쓰기를 모두 건너뛴다.
+  - 수집기를 재시작하면 모든 세션을 한 번씩 다시 받아들인다. 분류 로직이 바뀐 경우의 이관을 위해서다.
+- P0-B 구현:
+  - `officeView`로 snapshot 1회 조회(좌석·소식·목록)
+  - writer 파싱 행 캐시. 다른 연결의 커밋은 `PRAGMA data_version`으로 감지해 무효화한다.
+  - personal 일괄 조회
+  - 내용이 바뀔 때만 emit(확인 시각만 바뀐 경우는 60초마다)
+  - snapshot에 `epoch` 추가, 웹 조건부 폴링(`{unchanged}`)
+  - Electron은 화면에 보이는 창에만 전송하고, 창이 다시 보일 때 최신본을 1회 보낸다.
+  - 렌더러 시계·폴링은 창 가시성(`office:visibility`)을 따른다.
+  - Inspector는 이벤트 내용이 바뀔 때만 상세를 다시 조회한다.
+- 변경분 전송(3.3의 2번)과 증분 수집(3.4)은 후속 PR에서 진행한다.
+
 핵심은 **변경 없는 기록을 다시 처리하지 않고, 필요한 화면에 필요한 요약만 전달하는 것**이다. 캐릭터 수를 줄이거나 실시간 소식을 늦추는 방식을 첫 해결책으로 삼지 않는다. 기존 [골든 정책](../golden/GOLDEN-OFFICE-POLICY.md), [관측 규격](../golden/OFFICE-OBSERVATION-PROTOCOL.md), [수집 계약](SESSION-INGESTION.md)을 유지한다.
 
 ## 1. 코드와 측정 기준

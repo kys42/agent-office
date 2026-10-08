@@ -2,6 +2,7 @@ import type { OfficeAPI, Snapshot } from '../shared/types';
 import { parseArtifact } from '../shared/office';
 import { m } from '../shared/i18n';
 import { webLink } from '../shared/links';
+import { isPageHidden, onPageVisibility } from './visibility';
 declare global {
   interface Window {
     office?: OfficeAPI;
@@ -43,23 +44,36 @@ export const api: OfficeAPI = window.office ?? {
   handoff: (id, r) => rpc('handoff', id, r),
   preferences: (p) => rpc('preferences', p),
   subscribe: (cb) => {
+    // Polls only while the tab is visible, and says which version it holds: an office that did
+    // not change answers in a few bytes instead of the whole snapshot.
     let active = true,
-      running = false;
-    const t = setInterval(async () => {
-      if (running) return;
+      running = false,
+      known: Pick<Snapshot, 'epoch' | 'version'> | null = null;
+    const poll = async () => {
+      if (running || isPageHidden()) return;
       running = true;
       try {
-        const s: Snapshot = await rpc('snapshot');
-        if (active) cb(s);
+        const s: Snapshot | { unchanged: true } = await rpc(
+          'snapshot',
+          known?.epoch ?? null,
+          known?.version ?? null,
+        );
+        if (active && !('unchanged' in s)) {
+          known = { epoch: s.epoch, version: s.version };
+          cb(s);
+        }
       } catch {
         /* initial fetch and refresh expose failures */
       } finally {
         running = false;
       }
-    }, 5000);
+    };
+    const t = setInterval(poll, 5000);
+    const stop = onPageVisibility(() => void poll());
     return () => {
       active = false;
       clearInterval(t);
+      stop();
     };
   },
   window: async (action, id) => {

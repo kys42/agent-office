@@ -20,6 +20,7 @@ import type { ReceiptHandler } from './News';
 import { isWorking } from '../shared/presentation';
 import { isAttentionNotice } from '../shared/notices';
 import { useI18n } from '../lib/i18n';
+import { isPageHidden, onPageVisibility } from '../lib/visibility';
 function saved(key: string) {
   try {
     return localStorage.getItem(key) === '1';
@@ -71,8 +72,15 @@ export function Roster({
   const { t } = useI18n();
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
-    const timer = setInterval(() => setClock(Date.now()), 30_000);
-    return () => clearInterval(timer);
+    const tick = () => {
+      if (!isPageHidden()) setClock(Date.now());
+    };
+    const timer = setInterval(tick, 30_000);
+    const stop = onPageVisibility(tick);
+    return () => {
+      clearInterval(timer);
+      stop();
+    };
   }, []);
   const [restFolded, setRestFolded] = useState(() => saved('office:roster:rest-folded'));
   useEffect(() => {
