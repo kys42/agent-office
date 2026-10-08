@@ -295,6 +295,15 @@ export function NewsFeed({
     }
     void Promise.resolve(onReceipt(receipts, action)).then(() => setSettled((n) => n + 1));
   };
+  // Read all: shown at once as read on the page, then read again once the collector saved it.
+  const readEverything = (p: LoadedPage, read: NonNullable<typeof readAll>) => {
+    const all = { ...query, includeRead: false };
+    const notices = p.notices.map((n) =>
+      matchesQuery(n, all) && n.receivedAt <= p.at ? { ...n, seenAt: Date.now() } : n,
+    );
+    show({ ...p, notices, unread: recount(p, notices, includeBackground) });
+    void read(all, p.at).then(() => setSettled((n) => n + 1));
+  };
   const matches = (n: OfficeNotice, kind = filter) => matchesKind(n, kind, includeBackground);
   const local = (kind: NoticeFilter) => notices.filter((n) => !n.seenAt && matches(n, kind)).length;
   const counts = (kind: NoticeFilter) => (loaded ? loaded.unread[kind] : local(kind));
@@ -338,7 +347,7 @@ export function NewsFeed({
           onClick={() =>
             // Paged, the collector reads every match, shown or not, as of the page's reading.
             loaded && readAll
-              ? void readAll({ ...query, includeRead: false }, loaded.at)
+              ? readEverything(loaded, readAll)
               : receipt(
                   unread.map(({ id, version }) => ({ id, version })),
                   'read',

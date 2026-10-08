@@ -74,8 +74,9 @@ export function pageNotices(
 /**
  * What the office needs live, out of every visible notice (in `noticeOrder`): each session's
  * latest notice (its bubble or peek), latest request (the quote above it) and latest
- * conversation (whether a hidden colleague came back), just-arrived requests, every open call,
- * every unread final up to `UNREAD_FINALS`, and the `RECENT_NOTICES` newest of any kind.
+ * conversation (whether a hidden colleague came back) and latest unread result (its badge),
+ * just-arrived requests, every open call, every unread final up to `UNREAD_FINALS`, and the
+ * `RECENT_NOTICES` newest of any kind.
  * Unread counts come from all of them, not from this set.
  */
 export function residentNotices(notices: OfficeNotice[], now = Date.now()): OfficeNotice[] {
@@ -98,6 +99,8 @@ export function residentNotices(notices: OfficeNotice[], now = Date.now()): Offi
       n.kind === 'request' && 'request',
       (n.kind === 'request' || isFinalNotice(n) || n.kind === 'attention' || n.kind === 'error') &&
         'conversation',
+      // Every colleague with an unread result keeps one past the cap (its badge and triage).
+      !n.seenAt && isInboxNotice(n) && 'unread',
     ])
       if (kind && !seen.has(`${n.sessionId}\n${kind}`)) {
         seen.add(`${n.sessionId}\n${kind}`);

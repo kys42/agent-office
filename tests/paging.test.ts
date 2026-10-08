@@ -401,3 +401,42 @@ test('A cursor that left the stored window pages on by its time, excerpts includ
     );
   });
 });
+
+test('Past the unread-finals cap, every colleague with an unread result still carries one', async () => {
+  await withStore((store) => {
+    const many = Array.from({ length: 5 }, (_, i) => session(`claude:s${i}`));
+    store.upsert([...many, session('claude:lone')], 'claude');
+    const finals = Array.from({ length: UNREAD_FINALS + 50 }, (_, i) =>
+      notice(`claude:s${i % 5}`, i, { kind: 'reply', phase: 'final' }),
+    );
+    // Its newest notices are read; its one unread result is older than every other final.
+    const lone = [
+      notice('claude:lone', 10, { kind: 'reply', phase: 'final', seenAt: now - 1 }),
+      notice('claude:lone', 11, { kind: 'request', phase: undefined, seenAt: now - 1 }),
+      notice('claude:lone', 5000, { kind: 'reply', phase: 'final', text: 'old result' }),
+    ];
+    put(store, [...finals, ...lone]);
+    const view = store.officeView();
+    assert.equal(view.noticeStats.unread, UNREAD_FINALS + 51);
+    const carried = view.notices.filter((n) => n.sessionId === 'claude:lone' && !n.seenAt);
+    assert.deepEqual(
+      carried.map((n) => n.text),
+      ['old result'],
+    );
+    // The cap trims only further unread finals of colleagues that already carry one.
+    const carriedFinals = view.notices.filter((n) => !n.seenAt && n.kind === 'reply');
+    assert.ok(carriedFinals.length <= UNREAD_FINALS + 6);
+    for (const id of [
+      'claude:s0',
+      'claude:s1',
+      'claude:s2',
+      'claude:s3',
+      'claude:s4',
+      'claude:lone',
+    ])
+      assert.ok(
+        carriedFinals.some((n) => n.sessionId === id),
+        id,
+      );
+  });
+});

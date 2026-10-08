@@ -342,3 +342,32 @@ test('A paged list stays whole while it changes: no gap from a page racing a re-
   await expect(items).toHaveCount(301);
   expect(await ids()).toEqual(await newest(301));
 });
+
+test('Reading all of a paged list outside the inbox clears it at once and stays cleared', async ({
+  page,
+}) => {
+  // Only old progress is unread: no count the snapshot carries moves when it is read.
+  await newsOffice(page, 300, (i) => i < 250 || i % 50 === 7);
+  await page.goto('/');
+  await page.getByRole('button', { name: '소식함 열기' }).click();
+  const inbox = page.getByRole('complementary', { name: '소식함' });
+  const all = inbox.getByRole('button', { name: /전체 기록/ });
+  await all.click();
+  await expect(all).toContainText('49');
+  await expect(inbox.locator('.news-item')).toHaveCount(30);
+  await inbox.getByRole('button', { name: '미확인 49건 읽음', exact: true }).click();
+  await expect(inbox.locator('.news-item')).toHaveCount(0);
+  await expect(all).toContainText('0');
+  expect(await page.evaluate(() => (window as any).all.filter((n: any) => !n.seenAt).length)).toBe(
+    0,
+  );
+  // Read again from the collector, it stays empty.
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).calls.filter((c: any) => c[0] === 'page').length),
+    )
+    .toBeGreaterThan(2);
+  await page.waitForTimeout(600);
+  await expect(inbox.locator('.news-item')).toHaveCount(0);
+  await expect(all).toContainText('0');
+});
