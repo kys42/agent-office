@@ -80,7 +80,7 @@
   color: var(--st-work);
 }
 .stat.is-live span i {
-  animation: soft-pulse 1.4s ease-in-out infinite;
+  animation: soft-pulse 1.375s ease-in-out infinite;
 }
 .stat.is-alert {
   background: linear-gradient(180deg, rgba(255, 122, 138, 0.12), transparent);
@@ -290,7 +290,7 @@
   border: 2px solid rgba(95, 214, 155, 0.6);
   opacity: 0;
   --ping-scale: 1.8;
-  animation: ping-out 1.8s ease-out infinite;
+  animation: ping-out 1.75s ease-out infinite;
 }
 .session-row .face .sprite-window {
   border-radius: 0 0 10px 10px;
@@ -1469,13 +1469,13 @@
   height: 5px;
   border-radius: 50%;
   background: var(--st-work);
-  animation: typing 1.2s ease-in-out infinite;
+  animation: typing 1.25s ease-in-out infinite;
 }
 .typing-dots i:nth-child(2) {
-  animation-delay: 0.15s;
+  animation-delay: 0.125s;
 }
 .typing-dots i:nth-child(3) {
-  animation-delay: 0.3s;
+  animation-delay: 0.25s;
 }
 @keyframes typing {
   0%,

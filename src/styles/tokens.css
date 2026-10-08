@@ -246,7 +246,7 @@ mark {
 }
 .spin svg,
 svg.spin {
-  animation: spin 0.9s linear infinite;
+  animation: spin 0.875s linear infinite;
 }
 @keyframes spin {
   to {
@@ -392,26 +392,26 @@ span.face {
   background-repeat: no-repeat;
   background-size: 100% 100%;
   image-rendering: pixelated;
-  animation: sprite-frames 0.8s steps(4) infinite;
+  animation: sprite-frames 1s steps(4) infinite;
 }
 .sprite.walking {
   height: calc(var(--size) * 3);
-  animation-duration: 0.48s;
+  animation-duration: 0.5s;
 }
 .sprite.mood-sleep {
-  animation-duration: 2.4s;
+  animation-duration: 2.5s;
 }
 .sprite.mood-think {
   animation-duration: 1.5s;
 }
 .sprite.mood-call {
-  animation-duration: 0.65s;
+  animation-duration: 0.5s;
 }
 .sprite.mood-idle,
 .sprite.mood-ready,
 .sprite.mood-leave,
 .sprite.mood-done {
-  animation-duration: 1.8s;
+  animation-duration: 2s;
 }
 @keyframes sprite-frames {
   to {
@@ -519,7 +519,7 @@ span.face {
   border-color: rgba(120, 182, 255, 0.22);
 }
 .pill-work i {
-  animation: soft-pulse 1.6s ease-in-out infinite;
+  animation: soft-pulse 1.625s ease-in-out infinite;
 }
 @keyframes soft-pulse {
   50% {

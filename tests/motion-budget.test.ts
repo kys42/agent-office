@@ -57,3 +57,25 @@ test('Nothing always on screen blurs or blends the moving office behind it', () 
   assert.doesNotMatch(rule('.scene-controls'), /backdrop-filter/);
   assert.doesNotMatch(rule('.desk-glow'), /mix-blend-mode/);
 });
+
+test('Looping animations step on the office clock (#52)', async () => {
+  const { FRAME_MS } = await import('../src/lib/frame-clock.js');
+  const ms = (t: string) => (t.endsWith('ms') ? parseFloat(t) : parseFloat(t) * 1000);
+  const off: string[] = [];
+  for (const { file, text } of css) {
+    let selector = '';
+    for (const line of text.split('\n')) {
+      if (line.trimEnd().endsWith('{')) selector = line.trim();
+      const looping = /animation\s*:[^;]*\binfinite\b/.test(line) && !/\bspin\b/.test(line);
+      const own = /^\s*animation-(duration|delay)\s*:/.test(line) && !/calc|var\(/.test(line);
+      if (!looping && !own) continue;
+      const steps = Number(line.match(/steps\((\d+)/)?.[1] ?? 1);
+      for (const [i, t] of [...line.matchAll(/-?\d*\.?\d+m?s\b/g)].map((m) => m[0]).entries()) {
+        // A stepped loop's duration covers whole office frames per step.
+        const unit = looping && i === 0 ? FRAME_MS * steps : FRAME_MS;
+        if (Math.abs(ms(t)) % unit) off.push(`${file} ${selector} ${line.trim()}`);
+      }
+    }
+  }
+  assert.deepEqual(off, []);
+});

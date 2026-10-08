@@ -8,6 +8,7 @@ import App from './App';
 import { DeskDock } from './components/DeskDock';
 import { DockCard } from './components/DockCard';
 import { bootLocale, useI18n } from './lib/i18n';
+import { startFrameClock } from './lib/frame-clock';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
@@ -43,6 +44,8 @@ function Crashed() {
   );
 }
 bootLocale();
+// The office's own frame rate for every looping animation (see frame-clock.ts).
+startFrameClock();
 // Same office core, three presentations: the big office window, the floating desk pet, and
 // the colleague card the pet opens at a desk.
 const dock = location.hash.startsWith('#mini');
