@@ -209,9 +209,16 @@ function createMain() {
     minWidth: 1050,
     minHeight: 740,
     title: 'Agent Office',
-    backgroundColor: '#0d0e11',
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 20, y: 20 },
+    trafficLightPosition: { x: 18, y: 20 },
+    // The sidebar shows the system's own translucent material; the content column paints itself.
+    ...(process.platform === 'darwin'
+      ? {
+          vibrancy: 'sidebar' as const,
+          visualEffectState: 'followWindow' as const,
+          backgroundColor: '#00000000',
+        }
+      : { backgroundColor: '#f5f5f7' }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

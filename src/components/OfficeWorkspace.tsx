@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { zoneLabel } from '../shared/zones';
 import {
   Archive,
@@ -103,6 +104,20 @@ export function OfficeWorkspace({
     setZone(zoneRequest.zone);
     onZoneHandled?.();
   }, [zoneRequest]);
+  // The window toolbar hosts the zone switcher; fall back to inline when there is no slot.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => setToolbarSlot(document.getElementById('toolbar-slot')), []);
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('office:zone', { detail: zone }));
+  }, [zone]);
+  useEffect(() => {
+    const onFilter = (e: Event) => {
+      setZone('office');
+      setQuery((e as CustomEvent<string>).detail ?? '');
+    };
+    window.addEventListener('office:filter', onFilter);
+    return () => window.removeEventListener('office:filter', onFilter);
+  }, []);
   const office = zones.office;
   useEffect(() => {
     const owner = selected ? model.view(selected) : undefined;
@@ -130,58 +145,61 @@ export function OfficeWorkspace({
     onReturn(id);
     setZone('office');
   };
+  const stageToolbar = (
+    <div className="stage-toolbar">
+      <div className="zone-tabs" role="tablist" aria-label={t.office.spaces}>
+        {ZONES.map((z) => (
+          <button
+            key={z.id}
+            role="tab"
+            aria-selected={zone === z.id}
+            className={zone === z.id ? 'active' : ''}
+            onClick={() => {
+              setZone(z.id);
+              setQuery('');
+            }}
+          >
+            <z.icon size={15} strokeWidth={1.9} />
+            {t.office.zones[z.id]}
+            <span>{zones[z.id].length}</span>
+          </button>
+        ))}
+      </div>
+      <div className="stage-toolbar-end">
+        <span
+          className={`live-badge ${demo ? 'demo' : prefs.paused ? 'paused' : ''}`}
+          title={
+            demo ? t.office.live.demo : prefs.paused ? t.office.live.paused : t.office.live.live
+          }
+        >
+          <i />
+          {demo ? 'Demo' : prefs.paused ? 'Paused' : 'Live'}
+        </span>
+        <button
+          className="office-policy"
+          onClick={onSettings}
+          aria-label={t.office.settingsLabel}
+          title={`${t.office.settingsTitle} · ${officeSchedule(prefs)}`}
+        >
+          <SlidersHorizontal size={15} />
+          <span className="policy-text">{officeSchedule(prefs)}</span>
+        </button>
+        <button
+          className={`icon-btn ${refreshing ? 'spin' : ''}`}
+          aria-label={t.office.refreshLabel}
+          title={t.office.refreshTitle}
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          <RotateCw size={15} />
+        </button>
+      </div>
+    </div>
+  );
   return (
     <div className="office-layout">
       <div className="office-column">
-        <div className="stage-toolbar">
-          <div className="zone-tabs" role="tablist" aria-label={t.office.spaces}>
-            {ZONES.map((z) => (
-              <button
-                key={z.id}
-                role="tab"
-                aria-selected={zone === z.id}
-                className={zone === z.id ? 'active' : ''}
-                onClick={() => {
-                  setZone(z.id);
-                  setQuery('');
-                }}
-              >
-                <z.icon size={15} strokeWidth={1.9} />
-                {t.office.zones[z.id]}
-                <span>{zones[z.id].length}</span>
-              </button>
-            ))}
-          </div>
-          <div className="stage-toolbar-end">
-            <span
-              className={`live-badge ${demo ? 'demo' : prefs.paused ? 'paused' : ''}`}
-              title={
-                demo ? t.office.live.demo : prefs.paused ? t.office.live.paused : t.office.live.live
-              }
-            >
-              <i />
-              {demo ? 'Demo' : prefs.paused ? 'Paused' : 'Live'}
-            </span>
-            <button
-              className="office-policy"
-              onClick={onSettings}
-              aria-label={t.office.settingsLabel}
-              title={t.office.settingsTitle}
-            >
-              <SlidersHorizontal size={13} />
-              {officeSchedule(prefs)}
-            </button>
-            <button
-              className={`icon-btn ${refreshing ? 'spin' : ''}`}
-              aria-label={t.office.refreshLabel}
-              title={t.office.refreshTitle}
-              onClick={onRefresh}
-              disabled={refreshing}
-            >
-              <RotateCw size={15} />
-            </button>
-          </div>
-        </div>
+        {toolbarSlot ? createPortal(stageToolbar, toolbarSlot) : stageToolbar}
         {zone === 'office' ? (
           <Office
             sessions={model.scene}
