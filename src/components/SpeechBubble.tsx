@@ -107,6 +107,7 @@ export function SpeechBubble({
       data-tone={tone}
       className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
+      {tone === 'attention' && <span className="bubble-halo" aria-hidden="true" />}
       {/* Not a <button>: its words can be selected and copied, and links inside open. */}
       <div
         className="speech-open"

@@ -106,17 +106,15 @@
   height: 6px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 0 0 currentColor;
-  animation: live-ping 2s ease-out infinite;
+  position: relative;
 }
-@keyframes live-ping {
-  0% {
-    box-shadow: 0 0 0 0 rgba(95, 214, 155, 0.6);
-  }
-  80%,
-  100% {
-    box-shadow: 0 0 0 6px rgba(95, 214, 155, 0);
-  }
+.live-badge i::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  animation: ping-out 2s ease-out infinite;
 }
 .live-badge.demo {
   color: var(--accent);
@@ -677,7 +675,8 @@
     rgba(255, 190, 110, 0.16) 60%,
     transparent
   );
-  mix-blend-mode: screen;
+  /* Plain alpha, no blend mode: one per desk under moving pets, a blend mode made the compositor
+     blend each of them separately. Over the dark floor it reads the same. */
 }
 .station-working .desk-glow {
   opacity: 0.45;
@@ -741,20 +740,36 @@
   box-shadow:
     0 0 0 3px rgba(255, 210, 120, 0.22),
     0 0 18px rgba(255, 210, 120, 0.5);
-  animation: ring 2.2s ease-in-out infinite;
 }
-@keyframes ring {
-  50% {
-    box-shadow:
-      0 0 0 6px rgba(255, 210, 120, 0.08),
-      0 0 22px rgba(255, 210, 120, 0.35);
-  }
+/* The selected glow breathes out: a wider halo fades in and out over the static one. */
+.pet-shadow.selected::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 6px rgba(255, 210, 120, 0.08),
+    0 0 22px rgba(255, 210, 120, 0.35);
+  opacity: 0;
+  animation: glow-pulse 2.2s ease-in-out infinite;
 }
 .status-call .pet-shadow:not(.selected),
 .status-error .pet-shadow:not(.selected) {
   border: 2px solid var(--st-call);
   background: rgba(255, 122, 138, 0.18);
+}
+/* A ring spreads out from the shadow of a colleague who is calling (or stuck). */
+.status-call .pet-shadow:not(.selected)::after,
+.status-error .pet-shadow:not(.selected)::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid var(--st-call);
   animation: call-ring 1.2s ease-out infinite;
+}
+.status-error .pet-shadow:not(.selected)::after {
+  border-color: var(--st-error);
 }
 .status-error .pet-shadow:not(.selected) {
   border-color: var(--st-error);
@@ -762,10 +777,13 @@
 }
 @keyframes call-ring {
   0% {
-    box-shadow: 0 0 0 0 rgba(255, 122, 138, 0.5);
+    transform: scale(1);
+    opacity: 0.5;
   }
   100% {
-    box-shadow: 0 0 0 12px rgba(255, 122, 138, 0);
+    /* About 12px further out on a 60×12 shadow. */
+    transform: scale(1.4, 3);
+    opacity: 0;
   }
 }
 .office-pet {
@@ -1642,9 +1660,10 @@
   align-items: center;
   height: 32px;
   border-radius: 10px;
-  background: rgba(17, 18, 22, 0.78);
+  /* Nearly opaque instead of blurring the scene behind: the office moves under it all the time,
+     and a backdrop blur is recomputed on every frame it changes. */
+  background: rgba(17, 18, 22, 0.92);
   border: 1px solid var(--line-2);
-  backdrop-filter: blur(14px) saturate(1.2);
   box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
 }
 .hud-pill {

@@ -377,20 +377,25 @@ span.face {
   overflow: hidden;
   flex-shrink: 0;
 }
+/*
+ * The whole sheet sits inside the window and slides one frame at a time with `transform`, which
+ * the compositor animates on its own. (Animating `background-position` instead ran style and
+ * paint on the main thread every display frame, for every pet, even between frames.)
+ */
 .sprite {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: calc(var(--size) * var(--row) * -1);
   display: block;
-  width: var(--size);
-  height: var(--size);
+  width: calc(var(--size) * 4);
+  height: calc(var(--size) * 8);
   background-repeat: no-repeat;
-  background-size: calc(var(--size) * 4) calc(var(--size) * 8);
-  background-position: 0 calc(var(--size) * var(--row) * -1);
+  background-size: 100% 100%;
   image-rendering: pixelated;
   animation: sprite-frames 0.8s steps(4) infinite;
 }
 .sprite.walking {
-  background-size: calc(var(--size) * 4) calc(var(--size) * 3);
+  height: calc(var(--size) * 3);
   animation-duration: 0.48s;
 }
 .sprite.mood-sleep {
@@ -410,7 +415,7 @@ span.face {
 }
 @keyframes sprite-frames {
   to {
-    background-position-x: calc(var(--size) * -4);
+    transform: translateX(calc(var(--size) * -4));
   }
 }
 .reduce-motion .sprite,
@@ -418,8 +423,41 @@ span.face {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .sprite {
+  .sprite,
+  .bubble-halo,
+  :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
     animation: none;
+  }
+}
+.reduce-motion .bubble-halo,
+.reduce-motion :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
+  animation: none;
+}
+/* A window out of sight (a hidden Electron window can still tick) holds every animation still. */
+.page-hidden *,
+.page-hidden *::before,
+.page-hidden *::after {
+  animation-play-state: paused !important;
+}
+
+/*
+ * Pulses run on the compositor: a pseudo-element grows and fades (transform/opacity), never an
+ * animated box-shadow, which would repaint every frame for as long as someone is live.
+ */
+@keyframes ping-out {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(var(--ping-scale, 3));
+    opacity: 0;
+  }
+}
+@keyframes glow-pulse {
+  50% {
+    opacity: 1;
   }
 }
 

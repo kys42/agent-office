@@ -33,12 +33,10 @@ test('Provider customization saves across reload and matches office, roster, lou
   await expect
     .poll(() =>
       dialog.locator('.pet-preview .sprite-window').evaluate((element) => {
-        const [body, decoration] = [...element.querySelectorAll('.sprite')];
-        return (
-          body.getAnimations()[0]?.startTime === decoration.getAnimations()[0]?.startTime &&
-          getComputedStyle(body).backgroundPositionX ===
-            getComputedStyle(decoration).backgroundPositionX
-        );
+        // Body and accessory are two backgrounds of one sheet: one animation, always in step.
+        const sheets = [...element.querySelectorAll('.sprite')];
+        const images = getComputedStyle(sheets[0]).backgroundImage;
+        return sheets.length === 1 && (images.match(/url\(/g) ?? []).length === 2;
       }),
     )
     .toBe(true);
@@ -56,7 +54,7 @@ test('Provider customization saves across reload and matches office, roster, lou
       .getByRole('group', { name: '동작 미리보기' })
       .getByRole('button', { name, exact: true })
       .click();
-    await expect(dialog.locator('.pet-preview .sprite-decoration')).toHaveCount(1);
+    await expect(dialog.locator('.pet-preview .sprite[data-decorated]')).toHaveCount(1);
   }
   await dialog.getByRole('button', { name: '이 모습으로 저장' }).click();
   await expect(dialog).toHaveCount(0);
