@@ -63,6 +63,7 @@ export function mergeSessions(input: Session[]): Session[] {
         startedAt: Math.min(...group.map((s) => s.startedAt)),
         events: events.slice(-180),
         partial: group.some((s) => s.partial) || events.length > 180,
+        windowed: group.some((s) => s.windowed) || undefined,
         artifacts: [...new Set(group.flatMap((s) => s.artifacts))].slice(-12),
         activity,
         action: activity.text,

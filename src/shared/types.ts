@@ -176,7 +176,12 @@ export interface SessionCost {
 export interface WorkingLocation {
   path: string;
   at: number;
-  source: 'tool-workdir' | 'shell-cd';
+  /**
+   * Work evidence: `file-edit` (a file it changed there) or `git-write` (commit, push, new
+   * branch/worktree, PR). `tool-workdir`/`shell-cd` are the older cd-based rule, kept only so
+   * stored records still read.
+   */
+  source: 'file-edit' | 'git-write' | 'tool-workdir' | 'shell-cd';
 }
 export interface QuotaWindow {
   key: string;
@@ -235,6 +240,8 @@ export interface Session {
   sourceKind: 'jsonl' | 'sqlite' | 'demo';
   sourceVersion: string;
   partial: boolean;
+  /** Only the head and tail of the source were read (a large file): evidence in between is unseen. */
+  windowed?: boolean;
   archived: boolean;
   pinned: boolean;
   parentId: string | null;

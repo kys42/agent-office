@@ -1,3 +1,9 @@
+# 작업 위치 = 실행 경로 + 작업 흔적 · 2026-10-08 (Issue #19)
+- 원인: 둘러보려는 `cd ~/.claude/… && …` 한 번에 책상이 `.claude` 구역으로 갔고, 이후 기록엔 cd가 없어 돌아오지 못했다
+- 단위(`tests/usage-workspace.test.ts`): 둘러보기 cd·workdir·조회 명령은 위치 없음 / commit·push·switch -c·gh pr create·`git -C`·worktree add·`rtk proxy` 접두 / 새 브랜치 아닌 checkout 무시 / 동적 경로 무시 / Edit·apply_patch(상대경로) / 에이전트 설정·스크래치 제외 / `Shell cwd was reset` 마지막 줄만 / 래핑 실행 / Codex 세션 파싱 / Claude 셸 위치 유지·되돌림 / store partial은 예전 cd 위치를 버리고 새 흔적은 유지
+- 실데이터: 이 세션 transcript를 다시 파싱하면 `~/.claude/…/memory` 대신 polyp(`git-write`). 실제 수집기 snapshot에서도 'UI 담당'·'기능 담당'이 agent-office, `~/.claude`에서 실행한 세션은 `.claude`
+- 리뷰 반영 검증(단위): 레코드 cwd 기준(유지·되돌린 cd, partial에서도), 거부·실패·결과 대기 호출 제외, 백그라운드 목록, 읽기 전용 git(--dry-run·--help), 저장소 지정 옵션과 -C 순서, 환경 변수 여러 개(종료), worktree --reason, JSON apply_patch, 지원 폴더(설정 환경 변수·임시 폴더, 실행 경로 안은 인정), store windowed 유지·전체 읽기 정리
+
 # 커서를 올리면 내 요청 말풍선 · 2026-10-07 (Issue #42)
 - 단위(`tests/office-row.test.ts`): 최신 내 요청(닫은 것 포함)·백그라운드 제외·다시 보기에도 실림·말풍선이 '내 요청'이면 없음·상주 세션의 다른 실행 요청·요청 없음
 - UI(`tests/ui/helpers-peek.spec.ts`): 큰 사무실은 응답 말풍선에 커서를 올릴 때만 인용이 생기고 떠나면 사라짐(말풍선은 유지). 책상 줄은 캐릭터를 가리키면 인용, 개인정보 모드는 본문 없음

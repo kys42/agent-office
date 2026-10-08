@@ -61,6 +61,8 @@ export const inspector = {
     startPathNote: 'Where the session started. Where it actually ran is shown separately below.',
     workingTitle: 'Where it ran recently',
     toolWorkdir: 'Tool working folder',
+    fileEdit: 'Where it edited files',
+    gitWrite: 'Where it branched, committed or opened a PR',
     explicitCd: 'Explicit cd command',
     repoFound: 'Git repo found, so the team and desk branch follow it.',
     repoMissing: 'A location was recorded, but no Git repo was found.',

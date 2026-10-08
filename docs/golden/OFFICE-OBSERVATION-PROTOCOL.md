@@ -136,4 +136,4 @@ Session {
 
 `UsageEntry`는 adapter→store 내부 표본으로 원본 메시지/response key, model, at, cache를 제외한 input/output/cached/cacheWrite/cacheWriteHour를 담는다. 저장 경계에서 별도 ledger로 옮기고 공개 snapshot에는 `SessionCost` 집계만 보낸다. cost와 기존 Usage.scope는 서로 다른 수집 범위일 수 있다. native cumulative 사용량을 반복 합산하지 않는다.
 
-`Session.workingLocation`은 명시 실행 인수 관측(path/at/source), `workspace.locationSource`는 그 경로의 Git 검증 근거다. 시작 cwd/기록 branch는 바꾸지 않는다. 공통 공간 계층이 검증된 workspace를 사용하고 화면에서 도구 코드를 재해석하지 않는다. 상세 정책은 [구현 문서](../development/USAGE-AND-WORKSPACE.md).
+`Session.workingLocation`은 명시 도구 인수에서 읽은 작업 흔적(파일 수정·Git/PR 쓰기)의 path/at/source, `workspace.locationSource`는 그 경로의 Git 검증 근거다. 시작 cwd/기록 branch는 바꾸지 않는다. 공통 공간 계층이 검증된 workspace를 사용하고 화면에서 도구 코드를 재해석하지 않는다. 상세 정책은 [구현 문서](../development/USAGE-AND-WORKSPACE.md).

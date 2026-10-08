@@ -140,10 +140,15 @@ export class OfficeStore {
         // Unchanged since this run took it in: nothing about its notices can become new with time
         // alone (time only retires old requests), so a quiet cycle writes nothing.
         const seen = `${s.revision}\n${s.events.map((e) => e.id).join('\n')}`;
-        if (previous?.revision === s.revision && this.ingested.get(s.id) === seen) continue;
+        // A place stored by the old cd rule is rewritten even when the record didn't change.
+        const legacyPlace = ['shell-cd', 'tool-workdir'].includes(
+          previous?.workingLocation?.source ?? '',
+        );
+        if (previous?.revision === s.revision && this.ingested.get(s.id) === seen && !legacyPlace)
+          continue;
         this.ingestNotices(s, standbyHours);
         this.ingested.set(s.id, seen);
-        if (previous?.revision === s.revision) continue;
+        if (previous?.revision === s.revision && !legacyPlace) continue;
         this.cached?.delete(s.id);
         const taskStartedAt =
           Math.max(s.taskStartedAt ?? 0, previous?.taskStartedAt ?? 0) || undefined;
@@ -167,7 +172,12 @@ export class OfficeStore {
           (r) => JSON.parse(r.data) as UsageEntry,
         );
         const { usageEntries: _transient, ...stored } = s;
-        const retainLocation = !s.workingLocation && s.partial && previous?.workingLocation;
+        // A partial tail may miss the evidence; keep the last one — but never an old cd-based guess.
+        const retainLocation =
+          !s.workingLocation &&
+          s.windowed &&
+          ['file-edit', 'git-write'].includes(previous?.workingLocation?.source ?? '') &&
+          previous?.workingLocation;
         const location =
           s.workingLocation ?? (retainLocation ? previous?.workingLocation : undefined);
         const workspace = retainLocation ? previous?.workspace : s.workspace;
