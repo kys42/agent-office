@@ -321,3 +321,164 @@ test('an answered call comes back settled, not calling again', () => {
   assert.equal(shown?.speech.tone, 'message');
   assert.match(shown!.speech.label, /해결됨$/);
 });
+
+test('pointing at a desk quotes the latest request the person sent it', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000, events: [] });
+  const asked = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '로그인 화면 다듬어 줘',
+    at: now - 5 * 60_000,
+    receivedAt: now - 5 * 60_000,
+    dismissedAt: now - 4 * 60_000,
+  });
+  const older = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '예전 부탁',
+    at: now - 60 * 60_000,
+  });
+  const scheduled = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '정기 실행',
+    at: now - 60_000,
+    background: true,
+  });
+  const reply = notice(s.id, { text: '다듬었어요', at: now - 1000 });
+  // The latest own request (closed ones too), never a background run.
+  const speech = stationSpeech(s, [older, asked, scheduled, reply], 3, now);
+  assert.equal(speech.bubble?.id, reply.id);
+  assert.equal(speech.request?.id, asked.id);
+  // A peek carries it too.
+  const closedReply = { ...reply, dismissedAt: now };
+  const quiet = stationSpeech(s, [asked, closedReply], 3, now);
+  assert.equal(
+    shownSpeech(s, [asked, closedReply], 3, now, quiet, true)?.speech.request?.id,
+    asked.id,
+  );
+  // When the bubble already is the person's request, nothing is quoted twice.
+  const fresh = notice(s.id, { kind: 'request', phase: undefined, text: '새 부탁', at: now });
+  const mine = stationSpeech(s, [asked, fresh], 3, now);
+  assert.equal(mine.tone, 'mine');
+  assert.equal(mine.request, undefined);
+  // A resident desk quotes the request of the run that speaks — never another run's instead.
+  const resident = session(0, 'team', {
+    status: 'idle',
+    events: [],
+    resident: { sessionIds: [s.id, 'fixture:other'] } as Session['resident'],
+  });
+  const viaOther = notice('fixture:other', { kind: 'request', phase: undefined, at: now - 2000 });
+  const otherReply = notice('fixture:other', { text: '다른 실행의 답', at: now - 500 });
+  assert.equal(stationSpeech(resident, [viaOther, otherReply], 3, now).request?.id, viaOther.id);
+  assert.equal(stationSpeech(resident, [viaOther, reply], 3, now).request, undefined);
+  assert.equal(stationSpeech(s, [reply], 3, now).request, undefined, 'nothing asked yet');
+});
+
+test('the quote is the request a bubble answers, never over a background run', () => {
+  const s = session(0, 'team', { status: 'idle', updatedAt: now - 10 * 60_000, events: [] });
+  const first = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '첫 부탁',
+    at: now - 10 * 60_000,
+  });
+  const reply = notice(s.id, { text: '첫 부탁 끝', at: now - 5 * 60_000 });
+  // A follow-up sent after the answer (e.g. while the pet still speaks the answer).
+  const followUp = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    text: '후속',
+    at: now - 1000,
+  });
+  const answered = stationSpeech(s, [first, reply, followUp], 3, now, reply);
+  assert.equal(answered.bubble?.id, reply.id);
+  assert.equal(answered.request?.id, first.id, 'the request this answer is for');
+  // A resident desk prefers the run that is speaking.
+  const resident = session(0, 'team', {
+    status: 'idle',
+    events: [],
+    resident: { sessionIds: [s.id, 'fixture:cron'] } as Session['resident'],
+  });
+  const elsewhere = notice('fixture:cron', {
+    kind: 'request',
+    phase: undefined,
+    at: now - 6 * 60_000,
+  });
+  assert.equal(stationSpeech(resident, [first, elsewhere, reply], 3, now).request?.id, first.id);
+  // A scheduled run's output is not answering the person: nothing is quoted over it.
+  const cronOut = notice('fixture:cron', { text: '정기 보고', at: now - 30_000, background: true });
+  assert.equal(stationSpeech(resident, [first, cronOut], 3, now).bubble?.id, cronOut.id);
+  assert.equal(stationSpeech(resident, [first, cronOut], 3, now).request, undefined);
+});
+
+test('the snapshot keeps the last requests so a quote can show its full original words', () => {
+  const long =
+    '로그인 화면을 다듬어 줘.\n```css\n.login { padding: 8px; }\n```\n' + '자세히 '.repeat(200);
+  const events = [
+    { id: 'u1', at: now - 9000, kind: 'user' as const, text: long, sourceRef: 'f' },
+    ...Array.from({ length: 6 }, (_, i) => ({
+      id: `a${i}`,
+      at: now - 8000 + i * 1000,
+      kind: 'assistant' as const,
+      text: `진행 ${i}`,
+      sourceRef: 'f',
+    })),
+  ];
+  const s = session(0, 'team', { status: 'idle', events });
+  const kept = snapshotEvents(s);
+  assert.ok(
+    kept.some((e) => e.id === 'u1'),
+    'the request survives the compact snapshot',
+  );
+  const asked = notice(s.id, {
+    kind: 'request',
+    phase: undefined,
+    eventId: 'u1',
+    text: '로그인 화면을 다듬어 줘.',
+    at: now - 9000,
+  });
+  const reply = notice(s.id, { text: '다듬었어요', at: now - 1000 });
+  const speech = stationSpeech({ ...s, events: kept }, [asked, reply], 3, now);
+  assert.equal(speech.request?.id, asked.id);
+  assert.equal(speech.requestText, long, 'the tooltip gets the original, not the excerpt');
+  assert.equal(stationSpeech({ ...s, events: [] }, [asked, reply], 3, now).requestText, asked.text);
+});
+
+test('a conversation found as history still quotes the request its snapshot kept', () => {
+  // First collected late: only the reply became a notice, but the user event is retained.
+  const events = [
+    { id: 'u1', at: now - 9000, kind: 'user' as const, text: '테스트를 고쳐 줘', sourceRef: 'f' },
+    { id: 'a1', at: now - 1000, kind: 'assistant' as const, text: '고쳤어요', sourceRef: 'f' },
+  ];
+  const s = session(0, 'team', { status: 'idle', events });
+  const reply = notice(s.id, { eventId: 'a1', text: '고쳤어요', at: now - 1000, bootstrap: true });
+  const speech = stationSpeech(s, [reply], 3, now);
+  assert.equal(speech.request?.text, '테스트를 고쳐 줘');
+  assert.equal(speech.request?.at, now - 9000);
+  // Not for a scheduled/internal run or a helper (their prompts aren't the person's words).
+  for (const patch of [
+    { origin: { kind: 'scheduled' } },
+    { relation: { kind: 'subagent', parentNativeId: 'p', source: 'f' } },
+  ] as Partial<Session>[])
+    assert.equal(stationSpeech({ ...s, ...patch }, [reply], 3, now).request, undefined);
+});
+
+test("a resident's speaking run quotes its own retained request before another run's", () => {
+  const events = [
+    { id: 'u1', at: now - 9000, kind: 'user' as const, text: '내 실행의 부탁', sourceRef: 'f' },
+  ];
+  const s = session(0, 'team', {
+    status: 'idle',
+    events,
+    resident: { sessionIds: ['fixture:0', 'fixture:other'] } as Session['resident'],
+  });
+  const other = notice('fixture:other', {
+    kind: 'request',
+    phase: undefined,
+    text: '다른 실행의 부탁',
+    at: now - 5000,
+  });
+  const reply = notice(s.id, { eventId: 'a1', text: '끝냈어요', at: now - 1000, bootstrap: true });
+  assert.equal(stationSpeech(s, [other, reply], 3, now).request?.text, '내 실행의 부탁');
+});

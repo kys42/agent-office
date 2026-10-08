@@ -94,6 +94,8 @@ export function DeskPet({
               session={speaker.view.session}
               speech={speech}
               privacy={privacy}
+              // Shown with the details when the pet is hovered (dock.css).
+              quote
               expanded={expanded}
               onExpandedChange={(on) => setUnfolded(on ? said : null)}
               onOpen={() => {

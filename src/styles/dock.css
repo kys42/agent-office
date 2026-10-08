@@ -726,3 +726,23 @@ body.card-mode {
 .desk-row-tools .icon-btn.is-busy svg {
   animation: spin 1s linear infinite;
 }
+
+/* The pet shows the request bubble only while hovered, with the other details; the hovered
+   answer makes room for it (more specific than speech.css, which loads later). Unfolded, the
+   answer gets its reading space back and the request steps aside as everywhere else. */
+.dock-pet-speech .speech-bubble > .speech-request-bubble {
+  display: none;
+}
+.dock-pet-anchor:hover .dock-pet-speech .speech-bubble:not(.is-expanded) > .speech-request-bubble {
+  display: block;
+}
+.dock-pet-speech .speech-request-text {
+  max-height: 31px;
+}
+.dock-pet-anchor:hover
+  .dock-pet-speech
+  .speech-bubble:not(.is-expanded):has(> .speech-request-bubble)
+  .speech-copy
+  b {
+  max-height: 40px;
+}

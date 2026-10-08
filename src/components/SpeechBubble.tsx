@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import {
   BellRing,
   Check,
@@ -65,6 +65,7 @@ export function SpeechBubble({
   reply,
   expanded,
   onExpandedChange,
+  quote = false,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -81,9 +82,12 @@ export function SpeechBubble({
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /** While pointed at: the person's request as its own bubble right above, to recall what was asked. */
+  quote?: boolean;
 }) {
   const { t } = useI18n();
   const { bubble, activity, text, label, markdown, tone } = speech;
+  const request = quote ? speech.request : undefined;
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
@@ -97,16 +101,52 @@ export function SpeechBubble({
     onExpandedChange?.(value);
   };
   const [long, setLong] = useState(false);
+  // The request bubble scrolls: a fade says there's more until its end is reached.
+  const asked = useRef<HTMLParagraphElement>(null);
+  const [more, setMore] = useState(false);
+  const measure = () => {
+    const el = asked.current;
+    setMore(!!el && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  };
+  useLayoutEffect(measure, [request?.id, speech.requestText, privacy]);
+  // Shown later (the pet reveals it on hover) or resized: measure again.
+  useEffect(() => {
+    const el = asked.current;
+    if (!el) return;
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [request?.id]);
   useLayoutEffect(() => {
     const el = body.current;
     if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
-  }, [text, markdown, open, privacy]);
+  }, [text, markdown, open, privacy, request?.id]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div
       data-tone={tone}
       className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
+      {request && (
+        // Its own bubble, never cut: long requests scroll inside it.
+        <div
+          className={`speech-request-bubble ${more ? 'has-more' : ''}`}
+          title={
+            privacy
+              ? t.desk.bubble.requestTitle
+              : `${t.desk.bubble.requestTitle}\n${speech.requestText ?? request.text}`
+          }
+        >
+          <small>
+            <User size={9} strokeWidth={2.6} aria-hidden="true" />
+            {t.desk.bubble.request}
+            <em>{ago(request.at)}</em>
+          </small>
+          <p className="speech-request-text" ref={asked} onScroll={measure}>
+            {privacy ? t.desk.hidden : (speech.requestText ?? request.text)}
+          </p>
+        </div>
+      )}
       {/* Not a <button>: its words can be selected and copied, and links inside open. */}
       <div
         className="speech-open"
