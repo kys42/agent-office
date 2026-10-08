@@ -289,6 +289,16 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
     'commands after the heredoc still count',
   );
   assert.equal(where('Bash', { command: "echo 'a; git push'" }, '/work/repo'), undefined);
+  // What runs inside control flow or a function body isn't certain: no write is claimed.
+  assert.equal(
+    where('Bash', { command: 'if false; then\ncd /work/other\ngit push\nfi' }, '/work/repo'),
+    undefined,
+  );
+  assert.equal(
+    where('Bash', { command: 'ship() { cd /work/other && git push; }' }, '/work/repo'),
+    undefined,
+  );
+  assert.equal(where('Bash', { command: '(cd /work/other && git push)' }, '/work/repo'), undefined);
   // Code mode edits through tools.apply_patch count too.
   assert.equal(
     wrappedLocations(
@@ -315,6 +325,35 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
       'codex',
     );
   assert.equal(codex('npm test').workingLocation, undefined);
+  // A Codex call without a workdir runs in the turn's cwd: an edit elsewhere, then a commit at
+  // home, brings the desk home.
+  const back = parse(
+    [
+      { type: 'session_meta', payload: { id: 'c', cwd: '/work/base' } },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'custom_tool_call',
+          name: 'apply_patch',
+          input: '*** Begin Patch\n*** Update File: /work/other/a.ts\n',
+        },
+      },
+      {
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'functions.exec_command',
+          arguments: JSON.stringify({ cmd: 'git commit -m x' }),
+        },
+      },
+    ],
+    'codex',
+  );
+  assert.equal(back.workingLocation?.path, '/work/base');
+  assert.equal(
+    wrappedLocations('await tools.exec_command({cmd: "git push"});', now, '/work/base')[0]?.path,
+    '/work/base',
+  );
   assert.equal(codex('git commit -m x').cwd, '/work/base');
   assert.equal(codex('git commit -m x').workingLocation?.path, '/work/wt');
 });

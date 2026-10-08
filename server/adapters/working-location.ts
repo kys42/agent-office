@@ -92,16 +92,27 @@ function segments(command: string): string[] {
   push();
   return out;
 }
+const CONTROL =
+  /^(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function)\b|^[({]|^[\w-]+\s*\(\s*\)/;
 const GIT_WRITES = new Set(['commit', 'push', 'merge', 'rebase', 'cherry-pick', 'revert']);
 /**
  * Walk a command line: `cd` moves the directory for the rest of the line; a Git or PR write
  * reports where it ran. Returns the directory after the line and the last write's location.
  */
 export function readCommand(command: string, base: string | undefined, at: number) {
+  const parts = segments(command);
+  // Control flow and function definitions decide at run time what actually executes: claim no
+  // write, and if a cd is inside, the shell's place afterwards is unknown.
+  if (parts.some((part) => CONTROL.test(part)))
+    return {
+      dir: parts.some((part) => /^cd\b/.test(part)) ? undefined : base,
+      moved: parts.some((part) => /^cd\b/.test(part)),
+      write: undefined,
+    };
   let dir = base;
   let moved = false;
   let write: WorkingLocation | undefined;
-  for (const part of segments(command)) {
+  for (const part of parts) {
     const [head, ...rest] = tokens(part);
     if (head === 'cd') {
       dir = rest[0] ? resolveIn(dir, rest[0]) : undefined;
@@ -266,7 +277,7 @@ export function wrappedLocations(code: unknown, at: number, cwd?: string): Worki
             )
               fields[key] = p.value.value;
           }
-          const value = toolLocation('exec_command', fields, at);
+          const value = toolLocation('exec_command', fields, at, cwd);
           if (value) out.push(value);
         }
       }

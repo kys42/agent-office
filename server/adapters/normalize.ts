@@ -181,8 +181,13 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       (name === 'exec' &&
         typeof args === 'string' &&
         /tools\.(?:exec_command|apply_patch)/.test(args));
+    // Other shell tools start each call in the turn's cwd (unless the call names a workdir).
     const here =
-      name === 'Bash' ? (shell === null ? undefined : (shell ?? cwd ?? undefined)) : undefined;
+      name === 'Bash'
+        ? shell === null
+          ? undefined
+          : (shell ?? cwd ?? undefined)
+        : (cwd ?? undefined);
     const location = wrapped
       ? wrappedLocations(args, at, cwd ?? undefined).at(-1)
       : (editLocation(name, args, cwd ?? undefined, at) ?? toolLocation(name, args, at, here));
