@@ -273,6 +273,15 @@ async function sitsAbove(request: Locator, answer: Locator, top: number) {
   expect(r.y).toBeGreaterThanOrEqual(top);
 }
 
+/** Two boxes share no pixel. */
+async function apart(a: Locator, b: Locator) {
+  const x = (await a.boundingBox())!;
+  const y = (await b.boundingBox())!;
+  const overlap =
+    x.x < y.x + y.width && y.x < x.x + x.width && x.y < y.y + y.height && y.y < x.y + x.height;
+  expect(overlap, `${JSON.stringify(x)} overlaps ${JSON.stringify(y)}`).toBe(false);
+}
+
 test('Pointing at a desk shows what the person asked as its own bubble above', async ({ page }) => {
   await bridge(page, answered());
   await page.goto('/');
@@ -324,11 +333,24 @@ test('The pet shows the request bubble only while hovered, inside its window', a
     speech.locator('.speech-open'),
     (await page.locator('.desk-pet-stage').boundingBox())!.y,
   );
-  // Unfolding the answer gives it the reading space; the request steps aside. (The hover tools
-  // sit over the expand tab, so unfold from the keyboard.)
-  await speech.getByRole('button', { name: '말풍선 전체 보기' }).focus();
-  await page.keyboard.press('Enter');
+  // The hover tools stand beside the pet, clear of the answer, its expand tab and the request.
+  const tools = page.locator('.dock-pet-tools');
+  await expect(tools).toHaveCSS('opacity', '1');
+  const expand = speech.getByRole('button', { name: '말풍선 전체 보기' });
+  for (const other of [speech.locator('.speech-open'), expand, request]) await apart(tools, other);
+  const stage = (await page.locator('.desk-pet-stage').boundingBox())!;
+  const box = (await tools.boundingBox())!;
+  expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width);
+  expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height);
+  // Unfolding the answer by mouse gives it the reading space; the request steps aside.
+  await expand.click();
   await expect(request).toBeHidden();
+  await expect(speech.locator('.speech-bubble')).toHaveClass(/is-expanded/);
+  // Unfolded, the bubble still keeps clear of the tools.
+  await apart(tools, speech.locator('.speech-bubble'));
+  // Hidden again, the tools take no clicks (the desktop behind gets them).
+  await page.mouse.move(5, 5);
+  await expect(tools).toHaveCSS('pointer-events', 'none');
 });
 
 test('The row shows the request bubble above when its desk is pointed at; screen sharing hides it', async ({

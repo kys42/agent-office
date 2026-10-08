@@ -239,23 +239,29 @@ body.dock-mode {
     transform: translateY(-3px);
   }
 }
+/* A column beside the pet, below the bubble's line: it never covers the bubble, its expand
+   tab or the request above it. Flush with the anchor so the pointer keeps the hover on the way
+   over; hidden, it lets clicks through to the desktop instead of catching them unseen. */
 .dock-pet-tools {
   position: absolute;
-  top: 4px;
-  left: -4px;
+  top: 20px;
+  left: 100%;
   z-index: 7;
   display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
   background: rgba(17, 18, 22, 0.94);
   border: 1px solid var(--line-2);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s;
 }
 .dock-pet-anchor:hover .dock-pet-tools,
 .dock-pet-tools:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 .dock-pet-tools .icon-btn {
   width: 22px;
