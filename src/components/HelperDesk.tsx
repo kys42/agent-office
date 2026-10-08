@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { EyeOff } from 'lucide-react';
 import { MOODS, type Mood, type Session } from '../shared/types';
-import { sessionName } from '../shared/office';
+import { helperName, sessionName } from '../shared/office';
 import { stackLead } from '../shared/presentation';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
@@ -35,7 +35,6 @@ export function HelperDesk({
 }) {
   const { t } = useI18n();
   const responded = s.runtime?.phase === 'responded' && !working;
-  const name = privacy ? t.desk.helper.name : s.relation?.role || sessionName(s);
   return (
     <>
       <button
@@ -58,13 +57,13 @@ export function HelperDesk({
             ✓
           </span>
         )}
-        <b>{name}</b>
+        <b>{privacy ? t.desk.helper.name : s.relation?.role || sessionName(s)}</b>
         {news && <i className="helper-news" />}
       </button>
       {/* A sibling, not inside the desk: hiding must never also open the work card. */}
       {onVeil && (
         <VeilButton
-          name={name}
+          name={privacy ? t.desk.helper.name : helperName(s)}
           onVeil={onVeil}
           className="helper-veil"
           style={{ left: at.x + 2, top: at.y - 4 }}

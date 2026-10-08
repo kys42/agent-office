@@ -179,8 +179,10 @@ test('One helper can be hidden on its own, by mouse or keyboard, and brought bac
   await expect(desks).toHaveCount(3);
   // The calling helper (조사 3) needs the person: no eye for it.
   await expect(page.locator('.helper-veil')).toHaveCount(2);
-  const eye = page.getByRole('button', { name: '조사 1 가리기' });
+  const eye = page.getByRole('button', { name: '조사 1 · 보조 조사 1 가리기' });
   await expect(eye).toHaveCSS('opacity', '0');
+  // Unseen, it leaves the desk's corner to the desk.
+  await expect(eye).toHaveCSS('pointer-events', 'none');
   await page.locator('.helper-desk[data-session-id="demo:helper-0"]').hover();
   await expect(eye).toHaveCSS('opacity', '1');
   await eye.click();
@@ -188,9 +190,9 @@ test('One helper can be hidden on its own, by mouse or keyboard, and brought bac
   await expect(page.locator('.helper-desk[data-session-id="demo:helper-0"]')).toHaveCount(0);
   await expect(desks).toHaveCount(2);
   await expect(page.locator('.desk-station[data-station-id="demo:0"]')).toBeVisible();
-  await expect(page).not.toHaveURL(/session=demo%3Ahelper-0/);
+  await expect(page.locator('.inspector-heading')).toHaveCount(0);
   // From the keyboard too.
-  await page.getByRole('button', { name: '조사 2 가리기' }).focus();
+  await page.getByRole('button', { name: '조사 2 · 보조 조사 2 가리기' }).focus();
   await page.keyboard.press('Enter');
   await expect(desks).toHaveCount(1);
   // The office's hidden list names each helper with its colleague and brings one back.
@@ -215,7 +217,7 @@ test('The ×N list hides each helper from its own row', async ({ page }) => {
   await expect(stack.locator('.helper-stack-count')).toHaveText('×4');
   await expect(list.locator('.helper-stack-open')).toHaveCount(4);
   await expect(list).not.toContainText('보조 조사 1');
-  await expect(page).not.toHaveURL(/session=demo%3Ahelper-0/);
+  await expect(page.locator('.inspector-heading')).toHaveCount(0);
 });
 
 test('The row and floor hide a helper on its own and bring it back from the chip', async ({
@@ -236,11 +238,32 @@ test('The row and floor hide a helper on its own and bring it back from the chip
     await page.reload();
     const desks = page.locator('.desk-row .helper-desk');
     await expect(desks).toHaveCount(3);
-    await page.locator('.desk-row .helper-desk[data-session-id="demo:helper-1"]').hover();
-    const eye = page.getByRole('button', { name: '조사 2 가리기' });
+    const eye = page.getByRole('button', { name: '조사 2 · 보조 조사 2 가리기' });
+    await expect(eye).toHaveCSS('pointer-events', 'none');
+    // Like a person: point at the helper, then move onto its eye and press. (Locator actions
+    // would first scroll the strip, which a person cannot, sliding the desk out from under the
+    // pointer. On the floor the desk box also runs past the window's bottom edge.)
+    await page.mouse.move(0, 0);
+    const desk = (await page
+      .locator('.desk-row .helper-desk[data-session-id="demo:helper-1"]')
+      .boundingBox())!;
+    await page.mouse.move(desk.x + 34, desk.y + 18, { steps: 4 });
+    await expect(eye).toHaveCSS('opacity', '1');
     await expect(eye).toHaveAttribute('data-solid');
-    await eye.click();
+    const at = (await eye.boundingBox())!;
+    await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2, { steps: 4 });
+    // The explanation opens upward, inside the strip.
+    const tip = eye.locator('.veil-tip');
+    await expect(tip).toBeVisible();
+    const box = (await tip.boundingBox())!;
+    const strip = (await page.locator('.desk-row').boundingBox())!;
+    expect(box.y).toBeGreaterThanOrEqual(strip.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(strip.y + strip.height);
+    await page.mouse.down();
+    await page.mouse.up();
     await expect(desks).toHaveCount(2);
+    // Hiding does not open the helper's card.
+    await expect(page).not.toHaveURL(/session=demo%3Ahelper-1/);
     await expect(page.locator('.desk-row [data-station-id="demo:0"]')).toBeVisible();
     const chip = page.locator('.desk-row-veiled');
     await expect(chip).toHaveText(/1/);

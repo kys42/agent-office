@@ -14,11 +14,11 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 ## 지원 소스
 
-| 공급자 | 입력 | 확인하는 정보 |
-|---|---|---|
+| 공급자      | 입력                                                                                                                       | 확인하는 정보                                                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`, 기본 `~/.claude/projects`; 실행 중 상태 `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` | sessionId, message.content, model, cwd, gitBranch, message.usage, 도구 호출·결과, custom-title와 sessions-index 이름; 실행 기록은 권한 확인 대기(`waiting`)만 |
-| Codex | `$CODEX_HOME/sessions/**/*.jsonl`, session_index.jsonl, state_N.sqlite의 threads(readOnly) | session_meta, turn_context, response_item, task_started/complete, token_count, token_usage_record, 실제 제목 |
-| OpenClaw | `$OPENCLAW_STATE_DIR/agents/*/sessions/*.jsonl`, `agents/*/agent/openclaw-agent.sqlite` | JSONL v3; SQLite session_nodes + transcript_events, rewrite watermark |
+| Codex       | `$CODEX_HOME/sessions/**/*.jsonl`, session_index.jsonl, state_N.sqlite의 threads(readOnly)                                 | session_meta, turn_context, response_item, task_started/complete, token_count, token_usage_record, 실제 제목                                                  |
+| OpenClaw    | `$OPENCLAW_STATE_DIR/agents/*/sessions/*.jsonl`, `agents/*/agent/openclaw-agent.sqlite`                                    | JSONL v3; SQLite session_nodes + transcript_events, rewrite watermark                                                                                         |
 
 현재 이 Mac의 OpenClaw는 원본 세션이 SQLite로 이관되어 JSONL 탐색만으로는 동작하지 않는다. DB의 인증·토큰·설정 테이블은 읽지 않는다. SQLite 스키마가 지원 범위와 다르면 연결 오류를 표시하고 마지막 정상 기록을 남긴다. 각 손상된 노드는 독립적으로 실패 처리한다. 재작성 generation을 캐시 revision에 포함한다.
 
@@ -43,7 +43,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `src/shared/office-model.ts`: `buildOfficeModel(snapshot, now)`이 동료 투영, 구역, 좌석 순서, 동료별 `ResidentView`(자세·할 일 그룹·미확인 소식·보조 소식), 그룹별 수, 대표 동료를 한 번에 파생한다. 개인정보 가림과 프로젝트 라벨은 `residentLabel` 한 곳에서 정한다.
 - 표현: App/OfficeWorkspace(큰 사무실), DeskPet(접힌 펫), DeskRow(책상 줄). `src/main.tsx`가 `#mini*` 해시로 루트를 고른다.
 - 배치: `officeTopology`(구역 → 긴 책상 → 보조 책상)가 좌표 이전의 공통 단계다. `layoutOffice`는 이를 2D 격자로, `layoutRow`는 1D 줄로 투영한다. 말풍선 판단 `stationSpeech`(src/shared/speech.ts)와 `SpeechBubble`·`HelperDesk`·`Furniture`·`Sprite` 컴포넌트, 큰 사무실의 책상 CSS를 두 장면이 함께 쓴다.
-- 가리기: `Session.hiddenAt`(`personal` 테이블, 서비스 `veil(ids, on)` 요청이 한 트랜잭션·서비스 시각으로 기록) + `isVeiled`(src/shared/veil.ts). 모델이 `ResidentView.veiled`, `scene`(장면 입력), `veiled`(되돌리기 목록)를 만들고, 액션은 `useOffice.veil(ids, on)`로 공유한다. 펫 말풍선은 `petSummary().speaker`(`PET_FRESH_MS` 2분).
+- 가리기: `Session.hiddenAt`(`personal` 테이블, 서비스 `veil(ids, on)` 요청이 한 트랜잭션·서비스 시각으로 기록) + `isVeiled`(src/shared/veil.ts). 모델이 `ResidentView.veiled`(보조는 동료 가림 또는 자기 가림), `scene`(장면 입력), `veiled`·`veiledHelpers`(되돌리기 목록: 동료 / 동료는 보이고 따로 가린 보조)를 만들고, 액션은 `useOffice.veil(ids, on)`로 공유한다. 펫 말풍선은 `petSummary().speaker`(`PET_FRESH_MS` 2분).
 - 말풍선 원문: `snapshotEvents`가 snapshot의 최근 4개 이벤트에 말하는 메시지(activity.eventId)를 더한다. `stationSpeech().markdown`이 원문(코드 블록 제외)을 주고, `InlineMarkdown`(remark-gfm singleTilde off, 인라인 요소만)이 그린다.
 - 바닥 책상: `DeskRow variant="floor"`. 같은 `layoutRow`에 `zoneGap: FLOOR_ZONE_GAP`(깃발 자리)을 주고, 장면 높이는 `FLOOR_SCENE_HEIGHT`(책상 발 `DESK_FOOT` + 그림자), 창 높이는 `FLOOR_HEIGHT`. main이 `floor` 모드의 bounds를 정하고, 마지막 펼침 모습은 렌더러 localStorage(`office:dock-expand`)에 둔다.
 - 책상 줄은 `ROW_SCALE`(기본 1, 큰 사무실 100%) 고정 축척이며 넘치면 스크롤한다. 창 높이 `ROW_HEIGHT` = 장면 높이 × 축척 + 도구 띠.
@@ -83,7 +83,6 @@ Session.activity는 원본 공개 메시지에서 가져온 220자 이내 발췌
 도구 호출이 이어져도 공개 진행 설명을 덮어쓰지 않는다. 원본 수집 범위에서 설명을 추출한 뒤 events를 180개로 제한하므로, 도구가 많은 세션과 4개 이벤트만 포함하는 snapshot에도 설명이 유지된다. 2분 넘은 진행 설명이나 작업 중이 아닌 상태에서는 마지막 진행 메시지라는 라벨과 원래 시각을 표시한다. 새로운 요청은 이전 답변을 재활용하지 않는다. 작업 내용을 추론하거나 모델 요약을 생성하지 않는다.
 
 사무실 말풍선은 짧은 발췌, 동료 명단은 두 줄 미리보기, 상세창 상단은 설명과 별도 최근 도구를 표시한다. 원문은 대화 탭에서 읽는다. 화면 내용 숨기기는 발췌·툴팁·도구 상세에도 적용한다.
-
 
 ### 수집 모듈 출처
 

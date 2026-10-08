@@ -84,11 +84,19 @@
   z-index: 5;
   width: 22px;
   height: 22px;
+  /* Unseen, it must not catch a click meant for the desk under it. */
+  pointer-events: none;
 }
 .helper-desk:hover + .helper-veil,
 .helper-veil:hover,
 .helper-veil:focus-visible {
   opacity: 1;
+  pointer-events: auto;
+}
+/* Helper desks sit low (the floor strip ends right under them): explain upward. */
+.helper-veil .veil-tip {
+  top: auto;
+  bottom: calc(100% + 7px);
 }
 /* The ×N list: each row's eye shows over its right end while that row is pointed at or
    focused, so names keep the full width the rest of the time. */
@@ -113,6 +121,11 @@
 .helper-stack-list li:hover .helper-stack-veil,
 .helper-stack-list li:focus-within .helper-stack-veil {
   opacity: 1;
+}
+/* …and the row makes room for it, so its status dot and marks stay in view. */
+.helper-stack-list li:hover .helper-stack-open,
+.helper-stack-list li:focus-within .helper-stack-open {
+  padding-right: 28px;
 }
 .helper-stack-list .helper-stack-veil:hover,
 .helper-stack-list .helper-stack-veil:focus-visible {

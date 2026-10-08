@@ -15,7 +15,7 @@ import {
 import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
-import { sessionName } from '../shared/office';
+import { helperName, sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
@@ -231,11 +231,7 @@ export function OfficeWorkspace({
                             <span className={`face face-${s.provider}`}>
                               <Sprite session={s} provider={s.provider} mood="idle" size={22} />
                             </span>
-                            <span>
-                              {prefs.privacy
-                                ? t.office.records.hidden
-                                : s.relation?.role || sessionName(s)}
-                            </span>
+                            <span>{prefs.privacy ? t.office.records.hidden : helperName(s)}</span>
                             <small className="veil-row-hint">
                               {t.office.veiled.helperAgain(
                                 prefs.privacy

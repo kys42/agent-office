@@ -155,6 +155,20 @@ test('a helper hidden on its own leaves its host and siblings in place (#35)', (
   const asking = buildOfficeModel(snap([host, helper('x', { hiddenAt, status: 'call' })]), now);
   assert.deepEqual(asking.scene.map((s) => s.id).sort(), ['h', 'x']);
   assert.equal(asking.view('x')?.needsPerson, true);
+  // A sibling calling shows the host, yet a helper hidden on its own stays hidden and listed.
+  const sibling = buildOfficeModel(
+    snap([
+      make('h', { officeSeat: 0, hiddenAt }),
+      helper('x', { hiddenAt }),
+      helper('y', { status: 'call' }),
+    ]),
+    now,
+  );
+  assert.deepEqual(sibling.scene.map((s) => s.id).sort(), ['h', 'y']);
+  assert.deepEqual(
+    sibling.veiledHelpers.map((v) => v.session.id),
+    ['x'],
+  );
   // Bring-everyone-back includes helpers hidden on their own.
   assert.deepEqual(model.hiddenSessionIds, ['x']);
 });
