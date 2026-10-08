@@ -549,6 +549,11 @@
   border-radius: 8px;
   pointer-events: none;
 }
+/* A zone's areas paint under the wall decor (it has its own transform layer). A bubble that
+   grows up to the wall — the request bubble, or an unfolded one — lifts its zone above it. */
+.project-area:has(.speech-request-bubble, .speech-bubble.is-expanded) {
+  z-index: 2;
+}
 .phase-night .project-area {
   background:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),

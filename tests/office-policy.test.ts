@@ -83,6 +83,19 @@ test('Ambient browser wrappers do not become titles, requests, or activity', () 
     '<in-app-browser-context source="ambient-ui-state">This automatically supplied context</in-app-browser-context>';
   assert.equal(cleanPrompt(wrapper), '');
   assert.equal(cleanPrompt(wrapper + '\n## My request:\n실제 요청'), '실제 요청');
+  // Harness notes recorded in the user role are not the person's request.
+  assert.equal(
+    cleanPrompt(
+      '<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n</task-notification>',
+    ),
+    '',
+  );
+  assert.equal(cleanPrompt('[Request interrupted by user]'), '');
+  assert.equal(cleanPrompt('[Request interrupted by user for tool use]'), '');
+  assert.equal(
+    cleanPrompt('[Request interrupted by user] 이건 남겨요'),
+    '[Request interrupted by user] 이건 남겨요',
+  );
   assert.equal(cleanTitle('<in-app-browser-context source="ambient-ui-state"> This'), '');
   const s = parseRecords(
     [

@@ -36,6 +36,8 @@ export const desk: Messages['desk'] = {
   },
   bubble: {
     peek: '지난 말풍선',
+    request: '내 요청',
+    requestTitle: '마지막으로 보낸 요청',
     expandLabel: '말풍선 전체 보기',
     collapseLabel: '말풍선 짧게 보기',
     expand: '전체 보기',
