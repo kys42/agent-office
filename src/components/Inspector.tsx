@@ -210,7 +210,7 @@ export function Inspector({
     if (demo || !view.older || !first || loadingOlder) return;
     setLoadingOlder(true);
     try {
-      const page = await api.detail(view.session.id, { before: first.id });
+      const page = await api.detail(view.session.id, { before: first.id, beforeAt: first.at });
       setView((v) => (v.session.events[0]?.id === first.id ? prependPage(v, page) : v));
     } catch (e) {
       notify((e as Error).message);

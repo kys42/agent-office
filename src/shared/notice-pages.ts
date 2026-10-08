@@ -87,6 +87,8 @@ export function residentNotices(notices: OfficeNotice[], now = Date.now()): Offi
     if (i < RECENT_NOTICES || isAttentionNotice(n)) keep.add(n.id);
     else if (n.kind === 'request' && now - n.at < ARRIVAL_MS + ARRIVAL_LAG_MS) keep.add(n.id);
     else if (!n.seenAt && isInboxNotice(n) && finals < UNREAD_FINALS) keep.add(n.id);
+    // Counts every unread inbox final, carried for another reason or not, so the cap keeps
+    // the newest `UNREAD_FINALS` of them (open calls are all carried regardless).
     if (!n.seenAt && isFinalNotice(n) && !n.background) finals++;
     // The bubble picks the latest by time, then by arrival: keep every notice tied for it.
     const top = latest.get(n.sessionId);

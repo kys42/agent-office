@@ -139,12 +139,12 @@ flowchart LR
 
 > **구현됨 (#64)**: 요약 테이블 없이 페이지 조회부터 넣었다.
 >
-> - **대화**: `detail(id, {before, limit})`(기본 40, 최대 200)은 저장된 순서 기준으로 `before` 이벤트 앞의 최신 `limit`개를 주고 `olderEvents`로 끝을 알린다. 인자 없는 호출은 첫 페이지다. 각 페이지에는 그 범위에 해당하는 이 세션의 소식이 함께 온다. 원본 창 밖 발췌용이며, 가장 오래된 페이지에는 그 이전 소식이 모두 온다. 가시성은 `get`과 같다. 카드는 읽은 페이지만 보관하고, 닫거나 다른 동료로 바꾸면 버린다(`src/shared/conversation-pages.ts`).
+> - **대화**: `detail(id, {before, limit})`(기본 40, 최대 200)은 저장된 순서 기준으로 `before` 이벤트 앞의 최신 `limit`개를 주고 `olderEvents`로 끝을 알린다. 인자 없는 호출은 첫 페이지다. cursor 이벤트가 저장 창에서 밀려났거나 다른 id로 다시 읽혔으면 함께 보낸 `beforeAt`(그 이벤트 시각)으로 이어서 읽으므로, 페이지와 발췌가 끊기지 않는다. 각 페이지에는 그 범위에 해당하는 이 세션의 소식이 함께 온다. 원본 창 밖 발췌용이며, 가장 오래된 페이지에는 그 이전 소식이 모두 온다. 가시성은 `get`과 같다. 카드는 읽은 페이지만 보관하고, 닫거나 다른 동료로 바꾸면 버린다(`src/shared/conversation-pages.ts`).
 > - **소식**: snapshot에는 아래 항목만 싣는다(`src/shared/notice-pages.ts`의 `residentNotices`). `noticeStats`는 모든 가시 소식을 센다.
 >   - 동료별 최신 소식(말풍선·peek), 최신 요청(인용), 최신 대화(숨김 해제 판단)
 >   - 막 도착한 요청, 미해결 호출 전부
 >   - 미확인 최종 응답(최대 1,000건), 최근 100건
-> - **지난 소식**: 소식함·동료 소식 탭은 snapshot에 없는 소식이 있을 때만 `noticePage({before, limit, filter, includeRead, includeBackground, sessionIds})`로 읽는다. 순서는 `(at, id)` 내림차순이라 cursor가 건너뛰거나 중복되지 않는다. 각 페이지는 범위 안 미확인 수를 정확히 준다.
+> - **지난 소식**: 소식함·동료 소식 탭은 snapshot에 없는 소식이 있을 때만 `noticePage({before, limit, filter, includeRead, includeBackground, sessionIds})`로 읽는다. 순서는 `(at, id)` 내림차순이라 cursor가 건너뛰거나 중복되지 않는다. 각 페이지는 범위 안 미확인 수를 정확히 준다. 다시 읽기는 변경이 잦을 때 400ms 모아 한 번 하고, 스크롤한 깊이만큼 여러 페이지로 읽어 목록이 줄지 않는다. 다시 읽기에 추월된 이전 페이지 요청은 버리고 새 목록 끝에서 다시 요청한다. receipt 뒤에도 다시 읽어 inbox 밖 소식의 수도 맞춘다.
 > - **receipt와 전체 읽음**: receipt는 snapshot에 실렸는지와 무관하게 id+version으로 적용된다. "미확인 N건 읽음"은 페이지 모드에서 `noticeReadAll(query, asOf)`로 범위 전체를 읽음 처리한다. 마지막으로 페이지를 읽은 시각(`asOf`) 이후에 도착했거나 새 version으로 바뀐 소식은 건드리지 않는다.
 >
 > SQL 열 이관과 count 인덱스는 아직이며, count는 모든 행을 읽어 계산한다.

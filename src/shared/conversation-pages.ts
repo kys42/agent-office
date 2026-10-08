@@ -12,19 +12,28 @@ export const DETAIL_PAGE_MAX = 200;
  */
 export const LOADED_EVENTS = 400;
 
-/** The newest `limit` events before `before` (the newest page without it). */
+/**
+ * The newest `limit` events before `before` (the newest page without it). A cursor event that
+ * left the stored window (or was re-read under another id) is found again by its time
+ * `beforeAt`: the page holds what is older than that, so paging and its excerpts go on.
+ */
 export function detailPage(
   s: Session,
   page: DetailPage = {},
   notices: OfficeNotice[] = [],
 ): SessionDetail {
-  const end = page.before ? s.events.findIndex((e) => e.id === page.before) : s.events.length;
-  // The cursor left the source window: everything older left with it.
+  const found = page.before ? s.events.findIndex((e) => e.id === page.before) : s.events.length;
+  const byTime = () => {
+    const at = s.events.findIndex((e) => e.at >= page.beforeAt!);
+    return at < 0 ? s.events.length : at;
+  };
+  const end = found >= 0 ? found : page.beforeAt !== undefined ? byTime() : -1;
+  // Neither id nor time to go by: nothing older can be told apart.
   if (end < 0) return { ...s, events: [], olderEvents: false, notices: [] };
   const start = Math.max(0, end - (page.limit ?? DETAIL_PAGE));
   const events = s.events.slice(start, end);
   const from = start > 0 ? Math.min(...events.map((e) => e.at)) : -Infinity;
-  const until = page.before ? s.events[end].at : Infinity;
+  const until = !page.before ? Infinity : found >= 0 ? s.events[end].at : page.beforeAt!;
   return {
     ...s,
     events,
@@ -49,9 +58,15 @@ export const freshConversation = (session: Session): LoadedConversation => ({
   notices: [],
 });
 
-const byTime = (a: OfficeEvent, b: OfficeEvent) => a.at - b.at;
-const union = (a: OfficeEvent[], b: OfficeEvent[]) =>
-  [...new Map([...a, ...b].map((e) => [e.id, e])).values()].sort(byTime);
+/**
+ * Events of both lists once each (the later copy wins), by time and, at the same time, in the
+ * order given: pages keep their stored order, so equal times never swap.
+ */
+function union(a: OfficeEvent[], b: OfficeEvent[]) {
+  const byId = new Map<string, { e: OfficeEvent; i: number }>();
+  [...a, ...b].forEach((e, i) => byId.set(e.id, { e, i: byId.get(e.id)?.i ?? i }));
+  return [...byId.values()].sort((x, y) => x.e.at - y.e.at || x.i - y.i).map((x) => x.e);
+}
 const unionNotices = (a: OfficeNotice[], b: OfficeNotice[]) => [
   ...new Map([...a, ...b].map((n) => [n.id, n])).values(),
 ];
@@ -103,7 +118,11 @@ export function mergeNewest(view: LoadedConversation, page: SessionDetail): Load
       paged: true,
       notices,
     };
-  const kept = view.session.events.filter((e) => e.at < head.at);
+  // Everything before the page's first event, by place: the same time can straddle the edge.
+  const kept = view.session.events.slice(
+    0,
+    view.session.events.findIndex((e) => e.id === head.id),
+  );
   return bounded(
     {
       session,

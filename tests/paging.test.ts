@@ -284,6 +284,12 @@ test('The service validates the paged reads and answers the old detail shape wit
       { before: 'e60', limit: 10 },
     ])) as Session;
     assert.deepEqual([page.events[0].id, page.events.length], ['e50', 10]);
+    const byTime = (await service.call('detail', [
+      'claude:long',
+      { before: 'gone', beforeAt: page.events[0].at, limit: 10 },
+    ])) as Session;
+    assert.deepEqual([byTime.events[0].id, byTime.events.length], ['e40', 10]);
+    await assert.rejects(service.call('detail', ['claude:long', { beforeAt: 'e1' }]));
     await assert.rejects(service.call('detail', ['claude:long', { limit: 0 }]));
     await assert.rejects(service.call('detail', ['claude:long', { limit: 201 }]));
     await assert.rejects(service.call('detail', ['claude:long', { from: 'e1' }]));
@@ -344,4 +350,54 @@ test('The carried set keeps each colleague latest bubble, quote and conversation
   assert.ok(kept.has('n200') && kept.has('n201') && kept.has('n202'));
   assert.ok(!kept.has('n203'), 'only the latest request');
   assert.ok(!kept.has('n149'), 'old chatter waits for its page');
+});
+
+test('Events sharing a time across a page edge stay in place when the newest page is read again', () => {
+  // e0..e59, where e18..e22 all happened in the same millisecond.
+  const all = events(60).map((e, i) => (i >= 18 && i <= 22 ? { ...e, at: now - 42_000 } : e));
+  const live = (evs: OfficeEvent[]) => ({ ...session('claude:x'), events: evs });
+  const detail = (evs: OfficeEvent[], olderEvents: boolean) => ({ ...live(evs), olderEvents });
+  let view = mergeNewest(freshConversation(live(all.slice(-4))), detail(all.slice(20), true));
+  view = prependPage(view, detail(all.slice(0, 20), false));
+  assert.deepEqual(
+    view.session.events.map((e) => e.id),
+    all.map((e) => e.id),
+  );
+  // A live event, then the newest page again starting at e21 (same time as e18..e20).
+  const next = { ...all[59], id: 'e60', at: now };
+  view = mergeLive(view, live([...all.slice(57), next]));
+  view = mergeNewest(view, detail([...all.slice(21), next], true));
+  assert.deepEqual(
+    view.session.events.map((e) => e.id),
+    [...all, next].map((e) => e.id),
+    'e18..e20 are kept, in their stored order',
+  );
+});
+
+test('A cursor that left the stored window pages on by its time, excerpts included', async () => {
+  await withStore((store) => {
+    const evs = events(100);
+    store.upsert([session('claude:long', evs)], 'claude');
+    put(store, [
+      notice('claude:long', 1, { at: evs[10].at - 500 }),
+      notice('claude:long', 2, { at: evs[0].at - 3600_000 }),
+    ]);
+    // The window slid on: e0..e29 are gone, the card still holds e20 as its oldest.
+    store.upsert([{ ...session('claude:long', evs.slice(30)), revision: 'slid' }], 'claude');
+    const gone = store.detail('claude:long', { before: 'e20', beforeAt: evs[20].at });
+    assert.deepEqual([gone.events.length, gone.olderEvents], [0, false]);
+    assert.deepEqual(
+      (gone.notices ?? []).map((n) => n.eventId).sort(),
+      ['n1', 'n2'],
+      'older excerpts still come',
+    );
+    // Re-read under other ids: the events older than the cursor's time are the page.
+    const renamed = evs.slice(30).map((e) => ({ ...e, id: `r${e.id}` }));
+    store.upsert([{ ...session('claude:long', renamed), revision: 'renamed' }], 'claude');
+    const page = store.detail('claude:long', { before: 'e70', beforeAt: evs[70].at, limit: 10 });
+    assert.deepEqual(
+      [page.events[0].id, page.events.at(-1)!.id, page.olderEvents],
+      ['re60', 're69', true],
+    );
+  });
 });

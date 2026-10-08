@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { noticeOrder } from '../../src/shared/notice-pages';
@@ -119,13 +119,16 @@ test('A colleague card reads older messages by page, keeps the reading position 
   await expect(older).toHaveText('이전 대화 16개 더 보기');
 });
 
-test('The inbox reads older notices by page, and receipts and read-all reach notices the snapshot does not carry', async ({
-  page,
-}) => {
+/**
+ * An office whose news lives in `window.all` (newest first): the snapshot carries the newest
+ * 100 and every unread final; `noticePage` and `noticeReadAll` act like the collector's.
+ * `window.hold` makes older pages wait for `window.release()`; `window.push()` publishes.
+ */
+async function newsOffice(page: Page, count: number, read: (i: number) => boolean) {
   const fixture = demoSnapshot();
   const now = Date.now();
   const ids = fixture.sessions.map((s) => s.id);
-  const all: OfficeNotice[] = Array.from({ length: 260 }, (_, i) => ({
+  const all: OfficeNotice[] = Array.from({ length: count }, (_, i) => ({
     id: `n${String(i).padStart(3, '0')}`,
     sessionId: ids[i % 6],
     eventId: `n${i}`,
@@ -135,8 +138,7 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
     at: now - (i + 1) * 60_000,
     receivedAt: now - (i + 1) * 60_000,
     version: 'v1',
-    // The newest half was read; older progress is unread.
-    seenAt: i < 130 ? now - 1000 : null,
+    seenAt: read(i) ? now - 1000 : null,
     viewedAt: null,
     dismissedAt: null,
     resolvedAt: null,
@@ -164,8 +166,10 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
         const carried = w.all.filter(
           (n: any, i: number) => i < 100 || (!n.seenAt && kind(n, 'final')),
         );
+        w.version = (w.version ?? s.version) + 1;
         return structuredClone({
           ...s,
+          version: w.version,
           notices: carried,
           noticeStats: {
             unread: w.all.filter((n: any) => !n.seenAt && inbox(n)).length,
@@ -178,7 +182,10 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
         detail: async (id: string) => structuredClone(s.sessions.find((x: any) => x.id === id)),
         visit: async () => view(),
         artifacts: async () => [],
-        subscribe: () => () => {},
+        subscribe: (cb: any) => {
+          w.push = () => cb(view());
+          return () => {};
+        },
         notices: async (receipts: any[], action: string) => {
           for (const n of w.all)
             if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
@@ -190,10 +197,12 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
         },
         noticePage: async (q: any) => {
           w.calls.push(['page', q.filter, q.before?.id ?? null]);
+          if (q.before && w.hold) await new Promise((r) => (w.release = r));
           const after = (n: any) =>
             !q.before || n.at < q.before.at || (n.at === q.before.at && n.id < q.before.id);
           const list = w.all.filter((n: any) => after(n) && matches(n, q));
-          const limit = q.limit ?? 50;
+          // `window.cap` stands for the collector's own page bound (NOTICE_PAGE_MAX).
+          const limit = Math.min(q.limit ?? 50, w.cap ?? Infinity);
           const unread = { final: 0, attention: 0, all: 0 } as any;
           for (const n of w.all)
             if (!n.seenAt && scope(n, q))
@@ -217,6 +226,13 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
     },
     { s: fixture, all },
   );
+}
+
+test('The inbox reads older notices by page, and receipts and read-all reach notices the snapshot does not carry', async ({
+  page,
+}) => {
+  // The newest half was read; older progress is unread.
+  await newsOffice(page, 260, (i) => i < 130);
   await page.goto('/');
   await page.getByRole('button', { name: '소식함 열기' }).click();
   const inbox = page.getByRole('complementary', { name: '소식함' });
@@ -239,6 +255,9 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
   const oldest = inbox.locator('.news-item[data-notice-id="n259"]');
   await oldest.getByRole('button', { name: '읽음으로 표시' }).click();
   await expect(oldest.getByRole('button', { name: '다시 미확인' })).toBeVisible();
+  // Its counts follow though it is outside the inbox (the snapshot's counts do not move).
+  await expect(inbox.getByRole('button', { name: /전체 기록/ })).toContainText('129');
+  await expect(inbox.getByRole('button', { name: '미확인 129건 읽음', exact: true })).toBeVisible();
   expect(
     await page.evaluate(() => (window as any).all.find((n: any) => n.id === 'n259').seenAt),
   ).toBeTruthy();
@@ -258,4 +277,68 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
     false,
   ]);
   await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('0');
+});
+
+test('A paged list stays whole while it changes: no gap from a page racing a re-read, no shrinking past one page, one re-read per burst', async ({
+  page,
+}) => {
+  await newsOffice(page, 300, () => true);
+  await page.goto('/');
+  await page.getByRole('button', { name: '소식함 열기' }).click();
+  const inbox = page.getByRole('complementary', { name: '소식함' });
+  await inbox.getByRole('button', { name: /전체 기록/ }).click();
+  await inbox.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
+  const items = inbox.locator('.news-item');
+  await expect(items).toHaveCount(30);
+  const calls = () => page.evaluate(() => (window as any).calls as [string, string, string][]);
+  const tops = async () => (await calls()).filter((c) => c[2] === null).length;
+  const more = inbox.locator('.news-load');
+  const ids = () => items.evaluateAll((xs) => xs.map((x) => x.getAttribute('data-notice-id')));
+  const newest = (n: number) =>
+    page.evaluate((n) => (window as any).all.slice(0, n).map((x: any) => x.id), n);
+  // Below the carried newest 100, where nothing else would fill a gap.
+  for (let shown = 60; shown <= 150; shown += 30) {
+    await more.click();
+    await expect(items).toHaveCount(shown);
+  }
+  // An older page is on its way when a new notice arrives and the list is read from the top.
+  await page.evaluate(() => ((window as any).hold = true));
+  await more.click();
+  const before = await tops();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.all.unshift({ ...w.all[0], id: 'fresh', eventId: 'fresh', text: '새 소식', at: Date.now() });
+    w.push();
+  });
+  await expect.poll(tops).toBe(before + 1);
+  await expect(inbox.getByText('새 소식', { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.hold = false;
+    w.release();
+  });
+  await expect(items).toHaveCount(180);
+  expect(await ids()).toEqual(await newest(180));
+  // Deeper than the collector's page bound: a re-read pages on and keeps every notice read.
+  await page.evaluate(() => ((window as any).cap = 100));
+  for (let i = 0; i < 12 && (await more.count()); i++) await more.click();
+  await expect(items).toHaveCount(301);
+  const reads = await tops();
+  const pages = (await calls()).length;
+  // A burst of changes is read once, after it settles.
+  await page.evaluate(async () => {
+    const w = window as any;
+    for (let i = 0; i < 3; i++) {
+      w.all[0] = { ...w.all[0], text: `새 소식 ${i}`, version: `v${i + 2}` };
+      w.push();
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  });
+  await expect(inbox.getByText('새 소식 2')).toBeVisible();
+  await expect.poll(tops).toBe(reads + 1);
+  await page.waitForTimeout(600);
+  expect(await tops()).toBe(reads + 1);
+  expect((await calls()).length - pages).toBeGreaterThanOrEqual(3);
+  await expect(items).toHaveCount(301);
+  expect(await ids()).toEqual(await newest(301));
 });

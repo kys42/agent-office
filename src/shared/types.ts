@@ -140,6 +140,8 @@ export interface NoticePage {
 /** A page of a conversation: the newest `limit` events before the `before` event. */
 export interface DetailPage {
   before?: string;
+  /** The `before` event's time: where the page ends should that event have left the record. */
+  beforeAt?: number;
   limit?: number;
 }
 /** A session with one page of its conversation. */

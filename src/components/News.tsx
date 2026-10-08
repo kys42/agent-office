@@ -33,7 +33,7 @@ import { useI18n } from '../lib/i18n';
 export type ReceiptHandler = (
   receipts: NoticeReceipt[],
   action: 'read' | 'dismiss' | 'unread' | 'view',
-) => void;
+) => void | Promise<void>;
 
 export function NewsList({
   notices,
@@ -165,6 +165,35 @@ export function NewsList({
   );
 }
 type LoadedPage = Omit<NoticePage, 'notices'> & { key: string; notices: OfficeNotice[] };
+/** A paged list waits this long after a change before reading again (changes come in bursts). */
+const REREAD_MS = 400;
+/** Pages a list reads again at most (a read from the top keeps the depth scrolled to). */
+const REREAD_PAGES = 20;
+/** The first `count` notices of `query`, a page at a time; read-all goes by the first read. */
+async function readPages(query: NoticeQuery, count: number): Promise<NoticePage> {
+  const notices: OfficeNotice[] = [];
+  let page: NoticePage | undefined;
+  let at: number | undefined;
+  for (let i = 0; i < REREAD_PAGES && notices.length < count; i++) {
+    const before = notices.length ? noticeCursor(notices.at(-1)!) : null;
+    const limit = Math.min(NOTICE_PAGE_MAX, Math.max(1, count - notices.length));
+    page = await api.noticePage({ ...query, before, limit });
+    at ??= page.at;
+    notices.push(...page.notices);
+    if (!page.more || !page.notices.length) break;
+  }
+  return { ...page!, notices, at: at! };
+}
+/** Unread counts moved by receipts applied to a page's notices (same order before and after). */
+function recount(page: LoadedPage, after: OfficeNotice[], includeBackground: boolean) {
+  const unread = { ...page.unread };
+  page.notices.forEach((n, i) => {
+    if (!n.seenAt === !after[i].seenAt) return;
+    for (const kind of ['final', 'attention', 'all'] as const)
+      if (matchesKind(n, kind, includeBackground)) unread[kind] += after[i].seenAt ? -1 : 1;
+  });
+  return unread;
+}
 export function NewsFeed({
   notices,
   sessions,
@@ -198,42 +227,73 @@ export function NewsFeed({
   };
   const key = JSON.stringify(query);
   // When the snapshot carries only part of the news, the list reads it from the collector by
-  // page; the carried copies (the freshest) stand in for theirs. Read again whenever the carried
-  // notices or the office's counts move, as deep as the person has scrolled.
+  // page; the carried copies (the freshest) stand in for theirs. Read again shortly after the
+  // carried notices, the office's counts or a receipt move, as deep as the person has scrolled.
   const [page, setPage] = useState<LoadedPage | null>(null);
+  const current = useRef<LoadedPage | null>(null);
+  const show = (next: LoadedPage | null) => {
+    current.current = next;
+    setPage(next);
+  };
   const depth = useRef({ key, count: NOTICE_PAGE });
+  // Bumped by each read from the top: an older page asked for before it no longer follows on.
+  const generation = useRef(0);
+  const reading = useRef<Promise<void>>(Promise.resolve());
+  const [settled, setSettled] = useState(0);
   const carried = notices
     .map((n) => `${n.id}:${n.version}:${n.seenAt}:${n.dismissedAt}:${n.resolvedAt}`)
     .join('\n');
   useEffect(() => {
-    if (!paged) return setPage(null);
+    if (!paged) return show(null);
     if (depth.current.key !== key) depth.current = { key, count: NOTICE_PAGE };
     let valid = true;
-    api
-      .noticePage({ ...query, limit: Math.min(NOTICE_PAGE_MAX, depth.current.count) })
-      .then((p) => valid && setPage({ ...p, key }))
-      .catch(() => {});
+    const timer = setTimeout(
+      () => {
+        const g = ++generation.current;
+        reading.current = readPages(query, depth.current.count)
+          .then((p) => {
+            if (valid && g === generation.current) show({ ...p, key });
+          })
+          .catch(() => {});
+      },
+      current.current?.key === key ? REREAD_MS : 0,
+    );
     return () => {
       valid = false;
+      clearTimeout(timer);
     };
-  }, [paged, key, carried, stats]);
+  }, [paged, key, carried, stats, settled]);
   const loaded = paged && page?.key === key ? page : null;
   const onMore = async () => {
-    const last = loaded?.notices.at(-1);
-    if (!loaded || !last) return;
-    const next = await api.noticePage({ ...query, before: noticeCursor(last), limit: NOTICE_PAGE });
-    setPage((p) => {
-      if (p?.key !== key) return p;
+    // A page continues the list it was asked from; one overtaken by a read from the top is
+    // asked again from where the new list ends.
+    for (let tries = 0; tries < 3; tries++) {
+      await reading.current;
+      const g = generation.current;
+      const last = current.current?.key === key ? current.current.notices.at(-1) : undefined;
+      if (!last) return;
+      const next = await api.noticePage({
+        ...query,
+        before: noticeCursor(last),
+        limit: NOTICE_PAGE,
+      });
+      if (g !== generation.current) continue;
+      const p = current.current!;
       const ids = new Set(p.notices.map((n) => n.id));
       const notices = [...p.notices, ...next.notices.filter((n) => !ids.has(n.id))];
       depth.current = { key, count: notices.length };
-      return { ...p, notices, more: next.more };
-    });
+      return show({ ...p, notices, more: next.more, unread: next.unread });
+    }
   };
-  // A receipt shows at once on paged-in notices too (the carried ones follow the snapshot).
+  // A receipt shows at once on paged-in notices and their counts; once saved, the list is read
+  // again (a notice outside the inbox moves no count the snapshot carries).
   const receipt: ReceiptHandler = (receipts, action) => {
-    setPage((p) => p && { ...p, notices: applyNoticeReceipt(p.notices, receipts, action) });
-    onReceipt(receipts, action);
+    const p = current.current;
+    if (p) {
+      const notices = applyNoticeReceipt(p.notices, receipts, action);
+      show({ ...p, notices, unread: recount(p, notices, includeBackground) });
+    }
+    void Promise.resolve(onReceipt(receipts, action)).then(() => setSettled((n) => n + 1));
   };
   const matches = (n: OfficeNotice, kind = filter) => matchesKind(n, kind, includeBackground);
   const local = (kind: NoticeFilter) => notices.filter((n) => !n.seenAt && matches(n, kind)).length;

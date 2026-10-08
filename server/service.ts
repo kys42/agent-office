@@ -108,6 +108,7 @@ const prefsSchema = z
 const detailPageSchema = z
   .object({
     before: z.string().max(1000).optional(),
+    beforeAt: z.number().optional(),
     limit: z.number().int().min(1).max(DETAIL_PAGE_MAX).optional(),
   })
   .strict();
