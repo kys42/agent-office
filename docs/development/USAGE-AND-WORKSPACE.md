@@ -32,7 +32,9 @@ Claude/OpenClaw는 message ID별 최대 출력 표본, Codex는 native response 
 - `git-write`: 명령 줄의 `git commit|push|merge|rebase|cherry-pick|revert`, 새 브랜치(`switch -c`·`checkout -b`), `git worktree add <경로>`(새 worktree), `gh pr create|merge`가 실행된 폴더. 폴더는 `git -C` → 같은 줄의 앞선 `cd` → `workdir` → Claude 셸 위치 순으로 정한다
 - Claude Bash는 `cd`를 다음 호출까지 유지하므로 셸 위치를 따라간다. 도구 결과 마지막 줄이 `Shell cwd was reset to <경로>`이면 되돌린다. 셸 위치 자체는 흔적이 아니다
 - 제외: `~/.claude`·`~/.codex`·`~/.openclaw`와 `/tmp/claude-*` 스크래치. 둘러보는 `cd`·`workdir`만 있는 명령은 흔적이 아니다
-- 예전 규칙(`shell-cd`·`tool-workdir`)으로 저장된 위치는 partial tail에서 이어 가지 않는다 `WorkspaceIdentity.locationSource`는 그 관측을 실제 Git 경로로 검증했다는 연결이다. 이 경우 현재 worktree의 branch/HEAD가 책상 표시를 이끈다. Git common-dir는 기존처럼 같은 프로젝트의 worktree를 한 팀으로 묶는다.
+- 예전 규칙(`shell-cd`·`tool-workdir`)으로 저장된 위치는 partial tail에서 이어 가지 않고, 기록이 그대로여도 다시 써서 정리한다
+- 셸 문법은 **보수적으로** 읽는다. 따옴표·heredoc 본문·`$(…)`·백틱·주석은 명령이 아니고, 파이프라인 속 `cd`는 바깥 셸을 옮기지 않는다. `if`·`for`·함수 정의·서브셸처럼 실행 여부가 정해지지 않는 구조, `--git-dir`·`--work-tree`·`GIT_DIR` 같은 저장소 지정, 읽을 수 없는 경로(`$VAR`, `~`)는 흔적으로 보지 않는다. 확실하지 않으면 위치를 정하지 않는다(실행 경로가 기준)
+- 앞·뒤만 읽은 큰 기록(partial)에서는 가운데의 `cd`를 놓쳤을 수 있어 Claude 셸 위치를 추적하지 않는다. 같은 명령에 위치가 드러난 쓰기만 흔적이다 `WorkspaceIdentity.locationSource`는 그 관측을 실제 Git 경로로 검증했다는 연결이다. 이 경우 현재 worktree의 branch/HEAD가 책상 표시를 이끈다. Git common-dir는 기존처럼 같은 프로젝트의 worktree를 한 팀으로 묶는다.
 
 Codex functions.exec 안의 `tools.exec_command`는 Acorn으로 구문만 읽고, 같은 작업 흔적 규칙을 적용한다. 실행하거나 문자열을 eval하지 않는다. literal 인수만 허용하고 동적 경로·함수 정의·조건부 호출·다른 위치의 병렬 호출은 추측하지 않는다. Claude Bash와 OpenClaw exec도 같은 중간 규격으로 번역한다. 파일 읽기 인수, 경로가 언급된 진행 문장, PR URL만으로는 이동하지 않는다. PR은 다른 저장소의 참고 링크일 수 있다.
 

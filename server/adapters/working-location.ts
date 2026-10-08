@@ -47,24 +47,21 @@ interface Segment {
 function segments(command: string): Segment[] {
   const out: Segment[] = [];
   const pending: { tag: string; strip: boolean }[] = [];
+  // Nesting: quotes and substitutions; only the top level splits.
+  const stack: string[] = [];
   let cur = '';
-  let quote: string | null = null;
-  let depth = 0; // inside $( … )
-  let tick = false; // inside ` … `
   let piped = false;
   const push = (next = false) => {
-    const text = cur
-      .trim()
-      .replace(/^(?:\w+=\S*\s+)*/, '')
-      .replace(/^(?:rtk(?:\s+proxy)?|command|time)\s+/, '');
+    const text = cur.trim();
     if (text) out.push({ text, piped: piped || next });
     cur = '';
     piped = next;
   };
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
-    if (quote === "'") {
-      if (c === "'") quote = null;
+    const ctx = stack.at(-1);
+    if (ctx === "'") {
+      if (c === "'") stack.pop();
       cur += c;
       continue;
     }
@@ -72,33 +69,37 @@ function segments(command: string): Segment[] {
       cur += c + (command[++i] ?? '');
       continue;
     }
-    if (quote === '"' && c !== '"' && !command.startsWith('$(', i) && c !== '`') {
+    if (ctx === '"') {
+      if (command.startsWith('$(', i)) {
+        stack.push('$(');
+        cur += '$(';
+        i++;
+        continue;
+      }
+      if (c === '"') stack.pop();
+      else if (c === '`') stack.push('`');
       cur += c;
       continue;
     }
-    if (c === "'" || c === '"') {
-      quote = quote === c ? null : quote ? quote : c;
+    if (ctx === '`') {
+      if (c === '`') stack.pop();
       cur += c;
       continue;
     }
-    // Command substitutions run in their own shell: keep them inside this command's text.
+    // Top level or inside $( … ).
+    if (c === "'" || c === '"' || c === '`') {
+      stack.push(c);
+      cur += c;
+      continue;
+    }
     if (command.startsWith('$(', i)) {
-      depth++;
+      stack.push('$(');
       cur += '$(';
       i++;
       continue;
     }
-    if (depth && c === ')') {
-      depth--;
-      cur += c;
-      continue;
-    }
-    if (c === '`') {
-      tick = !tick;
-      cur += c;
-      continue;
-    }
-    if (depth || tick || quote) {
+    if (ctx === '$(') {
+      if (c === ')') stack.pop();
       cur += c;
       continue;
     }
@@ -143,7 +144,8 @@ const GIT_WRITES = new Set(['commit', 'push', 'merge', 'rebase', 'cherry-pick', 
  */
 export function readCommand(command: string, base: string | undefined, at: number) {
   const parts = segments(command);
-  const cds = parts.some(({ text }) => /^cd\b/.test(text));
+  // Any cd word at all (e.g. `then cd …`) counts when the effect can't be followed.
+  const cds = parts.some(({ text }) => /(?:^|\s)cd(?:\s|$)/.test(text));
   // Control flow and function definitions decide at run time what actually executes: claim no
   // write, and if a cd is inside, the shell's place afterwards is unknown.
   if (parts.some(({ text }) => CONTROL.test(text)))
@@ -152,11 +154,23 @@ export function readCommand(command: string, base: string | undefined, at: numbe
   let moved = false;
   let write: WorkingLocation | undefined;
   for (const { text: part, piped } of parts) {
-    const [head, ...rest] = tokens(part);
+    const words = tokens(part);
+    // Assignments and wrappers before the command; GIT_DIR/GIT_WORK_TREE pick another repository.
+    let elsewhere = false;
+    while (words[0] && /^\w+=/.test(words[0]))
+      elsewhere ||= /^GIT_(?:DIR|WORK_TREE)=/.test(words.shift()!);
+    if (words[0] === 'rtk' && words[1] === 'proxy') words.splice(0, 2);
+    else if (['rtk', 'command', 'time'].includes(words[0])) words.shift();
+    const [head, ...rest] = words;
     // A cd inside a pipeline changes only that pipeline's subshell.
     if (head === 'cd' && piped) continue;
     if (head === 'cd') {
-      dir = rest[0] ? resolveIn(dir, rest[0]) : undefined;
+      // Options before the directory: -L/-P/-e/-@ and --; anything else is unknown.
+      let k = 0;
+      while (/^-[LPe@]+$/.test(rest[k] ?? '')) k++;
+      if (rest[k] === '--') k++;
+      const target = rest[k];
+      dir = target && !target.startsWith('-') ? resolveIn(dir, target) : undefined;
       moved = true;
       continue;
     }
@@ -165,12 +179,17 @@ export function readCommand(command: string, base: string | undefined, at: numbe
       continue;
     }
     if (head !== 'git') continue;
-    let where = dir;
+    let where = elsewhere ? undefined : dir;
     let i = 0;
-    // Global options: -C <dir> runs elsewhere, -c <k=v> only configures.
+    // Global options: -C <dir> runs elsewhere, -c <k=v> only configures; --git-dir/--work-tree
+    // pick a repository this doesn't follow, so no place is claimed.
     while (rest[i]?.startsWith('-')) {
       if (rest[i] === '-C' && rest[i + 1]) where = resolveIn(where, rest[++i]);
       else if (rest[i] === '-c') i++;
+      else if (/^--(?:git-dir|work-tree)(?:=|$)/.test(rest[i])) {
+        where = undefined;
+        if (!rest[i].includes('=')) i++;
+      }
       i++;
     }
     const sub = rest[i];

@@ -316,6 +316,40 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
     ),
     '/work/repo',
   );
+  // A quoted substitution closes, and what follows it is read again.
+  assert.equal(
+    where('Bash', { command: 'echo "$(pwd)"; cd /work/other; git push' }, '/work/repo'),
+    '/work/other',
+  );
+  assert.equal(
+    where(
+      'Bash',
+      { command: 'git commit -m "$(cat <<\'EOF\'\nmsg\nEOF\n)" && git push' },
+      '/work/repo',
+    ),
+    '/work/repo',
+  );
+  // cd options; repository overrides this doesn't follow claim nothing.
+  assert.equal(
+    where('Bash', { command: 'cd -- /work/other && git commit -m x' }, '/work/repo'),
+    '/work/other',
+  );
+  assert.equal(
+    where('Bash', { command: 'cd -P /work/other && git commit -m x' }, '/work/repo'),
+    '/work/other',
+  );
+  assert.equal(
+    where(
+      'Bash',
+      { command: 'git --git-dir=/work/other/.git --work-tree=/work/other commit -m x' },
+      '/work/repo',
+    ),
+    undefined,
+  );
+  assert.equal(
+    where('Bash', { command: 'GIT_DIR=/work/other/.git git commit -m x' }, '/work/repo'),
+    undefined,
+  );
   // An explicit workdir: relative ones read from the call's start, unreadable ones stay unknown.
   assert.equal(
     where('exec_command', { cmd: 'git push', workdir: '../other' }, '/work/base'),
@@ -431,6 +465,12 @@ test('Claude keeps its shell directory between calls until Claude Code resets it
       bash('b', 'git commit -m x'),
     ).workingLocation?.path,
     '/work/repo',
+  );
+  // A cd inside control flow leaves the shell's place unknown afterwards.
+  assert.equal(
+    claude(bash('a', 'if true; then cd /work/other; fi'), bash('b', 'git commit -m x'))
+      .workingLocation,
+    undefined,
   );
   // After a cd that can't be read literally, a bare commit isn't pinned on the launch repo.
   assert.equal(
