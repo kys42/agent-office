@@ -114,6 +114,18 @@ test('List hover spotlights a desk without moving any furniture', async ({ page 
   expect(after).toEqual(before);
 });
 
+test('The demo moves its labels with the poses as time passes (#16)', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/?demo');
+  const desk = page.locator('.desk-station[data-station-id="demo:0"]');
+  await expect(desk.locator('.desk-name small')).toContainText('일하는 중');
+  // Past two quiet minutes the colleague stands by: the label says so too (it used to stay
+  // "working" while the pose stood by).
+  await page.clock.fastForward('03:00');
+  await expect(desk.locator('.office-pet')).toHaveClass(/pose-standby/);
+  await expect(desk.locator('.desk-name small')).toContainText('대기 중');
+});
+
 test('Coming back summarises only what arrived while away', async ({ page }) => {
   const fixture = demoSnapshot();
   await page.clock.install();

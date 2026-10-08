@@ -39,7 +39,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 큰 사무실 창과 데스크 펫 창은 같은 코드로 같은 코어를 쓰고 표현만 다르다.
 
-- `src/lib/useOffice.ts`: snapshot 구독, 데모 분기, 변경 액션(refresh / setPrefs / patch / receipt / visit / returnToOffice), 15초 시계. `setPrefs`는 저장 성공 여부를 돌려준다.
+- `src/lib/useOffice.ts`: snapshot 구독, 데모 분기, 변경 액션(refresh / setPrefs / patch / receipt / visit / returnToOffice), 15초 시계. 데모는 들고 있는 원본(관측 상태)에서 시계마다 `deriveDemo`로 서비스와 같은 상태 사다리를 계산해 내보낸다. `setPrefs`는 저장 성공 여부를 돌려준다.
 - `src/shared/office-model.ts`: `buildOfficeModel(snapshot, now)`이 동료 투영, 구역, 좌석 순서, 동료별 `ResidentView`(자세·할 일 그룹·미확인 소식·보조 소식), 그룹별 수, 대표 동료를 한 번에 파생한다. 개인정보 가림과 프로젝트 라벨은 `residentLabel` 한 곳에서 정한다.
 - 표현: App/OfficeWorkspace(큰 사무실), DeskPet(접힌 펫), DeskRow(책상 줄). `src/main.tsx`가 `#mini*` 해시로 루트를 고른다.
 - 배치: `officeTopology`(구역 → 긴 책상 → 보조 책상)가 좌표 이전의 공통 단계다. `layoutOffice`는 이를 2D 격자로, `layoutRow`는 1D 줄로 투영한다. 말풍선 판단 `stationSpeech`(src/shared/speech.ts)와 `SpeechBubble`·`HelperDesk`·`Furniture`·`Sprite` 컴포넌트, 큰 사무실의 책상 CSS를 두 장면이 함께 쓴다.

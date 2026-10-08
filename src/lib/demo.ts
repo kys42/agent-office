@@ -1,6 +1,7 @@
 import type { Session, Snapshot, Mood, Provider } from '../shared/types';
 import { localizeNotice, noticeCandidates } from '../shared/notices';
 import { runtimeObservation } from '../shared/presentation';
+import { deriveState } from '../shared/runtime';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../shared/office';
 import { applyZone } from '../shared/zones';
@@ -18,6 +19,22 @@ export function reconcileDemo(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
     sessions: attachSessions(sessions.map((s) => ({ ...s, officeSeat: seats[seatKey(s)] }))),
+  };
+}
+/**
+ * The demo as the service would serve it at `now`: the same status ladder over each session's
+ * own (observed) status, so labels move with the poses (work → standing by after 2 minutes…).
+ * The held demo keeps the observed statuses; only what is shown is derived, like `decorate`.
+ */
+export function deriveDemo(snapshot: Snapshot, now = Date.now()): Snapshot {
+  const { standbyHours, readyMinutes } = snapshot.preferences;
+  return {
+    ...snapshot,
+    sessions: snapshot.sessions.map((s) => {
+      const state = deriveState(s.status, s.updatedAt, now, s.archived, standbyHours, readyMinutes);
+      if (!state.reason) return s;
+      return { ...s, status: state.status, statusReason: state.reason, statusEvidence: 'derived' };
+    }),
   };
 }
 // Desk order, provider, project and status; names and text come from the active language.

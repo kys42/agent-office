@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
-import { demoSnapshot, reconcileDemo } from './demo';
+import { demoSnapshot, deriveDemo, reconcileDemo } from './demo';
 import { applyNoticeReceipt } from '../shared/notices';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
@@ -198,7 +198,12 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   // A just-arrived request ends on time even between the coarse ticks.
   useWakeAt(arrivalEnds(snapshot?.notices ?? []), () => setClock(Date.now()));
   // `clock` only re-derives time-based state between snapshots; the model always uses now.
-  const model = useMemo(() => buildOfficeModel(snapshot, Date.now()), [snapshot, clock]);
+  // Live snapshots arrive derived from the service; the demo derives its own on the same clock.
+  const shown = useMemo(
+    () => (demo && snapshot ? deriveDemo(snapshot, Date.now()) : snapshot),
+    [demo, snapshot, clock],
+  );
+  const model = useMemo(() => buildOfficeModel(shown, Date.now()), [shown, clock]);
 
   const refresh = async () => {
     if (demo) {
@@ -377,7 +382,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     });
   };
   return {
-    snapshot,
+    snapshot: shown,
     error,
     refreshing,
     model,
