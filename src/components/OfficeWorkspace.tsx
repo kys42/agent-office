@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { zoneLabel } from '../shared/zones';
 import {
   Archive,
@@ -15,7 +16,7 @@ import {
 import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
-import { helperName, sessionName } from '../shared/office';
+import { helperName, projectKey, sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
@@ -53,6 +54,9 @@ export function OfficeWorkspace({
   onInbox,
   zoneRequest,
   onZoneHandled,
+  onZoneChange,
+  projectRequest,
+  onProjectHandled,
   model,
   onVeil,
   onPin,
@@ -73,6 +77,11 @@ export function OfficeWorkspace({
   onInbox: () => void;
   zoneRequest?: { zone: OfficeZone; at: number } | null;
   onZoneHandled?: () => void;
+  /** The sidebar and window title mirror the zone shown here. */
+  onZoneChange?: (zone: OfficeZone) => void;
+  /** A sidebar project scopes the roster to that exact project zone (not a text search). */
+  projectRequest?: { key: string; name: string; at: number } | null;
+  onProjectHandled?: () => void;
   /** Shared office core: projection and zones are derived once for every view. */
   model: OfficeModel;
   /** Hide colleagues (all member runs) until their next conversation, or bring them back. */
@@ -103,6 +112,23 @@ export function OfficeWorkspace({
     setZone(zoneRequest.zone);
     onZoneHandled?.();
   }, [zoneRequest]);
+  // The window toolbar hosts the zone switcher; fall back to inline when there is no slot.
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => setToolbarSlot(document.getElementById('toolbar-slot')), []);
+  useEffect(() => {
+    onZoneChange?.(zone);
+  }, [zone]);
+  const [project, setProject] = useState<{ key: string; name: string } | null>(null);
+  useEffect(() => {
+    if (!projectRequest) return;
+    setZone('office');
+    setProject({ key: projectRequest.key, name: projectRequest.name });
+    onProjectHandled?.();
+  }, [projectRequest]);
+  // Turning on privacy must not leave a typed project or name visible in the search field.
+  useEffect(() => {
+    if (prefs.privacy) setQuery('');
+  }, [prefs.privacy]);
   const office = zones.office;
   useEffect(() => {
     const owner = selected ? model.view(selected) : undefined;
@@ -112,6 +138,7 @@ export function OfficeWorkspace({
     .filter(
       (s) =>
         (filter === 'all' || s.provider === filter) &&
+        (!project || zone !== 'office' || projectKey(s) === project.key) &&
         [sessionName(s), s.project, s.area?.name ?? '']
           .join(' ')
           .toLowerCase()
@@ -130,58 +157,61 @@ export function OfficeWorkspace({
     onReturn(id);
     setZone('office');
   };
+  const stageToolbar = (
+    <div className="stage-toolbar">
+      <div className="zone-tabs" role="tablist" aria-label={t.office.spaces}>
+        {ZONES.map((z) => (
+          <button
+            key={z.id}
+            role="tab"
+            aria-selected={zone === z.id}
+            className={zone === z.id ? 'active' : ''}
+            onClick={() => {
+              setZone(z.id);
+              setQuery('');
+            }}
+          >
+            <z.icon size={15} strokeWidth={1.9} />
+            {t.office.zones[z.id]}
+            <span>{zones[z.id].length}</span>
+          </button>
+        ))}
+      </div>
+      <div className="stage-toolbar-end">
+        <span
+          className={`live-badge ${demo ? 'demo' : prefs.paused ? 'paused' : ''}`}
+          title={
+            demo ? t.office.live.demo : prefs.paused ? t.office.live.paused : t.office.live.live
+          }
+        >
+          <i />
+          {demo ? 'Demo' : prefs.paused ? 'Paused' : 'Live'}
+        </span>
+        <button
+          className="office-policy"
+          onClick={onSettings}
+          aria-label={t.office.settingsLabel}
+          title={`${t.office.settingsTitle} · ${officeSchedule(prefs)}`}
+        >
+          <SlidersHorizontal size={15} />
+          <span className="policy-text">{officeSchedule(prefs)}</span>
+        </button>
+        <button
+          className={`icon-btn ${refreshing ? 'spin' : ''}`}
+          aria-label={t.office.refreshLabel}
+          title={t.office.refreshTitle}
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          <RotateCw size={15} />
+        </button>
+      </div>
+    </div>
+  );
   return (
     <div className="office-layout">
       <div className="office-column">
-        <div className="stage-toolbar">
-          <div className="zone-tabs" role="tablist" aria-label={t.office.spaces}>
-            {ZONES.map((z) => (
-              <button
-                key={z.id}
-                role="tab"
-                aria-selected={zone === z.id}
-                className={zone === z.id ? 'active' : ''}
-                onClick={() => {
-                  setZone(z.id);
-                  setQuery('');
-                }}
-              >
-                <z.icon size={15} strokeWidth={1.9} />
-                {t.office.zones[z.id]}
-                <span>{zones[z.id].length}</span>
-              </button>
-            ))}
-          </div>
-          <div className="stage-toolbar-end">
-            <span
-              className={`live-badge ${demo ? 'demo' : prefs.paused ? 'paused' : ''}`}
-              title={
-                demo ? t.office.live.demo : prefs.paused ? t.office.live.paused : t.office.live.live
-              }
-            >
-              <i />
-              {demo ? 'Demo' : prefs.paused ? 'Paused' : 'Live'}
-            </span>
-            <button
-              className="office-policy"
-              onClick={onSettings}
-              aria-label={t.office.settingsLabel}
-              title={t.office.settingsTitle}
-            >
-              <SlidersHorizontal size={13} />
-              {officeSchedule(prefs)}
-            </button>
-            <button
-              className={`icon-btn ${refreshing ? 'spin' : ''}`}
-              aria-label={t.office.refreshLabel}
-              title={t.office.refreshTitle}
-              onClick={onRefresh}
-              disabled={refreshing}
-            >
-              <RotateCw size={15} />
-            </button>
-          </div>
-        </div>
+        {toolbarSlot ? createPortal(stageToolbar, toolbarSlot) : stageToolbar}
         {zone === 'office' ? (
           <Office
             sessions={model.scene}
@@ -367,6 +397,14 @@ export function OfficeWorkspace({
         onFilter={setFilter}
         query={query}
         onQuery={setQuery}
+        scope={
+          project && zone === 'office'
+            ? {
+                label: prefs.privacy ? t.app.sidebar.hiddenProject : project.name,
+                onClear: () => setProject(null),
+              }
+            : undefined
+        }
         sort={sort}
         onSort={setSort}
       />

@@ -14,9 +14,10 @@ test('Roster is a to-do list: waiting, results, working — and tiles jump to ro
   await expect(page.locator('.group-results .session-row')).toContainText('모모');
   await expect(page.locator('.group-working .session-row')).toHaveCount(4);
   await expect(page.locator('.roster-head h2')).toHaveText('1명이 나를 기다려요');
+  // The summary tile, not the sidebar's to-do item of the same name.
   await page
+    .locator('.stats-grid')
     .getByRole('button', { name: /확인할 결과/ })
-    .first()
     .click();
   await expect(page.locator('.session-row.is-hover')).toContainText('모모');
 });
@@ -292,9 +293,11 @@ test('Bubbles draw read state instead of writing it, and unfold long text in pla
   await expect(bubble).toBeVisible();
   // The state words remain for screen readers but are not drawn.
   await expect(bubble.locator('.bubble-exposure')).toHaveText('처음 도착');
+  // A 1px screen-reader box, scaled with the room (which may be drawn above 100%).
+  const scale = Number(await page.locator('.scene-viewport').getAttribute('data-scale'));
   expect(
     await bubble.locator('.bubble-exposure').evaluate((e) => e.getBoundingClientRect().width),
-  ).toBeLessThanOrEqual(1);
+  ).toBeLessThanOrEqual(Math.max(1, scale) + 0.01);
   const unfold = bubble.getByRole('button', { name: '말풍선 전체 보기' });
   await unfold.click();
   await expect(bubble).toHaveClass(/is-expanded/);

@@ -26,6 +26,7 @@ import {
   Wind,
   Building2,
   Coffee,
+  HelpCircle,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
@@ -34,7 +35,8 @@ import { useTerminalSend } from './lib/useTerminalSend';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
-import { sessionName } from './shared/office';
+import { projectKey, sessionName } from './shared/office';
+import { projectColor } from './shared/office-layout';
 import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
@@ -164,6 +166,8 @@ export default function App() {
   }, []);
   useEffect(() => {
     document.body.classList.toggle('is-desktop', isDesktop);
+    // Only macOS windows get the translucent sidebar material (see desktop/main.ts).
+    document.body.classList.toggle('is-mac', isDesktop && /Mac/i.test(navigator.userAgent));
   }, []);
   const sessions = snapshot?.sessions ?? [];
   // J/K walks what the office shows: hidden colleagues stay out until they talk again.
@@ -201,6 +205,38 @@ export default function App() {
     ),
     notices,
   ).flatMap((g) => g.sessions);
+  const todo = triage(ordered, notices).filter(
+    (g): g is typeof g & { group: 'attention' | 'results' | 'working' } =>
+      g.group === 'attention' || g.group === 'results' || g.group === 'working',
+  );
+  const projectList = [
+    ...ordered
+      .filter((s) => !s.attachedTo)
+      .reduce((map, s) => {
+        const key = projectKey(s);
+        const item = map.get(key) ?? { key, name: s.area?.name ?? s.project, count: 0 };
+        item.count += 1;
+        return map.set(key, item);
+      }, new Map<string, { key: string; name: string; count: number }>())
+      .values(),
+  ];
+  // The office remembers its zone per data source; the sidebar mirrors it.
+  // The office remembers its zone per data source; the sidebar and title mirror it from the start.
+  const [officeZoneNow, setOfficeZoneNow] = useState<OfficeZone>(() => {
+    try {
+      const zone = JSON.parse(
+        localStorage.getItem(`office:view:${demo ? 'demo' : 'live'}`) || '{}',
+      ).zone;
+      return zone === 'waiting' || zone === 'archive' ? zone : 'office';
+    } catch {
+      return 'office';
+    }
+  });
+  const [projectRequest, setProjectRequest] = useState<{
+    key: string;
+    name: string;
+    at: number;
+  } | null>(null);
   const openInbox = () => {
     setShowUsage(false);
     setInbox(true);
@@ -441,98 +477,139 @@ export default function App() {
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
     >
-      <header className="app-header">
-        <div className="brand">
-          <div className="brand-mark" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-            <span />
+      <aside className="sidebar" aria-label={t.app.mainMenu}>
+        <div className="sidebar-top">
+          <div className="brand">
+            <div className="brand-mark" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <b>Agent Office</b>
+            {demo && <span className="brand-tag">DEMO</span>}
           </div>
-          <b>Agent Office</b>
-          {demo && <span className="brand-tag">DEMO</span>}
         </div>
-        <button className="global-search" onClick={openSearch}>
-          <Search size={15} />
-          <span>{t.palette.search}</span>
-          <kbd>⌘K</kbd>
-        </button>
-        <div className="header-actions">
-          <button
-            className={`inbox-button ${inbox ? 'active' : ''} ${unread ? 'has-unread' : ''}`}
-            aria-label={t.app.header.openInbox}
-            title={t.app.header.inboxTitle}
-            onClick={() => {
-              setShowUsage(false);
-              setInbox((v) => !v);
-              setSelected(null);
-            }}
-          >
-            <Inbox size={16} />
-            <span>{t.app.header.inbox}</span>
-            <b>{unread}</b>
-          </button>
-          <button
-            className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
-            aria-label={t.app.header.openUsage}
-            title={t.app.header.usageTitle}
-            onClick={() => {
-              setShowUsage((v) => !v);
-              setInbox(false);
-              setSelected(null);
-            }}
-          >
-            <Gauge size={17} />
-          </button>
-          <button
-            className={`icon-btn ${prefs?.privacy ? 'is-on' : ''}`}
-            aria-label={prefs?.privacy ? t.app.header.showContent : t.app.header.hideContent}
-            title={prefs?.privacy ? t.app.header.showContent : t.app.header.hideContentTitle}
-            onClick={() => onPrefs({ privacy: !prefs?.privacy })}
-          >
-            {prefs?.privacy ? <EyeOff size={17} /> : <Eye size={17} />}
-          </button>
-          <button
-            className="icon-btn mini-button"
-            aria-label={t.app.header.mini}
-            title={t.app.header.miniTitle}
-            onClick={() => api.window('mini')}
-          >
-            <PictureInPicture2 size={17} />
-          </button>
-        </div>
-      </header>
-      <div className="app-body">
-        <nav className="side-nav" aria-label={t.app.mainMenu}>
-          <div>
-            {tabs.slice(0, 3).map((tab) => (
+        <nav className="source-list">
+          <div className="source-group">
+            <h6>{t.app.sidebar.spaces}</h6>
+            {(
+              [
+                ['office', Building2, 'office'],
+                ['waiting', Armchair, null],
+                ['archive', Archive, null],
+              ] as const
+            ).map(([zone, Icon, tab]) => (
               <button
-                key={tab.id}
-                className={view === tab.id ? 'active' : ''}
-                aria-label={t.app.tabs[tab.id].title}
-                title={t.app.tabs[tab.id].title}
+                key={zone}
+                className={`source-item ${view === 'office' && officeZoneNow === zone ? 'active' : ''}`}
+                aria-label={tab ? t.app.tabs.office.title : undefined}
+                title={tab ? t.app.tabs.office.title : undefined}
                 onClick={() => {
-                  setView(tab.id);
                   setSelected(null);
-                  if (tab.id === 'memory') setMemoryQuery('');
+                  goZone(zone);
                 }}
               >
-                <tab.icon size={19} strokeWidth={1.8} />
-                <span>{t.app.tabs[tab.id].short}</span>
+                <span className={`source-icon icon-${zone}`}>
+                  <Icon size={13} strokeWidth={2.2} />
+                </span>
+                <span className="source-label">{t.office.zones[zone]}</span>
+                <em>{model.zones[zone].length}</em>
               </button>
             ))}
           </div>
-          <div className="nav-bottom">
+          <div className="source-group">
+            <h6>{t.app.sidebar.todo}</h6>
+            {todo.map(({ group, sessions: members }) => (
+              <button
+                key={group}
+                className="source-item"
+                disabled={!members.length}
+                onClick={() => {
+                  setView('office');
+                  if (members[0]) choose(members[0].id);
+                }}
+              >
+                <span className={`source-dot dot-${group}`} />
+                <span className="source-label">{t.roster.tiles[group]}</span>
+                <em className={group === 'attention' && members.length ? 'hot' : ''}>
+                  {members.length}
+                </em>
+              </button>
+            ))}
+          </div>
+          {projectList.length > 0 && (
+            <div className="source-group">
+              <h6>{t.app.sidebar.projects}</h6>
+              {projectList.map((p) => (
+                <button
+                  key={p.key}
+                  className="source-item"
+                  title={prefs?.privacy ? undefined : p.name}
+                  onClick={() => {
+                    setSelected(null);
+                    setView('office');
+                    setProjectRequest({ key: p.key, name: p.name, at: Date.now() });
+                  }}
+                >
+                  <span className="source-dot" style={{ background: projectColor(p.key) }} />
+                  <span className="source-label">
+                    {prefs?.privacy ? t.app.sidebar.hiddenProject : p.name}
+                  </span>
+                  <em>{p.count}</em>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="source-group">
+            <h6>{t.app.sidebar.records}</h6>
+            {(['memory', 'activity'] as const).map((id) => {
+              const tab = tabs.find((x) => x.id === id)!;
+              return (
+                <button
+                  key={id}
+                  className={`source-item ${view === id ? 'active' : ''}`}
+                  aria-label={t.app.tabs[id].title}
+                  title={t.app.tabs[id].title}
+                  onClick={() => {
+                    setView(id);
+                    setSelected(null);
+                    if (id === 'memory') setMemoryQuery('');
+                  }}
+                >
+                  <span className={`source-icon icon-${id}`}>
+                    <tab.icon size={13} strokeWidth={2.2} />
+                  </span>
+                  <span className="source-label">{t.app.tabs[id].title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+        <div className="sidebar-foot app-footer">
+          <div className="foot-connectors">
+            {snapshot?.connectors.map((c) => (
+              <button
+                key={c.provider}
+                onClick={() => setView('settings')}
+                title={`${PROVIDERS[c.provider].name} · ${c.message}`}
+              >
+                <span className={`connector-dot ${c.state}`} />
+                {PROVIDERS[c.provider].short}
+              </button>
+            ))}
+          </div>
+          <span className={`sync-state ${prefs?.paused ? 'paused' : ''}`}>
+            <ShieldCheck size={11} />
+            {prefs?.paused
+              ? t.app.footer.paused
+              : snapshot?.lastSync
+                ? t.app.footer.synced(time(snapshot.lastSync))
+                : t.app.footer.connecting}
+          </span>
+          <div className="foot-actions">
             <button
-              aria-label={t.guide.title}
-              title={t.guide.title}
-              onClick={() => setGuide('features')}
-            >
-              <BookOpen size={19} strokeWidth={1.8} />
-              <span>{t.guide.menu}</span>
-            </button>
-            <button
-              className={view === 'settings' ? 'active' : ''}
+              className={`source-item ${view === 'settings' ? 'active' : ''}`}
               aria-label={t.app.tabs.settings.title}
               title={t.app.tabs.settings.title}
               onClick={() => {
@@ -540,12 +617,108 @@ export default function App() {
                 setSelected(null);
               }}
             >
-              <Settings2 size={19} strokeWidth={1.8} />
-              <span>{t.app.tabs.settings.short}</span>
+              <span className="source-icon icon-settings">
+                <Settings2 size={13} strokeWidth={2.2} />
+              </span>
+              <span className="source-label">{t.app.tabs.settings.short}</span>
+            </button>
+            <button
+              className="icon-btn"
+              aria-label={t.guide.title}
+              title={t.guide.title}
+              onClick={() => setGuide('features')}
+            >
+              <HelpCircle size={15} />
+            </button>
+            <button className="icon-btn" title={t.app.help.title} onClick={() => setHelp(true)}>
+              <Keyboard size={15} />
             </button>
           </div>
-        </nav>
+          <button
+            className="foot-demo"
+            onClick={() => {
+              setDemo(!demo);
+              setSelected(null);
+            }}
+          >
+            {demo ? t.app.footer.toLive : t.app.footer.toDemo}
+          </button>
+        </div>
+      </aside>
+      <div className="app-body">
         <main className={`main-content view-${view}`}>
+          <header className="toolbar app-header">
+            <div className="toolbar-title">
+              <h1>{view === 'office' ? t.office.zones[officeZoneNow] : t.app.tabs[view].title}</h1>
+              <small>
+                {view === 'office' && officeZoneNow !== 'office'
+                  ? t.app.toolbar.zoneCount(model.zones[officeZoneNow].length)
+                  : view === 'office'
+                    ? t.app.toolbar.officeSubtitle(
+                        projectList.length,
+                        model.scene.filter((s) => !s.attachedTo).length,
+                      )
+                    : snapshot?.lastSync
+                      ? t.app.footer.synced(time(snapshot.lastSync))
+                      : t.app.footer.connecting}
+              </small>
+            </div>
+            <div className="toolbar-slot" id="toolbar-slot" />
+            <div className="toolbar-spacer" />
+            <button
+              className="global-search"
+              onClick={openSearch}
+              aria-label={t.palette.search}
+              title={`${t.palette.search} · ⌘K`}
+            >
+              <Search size={13} />
+              <span>{t.palette.search}</span>
+              <kbd>⌘K</kbd>
+            </button>
+            <div className="header-actions">
+              <button
+                className={`icon-btn inbox-button ${inbox ? 'active is-on' : ''} ${unread ? 'has-unread' : ''}`}
+                aria-label={t.app.header.openInbox}
+                title={t.app.header.inboxTitle}
+                onClick={() => {
+                  setShowUsage(false);
+                  setInbox((v) => !v);
+                  setSelected(null);
+                }}
+              >
+                <Inbox size={16} />
+                <b>{unread}</b>
+              </button>
+              <button
+                className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
+                aria-label={t.app.header.openUsage}
+                title={t.app.header.usageTitle}
+                onClick={() => {
+                  setShowUsage((v) => !v);
+                  setInbox(false);
+                  setSelected(null);
+                }}
+              >
+                <Gauge size={16} />
+              </button>
+              <button
+                className={`icon-btn ${prefs?.privacy ? 'is-on' : ''}`}
+                aria-label={prefs?.privacy ? t.app.header.showContent : t.app.header.hideContent}
+                title={prefs?.privacy ? t.app.header.showContent : t.app.header.hideContentTitle}
+                onClick={() => onPrefs({ privacy: !prefs?.privacy })}
+              >
+                {prefs?.privacy ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+              <button
+                className="icon-btn mini-button"
+                aria-label={t.app.header.mini}
+                title={t.app.header.miniTitle}
+                onClick={() => api.window('mini')}
+              >
+                <PictureInPicture2 size={16} />
+              </button>
+            </div>
+          </header>
           {demo && (
             <div className="demo-banner">
               <Sparkles size={14} />
@@ -650,6 +823,9 @@ export default function App() {
               onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
+              onZoneChange={setOfficeZoneNow}
+              projectRequest={projectRequest}
+              onProjectHandled={() => setProjectRequest(null)}
               onReply={sendReply}
               onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />
@@ -722,47 +898,6 @@ export default function App() {
           />
         )}
       </div>
-      <footer className="app-footer">
-        <div>
-          <span className="footer-local">
-            <ShieldCheck size={12} />
-            {t.app.footer.local}
-          </span>
-          {snapshot?.connectors.map((c) => (
-            <button
-              key={c.provider}
-              onClick={() => setView('settings')}
-              title={`${PROVIDERS[c.provider].name} · ${c.message}`}
-            >
-              <span className={`connector-dot ${c.state}`} />
-              {PROVIDERS[c.provider].short}
-              <em>{c.state === 'connected' ? c.count : '—'}</em>
-            </button>
-          ))}
-        </div>
-        <div>
-          <span className={`sync-state ${prefs?.paused ? 'paused' : ''}`}>
-            <i />
-            {prefs?.paused
-              ? t.app.footer.paused
-              : snapshot?.lastSync
-                ? t.app.footer.synced(time(snapshot.lastSync))
-                : t.app.footer.connecting}
-          </span>
-          <button className="footer-keys" onClick={() => setHelp(true)} title={t.app.help.title}>
-            <kbd>⌘K</kbd> {t.app.footer.find} <kbd>?</kbd> {t.app.footer.shortcuts}
-          </button>
-          <span className="version">v0.1</span>
-          <button
-            onClick={() => {
-              setDemo(!demo);
-              setSelected(null);
-            }}
-          >
-            {demo ? t.app.footer.toLive : t.app.footer.toDemo}
-          </button>
-        </div>
-      </footer>
       {palette && snapshot && (
         <CommandPalette
           sessions={model.residents}

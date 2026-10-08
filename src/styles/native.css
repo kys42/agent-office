@@ -1,0 +1,790 @@
+/* ───────────────────────── Sonoma native layer ─────────────────────────
+   Loaded last. Turns the panels into macOS patterns: inset-grouped lists, a toolbar-height
+   header on every column, segmented controls instead of underline tabs, Messages-style
+   conversation, Spotlight-style palette. Only chrome lives here; the pixel office does not. */
+
+/* ── Right column: roster, inspector, inbox, usage share one grouped surface ── */
+.roster,
+.app-body > .inspector {
+  background: var(--grouped);
+  border-left: 0.5px solid var(--line-2);
+}
+.panel-tabs,
+.inspector-top {
+  position: relative;
+  flex-shrink: 0;
+  height: var(--bar-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: color-mix(in srgb, var(--bg-1) 86%, transparent);
+  border-bottom: 0.5px solid var(--line-2);
+  -webkit-app-region: drag;
+}
+.panel-tabs button,
+.inspector-top button,
+.inspector-top a {
+  -webkit-app-region: no-drag;
+}
+.roster > .panel-tabs {
+  margin: 0 -14px;
+  padding: 0 10px 0 14px;
+}
+.news-inbox > .panel-tabs {
+  padding: 0 10px 0 16px;
+}
+.inspector-top {
+  padding: 0 8px 0 16px;
+}
+.panel-tabs .panel-switch {
+  display: inline-flex;
+  padding: 2px;
+  gap: 0;
+  background: var(--bg-4);
+  border: 0;
+  border-radius: 7px;
+}
+.panel-tabs .panel-switch button {
+  height: 22px;
+  padding: 0 11px;
+  gap: 5px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+.panel-tabs .panel-switch button[aria-pressed='true'] {
+  background: var(--control);
+  box-shadow:
+    0 0 0 0.5px var(--control-line),
+    0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.panel-tabs .panel-switch button b {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 15px;
+  color: #ffffff;
+  background: var(--badge);
+}
+.inspector-crumb {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* ── Roster as an inset-grouped list ── */
+.roster {
+  gap: 12px;
+  padding: 0 14px;
+}
+.roster-head {
+  padding-top: 2px;
+}
+.roster-head span {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.roster-head h2 {
+  margin-top: 1px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.stats-grid {
+  border-radius: 10px;
+  background: var(--bg-2);
+  border: 0;
+  box-shadow: 0 0 0 0.5px var(--line-2);
+}
+.stats-grid > .stat {
+  padding: 8px 10px;
+  background: transparent;
+}
+.stat + .stat {
+  border-left: 0.5px solid var(--line-2);
+}
+.stat span {
+  font-size: 11px;
+  color: var(--text-2);
+}
+.stat span i {
+  border-radius: 50%;
+}
+.stat strong {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.stat.is-live,
+.stat.is-alert,
+.stat.is-result {
+  background: transparent;
+}
+.stats-grid > .stat:not(:disabled):hover {
+  background: var(--bg-3);
+}
+.section-title h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.section-title > span {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.section-title select {
+  height: 22px;
+  font-size: 12px;
+  box-shadow: none;
+  border-color: transparent;
+  background-color: transparent;
+}
+.roster-finder label {
+  height: 26px;
+  border-radius: 7px;
+  border: 0;
+  background: var(--bg-4);
+}
+.roster-finder label:focus-within {
+  background: var(--field);
+  box-shadow:
+    0 0 0 0.5px var(--control-line),
+    0 0 0 3px var(--accent-soft);
+}
+.roster-scroll {
+  margin: 0 -14px;
+  padding: 2px 14px 16px;
+}
+.roster-group + .roster-group {
+  margin-top: 12px;
+}
+.group-head {
+  padding: 6px 4px 5px;
+  background: var(--grouped);
+}
+.group-head b {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.group-head em {
+  font-family: var(--font-ui);
+}
+.group-action {
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--accent);
+  background: transparent;
+}
+.group-action:hover {
+  background: var(--accent-soft);
+}
+/* Rows join into one rounded white group with hairline separators. */
+.session-row {
+  border-radius: 0;
+  padding: 9px 10px;
+  background: var(--bg-2);
+}
+.group-head + .session-row,
+.roster-group > .session-row:first-child {
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
+}
+.session-row:last-child,
+.roster-group > .session-row:last-of-type {
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+}
+.session-row + .session-row {
+  box-shadow: inset 52px 0.5px 0 -52px var(--line-2);
+}
+.roster-group {
+  border-radius: 10px;
+}
+.session-row:hover,
+.session-row.is-hover:not(.selected) {
+  background: color-mix(in srgb, var(--bg-2) 92%, var(--text));
+}
+.session-row.selected {
+  background: var(--accent-soft);
+  box-shadow: none;
+}
+.session-row.selected::before {
+  display: none;
+}
+.group-attention .session-row,
+.group-attention .session-row:hover {
+  background: var(--bg-2);
+}
+.group-attention .session-row {
+  box-shadow: inset 3px 0 0 var(--st-call);
+}
+.session-row .face > i {
+  border-color: var(--bg-2);
+}
+.session-copy strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.session-copy strong em {
+  font-family: var(--font-ui);
+  color: #ffffff;
+  background: var(--badge);
+  border-radius: 9px;
+}
+.session-meta {
+  font-size: 11.5px;
+}
+.session-progress {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* ── Inspector: header on the grouped background, cards are white groups ── */
+.inspector-heading {
+  padding: 16px 16px 10px;
+}
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 15px;
+  background:
+    linear-gradient(180deg, transparent 64%, rgba(0, 0, 0, 0.05) 64%),
+    linear-gradient(180deg, var(--face-hi), var(--face-lo));
+  box-shadow: 0 0 0 0.5px var(--line-2);
+}
+.inspector-heading h2 {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+.relation-strip > span,
+.relation-strip > button {
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-2);
+  box-shadow: 0 0 0 0.5px var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.relation-strip > button {
+  font-family: var(--font-ui);
+  color: var(--accent);
+}
+.inspector-tabs {
+  margin: 2px 16px 10px;
+  padding: 2px;
+  gap: 0;
+  background: var(--bg-4);
+  border: 0;
+  border-radius: 7px;
+}
+.inspector-tabs button {
+  flex: 1;
+  justify-content: center;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+}
+.inspector-tabs button.active {
+  background: var(--control);
+  box-shadow:
+    0 0 0 0.5px var(--control-line),
+    0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.inspector-tabs button.active::after {
+  display: none;
+}
+.inspector-scroll {
+  padding: 4px 16px 18px;
+}
+.now-card,
+.progress-summary,
+.artifact-card,
+.detail-section dl,
+.usage-grid,
+.related-runs,
+.completion-button,
+.activity-evidence,
+.news-item,
+.source-note {
+  background: var(--bg-2);
+  border: 0;
+  border-radius: 10px;
+  box-shadow: 0 0 0 0.5px var(--line-2);
+}
+.now-card.tone-attention {
+  background: color-mix(in srgb, var(--st-call) 7%, var(--bg-2));
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--st-call) 35%, transparent),
+    inset 3px 0 0 var(--st-call);
+}
+.now-card.tone-result {
+  background: color-mix(in srgb, var(--st-done) 7%, var(--bg-2));
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--st-done) 35%, transparent),
+    inset 3px 0 0 var(--st-done);
+}
+.now-card.tone-working {
+  background: var(--bg-2);
+  box-shadow:
+    0 0 0 0.5px var(--line-2),
+    inset 3px 0 0 var(--st-work);
+}
+.detail-section dl > div + div,
+.usage-grid > div + div {
+  border-color: var(--line-2);
+}
+.detail-section h3 {
+  margin: 0 0 6px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+.path-copy {
+  background: var(--bg-2);
+  border: 0;
+  box-shadow: 0 0 0 0.5px var(--line-2);
+}
+.notes-editor textarea {
+  background: var(--field);
+  border: 0.5px solid var(--control-line);
+  border-radius: 8px;
+}
+.notes-editor textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.inspector-actions {
+  background: var(--grouped);
+  border-top: 0.5px solid var(--line-2);
+}
+.inspector-actions > .button.primary {
+  height: 30px;
+  font-size: 13px;
+}
+
+/* ── Conversation: Messages-style bubbles ── */
+.conversation-toolbar {
+  background: color-mix(in srgb, var(--grouped) 92%, transparent);
+  backdrop-filter: blur(16px) saturate(1.5);
+  border-bottom: 0.5px solid var(--line-2);
+}
+.conversation-filters button,
+.news-filter-bar button {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.conversation-filters button:hover,
+.news-filter-bar button:hover {
+  background: var(--bg-4);
+}
+.conversation-filters button.active,
+.news-filter-bar button.active {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 0;
+}
+.conversation-filters button span,
+.news-filter-bar button span {
+  font-family: var(--font-ui);
+  color: inherit;
+  opacity: 0.7;
+}
+.conversation-filters button.active span,
+.news-filter-bar button.active span {
+  color: inherit;
+}
+.message-meta b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.message-bubble {
+  background: var(--bg-2);
+  border: 0;
+  border-radius: 16px 16px 16px 5px;
+  box-shadow: 0 0 0 0.5px var(--line-2);
+}
+.message-user .message-bubble {
+  color: #ffffff;
+  background: var(--accent);
+  border: 0;
+  border-radius: 16px 16px 5px 16px;
+  box-shadow: none;
+}
+.message-user .message-text,
+.message-user .message-text a,
+.message-user .message-expand {
+  color: #ffffff;
+}
+.message-user .message-text code {
+  background: rgba(255, 255, 255, 0.2);
+}
+.conversation-message.category-reply .message-bubble {
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--st-done) 40%, transparent),
+    inset 3px 0 0 var(--st-done);
+}
+.conversation-message.category-progress .message-bubble {
+  box-shadow:
+    0 0 0 0.5px var(--line-2),
+    inset 3px 0 0 color-mix(in srgb, var(--st-work) 70%, transparent);
+}
+.message-text code {
+  background: var(--bg-4);
+}
+.message-text pre {
+  background: var(--bg-3);
+  border: 0;
+}
+.message-tool .message-bubble,
+.message-result .message-bubble,
+.message-lifecycle .message-bubble,
+.work-group {
+  background: var(--bg-3);
+  box-shadow: none;
+  border: 0;
+}
+.message-meta .message-category {
+  border-radius: 4px;
+}
+.new-messages {
+  box-shadow: var(--shadow-pop);
+}
+
+/* ── Inbox ── */
+.inbox-heading h2 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.inbox-heading h2 b {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.news-item.unread {
+  background: var(--bg-2);
+  box-shadow:
+    0 0 0 0.5px var(--line-2),
+    inset 3px 0 0 var(--accent);
+}
+.news-review-bar {
+  border-bottom-color: var(--line-2);
+}
+.news-review-bar button {
+  border: 0;
+  color: var(--accent);
+}
+.news-actions {
+  border-top-color: var(--line);
+}
+.news-footnote {
+  border-top-color: var(--line-2);
+}
+
+/* ── Palette: Spotlight ── */
+.palette-backdrop {
+  background: rgba(0, 0, 0, 0.12);
+  backdrop-filter: none;
+}
+.palette {
+  border-radius: 14px;
+  border: 0;
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  backdrop-filter: blur(30px) saturate(1.8);
+  box-shadow: var(--shadow-pop);
+}
+.palette-input {
+  height: 50px;
+}
+.palette-input input {
+  font-size: 19px;
+  font-weight: 300;
+}
+.palette-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-3);
+}
+.palette-item {
+  border-radius: 7px;
+}
+.palette-item.active {
+  color: #ffffff;
+  background: var(--accent);
+}
+.palette-item.active small,
+.palette-item.active em,
+.palette-item.active kbd,
+.palette-item.active .palette-enter {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+.palette-item.active kbd {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.palette-item.active .palette-icon {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: none;
+}
+.palette-icon {
+  background: var(--bg-4);
+  box-shadow: none;
+}
+.palette-foot {
+  border-top-color: var(--line-2);
+}
+
+/* ── Away banner: an info bar like the demo banner ── */
+.away-banner {
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  border-bottom: 0.5px solid var(--line-2);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-1));
+  padding: 6px 10px 6px 16px;
+}
+.away-banner > button:not(.icon-btn) {
+  height: 22px;
+  border-radius: 5px;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+/* ── Stage HUD call pill ── */
+.hud-call {
+  color: var(--st-call);
+  background: color-mix(in srgb, var(--st-call) 10%, var(--bg-1));
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--st-call) 40%, transparent),
+    0 4px 14px -6px rgba(0, 0, 0, 0.25);
+}
+.hud-call:hover {
+  color: var(--st-call);
+  filter: brightness(0.98);
+}
+
+/* ── Toolbar adapts to the content column, not the window (the dock narrows it) ── */
+.toolbar {
+  /* Size the toolbar to its own width. (A container on .main-content would trap the fixed
+     dialogs rendered inside the page in that column.) */
+  container: bar / inline-size;
+}
+@container bar (max-width: 1020px) {
+  .global-search {
+    width: auto;
+  }
+  .global-search span,
+  .global-search kbd {
+    display: none;
+  }
+}
+@container bar (max-width: 880px) {
+  .zone-tabs button > span,
+  .toolbar-title small {
+    display: none;
+  }
+  .live-badge {
+    gap: 0;
+    padding: 0 7px;
+    font-size: 0;
+  }
+}
+@container bar (max-width: 720px) {
+  .zone-tabs button {
+    padding: 0 8px;
+  }
+  .zone-tabs button svg {
+    display: none;
+  }
+}
+
+/* The lounge is a night room inside the window; its own labels stay light. */
+.rest-lounge .rest-pod-open h3 {
+  color: #f2e8da;
+}
+.rest-lounge .rest-pod-open p {
+  color: #b9ab9b;
+}
+
+/* Narrow windows: the dock floats over the stage from the top of the window. */
+.app-body {
+  position: relative;
+}
+@media (max-width: 1100px) and (min-width: 861px) {
+  .app-body > .inspector {
+    top: 0;
+    bottom: 0;
+    box-shadow:
+      -0.5px 0 0 var(--line-2),
+      -18px 0 40px -18px rgba(0, 0, 0, 0.35);
+  }
+}
+@media (max-width: 860px) {
+  .stage-toolbar-end .office-policy,
+  .stage-toolbar-end .icon-btn,
+  .toolbar-title {
+    display: none;
+  }
+}
+
+/* ── Card window: a macOS popover above the desk ── */
+.dock-card {
+  border-radius: 12px;
+  background: var(--grouped);
+  border: 0;
+  box-shadow: inset 0 0 0 0.5px var(--line-3);
+}
+.dock-card > .inspector {
+  background: var(--grouped);
+}
+.dock-card .modal-backdrop {
+  border-radius: 12px;
+}
+.dock-card-toast,
+.dock-toast {
+  color: var(--text);
+  background: var(--hud);
+  border: 0;
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(20px) saturate(1.6);
+}
+
+/* Tooltips and the pet customizer stage follow the window appearance. */
+.veil-tip {
+  background: var(--bg-1);
+  border: 0;
+  box-shadow: var(--shadow-pop);
+}
+.pet-preview {
+  background:
+    radial-gradient(
+      ellipse at 50% 30%,
+      color-mix(in srgb, var(--accent) 10%, transparent),
+      transparent 70%
+    ),
+    var(--scene-backdrop);
+  border: 0;
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.pet-preview .eyebrow {
+  color: var(--text-3);
+}
+
+/* Desk pet, desk row and floor desks float on the desktop as dark HUD pills in every
+   system appearance, like macOS HUD panels. The card popup follows the system instead. */
+body.dock-mode {
+  color-scheme: dark;
+  --bg-0: #1c1c1e;
+  --bg-1: #232325;
+  --bg-2: #2b2b2e;
+  --bg-3: rgba(255, 255, 255, 0.06);
+  --bg-4: rgba(255, 255, 255, 0.1);
+  --bg-5: rgba(255, 255, 255, 0.16);
+  --sidebar: #2a2a2d;
+  --sidebar-tint: rgba(40, 40, 44, 0.5);
+  --grouped: #1c1c1e;
+  --field: rgba(255, 255, 255, 0.06);
+  --control: rgba(255, 255, 255, 0.12);
+  --control-line: rgba(255, 255, 255, 0.08);
+  --control-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.06) inset, 0 0.5px 1px rgba(0, 0, 0, 0.3);
+  --selection: rgba(255, 255, 255, 0.1);
+  --canvas: #161618;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --line-3: rgba(255, 255, 255, 0.18);
+  --text: #f5f5f7;
+  --text-2: #b4b4b9;
+  --text-3: #8e8e93;
+  --text-4: #636366;
+  --accent: #0a84ff;
+  --accent-2: #5eb0ff;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(10, 132, 255, 0.16);
+  --accent-line: rgba(10, 132, 255, 0.4);
+  --badge: #ff453a;
+  --st-work: #30d158;
+  --st-think: #bf5af2;
+  --st-call: #ff453a;
+  --st-error: #ff9f0a;
+  --st-done: #4aa3ff;
+  --st-idle: #98989d;
+  --p-claude: #ec9a6c;
+  --p-codex: #63d6bd;
+  --p-openclaw: #f2878f;
+  --face-claude-hi: #4a3328;
+  --face-claude-lo: #2c201b;
+  --face-codex-hi: #1f4640;
+  --face-codex-lo: #142824;
+  --face-openclaw-hi: #4a2a30;
+  --face-openclaw-lo: #2a191c;
+  --scene-backdrop: #18181b;
+  --scene-dots: rgba(255, 255, 255, 0.05);
+  --hud: rgba(40, 40, 44, 0.82);
+  --shadow-pop:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 14px 40px -8px rgba(0, 0, 0, 0.6),
+    0 2px 8px -2px rgba(0, 0, 0, 0.4);
+}
+
+/* The card window is moved by its desk, not by dragging its header. */
+.dock-card .inspector-top {
+  -webkit-app-region: no-drag;
+}
+/* Dialogs can rise into the window's top drag strip; keep their controls clickable. */
+.modal,
+.palette,
+.modal-backdrop,
+.palette-backdrop {
+  -webkit-app-region: no-drag;
+}
+
+/* Sidebar project scope token */
+.roster-scope {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 9px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.roster-scope span {
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.roster-scope button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.artifact-merged .artifact-symbol {
+  color: var(--st-think);
+  background: color-mix(in srgb, var(--st-think) 12%, transparent);
+}
