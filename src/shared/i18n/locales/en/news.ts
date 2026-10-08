@@ -13,6 +13,8 @@ export const news = {
     dismiss: 'Dismiss bubble',
     dismissed: 'Bubble dismissed',
     loadMore: (n: number) => `Show ${n} more`,
+    loadOlder: 'Load earlier updates',
+    loadingOlder: 'Loading earlier updates…',
   },
   feed: {
     kinds: 'Update type',

@@ -23,6 +23,10 @@
   - 렌더러(`useOffice`)는 patch를 적용하거나, version 틈이 있으면 전체를 다시 받는다. 안 바뀐 객체는 그대로 재사용한다.
   - 웹은 가진 version을 보내 `unchanged`, 합성 patch(최근 64개), 전체 중 하나를 받는다.
   - 요약 테이블(3.2 다음 단계)은 범위 밖이다.
+- 대화·소식 페이지 조회(3.2·3.3) 구현 ([#64](https://github.com/kys42/agent-office/issues/64)):
+  - `detail(id, {before, limit=40})`은 최신 40개부터 cursor로 이전 페이지를 준다(`olderEvents`).
+  - snapshot 소식은 살아 있는 화면에 필요한 것만 싣는다. `noticeStats`는 전체 기준으로 정확하다.
+  - 지난 소식은 `noticePage`로, 분류 전체 읽음은 `noticeReadAll`로 처리한다.
 - 증분 수집(3.4)은 별도 PR이다.
 
 핵심은 **변경 없는 기록을 다시 처리하지 않고, 필요한 화면에 필요한 요약만 전달하는 것**이다. 캐릭터 수를 줄이거나 실시간 소식을 늦추는 방식을 첫 해결책으로 삼지 않는다. 기존 [골든 정책](../golden/GOLDEN-OFFICE-POLICY.md), [관측 규격](../golden/OFFICE-OBSERVATION-PROTOCOL.md), [수집 계약](SESSION-INGESTION.md)을 유지한다.
@@ -133,6 +137,18 @@ flowchart LR
 - 소식의 count와 검색/페이지는 SQL 인덱스로 조회한다. `seenAt/dismissedAt/kind/background/version` 등은 조회 가능한 열로 점진 이관한다. 메모리 절약을 이유로 미확인 최종 응답을 버리지 않는다.
 - store의 prepared statement와 preferences/personal map을 batch 단위로 재사용한다. `upsert`의 이전 JSON도 한 번만 파싱한다.
 
+> **구현됨 (#64)**: 요약 테이블 없이 페이지 조회부터 넣었다.
+>
+> - **대화**: `detail(id, {before, limit})`(기본 40, 최대 200)은 저장된 순서 기준으로 `before` 이벤트 앞의 최신 `limit`개를 주고 `olderEvents`로 끝을 알린다. 인자 없는 호출은 첫 페이지다. 각 페이지에는 그 범위에 해당하는 이 세션의 소식이 함께 온다. 원본 창 밖 발췌용이며, 가장 오래된 페이지에는 그 이전 소식이 모두 온다. 가시성은 `get`과 같다. 카드는 읽은 페이지만 보관하고, 닫거나 다른 동료로 바꾸면 버린다(`src/shared/conversation-pages.ts`).
+> - **소식**: snapshot에는 아래 항목만 싣는다(`src/shared/notice-pages.ts`의 `residentNotices`). `noticeStats`는 모든 가시 소식을 센다.
+>   - 동료별 최신 소식(말풍선·peek), 최신 요청(인용), 최신 대화(숨김 해제 판단)
+>   - 막 도착한 요청, 미해결 호출 전부
+>   - 미확인 최종 응답(최대 1,000건), 최근 100건
+> - **지난 소식**: 소식함·동료 소식 탭은 snapshot에 없는 소식이 있을 때만 `noticePage({before, limit, filter, includeRead, includeBackground, sessionIds})`로 읽는다. 순서는 `(at, id)` 내림차순이라 cursor가 건너뛰거나 중복되지 않는다. 각 페이지는 범위 안 미확인 수를 정확히 준다.
+> - **receipt와 전체 읽음**: receipt는 snapshot에 실렸는지와 무관하게 id+version으로 적용된다. "미확인 N건 읽음"은 페이지 모드에서 `noticeReadAll(query, asOf)`로 범위 전체를 읽음 처리한다. 마지막으로 페이지를 읽은 시각(`asOf`) 이후에 도착했거나 새 version으로 바뀐 소식은 건드리지 않는다.
+>
+> SQL 열 이관과 count 인덱스는 아직이며, count는 모든 행을 읽어 계산한다.
+
 usage ledger는 **바뀐 entry만** 갱신하고, entry의 이전/새 기여분 차이로 합계를 수정한다. native response 도입 시 fallback 중복 제거, 스트리밍 보정, 모델/단가 버전 변경은 별도 재집계 경로가 필요하다. 합계 검증을 통과하기 전에는 기존 전체 집계를 정본으로 유지한다. FTS는 실제 검색 본문이 달라질 때만 수정한다.
 
 notice ingestion은 단순히 전체 함수를 생략하지 않는다. 원본 이벤트 revision과 task/status 경계, parser migration, attention 해소를 분리해 새 요청·늦은 최종 응답·읽음 버전 정책을 검증한다. receipt는 원본 재수집으로 덮어쓰지 않는다.
@@ -146,6 +162,8 @@ notice ingestion은 단순히 전체 함수를 생략하지 않는다. 원본 �
 5. hidden 탭은 데이터 구독/상세 조회를 쉬고, 다시 보이면 cursor로 따라잡는다. visible 탭 여러 개는 서버의 동일 요약 캐시를 공유한다. 탭 leader 선출은 측정 후 선택할 후속 최적화다.
 6. Electron main이 창의 show/hide/minimize/restore를 알고 구독을 제어한다. `document.hidden`만 의존하지 않는다. `show:false` 창은 초기 visibility가 visible일 수 있다는 [Electron 문서](https://www.electronjs.org/docs/latest/api/browser-window#page-visibility)를 고려한다.
 7. Inspector는 `id + detailRevision`으로 재조회하고 events 배열 identity를 의존성으로 쓰지 않는다. 변경 없는 동료 객체 참조는 유지한다.
+
+> **구현됨 (#64)**: snapshot과 patch에는 소식의 bounded set만 담는다. 재조회도 최신 페이지만 다시 읽는다. 앞에서 읽은 페이지는 최신 페이지와 이어질 때 유지한다. 그사이 한 페이지 넘게 진행됐으면 최신 페이지부터 다시 시작한다. snapshot이 가진 이전 요청처럼 아직 읽지 않은 범위의 이벤트는 해당 페이지가 올 때까지 섞지 않아, 끊긴 대화를 이어진 것처럼 보이지 않는다.
 
 창이 닫혀도 collector는 소식을 저장한다. **전송·렌더 중단과 수집 중단은 다르다.** 재접속 자체로 viewed/read receipt나 새 작업 도착 효과를 만들지 않는다. 원본 사건 ID와 실제 노출/사용자 행동으로 처리한다.
 

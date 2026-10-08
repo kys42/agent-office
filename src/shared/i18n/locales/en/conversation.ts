@@ -18,6 +18,8 @@ export const conversation = {
   rangeFull: 'Chat kept in this session',
   readOnly: 'Read-only',
   older: (n: number) => `Show ${n} earlier ${n === 1 ? 'message' : 'messages'}`,
+  loadOlder: 'Load earlier messages',
+  loadingOlder: 'Loading earlier messages…',
   workLog: 'Work log',
   entries: (n: number) => `${n} ${n === 1 ? 'entry' : 'entries'}`,
   empty: 'No readable chat yet.',

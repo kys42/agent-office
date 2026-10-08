@@ -14,11 +14,11 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 ## 지원 소스
 
-| 공급자 | 입력 | 확인하는 정보 |
-|---|---|---|
+| 공급자      | 입력                                                                                                                       | 확인하는 정보                                                                                                                                                 |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code | `$CLAUDE_CONFIG_DIR/projects/**/*.jsonl`, 기본 `~/.claude/projects`; 실행 중 상태 `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` | sessionId, message.content, model, cwd, gitBranch, message.usage, 도구 호출·결과, custom-title와 sessions-index 이름; 실행 기록은 권한 확인 대기(`waiting`)만 |
-| Codex | `$CODEX_HOME/sessions/**/*.jsonl`, session_index.jsonl, state_N.sqlite의 threads(readOnly) | session_meta, turn_context, response_item, task_started/complete, token_count, token_usage_record, 실제 제목 |
-| OpenClaw | `$OPENCLAW_STATE_DIR/agents/*/sessions/*.jsonl`, `agents/*/agent/openclaw-agent.sqlite` | JSONL v3; SQLite session_nodes + transcript_events, rewrite watermark |
+| Codex       | `$CODEX_HOME/sessions/**/*.jsonl`, session_index.jsonl, state_N.sqlite의 threads(readOnly)                                 | session_meta, turn_context, response_item, task_started/complete, token_count, token_usage_record, 실제 제목                                                  |
+| OpenClaw    | `$OPENCLAW_STATE_DIR/agents/*/sessions/*.jsonl`, `agents/*/agent/openclaw-agent.sqlite`                                    | JSONL v3; SQLite session_nodes + transcript_events, rewrite watermark                                                                                         |
 
 현재 이 Mac의 OpenClaw는 원본 세션이 SQLite로 이관되어 JSONL 탐색만으로는 동작하지 않는다. DB의 인증·토큰·설정 테이블은 읽지 않는다. SQLite 스키마가 지원 범위와 다르면 연결 오류를 표시하고 마지막 정상 기록을 남긴다. 각 손상된 노드는 독립적으로 실패 처리한다. 재작성 generation을 캐시 revision에 포함한다.
 
@@ -84,7 +84,6 @@ Session.activity는 원본 공개 메시지에서 가져온 220자 이내 발췌
 
 사무실 말풍선은 짧은 발췌, 동료 명단은 두 줄 미리보기, 상세창 상단은 설명과 별도 최근 도구를 표시한다. 원문은 대화 탭에서 읽는다. 화면 내용 숨기기는 발췌·툴팁·도구 상세에도 적용한다.
 
-
 ### 수집 모듈 출처
 
 JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `server/adapters/files.ts`에서 bounded read stream으로 사용한다. `identity.ts`가 provider identity를 공통 관계로 바꾸며 Codex origin은 vendored Orca 함수를 호출한다. Claude 중첩 경로/sidecar/title 정책은 Agent Sessions 이식이다. OpenClaw SQLite는 기존 read-only 전용 어댑터를 유지한다. 전체 비교와 의존성 선택: [INGESTION-REFERENCE-AUDIT.md](../research/INGESTION-REFERENCE-AUDIT.md).
@@ -97,4 +96,4 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 
 `src/shared/conversation.ts`가 OfficeEvent의 공개 단계에 따라 사용자 요청/진행/최종/미분류/도구를 나누고 중복 공개 이벤트를 정리한다. Conversation은 이 기준으로 종류 필터와 말풍선 라벨을 적용하며 도구 기록은 기본 숨긴다. 분류를 바꿔도 메시지 확장 상태를 보존한다.
 
-소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 배지와 snapshot.noticeStats.unread가 같은 selector를 사용한다. NewsFeed는 최종/확인/전체 필터, 읽은 항목 포함, version별 일괄 read를 공유한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
+소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 배지와 snapshot.noticeStats.unread가 같은 selector를 사용한다. NewsFeed는 최종/확인/전체 필터, 읽은 항목 포함, version별 일괄 read를 공유한다. snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식이 있으면 NewsFeed는 `noticePage`(cursor `(at,id)`, 범위별 정확한 미확인 수)로 읽고, 일괄 읽음은 `noticeReadAll(query, asOf)`로 범위 전체에 적용한다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.

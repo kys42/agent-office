@@ -108,6 +108,50 @@ export interface NoticeReceipt {
   version: string;
 }
 export type NoticeAction = 'read' | 'dismiss' | 'unread' | 'view';
+/** The news lists' kinds: confirmed finals, open calls, everything. */
+export type NoticeFilter = 'final' | 'attention' | 'all';
+/** Which notices a news list shows. */
+export interface NoticeQuery {
+  filter: NoticeFilter;
+  includeRead?: boolean;
+  /** Finals of background runs and helpers count too (a colleague's own news tab). */
+  includeBackground?: boolean;
+  /** Only these sessions' notices; absent means the whole office. */
+  sessionIds?: string[];
+}
+/** A place in the news order (newest first, then id): pages continue strictly after it. */
+export interface NoticeCursor {
+  at: number;
+  id: string;
+}
+export interface NoticePageRequest extends NoticeQuery {
+  before?: NoticeCursor | null;
+  limit?: number;
+}
+export interface NoticePage {
+  notices: OfficeNotice[];
+  /** More matching notices come after this page. */
+  more: boolean;
+  /** Exact unread counts of each kind in the query's scope (sessions, background), all pages. */
+  unread: Record<NoticeFilter, number>;
+  /** When the collector read it: a later "read all" leaves what arrived after this alone. */
+  at: number;
+}
+/** A page of a conversation: the newest `limit` events before the `before` event. */
+export interface DetailPage {
+  before?: string;
+  limit?: number;
+}
+/** A session with one page of its conversation. */
+export type SessionDetail = Session & {
+  /** Older events exist before this page (absent from callers that send whole sessions). */
+  olderEvents?: boolean;
+  /**
+   * This session's notices from the page's first event on (the oldest page: all earlier ones
+   * too), for excerpts of messages the bounded source window no longer holds.
+   */
+  notices?: OfficeNotice[];
+};
 export interface Artifact {
   url: string;
   kind: 'pull' | 'issues';
@@ -301,7 +345,12 @@ export interface Snapshot {
   version: number;
   /** The collector run `version` counts in; a new run starts its versions again. */
   epoch?: string;
+  /**
+   * The notices the office needs live (the latest per colleague, every open call and unread
+   * final, the most recent ones); older ones are read a page at a time (`noticePage`).
+   */
   notices?: OfficeNotice[];
+  /** Exact over all visible notices, not only the ones carried in `notices`. */
   noticeStats?: { unread: number; total: number };
   /**
    * The collector's resolved language: its sessions, notices and messages are written in it.
@@ -365,10 +414,15 @@ export interface CardTarget {
 export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
-  detail: (id: string) => Promise<Session>;
+  /** One page of a colleague's conversation; without `page`, the newest one. */
+  detail: (id: string, page?: DetailPage) => Promise<SessionDetail>;
   visit: (id: string) => Promise<Snapshot>;
   returnToOffice: (id: string) => Promise<Snapshot>;
   notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
+  /** A page of the news, older ones included. */
+  noticePage: (request: NoticePageRequest) => Promise<NoticePage>;
+  /** Mark every unread notice matching `query` read, except those received after `asOf`. */
+  noticeReadAll: (query: NoticeQuery, asOf: number) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
   /** Open a web page (http/https only) from session text in the default browser. */
