@@ -38,6 +38,12 @@ import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Conversation } from './Conversation';
+import {
+  freshConversation,
+  mergeLive,
+  mergeNewest,
+  prependPage,
+} from '../shared/conversation-pages';
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
 import { NowCard, nowState } from './NowCard';
@@ -101,7 +107,9 @@ export function Inspector({
   onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
 }) {
   const { t } = useI18n();
-  const [s, setS] = useState(session);
+  // The pages of the conversation read so far, with the office's live view of the colleague.
+  const [view, setView] = useState(() => freshConversation(session));
+  const s = view.session;
   const panelRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -131,24 +139,13 @@ export function Inspector({
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
   // The office's view of this colleague (status, zone, return, the latest events) follows every
-  // snapshot; the whole conversation is fetched again only when the conversation changed.
+  // snapshot; the newest page of the conversation is read again only when it changed. Pages
+  // read further back stay while they still join it; another colleague starts over.
   useEffect(() => {
-    setS((previous) =>
-      previous.id === session.id
-        ? {
-            ...previous,
-            ...session,
-            events: [
-              ...new Map([...previous.events, ...session.events].map((e) => [e.id, e])).values(),
-            ]
-              .sort((a, b) => a.at - b.at)
-              .slice(-180),
-          }
-        : session,
-    );
+    setView((previous) => mergeLive(previous, session));
   }, [session]);
   // The few latest events the office carries, by content: a fresh snapshot with the same events
-  // (a new array each time) must not fetch the whole conversation again.
+  // (a new array each time) must not read the conversation again.
   const latestEvents = JSON.stringify(session.events);
   useEffect(() => {
     let valid = true;
@@ -156,8 +153,8 @@ export function Inspector({
     if (!demo)
       api
         .detail(session.id)
-        .then((s) => {
-          if (valid) setS(s);
+        .then((page) => {
+          if (valid) setView((previous) => mergeNewest(previous, page));
         })
         .catch((e) => {
           if (valid) setLoadError(e.message);
@@ -206,6 +203,21 @@ export function Inspector({
   });
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  /** The page before the oldest loaded event (the card keeps it until it closes or switches). */
+  const loadOlder = async () => {
+    const first = view.session.events[0];
+    if (demo || !view.older || !first || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const page = await api.detail(view.session.id, { before: first.id, beforeAt: first.at });
+      setView((v) => (v.session.events[0]?.id === first.id ? prependPage(v, page) : v));
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
   const patch = async (p: SessionPatch) => {
     try {
       await onPatch(s.id, p);
@@ -239,6 +251,9 @@ export function Inspector({
     ? sessions.filter((x) => x.actor?.id === s.actor!.id).sort((a, b) => b.updatedAt - a.updatedAt)
     : [];
   const news = notices.filter((n) => n.sessionId === s.id);
+  // Excerpts in the conversation: the carried notices (freshest) and those read with its pages.
+  const carried = new Set(news.map((n) => n.id));
+  const conversationNotices = [...news, ...view.notices.filter((n) => !carried.has(n.id))];
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
@@ -527,6 +542,7 @@ export function Inspector({
               includeBackground
               initialFilter={showNews ? 'all' : 'final'}
               notices={news}
+              sessionIds={[s.id]}
               sessions={sessions}
               privacy={privacy}
               onReceipt={onReceipt}
@@ -728,7 +744,15 @@ export function Inspector({
               </section>
             </>
           ) : tab === 'history' ? (
-            <Conversation key={s.id} session={s} notices={news} notify={notify} />
+            <Conversation
+              key={s.id}
+              session={s}
+              notices={conversationNotices}
+              older={view.older}
+              loadingOlder={loadingOlder}
+              onOlder={loadOlder}
+              notify={notify}
+            />
           ) : (
             <div className="notes-editor">
               <span className="eyebrow">{t.inspector.notes.eyebrow}</span>

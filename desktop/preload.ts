@@ -11,9 +11,11 @@ const action = (channel: string, ...args: unknown[]) =>
 const api: OfficeAPI = {
   quotas: () => call('quotas'),
   snapshot: () => call('snapshot'),
-  detail: (id) => call('detail', id),
+  detail: (id, page) => call('detail', id, page),
   visit: (id) => call('visit', id),
   notices: (receipts, action) => call('notices', receipts, action),
+  noticePage: (request) => call('noticePage', request),
+  noticeReadAll: (query, asOf) => call('noticeReadAll', query, asOf),
   returnToOffice: (id) => call('returnToOffice', id),
   artifacts: (id) => call('artifacts', id),
   openArtifact: (url) => ipcRenderer.invoke('office:open-artifact', url),

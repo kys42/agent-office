@@ -14,6 +14,11 @@ import type {
   SessionPatch,
   OfficeNotice,
   NoticeReceipt,
+  NoticePage,
+  NoticePageRequest,
+  NoticeQuery,
+  DetailPage,
+  SessionDetail,
   UsageEntry,
 } from '../src/shared/types.js';
 import { redact } from './adapters/normalize.js';
@@ -25,7 +30,10 @@ import {
   noticeCandidates,
   noticeContentVersion,
   requestClosedAt,
+  unreadNoticeCount,
 } from '../src/shared/notices.js';
+import { matchesQuery, pageNotices, residentNotices } from '../src/shared/notice-pages.js';
+import { detailPage } from '../src/shared/conversation-pages.js';
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
 import { getLocale, m, messagesFor, type Locale } from '../src/shared/i18n/index.js';
@@ -51,6 +59,8 @@ export const DEFAULT_PREFS: Preferences = {
   readyMinutes: 30,
 };
 const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); PRAGMA user_version=3;`;
+/** A notice read more than 30 days ago is no longer listed. */
+const fresh = (n: OfficeNotice) => !n.seenAt || Date.now() - n.seenAt < 30 * 86400_000;
 const isBusy = (e: unknown) =>
   /database is locked|SQLITE_BUSY/i.test(e instanceof Error ? e.message : String(e));
 /** Startup only: block this thread briefly (the collector runs in its own worker). */
@@ -354,7 +364,7 @@ export class OfficeStore {
       .prepare('INSERT OR REPLACE INTO notice_cursors VALUES(?,?)')
       .run(s.id, Math.max(cursor?.at ?? 0, s.updatedAt));
   }
-  /** Notices in `locale`; stored rows stay canonical. */
+  /** Every visible notice in `locale`, in `noticeOrder`; stored rows stay canonical. */
   noticeList(
     locale: Locale = getLocale(),
     sessions: Session[] = this.list(false, CANONICAL),
@@ -363,15 +373,51 @@ export class OfficeStore {
     const background = new Set(
       sessions.filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
     );
-    const rows = this.db.prepare('SELECT data FROM notices ORDER BY at DESC').all() as {
+    const rows = this.db.prepare('SELECT data FROM notices ORDER BY at DESC, id DESC').all() as {
       data: string;
     }[];
     return rows
       .map((r) => JSON.parse(r.data) as OfficeNotice)
-      .filter(
-        (n) => visible.has(n.sessionId) && (!n.seenAt || Date.now() - n.seenAt < 30 * 86400_000),
-      )
+      .filter((n) => visible.has(n.sessionId) && fresh(n))
       .map((n) => ({ ...localizeNotice(n, locale), background: background.has(n.sessionId) }));
+  }
+  /** What a snapshot carries: the notices the office needs live, and exact counts of all. */
+  noticeView(
+    locale: Locale = getLocale(),
+    sessions: Session[] = this.list(false, CANONICAL),
+  ): { notices: OfficeNotice[]; noticeStats: { unread: number; total: number } } {
+    const all = this.noticeList(locale, sessions);
+    return {
+      notices: residentNotices(all),
+      noticeStats: { unread: unreadNoticeCount(all), total: all.length },
+    };
+  }
+  /** A page of the news by cursor: the same notices, rules and order as the snapshot's. */
+  noticePage(request: NoticePageRequest, locale: Locale = getLocale()): NoticePage {
+    return pageNotices(this.noticeList(locale), request);
+  }
+  /**
+   * Marks every unread notice matching `query` read, carried in a snapshot or not, except those
+   * received after `asOf` (the person had not seen them yet, nor a newer version of one).
+   */
+  noticeReadAll(query: NoticeQuery, asOf: number) {
+    const put = this.db.prepare('UPDATE notices SET data=? WHERE id=?');
+    const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
+    const now = Date.now();
+    const ids = this.noticeList(CANONICAL)
+      .filter((n) => matchesQuery(n, { ...query, includeRead: false }) && n.receivedAt <= asOf)
+      .map((n) => n.id);
+    this.db.exec('BEGIN');
+    try {
+      for (const id of ids) {
+        const row = get.get(id) as { data: string } | undefined;
+        if (row) put.run(JSON.stringify({ ...JSON.parse(row.data), seenAt: now }), id);
+      }
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
   }
   noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
     const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
@@ -551,7 +597,11 @@ export class OfficeStore {
    * same colleagues, all in `locale`. The same result as `assignSeats`, `noticeList` and `list`
    * called in turn, without reading and parsing every session three times.
    */
-  officeView(locale: Locale = getLocale()): { sessions: Session[]; notices: OfficeNotice[] } {
+  officeView(locale: Locale = getLocale()): {
+    sessions: Session[];
+    notices: OfficeNotice[];
+    noticeStats: { unread: number; total: number };
+  } {
     const stored = this.seats();
     const base = this.decorated(false, stored);
     const listed = attachSessions(base);
@@ -562,7 +612,7 @@ export class OfficeStore {
         : attachSessions(base.map((s) => ({ ...s, officeSeat: seats[seatKey(s)] ?? seats[s.id] })));
     return {
       sessions: sessions.map((s) => localizeSession(s, locale)),
-      notices: this.noticeList(locale, sessions),
+      ...this.noticeView(locale, sessions),
     };
   }
   /** The stored (canonical) session, if the person's settings let it be seen. */
@@ -577,6 +627,23 @@ export class OfficeStore {
   get(id: string, locale: Locale = getLocale()): Session {
     const prefs = this.preferences();
     return localizeSession(this.decorate(this.stored(id, prefs), prefs), locale);
+  }
+  /**
+   * One page of the conversation (the newest without `before`), with the same visibility as
+   * `get`, and the session's notices the page's excerpts need.
+   */
+  detail(id: string, page: DetailPage = {}, locale: Locale = getLocale()): SessionDetail {
+    const s = this.get(id, locale);
+    const background = isBackground(s) || isHelper(s);
+    const notices = (
+      this.db
+        .prepare('SELECT data FROM notices WHERE session_id=? ORDER BY at DESC, id DESC')
+        .all(id) as { data: string }[]
+    )
+      .map((r) => JSON.parse(r.data) as OfficeNotice)
+      .filter(fresh)
+      .map((n) => ({ ...localizeNotice(n, locale), background }));
+    return detailPage(s, page, notices);
   }
   /**
    * Who these sessions are natively, for finding their terminals: the same visibility as `get`,

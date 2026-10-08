@@ -6,6 +6,7 @@ import { useTerminalSend } from '../lib/useTerminalSend';
 import type { CardTarget, ZoneRule } from '../shared/types';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
+import { NoticePagingContext } from '../lib/notice-paging';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
@@ -22,7 +23,7 @@ export function DockCard() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { snapshot, model, setPrefs, patch, pin, receipt, returnToOffice } = useOffice(
+  const { snapshot, model, setPrefs, patch, pin, receipt, readAll, returnToOffice } = useOffice(
     false,
     notify,
   );
@@ -114,7 +115,15 @@ export function DockCard() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      {content}
+      <NoticePagingContext.Provider
+        value={{
+          paged: model.noticesPaged,
+          stats: JSON.stringify(snapshot?.noticeStats ?? null),
+          readAll,
+        }}
+      >
+        {content}
+      </NoticePagingContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }
