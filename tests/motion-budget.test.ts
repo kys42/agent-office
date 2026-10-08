@@ -61,21 +61,41 @@ test('Nothing always on screen blurs or blends the moving office behind it', () 
 test('Looping animations step on the office clock (#52)', async () => {
   const { FRAME_MS } = await import('../src/lib/frame-clock.js');
   const ms = (t: string) => (t.endsWith('ms') ? parseFloat(t) : parseFloat(t) * 1000);
+  const times = (value: string) => [...value.matchAll(/-?\d*\.?\d+m?s\b/g)].map((m) => m[0]);
   const off: string[] = [];
-  for (const { file, text } of css) {
-    let selector = '';
-    for (const line of text.split('\n')) {
-      if (line.trimEnd().endsWith('{')) selector = line.trim();
-      const looping = /animation\s*:[^;]*\binfinite\b/.test(line) && !/\bspin\b/.test(line);
-      const own = /^\s*animation-(duration|delay)\s*:/.test(line) && !/calc|var\(/.test(line);
-      if (!looping && !own) continue;
-      const steps = Number(line.match(/steps\((\d+)/)?.[1] ?? 1);
-      for (const [i, t] of [...line.matchAll(/-?\d*\.?\d+m?s\b/g)].map((m) => m[0]).entries()) {
-        // A stepped loop's duration covers whole office frames per step.
-        const unit = looping && i === 0 ? FRAME_MS * steps : FRAME_MS;
-        if (Math.abs(ms(t)) % unit) off.push(`${file} ${selector} ${line.trim()}`);
+  // Whole declarations (they may span lines), one animation layer per comma.
+  for (const { file, text } of css)
+    for (const [, prop, value] of text.matchAll(
+      /(animation(?:-duration|-delay)?)\s*:([^;{}]*);/g,
+    )) {
+      // Layers split on top-level commas only (not inside steps(), cubic-bezier() or var()).
+      for (const layer of value.split(/,(?![^(]*\))/)) {
+        if (/calc|var\(/.test(layer)) continue;
+        const where = `${file} ${prop}: ${layer.trim()}`;
+        if (prop === 'animation') {
+          if (!/\binfinite\b/.test(layer) || /\bspin\b/.test(layer)) continue;
+          const [duration, delay] = times(layer);
+          // A stepped loop's duration covers whole office frames per step.
+          const steps = Number(layer.match(/steps\((\d+)/)?.[1] ?? 1);
+          if (duration && ms(duration) % (FRAME_MS * steps)) off.push(where);
+          if (delay && ms(delay) % FRAME_MS) off.push(where);
+        } else for (const t of times(layer)) if (ms(t) % FRAME_MS) off.push(where);
       }
     }
-  }
   assert.deepEqual(off, []);
+});
+
+test('Sprite speeds keep every one of the four frames on the office clock', async () => {
+  const { FRAME_MS } = await import('../src/lib/frame-clock.js');
+  const tokens = css.find((c) => c.file === 'tokens.css')!.text;
+  const speeds = [
+    ...tokens.matchAll(/\n\.sprite[^{]*\{[^}]*?animation(?:-duration)?\s*:[^;]*?(\d*\.?\d+m?s)/g),
+  ];
+  assert.ok(speeds.length >= 5, 'sprite speeds were found');
+  const ms = (t: string) => (t.endsWith('ms') ? parseFloat(t) : parseFloat(t) * 1000);
+  // Four frames, each a whole number of office frames.
+  assert.deepEqual(
+    speeds.map((m) => m[1]).filter((t) => ms(t) % (4 * FRAME_MS)),
+    [],
+  );
 });

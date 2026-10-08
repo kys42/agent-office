@@ -91,7 +91,7 @@ body.dock-mode {
 .desk-pet.is-speaking .dock-pet-body {
   animation:
     dock-pet-arrive 0.5s var(--ease-out),
-    dock-pet-bob 2.8s ease-in-out 0.5s infinite;
+    dock-pet-bob 2.75s ease-in-out 0.5s infinite;
 }
 @keyframes dock-pet-arrive {
   0% {
