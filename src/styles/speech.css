@@ -281,7 +281,8 @@
 /* The call pulses as a halo fading in and out (compositor only), not an animated box-shadow. */
 .speech-bubble .bubble-halo {
   position: absolute;
-  inset: 0;
+  /* Outside the bubble's 3px border, as the box-shadow was. */
+  inset: -3px;
   border-radius: inherit;
   box-shadow: 0 0 0 5px rgba(194, 48, 74, 0.18);
   opacity: 0;

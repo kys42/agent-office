@@ -34,7 +34,8 @@ test('Looping animations change only what the compositor animates', () => {
     for (const m of text.matchAll(/animation(?:-name)?\s*:([^;]*);/g))
       if (/\binfinite\b/.test(m[1]))
         for (const name of frames.keys())
-          if (new RegExp(`\\b${name}\\b`).test(m[1])) looping.add(name);
+          // Whole names only: `typing` is not `bubble-typing`.
+          if (new RegExp(`(^|[\\s,])${name}(?=[\\s,]|$)`).test(m[1].trim())) looping.add(name);
   assert.ok(looping.has('sprite-frames'), 'the sprite loop is checked');
   const costly = [...looping].flatMap((name) => {
     const { file, props } = frames.get(name)!;
@@ -46,8 +47,13 @@ test('Looping animations change only what the compositor animates', () => {
 
 test('Nothing always on screen blurs or blends the moving office behind it', () => {
   const office = css.find((c) => c.file === 'office.css')!.text;
-  const rule = (selector: string) =>
-    office.match(new RegExp(`\\n${selector.replace(/[.]/g, '\\.')} \\{([^}]*)\\}`))?.[1] ?? '';
+  const rule = (selector: string) => {
+    const body = office.match(
+      new RegExp(`\\n${selector.replace(/[.]/g, '\\.')} \\{([^}]*)\\}`),
+    )?.[1];
+    assert.ok(body, `${selector} is still styled here`);
+    return body;
+  };
   assert.doesNotMatch(rule('.scene-controls'), /backdrop-filter/);
   assert.doesNotMatch(rule('.desk-glow'), /mix-blend-mode/);
 });

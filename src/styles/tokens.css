@@ -422,16 +422,21 @@ span.face {
 .motion-paused .sprite {
   animation: none;
 }
+/*
+ * Pulses stop with reduced or paused motion. `!important` because this file loads before the
+ * office and speech styles that start them, which would otherwise win the cascade.
+ */
 @media (prefers-reduced-motion: reduce) {
   .sprite,
   .bubble-halo,
   :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
-    animation: none;
+    animation: none !important;
   }
 }
-.reduce-motion .bubble-halo,
-.reduce-motion :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
-  animation: none;
+:is(.reduce-motion, .motion-paused) .bubble-halo,
+:is(.reduce-motion, .motion-paused)
+  :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
+  animation: none !important;
 }
 /* A window out of sight (a hidden Electron window can still tick) holds every animation still. */
 .page-hidden *,

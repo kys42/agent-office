@@ -126,9 +126,10 @@
   background: rgba(246, 178, 79, 0.08);
   border-color: rgba(246, 178, 79, 0.25);
 }
-.live-badge.demo i,
-.live-badge.paused i {
+/* A demo or paused office is not live: no pulse (it lives on the dot's ::after). */
+.live-badge:is(.demo, .paused) i::after {
   animation: none;
+  opacity: 0;
 }
 .office-policy {
   display: inline-flex;

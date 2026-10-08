@@ -280,12 +280,16 @@
 .session-row:hover .face > i {
   border-color: var(--bg-3);
 }
+/* A ring spreads out from the dot's outer edge, never over its colour, and is invisible
+   whenever it is not animating (reduced motion). */
 .session-row.is-live .face > i::after {
   content: '';
   position: absolute;
   inset: -2px;
   border-radius: 50%;
-  background: rgba(95, 214, 155, 0.6);
+  border: 2px solid rgba(95, 214, 155, 0.6);
+  opacity: 0;
+  --ping-scale: 1.8;
   animation: ping-out 1.8s ease-out infinite;
 }
 .session-row .face .sprite-window {
