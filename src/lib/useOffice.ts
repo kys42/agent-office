@@ -4,11 +4,19 @@ import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
 import { demoDeriver, demoSnapshot, reconcileDemo } from './demo';
 import { applyNoticeReceipt } from '../shared/notices';
+import { matchesQuery } from '../shared/notice-pages';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
-import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
+import type {
+  NoticeQuery,
+  NoticeReceipt,
+  Preferences,
+  Session,
+  SessionPatch,
+  Snapshot,
+} from '../shared/types';
 import { useWakeAt } from './useWakeAt';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
@@ -302,6 +310,32 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       notify((e as Error).message);
     }
   };
+  /**
+   * Read every unread notice a list shows, carried or not (the collector marks them), except
+   * what arrived after `asOf`.
+   */
+  const readAll = async (query: NoticeQuery, asOf: number) => {
+    if (demo) {
+      setSnapshot((s) =>
+        s
+          ? {
+              ...s,
+              notices: (s.notices ?? []).map((n) =>
+                matchesQuery(n, { ...query, includeRead: false }) && n.receivedAt <= asOf
+                  ? { ...n, seenAt: Date.now() }
+                  : n,
+              ),
+            }
+          : s,
+      );
+      return;
+    }
+    try {
+      accept(await api.noticeReadAll(query, asOf));
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   /** Count an open of this colleague (frequent sort); never blocks the selection. */
   const visit = (id: string) => {
     if (!demo) {
@@ -392,6 +426,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     patch,
     pin,
     receipt,
+    readAll,
     visit,
     veil,
     returnToOffice,

@@ -22,7 +22,8 @@ import {
   type ClaudeProcess,
 } from './adapters/claude-live.js';
 import { mergeSessions } from './adapters/merge.js';
-import { unreadNoticeCount } from '../src/shared/notices.js';
+import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
+import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
 import {
   composePatches,
   diffSnapshot,
@@ -104,6 +105,31 @@ const prefsSchema = z
       .optional(),
   })
   .strict();
+const detailPageSchema = z
+  .object({
+    before: z.string().max(1000).optional(),
+    beforeAt: z.number().optional(),
+    limit: z.number().int().min(1).max(DETAIL_PAGE_MAX).optional(),
+  })
+  .strict();
+const noticeQueryShape = {
+  filter: z.enum(['final', 'attention', 'all']),
+  includeRead: z.boolean().optional(),
+  includeBackground: z.boolean().optional(),
+  sessionIds: z.array(z.string().max(400)).max(500).optional(),
+};
+const noticeQuerySchema = z.object(noticeQueryShape).strict();
+const noticePageSchema = z
+  .object({
+    ...noticeQueryShape,
+    before: z
+      .object({ at: z.number(), id: z.string().max(1000) })
+      .strict()
+      .nullable()
+      .optional(),
+    limit: z.number().int().min(1).max(NOTICE_PAGE_MAX).optional(),
+  })
+  .strict();
 /** A quiet office still reports that it checked, at this pace. */
 const HEALTH_MS = 60_000;
 /** Changes kept for pollers that fell behind; further back they get the whole office. */
@@ -182,10 +208,10 @@ export class OfficeService extends EventEmitter {
   }
   snapshot(): Snapshot {
     const locale: Locale = getLocale();
-    const { sessions, notices } = this.store.officeView(locale);
+    const { sessions, notices, noticeStats } = this.store.officeView(locale);
     return {
       notices,
-      noticeStats: { unread: unreadNoticeCount(notices), total: notices.length },
+      noticeStats,
       sessions,
       // A copy: the snapshot keeps describing its own version after the connectors move on.
       connectors: this.connectors.map((c) => ({ ...c })),
@@ -363,7 +389,9 @@ export class OfficeService extends EventEmitter {
                 s.project = s.cwd ? path.basename(s.cwd) : s.project;
               }
               s.revision = hash(`${key}:${s.title}`);
-              this.remember(file.path, { stamp, key, session: s });
+              // A copy, not the parse result itself: its texts are cut out of the raw records
+              // (string slices), which would keep every record's full text alive with it.
+              this.remember(file.path, { stamp, key, session: structuredClone(s) });
             } catch {
               errors++;
               continue;
@@ -412,11 +440,9 @@ export class OfficeService extends EventEmitter {
         // On partial source failure, retain existing records instead of silently deleting their history.
         if (errors) {
           const ids = new Set(sessions.map((s) => s.id));
-          sessions.push(
-            ...this.store
-              .list(true, CANONICAL)
-              .filter((s) => s.provider === provider && !ids.has(s.id)),
-          );
+          // As stored (not decorated or filtered by visibility): a hidden project's records must
+          // not be deleted for a pass that failed to read them.
+          sessions.push(...this.store.storedRecords(provider).filter((s) => !ids.has(s.id)));
         }
         this.store.upsert(sessions, provider);
         Object.assign(connector, {
@@ -438,6 +464,7 @@ export class OfficeService extends EventEmitter {
         );
       }
     }
+    this.windows.sweep();
     this.syncing = false;
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);
@@ -488,7 +515,11 @@ export class OfficeService extends EventEmitter {
       case 'refresh':
         return this.refresh();
       case 'detail':
-        return this.store.get(z.string().max(400).parse(args[0]));
+        // Without a page: the newest one, as every caller that only needs the session asks.
+        return this.store.detail(
+          z.string().max(400).parse(args[0]),
+          detailPageSchema.optional().parse(args[1] ?? undefined),
+        );
       case 'visit':
       case 'returnToOffice':
         this.store.visit(z.string().max(400).parse(args[0]), method === 'returnToOffice');
@@ -502,6 +533,14 @@ export class OfficeService extends EventEmitter {
             .max(1000)
             .parse(args[0]),
           z.enum(['read', 'dismiss', 'unread', 'view']).parse(args[1]),
+        );
+        return this.emitSnapshot();
+      case 'noticePage':
+        return this.store.noticePage(noticePageSchema.parse(args[0]));
+      case 'noticeReadAll':
+        this.store.noticeReadAll(
+          noticeQuerySchema.parse(args[0]),
+          z.number().nonnegative().parse(args[1]),
         );
         return this.emitSnapshot();
       case 'patch':

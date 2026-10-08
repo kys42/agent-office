@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
@@ -22,12 +22,15 @@ function Message({
   notify,
   expanded,
   onExpand,
+  group,
 }: {
   event: OfficeEvent;
   provider: Session['provider'];
   notify: (s: string) => void;
   expanded: boolean;
   onExpand: () => void;
+  /** Set on a message shown on its own: where the reading position is kept. */
+  group?: string;
 }) {
   const { t } = useI18n();
   const work = event.kind === 'tool' || event.kind === 'result';
@@ -51,6 +54,7 @@ function Message({
     <article
       className={`conversation-message message-${event.kind} category-${conversationKind(event)}`}
       data-message-category={conversationKind(event)}
+      data-group-id={group}
     >
       <div className="message-meta">
         <b>{label}</b>
@@ -123,10 +127,17 @@ export function Conversation({
   session,
   notices,
   notify,
+  older = false,
+  loadingOlder = false,
+  onOlder,
 }: {
   session: Session;
   notices: OfficeNotice[];
   notify: (s: string) => void;
+  /** Older messages wait to be read: `onOlder` reads the page before the first one. */
+  older?: boolean;
+  loadingOlder?: boolean;
+  onOlder?: () => void;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -139,10 +150,15 @@ export function Conversation({
   filterRef.current = filter;
   const [tools, setTools] = useState(false);
   const [expanded, setExpanded] = useState(new Set<string>());
-  const events = useMemo(
-    () => retainedConversation(session.events, notices),
-    [session.events, notices],
-  );
+  // Excerpts fill gaps only within what is loaded: an older notice waits for its page, so a
+  // message not yet read is never shown as if the record had lost it.
+  const events = useMemo(() => {
+    const first = older ? session.events[0]?.at : undefined;
+    return retainedConversation(
+      session.events,
+      first === undefined ? notices : notices.filter((n) => n.at >= first),
+    );
+  }, [session.events, notices, older]);
   const counts = Object.fromEntries(
     ['request', 'progress', 'reply', 'message', 'work'].map((kind) => [
       kind,
@@ -189,6 +205,23 @@ export function Conversation({
         toolbar.getBoundingClientRect().height -
         12;
   };
+  // Showing older messages keeps the one the person was reading where it was.
+  const anchor = useRef<{ id: string; top: number } | null>(null);
+  const keepPosition = () => {
+    const el = root.current?.querySelector<HTMLElement>('[data-group-id]');
+    anchor.current = el ? { id: el.dataset.groupId!, top: el.getBoundingClientRect().top } : null;
+  };
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    const scroller = root.current?.closest('.inspector-scroll');
+    const el =
+      a && root.current?.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(a.id)}"]`);
+    if (!a || !el || !scroller) return;
+    const moved = el.getBoundingClientRect().top - a.top;
+    if (!moved) return;
+    programmaticAt.current = performance.now();
+    scroller.scrollTop += moved;
+  }, [groups, count]);
   useEffect(() => {
     const scroller = root.current?.closest('.inspector-scroll');
     if (!scroller) return;
@@ -197,6 +230,8 @@ export function Conversation({
         if (follow.current) scrollBottom();
         return;
       }
+      // The person scrolls on their own: their position is theirs again.
+      anchor.current = null;
       follow.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
       if (follow.current) setNewBelow(false);
     };
@@ -284,20 +319,28 @@ export function Conversation({
         {session.partial ? t.conversation.rangePartial : t.conversation.rangeFull}
         <span>{t.conversation.readOnly}</span>
       </div>
-      {groups.length > count && (
+      {(groups.length > count || older) && (
         <button
           className="older-messages"
+          disabled={loadingOlder}
           onClick={() => {
             follow.current = false;
+            keepPosition();
+            // Shown ones first; the page before them once fewer than a step remain.
+            if (groups.length - count < 24 && older) onOlder?.();
             setCount(count + 24);
           }}
         >
-          {t.conversation.older(Math.min(24, groups.length - count))}
+          {loadingOlder
+            ? t.conversation.loadingOlder
+            : groups.length > count
+              ? t.conversation.older(Math.min(24, groups.length - count))
+              : t.conversation.loadOlder}
         </button>
       )}
       {groups.slice(-count).map((g) =>
         g.work ? (
-          <details className="work-group" key={g.id}>
+          <details className="work-group" key={g.id} data-group-id={g.id}>
             <summary>
               <Terminal size={14} />
               <span>
@@ -328,6 +371,7 @@ export function Conversation({
             notify={notify}
             expanded={expanded.has(g.id)}
             onExpand={() => toggleMessage(g.id)}
+            group={g.id}
           />
         ),
       )}

@@ -19,6 +19,8 @@ export const conversation: Messages['conversation'] = {
   rangeFull: '이 세션에 남은 대화',
   readOnly: '읽기 전용',
   older: (n) => `이전 대화 ${n}개 더 보기`,
+  loadOlder: '이전 대화 불러오기',
+  loadingOlder: '이전 대화를 불러오는 중…',
   workLog: '작업 진행 기록',
   entries: (n) => `${n}개 기록`,
   empty: '아직 읽을 수 있는 대화가 없어요.',

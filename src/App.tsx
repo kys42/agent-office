@@ -47,6 +47,7 @@ import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
 import { useI18n } from './lib/i18n';
+import { NoticePagingContext } from './lib/notice-paging';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
   { id: 'office', icon: Home },
@@ -104,6 +105,7 @@ export default function App() {
     patch: onPatch,
     pin,
     receipt: onReceipt,
+    readAll,
     visit,
     veil,
     returnToOffice,
@@ -708,6 +710,7 @@ export default function App() {
         {inbox && (
           <NewsInbox
             notices={snapshot?.notices ?? []}
+            unread={unread}
             sessions={sessions}
             privacy={prefs?.privacy ?? false}
             onReceipt={onReceipt}
@@ -858,7 +861,15 @@ export default function App() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      {content}
+      <NoticePagingContext.Provider
+        value={{
+          paged: model.noticesPaged,
+          stats: JSON.stringify(snapshot?.noticeStats ?? null),
+          readAll,
+        }}
+      >
+        {content}
+      </NoticePagingContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

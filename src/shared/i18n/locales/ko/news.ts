@@ -15,6 +15,8 @@ export const news: Messages['news'] = {
     dismiss: '말풍선 접기',
     dismissed: '말풍선 접힘',
     loadMore: (n) => `소식 더 보기 · ${n}건`,
+    loadOlder: '지난 소식 불러오기',
+    loadingOlder: '지난 소식을 불러오는 중…',
   },
   feed: {
     kinds: '소식 종류',

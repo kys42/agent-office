@@ -57,8 +57,10 @@ export interface OfficeModel {
   hiddenSessionIds: string[];
   /** Shown office colleagues per triage group, helpers included (same as the roster). */
   counts: Record<TriageGroup, number>;
-  /** Important unread news across the whole office (header/inbox number). */
+  /** Important unread news across the whole office (header/inbox number), exact. */
   unread: number;
+  /** Some visible notices are not carried in `notices`; news lists read them by page. */
+  noticesPaged: boolean;
   /** The colleague that most needs the person right now. */
   lead: ResidentView | undefined;
   view: (id: string) => ResidentView | undefined;
@@ -153,7 +155,9 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
     veiledHelpers: shown.flatMap((v) => v.helpers.filter((h) => h.veiled)),
     hiddenSessionIds: sessions.filter((s) => s.hiddenAt).map((s) => s.id),
     counts,
-    unread: unreadNoticeCount(notices),
+    // Counted over every notice by the collector; the carried ones are a bounded part.
+    unread: snapshot?.noticeStats?.unread ?? unreadNoticeCount(notices),
+    noticesPaged: (snapshot?.noticeStats?.total ?? 0) > notices.length,
     lead,
     view,
     ownerOf: (id) => view(id)?.session,
