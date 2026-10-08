@@ -363,7 +363,9 @@ export class OfficeService extends EventEmitter {
                 s.project = s.cwd ? path.basename(s.cwd) : s.project;
               }
               s.revision = hash(`${key}:${s.title}`);
-              this.remember(file.path, { stamp, key, session: s });
+              // A copy, not the parse result itself: its texts are cut out of the raw records
+              // (string slices), which would keep every record's full text alive with it.
+              this.remember(file.path, { stamp, key, session: structuredClone(s) });
             } catch {
               errors++;
               continue;
@@ -412,11 +414,9 @@ export class OfficeService extends EventEmitter {
         // On partial source failure, retain existing records instead of silently deleting their history.
         if (errors) {
           const ids = new Set(sessions.map((s) => s.id));
-          sessions.push(
-            ...this.store
-              .list(true, CANONICAL)
-              .filter((s) => s.provider === provider && !ids.has(s.id)),
-          );
+          // As stored (not decorated or filtered by visibility): a hidden project's records must
+          // not be deleted for a pass that failed to read them.
+          sessions.push(...this.store.storedRecords(provider).filter((s) => !ids.has(s.id)));
         }
         this.store.upsert(sessions, provider);
         Object.assign(connector, {
@@ -438,6 +438,7 @@ export class OfficeService extends EventEmitter {
         );
       }
     }
+    this.windows.sweep();
     this.syncing = false;
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);

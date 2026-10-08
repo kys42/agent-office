@@ -12,7 +12,12 @@ import {
 } from './files.js';
 
 const VERIFY_MS = 10 * 60_000;
-const DEFAULT_BUDGET_BYTES = 32 * 1024 * 1024;
+const DEFAULT_BUDGET_BYTES = 16 * 1024 * 1024;
+/**
+ * Only files written to recently (a session at work) keep a window: they are the ones that will
+ * be appended to again soon. A quiet file is read whole on its next change instead.
+ */
+const ACTIVE_MS = 15 * 60_000;
 
 interface Entry {
   dev: number;
@@ -38,6 +43,8 @@ interface Entry {
   trailing: boolean;
   approxBytes: number;
   lastUsed: number;
+  /** When its file was last written to, as far as this cache saw: the active-window clock. */
+  writtenAt: number;
   verifiedAt: number;
   /** Took the append path since its last full read, so it relies on the guard alone. */
   appended: boolean;
@@ -66,11 +73,19 @@ export class RecordWindowCache {
   readonly maxBytes: number;
   readonly budgetBytes: number;
   private verifyMs: number;
+  private activeMs: number;
   private now: () => number;
   constructor(
-    opts: { budgetBytes?: number; maxBytes?: number; verifyMs?: number; now?: () => number } = {},
+    opts: {
+      budgetBytes?: number;
+      maxBytes?: number;
+      verifyMs?: number;
+      activeMs?: number;
+      now?: () => number;
+    } = {},
   ) {
     this.budgetBytes = opts.budgetBytes ?? DEFAULT_BUDGET_BYTES;
+    this.activeMs = opts.activeMs ?? ACTIVE_MS;
     this.maxBytes = opts.maxBytes ?? READ_BUDGET_BYTES;
     this.verifyMs = opts.verifyMs ?? VERIFY_MS;
     this.now = opts.now ?? Date.now;
@@ -90,14 +105,22 @@ export class RecordWindowCache {
       const appended = await this.append(file.path, entry);
       if (appended) return appended;
     }
-    return this.full(file.path);
+    return this.full(file.path, undefined, file.mtime);
+  }
+  /** Let go of windows whose files went quiet: nothing is appended to them any more. */
+  sweep() {
+    for (const [key, entry] of [...this.entries])
+      if (this.now() - entry.writtenAt > this.activeMs) {
+        if (entry.appended) this.due.set(key, entry.verifiedAt);
+        this.drop(key);
+      }
   }
   /**
    * The scheduled full re-verification of a `stale` window. Only this path compares the old
    * window with the fresh read; ordinary fallbacks re-parse anyway and skip that cost.
    */
   async verify(file: SourceFile): Promise<WindowRead> {
-    return this.full(file.path, this.entries.get(file.path) ?? null);
+    return this.full(file.path, this.entries.get(file.path) ?? null, file.mtime);
   }
   /**
    * Appended windows rely on the guard alone; once their last full read is older than the
@@ -127,13 +150,18 @@ export class RecordWindowCache {
     this.entries.delete(filePath);
   }
   /** `previous` (verify only): the entry to compare with; null when there is none. */
-  private async full(filePath: string, previous?: Entry | null): Promise<WindowRead> {
+  private async full(
+    filePath: string,
+    previous?: Entry | null,
+    mtime?: number,
+  ): Promise<WindowRead> {
     this.drop(filePath);
     // Evicted before its verification: what it had kept is gone, so report a drift to be safe.
     const evicted = previous === null && this.due.has(filePath);
     this.due.delete(filePath);
     const w = await readWindow(filePath, this.maxBytes);
-    if (w.resumable) this.store(filePath, w);
+    const active = mtime === undefined || this.now() - mtime <= this.activeMs;
+    if (w.resumable && active) this.store(filePath, w, mtime);
     const records = w.records.map((r) => r.record);
     const read: WindowRead = { records, partial: w.partial, mode: 'full' };
     if (evicted) read.drifted = true;
@@ -144,7 +172,7 @@ export class RecordWindowCache {
       );
     return read;
   }
-  private store(filePath: string, w: RecordWindow) {
+  private store(filePath: string, w: RecordWindow, mtime?: number) {
     const split = w.size > this.maxBytes;
     const headSize = headWindowBytes(this.maxBytes);
     const head = split ? w.records.filter((r) => r.end <= headSize) : [];
@@ -164,6 +192,7 @@ export class RecordWindowCache {
       trailing: w.consumedThrough < w.size,
       approxBytes: 0,
       lastUsed: this.now(),
+      writtenAt: Math.min(this.now(), mtime ?? this.now()),
       verifiedAt: this.now(),
       appended: false,
     };
@@ -237,6 +266,7 @@ export class RecordWindowCache {
         malformed: entry.malformed || malformed,
         trailing: !!read.trailingPartialLine,
         appended: true,
+        writtenAt: this.now(),
       };
       if (size > this.maxBytes) {
         if (!next.split) {

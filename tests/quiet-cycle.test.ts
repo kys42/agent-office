@@ -251,11 +251,10 @@ test('Unchanged rows are not parsed again; a failed pass is taken in again', asy
     const a = record('a'),
       b = record('b');
     store.upsert([a, b], 'codex');
-    const first = store.list(true, CANONICAL);
+    store.list(false, CANONICAL);
     const parse = t.mock.method(JSON, 'parse');
-    const second = store.list(true, CANONICAL);
-    // Same parsed record (its events array) and no session row parsed again.
-    assert.equal(second[0].events, first[0].events);
+    store.list(false, CANONICAL);
+    // No session row parsed again for the office view.
     assert.ok(
       !parse.mock.calls.some(
         (c) => typeof c.arguments[0] === 'string' && c.arguments[0].includes('"events"'),
@@ -274,6 +273,39 @@ test('Unchanged rows are not parsed again; a failed pass is taken in again', asy
     ingest.mock.mockImplementation(() => {});
     store.upsert([a, b], 'codex');
     assert.equal(ingest.mock.callCount(), 3, 'one failed call, then both sessions again');
+  } finally {
+    store.close();
+    await rm(dir, { recursive: true });
+  }
+});
+
+test('Only what the office shows stays resident; full reads still see the whole conversation', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-resident-'));
+  const store = new OfficeStore(dir);
+  try {
+    const records = [
+      { type: 'session_meta', payload: { id: 'long', cwd: '/test/p' } },
+      ...Array.from({ length: 30 }, (_, i) => ({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: i % 2 ? 'assistant' : 'user',
+          content: [{ type: i % 2 ? 'output_text' : 'input_text', text: `메시지 ${i}` }],
+        },
+      })),
+    ];
+    const s = parseRecords(records, {
+      provider: 'codex',
+      sourcePath: '/test/long.jsonl',
+      mtime: Date.now(),
+    });
+    store.upsert([s], 'codex');
+    const office = store.list(false, CANONICAL)[0];
+    assert.ok(office.events.length <= 7, 'a few events for the office');
+    const ids = (events: { id: string }[]) => events.map((e) => e.id);
+    assert.deepEqual(ids(office.events.slice(-4)), ids(s.events.slice(-4)));
+    assert.equal(store.list(true, CANONICAL)[0].events.length, s.events.length);
+    assert.equal(store.get('codex:long', CANONICAL).events.length, s.events.length);
   } finally {
     store.close();
     await rm(dir, { recursive: true });

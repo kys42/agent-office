@@ -454,10 +454,15 @@ export class OfficeStore {
     };
     this.db.prepare('INSERT OR REPLACE INTO personal VALUES (?,?)').run(id, JSON.stringify(next));
   }
-  /** Stored sessions, newest first. The writer parses only rows it has not parsed yet. */
-  private rows(): Session[] {
+  /**
+   * Stored sessions, newest first. The writer parses only rows it has not parsed yet and keeps
+   * just what the office shows of each (`snapshotEvents`, a few events), never the whole
+   * conversation: `full` reads (search, recovery) go to the database every time.
+   */
+  private rows(full = false): Session[] {
     const parse = (rows: { data: string }[]) => rows.map((r) => JSON.parse(r.data) as Session);
-    if (!this.cached)
+    const resident = (s: Session): Session => ({ ...s, events: snapshotEvents(s) });
+    if (!this.cached || full)
       return parse(
         this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC').all() as {
           data: string;
@@ -476,8 +481,9 @@ export class OfficeStore {
           data: string;
         }[],
       );
-      for (const s of all) this.cached.set(s.id, s);
-      return all;
+      const kept = all.map(resident);
+      for (const s of kept) this.cached.set(s.id, s);
+      return kept;
     }
     const read = this.db.prepare('SELECT data FROM sessions WHERE id=?');
     const ids = this.db.prepare('SELECT id FROM sessions ORDER BY updated_at DESC').all() as {
@@ -491,7 +497,7 @@ export class OfficeStore {
       if (!s) {
         const row = read.get(id) as { data: string } | undefined;
         if (!row) continue;
-        s = JSON.parse(row.data) as Session;
+        s = resident(JSON.parse(row.data) as Session);
         this.cached.set(id, s);
       }
       result.push(s);
@@ -508,7 +514,7 @@ export class OfficeStore {
         this.db.prepare('SELECT id, data FROM personal').all() as { id: string; data: string }[]
       ).map((r) => [r.id, r.data]),
     );
-    return this.rows()
+    return this.rows(full)
       .filter((s) => this.visible(s, prefs))
       .map((s) => {
         const d = {
@@ -522,6 +528,17 @@ export class OfficeStore {
     const row = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
       { value: string } | undefined;
     return row ? JSON.parse(row.value) : {};
+  }
+  /**
+   * One provider's stored records exactly as collected: no settings, no visibility filter. For
+   * the collector to keep what it could not read this pass (a hidden project's records included).
+   */
+  storedRecords(provider: Provider): Session[] {
+    return (
+      this.db.prepare('SELECT data FROM sessions WHERE provider=?').all(provider) as {
+        data: string;
+      }[]
+    ).map((r) => JSON.parse(r.data) as Session);
   }
   /** Visible sessions in `locale` (the collector's stored rows are canonical). */
   list(full = false, locale: Locale = getLocale()): Session[] {
