@@ -16,7 +16,7 @@ import {
 import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
-import { helperName, sessionName } from '../shared/office';
+import { helperName, projectKey, sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
@@ -54,6 +54,9 @@ export function OfficeWorkspace({
   onInbox,
   zoneRequest,
   onZoneHandled,
+  onZoneChange,
+  projectRequest,
+  onProjectHandled,
   model,
   onVeil,
   onPin,
@@ -74,6 +77,11 @@ export function OfficeWorkspace({
   onInbox: () => void;
   zoneRequest?: { zone: OfficeZone; at: number } | null;
   onZoneHandled?: () => void;
+  /** The sidebar and window title mirror the zone shown here. */
+  onZoneChange?: (zone: OfficeZone) => void;
+  /** A sidebar project scopes the roster to that exact project zone (not a text search). */
+  projectRequest?: { key: string; name: string; at: number } | null;
+  onProjectHandled?: () => void;
   /** Shared office core: projection and zones are derived once for every view. */
   model: OfficeModel;
   /** Hide colleagues (all member runs) until their next conversation, or bring them back. */
@@ -108,16 +116,19 @@ export function OfficeWorkspace({
   const [toolbarSlot, setToolbarSlot] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => setToolbarSlot(document.getElementById('toolbar-slot')), []);
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('office:zone', { detail: zone }));
+    onZoneChange?.(zone);
   }, [zone]);
+  const [project, setProject] = useState<{ key: string; name: string } | null>(null);
   useEffect(() => {
-    const onFilter = (e: Event) => {
-      setZone('office');
-      setQuery((e as CustomEvent<string>).detail ?? '');
-    };
-    window.addEventListener('office:filter', onFilter);
-    return () => window.removeEventListener('office:filter', onFilter);
-  }, []);
+    if (!projectRequest) return;
+    setZone('office');
+    setProject({ key: projectRequest.key, name: projectRequest.name });
+    onProjectHandled?.();
+  }, [projectRequest]);
+  // Turning on privacy must not leave a typed project or name visible in the search field.
+  useEffect(() => {
+    if (prefs.privacy) setQuery('');
+  }, [prefs.privacy]);
   const office = zones.office;
   useEffect(() => {
     const owner = selected ? model.view(selected) : undefined;
@@ -127,6 +138,7 @@ export function OfficeWorkspace({
     .filter(
       (s) =>
         (filter === 'all' || s.provider === filter) &&
+        (!project || zone !== 'office' || projectKey(s) === project.key) &&
         [sessionName(s), s.project, s.area?.name ?? '']
           .join(' ')
           .toLowerCase()
@@ -385,6 +397,14 @@ export function OfficeWorkspace({
         onFilter={setFilter}
         query={query}
         onQuery={setQuery}
+        scope={
+          project && zone === 'office'
+            ? {
+                label: prefs.privacy ? t.app.sidebar.hiddenProject : project.name,
+                onClear: () => setProject(null),
+              }
+            : undefined
+        }
         sort={sort}
         onSort={setSort}
       />

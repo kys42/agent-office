@@ -8,9 +8,9 @@
   overflow: hidden;
   background: var(--bg-0);
 }
-body.is-desktop,
-body.is-desktop #root,
-body.is-desktop .app {
+body.is-mac,
+body.is-mac #root,
+body.is-mac .app {
   background: transparent;
 }
 
@@ -23,7 +23,7 @@ body.is-desktop .app {
   border-right: 0.5px solid var(--line-2);
   user-select: none;
 }
-body.is-desktop .sidebar {
+body.is-mac .sidebar {
   background: var(--sidebar-tint);
 }
 .sidebar-top {
@@ -35,7 +35,7 @@ body.is-desktop .sidebar {
   -webkit-app-region: drag;
 }
 /* Traffic lights sit here on the desktop; the brand is only for the browser preview. */
-body.is-desktop .sidebar-top .brand {
+body.is-mac .sidebar-top .brand {
   display: none;
 }
 .brand {

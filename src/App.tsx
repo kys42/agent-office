@@ -166,6 +166,8 @@ export default function App() {
   }, []);
   useEffect(() => {
     document.body.classList.toggle('is-desktop', isDesktop);
+    // Only macOS windows get the translucent sidebar material (see desktop/main.ts).
+    document.body.classList.toggle('is-mac', isDesktop && /Mac/i.test(navigator.userAgent));
   }, []);
   const sessions = snapshot?.sessions ?? [];
   // J/K walks what the office shows: hidden colleagues stay out until they talk again.
@@ -219,12 +221,22 @@ export default function App() {
       .values(),
   ];
   // The office remembers its zone per data source; the sidebar mirrors it.
-  const [officeZoneNow, setOfficeZoneNow] = useState<OfficeZone>('office');
-  useEffect(() => {
-    const onZone = (e: Event) => setOfficeZoneNow((e as CustomEvent<OfficeZone>).detail);
-    window.addEventListener('office:zone', onZone);
-    return () => window.removeEventListener('office:zone', onZone);
-  }, []);
+  // The office remembers its zone per data source; the sidebar and title mirror it from the start.
+  const [officeZoneNow, setOfficeZoneNow] = useState<OfficeZone>(() => {
+    try {
+      const zone = JSON.parse(
+        localStorage.getItem(`office:view:${demo ? 'demo' : 'live'}`) || '{}',
+      ).zone;
+      return zone === 'waiting' || zone === 'archive' ? zone : 'office';
+    } catch {
+      return 'office';
+    }
+  });
+  const [projectRequest, setProjectRequest] = useState<{
+    key: string;
+    name: string;
+    at: number;
+  } | null>(null);
   const openInbox = () => {
     setShowUsage(false);
     setInbox(true);
@@ -536,10 +548,8 @@ export default function App() {
                   title={prefs?.privacy ? undefined : p.name}
                   onClick={() => {
                     setSelected(null);
-                    goZone('office');
-                    window.dispatchEvent(
-                      new CustomEvent('office:filter', { detail: prefs?.privacy ? '' : p.name }),
-                    );
+                    setView('office');
+                    setProjectRequest({ key: p.key, name: p.name, at: Date.now() });
                   }}
                 >
                   <span className="source-dot" style={{ background: projectColor(p.key) }} />
@@ -813,6 +823,9 @@ export default function App() {
               onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
+              onZoneChange={setOfficeZoneNow}
+              projectRequest={projectRequest}
+              onProjectHandled={() => setProjectRequest(null)}
               onReply={sendReply}
               onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />

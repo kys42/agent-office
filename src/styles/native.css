@@ -581,10 +581,12 @@
 }
 
 /* ── Toolbar adapts to the content column, not the window (the dock narrows it) ── */
-.main-content {
-  container: main / inline-size;
+.toolbar {
+  /* Size the toolbar to its own width. (A container on .main-content would trap the fixed
+     dialogs rendered inside the page in that column.) */
+  container: bar / inline-size;
 }
-@container main (max-width: 1020px) {
+@container bar (max-width: 1020px) {
   .global-search {
     width: auto;
   }
@@ -593,7 +595,7 @@
     display: none;
   }
 }
-@container main (max-width: 880px) {
+@container bar (max-width: 880px) {
   .zone-tabs button > span,
   .toolbar-title small {
     display: none;
@@ -604,7 +606,7 @@
     font-size: 0;
   }
 }
-@container main (max-width: 720px) {
+@container bar (max-width: 720px) {
   .zone-tabs button {
     padding: 0 8px;
   }
@@ -683,4 +685,106 @@
 }
 .pet-preview .eyebrow {
   color: var(--text-3);
+}
+
+/* Desk pet, desk row and floor desks float on the desktop as dark HUD pills in every
+   system appearance, like macOS HUD panels. The card popup follows the system instead. */
+body.dock-mode {
+  color-scheme: dark;
+  --bg-0: #1c1c1e;
+  --bg-1: #232325;
+  --bg-2: #2b2b2e;
+  --bg-3: rgba(255, 255, 255, 0.06);
+  --bg-4: rgba(255, 255, 255, 0.1);
+  --bg-5: rgba(255, 255, 255, 0.16);
+  --sidebar: #2a2a2d;
+  --sidebar-tint: rgba(40, 40, 44, 0.5);
+  --grouped: #1c1c1e;
+  --field: rgba(255, 255, 255, 0.06);
+  --control: rgba(255, 255, 255, 0.12);
+  --control-line: rgba(255, 255, 255, 0.08);
+  --control-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.06) inset, 0 0.5px 1px rgba(0, 0, 0, 0.3);
+  --selection: rgba(255, 255, 255, 0.1);
+  --canvas: #161618;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --line-3: rgba(255, 255, 255, 0.18);
+  --text: #f5f5f7;
+  --text-2: #b4b4b9;
+  --text-3: #8e8e93;
+  --text-4: #636366;
+  --accent: #0a84ff;
+  --accent-2: #5eb0ff;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(10, 132, 255, 0.16);
+  --accent-line: rgba(10, 132, 255, 0.4);
+  --badge: #ff453a;
+  --st-work: #30d158;
+  --st-think: #bf5af2;
+  --st-call: #ff453a;
+  --st-error: #ff9f0a;
+  --st-done: #4aa3ff;
+  --st-idle: #98989d;
+  --p-claude: #ec9a6c;
+  --p-codex: #63d6bd;
+  --p-openclaw: #f2878f;
+  --face-claude-hi: #4a3328;
+  --face-claude-lo: #2c201b;
+  --face-codex-hi: #1f4640;
+  --face-codex-lo: #142824;
+  --face-openclaw-hi: #4a2a30;
+  --face-openclaw-lo: #2a191c;
+  --scene-backdrop: #18181b;
+  --scene-dots: rgba(255, 255, 255, 0.05);
+  --hud: rgba(40, 40, 44, 0.82);
+  --shadow-pop:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 14px 40px -8px rgba(0, 0, 0, 0.6),
+    0 2px 8px -2px rgba(0, 0, 0, 0.4);
+}
+
+/* The card window is moved by its desk, not by dragging its header. */
+.dock-card .inspector-top {
+  -webkit-app-region: no-drag;
+}
+/* Dialogs can rise into the window's top drag strip; keep their controls clickable. */
+.modal,
+.palette,
+.modal-backdrop,
+.palette-backdrop {
+  -webkit-app-region: no-drag;
+}
+
+/* Sidebar project scope token */
+.roster-scope {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 4px;
+  height: 22px;
+  padding: 0 4px 0 9px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.roster-scope span {
+  max-width: 220px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.roster-scope button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.artifact-merged .artifact-symbol {
+  color: var(--st-think);
+  background: color-mix(in srgb, var(--st-think) 12%, transparent);
 }
