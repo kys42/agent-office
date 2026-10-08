@@ -1,6 +1,7 @@
 import type { Session, Snapshot, Mood, Provider } from '../shared/types';
 import { localizeNotice, noticeCandidates } from '../shared/notices';
 import { runtimeObservation } from '../shared/presentation';
+import { deriveState } from '../shared/runtime';
 import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../shared/office';
 import { applyZone } from '../shared/zones';
@@ -18,6 +19,74 @@ export function reconcileDemo(snapshot: Snapshot): Snapshot {
   return {
     ...snapshot,
     sessions: attachSessions(sessions.map((s) => ({ ...s, officeSeat: seats[seatKey(s)] }))),
+  };
+}
+/**
+ * The demo as the service would serve it at `now`: the same status ladder over each session's
+ * own (observed) status and the same zone rule, so labels move with the poses (work → standing
+ * by after 2 minutes…) and long-quiet desks leave for the lounge. The held demo keeps the
+ * observed statuses; only what is shown is derived, like `decorate`. With `memo`, a session
+ * whose derived look did not change keeps its object.
+ */
+export function deriveDemo(
+  snapshot: Snapshot,
+  now = Date.now(),
+  memo?: WeakMap<Session, Session>,
+): Snapshot {
+  const prefs = snapshot.preferences;
+  let changed = false;
+  const sessions = snapshot.sessions.map((s) => {
+    const state = deriveState(
+      s.status,
+      s.updatedAt,
+      now,
+      s.archived,
+      prefs.standbyHours,
+      prefs.readyMinutes,
+    );
+    const zone = officeZone(s, prefs, now);
+    if (!state.reason && zone === s.zone) return s;
+    changed = true;
+    const prior = memo?.get(s);
+    if (
+      prior &&
+      prior.status === state.status &&
+      prior.statusReason === (state.reason ?? s.statusReason) &&
+      prior.zone === zone
+    )
+      return prior;
+    const next: Session = state.reason
+      ? {
+          ...s,
+          observedStatus: s.status,
+          status: state.status,
+          statusReason: state.reason,
+          statusEvidence: 'derived',
+          zone,
+        }
+      : { ...s, zone };
+    memo?.set(s, next);
+    return next;
+  });
+  return changed ? { ...snapshot, sessions } : snapshot;
+}
+/**
+ * `deriveDemo` on a clock: while the held demo and every derived session stay the same, the
+ * previous result comes back, so effects keyed on the snapshot or its sessions stay quiet.
+ */
+export function demoDeriver() {
+  const memo = new WeakMap<Session, Session>();
+  let last: { from: Snapshot; shown: Snapshot } | undefined;
+  return (snapshot: Snapshot, now = Date.now()) => {
+    const shown = deriveDemo(snapshot, now, memo);
+    if (
+      last?.from === snapshot &&
+      shown.sessions.length === last.shown.sessions.length &&
+      shown.sessions.every((s, i) => s === last!.shown.sessions[i])
+    )
+      return last.shown;
+    last = { from: snapshot, shown };
+    return shown;
   };
 }
 // Desk order, provider, project and status; names and text come from the active language.
