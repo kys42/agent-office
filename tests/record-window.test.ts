@@ -403,3 +403,37 @@ test('Shrinking only an unfinished tail of a large file is not treated as an app
     await rm(dir, { recursive: true });
   }
 });
+
+test('Only files written to recently keep a window, and a window goes when its file goes quiet', async () => {
+  const dir = await temp();
+  try {
+    let now = Date.now();
+    const cache = new RecordWindowCache({ activeMs: 60_000, now: () => now });
+    const quiet = path.join(dir, 'quiet.jsonl');
+    const busy = path.join(dir, 'busy.jsonl');
+    await writeFile(quiet, lines(0, 20));
+    await writeFile(busy, lines(0, 20));
+    // An old session found on scan: read in full, not kept.
+    const old = { ...(await source(quiet)), mtime: now - 3_600_000 };
+    assert.equal((await cache.read(old)).mode, 'full');
+    assert.equal(cache.has(quiet), false);
+    // A session at work keeps its window and reads only what it appends.
+    await cache.read(await source(busy));
+    assert.equal(cache.has(busy), true);
+    await appendFile(busy, lines(20, 3));
+    assert.equal((await cache.read(await source(busy))).mode, 'append');
+    // It stops writing: after the active window the sweep lets it go.
+    now += 61_000;
+    cache.sweep();
+    assert.equal(cache.has(busy), false);
+    assert.equal(cache.bytes, 0);
+    // It wakes up again: one full read, then appends as before (written "now" on this clock).
+    const written = async () => ({ ...(await source(busy)), mtime: now });
+    await appendFile(busy, lines(23, 2));
+    assert.equal((await cache.read(await written())).mode, 'full');
+    await appendFile(busy, lines(25, 2));
+    assert.equal((await cache.read(await written())).mode, 'append');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
