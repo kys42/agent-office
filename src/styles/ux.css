@@ -226,7 +226,7 @@
   inset: 0;
   border-radius: 50%;
   background: rgba(255, 122, 138, 0.7);
-  animation: ping-out 1.6s ease-out infinite;
+  animation: ping-out 1.625s ease-out infinite;
 }
 
 /* Now card — the top of a colleague's card */
@@ -277,7 +277,7 @@
   color: var(--st-work);
 }
 .now-spin {
-  animation: spin 2.4s linear infinite;
+  animation: spin 2.375s linear infinite;
 }
 .reduce-motion .now-spin {
   animation: none;

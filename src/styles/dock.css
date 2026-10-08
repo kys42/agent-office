@@ -91,7 +91,7 @@ body.dock-mode {
 .desk-pet.is-speaking .dock-pet-body {
   animation:
     dock-pet-arrive 0.5s var(--ease-out),
-    dock-pet-bob 2.8s ease-in-out 0.5s infinite;
+    dock-pet-bob 2.75s ease-in-out 0.5s infinite;
 }
 @keyframes dock-pet-arrive {
   0% {
@@ -127,7 +127,7 @@ body.dock-mode {
   position: relative;
   z-index: 2;
   filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.35));
-  animation: dock-pet-bob 2.8s ease-in-out infinite;
+  animation: dock-pet-bob 2.75s ease-in-out infinite;
   transition: scale 0.15s var(--ease-out);
 }
 .desk-pet:hover .dock-pet-body {
@@ -148,7 +148,7 @@ body.dock-mode {
   margin-top: -7px;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.3);
-  animation: dock-pet-shadow 2.8s ease-in-out infinite;
+  animation: dock-pet-shadow 2.75s ease-in-out infinite;
 }
 @keyframes dock-pet-shadow {
   50% {
@@ -232,7 +232,7 @@ body.dock-mode {
   color: #2a0a0f;
   background: var(--st-call);
   box-shadow: 0 4px 10px -4px rgba(0, 0, 0, 0.6);
-  animation: dock-pet-bang 1.2s steps(2) infinite;
+  animation: dock-pet-bang 1.25s steps(2) infinite;
 }
 @keyframes dock-pet-bang {
   50% {
