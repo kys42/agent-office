@@ -104,6 +104,56 @@ test('A failed read is not a used-up limit', async ({ page }) => {
   await expect(page.locator('.quota-badge')).toHaveCount(0);
 });
 
+test('A failed read clears the lights and the back-off holds even when the window comes back', async ({
+  page,
+}) => {
+  await page.clock.install();
+  let fail = false;
+  let calls = 0;
+  await page.route('**/api/rpc', (route) => {
+    const { method } = route.request().postDataJSON();
+    const now = Date.now();
+    if (method === 'quotas') {
+      calls++;
+      if (fail) return route.abort();
+      const claude: ProviderQuota = {
+        provider: 'claude',
+        state: 'ok',
+        windows: [{ key: 'five_hour', label: '5시간', usedPercent: 100, resetsAt: now + 7200_000 }],
+        checkedAt: now,
+        source: 'test',
+        message: '',
+      };
+      return route.fulfill({ json: { result: [claude] } });
+    }
+    return route.fulfill({ json: { result: demoSnapshot() } });
+  });
+  const shown = (hidden: boolean) =>
+    page.evaluate((h) => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, hidden);
+  await page.goto('/');
+  await expect(desk(page, 'demo:5')).toHaveClass(/lights-out/);
+  expect(calls).toBe(1);
+  // The next read (five minutes on) fails: nothing is claimed any more.
+  fail = true;
+  await page.clock.fastForward('05:01');
+  await expect(desk(page, 'demo:5')).not.toHaveClass(/lights-out/);
+  expect(calls).toBe(2);
+  // Away and back six minutes later: still inside the 15-minute back-off, no read.
+  await shown(true);
+  await page.clock.fastForward('06:00');
+  await shown(false);
+  await page.clock.runFor(1000);
+  expect(calls).toBe(2);
+  // Once the back-off is over, it reads again.
+  fail = false;
+  await page.clock.fastForward('10:00');
+  await expect(desk(page, 'demo:5')).toHaveClass(/lights-out/);
+  expect(calls).toBe(3);
+});
+
 test('Privacy mode neither reads the limits nor claims anything', async ({ page }) => {
   const calls = await serve(page, 'used-up', undefined, { privacy: true });
   await page.goto('/');
