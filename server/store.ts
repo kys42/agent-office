@@ -57,6 +57,21 @@ const isBusy = (e: unknown) =>
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 export class OfficeStore {
   db: DatabaseSync;
+  /**
+   * Writer only: stored sessions already parsed, by id. Our own writes drop their ids (upsert),
+   * a commit from another connection (a dev server or second app on the same data) drops all of
+   * them (`PRAGMA data_version`, compared on this one connection). A read-only store (MCP) has
+   * no cache and always reads what is on disk. Returned sessions share these objects (and their
+   * events, workspace, usage): callers treat what `list`/`officeView` return as read-only.
+   */
+  private cached: Map<string, Session> | null = null;
+  private dataVersion = -1;
+  /**
+   * Sessions whose notices this run already took in, by revision and event ids. Each collector
+   * run takes every session in once (a newer collector may classify notices differently), then
+   * an unchanged session costs nothing.
+   */
+  private ingested = new Map<string, string>();
   constructor(dir = defaultDataDir(), readOnly = false) {
     if (!readOnly) mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, 'office.sqlite');
@@ -75,6 +90,7 @@ export class OfficeStore {
         }
       }
       chmodSync(file, 0o600);
+      this.cached = new Map();
     } else this.db.exec('PRAGMA query_only=ON');
   }
   close() {
@@ -104,32 +120,37 @@ export class OfficeStore {
     const get = this.db.prepare('SELECT data FROM sessions WHERE id=?');
     const remove = this.db.prepare('DELETE FROM session_search WHERE id=?');
     const index = this.db.prepare('INSERT INTO session_search(id,title,body) VALUES (?,?,?)');
+    const ledgerPut = this.db.prepare('INSERT OR REPLACE INTO usage_ledger VALUES(?,?,?)');
+    const ledgerGet = this.db.prepare(
+      'SELECT data FROM usage_ledger WHERE session_id=? AND entry_id=?',
+    );
+    const ledgerAll = this.db.prepare('SELECT data FROM usage_ledger WHERE session_id=?');
+    const ledgerNative = this.db.prepare(
+      "SELECT 1 FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'response:%' LIMIT 1",
+    );
+    const ledgerDropFallback = this.db.prepare(
+      "DELETE FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'codex:%'",
+    );
     const standbyHours = this.preferences().standbyHours ?? DEFAULT_PREFS.standbyHours!;
     this.db.exec('BEGIN');
     try {
       for (const s of sessions) {
         const prior = get.get(s.id) as { data: string } | undefined;
         const previous: Session | undefined = prior ? JSON.parse(prior.data) : undefined;
+        // Unchanged since this run took it in: nothing about its notices can become new with time
+        // alone (time only retires old requests), so a quiet cycle writes nothing.
+        const seen = `${s.revision}\n${s.events.map((e) => e.id).join('\n')}`;
+        if (previous?.revision === s.revision && this.ingested.get(s.id) === seen) continue;
         this.ingestNotices(s, standbyHours);
-        if (prior && JSON.parse(prior.data).revision === s.revision) continue;
+        this.ingested.set(s.id, seen);
+        if (previous?.revision === s.revision) continue;
+        this.cached?.delete(s.id);
         const taskStartedAt =
-          Math.max(s.taskStartedAt ?? 0, prior ? (JSON.parse(prior.data).taskStartedAt ?? 0) : 0) ||
-          undefined;
-        const ledgerPut = this.db.prepare('INSERT OR REPLACE INTO usage_ledger VALUES(?,?,?)');
-        const ledgerGet = this.db.prepare(
-          'SELECT data FROM usage_ledger WHERE session_id=? AND entry_id=?',
-        );
+          Math.max(s.taskStartedAt ?? 0, previous?.taskStartedAt ?? 0) || undefined;
         const hasNative =
           (s.usageEntries ?? []).some((e) => e.id.startsWith('response:')) ||
-          !!this.db
-            .prepare(
-              "SELECT 1 FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'response:%' LIMIT 1",
-            )
-            .get(s.id);
-        if (hasNative)
-          this.db
-            .prepare("DELETE FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'codex:%'")
-            .run(s.id);
+          !!ledgerNative.get(s.id);
+        if (hasNative) ledgerDropFallback.run(s.id);
         for (const entry of s.usageEntries ?? []) {
           if (hasNative && entry.id.startsWith('codex:')) continue;
           const old = ledgerGet.get(s.id, entry.id) as { data: string } | undefined;
@@ -142,11 +163,9 @@ export class OfficeStore {
               JSON.stringify({ ...entry, model: entry.model ?? prev?.model ?? null }),
             );
         }
-        const entries = (
-          this.db.prepare('SELECT data FROM usage_ledger WHERE session_id=?').all(s.id) as {
-            data: string;
-          }[]
-        ).map((r) => JSON.parse(r.data) as UsageEntry);
+        const entries = (ledgerAll.all(s.id) as { data: string }[]).map(
+          (r) => JSON.parse(r.data) as UsageEntry,
+        );
         const { usageEntries: _transient, ...stored } = s;
         const retainLocation = !s.workingLocation && s.partial && previous?.workingLocation;
         const location =
@@ -181,11 +200,16 @@ export class OfficeStore {
         if (!present.has(row.id)) {
           this.db.prepare('DELETE FROM sessions WHERE id=?').run(row.id);
           remove.run(row.id);
+          this.cached?.delete(row.id);
+          this.ingested.delete(row.id);
         }
       }
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');
+      // Nothing of this pass was kept: take everything in again next time.
+      this.ingested.clear();
+      this.cached?.clear();
       throw e;
     }
   }
@@ -321,8 +345,10 @@ export class OfficeStore {
       .run(s.id, Math.max(cursor?.at ?? 0, s.updatedAt));
   }
   /** Notices in `locale`; stored rows stay canonical. */
-  noticeList(locale: Locale = getLocale()): OfficeNotice[] {
-    const sessions = this.list(false, CANONICAL);
+  noticeList(
+    locale: Locale = getLocale(),
+    sessions: Session[] = this.list(false, CANONICAL),
+  ): OfficeNotice[] {
     const visible = new Set(sessions.map((s) => s.id));
     const background = new Set(
       sessions.filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
@@ -368,10 +394,14 @@ export class OfficeStore {
     );
   }
   /** `prefs` is read once by the caller: a list decorates every session with the same settings. */
-  decorate(s: Session, prefs: Preferences): Session {
-    const p = this.db.prepare('SELECT data FROM personal WHERE id=?').get(s.id) as
-      { data: string } | undefined;
-    const session = { ...s, ...(p ? JSON.parse(p.data) : {}) };
+  decorate(s: Session, prefs: Preferences, personal?: Map<string, string>): Session {
+    const data = personal
+      ? personal.get(s.id)
+      : (
+          this.db.prepare('SELECT data FROM personal WHERE id=?').get(s.id) as
+            { data: string } | undefined
+        )?.data;
+    const session = { ...s, ...(data ? JSON.parse(data) : {}) };
     const state = deriveState(
       s.observedStatus ?? s.status,
       s.updatedAt,
@@ -388,10 +418,9 @@ export class OfficeStore {
       zone: officeZone(session, prefs),
     };
   }
-  assignSeats(): void {
-    const sessions = officeResidents(this.list(false, CANONICAL)).sessions.filter(
-      (s) => s.zone === 'office',
-    );
+  /** Keeps desks for the colleagues in the office; written only when they change. */
+  assignSeats(listed: Session[] = this.list(false, CANONICAL)): Record<string, number> {
+    const sessions = officeResidents(listed).sessions.filter((s) => s.zone === 'office');
     const row = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
       { value: string } | undefined;
     const previous = row ? JSON.parse(row.value) : {};
@@ -399,6 +428,7 @@ export class OfficeStore {
     const value = JSON.stringify(next);
     if (row?.value !== value)
       this.db.prepare("INSERT OR REPLACE INTO settings VALUES ('office_seats',?)").run(value);
+    return next;
   }
   visit(id: string, returnToOffice = false) {
     this.get(id);
@@ -414,25 +444,99 @@ export class OfficeStore {
     };
     this.db.prepare('INSERT OR REPLACE INTO personal VALUES (?,?)').run(id, JSON.stringify(next));
   }
-  /** Visible sessions in `locale` (the collector's stored rows are canonical). */
-  list(full = false, locale: Locale = getLocale()): Session[] {
-    const prefs = this.preferences();
-    const seatRow = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
-      { value: string } | undefined;
-    const seats = seatRow ? JSON.parse(seatRow.value) : {};
-    return attachSessions(
-      (
+  /** Stored sessions, newest first. The writer parses only rows it has not parsed yet. */
+  private rows(): Session[] {
+    const parse = (rows: { data: string }[]) => rows.map((r) => JSON.parse(r.data) as Session);
+    if (!this.cached)
+      return parse(
         this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC').all() as {
           data: string;
-        }[]
-      )
-        .map((r) => JSON.parse(r.data) as Session)
-        .filter((s) => this.visible(s, prefs))
-        .map((s) => {
-          const d = { ...this.decorate(s, prefs), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
-          return full ? d : { ...d, events: snapshotEvents(d) };
-        }),
-    ).map((s) => localizeSession(s, locale));
+        }[],
+      );
+    const { data_version: version } = this.db.prepare('PRAGMA data_version').get() as {
+      data_version: number;
+    };
+    if (version !== this.dataVersion) {
+      this.cached.clear();
+      this.dataVersion = version;
+    }
+    if (!this.cached.size) {
+      const all = parse(
+        this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC').all() as {
+          data: string;
+        }[],
+      );
+      for (const s of all) this.cached.set(s.id, s);
+      return all;
+    }
+    const read = this.db.prepare('SELECT data FROM sessions WHERE id=?');
+    const ids = this.db.prepare('SELECT id FROM sessions ORDER BY updated_at DESC').all() as {
+      id: string;
+    }[];
+    const result: Session[] = [];
+    const present = new Set<string>();
+    for (const { id } of ids) {
+      present.add(id);
+      let s = this.cached.get(id);
+      if (!s) {
+        const row = read.get(id) as { data: string } | undefined;
+        if (!row) continue;
+        s = JSON.parse(row.data) as Session;
+        this.cached.set(id, s);
+      }
+      result.push(s);
+    }
+    if (this.cached.size > present.size)
+      for (const id of this.cached.keys()) if (!present.has(id)) this.cached.delete(id);
+    return result;
+  }
+  /** Visible sessions decorated with the person's settings and desks, before grouping. */
+  private decorated(full: boolean, seats: Record<string, number>): Session[] {
+    const prefs = this.preferences();
+    const personal = new Map(
+      (
+        this.db.prepare('SELECT id, data FROM personal').all() as { id: string; data: string }[]
+      ).map((r) => [r.id, r.data]),
+    );
+    return this.rows()
+      .filter((s) => this.visible(s, prefs))
+      .map((s) => {
+        const d = {
+          ...this.decorate(s, prefs, personal),
+          officeSeat: seats[seatKey(s)] ?? seats[s.id],
+        };
+        return full ? d : { ...d, events: snapshotEvents(d) };
+      });
+  }
+  private seats(): Record<string, number> {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
+      { value: string } | undefined;
+    return row ? JSON.parse(row.value) : {};
+  }
+  /** Visible sessions in `locale` (the collector's stored rows are canonical). */
+  list(full = false, locale: Locale = getLocale()): Session[] {
+    return attachSessions(this.decorated(full, this.seats())).map((s) =>
+      localizeSession(s, locale),
+    );
+  }
+  /**
+   * What the office shows, from one read of the sessions: desks kept up to date, notices of the
+   * same colleagues, all in `locale`. The same result as `assignSeats`, `noticeList` and `list`
+   * called in turn, without reading and parsing every session three times.
+   */
+  officeView(locale: Locale = getLocale()): { sessions: Session[]; notices: OfficeNotice[] } {
+    const stored = this.seats();
+    const base = this.decorated(false, stored);
+    const listed = attachSessions(base);
+    const seats = this.assignSeats(listed);
+    const sessions =
+      JSON.stringify(seats) === JSON.stringify(stored)
+        ? listed
+        : attachSessions(base.map((s) => ({ ...s, officeSeat: seats[seatKey(s)] ?? seats[s.id] })));
+    return {
+      sessions: sessions.map((s) => localizeSession(s, locale)),
+      notices: this.noticeList(locale, sessions),
+    };
   }
   /** The stored (canonical) session, if the person's settings let it be seen. */
   private stored(id: string, prefs: Preferences): Session {

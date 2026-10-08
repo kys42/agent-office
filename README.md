@@ -24,6 +24,10 @@ so you can see who's working, who's waiting on you, and what just finished witho
 
 ---
 
+## 👋 Your first visit
+
+The first launch includes a four-step tour: meet your teammates, catch up on questions and results, try the desk pet, and make the office yours. Skip it or finish it once; it stays out of the way next time. **Guide** in the sidebar or the **⌘K** command palette opens the tour and feature guide again. Feature cards take you straight to the Inbox, character settings, Memory, Usage and other screens. The sample office has its own guide and does not complete your live-office tour.
+
 ## 🖥️ A team that lives on your desktop
 
 Agent Office isn't another window to keep checking. It docks to your desktop, stays out of the way, and speaks up when something needs you.

@@ -1,3 +1,4 @@
+import type { SnapshotMessage } from './snapshot-patch';
 import { m, type Locale, type LocalePreference } from './i18n';
 import type { PetCustomization } from './pets';
 export type Provider = 'claude' | 'codex' | 'openclaw';
@@ -291,6 +292,8 @@ export interface Snapshot {
   lastSync: number | null;
   error: string | null;
   version: number;
+  /** The collector run `version` counts in; a new run starts its versions again. */
+  epoch?: string;
   notices?: OfficeNotice[];
   noticeStats?: { unread: number; total: number };
   /**
@@ -375,7 +378,14 @@ export interface OfficeAPI {
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
-  subscribe: (callback: (s: Snapshot) => void) => () => void;
+  /**
+   * The office as it changes: a whole snapshot or a patch on the version held. `since` tells a
+   * poller (the web preview) what is held, so it can ask for only what changed.
+   */
+  subscribe: (
+    callback: (message: SnapshotMessage) => void,
+    since?: () => Pick<Snapshot, 'epoch' | 'version'> | null,
+  ) => () => void;
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
@@ -402,6 +412,9 @@ export interface OfficeAPI {
   ) => Promise<void>;
   /** The dock card window: which colleague to show. */
   onCard?: (callback: (target: CardTarget | null) => void) => () => void;
+  /** Desktop: whether this window is on screen, and each time that changes. */
+  visible?: () => Promise<boolean>;
+  onVisibility?: (callback: (shown: boolean) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
   /** Desktop only. Browser previews switch the dock layout locally. */

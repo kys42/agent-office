@@ -1,5 +1,5 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PetCustomizer } from './PetCustomizer';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
@@ -27,6 +27,7 @@ import { ZONE_MATCH_LABELS, isCustomZone, ruleZoneKey } from '../shared/zones';
 import { projectKey } from '../shared/office';
 import { LOCALES, type LocalePreference } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
+export type SettingsSection = 'appearance' | 'connections' | 'office' | 'rhythm';
 function Toggle({
   checked,
   onChange,
@@ -55,6 +56,8 @@ export function Settings({
   notify,
   terminalSend,
   onTerminalSend,
+  focusSection,
+  onSectionFocused,
 }: {
   snapshot: Snapshot;
   onPrefs: (p: Partial<Preferences>) => Promise<boolean>;
@@ -63,11 +66,23 @@ export function Settings({
   /** Desktop only; undefined hides the setting (web preview, demo). */
   terminalSend?: boolean;
   onTerminalSend?: () => void;
+  focusSection?: { section: SettingsSection; at: number };
+  onSectionFocused?: () => void;
 }) {
   const { t } = useI18n();
   const s = t.settings;
   const p = snapshot.preferences;
   const [customizing, setCustomizing] = useState<Provider | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusSection) return;
+    const section = root.current?.querySelector<HTMLElement>(
+      `[data-guide-section="${focusSection.section}"]`,
+    );
+    section?.scrollIntoView({ block: 'start' });
+    section?.focus({ preventScroll: true });
+    onSectionFocused?.();
+  }, [focusSection, onSectionFocused]);
   const projects = [
     ...new Set([...snapshot.sessions.map((s) => s.project), ...p.excludedProjects]),
   ].sort();
@@ -80,7 +95,7 @@ export function Settings({
       (s) => s.area && projectKey(s) === key && s.zone === 'office' && !s.attachedTo,
     ).length;
   return (
-    <div className="settings-page page">
+    <div className="settings-page page" ref={root}>
       <header className="page-head">
         <div>
           <span className="eyebrow">Settings</span>
@@ -88,7 +103,11 @@ export function Settings({
           <p>{s.subtitle}</p>
         </div>
       </header>
-      <section className="pet-settings settings-section">
+      <section
+        className="pet-settings settings-section"
+        data-guide-section="appearance"
+        tabIndex={-1}
+      >
         <div className="section-title">
           <div>
             <span className="eyebrow">Little colleagues</span>
@@ -131,7 +150,7 @@ export function Settings({
         />
       )}
       <div className="settings-grid">
-        <section className="settings-section">
+        <section className="settings-section" data-guide-section="connections" tabIndex={-1}>
           <div className="section-title">
             <h2>{s.connectors.title}</h2>
             <button className="icon-btn" aria-label={s.connectors.refresh} onClick={onRefresh}>
@@ -206,7 +225,7 @@ export function Settings({
               </select>
             </div>
           </section>
-          <section className="settings-section">
+          <section className="settings-section" data-guide-section="office" tabIndex={-1}>
             <h2>{s.office.title}</h2>
             <p>{s.office.body}</p>
             <div className="setting-row">
@@ -307,7 +326,7 @@ export function Settings({
             </p>
             <p className="helper-lifecycle-note">{s.office.helperNote}</p>
           </section>
-          <section className="settings-section">
+          <section className="settings-section" data-guide-section="rhythm" tabIndex={-1}>
             <h2>{s.rhythm.title}</h2>
             <div className="setting-row">
               <Pause size={18} />
