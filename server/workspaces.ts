@@ -79,6 +79,18 @@ export async function resolveWorkspace(
   if (cache.size > 1500) cache.delete(cache.keys().next().value!);
   return value;
 }
+/**
+ * What a workspace means for a session's revision: everything but the time it was last checked.
+ * `git.observedAt` moves every time the 15s Git cache refreshes; hashing it would turn every
+ * refresh into a rewrite of every Git session (record, usage ledger, search index).
+ */
+export function workspaceSignature(workspace: WorkspaceIdentity | undefined): string {
+  if (!workspace) return '';
+  const { git, ...rest } = workspace;
+  if (!git) return JSON.stringify(rest);
+  const { observedAt: _checked, ...meaning } = git;
+  return JSON.stringify({ ...rest, git: meaning });
+}
 export async function enrichWorkspaces(sessions: Session[]) {
   // Bounded concurrency; never fetch remotes or reinterpret recorded branch as current HEAD.
   const result: Session[] = [];

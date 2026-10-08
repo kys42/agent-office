@@ -58,6 +58,8 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 검색은 제한된 로컬 코퍼스에 대해 대소문자 비구분 AND 부분 문자열을 사용한다. 한국어 부분 단어·기호를 지원한다. FTS5 테이블은 증분 색인으로 유지하되 현재 검색 결과에는 문자열 검증을 사용한다. 의미 검색/AI 요약이라고 표기하지 않는다.
 
+수집기 store는 파싱한 세션 행을 메모리에 재사용하고, 다른 연결이 커밋하면(`PRAGMA data_version`) 모두 다시 읽는다. read-only(MCP)는 항상 디스크를 읽는다. 사무실 snapshot은 세션을 한 번 읽어 좌석·소식·목록을 함께 만들고(`officeView`), 내용이 바뀔 때만 보낸다(확인 시각만 바뀌면 60초마다). 전송은 바뀐 동료·소식·필드만 담은 patch(`src/shared/snapshot-patch.ts`)다. Electron은 화면에 보이는 창에만 보내고, 그 창이 patch의 시작 version을 갖고 있으면 patch를, 아니면 전체를 보낸다. 다시 보이면 최신본을 한 번 보낸다. 렌더러는 안 바뀐 동료 객체를 그대로 두고, version 틈이 있으면 전체를 다시 받는다. 웹은 `epoch+version`을 보내 변경 없음·합성 patch·전체 중 하나를 받는다. 세션 revision의 workspace 부분은 Git 확인 시각을 빼고 의미만 해시한다.
+
 사무실 좌석은 settings의 office_seats에 별도 저장한다. 정렬·검색은 명단에만 적용하며 자리 재배치를 유발하지 않는다. 숫자는 영속 순서 토큰이며 물리 좌표가 아니다. src/shared/office-layout.ts가 프로젝트별 구역, 이어지는 공동 책상, 모든 보조 책상의 실제 좌표를 계산한다. 상태 갱신은 배치를 유지하고 세션 구성·관계·프로젝트·브랜치·창 크기 변경에서만 다시 배치한다. 메인은 층 제한 없이 화면에 모두 맞추며 수동 확대를 지원한다. 기본 4시간 활동이 없으면 대기, 7일이면 보관한다. pinned는 자동 이동에서 제외되고, 수동 archived가 우선한다. 복귀 시 returnedAt을 따로 남기며 원본 updatedAt은 바꾸지 않는다. 열람 횟수는 10초 중복을 제거한 앱 내 열람 수로, 원본 도구 사용 빈도와 다르다.
 
 제목은 사용자 별명 → 원본 이름 → 첫 메시지 기반 제목 순이다. Codex는 threads.name → session_index → threads.title, Claude는 custom-title → optional sessions-index 이름을 사용한다. 대화는 user/assistant 말풍선과 묶은 tool/result 기록으로 표시한다. snapshot의 최근 이벤트를 ID로 병합하고 상세를 다시 읽어, 펼침 상태와 작성 중 메모를 보존하면서 갱신한다.

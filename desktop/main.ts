@@ -49,6 +49,8 @@ import {
   TerminalInputError,
 } from './terminals.js';
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
+import { SnapshotDelivery, type Viewer } from './delivery.js';
+import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
   // The dock card: a colleague's card opened at a desk in the dock (presentation only).
@@ -76,11 +78,21 @@ else {
     // System language until the first snapshot brings the saved preference.
     syncLocale(undefined);
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
-    bridge.on('snapshot', (s: Snapshot) => {
-      // Follow the language the collector actually resolved, so tray and windows always agree.
+    const windows = () =>
+      [main, dock, card].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map(viewer);
+    // Follow the language the collector actually resolved, so tray and windows always agree.
+    const followLanguage = (s: Snapshot) => {
       if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
-      for (const w of [main, dock, card])
-        if (w && !w.isDestroyed()) w.webContents.send('office:snapshot', s);
+    };
+    const publish = (s: Snapshot) => {
+      followLanguage(s);
+      delivery.publish(s, windows());
+    };
+    bridge.on('snapshot', publish);
+    bridge.on('patch', (patch: SnapshotPatch) => {
+      if (delivery.update(patch, windows())) followLanguage(delivery.latest!);
+      // A change that does not start from what is held here (e.g. the collector restarted).
+      else void bridge.call('snapshot').then(publish, () => {});
     });
     bridge.on('failure', (message) => console.error('Collector worker:', message));
     petSpot = loadPetSpot();
@@ -122,6 +134,39 @@ function buildTray() {
       },
     ]),
   );
+}
+const delivery = new SnapshotDelivery();
+const onScreen = (w: BrowserWindow) => !w.isDestroyed() && w.isVisible() && !w.isMinimized();
+const viewers = new WeakMap<BrowserWindow, Viewer>();
+function viewer(w: BrowserWindow): Viewer {
+  let v = viewers.get(w);
+  if (!v) {
+    const id = w.webContents.id;
+    v = {
+      id,
+      shown: () => onScreen(w),
+      send: (s) => w.webContents.send('office:snapshot', s),
+    };
+    viewers.set(w, v);
+  }
+  return v;
+}
+/**
+ * Snapshots go only to windows on screen (`document.hidden` is not reliable for a hidden
+ * Electron window), and the page is told when it shows or hides so its clocks and polls rest.
+ */
+function watch(w: BrowserWindow) {
+  const v = viewer(w);
+  const tell = () => {
+    if (w.isDestroyed()) return;
+    w.webContents.send('office:visibility', onScreen(w));
+    delivery.reveal(v);
+  };
+  w.on('show', tell);
+  w.on('hide', tell);
+  w.on('minimize', tell);
+  w.on('restore', tell);
+  w.on('closed', () => delivery.forget(v.id));
 }
 function secure(w: BrowserWindow) {
   // A web page link (target=_blank) opens in the browser; nothing opens inside the app.
@@ -175,6 +220,7 @@ function createMain() {
     },
   });
   secure(main);
+  watch(main);
   void main.loadFile(index);
   main.on('close', (e) => {
     if (!quitting) {
@@ -260,6 +306,7 @@ function showDock(mode: DockMode = 'pet') {
       },
     });
     secure(dock);
+    watch(dock);
     dock.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true,
       skipTransformProcessType: true,
@@ -328,6 +375,7 @@ function showCard(target: CardTarget, anchor: Rect) {
       },
     });
     secure(card);
+    watch(card);
     // Above the dock, which is itself always on top.
     card.setAlwaysOnTop(true, 'pop-up-menu');
     card.setVisibleOnAllWorkspaces(true, {
@@ -407,6 +455,12 @@ function setupIPC() {
     trusted(e);
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
     clipboard.writeText(text);
+  });
+  // Whether this page's window is on screen right now (the page also hears each change).
+  ipcMain.handle('office:visible', (e) => {
+    trusted(e);
+    const w = BrowserWindow.fromWebContents(e.sender);
+    return w ? onScreen(w) : true;
   });
   ipcMain.handle('office:call', async (e, method, args) => {
     trusted(e);
