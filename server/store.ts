@@ -167,7 +167,12 @@ export class OfficeStore {
           (r) => JSON.parse(r.data) as UsageEntry,
         );
         const { usageEntries: _transient, ...stored } = s;
-        const retainLocation = !s.workingLocation && s.partial && previous?.workingLocation;
+        // A partial tail may miss the evidence; keep the last one — but never an old cd-based guess.
+        const retainLocation =
+          !s.workingLocation &&
+          s.partial &&
+          ['file-edit', 'git-write'].includes(previous?.workingLocation?.source ?? '') &&
+          previous?.workingLocation;
         const location =
           s.workingLocation ?? (retainLocation ? previous?.workingLocation : undefined);
         const workspace = retainLocation ? previous?.workspace : s.workspace;

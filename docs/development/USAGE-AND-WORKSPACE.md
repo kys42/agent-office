@@ -26,11 +26,17 @@ Claude/OpenClaw는 message ID별 최대 출력 표본, Codex는 native response 
 
 ## 실제 작업 위치
 
-원본 `cwd`/`branch`/`gitCommit`은 보존한다. `workingLocation`은 가장 최근 명시적 shell workdir/cwd 또는 literal leading `cd … &&` 관측과 시각/출처다. `WorkspaceIdentity.locationSource`는 그 관측을 실제 Git 경로로 검증했다는 연결이다. 이 경우 현재 worktree의 branch/HEAD가 책상 표시를 이끈다. Git common-dir는 기존처럼 같은 프로젝트의 worktree를 한 팀으로 묶는다.
+원본 `cwd`/`branch`/`gitCommit`은 보존한다. `workingLocation`은 가장 최근 **작업 흔적**의 위치·시각·출처다(`server/adapters/working-location.ts`). 흔적이 없으면 없고, 실행 경로(`cwd`)가 기준이다.
 
-Codex functions.exec 안의 `tools.exec_command`는 Acorn으로 구문만 읽는다. 실행하거나 문자열을 eval하지 않는다. literal 인수만 허용하고 동적 경로·함수 정의·조건부 호출·다른 위치의 병렬 호출은 추측하지 않는다. Claude Bash와 OpenClaw exec도 같은 중간 규격으로 번역한다. 파일 읽기 인수, 경로가 언급된 진행 문장, PR URL만으로는 이동하지 않는다. PR은 다른 저장소의 참고 링크일 수 있다.
+- `file-edit`: Claude `Edit`·`Write`·`MultiEdit`·`NotebookEdit`의 `file_path`/`notebook_path` 폴더, Codex `apply_patch`의 `*** Add/Update/Delete File:` 경로(상대경로는 세션 cwd 기준)
+- `git-write`: 명령 줄의 `git commit|push|merge|rebase|cherry-pick|revert`, 새 브랜치(`switch -c`·`checkout -b`), `git worktree add <경로>`(새 worktree), `gh pr create|merge`가 실행된 폴더. 폴더는 `git -C` → 같은 줄의 앞선 `cd` → `workdir` → Claude 셸 위치 순으로 정한다
+- Claude Bash는 `cd`를 다음 호출까지 유지하므로 셸 위치를 따라간다. 도구 결과 마지막 줄이 `Shell cwd was reset to <경로>`이면 되돌린다. 셸 위치 자체는 흔적이 아니다
+- 제외: `~/.claude`·`~/.codex`·`~/.openclaw`와 `/tmp/claude-*` 스크래치. 둘러보는 `cd`·`workdir`만 있는 명령은 흔적이 아니다
+- 예전 규칙(`shell-cd`·`tool-workdir`)으로 저장된 위치는 partial tail에서 이어 가지 않는다 `WorkspaceIdentity.locationSource`는 그 관측을 실제 Git 경로로 검증했다는 연결이다. 이 경우 현재 worktree의 branch/HEAD가 책상 표시를 이끈다. Git common-dir는 기존처럼 같은 프로젝트의 worktree를 한 팀으로 묶는다.
 
-Git 검증이 실패하면 시작 위치의 팀을 유지하고 상세에 관측 경로만 남긴다. partial tail에서 경로 관측이 빠지면 이전 경로와 당시 Git 근거를 함께 보존한다. 실제 shell 실행 성공, remote host, 동적으로 조합한 shell 변수, 여러 동시 작업 위치는 모두 완전히 추적할 수 있는 것이 아니다. 상세에서 관측 시각을 확인할 수 있다.
+Codex functions.exec 안의 `tools.exec_command`는 Acorn으로 구문만 읽고, 같은 작업 흔적 규칙을 적용한다. 실행하거나 문자열을 eval하지 않는다. literal 인수만 허용하고 동적 경로·함수 정의·조건부 호출·다른 위치의 병렬 호출은 추측하지 않는다. Claude Bash와 OpenClaw exec도 같은 중간 규격으로 번역한다. 파일 읽기 인수, 경로가 언급된 진행 문장, PR URL만으로는 이동하지 않는다. PR은 다른 저장소의 참고 링크일 수 있다.
+
+Git 검증이 실패하면 시작 위치의 팀을 유지하고 상세에 관측 경로만 남긴다. partial tail에서 작업 흔적이 빠지면 이전 흔적(`file-edit`·`git-write`)과 당시 Git 근거를 함께 보존한다. 실제 shell 실행 성공, remote host, 동적으로 조합한 shell 변수, 여러 동시 작업 위치는 모두 완전히 추적할 수 있는 것이 아니다. 상세에서 관측 시각을 확인할 수 있다.
 
 ## 서류 도착과 집중 연출
 

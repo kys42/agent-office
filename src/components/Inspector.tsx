@@ -602,9 +602,14 @@ export function Inspector({
                   <h3>{t.inspector.overview.workingTitle}</h3>
                   <code>{s.workingLocation.path}</code>
                   <p>
-                    {s.workingLocation.source === 'tool-workdir'
-                      ? t.inspector.overview.toolWorkdir
-                      : t.inspector.overview.explicitCd}{' '}
+                    {
+                      {
+                        'file-edit': t.inspector.overview.fileEdit,
+                        'git-write': t.inspector.overview.gitWrite,
+                        'tool-workdir': t.inspector.overview.toolWorkdir,
+                        'shell-cd': t.inspector.overview.explicitCd,
+                      }[s.workingLocation.source]
+                    }{' '}
                     · {new Date(s.workingLocation.at).toLocaleString(intlLocale())}
                   </p>
                   <small>

@@ -1,4 +1,10 @@
-import { toolLocation, wrappedLocations } from './working-location.js';
+import {
+  editLocation,
+  readCommand,
+  resetLocation,
+  toolLocation,
+  wrappedLocations,
+} from './working-location.js';
 import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -166,12 +172,18 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     ({ r }) => r.type === 'token_usage_record' && r.payload?.usage && r.payload?.response_id,
   );
   let lastCodexTotal: string | undefined;
+  // Claude's Bash keeps its directory between calls (a cd persists until Claude Code resets it).
+  let shell: string | undefined;
   const locate = (name: string, args: unknown, at: number) => {
-    const location =
+    const wrapped =
       name === 'functions.exec' ||
-      (name === 'exec' && typeof args === 'string' && args.includes('tools.exec_command'))
-        ? wrappedLocations(args, at).at(-1)
-        : toolLocation(name, args, at);
+      (name === 'exec' && typeof args === 'string' && args.includes('tools.exec_command'));
+    const here = name === 'Bash' ? (shell ?? cwd ?? undefined) : undefined;
+    const location = wrapped
+      ? wrappedLocations(args, at).at(-1)
+      : (editLocation(name, args, cwd ?? undefined, at) ?? toolLocation(name, args, at, here));
+    if (name === 'Bash' && args && typeof (args as any).command === 'string')
+      shell = readCommand((args as any).command, here, at).dir;
     if (location) workingLocation = location;
   };
   const add = (
@@ -480,6 +492,8 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             );
           }
           if (b.type === 'tool_result') {
+            // Claude Code puts the shell back after a cd outside the project, and says so.
+            shell = resetLocation(contentText(b.content)) ?? shell;
             add(
               { ...r, id: b.tool_use_id ?? r.uuid },
               at,

@@ -63,6 +63,8 @@ export const inspector: Messages['inspector'] = {
     startPathNote: '세션 시작 기록의 위치예요. 실제 실행 위치는 아래에서 구분해요.',
     workingTitle: '최근 실제 작업 위치',
     toolWorkdir: '도구 실행 폴더',
+    fileEdit: '파일을 고친 위치',
+    gitWrite: '브랜치·커밋·PR 작업 위치',
     explicitCd: '명시적 cd 명령',
     repoFound: 'Git 저장소를 확인해 팀과 책상 브랜치에 반영해요.',
     repoMissing: '위치 기록은 있지만 Git 저장소는 확인되지 않았어요.',

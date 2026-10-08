@@ -1,3 +1,14 @@
+# 2026-10-08 · 작업 위치 = 실행 경로 + 작업 흔적 (Issue #19)
+
+- 문제: 둘러보려고 `cd ~/.claude/… && grep …`만 해도 책상이 `.claude` 구역으로 가서 돌아오지 않았다(Claude 기록엔 프로젝트 폴더로 가는 cd가 남지 않음)
+- 규칙(사용자 결정): 기본은 **실행 경로**, 이동은 **작업 흔적**이 있을 때만
+  - `file-edit`: Claude 편집 도구 경로, Codex `apply_patch`
+  - `git-write`: commit·push·merge·rebase·cherry-pick·revert, 새 브랜치, `worktree add`(새 경로), `gh pr create|merge`
+  - Claude 셸 위치 추적(`cd` 유지, `Shell cwd was reset` 되돌림)은 git 쓰기의 폴더를 정할 때만 쓴다
+  - `~/.claude`·`~/.codex`·`~/.openclaw`·Claude 스크래치는 흔적이 아니다
+- **⚠ 저장 데이터**: 예전 `shell-cd`·`tool-workdir` 위치는 partial tail에서 이어 가지 않는다(남아 있던 엉뚱한 위치가 다음 수집에서 풀린다)
+- 상세 패널 근거 문구: '파일을 고친 위치', '브랜치·커밋·PR 작업 위치'(ko·en)
+
 # 2026-10-08 · 상시 실행 경량화: 조용한 수집 주기·변경분 전송·증분 수집 (PR #47·#50·#51, Issue #45)
 
 - **조용한 수집 주기(#47):**
