@@ -22,6 +22,13 @@ import {
 } from './adapters/claude-live.js';
 import { mergeSessions } from './adapters/merge.js';
 import { unreadNoticeCount } from '../src/shared/notices.js';
+import {
+  composePatches,
+  diffSnapshot,
+  indexSnapshot,
+  type SnapshotIndex,
+  type SnapshotPatch,
+} from '../src/shared/snapshot-patch.js';
 import { enrichWorkspaces, workspaceSignature } from './workspaces.js';
 import { syncLocale } from './locale.js';
 import {
@@ -98,6 +105,19 @@ const prefsSchema = z
   .strict();
 /** A quiet office still reports that it checked, at this pace. */
 const HEALTH_MS = 60_000;
+/** Changes kept for pollers that fell behind; further back they get the whole office. */
+const PATCH_HISTORY = 64;
+/** Changes are kept only while a poller has asked recently (the desktop app never asks). */
+const POLLER_MS = 60_000;
+/** Whether a change is more than the check times moving on. */
+function meaningful(change: ReturnType<typeof diffSnapshot>, before: Snapshot, after: Snapshot) {
+  const { fields, ...parts } = change;
+  if (Object.keys(parts).length) return true;
+  const keys = Object.keys(fields ?? {}).filter((k) => k !== 'lastSync' && k !== 'connectors');
+  if (keys.length) return true;
+  const plain = (s: Snapshot) => JSON.stringify(s.connectors.map((c) => ({ ...c, lastSync: 0 })));
+  return !!fields?.connectors && plain(before) !== plain(after);
+}
 export class OfficeService extends EventEmitter {
   private quotaService = new QuotaService();
   store: OfficeStore;
@@ -109,7 +129,10 @@ export class OfficeService extends EventEmitter {
   /** This collector's run: a client holding another run's version must take a full snapshot. */
   readonly epoch = randomUUID();
   /** What was last sent, so a cycle that changed nothing sends nothing. */
-  private sent: { content: string; at: number; snapshot: Snapshot } | null = null;
+  private sent: { index: SnapshotIndex; at: number; snapshot: Snapshot } | null = null;
+  /** Recent changes, for a poller a few versions behind (the web preview). */
+  private patches: SnapshotPatch[] = [];
+  private polledAt = 0;
   cache = new Map<string, { stamp: string; session: Session }>();
   clawCache = new Map<string, Session>();
   timer: ReturnType<typeof setTimeout> | null = null;
@@ -173,24 +196,52 @@ export class OfficeService extends EventEmitter {
   }
   /**
    * Sends the office out only when something in it changed: colleagues, notices, settings or a
-   * connector's state. Time-driven changes (a colleague going quiet, moving to waiting) show up
-   * as changed content on the next pass. The check times alone go out once a minute.
+   * connector's state, as a patch of just those parts (`snapshot` listeners also get the whole
+   * office). Time-driven changes (a colleague going quiet, moving to waiting) show up as changed
+   * content on the next pass. The check times alone go out once a minute.
    */
   emitSnapshot(): Snapshot {
     const s = this.snapshot();
-    const content = JSON.stringify({
-      ...s,
-      version: 0,
-      lastSync: 0,
-      connectors: s.connectors.map((c) => ({ ...c, lastSync: 0 })),
-    });
+    const index = indexSnapshot(s);
     const now = Date.now();
-    if (this.sent && this.sent.content === content && now - this.sent.at < HEALTH_MS)
-      return { ...s, version: this.sent.snapshot.version };
+    const sent = this.sent;
+    const change = sent ? diffSnapshot(sent.index, s, index) : null;
+    if (sent && change && !meaningful(change, sent.snapshot, s) && now - sent.at < HEALTH_MS)
+      // Nothing to publish: answer with what was published, the baseline of the next patch.
+      return sent.snapshot;
     s.version = ++this.version;
-    this.sent = { content, at: now, snapshot: s };
-    this.emit('snapshot', s);
+    const patch: SnapshotPatch | null =
+      sent && change
+        ? {
+            kind: 'patch',
+            epoch: this.epoch,
+            base: sent.snapshot.version,
+            version: s.version,
+            ...change,
+          }
+        : null;
+    this.sent = { index, at: now, snapshot: s };
+    if (patch && now - this.polledAt < POLLER_MS)
+      this.patches = [...this.patches.slice(-(PATCH_HISTORY - 1)), patch];
+    else this.patches = [];
+    this.emit('snapshot', s, patch);
     return s;
+  }
+  /**
+   * The office as last published. Every client must hold exactly what a version was published
+   * as, since patches are made against that; a mid-collection read could differ (e.g. `syncing`).
+   */
+  private published(): Snapshot {
+    return this.sent?.snapshot ?? this.emitSnapshot();
+  }
+  /** What a client holding `version` of run `epoch` needs: nothing, a patch, or the office. */
+  private catchUp(epoch: unknown, version: unknown) {
+    this.polledAt = Date.now();
+    const sent = this.sent;
+    if (!sent || epoch !== this.epoch || typeof version !== 'number') return this.published();
+    if (version === sent.snapshot.version) return { unchanged: true, epoch, version };
+    const from = this.patches.findIndex((p) => p.base === version);
+    return from < 0 ? sent.snapshot : composePatches(this.patches.slice(from));
   }
   start() {
     // Polling never outlives stop(): no new timer, no refresh on a closed store.
@@ -399,13 +450,9 @@ export class OfficeService extends EventEmitter {
         return Promise.all(
           this.store.preferences().enabledProviders.map((p) => this.quotaService.read(p)),
         );
-      case 'snapshot': {
-        // A poller that already holds the latest version of this run gets a short answer.
-        const [epoch, version] = args;
-        if (this.sent && epoch === this.epoch && version === this.sent.snapshot.version)
-          return { unchanged: true, epoch, version };
-        return this.sent && epoch === this.epoch ? this.sent.snapshot : this.snapshot();
-      }
+      case 'snapshot':
+        // A poller says what it holds: it gets nothing new, what changed, or the whole office.
+        return args.length ? this.catchUp(args[0], args[1]) : this.published();
       case 'refresh':
         return this.refresh();
       case 'detail':
