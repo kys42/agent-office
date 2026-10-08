@@ -270,6 +270,34 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
     wrappedLocations('await tools.exec_command({workdir: dir, cmd: "git push"});', now),
     [],
   );
+  // Quoted text and heredoc bodies are never commands (a commit message, a script).
+  assert.equal(
+    where('Bash', { command: 'git commit -m "notes\ncd /work/other\ngit push"' }, '/work/repo'),
+    '/work/repo',
+  );
+  assert.equal(
+    where(
+      'Bash',
+      { command: "cat <<'EOF' > plan.md\ncd /work/other\ngit push\nEOF\nls" },
+      '/work/repo',
+    ),
+    undefined,
+  );
+  assert.equal(
+    where('Bash', { command: 'python3 - <<EOF\nprint("git commit")\nEOF\ngit push' }, '/work/repo'),
+    '/work/repo',
+    'commands after the heredoc still count',
+  );
+  assert.equal(where('Bash', { command: "echo 'a; git push'" }, '/work/repo'), undefined);
+  // Code mode edits through tools.apply_patch count too.
+  assert.equal(
+    wrappedLocations(
+      'await tools.apply_patch(`*** Begin Patch\n*** Update File: src/c.ts\n`);',
+      now,
+      '/work/repo',
+    )[0]?.path,
+    '/work/repo/src',
+  );
   // A parsed session: a Codex workdir alone stays at its start; a commit there moves it.
   const codex = (cmd: string) =>
     parse(
@@ -328,6 +356,17 @@ test('Claude keeps its shell directory between calls until Claude Code resets it
       bash('b', 'git commit -m x'),
     ).workingLocation?.path,
     '/work/repo',
+  );
+  // After a cd that can't be read literally, a bare commit isn't pinned on the launch repo.
+  assert.equal(
+    claude(bash('a', 'cd "$WORKTREE"'), bash('b', 'git commit -m x')).workingLocation,
+    undefined,
+  );
+  // An explicit cd (or Claude Code's reset) makes the shell known again.
+  assert.equal(
+    claude(bash('a', 'cd "$WORKTREE"'), bash('b', 'cd /work/repo2 && git commit -m x'))
+      .workingLocation?.path,
+    '/work/repo2',
   );
   // Looking around elsewhere leaves no location at all: the desk stays where the session started.
   assert.equal(

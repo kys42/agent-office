@@ -34,17 +34,64 @@ const resolveIn = (dir: string | undefined, target: string) =>
       : dir
         ? path.resolve(dir, target)
         : undefined;
-/** Shell segments of one command line (&&, ||, ;, |, newlines), with wrappers like `rtk proxy` dropped. */
-const segments = (command: string) =>
-  command
-    .split(/&&|\|\||[;|\n]/)
-    .map((part) =>
-      part
-        .trim()
-        .replace(/^(?:\w+=\S*\s+)*/, '')
-        .replace(/^(?:rtk(?:\s+proxy)?|command|time)\s+/, ''),
-    )
-    .filter(Boolean);
+/**
+ * Simple commands of one command line, split on &&, ||, ;, | and newlines only outside quotes.
+ * Heredoc bodies and quoted text (a commit message, a script) are never read as commands.
+ */
+function segments(command: string): string[] {
+  const out: string[] = [];
+  const pending: { tag: string; strip: boolean }[] = [];
+  let cur = '';
+  let quote: string | null = null;
+  const push = () => {
+    const part = cur
+      .trim()
+      .replace(/^(?:\w+=\S*\s+)*/, '')
+      .replace(/^(?:rtk(?:\s+proxy)?|command|time)\s+/, '');
+    if (part) out.push(part);
+    cur = '';
+  };
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) {
+      if (c === '\\' && quote === '"') cur += c + (command[++i] ?? '');
+      else {
+        if (c === quote) quote = null;
+        cur += c;
+      }
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      cur += c;
+    } else if (c === '\\') cur += c + (command[++i] ?? '');
+    else if (command.startsWith('<<', i) && command[i + 2] !== '<') {
+      const tag = command.slice(i + 2).match(/^(-?)\s*(?:'([^']+)'|"([^"]+)"|([\w.-]+))/);
+      if (tag) {
+        pending.push({ tag: tag[2] ?? tag[3] ?? tag[4], strip: tag[1] === '-' });
+        cur += command.slice(i, i + 2 + tag[0].length);
+        i += 1 + tag[0].length;
+      } else cur += c;
+    } else if (c === '\n') {
+      push();
+      // Skip each heredoc body up to its closing tag line.
+      for (const { tag, strip } of pending.splice(0)) {
+        while (i < command.length) {
+          const next = command.indexOf('\n', i + 1);
+          const line = command.slice(i + 1, next < 0 ? command.length : next);
+          i = next < 0 ? command.length : next;
+          if ((strip ? line.trim() : line) === tag) break;
+        }
+      }
+    } else if ((c === '&' || c === '|') && command[i + 1] === c) {
+      push();
+      i++;
+    } else if (c === ';' || c === '|') push();
+    else cur += c;
+  }
+  push();
+  return out;
+}
 const GIT_WRITES = new Set(['commit', 'push', 'merge', 'rebase', 'cherry-pick', 'revert']);
 /**
  * Walk a command line: `cd` moves the directory for the rest of the line; a Git or PR write
@@ -52,11 +99,13 @@ const GIT_WRITES = new Set(['commit', 'push', 'merge', 'rebase', 'cherry-pick', 
  */
 export function readCommand(command: string, base: string | undefined, at: number) {
   let dir = base;
+  let moved = false;
   let write: WorkingLocation | undefined;
   for (const part of segments(command)) {
     const [head, ...rest] = tokens(part);
     if (head === 'cd') {
       dir = rest[0] ? resolveIn(dir, rest[0]) : undefined;
+      moved = true;
       continue;
     }
     if (head === 'gh' && rest[0] === 'pr' && ['create', 'merge'].includes(rest[1])) {
@@ -85,7 +134,8 @@ export function readCommand(command: string, base: string | undefined, at: numbe
       write = evidence(target ? resolveIn(where, target) : undefined, at, 'git-write') ?? write;
     } else if (GIT_WRITES.has(sub) || branching) write = evidence(where, at, 'git-write') ?? write;
   }
-  return { dir, write };
+  /** `dir` is undefined when a cd went somewhere that can't be read literally ($VAR, ~, -). */
+  return { dir, moved, write };
 }
 /** Where a file-editing tool wrote (Claude edit tools, Codex apply_patch). */
 export function editLocation(
@@ -140,7 +190,7 @@ export function toolLocation(
   return readCommand(command, safe(explicit) ? explicit : shell, at).write;
 }
 // Inspect syntax only; never evaluate log text. Dynamic expressions are unknown.
-export function wrappedLocations(code: unknown, at: number): WorkingLocation[] {
+export function wrappedLocations(code: unknown, at: number, cwd?: string): WorkingLocation[] {
   if (typeof code !== 'string' || code.length > 200_000) return [];
   const out: WorkingLocation[] = [];
   try {
@@ -167,6 +217,24 @@ export function wrappedLocations(code: unknown, at: number): WorkingLocation[] {
         ].includes(node.type)
       )
         return;
+      // Code mode's own edits: a literal patch passed to tools.apply_patch.
+      if (
+        node.type === 'CallExpression' &&
+        node.callee?.type === 'MemberExpression' &&
+        !node.callee.computed &&
+        node.callee.object?.name === 'tools' &&
+        node.callee.property?.name === 'apply_patch'
+      ) {
+        const arg = node.arguments[0];
+        const patch =
+          arg?.type === 'Literal' && typeof arg.value === 'string'
+            ? arg.value
+            : arg?.type === 'TemplateLiteral' && !arg.expressions.length
+              ? arg.quasis[0]?.value.cooked
+              : undefined;
+        const value = patch ? editLocation('apply_patch', patch, cwd, at) : undefined;
+        if (value) out.push(value);
+      }
       if (
         node.type === 'CallExpression' &&
         node.callee?.type === 'MemberExpression' &&

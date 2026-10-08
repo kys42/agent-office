@@ -173,17 +173,23 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   );
   let lastCodexTotal: string | undefined;
   // Claude's Bash keeps its directory between calls (a cd persists until Claude Code resets it).
-  let shell: string | undefined;
+  // undefined = still where it launched; null = moved somewhere that can't be read literally.
+  let shell: string | null | undefined;
   const locate = (name: string, args: unknown, at: number) => {
     const wrapped =
       name === 'functions.exec' ||
-      (name === 'exec' && typeof args === 'string' && args.includes('tools.exec_command'));
-    const here = name === 'Bash' ? (shell ?? cwd ?? undefined) : undefined;
+      (name === 'exec' &&
+        typeof args === 'string' &&
+        /tools\.(?:exec_command|apply_patch)/.test(args));
+    const here =
+      name === 'Bash' ? (shell === null ? undefined : (shell ?? cwd ?? undefined)) : undefined;
     const location = wrapped
-      ? wrappedLocations(args, at).at(-1)
+      ? wrappedLocations(args, at, cwd ?? undefined).at(-1)
       : (editLocation(name, args, cwd ?? undefined, at) ?? toolLocation(name, args, at, here));
-    if (name === 'Bash' && args && typeof (args as any).command === 'string')
-      shell = readCommand((args as any).command, here, at).dir;
+    if (name === 'Bash' && args && typeof (args as any).command === 'string') {
+      const after = readCommand((args as any).command, here, at);
+      if (after.moved) shell = after.dir ?? null;
+    }
     if (location) workingLocation = location;
   };
   const add = (
