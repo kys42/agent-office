@@ -28,7 +28,7 @@ export interface ResidentView {
   helperUnread: OfficeNotice[];
   /** Helper desks attached to this colleague (empty for helpers themselves). */
   helpers: ResidentView[];
-  /** Hidden by the person until the next conversation (helpers follow their host). */
+  /** Hidden by the person until the next conversation: on its own, or with its host (helpers). */
   veiled: boolean;
   /** This colleague or one of its helpers waits for the person: never hidden, no hide button. */
   needsPerson: boolean;
@@ -51,6 +51,8 @@ export interface OfficeModel {
   scene: Session[];
   /** Primary colleagues the person hid, in seat order (to bring them back). */
   veiled: ResidentView[];
+  /** Helpers hidden on their own while their colleague is shown (to bring them back). */
+  veiledHelpers: ResidentView[];
   /** Every session carrying a hiding time, shown or not ("bring everyone back"). */
   hiddenSessionIds: string[];
   /** Shown office colleagues per triage group, helpers included (same as the roster). */
@@ -117,7 +119,8 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
       host.needsPerson = true;
       host.veiled = false;
     }
-    for (const h of host.helpers) h.veiled = host.veiled;
+    // Hiding a colleague hides its helpers; a helper can also be hidden on its own.
+    for (const h of host.helpers) h.veiled = host.veiled || h.veiled;
   }
   const byMember = new Map<string, ResidentView>();
   for (const v of views)
@@ -125,7 +128,8 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
       if (!byMember.has(id)) byMember.set(id, v);
   const seats = bySeat.filter((s) => !s.attachedTo).map((s) => byId.get(s.id)!);
   // Helpers count on their own (like the roster) and follow their host's seat for the lead.
-  const desks = seats.filter((v) => !v.veiled).flatMap((v) => [v, ...v.helpers]);
+  const shown = seats.filter((v) => !v.veiled);
+  const desks = shown.flatMap((v) => [v, ...v.helpers.filter((h) => !h.veiled)]);
   const counts = Object.fromEntries(
     TRIAGE_ORDER.map((g) => [g, desks.filter((v) => v.group === g).length]),
   ) as Record<TriageGroup, number>;
@@ -146,6 +150,7 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
     seats,
     scene: bySeat.filter((s) => !byId.get(s.id)?.veiled),
     veiled: seats.filter((v) => v.veiled),
+    veiledHelpers: shown.flatMap((v) => v.helpers.filter((h) => h.veiled)),
     hiddenSessionIds: sessions.filter((s) => s.hiddenAt).map((s) => s.id),
     counts,
     unread: unreadNoticeCount(notices),
@@ -204,7 +209,7 @@ export function petSummary(model: OfficeModel) {
   let speaker: { view: ResidentView; notice: OfficeNotice } | undefined;
   for (const seat of model.seats)
     if (!seat.veiled)
-      for (const v of [seat, ...seat.helpers]) {
+      for (const v of [seat, ...seat.helpers.filter((h) => !h.veiled)]) {
         // Only each colleague's latest arrival may speak.
         const latest = (v.session.resident?.sessionIds ?? [v.session.id])
           .map((id) => latestBy.get(id))

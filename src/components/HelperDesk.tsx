@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { EyeOff } from 'lucide-react';
 import { MOODS, type Mood, type Session } from '../shared/types';
-import { sessionName } from '../shared/office';
+import { helperName, sessionName } from '../shared/office';
 import { stackLead } from '../shared/presentation';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
+import { VeilButton } from './VeilButton';
 import { useI18n } from '../lib/i18n';
 
 /** A real subagent/child at its own low desk beside the colleague it works for. */
@@ -17,6 +19,7 @@ export function HelperDesk({
   privacy,
   className = '',
   onClick,
+  onVeil,
 }: {
   session: Session;
   parentId: string;
@@ -27,31 +30,46 @@ export function HelperDesk({
   privacy: boolean;
   className?: string;
   onClick: () => void;
+  /** Hide just this helper (absent while it needs the person). */
+  onVeil?: () => void;
 }) {
   const { t } = useI18n();
   const responded = s.runtime?.phase === 'responded' && !working;
   return (
-    <button
-      className={`helper-desk ${working ? 'helper-working' : ''} ${className}`}
-      data-session-id={s.id}
-      data-parent-id={parentId}
-      data-furniture="helper-desk"
-      data-solid
-      style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
-      aria-label={t.desk.helper.label(privacy ? s.provider : sessionName(s), responded)}
-      title={privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`}
-      onClick={onClick}
-    >
-      <Sprite session={s} provider={s.provider} mood={mood} size={44} />
-      <Furniture kind="helper" />
-      {responded && (
-        <span className="helper-result" title={t.desk.helper.result}>
-          ✓
-        </span>
+    <>
+      <button
+        className={`helper-desk ${working ? 'helper-working' : ''} ${className}`}
+        data-session-id={s.id}
+        data-parent-id={parentId}
+        data-furniture="helper-desk"
+        data-solid
+        style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
+        aria-label={t.desk.helper.label(privacy ? s.provider : sessionName(s), responded)}
+        title={
+          privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`
+        }
+        onClick={onClick}
+      >
+        <Sprite session={s} provider={s.provider} mood={mood} size={44} />
+        <Furniture kind="helper" />
+        {responded && (
+          <span className="helper-result" title={t.desk.helper.result}>
+            ✓
+          </span>
+        )}
+        <b>{privacy ? t.desk.helper.name : s.relation?.role || sessionName(s)}</b>
+        {news && <i className="helper-news" />}
+      </button>
+      {/* A sibling, not inside the desk: hiding must never also open the work card. */}
+      {onVeil && (
+        <VeilButton
+          name={privacy ? t.desk.helper.name : helperName(s)}
+          onVeil={onVeil}
+          className="helper-veil"
+          style={{ left: at.x + 2, top: at.y - 4 }}
+        />
       )}
-      <b>{privacy ? t.desk.helper.name : s.relation?.role || sessionName(s)}</b>
-      {news && <i className="helper-news" />}
-    </button>
+    </>
   );
 }
 
@@ -69,6 +87,8 @@ export function HelperStack({
   selected,
   className = '',
   onOpen,
+  canVeil = () => true,
+  onVeil,
 }: {
   members: Session[];
   parentId: string;
@@ -80,6 +100,9 @@ export function HelperStack({
   selected?: string | null;
   className?: string;
   onOpen: (id: string) => void;
+  /** Hide one helper from the list (never one that needs the person). */
+  canVeil?: (s: Session) => boolean;
+  onVeil?: (s: Session) => void;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -155,31 +178,44 @@ export function HelperStack({
       </button>
       {open && (
         <ul className="helper-stack-list" data-solid aria-label={t.desk.helper.stackList}>
-          {members.map((s) => (
-            <li key={s.id}>
-              <button
-                data-session-id={s.id}
-                aria-current={s.id === selected || undefined}
-                onClick={() => {
-                  setOpen(false);
-                  onOpen(s.id);
-                }}
-              >
-                <Sprite session={s} provider={s.provider} mood={pose(s).mood} size={22} />
-                <span className="helper-stack-name" title={privacy ? undefined : label(s)}>
-                  {role(s) && <small>{role(s)}</small>}
-                  {name(s)}
-                </span>
-                <i style={{ background: MOODS[s.status].color }} title={MOODS[s.status].label} />
-                {responded(s) && (
-                  <b className="helper-stack-done" title={t.desk.helper.responded}>
-                    ✓
-                  </b>
+          {members.map((s) => {
+            return (
+              <li key={s.id}>
+                <button
+                  className="helper-stack-open"
+                  data-session-id={s.id}
+                  aria-current={s.id === selected || undefined}
+                  onClick={() => {
+                    setOpen(false);
+                    onOpen(s.id);
+                  }}
+                >
+                  <Sprite session={s} provider={s.provider} mood={pose(s).mood} size={22} />
+                  <span className="helper-stack-name" title={privacy ? undefined : label(s)}>
+                    {role(s) && <small>{role(s)}</small>}
+                    {name(s)}
+                  </span>
+                  <i style={{ background: MOODS[s.status].color }} title={MOODS[s.status].label} />
+                  {responded(s) && (
+                    <b className="helper-stack-done" title={t.desk.helper.responded}>
+                      ✓
+                    </b>
+                  )}
+                  {news(s) && <em className="helper-news" />}
+                </button>
+                {onVeil && canVeil(s) && (
+                  <button
+                    className="helper-stack-veil"
+                    aria-label={t.desk.veil.label(label(s))}
+                    title={t.desk.veil.hint}
+                    onClick={() => onVeil(s)}
+                  >
+                    <EyeOff size={11} strokeWidth={2.4} />
+                  </button>
                 )}
-                {news(s) && <em className="helper-news" />}
-              </button>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

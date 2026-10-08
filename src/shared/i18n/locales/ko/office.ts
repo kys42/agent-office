@@ -46,6 +46,7 @@ export const office: Messages['office'] = {
     summary: '가린 동료',
     body: '다음 대화가 오면 저절로 돌아와요. 지금 다시 보려면 고르세요.',
     again: '다시 보기',
+    helperAgain: (host) => (host ? `${host}의 보조 · 다시 보기` : '보조 · 다시 보기'),
     all: '모두 다시 보기',
   },
   records: {

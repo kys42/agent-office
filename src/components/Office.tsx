@@ -511,6 +511,8 @@ export function Office({
                           className={`${members.some((h) => h.id === selected) ? 'chosen' : ''} ${members.some((h) => h.id === spotlight) ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
                           selected={selected}
                           onOpen={onSelect}
+                          canVeil={canVeil}
+                          onVeil={onVeil}
                         />
                       );
                     }
@@ -530,6 +532,7 @@ export function Office({
                         privacy={privacy}
                         className={`${selected === s.id ? 'chosen' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
                         onClick={() => onSelect(s.id)}
+                        onVeil={onVeil && canVeil(s) ? () => onVeil(s) : undefined}
                       />
                     );
                   }),

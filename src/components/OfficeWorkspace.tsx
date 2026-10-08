@@ -15,7 +15,7 @@ import {
 import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
-import { sessionName } from '../shared/office';
+import { helperName, sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Office } from './Office';
 import { Roster } from './Roster';
@@ -203,11 +203,12 @@ export function OfficeWorkspace({
             onReply={onReply}
             footer={
               <>
-                {model.veiled.length > 0 && (
+                {model.veiled.length + model.veiledHelpers.length > 0 && (
                   <details className="background-records veiled-records">
                     <summary>
                       <EyeOff size={13} />
-                      {t.office.veiled.summary} <b>{model.veiled.length}</b>
+                      {t.office.veiled.summary}{' '}
+                      <b>{model.veiled.length + model.veiledHelpers.length}</b>
                       <ChevronUp size={13} className="chev" />
                     </summary>
                     <div className="background-pop">
@@ -223,6 +224,21 @@ export function OfficeWorkspace({
                             </span>
                             <span>{prefs.privacy ? t.office.records.hidden : sessionName(s)}</span>
                             <small className="veil-row-hint">{t.office.veiled.again}</small>
+                          </button>
+                        ))}
+                        {model.veiledHelpers.map(({ session: s }) => (
+                          <button key={s.id} onClick={() => onVeil([s.id], false)}>
+                            <span className={`face face-${s.provider}`}>
+                              <Sprite session={s} provider={s.provider} mood="idle" size={22} />
+                            </span>
+                            <span>{prefs.privacy ? t.office.records.hidden : helperName(s)}</span>
+                            <small className="veil-row-hint">
+                              {t.office.veiled.helperAgain(
+                                prefs.privacy
+                                  ? null
+                                  : sessionName(model.ownerOf(s.attachedTo ?? '') ?? s),
+                              )}
+                            </small>
                           </button>
                         ))}
                       </div>

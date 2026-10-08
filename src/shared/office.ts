@@ -4,6 +4,9 @@ import { m } from './i18n';
 
 export const sessionName = (s: Session) =>
   (s.resident?.name || s.alias || s.title || m().shared.office.unnamed).replace(/\s+/g, ' ').trim();
+/** A helper by role and its own name: helpers often share a role (e.g. "explorer"). */
+export const helperName = (s: Session) =>
+  s.relation?.role ? `${s.relation.role} · ${sessionName(s)}` : sessionName(s);
 export const seatKey = (s: Session) => (s.actor ? `actor:${s.actor.id}` : s.id);
 /** The zone a session's own workspace evidence gives it, before any user rule. */
 export const nativeProjectKey = (s: Session) =>
