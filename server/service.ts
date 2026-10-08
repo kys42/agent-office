@@ -7,7 +7,8 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Connector, Provider, Session, Snapshot } from '../src/shared/types.js';
 import { OfficeStore } from './store.js';
-import { discover, readRecords } from './adapters/files.js';
+import { discover } from './adapters/files.js';
+import { RecordWindowCache } from './adapters/record-window.js';
 import { parseRecords, hash } from './adapters/normalize.js';
 import { codexMetadata } from './adapters/codex.js';
 import { readOpenClawDatabases } from './adapters/openclaw.js';
@@ -133,7 +134,10 @@ export class OfficeService extends EventEmitter {
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
   private polledAt = 0;
-  cache = new Map<string, { stamp: string; session: Session }>();
+  /** `key` feeds revisions: the stamp, plus a marker once a re-verification found drift. */
+  cache = new Map<string, { stamp: string; key?: string; session: Session }>();
+  /** JSONL read windows: changed files read only their appended lines. */
+  windows = new RecordWindowCache();
   clawCache = new Map<string, Session>();
   timer: ReturnType<typeof setTimeout> | null = null;
   pending: Promise<Snapshot> | null = null;
@@ -284,6 +288,8 @@ export class OfficeService extends EventEmitter {
       if (!prefs.enabledProviders.includes(provider)) {
         connector.state = 'paused';
         this.say(connector, () => m().server.connector.disabled);
+        this.forget(provider, new Set());
+        if (provider === 'openclaw') this.clawCache.clear();
         continue;
       }
       try {
@@ -313,9 +319,19 @@ export class OfficeService extends EventEmitter {
           const stamp = `office-v11:${file.size}:${file.mtime}`;
           const cached = this.cache.get(file.path);
           let s = cached?.stamp === stamp ? cached.session : null;
+          let key = (s && cached?.key) || stamp;
+          // A window built by appends trusts its guard bytes; re-verify it in full on schedule
+          // even when the file has gone quiet, and re-parse only if that found other records.
+          if (s && this.windows.stale(file.path)) {
+            const check = await this.windows.verify(file).catch(() => null);
+            if (check?.drifted) {
+              s = null;
+              key = `${stamp}:verified:${Date.now()}`;
+            }
+          }
           if (!s) {
             try {
-              const { records, partial } = await readRecords(file);
+              const { records, partial } = await this.windows.read(file);
               if (!records.length) continue;
               if (
                 provider === 'codex' &&
@@ -346,8 +362,8 @@ export class OfficeService extends EventEmitter {
                 };
                 s.project = s.cwd ? path.basename(s.cwd) : s.project;
               }
-              s.revision = hash(`${stamp}:${s.title}`);
-              this.cache.set(file.path, { stamp, session: s });
+              s.revision = hash(`${key}:${s.title}`);
+              this.remember(file.path, { stamp, key, session: s });
             } catch {
               errors++;
               continue;
@@ -365,7 +381,7 @@ export class OfficeService extends EventEmitter {
               model: latestMeta.model ?? s.model,
             };
             s.project = s.cwd ? path.basename(s.cwd) : s.project;
-            s.revision = hash(`${stamp}:${s.title}:${s.cwd}:${s.model}:${s.branch}:${s.gitCommit}`);
+            s.revision = hash(`${key}:${s.title}:${s.cwd}:${s.model}:${s.branch}:${s.gitCommit}`);
           }
           if (provider === 'claude') {
             const sidecar = await claudeSubagentMetadata(file.path);
@@ -381,6 +397,7 @@ export class OfficeService extends EventEmitter {
           }
           sessions.push(s);
         }
+        this.forget(provider, new Set(files.map((f) => f.path)));
         // Discovery is newest-first. Never let an older duplicate replace live activity.
         sessions = mergeSessions(sessions)
           .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -425,6 +442,21 @@ export class OfficeService extends EventEmitter {
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);
     return this.emitSnapshot();
+  }
+  /** Parse cache with a size cap as a safety net; pruning to discovered files keeps it far below. */
+  private remember(file: string, entry: { stamp: string; key: string; session: Session }) {
+    this.cache.delete(file);
+    this.cache.set(file, entry);
+    for (const key of this.cache.keys()) {
+      if (this.cache.size <= 4000) break;
+      this.cache.delete(key);
+    }
+  }
+  /** Drop one provider's read caches for files that are no longer discovered. */
+  private forget(provider: Provider, keep: Set<string>) {
+    for (const [file, entry] of this.cache)
+      if (entry.session.provider === provider && !keep.has(file)) this.cache.delete(file);
+    this.windows.prune(keep, this.roots[provider]);
   }
   /**
    * A permission prompt shows only in the live process record, never in the transcript. Applied
