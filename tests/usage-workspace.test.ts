@@ -210,6 +210,10 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
   assert.equal(at('cat <<\\EOF\ncd /work/other\ngit push\nEOF'), undefined);
   assert.equal(at('cat <<\\EOF\nnotes\nEOF\ngit push'), '/work/repo');
   assert.equal(at('cat <<<"x"; git push'), '/work/repo', 'a here-string is not a heredoc');
+  assert.equal(at('cat <<<"x"\ngit -C /work/other push'), '/work/other');
+  // Attached and combined options.
+  assert.equal(at('git -C/work/other commit -m x'), '/work/other');
+  assert.equal(at('git worktree add -qb feature /work/wt', '/work/base'), '/work/wt');
   // A PR in another named repository isn't this folder's work.
   assert.equal(at('gh pr merge https://github.com/other/repo/pull/123'), undefined);
   assert.equal(at('gh pr create --repo owner/other --title x'), undefined);

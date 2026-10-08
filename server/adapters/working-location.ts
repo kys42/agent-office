@@ -141,7 +141,11 @@ function segments(command: string): Segment[] | undefined {
       // A comment runs to the end of the line.
       const next = command.indexOf('\n', i);
       i = (next < 0 ? command.length : next) - 1;
-    } else if (command.startsWith('<<', i) && command[i + 2] !== '<') {
+    } else if (command.startsWith('<<<', i)) {
+      // A here-string, not a heredoc.
+      cur += '<<<';
+      i += 2;
+    } else if (command.startsWith('<<', i)) {
       const tag = command.slice(i + 2).match(/^(-?)\s*(?:'([^']+)'|"([^"]+)"|\\?([\w.-]+))/);
       // A heredoc whose end can't be read would make its body look like commands: give up.
       if (!tag) return;
@@ -249,6 +253,7 @@ export function commandWrite(
       // `git --help commit`, `git -h`, `git --version` only ask.
       if (['--help', '-h', '--version'].includes(rest[i])) override = true;
       else if (rest[i] === '-C' && rest[i + 1]) where = resolveIn(where, rest[++i]);
+      else if (/^-C./.test(rest[i])) where = resolveIn(where, rest[i].slice(2));
       else if (rest[i] === '-c') i++;
       else if (/^--(?:git-dir|work-tree)(?:=|$)/.test(rest[i])) {
         override = true;
@@ -269,15 +274,14 @@ export function commandWrite(
       (sub === 'switch' && args.some((a) => ['-c', '-C', '--create'].includes(a))) ||
       (sub === 'checkout' && args.some((a) => ['-b', '-B'].includes(a)));
     if (sub === 'worktree' && args[0] === 'add') {
-      // The new worktree is where the work goes next (skipping options that take a value).
-      const target = args
-        .slice(1)
-        .filter(
-          (a, k, all) =>
-            !a.startsWith('-') &&
-            !['-b', '-B', '--reason'].includes(all[k]) &&
-            !['-b', '-B', '--reason'].includes(all[k - 1]),
-        )[0];
+      // The new worktree is where the work goes next: the first operand, skipping options and
+      // the values they take (-b/-B branch, also combined like -qb; --reason).
+      let target: string | undefined;
+      for (let k = 1; k < args.length && !target; k++) {
+        const a = args[k];
+        if (a === '--reason' || /^-[^-]*[bB]$/.test(a)) k++;
+        else if (!a.startsWith('-')) target = a;
+      }
       write = evidence(target ? resolveIn(where, target) : undefined, at, 'git-write') ?? write;
     } else if (GIT_WRITES.has(sub) || branching) write = evidence(where, at, 'git-write') ?? write;
   }
