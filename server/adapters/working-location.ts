@@ -60,6 +60,8 @@ interface Segment {
   piped: boolean;
   list: number;
   background: boolean;
+  /** After `||`: runs only if what came before failed — not established. */
+  orElse: boolean;
 }
 /**
  * Simple commands of one command line, split on &&, ||, ;, | and newlines only at the top level.
@@ -74,17 +76,20 @@ function segments(command: string): Segment[] {
   let cur = '';
   let piped = false;
   let list = 0;
-  const push = (next = false) => {
+  let orElse = false;
+  const push = (next = false, nextOrElse = false) => {
     const text = cur.trim();
-    if (text) out.push({ text, piped: piped || next, list, background: false });
+    if (text) out.push({ text, piped: piped || next, list, background: false, orElse });
     cur = '';
     piped = next;
+    orElse = nextOrElse || (orElse && !text);
   };
   /** End the current command list (`;`, newline, or `&` for a background one). */
   const end = (background = false) => {
     push();
     if (background) for (const seg of out) if (seg.list === list) seg.background = true;
     list++;
+    orElse = false;
   };
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
@@ -155,7 +160,8 @@ function segments(command: string): Segment[] {
         }
       }
     } else if ((c === '&' || c === '|') && command[i + 1] === c) {
-      push();
+      // Everything after `||` in this list runs only on failure: not established.
+      push(false, c === '|' || orElse);
       i++;
     } else if (c === '|') push(true);
     else if (c === ';') end();
@@ -185,7 +191,7 @@ export function commandWrite(
   let before = dir;
   let background = false;
   let write: WorkingLocation | undefined;
-  for (const { text: part, piped, list: id, background: bg } of parts) {
+  for (const { text: part, piped, list: id, background: bg, orElse } of parts) {
     if (id !== list) {
       // A background list ran in its own subshell: its cd never reached this shell.
       if (background) dir = before;
@@ -203,6 +209,11 @@ export function commandWrite(
     if (words[0] === 'rtk' && words[1] === 'proxy') words.splice(0, 2);
     else if (['rtk', 'command', 'time'].includes(words[0])) words.shift();
     const [head, ...rest] = words;
+    if (orElse) {
+      // Maybe ran, maybe not: a cd leaves the place unknown, a write is not claimed.
+      if (head === 'cd' && !piped) dir = undefined;
+      continue;
+    }
     if (head === 'cd') {
       // A cd inside a pipeline changes only that pipeline's subshell.
       if (piped) continue;
@@ -225,7 +236,9 @@ export function commandWrite(
     // Global options: -C <dir> runs elsewhere, -c <k=v> only configures; --git-dir/--work-tree
     // pick a repository this doesn't follow, so no place is claimed whatever comes after.
     while (rest[i]?.startsWith('-')) {
-      if (rest[i] === '-C' && rest[i + 1]) where = resolveIn(where, rest[++i]);
+      // `git --help commit`, `git -h`, `git --version` only ask.
+      if (['--help', '-h', '--version'].includes(rest[i])) override = true;
+      else if (rest[i] === '-C' && rest[i + 1]) where = resolveIn(where, rest[++i]);
       else if (rest[i] === '-c') i++;
       else if (/^--(?:git-dir|work-tree)(?:=|$)/.test(rest[i])) {
         override = true;

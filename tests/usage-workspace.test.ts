@@ -205,6 +205,12 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
   assert.equal(at('git -C /work/other push --dry-run'), undefined);
   assert.equal(at('git push -n'), undefined);
   assert.equal(at('git -C /work/other commit --help'), undefined);
+  assert.equal(at('git -C /work/other --help commit'), undefined);
+  // After `||` a command runs only on failure: no write is claimed, a cd makes the place unknown.
+  assert.equal(at('cd /work/other || git push'), undefined);
+  assert.equal(at('cd /x || cd /work/other && git push'), undefined);
+  assert.equal(at('git push || echo failed'), '/work/repo');
+  assert.equal(at('false || true; git push'), '/work/repo', 'a new list starts fresh');
   // Quoted text, heredocs, substitutions, pipelines, comments and background lists.
   assert.equal(at('git commit -m "notes\ncd /work/other\ngit push"'), '/work/repo');
   assert.equal(at("cat <<'EOF' > plan.md\ncd /work/other\ngit push\nEOF\nls"), undefined);
