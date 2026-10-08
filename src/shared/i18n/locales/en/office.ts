@@ -46,6 +46,8 @@ export const office = {
     summary: 'Hidden teammates',
     body: 'They come back on their own with their next conversation. Pick one to show them now.',
     again: 'Show again',
+    helperAgain: (host: string | null) =>
+      host ? `${host}'s helper · Show again` : 'Helper · Show again',
     all: 'Show all again',
   },
   records: {

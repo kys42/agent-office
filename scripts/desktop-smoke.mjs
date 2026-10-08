@@ -214,6 +214,8 @@ try {
   await dock.waitForSelector('.desk-pet');
   const back = await dockBounds();
   assert.deepEqual([back.x, back.y, back.width], [pet.x, pet.y, pet.width], 'pet returns home');
+  // The pet's tools appear (and take clicks) only while the pet is pointed at.
+  await dock.locator('.dock-pet-anchor').hover();
   await dock.getByRole('button', { name: '사무실 펼치기' }).click();
   await checkMacDock('return to main office');
   const native = await app.evaluate(({ BrowserWindow }) =>

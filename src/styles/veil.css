@@ -78,6 +78,47 @@
   opacity: 1;
   visibility: visible;
 }
+/* Helper desks: a smaller eye on the desk's own top-left corner (a sibling of the desk button,
+   so hiding never opens the card). It overlaps the desk, so the pointer keeps it on the way. */
+.helper-veil {
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+}
+.helper-desk:hover + .helper-veil,
+.helper-veil:hover,
+.helper-veil:focus-visible {
+  opacity: 1;
+}
+/* The ×N list: each row's eye shows over its right end while that row is pointed at or
+   focused, so names keep the full width the rest of the time. */
+.helper-stack-list li {
+  position: relative;
+}
+.helper-stack-list .helper-stack-veil {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 5px;
+  color: #f2e4cf;
+  background: #3a2c25;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.helper-stack-list li:hover .helper-stack-veil,
+.helper-stack-list li:focus-within .helper-stack-veil {
+  opacity: 1;
+}
+.helper-stack-list .helper-stack-veil:hover,
+.helper-stack-list .helper-stack-veil:focus-visible {
+  color: var(--accent-2);
+  background: #4a382e;
+}
 .veiled-records .veil-row-hint {
   margin-left: auto;
   font-size: 10.5px;

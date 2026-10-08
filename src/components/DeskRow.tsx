@@ -147,6 +147,8 @@ export function DeskRow({
     return () => el.removeEventListener('wheel', wheel);
   }, []);
   const sessions = model.scene;
+  // Hidden colleagues and helpers hidden on their own: all come back from one chip.
+  const veiledCount = model.veiled.length + model.veiledHelpers.length;
   const signature = layoutSignature(sessions);
   const layout = useMemo(
     () => layoutRow(sessions, floor ? { zoneGap: FLOOR_ZONE_GAP } : {}),
@@ -586,6 +588,8 @@ export function DeskRow({
                         news={hasNews}
                         privacy={privacy}
                         onOpen={open}
+                        canVeil={(h) => !model.view(h.id)?.needsPerson}
+                        onVeil={(h) => onVeil([h.id], true)}
                       />
                     );
                   const s = byId.get(helper.id)!;
@@ -603,6 +607,9 @@ export function DeskRow({
                       )}
                       privacy={privacy}
                       onClick={() => open(s.id)}
+                      onVeil={
+                        model.view(s.id)?.needsPerson ? undefined : () => onVeil([s.id], true)
+                      }
                     />
                   );
                 })}
@@ -649,14 +656,14 @@ export function DeskRow({
           {t.desk.row.seats(model.seats.length)}
           {model.counts.attention > 0 && <em>{t.desk.row.waiting(model.counts.attention)}</em>}
         </span>
-        {model.veiled.length > 0 && (
+        {veiledCount > 0 && (
           <button
             className="desk-row-veiled"
-            title={t.desk.row.veiledTitle(model.veiled.length)}
+            title={t.desk.row.veiledTitle(veiledCount)}
             onClick={() => onVeil(model.hiddenSessionIds, false)}
           >
             <EyeOff size={11} />
-            {t.desk.row.veiled(model.veiled.length)}
+            {t.desk.row.veiled(veiledCount)}
           </button>
         )}
         {lounge > 0 && (

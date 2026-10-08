@@ -104,6 +104,61 @@ test('anyone who needs the person is shown even if hidden; helpers follow their 
   assert.equal(quiet.view('h')?.needsPerson, false);
 });
 
+test('a helper hidden on its own leaves its host and siblings in place (#35)', () => {
+  const host = make('h', { officeSeat: 0 });
+  const helper = (id: string, patch: Partial<Session> = {}) =>
+    make(id, {
+      relation: { kind: 'subagent', parentNativeId: 'h', source: 'fixture' },
+      parentId: 'h',
+      status: 'work',
+      updatedAt: now - 5_000,
+      activity: { text: '조사 중', kind: 'progress', at: now - 5_000 },
+      ...patch,
+    });
+  const model = buildOfficeModel(snap([host, helper('x', { hiddenAt }), helper('y')]), now);
+  assert.deepEqual(model.scene.map((s) => s.id).sort(), ['h', 'y']);
+  assert.deepEqual(
+    model.veiledHelpers.map((v) => v.session.id),
+    ['x'],
+  );
+  assert.deepEqual(model.veiled, [], 'the host itself is not hidden');
+  assert.equal(model.counts.working, 1, 'the hidden helper is not counted');
+  assert.equal(model.view('x')?.veiled, true);
+  // Its own next conversation brings it back, like any lone desk.
+  const back = buildOfficeModel(
+    snap(
+      [host, helper('x', { hiddenAt }), helper('y')],
+      [notice('x', { kind: 'reply', background: true, at: now })],
+    ),
+    now,
+  );
+  assert.deepEqual(back.veiledHelpers, []);
+  // A fresh result from a hidden helper never takes over the pet.
+  const quiet = helper('x', { hiddenAt });
+  assert.equal(
+    petSummary(
+      buildOfficeModel(
+        snap([host, quiet], [notice('x', { at: hiddenAt - 1, receivedAt: now - 1 })]),
+        now,
+      ),
+    ).speaker,
+    undefined,
+  );
+  // Hiding the host still hides every helper; restoring it keeps one hidden on its own.
+  const both = buildOfficeModel(
+    snap([make('h', { officeSeat: 0, hiddenAt }), helper('x', { hiddenAt }), helper('y')]),
+    now,
+  );
+  assert.deepEqual(both.scene, []);
+  assert.deepEqual(both.veiledHelpers, [], 'listed under its host while that is hidden');
+  // A helper that asks for the person is shown even if hidden, and offers no hide button.
+  const asking = buildOfficeModel(snap([host, helper('x', { hiddenAt, status: 'call' })]), now);
+  assert.deepEqual(asking.scene.map((s) => s.id).sort(), ['h', 'x']);
+  assert.equal(asking.view('x')?.needsPerson, true);
+  // Bring-everyone-back includes helpers hidden on their own.
+  assert.deepEqual(model.hiddenSessionIds, ['x']);
+});
+
 test('a just-arrived result turns the collapsed pet into its colleague', () => {
   const a = make('a', { officeSeat: 0 });
   const b = make('b', { officeSeat: 1 });
