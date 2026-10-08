@@ -19,6 +19,17 @@ export const desk: Messages['desk'] = {
     pinnedTitle: '고정됨 · 누르면 풀어요',
     hint: '오래 지나도 이 자리에 남아요. 대기 라운지·보관으로 옮기지 않아요.',
   },
+  quota: {
+    label: (tool) => `${tool} 사용 한도 소진`,
+    title: (tool) => `${tool} 사용 한도를 다 썼어요`,
+    account: '계정 전체',
+    model: (model) => `${model} 모델만`,
+    window: (label, scope) => `${label} · ${scope} · 100% 사용`,
+    resets: (when) => `${when} 재설정`,
+    noReset: '재설정 시각 모름',
+    checked: (when) => `${when} 확인`,
+    back: '한도가 돌아오면 불이 다시 켜져요.',
+  },
   veil: {
     label: (name) => `${name} 가리기`,
     title: '가리기',

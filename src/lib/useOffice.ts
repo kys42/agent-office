@@ -18,6 +18,7 @@ import type {
   Snapshot,
 } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
+import { useQuotas } from './useQuotas';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
 import { isPageHidden, onPageVisibility } from './visibility';
@@ -90,6 +91,8 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const held = useRef<Snapshot | null>(snapshot);
   // Bumped when the live subscription starts or ends, so a late resync cannot land in the demo.
   const generation = useRef(0);
+  // Offices that came from the service (not the demo), e.g. to trust their privacy setting.
+  const fromService = useRef(new WeakSet<Snapshot>());
   // Live, only `accept` moves it (an effect could step it back behind a newer patch); the demo
   // changes its snapshot directly, so there it follows the state.
   const resyncing = useRef(false);
@@ -129,6 +132,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       if (next === prev) return;
     }
     held.current = next;
+    fromService.current.add(next);
     setSnapshot(next);
   }, []);
   // Demo content is written in the language it was generated in.
@@ -212,7 +216,13 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     () => (demo && snapshot ? derive(snapshot, Date.now()) : snapshot),
     [demo, snapshot, clock, derive],
   );
-  const model = useMemo(() => buildOfficeModel(shown, Date.now()), [shown, clock]);
+  // Only the service's own office says whether privacy is on: leaving the demo, its snapshot
+  // lingers for a render, and its settings must not start a real read.
+  const quotas = useQuotas(
+    demo,
+    !demo && snapshot && fromService.current.has(snapshot) ? !!snapshot.preferences.privacy : null,
+  );
+  const model = useMemo(() => buildOfficeModel(shown, Date.now(), quotas), [shown, clock, quotas]);
 
   const refresh = async () => {
     if (demo) {

@@ -10,6 +10,8 @@ import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
+import { QuotaBadge } from './QuotaBadge';
+import { dimsDesk, type QuotaExhaustion } from '../shared/quota';
 import { arrivalEnds, deskSpeech, hopping, shownSpeech } from '../shared/speech';
 import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
@@ -45,6 +47,7 @@ export function Office({
   onPin,
   onZoneDrop,
   onReply,
+  quotaOf,
 }: {
   sessions: Session[];
   notices: OfficeNotice[];
@@ -69,6 +72,8 @@ export function Office({
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
   /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
   onReply?: (sessionId: string, text: string) => Promise<void>;
+  /** The usage limit this colleague's tool has used up, if any (desk lights go out). */
+  quotaOf?: (s: Session) => QuotaExhaustion | undefined;
 }) {
   const { t, locale } = useI18n();
   const holder = useRef<HTMLDivElement>(null);
@@ -343,9 +348,11 @@ export function Office({
                   const canReply = !!replyTarget?.canSend;
                   const focus = focusLevel(s, clock);
                   const branch = branchInfo(s);
+                  const quota = quotaOf?.(s);
+                  const dark = !!quota && dimsDesk(s, pose.working);
                   return (
                     <div
-                      className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus}`}
+                      className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
                       data-working={pose.working}
                       key={s.id}
                       data-station-id={s.id}
@@ -403,6 +410,7 @@ export function Office({
                         />
                       )}
                       <Furniture kind="equipment" />
+                      {quota && <QuotaBadge quota={quota} />}
                       <PaperPile count={deskPapers(s, clock)} level={focus} />
                       {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
                       {pose.working && <WorkingBeacon level={focus} />}

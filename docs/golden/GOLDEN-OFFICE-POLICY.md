@@ -247,6 +247,7 @@ Claude Code / Codex / OpenClaw / 다음 공급자
 ## 12. 계정 한도·작업량·실행 위치 (v6)
 
 - 사용량 버튼은 계정 전체의 공급자별 quota 창과 갱신 시각을 오른쪽 패널에 표시한다. 원본이 제공한 기간만 사용하고 primary=5시간을 가정하지 않는다. 실패·미지원·null은 0%가 아니다. 수집 폴링과 분리한 명시적 조회, 1분 캐시, 개인정보 모드 조회 생략을 적용한다.
+  - **예외(Issue #29, 책상 소등):** 창이 보이는 동안 창마다 5분 간격(실패 뒤 15분)으로 같은 조회를 한다. 책상 수만큼 반복하지 않고, 숨은 창·데모·개인정보 모드는 조회하지 않는다. 같은 1분 캐시를 공유한다. 규칙은 [기능 정책서](FEATURE-POLICY.md#한도-소진-소등)
 - 세션별 `cost`는 관측 표본의 **API 기본 요금 환산**이다. 구독료·실제 청구·전체 원본 비용이 아니다. 메시지/응답 ID 장부로 streaming·재수집·재시작 중복을 제거하고, 모르는 모델·누락된 구간을 임의 환산하지 않는다. 순위나 강제 공간 배치의 기준으로 쓰지 않는다.
 - 원본 cwd/branch는 보존한다. **기본은 세션을 실행한 경로**다. **작업 흔적**이 있는 곳만 `workingLocation`으로 읽고, 실제 Git 검증을 통과한 경우 팀/책상은 그 worktree를 따른다. 위치 provenance와 시각을 상세에서 보여준다.
   - 작업 흔적: 파일 수정(Claude Edit·Write·MultiEdit·NotebookEdit의 경로, Codex apply_patch), Git·PR 쓰기(`git commit|push|switch -c|checkout -b|merge|rebase|cherry-pick|revert|worktree add`, `gh pr create|merge`)

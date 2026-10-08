@@ -50,6 +50,8 @@ import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
+import { QuotaBadge } from './QuotaBadge';
+import { dimsDesk } from '../shared/quota';
 import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
@@ -387,9 +389,10 @@ export function DeskRow({
                   const replyTarget = targets[replyId];
                   const canReply = !!onReply && !privacy && !!replyTarget?.canSend;
                   const deskTarget = targets[s.id];
+                  const dark = !!v.quota && dimsDesk(s, pose.working);
                   return (
                     <div
-                      className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus}`}
+                      className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
                       key={s.id}
                       data-station-id={s.id}
                       style={{ transform: `translate(${station.x}px, ${top}px)` }}
@@ -446,6 +449,7 @@ export function DeskRow({
                         />
                       )}
                       <Furniture kind="equipment" />
+                      {v.quota && <QuotaBadge quota={v.quota} />}
                       <PaperPile count={deskPapers(s, model.now)} level={focus} />
                       {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
                       {pose.working && <WorkingBeacon level={focus} />}
