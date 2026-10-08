@@ -14,7 +14,7 @@ export const dock = {
     title: (total: number) =>
       `Our Office · ${total} ${total === 1 ? 'teammate' : 'teammates'}\nClick to unfold your last look (desk row or floor desks), or drag to move it`,
     unread: (n: number) => `${n} unread ${n === 1 ? 'update' : 'updates'} · `,
-    detailHint: 'Click to enlarge · open the work card from the tools beside it',
+    detailHint: 'Click to enlarge · work card in the side tools',
     /** Stands in for the name in "Quick reply to …" when it is unknown. */
     someone: 'your teammate',
     openCard: 'Open work card',

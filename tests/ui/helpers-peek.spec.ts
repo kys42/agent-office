@@ -273,6 +273,15 @@ async function sitsAbove(request: Locator, answer: Locator, top: number) {
   expect(r.y).toBeGreaterThanOrEqual(top);
 }
 
+/** The pointer at the middle of `target` lands on it (nothing above it, it takes pointers). */
+async function hit(target: Locator) {
+  return target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!top && el.contains(top);
+  });
+}
+
 /** Two boxes share no pixel. */
 async function apart(a: Locator, b: Locator) {
   const x = (await a.boundingBox())!;
@@ -342,6 +351,15 @@ test('The pet shows the request bubble only while hovered, inside its window', a
   const box = (await tools.boundingBox())!;
   expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width);
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height);
+  // Moving slowly down from the bubble onto the column keeps the hover (a bridge spans the gap).
+  const first = tools.getByRole('button').first();
+  const answer = (await speech.locator('.speech-bubble').boundingBox())!;
+  const target = (await first.boundingBox())!;
+  const x = target.x + target.width / 2;
+  await page.mouse.move(x, answer.y + answer.height - 3);
+  await page.mouse.move(x, target.y + target.height / 2, { steps: 16 });
+  await expect(tools).toHaveCSS('opacity', '1');
+  expect(await hit(first)).toBe(true);
   // Unfolding the answer by mouse gives it the reading space; the request steps aside.
   await expand.click();
   await expect(request).toBeHidden();
@@ -351,6 +369,39 @@ test('The pet shows the request bubble only while hovered, inside its window', a
   // Hidden again, the tools take no clicks (the desktop behind gets them).
   await page.mouse.move(5, 5);
   await expect(tools).toHaveCSS('pointer-events', 'none');
+  expect(await hit(first)).toBe(false);
+});
+
+test('The pet tools step aside while a reply is being written', async ({ page }) => {
+  await bridge(page, answered());
+  await page.addInitScript(() => {
+    const office = (window as any).office;
+    // Terminal sending is on and the colleague's terminal takes text.
+    office.terminalSend = async () => true;
+    office.send = async () => 'sent';
+    office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          { kind: 'tmux', label: 'tmux', status: 'idle', canSend: true, canFocus: true },
+        ]),
+      );
+  });
+  await page.goto('/#mini');
+  const speech = page.locator('.dock-pet-speech');
+  const tools = page.locator('.dock-pet-tools');
+  await page.locator('.dock-pet-anchor').hover();
+  await expect(tools).toHaveCSS('opacity', '1');
+  await speech.locator('.bubble-reply').click();
+  const form = speech.locator('.quick-reply');
+  await expect(form).toBeVisible();
+  // The form reaches over the tools' column; hidden, they neither show nor take its clicks.
+  await expect(tools).toHaveCSS('visibility', 'hidden');
+  await form.locator('textarea').click();
+  await form.locator('.quick-reply-close').click();
+  await expect(form).toHaveCount(0);
+  await page.locator('.dock-pet-anchor').hover();
+  await expect(tools).toHaveCSS('visibility', 'visible');
 });
 
 test('The row shows the request bubble above when its desk is pointed at; screen sharing hides it', async ({
