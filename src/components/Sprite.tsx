@@ -30,7 +30,6 @@ export function Sprite({
   const spriteStyle = {
     '--size': `${size}px`,
     '--row': walking ? { down: 0, up: 1, side: 2 }[direction] : SPRITE_ROWS[mood],
-    transform: flip ? 'scaleX(-1)' : undefined,
   } as CSSProperties;
   return (
     <span
@@ -38,25 +37,26 @@ export function Sprite({
       data-asset-id={assets.id}
       data-pet-color={look.color}
       data-pet-accessory={look.accessory}
-      style={{ width: size, height: size }}
+      // The flip lives on the window: the sheet's own transform is its frame animation.
+      style={{ width: size, height: size, scale: flip ? '-1 1' : undefined }}
       aria-hidden="true"
     >
+      {/*
+        One sheet, one animation: the accessory is a second background over the body, so the two
+        can never drift apart and a pet without one costs nothing extra.
+      */}
       <span
         className={`sprite ${walking ? 'walking' : ''} mood-${mood}`}
+        data-decorated={assets.decoration ? 'true' : undefined}
         style={{
           ...spriteStyle,
-          backgroundImage: `url(${walking ? assets.walk : assets.sheet})`,
+          backgroundImage: [
+            assets.decoration && `url(${walking ? assets.decorationWalk : assets.decoration})`,
+            `url(${walking ? assets.walk : assets.sheet})`,
+          ]
+            .filter(Boolean)
+            .join(', '),
           filter: hue ? `hue-rotate(${hue}deg)` : undefined,
-        }}
-      />
-      {/* Keep both timelines mounted, even with no accessory, so selecting a hat stays in sync. */}
-      <span
-        className={`sprite sprite-decoration ${walking ? 'walking' : ''} mood-${mood}`}
-        style={{
-          ...spriteStyle,
-          backgroundImage: assets.decoration
-            ? `url(${walking ? assets.decorationWalk : assets.decoration})`
-            : 'none',
         }}
       />
     </span>

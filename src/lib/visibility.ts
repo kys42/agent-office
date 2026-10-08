@@ -5,7 +5,12 @@
  */
 let windowHidden = false;
 const listeners = new Set<() => void>();
-const notify = () => listeners.forEach((f) => f());
+const notify = () => {
+  // Every animation rests while the page is out of sight (see `.page-hidden` in tokens.css).
+  if (typeof document !== 'undefined')
+    document.documentElement.classList.toggle('page-hidden', isPageHidden());
+  listeners.forEach((f) => f());
+};
 const office = typeof window === 'undefined' ? undefined : window.office;
 office?.onVisibility?.((shown) => {
   windowHidden = !shown;

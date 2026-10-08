@@ -276,16 +276,18 @@
   --b-chip-ink: #a2213a;
   --b-meta: #b0707c;
   border-width: 3px;
-  animation:
-    bubble-in 0.34s var(--ease-out) both,
-    bubble-call 1.6s ease-in-out 0.4s infinite;
+  animation: bubble-in 0.34s var(--ease-out) both;
 }
-@keyframes bubble-call {
-  50% {
-    box-shadow:
-      0 3px 0 var(--b-line),
-      0 0 0 5px rgba(194, 48, 74, 0.18);
-  }
+/* The call pulses as a halo fading in and out (compositor only), not an animated box-shadow. */
+.speech-bubble .bubble-halo {
+  position: absolute;
+  /* Outside the bubble's 3px border, as the box-shadow was. */
+  inset: -3px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 5px rgba(194, 48, 74, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  animation: glow-pulse 1.6s ease-in-out 0.4s infinite;
 }
 
 /* Error — a warning label: amber stripes along the top. */
