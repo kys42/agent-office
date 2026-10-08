@@ -414,11 +414,9 @@ export class OfficeService extends EventEmitter {
         // On partial source failure, retain existing records instead of silently deleting their history.
         if (errors) {
           const ids = new Set(sessions.map((s) => s.id));
-          sessions.push(
-            ...this.store
-              .list(true, CANONICAL)
-              .filter((s) => s.provider === provider && !ids.has(s.id)),
-          );
+          // As stored (not decorated or filtered by visibility): a hidden project's records must
+          // not be deleted for a pass that failed to read them.
+          sessions.push(...this.store.storedRecords(provider).filter((s) => !ids.has(s.id)));
         }
         this.store.upsert(sessions, provider);
         Object.assign(connector, {

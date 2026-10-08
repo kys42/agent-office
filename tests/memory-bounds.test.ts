@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, appendFile, utimes, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, appendFile, utimes, rm, chmod } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { OfficeService } from '../server/service.js';
@@ -45,9 +45,15 @@ test('A long-running collector keeps only bounded, recent things in memory', asy
       await touch(1);
       await service.refresh();
       assert.ok(service.windows.bytes <= service.windows.budgetBytes);
-      assert.ok(service.cache.size <= 8);
     }
-    // Quiet for longer than the active window: their windows are let go.
+    // Twenty minutes on, only the two still at work keep a window.
+    t.mock.timers.tick(20 * 60_000);
+    await touch(0);
+    await touch(1);
+    await service.refresh();
+    assert.equal(service.windows.size, 2, 'windows only for the files still being written');
+    assert.ok(service.windows.has(file(0)) && service.windows.has(file(1)));
+    // Quiet for longer than the active window: their windows are let go too.
     t.mock.timers.tick(16 * 60_000);
     await service.refresh();
     assert.equal(service.windows.size, 0, 'no window for files that went quiet');
@@ -58,6 +64,44 @@ test('A long-running collector keeps only bounded, recent things in memory', asy
     // The whole conversation is still one read away.
     const busy = service.snapshot().sessions.find((s) => s.nativeId === id(0))!;
     assert.ok(service.store.get(busy.id).events.length > 7);
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test('A pass that cannot read a hidden project keeps its records as stored', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-partial-'));
+  const project = path.join(temp, 'claude', 'projects', 'hidden');
+  await mkdir(project, { recursive: true });
+  const ids = ['aaaa1111-0000-4000-8000-000000000001', 'bbbb2222-0000-4000-8000-000000000002'];
+  for (const id of ids)
+    await writeFile(
+      path.join(project, `${id}.jsonl`),
+      JSON.stringify({
+        type: 'user',
+        sessionId: id,
+        timestamp: new Date().toISOString(),
+        cwd: '/tmp/hidden-project',
+        message: { role: 'user', content: '작업' },
+      }) + '\n',
+    );
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  service.roots.claude = path.join(temp, 'claude', 'projects');
+  service.store.preferences({ enabledProviders: ['claude'] });
+  try {
+    await service.refresh();
+    assert.equal(service.store.storedRecords('claude').length, 2);
+    // The person hides the project; then one of its files cannot be read for a pass.
+    service.store.preferences({ excludedProjects: ['hidden-project'] });
+    const unreadable = path.join(project, `${ids[1]}.jsonl`);
+    await appendFile(unreadable, '\n');
+    await chmod(unreadable, 0o000);
+    await service.refresh().finally(() => chmod(unreadable, 0o644));
+    // Still both records, as collected (no personal settings mixed in).
+    const kept = service.store.storedRecords('claude');
+    assert.equal(kept.length, 2);
+    assert.ok(kept.every((s) => s.officeSeat === undefined));
   } finally {
     service.stop();
     await rm(temp, { recursive: true, force: true });

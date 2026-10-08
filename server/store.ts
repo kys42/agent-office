@@ -529,6 +529,17 @@ export class OfficeStore {
       { value: string } | undefined;
     return row ? JSON.parse(row.value) : {};
   }
+  /**
+   * One provider's stored records exactly as collected: no settings, no visibility filter. For
+   * the collector to keep what it could not read this pass (a hidden project's records included).
+   */
+  storedRecords(provider: Provider): Session[] {
+    return (
+      this.db.prepare('SELECT data FROM sessions WHERE provider=?').all(provider) as {
+        data: string;
+      }[]
+    ).map((r) => JSON.parse(r.data) as Session);
+  }
   /** Visible sessions in `locale` (the collector's stored rows are canonical). */
   list(full = false, locale: Locale = getLocale()): Session[] {
     return attachSessions(this.decorated(full, this.seats())).map((s) =>

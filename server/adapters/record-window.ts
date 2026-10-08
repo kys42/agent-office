@@ -43,6 +43,8 @@ interface Entry {
   trailing: boolean;
   approxBytes: number;
   lastUsed: number;
+  /** When its file was last written to, as far as this cache saw: the active-window clock. */
+  writtenAt: number;
   verifiedAt: number;
   /** Took the append path since its last full read, so it relies on the guard alone. */
   appended: boolean;
@@ -108,7 +110,7 @@ export class RecordWindowCache {
   /** Let go of windows whose files went quiet: nothing is appended to them any more. */
   sweep() {
     for (const [key, entry] of [...this.entries])
-      if (this.now() - entry.lastUsed > this.activeMs) {
+      if (this.now() - entry.writtenAt > this.activeMs) {
         if (entry.appended) this.due.set(key, entry.verifiedAt);
         this.drop(key);
       }
@@ -159,7 +161,7 @@ export class RecordWindowCache {
     this.due.delete(filePath);
     const w = await readWindow(filePath, this.maxBytes);
     const active = mtime === undefined || this.now() - mtime <= this.activeMs;
-    if (w.resumable && active) this.store(filePath, w);
+    if (w.resumable && active) this.store(filePath, w, mtime);
     const records = w.records.map((r) => r.record);
     const read: WindowRead = { records, partial: w.partial, mode: 'full' };
     if (evicted) read.drifted = true;
@@ -170,7 +172,7 @@ export class RecordWindowCache {
       );
     return read;
   }
-  private store(filePath: string, w: RecordWindow) {
+  private store(filePath: string, w: RecordWindow, mtime?: number) {
     const split = w.size > this.maxBytes;
     const headSize = headWindowBytes(this.maxBytes);
     const head = split ? w.records.filter((r) => r.end <= headSize) : [];
@@ -190,6 +192,7 @@ export class RecordWindowCache {
       trailing: w.consumedThrough < w.size,
       approxBytes: 0,
       lastUsed: this.now(),
+      writtenAt: Math.min(this.now(), mtime ?? this.now()),
       verifiedAt: this.now(),
       appended: false,
     };
@@ -263,6 +266,7 @@ export class RecordWindowCache {
         malformed: entry.malformed || malformed,
         trailing: !!read.trailingPartialLine,
         appended: true,
+        writtenAt: this.now(),
       };
       if (size > this.maxBytes) {
         if (!next.split) {
