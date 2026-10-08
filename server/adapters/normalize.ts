@@ -1,10 +1,4 @@
-import {
-  editLocation,
-  readCommand,
-  resetLocation,
-  toolLocation,
-  wrappedLocations,
-} from './working-location.js';
+import { admissible, editLocation, toolLocation, wrappedLocations } from './working-location.js';
 import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -172,32 +166,27 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     ({ r }) => r.type === 'token_usage_record' && r.payload?.usage && r.payload?.response_id,
   );
   let lastCodexTotal: string | undefined;
-  // Claude's Bash keeps its directory between calls (a cd persists until Claude Code resets it).
-  // undefined = still where it launched; null = moved somewhere that can't be read literally.
-  let shell: string | null | undefined;
-  const locate = (name: string, args: unknown, at: number) => {
+  // Where the session started: evidence there always counts (even in a support folder).
+  let launch: string | undefined;
+  // Claude tool calls wait for their result: a denied or failed call is no evidence.
+  const pending = new Map<string, WorkingLocation>();
+  /**
+   * Work evidence of one tool call. Calls start where the record says (`cwd`): Claude writes the
+   * shell's current directory on every record, and Codex runs in the turn's cwd.
+   */
+  const locate = (name: string, args: unknown, at: number, callId?: string) => {
     const wrapped =
       name === 'functions.exec' ||
       (name === 'exec' &&
         typeof args === 'string' &&
         /tools\.(?:exec_command|apply_patch)/.test(args));
-    // Other shell tools start each call in the turn's cwd (unless the call names a workdir).
-    // A partial (head + tail) read may have lost a cd in the middle: then only a place named in
-    // the same command counts for Claude's Bash.
-    const here =
-      name === 'Bash'
-        ? shell === null || opt.partial
-          ? undefined
-          : (shell ?? cwd ?? undefined)
-        : (cwd ?? undefined);
+    const here = cwd ?? undefined;
     const location = wrapped
-      ? wrappedLocations(args, at, cwd ?? undefined).at(-1)
-      : (editLocation(name, args, cwd ?? undefined, at) ?? toolLocation(name, args, at, here));
-    if (name === 'Bash' && args && typeof (args as any).command === 'string') {
-      const after = readCommand((args as any).command, here, at);
-      if (after.moved) shell = after.dir ?? null;
-    }
-    if (location) workingLocation = location;
+      ? wrappedLocations(args, at, here).at(-1)
+      : (editLocation(name, args, here, at) ?? toolLocation(name, args, at, here));
+    if (!admissible(location, launch)) return;
+    if (callId) pending.set(callId, location);
+    else workingLocation = location;
   };
   const add = (
     r: Obj,
@@ -270,12 +259,18 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       nativeTitle = true;
     }
     if (r.type === 'summary' && !title) title = cleanTitle(r.summary);
+    launch ??= cwd ?? undefined;
     if (r.type === 'response_item' && ['function_call', 'custom_tool_call'].includes(p.type))
       locate(String(p.name ?? ''), p.arguments ?? p.input, at);
     if (Array.isArray(m.content))
       for (const b of m.content)
         if (['tool_use', 'toolCall'].includes(b.type))
-          locate(String(b.name ?? ''), b.input ?? b.arguments, at);
+          locate(
+            String(b.name ?? ''),
+            b.input ?? b.arguments,
+            at,
+            b.type === 'tool_use' ? (b.id ?? undefined) : undefined,
+          );
     if (r.type === 'token_usage_record') {
       const sample = p.usage;
       if (
@@ -505,8 +500,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             );
           }
           if (b.type === 'tool_result') {
-            // Claude Code puts the shell back after a cd outside the project, and says so.
-            shell = resetLocation(contentText(b.content)) ?? shell;
+            // The call ran: its evidence counts now, unless it was denied or failed.
+            const evidence = pending.get(b.tool_use_id);
+            pending.delete(b.tool_use_id);
+            if (evidence && !b.is_error) workingLocation = evidence;
             add(
               { ...r, id: b.tool_use_id ?? r.uuid },
               at,
@@ -592,6 +589,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     sourceKind: opt.sourceKind ?? 'jsonl',
     sourceVersion: version,
     partial: !!opt.partial || events.length > 180,
+    windowed: opt.partial || undefined,
     archived: false,
     pinned: false,
     parentId,

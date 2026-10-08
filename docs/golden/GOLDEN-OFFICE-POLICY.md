@@ -250,7 +250,9 @@ Claude Code / Codex / OpenClaw / 다음 공급자
 - 세션별 `cost`는 관측 표본의 **API 기본 요금 환산**이다. 구독료·실제 청구·전체 원본 비용이 아니다. 메시지/응답 ID 장부로 streaming·재수집·재시작 중복을 제거하고, 모르는 모델·누락된 구간을 임의 환산하지 않는다. 순위나 강제 공간 배치의 기준으로 쓰지 않는다.
 - 원본 cwd/branch는 보존한다. **기본은 세션을 실행한 경로**다. **작업 흔적**이 있는 곳만 `workingLocation`으로 읽고, 실제 Git 검증을 통과한 경우 팀/책상은 그 worktree를 따른다. 위치 provenance와 시각을 상세에서 보여준다.
   - 작업 흔적: 파일 수정(Claude Edit·Write·MultiEdit·NotebookEdit의 경로, Codex apply_patch), Git·PR 쓰기(`git commit|push|switch -c|checkout -b|merge|rebase|cherry-pick|revert|worktree add`, `gh pr create|merge`)
-  - 둘러보려는 `cd`·`workdir`, 파일 read 경로, PR 링크, 진행 문장으로는 이동하지 않는다. 에이전트 설정 폴더(`~/.claude`·`~/.codex`·`~/.openclaw`)와 Claude 스크래치는 작업 흔적이 아니다(#19) 기록 브랜치보다 최근 실행 worktree를 우선하는 예외는 `workspace.locationSource` 근거가 있을 때만 적용한다.
+  - 둘러보려는 `cd`·`workdir`, 파일 read 경로, PR 링크, 진행 문장, 거부·실패한 호출로는 이동하지 않는다. 에이전트 설정 폴더(`~/.claude`·`~/.codex`·`~/.openclaw`)와 임시 폴더는 작업 흔적이 아니다(그 안에서 실행한 세션은 예외)(#19)
+  - 셸 문법은 보수적으로 읽고, 확실하지 않으면 위치를 정하지 않는다(구현 정본: [사용량과 실행 위치](../development/USAGE-AND-WORKSPACE.md))
+- 기록 브랜치보다 최근 실행 worktree를 우선하는 예외는 `workspace.locationSource` 근거가 있을 때만 적용한다.
 - 새 요청은 서류 도착과 요청 발췌로 잠깐 강조한다. 가장 최근 요청을 선택하며 기존 읽음/접기 영수증을 존중한다. 초기 연결·과거 기록·늦게 수집된 오래된 요청은 새 도착처럼 재생하지 않는다.
 - 현재 요청 경계 이후 5분/15분/30분 경과 + 최근 실행 관측이 있을 때만 집중/몰입/불타는 중 연출([상태 정책서](STATUS-POLICY.md#집중-단계-작업-중-위에-얹는-장식)). 경과 시간은 벽시계 기준이고 지속 노동/생산성 판단이 아니다. 응답 완료·휴식·입력 대기·다음 요청에서 재평가한다. 모션 감소·개인정보 정책을 유지한다.
 

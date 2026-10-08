@@ -240,6 +240,8 @@ export interface Session {
   sourceKind: 'jsonl' | 'sqlite' | 'demo';
   sourceVersion: string;
   partial: boolean;
+  /** Only the head and tail of the source were read (a large file): evidence in between is unseen. */
+  windowed?: boolean;
   archived: boolean;
   pinned: boolean;
   parentId: string | null;

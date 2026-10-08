@@ -5,24 +5,41 @@ import type { WorkingLocation } from '../../src/shared/types.js';
 // Where a session works = where it launched, unless it leaves work evidence elsewhere: files it
 // edits, or Git/PR state it writes (commit, push, new branch, PR). A cd to look around, a file it
 // reads or a PR link in prose never moves it. Interpret only explicit tool fields; never execute
-// transcript code.
+// transcript code. When the syntax can't be followed for sure, claim nothing.
 const safe = (v: unknown): v is string =>
   typeof v === 'string' && v.length < 4096 && path.isAbsolute(v) && !/[\x00-\x1f$`]/.test(v);
-/** Agent homes and Claude scratch folders support the work; they are never where it is. */
-export function isAgentHome(p: string, home = os.homedir()) {
+const within = (p: string, root: string) => p === root || p.startsWith(root + path.sep);
+/**
+ * Folders that support the work but are never where it is: agent homes (also when moved by
+ * CLAUDE_CONFIG_DIR / CODEX_HOME / OPENCLAW_STATE_DIR) and temporary folders.
+ */
+export function isSupportFolder(p: string, home = os.homedir(), env = process.env) {
   const n = path.normalize(p);
-  const inside = (root: string) => n === root || n.startsWith(root + path.sep);
-  return (
-    ['.claude', '.codex', '.openclaw'].some((d) => inside(path.join(home, d))) ||
-    /^\/(?:private\/)?tmp\/claude-[^/]+(?:\/|$)/.test(n)
-  );
+  const roots = [
+    ...['.claude', '.codex', '.openclaw'].map((d) => path.join(home, d)),
+    env.CLAUDE_CONFIG_DIR,
+    env.CODEX_HOME,
+    env.OPENCLAW_STATE_DIR,
+    os.tmpdir(),
+    '/tmp',
+    '/private/tmp',
+    '/var/folders',
+    '/private/var/folders',
+  ].filter((r): r is string => !!r && path.isAbsolute(r));
+  return roots.some((root) => within(n, path.normalize(root)));
 }
+/** Evidence counts unless it is in a support folder — a session that launched there may come home. */
+export const admissible = (
+  location: WorkingLocation | undefined,
+  launch: string | undefined,
+): location is WorkingLocation =>
+  !!location &&
+  (!isSupportFolder(location.path) || (!!launch && within(location.path, path.normalize(launch))));
 const evidence = (
   p: string | undefined,
   at: number,
   source: WorkingLocation['source'],
-): WorkingLocation | undefined =>
-  safe(p) && !isAgentHome(p) ? { path: path.normalize(p), at, source } : undefined;
+): WorkingLocation | undefined => (safe(p) ? { path: path.normalize(p), at, source } : undefined);
 const unquote = (t: string) => t.replace(/^(["'])(.*)\1$/, '$2');
 const tokens = (segment: string) => (segment.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map(unquote);
 /** A path relative to `dir`; unknown (undefined) when it can't be resolved literally. */
@@ -34,10 +51,15 @@ const resolveIn = (dir: string | undefined, target: string) =>
       : dir
         ? path.resolve(dir, target)
         : undefined;
-/** A simple command of a command line; `piped` ones run in a pipeline's subshell. */
+/**
+ * A simple command of a command line. `piped` ones run in a pipeline's subshell; `list` numbers
+ * the command list it belongs to, and `background` lists (ended by `&`) run in a subshell too.
+ */
 interface Segment {
   text: string;
   piped: boolean;
+  list: number;
+  background: boolean;
 }
 /**
  * Simple commands of one command line, split on &&, ||, ;, | and newlines only at the top level.
@@ -51,11 +73,18 @@ function segments(command: string): Segment[] {
   const stack: string[] = [];
   let cur = '';
   let piped = false;
+  let list = 0;
   const push = (next = false) => {
     const text = cur.trim();
-    if (text) out.push({ text, piped: piped || next });
+    if (text) out.push({ text, piped: piped || next, list, background: false });
     cur = '';
     piped = next;
+  };
+  /** End the current command list (`;`, newline, or `&` for a background one). */
+  const end = (background = false) => {
+    push();
+    if (background) for (const seg of out) if (seg.list === list) seg.background = true;
+    list++;
   };
   for (let i = 0; i < command.length; i++) {
     const c = command[i];
@@ -115,7 +144,7 @@ function segments(command: string): Segment[] {
         i += 1 + tag[0].length;
       } else cur += c;
     } else if (c === '\n') {
-      push();
+      end();
       // Skip each heredoc body up to its closing tag line.
       for (const { tag, strip } of pending.splice(0)) {
         while (i < command.length) {
@@ -129,84 +158,107 @@ function segments(command: string): Segment[] {
       push();
       i++;
     } else if (c === '|') push(true);
-    else if (c === ';') push();
+    else if (c === ';') end();
+    else if (c === '&' && command[i + 1] !== '>' && command[i - 1] !== '>') end(true);
     else cur += c;
   }
-  push();
+  end();
   return out;
 }
 const CONTROL =
   /^(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select|function)\b|^[({]|^[\w-]+\s*\(\s*\)/;
 const GIT_WRITES = new Set(['commit', 'push', 'merge', 'rebase', 'cherry-pick', 'revert']);
 /**
- * Walk a command line: `cd` moves the directory for the rest of the line; a Git or PR write
- * reports where it ran. Returns the directory after the line and the last write's location.
+ * Where a command line wrote Git or PR state, if it did: `cd` moves the directory for the rest of
+ * its list (not past a background list), and the write reports where it ran.
  */
-export function readCommand(command: string, base: string | undefined, at: number) {
+export function commandWrite(
+  command: string,
+  base: string | undefined,
+  at: number,
+): WorkingLocation | undefined {
   const parts = segments(command);
-  // Any cd word at all (e.g. `then cd …`) counts when the effect can't be followed.
-  const cds = parts.some(({ text }) => /(?:^|\s)cd(?:\s|$)/.test(text));
-  // Control flow and function definitions decide at run time what actually executes: claim no
-  // write, and if a cd is inside, the shell's place afterwards is unknown.
-  if (parts.some(({ text }) => CONTROL.test(text)))
-    return { dir: cds ? undefined : base, moved: cds, write: undefined };
+  // Control flow and function definitions decide at run time what actually executes.
+  if (parts.some(({ text }) => CONTROL.test(text))) return;
   let dir = base;
-  let moved = false;
+  let list = -1;
+  let before = dir;
+  let background = false;
   let write: WorkingLocation | undefined;
-  for (const { text: part, piped } of parts) {
+  for (const { text: part, piped, list: id, background: bg } of parts) {
+    if (id !== list) {
+      // A background list ran in its own subshell: its cd never reached this shell.
+      if (background) dir = before;
+      list = id;
+      before = dir;
+      background = bg;
+    }
     const words = tokens(part);
     // Assignments and wrappers before the command; GIT_DIR/GIT_WORK_TREE pick another repository.
-    let elsewhere = false;
-    while (words[0] && /^\w+=/.test(words[0]))
-      elsewhere ||= /^GIT_(?:DIR|WORK_TREE)=/.test(words.shift()!);
+    let override = false;
+    while (words[0] && /^\w+=/.test(words[0])) {
+      const assignment = words.shift()!;
+      if (/^GIT_(?:DIR|WORK_TREE)=/.test(assignment)) override = true;
+    }
     if (words[0] === 'rtk' && words[1] === 'proxy') words.splice(0, 2);
     else if (['rtk', 'command', 'time'].includes(words[0])) words.shift();
     const [head, ...rest] = words;
-    // A cd inside a pipeline changes only that pipeline's subshell.
-    if (head === 'cd' && piped) continue;
     if (head === 'cd') {
+      // A cd inside a pipeline changes only that pipeline's subshell.
+      if (piped) continue;
       // Options before the directory: -L/-P/-e/-@ and --; anything else is unknown.
       let k = 0;
       while (/^-[LPe@]+$/.test(rest[k] ?? '')) k++;
       if (rest[k] === '--') k++;
       const target = rest[k];
       dir = target && !target.startsWith('-') ? resolveIn(dir, target) : undefined;
-      moved = true;
       continue;
     }
     if (head === 'gh' && rest[0] === 'pr' && ['create', 'merge'].includes(rest[1])) {
-      write = evidence(dir, at, 'git-write') ?? write;
+      if (!rest.some((a) => ['--help', '-h', '--dry-run'].includes(a)))
+        write = evidence(dir, at, 'git-write') ?? write;
       continue;
     }
     if (head !== 'git') continue;
-    let where = elsewhere ? undefined : dir;
+    let where = dir;
     let i = 0;
     // Global options: -C <dir> runs elsewhere, -c <k=v> only configures; --git-dir/--work-tree
-    // pick a repository this doesn't follow, so no place is claimed.
+    // pick a repository this doesn't follow, so no place is claimed whatever comes after.
     while (rest[i]?.startsWith('-')) {
       if (rest[i] === '-C' && rest[i + 1]) where = resolveIn(where, rest[++i]);
       else if (rest[i] === '-c') i++;
       else if (/^--(?:git-dir|work-tree)(?:=|$)/.test(rest[i])) {
-        where = undefined;
+        override = true;
         if (!rest[i].includes('=')) i++;
       }
       i++;
     }
+    if (override) continue;
     const sub = rest[i];
     const args = rest.slice(i + 1);
+    // Asking (help, dry runs) changes nothing.
+    if (
+      args.some((a) => ['--help', '-h', '--dry-run'].includes(a)) ||
+      (sub === 'push' && args.includes('-n'))
+    )
+      continue;
     const branching =
       (sub === 'switch' && args.some((a) => ['-c', '-C', '--create'].includes(a))) ||
       (sub === 'checkout' && args.some((a) => ['-b', '-B'].includes(a)));
     if (sub === 'worktree' && args[0] === 'add') {
-      // The new worktree is where the work goes next.
+      // The new worktree is where the work goes next (skipping options that take a value).
       const target = args
         .slice(1)
-        .filter((a, k, all) => !a.startsWith('-') && !['-b', '-B'].includes(all[k - 1]))[0];
+        .filter(
+          (a, k, all) =>
+            !a.startsWith('-') &&
+            !['-b', '-B', '--reason'].includes(all[k]) &&
+            !['-b', '-B', '--reason'].includes(all[k - 1]),
+        )[0];
       write = evidence(target ? resolveIn(where, target) : undefined, at, 'git-write') ?? write;
     } else if (GIT_WRITES.has(sub) || branching) write = evidence(where, at, 'git-write') ?? write;
   }
-  /** `dir` is undefined when a cd went somewhere that can't be read literally ($VAR, ~, -). */
-  return { dir, moved, write };
+  return write;
 }
 /** Where a file-editing tool wrote (Claude edit tools, Codex apply_patch). */
 export function editLocation(
@@ -220,7 +272,15 @@ export function editLocation(
     return safe(file) ? evidence(path.dirname(file), at, 'file-edit') : undefined;
   }
   if (/^(?:functions\.)?apply_patch$/.test(name)) {
-    const patch = typeof raw === 'string' ? raw : ((raw as any)?.input ?? (raw as any)?.patch);
+    let input: any = raw;
+    // function_call arguments arrive as JSON text: {"input": "*** Begin Patch…"}.
+    if (typeof raw === 'string' && raw.trimStart().startsWith('{'))
+      try {
+        input = JSON.parse(raw);
+      } catch {
+        return;
+      }
+    const patch = typeof input === 'string' ? input : (input?.input ?? input?.patch);
     const file =
       typeof patch === 'string'
         ? patch.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/m)?.[1]?.trim()
@@ -229,21 +289,16 @@ export function editLocation(
     return full ? evidence(path.dirname(full), at, 'file-edit') : undefined;
   }
 }
-/** The shell's own report that it went back after a cd outside the project (last line only). */
-export function resetLocation(text: string): string | undefined {
-  const last = text.trimEnd().split('\n').at(-1)?.trim();
-  const target = last?.match(/^Shell cwd was reset to (.+)$/)?.[1];
-  return safe(target) ? path.normalize(target) : undefined;
-}
 /**
- * A shell tool call: where it wrote Git/PR state, if it did. `shell` is where a persistent
- * shell (Claude Bash) currently is; an explicit workdir wins for the call.
+ * A shell tool call: where it wrote Git/PR state, if it did. `start` is where the call began
+ * (Claude records the shell's directory on every record; Codex runs in the turn's cwd); an
+ * explicit workdir wins for the call.
  */
 export function toolLocation(
   name: string,
   raw: unknown,
   at: number,
-  shell?: string,
+  start?: string,
 ): WorkingLocation | undefined {
   if (!/^(?:functions\.)?(?:exec_command|Bash|bash|exec|shell_command)$/.test(name)) return;
   let args: any = raw;
@@ -262,13 +317,13 @@ export function toolLocation(
   // be read literally leaves the place unknown (never the default).
   const base =
     given === undefined || given === null
-      ? shell
+      ? start
       : safe(given)
         ? given
         : typeof given === 'string' && given && !/[$`~\x00-\x1f]/.test(given)
-          ? resolveIn(shell, given)
+          ? resolveIn(start, given)
           : undefined;
-  return readCommand(command, base, at).write;
+  return commandWrite(command, base, at);
 }
 // Inspect syntax only; never evaluate log text. Dynamic expressions are unknown.
 export function wrappedLocations(code: unknown, at: number, cwd?: string): WorkingLocation[] {

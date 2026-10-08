@@ -4,9 +4,12 @@
 - 규칙(사용자 결정): 기본은 **실행 경로**, 이동은 **작업 흔적**이 있을 때만
   - `file-edit`: Claude 편집 도구 경로, Codex `apply_patch`
   - `git-write`: commit·push·merge·rebase·cherry-pick·revert, 새 브랜치, `worktree add`(새 경로), `gh pr create|merge`
-  - Claude 셸 위치 추적(`cd` 유지, `Shell cwd was reset` 되돌림)은 git 쓰기의 폴더를 정할 때만 쓴다
-  - `~/.claude`·`~/.codex`·`~/.openclaw`·Claude 스크래치는 흔적이 아니다
-- **⚠ 저장 데이터**: 예전 `shell-cd`·`tool-workdir` 위치는 partial tail에서 이어 가지 않는다(남아 있던 엉뚱한 위치가 다음 수집에서 풀린다)
+  - 호출 시작 위치: Claude는 **레코드마다 기록된 `cwd`**(그때의 실제 셸 위치)를 쓴다. 처음에는 `cd`·`Shell cwd was reset`으로 직접 추적했는데, 백그라운드 실행·안내문이 붙은 되돌림·거부된 명령·병렬 호출에서 어긋났다(독립 리뷰가 실데이터로 확인)
+  - Claude 호출은 결과를 보고 반영한다(거부·실패한 호출은 흔적이 아님)
+  - 에이전트 설정 폴더(설정 환경 변수 포함)·임시 폴더는 흔적이 아니다. 그 안에서 실행한 세션은 돌아올 수 있다
+  - 셸 문법은 보수적으로 읽는다: 따옴표·heredoc·치환·주석·파이프라인·백그라운드 목록·제어 구조·저장소 지정 옵션
+- **⚠ 저장 데이터**: 예전 `shell-cd`·`tool-workdir` 위치는 이어 가지 않고 기록이 그대로여도 정리한다. 흔적을 이어 가는 건 실제로 앞·뒤만 읽은 경우(`windowed`)뿐이다(이벤트만 많은 전체 읽기는 아님)
+- **⚠ 버그**: 리뷰 중 환경 변수 두 개(`GIT_DIR=… GIT_WORK_TREE=… git …`)에서 끝나지 않는 반복문을 만들었다가 Codex가 잡았다(동기 파싱이라 수집기가 멈출 수 있었음)
 - 상세 패널 근거 문구: '파일을 고친 위치', '브랜치·커밋·PR 작업 위치'(ko·en)
 
 # 2026-10-08 · 모션 예산: 움직임은 그대로, compositor 애니메이션으로 (PR #59, Issue #52)

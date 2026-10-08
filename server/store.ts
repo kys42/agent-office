@@ -175,7 +175,7 @@ export class OfficeStore {
         // A partial tail may miss the evidence; keep the last one — but never an old cd-based guess.
         const retainLocation =
           !s.workingLocation &&
-          s.partial &&
+          s.windowed &&
           ['file-edit', 'git-write'].includes(previous?.workingLocation?.source ?? '') &&
           previous?.workingLocation;
         const location =
