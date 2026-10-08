@@ -68,7 +68,7 @@ interface Segment {
  * Quoted text, command substitutions ($(…), `…`), comments and heredoc bodies are never read as
  * commands of this shell (a commit message, a script, an example).
  */
-function segments(command: string): Segment[] {
+function segments(command: string): Segment[] | undefined {
   const out: Segment[] = [];
   const pending: { tag: string; strip: boolean }[] = [];
   // Nesting: quotes and substitutions; only the top level splits.
@@ -142,12 +142,12 @@ function segments(command: string): Segment[] {
       const next = command.indexOf('\n', i);
       i = (next < 0 ? command.length : next) - 1;
     } else if (command.startsWith('<<', i) && command[i + 2] !== '<') {
-      const tag = command.slice(i + 2).match(/^(-?)\s*(?:'([^']+)'|"([^"]+)"|([\w.-]+))/);
-      if (tag) {
-        pending.push({ tag: tag[2] ?? tag[3] ?? tag[4], strip: tag[1] === '-' });
-        cur += command.slice(i, i + 2 + tag[0].length);
-        i += 1 + tag[0].length;
-      } else cur += c;
+      const tag = command.slice(i + 2).match(/^(-?)\s*(?:'([^']+)'|"([^"]+)"|\\?([\w.-]+))/);
+      // A heredoc whose end can't be read would make its body look like commands: give up.
+      if (!tag) return;
+      pending.push({ tag: tag[2] ?? tag[3] ?? tag[4], strip: tag[1] === '-' });
+      cur += command.slice(i, i + 2 + tag[0].length);
+      i += 1 + tag[0].length;
     } else if (c === '\n') {
       end();
       // Skip each heredoc body up to its closing tag line.
@@ -184,8 +184,10 @@ export function commandWrite(
   at: number,
 ): WorkingLocation | undefined {
   const parts = segments(command);
-  // Control flow and function definitions decide at run time what actually executes.
-  if (parts.some(({ text }) => CONTROL.test(text))) return;
+  // Unreadable syntax, control flow and function definitions decide at run time what executes.
+  if (!parts || parts.some(({ text }) => CONTROL.test(text))) return;
+  // `export GIT_DIR=…` (or a bare assignment) points Git elsewhere for the rest of the line.
+  let pointed: boolean = false;
   let dir = base;
   let list = -1;
   let before = dir;
@@ -201,10 +203,16 @@ export function commandWrite(
     }
     const words = tokens(part);
     // Assignments and wrappers before the command; GIT_DIR/GIT_WORK_TREE pick another repository.
-    let override = false;
+    let override: boolean = pointed;
+    if (words[0] === 'export') words.shift();
     while (words[0] && /^\w+=/.test(words[0])) {
       const assignment = words.shift()!;
       if (/^GIT_(?:DIR|WORK_TREE)=/.test(assignment)) override = true;
+    }
+    // Only assignments: they stay for the rest of the line.
+    if (!words.length) {
+      pointed = override;
+      continue;
     }
     if (words[0] === 'rtk' && words[1] === 'proxy') words.splice(0, 2);
     else if (['rtk', 'command', 'time'].includes(words[0])) words.shift();
@@ -226,7 +234,9 @@ export function commandWrite(
       continue;
     }
     if (head === 'gh' && rest[0] === 'pr' && ['create', 'merge'].includes(rest[1])) {
-      if (!rest.some((a) => ['--help', '-h', '--dry-run'].includes(a)))
+      // Another repository named (--repo, a PR URL) isn't necessarily this folder's.
+      const elsewhere = rest.some((a) => /^(?:-R|--repo)(?:=|$)/.test(a) || /^https?:\/\//.test(a));
+      if (!elsewhere && !rest.some((a) => ['--help', '-h', '--dry-run'].includes(a)))
         write = evidence(dir, at, 'git-write') ?? write;
       continue;
     }

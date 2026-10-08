@@ -206,6 +206,16 @@ test('A desk moves only on work evidence: edits, Git writes and PRs — never a 
   assert.equal(at('git push -n'), undefined);
   assert.equal(at('git -C /work/other commit --help'), undefined);
   assert.equal(at('git -C /work/other --help commit'), undefined);
+  // Escaped heredoc tags are read; an unreadable heredoc makes the whole line unknown.
+  assert.equal(at('cat <<\\EOF\ncd /work/other\ngit push\nEOF'), undefined);
+  assert.equal(at('cat <<\\EOF\nnotes\nEOF\ngit push'), '/work/repo');
+  assert.equal(at('cat <<<"x"; git push'), '/work/repo', 'a here-string is not a heredoc');
+  // A PR in another named repository isn't this folder's work.
+  assert.equal(at('gh pr merge https://github.com/other/repo/pull/123'), undefined);
+  assert.equal(at('gh pr create --repo owner/other --title x'), undefined);
+  // A repository set earlier in the line (export, bare assignment) points Git elsewhere.
+  assert.equal(at('export GIT_DIR=/work/other/.git; git push'), undefined);
+  assert.equal(at('GIT_WORK_TREE=/work/other; git commit -m x'), undefined);
   // After `||` a command runs only on failure: no write is claimed, a cd makes the place unknown.
   assert.equal(at('cd /work/other || git push'), undefined);
   assert.equal(at('cd /x || cd /work/other && git push'), undefined);
