@@ -7,6 +7,8 @@ import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
 import { MOODS, type NoticeReceipt } from '../shared/types';
+import { QuotaBadge } from './QuotaBadge';
+import { dimsDesk } from '../shared/quota';
 import { petSummary, residentLabel, type OfficeModel } from '../shared/office-model';
 import { branchInfo } from '../shared/branch';
 import { PET_SIZE } from '../shared/dock-geometry';
@@ -77,6 +79,8 @@ export function DeskPet({
   });
   const target = bubble ? targets[bubble.sessionId] : undefined;
   const canReply = !!onReply && !privacy && !!target?.canSend;
+  const lead = pet.lead;
+  const dark = !status && !speaker && !!lead?.quota && dimsDesk(lead.session, lead.pose.working);
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
@@ -198,8 +202,12 @@ export function DeskPet({
             <X size={12} />
           </button>
         </div>
+        {/* The colleague it stands for used up its tool's limit: a dim pet with the badge. */}
+        {!status && pet.lead?.quota && (
+          <QuotaBadge quota={pet.lead.quota} className="dock-pet-quota" />
+        )}
         <button
-          className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaker ? 'is-speaking' : ''}`}
+          className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaker ? 'is-speaking' : ''} ${dark ? 'lights-out' : ''}`}
           data-solid
           aria-label={d.aria(label, count)}
           title={d.title(total)}

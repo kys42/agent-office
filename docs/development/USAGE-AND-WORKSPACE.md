@@ -6,7 +6,7 @@
 
 상단 **사용량** 버튼은 오른쪽 패널을 연다. 사무실은 그대로 보이며 동료 상세·소식함과 한 자리만 사용한다. 현재 로그인 계정의 남은 비율과 갱신 시각이다. 세션 토큰/모델 문맥/실제 청구액과 다르다. 두 창 모두 오는 경우 5시간·일주일을 표시하고, 한 창만 오면 그것만 표시한다. `primary`가 반드시 5시간이라는 가정을 하지 않고 기간 값을 읽는다. Codex의 복수 limit ID도 독립 표시한다. null/실패/미지원은 0%가 아니다.
 
-정본 `server/quotas.ts`: 버튼 요청에서만 실행, 60초 메모리 캐시, 동시 요청 결합, 실패도 잠시 캐시. 수집 폴링·MCP에서 실행하지 않는다. 공급자 비활성은 조회하지 않는다. 데모는 합성 값, 개인정보 모드는 조회·숫자 표시를 생략한다. 최신 계정을 다시 로그인했다면 캐시 최대 1분 후 반영된다.
+정본 `server/quotas.ts`: 버튼 요청과 책상 소등의 느린 조회에서만 실행, 60초 메모리 캐시, 동시 요청 결합, 실패도 잠시 캐시. 책상 소등(`src/lib/useQuotas.ts`)은 보이는 창에서만 5분마다(실패 뒤 15분) 한 번 읽고, 숨은 창·데모·개인정보 모드는 읽지 않는다. 수집 폴링·MCP에서 실행하지 않는다. 공급자 비활성은 조회하지 않는다. 데모는 합성 값, 개인정보 모드는 조회·숫자 표시를 생략한다. 최신 계정을 다시 로그인했다면 캐시 최대 1분 후 반영된다.
 
 - Codex: `app-server` 프로세스에 initialize/initialized → `account/rateLimits/read`만 전송한다. 대화/모델 실행을 만들지 않는다. 타임아웃·1MiB 응답 한도, 성공/오류/종료 모두 SIGTERM 후 필요시 SIGKILL. raw stderr는 버린다. macOS 설치 앱의 bundled CLI가 있으면 우선 사용하고 그 외 PATH CLI를 쓴다. 이 Mac의 npm launcher가 누락된 바이너리를 가리키는 문제에서 앱 번들 경로를 검증했다.
 - Claude: 기존 `.credentials.json`의 `claudeAiOauth.accessToken`, 기본 macOS 설정이면 `Claude Code-credentials` Keychain 항목을 읽는다. 해당 토큰을 issuer의 고정 `https://api.anthropic.com/api/oauth/usage`에만 전송한다. redirect 금지·10초 timeout. 쿠키 수집, 인증 갱신/변경, 모델 요청은 하지 않는다. credential은 프로세스 메모리에만 존재하며 DB/renderer/로그에 복제하지 않는다. OS의 기존 키체인 접근 정책은 그대로 적용된다.

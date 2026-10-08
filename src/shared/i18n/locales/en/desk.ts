@@ -21,6 +21,18 @@ export const desk = {
     pinnedTitle: 'Pinned · click to unpin',
     hint: "Stays at this desk no matter how long it's quiet. Never sent to the Lounge or Archive.",
   },
+  // Usage limit used up (#29): the badge on a dark monitor and its explanation.
+  quota: {
+    label: (tool: string) => `${tool} usage limit used up`,
+    title: (tool: string) => `${tool}'s usage limit is used up`,
+    account: 'whole account',
+    model: (model: string) => `${model} only`,
+    window: (label: string, scope: string) => `${label} · ${scope} · 100% used`,
+    resets: (when: string) => `resets ${when}`,
+    noReset: 'reset time unknown',
+    checked: (when: string) => `Checked ${when}`,
+    back: 'The lights come back on once the limit resets.',
+  },
   veil: {
     label: (name: string) => `Hide ${name}`,
     title: 'Hide',

@@ -18,6 +18,7 @@ import type {
   Snapshot,
 } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
+import { useQuotas } from './useQuotas';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
 import { isPageHidden, onPageVisibility } from './visibility';
@@ -212,7 +213,8 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     () => (demo && snapshot ? derive(snapshot, Date.now()) : snapshot),
     [demo, snapshot, clock, derive],
   );
-  const model = useMemo(() => buildOfficeModel(shown, Date.now()), [shown, clock]);
+  const quotas = useQuotas(demo, snapshot ? !!snapshot.preferences.privacy : null);
+  const model = useMemo(() => buildOfficeModel(shown, Date.now(), quotas), [shown, clock, quotas]);
 
   const refresh = async () => {
     if (demo) {

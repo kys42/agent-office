@@ -198,6 +198,7 @@ export function OfficeWorkspace({
             onHover={setDeskHover}
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
             canVeil={(s) => !model.view(s.id)?.needsPerson}
+            quotaOf={(s) => model.view(s.id)?.quota}
             onPin={onPin}
             onZoneDrop={onZoneDrop}
             onReply={onReply}
