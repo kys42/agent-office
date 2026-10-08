@@ -239,23 +239,44 @@ body.dock-mode {
     transform: translateY(-3px);
   }
 }
+/* A column beside the pet, below the bubble's line: it never covers the bubble, its expand
+   tab or the request above it. Flush with the anchor, and bridged up to the bubble's bottom, so
+   the pointer keeps the hover on the way over from either. Under the speech layer (z 6), so
+   the bubble's own buttons win where a wide one reaches the column. Hidden, it lets clicks
+   through to the desktop instead of catching them unseen. */
 .dock-pet-tools {
   position: absolute;
-  top: 4px;
-  left: -4px;
-  z-index: 7;
+  top: 20px;
+  left: 100%;
+  z-index: 5;
   display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
   background: rgba(17, 18, 22, 0.94);
   border: 1px solid var(--line-2);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s;
 }
+.dock-pet-tools::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 6px;
+}
+/* Keyboard focus shows them; a mouse click (which also focuses) does not keep them up. */
 .dock-pet-anchor:hover .dock-pet-tools,
-.dock-pet-tools:focus-within {
+.dock-pet-tools:has(:focus-visible) {
   opacity: 1;
+  pointer-events: auto;
+}
+/* The open reply form spans the pet's width under the bubble: the tools step aside for it. */
+.dock-pet-anchor:has(.quick-reply) .dock-pet-tools {
+  visibility: hidden;
 }
 .dock-pet-tools .icon-btn {
   width: 22px;
