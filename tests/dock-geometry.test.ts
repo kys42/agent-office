@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CARD_MIN,
   CARD_MIN_HEIGHT,
   CARD_SIZE,
+  readCardSize,
   cardBounds,
   FLOOR_HEIGHT,
   FLOOR_SCENE_HEIGHT,
@@ -125,4 +127,17 @@ test('the dock card stays on screen at the edges and beside a desk with no room 
   const short = { x: 0, y: 0, width: 1280, height: 600 };
   const fitted = cardBounds({ x: 600, y: 500, width: 164, height: 90 }, short);
   assert.ok(fitted.height < CARD_SIZE.height && inside(fitted, short));
+});
+
+test('the card opens at the size the person gave it, and a bad remembered size is ignored', () => {
+  assert.deepEqual(readCardSize({ width: 600.4, height: 820 }), { width: 600, height: 820 });
+  for (const bad of [null, {}, { width: 200, height: 800 }, { width: 600, height: 9000 }, 'x'])
+    assert.equal(readCardSize(bad), null);
+  const tall = { x: 0, y: 0, width: 2560, height: 1415 };
+  const b = cardBounds({ x: 1200, y: 1100, width: 164, height: 160 }, tall, {
+    width: 600,
+    height: 900,
+  });
+  assert.deepEqual([b.width, b.height], [600, 900]);
+  assert.ok(CARD_SIZE.width >= CARD_MIN.width && CARD_SIZE.height >= CARD_MIN.height);
 });
