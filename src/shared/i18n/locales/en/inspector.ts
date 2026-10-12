@@ -34,6 +34,23 @@ export const inspector = {
   personaRunsLabel: "Persona's runs",
   hiddenRecord: 'Hidden record',
   tabsLabel: 'Work card sections',
+  // The dock's pop-up card: one header line, a fold for the details, a chat box at the bottom.
+  card: {
+    more: 'Card menu',
+    workInfo: 'Work details',
+    unread: (n: number) => `${n} new`,
+    markRead: 'Mark as read',
+    calling: 'Needs you',
+    filters: 'Filters',
+    noTarget: 'No live terminal to type into',
+    progress: 'Progress',
+    progressLabel: 'Show progress notes',
+    progressHidden: (n: number) => `${n} progress ${n === 1 ? 'note' : 'notes'} hidden`,
+    office: 'Big office',
+    statusTitle: 'Status',
+    startPath: 'Started in',
+    model: 'Model',
+  },
   tabs: {
     overview: 'Details',
     history: 'Chat',

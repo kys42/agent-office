@@ -15,6 +15,7 @@ import {
   Cloud,
   Copy,
   MessageSquare,
+  PanelRightOpen,
   PenLine,
   Reply,
   TriangleAlert,
@@ -22,7 +23,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { MOODS, type Session } from '../shared/types';
+import { MOODS, PROVIDERS, type Session } from '../shared/types';
 import { sessionName } from '../shared/office';
 import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
@@ -70,6 +71,7 @@ export function SpeechBubble({
   detail,
   peek = false,
   reply,
+  onPopup,
   expanded,
   onExpandedChange,
   quote = false,
@@ -86,6 +88,8 @@ export function SpeechBubble({
   peek?: boolean;
   /** Quick reply, offered only when the session can take a follow-up right now. */
   reply?: { title: string; open: boolean; onClick: () => void };
+  /** Dock views: an unfolded bubble offers the colleague's pop-up card (the desk click is easy to miss). */
+  onPopup?: (anchor: Element) => void;
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
@@ -271,6 +275,19 @@ export function SpeechBubble({
           <i />
           <i />
         </span>
+      )}
+      {onPopup && open && (
+        <button
+          className="bubble-popup"
+          aria-label={t.desk.row.openCard(privacy ? PROVIDERS[s.provider].name : sessionName(s))}
+          onClick={(e) => {
+            e.stopPropagation();
+            onPopup(e.currentTarget);
+          }}
+        >
+          <PanelRightOpen size={11} strokeWidth={2.4} />
+          {t.desk.row.cardTitle}
+        </button>
       )}
       {reply && (
         <button

@@ -32,6 +32,7 @@ export function TerminalSend({
   privacy,
   onSend,
   onJump,
+  chat = false,
 }: {
   target: TerminalTarget;
   enabled: boolean;
@@ -39,6 +40,8 @@ export function TerminalSend({
   onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
   /** Brings the session's terminal to the front (offered when its text can't be cleared). */
   onJump?: () => void;
+  /** The card's chat box: Enter sends, Shift+Enter breaks the line, and it grows as you type. */
+  chat?: boolean;
 }) {
   const { t } = useI18n();
   const reply = useComposerSend(onSend, () => reply.setText(''));
@@ -57,7 +60,7 @@ export function TerminalSend({
   };
   return (
     <form
-      className="terminal-send"
+      className={`terminal-send ${chat ? 'terminal-send-chat' : ''}`}
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -72,17 +75,18 @@ export function TerminalSend({
     >
       <textarea
         aria-label={t.terminal.messageLabel(host)}
-        rows={2}
+        rows={chat ? 1 : 2}
         maxLength={4000}
         value={text}
         placeholder={
           waiting
             ? targetPlaceholder(target)
-            : `${targetPlaceholder(target)} · ${t.terminal.sendShortcut}`
+            : `${targetPlaceholder(target)} · ${chat ? t.terminal.replyKeys : t.terminal.sendShortcut}`
         }
         onChange={(e) => reply.setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+          const sends = chat ? !e.shiftKey : e.metaKey || e.ctrlKey;
+          if (e.key === 'Enter' && sends && !e.nativeEvent.isComposing) {
             e.preventDefault();
             submit();
           }

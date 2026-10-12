@@ -30,6 +30,9 @@ import { m, setLocale } from '../src/shared/i18n/index.js';
 import { webLink } from '../src/shared/links.js';
 import {
   cardBounds,
+  CARD_MIN,
+  CARD_SIZE,
+  readCardSize,
   clampInto,
   FLOOR_HEIGHT,
   ROW_HEIGHT,
@@ -363,14 +366,48 @@ function stopDrag(save: boolean) {
  * The colleague card for the dock: the same card as the big office's right panel, in a small
  * focusable window above the clicked desk. The dock itself stays see-through and unfocused.
  */
+const cardFile = () =>
+  path.join(process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'), 'card-size.json');
+/** The size the person last gave the card (it opens at that size from then on). */
+function loadCardSize() {
+  try {
+    return readCardSize(JSON.parse(readFileSync(cardFile(), 'utf8'))) ?? CARD_SIZE;
+  } catch {
+    return CARD_SIZE;
+  }
+}
+async function saveCardSize(size: { width: number; height: number }) {
+  try {
+    await mkdir(path.dirname(cardFile()), { recursive: true, mode: 0o700 });
+    await writeFile(cardFile(), JSON.stringify(size), { mode: 0o600 });
+  } catch (e) {
+    console.error('Card size:', e);
+  }
+}
+/** The size the card was last placed at (to tell the person's resize from a fit to the room). */
+let cardPlaced = { width: 0, height: 0 };
 function showCard(target: CardTarget, anchor: Rect) {
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
+  const size = loadCardSize();
   if (!card || card.isDestroyed()) {
     card = new BrowserWindow({
-      ...cardBounds(anchor, workAreaFor(anchor)),
+      ...cardBounds(anchor, workAreaFor(anchor), size),
       show: false,
-      resizable: false,
+      resizable: true,
+      minWidth: CARD_MIN.width,
+      minHeight: CARD_MIN.height,
+      // A double click on the header (its drag strip) must not fill the screen.
+      maximizable: false,
+      // macOS: the card is real glass — the system's popover material behind a translucent page.
+      ...(process.platform === 'darwin'
+        ? {
+            // A material the desktop shows through ('popover' reads as near-opaque white).
+            vibrancy: 'under-window' as const,
+            visualEffectState: 'active' as const,
+            roundedCorners: true,
+          }
+        : {}),
       frame: false,
       transparent: true,
       fullscreenable: false,
@@ -406,8 +443,22 @@ function showCard(target: CardTarget, anchor: Rect) {
     card.on('closed', () => {
       card = null;
     });
+    // The person resized it: open at this size from now on. Only the sides they changed —
+    // a card shortened to fit above a desk must not make the shorter height the new size.
+    card.on('resized', () => {
+      if (!card || card.isDestroyed()) return;
+      const [width, height] = card.getSize();
+      const stored = loadCardSize();
+      void saveCardSize({
+        width: width !== cardPlaced.width ? width : stored.width,
+        height: height !== cardPlaced.height ? height : stored.height,
+      });
+      cardPlaced = { width, height };
+    });
     void card.loadFile(index, { hash: 'card' });
-  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor)));
+  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor), size));
+  const [placedWidth, placedHeight] = card.getSize();
+  cardPlaced = { width: placedWidth, height: placedHeight };
   const window = card;
   const send = () => {
     if (!window.isDestroyed()) window.webContents.send('office:card', target);
@@ -429,7 +480,32 @@ function showCard(target: CardTarget, anchor: Rect) {
     reveal();
   }
 }
+/**
+ * Moving the card by its header follows the cursor from here, like the pet. A CSS drag region
+ * would make Chromium re-send the window's drag regions on every layout change of the live
+ * conversation, and the card's clicks felt slow and got lost.
+ */
+let cardDrag: ReturnType<typeof setInterval> | null = null;
+function startCardDrag() {
+  if (!card || card.isDestroyed()) return;
+  stopCardDrag();
+  const cursor = screen.getCursorScreenPoint();
+  const [x, y] = card.getPosition();
+  const offset = { x: cursor.x - x, y: cursor.y - y };
+  const started = Date.now();
+  cardDrag = setInterval(() => {
+    if (!card || card.isDestroyed() || Date.now() - started > 30_000) return stopCardDrag();
+    const c = screen.getCursorScreenPoint();
+    card.setPosition(c.x - offset.x, c.y - offset.y);
+  }, 16);
+}
+function stopCardDrag() {
+  if (!cardDrag) return;
+  clearInterval(cardDrag);
+  cardDrag = null;
+}
 function hideCard() {
+  stopCardDrag();
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
   if (card && !card.isDestroyed() && card.isVisible()) {
@@ -504,8 +580,10 @@ function setupIPC() {
   });
   ipcMain.handle('office:card', (e, action, target, anchor) => {
     trusted(e);
-    if (action === 'close') {
+    if (action === 'close' || action === 'drag-start' || action === 'drag-end') {
       if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
+      if (action === 'drag-start') return startCardDrag();
+      if (action === 'drag-end') return stopCardDrag();
       return hideCard();
     }
     const valid =

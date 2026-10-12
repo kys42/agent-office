@@ -1290,6 +1290,32 @@
   background: #b02a44;
 }
 /* Quick reply: only on bubbles whose session can take a follow-up right now */
+/* Dock views: the unfolded bubble's way to the colleague's pop-up card. */
+.bubble-popup {
+  position: absolute;
+  left: 10px;
+  bottom: -11px;
+  z-index: 3;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 9px;
+  border-radius: 99px;
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--accent-ink);
+  background: var(--accent);
+  box-shadow:
+    0 0 0 2px #fffaf1,
+    0 2px 0 2px #2a2128;
+  transition: transform 0.15s;
+}
+.bubble-popup:hover,
+.bubble-popup:focus-visible {
+  transform: translateY(-1px) scale(1.04);
+}
 .bubble-reply {
   position: absolute;
   right: -8px;

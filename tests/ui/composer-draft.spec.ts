@@ -244,3 +244,38 @@ test('Text not all on screen is never cleared from here: the terminal is offered
   expect((await sends(page)).length).toBe(1);
   await expect(field).toHaveValue('테스트를 먼저 돌려 주세요');
 });
+
+test('The card chat box asks about text in the prompt the same way, inside the card', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 480, height: 760 });
+  await desktop(page, '#card');
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.office.card = async () => {};
+    w.office.onCard = (cb: any) => {
+      setTimeout(() => cb({ id: 'demo:0', news: false }), 50);
+      return () => {};
+    };
+  });
+  await page.reload();
+  const aside = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  const box = aside.locator('.terminal-send-chat');
+  const field = box.getByRole('textbox');
+  await field.fill('리뷰 반영해 주세요');
+  await field.press('Enter');
+  const confirm = box.locator('.draft-confirm');
+  await expect(confirm).toContainText('Claude 입력창에 이 글이 있어요');
+  const clear = confirm.getByRole('button', { name: '지우고 보내기' });
+  const r = (await clear.boundingBox())!;
+  expect(r.y + r.height).toBeLessThanOrEqual(760);
+  // Esc closes only the question; the message stays.
+  await field.press('Escape');
+  await expect(confirm).toHaveCount(0);
+  await expect(field).toHaveValue('리뷰 반영해 주세요');
+  await field.press('Enter');
+  await confirm.getByRole('button', { name: '지우고 보내기' }).click();
+  await expect(field).toHaveValue('');
+  const all = await sends(page);
+  expect(all.at(-1).options).toEqual({ replaceDraft: 'half-written idea\nsecond line' });
+});

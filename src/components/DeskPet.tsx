@@ -106,6 +106,12 @@ export function DeskPet({
               quote
               expanded={expanded}
               onExpandedChange={(on) => setUnfolded(on ? said : null)}
+              onPopup={(el) =>
+                void openColleague(bubble.sessionId, {
+                  anchor: el.closest('.dock-pet-anchor'),
+                  news: true,
+                })
+              }
               onOpen={() => {
                 if (!privacy && !expanded)
                   onReceipt([{ id: bubble.id, version: bubble.version }], 'view');

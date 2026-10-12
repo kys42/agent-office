@@ -23,9 +23,11 @@ function Message({
   expanded,
   onExpand,
   group,
+  name,
 }: {
   event: OfficeEvent;
   provider: Session['provider'];
+  name?: string;
   notify: (s: string) => void;
   expanded: boolean;
   onExpand: () => void;
@@ -44,7 +46,7 @@ function Message({
     event.kind === 'user'
       ? t.conversation.you
       : event.kind === 'assistant'
-        ? PROVIDERS[provider].name
+        ? (name ?? PROVIDERS[provider].name)
         : event.kind === 'tool'
           ? t.conversation.toolUse
           : event.kind === 'result'
@@ -130,6 +132,10 @@ export function Conversation({
   older = false,
   loadingOlder = false,
   onOlder,
+  compact = false,
+  hideProgress = false,
+  name,
+  filtersOpen,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -138,6 +144,14 @@ export function Conversation({
   older?: boolean;
   loadingOlder?: boolean;
   onOlder?: () => void;
+  /** The card's chat: filters fold behind a small button, the range note goes away. */
+  compact?: boolean;
+  /** Progress notes left out of the whole conversation (the card's switch). */
+  hideProgress?: boolean;
+  /** Who answers, as the office calls them (the card's chat); else the tool's name. */
+  name?: string;
+  /** The card opens its filters from a button beside its tabs. */
+  filtersOpen?: boolean;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -171,12 +185,13 @@ export function Conversation({
       const category = conversationKind(e);
       const work = category === 'work';
       if (work ? !tools || filter !== 'all' : filter !== 'all' && category !== filter) continue;
+      if (hideProgress && category === 'progress' && filter === 'all') continue;
       const last = out.at(-1);
       if (work && last?.work) last.events.push(e);
       else out.push({ id: e.id, events: [e], work });
     }
     return out;
-  }, [events, filter, tools]);
+  }, [events, filter, tools, hideProgress]);
   const toggleMessage = (id: string) =>
     setExpanded((old) => {
       const next = new Set(old);
@@ -197,12 +212,14 @@ export function Conversation({
     }
     const messages = root.current?.querySelectorAll('.conversation-message');
     const lastMessage = messages?.[messages.length - 1];
+    // The sticky filters cover the top; folded away (the card's chat), nothing does.
+    // The filter row covers the top while open (the card's folded filters cover nothing).
     const toolbar = root.current?.querySelector('.conversation-toolbar');
-    if (lastMessage && toolbar)
+    if (lastMessage)
       scroller.scrollTop +=
         lastMessage.getBoundingClientRect().top -
         scroller.getBoundingClientRect().top -
-        toolbar.getBoundingClientRect().height -
+        (toolbar?.getBoundingClientRect().height ?? 0) -
         12;
   };
   // Showing older messages keeps the one the person was reading where it was.
@@ -272,53 +289,69 @@ export function Conversation({
         if ((e.target as HTMLElement).closest('.message-expand, summary')) follow.current = false;
       }}
     >
-      <div className="conversation-toolbar">
-        <div className="conversation-filters" role="group" aria-label={t.conversation.filtersLabel}>
-          {(
-            [
-              'all',
-              'request',
-              'progress',
-              'reply',
-              ...(counts.message ? ['message'] : []),
-            ] as ConversationFilter[]
-          ).map((kind) => (
-            <button
-              key={kind}
-              aria-pressed={filter === kind}
-              className={filter === kind ? 'active' : ''}
-              onClick={() => {
-                follow.current = true;
-                setNewBelow(false);
-                setCount(24);
-                setFilter(kind);
-              }}
+      {/* One sticky block: the folded filters and, opened, the filters themselves. */}
+      <div className={compact ? 'conversation-sticky' : 'conversation-filters-block'}>
+        {(!compact || filtersOpen) && (
+          <div className="conversation-toolbar">
+            <div
+              className="conversation-filters"
+              role="group"
+              aria-label={t.conversation.filtersLabel}
             >
-              {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
-              <span>
-                {kind === 'all'
-                  ? events.filter((e) => conversationKind(e) !== 'work').length
-                  : counts[kind]}
-              </span>
-            </button>
-          ))}
+              {(
+                [
+                  'all',
+                  'request',
+                  'progress',
+                  'reply',
+                  ...(counts.message ? ['message'] : []),
+                ] as ConversationFilter[]
+              ).map((kind) => (
+                <button
+                  key={kind}
+                  aria-pressed={filter === kind}
+                  className={filter === kind ? 'active' : ''}
+                  onClick={() => {
+                    follow.current = true;
+                    setNewBelow(false);
+                    setCount(24);
+                    setFilter(kind);
+                  }}
+                >
+                  {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
+                  <span>
+                    {kind === 'all'
+                      ? events.filter((e) => conversationKind(e) !== 'work').length
+                      : counts[kind]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <label className="conversation-tools-toggle">
+              <input
+                type="checkbox"
+                checked={tools}
+                disabled={filter !== 'all'}
+                onChange={(e) => setTools(e.target.checked)}
+              />
+              {t.conversation.includeTools}
+              <span>{counts.work}</span>
+            </label>
+          </div>
+        )}
+      </div>
+      {hideProgress && filter === 'all' && counts.progress > 0 && (
+        <p className="conversation-hidden-note">
+          {t.inspector.card.progressHidden(counts.progress)}
+        </p>
+      )}
+      {!compact && (
+        <div className="conversation-range">
+          <Clock3 size={12} />
+          {session.partial ? t.conversation.rangePartial : t.conversation.rangeFull}
+          <span>{t.conversation.readOnly}</span>
         </div>
-        <label className="conversation-tools-toggle">
-          <input
-            type="checkbox"
-            checked={tools}
-            disabled={filter !== 'all'}
-            onChange={(e) => setTools(e.target.checked)}
-          />
-          {t.conversation.includeTools}
-          <span>{counts.work}</span>
-        </label>
-      </div>
-      <div className="conversation-range">
-        <Clock3 size={12} />
-        {session.partial ? t.conversation.rangePartial : t.conversation.rangeFull}
-        <span>{t.conversation.readOnly}</span>
-      </div>
+      )}
       {(groups.length > count || older) && (
         <button
           className="older-messages"
@@ -355,6 +388,7 @@ export function Conversation({
                 <Message
                   event={e}
                   provider={session.provider}
+                  name={name}
                   notify={notify}
                   key={e.id + i}
                   expanded={expanded.has(e.id)}
@@ -368,6 +402,7 @@ export function Conversation({
             key={g.id}
             event={g.events[0]}
             provider={session.provider}
+            name={name}
             notify={notify}
             expanded={expanded.has(g.id)}
             onExpand={() => toggleMessage(g.id)}
