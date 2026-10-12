@@ -272,27 +272,46 @@ export class OfficeStore {
         .run(next.id, next.sessionId, next.at, JSON.stringify(next));
       this.db.prepare('DELETE FROM notices WHERE id=?').run(oldId);
     }
+    // What this session's events were last observed as, read once; written only when it moves
+    // (rewriting the same version every pass was most of a busy colleague's write cost).
+    const versions = new Map(
+      (
+        this.db
+          .prepare('SELECT event_id, version FROM notice_observed WHERE session_id=?')
+          .all(s.id) as { event_id: string; version: string }[]
+      ).map((r) => [r.event_id, r.version]),
+    );
+    const observe = (eventId: string, version: string) => {
+      if (versions.get(eventId) === version) return;
+      remember.run(s.id, eventId, version);
+      versions.set(eventId, version);
+    };
     // Classify legacy replies without turning a parser upgrade into a fresh notification.
     // Old rows outside the retained source window stay available in All, but never count as finals.
+    // Stored notices with a phase need nothing here; unphased replies/progress may be reclassified.
+    const phased = new Set<string>();
+    const unphased = new Map<string, string>();
+    for (const r of this.db
+      .prepare(
+        "SELECT id, COALESCE(json_extract(data,'$.phase'),'')<>'' AS phased, CASE WHEN COALESCE(json_extract(data,'$.phase'),'')='' AND json_extract(data,'$.kind') IN ('reply','progress') THEN data END AS legacy FROM notices WHERE session_id=?",
+      )
+      .all(s.id) as { id: string; phased: number; legacy: string | null }[]) {
+      if (r.phased) phased.add(r.id);
+      if (r.legacy !== null) unphased.set(r.id, r.legacy);
+    }
     for (const n of all) {
-      const row = get.get(n.id) as { data: string } | undefined;
-      const old: OfficeNotice | undefined = row ? JSON.parse(row.data) : undefined;
-      const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
       // Legacy unphased assistants used the reply kind, even when bootstrap suppressed
       // their notice rows. Advance that cursor too, rather than backfilling old progress.
       if (
-        (!old || !old.phase) &&
+        !phased.has(n.id) &&
         n.kind !== 'reply' &&
-        prior?.version === noticeContentVersion('reply', n.text, n.at)
+        versions.get(n.eventId) === noticeContentVersion('reply', n.text, n.at)
       )
-        remember.run(s.id, n.eventId, n.version);
-      if (!old) continue;
-      if (
-        !old.phase &&
-        ['reply', 'progress'].includes(old.kind) &&
-        old.text === n.text &&
-        old.at === n.at
-      ) {
+        observe(n.eventId, n.version);
+      const row = unphased.get(n.id);
+      if (!row) continue;
+      const old: OfficeNotice = JSON.parse(row);
+      if (old.text === n.text && old.at === n.at) {
         this.db
           .prepare('UPDATE notices SET data=? WHERE id=?')
           .run(JSON.stringify({ ...old, kind: n.kind, phase: n.phase, version: n.version }), n.id);
@@ -304,12 +323,9 @@ export class OfficeStore {
     const news = all.filter((n) => n.kind !== 'attention' || now - n.at < standbyHours * 3600_000);
     const recent =
       cursor || born
-        ? news.filter((n) => {
-            const prior = observed.get(s.id, n.eventId) as { version: string } | undefined;
-            return !prior || prior.version !== n.version;
-          })
+        ? news.filter((n) => versions.get(n.eventId) !== n.version)
         : news.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
-    for (const n of all) remember.run(s.id, n.eventId, n.version);
+    for (const n of all) observe(n.eventId, n.version);
     const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
     for (const n of recent) {
       const row = get.get(n.id) as { data: string } | undefined;
@@ -608,6 +624,8 @@ export class OfficeStore {
     sessions: Session[];
     notices: OfficeNotice[];
     noticeStats: { unread: number; total: number };
+    /** Every visible notice the carried ones were chosen from (`noticeList`). */
+    all: OfficeNotice[];
   } {
     const stored = this.seats();
     const base = this.decorated(false, stored);
@@ -617,10 +635,74 @@ export class OfficeStore {
       JSON.stringify(seats) === JSON.stringify(stored)
         ? listed
         : attachSessions(base.map((s) => ({ ...s, officeSeat: seats[seatKey(s)] ?? seats[s.id] })));
+    const all = this.noticeList(locale, sessions);
     return {
       sessions: sessions.map((s) => localizeSession(s, locale)),
-      ...this.noticeView(locale, sessions),
+      notices: residentNotices(all),
+      noticeStats: { unread: unreadNoticeCount(all), total: all.length },
+      all,
     };
+  }
+  /**
+   * One session as `officeView` lists it before attachment and localization: decorated with the
+   * person's settings, seated, events cut to what the office shows. Null when it is not stored
+   * or not visible. Reads one row, for a collector pass that changed only a few sessions.
+   */
+  officeRow(id: string): Session | null {
+    const s = this.residentRow(id);
+    if (!s) return null;
+    const prefs = this.preferences();
+    if (!this.visible(s, prefs)) return null;
+    const seats = this.seats();
+    const d = { ...this.decorate(s, prefs), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
+    return { ...d, events: snapshotEvents(d) };
+  }
+  /** Stored session ids in the order `officeView` lists them (newest first). */
+  sessionOrder(): string[] {
+    return (
+      this.db.prepare('SELECT id FROM sessions ORDER BY updated_at DESC').all() as { id: string }[]
+    ).map((r) => r.id);
+  }
+  /**
+   * `noticeList` for just these (visible) sessions, in `noticeOrder`: what a collector pass that
+   * changed only them merges into the office's notices. `background` as `noticeList` marks it.
+   */
+  noticesOf(ids: string[], background: Set<string>, locale: Locale = getLocale()): OfficeNotice[] {
+    return (
+      this.db
+        .prepare(
+          'SELECT data FROM notices WHERE session_id IN (SELECT value FROM json_each(?)) ORDER BY at DESC, id DESC',
+        )
+        .all(JSON.stringify(ids)) as { data: string }[]
+    )
+      .map((r) => JSON.parse(r.data) as OfficeNotice)
+      .filter(fresh)
+      .map((n) => ({ ...localizeNotice(n, locale), background: background.has(n.sessionId) }));
+  }
+  /** One stored row as `rows` keeps it, through the same cache and invalidation. */
+  private residentRow(id: string): Session | null {
+    const read = () => {
+      const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
+        { data: string } | undefined;
+      if (!row) return null;
+      const s = JSON.parse(row.data) as Session;
+      return { ...s, events: snapshotEvents(s) };
+    };
+    if (!this.cached) return read();
+    const { data_version: version } = this.db.prepare('PRAGMA data_version').get() as {
+      data_version: number;
+    };
+    if (version !== this.dataVersion) {
+      this.cached.clear();
+      this.dataVersion = version;
+    }
+    let s = this.cached.get(id);
+    if (!s) {
+      const row = read();
+      if (!row) return null;
+      this.cached.set(id, (s = row));
+    }
+    return s;
   }
   /** The stored (canonical) session, if the person's settings let it be seen. */
   private stored(id: string, prefs: Preferences): Session {

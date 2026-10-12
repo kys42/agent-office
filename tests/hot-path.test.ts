@@ -8,7 +8,7 @@ import { OfficeStore } from '../server/store.js';
 import { parseRecords } from '../server/adapters/normalize.js';
 import { readClaudeProcessesCached, type ClaudeLiveDeps } from '../server/adapters/claude-live.js';
 import type { Session, Snapshot } from '../src/shared/types.js';
-import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
+import { applyPatch, type SnapshotPatch } from '../src/shared/snapshot-patch.js';
 
 const START = 'Tue Oct  6 13:05:12 2026';
 const iso = (at: number) => new Date(at).toISOString();
@@ -397,5 +397,160 @@ test('Live process records read every second are parsed again only when they mov
     assert.equal(cache.size, 0);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+/** A snapshot as a client holds it (JSON), version aside. */
+const plain = (s: Snapshot) => JSON.parse(JSON.stringify({ ...s, version: 0 }));
+
+test('A hot pass sends only what changed, and the patched office equals a full rebuild', async () => {
+  const o = await office();
+  const now = Date.now();
+  const parent = sid(11);
+  const other = sid(12);
+  const child = path.join(o.project, parent, 'subagents', 'agent-a17.jsonl');
+  const helper = (at: number, text: string) =>
+    line({
+      type: 'assistant',
+      sessionId: parent,
+      agentId: 'a17',
+      isSidechain: true,
+      uuid: `h-${at}`,
+      timestamp: iso(at),
+      cwd: '/tmp/hot-demo',
+      message: {
+        id: `hm-${at}`,
+        role: 'assistant',
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text },
+          { type: 'tool_use', id: `toolu_h${at}`, name: 'Read', input: {} },
+        ],
+      },
+    });
+  try {
+    await mkdir(path.dirname(child), { recursive: true });
+    await writeFile(
+      o.file(parent),
+      user(parent, now - 9000, '같이 일해 줘') + progress(parent, now - 8000, '나눠 맡김'),
+    );
+    await writeFile(child, helper(now - 7000, '도우미 시작'));
+    await writeFile(
+      o.file(other),
+      user(other, now - 6000, '다른 일') + progress(other, now - 5000, '진행'),
+    );
+    for (let n = 20; n < 40; n++)
+      await writeFile(
+        o.file(sid(n)),
+        user(sid(n), now - 7200_000 + n, '옛일') + final(sid(n), now - 7100_000 + n, `끝 ${n}`),
+      );
+    await o.service.refresh();
+    assert.equal(o.service.hotSessions().length, 3, 'parent, helper and the other at work');
+    const view = o.service.store.officeView;
+    let rebuilt = 0;
+    o.service.store.officeView = function (...args) {
+      rebuilt++;
+      return view.apply(this, args);
+    };
+    const check = async (step: string) => {
+      const before = (await o.service.call('snapshot')) as Snapshot;
+      o.sent.length = 0;
+      await o.service.hotTick();
+      assert.equal(rebuilt, 0, `${step}: the office was not rebuilt`);
+      assert.equal(o.sent.length, 1, `${step}: one patch`);
+      const { patch, snapshot } = o.sent[0];
+      assert.ok(patch && patch.base === before.version && patch.version === snapshot.version);
+      // What a client holding the previous version ends up with…
+      assert.deepEqual(plain(applyPatch(before, patch)), plain(snapshot));
+      assert.deepEqual(plain((await o.service.call('snapshot')) as Snapshot), plain(snapshot));
+      // …is exactly the office rebuilt from scratch right after.
+      assert.deepEqual(plain(snapshot), plain(o.service.snapshot()), step);
+      rebuilt = 0;
+      return patch;
+    };
+
+    await appendFile(o.file(parent), progress(parent, Date.now(), '부모가 더 진행'));
+    const one = await check('parent');
+    assert.deepEqual(
+      one.sessions?.map((s) => s.nativeId),
+      [parent],
+      'only the parent row',
+    );
+
+    await appendFile(child, helper(Date.now(), '도우미가 더 진행'));
+    const two = await check('helper');
+    assert.equal(
+      two.sessions?.[0].attachedTo,
+      o.service.store.list().find((s) => s.nativeId === parent)!.id,
+    );
+
+    // A final reply: a new notice, counts move, the colleague moves to the top.
+    await appendFile(o.file(other), final(other, Date.now(), '다 끝났어요'));
+    const three = await check('final reply');
+    assert.ok(three.notices?.some((n) => n.text.includes('다 끝났어요')));
+    assert.ok(three.fields?.noticeStats);
+
+    // Two at once, then the full pass agrees and has nothing to add.
+    await appendFile(o.file(parent), progress(parent, Date.now() + 1, '부모 하나 더'));
+    await appendFile(child, helper(Date.now() + 2, '도우미 하나 더'));
+    await check('both');
+    o.service.store.officeView = view;
+    o.sent.length = 0;
+    await o.service.refresh();
+    assert.equal(o.sent.length, 0, 'the full pass found nothing new to send');
+  } finally {
+    await o.done();
+  }
+});
+
+test('A hot change that could move someone else falls back to the full rebuild', async () => {
+  const o = await office();
+  const id = sid(13);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '일') + progress(id, now - 4000, '진행'));
+    await o.service.refresh();
+    // Pinned meanwhile (a zone/standing change the published office does not know yet).
+    const stored = o.service.store.list().find((s) => s.nativeId === id)!;
+    o.service.store.pin([stored.id], true);
+    const view = o.service.store.officeView;
+    let rebuilt = 0;
+    o.service.store.officeView = function (...args) {
+      rebuilt++;
+      return view.apply(this, args);
+    };
+    o.sent.length = 0;
+    await appendFile(o.file(id), progress(id, Date.now(), '핀 꽂힌 뒤 진행'));
+    await o.service.hotTick();
+    assert.equal(rebuilt, 1, 'rebuilt in full');
+    assert.equal(o.sent.length, 1);
+    assert.equal(o.sent[0].snapshot.sessions.find((s) => s.nativeId === id)!.pinned, true);
+    assert.deepEqual(plain(o.sent[0].snapshot), plain(o.service.snapshot()));
+  } finally {
+    await o.done();
+  }
+});
+
+test('A hot notice that pushes an old one out of the carried set removes it in the patch', async () => {
+  const o = await office();
+  const id = sid(14);
+  const now = Date.now();
+  try {
+    // A burst of requests from under two minutes ago: all of them are news, each a notice.
+    let body = '';
+    for (let n = 0; n < 105; n++) body += user(id, now - 118_000 + n * 350, `요청 ${n}번`);
+    await writeFile(o.file(id), body);
+    await o.service.refresh();
+    const before = (await o.service.call('snapshot')) as Snapshot;
+    assert.ok((before.noticeStats?.total ?? 0) > 100, 'more notices than the office carries');
+    o.sent.length = 0;
+    await appendFile(o.file(id), user(id, Date.now(), '새 요청'));
+    await o.service.hotTick();
+    const { patch, snapshot } = o.sent[0];
+    assert.ok(patch?.removedNotices?.length, 'an old notice left the carried set');
+    assert.deepEqual(plain(applyPatch(before, patch!)), plain(snapshot));
+    assert.deepEqual(plain(snapshot), plain(o.service.snapshot()));
+  } finally {
+    await o.done();
   }
 });

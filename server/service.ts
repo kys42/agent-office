@@ -9,6 +9,7 @@ import { z } from 'zod';
 import type {
   Connector,
   Mood,
+  OfficeNotice,
   Preferences,
   Provider,
   Session,
@@ -37,6 +38,7 @@ import { mergeSessions } from './adapters/merge.js';
 import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
 import {
+  applyPatch,
   composePatches,
   diffSnapshot,
   indexSnapshot,
@@ -46,6 +48,10 @@ import {
 import { enrichWorkspaces, workspaceSignature } from './workspaces.js';
 import { syncLocale } from './locale.js';
 import { deriveState } from '../src/shared/runtime.js';
+import { attachSessions, parentSession } from '../src/shared/office.js';
+import { isBackground, isHelper, needsAttention } from '../src/shared/residents.js';
+import { noticeOrder, residentNotices } from '../src/shared/notice-pages.js';
+import { unreadNoticeCount } from '../src/shared/notices.js';
 import {
   LOCALES,
   getLocale,
@@ -53,7 +59,7 @@ import {
   type Locale,
   type LocalePreference,
 } from '../src/shared/i18n/index.js';
-import { CANONICAL, localizePreferences } from '../src/shared/canonical.js';
+import { CANONICAL, localizePreferences, localizeSession } from '../src/shared/canonical.js';
 import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
 import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
 const petLookSchema = z
@@ -222,6 +228,35 @@ function placed(s: Session, last: WorkspaceIdentity | undefined): Session {
     revision: hash(`${s.revision}:${workspaceSignature(workspace)}`),
   };
 }
+/**
+ * Whether a session's change leaves everyone else's place as it was: the same zone, standing
+ * (pinned, archived, background or not and, if background, calling or not), identity and
+ * relations, and no actor (an actor's runs share one desk). `was` as published, `now` decorated.
+ */
+function standsStill(was: Session, now: Session): boolean {
+  const relation = (s: Session) =>
+    JSON.stringify([
+      s.provider,
+      s.nativeId,
+      s.sessionKey ?? null,
+      s.agentName ?? null,
+      s.parentId ?? null,
+      s.relation?.kind ?? null,
+      s.relation?.parentNativeId ?? null,
+      s.relation?.parentSessionKey ?? null,
+    ]);
+  return (
+    !was.actor &&
+    !now.actor &&
+    !was.resident &&
+    was.zone === now.zone &&
+    !!was.pinned === !!now.pinned &&
+    !!was.archived === !!now.archived &&
+    isBackground(was) === isBackground(now) &&
+    (!isBackground(now) || needsAttention(was) === needsAttention(now)) &&
+    relation(was) === relation(now)
+  );
+}
 export class OfficeService extends EventEmitter {
   private quotaService = new QuotaService();
   store: OfficeStore;
@@ -234,6 +269,8 @@ export class OfficeService extends EventEmitter {
   readonly epoch = randomUUID();
   /** What was last sent, so a cycle that changed nothing sends nothing. */
   private sent: { index: SnapshotIndex; at: number; snapshot: Snapshot } | null = null;
+  /** Every visible notice as the office last listed it, for `emitChanged` to merge into. */
+  private notices: { all: OfficeNotice[]; locale: Locale } | null = null;
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
   private polledAt = 0;
@@ -308,21 +345,28 @@ export class OfficeService extends EventEmitter {
     for (const c of this.connectors) c.message = this.phrasing.get(c.provider)?.() ?? c.message;
   }
   snapshot(): Snapshot {
+    return this.compose().snapshot;
+  }
+  /** The office now, and every visible notice its carried ones were chosen from. */
+  private compose(): { snapshot: Snapshot; all: OfficeNotice[] } {
     const locale: Locale = getLocale();
-    const { sessions, notices, noticeStats } = this.store.officeView(locale);
+    const { sessions, notices, noticeStats, all } = this.store.officeView(locale);
     return {
-      notices,
-      noticeStats,
-      sessions,
-      // A copy: the snapshot keeps describing its own version after the connectors move on.
-      connectors: this.connectors.map((c) => ({ ...c })),
-      preferences: localizePreferences(this.store.preferences(), locale),
-      syncing: this.syncing,
-      lastSync: this.lastSync,
-      error: this.error,
-      version: this.version,
-      epoch: this.epoch,
-      locale,
+      all,
+      snapshot: {
+        notices,
+        noticeStats,
+        sessions,
+        // A copy: the snapshot keeps describing its own version after the connectors move on.
+        connectors: this.connectors.map((c) => ({ ...c })),
+        preferences: localizePreferences(this.store.preferences(), locale),
+        syncing: this.syncing,
+        lastSync: this.lastSync,
+        error: this.error,
+        version: this.version,
+        epoch: this.epoch,
+        locale,
+      },
     };
   }
   /**
@@ -332,7 +376,8 @@ export class OfficeService extends EventEmitter {
    * content on the next pass. The check times alone go out once a minute.
    */
   emitSnapshot(): Snapshot {
-    const s = this.snapshot();
+    const { snapshot: s, all } = this.compose();
+    this.notices = { all, locale: s.locale! };
     const index = indexSnapshot(s);
     const now = Date.now();
     const sent = this.sent;
@@ -341,12 +386,21 @@ export class OfficeService extends EventEmitter {
       // Nothing to publish: answer with what was published, the baseline of the next patch.
       return sent.snapshot;
     s.version = ++this.version;
+    return this.publish(s, index, sent && change);
+  }
+  /** Makes `s` (indexed as `index`) the published office; `change` from the last one, if any. */
+  private publish(
+    s: Snapshot,
+    index: SnapshotIndex,
+    change: ReturnType<typeof diffSnapshot> | null,
+  ): Snapshot {
+    const now = Date.now();
     const patch: SnapshotPatch | null =
-      sent && change
+      this.sent && change
         ? {
             kind: 'patch',
             epoch: this.epoch,
-            base: sent.snapshot.version,
+            base: this.sent.snapshot.version,
             version: s.version,
             ...change,
           }
@@ -357,6 +411,115 @@ export class OfficeService extends EventEmitter {
     else this.patches = [];
     this.emit('snapshot', s, patch);
     return s;
+  }
+  /**
+   * After a hot pass: sends what changed in just these sessions without rebuilding the office.
+   * Their rows are read and decorated one by one, attached against the published colleagues,
+   * their notices merged into the last full list of notices, and the carried notices and counts
+   * chosen again from it. The result is what `emitSnapshot` would publish, as long as nothing
+   * about these sessions can move anyone else: the same zone, desk, attachment, relations, actor
+   * and background standing, and no unattached helper hanging off them. Otherwise, and before
+   * anything was published, it is `emitSnapshot`. Time-driven changes of other colleagues wait
+   * for the next full pass, as they always have.
+   */
+  private emitChanged(ids: string[]) {
+    const sent = this.sent;
+    const base = this.notices;
+    const locale = getLocale();
+    const change =
+      sent && base?.locale === locale ? this.changeOf(sent, base.all, ids, locale) : null;
+    if (!change) return void this.emitSnapshot();
+    this.notices = { all: change.all, locale };
+    if (!change.patch) return;
+    const s = applyPatch(sent!.snapshot, {
+      kind: 'patch',
+      epoch: this.epoch,
+      base: sent!.snapshot.version,
+      version: ++this.version,
+      ...change.patch,
+    });
+    this.publish(s, change.index, change.patch);
+  }
+  /** `emitChanged`'s patch and index, null when only the whole office can tell. */
+  private changeOf(
+    sent: NonNullable<OfficeService['sent']>,
+    all: OfficeNotice[],
+    ids: string[],
+    locale: Locale,
+  ): {
+    patch: ReturnType<typeof diffSnapshot> | null;
+    index: SnapshotIndex;
+    all: OfficeNotice[];
+  } | null {
+    const published = sent.snapshot.sessions;
+    const before = new Map(published.map((s) => [s.id, s]));
+    const changed = new Set(ids);
+    const rows = new Map<string, Session>();
+    for (const id of changed) {
+      const was = before.get(id);
+      const row = this.store.officeRow(id);
+      if (!was || !row || !standsStill(was, row)) return null;
+      rows.set(id, row);
+    }
+    const list = published.map((s) => rows.get(s.id) ?? s);
+    // Anyone hanging off a changed session whose desk could depend on it.
+    for (const s of list)
+      if (!changed.has(s.id) && isHelper(s)) {
+        const parent = parentSession(s, list);
+        if (parent && changed.has(parent.id) && (isHelper(parent) || !s.attachedTo)) return null;
+      }
+    const next = new Map<string, Session>();
+    for (const s of attachSessions(list))
+      if (changed.has(s.id)) {
+        const was = before.get(s.id)!;
+        if (s.attachedTo !== was.attachedTo || s.officeSeat !== was.officeSeat) return null;
+        next.set(s.id, localizeSession(s, locale));
+      }
+    // Notices: these sessions' own, merged into the rest as last listed.
+    const background = new Set(
+      [...rows.values()].filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
+    );
+    const merged = all
+      .filter((n) => !changed.has(n.sessionId))
+      .concat(this.store.noticesOf([...changed], background, locale))
+      .sort(noticeOrder);
+    const carried = residentNotices(merged);
+    const noticeStats = { unread: unreadNoticeCount(merged), total: merged.length };
+    // The patch, against the published index.
+    const prev = sent.index;
+    const index: SnapshotIndex = {
+      sessions: new Map(prev.sessions),
+      notices: new Map(),
+      order: prev.order,
+      noticeOrder: carried.map((n) => n.id).join('\n'),
+      fields: new Map(prev.fields),
+    };
+    const patch: ReturnType<typeof diffSnapshot> = {};
+    for (const s of next.values()) {
+      const json = JSON.stringify(s);
+      if (prev.sessions.get(s.id) === json) continue;
+      index.sessions.set(s.id, json);
+      (patch.sessions ??= []).push(s);
+    }
+    const order = this.store.sessionOrder().filter((id) => before.has(id));
+    index.order = order.join('\n');
+    if (index.order !== prev.order) patch.order = order;
+    const sentNotices = new Map((sent.snapshot.notices ?? []).map((n) => [n.id, n]));
+    for (const n of carried) {
+      const old = prev.notices.get(n.id);
+      const json = sentNotices.get(n.id) === n && old ? old : JSON.stringify(n);
+      index.notices.set(n.id, json);
+      if (json !== old) (patch.notices ??= []).push(n);
+    }
+    const removedNotices = [...prev.notices.keys()].filter((id) => !index.notices.has(id));
+    if (removedNotices.length) patch.removedNotices = removedNotices;
+    if (index.noticeOrder !== prev.noticeOrder) patch.noticeOrder = carried.map((n) => n.id);
+    const stats = JSON.stringify(noticeStats);
+    if (prev.fields.get('noticeStats') !== stats) {
+      index.fields.set('noticeStats', stats);
+      patch.fields = { noticeStats };
+    }
+    return { patch: Object.keys(patch).length ? patch : null, index, all: merged };
   }
   /**
    * The office as last published. Every client must hold exactly what a version was published
@@ -866,7 +1029,7 @@ export class OfficeService extends EventEmitter {
       );
     // A final reply starts its grace period; idle sessions leave the hot set.
     this.rehot(Date.now(), prefs);
-    this.emitSnapshot();
+    this.emitChanged(updates.map((s) => s.id));
   }
   /** One hot session rebuilt from its files, or null to leave it to the full pass. */
   private async hotSession(
