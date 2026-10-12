@@ -451,6 +451,34 @@ test("Claude's prompt is read from the screen: a dialog, menu or other view is n
     readPrompt(`${claudeScreen('/clear')}\n  ❯ /clear    Start a new session`),
     '/clear',
   );
+  // Queued messages above the box are not a list (measured while working).
+  assert.equal(
+    readPrompt(
+      [
+        '❯ Add the word ONE.',
+        '❯ Add the word TWO.',
+        '  ctrl+x ctrl+s to send now',
+        '✻ Composing…',
+        `${RULE} x ─`,
+        '❯ Press up to edit queued messages',
+        RULE,
+      ].join('\n'),
+    ),
+    'Press up to edit queued messages',
+  );
+  // The selected row need not touch the box.
+  assert.equal(
+    readPrompt(
+      [
+        `  ❯ /clear    Start a new session`,
+        '    /compact  Summarize',
+        `${RULE} x ─`,
+        '❯ /c',
+        RULE,
+      ].join('\n'),
+    ),
+    null,
+  );
   // Anything else selected would run instead of what was typed.
   assert.equal(readPrompt(slash('/cl', '/clear')), null);
   assert.equal(readPrompt(slash('/clear now', '/clear')), null);
@@ -466,6 +494,8 @@ test("Claude's prompt is read from the screen: a dialog, menu or other view is n
     readPrompt(`${claudeScreen('')}\n ⏵⏵ auto mode on (shift+tab to cycle) · ? for shortcuts`),
     '',
   );
+  // A title that fills a narrow pane leaves one dash before it.
+  assert.equal(readPrompt(['─ a title filling the pane ─', '❯', RULE].join('\n')), '');
   // A long session name leaves fewer dashes before it.
   assert.equal(
     readPrompt(claudeScreen('').replace(`${RULE} ao-send-test ─`, '─── a very long name ─')),
@@ -484,6 +514,10 @@ test('The prompt must hold exactly the typed text, as drawn', () => {
   );
   assert.equal(promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14)), true);
   assert.equal(promptHolds(claudeScreen('good 👍'), 'good 👍️'), true);
+  // A long text the composer shows only the end of.
+  const long = Array.from({ length: 30 }, (_, i) => `line ${i} of a long reply`).join('\n');
+  assert.equal(promptHolds(claudeScreen(long.split('\n').slice(-8).join('\n')), long), true);
+  assert.equal(promptHolds(claudeScreen('reply'), long), false, 'too short to tell');
   // Text left over from before would be submitted twice; a draft would be mixed in.
   assert.equal(promptHolds(claudeScreen('hi hi'), 'hi'), false);
   assert.equal(promptHolds(claudeScreen('draft then mine'), 'mine'), false);

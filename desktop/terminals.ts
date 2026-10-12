@@ -264,7 +264,8 @@ export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' :
 const OPEN = new Set(['idle', 'busy', 'shell']);
 export const acceptsInput = (status: string) => OPEN.has(status);
 
-const RULE = /^─{3,}/;
+/** A box border: dashes, or dashes around a session title that may fill the pane. */
+const RULE = /^─+(?: .* ─+)?$/;
 /**
  * Footer hints of a screen where Enter goes elsewhere: dialogs and pickers, the agents view
  * ("enter to create · esc to clear"), the transcript, history search, and a prompt where Enter
@@ -273,8 +274,6 @@ const RULE = /^─{3,}/;
  */
 const FOOT =
   /do you want|esc to (?:cancel|clear|close|return)|\benter to\b|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
-/** An `@` completion row, drawn right above the prompt; Enter would pick from the list. */
-const SUGGESTION = /^\s{2,}(?:◇|❯)\s/;
 /** What an empty prompt shows in place of text: examples, and queued-message help. */
 const HINT = /^(?:Try "[\s\S]*"|Press (?:up|Enter) to [\s\S]*)$/;
 const PASTED = /^\[Pasted text #\d+[^\]]*\]$/;
@@ -301,23 +300,39 @@ export function readPrompt(screen: string): string | null {
     .replace(/^❯\s?/, '');
   // A slash command typed in full selects its own row: Enter then runs exactly that command.
   const command = /^\/\S+$/.test(typed) ? typed : null;
+  // List rows are indented; queued messages and the person's turns sit at column 0.
   const picks = (line: string) => {
-    const row = /^\s*❯\s+(\S+)/.exec(line);
+    const row = /^\s{2,}❯\s+(\S+)/.exec(line);
     return !!row && row[1] !== command;
   };
   const below = lines.slice(bottom + 1);
   // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
-  if (FOOT.test(below.join(' ').replace(/\s+/g, ' ')) || below.some(picks)) return null;
-  // Only the row touching the box: older output that merely looks like a list is no list.
-  const above = lines.slice(Math.max(0, top - 3), top).findLast((line) => line.trim());
-  if (above && SUGGESTION.test(above) && (/◇/.test(above) || picks(above))) return null;
+  if (
+    FOOT.test(below.join(' ').replace(/\s+/g, ' ')) ||
+    below.some((line) => /^\s*❯/.test(line) && (!command || picks(` ${line}`)))
+  )
+    return null;
+  // The list touching the box (rows, wrapped descriptions) up to a blank line; older output
+  // that merely looks like a list is no list.
+  const start = lines.slice(0, top).findLastIndex((line) => !line.trim());
+  const list = lines.slice(Math.max(start + 1, top - 30), top);
+  if (list.some((line) => /^\s{2,}◇\s/.test(line) || picks(line))) return null;
   return typed;
 }
 
-/** The prompt holds exactly `text` (or the placeholder a long paste collapses into). */
+/**
+ * The prompt holds exactly `text`, or the placeholder a long paste collapses into. The prompt
+ * was empty before typing, so a long text the composer shows only the end of counts too.
+ */
 export function promptHolds(screen: string, text: string): boolean {
   const typed = readPrompt(screen);
-  return typed !== null && (drawn(typed) === drawn(text) || PASTED.test(typed));
+  if (typed === null) return false;
+  const shown = drawn(typed);
+  return (
+    shown === drawn(text) ||
+    PASTED.test(typed) ||
+    (shown.length >= 40 && drawn(text).endsWith(shown))
+  );
 }
 
 /** What the renderer may know: never the handle or socket, which main re-resolves per action. */
