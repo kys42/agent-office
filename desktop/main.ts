@@ -382,6 +382,8 @@ async function saveCardSize(size: { width: number; height: number }) {
     console.error('Card size:', e);
   }
 }
+/** The size the card was last placed at (to tell the person's resize from a fit to the room). */
+let cardPlaced = { width: 0, height: 0 };
 function showCard(target: CardTarget, anchor: Rect) {
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
@@ -393,6 +395,8 @@ function showCard(target: CardTarget, anchor: Rect) {
       resizable: true,
       minWidth: CARD_MIN.width,
       minHeight: CARD_MIN.height,
+      // A double click on the header (its drag strip) must not fill the screen.
+      maximizable: false,
       frame: false,
       transparent: true,
       fullscreenable: false,
@@ -428,14 +432,22 @@ function showCard(target: CardTarget, anchor: Rect) {
     card.on('closed', () => {
       card = null;
     });
-    // The person resized it: open at this size from now on.
+    // The person resized it: open at this size from now on. Only the sides they changed —
+    // a card shortened to fit above a desk must not make the shorter height the new size.
     card.on('resized', () => {
       if (!card || card.isDestroyed()) return;
       const [width, height] = card.getSize();
-      void saveCardSize({ width, height });
+      const stored = loadCardSize();
+      void saveCardSize({
+        width: width !== cardPlaced.width ? width : stored.width,
+        height: height !== cardPlaced.height ? height : stored.height,
+      });
+      cardPlaced = { width, height };
     });
     void card.loadFile(index, { hash: 'card' });
   } else card.setBounds(cardBounds(anchor, workAreaFor(anchor), size));
+  const [placedWidth, placedHeight] = card.getSize();
+  cardPlaced = { width: placedWidth, height: placedHeight };
   const window = card;
   const send = () => {
     if (!window.isDestroyed()) window.webContents.send('office:card', target);

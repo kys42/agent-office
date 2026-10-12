@@ -743,7 +743,7 @@ body.dock-mode {
     0 2px 8px -2px rgba(0, 0, 0, 0.4);
 }
 
-/* The card window is moved by its desk, not by dragging its header. */
+/* The office panel's top bar inside a card never drags (the chat card drags by its header). */
 .dock-card .inspector-top {
   -webkit-app-region: no-drag;
 }
@@ -809,7 +809,7 @@ body.dock-mode {
   /* The card moves by its header (its controls stay clickable). */
   -webkit-app-region: drag;
 }
-.inspector-card .card-head :is(button, input, form, .card-menu) {
+.inspector-card .card-head :is(button, input, form, .card-menu, h2) {
   -webkit-app-region: no-drag;
 }
 .card-avatar {
@@ -845,6 +845,8 @@ body.dock-mode {
   display: flex;
   align-items: center;
   gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: 11px;
   color: var(--text-3);
 }
@@ -913,6 +915,7 @@ body.dock-mode {
   border-bottom: 0.5px solid var(--line-2);
 }
 .card-workinfo summary {
+  list-style: none;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -921,6 +924,23 @@ body.dock-mode {
   font-weight: 600;
   color: var(--text-2);
   cursor: pointer;
+}
+.card-workinfo summary::before {
+  content: '';
+  flex: none;
+  align-self: center;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s;
+}
+.card-workinfo[open] summary::before {
+  transform: rotate(90deg);
+}
+.card-workinfo summary::-webkit-details-marker {
+  display: none;
 }
 .card-workinfo summary small {
   min-width: 0;
@@ -931,7 +951,8 @@ body.dock-mode {
   color: var(--text-3);
 }
 .card-workinfo-body {
-  max-height: 42vh;
+  /* Never more than leaves the chat a readable height, even in a small card. */
+  max-height: min(42vh, calc(100vh - 330px));
   overflow-y: auto;
   padding: 0 12px 10px;
 }
@@ -993,6 +1014,11 @@ body.dock-mode {
   border: 0;
   background: none;
   box-shadow: none;
+}
+.terminal-send-chat textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .terminal-send-chat textarea {
   min-height: 36px;

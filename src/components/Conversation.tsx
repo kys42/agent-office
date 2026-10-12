@@ -209,12 +209,13 @@ export function Conversation({
     }
     const messages = root.current?.querySelectorAll('.conversation-message');
     const lastMessage = messages?.[messages.length - 1];
+    // The sticky filters cover the top; folded away (the card's chat), nothing does.
     const toolbar = root.current?.querySelector('.conversation-toolbar');
-    if (lastMessage && toolbar)
+    if (lastMessage)
       scroller.scrollTop +=
         lastMessage.getBoundingClientRect().top -
         scroller.getBoundingClientRect().top -
-        toolbar.getBoundingClientRect().height -
+        (toolbar?.getBoundingClientRect().height ?? 0) -
         12;
   };
   // Showing older messages keeps the one the person was reading where it was.

@@ -83,8 +83,9 @@ export function readCardSize(v: unknown): { width: number; height: number } | nu
     ? { width: Math.round(p.width as number), height: Math.round(p.height as number) }
     : null;
 }
-/** Shorter than this, the card would be cramped above a desk; it opens beside it instead. */
-export const CARD_MIN_HEIGHT = 420;
+/** Shorter than this, the card would be cramped above a desk; it opens beside it instead.
+ * The window's own minimum: a shorter placement would be grown down over the desk. */
+export const CARD_MIN_HEIGHT = 480;
 const CARD_GAP = 10;
 const CARD_MARGIN = 12;
 

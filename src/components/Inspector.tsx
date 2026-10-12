@@ -861,11 +861,22 @@ export function Inspector({
               </span>
             </div>
             {state === 'attention' && (
-              <span className="card-chip tone-attention">{t.inspector.card.calling}</span>
+              // Waiting for the person (e.g. a permission prompt the chat box cannot answer):
+              // straight to its terminal.
+              <button
+                className="card-chip tone-attention"
+                aria-label={`${t.inspector.card.calling} · ${resumeLabel}`}
+                title={resumeLabel}
+                disabled={demo}
+                onClick={resume}
+              >
+                {t.inspector.card.calling}
+              </button>
             )}
             {unread.length > 0 && (
               <button
                 className="card-chip tone-news"
+                aria-label={`${t.inspector.card.unread(unread.length)} · ${t.inspector.card.markRead}`}
                 title={t.inspector.card.markRead}
                 onClick={() =>
                   onReceipt(
@@ -937,6 +948,8 @@ export function Inspector({
           </div>
           {petEditor}
           {zoneEditor}
+          {/* While sharing the screen the details stay hidden; the run picker (names masked) stays. */}
+          {privacy && personaPicker}
           {!privacy && (
             <details
               className="card-workinfo"

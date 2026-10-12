@@ -39,7 +39,7 @@ export const inspector: Messages['inspector'] = {
   card: {
     more: '카드 메뉴',
     workInfo: '작업 정보',
-    unread: (n) => `새 결과 ${n}`,
+    unread: (n) => `새 소식 ${n}`,
     markRead: '읽음으로 표시',
     calling: '나를 기다려요',
     filters: '필터',
