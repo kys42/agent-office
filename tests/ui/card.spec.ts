@@ -250,10 +250,15 @@ test('Sharing the screen hides recent work and names but keeps the chat card usa
 test('Filters fold behind a small button in the card', async ({ page }) => {
   const aside = await card(page);
   // Reachable at the newest message too (it sticks to the top of the chat).
-  await expect(aside.locator('.conversation-filter-toggle')).toHaveCSS('position', 'sticky');
+  await expect(aside.locator('.conversation-sticky')).toHaveCSS('position', 'sticky');
   await expect(aside.locator('.conversation-toolbar')).toHaveCount(0);
-  await aside.getByRole('button', { name: '필터' }).click();
+  const toggle = aside.getByRole('button', { name: '필터' });
+  await toggle.click();
   await expect(aside.locator('.conversation-toolbar')).toBeVisible();
+  // Scrolled to the newest message, the opened filters never cover the button that folds them.
+  await aside.locator('.inspector-scroll').evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await toggle.click();
+  await expect(aside.locator('.conversation-toolbar')).toHaveCount(0);
   await expect(aside.locator('.conversation-range')).toHaveCount(0);
 });
 

@@ -1076,11 +1076,30 @@ body.card-mode:not(.is-mac) .dock-card {
   text-align: center;
   color: var(--text-3);
 }
-.conversation-filter-toggle {
-  /* Stays reachable while the chat sits scrolled to its newest message. */
+/* The card's filters: the folded button and, opened, the filter row stick together at the top,
+   reachable while the chat sits scrolled to its newest message. */
+.conversation-sticky {
   position: sticky;
-  top: 6px;
-  z-index: 3;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 6px;
+}
+.conversation-sticky .conversation-toolbar {
+  position: static;
+  align-self: stretch;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.conversation-filters-block {
+  display: contents;
+}
+.conversation-filter-toggle {
   box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.25);
   align-self: flex-start;
   width: fit-content;

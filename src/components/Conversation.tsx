@@ -289,64 +289,67 @@ export function Conversation({
         if ((e.target as HTMLElement).closest('.message-expand, summary')) follow.current = false;
       }}
     >
-      {compact && (
-        <button
-          className={`conversation-filter-toggle ${showFilters ? 'active' : ''}`}
-          aria-expanded={showFilters}
-          onClick={() => setShowFilters((v) => !v)}
-        >
-          <ListFilter size={12} />
-          {filter === 'all' ? t.inspector.card.filters : CONVERSATION_LABELS[filter]}
-        </button>
-      )}
-      {(!compact || showFilters) && (
-        <div className="conversation-toolbar">
-          <div
-            className="conversation-filters"
-            role="group"
-            aria-label={t.conversation.filtersLabel}
+      {/* One sticky block: the folded filters and, opened, the filters themselves. */}
+      <div className={compact ? 'conversation-sticky' : 'conversation-filters-block'}>
+        {compact && (
+          <button
+            className={`conversation-filter-toggle ${showFilters ? 'active' : ''}`}
+            aria-expanded={showFilters}
+            onClick={() => setShowFilters((v) => !v)}
           >
-            {(
-              [
-                'all',
-                'request',
-                'progress',
-                'reply',
-                ...(counts.message ? ['message'] : []),
-              ] as ConversationFilter[]
-            ).map((kind) => (
-              <button
-                key={kind}
-                aria-pressed={filter === kind}
-                className={filter === kind ? 'active' : ''}
-                onClick={() => {
-                  follow.current = true;
-                  setNewBelow(false);
-                  setCount(24);
-                  setFilter(kind);
-                }}
-              >
-                {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
-                <span>
-                  {kind === 'all'
-                    ? events.filter((e) => conversationKind(e) !== 'work').length
-                    : counts[kind]}
-                </span>
-              </button>
-            ))}
+            <ListFilter size={12} />
+            {filter === 'all' ? t.inspector.card.filters : CONVERSATION_LABELS[filter]}
+          </button>
+        )}
+        {(!compact || showFilters) && (
+          <div className="conversation-toolbar">
+            <div
+              className="conversation-filters"
+              role="group"
+              aria-label={t.conversation.filtersLabel}
+            >
+              {(
+                [
+                  'all',
+                  'request',
+                  'progress',
+                  'reply',
+                  ...(counts.message ? ['message'] : []),
+                ] as ConversationFilter[]
+              ).map((kind) => (
+                <button
+                  key={kind}
+                  aria-pressed={filter === kind}
+                  className={filter === kind ? 'active' : ''}
+                  onClick={() => {
+                    follow.current = true;
+                    setNewBelow(false);
+                    setCount(24);
+                    setFilter(kind);
+                  }}
+                >
+                  {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
+                  <span>
+                    {kind === 'all'
+                      ? events.filter((e) => conversationKind(e) !== 'work').length
+                      : counts[kind]}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <label className="conversation-tools-toggle">
+              <input
+                type="checkbox"
+                checked={tools}
+                disabled={filter !== 'all'}
+                onChange={(e) => setTools(e.target.checked)}
+              />
+              {t.conversation.includeTools}
+              <span>{counts.work}</span>
+            </label>
           </div>
-          <label className="conversation-tools-toggle">
-            <input
-              type="checkbox"
-              checked={tools}
-              disabled={filter !== 'all'}
-              onChange={(e) => setTools(e.target.checked)}
-            />
-            {t.conversation.includeTools}
-            <span>{counts.work}</span>
-          </label>
-        </div>
-      )}
+        )}
+      </div>
       {hideProgress && filter === 'all' && counts.progress > 0 && (
         <p className="conversation-hidden-note">
           {t.inspector.card.progressHidden(counts.progress)}
