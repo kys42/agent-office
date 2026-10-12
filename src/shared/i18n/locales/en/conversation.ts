@@ -27,5 +27,9 @@ export const conversation = {
   replyHint: "Progress messages and unlabeled replies aren't marked as final.",
   working: 'Your teammate is working on it',
   lastEntry: 'Last entry',
+  bookmark: 'Bookmark this message',
+  unbookmark: 'Remove bookmark',
+  bookmarked: 'Bookmarked · find it in the Memory Drawer',
+  unbookmarked: 'Bookmark removed',
   newEntries: 'See new entries',
 };

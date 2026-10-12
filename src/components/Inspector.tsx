@@ -38,6 +38,7 @@ import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Conversation } from './Conversation';
+import type { BookmarkFocus } from '../shared/bookmarks';
 import {
   freshConversation,
   mergeLive,
@@ -77,6 +78,9 @@ export function Inspector({
   terminalSend = false,
   onExpand,
   onPrefs,
+  bookmarked,
+  onBookmark,
+  focus,
 }: {
   session: Session;
   sessions: Session[];
@@ -105,6 +109,11 @@ export function Inspector({
   /** Shown in the dock card: open this colleague in the big office. */
   onExpand?: () => void;
   onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
+  /** This colleague's bookmarked messages; `onBookmark` (absent in the demo) toggles one. */
+  bookmarked?: string[];
+  onBookmark?: (sessionId: string, eventId: string, on: boolean) => Promise<void>;
+  /** A bookmarked message to open the conversation at (`key` tells two openings apart). */
+  focus?: BookmarkFocus | null;
 }) {
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
@@ -203,6 +212,34 @@ export function Inspector({
   });
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
+  // Opening a bookmark: the conversation, read back far enough to hold its message.
+  const [reached, setReached] = useState<number | null>(null);
+  const focusHere = focus && focus.sessionId === session.id && !demo ? focus : null;
+  useEffect(() => {
+    if (!focusHere) return;
+    let valid = true;
+    setTab('history');
+    setReached(null);
+    api
+      .detail(session.id, { reach: focusHere.eventId, reachAt: focusHere.at })
+      .then((page) => {
+        if (!valid) return;
+        setView((previous) => mergeNewest(previous, page));
+        setReached(focusHere.key);
+      })
+      .catch((e) => {
+        if (valid) notify((e as Error).message);
+      });
+    return () => {
+      valid = false;
+    };
+  }, [focusHere?.key, session.id]);
+  const mark =
+    onBookmark &&
+    ((eventId: string, on: boolean) =>
+      void onBookmark(s.id, eventId, on)
+        .then(() => notify(on ? t.conversation.bookmarked : t.conversation.unbookmarked))
+        .catch((e) => notify((e as Error).message)));
   const [loadingOlder, setLoadingOlder] = useState(false);
   /** The page before the oldest loaded event (the card keeps it until it closes or switches). */
   const loadOlder = async () => {
@@ -752,6 +789,9 @@ export function Inspector({
               loadingOlder={loadingOlder}
               onOlder={loadOlder}
               notify={notify}
+              bookmarked={bookmarked}
+              onBookmark={demo ? undefined : mark}
+              focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
             />
           ) : (
             <div className="notes-editor">

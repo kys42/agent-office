@@ -41,6 +41,7 @@ import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
+import type { BookmarkFocus } from './shared/bookmarks';
 import { Settings, type SettingsSection } from './components/Settings';
 import { NewsInbox } from './components/News';
 import { isAttentionNotice } from './shared/notices';
@@ -111,7 +112,11 @@ export default function App() {
     visit,
     veil,
     returnToOffice,
+    bookmark,
+    unbookmark,
   } = useOffice(demo, notify);
+  // A bookmark being opened: its colleague's card, at its message.
+  const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
     () =>
       api.onSelect?.((id) => {
@@ -257,6 +262,7 @@ export default function App() {
     if (await onPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
   };
   const choose = (id: string) => {
+    setBookmarkFocus(null);
     setShowUsage(false);
     setInbox(false);
     setShowNews(null);
@@ -846,6 +852,18 @@ export default function App() {
               onSelect={choose}
               demo={demo}
               privacy={prefs?.privacy ?? false}
+              bookmarkStamp={JSON.stringify(snapshot?.bookmarked ?? {})}
+              onOpenBookmark={(b) => {
+                choose(b.sessionId);
+                setBookmarkFocus({
+                  sessionId: b.sessionId,
+                  eventId: b.eventId,
+                  at: b.at,
+                  key: Date.now(),
+                });
+              }}
+              onUnbookmark={unbookmark}
+              notify={notify}
             />
           ) : view === 'settings' ? (
             <Settings
@@ -883,6 +901,9 @@ export default function App() {
             zoneRules={prefs?.zoneRules ?? []}
             onZoneRules={saveZoneRules}
             terminalSend={terminalSend}
+            bookmarked={snapshot?.bookmarked?.[current.id]}
+            onBookmark={bookmark}
+            focus={bookmarkFocus}
           />
         )}
         {showUsage && (

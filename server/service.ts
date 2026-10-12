@@ -37,6 +37,7 @@ import {
 import { mergeSessions } from './adapters/merge.js';
 import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
+import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
 import {
   applyPatch,
   composePatches,
@@ -129,8 +130,23 @@ const detailPageSchema = z
     before: z.string().max(1000).optional(),
     beforeAt: z.number().optional(),
     limit: z.number().int().min(1).max(DETAIL_PAGE_MAX).optional(),
+    reach: z.string().max(1000).optional(),
+    reachAt: z.number().optional(),
   })
   .strict();
+const bookmarkQuerySchema = z
+  .object({
+    sessionIds: z.array(z.string().max(400)).max(500).optional(),
+    text: z.string().max(200).optional(),
+    before: z
+      .object({ createdAt: z.number(), id: z.string().max(100) })
+      .strict()
+      .nullable()
+      .optional(),
+    limit: z.number().int().min(1).max(BOOKMARK_PAGE_MAX).optional(),
+  })
+  .strict();
+const noteSchema = z.string().max(BOOKMARK_NOTE);
 const noticeQueryShape = {
   filter: z.enum(['final', 'attention', 'all']),
   includeRead: z.boolean().optional(),
@@ -366,6 +382,7 @@ export class OfficeService extends EventEmitter {
         // A copy: the snapshot keeps describing its own version after the connectors move on.
         connectors: this.connectors.map((c) => ({ ...c })),
         preferences: localizePreferences(this.store.preferences(), locale),
+        bookmarked: this.store.bookmarkMarks(sessions.map((x) => x.id)),
         syncing: this.syncing,
         lastSync: this.lastSync,
         error: this.error,
@@ -1166,6 +1183,24 @@ export class OfficeService extends EventEmitter {
         return this.store.search(
           z.string().max(200).parse(args[0]),
           args[1] ? providerSchema.parse(args[1]) : undefined,
+        );
+      case 'bookmarks':
+        return this.store.bookmarks(bookmarkQuerySchema.optional().parse(args[0] ?? undefined));
+      case 'bookmark': {
+        const bookmark = this.store.bookmark(
+          z.string().max(400).parse(args[0]),
+          z.string().max(1000).parse(args[1]),
+          noteSchema.optional().parse(args[2] ?? undefined),
+        );
+        return { bookmark, snapshot: this.emitSnapshot() };
+      }
+      case 'unbookmark':
+        this.store.unbookmark(z.string().max(100).parse(args[0]));
+        return this.emitSnapshot();
+      case 'bookmarkNote':
+        return this.store.bookmarkNote(
+          z.string().max(100).parse(args[0]),
+          noteSchema.parse(args[1]),
         );
       case 'handoff':
         return this.store.handoff(

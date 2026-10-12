@@ -1,10 +1,14 @@
 import { summarizeCost } from './pricing.js';
 import { validOfficeSchedule } from '../src/shared/lifecycle.js';
 import { DatabaseSync } from 'node:sqlite';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type {
+  Bookmark,
+  BookmarkPage,
+  BookmarkQuery,
   Handoff,
   Preferences,
   Provider,
@@ -39,6 +43,15 @@ import {
   residentNotices,
 } from '../src/shared/notice-pages.js';
 import { detailPage } from '../src/shared/conversation-pages.js';
+import { retainedConversation } from '../src/shared/conversation.js';
+import {
+  BOOKMARK_NOTE,
+  BOOKMARK_PAGE,
+  BOOKMARK_PAGE_MAX,
+  bookmarkMatches,
+  bookmarkOrder,
+  makeBookmark,
+} from '../src/shared/bookmarks.js';
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
 import { getLocale, m, messagesFor, type Locale } from '../src/shared/i18n/index.js';
@@ -63,7 +76,7 @@ export const DEFAULT_PREFS: Preferences = {
   bubbleHours: 3,
   readyMinutes: 30,
 };
-const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); PRAGMA user_version=3;`;
+const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(session_id,event_id)); CREATE INDEX IF NOT EXISTS bookmarks_created ON bookmarks(created_at); PRAGMA user_version=4;`;
 /** A notice read more than 30 days ago is no longer listed. */
 const fresh = (n: OfficeNotice) => !n.seenAt || Date.now() - n.seenAt < 30 * 86400_000;
 const isBusy = (e: unknown) =>
@@ -1170,6 +1183,108 @@ export class OfficeStore {
       if (hits.length >= 50) break;
     }
     return hits;
+  }
+  /**
+   * Bookmarks `eventId` of a visible session: the message, the request that led to it and what
+   * was said on the way are copied from the stored record (what the renderer shows is never
+   * taken on its word), with where it was. The same message again is the same bookmark; `note`,
+   * when given, replaces its note.
+   */
+  bookmark(sessionId: string, eventId: string, note?: string, now = Date.now()): Bookmark {
+    const held = this.bookmarkOf(sessionId, eventId);
+    if (held) return note === undefined ? held : this.bookmarkNote(held.id, note);
+    // Every stored event and the notices of all of them, in the reader's language.
+    const s = this.detail(sessionId, { limit: Number.MAX_SAFE_INTEGER });
+    const b = makeBookmark(
+      s,
+      retainedConversation(s.events, s.notices ?? []),
+      eventId,
+      randomUUID(),
+      now,
+      note,
+    );
+    if (!b) throw new Error(m().server.store.noMessage);
+    this.db
+      .prepare('INSERT INTO bookmarks VALUES (?,?,?,?,?)')
+      .run(b.id, b.sessionId, b.eventId, b.createdAt, JSON.stringify(b));
+    return b;
+  }
+  private bookmarkOf(sessionId: string, eventId: string): Bookmark | null {
+    const row = this.db
+      .prepare('SELECT data FROM bookmarks WHERE session_id=? AND event_id=?')
+      .get(sessionId, eventId) as { data: string } | undefined;
+    return row ? (JSON.parse(row.data) as Bookmark) : null;
+  }
+  unbookmark(id: string) {
+    this.db.prepare('DELETE FROM bookmarks WHERE id=?').run(id);
+  }
+  bookmarkNote(id: string, note: string): Bookmark {
+    const row = this.db.prepare('SELECT data FROM bookmarks WHERE id=?').get(id) as
+      { data: string } | undefined;
+    if (!row) throw new Error(m().server.store.noBookmark);
+    const b: Bookmark = {
+      ...(JSON.parse(row.data) as Bookmark),
+      note: note.slice(0, BOOKMARK_NOTE),
+    };
+    this.db.prepare('UPDATE bookmarks SET data=? WHERE id=?').run(JSON.stringify(b), id);
+    return b;
+  }
+  /** Every bookmark, newest first; none on a database from before bookmarks (read-only). */
+  private allBookmarks(): Bookmark[] {
+    try {
+      return (
+        this.db.prepare('SELECT data FROM bookmarks ORDER BY created_at DESC, id DESC').all() as {
+          data: string;
+        }[]
+      ).map((r) => JSON.parse(r.data) as Bookmark);
+    } catch (e) {
+      if (/no such table/.test(String(e))) return [];
+      throw e;
+    }
+  }
+  /**
+   * A page of the bookmarks whose tool and project the settings show (the others are kept, only
+   * not listed). A person's bookmarks run to hundreds, not more: they are filtered here.
+   */
+  bookmarks(query: BookmarkQuery = {}): BookmarkPage {
+    const prefs = this.preferences();
+    const ids = query.sessionIds && new Set(query.sessionIds);
+    const all = this.allBookmarks()
+      .filter((b) => this.visible(b.source, prefs))
+      .filter((b) => !ids || ids.has(b.sessionId))
+      .filter((b) => bookmarkMatches(b, query.text ?? ''))
+      .sort(bookmarkOrder);
+    const before = query.before;
+    const start = before
+      ? all.findIndex(
+          (b) => bookmarkOrder(b, { createdAt: before.createdAt, id: before.id } as Bookmark) > 0,
+        )
+      : 0;
+    const from = start < 0 ? all.length : start;
+    const limit = Math.max(1, Math.min(query.limit ?? BOOKMARK_PAGE, BOOKMARK_PAGE_MAX));
+    return {
+      bookmarks: all.slice(from, from + limit),
+      more: from + limit < all.length,
+      total: all.length,
+    };
+  }
+  /** Which messages of these sessions are bookmarked: event ids by session id. */
+  bookmarkMarks(sessionIds: string[]): Record<string, string[]> {
+    const marks: Record<string, string[]> = {};
+    if (!sessionIds.length) return marks;
+    let rows: { session_id: string; event_id: string }[];
+    try {
+      rows = this.db
+        .prepare(
+          'SELECT session_id, event_id FROM bookmarks WHERE session_id IN (SELECT value FROM json_each(?)) ORDER BY session_id, event_id',
+        )
+        .all(JSON.stringify(sessionIds)) as typeof rows;
+    } catch (e) {
+      if (/no such table/.test(String(e))) return marks;
+      throw e;
+    }
+    for (const r of rows) (marks[r.session_id] ??= []).push(r.event_id);
+    return marks;
   }
   /**
    * Handoff Markdown in `locale`, from one read of the session. Errors use the active language,

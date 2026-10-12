@@ -8,6 +8,8 @@ export const server: Messages['server'] = {
     notFound: '세션을 찾을 수 없어요. 새로고침 후 다시 선택해 주세요.',
     excluded: '설정에서 제외한 세션입니다.',
     changed: '기록이 변경됐어요. 상세 카드를 새로고침한 뒤 다시 만들어 주세요.',
+    noMessage: '이 메시지를 기록에서 찾을 수 없어요. 대화를 새로고침한 뒤 다시 해 주세요.',
+    noBookmark: '이미 지워진 북마크예요. 다른 창에서 해제했을 수 있어요.',
   },
   handoff: {
     title: (name) => `${name} · 인수인계`,

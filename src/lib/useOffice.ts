@@ -10,6 +10,7 @@ import { officeResidents } from '../shared/residents';
 import { allocateSeats, officeZone, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
 import type {
+  BookmarkQuery,
   NoticeQuery,
   NoticeReceipt,
   Preferences,
@@ -18,6 +19,7 @@ import type {
   Snapshot,
 } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
+import { BOOKMARK_PAGE_MAX } from '../shared/bookmarks';
 import { useQuotas } from './useQuotas';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
@@ -306,6 +308,30 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       accept(await api.pin(ids.slice(i, i + BATCH), next));
     return next;
   };
+  /**
+   * Bookmark one of a colleague's messages (`on`), or take its bookmark off; every window then
+   * marks it from the office it receives. Nothing is kept in the demo.
+   */
+  const bookmark = async (sessionId: string, eventId: string, on: boolean) => {
+    if (demo) return;
+    if (on) return void accept((await api.bookmark(sessionId, eventId)).snapshot);
+    for (let before: BookmarkQuery['before'] = null; ;) {
+      const page = await api.bookmarks({
+        sessionIds: [sessionId],
+        before,
+        limit: BOOKMARK_PAGE_MAX,
+      });
+      const held = page.bookmarks.find((b) => b.eventId === eventId);
+      if (held) return void accept(await api.unbookmark(held.id));
+      const last = page.bookmarks.at(-1);
+      if (!page.more || !last) return void accept(await api.snapshot());
+      before = { createdAt: last.createdAt, id: last.id };
+    }
+  };
+  /** Take a bookmark off by its id (the bookmark list). */
+  const unbookmark = async (id: string) => {
+    if (!demo) accept(await api.unbookmark(id));
+  };
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
     if (demo) {
       setSnapshot((s) =>
@@ -440,6 +466,8 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     visit,
     veil,
     returnToOffice,
+    bookmark,
+    unbookmark,
   };
 }
 export type OfficeCore = ReturnType<typeof useOffice>;

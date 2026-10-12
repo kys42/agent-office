@@ -120,6 +120,7 @@ When you want the whole picture, open the full office: every project on its own 
 | 📋 **Select, copy & open links** | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
+| 🔖 **Message bookmarks** | Bookmark an important message in a conversation; Memory collects them with the request that led to it, and opens the conversation right at it. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
 | 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |
 | 🔗 **PR & issue cards** | GitHub links found in a session become cards with live title and state via your existing `gh` login. |
@@ -224,6 +225,7 @@ Agent Office ships a **read-only** MCP server over the same database, so an agen
 | `office_search` | Keyword search across allowed session history |
 | `office_get_session` | Session detail with evidence and partial-collection flags |
 | `office_prepare_handoff` | Handoff Markdown for a given snapshot |
+| `office_list_bookmarks` | Messages you bookmarked, with the request that led to each |
 
 Requires Node 24+. If you moved the data directory, set `AGENT_OFFICE_DATA_DIR` for the MCP server too. Nothing is registered automatically, and existing configs are never overwritten. Search results are untrusted reference material — not instructions. A Codex TOML example lives in the [MCP guide](docs/development/MCP.md).
 

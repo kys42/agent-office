@@ -23,10 +23,8 @@ export function DockCard() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { snapshot, model, setPrefs, patch, pin, receipt, readAll, returnToOffice } = useOffice(
-    false,
-    notify,
-  );
+  const { snapshot, model, setPrefs, patch, pin, receipt, readAll, returnToOffice, bookmark } =
+    useOffice(false, notify);
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
   // Bumped on every open so the card jumps to news again even for the same colleague.
@@ -96,6 +94,8 @@ export function DockCard() {
             if (await setPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
           }}
           terminalSend={send.enabled}
+          bookmarked={snapshot?.bookmarked?.[session.id]}
+          onBookmark={bookmark}
         />
       ) : (
         <div className="dock-card-empty">
