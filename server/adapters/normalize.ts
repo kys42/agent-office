@@ -425,7 +425,8 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       (queued.commandMode ?? 'prompt') === 'prompt'
     ) {
       const text = cleanPrompt(contentText(queued.prompt));
-      if (text) {
+      // Older records may leave out the origin; a hand-back still reads as one.
+      if (text && !text.startsWith('<task-notification')) {
         if (!title) title = text.slice(0, 140);
         add(r, at, 'user', text);
         set('think', t.reason.afterUser);

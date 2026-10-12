@@ -493,6 +493,8 @@ export function Conversation({
                     follow.current = true;
                     setNewBelow(false);
                     setCount(24);
+                    // A fresh filter starts at the newest again: no reading back until scrolled.
+                    scrolledByPerson.current = false;
                     setFilter(kind);
                   }}
                 >

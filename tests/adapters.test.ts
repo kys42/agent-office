@@ -359,6 +359,7 @@ test('Claude input typed mid-turn (queued command) becomes a user message; hand-
       q('b', [{ type: 'text', text: '두 번째 말' }]),
       q('c', '<task-notification>done</task-notification>', 'task-notification'),
       q('d', 'peer says hi', 'peer'),
+      q('e', '<task-notification>old shape</task-notification>'),
     ],
     { ...opts, provider: 'claude', sourcePath: '/test/claude.jsonl' },
   );

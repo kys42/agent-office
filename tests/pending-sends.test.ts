@@ -54,6 +54,15 @@ test('Sends wait for their own session, match tidied words, ignore older records
     taken,
     12_000,
   );
+  // A short word typed in the terminal does not settle a longer send.
+  const short = settleSends(
+    [send('s', 'ok then run tests', 30_000)],
+    's1',
+    [user('u3', 'ok', 31_000)],
+    taken,
+    32_000,
+  );
+  assert.equal(short.length, 1);
   assert.deepEqual(
     list.map((p) => p.id),
     ['c', 'd'],

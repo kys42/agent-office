@@ -28,8 +28,9 @@ export function rememberSend(sessionId: string, text: string, now = Date.now()) 
 
 const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
 // The record may tidy the words (spacing, hidden secrets, long text cut), so compare loosely.
+// Short words must match whole ("ok" is not "ok then run tests"); long ones by their start.
 const same = (a: string, b: string) =>
-  a === b || a.startsWith(b.slice(0, 60)) || b.startsWith(a.slice(0, 60));
+  a === b || (a.length >= 60 && b.length >= 60 && a.slice(0, 60) === b.slice(0, 60));
 
 /**
  * Settles the session's sends against its recorded requests: each record clears one send at
