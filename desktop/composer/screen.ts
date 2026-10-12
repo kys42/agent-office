@@ -16,6 +16,8 @@ export interface Screen {
    * the marker, and the suggestion Claude offers comes back here too (measured).
    */
   composer?: string;
+  /** Where the terminal's cursor is (cells, rows of `text`), when the host reports it (tmux). */
+  cursor?: { x: number; y: number };
 }
 
 /**
@@ -85,3 +87,7 @@ export function parseStyledScreen(raw: string): Screen {
   faint.push(flags);
   return { text: lines.join('\n'), faint };
 }
+
+/** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
+export const drawn = (value: string) =>
+  value.normalize('NFC').replace(/[\s\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');

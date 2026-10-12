@@ -8,7 +8,7 @@ import type { Screen } from './screen.js';
  */
 
 /** Keys an adapter may press. Hosts translate them (tmux key names, raw bytes for Orca). */
-export type ComposerKey = 'C-k' | 'C-u';
+export type ComposerKey = 'C-k' | 'C-u' | 'BSpace';
 
 /** The terminal a composer is drawn in: tmux or Orca, as seen by an adapter. */
 export interface ComposerHost {

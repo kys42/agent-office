@@ -54,6 +54,8 @@ export const desktop: Messages['desktop'] = {
       `${agent} 입력창을 비우지 못해 보내지 않았어요. 터미널을 확인해 주세요.`,
     clearFailedSuggestion: (agent) =>
       `${agent} 입력창을 비우지 못해 보내지 않았어요. ${agent}의 추천 글이면 여기서는 지울 수 없어요. 터미널에서 그 위에 입력해 주세요.`,
+    notVerified:
+      '비운 입력창에 넣었지만 넣은 글만 있는지 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
     clipboardKept: '입력창에 있던 글은 클립보드에 있어요.',
     unsupportedAgent: (agent) => `${agent}에는 여기서 보낼 수 없어요.`,
     shellPrefix: '‘!’로 시작하는 글은 셸 명령으로 실행돼서 보내지 않아요.',

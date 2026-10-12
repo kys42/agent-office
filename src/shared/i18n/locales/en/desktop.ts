@@ -59,6 +59,9 @@ export const desktop = {
     /** The text never moved: the keys may not have arrived, or it is the agent's own suggestion. */
     clearFailedSuggestion: (agent: string) =>
       `Couldn't empty the ${agent} prompt, so nothing was sent. If it's ${agent}'s suggestion, it can't be cleared from here: type over it in the terminal.`,
+    /** After clearing, the prompt did not show exactly the typed text: no Enter, the text stays. */
+    notVerified:
+      "Typed it into the emptied prompt, but couldn't confirm it holds only your text, so it wasn't submitted. Check the terminal.",
     /** Added to any failure once the composer's text was copied (it may be partly cleared). */
     clipboardKept: 'The text that was in the prompt is on your clipboard.',
     /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */

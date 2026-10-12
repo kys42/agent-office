@@ -11,6 +11,7 @@ import {
   parseStyledScreen,
   promptHolds,
   readyToType,
+  mergeBackup,
   type ComposerAdapter,
   type ComposerHost,
   type ComposerKey,
@@ -359,19 +360,23 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
   try {
     if (host.kind === 'tmux') {
       const tmux = deps.bin('tmux');
-      const mode = await deps.run(tmux, [
+      const state = await deps.run(tmux, [
         '-S',
         host.socket,
         'display-message',
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode}',
+        '#{pane_in_mode} #{cursor_x} #{cursor_y}',
       ]);
-      if (mode.trim() !== '0') return { text: '' };
-      return parseStyledScreen(
+      const [mode, x, y] = state.trim().split(' ');
+      if (mode !== '0') return { text: '' };
+      const screen = parseStyledScreen(
         await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
       );
+      return /^\d+$/.test(x ?? '') && /^\d+$/.test(y ?? '')
+        ? { ...screen, cursor: { x: Number(x), y: Number(y) } }
+        : screen;
     }
     const out = await deps.run(deps.bin('orca'), [
       'terminal',
@@ -394,7 +399,7 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
 }
 
 /** The bytes a key sends: what tmux `send-keys` writes for the same names. */
-const KEY_BYTES: Record<ComposerKey, string> = { 'C-k': '\x0b', 'C-u': '\x15' };
+const KEY_BYTES: Record<ComposerKey, string> = { 'C-k': '\x0b', 'C-u': '\x15', BSpace: '\x7f' };
 
 /** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */
 export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHost {
@@ -510,6 +515,28 @@ export function sendToTerminal(
 
 const sending = new Map<string, Promise<SendResult>>();
 
+/**
+ * What clearing put on the clipboard, per session, until a send goes through: a clearing that
+ * was interrupted (someone typing, the prompt closing) and is confirmed again only ever adds to
+ * it. Short-lived, in memory only, kept with the deps (one shared instance in the app).
+ */
+const BACKUP_TTL = 10 * 60_000;
+const backupsOf = new WeakMap<TerminalDeps, Map<string, { text: string; at: number }>>();
+function backupMemory(deps: TerminalDeps) {
+  let memory = backupsOf.get(deps);
+  if (!memory) backupsOf.set(deps, (memory = new Map()));
+  return {
+    held(key: string): string | undefined {
+      const held = memory.get(key);
+      if (held && Date.now() - held.at < BACKUP_TTL) return held.text;
+      memory.delete(key);
+      return undefined;
+    },
+    keep: (key: string, text: string) => memory.set(key, { text, at: Date.now() }),
+    drop: (key: string) => memory.delete(key),
+  };
+}
+
 async function deliver(
   live: LiveTerminal,
   input: unknown,
@@ -536,6 +563,8 @@ async function deliver(
   if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
   if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
   const { host } = live;
+  const key = live.process.sessionId;
+  const memory = backupMemory(deps);
   const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
   const composer = options.composer ?? claudeCodeComposer;
   const io = composerHost(host, deps);
@@ -551,16 +580,14 @@ async function deliver(
   }
   // Never mixed into a draft, or into text a failed send left behind.
   if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
-  const ask = (
-    draft: string,
-    extra: { changed?: boolean; clipboard?: boolean } = {},
-  ): SendResult => ({
+  const ask = (draft: string, extra: { changed?: boolean } = {}): SendResult => ({
     status: 'needs-confirm',
     draft,
     agent: composer.agent,
     ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
     ...(extra.changed && { changed: true }),
-    ...(extra.clipboard && { clipboard: true }),
+    // An earlier, interrupted clearing already put text on the clipboard.
+    ...(memory.held(key) !== undefined && { clipboard: true }),
   });
   const confirmed = options.replaceDraft;
   if (confirmed === undefined) return ask(state.text);
@@ -569,45 +596,54 @@ async function deliver(
   let saved = false;
   try {
     const result = await composer.clear(io, state, async (text) => {
+      // Never less than an earlier, interrupted clearing of this session saved.
+      const merged = mergeBackup(memory.held(key), text);
       try {
-        await backup(text);
+        await backup(merged);
       } catch {
         throw new TerminalInputError(t.backupFailed);
       }
+      memory.keep(key, merged);
       saved = true;
     });
-    if (result.status === 'changed') return ask(result.text, { changed: true, clipboard: true });
+    if (result.status === 'changed') return ask(result.text, { changed: true });
     if (result.status === 'failed')
       throw new TerminalInputError(
         result.state.kind === 'unknown'
           ? t.clearFailedSuggestion(composer.agent)
           : t.clearFailed(composer.agent),
       );
-    return await submit(true);
+    // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
+    // prompt must hold exactly the text, never a collapsed or shortened view of it.
+    const inferred = result.state.kind === 'suggestion' && !!result.state.inferred;
+    return await submit(true, inferred);
   } catch (error) {
-    // Once something went to the clipboard, every failure says so.
+    // Once something went to the clipboard, every failure says so (a failed copy says its own).
     if (!saved) throw error;
     const reason =
       error instanceof TerminalInputError ? error.message : t.unconfirmed(hostName(host));
     throw new TerminalInputError(
-      reason.includes(t.clipboardKept) ? reason : `${reason} ${t.clipboardKept}`,
+      reason === t.backupFailed || reason.includes(t.clipboardKept)
+        ? reason
+        : `${reason} ${t.clipboardKept}`,
     );
   }
 
   /**
-   * Types the text and presses Enter once the prompt holds exactly it. After clearing, only the
-   * exact text counts: a shortened or collapsed view could hide text the keys never reached.
+   * Types the text and presses Enter once the prompt holds it: exactly, or (the prompt being
+   * verified empty) as the placeholder of a long paste or the end of a long text. `strict`
+   * after a clearing that could only infer the box was empty: the exact text only.
    */
-  async function submit(cleared: boolean): Promise<SendResult> {
+  async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await typeText(host, text, deps);
-    const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, cleared);
+    const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
     // The prompt may take a moment to draw the text.
     let shown = false;
     for (let tries = 0; !shown && tries < 3; tries++) {
       await deps.wait(150);
       shown = await holds();
     }
-    if (!shown) throw new TerminalInputError(t.stateChanged);
+    if (!shown) throw new TerminalInputError(cleared ? t.notVerified : t.stateChanged);
     // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
     // retries leaves Claude's last frame on screen over a shell.
     const again = await current();
@@ -621,6 +657,7 @@ async function deliver(
       if (error instanceof TerminalInputError) throw new TerminalInputError(t.notSubmitted(where));
       throw error;
     }
+    memory.drop(key);
     const sent = (message: string): SendResult => ({
       status: 'sent',
       message,

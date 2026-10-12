@@ -6,7 +6,7 @@ import { demoSnapshot } from '../../src/lib/demo';
  * The desktop app found text in Claude's prompt: the reply box shows it, keeps the reply as
  * written, and only [Clear & send] sends again with that exact text to clear.
  */
-async function desktop(page: Page, hash = '') {
+async function desktop(page: Page, hash = '', maybeSuggestion = false) {
   const fixture = demoSnapshot();
   // The big office and the row reply to the desk's own session; the pet speaks for the news.
   const now = Date.now();
@@ -32,36 +32,41 @@ async function desktop(page: Page, hash = '') {
           },
         ]
       : [];
-  await page.addInitScript((s) => {
-    const w = window as any;
-    w.sends = [];
-    w.office = {
-      snapshot: async () => structuredClone(s),
-      detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
-      visit: async () => structuredClone(s),
-      preferences: async () => structuredClone(s),
-      artifacts: async () => [],
-      subscribe: () => () => {},
-      terminalSend: async () => true,
-      terminals: async (ids: string[]) =>
-        Object.fromEntries(
-          ids.map((id) => [
-            id,
-            { kind: 'tmux', label: 'work:1.0', status: 'idle', canSend: true, canFocus: true },
-          ]),
-        ),
-      send: async (id: string, text: string, options?: { replaceDraft?: string }) => {
-        w.sends.push({ id, text, options: options ?? null });
-        if (options?.replaceDraft !== 'half-written idea\nsecond line')
-          return {
-            status: 'needs-confirm',
-            draft: 'half-written idea\nsecond line',
-            agent: 'Claude',
-          };
-        return { status: 'sent', message: 'tmux work:1.0에 보냈어요', cleared: true };
-      },
-    };
-  }, fixture);
+  await page.addInitScript(
+    (s) => {
+      const w = window as any;
+      w.sends = [];
+      w.maybeSuggestion = s.maybeSuggestion;
+      w.office = {
+        snapshot: async () => structuredClone(s),
+        detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
+        visit: async () => structuredClone(s),
+        preferences: async () => structuredClone(s),
+        artifacts: async () => [],
+        subscribe: () => () => {},
+        terminalSend: async () => true,
+        terminals: async (ids: string[]) =>
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              { kind: 'tmux', label: 'work:1.0', status: 'idle', canSend: true, canFocus: true },
+            ]),
+          ),
+        send: async (id: string, text: string, options?: { replaceDraft?: string }) => {
+          w.sends.push({ id, text, options: options ?? null });
+          if (options?.replaceDraft !== 'half-written idea\nsecond line')
+            return {
+              status: 'needs-confirm',
+              draft: 'half-written idea\nsecond line',
+              agent: 'Claude',
+              ...(w.maybeSuggestion && { maybeSuggestion: true }),
+            };
+          return { status: 'sent', message: 'tmux work:1.0에 보냈어요', cleared: true };
+        },
+      };
+    },
+    Object.assign(fixture, { maybeSuggestion }),
+  );
   await page.goto(`/${hash}`);
 }
 const sends = (page: Page) => page.evaluate(() => (window as any).sends);
@@ -176,3 +181,38 @@ for (const [hash, stage] of [
       '지운 글은 클립보드에 있어요',
     );
   });
+
+/** The element a click at the middle of `target` lands on is `target` (or inside it). */
+const clickable = (target: ReturnType<Page['locator']>) =>
+  target.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!hit && el.contains(hit);
+  });
+
+test('In the big office the question is never covered by the next project area', async ({
+  page,
+}) => {
+  await desktop(page, '', true);
+  // Every desk with a reply button, so the open one has neighbours on each side.
+  const buttons = page.locator('.bubble-reply');
+  await expect(buttons.nth(1)).toBeVisible();
+  const count = await buttons.count();
+  expect(count).toBeGreaterThan(1);
+  for (let i = 0; i < count; i++) {
+    await page.locator('.bubble-reply').nth(i).click();
+    const reply = page.locator('.quick-reply');
+    const field = reply.getByRole('textbox', { name: '답장 내용' });
+    await field.fill('테스트를 먼저 돌려 주세요');
+    await field.press('Enter');
+    const confirm = reply.locator('.draft-confirm');
+    await expect(confirm).toContainText('추천 글일 수도 있어요');
+    await expect(confirm).toContainText('원래 클립보드 내용을 대신해요');
+    const clear = confirm.getByRole('button', { name: '지우고 보내기' });
+    await clear.scrollIntoViewIfNeeded();
+    expect(await clickable(clear), `desk ${i}`).toBe(true);
+    expect(await clickable(confirm.getByRole('button', { name: '취소' })), `desk ${i}`).toBe(true);
+    await reply.getByRole('button', { name: '답장 닫기' }).click();
+    await expect(reply).toHaveCount(0);
+  }
+});

@@ -167,14 +167,20 @@ function fakeDeps(
         if (args.includes('-ww')) return `${options.args ?? ARGS}\n`;
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg ?? 'S+ 4242 4242'}\n`;
       }
-      if (file === '/bin/tmux' && args.includes('#{pane_in_mode}'))
-        return `${options.paneMode ?? '0'}\n`;
+      if (file === '/bin/tmux' && args.some((a) => a.startsWith('#{pane_in_mode}'))) {
+        // The cursor sits at the end of the prompt's last row, as after typing.
+        const rows = (options.screen ?? claudeScreen)(typed, reads).split('\n');
+        const bottom = rows.findLastIndex((row) => /^─+/.test(row));
+        const last = rows[bottom - 1] ?? '';
+        const x = 2 + [...last.slice(2)].reduce((n, c) => n + (/[가-힣]/.test(c) ? 2 : 1), 0);
+        return `${options.paneMode ?? '0'} ${x} ${bottom - 1}\n`;
+      }
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
       if (file === '/bin/tmux' && args.includes('load-buffer')) loaded = runOptions?.input ?? '';
       if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
       // Enter submits; Ctrl+K/Ctrl+U pairs (the composer adapter's clearing) empty the prompt.
       if (file === '/bin/tmux' && args.includes('send-keys'))
-        typed = args.includes('Enter') || args.includes('C-u') ? '' : typed;
+        typed = args.includes('Enter') || clears(args) ? '' : typed;
       if (file === '/bin/tmux' && args.includes('capture-pane')) return screen();
       if (file === '/bin/orca' && args[1] === 'read') {
         const draft = options.orcaDraft?.(typed, reads);
@@ -201,7 +207,7 @@ function fakeDeps(
         );
       if (file === '/bin/orca' && args[1] === 'send') {
         const text = args.find((arg) => arg.startsWith('--text='));
-        if (text?.includes('\x15')) typed = '';
+        if (clears(args)) typed = '';
         else if (text) typed += text.slice('--text='.length).replace(/\x1b\[20[01]~/g, '');
         if (args.includes('--enter')) {
           if (options.enterRefused)
@@ -434,6 +440,11 @@ const said = async (result: Promise<SendResult>) => {
   const r = await result;
   return r.status === 'sent' ? r.message : `needs-confirm: ${r.draft}`;
 };
+/** Keys that delete from the prompt: tmux key names, or Orca's control bytes. */
+const clears = (args: string[]) =>
+  args.includes('send-keys')
+    ? args.some((a) => a === 'C-u' || a === 'BSpace' || a === 'C-k')
+    : args.some((a) => a.startsWith('--text=') && /[\x0b\x15\x7f]/.test(a));
 /** Text typed: a paste, or Orca text that is more than the clearing keys' control bytes. */
 const typedAny = (calls: { args: string[] }[]) =>
   calls.some(
@@ -611,7 +622,15 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
     const { deps, calls } = fakeDeps(dir);
     await sendToTerminal(tmuxLive(), 'const a = 1;\nb', deps);
     const tmux = calls.filter((c) => c.file === '/bin/tmux');
-    const mode = ['-S', SOCKET, 'display-message', '-p', '-t', '%3', '#{pane_in_mode}'];
+    const mode = [
+      '-S',
+      SOCKET,
+      'display-message',
+      '-p',
+      '-t',
+      '%3',
+      '#{pane_in_mode} #{cursor_x} #{cursor_y}',
+    ];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-e', '-t', '%3'];
     assert.equal(tmux.length, 9);
     assert.deepEqual(tmux[0].args, mode);
@@ -701,7 +720,7 @@ test("Text already in the prompt, a draft or a failed send's, is never added to"
       /이미 글이 있어요/,
     );
     assert.ok(!typedAny(calls) && !sent(calls), live.host.kind);
-    assert.ok(!calls.some((c) => c.args.includes('C-u') || c.args.some((a) => a.includes('\x15'))));
+    assert.ok(!calls.some((c) => clears(c.args)));
   }
   // Hints an empty prompt shows are not drafts: faint on tmux, by their wording on Orca.
   await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
@@ -758,7 +777,7 @@ test('A faint suggestion in the tmux prompt is typed over without asking', async
     });
     const result = await sendToTerminal(tmuxLive(), 'hi', deps, { backup: async () => {} });
     assert.deepEqual(result, { status: 'sent', message: 'tmux work:1.0에 보냈어요' });
-    assert.ok(!calls.some((c) => c.args.includes('C-u')), 'nothing cleared');
+    assert.ok(!calls.some((c) => clears(c.args)), 'nothing cleared');
     assert.ok(sent(calls));
   });
   // On Orca the same text reads like a draft (Orca's `draft` holds it too): the person is asked.
@@ -778,7 +797,7 @@ function steps(deps: TerminalDeps) {
   const run = deps.run;
   deps.run = async (file, args, options) => {
     if (args.includes('capture-pane') || args[1] === 'read') log.push('read');
-    else if (args.includes('C-u') || args.some((a) => a.includes('\x15'))) log.push('clear');
+    else if (clears(args)) log.push('clear');
     else if (args.includes('paste-buffer') || args.some((a) => a.startsWith('--text=')))
       log.push('type');
     else if (args.includes('Enter') || args.includes('--enter')) log.push('enter');
@@ -798,7 +817,7 @@ test('Clear & send: clipboard, clear, verify empty, type, verify, then Enter', a
       // The fake prompt shows the draft until the clearing keys arrive.
       const run = deps.run;
       deps.run = async (file, args, options) => {
-        if (args.includes('C-u') || args.some((a) => a.includes('\x15'))) draft = '';
+        if (clears(args)) draft = '';
         return run(file, args, options);
       };
       const { log, backup } = steps(deps);
@@ -810,13 +829,19 @@ test('Clear & send: clipboard, clear, verify empty, type, verify, then Enter', a
       assert.equal(result.status === 'sent' && result.cleared, true);
       assert.deepEqual(
         log.filter((step, i) => step !== log[i - 1]),
-        ['read', 'clipboard:half-written idea', 'clear', 'read', 'type', 'read', 'enter'],
+        // After the copy, one more look (the cursor, and still the same text), then each key.
+        ['read', 'clipboard:half-written idea', 'read', 'clear', 'read', 'type', 'read', 'enter'],
         live.host.kind,
       );
       // One pair at a time: a pair reaches only what was on screen (and saved).
       if (live.host.kind === 'tmux')
         assert.ok(
-          calls.some((c) => c.args.includes('send-keys') && c.args.join(' ').endsWith('C-k C-u')),
+          // Backspace once per character left of the cursor: exactly the visible draft.
+          calls.some(
+            (c) =>
+              c.args.includes('send-keys') &&
+              c.args.filter((a) => a === 'BSpace').length === 'half-written idea'.length,
+          ),
         );
       else assert.ok(calls.some((c) => c.args.includes('--text=\x0b\x15')));
     }
@@ -874,7 +899,7 @@ test('A prompt that cannot be emptied gets nothing typed and nothing sent', asyn
     }),
     /클립보드에 복사하지 못해/,
   );
-  assert.ok(!failing.calls.some((c) => c.args.includes('C-u')) && !typedAny(failing.calls));
+  assert.ok(!failing.calls.some((c) => clears(c.args)) && !typedAny(failing.calls));
 });
 
 test('After clearing, only the exact text is submitted: a long reply over leftovers is not', async () => {
@@ -894,7 +919,7 @@ test('After clearing, only the exact text is submitted: a long reply over leftov
     });
     const run = deps.run;
     deps.run = async (file, args, options) => {
-      if (args.some((a) => a.includes('\x15'))) cleared = true;
+      if (clears(args)) cleared = true;
       return run(file, args, options);
     };
     const saved: string[] = [];
@@ -903,13 +928,84 @@ test('After clearing, only the exact text is submitted: a long reply over leftov
         replaceDraft: 'half-written idea',
         backup: async (text) => void saved.push(text),
       }),
-      /제출하지 않았어요.*입력창에 있던 글은 클립보드에 있어요/,
+      /넣은 글만 있는지 확인하지 못해 제출하지 않았어요.*입력창에 있던 글은 클립보드에 있어요/,
     );
     assert.ok(typedAny(calls));
     assert.ok(!sent(calls), 'no Enter');
     // Everything the keys went over was saved first.
     assert.equal(saved.at(-1), 'stale words here\nhalf-written idea');
   });
+});
+
+test('An interrupted clearing confirmed again never backs up less than before', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let draft = 'first\nsecond\nthird';
+    let presses = 0;
+    const { deps } = fakeDeps(dir, { screen: (typed) => claudeScreen(typed || draft) });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (clears(args)) {
+        // Each step takes the last row; after the first, someone types on.
+        draft = draft.split('\n').slice(0, -1).join('\n');
+        if (++presses === 1) draft += ' typed';
+        return '';
+      }
+      return run(file, args, options);
+    };
+    const clipboard: string[] = [];
+    const backup = async (text: string) => void clipboard.push(text);
+    const first = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      replaceDraft: 'first\nsecond\nthird',
+      backup,
+    });
+    // The typing stopped it: shown again, with what was cleared so far on the clipboard.
+    assert.deepEqual(first, {
+      status: 'needs-confirm',
+      draft: 'first\nsecond typed',
+      agent: 'Claude',
+      changed: true,
+      clipboard: true,
+    });
+    const second = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      replaceDraft: 'first\nsecond typed',
+      backup,
+    });
+    assert.equal(second.status, 'sent');
+    // Every backup holds the earlier one: 'third' was never dropped from the clipboard.
+    for (const text of clipboard.slice(1)) assert.match(text, /third/);
+    assert.match(clipboard.at(-1)!, /first[\s\S]*second typed/);
+  });
+});
+
+test('A verified empty prompt takes a long reply as Claude shows it; an inferred one does not', async () => {
+  /** Claude collapses a paste of 4 lines or more, or over 800 characters (measured). */
+  const collapse = (text: string) =>
+    text.split('\n').length >= 4 || text.length > 800
+      ? `[Pasted text #1 +${text.split('\n').length - 1} lines]`
+      : text;
+  for (const reply of [
+    Array.from({ length: 5 }, (_, i) => `step ${i + 1}: check it`).join('\n'),
+    'x'.repeat(1000),
+  ])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      let draft = 'half-written idea';
+      const { deps, calls } = fakeDeps(dir, {
+        screen: (typed) => claudeScreen(typed ? collapse(typed) : draft),
+      });
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        if (clears(args)) draft = '';
+        return run(file, args, options);
+      };
+      const result = await sendToTerminal(tmuxLive(), reply, deps, {
+        replaceDraft: 'half-written idea',
+        backup: async () => {},
+      });
+      assert.equal(result.status, 'sent', reply.slice(0, 20));
+      assert.ok(sent(calls));
+    });
+  // The inferred case (Orca, text the keys never touch after the draft went) refuses a long
+  // reply shown in part: tested below with what it would hide.
 });
 
 test('The send flow only types for agents whose composer it can read', async () => {
