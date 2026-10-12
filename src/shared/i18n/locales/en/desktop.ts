@@ -48,12 +48,19 @@ export const desktop = {
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
     /** A permission prompt, plan approval, menu or `!` shell mode on screen would take the text. */
     notReady:
-      "It isn't taking input right now (a permission prompt, plan approval or menu may be open). Check the terminal.",
+      "It isn't taking input right now (a permission prompt, plan approval, menu or shell mode may be open). Check the terminal.",
+    draft: 'There is already text in the prompt. Check the terminal before sending.',
+    shellPrefix: "Text starting with ‘!’ would run as a shell command, so it isn't sent.",
+    unreadable: (host: string) => `Couldn't read the ${host} screen, so nothing was sent.`,
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */
     orcaRefused: (reason: string) => `Orca didn't accept the input${reason}.`,
     orcaSent: 'Sent to the Orca terminal',
     stateChanged:
-      "Typed it into the prompt, but the state changed in the meantime, so it wasn't submitted. Check the terminal.",
+      "Typed it into the prompt, but the state changed in the meantime, so it wasn't submitted. Check the terminal before sending again.",
+    notSubmitted: (host: string) =>
+      `Typed it into ${host}, but couldn't press Enter. Check the terminal before sending again.`,
+    sentThenPrompt: (host: string) =>
+      `Sent to ${host}, and a permission prompt opened right after. Check the terminal.`,
     tmuxSent: (label: string) => `Sent to tmux ${label}`,
     /** Sent mid-turn: Claude queues it and picks it up as it goes. */
     queued: (target: string) =>

@@ -12,6 +12,7 @@ import {
   parseClaudeProcess,
   parseProcessEnv,
   promptHolds,
+  readPrompt,
   ptyOwner,
   sendToTerminal,
   terminalTarget,
@@ -71,6 +72,7 @@ const claudeScreen = (typed: string) =>
   ].join('\n');
 /** A permission prompt replaces the prompt box (measured on 2.1.296). */
 const permissionScreen = [
+  `${RULE} earlier output`,
   '⏺ Waiting 8 seconds',
   '  ⎿  $ sleep 8 && date > out.txt',
   '',
@@ -84,6 +86,29 @@ const permissionScreen = [
   '',
   ' Esc to cancel · Tab to amend',
 ].join('\n');
+/** The agents view (← for agents) has a prompt of its own: Enter there starts a new session. */
+const agentsScreen = (typed: string) =>
+  [
+    'Your conversation moved to the background — enter opens it · esc returns to it',
+    'Needs input',
+    ' ✻ current session  ao-send-test',
+    RULE,
+    `❯ ${typed || 'describe a task for a new session'}`,
+    RULE,
+    typed
+      ? '  enter to create · esc to clear · ctrl+f to find'
+      : '  enter to return · space to reply',
+  ].join('\n');
+/** `@` completions drawn above the prompt: Enter would pick a file. */
+const suggestScreen = (typed: string) =>
+  [
+    '    ◇ src/app.ts',
+    '    ◇ src/api.ts',
+    `${RULE} ao-send-test ─`,
+    `❯ ${typed}`,
+    RULE,
+    '  ⏸ manual mode on',
+  ].join('\n');
 
 /** Fake process table and CLIs. Every call is recorded so tests can check exact arguments. */
 function fakeDeps(
@@ -102,6 +127,10 @@ function fakeDeps(
     fg?: string;
     /** The rendered terminal for what sits in the prompt; the nth read (from 0). */
     screen?: (typed: string, read: number) => string;
+    /** `#{pane_in_mode}`: 1 while the tmux pane is scrolled back. */
+    paneMode?: string;
+    /** Fails `orca terminal send --enter` only. */
+    enterRefused?: boolean;
     fail?: (file: string, args: string[]) => Error | undefined;
   } = {},
 ) {
@@ -129,6 +158,8 @@ function fakeDeps(
         if (args.includes('-ww')) return `${options.args ?? ARGS}\n`;
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg ?? 'S+ 4242 4242'}\n`;
       }
+      if (file === '/bin/tmux' && args.includes('#{pane_in_mode}'))
+        return `${options.paneMode ?? '0'}\n`;
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
       if (file === '/bin/tmux' && args.includes('load-buffer')) loaded = runOptions?.input ?? '';
       if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
@@ -147,7 +178,11 @@ function fakeDeps(
       if (file === '/bin/orca' && args[1] === 'send') {
         const text = args.find((arg) => arg.startsWith('--text='));
         if (text) typed += text.slice('--text='.length);
-        if (args.includes('--enter')) typed = '';
+        if (args.includes('--enter')) {
+          if (options.enterRefused)
+            return JSON.stringify({ ok: true, result: { send: { accepted: false } } });
+          typed = '';
+        }
         return JSON.stringify(
           options.orcaSend ?? { ok: true, result: { send: { accepted: true } } },
         );
@@ -370,23 +405,44 @@ const sent = (calls: { args: string[] }[]) =>
 const typedAny = (calls: { args: string[] }[]) =>
   calls.some((c) => c.args.includes('paste-buffer') || c.args.some((a) => a.startsWith('--text=')));
 
-test("Claude's prompt is read from the screen: a dialog, menu or shell mode is never it", () => {
-  assert.equal(promptHolds(claudeScreen('')), true);
+test("Claude's prompt is read from the screen: a dialog, menu or other view is never it", () => {
+  assert.equal(readPrompt(claudeScreen('')), '');
+  assert.equal(readPrompt(claudeScreen('Try "fix lint errors"')), 'Try "fix lint errors"');
+  assert.equal(readPrompt(claudeScreen('first\nsecond')), 'first\nsecond');
+  assert.equal(readPrompt(permissionScreen), null);
+  assert.equal(readPrompt(claudeScreen('').replace('❯', '!')), null, '! shell mode');
+  assert.equal(readPrompt(agentsScreen('')), null, 'agents view');
+  assert.equal(readPrompt(agentsScreen('hi')), null, 'agents view, typed');
+  assert.equal(readPrompt(suggestScreen('see @src/ap')), null, 'completions');
+  assert.equal(readPrompt(`${claudeScreen('')}\n esc to close`), null, 'lowercase hint');
+  assert.equal(readPrompt(`${claudeScreen('')}\n  ❯ /model`), null, 'list below');
+  // The person's own footer stays fine: shift+tab, "? for shortcuts".
+  assert.equal(
+    readPrompt(`${claudeScreen('')}\n ⏵⏵ auto mode on (shift+tab to cycle) · ? for shortcuts`),
+    '',
+  );
+  // A long session name leaves fewer dashes before it.
+  assert.equal(
+    readPrompt(claudeScreen('').replace(`${RULE} ao-send-test ─`, '─── a very long name ─')),
+    '',
+  );
+  assert.equal(readPrompt(''), null);
+  assert.equal(readPrompt(RULE), null);
+});
+
+test('The prompt must hold exactly the typed text, as drawn', () => {
   assert.equal(promptHolds(claudeScreen('first\nsecond'), 'first\nsecond'), true);
-  // The person's own draft stays in front of what was typed.
-  assert.equal(promptHolds(claudeScreen('draft then mine'), 'mine'), true);
-  // Wrapped lines and a long paste collapsed by Claude both count.
+  // Wrapping, a collapsed long paste, and emoji variation selectors all count.
   assert.equal(
     promptHolds(claudeScreen('가'.repeat(50) + '\n' + '가'.repeat(30)), '가'.repeat(80)),
     true,
   );
   assert.equal(promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14)), true);
-  assert.equal(promptHolds(claudeScreen('something else'), 'mine'), false);
-  assert.equal(promptHolds(permissionScreen), false);
-  assert.equal(promptHolds(claudeScreen('').replace('❯', '!')), false, '! shell mode');
-  assert.equal(promptHolds(`${claudeScreen('')}\n Enter to confirm · Esc to cancel`), false);
-  assert.equal(promptHolds(''), false);
-  assert.equal(promptHolds(RULE), false);
+  assert.equal(promptHolds(claudeScreen('good 👍'), 'good 👍️'), true);
+  // Text left over from before would be submitted twice; a draft would be mixed in.
+  assert.equal(promptHolds(claudeScreen('hi hi'), 'hi'), false);
+  assert.equal(promptHolds(claudeScreen('draft then mine'), 'mine'), false);
+  assert.equal(promptHolds(agentsScreen('hi'), 'hi'), false);
 });
 
 test('Orca types the text, looks again, then presses Enter on its own', async () => {
@@ -438,14 +494,16 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
     const { deps, calls } = fakeDeps(dir);
     await sendToTerminal(tmuxLive(), 'const a = 1;\nb', deps);
     const tmux = calls.filter((c) => c.file === '/bin/tmux');
+    const mode = ['-S', SOCKET, 'display-message', '-p', '-t', '%3', '#{pane_in_mode}'];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-t', '%3'];
-    assert.equal(tmux.length, 5);
-    assert.deepEqual(tmux[0].args, capture);
-    const buffer = tmux[1].args[4];
+    assert.equal(tmux.length, 7);
+    assert.deepEqual(tmux[0].args, mode);
+    assert.deepEqual(tmux[1].args, capture);
+    const buffer = tmux[2].args[4];
     assert.match(buffer, /^agent-office-[\w-]+$/);
-    assert.deepEqual(tmux[1].args, ['-S', SOCKET, 'load-buffer', '-b', buffer, '-']);
-    assert.equal(tmux[1].options?.input, 'const a = 1;\nb');
-    assert.deepEqual(tmux[2].args, [
+    assert.deepEqual(tmux[2].args, ['-S', SOCKET, 'load-buffer', '-b', buffer, '-']);
+    assert.equal(tmux[2].options?.input, 'const a = 1;\nb');
+    assert.deepEqual(tmux[3].args, [
       '-S',
       SOCKET,
       'paste-buffer',
@@ -456,8 +514,9 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
       '-t',
       '%3',
     ]);
-    assert.deepEqual(tmux[3].args, capture);
-    assert.deepEqual(tmux[4].args, ['-S', SOCKET, 'send-keys', '-t', '%3', 'Enter']);
+    assert.deepEqual(tmux[4].args, mode);
+    assert.deepEqual(tmux[5].args, capture);
+    assert.deepEqual(tmux[6].args, ['-S', SOCKET, 'send-keys', '-t', '%3', 'Enter']);
   });
 });
 
@@ -465,7 +524,8 @@ test('Nothing is typed while a permission prompt, menu or shell mode holds the s
   const screens = [
     permissionScreen,
     claudeScreen('').replace('❯', '!'),
-    `${claudeScreen('')}\n Enter to confirm · Esc to cancel`,
+    agentsScreen(''),
+    suggestScreen(''),
     '',
   ];
   for (const live of [orcaLive('busy'), tmuxLive('busy')])
@@ -497,6 +557,64 @@ test('The prompt gets a moment to draw the text, then a send that never shows st
     await assert.rejects(sendToTerminal(tmuxLive(), 'hi', never.deps), TerminalInputError);
     assert.ok(!sent(never.calls));
     assert.equal(never.calls.filter((c) => c.args.includes('capture-pane')).length, 4);
+  });
+});
+
+test("Text already in the prompt, a draft or a failed send's, is never added to", async () => {
+  for (const live of [orcaLive('busy'), tmuxLive('busy')]) {
+    const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
+    await assert.rejects(sendToTerminal(live, 'hi', deps), /이미 글이 있어요/);
+    assert.ok(!typedAny(calls) && !sent(calls), live.host.kind);
+  }
+  // Hints an empty prompt shows are not drafts.
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed) => claudeScreen(typed || 'Press up to edit queued messages'),
+    });
+    await sendToTerminal(tmuxLive('busy'), 'hi', deps);
+    assert.ok(sent(calls));
+  });
+});
+
+test('A leading ! never reaches the prompt, where it would switch to shell mode', async () => {
+  const { deps, calls } = fakeDeps('/x');
+  await assert.rejects(sendToTerminal(tmuxLive(), '!rm -rf build', deps), /셸 명령/);
+  assert.equal(calls.length, 0);
+});
+
+test('A scrolled-back tmux pane or an unreadable screen gets nothing', async () => {
+  const scrolled = fakeDeps('/x', { paneMode: '1' });
+  await assert.rejects(sendToTerminal(tmuxLive(), 'hi', scrolled.deps), TerminalInputError);
+  assert.ok(!typedAny(scrolled.calls));
+  const unreadable = fakeDeps('/x', {
+    fail: (file, args) =>
+      file === '/bin/orca' && args[1] === 'read' ? new Error('old Orca') : undefined,
+  });
+  await assert.rejects(sendToTerminal(orcaLive(), 'hi', unreadable.deps), /화면을 읽지 못해서/);
+  assert.ok(!typedAny(unreadable.calls));
+});
+
+test('Orca taking the text but refusing Enter says the text is waiting there', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps } = fakeDeps(dir, { enterRefused: true });
+    await assert.rejects(
+      sendToTerminal(orcaLive(), 'hi', deps),
+      /글은 넣었지만 Enter를 보내지 못했어요/,
+    );
+  });
+});
+
+test('A permission prompt opening right after Enter is reported, not hidden', async () => {
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps } = fakeDeps(dir);
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      const out = await run(file, args, options);
+      if (args.includes('send-keys'))
+        await writeFile(path.join(dir, '4242.json'), record(4242, { status: 'waiting' }));
+      return out;
+    };
+    assert.match(await sendToTerminal(tmuxLive('busy'), 'hi', deps), /바로 승인 창이 떴어요/);
   });
 });
 
