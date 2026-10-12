@@ -86,6 +86,68 @@ test('A desk whose tool used up its limit goes dark, with a badge that explains 
   await expect(tip).toBeVisible();
 });
 
+test('In the light theme the explanation stays readable, and Esc puts it away', async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await serve(page, 'used-up');
+  await page.goto('/');
+  const badge = desk(page, 'demo:5').getByRole('button', { name: 'Claude 사용 한도 소진' });
+  const tip = badge.locator('.quota-tip');
+  await badge.hover();
+  await expect(tip).toBeVisible();
+  // A dark slip with light text in either theme (the page tokens are light here).
+  await expect(tip.locator('b')).toHaveCSS('color', 'rgb(245, 245, 247)');
+  await expect(tip).toHaveCSS('background-color', 'rgba(17, 18, 22, 0.97)');
+  // Over the neighbouring project's bubbles: its area is lifted while pointed at.
+  await expect(page.locator('.project-area', { has: desk(page, 'demo:5') })).toHaveCSS(
+    'z-index',
+    '3',
+  );
+  // The pointer can move onto the explanation without losing it.
+  const box = (await tip.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 4, { steps: 6 });
+  await expect(tip).toBeVisible();
+  // Esc puts it away while still pointed at; leaving and coming back shows it again.
+  await badge.hover();
+  await page.keyboard.press('Escape');
+  await expect(tip).toBeHidden();
+  await page.mouse.move(0, 0);
+  await badge.hover();
+  await expect(tip).toBeVisible();
+});
+
+test('One tool without a reading does not slow the others', async ({ page }) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route('**/api/rpc', (route) => {
+    const { method } = route.request().postDataJSON();
+    const now = Date.now();
+    if (method === 'quotas') {
+      calls++;
+      const base = { checkedAt: now, source: 'test', message: '' };
+      const reads: ProviderQuota[] = [
+        {
+          ...base,
+          provider: 'claude',
+          state: 'ok',
+          windows: [
+            { key: 'five_hour', label: '5시간', usedPercent: 40, resetsAt: now + 3600_000 },
+          ],
+        },
+        { ...base, provider: 'codex', state: 'error', windows: [] },
+      ];
+      return route.fulfill({ json: { result: reads } });
+    }
+    return route.fulfill({ json: { result: demoSnapshot() } });
+  });
+  await page.goto('/');
+  await expect(desk(page, 'demo:5')).toBeVisible();
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.fastForward('05:01');
+  await expect.poll(() => calls).toBe(2);
+});
+
 test('The lights come back on once the limit resets', async ({ page }) => {
   await page.clock.install();
   await serve(page, 'used-up', 40_000);

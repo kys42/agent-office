@@ -3,8 +3,12 @@ import type { ProviderQuota, QuotaWindow, Session } from './types';
 /** A read older than this is not evidence of anything now (the pull runs every few minutes). */
 export const QUOTA_STALE_MS = 30 * 60_000;
 
-/** Which sessions a limit binds: the whole account, or one model family. */
-export type QuotaScope = { kind: 'account' } | { kind: 'model'; model: string };
+/**
+ * Which sessions a limit binds: the whole account, one model family, or nobody we can name
+ * (a limit whose reach the read does not say: never claimed for any desk).
+ */
+export type QuotaScope =
+  { kind: 'account' } | { kind: 'model'; model: string } | { kind: 'unknown' };
 
 export interface QuotaExhaustion {
   provider: Session['provider'];
@@ -24,8 +28,8 @@ const CLAUDE_MODEL_KEYS: Record<string, string> = {
 
 /**
  * The scope of one limit window, from its key alone (see server/quotas.ts `normalizeQuota`).
- * Codex keys are `<limitId>:primary|secondary`; the plain `codex` id is the account's limit,
- * any other id names the model it limits.
+ * Codex keys are `<limitId>:primary|secondary`; the plain `codex` id is the account's limit.
+ * Other ids are internal names, not model names, so which desks they bind is unknown.
  */
 export function quotaScope(provider: Session['provider'], key: string): QuotaScope {
   if (provider === 'claude') {
@@ -33,13 +37,15 @@ export function quotaScope(provider: Session['provider'], key: string): QuotaSco
     return model ? { kind: 'model', model } : { kind: 'account' };
   }
   const id = key.split(':')[0];
-  return !id || id === 'codex' ? { kind: 'account' } : { kind: 'model', model: id };
+  return !id || id === 'codex' ? { kind: 'account' } : { kind: 'unknown' };
 }
 
 const binds = (scope: QuotaScope, s: Session) =>
   scope.kind === 'account' ||
   // A model limit is only claimed for a session whose model is known to be that model.
-  (!!s.model && s.model.toLowerCase().includes(scope.model.toLowerCase()));
+  (scope.kind === 'model' &&
+    !!s.model &&
+    s.model.toLowerCase().includes(scope.model.toLowerCase()));
 
 /**
  * The limits this session's tool has fully used right now, or nothing. Only a fresh, successful

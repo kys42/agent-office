@@ -1,4 +1,4 @@
-import { useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { BatteryWarning } from 'lucide-react';
 import { PROVIDERS } from '../shared/types';
 import { intlLocale } from '../shared/i18n';
@@ -33,10 +33,31 @@ export function QuotaBadge({
   const q = t.desk.quota;
   const tip = useId();
   const tool = PROVIDERS[quota.provider].short;
+  // Esc puts the explanation away (pointed at or focused) until the pointer or focus leaves.
+  const [active, setActive] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    if (!active || dismissed) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      setDismissed(true);
+    };
+    window.addEventListener('keydown', key, true);
+    return () => window.removeEventListener('keydown', key, true);
+  }, [active, dismissed]);
+  const leave = () => {
+    setActive(false);
+    setDismissed(false);
+  };
   return (
     <button
       type="button"
-      className={`quota-badge ${className}`}
+      className={`quota-badge ${dismissed ? 'tip-dismissed' : ''} ${className}`}
+      onMouseEnter={() => setActive(true)}
+      onFocus={() => setActive(true)}
+      onMouseLeave={leave}
+      onBlur={leave}
       data-solid
       aria-label={q.label(tool)}
       aria-describedby={tip}
@@ -49,7 +70,7 @@ export function QuotaBadge({
           <span key={w.key}>
             {q.window(
               w.label,
-              w.scope.kind === 'account' ? q.account : q.model(family(w.scope.model)),
+              w.scope.kind === 'model' ? q.model(family(w.scope.model)) : q.account,
             )}
             {' · '}
             {w.resetsAt ? q.resets(when(w.resetsAt)) : q.noReset}

@@ -41,7 +41,9 @@ export function useQuotas(demo: boolean, privacy: boolean | null): ProviderQuota
         // Anything but a list of reads is no reading at all (unknown, never "used up").
         const got = Array.isArray(read) ? (read as ProviderQuota[]) : [];
         if (alive) setQuotas(got);
-        if (!got.length || got.some((q) => q.state === 'error')) wait = QUOTA_BACKOFF_MS;
+        // One tool not set up (e.g. no Codex) must not slow the others: back off only when
+        // no tool gave a reading.
+        if (!got.some((q) => q.state === 'ok')) wait = QUOTA_BACKOFF_MS;
       } catch {
         // A failed read leaves nothing claimed, like a provider error.
         if (alive) setQuotas([]);

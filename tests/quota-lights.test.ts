@@ -33,10 +33,13 @@ test('limits bind by scope: account-wide or one model family', () => {
   assert.deepEqual(quotaScope('claude', 'seven_day'), { kind: 'account' });
   assert.deepEqual(quotaScope('claude', 'seven_day_opus'), { kind: 'model', model: 'opus' });
   assert.deepEqual(quotaScope('codex', 'codex:primary'), { kind: 'account' });
-  assert.deepEqual(quotaScope('codex', 'gpt-5-codex:secondary'), {
-    kind: 'model',
-    model: 'gpt-5-codex',
-  });
+  // Other Codex limit ids are internal names: their reach is unknown, never claimed.
+  assert.deepEqual(quotaScope('codex', 'codex_bengalfox:secondary'), { kind: 'unknown' });
+  const internal = [read('codex', [window('codex_bengalfox:primary', 100)])];
+  assert.equal(
+    quotaExhaustion(session({ provider: 'codex', model: 'codex_bengalfox' }), internal, now),
+    undefined,
+  );
   const opus = session();
   const sonnet = session({ model: 'claude-sonnet-4-5' });
   const unknown = session({ model: null });
