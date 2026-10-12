@@ -51,6 +51,9 @@ export const inspector: Messages['inspector'] = {
     statusTitle: '상태',
     startPath: '실행 경로',
     model: '모델',
+    keepOpen: '카드 열어 두기',
+    keepOpenOn: '다른 곳을 눌러도 열려 있어요 · 누르면 다시 닫히게',
+    keepOpenOff: '다른 곳을 누르면 닫혀요 · 누르면 열어 두기',
   },
   tabs: {
     overview: '작업 정보',

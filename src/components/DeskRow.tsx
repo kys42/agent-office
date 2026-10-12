@@ -541,7 +541,7 @@ export function DeskRow({
                               privacy={privacy}
                               expanded={expanded === s.id}
                               onExpandedChange={(on) => setExpanded(on ? s.id : null)}
-                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el, !!bubble)}
+                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el)}
                               onOpen={() => {
                                 // Opening a bubble reads it in place; the card is one hover away.
                                 if (bubble && !privacy && expanded !== s.id)

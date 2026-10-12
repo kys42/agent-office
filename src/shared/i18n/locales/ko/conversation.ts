@@ -1,6 +1,7 @@
 import type { Messages } from '../en';
 
 export const conversation: Messages['conversation'] = {
+  pending: '보냄 · 차례를 기다리는 중',
   you: '나',
   toolUse: '도구 사용',
   toolResult: '작업 결과',

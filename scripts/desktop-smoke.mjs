@@ -225,6 +225,45 @@ try {
   // Its header moves it from the main process (no CSS drag region in the card).
   await card.evaluate(() => window.office.card('drag-start'));
   await card.evaluate(() => window.office.card('drag-end'));
+  // The same desk clicked again puts its card away (a toggle); clicked once more, it is back.
+  const cardShown = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .isVisible(),
+    );
+  const again = () =>
+    dock.evaluate(() =>
+      window.office.card(
+        'open',
+        { id: 'codex:codex-test', news: false },
+        { x: 400, y: 600, width: 200, height: 100 },
+      ),
+    );
+  await again();
+  assert.equal(await cardShown(), false, 'a second click on the same desk closes its card');
+  await again();
+  await card.waitForSelector('.inspector-card');
+  assert.equal(await cardShown(), true, 'and a third opens it again');
+  // Moved on inside the card to another colleague, the first one's desk opens it rather than closing.
+  await card.evaluate(() =>
+    window.office.card('select', { id: 'claude:claude-test', news: false }),
+  );
+  await again();
+  assert.equal(await cardShown(), true, 'a desk other than the one shown switches the card');
+  // Kept open, a click elsewhere (the card losing focus) leaves it up; let go, it closes again.
+  const blurCard = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .emit('blur'),
+    );
+  await card.evaluate(() => window.office.card('keep-on'));
+  await card.waitForTimeout(700);
+  await blurCard();
+  await card.waitForTimeout(900);
+  assert.equal(await cardShown(), true, 'a kept-open card stays when focus goes elsewhere');
+  await card.evaluate(() => window.office.card('keep-off'));
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();

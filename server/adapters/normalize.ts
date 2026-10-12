@@ -417,6 +417,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         set('work', t.reason.toolResultWaiting);
       }
     }
+    // Claude Code keeps what a person types mid-turn as a queued command, not a user message.
+    const queued = r.type === 'attachment' ? r.attachment : null;
+    if (
+      queued?.type === 'queued_command' &&
+      (queued.origin?.kind ?? 'human') === 'human' &&
+      (queued.commandMode ?? 'prompt') === 'prompt'
+    ) {
+      const text = cleanPrompt(contentText(queued.prompt));
+      // Older records may leave out the origin; a hand-back still reads as one.
+      if (text && !text.startsWith('<task-notification')) {
+        if (!title) title = text.slice(0, 140);
+        add(r, at, 'user', text);
+        set('think', t.reason.afterUser);
+      }
+    }
     if (['assistant', 'user', 'message'].includes(r.type) && m.role) {
       const role = m.role;
       const text = role === 'user' ? cleanPrompt(contentText(m.content)) : contentText(m.content);

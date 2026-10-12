@@ -1398,3 +1398,15 @@ body.card-mode:not(.is-mac) .dock-card {
     display: none;
   }
 }
+
+/* Sent, not in the record yet (a busy colleague reads it when it gets to it). */
+.message-pending .message-bubble {
+  opacity: 0.7;
+}
+.message-pending .message-meta small {
+  color: var(--text-3);
+}
+
+.inspector-card .card-head .icon-btn.is-on {
+  color: var(--accent);
+}

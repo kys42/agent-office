@@ -95,7 +95,7 @@ async function card(
         terminalSend: async () => true,
         send: async (id: string, text: string) => {
           w.sent.push([id, text]);
-          return 'sent';
+          return { status: 'sent', message: '보냈어요' };
         },
         terminals: async (ids: string[]) =>
           Object.fromEntries(
@@ -328,4 +328,47 @@ test('At the smallest card width the tabs never run under the filter or the swit
     'aria-selected',
     'true',
   );
+});
+
+test('What the person sends shows at once, marked as waiting, until the record has it', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  const box = aside.locator('.card-composer textarea');
+  await box.fill('작업 끝나면 테스트도 돌려 줘');
+  await box.press('Enter');
+  const waiting = aside.locator('.message-pending');
+  await expect(waiting).toContainText('작업 끝나면 테스트도 돌려 줘');
+  await expect(waiting).toContainText('차례를 기다리는 중');
+});
+
+test('The same words sent twice wait as two bubbles', async ({ page }) => {
+  const aside = await card(page);
+  const box = aside.locator('.card-composer textarea');
+  for (let i = 0; i < 2; i++) {
+    await box.fill('계속해 줘');
+    await box.press('Enter');
+  }
+  await expect(aside.locator('.message-pending')).toHaveCount(2);
+});
+
+test('The card can be kept open when the person clicks elsewhere, and remembers it', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  const keep = aside.getByRole('button', { name: '카드 열어 두기' });
+  await expect(keep).toHaveAttribute('aria-pressed', 'false');
+  await keep.click();
+  await expect(keep).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-on');
+  await page.reload();
+  await expect(
+    page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).cardCalls.includes('keep-on')))
+    .toBe(true);
+  // Let go again: blur closes it once more.
+  await page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-off');
 });

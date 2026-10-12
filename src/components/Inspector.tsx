@@ -21,6 +21,8 @@ import {
   Maximize2,
   Sparkles,
   ListFilter,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import type {
   Session,
@@ -38,6 +40,7 @@ import { Modal } from './Modal';
 import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
 import { sendFollowUp } from '../lib/useTerminalSend';
+import { rememberSend, settlePending, usePendingSends } from '../lib/pendingSends';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Conversation } from './Conversation';
 import type { BookmarkFocus } from '../shared/bookmarks';
@@ -86,6 +89,8 @@ export function Inspector({
   focus,
   onFocused,
   variant = 'panel',
+  keepOpen = false,
+  onKeepOpen,
 }: {
   session: Session;
   sessions: Session[];
@@ -126,6 +131,9 @@ export function Inspector({
    * folded at the top, the conversation, and a chat box at the bottom. The office panel is `panel`.
    */
   variant?: 'panel' | 'card';
+  /** The card stays open when the person clicks elsewhere. */
+  keepOpen?: boolean;
+  onKeepOpen?: (on: boolean) => void;
 }) {
   const card = variant === 'card';
   const { t } = useI18n();
@@ -236,6 +244,14 @@ export function Inspector({
   });
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
+  // What was just sent, until the record shows it (a busy Claude reads queued input later).
+  // Kept per session outside this panel, so reopening the card or switching back still shows it.
+  const sentAll = usePendingSends();
+  const remember = rememberSend;
+  useEffect(() => {
+    settlePending(view.session.id, view.session.events);
+  }, [view.session.events, view.session.id]);
+  const sent = sentAll.filter((p) => p.sessionId === s.id);
   // Opening a bookmark: the conversation, read back far enough to hold its message.
   const [reached, setReached] = useState<number | null>(null);
   const focusHere = focus && focus.sessionId === session.id && !demo ? focus : null;
@@ -785,7 +801,10 @@ export function Inspector({
             onSend={async (text, replaceDraft) => {
               const id = s.id;
               const result = await sendFollowUp(id, text, replaceDraft, notify);
-              if (result.status === 'sent') markSent(id);
+              if (result.status === 'sent') {
+                markSent(id);
+                remember(id, text);
+              }
               return result;
             }}
           />
@@ -875,6 +894,7 @@ export function Inspector({
             hideProgress={card && !showProgress}
             name={card ? (privacy ? undefined : sessionName(s)) : undefined}
             filtersOpen={filtersOpen}
+            sent={sent}
             bookmarked={bookmarked}
             onBookmark={demo ? undefined : mark}
             focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
@@ -1121,6 +1141,17 @@ export function Inspector({
                   <Maximize2 size={15} />
                 </button>
               )}
+              {onKeepOpen && (
+                <button
+                  className={`icon-btn ${keepOpen ? 'is-on' : ''}`}
+                  aria-label={t.inspector.card.keepOpen}
+                  aria-pressed={keepOpen}
+                  data-tip={keepOpen ? t.inspector.card.keepOpenOn : t.inspector.card.keepOpenOff}
+                  onClick={() => onKeepOpen(!keepOpen)}
+                >
+                  {keepOpen ? <Lock size={14} /> : <LockOpen size={14} />}
+                </button>
+              )}
               <CardMenu label={t.inspector.card.more}>
                 {(close) => (
                   <>
@@ -1227,7 +1258,10 @@ export function Inspector({
                 onSend={async (text, replaceDraft) => {
                   const id = s.id;
                   const result = await sendFollowUp(id, text, replaceDraft, notify);
-                  if (result.status === 'sent') markSent(id);
+                  if (result.status === 'sent') {
+                    markSent(id);
+                    remember(id, text);
+                  }
                   return result;
                 }}
               />
