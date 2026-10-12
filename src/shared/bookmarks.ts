@@ -37,15 +37,21 @@ export function bookmarkLine(e: OfficeEvent, max: number): BookmarkLine {
   };
 }
 /**
- * How the message at `index` of a conversation came about: the person's last request before it
- * and the colleague's messages since, tool calls only counted. A request itself has none.
+ * How `target` came about, from the conversation events before index `end` (where it is, or
+ * would be): the person's last request before it and the colleague's messages since, tool calls
+ * only counted. A request itself has none. Another form of the same message is not context.
  */
-export function bookmarkContext(conversation: OfficeEvent[], index: number): Bookmark['context'] {
+export function bookmarkContext(
+  conversation: OfficeEvent[],
+  end: number,
+  target: OfficeEvent,
+): Bookmark['context'] {
   const context: Bookmark['context'] = { progress: [], omitted: 0, tools: 0 };
-  if (conversation[index]?.kind === 'user') return context;
+  if (target.kind === 'user') return context;
   const said: OfficeEvent[] = [];
-  for (let i = index - 1; i >= 0; i--) {
+  for (let i = end - 1; i >= 0; i--) {
     const e = conversation[i];
+    if (e.kind === target.kind && e.phase === target.phase && e.text === target.text) continue;
     if (e.kind === 'user') {
       context.request = bookmarkLine(e, REQUEST_TEXT);
       break;
@@ -98,7 +104,7 @@ export function makeBookmark(
       branch: session.branch,
       cwd: session.cwd,
     },
-    context: bookmarkContext(conversation, index),
+    context: bookmarkContext(conversation, index, event),
     anchor: {
       nativeId: session.nativeId,
       ...(session.sessionKey ? { sessionKey: session.sessionKey } : {}),

@@ -162,6 +162,7 @@ export function Conversation({
   bookmarked = [],
   onBookmark,
   focus,
+  onFocused,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -175,6 +176,8 @@ export function Conversation({
   onBookmark?: (eventId: string, on: boolean) => void;
   /** A message to bring into view and mark for a moment (a bookmark being opened). */
   focus?: { eventId: string; at: number; key: number; ready: boolean } | null;
+  /** The focused message was brought into view (or found missing): the opening is done. */
+  onFocused?: () => void;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -291,21 +294,24 @@ export function Conversation({
     };
   }, []);
   useEffect(() => {
+    if (pending.current) return;
     const raf = requestAnimationFrame(() => {
       if (follow.current) scrollBottom();
       else setNewBelow(true);
     });
     return () => cancelAnimationFrame(raf);
   }, [last]);
+  // Opening a bookmark: once its message is loaded, it is shown (all kinds, its work group
+  // open, enough older ones listed) and brought into view, marked for a moment. Until then
+  // nothing else moves the reading position.
+  const pending = useRef<{ eventId: string; at: number } | null>(null);
+  const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
+    if (pending.current) return;
     const raf = requestAnimationFrame(scrollBottom);
     return () => cancelAnimationFrame(raf);
   }, [filter]);
   const marks = useMemo(() => new Set(bookmarked), [bookmarked]);
-  // Opening a bookmark: once its message is loaded, it is shown (all kinds, its work group
-  // open, enough older ones listed) and brought into view, marked for a moment.
-  const [focused, setFocused] = useState<string | null>(null);
-  const pending = useRef<{ eventId: string; at: number } | null>(null);
   useEffect(() => {
     if (!focus) return;
     pending.current = { eventId: focus.eventId, at: focus.at };
@@ -315,31 +321,41 @@ export function Conversation({
   }, [focus?.key]);
   useEffect(() => {
     const want = pending.current;
-    if (!want) return;
-    // Re-read under another id: by its time once the reached page is in.
-    const target =
-      events.find((e) => e.id === want.eventId) ??
-      (focus?.ready ? events.find((e) => e.at >= want.at) : undefined);
-    if (!target) return;
+    if (!want || filter !== 'all') return;
+    const exact = events.find((e) => e.id === want.eventId);
+    // Re-read under another id, or gone from the record: near its time once the reached page
+    // is in, without marking another message as it.
+    const target = exact ?? (focus?.ready ? events.find((e) => e.at >= want.at) : undefined);
+    if (!target) {
+      if (focus?.ready) {
+        pending.current = null;
+        notify(t.conversation.bookmarkMissing);
+        onFocused?.();
+      }
+      return;
+    }
     if (conversationKind(target) === 'work' && !tools) return setTools(true);
     const index = groups.findIndex((g) => g.events.some((e) => e.id === target.id));
     if (index < 0) return;
     if (groups.length - index > count) return setCount(groups.length - index + 4);
-    pending.current = null;
     const raf = requestAnimationFrame(() => {
       const el = root.current?.querySelector<HTMLElement>(
         `[data-event-id="${CSS.escape(target.id)}"]`,
       );
-      if (!el) return;
+      if (!el || pending.current !== want) return;
+      pending.current = null;
       const group = el.closest('details');
       if (group) group.open = true;
       programmaticAt.current = performance.now();
       follow.current = false;
       el.scrollIntoView({ block: 'center' });
-      setFocused(target.id);
+      setNewBelow(false);
+      if (exact) setFocused(target.id);
+      else notify(t.conversation.bookmarkNear);
+      onFocused?.();
     });
     return () => cancelAnimationFrame(raf);
-  }, [events, groups, count, tools, focus?.ready, focus?.key]);
+  }, [events, groups, count, tools, filter, focus?.ready, focus?.key]);
   useEffect(() => {
     if (!focused) return;
     const timer = setTimeout(() => setFocused(null), 2400);

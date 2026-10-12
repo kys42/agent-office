@@ -47,6 +47,7 @@ export const api: OfficeAPI = window.office ?? {
   bookmarks: (query) => rpc('bookmarks', query),
   bookmark: (sessionId, eventId, note) => rpc('bookmark', sessionId, eventId, note),
   unbookmark: (id) => rpc('unbookmark', id),
+  unbookmarkMessage: (sessionId, eventId) => rpc('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => rpc('bookmarkNote', id, note),
   handoff: (id, r) => rpc('handoff', id, r),
   preferences: (p) => rpc('preferences', p),

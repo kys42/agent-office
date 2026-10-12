@@ -28,6 +28,9 @@ export const conversation = {
   working: 'Your teammate is working on it',
   lastEntry: 'Last entry',
   bookmark: 'Bookmark this message',
+  bookmarkNear: "The bookmarked message isn't in the record anymore · showing where it was",
+  bookmarkMissing:
+    "The bookmarked message isn't in the record anymore · its copy stays in the Memory Drawer",
   unbookmark: 'Remove bookmark',
   bookmarked: 'Bookmarked · find it in the Memory Drawer',
   unbookmarked: 'Bookmark removed',

@@ -383,6 +383,7 @@ export class OfficeService extends EventEmitter {
         connectors: this.connectors.map((c) => ({ ...c })),
         preferences: localizePreferences(this.store.preferences(), locale),
         bookmarked: this.store.bookmarkMarks(sessions.map((x) => x.id)),
+        bookmarkStamp: this.store.bookmarkStamp(),
         syncing: this.syncing,
         lastSync: this.lastSync,
         error: this.error,
@@ -1197,11 +1198,21 @@ export class OfficeService extends EventEmitter {
       case 'unbookmark':
         this.store.unbookmark(z.string().max(100).parse(args[0]));
         return this.emitSnapshot();
-      case 'bookmarkNote':
-        return this.store.bookmarkNote(
+      case 'unbookmarkMessage':
+        this.store.unbookmarkMessage(
+          z.string().max(400).parse(args[0]),
+          z.string().max(1000).parse(args[1]),
+        );
+        return this.emitSnapshot();
+      case 'bookmarkNote': {
+        const bookmark = this.store.bookmarkNote(
           z.string().max(100).parse(args[0]),
           noteSchema.parse(args[1]),
         );
+        // Other windows' lists read the note again.
+        this.emitSnapshot();
+        return bookmark;
+      }
       case 'handoff':
         return this.store.handoff(
           z.string().max(400).parse(args[0]),

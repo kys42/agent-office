@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowUpRight,
   BookmarkCheck,
@@ -13,7 +13,7 @@ import { PROVIDERS } from '../shared/types';
 import { api } from '../lib/api';
 import { ago, time, date } from '../lib/format';
 import { messageExcerpt } from '../shared/activity';
-import { BOOKMARK_NOTE } from '../shared/bookmarks';
+import { BOOKMARK_NOTE, BOOKMARK_PAGE, BOOKMARK_PAGE_MAX } from '../shared/bookmarks';
 import { useI18n } from '../lib/i18n';
 
 /** One saved line of a bookmark's context, clipped like the cards' excerpts. */
@@ -194,6 +194,10 @@ export function Bookmarks({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loadingMore, setLoadingMore] = useState(false);
+  // Read again after a change elsewhere: as many as were listed (up to a page's bound), so
+  // what was loaded further down does not fold back to the first page.
+  const latest = useRef(list);
+  latest.current = list;
   useEffect(() => {
     if (demo) return;
     let active = true;
@@ -201,7 +205,10 @@ export function Bookmarks({
     setError('');
     const timer = setTimeout(async () => {
       try {
-        const page = await api.bookmarks({ text: query });
+        const page = await api.bookmarks({
+          text: query,
+          limit: Math.min(Math.max(latest.current.length, BOOKMARK_PAGE), BOOKMARK_PAGE_MAX),
+        });
         if (!active) return;
         setList(page.bookmarks);
         setMore(page.more);
@@ -227,7 +234,9 @@ export function Bookmarks({
         text: query,
         before: { createdAt: last.createdAt, id: last.id },
       });
-      setList((l) => (l.at(-1)?.id === last.id ? [...l, ...page.bookmarks] : l));
+      // The list was read again meanwhile: this page no longer follows it.
+      if (latest.current.at(-1)?.id !== last.id) return;
+      setList([...latest.current, ...page.bookmarks]);
       setMore(page.more);
     } catch (e) {
       notify((e as Error).message);

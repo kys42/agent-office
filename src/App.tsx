@@ -852,7 +852,11 @@ export default function App() {
               onSelect={choose}
               demo={demo}
               privacy={prefs?.privacy ?? false}
-              bookmarkStamp={JSON.stringify(snapshot?.bookmarked ?? {})}
+              bookmarkStamp={JSON.stringify([
+                snapshot?.bookmarkStamp,
+                prefs?.excludedProjects,
+                prefs?.enabledProviders,
+              ])}
               onOpenBookmark={(b) => {
                 choose(b.sessionId);
                 setBookmarkFocus({
@@ -904,6 +908,7 @@ export default function App() {
             bookmarked={snapshot?.bookmarked?.[current.id]}
             onBookmark={bookmark}
             focus={bookmarkFocus}
+            onFocused={() => setBookmarkFocus(null)}
           />
         )}
         {showUsage && (

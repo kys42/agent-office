@@ -81,6 +81,7 @@ export function Inspector({
   bookmarked,
   onBookmark,
   focus,
+  onFocused,
 }: {
   session: Session;
   sessions: Session[];
@@ -114,6 +115,8 @@ export function Inspector({
   onBookmark?: (sessionId: string, eventId: string, on: boolean) => Promise<void>;
   /** A bookmarked message to open the conversation at (`key` tells two openings apart). */
   focus?: BookmarkFocus | null;
+  /** The bookmarked message was brought into view: `focus` is used up. */
+  onFocused?: () => void;
 }) {
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
@@ -792,6 +795,7 @@ export function Inspector({
               bookmarked={bookmarked}
               onBookmark={demo ? undefined : mark}
               focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
+              onFocused={onFocused}
             />
           ) : (
             <div className="notes-editor">

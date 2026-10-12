@@ -83,7 +83,7 @@ const turn = [
 ];
 
 test('Context: the last request, what was said since, tool calls only counted', () => {
-  const c = bookmarkContext(turn, 7);
+  const c = bookmarkContext(turn, 7, turn[7]);
   assert.equal(c.request?.eventId, 'r2');
   assert.deepEqual(
     c.progress.map((l) => l.eventId),
@@ -93,13 +93,11 @@ test('Context: the last request, what was said since, tool calls only counted', 
   assert.equal(c.tools, 2);
   assert.equal(c.omitted, 0);
   // A request has no context of its own.
-  assert.deepEqual(bookmarkContext(turn, 2), { progress: [], omitted: 0, tools: 0 });
+  assert.deepEqual(bookmarkContext(turn, 2, turn[2]), { progress: [], omitted: 0, tools: 0 });
   // The request out of the record: what was said is still kept.
   const tail = turn.slice(3);
-  const cut = bookmarkContext(
-    tail,
-    tail.findIndex((e) => e.id === 'f1'),
-  );
+  const at = tail.findIndex((e) => e.id === 'f1');
+  const cut = bookmarkContext(tail, at, tail[at]);
   assert.equal(cut.request, undefined);
   assert.equal(cut.progress.length, 2);
 });
@@ -110,11 +108,26 @@ test('Context: a long stretch keeps its first and last messages, the middle coun
     ...Array.from({ length: 20 }, (_, i) => ev(`m${i}`, 'assistant', `진행 ${i}`, i + 1)),
     ev('end', 'assistant', '끝', 30, 'final'),
   ];
-  const c = bookmarkContext(many, many.length - 1);
+  const c = bookmarkContext(many, many.length - 1, many.at(-1)!);
   assert.equal(c.progress.length, PROGRESS_HEAD + PROGRESS_TAIL);
   assert.equal(c.omitted, 20 - PROGRESS_HEAD - PROGRESS_TAIL);
   assert.equal(c.progress[0].eventId, 'm0');
   assert.equal(c.progress.at(-1)!.eventId, 'm19');
+});
+
+test('A form of a message the conversation folds away keeps the context of the shown one', () => {
+  // Codex may write a message twice (message and event forms); the conversation shows one.
+  const twin = { ...turn[7], id: 'f1-event', at: turn[7].at + 1000 };
+  const events = [...turn.slice(0, 8), twin, ...turn.slice(8)];
+  const later = [...turn.slice(0, 8), ev('r3', 'user', '다음 요청', 9)];
+  const b = makeBookmark(session(events), later, 'f1-event', 'x', 0)!;
+  assert.equal(b.eventId, 'f1-event');
+  assert.equal(b.context.request?.eventId, 'r2');
+  assert.deepEqual(
+    b.context.progress.map((l) => l.eventId),
+    ['p1', 'p2'],
+  );
+  assert.equal(b.context.tools, 2);
 });
 
 test('A bookmark copies the message with where it was; lifecycle and unknown ids are none', () => {
@@ -172,10 +185,51 @@ test('Store: hidden projects and tools keep their bookmarks out of the list only
     store.preferences({ excludedProjects: ['secret'] });
     assert.equal(store.bookmarks().total, 0);
     assert.throws(() => store.bookmark(s.id, 'p2'));
+    // Hidden: not read, changed or removed through its message or id either.
+    const id = store.bookmarks({}).bookmarks[0]?.id;
+    assert.equal(id, undefined);
+    assert.throws(() => store.bookmark(s.id, 'f1'), /제외/);
+    assert.throws(() => store.unbookmarkMessage(s.id, 'f1'), /제외/);
+    store.preferences({ excludedProjects: [] });
+    assert.equal(store.bookmarks().total, 1);
+    const held = store.bookmarks().bookmarks[0];
+    store.preferences({ excludedProjects: ['secret'] });
+    assert.throws(() => store.bookmarkNote(held.id, 'x'), /제외/);
+    assert.throws(() => store.unbookmark(held.id), /제외/);
     store.preferences({ excludedProjects: [] });
     assert.equal(store.bookmarks().total, 1);
     store.preferences({ enabledProviders: ['claude'] });
     assert.equal(store.bookmarks().total, 0);
+  }));
+
+test('Store: a bookmark follows where its colleague is now, its copy only once that is gone', () =>
+  fixture((store) => {
+    const s = session(turn, 'one', 'first');
+    store.upsert([s], 'codex');
+    store.bookmark(s.id, 'f1');
+    // The colleague is now recorded under another project: that one decides.
+    store.upsert([{ ...session(turn, 'one', 'moved'), revision: 'moved' }], 'codex');
+    store.preferences({ excludedProjects: ['moved'] });
+    assert.equal(store.bookmarks().total, 0);
+    store.preferences({ excludedProjects: ['first'] });
+    assert.equal(store.bookmarks().total, 1);
+    // Gone: the project it was bookmarked in.
+    store.upsert([], 'codex');
+    assert.equal(store.bookmarks().total, 0);
+  }));
+
+test('Store: the stamp moves on every add, note and removal', () =>
+  fixture((store) => {
+    const s = session(turn);
+    store.upsert([s], 'codex');
+    const stamps = [store.bookmarkStamp()];
+    const b = store.bookmark(s.id, 'f1', undefined, 1000);
+    stamps.push(store.bookmarkStamp());
+    store.bookmarkNote(b.id, '메모', 2000);
+    stamps.push(store.bookmarkStamp());
+    store.unbookmark(b.id);
+    stamps.push(store.bookmarkStamp());
+    assert.equal(new Set(stamps).size, 4);
   }));
 
 test('Store: newest saved first, pages by cursor, words and sessions narrow', () =>
@@ -258,9 +312,21 @@ test('The office carries bookmark marks; bookmarking and removing publish them',
     };
     assert.deepEqual(snapshot.bookmarked, { [s.id]: ['f1'] });
     assert.ok(snapshot.version > before.version);
-    assert.deepEqual((patches.at(-1) as { fields: unknown }).fields, {
-      bookmarked: { [s.id]: ['f1'] },
-    });
+    const fields = (patches.at(-1) as { fields: Record<string, unknown> }).fields;
+    assert.deepEqual(fields.bookmarked, { [s.id]: ['f1'] });
+    assert.notEqual(fields.bookmarkStamp, before.bookmarkStamp);
+    // A note goes out too (other windows' lists read again), without changing the marks.
+    await service.call('bookmarkNote', [bookmark.id, '중요']);
+    const noted = (patches.at(-1) as { fields: Record<string, unknown> }).fields;
+    assert.deepEqual(Object.keys(noted), ['bookmarkStamp']);
+    // Off by its message, as the conversation tab does.
+    const off = (await service.call('unbookmarkMessage', [s.id, 'f1'])) as {
+      bookmarked: Record<string, string[]>;
+    };
+    assert.deepEqual(off.bookmarked, {});
+    await service.call('bookmark', [s.id, 'f1']);
+    const again = (await service.call('bookmarks', [{}])) as { bookmarks: { id: string }[] };
+    bookmark.id = again.bookmarks[0].id;
     const page = (await service.call('bookmarks', [{ text: '캐시' }])) as { total: number };
     assert.equal(page.total, 1);
     const after = (await service.call('unbookmark', [bookmark.id])) as {

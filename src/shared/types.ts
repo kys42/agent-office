@@ -432,6 +432,8 @@ export interface Snapshot {
   noticeStats?: { unread: number; total: number };
   /** Bookmarked messages of the listed colleagues: event ids by session id. */
   bookmarked?: Record<string, string[]>;
+  /** Changes whenever any bookmark is added, removed or edited: lists read again. */
+  bookmarkStamp?: string;
   /**
    * The collector's resolved language: its sessions, notices and messages are written in it.
    * With the `auto` preference the UI follows it, so both sides always agree. Demo snapshots
@@ -526,6 +528,8 @@ export interface OfficeAPI {
     note?: string,
   ) => Promise<{ bookmark: Bookmark; snapshot: Snapshot }>;
   unbookmark: (id: string) => Promise<Snapshot>;
+  /** Take the bookmark of one message off (no-op when it has none). */
+  unbookmarkMessage: (sessionId: string, eventId: string) => Promise<Snapshot>;
   bookmarkNote: (id: string, note: string) => Promise<Bookmark>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;

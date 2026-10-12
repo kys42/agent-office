@@ -76,7 +76,7 @@ export const DEFAULT_PREFS: Preferences = {
   bubbleHours: 3,
   readyMinutes: 30,
 };
-const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(session_id,event_id)); CREATE INDEX IF NOT EXISTS bookmarks_created ON bookmarks(created_at); PRAGMA user_version=4;`;
+const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(session_id,event_id)); CREATE INDEX IF NOT EXISTS bookmarks_created ON bookmarks(created_at); PRAGMA user_version=4;`;
 /** A notice read more than 30 days ago is no longer listed. */
 const fresh = (n: OfficeNotice) => !n.seenAt || Date.now() - n.seenAt < 30 * 86400_000;
 const isBusy = (e: unknown) =>
@@ -1191,8 +1191,8 @@ export class OfficeStore {
    * when given, replaces its note.
    */
   bookmark(sessionId: string, eventId: string, note?: string, now = Date.now()): Bookmark {
-    const held = this.bookmarkOf(sessionId, eventId);
-    if (held) return note === undefined ? held : this.bookmarkNote(held.id, note);
+    const held = this.bookmarkRow('session_id=? AND event_id=?', sessionId, eventId);
+    if (held) return note === undefined ? held : this.bookmarkNote(held.id, note, now);
     // Every stored event and the notices of all of them, in the reader's language.
     const s = this.detail(sessionId, { limit: Number.MAX_SAFE_INTEGER });
     const b = makeBookmark(
@@ -1205,42 +1205,91 @@ export class OfficeStore {
     );
     if (!b) throw new Error(m().server.store.noMessage);
     this.db
-      .prepare('INSERT INTO bookmarks VALUES (?,?,?,?,?)')
-      .run(b.id, b.sessionId, b.eventId, b.createdAt, JSON.stringify(b));
+      .prepare('INSERT INTO bookmarks VALUES (?,?,?,?,?,?)')
+      .run(b.id, b.sessionId, b.eventId, b.createdAt, now, JSON.stringify(b));
+    this.touchBookmarks();
     return b;
   }
-  private bookmarkOf(sessionId: string, eventId: string): Bookmark | null {
-    const row = this.db
-      .prepare('SELECT data FROM bookmarks WHERE session_id=? AND event_id=?')
-      .get(sessionId, eventId) as { data: string } | undefined;
-    return row ? (JSON.parse(row.data) as Bookmark) : null;
+  /**
+   * The bookmark of one row, when the settings show it: by its colleague as stored now, or as
+   * it was when bookmarked once the record is gone. Hidden ones are not there to read or change.
+   */
+  private bookmarkRow(where: string, ...args: string[]): Bookmark | null {
+    const row = this.db.prepare(`SELECT data FROM bookmarks WHERE ${where}`).get(...args) as
+      { data: string } | undefined;
+    if (!row) return null;
+    const b = JSON.parse(row.data) as Bookmark;
+    if (!this.bookmarkShown(b, this.preferences(), this.placesOf([b.sessionId])))
+      throw new Error(m().server.store.excluded);
+    return b;
+  }
+  /** Tool and project of these stored sessions (the hot path's staged ones as staged). */
+  private placesOf(ids?: string[]): Map<string, Pick<Session, 'provider' | 'project'>> {
+    const rows = (
+      ids
+        ? this.db
+            .prepare(
+              'SELECT id, provider, project FROM sessions WHERE id IN (SELECT value FROM json_each(?))',
+            )
+            .all(JSON.stringify(ids))
+        : this.db.prepare('SELECT id, provider, project FROM sessions').all()
+    ) as { id: string; provider: Provider; project: string }[];
+    const places = new Map(rows.map((r) => [r.id, { provider: r.provider, project: r.project }]));
+    for (const [id, { row }] of this.staged)
+      if (!ids || ids.includes(id))
+        places.set(id, { provider: row.provider, project: row.project });
+    return places;
+  }
+  private bookmarkShown(
+    b: Bookmark,
+    prefs: Preferences,
+    places: Map<string, Pick<Session, 'provider' | 'project'>>,
+  ) {
+    return this.visible(places.get(b.sessionId) ?? b.source, prefs);
   }
   unbookmark(id: string) {
+    if (!this.bookmarkRow('id=?', id)) return;
     this.db.prepare('DELETE FROM bookmarks WHERE id=?').run(id);
+    this.touchBookmarks();
   }
-  bookmarkNote(id: string, note: string): Bookmark {
-    const row = this.db.prepare('SELECT data FROM bookmarks WHERE id=?').get(id) as
-      { data: string } | undefined;
-    if (!row) throw new Error(m().server.store.noBookmark);
-    const b: Bookmark = {
-      ...(JSON.parse(row.data) as Bookmark),
-      note: note.slice(0, BOOKMARK_NOTE),
-    };
-    this.db.prepare('UPDATE bookmarks SET data=? WHERE id=?').run(JSON.stringify(b), id);
+  /** Takes the bookmark of one message off, if it has one. */
+  unbookmarkMessage(sessionId: string, eventId: string) {
+    const b = this.bookmarkRow('session_id=? AND event_id=?', sessionId, eventId);
+    if (!b) return;
+    this.db.prepare('DELETE FROM bookmarks WHERE id=?').run(b.id);
+    this.touchBookmarks();
+  }
+  bookmarkNote(id: string, note: string, now = Date.now()): Bookmark {
+    const held = this.bookmarkRow('id=?', id);
+    if (!held) throw new Error(m().server.store.noBookmark);
+    const b: Bookmark = { ...held, note: note.slice(0, BOOKMARK_NOTE) };
+    this.db
+      .prepare('UPDATE bookmarks SET data=?, updated_at=? WHERE id=?')
+      .run(JSON.stringify(b), now, id);
+    this.touchBookmarks();
     return b;
   }
-  /** Every bookmark, newest first; none on a database from before bookmarks (read-only). */
+  /**
+   * Every bookmark, newest first; none on a database from before bookmarks (read-only). A row
+   * that cannot be read is left out rather than failing the list.
+   */
   private allBookmarks(): Bookmark[] {
+    let rows: { data: string }[];
     try {
-      return (
-        this.db.prepare('SELECT data FROM bookmarks ORDER BY created_at DESC, id DESC').all() as {
-          data: string;
-        }[]
-      ).map((r) => JSON.parse(r.data) as Bookmark);
+      rows = this.db
+        .prepare('SELECT data FROM bookmarks ORDER BY created_at DESC, id DESC')
+        .all() as typeof rows;
     } catch (e) {
       if (/no such table/.test(String(e))) return [];
       throw e;
     }
+    return rows.flatMap((r) => {
+      try {
+        return [JSON.parse(r.data) as Bookmark];
+      } catch {
+        return [];
+      }
+    });
   }
   /**
    * A page of the bookmarks whose tool and project the settings show (the others are kept, only
@@ -1248,12 +1297,14 @@ export class OfficeStore {
    */
   bookmarks(query: BookmarkQuery = {}): BookmarkPage {
     const prefs = this.preferences();
+    const places = this.placesOf();
     const ids = query.sessionIds && new Set(query.sessionIds);
-    const all = this.allBookmarks()
-      .filter((b) => this.visible(b.source, prefs))
-      .filter((b) => !ids || ids.has(b.sessionId))
-      .filter((b) => bookmarkMatches(b, query.text ?? ''))
-      .sort(bookmarkOrder);
+    const all = this.allBookmarks().filter(
+      (b) =>
+        this.bookmarkShown(b, prefs, places) &&
+        (!ids || ids.has(b.sessionId)) &&
+        bookmarkMatches(b, query.text ?? ''),
+    );
     const before = query.before;
     const start = before
       ? all.findIndex(
@@ -1285,6 +1336,21 @@ export class OfficeStore {
     }
     for (const r of rows) (marks[r.session_id] ??= []).push(r.event_id);
     return marks;
+  }
+  /** Counts every bookmark write (any process on this data): what `bookmarkStamp` reports. */
+  private touchBookmarks() {
+    this.db
+      .prepare(
+        "INSERT INTO settings VALUES ('bookmarks_revision','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1",
+      )
+      .run();
+  }
+  /** Changes whenever a bookmark is added, removed or its note edited, so lists read again. */
+  bookmarkStamp(): string {
+    const row = this.db
+      .prepare("SELECT value FROM settings WHERE key='bookmarks_revision'")
+      .get() as { value: string } | undefined;
+    return row?.value ?? '0';
   }
   /**
    * Handoff Markdown in `locale`, from one read of the session. Errors use the active language,

@@ -29,6 +29,7 @@ const api: OfficeAPI = {
   bookmarks: (query) => call('bookmarks', query),
   bookmark: (sessionId, eventId, note) => call('bookmark', sessionId, eventId, note),
   unbookmark: (id) => call('unbookmark', id),
+  unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),

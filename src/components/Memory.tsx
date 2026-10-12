@@ -35,14 +35,12 @@ export function Memory({
   demo,
   privacy,
   initialQuery = '',
-  initialMode = 'search',
   bookmarkStamp,
   onOpenBookmark,
   onUnbookmark,
   notify,
 }: {
   initialQuery?: string;
-  initialMode?: 'search' | 'bookmarks';
   sessions: Session[];
   onSelect: (id: string) => void;
   demo: boolean;
@@ -54,7 +52,7 @@ export function Memory({
   notify: (s: string) => void;
 }) {
   const { t } = useI18n();
-  const [mode, setMode] = useState(initialMode);
+  const [mode, setMode] = useState<'search' | 'bookmarks'>('search');
   const [query, setQuery] = useState(initialQuery),
     [filter, setFilter] = useState<Provider | 'all'>('all'),
     [notesOnly, setNotesOnly] = useState(false),
