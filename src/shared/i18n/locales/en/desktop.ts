@@ -50,6 +50,12 @@ export const desktop = {
     notReady:
       "It isn't taking input right now (a permission prompt, plan approval, menu or shell mode may be open). Check the terminal.",
     draft: 'There is already text in the prompt. Check the terminal before sending.',
+    /** Copying the composer's text to the clipboard failed, so it was left alone. */
+    backupFailed:
+      "Couldn't copy the text in the prompt to the clipboard, so nothing was cleared or sent.",
+    /** `agent` is the agent's name, e.g. Claude. The earlier text is already on the clipboard. */
+    clearFailed: (agent: string) =>
+      `Couldn't empty the ${agent} prompt, so nothing was sent. The earlier text is on your clipboard. Check the terminal.`,
     shellPrefix: "Text starting with ‘!’ would run as a shell command, so it isn't sent.",
     unreadable: (host: string) => `Couldn't read the ${host} screen, so nothing was sent.`,
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */

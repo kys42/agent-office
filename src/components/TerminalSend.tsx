@@ -1,8 +1,9 @@
-import { useState } from 'react';
 import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
-import type { TerminalTarget } from '../shared/types';
+import type { SendResult, TerminalTarget } from '../shared/types';
 import { m } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
+import { useComposerSend } from '../lib/useComposerSend';
+import { DraftConfirm } from './DraftConfirm';
 
 export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
@@ -34,12 +35,11 @@ export function TerminalSend({
   target: TerminalTarget;
   enabled: boolean;
   privacy: boolean;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
 }) {
   const { t } = useI18n();
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const reply = useComposerSend(onSend, () => reply.setText(''));
+  const { text, sending, error, draft } = reply;
   const host = HOSTS[target.kind];
   if (!enabled)
     return (
@@ -49,25 +49,15 @@ export function TerminalSend({
       </p>
     );
   const waiting = !target.canSend;
-  const submit = async () => {
-    if (!text.trim() || waiting || sending) return;
-    setSending(true);
-    setError('');
-    try {
-      await onSend(text);
-      setText('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+  const submit = () => {
+    if (!waiting) void reply.submit();
   };
   return (
     <form
       className="terminal-send"
       onSubmit={(e) => {
         e.preventDefault();
-        void submit();
+        submit();
       }}
     >
       <textarea
@@ -80,11 +70,11 @@ export function TerminalSend({
             ? targetPlaceholder(target)
             : `${targetPlaceholder(target)} · ${t.terminal.sendShortcut}`
         }
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => reply.setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            void submit();
+            submit();
           }
         }}
       />
@@ -103,6 +93,15 @@ export function TerminalSend({
           {t.terminal.send}
         </button>
       </div>
+      {draft && (
+        <DraftConfirm
+          draft={draft}
+          sending={sending}
+          privacy={privacy}
+          onConfirm={() => void reply.confirm()}
+          onCancel={reply.cancel}
+        />
+      )}
       {error && (
         <small className="terminal-send-error" role="alert">
           {error}

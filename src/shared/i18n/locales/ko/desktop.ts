@@ -49,6 +49,9 @@ export const desktop: Messages['desktop'] = {
     notReady:
       '지금은 입력을 받을 수 없어요(권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 터미널을 확인해 주세요.',
     draft: '입력창에 이미 글이 있어요. 터미널을 확인한 뒤 보내 주세요.',
+    backupFailed: '입력창의 글을 클립보드에 복사하지 못해 지우지도 보내지도 않았어요.',
+    clearFailed: (agent) =>
+      `${agent} 입력창을 비우지 못해 보내지 않았어요. 원래 글은 클립보드에 있어요. 터미널을 확인해 주세요.`,
     shellPrefix: '‘!’로 시작하는 글은 셸 명령으로 실행돼서 보내지 않아요.',
     unreadable: (host) => `${host} 화면을 읽지 못해서 보내지 않았어요.`,
     orcaRefused: (reason) => `Orca가 입력을 받지 않았어요${reason}.`,

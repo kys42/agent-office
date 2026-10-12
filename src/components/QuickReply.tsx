@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { CornerDownLeft, Loader, X } from 'lucide-react';
-import type { TerminalTarget } from '../shared/types';
+import type { SendResult, TerminalTarget } from '../shared/types';
 import { targetLine, targetPlaceholder } from './TerminalSend';
+import { DraftConfirm } from './DraftConfirm';
 import { useI18n } from '../lib/i18n';
+import { useComposerSend } from '../lib/useComposerSend';
 
 /**
  * A short follow-up straight from a desk bubble, without opening the colleague card.
- * Enter sends, Shift+Enter breaks the line, Esc closes. The desktop side re-checks the target.
+ * Enter sends, Shift+Enter breaks the line, Esc closes. The desktop side re-checks the target;
+ * text already in the agent's composer is shown for a decision before anything is typed.
  */
 export function QuickReply({
   target,
@@ -16,27 +19,17 @@ export function QuickReply({
 }: {
   target: TerminalTarget;
   name: string;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
   onClose: () => void;
 }) {
   const { t } = useI18n();
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const reply = useComposerSend(onSend, onClose);
+  const { text, sending, error, draft } = reply;
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => field.current?.focus({ preventScroll: true }), []);
   const blocked = !target.canSend;
-  const submit = async () => {
-    if (!text.trim() || sending || blocked) return;
-    setSending(true);
-    setError('');
-    try {
-      await onSend(text);
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-      setSending(false);
-    }
+  const submit = () => {
+    if (!blocked) void reply.submit();
   };
   return (
     <form
@@ -45,14 +38,18 @@ export function QuickReply({
       aria-label={t.terminal.replyTo(name)}
       onSubmit={(e) => {
         e.preventDefault();
-        void submit();
+        submit();
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === 'Escape' && !e.nativeEvent.isComposing) {
           e.stopPropagation();
-          onClose();
+          // Esc first drops an open question about the composer's text, keeping the reply.
+          if (draft) {
+            reply.cancel();
+            field.current?.focus({ preventScroll: true });
+          } else onClose();
         }
       }}
     >
@@ -63,11 +60,11 @@ export function QuickReply({
         value={text}
         aria-label={t.terminal.replyLabel}
         placeholder={targetPlaceholder(target)}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => reply.setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            void submit();
+            submit();
           }
         }}
       />
@@ -92,6 +89,17 @@ export function QuickReply({
           {sending ? <Loader size={12} className="now-spin" /> : <CornerDownLeft size={12} />}
         </button>
       </div>
+      {draft && (
+        <DraftConfirm
+          draft={draft}
+          sending={sending}
+          onConfirm={() => void reply.confirm()}
+          onCancel={() => {
+            reply.cancel();
+            field.current?.focus({ preventScroll: true });
+          }}
+        />
+      )}
       {error && (
         <small className="quick-reply-error" role="alert">
           {error}

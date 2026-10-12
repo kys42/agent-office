@@ -36,6 +36,7 @@ import { Sprite } from './Sprite';
 import { Modal } from './Modal';
 import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
+import { sendFollowUp } from '../lib/useTerminalSend';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Conversation } from './Conversation';
 import {
@@ -482,10 +483,11 @@ export function Inspector({
               target={live}
               enabled={terminalSend}
               privacy={privacy}
-              onSend={async (text) => {
+              onSend={async (text, replaceDraft) => {
                 const id = s.id;
-                notify(await api.send!(id, text));
-                markSent(id);
+                const result = await sendFollowUp(id, text, replaceDraft, notify);
+                if (result.status === 'sent') markSent(id);
+                return result;
               }}
             />
           )}

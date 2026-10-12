@@ -392,6 +392,39 @@ export interface TerminalTarget {
   /** Goes through the session's own queue (Codex), never typed into a terminal. */
   queues?: boolean;
 }
+/**
+ * What a follow-up send did. `needs-confirm`: the agent's composer already holds text (a draft,
+ * or text the screen cannot tell from a suggestion), so nothing was typed; sending again with
+ * `replaceDraft` set to exactly that text clears it (after copying it to the clipboard) first.
+ */
+export type SendResult =
+  | {
+      status: 'sent';
+      message: string;
+      /** The composer's earlier text was cleared and is on the clipboard. */
+      cleared?: boolean;
+    }
+  | {
+      status: 'needs-confirm';
+      /** What the composer holds, as shown on screen. */
+      draft: string;
+      /** The agent whose composer it is, e.g. "Claude". */
+      agent: string;
+      /** The screen cannot tell this text from the agent's own suggestion. */
+      maybeSuggestion?: boolean;
+      /** A confirmed text was no longer what the composer held: this is the new one. */
+      changed?: boolean;
+    };
+export interface SendOptions {
+  /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */
+  replaceDraft?: string;
+}
+/** Sends a follow-up to a session; `replaceDraft` is the composer text the person agreed to clear. */
+export type ReplySender = (
+  sessionId: string,
+  text: string,
+  replaceDraft?: string,
+) => Promise<SendResult>;
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
   text: string;
@@ -456,8 +489,11 @@ export interface OfficeAPI {
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
   /** Desktop only: focus the live terminal, or fall back to resume. */
   jump?: (id: string) => Promise<JumpResult>;
-  /** Desktop only, on by default: type into an idle Claude terminal, or queue into Codex CLI. */
-  send?: (id: string, text: string) => Promise<string>;
+  /**
+   * Desktop only, on by default: type into an idle Claude terminal, or queue into Codex CLI.
+   * Text already in the composer is never added to: it comes back as `needs-confirm`.
+   */
+  send?: (id: string, text: string, options?: SendOptions) => Promise<SendResult>;
   /**
    * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
    * profile, outside the preferences shared with the web preview; turning it back on asks for

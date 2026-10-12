@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
-import { MOODS, type Session, type OfficeNotice, type TerminalTarget } from '../shared/types';
+import {
+  MOODS,
+  type Session,
+  type OfficeNotice,
+  type ReplySender,
+  type TerminalTarget,
+} from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
@@ -71,7 +77,7 @@ export function Office({
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
   /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
-  onReply?: (sessionId: string, text: string) => Promise<void>;
+  onReply?: ReplySender;
   /** The usage limit this colleague's tool has used up, if any (desk lights go out). */
   quotaOf?: (s: Session) => QuotaExhaustion | undefined;
 }) {
@@ -507,9 +513,10 @@ export function Office({
                           }
                           name={sessionName(byId.get(replying.id) ?? s)}
                           onClose={() => setReplying(null)}
-                          onSend={async (text) => {
-                            await onReply!(replying.id, text);
-                            markSent(replying.id);
+                          onSend={async (text, replaceDraft) => {
+                            const result = await onReply!(replying.id, text, replaceDraft);
+                            if (result.status === 'sent') markSent(replying.id);
+                            return result;
                           }}
                         />
                       )}

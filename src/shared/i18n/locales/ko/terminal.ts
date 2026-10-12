@@ -25,4 +25,11 @@ export const terminal: Messages['terminal'] = {
   replyLabel: '답장 내용',
   replyKeys: '↵ 보내기 · ⇧↵ 줄바꿈',
   closeReply: '답장 닫기',
+  draftFound: (agent) => `${agent} 입력창에 이 글이 있어요`,
+  draftMaybeSuggestion: '입력창에 뜬 추천 글일 수도 있어요. 화면 글자만으로는 구분할 수 없어요.',
+  draftChanged: '그사이 입력창 글이 바뀌었어요. 다시 확인해 주세요.',
+  draftHidden: '화면 내용 숨기기 중이라 가렸어요',
+  clearAndSend: '지우고 보내기',
+  cancelClear: '취소',
+  clearedToClipboard: '지운 글은 클립보드에 있어요',
 };

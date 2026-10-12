@@ -22,6 +22,8 @@ import {
   type TerminalDeps,
 } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
+import type { SendResult } from '../src/shared/types.js';
+import { codexQueueComposer, composerFor } from '../desktop/composer/index.js';
 import { setLocale } from '../src/shared/i18n/index.js';
 // These tests assert the original Korean copy: pin the language so results never depend on the
 // machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
@@ -165,7 +167,9 @@ function fakeDeps(
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
       if (file === '/bin/tmux' && args.includes('load-buffer')) loaded = runOptions?.input ?? '';
       if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
-      if (file === '/bin/tmux' && args.includes('send-keys')) typed = '';
+      // Enter submits; Ctrl+K/Ctrl+U pairs (the composer adapter's clearing) empty the prompt.
+      if (file === '/bin/tmux' && args.includes('send-keys'))
+        typed = args.includes('Enter') || args.includes('C-u') ? '' : typed;
       if (file === '/bin/tmux' && args.includes('capture-pane')) return screen();
       if (file === '/bin/orca' && args[1] === 'read')
         return JSON.stringify({
@@ -184,7 +188,8 @@ function fakeDeps(
         );
       if (file === '/bin/orca' && args[1] === 'send') {
         const text = args.find((arg) => arg.startsWith('--text='));
-        if (text) typed += text.slice('--text='.length).replace(/\x1b\[20[01]~/g, '');
+        if (text?.includes('\x15')) typed = '';
+        else if (text) typed += text.slice('--text='.length).replace(/\x1b\[20[01]~/g, '');
         if (args.includes('--enter')) {
           if (options.enterRefused)
             return JSON.stringify({ ok: true, result: { send: { accepted: false } } });
@@ -408,7 +413,14 @@ const tmuxLive = (status = 'idle'): LiveTerminal => ({
 });
 
 const sent = (calls: { args: string[] }[]) =>
-  calls.some((c) => c.args.includes('send-keys') || c.args.includes('--enter'));
+  calls.some(
+    (c) => (c.args.includes('send-keys') && c.args.includes('Enter')) || c.args.includes('--enter'),
+  );
+/** The message of a finished send, or what came back instead. */
+const said = async (result: Promise<SendResult>) => {
+  const r = await result;
+  return r.status === 'sent' ? r.message : `needs-confirm: ${r.draft}`;
+};
 const typedAny = (calls: { args: string[] }[]) =>
   calls.some((c) => c.args.includes('paste-buffer') || c.args.some((a) => a.startsWith('--text=')));
 
@@ -528,7 +540,7 @@ test('Orca types the text, looks again, then presses Enter on its own', async ()
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     const { deps, calls } = fakeDeps(dir);
     assert.equal(
-      await sendToTerminal(orcaLive(), '--dry-run\nfirst', deps),
+      await said(sendToTerminal(orcaLive(), '--dry-run\nfirst', deps)),
       'Orca 터미널에 보냈어요',
     );
     const orca = calls.filter((c) => c.file === '/bin/orca').map((c) => c.args);
@@ -582,7 +594,7 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
     await sendToTerminal(tmuxLive(), 'const a = 1;\nb', deps);
     const tmux = calls.filter((c) => c.file === '/bin/tmux');
     const mode = ['-S', SOCKET, 'display-message', '-p', '-t', '%3', '#{pane_in_mode}'];
-    const capture = ['-S', SOCKET, 'capture-pane', '-p', '-t', '%3'];
+    const capture = ['-S', SOCKET, 'capture-pane', '-p', '-e', '-t', '%3'];
     assert.equal(tmux.length, 9);
     assert.deepEqual(tmux[0].args, mode);
     assert.deepEqual(tmux[1].args, capture);
@@ -653,8 +665,21 @@ test('The prompt gets a moment to draw the text, then a send that never shows st
 test("Text already in the prompt, a draft or a failed send's, is never added to", async () => {
   for (const live of [orcaLive('busy'), tmuxLive('busy')]) {
     const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
-    await assert.rejects(sendToTerminal(live, 'hi', deps), /이미 글이 있어요/);
+    // Nothing is typed: the text comes back for the person to decide about.
+    const result = await sendToTerminal(live, 'hi', deps, { backup: () => {} });
+    assert.deepEqual(result, {
+      status: 'needs-confirm',
+      draft: 'half-written idea',
+      agent: 'Claude',
+      ...(live.host.kind === 'orca' && { maybeSuggestion: true }),
+    });
+    // Without a way to back the text up first (no clipboard), it is refused as before.
+    await assert.rejects(
+      sendToTerminal(live, 'hi', deps, { replaceDraft: 'half-written idea' }),
+      /이미 글이 있어요/,
+    );
     assert.ok(!typedAny(calls) && !sent(calls), live.host.kind);
+    assert.ok(!calls.some((c) => c.args.includes('C-u') || c.args.some((a) => a.includes('\x15'))));
   }
   // Hints an empty prompt shows are not drafts.
   await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
@@ -672,13 +697,171 @@ test("Text already in the prompt, a draft or a failed send's, is never added to"
     assert.equal(readPrompt(claudeScreen(hint)), hint);
 });
 
+/** The prompt with Claude's suggestion drawn faint, as `capture-pane -e` shows it (2.1.296). */
+const suggested = (text: string) =>
+  claudeScreen('').replace(/❯$/m, `\x1b[39m❯ \x1b[2m${text}\x1b[0m`);
+
+test('A faint suggestion in the tmux prompt is typed over without asking', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed) => (typed ? claudeScreen(typed) : suggested('run the tests')),
+    });
+    const result = await sendToTerminal(tmuxLive(), 'hi', deps, { backup: () => {} });
+    assert.deepEqual(result, { status: 'sent', message: 'tmux work:1.0에 보냈어요' });
+    assert.ok(!calls.some((c) => c.args.includes('C-u')), 'nothing cleared');
+    assert.ok(sent(calls));
+  });
+  // On Orca the same text reads like a draft: the person is asked.
+  const { deps, calls } = fakeDeps('/x', {
+    screen: (typed) => claudeScreen(typed || 'run the tests'),
+  });
+  assert.deepEqual(await sendToTerminal(orcaLive(), 'hi', deps, { backup: () => {} }), {
+    status: 'needs-confirm',
+    draft: 'run the tests',
+    agent: 'Claude',
+    maybeSuggestion: true,
+  });
+  assert.ok(!typedAny(calls));
+});
+
+/** Every step of a send, in order: what reached the clipboard and the terminal. */
+function steps(deps: TerminalDeps) {
+  const log: string[] = [];
+  const run = deps.run;
+  deps.run = async (file, args, options) => {
+    if (args.includes('capture-pane') || args[1] === 'read') log.push('read');
+    else if (args.includes('C-u') || args.some((a) => a.includes('\x15'))) log.push('clear');
+    else if (args.includes('paste-buffer') || args.some((a) => a.startsWith('--text=')))
+      log.push('type');
+    else if (args.includes('Enter') || args.includes('--enter')) log.push('enter');
+    return run(file, args, options);
+  };
+  const backup = (text: string) => void log.push(`clipboard:${text}`);
+  return { log, backup };
+}
+
+test('Clear & send: clipboard, clear, verify empty, type, verify, then Enter', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    for (const live of [tmuxLive(), orcaLive()]) {
+      let draft = 'half-written idea';
+      const { deps, calls } = fakeDeps(dir, {
+        screen: (typed) => claudeScreen(typed || draft),
+      });
+      // The fake prompt shows the draft until the clearing keys arrive.
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        if (args.includes('C-u') || args.some((a) => a.includes('\x15'))) draft = '';
+        return run(file, args, options);
+      };
+      const { log, backup } = steps(deps);
+      const result = await sendToTerminal(live, 'hi', deps, {
+        replaceDraft: 'half-written idea',
+        backup,
+      });
+      assert.equal(result.status, 'sent', live.host.kind);
+      assert.equal(result.status === 'sent' && result.cleared, true);
+      assert.deepEqual(
+        log.filter((step, i) => step !== log[i - 1]),
+        ['read', 'clipboard:half-written idea', 'clear', 'read', 'type', 'read', 'enter'],
+        live.host.kind,
+      );
+      if (live.host.kind === 'tmux')
+        assert.ok(
+          calls.some(
+            (c) => c.args.includes('send-keys') && c.args.join(' ').endsWith('C-k C-u C-k C-u'),
+          ),
+        );
+      else assert.ok(calls.some((c) => c.args.includes('--text=\x0b\x15\x0b\x15')));
+    }
+  });
+});
+
+test('A draft that changed since it was shown is shown again, untouched', async () => {
+  const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('a newer idea') });
+  const { log, backup } = steps(deps);
+  const result = await sendToTerminal(tmuxLive(), 'hi', deps, {
+    replaceDraft: 'half-written idea',
+    backup,
+  });
+  assert.deepEqual(result, {
+    status: 'needs-confirm',
+    draft: 'a newer idea',
+    agent: 'Claude',
+    changed: true,
+  });
+  assert.deepEqual(log, ['read']);
+  assert.ok(!typedAny(calls) && !sent(calls));
+});
+
+test('A prompt that cannot be emptied gets nothing typed and nothing sent', async () => {
+  // The keys reach the terminal but the prompt keeps the text (on tmux, drawn plain).
+  const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
+  const { log, backup } = steps(deps);
+  await assert.rejects(
+    sendToTerminal(tmuxLive(), 'hi', deps, { replaceDraft: 'half-written idea', backup }),
+    /Claude 입력창을 비우지 못해 보내지 않았어요. 원래 글은 클립보드에 있어요/,
+  );
+  assert.equal(log[1], 'clipboard:half-written idea');
+  assert.ok(log.includes('clear'));
+  assert.ok(!typedAny(calls) && !sent(calls));
+  // On Orca text the keys never touch passes as Claude's suggestion, but the typed text then
+  // mixes with it and the prompt never holds exactly what was typed: no Enter.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const orca = fakeDeps(dir, {
+      screen: (typed) => claudeScreen(`half-written idea${typed}`),
+    });
+    const run = orca.deps.run;
+    orca.deps.run = async (file, args, options) =>
+      args.some((a) => a.includes('\x15'))
+        ? '{"result":{"send":{"accepted":true}}}'
+        : run(file, args, options);
+    await assert.rejects(
+      sendToTerminal(orcaLive(), 'hi', orca.deps, {
+        replaceDraft: 'half-written idea',
+        backup: () => {},
+      }),
+      /제출하지 않았어요/,
+    );
+    assert.ok(!sent(orca.calls));
+  });
+  // A clipboard that fails leaves the prompt alone.
+  const failing = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
+  await assert.rejects(
+    sendToTerminal(tmuxLive(), 'hi', failing.deps, {
+      replaceDraft: 'half-written idea',
+      backup: () => {
+        throw new Error('no clipboard');
+      },
+    }),
+    /클립보드에 복사하지 못해/,
+  );
+  assert.ok(!failing.calls.some((c) => c.args.includes('C-u')) && !typedAny(failing.calls));
+});
+
+test('The send flow follows what the agent adapter supports', async () => {
+  // An agent whose composer is not checked (a queue) is never read before typing.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps } = fakeDeps(dir);
+    const { log } = steps(deps);
+    await sendToTerminal(tmuxLive(), 'hi', deps, { composer: codexQueueComposer });
+    assert.deepEqual(log.slice(0, 2), ['type', 'read']);
+  });
+  // An agent with no known composer gets nothing.
+  const { deps, calls } = fakeDeps('/x');
+  await assert.rejects(
+    sendToTerminal(tmuxLive(), 'hi', deps, { composer: composerFor('openclaw') }),
+    TerminalInputError,
+  );
+  assert.ok(!typedAny(calls) && !sent(calls));
+});
+
 test('While working, the default footer still lets a follow-up through', async () => {
   await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
     const { deps, calls } = fakeDeps(dir, {
       screen: (typed) =>
         `${claudeScreen(typed)}${typed ? '' : '\n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt'}`,
     });
-    assert.match(await sendToTerminal(tmuxLive('busy'), 'stop, do B', deps), /대기열/);
+    assert.match(await said(sendToTerminal(tmuxLive('busy'), 'stop, do B', deps)), /대기열/);
     assert.ok(sent(calls));
   });
 });
@@ -725,7 +908,7 @@ test('A permission prompt opening right after Enter is reported, not hidden', as
         await writeFile(path.join(dir, '4242.json'), record(4242, { status: 'waiting' }));
       return out;
     };
-    assert.match(await sendToTerminal(tmuxLive('busy'), 'hi', deps), /바로 승인 창이 떴어요/);
+    assert.match(await said(sendToTerminal(tmuxLive('busy'), 'hi', deps)), /바로 승인 창이 떴어요/);
   });
 });
 
@@ -761,9 +944,9 @@ test('A turn starting or ending around the paste still submits', async () => {
         await writeFile(path.join(dir, '4242.json'), record(4242, { status: to }));
         await wait(ms);
       };
-      const said = await sendToTerminal(tmuxLive(from), 'hi', deps);
+      const message = await said(sendToTerminal(tmuxLive(from), 'hi', deps));
       assert.ok(sent(calls), `${from} → ${to}`);
-      assert.equal(/대기열/.test(said), to === 'busy', said);
+      assert.equal(/대기열/.test(message), to === 'busy', message);
     });
   }
 });
@@ -775,7 +958,7 @@ test('A working session takes a follow-up into its queue', async () => {
   await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
     for (const live of [orcaLive('busy'), tmuxLive('busy')]) {
       const { deps, calls } = fakeDeps(dir);
-      assert.match(await sendToTerminal(live, 'stop, do B', deps), /대기열/);
+      assert.match(await said(sendToTerminal(live, 'stop, do B', deps)), /대기열/);
       assert.ok(sent(calls), live.host.kind);
     }
   });
@@ -785,11 +968,11 @@ test('Sends to one session wait their turn instead of typing into each other', a
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     for (const live of [orcaLive(), tmuxLive()]) {
       const { deps, calls } = fakeDeps(dir);
-      const said = await Promise.all([
+      const results = await Promise.all([
         sendToTerminal(live, 'first', deps),
         sendToTerminal(live, 'second', deps),
       ]);
-      assert.equal(said.length, 2, live.host.kind);
+      assert.equal(results.length, 2, live.host.kind);
       const order = calls
         .filter(
           (c) =>
