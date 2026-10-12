@@ -656,9 +656,13 @@ function setupIPC() {
       throw new Error(m().desktop.badRequest);
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
     const known = await identity(id);
-    // Each agent's composer is handled by its adapter; the queue (Codex) never touches one.
+    // Each agent's adapter says how a follow-up reaches it: its queue (Codex, no composer
+    // involved) or its terminal (the composer is read, and cleared only when confirmed).
     const composer = composerFor(known.provider);
-    const thread = await codex(known, true);
+    const delivery = composer.capabilities(null).delivery;
+    if (delivery === 'none') throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+    const thread = delivery === 'queue' ? await codex(known, true) : null;
+    if (delivery === 'queue' && !thread) throw new Error(m().desktop.terminal.noTarget);
     if (thread)
       try {
         return { status: 'sent', message: await queueToCodex(thread, text) };
@@ -675,7 +679,7 @@ function setupIPC() {
         composer,
         replaceDraft,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
-        backup: (draft) => clipboard.writeText(draft),
+        backup: async (draft) => clipboard.writeText(draft),
       });
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;

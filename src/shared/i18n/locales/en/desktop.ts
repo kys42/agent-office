@@ -55,7 +55,14 @@ export const desktop = {
       "Couldn't copy the text in the prompt to the clipboard, so nothing was cleared or sent.",
     /** `agent` is the agent's name, e.g. Claude. The earlier text is already on the clipboard. */
     clearFailed: (agent: string) =>
-      `Couldn't empty the ${agent} prompt, so nothing was sent. The earlier text is on your clipboard. Check the terminal.`,
+      `Couldn't empty the ${agent} prompt, so nothing was sent. Check the terminal.`,
+    /** The text never moved: the keys may not have arrived, or it is the agent's own suggestion. */
+    clearFailedSuggestion: (agent: string) =>
+      `Couldn't empty the ${agent} prompt, so nothing was sent. If it's ${agent}'s suggestion, it can't be cleared from here: type over it in the terminal.`,
+    /** Added to any failure once the composer's text was copied (it may be partly cleared). */
+    clipboardKept: 'The text that was in the prompt is on your clipboard.',
+    /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */
+    unsupportedAgent: (agent: string) => `Sending to ${agent} from here isn't supported.`,
     shellPrefix: "Text starting with ‘!’ would run as a shell command, so it isn't sent.",
     unreadable: (host: string) => `Couldn't read the ${host} screen, so nothing was sent.`,
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */

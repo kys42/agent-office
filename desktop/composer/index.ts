@@ -15,25 +15,42 @@ export * from './types.js';
 /**
  * Codex CLI sessions take follow-ups through `codex queue` (desktop/codex-queue.ts): the
  * message goes to the session's queue, never through the TUI's composer, so whatever is typed
- * there stays untouched. There is nothing to check or clear.
+ * there stays untouched. Its composer is not read or cleared, and nothing is typed.
  */
 export const codexQueueComposer: ComposerAdapter = {
   agent: 'Codex',
-  capabilities: () => ({ needsComposerCheck: false, canDetectSuggestion: false, canClear: false }),
+  capabilities: () => ({
+    delivery: 'queue',
+    canInspect: false,
+    canDetectSuggestion: false,
+    canClear: false,
+  }),
   inspect: async () => ({ kind: 'unsupported' }),
-  clear: async () => ({ kind: 'unsupported' }),
+  clear: async (_host, from) => ({
+    status: 'failed',
+    state: { kind: 'unsupported' },
+    saved: from.text,
+  }),
 };
 
 /**
- * Agents with no known composer (OpenClaw, anything new): nothing is typed into them. Should a
- * send path ever reach one, the common flow sees a composer it must check but cannot read or
- * clear, and refuses.
+ * Agents with no known composer (OpenClaw, anything new): nothing is sent to them. Should a
+ * send path ever reach one, the common flow refuses it as an unsupported agent.
  */
 export const unsupportedComposer = (agent: string): ComposerAdapter => ({
   agent,
-  capabilities: () => ({ needsComposerCheck: true, canDetectSuggestion: false, canClear: false }),
+  capabilities: () => ({
+    delivery: 'none',
+    canInspect: false,
+    canDetectSuggestion: false,
+    canClear: false,
+  }),
   inspect: async () => ({ kind: 'unsupported' }),
-  clear: async () => ({ kind: 'unsupported' }),
+  clear: async (_host, from) => ({
+    status: 'failed',
+    state: { kind: 'unsupported' },
+    saved: from.text,
+  }),
 });
 
 const NAMES: Record<Provider, string> = { claude: 'Claude', codex: 'Codex', openclaw: 'OpenClaw' };

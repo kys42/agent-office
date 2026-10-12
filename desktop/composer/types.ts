@@ -41,13 +41,32 @@ export type ComposerState =
   | { kind: 'unsupported' };
 
 export interface ComposerCapabilities {
-  /** Sending goes through this composer, so its contents must be checked first. */
-  needsComposerCheck: boolean;
+  /**
+   * How a follow-up reaches the agent: typed into its terminal (so the composer must be checked
+   * first), handed to its own queue (no composer involved), or not at all.
+   */
+  delivery: 'terminal' | 'queue' | 'none';
+  /** The composer can be read on this host. A terminal send needs it. */
+  canInspect: boolean;
   /** A suggestion can be told apart from a draft on this host. */
   canDetectSuggestion: boolean;
   /** The adapter can empty the composer and verify it. */
   canClear: boolean;
 }
+
+/** Saves what is about to be deleted (the clipboard): the whole text so far, each time. */
+export type ComposerBackup = (text: string) => Promise<void>;
+
+/**
+ * How a clearing ended. `cleared`: the composer is verified ready for typing (`state` is empty
+ * or a suggestion). `failed`: it could not be emptied (`state` is what it holds). `changed`:
+ * new text appeared that is no part of what was confirmed (someone typing meanwhile); it was
+ * left alone and must be shown again. `saved` is what the backup holds by then.
+ */
+export type ClearResult =
+  | { status: 'cleared'; state: ComposerState; saved: string }
+  | { status: 'failed'; state: ComposerState; saved: string }
+  | { status: 'changed'; text: string; saved: string };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */
@@ -56,11 +75,15 @@ export interface ComposerAdapter {
   capabilities(host: Pick<ComposerHost, 'styled'> | null): ComposerCapabilities;
   inspect(host: ComposerHost): Promise<ComposerState>;
   /**
-   * Empties the composer and returns what it holds afterwards: `empty` or `suggestion` means
-   * verified empty for typing; anything else means it could not be emptied. `from` is what an
-   * inspection just found (the text already backed up), so no newer text is cleared unseen.
+   * Empties the composer that `from` (a fresh inspection the person confirmed) describes. Every
+   * text is passed to `backup` before any key could delete it, including parts that only show
+   * once the visible part is gone.
    */
-  clear(host: ComposerHost, from?: ComposerState): Promise<ComposerState>;
+  clear(
+    host: ComposerHost,
+    from: Extract<ComposerState, { kind: 'draft' | 'unknown' }>,
+    backup: ComposerBackup,
+  ): Promise<ClearResult>;
 }
 
 /** Ready to type into: typing replaces a suggestion, and the box is otherwise empty. */

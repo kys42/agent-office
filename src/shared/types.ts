@@ -414,6 +414,8 @@ export type SendResult =
       maybeSuggestion?: boolean;
       /** A confirmed text was no longer what the composer held: this is the new one. */
       changed?: boolean;
+      /** Part of the composer's text was already cleared, and is on the clipboard. */
+      clipboard?: boolean;
     };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */

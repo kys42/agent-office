@@ -76,18 +76,20 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 정본 `desktop/composer/`(어댑터)와 `desktop/terminals.ts`(공통 흐름), 렌더러 `src/lib/useComposerSend.ts`·`src/components/DraftConfirm.tsx`.
 
 - **문제:** Claude Code는 답한 뒤 입력창에 다음에 칠 법한 글(prompt suggestion)을 흐리게 띄운다. 화면 글자로는 초안과 똑같아서 예전에는 "입력창에 이미 글이 있어요"로 보내기가 막혔다.
-- **구분:** tmux는 `capture-pane -p -e`로 글자의 흐림(SGR 2)을 읽어 추천 글이면 그대로 보낸다(입력하면 추천 글은 사라지고, 넣은 글과 정확히 같은지 Enter 전에 확인하는 기존 검사가 그대로 적용된다). Orca `terminal read --screen`은 글자만 주므로(색·커서 없음) 구분할 수 없다. 이때와 진짜 초안일 때는 **아무것도 입력하지 않고** 결과 `{ status: 'needs-confirm', draft, agent, maybeSuggestion? }`를 돌려준다.
-- **확인 UI(한 벌):** 업무 카드 입력창과 말풍선 빠른 답장이 같은 `DraftConfirm`을 쓴다. "Claude 입력창에 이 글이 있어요" + 그 글 미리보기 + [지우고 보내기]·[취소]. 에이전트 이름은 어댑터(`agent`)에서 온다. 쓰던 답장은 그대로 남고, 취소(빠른 답장은 Esc도)는 질문만 닫는다. 이어 붙여 보내기는 없다(지시가 섞일 위험). Orca처럼 추천 글일 수 있으면 "추천 글일 수도 있어요"를 덧붙인다. 화면 숨기기 모드에서는 미리보기 글을 가린다. 포커스는 옮기지 않아 Enter 연타가 지우기로 이어지지 않는다.
-- **지우고 보내기:** `send(id, text, { replaceDraft: <보여 준 글> })`. main이 다시 화면을 읽어 입력창 글이 보여 준 것과 같을 때만(그려진 모양 기준) 진행하고, 다르면 새 글로 다시 묻는다(`changed`). 순서는 **클립보드(main `clipboard.writeText`) → 어댑터가 비우기 → 화면으로 빈 입력창 재확인 → 입력 → 정확히 같은지 확인 → 기록·전면 소유 → 화면 한 번 더 → Enter**다. 클립보드 복사가 실패하면 지우지 않는다. 비웠는지 확인하지 못하면 보내지 않고 "원래 글은 클립보드에 있어요"로 알린다. 성공하면 알림에 "지운 글은 클립보드에 있어요"를 붙인다. 긴 붙여넣기(`[Pasted text #N +k lines]`)는 화면에 자리표시만 보여 클립보드에도 그 자리표시만 들어간다. 지운 직후라면 그 터미널에서 Ctrl+Y로 되살릴 수 있다(실측).
-- **어댑터(에이전트별 차이는 여기만):** `ComposerAdapter { agent, capabilities(host), inspect(host), clear(host, from?) }`, 상태 `empty | suggestion | draft | unknown | closed | unreadable | unsupported`. 호스트(tmux·Orca)는 `ComposerHost { styled, read, press, wait }`로 화면 읽기와 키 입력만 제공한다.
-  - **Claude Code** (`claude-code.ts`): `needsComposerCheck: true`, `canClear: true`, `canDetectSuggestion`은 tmux만. 입력창 해석(`readPrompt`·`promptHolds`)도 여기로 옮겼다.
-  - **Codex** (`index.ts`의 `codexQueueComposer`): `codex queue`로 보내 TUI 입력창을 건드리지 않으므로 `needsComposerCheck: false` — 공통 흐름이 확인 단계를 건너뛴다.
-  - **그 밖(OpenClaw 등)**: 확인은 필요한데 읽기·비우기를 지원하지 않음(`unsupported`) → 공통 흐름이 거부한다.
-- **비우기 키:** Ctrl+K·Ctrl+U 한 쌍을 (줄 수 + 1)번, 최대 6회 반복하며 매번 150ms 뒤 화면을 다시 본다. tmux는 `send-keys C-k C-u …`, Orca는 같은 바이트(`\x0b\x15`)를 `--text=`로 보낸다. Esc는 쓰지 않는다(작업 중이면 턴을 끊고, 빈 입력창에서 두 번이면 되돌리기 메뉴). 같은 글이 두 번 연속 키에 꿈쩍하지 않으면: tmux(흐림이 보임)는 비우기 실패, Orca는 지운 뒤 다시 나타난 추천 글로 본다(지우기 키가 닿지 않는 글은 입력된 글이 아님). Orca에서 그 판단이 틀려도 입력 뒤 "입력창이 넣은 글과 정확히 같아야 Enter"에서 막혀 섞인 글은 제출되지 않는다.
+- **구분:** tmux는 `capture-pane -p -e`로 글자의 흐림(SGR 2)을 읽어 추천 글이면 그대로 보낸다(입력하면 추천 글은 사라지고, 넣은 글과 같은지 Enter 전에 확인하는 기존 검사가 그대로 적용된다). 흐리지 않은 글은 `Try "…"`처럼 보여도 직접 친 초안이다. Orca는 글자만 주고, 1.4.216부터는 입력창 글을 화면(`tail`)에서 빼 `draft`로 따로 준다(추천 글도 `draft`에 들어옴, 실측). 그래서 Orca에서는 구분할 수 없다(`canDetectSuggestion: false`). 이때와 진짜 초안일 때는 **아무것도 입력하지 않고** `{ status: 'needs-confirm', draft, agent, maybeSuggestion? }`를 돌려준다.
+- **Orca `draft` 읽기(기존 문제도 함께 수정):** Orca가 입력창 글을 `draft`로 옮긴 뒤로는 화면의 입력창이 늘 `❯`만 보여, 예전 코드는 초안이 있어도 빈 입력창으로 보고 그 뒤에 이어 입력했고, 넣은 글도 화면에서 확인하지 못해 제출하지 못했다. 이제 `draft`가 있으면 그것을 입력창 글로 읽는다(`Screen.composer`). 없으면(옛 Orca) 화면 그대로 읽는다.
+- **확인 UI(한 벌):** 업무 카드 입력창과 말풍선 빠른 답장이 같은 `DraftConfirm`을 쓴다. "Claude 입력창에 이 글이 있어요" + 그 글 미리보기 + [지우고 보내기]·[취소]. 에이전트 이름은 어댑터(`agent`)에서 온다. 쓰던 답장은 그대로 남고, 취소와 Esc(두 곳 모두)는 질문만 닫는다. 이어 붙여 보내기는 없다(지시가 섞일 위험). 추천 글과 구분할 수 없는 화면(Orca)에서는 "추천 글일 수도 있어요 … 지우면 이 글이 클립보드에 들어가 원래 클립보드 내용을 대신해요"를 덧붙인다. 화면 숨기기 모드에서는 미리보기 글을 가린다. 대상이 입력을 받지 않는 상태(승인 대기 등)면 [지우고 보내기]가 잠긴다. 포커스는 옮기지 않아 Enter 연타가 지우기로 이어지지 않고, 영역은 `role="status"` 하나로 제목을 한 번만 읽는다. 데스크 펫·책상 줄·바닥 책상 창은 답장 칸 바로 아래에서 창이 끝나므로, 거기서는 질문을 답장 칸 **위**(말풍선 위)에 띄워 버튼이 창 안에 남게 했다.
+- **지우고 보내기:** `send(id, text, { replaceDraft: <보여 준 글> })`. main이 화면을 다시 읽어 입력창 글이 보여 준 것과 같을 때만(그려진 모양 기준) 진행하고, 다르면 새 글로 다시 묻는다(`changed`). 순서는 **클립보드(main `clipboard.writeText`) → 어댑터가 한 쌍씩 지우며 매번 확인(새로 보인 글은 지우기 전에 클립보드에 덧붙임) → 빈 입력창 확인 → 입력 → 입력창이 넣은 글과 정확히 같은지 확인 → 기록·전면 소유 → 화면 한 번 더 → Enter**다. 지운 뒤에는 "정확히 같은 글"만 인정한다: 긴 글 끝부분만 보이는 경우나 `[Pasted text #N]` 자리표시는 받아들이지 않고, 그러면 Enter를 누르지 않고 알린다(글은 입력창에 남는다). 클립보드 복사가 실패하면 지우지 않는다. 클립보드에 무언가 넣은 뒤의 실패 문구에는 모두 "입력창에 있던 글은 클립보드에 있어요"가 붙는다. 성공하면 알림에 "지운 글은 클립보드에 있어요"를 붙인다.
+- **백업은 화면에서 다시 만든 글이다:** 미리보기와 클립보드 글은 화면(또는 Orca `draft`)에서 읽은 것이라 줄바꿈 위치·공백이 원래와 다를 수 있고, 긴 붙여넣기는 `[Pasted text #N …]` 자리표시만 들어간다. 원래 글 그대로는 지운 직후 그 터미널에서 Ctrl+Y로 되살릴 수 있다(실측).
+- **어댑터(에이전트별 차이는 여기만):** `ComposerAdapter { agent, capabilities(host), inspect(host), clear(host, from, backup) }`, 상태 `empty | suggestion | draft | unknown | closed | unreadable | unsupported`, 비우기 결과 `cleared | failed | changed`. 능력은 전달 방식(`delivery: 'terminal' | 'queue' | 'none'`)과 입력창 능력(`canInspect`·`canDetectSuggestion`·`canClear`)으로 나뉜다. 호스트(tmux·Orca)는 `ComposerHost { styled, read, press, wait }`로 화면 읽기와 키 입력만 제공한다.
+  - **Claude Code** (`claude-code.ts`): `delivery: 'terminal'`, `canInspect`·`canClear`, `canDetectSuggestion`은 tmux만. 입력창 해석(`readPrompt`·`promptHolds`)도 여기 있다.
+  - **Codex** (`index.ts`의 `codexQueueComposer`): `delivery: 'queue'` — `codex queue`로 보내 TUI 입력창을 건드리지 않는다. main이 이 능력을 보고 대기열로 보낸다. 터미널 입력 흐름(`sendToTerminal`)은 `delivery: 'terminal'`이고 입력창을 읽을 수 있는 어댑터만 받는다.
+  - **그 밖(OpenClaw 등)**: `delivery: 'none'` → "여기서 보낼 수 없어요"로 거부.
+- **비우기(Claude Code):** 한 라운드에 Ctrl+K·Ctrl+U **한 쌍**만 누르고 120ms 뒤 화면을 다시 본다(최대 60라운드). 한 쌍은 한 줄까지만 지우므로, 누르기 전에 화면에 보인 글(=이미 백업한 글)만 지울 수 있다. 입력창이 긴 글의 끝만 보여 주는 경우 지울수록 앞부분이 나타나는데, 백업에 없는 글이 보이면 지우기 전에 백업 앞쪽에 붙인다(겹치는 줄은 한 번만). 직전 글과 같은 줄로 시작하면서 다르게 이어지는 글(지우는 동안 누가 입력함)이 보이면 지우지 않고 그 글로 다시 묻는다(`changed`, "지금까지 지운 글은 클립보드에 있어요"). 같은 글이 키에 두 번 연속 그대로면: tmux(흐림이 보임)는 비우기 실패, Orca는 **그 전에 키가 실제로 글을 지운 적이 있고** 그 글이 확인받은 초안의 일부가 아닐 때만 다시 나타난 추천 글로 본다. 한 번도 줄지 않은 글은 키가 닿지 않은 것일 수 있어 실패로 처리한다(그래서 Orca에서 추천 글만 떠 있는 입력창은 여기서 비울 수 없다: "추천 글이면 여기서는 지울 수 없어요. 터미널에서 그 위에 입력해 주세요"). 그 판단이 틀려도 지운 뒤에는 정확히 같은 글만 인정하므로 섞인 글은 제출되지 않는다. tmux는 `send-keys C-k C-u`, Orca는 같은 바이트(`\x0b\x15`)를 `--text=`로 보낸다. Esc는 쓰지 않는다(작업 중이면 턴을 끊고, 빈 입력창에서 두 번이면 되돌리기 메뉴).
 
-### 측정 (Claude Code 2.1.296, tmux 3.6a, 120×40 패널, 2026-10-12)
+### 측정 (Claude Code 2.1.296, tmux 3.6a 120×40 패널, Orca 1.4.216, 2026-10-12)
 
-임시 tmux 서버(전용 소켓)에 빈 프로젝트로 `claude`를 띄워 `capture-pane -p`·`-p -e`·`display-message '#{cursor_x},#{cursor_y}'`로 읽었다. 도구 사용은 승인하지 않았고 프롬프트는 "한 문장으로 답해" 수준만 썼다.
+임시 tmux 서버(전용 소켓)와 Orca 임시 터미널 탭에 빈 프로젝트로 `claude`를 띄워 `capture-pane -p`·`-p -e`·`display-message '#{cursor_x},#{cursor_y}'`, `orca terminal read --screen --json`으로 읽었다. 도구 사용은 승인하지 않았고 프롬프트는 "한 문장으로 답해" 수준만 썼다. 끝난 뒤 tmux 서버와 Orca 탭을 닫았다.
 
 | 상태 | `-e`로 본 입력창 줄 | 커서 |
 | --- | --- | --- |
@@ -99,11 +101,12 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 | 작업 중 초안 | `ESC[38;5;246m❯\xa0ESC[39mdraft while busy` (표식만 회색) | 18,36 |
 
 - `-p`(글자만)로는 추천 글과 초안이 똑같다. 표식 뒤 공백은 NBSP(`\xa0`). 속성은 바뀌는 곳에만 찍혀 줄을 넘어 이어진다(`ESC[0m`이 다음 줄 맨 앞에 오기도 함). 색(`38;5;n`)은 상태마다 달라 기준으로 쓰지 않는다.
-- **추천 글이 뜨는 조건:** 대화에 어시스턴트 답이 2개 이상, 터미널 포커스가 있어야 한다(내부 사유 `early_conversation`·`unfocused`). 포커스 보고가 없는 tmux(`focus-events off`, 클라이언트 없음)에서는 안 뜨고, 포커스 입력(`ESC[I`)을 넣은 뒤 다음 답에서 떴다. 계정 플래그 또는 `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1`, 설정 `promptSuggestionEnabled`로 켜진다.
-- **입력·붙여넣기는 추천 글을 대신한다:** 첫 글자부터 추천 글이 사라지고(남은 부분을 흐리게 이어 보여 주지 않음) 입력한 글만 남는다. 입력창을 다시 비우면 같은 추천 글이 돌아온다. 지우기 키는 추천 글에 아무 영향이 없다.
-- **비우기:** Ctrl+U는 커서 앞(줄 처음까지)을, Ctrl+K는 커서 뒤를 지운다. 줄 처음에서 Ctrl+U, 빈 줄에서 Ctrl+K는 줄바꿈을 지워 줄을 합친다(3줄 초안은 Ctrl+U만으로 5번). 커서가 가운데여도 C-k C-u 쌍을 반복하면 비워진다. 12줄 붙여넣기 자리표시는 한 쌍으로 지워진다. 여러 쌍을 한 번에 보내도 순서대로 처리된다. 빈 입력창에 더 눌러도 변화 없음. 지우면 입력창 위에 `Ctrl+Y to paste deleted text`가 잠깐 뜨고, Ctrl+Y는 마지막에 지운 글(붙여넣기 자리표시 포함)을 되살린다. 작업 중에도 같다.
+- **추천 글이 뜨는 조건:** 대화에 어시스턴트 답이 2개 이상, 터미널 포커스가 있어야 한다(내부 사유 `early_conversation`·`unfocused`). 포커스 보고가 없는 tmux(`focus-events off`, 클라이언트 없음)에서는 안 뜨고, 포커스 입력(`ESC[I`)을 넣은 뒤 다음 답에서 떴다. Orca 탭에서는 두 번째 답 뒤에 바로 떴다. 계정 플래그 또는 `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=1`, 설정 `promptSuggestionEnabled`로 켜진다.
+- **입력·붙여넣기는 추천 글을 대신한다:** 첫 글자부터 추천 글이 사라지고(남은 부분을 흐리게 이어 보여 주지 않음) 입력한 글만 남는다. 입력창을 다시 비우면 같은 추천 글이 돌아온다. 지우기 키는 추천 글에 아무 영향이 없다(tmux·Orca 모두).
+- **비우기 키:** Ctrl+U는 커서 앞(줄 처음까지)을, Ctrl+K는 커서 뒤를 지운다. 줄 처음에서 Ctrl+U, 빈 줄에서 Ctrl+K는 줄바꿈을 지워 줄을 합친다(커서가 끝일 때 3줄 초안은 Ctrl+U 5번, 즉 2n−1). 커서가 가운데여도 C-k C-u 쌍을 반복하면 비워진다. 붙여넣기 자리표시는 한 쌍으로 지워진다. 빈 입력창에 더 눌러도 변화 없음. 지우면 입력창 위에 `Ctrl+Y to paste deleted text`가 잠깐 뜨고, Ctrl+Y는 마지막에 지운 글(붙여넣기 자리표시 포함)을 되살린다. 작업 중에도 같다.
+- **Orca:** `orca terminal send --text=$'\x0b\x15'`가 tmux와 똑같이 지운다(3줄 초안 → 한 쌍 뒤 2줄 → …, 추천 글은 그대로, 붙여넣기 자리표시는 한 쌍). 1.4.216은 입력창 글을 `tail`에서 빼고 `draft` 필드로 준다(`"draft is UI-only composer text excluded from tail"`): 빈 입력창은 `draft` 없이 `tail`에 예시 안내, 초안·붙여넣기 자리표시·**추천 글**은 `draft`에, 입력창 줄은 `❯`만.
+- **긴 글 표시(tmux):** 붙여넣기는 **4줄 이상이거나 800자를 넘으면** `[Pasted text #N +k lines]`(줄이 하나면 `[Pasted text #N]`)로 접힌다(3줄·799자는 그대로). 입력창은 패널 높이에 맞춰 최대 줄 수가 있고, 넘으면 **끝부분만** 보인다(40×20 패널: 790자 한 줄·2~3줄 붙여넣기가 5줄로 끝만, 1080자 직접 입력도 끝만; 120×40에서는 799자가 7줄로 다 보임). 그래서 빈 입력창에서 보낸 경우에는 끝부분(40자 이상) 일치와 자리표시를 그대로 인정하고, 지운 뒤에는 인정하지 않는다. 끝부분만 보이는 상태에서는 맨 위 줄이 앞부분이 잘린 줄이라는 표시가 없다.
 - **Codex:** `codex queue`는 입력창을 거치지 않으므로(위 Codex 절) TUI는 따로 측정하지 않았다.
-- **Orca:** 같은 Claude에서 `terminal read --screen`이 글자만 주는 것은 기존 측정과 같다. Orca에서 지우기 키를 실제로 눌러 본 측정은 하지 않았다(Orca는 `--text`를 바이트 그대로 쓰고, 같은 바이트를 tmux로 보낸 결과가 위와 같다).
 
 ## 경계
 
@@ -122,7 +125,7 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 
 ## 알려진 한계
 
-- Orca는 추천 글과 초안을 구분하지 못해 추천 글이 떠 있어도 한 번 확인을 거친다. 긴 붙여넣기는 자리표시만 클립보드로 간다(지운 직후 터미널에서 Ctrl+Y로 되살림).
+- Orca는 추천 글과 초안을 구분하지 못해 추천 글이 떠 있어도 한 번 확인을 거치고, 추천 글만 떠 있는 입력창은 여기서 비우지 못한다(키가 닿았는지 확인할 수 없어 실패로 처리). 긴 붙여넣기는 자리표시만 클립보드로 간다(지운 직후 터미널에서 Ctrl+Y로 되살림). 한 줄(줄바꿈 없는 문단)이 입력창 높이보다 길어 앞부분이 안 보이면, Ctrl+U가 그 안 보이는 앞부분까지 지운다(백업에는 보인 부분만 들어감, Ctrl+Y로 되살림).
 - Orca 경로는 상태 확인과 제출 사이를 Orca가 처리하므로, 그 짧은 사이에 턴이 시작되는 경우는 막지 못한다. tmux는 Enter 직전에 다시 확인한다.
 - 셸 없이 tmux 패널의 첫 프로세스로 `claude`를 띄우면 Ctrl+Z가 실제로 멈추지 못한다(작업 제어 없음). Claude 화면만 일시정지 안내가 되고 입력은 셸 없이 tty에 찍힐 뿐 실행되지 않는다.
 - 첫 조회는 전체 프로세스 표와 Orca CLI 때문에 기기 부하에 따라 1~2초 걸린다. 이후에는 Orca 약 0.5초, tmux 수십 ms. Codex 조회는 수 ms다.

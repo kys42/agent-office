@@ -93,6 +93,7 @@ export function QuickReply({
         <DraftConfirm
           draft={draft}
           sending={sending}
+          blocked={blocked}
           onConfirm={() => void reply.confirm()}
           onCancel={() => {
             reply.cancel();

@@ -10,11 +10,22 @@ export interface Screen {
    * plain characters only (Orca's `terminal read`).
    */
   faint?: boolean[][];
+  /**
+   * The composer's text when the host reports it apart from the screen. Orca (1.4.216) returns
+   * it as `draft` ("UI-only composer text excluded from tail"): the prompt line then shows only
+   * the marker, and the suggestion Claude offers comes back here too (measured).
+   */
+  composer?: string;
 }
 
-/** Escape sequences: CSI (SGR among them), OSC (hyperlinks, titles), DCS/PM/APC, and 2-byte ones. */
+/**
+ * Escape sequences: CSI (SGR among them), OSC (hyperlinks, titles), DCS/PM/APC, sequences with
+ * intermediate bytes (charset selection such as `ESC ( B`), and the other 2-byte ones.
+ */
 const SEQUENCE =
-  /\x1b(?:\[([0-9;:?<=>]*)([ -/]*)([@-~])|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[PX^_][^\x1b]*(?:\x1b\\)?|[ -~])/y;
+  /\x1b(?:\[([0-9;:?<=>]*)([ -/]*)([@-~])|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[PX^_][^\x1b]*(?:\x1b\\)?|[ -/]+[0-~]|[0-~])/y;
+/** Other control characters (SO/SI, BEL, CR…): never drawn. Tabs and line breaks stay. */
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
 
 /** The faint state after one SGR sequence. Colour arguments (38;5;n, 38;2;r;g;b) are skipped. */
 function applySgr(params: string, faint: boolean): boolean {
@@ -53,6 +64,10 @@ export function parseStyledScreen(raw: string): Screen {
       }
       if (m[3] === 'm' && !m[2] && !/[?<=>]/.test(m[1] ?? '')) dim = applySgr(m[1] ?? '', dim);
       i = SEQUENCE.lastIndex;
+      continue;
+    }
+    if (CONTROL.test(char)) {
+      i++;
       continue;
     }
     if (char === '\n') {

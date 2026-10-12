@@ -59,6 +59,13 @@ export function TerminalSend({
         e.preventDefault();
         submit();
       }}
+      onKeyDown={(e) => {
+        // Esc drops an open question about the composer's text; the message stays.
+        if (e.key === 'Escape' && draft && !e.nativeEvent.isComposing) {
+          e.stopPropagation();
+          reply.cancel();
+        }
+      }}
     >
       <textarea
         aria-label={t.terminal.messageLabel(host)}
@@ -98,6 +105,7 @@ export function TerminalSend({
           draft={draft}
           sending={sending}
           privacy={privacy}
+          blocked={waiting}
           onConfirm={() => void reply.confirm()}
           onCancel={reply.cancel}
         />

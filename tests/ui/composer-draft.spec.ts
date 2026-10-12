@@ -6,9 +6,32 @@ import { demoSnapshot } from '../../src/lib/demo';
  * The desktop app found text in Claude's prompt: the reply box shows it, keeps the reply as
  * written, and only [Clear & send] sends again with that exact text to clear.
  */
-async function desktop(page: Page) {
+async function desktop(page: Page, hash = '') {
   const fixture = demoSnapshot();
-  fixture.notices = [];
+  // The big office and the row reply to the desk's own session; the pet speaks for the news.
+  const now = Date.now();
+  if (hash === '#mini') {
+    // The pet speaks for the colleague who just answered (as in helpers-peek.spec.ts).
+    const host = fixture.sessions.find((x) => x.id === 'demo:0')!;
+    Object.assign(host, { status: 'ready', updatedAt: now - 10 * 60_000, events: [] });
+  }
+  fixture.notices =
+    hash === '#mini'
+      ? [
+          {
+            ...fixture.notices![0],
+            id: 'answer',
+            eventId: 'answer',
+            kind: 'reply',
+            phase: 'final',
+            text: '여백을 8px로 맞췄어요.',
+            at: now - 60_000,
+            receivedAt: now - 60_000,
+            dismissedAt: null,
+            bootstrap: false,
+          },
+        ]
+      : [];
   await page.addInitScript((s) => {
     const w = window as any;
     w.sends = [];
@@ -39,7 +62,7 @@ async function desktop(page: Page) {
       },
     };
   }, fixture);
-  await page.goto('/');
+  await page.goto(`/${hash}`);
 }
 const sends = (page: Page) => page.evaluate(() => (window as any).sends);
 
@@ -100,8 +123,56 @@ test('The work card asks the same way and empties its box after a confirmed send
   const confirm = box.locator('.draft-confirm');
   await expect(confirm).toContainText('Claude 입력창에 이 글이 있어요');
   await expect(field).toHaveValue('리뷰 반영해 주세요');
+  // Esc drops only the question here too; the card stays open with the message.
+  await field.press('Escape');
+  await expect(confirm).toHaveCount(0);
+  await expect(field).toHaveValue('리뷰 반영해 주세요');
+  await box.getByRole('button', { name: '보내기' }).click();
   await confirm.getByRole('button', { name: '지우고 보내기' }).click();
   await expect(confirm).toHaveCount(0);
   await expect(field).toHaveValue('');
   await expect(page.locator('.toast')).toContainText('지운 글은 클립보드에 있어요');
 });
+
+/** The dock windows are exactly the stage: anything outside it is off the window. */
+const inside = async (page: Page, stage: string, target: ReturnType<Page['locator']>) => {
+  const s = (await page.locator(stage).boundingBox())!;
+  const b = (await target.boundingBox())!;
+  expect(b.x).toBeGreaterThanOrEqual(s.x - 0.5);
+  expect(b.y).toBeGreaterThanOrEqual(s.y - 0.5);
+  expect(b.x + b.width).toBeLessThanOrEqual(s.x + s.width + 0.5);
+  expect(b.y + b.height).toBeLessThanOrEqual(s.y + s.height + 0.5);
+};
+
+for (const [hash, stage] of [
+  ['#mini=row', '.desk-row'],
+  ['#mini=floor', '.desk-row'],
+  ['#mini', '.desk-pet-stage'],
+] as const)
+  test(`In the dock (${hash}), the question about the prompt stays inside the window`, async ({
+    page,
+  }) => {
+    await desktop(page, hash);
+    const pet = hash === '#mini';
+    const desk = pet
+      ? page.locator('.dock-pet-speech')
+      : page.locator('.desk-row [data-station-id="demo:0"]');
+    await (pet ? page.locator('.dock-pet-anchor') : desk.locator('.office-pet')).hover();
+    await desk.locator('.bubble-reply').click();
+    const reply = page.locator('.quick-reply');
+    const field = reply.getByRole('textbox', { name: '답장 내용' });
+    await field.fill('테스트를 먼저 돌려 주세요');
+    await field.press('Enter');
+    const confirm = reply.locator('.draft-confirm');
+    await expect(confirm).toContainText('Claude 입력창에 이 글이 있어요');
+    await page.screenshot({
+      path: `.local/composer-draft${hash.replace('#mini', '-pet').replace('-pet=', '-')}.png`,
+    });
+    const clear = confirm.getByRole('button', { name: '지우고 보내기' });
+    await inside(page, stage, clear);
+    await inside(page, stage, confirm);
+    await clear.click();
+    await expect(page.locator('.toast, .dock-toast').first()).toContainText(
+      '지운 글은 클립보드에 있어요',
+    );
+  });

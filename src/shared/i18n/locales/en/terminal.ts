@@ -28,7 +28,10 @@ export const terminal = {
   /** The agent's composer already holds text: shown before anything is typed. `agent`: e.g. Claude. */
   draftFound: (agent: string) => `This is already in the ${agent} prompt`,
   /** On screens without styles, the agent's own suggestion looks the same as a draft. */
-  draftMaybeSuggestion: 'It may be a suggestion the prompt shows; the screen alone can’t tell.',
+  draftMaybeSuggestion:
+    'It may be a suggestion the prompt shows; the screen alone can’t tell. Clearing puts it on your clipboard, replacing what’s there.',
+  /** Typing showed up while clearing: what was cleared so far is already on the clipboard. */
+  draftPartlySaved: 'What was cleared so far is on your clipboard.',
   /** The text confirmed earlier was no longer what the prompt held. */
   draftChanged: 'The prompt changed in the meantime. Check it again.',
   /** In hidden-screen mode the text itself is not shown. */

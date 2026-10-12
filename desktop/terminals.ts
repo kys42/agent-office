@@ -384,7 +384,10 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
     const terminal = JSON.parse(out)?.result?.terminal;
     // Without a rendered screen Orca falls back to past output, which is not what is shown now.
     if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
-    return { text: terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n') };
+    const text = terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
+    // Orca 1.4.216 reports the composer's text apart (`draft`) and leaves only the marker on
+    // screen; an older Orca draws it in the screen as tmux does.
+    return typeof terminal.draft === 'string' ? { text, composer: terminal.draft } : { text };
   } catch {
     return null;
   }
@@ -537,61 +540,95 @@ async function deliver(
   const composer = options.composer ?? claudeCodeComposer;
   const io = composerHost(host, deps);
   const can = composer.capabilities(io);
-  let cleared = false;
-  if (can.needsComposerCheck) {
-    const state = await composer.inspect(io);
-    if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(hostName(host)));
-    if (holdsText(state)) {
-      // Never mixed into a draft, or into text a failed send left behind.
-      if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
-      const confirmed = options.replaceDraft;
-      if (confirmed === undefined || drawn(confirmed) !== drawn(state.text))
-        return {
-          status: 'needs-confirm',
-          draft: state.text,
-          agent: composer.agent,
-          ...(state.kind === 'unknown' && { maybeSuggestion: true }),
-          ...(confirmed !== undefined && { changed: true }),
-        };
+  // Typing into a terminal is only for agents whose composer can be read first.
+  if (can.delivery !== 'terminal' || !can.canInspect)
+    throw new TerminalInputError(t.unsupportedAgent(composer.agent));
+  const state = await composer.inspect(io);
+  if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(hostName(host)));
+  if (!holdsText(state)) {
+    if (!readyToType(state)) throw new TerminalInputError(t.notReady);
+    return submit(false);
+  }
+  // Never mixed into a draft, or into text a failed send left behind.
+  if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
+  const ask = (
+    draft: string,
+    extra: { changed?: boolean; clipboard?: boolean } = {},
+  ): SendResult => ({
+    status: 'needs-confirm',
+    draft,
+    agent: composer.agent,
+    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...(extra.changed && { changed: true }),
+    ...(extra.clipboard && { clipboard: true }),
+  });
+  const confirmed = options.replaceDraft;
+  if (confirmed === undefined) return ask(state.text);
+  if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, { changed: true });
+  const backup = options.backup;
+  let saved = false;
+  try {
+    const result = await composer.clear(io, state, async (text) => {
       try {
-        await options.backup(state.text);
+        await backup(text);
       } catch {
         throw new TerminalInputError(t.backupFailed);
       }
-      if (!readyToType(await composer.clear(io, state)))
-        throw new TerminalInputError(t.clearFailed(composer.agent));
-      cleared = true;
-    } else if (!readyToType(state)) throw new TerminalInputError(t.notReady);
-  }
-  await typeText(host, text, deps);
-  const holds = async () => promptHolds((await readScreen(host, deps))?.text ?? '', text);
-  // The prompt may take a moment to draw the text.
-  let shown = false;
-  for (let tries = 0; !shown && tries < 3; tries++) {
-    await deps.wait(150);
-    shown = await holds();
-  }
-  if (!shown) throw new TerminalInputError(t.stateChanged);
-  // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
-  // retries leaves Claude's last frame on screen over a shell.
-  const again = await current();
-  if (!again) throw new TerminalInputError(t.stateChanged);
-  // And the screen once more: a dialog may have opened during those checks.
-  if (!(await holds())) throw new TerminalInputError(t.stateChanged);
-  try {
-    await pressEnter(host, deps);
+      saved = true;
+    });
+    if (result.status === 'changed') return ask(result.text, { changed: true, clipboard: true });
+    if (result.status === 'failed')
+      throw new TerminalInputError(
+        result.state.kind === 'unknown'
+          ? t.clearFailedSuggestion(composer.agent)
+          : t.clearFailed(composer.agent),
+      );
+    return await submit(true);
   } catch (error) {
-    // The text is in the prompt: a blind resend would type it twice.
-    if (error instanceof TerminalInputError) throw new TerminalInputError(t.notSubmitted(where));
-    throw error;
+    // Once something went to the clipboard, every failure says so.
+    if (!saved) throw error;
+    const reason =
+      error instanceof TerminalInputError ? error.message : t.unconfirmed(hostName(host));
+    throw new TerminalInputError(
+      reason.includes(t.clipboardKept) ? reason : `${reason} ${t.clipboardKept}`,
+    );
   }
-  const sent = (message: string): SendResult => ({
-    status: 'sent',
-    message,
-    ...(cleared && { cleared }),
-  });
-  const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
-  if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));
-  if (again.status === 'busy') return sent(t.queued(where));
-  return sent(host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label));
+
+  /**
+   * Types the text and presses Enter once the prompt holds exactly it. After clearing, only the
+   * exact text counts: a shortened or collapsed view could hide text the keys never reached.
+   */
+  async function submit(cleared: boolean): Promise<SendResult> {
+    await typeText(host, text, deps);
+    const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, cleared);
+    // The prompt may take a moment to draw the text.
+    let shown = false;
+    for (let tries = 0; !shown && tries < 3; tries++) {
+      await deps.wait(150);
+      shown = await holds();
+    }
+    if (!shown) throw new TerminalInputError(t.stateChanged);
+    // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
+    // retries leaves Claude's last frame on screen over a shell.
+    const again = await current();
+    if (!again) throw new TerminalInputError(t.stateChanged);
+    // And the screen once more: a dialog may have opened during those checks.
+    if (!(await holds())) throw new TerminalInputError(t.stateChanged);
+    try {
+      await pressEnter(host, deps);
+    } catch (error) {
+      // The text is in the prompt: a blind resend would type it twice.
+      if (error instanceof TerminalInputError) throw new TerminalInputError(t.notSubmitted(where));
+      throw error;
+    }
+    const sent = (message: string): SendResult => ({
+      status: 'sent',
+      message,
+      ...(cleared && { cleared }),
+    });
+    const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
+    if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));
+    if (again.status === 'busy') return sent(t.queued(where));
+    return sent(host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label));
+  }
 }
