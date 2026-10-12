@@ -1,4 +1,4 @@
-import type { OfficeNotice, OfficeZone, Session, Snapshot } from './types';
+import type { OfficeNotice, OfficeZone, ProviderQuota, Session, Snapshot } from './types';
 import { officeResidents } from './residents';
 import { officeZone, sessionName } from './office';
 import { presentSession } from './presentation';
@@ -10,6 +10,7 @@ import { freshRequest } from './speech';
 import { zoneLabel } from './zones';
 import { m } from './i18n';
 import { liveLabels } from './labels';
+import { quotaExhaustion, type QuotaExhaustion } from './quota';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -32,6 +33,8 @@ export interface ResidentView {
   veiled: boolean;
   /** This colleague or one of its helpers waits for the person: never hidden, no hide button. */
   needsPerson: boolean;
+  /** Its tool's usage limit is used up right now (a fresh read), with what binds it. */
+  quota?: QuotaExhaustion;
 }
 
 export interface OfficeModel {
@@ -69,7 +72,11 @@ export interface OfficeModel {
 
 const seatOrder = (a: Session, b: Session) => (a.officeSeat ?? 0) - (b.officeSeat ?? 0);
 
-export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): OfficeModel {
+export function buildOfficeModel(
+  snapshot: Snapshot | null,
+  now = Date.now(),
+  quotas: readonly ProviderQuota[] = [],
+): OfficeModel {
   const sessions = snapshot?.sessions ?? [];
   const prefs = snapshot?.preferences ?? {};
   const notices = snapshot?.notices ?? [];
@@ -107,6 +114,7 @@ export function buildOfficeModel(snapshot: Snapshot | null, now = Date.now()): O
           notices,
         ),
       needsPerson: group === 'attention',
+      quota: quotas.length ? quotaExhaustion(s, quotas, now) : undefined,
     };
   });
   const byId = new Map(views.map((v) => [v.session.id, v]));
