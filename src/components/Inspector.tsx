@@ -47,7 +47,7 @@ import {
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
 import { NowCard, nowState } from './NowCard';
-import { isInboxNotice, unreadNoticeCount } from '../shared/notices';
+import { unreadNoticeCount } from '../shared/notices';
 import { CardMenu } from './CardMenu';
 import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
@@ -146,12 +146,12 @@ export function Inspector({
   const [packet, setPacket] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
-  // The card's details fold, remembered across cards.
-  const [infoOpen, setInfoOpen] = useState(() => {
+  // The card's chat shows progress notes unless the person switched them off (remembered).
+  const [showProgress, setShowProgress] = useState(() => {
     try {
-      return localStorage.getItem('office:card-info') === 'open';
+      return localStorage.getItem('office:card-progress') !== 'off';
     } catch {
-      return false;
+      return true;
     }
   });
   // The office's view of this colleague (status, zone, return, the latest events) follows every
@@ -591,10 +591,7 @@ export function Inspector({
   const tabBar = (
     <>
       <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
-        {(card
-          ? (['history', 'news', 'notes'] as const)
-          : (['history', 'news', 'overview', 'notes'] as const)
-        ).map((key) => (
+        {(['history', 'news', 'overview', 'notes'] as const).map((key) => (
           <button
             key={key}
             role="tab"
@@ -666,6 +663,7 @@ export function Inspector({
             onOlder={loadOlder}
             notify={notify}
             compact={card}
+            hideProgress={card && !showProgress}
           />
         ) : (
           <div className="notes-editor">
@@ -799,7 +797,6 @@ export function Inspector({
     </>
   );
   if (card) {
-    const unread = colleagueNews.filter((n) => !n.seenAt && isInboxNotice(n));
     const item = (label: string, run: () => void, close: () => void, disabled = false) => (
       <button
         role="menuitem"
@@ -812,6 +809,7 @@ export function Inspector({
         {label}
       </button>
     );
+    const calling = state === 'attention';
     return (
       <>
         <aside
@@ -852,82 +850,45 @@ export function Inspector({
               ) : (
                 <h2 title={privacy ? undefined : sessionName(s)}>
                   {privacy ? t.inspector.hiddenTeammate : sessionName(s)}
+                  {!privacy && <small> · {s.area ? s.area.name : s.project}</small>}
                 </h2>
               )}
-              <span className="card-status">
+              <span className={`card-status ${calling ? 'is-calling' : ''}`}>
                 <i style={{ background: MOODS[s.status].color }} />
                 {MOODS[s.status].label} · {ago(s.updatedAt)}
                 {colleague.pinned && <Pin size={10} />}
               </span>
             </div>
-            {state === 'attention' && (
-              // Waiting for the person (e.g. a permission prompt the chat box cannot answer):
-              // straight to its terminal.
-              <button
-                className="card-chip tone-attention"
-                aria-label={`${t.inspector.card.calling} · ${resumeLabel}`}
-                title={resumeLabel}
-                disabled={demo}
-                onClick={resume}
-              >
-                {t.inspector.card.calling}
-              </button>
-            )}
-            {unread.length > 0 && (
-              <button
-                className="card-chip tone-news"
-                aria-label={`${t.inspector.card.unread(unread.length)} · ${t.inspector.card.markRead}`}
-                title={t.inspector.card.markRead}
-                onClick={() =>
-                  onReceipt(
-                    unread.map(({ id, version }) => ({ id, version })),
-                    'read',
-                  )
-                }
-              >
-                {t.inspector.card.unread(unread.length)}
-              </button>
-            )}
             <div className="card-head-tools">
-              {onExpand && (
-                <button
-                  className="icon-btn"
-                  aria-label={t.inspector.expand}
-                  title={t.inspector.expandTitle}
-                  onClick={onExpand}
-                >
-                  <Maximize2 size={14} />
-                </button>
-              )}
+              <button
+                className="icon-btn"
+                aria-label={busy ? t.inspector.gathering : t.inspector.packHandoff}
+                title={t.inspector.packHandoff}
+                disabled={busy || privacy}
+                onClick={handoff}
+              >
+                <PackageOpen size={15} />
+              </button>
+              <button
+                className="icon-btn"
+                aria-label={t.inspector.revealSource}
+                title={t.inspector.revealSource}
+                disabled={demo || !isDesktop || privacy}
+                onClick={() => api.reveal(s.id).catch((e) => notify(e.message))}
+              >
+                <Folder size={15} />
+              </button>
               <CardMenu label={t.inspector.card.more}>
                 {(close) => (
                   <>
-                    {item(
-                      busy ? t.inspector.gathering : t.inspector.packHandoff,
-                      handoff,
-                      close,
-                      busy || privacy,
-                    )}
-                    {item(resumeLabel, resume, close, demo)}
                     {s.zone &&
                       s.zone !== 'office' &&
                       item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
-                    {item(
-                      colleague.pinned ? t.inspector.unpin : t.inspector.pin,
-                      () => onPin(colleague),
-                      close,
-                    )}
                     {item(t.inspector.rename, () => setEditing(true), close)}
                     {item(t.pets.individualTitle, () => setPetOpen(true), close)}
                     {!privacy &&
                       onZoneRules &&
                       item(t.inspector.zone, () => setZoneOpen(true), close)}
-                    {item(
-                      t.inspector.revealSource,
-                      () => void api.reveal(s.id).catch((e) => notify(e.message)),
-                      close,
-                      demo || !isDesktop,
-                    )}
                     {item(
                       s.archived ? t.inspector.unarchive : t.inspector.archive,
                       () => void patch({ archived: !s.archived }),
@@ -948,38 +909,66 @@ export function Inspector({
           </div>
           {petEditor}
           {zoneEditor}
-          {/* While sharing the screen the details stay hidden; the run picker (names masked) stays. */}
-          {privacy && personaPicker}
           {!privacy && (
-            <details
-              className="card-workinfo"
-              open={infoOpen}
-              onToggle={(e) => {
-                const open = (e.currentTarget as HTMLDetailsElement).open;
-                setInfoOpen(open);
-                try {
-                  localStorage.setItem('office:card-info', open ? 'open' : 'closed');
-                } catch {
-                  // Remembering is a convenience.
-                }
-              }}
-            >
-              <summary>
-                {t.inspector.card.workInfo}
-                <small>
-                  {s.area ? `${s.area.name} · ${s.project}` : s.project} · {branchInfo(s).label}
-                </small>
-              </summary>
-              <div className="card-workinfo-body">
-                {relationStrip}
-                {personaPicker}
-                {overview}
-              </div>
-            </details>
+            <div className="card-recent">
+              <ArtifactCards
+                id={s.id}
+                urls={s.artifacts}
+                demo={demo}
+                privacy={privacy}
+                notify={notify}
+                variant="list"
+              />
+            </div>
           )}
-          {tabBar}
+          <div className="card-tabs-row">
+            {tabBar}
+            {tab === 'history' && (
+              <label className="card-progress-switch">
+                {t.inspector.card.progress}
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={t.inspector.card.progressLabel}
+                  checked={showProgress}
+                  onChange={(e) => {
+                    setShowProgress(e.target.checked);
+                    try {
+                      localStorage.setItem('office:card-progress', e.target.checked ? 'on' : 'off');
+                    } catch {
+                      // Remembering is a convenience.
+                    }
+                  }}
+                />
+              </label>
+            )}
+          </div>
           {scrollArea}
           <div className="card-composer">
+            <div className="card-actions">
+              <button
+                className={`card-action ${calling ? 'primary' : ''}`}
+                disabled={demo}
+                onClick={resume}
+              >
+                <Terminal size={13} />
+                {resumeLabel}
+              </button>
+              <button
+                className={`card-action ${colleague.pinned ? 'is-on' : ''}`}
+                aria-pressed={colleague.pinned}
+                onClick={() => onPin(colleague)}
+              >
+                <Pin size={13} />
+                {colleague.pinned ? t.inspector.unpin : t.inspector.pin}
+              </button>
+              {onExpand && (
+                <button className="card-action" onClick={onExpand} title={t.inspector.expandTitle}>
+                  <Maximize2 size={13} />
+                  {t.inspector.card.office}
+                </button>
+              )}
+            </div>
             {live ? (
               <TerminalSend
                 key={s.id}
@@ -997,9 +986,6 @@ export function Inspector({
               <p className="terminal-send-hint">
                 <Terminal size={12} />
                 {t.inspector.card.noTarget}
-                <button className="button subtle" disabled={demo} onClick={resume}>
-                  {resumeLabel}
-                </button>
               </p>
             )}
           </div>

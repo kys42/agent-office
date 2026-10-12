@@ -46,6 +46,8 @@ export function DockCard() {
   );
   useEffect(() => {
     document.body.classList.add('card-mode');
+    // On a Mac the window is vibrant glass (desktop/main.ts): the page lets it show through.
+    document.body.classList.toggle('is-mac', /Mac/i.test(navigator.userAgent));
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing) return;
       // In a field, Esc leaves the field first, as in the big office.

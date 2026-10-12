@@ -139,6 +139,7 @@ export function Conversation({
   loadingOlder = false,
   onOlder,
   compact = false,
+  hideProgress = false,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -149,6 +150,8 @@ export function Conversation({
   onOlder?: () => void;
   /** The card's chat: filters fold behind a small button, the range note goes away. */
   compact?: boolean;
+  /** Progress notes left out of the whole conversation (the card's switch). */
+  hideProgress?: boolean;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -183,12 +186,13 @@ export function Conversation({
       const category = conversationKind(e);
       const work = category === 'work';
       if (work ? !tools || filter !== 'all' : filter !== 'all' && category !== filter) continue;
+      if (hideProgress && category === 'progress' && filter === 'all') continue;
       const last = out.at(-1);
       if (work && last?.work) last.events.push(e);
       else out.push({ id: e.id, events: [e], work });
     }
     return out;
-  }, [events, filter, tools]);
+  }, [events, filter, tools, hideProgress]);
   const toggleMessage = (id: string) =>
     setExpanded((old) => {
       const next = new Set(old);
@@ -342,6 +346,11 @@ export function Conversation({
             <span>{counts.work}</span>
           </label>
         </div>
+      )}
+      {hideProgress && filter === 'all' && counts.progress > 0 && (
+        <p className="conversation-hidden-note">
+          {t.inspector.card.progressHidden(counts.progress)}
+        </p>
       )}
       {!compact && (
         <div className="conversation-range">

@@ -397,6 +397,14 @@ function showCard(target: CardTarget, anchor: Rect) {
       minHeight: CARD_MIN.height,
       // A double click on the header (its drag strip) must not fill the screen.
       maximizable: false,
+      // macOS: the card is real glass — the system's popover material behind a translucent page.
+      ...(process.platform === 'darwin'
+        ? {
+            vibrancy: 'popover' as const,
+            visualEffectState: 'active' as const,
+            roundedCorners: true,
+          }
+        : {}),
       frame: false,
       transparent: true,
       fullscreenable: false,

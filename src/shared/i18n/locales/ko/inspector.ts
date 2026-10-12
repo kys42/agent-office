@@ -44,6 +44,10 @@ export const inspector: Messages['inspector'] = {
     calling: '나를 기다려요',
     filters: '필터',
     noTarget: '입력할 수 있는 터미널이 없어요',
+    progress: '진행 소식',
+    progressLabel: '진행 소식 보이기',
+    progressHidden: (n) => `진행 소식 ${n}개 숨김`,
+    office: '큰 사무실',
   },
   tabs: {
     overview: '작업 정보',

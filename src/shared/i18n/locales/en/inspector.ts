@@ -43,6 +43,10 @@ export const inspector = {
     calling: 'Needs you',
     filters: 'Filters',
     noTarget: 'No live terminal to type into',
+    progress: 'Progress',
+    progressLabel: 'Show progress notes',
+    progressHidden: (n: number) => `${n} progress ${n === 1 ? 'note' : 'notes'} hidden`,
+    office: 'Big office',
   },
   tabs: {
     overview: 'Details',

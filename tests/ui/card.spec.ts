@@ -44,7 +44,33 @@ async function card(
         detail: async (id: string) =>
           structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
         visit: async () => structuredClone(w.fixture),
-        artifacts: async () => [],
+        // The colleague's recent work, as the service reads it from GitHub.
+        artifacts: async () => [
+          {
+            url: 'https://github.com/kys42/agent-office/pull/95',
+            kind: 'pull',
+            repo: 'kys42/agent-office',
+            number: 95,
+            title: '팝업 업무 카드를 채팅형으로',
+            state: 'open',
+          },
+          {
+            url: 'https://github.com/kys42/agent-office/issues/86',
+            kind: 'issues',
+            repo: 'kys42/agent-office',
+            number: 86,
+            title: '크기 조절·아래 입력창·윗줄 정리',
+            state: 'open',
+          },
+          {
+            url: 'https://github.com/kys42/agent-office/pull/89',
+            kind: 'pull',
+            repo: 'kys42/agent-office',
+            number: 89,
+            title: '스크롤 깜박임 막기',
+            state: 'merged',
+          },
+        ],
         subscribe: () => () => {},
         notices: async (receipts: any[], action: string) => {
           w.receipts.push([action, receipts.map((r: any) => r.id)]);
@@ -92,26 +118,52 @@ async function card(
   return aside;
 }
 
-test('The card opens as a chat: one header line, folded details, the conversation and a chat box', async ({
+test('The card opens as a glass chat: header tools, recent work, tabs, actions and a chat box', async ({
   page,
 }) => {
   const aside = await card(page);
-  await expect(aside.locator('.card-head h2')).toBeVisible();
-  // No big banners above the conversation any more.
+  await expect(aside.locator('.card-head h2')).toContainText('Coco');
+  // No banners or chips above the conversation.
   await expect(aside.locator('.now-card')).toHaveCount(0);
+  await expect(aside.locator('.card-chip')).toHaveCount(0);
   await expect(aside.locator('.inspector-actions')).toHaveCount(0);
-  // Details fold at the top; the tabs are chat, updates and notes.
-  const info = aside.locator('details.card-workinfo');
-  await expect(info).not.toHaveAttribute('open', '');
-  await expect(aside.getByRole('tab')).toHaveText(['대화', /^소식/, '기억 메모']);
+  // Hand-off and the source folder sit in the header; pin, terminal and big office above the box.
+  const head = aside.locator('.card-head');
+  await expect(head.getByRole('button', { name: '인수인계 꾸리기' })).toBeVisible();
+  await expect(head.getByRole('button', { name: '원본 위치 열기' })).toBeVisible();
+  const actions = aside.locator('.card-actions');
+  await expect(actions.getByRole('button', { name: 'Orca로 이동' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: '사무실에 고정' })).toBeVisible();
+  await expect(actions.getByRole('button', { name: /큰 사무실/ })).toBeVisible();
+  // Recent issues and PRs above the tabs: two, the rest behind "n more".
+  const recent = aside.locator('.artifact-list');
+  await expect(recent.locator('.artifact-row')).toHaveCount(2);
+  await recent.getByRole('button', { name: /더 보기|1/ }).click();
+  await expect(recent.locator('.artifact-row')).toHaveCount(3);
+  await expect(aside.getByRole('tab')).toHaveText(['대화', /^소식/, '작업 정보', '기억 메모']);
   await expect(aside.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
-  await page.screenshot({ path: '.local/card-chat-folded.png' });
-  await info.locator(':scope > summary').click();
-  await expect(info.locator('.card-workinfo-body')).toBeVisible();
-  // The conversation fills the card; the chat box sits at its bottom.
+  // The chat box sits at the bottom.
   const composer = (await aside.locator('.card-composer').boundingBox())!;
   expect(composer.y + composer.height).toBeGreaterThan(740);
   await page.screenshot({ path: '.local/card-chat.png' });
+});
+
+test('Progress notes can be hidden from the chat, and the choice is remembered', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  const progress = aside.getByRole('switch', { name: '진행 소식 보이기' });
+  await expect(progress).toBeChecked();
+  const shown = await aside.locator('.conversation-message.category-progress').count();
+  expect(shown).toBeGreaterThan(0);
+  await progress.click();
+  await expect(aside.locator('.conversation-message.category-progress')).toHaveCount(0);
+  await expect(aside.locator('.conversation-hidden-note')).toContainText('진행 소식');
+  await page.reload();
+  await expect(
+    page.getByRole('complementary', { name: '동료의 업무 카드' }).getByRole('switch'),
+  ).not.toBeChecked();
+  await page.screenshot({ path: '.local/card-chat-quiet.png' });
 });
 
 test('Enter sends from the chat box, Shift+Enter breaks the line', async ({ page }) => {
@@ -128,14 +180,13 @@ test('Enter sends from the chat box, Shift+Enter breaks the line', async ({ page
   await expect(box).toHaveValue('');
 });
 
-test('The more menu holds the actions that used to take a row', async ({ page }) => {
+test('The card menu holds the rest, and works from the keyboard', async ({ page }) => {
   const aside = await card(page);
   const more = aside.getByRole('button', { name: '카드 메뉴' });
   await more.click();
   const menu = aside.getByRole('menu');
-  for (const name of ['인수인계 꾸리기', 'Orca로 이동', '이 동료 꾸미기', '이름 바꾸기'])
+  for (const name of ['이름 바꾸기', '이 동료 꾸미기'])
     await expect(menu.getByRole('menuitem', { name })).toBeVisible();
-  // The keyboard: the first item is focused, arrows move, Esc closes the menu only.
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(menu.getByRole('menuitem').nth(1)).toBeFocused();
@@ -148,36 +199,35 @@ test('The more menu holds the actions that used to take a row', async ({ page })
   // A second Esc is for the card.
   await page.keyboard.press('Escape');
   await expect.poll(() => page.evaluate(() => (window as any).cardCalls)).toEqual(['close']);
-  await more.click();
-  await menu.getByRole('menuitem', { name: '인수인계 꾸리기' }).click();
+  // Hand-off from the header.
+  await aside.getByRole('button', { name: '인수인계 꾸리기' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 
-test('Without a live terminal the chat box says why and offers the way there', async ({ page }) => {
+test('Without a live terminal the chat box says why', async ({ page }) => {
   const aside = await card(page, { terminal: false });
   await expect(aside.locator('.card-composer')).toContainText('입력할 수 있는 터미널이 없어요');
   await expect(aside.locator('.card-composer textarea')).toHaveCount(0);
 });
 
-test('The header chips: new updates mark read, a waiting colleague goes to its terminal', async ({
+test('A colleague waiting for the person makes the terminal button the primary one', async ({
   page,
 }) => {
-  // demo:3 is calling and has an unread notice.
+  // demo:3 is calling.
   const aside = await card(page, { id: 'demo:3' });
-  const calling = aside.getByRole('button', { name: /나를 기다려요/ });
-  await calling.click();
+  const go = aside.locator('.card-actions').getByRole('button', { name: 'Orca로 이동' });
+  await expect(go).toHaveClass(/primary/);
+  await go.click();
   await expect.poll(() => page.evaluate(() => (window as any).jumps)).toEqual(['demo:3']);
-  const news = aside.getByRole('button', { name: /새 소식 \d+ · 읽음으로 표시/ });
-  await news.click();
-  await expect
-    .poll(() => page.evaluate(() => (window as any).receipts.map((r: any) => r[0])))
-    .toContain('read');
-  await expect(news).toHaveCount(0);
+  // Pin from the action row.
+  await aside.getByRole('button', { name: '사무실에 고정' }).click();
 });
 
-test('Sharing the screen hides the details but keeps the chat card usable', async ({ page }) => {
+test('Sharing the screen hides recent work and names but keeps the chat card usable', async ({
+  page,
+}) => {
   const aside = await card(page, { privacy: true });
-  await expect(aside.locator('details.card-workinfo')).toHaveCount(0);
+  await expect(aside.locator('.artifact-list')).toHaveCount(0);
   await expect(aside.locator('.card-head h2')).not.toContainText('Coco');
   await expect(aside.locator('.card-composer textarea')).toBeVisible();
 });
