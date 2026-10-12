@@ -488,9 +488,10 @@ export function sendToTerminal(
 ): Promise<string> {
   // One send per session at a time: two surfaces sending at once would type into each other.
   const key = live.process.sessionId;
-  const turn = (sending.get(key) ?? Promise.resolve())
+  const before = sending.get(key);
+  const turn = (before ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => deliver(live, input, deps));
+    .then(() => deliver(live, input, deps, !!before));
   sending.set(key, turn);
   const done = () => {
     if (sending.get(key) === turn) sending.delete(key);
@@ -501,11 +502,28 @@ export function sendToTerminal(
 
 const sending = new Map<string, Promise<string>>();
 
-async function deliver(live: LiveTerminal, input: unknown, deps: TerminalDeps): Promise<string> {
+async function deliver(
+  live: LiveTerminal,
+  input: unknown,
+  deps: TerminalDeps,
+  waited: boolean,
+): Promise<string> {
   const text = cleanInput(input);
   const t = m().desktop.terminal;
+  /** The same process, still on this session, open to input and in front of its terminal. */
+  const current = async () => {
+    const now = await findClaudeProcess(live.process.sessionId, deps, true);
+    return now?.pid === live.process.pid &&
+      acceptsInput(now.status) &&
+      (await ownsTerminal(now.pid, deps))
+      ? now
+      : null;
+  };
   // A leading `!` turns Claude's prompt into shell mode: the text would run as a command.
   if (text.startsWith('!')) throw new TerminalInputError(t.shellPrefix);
+  // A send that waited its turn looks again: the one before may have ended or replaced the
+  // session (`/clear`).
+  if (waited && !(await current())) throw new TerminalInputError(t.stateChanged);
   if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
   if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
   const { host } = live;
@@ -517,21 +535,17 @@ async function deliver(live: LiveTerminal, input: unknown, deps: TerminalDeps): 
   // Never mixed into a draft, or into text a failed send left behind.
   if (prompt && !HINT.test(prompt)) throw new TerminalInputError(t.draft);
   await typeText(host, text, deps);
-  await deps.wait(150);
-  const again = await findClaudeProcess(live.process.sessionId, deps, true);
-  if (
-    again?.pid !== live.process.pid ||
-    !acceptsInput(again.status) ||
-    !(await ownsTerminal(again.pid, deps))
-  )
-    throw new TerminalInputError(t.stateChanged);
   // The prompt may take a moment to draw the text.
-  let holds = promptHolds((await readScreen(host, deps)) ?? '', text);
-  for (let tries = 1; !holds && tries < 3; tries++) {
+  let holds = false;
+  for (let tries = 0; !holds && tries < 3; tries++) {
     await deps.wait(150);
     holds = promptHolds((await readScreen(host, deps)) ?? '', text);
   }
   if (!holds) throw new TerminalInputError(t.stateChanged);
+  // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
+  // retries leaves Claude's last frame on screen over a shell.
+  const again = await current();
+  if (!again) throw new TerminalInputError(t.stateChanged);
   try {
     await pressEnter(host, deps);
   } catch (error) {

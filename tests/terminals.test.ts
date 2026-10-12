@@ -746,6 +746,49 @@ test('Sends to one session wait their turn instead of typing into each other', a
   });
 });
 
+test('A send that waited its turn looks again before typing', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir);
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      const out = await run(file, args, options);
+      // The first text was `/clear`: the same process moves on to a new session.
+      if (args.includes('send-keys'))
+        await writeFile(
+          path.join(dir, '4242.json'),
+          record(4242, { sessionId: 'another-session-0001' }),
+        );
+      return out;
+    };
+    const [first, second] = await Promise.allSettled([
+      sendToTerminal(tmuxLive(), '/clear', deps),
+      sendToTerminal(tmuxLive(), 'follow-up', deps),
+    ]);
+    assert.equal(first.status, 'fulfilled');
+    assert.equal(second.status, 'rejected');
+    assert.equal(calls.filter((c) => c.args.includes('paste-buffer')).length, 1);
+  });
+});
+
+test('A pause during the screen checks stops Enter', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let paused = false;
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed, read) => {
+        if (read === 2) paused = true;
+        return claudeScreen(read < 2 ? '' : typed);
+      },
+    });
+    const run = deps.run;
+    deps.run = (file, args, options) =>
+      args.includes('stat=,pgid=,tpgid=') && paused
+        ? Promise.resolve('T 4242 4242\n')
+        : run(file, args, options);
+    await assert.rejects(sendToTerminal(tmuxLive(), 'hi', deps), TerminalInputError);
+    assert.ok(!sent(calls));
+  });
+});
+
 test('A failed tmux paste removes the buffer holding the text', async () => {
   const { deps, calls } = fakeDeps('/x', {
     fail: (_file, args) => (args.includes('paste-buffer') ? new Error('no pane') : undefined),
