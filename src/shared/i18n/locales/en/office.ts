@@ -29,6 +29,9 @@ export const office = {
     fit: 'Fit all',
     inLabel: 'Zoom into the office',
     inTitle: 'Zoom in · scroll to look around',
+    zoneLabel: (zone: string) => `Zoom into ${zone}`,
+    zoneTitle: 'Zoom into this zone · click again or Esc to see all',
+    zoneBack: (zone: string) => `${zone} · See all`,
   },
   // Workspace around the map: zone tabs, toolbar, folded records and the archive room.
   spaces: 'Office spaces',

@@ -34,6 +34,10 @@ export const desk: Messages['desk'] = {
     label: (name) => `${name} 가리기`,
     title: '가리기',
     hint: '다음 대화(새 요청·최종 응답)가 올 때까지 가려요. 확인 요청이나 오류가 생기면 바로 다시 보여요.',
+    zoneLabel: (zone) => `${zone} 모두 가리기`,
+    zoneTitle: '이 프로젝트 모두 가리기',
+    zoneHint:
+      '지금 이 구역 동료를 한꺼번에 가려요. 각자 다음 대화가 오면 돌아오고, 나를 기다리는 동료는 남아요.',
   },
   helper: {
     name: '보조 동료',

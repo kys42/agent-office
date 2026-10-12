@@ -564,7 +564,7 @@
   pointer-events: none;
   z-index: 1;
 }
-.project-floor-mark > span {
+:is(.project-floor-mark, .zone-mark-focus) > span {
   display: grid;
   place-items: center;
   width: 17px;
@@ -576,7 +576,7 @@
   font-family: 'Galmuri9', var(--font-pixel);
   font-size: 9px;
 }
-.project-floor-mark b {
+:is(.project-floor-mark, .zone-mark-focus) > b {
   font-family: var(--font-pixel);
   font-size: 11px;
   font-weight: 700;
@@ -584,11 +584,50 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.project-floor-mark small {
+:is(.project-floor-mark, .zone-mark-focus) > small {
   flex-shrink: 0;
   font-family: 'Galmuri9', var(--font-pixel);
   font-size: 9px;
   color: #bca788;
+}
+
+/* The big office's zone sign is a button: it zooms the room onto its zone (again: all). */
+.project-area > .project-floor-mark {
+  pointer-events: auto;
+}
+.zone-mark-focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  cursor: zoom-in;
+}
+.project-area.is-focus-zone .zone-mark-focus {
+  cursor: zoom-out;
+}
+.zone-mark-focus:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.project-floor-mark:has(.zone-mark-focus:hover) {
+  background: rgba(52, 38, 30, 0.96);
+}
+/* Zoomed onto one zone: the rest of the room steps back. */
+.project-area {
+  transition:
+    opacity 0.2s,
+    filter 0.2s;
+}
+.office-card.is-zone-focus .project-area:not(.is-focus-zone) {
+  opacity: 0.32;
+  filter: saturate(0.5);
 }
 
 /* Desks (bench furniture) */
@@ -1710,6 +1749,15 @@
   font-size: 12px !important;
   min-width: 82px !important;
 }
+.scene-controls .zone-back {
+  max-width: 220px;
+  color: var(--accent);
+}
+.zone-back span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .zoom-readout.is-fit {
   font-family: var(--font-ui);
   color: var(--accent) !important;
@@ -2251,7 +2299,8 @@
 }
 
 /* A user-made area wears a dashed outline on its number tag. */
-.project-floor-mark.custom-area > span {
+.project-floor-mark.custom-area > span,
+.project-floor-mark.custom-area > .zone-mark-focus > span {
   outline: 1px dashed #f6e6cc;
   outline-offset: 1px;
 }

@@ -2,7 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { demoSnapshot } from '../src/lib/demo.js';
 import { isVeiled } from '../src/shared/veil.js';
-import { buildOfficeModel, petSummary, PET_FRESH_MS } from '../src/shared/office-model.js';
+import {
+  buildOfficeModel,
+  petSummary,
+  PET_FRESH_MS,
+  zoneVeilIds,
+} from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
 const now = Date.now();
 const hiddenAt = now - 10 * 60_000;
@@ -296,4 +301,34 @@ test('the pet prefers a question, skips opened news, and lets go once closed', (
     undefined,
     'a resolved question still stands in front of the older result',
   );
+});
+
+test('hiding a zone hides everyone shown there except who waits for the person (#100)', () => {
+  const helper = (id: string, patch: Partial<Session> = {}) =>
+    make(id, {
+      relation: { kind: 'subagent', parentNativeId: 'w', source: 'fixture' },
+      parentId: 'w',
+      status: 'work',
+      updatedAt: now - 5_000,
+      activity: { text: '조사 중', kind: 'progress', at: now - 5_000 },
+      ...patch,
+    });
+  const sessions = [
+    make('a', { officeSeat: 0 }),
+    make('c', { officeSeat: 1, status: 'call' }),
+    make('gone', { officeSeat: 2, hiddenAt }),
+    // Waits for the person only through one helper: the host and that helper stay.
+    make('w', { officeSeat: 3 }),
+    helper('ask', { status: 'error' }),
+    helper('quiet'),
+  ];
+  const model = buildOfficeModel(snap(sessions), now);
+  assert.deepEqual(zoneVeilIds(model, ['a', 'c', 'gone', 'w']), ['a', 'quiet']);
+  assert.deepEqual(zoneVeilIds(model, ['c']), [], 'nothing to hide: no button');
+  // Hiding them is the desk hide: the zone empties of everyone it may hide.
+  const after = buildOfficeModel(
+    snap(sessions.map((s) => (['a', 'quiet'].includes(s.id) ? { ...s, hiddenAt: now } : s))),
+    now,
+  );
+  assert.deepEqual(after.scene.map((s) => s.id).sort(), ['ask', 'c', 'w']);
 });
