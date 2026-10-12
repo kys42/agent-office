@@ -429,6 +429,56 @@ test('Pointing at a desk shows what the person asked as its own bubble above', a
   await expect(request).toHaveCount(0);
 });
 
+test('An unfolded bubble folds back on a click elsewhere or when the window loses focus', async ({
+  page,
+}) => {
+  await bridge(page, answered());
+  await page.goto('/');
+  const bubble = page.locator('.desk-station[data-station-id="demo:0"] .speech-bubble');
+  const unfold = () => bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await unfold();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  // Clicking inside it keeps it.
+  await bubble.locator('.speech-copy').click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  // A click on the room elsewhere folds it.
+  const room = (await page.locator('.office-card').boundingBox())!;
+  await page.mouse.click(room.x + 8, room.y + room.height - 8);
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+  // So does turning to another app.
+  await unfold();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+});
+
+test('Writing a reply keeps the unfolded bubble open', async ({ page }) => {
+  await bridge(page, answered());
+  await page.addInitScript(() => {
+    const office = (window as any).office;
+    office.terminalSend = async () => true;
+    office.send = async () => 'sent';
+    office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          { kind: 'tmux', label: 'tmux', status: 'idle', canSend: true, canFocus: true },
+        ]),
+      );
+  });
+  await page.goto('/#mini=row');
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  const bubble = desk.locator('.speech-bubble');
+  await desk.locator('.office-pet').hover();
+  await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await bubble.locator('.bubble-reply').click();
+  const form = desk.locator('.quick-reply');
+  await form.locator('textarea').click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await expect(form).toBeVisible();
+});
+
 test('The pet shows the request bubble only while hovered, inside its window', async ({ page }) => {
   const snapshot = answered();
   await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));

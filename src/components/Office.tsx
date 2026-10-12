@@ -99,12 +99,16 @@ export function Office({
     if (from && onZoneDrop && zoneKey !== projectKey(from)) onZoneDrop(from.id, zoneKey);
   };
   useEffect(() => {
-    const el = holder.current!;
+    // Measure the card around the scroller, not the scroller: its own scrollbar would change
+    // what it measures (scale → scene size → scrollbar → scale…), a flicker loop. Whole pixels,
+    // and no update when nothing changed.
+    const el = holder.current!.parentElement!;
     let windowSize = '';
     const ro = new ResizeObserver(() => {
-      const width = el.clientWidth,
-        height = el.clientHeight;
-      setViewport({ width, height });
+      const box = el.getBoundingClientRect();
+      const width = Math.floor(box.width),
+        height = Math.floor(box.height);
+      setViewport((v) => (v.width === width && v.height === height ? v : { width, height }));
       const size = `${window.innerWidth}:${window.innerHeight}`;
       // Measure the actual room. Opening a dock only changes scale, never the floor plan.
       if (height > 0 && size !== windowSize) {
@@ -204,13 +208,22 @@ export function Office({
       className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''} ${dragging ? 'is-dragging' : ''}`}
       aria-label={t.office.region}
     >
-      <div className="map-holder scene-viewport" ref={holder} data-scale={scale.toFixed(3)}>
+      <div
+        className={`map-holder scene-viewport ${zoom === null ? 'is-fit' : ''}`}
+        ref={holder}
+        data-scale={scale.toFixed(3)}
+      >
         <div
           className="scene-size"
-          style={{
-            width: Math.max(viewport.width, layout.width * scale + 48),
-            height: Math.max(viewport.height, layout.height * scale + 92),
-          }}
+          style={
+            // Fitted, the room is the view (it never scrolls); zoomed, it grows past it.
+            zoom === null
+              ? { width: '100%', height: '100%' }
+              : {
+                  width: Math.max(viewport.width, layout.width * scale + 48),
+                  height: Math.max(viewport.height, layout.height * scale + 92),
+                }
+          }
         >
           <div
             className={`office-map ${dragging && dropKey === null ? 'drop-new' : ''}`}

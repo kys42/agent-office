@@ -168,6 +168,10 @@
   inset: 0;
   overflow: auto;
 }
+/* Fitted to the window, the room never scrolls: no scrollbar can come and go. */
+.scene-viewport.is-fit {
+  overflow: hidden;
+}
 .scene-size {
   position: relative;
 }
