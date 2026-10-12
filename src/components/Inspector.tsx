@@ -236,23 +236,32 @@ export function Inspector({
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
   // What was just sent, until the record shows it (a busy Claude reads queued input later).
-  const [sent, setSent] = useState<{ id: string; text: string; at: number }[]>([]);
-  const remember = (text: string) =>
-    setSent((list) => [...list, { id: `sent:${Date.now()}`, text: text.trim(), at: Date.now() }]);
-  useEffect(() => setSent([]), [session.id]);
+  // Kept per session: a send that resolves after switching colleagues stays with its own.
+  type Sent = { id: string; sessionId: string; text: string; at: number };
+  const [sentAll, setSent] = useState<Sent[]>([]);
+  const remember = (sessionId: string, text: string) =>
+    setSent((list) => [
+      ...list,
+      { id: `sent:${sessionId}:${Date.now()}`, sessionId, text: text.trim(), at: Date.now() },
+    ]);
   useEffect(() => {
     setSent((list) => {
+      // Each recorded request settles one send at most: the same words sent twice need two.
       const asked = view.session.events
         .filter((e) => e.kind === 'user')
-        .map((e) => ({ text: e.text.trim(), at: e.at }));
-      const next = list.filter(
-        (p) =>
-          Date.now() - p.at < 30 * 60_000 &&
-          !asked.some((e) => e.text === p.text && e.at >= p.at - 60_000),
-      );
+        .map((e) => ({ text: e.text.trim(), at: e.at, used: false }));
+      const next = list.filter((p) => {
+        if (Date.now() - p.at > 30 * 60_000) return false;
+        if (p.sessionId !== view.session.id) return true;
+        const match = asked.find((e) => !e.used && e.text === p.text && e.at >= p.at - 10_000);
+        if (!match) return true;
+        match.used = true;
+        return false;
+      });
       return next.length === list.length ? list : next;
     });
-  }, [view.session.events]);
+  }, [view.session.events, view.session.id]);
+  const sent = sentAll.filter((p) => p.sessionId === s.id);
   // Opening a bookmark: the conversation, read back far enough to hold its message.
   const [reached, setReached] = useState<number | null>(null);
   const focusHere = focus && focus.sessionId === session.id && !demo ? focus : null;
@@ -802,7 +811,7 @@ export function Inspector({
               const id = s.id;
               notify(await api.send!(id, text));
               markSent(id);
-              remember(text);
+              remember(id, text);
             }}
           />
         )}
@@ -1244,7 +1253,7 @@ export function Inspector({
                   const id = s.id;
                   notify(await api.send!(id, text));
                   markSent(id);
-                  remember(text);
+                  remember(id, text);
                 }}
               />
             ) : (

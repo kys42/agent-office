@@ -77,7 +77,10 @@ export function DockCard() {
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
-          onSelect={(id) => setTarget({ id, news: false })}
+          onSelect={(id) => {
+            setTarget({ id, news: false });
+            void api.card?.('select', { id, news: false });
+          }}
           showNews={target.news ? `${session.id}:${opened}` : null}
           onClose={close}
           onExpand={() => void api.card?.('expand', { id: session.id, news: false })}

@@ -245,6 +245,12 @@ try {
   await again();
   await card.waitForSelector('.inspector-card');
   assert.equal(await cardShown(), true, 'and a third opens it again');
+  // Moved on inside the card to another colleague, the first one's desk opens it rather than closing.
+  await card.evaluate(() =>
+    window.office.card('select', { id: 'claude:claude-test', news: false }),
+  );
+  await again();
+  assert.equal(await cardShown(), true, 'a desk other than the one shown switches the card');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();

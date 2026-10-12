@@ -318,6 +318,20 @@ export function Conversation({
     loadedAt.current = performance.now();
     showOlder();
   });
+  // Still at the top once a page settled or the pause passed (the observer only tells changes):
+  // look again, so staying up there keeps reading back.
+  useEffect(() => {
+    if (loadingOlder || !canShowOlder) return;
+    const wait = Math.max(0, 800 - (performance.now() - loadedAt.current)) + 50;
+    const timer = setTimeout(() => {
+      const button = olderButton.current;
+      const scroller = root.current?.closest('.inspector-scroll');
+      if (!button || !scroller) return;
+      if (button.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top - 400)
+        reachTop();
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [loadingOlder, count, groups.length, canShowOlder]);
   useEffect(() => {
     const button = olderButton.current;
     const scroller = root.current?.closest('.inspector-scroll');

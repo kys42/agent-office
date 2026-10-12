@@ -341,3 +341,13 @@ test('What the person sends shows at once, marked as waiting, until the record h
   await expect(waiting).toContainText('작업 끝나면 테스트도 돌려 줘');
   await expect(waiting).toContainText('차례를 기다리는 중');
 });
+
+test('The same words sent twice wait as two bubbles', async ({ page }) => {
+  const aside = await card(page);
+  const box = aside.locator('.card-composer textarea');
+  for (let i = 0; i < 2; i++) {
+    await box.fill('계속해 줘');
+    await box.press('Enter');
+  }
+  await expect(aside.locator('.message-pending')).toHaveCount(2);
+});

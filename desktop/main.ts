@@ -601,6 +601,13 @@ function setupIPC() {
       typeof target.news === 'boolean';
     if (!valid) throw new Error(m().desktop.badRequest);
     const chosen: CardTarget = { id: target.id, news: target.news };
+    // The card moved on to another colleague inside it (a helper, another run): clicks on the
+    // dock now toggle against that one.
+    if (action === 'select') {
+      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
+      cardTarget = chosen;
+      return;
+    }
     if (action === 'expand') {
       if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
       hideCard();
