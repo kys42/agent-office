@@ -214,7 +214,9 @@ export function Conversation({
     const messages = root.current?.querySelectorAll('.conversation-message');
     const lastMessage = messages?.[messages.length - 1];
     // The sticky filters cover the top; folded away (the card's chat), nothing does.
-    const toolbar = root.current?.querySelector('.conversation-toolbar');
+    const toolbar =
+      root.current?.querySelector('.conversation-sticky') ??
+      root.current?.querySelector('.conversation-toolbar');
     if (lastMessage)
       scroller.scrollTop +=
         lastMessage.getBoundingClientRect().top -
