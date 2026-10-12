@@ -272,7 +272,7 @@ const RULE = /^─{3,}/;
  * tasks", "shift+tab to cycle") are not among them.
  */
 const FOOT =
-  /do you want|esc to (?:cancel|clear|close|return)|enter to (?:confirm|return|create|start|open|select|interrupt)|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
+  /do you want|esc to (?:cancel|clear|close|return)|\benter to\b|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
 /** An `@` completion row, drawn right above the prompt; Enter would pick from the list. */
 const SUGGESTION = /^\s{2,}(?:◇|❯)\s/;
 /** What an empty prompt shows in place of text: examples, and queued-message help. */
@@ -549,6 +549,9 @@ async function deliver(
   // retries leaves Claude's last frame on screen over a shell.
   const again = await current();
   if (!again) throw new TerminalInputError(t.stateChanged);
+  // And the screen once more: a dialog may have opened during those checks.
+  if (!promptHolds((await readScreen(host, deps)) ?? '', text))
+    throw new TerminalInputError(t.stateChanged);
   try {
     await pressEnter(host, deps);
   } catch (error) {

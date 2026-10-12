@@ -437,6 +437,8 @@ test("Claude's prompt is read from the screen: a dialog, menu or other view is n
     'hold space to speak',
   ])
     assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), '', foot);
+  // A narrow pane truncates a hint: any "enter to …" below the box means Enter goes elsewhere.
+  assert.equal(readPrompt(`${claudeScreen('hi')}\n  enter to inter…`), null);
   // A narrow pane wraps a hint across rows.
   assert.equal(readPrompt(`${claudeScreen('hi')}\n  enter to\n  interrupt and send`), null);
   // History search and the transcript take Enter themselves.
@@ -491,6 +493,8 @@ test('Orca types the text, looks again, then presses Enter on its own', async ()
         '--json',
       ],
       read,
+      // Once more after the record and foreground checks.
+      read,
       ['terminal', 'send', `--terminal=${HANDLE}`, '--enter', '--json'],
     ]);
   });
@@ -528,7 +532,7 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
     const tmux = calls.filter((c) => c.file === '/bin/tmux');
     const mode = ['-S', SOCKET, 'display-message', '-p', '-t', '%3', '#{pane_in_mode}'];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-t', '%3'];
-    assert.equal(tmux.length, 7);
+    assert.equal(tmux.length, 9);
     assert.deepEqual(tmux[0].args, mode);
     assert.deepEqual(tmux[1].args, capture);
     const buffer = tmux[2].args[4];
@@ -548,7 +552,10 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
     ]);
     assert.deepEqual(tmux[4].args, mode);
     assert.deepEqual(tmux[5].args, capture);
-    assert.deepEqual(tmux[6].args, ['-S', SOCKET, 'send-keys', '-t', '%3', 'Enter']);
+    // The screen once more after the record and foreground checks, right before Enter.
+    assert.deepEqual(tmux[6].args, mode);
+    assert.deepEqual(tmux[7].args, capture);
+    assert.deepEqual(tmux[8].args, ['-S', SOCKET, 'send-keys', '-t', '%3', 'Enter']);
   });
 });
 
