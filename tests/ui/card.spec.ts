@@ -140,6 +140,10 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   await expect(recent.locator('.artifact-row')).toHaveCount(2);
   await recent.getByRole('button', { name: /더 보기|1/ }).click();
   await expect(recent.locator('.artifact-row')).toHaveCount(3);
+  // Only once: the office panel's tray stays out of the card (one read of the work, not two).
+  await expect(aside.locator('.artifact-tray')).toHaveCount(0);
+  const box = (await recent.boundingBox())!;
+  expect(box.height).toBeLessThanOrEqual(152);
   await expect(aside.getByRole('tab')).toHaveText(['대화', /^소식/, '작업 정보', '기억 메모']);
   await expect(aside.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
   // The chat box sits at the bottom.

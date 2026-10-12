@@ -922,6 +922,9 @@ body.card-mode:not(.is-mac) .dock-card {
   display: none;
 }
 .artifact-list {
+  /* Expanded, it scrolls within a bounded height: the chat keeps its room. */
+  max-height: min(150px, 24vh);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1189,4 +1192,8 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 .terminal-send-chat .terminal-send-error {
   grid-column: 1 / -1;
+}
+.inspector-card .persona-run-picker {
+  flex: none;
+  margin: 8px 14px 0;
 }

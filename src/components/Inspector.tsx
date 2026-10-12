@@ -624,7 +624,7 @@ export function Inspector({
         )}
         {loadError && <div className="inline-error">{loadError}</div>}
 
-        {(tab === 'history' || tab === 'overview') && (
+        {!card && (tab === 'history' || tab === 'overview') && (
           <ArtifactCards
             id={s.id}
             urls={s.artifacts}
@@ -909,6 +909,7 @@ export function Inspector({
           </div>
           {petEditor}
           {zoneEditor}
+          {personaPicker}
           {!privacy && (
             <div className="card-recent">
               <ArtifactCards
