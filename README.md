@@ -105,8 +105,8 @@ When you want the whole picture, open the full office: every project on its own 
 ### 💬 Jump in and reply
 
 - Claude Code sessions running in **Orca** or **tmux** get a *Jump to Orca / tmux* button on their work card.
-- **Send to terminal** (desktop only, on by default) lets you follow up from the work card or a speech bubble's reply button. Turn it off in Settings any time; turning it back on asks you to confirm in a native dialog. Idle Claude Code sessions get your text typed into their own terminal; live Codex CLI sessions receive it through `codex queue`.
-- It never approves permission prompts, only types into an idle session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
+- **Send to terminal** (desktop only, on by default) lets you follow up from the work card or a speech bubble's reply button. Turn it off in Settings any time; turning it back on asks you to confirm in a native dialog. Claude Code sessions get your text typed into their own terminal (queued for the current turn while working, held back while a permission prompt is open); live Codex CLI sessions receive it through `codex queue`.
+- It never approves permission prompts, only types into Claude's own prompt (resting or mid-task, checked on screen right before Enter) in a session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
 
 ### Everything else
 

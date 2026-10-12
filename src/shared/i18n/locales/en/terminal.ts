@@ -8,7 +8,7 @@ export const terminal = {
   queueLine: (host: string) => `${host} · session queue`,
   placeholder: {
     queues: "Goes straight to the Codex session · if it's busy, it runs after the current turn",
-    busy: "Working · you can send once it's done",
+    busy: 'Working · what you send is queued and picked up as it goes',
     notWaiting: 'Not waiting for input right now',
     direct: (host: string) => `Typed straight into the ${host} terminal`,
   },

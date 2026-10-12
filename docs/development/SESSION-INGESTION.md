@@ -143,7 +143,7 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
   - **같은 프로세스 확인**: `waiting`이고 이번 수집 목록에 있는 세션의 기록만 확인한다. PID가 살아 있고 `ps -o lstart=`(UTC·C 로케일)가 `procStart`와 같아야 한다. 확인 결과는 PID·procStart별로 30초 기억하고, 실패한 확인은 기억하지 않는다. 평소 비용은 수집당 폴더 읽기 한 번이다.
   - **최신 확인**: `statusUpdatedAt`(없으면 `updatedAt`) 뒤에 결과·메시지·턴 경계 이벤트가 있으면 지난 기록으로 보고 무시한다.
   - **적용 위치**: `OfficeService.collect`에서 병합·작업 위치 보완 뒤, 저장 직전에 매 수집 적용한다(`applyLiveWait`). 파싱 캐시에는 넣지 않는다: 대기는 transcript가 그대로여도 바뀐다. 적용하면 상태 `call`, 이유(권한 확인/플랜 승인/일반 대기), 현재 턴에서 결과가 없는 마지막 도구 호출을 `request-input`으로 표시하고 revision에 반영한다. 대기가 끝나면 다음 수집에서 overlay가 사라지고 revision이 다시 바뀌어 저장소와 화면이 갱신된다.
-  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`일 때만 입력한다(`waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
+  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`·`busy`·`shell`일 때, 화면에서 입력창을 확인한 뒤에만 입력한다(작업 중이면 Claude가 대기열에 넣음. `waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
 - **소식**: 열린 요청만 '응답 필요' 후보다. 결과·이후 메시지·턴 경계가 기록되거나 대기 overlay가 사라지면 해당 소식을 해결한다. 퇴근 시간보다 오래된 미응답 요청은 관측으로만 기억하고 소식을 만들지 않는다. 그래서 업그레이드 뒤 재파싱해도 지난 플랜 승인은 새 미확인 소식이 되지 않는다.
 - **Codex 한계**: Codex rollout에는 승인·권한 요청 이벤트가 없다. `request_user_input`만 호출로 보이고, 명령 승인 대기는 보이지 않는다. 근거가 생기기 전에는 추측하지 않는다.
 

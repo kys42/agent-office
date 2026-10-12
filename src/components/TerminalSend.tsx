@@ -16,13 +16,14 @@ export function targetLine(target: TerminalTarget, privacy: boolean) {
 export function targetPlaceholder(target: TerminalTarget) {
   const text = m().terminal.placeholder;
   if (target.queues) return text.queues;
-  if (!target.canSend) return target.status === 'busy' ? text.busy : text.notWaiting;
-  return text.direct(HOSTS[target.kind]);
+  if (!target.canSend) return text.notWaiting;
+  // Mid-turn Claude queues what is typed, so a follow-up can steer the work in progress.
+  return target.status === 'busy' ? text.busy : text.direct(HOSTS[target.kind]);
 }
 
 /**
  * A follow-up typed into the colleague's live terminal, exactly as if typed there.
- * Desktop only, on unless turned off in Settings; the main process re-checks the terminal and its idle state.
+ * Desktop only, on unless turned off in Settings; the main process re-checks the terminal and its state.
  */
 export function TerminalSend({
   target,
@@ -91,7 +92,7 @@ export function TerminalSend({
         <small>
           <Terminal size={11} />
           {targetLine(target, privacy)}
-          {waiting && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
+          {!target.queues && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
         </small>
         <button
           className="button primary"

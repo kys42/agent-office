@@ -256,16 +256,92 @@ export const forgetTerminal = (sessionId: string) =>
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 
 /**
- * What the renderer may know: never the handle or socket, which main re-resolves per action.
- * Only an idle prompt takes typed text; `waiting` (a permission prompt or plan approval on
- * screen) would turn the text into an answer.
+ * Statuses whose screen may show the prompt: at rest (`shell` is at rest while a background
+ * shell runs), or mid-turn, where Claude Code queues what is typed. `waiting` (a permission
+ * prompt or plan approval) and anything unknown are refused outright. The record is written
+ * after the screen changes, so the screen itself is read right before typing and before Enter.
  */
+const OPEN = new Set(['idle', 'busy', 'shell']);
+export const acceptsInput = (status: string) => OPEN.has(status);
+
+/** A box border: dashes, or dashes around a session title that may fill the pane. */
+const RULE = /^─+(?: .* ─+)?$/;
+/**
+ * Footer hints of a screen where Enter goes elsewhere: dialogs and pickers, the agents view
+ * ("enter to create · esc to clear"), the transcript, history search, and a prompt where Enter
+ * would interrupt the turn. The main prompt's own hints ("esc to interrupt", "ctrl+t to hide
+ * tasks", "shift+tab to cycle") are not among them.
+ */
+const FOOT =
+  /do you want|esc to (?:cancel|clear|close|return)|\benter to\b|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
+/** What an empty prompt shows in place of text: examples, and queued-message help. */
+const HINT = /^(?:Try "[\s\S]*"|Press (?:up|Enter) to [\s\S]*)$/;
+const PASTED = /^\[Pasted text #\d+[^\]]*\]$/;
+/** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
+const drawn = (value: string) => value.normalize('NFC').replace(/[\s​-‍⁠︎️]+/g, '');
+
+/**
+ * What Claude Code's main prompt holds, read from the rendered screen: the last box, a `❯`
+ * line between two rules, with nothing below that offers Enter to something else. A permission
+ * prompt, plan approval or question replaces the box, `!` shell mode changes its marker, and
+ * the agents view, menus and completion lists announce themselves around it; any of those is
+ * `null` (closed). Measured on Claude Code 2.1.296.
+ */
+export function readPrompt(screen: string): string | null {
+  const lines = screen.split('\n').map((line) => line.trimEnd());
+  const bottom = lines.findLastIndex((line) => RULE.test(line));
+  const top = lines.findLastIndex((line, i) => i < bottom && RULE.test(line));
+  if (top < 0) return null;
+  const box = lines.slice(top + 1, bottom);
+  if (!/^❯(\s|$)/.test(box[0] ?? '')) return null;
+  const typed = box
+    .map((line) => line.trim())
+    .join('\n')
+    .replace(/^❯\s?/, '');
+  // A slash command typed in full selects its own row: Enter then runs exactly that command.
+  const command = /^\/\S+$/.test(typed) ? typed : null;
+  // List rows are indented; queued messages and the person's turns sit at column 0.
+  const picks = (line: string) => {
+    const row = /^\s{2,}❯\s+(\S+)/.exec(line);
+    return !!row && row[1] !== command;
+  };
+  const below = lines.slice(bottom + 1);
+  // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
+  if (
+    FOOT.test(below.join(' ').replace(/\s+/g, ' ')) ||
+    below.some((line) => /^\s*❯/.test(line) && (!command || picks(` ${line}`)))
+  )
+    return null;
+  // The list touching the box (rows, wrapped descriptions) up to a blank line; older output
+  // that merely looks like a list is no list.
+  const start = lines.slice(0, top).findLastIndex((line) => !line.trim());
+  const list = lines.slice(Math.max(start + 1, top - 30), top);
+  if (list.some((line) => /^\s{2,}◇\s/.test(line) || picks(line))) return null;
+  return typed;
+}
+
+/**
+ * The prompt holds exactly `text`, or the placeholder a long paste collapses into. The prompt
+ * was empty before typing, so a long text the composer shows only the end of counts too.
+ */
+export function promptHolds(screen: string, text: string): boolean {
+  const typed = readPrompt(screen);
+  if (typed === null) return false;
+  const shown = drawn(typed);
+  return (
+    shown === drawn(text) ||
+    PASTED.test(typed) ||
+    (shown.length >= 40 && drawn(text).endsWith(shown))
+  );
+}
+
+/** What the renderer may know: never the handle or socket, which main re-resolves per action. */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
   return {
     kind: live.host.kind,
     label: live.host.kind === 'orca' ? live.host.title : live.host.label,
     status: live.process.status,
-    canSend: live.process.status === 'idle',
+    canSend: acceptsInput(live.process.status),
     canFocus: true,
   };
 }
@@ -332,48 +408,68 @@ export function cleanInput(text: unknown): string {
   return value;
 }
 
-export async function sendToTerminal(
-  live: LiveTerminal,
-  input: unknown,
-  deps = defaultTerminalDeps(),
-): Promise<string> {
-  const text = cleanInput(input);
-  if (live.process.status !== 'idle') throw new TerminalInputError(m().desktop.terminal.busy);
-  if (!(await ownsTerminal(live.process.pid, deps)))
-    throw new TerminalInputError(m().desktop.terminal.notOwner);
-  const { host } = live;
-  if (host.kind === 'orca') {
-    // `--flag=value` is the only form Orca reads for a value that starts with `--`.
-    let out: string;
-    try {
-      // Orca waits up to 5s for the turn to start, on top of its own startup.
-      out = await deps.run(
-        deps.bin('orca'),
-        [
-          'terminal',
-          'send',
-          `--terminal=${host.handle}`,
-          `--text=${text}`,
-          '--enter',
-          '--wait-submit=5',
-          '--json',
-        ],
-        { timeout: 20000 },
-      );
-    } catch (error) {
-      out = (error as { stdout?: string }).stdout ?? '';
-      if (!/"accepted"\s*:\s*false/.test(out)) throw error;
+/**
+ * The rendered screen as plain text, or `null` when it cannot be read. A tmux pane scrolled
+ * back (copy mode) would take Enter itself, so it reads as no prompt at all.
+ */
+async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<string | null> {
+  try {
+    if (host.kind === 'tmux') {
+      const tmux = deps.bin('tmux');
+      const mode = await deps.run(tmux, [
+        '-S',
+        host.socket,
+        'display-message',
+        '-p',
+        '-t',
+        host.pane,
+        '#{pane_in_mode}',
+      ]);
+      if (mode.trim() !== '0') return '';
+      return await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-t', host.pane]);
     }
-    const send = JSON.parse(out)?.result?.send;
-    if (send?.accepted !== true) {
-      const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
-      throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
-    }
-    const stages: unknown = send.prompt?.stages;
-    return Array.isArray(stages) && stages.includes('turn_started')
-      ? m().desktop.terminal.orcaStarted
-      : m().desktop.terminal.orcaSent;
+    const out = await deps.run(deps.bin('orca'), [
+      'terminal',
+      'read',
+      `--terminal=${host.handle}`,
+      '--screen',
+      '--limit=200',
+      '--json',
+    ]);
+    const terminal = JSON.parse(out)?.result?.terminal;
+    // Without a rendered screen Orca falls back to past output, which is not what is shown now.
+    if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
+    return terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
+  } catch {
+    return null;
   }
+}
+
+async function orcaSend(host: { handle: string }, input: string[], deps: TerminalDeps) {
+  let out: string;
+  try {
+    // `--flag=value` is the only form Orca reads for a value that starts with `--`.
+    out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'send', `--terminal=${host.handle}`, ...input, '--json'],
+      { timeout: 20000 },
+    );
+  } catch (error) {
+    out = (error as { stdout?: string }).stdout ?? '';
+    if (!/"accepted"\s*:\s*false/.test(out)) throw error;
+  }
+  const send = JSON.parse(out)?.result?.send;
+  if (send?.accepted !== true) {
+    const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
+    throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
+  }
+}
+
+/** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
+async function typeText(host: TerminalHost, text: string, deps: TerminalDeps) {
+  // Orca writes the bytes as they are: bracketed paste keeps tabs and line breaks as text.
+  // cleanInput removed every ESC, so the text itself can never close the paste early.
+  if (host.kind === 'orca') return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
   const tmux = deps.bin('tmux');
   const buffer = `agent-office-${randomUUID()}`;
   // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
@@ -395,16 +491,97 @@ export async function sendToTerminal(
     await deps.run(tmux, ['-S', host.socket, 'delete-buffer', '-b', buffer]).catch(() => '');
     throw error;
   }
-  await deps.wait(150);
-  // A turn may have started meanwhile (a background task, a wake-up); Enter would then land
-  // in it or pick a default choice. Look once more before submitting.
-  const again = await findClaudeProcess(live.process.sessionId, deps, true);
-  if (
-    again?.pid !== live.process.pid ||
-    again.status !== 'idle' ||
-    !(await ownsTerminal(again.pid, deps))
-  )
-    throw new TerminalInputError(m().desktop.terminal.stateChanged);
-  await deps.run(tmux, ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
-  return m().desktop.terminal.tmuxSent(host.label);
+}
+
+const pressEnter = (host: TerminalHost, deps: TerminalDeps) =>
+  host.kind === 'orca'
+    ? orcaSend(host, ['--enter'], deps)
+    : deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
+
+/**
+ * Types the text, then submits it only while Claude's own prompt holds exactly that. Enter is
+ * the risk: on a permission prompt it picks the default choice (pasted text alone is ignored
+ * there, measured on 2.1.296), and mid-turn such prompts come and go. So the record and then
+ * the screen are checked as late as possible; one CLI call (~0.1s) and Claude's next frame are
+ * left between the last look and Enter, and a prompt that opens right after is reported.
+ */
+export function sendToTerminal(
+  live: LiveTerminal,
+  input: unknown,
+  deps = defaultTerminalDeps(),
+): Promise<string> {
+  // One send per session at a time: two surfaces sending at once would type into each other.
+  const key = live.process.sessionId;
+  const before = sending.get(key);
+  const turn = (before ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => deliver(live, input, deps, !!before));
+  sending.set(key, turn);
+  const done = () => {
+    if (sending.get(key) === turn) sending.delete(key);
+  };
+  turn.then(done, done);
+  return turn;
+}
+
+const sending = new Map<string, Promise<string>>();
+
+async function deliver(
+  live: LiveTerminal,
+  input: unknown,
+  deps: TerminalDeps,
+  waited: boolean,
+): Promise<string> {
+  const text = cleanInput(input);
+  const t = m().desktop.terminal;
+  /** The same process, still on this session, open to input and in front of its terminal. */
+  const current = async () => {
+    const now = await findClaudeProcess(live.process.sessionId, deps, true);
+    return now?.pid === live.process.pid &&
+      acceptsInput(now.status) &&
+      (await ownsTerminal(now.pid, deps))
+      ? now
+      : null;
+  };
+  // A leading `!` turns Claude's prompt into shell mode: the text would run as a command.
+  if (text.startsWith('!')) throw new TerminalInputError(t.shellPrefix);
+  // A send that waited its turn looks again: the one before may have ended or replaced the
+  // session (`/clear`).
+  if (waited && !(await current())) throw new TerminalInputError(t.stateChanged);
+  if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
+  if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
+  const { host } = live;
+  const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
+  const screen = await readScreen(host, deps);
+  if (screen === null) throw new TerminalInputError(t.unreadable(hostName(host)));
+  const prompt = readPrompt(screen);
+  if (prompt === null) throw new TerminalInputError(t.notReady);
+  // Never mixed into a draft, or into text a failed send left behind.
+  if (prompt && !HINT.test(prompt)) throw new TerminalInputError(t.draft);
+  await typeText(host, text, deps);
+  // The prompt may take a moment to draw the text.
+  let holds = false;
+  for (let tries = 0; !holds && tries < 3; tries++) {
+    await deps.wait(150);
+    holds = promptHolds((await readScreen(host, deps)) ?? '', text);
+  }
+  if (!holds) throw new TerminalInputError(t.stateChanged);
+  // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
+  // retries leaves Claude's last frame on screen over a shell.
+  const again = await current();
+  if (!again) throw new TerminalInputError(t.stateChanged);
+  // And the screen once more: a dialog may have opened during those checks.
+  if (!promptHolds((await readScreen(host, deps)) ?? '', text))
+    throw new TerminalInputError(t.stateChanged);
+  try {
+    await pressEnter(host, deps);
+  } catch (error) {
+    // The text is in the prompt: a blind resend would type it twice.
+    if (error instanceof TerminalInputError) throw new TerminalInputError(t.notSubmitted(where));
+    throw error;
+  }
+  const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
+  if (after?.status === 'waiting') return t.sentThenPrompt(where);
+  if (again.status === 'busy') return t.queued(where);
+  return host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label);
 }
