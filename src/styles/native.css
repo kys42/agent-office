@@ -992,6 +992,9 @@ body.card-mode:not(.is-mac) .dock-card {
 .inspector-card .inspector-tabs {
   flex: 1;
   min-width: 0;
+  /* Never under the filter or the switch: a narrow card scrolls its tabs sideways. */
+  overflow-x: auto;
+  scrollbar-width: none;
   margin: 0;
   padding: 0;
   gap: 2px;
@@ -1386,4 +1389,11 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 .card-info > .info-note {
   padding: 0 4px;
+}
+
+/* A narrow card keeps the progress switch, drops its word (its name stays for assistive tech). */
+@media (max-width: 440px) {
+  .card-progress-switch span {
+    display: none;
+  }
 }

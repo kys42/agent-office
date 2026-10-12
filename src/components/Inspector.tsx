@@ -1137,7 +1137,7 @@ export function Inspector({
             )}
             {tab === 'history' && (
               <label className="card-progress-switch">
-                {t.inspector.card.progress}
+                <span>{t.inspector.card.progress}</span>
                 <input
                   type="checkbox"
                   role="switch"

@@ -314,3 +314,18 @@ test('Details read as grouped rows', async ({ page }) => {
   await expect(aside.getByRole('button', { name: /실행 경로/ })).toBeVisible();
   await page.screenshot({ path: '.local/card-info.png' });
 });
+
+test('At the smallest card width the tabs never run under the filter or the switch', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  await page.setViewportSize({ width: 380, height: 480 });
+  const tabs = (await aside.locator('.inspector-tabs').boundingBox())!;
+  const filter = (await aside.getByRole('button', { name: '필터' }).boundingBox())!;
+  expect(tabs.x + tabs.width).toBeLessThanOrEqual(filter.x);
+  await aside.getByRole('tab', { name: '기억 메모' }).click();
+  await expect(aside.getByRole('tab', { name: '기억 메모' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+});
