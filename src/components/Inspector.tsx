@@ -47,7 +47,8 @@ import {
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
 import { NowCard, nowState } from './NowCard';
-import { unreadNoticeCount } from '../shared/notices';
+import { isInboxNotice, unreadNoticeCount } from '../shared/notices';
+import { CardMenu } from './CardMenu';
 import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
@@ -77,6 +78,7 @@ export function Inspector({
   terminalSend = false,
   onExpand,
   onPrefs,
+  variant = 'panel',
 }: {
   session: Session;
   sessions: Session[];
@@ -105,7 +107,13 @@ export function Inspector({
   /** Shown in the dock card: open this colleague in the big office. */
   onExpand?: () => void;
   onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
+  /**
+   * `card`: the dock's pop-up card reads like a chat — one header line with a menu, the details
+   * folded at the top, the conversation, and a chat box at the bottom. The office panel is `panel`.
+   */
+  variant?: 'panel' | 'card';
 }) {
+  const card = variant === 'card';
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
   const [view, setView] = useState(() => freshConversation(session));
@@ -138,6 +146,14 @@ export function Inspector({
   const [packet, setPacket] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
+  // The card's details fold, remembered across cards.
+  const [infoOpen, setInfoOpen] = useState(() => {
+    try {
+      return localStorage.getItem('office:card-info') === 'open';
+    } catch {
+      return false;
+    }
+  });
   // The office's view of this colleague (status, zone, return, the latest events) follows every
   // snapshot; the newest page of the conversation is read again only when it changed. Pages
   // read further back stay while they still join it; another colleague starts over.
@@ -278,8 +294,707 @@ export function Inspector({
     }
   };
   const presentation = presentSession(s);
+  // What and where it works, its usage and its source: a tab in the office, a fold in the card.
+  const overview = (
+    <>
+      <p className="activity-evidence">
+        {t.inspector.overview.currentStatus} · {s.statusReason}
+      </p>
+      <p className="activity-evidence">
+        {t.inspector.overview.lastRun} · {PHASE_LABELS[presentation.runtime.phase]} ·{' '}
+        {ago(presentation.runtime.at)}
+        {presentation.stale ? t.inspector.overview.staleRun : ''}
+        <br />
+        {presentation.runtime.reason}
+      </p>
+      {s.relation?.role && (
+        <p className="activity-evidence">
+          {t.inspector.overview.role} · {s.relation.role}
+        </p>
+      )}
+      <section className="detail-section">
+        <h3>{t.inspector.overview.whereTitle}</h3>
+        <dl>
+          <div>
+            <dt>
+              <Folder size={14} />
+              {t.inspector.overview.project}
+            </dt>
+            <dd>{s.project}</dd>
+          </div>
+          <div>
+            <dt>
+              <LayoutGrid size={14} />
+              {t.inspector.overview.zone}
+            </dt>
+            <dd>
+              {s.area
+                ? t.inspector.overview.zoneCustom(zoneLabel(s))
+                : t.inspector.overview.zoneByProject(s.project)}
+            </dd>
+          </div>
+          <div>
+            <dt>
+              <GitBranch size={14} />
+              {t.inspector.overview.branch}
+            </dt>
+            <dd title={branchInfo(s).detail}>{branchInfo(s).label}</dd>
+          </div>
+          <div>
+            <dt>
+              <Clock size={14} />
+              {t.inspector.overview.lastActive}
+            </dt>
+            <dd>
+              {date(s.updatedAt)} {time(s.updatedAt)}
+            </dd>
+          </div>
+        </dl>
+        <button
+          className="path-copy"
+          onClick={() => copy(s.cwd ?? '')}
+          disabled={!s.cwd}
+          title={s.cwd ?? ''}
+        >
+          <code>{shortPath(s.cwd)}</code>
+          <Copy size={13} />
+        </button>
+        <p className="fine-print">{t.inspector.overview.startPathNote}</p>
+      </section>
+      {s.workingLocation && (
+        <section className="detail-section working-location">
+          <h3>{t.inspector.overview.workingTitle}</h3>
+          <code>{s.workingLocation.path}</code>
+          <p>
+            {
+              {
+                'file-edit': t.inspector.overview.fileEdit,
+                'git-write': t.inspector.overview.gitWrite,
+                'tool-workdir': t.inspector.overview.toolWorkdir,
+                'shell-cd': t.inspector.overview.explicitCd,
+              }[s.workingLocation.source]
+            }{' '}
+            · {new Date(s.workingLocation.at).toLocaleString(intlLocale())}
+          </p>
+          <small>
+            {s.workspace?.locationSource
+              ? t.inspector.overview.repoFound
+              : t.inspector.overview.repoMissing}{' '}
+            {t.inspector.overview.noMoveHint}
+          </small>
+        </section>
+      )}
+      <section className="detail-section">
+        <div className="section-title">
+          <h3>{t.inspector.usage.title}</h3>
+          <span className="small-badge">
+            {s.usage.scope === 'sample'
+              ? t.inspector.usage.scopeSample
+              : t.inspector.usage.scopeSession}
+          </span>
+        </div>
+        <div className="model-line">
+          <span className="model-symbol">✳</span>
+          <div>
+            <b>{s.model || t.inspector.usage.modelMissing}</b>
+            <small>{s.usage.source}</small>
+          </div>
+        </div>
+        <div className="cost-card">
+          <span>{t.inspector.usage.costLabel}</span>
+          <strong>
+            {s.cost?.usd != null
+              ? `$${s.cost.usd.toLocaleString('en-US', { minimumFractionDigits: s.cost.usd < 0.01 ? 4 : 2, maximumFractionDigits: s.cost.usd < 0.01 ? 4 : 2 })}`
+              : t.inspector.usage.costUnknown}
+          </strong>
+          <b>{t.inspector.usage.costBasis}</b>
+          <small>
+            {s.cost
+              ? t.inspector.usage.costDetail(s.cost.priced, s.cost.unpriced, compact(s.cost.tokens))
+              : t.inspector.usage.costPending}
+          </small>
+          <p>{t.inspector.usage.costDisclaimer}</p>
+          <details>
+            <summary>{t.inspector.usage.costHowTitle}</summary>
+            <p>{t.inspector.usage.costHowBody}</p>
+            <small>{s.cost?.rateVersion}</small>
+            <p>
+              <a
+                href="https://developers.openai.com/api/docs/pricing"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t.inspector.usage.openaiPricing}
+              </a>{' '}
+              ·{' '}
+              <a
+                href="https://platform.claude.com/docs/en/about-claude/pricing"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t.inspector.usage.claudePricing}
+              </a>
+            </p>
+          </details>
+        </div>
+        <div className="usage-grid">
+          <div>
+            <span>{t.inspector.usage.inputTokens}</span>
+            <strong>{compact(s.usage.input)}</strong>
+          </div>
+          <div>
+            <span>{t.inspector.usage.outputTokens}</span>
+            <strong>{compact(s.usage.output)}</strong>
+          </div>
+          <div>
+            <span>{t.inspector.usage.totalTokens}</span>
+            <strong>{compact(s.usage.total)}</strong>
+          </div>
+        </div>
+        {s.usage.contextUsed !== null &&
+        s.usage.contextWindow !== null &&
+        s.usage.contextWindow > 0 ? (
+          <div className="context">
+            <div>
+              <span>{t.inspector.usage.contextTitle}</span>
+              <b>
+                {Math.min(100, Math.round((s.usage.contextUsed / s.usage.contextWindow) * 100))}%
+              </b>
+            </div>
+            <progress value={s.usage.contextUsed} max={s.usage.contextWindow} />
+            <small>{t.inspector.usage.contextNote}</small>
+          </div>
+        ) : (
+          <p className="fine-print">{t.inspector.usage.contextMissing}</p>
+        )}
+      </section>
+      <section className="source-note">
+        <span className="live-dot" />
+        <div>
+          <b>
+            {s.sourceKind === 'sqlite'
+              ? t.inspector.source.sqlite
+              : s.sourceKind === 'demo'
+                ? t.inspector.source.demo
+                : t.inspector.source.log}
+          </b>
+          <p>{s.partial ? t.inspector.source.partial : t.inspector.source.full}</p>
+          <p>{t.inspector.source.readOnly}</p>
+        </div>
+      </section>
+    </>
+  );
   // Pinning belongs to the colleague: a persona is pinned when any of its runs is.
   const colleague = resident ?? s;
+  const petEditor = (
+    <>
+      {petOpen && (
+        <PetCustomizer
+          key={session.id}
+          provider={session.provider}
+          session={session}
+          onPrefs={onPrefs}
+          onClose={() => setPetOpen(false)}
+        />
+      )}
+    </>
+  );
+  const zoneEditor = (
+    <>
+      {zoneOpen && !privacy && onZoneRules && (
+        <ZoneEditor
+          key={s.id}
+          session={s}
+          sessions={sessions}
+          rules={zoneRules ?? []}
+          onRules={onZoneRules}
+          onClose={() => setZoneOpen(false)}
+        />
+      )}
+    </>
+  );
+  const relationStrip = (
+    <>
+      {!privacy && (
+        <div className="relation-strip">
+          <span title={branchInfo(s).detail}>
+            <GitBranch size={12} />
+            {branchInfo(s).label}
+          </span>
+          {parent && (
+            <button onClick={() => onSelect(parent.id)}>
+              {s.relation?.kind === 'fork' ? t.inspector.forkSource : t.inspector.parentTask} ·{' '}
+              {sessionName(parent)}
+            </button>
+          )}
+          {!parent && s.relation?.parentNativeId && <span>{t.inspector.parentMissing}</span>}
+        </div>
+      )}
+    </>
+  );
+  const personaPicker = (
+    <>
+      {personaRuns.length > 0 && (
+        <label className="persona-run-picker">
+          <span>
+            {privacy ? t.inspector.persona : s.actor?.name} ·{' '}
+            {t.inspector.personaRuns(personaRuns.length)}
+          </span>
+          <select
+            aria-label={t.inspector.personaRunsLabel}
+            value={s.id}
+            onChange={(e) => onSelect(e.target.value)}
+          >
+            {personaRuns.map((run) => (
+              <option value={run.id} key={run.id}>
+                {sessionScopeLabel(run)} · {privacy ? t.inspector.hiddenRecord : sessionName(run)} ·{' '}
+                {ago(run.updatedAt)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </>
+  );
+  const nowArea = (
+    <>
+      <div className="inspector-now">
+        <NowCard
+          key={s.id}
+          session={s}
+          notices={colleagueNews}
+          privacy={privacy}
+          onReceipt={onReceipt}
+          onResume={resume}
+          resumeLabel={resumeLabel}
+          canResume={!demo}
+          canType={!!live && terminalSend}
+          typeQueues={!!live?.queues}
+          onShowNews={() => setTab('news')}
+        />
+        {live && (
+          <TerminalSend
+            key={s.id}
+            target={live}
+            enabled={terminalSend}
+            privacy={privacy}
+            onSend={async (text) => {
+              const id = s.id;
+              notify(await api.send!(id, text));
+              markSent(id);
+            }}
+          />
+        )}
+      </div>
+    </>
+  );
+  const tabBar = (
+    <>
+      <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
+        {(card
+          ? (['history', 'news', 'notes'] as const)
+          : (['history', 'news', 'overview', 'notes'] as const)
+        ).map((key) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={tab === key}
+            className={tab === key ? 'active' : ''}
+            onClick={() => setTab(key)}
+          >
+            {key === 'news'
+              ? t.inspector.tabs.news(unreadNoticeCount(news))
+              : t.inspector.tabs[key]}
+            {key === 'notes' && s.notes && <i />}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+  const scrollArea = (
+    <>
+      <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
+        {!privacy && children.length > 0 && (
+          <details className="related-runs">
+            <summary>{t.inspector.linkedRuns(children.length)}</summary>
+            {children.map((child) => (
+              <button key={child.id} onClick={() => onSelect(child.id)}>
+                {child.relation?.kind === 'fork' ? t.inspector.fork : sessionScopeLabel(child)} ·{' '}
+                {sessionName(child)}
+              </button>
+            ))}
+          </details>
+        )}
+        {loadError && <div className="inline-error">{loadError}</div>}
+
+        {(tab === 'history' || tab === 'overview') && (
+          <ArtifactCards
+            id={s.id}
+            urls={s.artifacts}
+            demo={demo}
+            privacy={privacy}
+            notify={notify}
+          />
+        )}
+
+        {privacy ? (
+          <div className="privacy-placeholder">
+            <Folder size={28} />
+            <h3>{t.inspector.privacy.title}</h3>
+            <p>{t.inspector.privacy.body}</p>
+          </div>
+        ) : tab === 'news' ? (
+          <NewsFeed
+            key={s.id + (showNews ?? '')}
+            includeBackground
+            initialFilter={showNews ? 'all' : 'final'}
+            notices={news}
+            sessionIds={[s.id]}
+            sessions={sessions}
+            privacy={privacy}
+            onReceipt={onReceipt}
+          />
+        ) : tab === 'overview' ? (
+          overview
+        ) : tab === 'history' ? (
+          <Conversation
+            key={s.id}
+            session={s}
+            notices={conversationNotices}
+            older={view.older}
+            loadingOlder={loadingOlder}
+            onOlder={loadOlder}
+            notify={notify}
+            compact={card}
+          />
+        ) : (
+          <div className="notes-editor">
+            <span className="eyebrow">{t.inspector.notes.eyebrow}</span>
+            <h3>{t.inspector.notes.title}</h3>
+            <p>{t.inspector.notes.body}</p>
+            <label className="sr-only" htmlFor="notes">
+              {t.inspector.notes.label}
+            </label>
+            <textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                setNotesDirty(true);
+              }}
+              maxLength={12000}
+              placeholder={t.inspector.notes.placeholder}
+            />
+            <button className="button primary" onClick={() => patch({ notes })}>
+              <Check size={16} />
+              {t.inspector.notes.save}
+            </button>
+            <button
+              className={`completion-button ${s.completed ? 'checked' : ''}`}
+              onClick={() => patch({ completed: !s.completed })}
+            >
+              <span>{s.completed && <Check size={14} />}</span>
+              <div>
+                <b>{t.inspector.notes.completedTitle}</b>
+                <small>{t.inspector.notes.completedBody}</small>
+              </div>
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+  const actionBar = (
+    <>
+      <div className="inspector-actions">
+        {s.zone && s.zone !== 'office' && (
+          <button className="return-office" onClick={() => onReturn(s.id)}>
+            {t.inspector.returnToOffice} <ArrowRight size={14} />
+          </button>
+        )}
+        {state === 'attention' ? (
+          <button className="button primary" onClick={resume} disabled={demo}>
+            <Terminal size={16} />
+            {resumeLabel}
+            <ArrowRight size={16} />
+          </button>
+        ) : (
+          <button className="button primary" onClick={handoff} disabled={busy || privacy}>
+            <PackageOpen size={17} />
+            {busy ? t.inspector.gathering : t.inspector.packHandoff}
+            <ArrowRight size={16} />
+          </button>
+        )}
+        <div>
+          {state === 'attention' ? (
+            <button className="button subtle" onClick={handoff} disabled={busy || privacy}>
+              <PackageOpen size={14} />
+              {busy ? t.inspector.gathering : t.inspector.packHandoff}
+            </button>
+          ) : (
+            <button className="button subtle" disabled={demo} onClick={resume}>
+              <Terminal size={14} />
+              {resumeLabel}
+            </button>
+          )}
+          <button
+            className="icon-btn"
+            aria-label={t.inspector.revealSource}
+            disabled={demo || !isDesktop}
+            onClick={() => api.reveal(s.id).catch((e) => notify(e.message))}
+          >
+            <Folder size={16} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label={s.archived ? t.inspector.unarchive : t.inspector.archive}
+            onClick={() => patch({ archived: !s.archived })}
+          >
+            <Archive size={16} />
+          </button>
+        </div>
+      </div>
+    </>
+  );
+  const handoffModal = (
+    <>
+      {packet && (
+        <Modal title={t.inspector.handoff.title} onClose={closePacket} wide>
+          <div className="handoff-intro">
+            <PackageOpen size={24} />
+            <div>
+              <b>{t.inspector.handoff.introTitle}</b>
+              <p>{t.inspector.handoff.introBody}</p>
+            </div>
+          </div>
+          <textarea
+            className="handoff-text"
+            aria-label={t.inspector.handoff.textLabel}
+            value={packet.markdown}
+            onChange={(e) => setPacket({ ...packet, markdown: e.target.value })}
+          />
+          <div className="modal-footer">
+            <span>{t.inspector.handoff.notSent}</span>
+            <button
+              className="button subtle"
+              onClick={async () => {
+                try {
+                  if (await api.exportFile('agent-office-handoff.md', packet.markdown))
+                    notify(t.inspector.handoff.savedFile);
+                } catch (e) {
+                  notify((e as Error).message);
+                }
+              }}
+            >
+              <Download size={15} />
+              {t.inspector.handoff.saveFile}
+            </button>
+            <button className="button primary" onClick={() => copy(packet.markdown)}>
+              <Copy size={15} />
+              {t.inspector.handoff.copy}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+  if (card) {
+    const unread = colleagueNews.filter((n) => !n.seenAt && isInboxNotice(n));
+    const item = (label: string, run: () => void, close: () => void, disabled = false) => (
+      <button
+        role="menuitem"
+        disabled={disabled}
+        onClick={() => {
+          close();
+          run();
+        }}
+      >
+        {label}
+      </button>
+    );
+    return (
+      <>
+        <aside
+          className="inspector inspector-card"
+          aria-label={t.inspector.label}
+          ref={panelRef}
+          tabIndex={-1}
+        >
+          <div className="card-head">
+            <div className={`card-avatar face-${s.provider} status-${s.status}`}>
+              <Sprite session={s} provider={s.provider} mood={s.status} size={36} />
+            </div>
+            <div className="card-title">
+              {editing ? (
+                <form
+                  className="name-editor"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    await patch({ alias });
+                    setEditing(false);
+                  }}
+                >
+                  <label className="sr-only" htmlFor="nickname">
+                    {t.inspector.nicknameLabel}
+                  </label>
+                  <input
+                    autoFocus
+                    id="nickname"
+                    value={alias}
+                    maxLength={60}
+                    onChange={(e) => setAlias(e.target.value)}
+                    placeholder={t.inspector.nicknamePlaceholder}
+                  />
+                  <button className="icon-btn" type="submit" aria-label={t.inspector.saveNickname}>
+                    <Check size={15} />
+                  </button>
+                </form>
+              ) : (
+                <h2 title={privacy ? undefined : sessionName(s)}>
+                  {privacy ? t.inspector.hiddenTeammate : sessionName(s)}
+                </h2>
+              )}
+              <span className="card-status">
+                <i style={{ background: MOODS[s.status].color }} />
+                {MOODS[s.status].label} · {ago(s.updatedAt)}
+                {colleague.pinned && <Pin size={10} />}
+              </span>
+            </div>
+            {state === 'attention' && (
+              <span className="card-chip tone-attention">{t.inspector.card.calling}</span>
+            )}
+            {unread.length > 0 && (
+              <button
+                className="card-chip tone-news"
+                title={t.inspector.card.markRead}
+                onClick={() =>
+                  onReceipt(
+                    unread.map(({ id, version }) => ({ id, version })),
+                    'read',
+                  )
+                }
+              >
+                {t.inspector.card.unread(unread.length)}
+              </button>
+            )}
+            <div className="card-head-tools">
+              {onExpand && (
+                <button
+                  className="icon-btn"
+                  aria-label={t.inspector.expand}
+                  title={t.inspector.expandTitle}
+                  onClick={onExpand}
+                >
+                  <Maximize2 size={14} />
+                </button>
+              )}
+              <CardMenu label={t.inspector.card.more}>
+                {(close) => (
+                  <>
+                    {item(
+                      busy ? t.inspector.gathering : t.inspector.packHandoff,
+                      handoff,
+                      close,
+                      busy || privacy,
+                    )}
+                    {item(resumeLabel, resume, close, demo)}
+                    {s.zone &&
+                      s.zone !== 'office' &&
+                      item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
+                    {item(
+                      colleague.pinned ? t.inspector.unpin : t.inspector.pin,
+                      () => onPin(colleague),
+                      close,
+                    )}
+                    {item(t.inspector.rename, () => setEditing(true), close)}
+                    {item(t.pets.individualTitle, () => setPetOpen(true), close)}
+                    {!privacy &&
+                      onZoneRules &&
+                      item(t.inspector.zone, () => setZoneOpen(true), close)}
+                    {item(
+                      t.inspector.revealSource,
+                      () => void api.reveal(s.id).catch((e) => notify(e.message)),
+                      close,
+                      demo || !isDesktop,
+                    )}
+                    {item(
+                      s.archived ? t.inspector.unarchive : t.inspector.archive,
+                      () => void patch({ archived: !s.archived }),
+                      close,
+                    )}
+                  </>
+                )}
+              </CardMenu>
+              <button
+                className="icon-btn"
+                aria-label={t.inspector.close}
+                title={t.inspector.closeTitle}
+                onClick={onClose}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          {petEditor}
+          {zoneEditor}
+          {!privacy && (
+            <details
+              className="card-workinfo"
+              open={infoOpen}
+              onToggle={(e) => {
+                const open = (e.currentTarget as HTMLDetailsElement).open;
+                setInfoOpen(open);
+                try {
+                  localStorage.setItem('office:card-info', open ? 'open' : 'closed');
+                } catch {
+                  // Remembering is a convenience.
+                }
+              }}
+            >
+              <summary>
+                {t.inspector.card.workInfo}
+                <small>
+                  {s.area ? `${s.area.name} · ${s.project}` : s.project} · {branchInfo(s).label}
+                </small>
+              </summary>
+              <div className="card-workinfo-body">
+                {relationStrip}
+                {personaPicker}
+                {overview}
+              </div>
+            </details>
+          )}
+          {tabBar}
+          {scrollArea}
+          <div className="card-composer">
+            {live ? (
+              <TerminalSend
+                key={s.id}
+                chat
+                target={live}
+                enabled={terminalSend}
+                privacy={privacy}
+                onSend={async (text) => {
+                  const id = s.id;
+                  notify(await api.send!(id, text));
+                  markSent(id);
+                }}
+              />
+            ) : (
+              <p className="terminal-send-hint">
+                <Terminal size={12} />
+                {t.inspector.card.noTarget}
+                <button className="button subtle" disabled={demo} onClick={resume}>
+                  {resumeLabel}
+                </button>
+              </p>
+            )}
+          </div>
+        </aside>
+        {handoffModal}
+      </>
+    );
+  }
   return (
     <>
       <aside className="inspector" aria-label={t.inspector.label} ref={panelRef} tabIndex={-1}>
@@ -408,473 +1123,16 @@ export function Inspector({
             </div>
           </div>
         </div>
-        {petOpen && (
-          <PetCustomizer
-            key={session.id}
-            provider={session.provider}
-            session={session}
-            onPrefs={onPrefs}
-            onClose={() => setPetOpen(false)}
-          />
-        )}
-        {zoneOpen && !privacy && onZoneRules && (
-          <ZoneEditor
-            key={s.id}
-            session={s}
-            sessions={sessions}
-            rules={zoneRules ?? []}
-            onRules={onZoneRules}
-            onClose={() => setZoneOpen(false)}
-          />
-        )}
-        {!privacy && (
-          <div className="relation-strip">
-            <span title={branchInfo(s).detail}>
-              <GitBranch size={12} />
-              {branchInfo(s).label}
-            </span>
-            {parent && (
-              <button onClick={() => onSelect(parent.id)}>
-                {s.relation?.kind === 'fork' ? t.inspector.forkSource : t.inspector.parentTask} ·{' '}
-                {sessionName(parent)}
-              </button>
-            )}
-            {!parent && s.relation?.parentNativeId && <span>{t.inspector.parentMissing}</span>}
-          </div>
-        )}
-        {personaRuns.length > 0 && (
-          <label className="persona-run-picker">
-            <span>
-              {privacy ? t.inspector.persona : s.actor?.name} ·{' '}
-              {t.inspector.personaRuns(personaRuns.length)}
-            </span>
-            <select
-              aria-label={t.inspector.personaRunsLabel}
-              value={s.id}
-              onChange={(e) => onSelect(e.target.value)}
-            >
-              {personaRuns.map((run) => (
-                <option value={run.id} key={run.id}>
-                  {sessionScopeLabel(run)} · {privacy ? t.inspector.hiddenRecord : sessionName(run)}{' '}
-                  · {ago(run.updatedAt)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        <div className="inspector-now">
-          <NowCard
-            key={s.id}
-            session={s}
-            notices={colleagueNews}
-            privacy={privacy}
-            onReceipt={onReceipt}
-            onResume={resume}
-            resumeLabel={resumeLabel}
-            canResume={!demo}
-            canType={!!live && terminalSend}
-            typeQueues={!!live?.queues}
-            onShowNews={() => setTab('news')}
-          />
-          {live && (
-            <TerminalSend
-              key={s.id}
-              target={live}
-              enabled={terminalSend}
-              privacy={privacy}
-              onSend={async (text) => {
-                const id = s.id;
-                notify(await api.send!(id, text));
-                markSent(id);
-              }}
-            />
-          )}
-        </div>
-        <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
-          {(['history', 'news', 'overview', 'notes'] as const).map((key) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={tab === key}
-              className={tab === key ? 'active' : ''}
-              onClick={() => setTab(key)}
-            >
-              {key === 'news'
-                ? t.inspector.tabs.news(unreadNoticeCount(news))
-                : t.inspector.tabs[key]}
-              {key === 'notes' && s.notes && <i />}
-            </button>
-          ))}
-        </div>
-        <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
-          {!privacy && children.length > 0 && (
-            <details className="related-runs">
-              <summary>{t.inspector.linkedRuns(children.length)}</summary>
-              {children.map((child) => (
-                <button key={child.id} onClick={() => onSelect(child.id)}>
-                  {child.relation?.kind === 'fork' ? t.inspector.fork : sessionScopeLabel(child)} ·{' '}
-                  {sessionName(child)}
-                </button>
-              ))}
-            </details>
-          )}
-          {loadError && <div className="inline-error">{loadError}</div>}
-
-          {(tab === 'history' || tab === 'overview') && (
-            <ArtifactCards
-              id={s.id}
-              urls={s.artifacts}
-              demo={demo}
-              privacy={privacy}
-              notify={notify}
-            />
-          )}
-
-          {privacy ? (
-            <div className="privacy-placeholder">
-              <Folder size={28} />
-              <h3>{t.inspector.privacy.title}</h3>
-              <p>{t.inspector.privacy.body}</p>
-            </div>
-          ) : tab === 'news' ? (
-            <NewsFeed
-              key={s.id + (showNews ?? '')}
-              includeBackground
-              initialFilter={showNews ? 'all' : 'final'}
-              notices={news}
-              sessionIds={[s.id]}
-              sessions={sessions}
-              privacy={privacy}
-              onReceipt={onReceipt}
-            />
-          ) : tab === 'overview' ? (
-            <>
-              <p className="activity-evidence">
-                {t.inspector.overview.currentStatus} · {s.statusReason}
-              </p>
-              <p className="activity-evidence">
-                {t.inspector.overview.lastRun} · {PHASE_LABELS[presentation.runtime.phase]} ·{' '}
-                {ago(presentation.runtime.at)}
-                {presentation.stale ? t.inspector.overview.staleRun : ''}
-                <br />
-                {presentation.runtime.reason}
-              </p>
-              {s.relation?.role && (
-                <p className="activity-evidence">
-                  {t.inspector.overview.role} · {s.relation.role}
-                </p>
-              )}
-              <section className="detail-section">
-                <h3>{t.inspector.overview.whereTitle}</h3>
-                <dl>
-                  <div>
-                    <dt>
-                      <Folder size={14} />
-                      {t.inspector.overview.project}
-                    </dt>
-                    <dd>{s.project}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <LayoutGrid size={14} />
-                      {t.inspector.overview.zone}
-                    </dt>
-                    <dd>
-                      {s.area
-                        ? t.inspector.overview.zoneCustom(zoneLabel(s))
-                        : t.inspector.overview.zoneByProject(s.project)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <GitBranch size={14} />
-                      {t.inspector.overview.branch}
-                    </dt>
-                    <dd title={branchInfo(s).detail}>{branchInfo(s).label}</dd>
-                  </div>
-                  <div>
-                    <dt>
-                      <Clock size={14} />
-                      {t.inspector.overview.lastActive}
-                    </dt>
-                    <dd>
-                      {date(s.updatedAt)} {time(s.updatedAt)}
-                    </dd>
-                  </div>
-                </dl>
-                <button
-                  className="path-copy"
-                  onClick={() => copy(s.cwd ?? '')}
-                  disabled={!s.cwd}
-                  title={s.cwd ?? ''}
-                >
-                  <code>{shortPath(s.cwd)}</code>
-                  <Copy size={13} />
-                </button>
-                <p className="fine-print">{t.inspector.overview.startPathNote}</p>
-              </section>
-              {s.workingLocation && (
-                <section className="detail-section working-location">
-                  <h3>{t.inspector.overview.workingTitle}</h3>
-                  <code>{s.workingLocation.path}</code>
-                  <p>
-                    {
-                      {
-                        'file-edit': t.inspector.overview.fileEdit,
-                        'git-write': t.inspector.overview.gitWrite,
-                        'tool-workdir': t.inspector.overview.toolWorkdir,
-                        'shell-cd': t.inspector.overview.explicitCd,
-                      }[s.workingLocation.source]
-                    }{' '}
-                    · {new Date(s.workingLocation.at).toLocaleString(intlLocale())}
-                  </p>
-                  <small>
-                    {s.workspace?.locationSource
-                      ? t.inspector.overview.repoFound
-                      : t.inspector.overview.repoMissing}{' '}
-                    {t.inspector.overview.noMoveHint}
-                  </small>
-                </section>
-              )}
-              <section className="detail-section">
-                <div className="section-title">
-                  <h3>{t.inspector.usage.title}</h3>
-                  <span className="small-badge">
-                    {s.usage.scope === 'sample'
-                      ? t.inspector.usage.scopeSample
-                      : t.inspector.usage.scopeSession}
-                  </span>
-                </div>
-                <div className="model-line">
-                  <span className="model-symbol">✳</span>
-                  <div>
-                    <b>{s.model || t.inspector.usage.modelMissing}</b>
-                    <small>{s.usage.source}</small>
-                  </div>
-                </div>
-                <div className="cost-card">
-                  <span>{t.inspector.usage.costLabel}</span>
-                  <strong>
-                    {s.cost?.usd != null
-                      ? `$${s.cost.usd.toLocaleString('en-US', { minimumFractionDigits: s.cost.usd < 0.01 ? 4 : 2, maximumFractionDigits: s.cost.usd < 0.01 ? 4 : 2 })}`
-                      : t.inspector.usage.costUnknown}
-                  </strong>
-                  <b>{t.inspector.usage.costBasis}</b>
-                  <small>
-                    {s.cost
-                      ? t.inspector.usage.costDetail(
-                          s.cost.priced,
-                          s.cost.unpriced,
-                          compact(s.cost.tokens),
-                        )
-                      : t.inspector.usage.costPending}
-                  </small>
-                  <p>{t.inspector.usage.costDisclaimer}</p>
-                  <details>
-                    <summary>{t.inspector.usage.costHowTitle}</summary>
-                    <p>{t.inspector.usage.costHowBody}</p>
-                    <small>{s.cost?.rateVersion}</small>
-                    <p>
-                      <a
-                        href="https://developers.openai.com/api/docs/pricing"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {t.inspector.usage.openaiPricing}
-                      </a>{' '}
-                      ·{' '}
-                      <a
-                        href="https://platform.claude.com/docs/en/about-claude/pricing"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {t.inspector.usage.claudePricing}
-                      </a>
-                    </p>
-                  </details>
-                </div>
-                <div className="usage-grid">
-                  <div>
-                    <span>{t.inspector.usage.inputTokens}</span>
-                    <strong>{compact(s.usage.input)}</strong>
-                  </div>
-                  <div>
-                    <span>{t.inspector.usage.outputTokens}</span>
-                    <strong>{compact(s.usage.output)}</strong>
-                  </div>
-                  <div>
-                    <span>{t.inspector.usage.totalTokens}</span>
-                    <strong>{compact(s.usage.total)}</strong>
-                  </div>
-                </div>
-                {s.usage.contextUsed !== null &&
-                s.usage.contextWindow !== null &&
-                s.usage.contextWindow > 0 ? (
-                  <div className="context">
-                    <div>
-                      <span>{t.inspector.usage.contextTitle}</span>
-                      <b>
-                        {Math.min(
-                          100,
-                          Math.round((s.usage.contextUsed / s.usage.contextWindow) * 100),
-                        )}
-                        %
-                      </b>
-                    </div>
-                    <progress value={s.usage.contextUsed} max={s.usage.contextWindow} />
-                    <small>{t.inspector.usage.contextNote}</small>
-                  </div>
-                ) : (
-                  <p className="fine-print">{t.inspector.usage.contextMissing}</p>
-                )}
-              </section>
-              <section className="source-note">
-                <span className="live-dot" />
-                <div>
-                  <b>
-                    {s.sourceKind === 'sqlite'
-                      ? t.inspector.source.sqlite
-                      : s.sourceKind === 'demo'
-                        ? t.inspector.source.demo
-                        : t.inspector.source.log}
-                  </b>
-                  <p>{s.partial ? t.inspector.source.partial : t.inspector.source.full}</p>
-                  <p>{t.inspector.source.readOnly}</p>
-                </div>
-              </section>
-            </>
-          ) : tab === 'history' ? (
-            <Conversation
-              key={s.id}
-              session={s}
-              notices={conversationNotices}
-              older={view.older}
-              loadingOlder={loadingOlder}
-              onOlder={loadOlder}
-              notify={notify}
-            />
-          ) : (
-            <div className="notes-editor">
-              <span className="eyebrow">{t.inspector.notes.eyebrow}</span>
-              <h3>{t.inspector.notes.title}</h3>
-              <p>{t.inspector.notes.body}</p>
-              <label className="sr-only" htmlFor="notes">
-                {t.inspector.notes.label}
-              </label>
-              <textarea
-                id="notes"
-                value={notes}
-                onChange={(e) => {
-                  setNotes(e.target.value);
-                  setNotesDirty(true);
-                }}
-                maxLength={12000}
-                placeholder={t.inspector.notes.placeholder}
-              />
-              <button className="button primary" onClick={() => patch({ notes })}>
-                <Check size={16} />
-                {t.inspector.notes.save}
-              </button>
-              <button
-                className={`completion-button ${s.completed ? 'checked' : ''}`}
-                onClick={() => patch({ completed: !s.completed })}
-              >
-                <span>{s.completed && <Check size={14} />}</span>
-                <div>
-                  <b>{t.inspector.notes.completedTitle}</b>
-                  <small>{t.inspector.notes.completedBody}</small>
-                </div>
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="inspector-actions">
-          {s.zone && s.zone !== 'office' && (
-            <button className="return-office" onClick={() => onReturn(s.id)}>
-              {t.inspector.returnToOffice} <ArrowRight size={14} />
-            </button>
-          )}
-          {state === 'attention' ? (
-            <button className="button primary" onClick={resume} disabled={demo}>
-              <Terminal size={16} />
-              {resumeLabel}
-              <ArrowRight size={16} />
-            </button>
-          ) : (
-            <button className="button primary" onClick={handoff} disabled={busy || privacy}>
-              <PackageOpen size={17} />
-              {busy ? t.inspector.gathering : t.inspector.packHandoff}
-              <ArrowRight size={16} />
-            </button>
-          )}
-          <div>
-            {state === 'attention' ? (
-              <button className="button subtle" onClick={handoff} disabled={busy || privacy}>
-                <PackageOpen size={14} />
-                {busy ? t.inspector.gathering : t.inspector.packHandoff}
-              </button>
-            ) : (
-              <button className="button subtle" disabled={demo} onClick={resume}>
-                <Terminal size={14} />
-                {resumeLabel}
-              </button>
-            )}
-            <button
-              className="icon-btn"
-              aria-label={t.inspector.revealSource}
-              disabled={demo || !isDesktop}
-              onClick={() => api.reveal(s.id).catch((e) => notify(e.message))}
-            >
-              <Folder size={16} />
-            </button>
-            <button
-              className="icon-btn"
-              aria-label={s.archived ? t.inspector.unarchive : t.inspector.archive}
-              onClick={() => patch({ archived: !s.archived })}
-            >
-              <Archive size={16} />
-            </button>
-          </div>
-        </div>
+        {petEditor}
+        {zoneEditor}
+        {relationStrip}
+        {personaPicker}
+        {nowArea}
+        {tabBar}
+        {scrollArea}
+        {actionBar}
       </aside>
-      {packet && (
-        <Modal title={t.inspector.handoff.title} onClose={closePacket} wide>
-          <div className="handoff-intro">
-            <PackageOpen size={24} />
-            <div>
-              <b>{t.inspector.handoff.introTitle}</b>
-              <p>{t.inspector.handoff.introBody}</p>
-            </div>
-          </div>
-          <textarea
-            className="handoff-text"
-            aria-label={t.inspector.handoff.textLabel}
-            value={packet.markdown}
-            onChange={(e) => setPacket({ ...packet, markdown: e.target.value })}
-          />
-          <div className="modal-footer">
-            <span>{t.inspector.handoff.notSent}</span>
-            <button
-              className="button subtle"
-              onClick={async () => {
-                try {
-                  if (await api.exportFile('agent-office-handoff.md', packet.markdown))
-                    notify(t.inspector.handoff.savedFile);
-                } catch (e) {
-                  notify((e as Error).message);
-                }
-              }}
-            >
-              <Download size={15} />
-              {t.inspector.handoff.saveFile}
-            </button>
-            <button className="button primary" onClick={() => copy(packet.markdown)}>
-              <Copy size={15} />
-              {t.inspector.handoff.copy}
-            </button>
-          </div>
-        </Modal>
-      )}
+      {handoffModal}
     </>
   );
 }

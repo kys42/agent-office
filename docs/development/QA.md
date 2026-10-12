@@ -1,3 +1,10 @@
+# 팝업 업무 카드를 채팅형으로 · 2026-10-12 (Issue #86)
+- UI(`tests/ui/card.spec.ts`, 브라우저에서 데스크톱 브리지로 `#card`를 연다): 머리줄 한 줄·지금 카드/아래 버튼 줄 없음·작업 정보 기본 접힘·탭 3개(대화 기본)·입력창이 카드 맨 아래 / Enter 보내기·Shift+Enter 줄바꿈 / 카드 메뉴의 인수인계·이동·꾸미기·이름 바꾸기, Esc는 메뉴만 닫음, 인수인계 대화상자 열림 / 터미널이 없으면 이유 안내
+- 큰 사무실 패널은 그대로(기존 ux·paging·office·usage-life·i18n 통과). `Inspector`는 조각으로 나눠 패널과 카드가 순서만 달리 조립
+- 단위: `readCardSize`(정상·이상한 값), 기억한 크기로 열림
+- desktop: 카드 창이 크기 조절되고, 바꾼 크기(560)로 다시 열림. 기억 메모 키보드 입력 유지
+- 화면 확인: `.local/card-chat-folded.png`, `.local/card-chat.png`
+
 # 스크롤 깜박임 + 펼친 말풍선 자동 접기 · 2026-10-12 (Issue #85)
 - 스크롤: 데모(여러 창 폭)로는 재현되지 않았다. 원인 후보를 구조적으로 막았다
   - 화면 맞춤에서는 `.scene-viewport`가 스크롤하지 않음(`is-fit` → overflow hidden, scene-size 100%)

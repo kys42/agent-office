@@ -36,6 +36,15 @@ export const inspector: Messages['inspector'] = {
   personaRunsLabel: '페르소나의 실행 기록',
   hiddenRecord: '숨긴 기록',
   tabsLabel: '업무 카드 항목',
+  card: {
+    more: '카드 메뉴',
+    workInfo: '작업 정보',
+    unread: (n) => `새 결과 ${n}`,
+    markRead: '읽음으로 표시',
+    calling: '나를 기다려요',
+    filters: '필터',
+    noTarget: '입력할 수 있는 터미널이 없어요',
+  },
   tabs: {
     overview: '작업 정보',
     history: '대화',

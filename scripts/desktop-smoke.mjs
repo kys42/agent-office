@@ -199,6 +199,29 @@ try {
   await notes.fill('');
   await notes.pressSequentially('Panel keyboard input');
   assert.equal(await notes.inputValue(), 'Panel keyboard input', 'popup panel accepts keyboard');
+  // The card can be resized, and opens at the size it was given from then on.
+  await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().endsWith('#card'));
+    if (!w.isResizable()) throw new Error('the card is not resizable');
+    w.setSize(560, 600);
+    w.emit('resized');
+  });
+  await card.waitForTimeout(300);
+  await card.evaluate(() => window.office.card('close'));
+  await dock.evaluate(() =>
+    window.office.card(
+      'open',
+      { id: 'codex:codex-test', news: false },
+      { x: 400, y: 600, width: 200, height: 100 },
+    ),
+  );
+  await card.waitForSelector('.inspector-card');
+  const [reopenedWidth] = await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((x) => x.webContents.getURL().endsWith('#card'))
+      .getSize(),
+  );
+  assert.equal(reopenedWidth, 560, 'the card reopens at the size the person gave it');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();

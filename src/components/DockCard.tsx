@@ -96,6 +96,7 @@ export function DockCard() {
             if (await setPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
           }}
           terminalSend={send.enabled}
+          variant="card"
         />
       ) : (
         <div className="dock-card-empty">

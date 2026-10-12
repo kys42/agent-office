@@ -29,6 +29,9 @@ import { m, setLocale } from '../src/shared/i18n/index.js';
 import { webLink } from '../src/shared/links.js';
 import {
   cardBounds,
+  CARD_MIN,
+  CARD_SIZE,
+  readCardSize,
   clampInto,
   FLOOR_HEIGHT,
   ROW_HEIGHT,
@@ -361,14 +364,35 @@ function stopDrag(save: boolean) {
  * The colleague card for the dock: the same card as the big office's right panel, in a small
  * focusable window above the clicked desk. The dock itself stays see-through and unfocused.
  */
+const cardFile = () =>
+  path.join(process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'), 'card-size.json');
+/** The size the person last gave the card (it opens at that size from then on). */
+function loadCardSize() {
+  try {
+    return readCardSize(JSON.parse(readFileSync(cardFile(), 'utf8'))) ?? CARD_SIZE;
+  } catch {
+    return CARD_SIZE;
+  }
+}
+async function saveCardSize(size: { width: number; height: number }) {
+  try {
+    await mkdir(path.dirname(cardFile()), { recursive: true, mode: 0o700 });
+    await writeFile(cardFile(), JSON.stringify(size), { mode: 0o600 });
+  } catch (e) {
+    console.error('Card size:', e);
+  }
+}
 function showCard(target: CardTarget, anchor: Rect) {
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
+  const size = loadCardSize();
   if (!card || card.isDestroyed()) {
     card = new BrowserWindow({
-      ...cardBounds(anchor, workAreaFor(anchor)),
+      ...cardBounds(anchor, workAreaFor(anchor), size),
       show: false,
-      resizable: false,
+      resizable: true,
+      minWidth: CARD_MIN.width,
+      minHeight: CARD_MIN.height,
       frame: false,
       transparent: true,
       fullscreenable: false,
@@ -404,8 +428,14 @@ function showCard(target: CardTarget, anchor: Rect) {
     card.on('closed', () => {
       card = null;
     });
+    // The person resized it: open at this size from now on.
+    card.on('resized', () => {
+      if (!card || card.isDestroyed()) return;
+      const [width, height] = card.getSize();
+      void saveCardSize({ width, height });
+    });
     void card.loadFile(index, { hash: 'card' });
-  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor)));
+  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor), size));
   const window = card;
   const send = () => {
     if (!window.isDestroyed()) window.webContents.send('office:card', target);

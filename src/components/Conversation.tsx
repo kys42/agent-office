@@ -2,7 +2,15 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, Copy, Terminal, Clock3, MessageSquare, ArrowDown } from 'lucide-react';
+import {
+  ChevronDown,
+  Copy,
+  Terminal,
+  Clock3,
+  MessageSquare,
+  ArrowDown,
+  ListFilter,
+} from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { parseArtifact } from '../shared/office';
@@ -130,6 +138,7 @@ export function Conversation({
   older = false,
   loadingOlder = false,
   onOlder,
+  compact = false,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -138,6 +147,8 @@ export function Conversation({
   older?: boolean;
   loadingOlder?: boolean;
   onOlder?: () => void;
+  /** The card's chat: filters fold behind a small button, the range note goes away. */
+  compact?: boolean;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -146,6 +157,7 @@ export function Conversation({
   const [count, setCount] = useState(24);
   const [newBelow, setNewBelow] = useState(false);
   const [filter, setFilter] = useState<ConversationFilter>('all');
+  const [showFilters, setShowFilters] = useState(false);
   const filterRef = useRef(filter);
   filterRef.current = filter;
   const [tools, setTools] = useState(false);
@@ -272,53 +284,71 @@ export function Conversation({
         if ((e.target as HTMLElement).closest('.message-expand, summary')) follow.current = false;
       }}
     >
-      <div className="conversation-toolbar">
-        <div className="conversation-filters" role="group" aria-label={t.conversation.filtersLabel}>
-          {(
-            [
-              'all',
-              'request',
-              'progress',
-              'reply',
-              ...(counts.message ? ['message'] : []),
-            ] as ConversationFilter[]
-          ).map((kind) => (
-            <button
-              key={kind}
-              aria-pressed={filter === kind}
-              className={filter === kind ? 'active' : ''}
-              onClick={() => {
-                follow.current = true;
-                setNewBelow(false);
-                setCount(24);
-                setFilter(kind);
-              }}
-            >
-              {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
-              <span>
-                {kind === 'all'
-                  ? events.filter((e) => conversationKind(e) !== 'work').length
-                  : counts[kind]}
-              </span>
-            </button>
-          ))}
+      {compact && (
+        <button
+          className={`conversation-filter-toggle ${showFilters ? 'active' : ''}`}
+          aria-expanded={showFilters}
+          onClick={() => setShowFilters((v) => !v)}
+        >
+          <ListFilter size={12} />
+          {filter === 'all' ? t.inspector.card.filters : CONVERSATION_LABELS[filter]}
+        </button>
+      )}
+      {(!compact || showFilters) && (
+        <div className="conversation-toolbar">
+          <div
+            className="conversation-filters"
+            role="group"
+            aria-label={t.conversation.filtersLabel}
+          >
+            {(
+              [
+                'all',
+                'request',
+                'progress',
+                'reply',
+                ...(counts.message ? ['message'] : []),
+              ] as ConversationFilter[]
+            ).map((kind) => (
+              <button
+                key={kind}
+                aria-pressed={filter === kind}
+                className={filter === kind ? 'active' : ''}
+                onClick={() => {
+                  follow.current = true;
+                  setNewBelow(false);
+                  setCount(24);
+                  setFilter(kind);
+                }}
+              >
+                {kind === 'all' ? t.conversation.all : CONVERSATION_LABELS[kind]}
+                <span>
+                  {kind === 'all'
+                    ? events.filter((e) => conversationKind(e) !== 'work').length
+                    : counts[kind]}
+                </span>
+              </button>
+            ))}
+          </div>
+          <label className="conversation-tools-toggle">
+            <input
+              type="checkbox"
+              checked={tools}
+              disabled={filter !== 'all'}
+              onChange={(e) => setTools(e.target.checked)}
+            />
+            {t.conversation.includeTools}
+            <span>{counts.work}</span>
+          </label>
         </div>
-        <label className="conversation-tools-toggle">
-          <input
-            type="checkbox"
-            checked={tools}
-            disabled={filter !== 'all'}
-            onChange={(e) => setTools(e.target.checked)}
-          />
-          {t.conversation.includeTools}
-          <span>{counts.work}</span>
-        </label>
-      </div>
-      <div className="conversation-range">
-        <Clock3 size={12} />
-        {session.partial ? t.conversation.rangePartial : t.conversation.rangeFull}
-        <span>{t.conversation.readOnly}</span>
-      </div>
+      )}
+      {!compact && (
+        <div className="conversation-range">
+          <Clock3 size={12} />
+          {session.partial ? t.conversation.rangePartial : t.conversation.rangeFull}
+          <span>{t.conversation.readOnly}</span>
+        </div>
+      )}
       {(groups.length > count || older) && (
         <button
           className="older-messages"
