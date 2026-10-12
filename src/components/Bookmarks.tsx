@@ -198,8 +198,11 @@ export function Bookmarks({
   // what was loaded further down does not fold back to the first page.
   const latest = useRef(list);
   latest.current = list;
+  // Which reading of the list a page continues: a new query or a change elsewhere starts another.
+  const generation = useRef(0);
   useEffect(() => {
     if (demo) return;
+    const reading = ++generation.current;
     let active = true;
     setLoading(true);
     setError('');
@@ -209,7 +212,7 @@ export function Bookmarks({
           text: query,
           limit: Math.min(Math.max(latest.current.length, BOOKMARK_PAGE), BOOKMARK_PAGE_MAX),
         });
-        if (!active) return;
+        if (!active || reading !== generation.current) return;
         setList(page.bookmarks);
         setMore(page.more);
         setTotal(page.total);
@@ -228,14 +231,16 @@ export function Bookmarks({
   const loadMore = async () => {
     const last = list.at(-1);
     if (!last || loadingMore) return;
+    const reading = generation.current;
     setLoadingMore(true);
     try {
       const page = await api.bookmarks({
         text: query,
         before: { createdAt: last.createdAt, id: last.id },
       });
-      // The list was read again meanwhile: this page no longer follows it.
-      if (latest.current.at(-1)?.id !== last.id) return;
+      // The list was read again meanwhile (another query, a change elsewhere): this page no
+      // longer follows it.
+      if (reading !== generation.current || latest.current.at(-1)?.id !== last.id) return;
       setList([...latest.current, ...page.bookmarks]);
       setMore(page.more);
     } catch (e) {

@@ -231,7 +231,9 @@ export function Inspector({
         setReached(focusHere.key);
       })
       .catch((e) => {
-        if (valid) notify((e as Error).message);
+        if (!valid) return;
+        notify((e as Error).message);
+        onFocused?.();
       });
     return () => {
       valid = false;

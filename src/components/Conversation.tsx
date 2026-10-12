@@ -321,17 +321,17 @@ export function Conversation({
   }, [focus?.key]);
   useEffect(() => {
     const want = pending.current;
-    if (!want || filter !== 'all') return;
+    // Only once the page reaching back to it is in: what the card holds before may be dropped
+    // by the newest page arriving after it.
+    if (!want || filter !== 'all' || !focus?.ready) return;
     const exact = events.find((e) => e.id === want.eventId);
     // Re-read under another id, or gone from the record: near its time once the reached page
     // is in, without marking another message as it.
-    const target = exact ?? (focus?.ready ? events.find((e) => e.at >= want.at) : undefined);
+    const target = exact ?? events.find((e) => e.at >= want.at);
     if (!target) {
-      if (focus?.ready) {
-        pending.current = null;
-        notify(t.conversation.bookmarkMissing);
-        onFocused?.();
-      }
+      pending.current = null;
+      notify(t.conversation.bookmarkMissing);
+      onFocused?.();
       return;
     }
     if (conversationKind(target) === 'work' && !tools) return setTools(true);

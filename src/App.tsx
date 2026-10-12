@@ -852,8 +852,11 @@ export default function App() {
               onSelect={choose}
               demo={demo}
               privacy={prefs?.privacy ?? false}
+              // Any bookmark write, and whatever decides which are shown: a colleague leaving
+              // the office or moving projects changes its marks, the settings the rest.
               bookmarkStamp={JSON.stringify([
                 snapshot?.bookmarkStamp,
+                snapshot?.bookmarked,
                 prefs?.excludedProjects,
                 prefs?.enabledProviders,
               ])}
