@@ -633,12 +633,27 @@ test('Sparse old seats become one fitted room with movable furniture, project zo
   await assertFit();
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   const initialScale = Number(await page.locator('.scene-viewport').getAttribute('data-scale'));
+  // Fitted, the room never scrolls, so no scrollbar can come and go (it used to flicker).
+  const viewport = page.locator('.scene-viewport');
+  await expect(viewport).toHaveCSS('overflow-y', 'hidden');
+  const steady = await viewport.evaluate(async (el) => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 30; i++) {
+      seen.add(`${(el as HTMLElement).dataset.scale}|${el.clientWidth}|${el.clientHeight}`);
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+    }
+    return seen.size;
+  });
+  expect(steady).toBe(1);
   await page.getByRole('button', { name: '사무실 확대' }).click();
   expect(Number(await page.locator('.scene-viewport').getAttribute('data-scale'))).toBeGreaterThan(
     initialScale,
   );
+  // Zoomed in, it scrolls.
+  await expect(viewport).toHaveCSS('overflow-y', 'auto');
   await page.getByRole('button', { name: '사무실 모두 보기' }).click();
   await assertFit();
+  await expect(viewport).toHaveCSS('overflow-y', 'hidden');
 });
 
 test('Conversation filters public phases, hides tools by default and preserves expanded text across filters', async ({

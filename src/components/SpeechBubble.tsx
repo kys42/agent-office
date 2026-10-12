@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   BellRing,
   Check,
@@ -100,6 +107,30 @@ export function SpeechBubble({
     if (expanded === undefined) setOwnOpen(value);
     onExpandedChange?.(value);
   };
+  // Unfolded, it folds back once the person turns to something else: a click outside it (its
+  // reply box counts as inside) or another app (the window loses focus).
+  const root = useRef<HTMLDivElement>(null);
+  const fold = useEffectEvent(() => setOpen(false));
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (!el || root.current?.contains(el)) return;
+      // Its own reply box (drawn beside it in the same desk or pet) counts as inside; another
+      // desk's does not.
+      const reply = el.closest('.quick-reply');
+      const desk = root.current?.closest('.desk-station, .dock-pet-speech');
+      if (reply && desk?.contains(reply)) return;
+      fold();
+    };
+    const blur = () => fold();
+    document.addEventListener('pointerdown', away, true);
+    window.addEventListener('blur', blur);
+    return () => {
+      document.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('blur', blur);
+    };
+  }, [open]);
   const [long, setLong] = useState(false);
   // The request bubble scrolls: a fade says there's more until its end is reached.
   const asked = useRef<HTMLParagraphElement>(null);
@@ -124,6 +155,7 @@ export function SpeechBubble({
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div
+      ref={root}
       data-tone={tone}
       className={`speech-bubble tone-${tone} bubble-${s.status} ${bubble ? `bubble-kind-${bubble.kind === 'reply' && bubble.phase !== 'final' ? 'message' : bubble.kind}` : 'bubble-live'} ${bubble && !bubble.seenAt ? 'unread' : ''} ${bubble?.viewedAt || bubble?.seenAt ? 'bubble-opened' : 'bubble-new'} ${open ? 'is-expanded' : ''} ${peek ? 'is-peek' : ''}`}
     >
