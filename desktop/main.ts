@@ -400,7 +400,8 @@ function showCard(target: CardTarget, anchor: Rect) {
       // macOS: the card is real glass — the system's popover material behind a translucent page.
       ...(process.platform === 'darwin'
         ? {
-            vibrancy: 'popover' as const,
+            // A material the desktop shows through ('popover' reads as near-opaque white).
+            vibrancy: 'under-window' as const,
             visualEffectState: 'active' as const,
             roundedCorners: true,
           }

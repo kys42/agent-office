@@ -794,9 +794,16 @@ body.dock-mode {
    with the progress switch, the conversation, and actions + chat box at the bottom. Only
    `.inspector-card`; the office panel keeps its layout. On macOS the window itself is vibrant
    (desktop/main.ts), so the card is translucent over it. ── */
-body.card-mode.is-mac .dock-card,
+/* One thin tint over the window's material (two layers made it ~77% opaque: it read as white). */
+body.card-mode.is-mac,
+body.card-mode.is-mac #root {
+  background: transparent;
+}
+body.card-mode.is-mac .dock-card {
+  background: color-mix(in srgb, var(--grouped) 22%, transparent);
+}
 body.card-mode.is-mac .dock-card > .inspector-card {
-  background: color-mix(in srgb, var(--grouped) 52%, transparent);
+  background: transparent;
 }
 body.card-mode:not(.is-mac) .dock-card {
   background: color-mix(in srgb, var(--grouped) 90%, transparent);
