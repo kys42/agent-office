@@ -37,6 +37,10 @@ export const desk = {
     label: (name: string) => `Hide ${name}`,
     title: 'Hide',
     hint: 'Hidden until their next conversation (a new request or final response). Shows up again right away if they need you or hit an error.',
+    zoneLabel: (zone: string) => `Hide everyone in ${zone}`,
+    zoneTitle: 'Hide this project',
+    zoneHint:
+      'Hides everyone here now. Each comes back on their next conversation; anyone waiting for you stays.',
   },
   helper: {
     name: 'Helper',

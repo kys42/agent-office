@@ -588,11 +588,23 @@ body.dock-mode {
   background: #3a2820;
   box-shadow: 0 3px 6px -2px rgba(0, 0, 0, 0.5);
 }
-/* A tall vertical banner (nobori) in the zone colour, swallow-tailed at the bottom. */
-.zone-flag-cloth {
+/* The cloth and the zone's hide eye under it; only those two take the mouse. */
+.zone-flag > .zone-flag-banner {
   position: absolute;
   left: 9px;
   top: 6px;
+  width: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.zone-flag-banner > * {
+  pointer-events: auto;
+}
+/* A tall vertical banner (nobori) in the zone colour, swallow-tailed at the bottom. */
+.zone-flag-cloth {
+  position: relative;
   width: 24px;
   max-height: 150px;
   display: flex;
