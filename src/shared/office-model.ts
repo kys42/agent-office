@@ -182,6 +182,21 @@ export function residentLabel(s: Session, privacy: boolean) {
   };
 }
 
+/**
+ * What hiding a whole zone hides: each shown colleague at these stations (its helpers follow),
+ * minus anyone waiting for the person. A colleague waiting only through one helper keeps its
+ * desk, but its other helpers still go. Empty when nobody here can be hidden.
+ * It is the same hide as one desk's: everyone comes back on their own next conversation.
+ */
+export function zoneVeilIds(model: OfficeModel, stationIds: string[]): string[] {
+  return stationIds.flatMap((id) => {
+    const v = model.view(id);
+    if (!v || v.veiled) return [];
+    if (!v.needsPerson) return v.session.resident?.sessionIds ?? [v.session.id];
+    return v.helpers.filter((h) => !h.veiled && !h.needsPerson).map((h) => h.session.id);
+  });
+}
+
 export const hasNews = (v: ResidentView) => v.unread.length + v.helperUnread.length > 0;
 
 export const PET_LABELS: Record<TriageGroup, string> = liveLabels((t) => t.shared.pet);

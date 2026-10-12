@@ -44,6 +44,8 @@ export function Office({
   onHover,
   onVeil,
   canVeil = () => true,
+  zoneVeilIds,
+  onVeilZone,
   onPin,
   onZoneDrop,
   onReply,
@@ -66,6 +68,9 @@ export function Office({
   onVeil?: (s: Session) => void;
   /** Someone waiting for the person cannot be hidden. */
   canVeil?: (s: Session) => boolean;
+  /** Who hiding a whole zone would hide, from its station ids (empty: no zone hide button). */
+  zoneVeilIds?: (stationIds: string[]) => string[];
+  onVeilZone?: (ids: string[]) => void;
   /** Keep a colleague in the office however long it stays quiet (or let go). */
   onPin?: (s: Session) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
@@ -80,6 +85,8 @@ export function Office({
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
   const [zoom, setZoom] = useState<number | null>(null);
+  // A zone sign zooms the room onto that zone; it follows the window until "see all".
+  const [focusKey, setFocusKey] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
   const [closed, setClosed] = useState<string | null>(null);
@@ -136,12 +143,23 @@ export function Office({
   useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
   const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect, locale]);
-  const scale =
-    zoom ??
-    Math.max(
-      0.01,
-      Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
-    );
+  const focused = focusKey ? layout.projects.find((p) => p.key === focusKey) : undefined;
+  const fitScale = Math.max(
+    0.01,
+    Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
+  );
+  // A zone's zoom never ends up smaller than the whole room (one wide zone fills it already).
+  const scale = focused
+    ? Math.max(
+        fitScale,
+        Math.min(
+          2,
+          (viewport.width - 48) / (focused.width + 32),
+          (viewport.height - 92) / (focused.height + 32),
+        ),
+      )
+    : (zoom ?? fitScale);
+  const isFit = zoom === null && !focused;
   const byId = new Map(sessions.map((s) => [s.id, s]));
   // A reply goes to the session whose news the bubble shows, else the desk's own session.
   const replyFor = (s: Session) =>
@@ -170,9 +188,14 @@ export function Office({
   const now = new Date(clock);
   const fit = () => {
     setZoom(null);
+    setFocusKey(null);
     holder.current?.scrollTo({ top: 0, left: 0 });
   };
-  const zoomBy = (delta: number) => setZoom(Math.min(2, Math.max(0.15, scale + delta)));
+  const zoomBy = (delta: number) => {
+    setZoom(Math.min(2, Math.max(0.15, scale + delta)));
+    setFocusKey(null);
+  };
+  const focusZone = (key: string) => (focusKey === key ? fit() : setFocusKey(key));
   useEffect(() => {
     const command = (e: Event) => {
       const what = (e as CustomEvent<string>).detail;
@@ -185,10 +208,16 @@ export function Office({
   });
   // When zoomed in, bring the chosen colleague's desk into view. Furniture never moves.
   useEffect(() => {
-    if (zoom === null || !selected || !holder.current) return;
+    if (isFit || !selected || !holder.current) return;
     const owner = sessions.find(
       (s) => s.id === selected || s.resident?.sessionIds.includes(selected),
     );
+    const host = owner?.attachedTo ?? owner?.id;
+    // Choosing someone outside the zoomed zone keeps the zoom but leaves the zone behind.
+    if (focused && !focused.stations.some((st) => st.id === host)) {
+      setZoom(scale);
+      setFocusKey(null);
+    }
     const el = holder.current.querySelector<HTMLElement>(
       // A stacked helper is found through the shared desk's member list.
       `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"], .helper-desk[data-members~="${CSS.escape(selected)}"]`,
@@ -201,15 +230,59 @@ export function Office({
       top: holder.current.scrollTop + box.top - view.top - (view.height - box.height) / 2,
       behavior: reducedMotion ? 'auto' : 'smooth',
     });
-  }, [selected, zoom === null]);
+  }, [selected, isFit]);
+  // A zone that left the room (its last desk went) goes back to the whole room.
+  useEffect(() => {
+    if (focusKey && !focused) fit();
+  }, [focusKey, focused]);
+  // Centre the zoomed zone, after the selected-desk scroll above so the zone wins. Again
+  // whenever it moves: another zone's desks coming or going, or the window resizing.
+  const focusIndex = focused ? layout.projects.indexOf(focused) : -1;
+  useEffect(() => {
+    if (focusIndex < 0 || !holder.current) return;
+    const el = holder.current.querySelector<HTMLElement>(`[data-zone-index="${focusIndex}"]`);
+    if (!el) return;
+    const box = el.getBoundingClientRect(),
+      view = holder.current.getBoundingClientRect();
+    holder.current.scrollTo({
+      left: holder.current.scrollLeft + box.left - view.left - (view.width - box.width) / 2,
+      top: holder.current.scrollTop + box.top - view.top - (view.height - box.height) / 2,
+      behavior: reducedMotion ? 'auto' : 'smooth',
+    });
+  }, [
+    focusIndex,
+    scale,
+    focused?.x,
+    focused?.y,
+    focused?.width,
+    focused?.height,
+    viewport.width,
+    viewport.height,
+  ]);
+  // Esc goes back to the whole room, one layer at a time like the app's own Esc: a field or
+  // an open colleague closes first.
+  useEffect(() => {
+    if (!focusKey) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || selected) return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')
+      )
+        return;
+      fit();
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [focusKey, selected]);
   const callers = primary.filter((s) => s.status === 'call' || s.status === 'error');
   return (
     <section
-      className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''} ${dragging ? 'is-dragging' : ''}`}
+      className={`office-card dynamic-office phase-${phase} ${reducedMotion || hidden ? 'motion-paused' : ''} ${dragging ? 'is-dragging' : ''} ${focused ? 'is-zone-focus' : ''}`}
       aria-label={t.office.region}
     >
       <div
-        className={`map-holder scene-viewport ${zoom === null ? 'is-fit' : ''}`}
+        className={`map-holder scene-viewport ${isFit ? 'is-fit' : ''}`}
         ref={holder}
         data-scale={scale.toFixed(3)}
       >
@@ -217,7 +290,7 @@ export function Office({
           className="scene-size"
           style={
             // Fitted, the room is the view (it never scrolls); zoomed, it grows past it.
-            zoom === null
+            isFit
               ? { width: '100%', height: '100%' }
               : {
                   // At least the view inside its own scrollbars (100%), never the card's
@@ -286,284 +359,308 @@ export function Office({
             <div className="floor-light" aria-hidden="true" />
             <i className="wall-plant plant-left" aria-hidden="true" />
             <i className="wall-plant plant-right" aria-hidden="true" />
-            {layout.projects.map((area, index) => (
-              <div
-                className={`project-area ${dragging && dropKey === area.key ? (dragFrom && projectKey(dragFrom) === area.key ? 'drop-home' : 'drop-target') : ''}`}
-                key={area.key}
-                data-project-key={privacy ? undefined : area.key}
-                onDragOver={(e) => {
-                  if (!dragging) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = 'move';
-                  setDropKey(area.key);
-                }}
-                onDrop={(e) => {
-                  if (!dragging) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  drop(area.key);
-                }}
-                style={
-                  {
-                    transform: `translate(${area.x}px, ${area.y}px)`,
-                    width: area.width,
-                    height: area.height,
-                    '--project-color': projectColor(area.key),
-                  } as CSSProperties
-                }
-              >
+            {layout.projects.map((area, index) => {
+              const areaName = privacy ? t.desk.project : area.name;
+              const veilIds = zoneVeilIds?.(area.stations.map((s) => s.id)) ?? [];
+              return (
                 <div
-                  className={`project-floor-mark ${area.custom ? 'custom-area' : ''}`}
-                  title={
-                    privacy
-                      ? undefined
-                      : area.custom
-                        ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}`
-                        : area.name
+                  className={`project-area ${focusKey === area.key ? 'is-focus-zone' : ''} ${dragging && dropKey === area.key ? (dragFrom && projectKey(dragFrom) === area.key ? 'drop-home' : 'drop-target') : ''}`}
+                  key={area.key}
+                  data-project-key={privacy ? undefined : area.key}
+                  data-zone-index={index}
+                  onDragOver={(e) => {
+                    if (!dragging) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = 'move';
+                    setDropKey(area.key);
+                  }}
+                  onDrop={(e) => {
+                    if (!dragging) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    drop(area.key);
+                  }}
+                  style={
+                    {
+                      transform: `translate(${area.x}px, ${area.y}px)`,
+                      width: area.width,
+                      height: area.height,
+                      '--project-color': projectColor(area.key),
+                    } as CSSProperties
                   }
                 >
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  <b>{privacy ? t.desk.project : area.name}</b>
-                  <small>
-                    {t.desk.headcount(
-                      area.stations.length,
-                      area.stations.some((s) => s.children.length > 0),
-                    )}
-                  </small>
-                </div>
-                {area.benches.map((bench, i) => (
-                  <Furniture
-                    kind="desk"
-                    key={`${bench.key}:${i}`}
-                    shared={bench.members.length > 1}
-                    assetKey={privacy ? undefined : bench.key}
-                    style={{ left: bench.x, top: bench.y, width: bench.width }}
-                  />
-                ))}
-                {area.stations.map((station) => {
-                  const s = byId.get(station.id)!;
-                  const members = s.resident?.sessionIds ?? [s.id];
-                  const active = members.includes(selected ?? '');
-                  const pose = presentSession(s, clock);
-                  // A just-arrived request plays on the desk and speaks first.
-                  const speech = deskSpeech(s, notices, bubbleHours, clock);
-                  const { unread, arrival, hop } = speech;
-                  // Pointing at a desk shows its bubble — or the last thing it said, if closed.
-                  const shown = shownSpeech(
-                    s,
-                    notices,
-                    bubbleHours,
-                    clock,
-                    speech,
-                    hover === s.id || active,
-                    hover === s.id && closed !== s.id,
-                  );
-                  const bubble = shown?.speech.bubble;
-                  const replyId = bubble?.sessionId ?? s.id;
-                  const replyTarget = quick ? replyTargets[replyId] : null;
-                  const canReply = !!replyTarget?.canSend;
-                  const focus = focusLevel(s, clock);
-                  const branch = branchInfo(s);
-                  const quota = quotaOf?.(s);
-                  const dark = !!quota && dimsDesk(s, pose.working);
-                  return (
-                    <div
-                      className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
-                      data-working={pose.working}
-                      key={s.id}
-                      data-station-id={s.id}
-                      style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
-                      // The whole desk (bubble included) is what the person points at.
-                      onMouseEnter={() => setHover(s.id)}
-                      onMouseLeave={() => {
-                        setHover((h) => (h === s.id ? null : h));
-                        setClosed((c) => (c === s.id ? null : c));
-                      }}
+                  <div
+                    className={`project-floor-mark ${area.custom ? 'custom-area' : ''} ${
+                      // The room clips at its walls: zones on the right explain leftwards.
+                      area.x + area.width / 2 > layout.width / 2 ? 'tip-left' : ''
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className="zone-mark-focus"
+                      aria-label={`${t.office.zoom.zoneLabel(areaName)}, ${t.desk.headcount(
+                        area.stations.length,
+                        area.stations.some((s) => s.children.length > 0),
+                      )}`}
+                      aria-pressed={focusKey === area.key}
+                      title={`${
+                        privacy
+                          ? ''
+                          : area.custom
+                            ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}\n`
+                            : `${area.name}\n`
+                      }${t.office.zoom.zoneTitle}`}
+                      onClick={() => focusZone(area.key)}
                     >
-                      <i className="desk-glow" aria-hidden="true" />
-                      <Furniture kind="chair" />
-                      <div className={`pet-shadow ${active ? 'selected' : ''}`} />
-                      <button
-                        className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
-                        data-session-id={s.id}
-                        data-seat={s.officeSeat}
-                        aria-label={t.office.station(
-                          privacy ? s.provider : sessionName(s),
-                          MOODS[s.status].label,
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <b>{areaName}</b>
+                      <small>
+                        {t.desk.headcount(
+                          area.stations.length,
+                          area.stations.some((s) => s.children.length > 0),
                         )}
-                        title={
-                          draggable
-                            ? t.office.dragToZone(POSTURE_LABELS[pose.posture])
-                            : POSTURE_LABELS[pose.posture]
-                        }
-                        draggable={draggable}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', s.id);
-                          e.dataTransfer.effectAllowed = 'move';
-                          setDragging(s.id);
-                          setHover(null);
+                      </small>
+                    </button>
+                    {onVeilZone && veilIds.length > 0 && (
+                      <VeilButton zone name={areaName} onVeil={() => onVeilZone(veilIds)} />
+                    )}
+                  </div>
+                  {area.benches.map((bench, i) => (
+                    <Furniture
+                      kind="desk"
+                      key={`${bench.key}:${i}`}
+                      shared={bench.members.length > 1}
+                      assetKey={privacy ? undefined : bench.key}
+                      style={{ left: bench.x, top: bench.y, width: bench.width }}
+                    />
+                  ))}
+                  {area.stations.map((station) => {
+                    const s = byId.get(station.id)!;
+                    const members = s.resident?.sessionIds ?? [s.id];
+                    const active = members.includes(selected ?? '');
+                    const pose = presentSession(s, clock);
+                    // A just-arrived request plays on the desk and speaks first.
+                    const speech = deskSpeech(s, notices, bubbleHours, clock);
+                    const { unread, arrival, hop } = speech;
+                    // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                    const shown = shownSpeech(
+                      s,
+                      notices,
+                      bubbleHours,
+                      clock,
+                      speech,
+                      hover === s.id || active,
+                      hover === s.id && closed !== s.id,
+                    );
+                    const bubble = shown?.speech.bubble;
+                    const replyId = bubble?.sessionId ?? s.id;
+                    const replyTarget = quick ? replyTargets[replyId] : null;
+                    const canReply = !!replyTarget?.canSend;
+                    const focus = focusLevel(s, clock);
+                    const branch = branchInfo(s);
+                    const quota = quotaOf?.(s);
+                    const dark = !!quota && dimsDesk(s, pose.working);
+                    return (
+                      <div
+                        className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
+                        data-working={pose.working}
+                        key={s.id}
+                        data-station-id={s.id}
+                        style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
+                        // The whole desk (bubble included) is what the person points at.
+                        onMouseEnter={() => setHover(s.id)}
+                        onMouseLeave={() => {
+                          setHover((h) => (h === s.id ? null : h));
+                          setClosed((c) => (c === s.id ? null : c));
                         }}
-                        onDragEnd={endDrag}
-                        onClick={() => onSelect(s.id)}
-                        onMouseEnter={() => onHover?.(s.id)}
-                        onMouseLeave={() => onHover?.(null)}
                       >
-                        <FocusEffects level={focus} />
-                        <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
-                        {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
-                      </button>
-                      {onVeil && canVeil(s) && (
-                        <VeilButton
-                          name={privacy ? s.provider : sessionName(s)}
-                          onVeil={() => onVeil(s)}
-                        />
-                      )}
-                      {onPin && (
-                        <PinButton
-                          name={privacy ? s.provider : sessionName(s)}
-                          pinned={s.pinned}
-                          onPin={() => onPin(s)}
-                        />
-                      )}
-                      <Furniture kind="equipment" />
-                      {quota && <QuotaBadge quota={quota} />}
-                      <PaperPile count={deskPapers(s, clock)} level={focus} />
-                      {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
-                      {pose.working && <WorkingBeacon level={focus} />}
-                      <button
-                        className={`desk-branch branch-${branch.kind}`}
-                        title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                        onClick={() => onSelect(s.id)}
-                      >
-                        <GitBranch size={9} />
-                        <span>{privacy ? t.desk.hidden : branch.label}</span>
-                      </button>
-                      <button
-                        className={`desk-name ${active ? 'selected' : ''}`}
-                        onClick={() => onSelect(s.id)}
-                        title={privacy ? undefined : sessionName(s)}
-                      >
-                        <strong>
-                          <i style={{ background: MOODS[s.status].color }} />
-                          <span>{privacy ? s.provider : sessionName(s)}</span>
-                          {s.pinned && <Pin size={9} />}
-                        </strong>
-                        <small>
-                          <span>
-                            {pose.working
-                              ? s.resident && s.resident.activeCount > 1
-                                ? t.desk.runningTasks(s.resident.activeCount)
-                                : t.desk.working
-                              : MOODS[s.status].label}
-                          </span>
-                          {unread > 0 && <em>{t.desk.unread(unread)}</em>}
-                        </small>
-                      </button>
-                      {shown && (
-                        <SpeechBubble
-                          session={s}
-                          speech={shown.speech}
-                          peek={shown.peek}
-                          quote={hover === s.id && closed !== s.id}
-                          privacy={privacy}
-                          onOpen={() => {
-                            if (bubble) {
-                              if (!privacy)
-                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                              onNews(bubble.sessionId);
-                            } else onSelect(s.id);
-                          }}
-                          onDismiss={() => {
-                            setClosed(s.id);
-                            if (bubble)
-                              onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
-                          }}
-                          reply={
-                            canReply
-                              ? {
-                                  title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
-                                  open: replying?.station === s.id,
-                                  onClick: () =>
-                                    setReplying(
-                                      replying?.station === s.id
-                                        ? null
-                                        : { station: s.id, id: replyId, target: replyTarget! },
-                                    ),
-                                }
-                              : undefined
+                        <i className="desk-glow" aria-hidden="true" />
+                        <Furniture kind="chair" />
+                        <div className={`pet-shadow ${active ? 'selected' : ''}`} />
+                        <button
+                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          data-session-id={s.id}
+                          data-seat={s.officeSeat}
+                          aria-label={t.office.station(
+                            privacy ? s.provider : sessionName(s),
+                            MOODS[s.status].label,
+                          )}
+                          title={
+                            draggable
+                              ? t.office.dragToZone(POSTURE_LABELS[pose.posture])
+                              : POSTURE_LABELS[pose.posture]
                           }
-                        />
-                      )}
-                      {quick && replying?.station === s.id && (
-                        <QuickReply
-                          key={replying.id}
-                          target={
-                            replyTargets[replying.id] ?? {
-                              ...replying.target,
-                              status: 'gone',
-                              canSend: false,
+                          draggable={draggable}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', s.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                            setDragging(s.id);
+                            setHover(null);
+                          }}
+                          onDragEnd={endDrag}
+                          onClick={() => onSelect(s.id)}
+                          onMouseEnter={() => onHover?.(s.id)}
+                          onMouseLeave={() => onHover?.(null)}
+                        >
+                          <FocusEffects level={focus} />
+                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
+                        </button>
+                        {onVeil && canVeil(s) && (
+                          <VeilButton
+                            name={privacy ? s.provider : sessionName(s)}
+                            onVeil={() => onVeil(s)}
+                          />
+                        )}
+                        {onPin && (
+                          <PinButton
+                            name={privacy ? s.provider : sessionName(s)}
+                            pinned={s.pinned}
+                            onPin={() => onPin(s)}
+                          />
+                        )}
+                        <Furniture kind="equipment" />
+                        {quota && <QuotaBadge quota={quota} />}
+                        <PaperPile count={deskPapers(s, clock)} level={focus} />
+                        {arrival && (
+                          <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
+                        )}
+                        {pose.working && <WorkingBeacon level={focus} />}
+                        <button
+                          className={`desk-branch branch-${branch.kind}`}
+                          title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                          onClick={() => onSelect(s.id)}
+                        >
+                          <GitBranch size={9} />
+                          <span>{privacy ? t.desk.hidden : branch.label}</span>
+                        </button>
+                        <button
+                          className={`desk-name ${active ? 'selected' : ''}`}
+                          onClick={() => onSelect(s.id)}
+                          title={privacy ? undefined : sessionName(s)}
+                        >
+                          <strong>
+                            <i style={{ background: MOODS[s.status].color }} />
+                            <span>{privacy ? s.provider : sessionName(s)}</span>
+                            {s.pinned && <Pin size={9} />}
+                          </strong>
+                          <small>
+                            <span>
+                              {pose.working
+                                ? s.resident && s.resident.activeCount > 1
+                                  ? t.desk.runningTasks(s.resident.activeCount)
+                                  : t.desk.working
+                                : MOODS[s.status].label}
+                            </span>
+                            {unread > 0 && <em>{t.desk.unread(unread)}</em>}
+                          </small>
+                        </button>
+                        {shown && (
+                          <SpeechBubble
+                            session={s}
+                            speech={shown.speech}
+                            peek={shown.peek}
+                            quote={hover === s.id && closed !== s.id}
+                            privacy={privacy}
+                            onOpen={() => {
+                              if (bubble) {
+                                if (!privacy)
+                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                                onNews(bubble.sessionId);
+                              } else onSelect(s.id);
+                            }}
+                            onDismiss={() => {
+                              setClosed(s.id);
+                              if (bubble)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
+                            }}
+                            reply={
+                              canReply
+                                ? {
+                                    title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
+                                    open: replying?.station === s.id,
+                                    onClick: () =>
+                                      setReplying(
+                                        replying?.station === s.id
+                                          ? null
+                                          : { station: s.id, id: replyId, target: replyTarget! },
+                                      ),
+                                  }
+                                : undefined
                             }
-                          }
-                          name={sessionName(byId.get(replying.id) ?? s)}
-                          onClose={() => setReplying(null)}
-                          onSend={async (text) => {
-                            await onReply!(replying.id, text);
-                            markSent(replying.id);
-                          }}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-                {area.stations.flatMap((station) =>
-                  station.children.map((child) => {
-                    if (child.stack) {
-                      const members = child.stack.map((id) => byId.get(id)!);
+                          />
+                        )}
+                        {quick && replying?.station === s.id && (
+                          <QuickReply
+                            key={replying.id}
+                            target={
+                              replyTargets[replying.id] ?? {
+                                ...replying.target,
+                                status: 'gone',
+                                canSend: false,
+                              }
+                            }
+                            name={sessionName(byId.get(replying.id) ?? s)}
+                            onClose={() => setReplying(null)}
+                            onSend={async (text) => {
+                              await onReply!(replying.id, text);
+                              markSent(replying.id);
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                  {area.stations.flatMap((station) =>
+                    station.children.map((child) => {
+                      if (child.stack) {
+                        const members = child.stack.map((id) => byId.get(id)!);
+                        return (
+                          <HelperStack
+                            key={`stack:${station.id}`}
+                            members={members}
+                            parentId={station.id}
+                            at={child}
+                            pose={(h) => presentSession(h, clock)}
+                            news={(h) =>
+                              notices.some(
+                                (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                              )
+                            }
+                            privacy={privacy}
+                            className={`${members.some((h) => h.id === selected) ? 'chosen' : ''} ${members.some((h) => h.id === spotlight) ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                            selected={selected}
+                            onOpen={onSelect}
+                            canVeil={canVeil}
+                            onVeil={onVeil}
+                          />
+                        );
+                      }
+                      const s = byId.get(child.id)!;
+                      const childPose = presentSession(s, clock);
                       return (
-                        <HelperStack
-                          key={`stack:${station.id}`}
-                          members={members}
+                        <HelperDesk
+                          key={s.id}
+                          session={s}
                           parentId={station.id}
                           at={child}
-                          pose={(h) => presentSession(h, clock)}
-                          news={(h) =>
-                            notices.some(
-                              (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
-                            )
-                          }
+                          mood={childPose.mood}
+                          working={childPose.working}
+                          news={notices.some(
+                            (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
+                          )}
                           privacy={privacy}
-                          className={`${members.some((h) => h.id === selected) ? 'chosen' : ''} ${members.some((h) => h.id === spotlight) ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
-                          selected={selected}
-                          onOpen={onSelect}
-                          canVeil={canVeil}
-                          onVeil={onVeil}
+                          className={`${selected === s.id ? 'chosen' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
+                          onClick={() => onSelect(s.id)}
+                          onVeil={onVeil && canVeil(s) ? () => onVeil(s) : undefined}
                         />
                       );
-                    }
-                    const s = byId.get(child.id)!;
-                    const childPose = presentSession(s, clock);
-                    return (
-                      <HelperDesk
-                        key={s.id}
-                        session={s}
-                        parentId={station.id}
-                        at={child}
-                        mood={childPose.mood}
-                        working={childPose.working}
-                        news={notices.some(
-                          (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
-                        )}
-                        privacy={privacy}
-                        className={`${selected === s.id ? 'chosen' : ''} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''}`}
-                        onClick={() => onSelect(s.id)}
-                        onVeil={onVeil && canVeil(s) ? () => onVeil(s) : undefined}
-                      />
-                    );
-                  }),
-                )}
-              </div>
-            ))}
+                    }),
+                  )}
+                </div>
+              );
+            })}
             {!primary.length && (
               <div className="scene-empty">
                 <Armchair size={30} />
@@ -618,6 +715,12 @@ export function Office({
         {footer}
       </div>
       <div className="stage-hud hud-bottom-right scene-controls">
+        {focused && (
+          <button className="zone-back" onClick={fit}>
+            <Maximize2 size={12} />
+            <span>{t.office.zoom.zoneBack(privacy ? t.desk.project : focused.name)}</span>
+          </button>
+        )}
         <button
           aria-label={t.office.zoom.outLabel}
           title={t.office.zoom.outTitle}
@@ -627,13 +730,13 @@ export function Office({
           <Minus size={14} />
         </button>
         <button
-          className={`zoom-readout ${zoom === null ? 'is-fit' : ''}`}
+          className={`zoom-readout ${isFit ? 'is-fit' : ''}`}
           aria-label={t.office.zoom.fitLabel}
           title={t.office.zoom.fitTitle}
           onClick={fit}
         >
-          {zoom === null ? <Maximize2 size={12} /> : null}
-          <span>{zoom === null ? t.office.zoom.fit : `${Math.round(scale * 100)}%`}</span>
+          {isFit ? <Maximize2 size={12} /> : null}
+          <span>{isFit ? t.office.zoom.fit : `${Math.round(scale * 100)}%`}</span>
         </button>
         <button
           aria-label={t.office.zoom.inLabel}
