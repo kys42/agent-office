@@ -36,6 +36,13 @@ export function bookmarkLine(e: OfficeEvent, max: number): BookmarkLine {
     ...(e.excerpt ? { excerpt: true } : {}),
   };
 }
+/** Another form of the same message, as the conversation folds it (`conversationEvents`). */
+const twin = (e: OfficeEvent, target: OfficeEvent) =>
+  (e.kind === 'user' || e.kind === 'assistant') &&
+  e.kind === target.kind &&
+  e.phase === target.phase &&
+  e.text === target.text &&
+  Math.abs(e.at - target.at) < 3000;
 /**
  * How `target` came about, from the conversation events before index `end` (where it is, or
  * would be): the person's last request before it and the colleague's messages since, tool calls
@@ -51,7 +58,7 @@ export function bookmarkContext(
   const said: OfficeEvent[] = [];
   for (let i = end - 1; i >= 0; i--) {
     const e = conversation[i];
-    if (e.kind === target.kind && e.phase === target.phase && e.text === target.text) continue;
+    if (twin(e, target)) continue;
     if (e.kind === 'user') {
       context.request = bookmarkLine(e, REQUEST_TEXT);
       break;

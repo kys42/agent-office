@@ -128,6 +128,17 @@ test('A form of a message the conversation folds away keeps the context of the s
     ['p1', 'p2'],
   );
   assert.equal(b.context.tools, 2);
+  // The same words said again minutes apart are two messages: both stay context.
+  const again = [
+    ev('q', 'user', '확인해 줘', 0),
+    ev('s1', 'assistant', '파일을 확인할게요', 1, 'commentary'),
+    ev('s2', 'assistant', '파일을 확인할게요', 5, 'commentary'),
+  ];
+  const repeated = makeBookmark(session(again), again, 's2', 'y', 0)!;
+  assert.deepEqual(
+    repeated.context.progress.map((l) => l.eventId),
+    ['s1'],
+  );
 });
 
 test('A bookmark copies the message with where it was; lifecycle and unknown ids are none', () => {

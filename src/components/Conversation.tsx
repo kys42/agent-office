@@ -313,7 +313,11 @@ export function Conversation({
   }, [filter]);
   const marks = useMemo(() => new Set(bookmarked), [bookmarked]);
   useEffect(() => {
-    if (!focus) return;
+    // Done elsewhere or given up (its page could not be read): nothing waits any more.
+    if (!focus) {
+      pending.current = null;
+      return;
+    }
     pending.current = { eventId: focus.eventId, at: focus.at };
     follow.current = false;
     setNewBelow(false);
