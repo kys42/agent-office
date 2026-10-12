@@ -10,6 +10,27 @@
 - CI: `paging.spec`의 불안정한 실패는 다른 브랜치에도 있다 → #83
 - 후속: 추가 사용량·크레딧이면 소진에서 빼기, 조회를 메인 프로세스 한 곳으로
 
+# 2026-10-12 · 일하는 동료만 1초 안에 갱신하는 hot path (PR #84, Issue #77)
+
+- 목표: 진행 말풍선·최종 응답이 5초 전체 수집을 기다리지 않게, 부하는 늘리지 않고
+- 구조
+  - hot 집합: JSONL 세션 중 work/think/call 또는 최종 응답 후 10초, 최근순 최대 8개. Claude 실행 기록(`~/.claude/sessions`)이 busy/waiting이면 즉시 승격(이미 hot인 승격도 매 pass `isLiveProcess` 재확인)
+  - 1초 hot pass(pass 단위 간격) + hot 파일만 fs.watch 힌트(150ms 모음, 실패·rename 시 stat 폴백/재부착). 폴더 탐색·metadata·git·ps는 하지 않고 직전 값 재사용
+  - 파일 처리는 `readSession()`으로 전체 수집과 공용 → 같은 바이트면 같은 세션·revision
+  - 바뀐 세션만으로 patch(`emitChanged`). 자리·붙임·구역·핀·가시성·언어·붙지 않은 도우미가 바뀌면 전체 `emitSnapshot`으로 복귀. patch = 직후 전체 snapshot을 테스트로 고정
+  - 메모리 staging(`OfficeStore.stage`): hot은 디스크에 안 쓰고 5초 전체 수집이 flush. 모든 store 읽기가 겹쳐 봄(목록·detail·검색·인수인계·소식 페이지)
+- **⚠ 사용자 조작은 지연 쓰기 대상이 아님**: 읽음·숨김·안 읽음·봄·전체 읽음은 즉시 디스크 + staged 사본 동기화(종료 직전 조작 유실 방지)
+- **⚠ 종료 절차**: worker `stop` 메시지 → `service.shutdown()`(진행 중 pass 대기 → flush → close) → bridge는 최대 3초 기다린 뒤 terminate. 데스크탑 `before-quit`은 `collectorClosing`/`collectorClosed`로 반복 종료 요청도 기다림. dev 서버는 SIGINT/SIGTERM 동일, 두 번째 신호나 5초 초과면 즉시 종료
+- **⚠ 늦을 수 있는 것**: 별도 프로세스인 MCP·`identities`는 최대 5초, git 관측(브랜치 변경)은 다음 전체 수집. 작업 위치 입력이 바뀐 세션은 hot이 건드리지 않음
+- 세션 순서를 `updated_at desc, id desc`로 고정(같은 밀리초 세션이 쓰기 후 순서 patch를 다시 내던 문제)
+- 측정(M3 Pro, 세션 200개, 수집기 단독 60초)
+  - 지연: 평균 2.0~2.9초 → 0.18초(최대 5초 → 0.7초), 감시 없이 stat만 0.4초
+  - CPU(단일 코어): 무활동 ~0.73% → 동일 / 3개가 2초마다 append ~0.8% → 1.15~1.57% / 과부하(0.3초) ~1.17% → 3.5~3.8%
+  - 남은 비용: 갱신마다 창 전체 재파싱 ~2ms/세션 → **#79 증분 파서**로 분리. 저장 비용은 staging으로 제거
+- 리뷰: 독립 + Codex 듀얼 2회(1차 수정 필요 8건 → 재리뷰 승인, 종료 대기 우회 1건 추가 수정)
+- 기존 코드 이슈 등록: #90 noticeReceipt 트랜잭션 없음, #91 읽는 곳 없는 FTS5 `session_search` 쓰기
+- CI: GitHub Actions 결제/지출 한도로 job 미시작 상태 — 로컬 깨끗한 체크아웃 검증(npm test 317, test:ui 114, desktop·mcp smoke, typecheck, format, build)으로 대신함
+
 # 2026-10-08 · 데모도 시간에 따라 상태를 다시 계산 (PR #70, Issue #16)
 
 - 문제: 데모는 상태가 고정이라 2분이 지나면 자세는 '대기'인데 라벨은 '일하는 중'

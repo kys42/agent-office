@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { OfficeEvent, Session } from '../../src/shared/types.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
@@ -141,6 +141,37 @@ export async function readClaudeProcesses(dir: string): Promise<ClaudeProcess[]>
 }
 
 /**
+ * `readClaudeProcesses` for a caller that reads the directory every second: a record file is
+ * parsed again only when its size or mtime moved (`cache` is the caller's, by file name).
+ */
+export async function readClaudeProcessesCached(
+  dir: string,
+  cache: Map<string, { stamp: string; record: ClaudeProcess | null }>,
+): Promise<ClaudeProcess[]> {
+  const files = (await readdir(dir).catch(() => [] as string[]))
+    .filter((name) => /^\d+\.json$/.test(name))
+    .slice(0, 1000);
+  const records = await Promise.all(
+    files.map(async (name) => {
+      const file = path.join(dir, name);
+      const st = await stat(file).catch(() => null);
+      if (!st) return null;
+      const stamp = `${st.size}:${st.mtimeMs}`;
+      const hit = cache.get(name);
+      if (hit?.stamp === stamp) return hit.record;
+      const text = await readFile(file, 'utf8').catch(() => null);
+      if (text === null) return null;
+      const record = parseClaudeProcess(name, text);
+      cache.set(name, { stamp, record });
+      return record;
+    }),
+  );
+  const present = new Set(files);
+  for (const name of cache.keys()) if (!present.has(name)) cache.delete(name);
+  return records.filter((r): r is ClaudeProcess => !!r);
+}
+
+/**
  * The record's process is alive and is the one that wrote it: a recycled PID started at another
  * time. procStart is written in UTC with the C locale. A failed check is not remembered.
  */
@@ -183,19 +214,40 @@ export async function findClaudeProcess(
  * id (newest record first). Only `wanted` sessions are verified, so a pass costs one directory
  * read and, while something waits, one memoized `ps` per process.
  */
-export async function waitingClaudeProcesses(
+export function waitingClaudeProcesses(
   deps: ClaudeLiveDeps,
   wanted: ReadonlySet<string>,
+  records?: ClaudeProcess[],
+): Promise<Map<string, ClaudeProcess>> {
+  return liveClaudeProcesses(deps, wanted, WAITING, records);
+}
+
+const WAITING: ReadonlySet<string> = new Set(['waiting']);
+
+/**
+ * `wanted` sessions whose live, verified process has one of `statuses`, by native session id
+ * (newest record first). `records` lets one directory read serve several lookups; verification
+ * uses the same 30-second memo as every other caller.
+ */
+export async function liveClaudeProcesses(
+  deps: ClaudeLiveDeps,
+  wanted: ReadonlySet<string>,
+  statuses: ReadonlySet<string>,
+  records?: ClaudeProcess[],
 ): Promise<Map<string, ClaudeProcess>> {
   const found = new Map<string, ClaudeProcess>();
-  const records = (await readClaudeProcesses(deps.sessionsDir))
-    .filter((r) => r.status === 'waiting' && wanted.has(r.sessionId))
+  const candidates = (records ?? (await readClaudeProcesses(deps.sessionsDir)))
+    .filter((r) => statuses.has(r.status) && wanted.has(r.sessionId))
     .sort((a, b) => b.updatedAt - a.updatedAt);
-  for (const record of records)
+  for (const record of candidates)
     if (!found.has(record.sessionId) && (await isLiveProcess(record, deps)))
       found.set(record.sessionId, record);
   return found;
 }
+
+/** What a live wait changes in a session, so a pass can tell whether it moved ('' for none). */
+export const liveWaitSignature = (live: ClaudeProcess | undefined) =>
+  live ? `${live.pid}:${live.statusUpdatedAt ?? live.updatedAt}:${live.waitingFor ?? ''}` : '';
 
 /**
  * The latest tool call of the current turn that has no result yet: what a permission prompt
