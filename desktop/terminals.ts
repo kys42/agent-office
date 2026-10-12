@@ -295,17 +295,23 @@ export function readPrompt(screen: string): string | null {
   if (top < 0) return null;
   const box = lines.slice(top + 1, bottom);
   if (!/^❯(\s|$)/.test(box[0] ?? '')) return null;
-  const below = lines.slice(bottom + 1);
-  // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
-  if (FOOT.test(below.join(' ').replace(/\s+/g, ' ')) || below.some((line) => /^\s*❯/.test(line)))
-    return null;
-  // Only the row touching the box: older output that merely looks like a list is no list.
-  const above = lines.slice(Math.max(0, top - 3), top).findLast((line) => line.trim());
-  if (above && SUGGESTION.test(above)) return null;
-  return box
+  const typed = box
     .map((line) => line.trim())
     .join('\n')
     .replace(/^❯\s?/, '');
+  // A slash command typed in full selects its own row: Enter then runs exactly that command.
+  const command = /^\/\S+$/.test(typed) ? typed : null;
+  const picks = (line: string) => {
+    const row = /^\s*❯\s+(\S+)/.exec(line);
+    return !!row && row[1] !== command;
+  };
+  const below = lines.slice(bottom + 1);
+  // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
+  if (FOOT.test(below.join(' ').replace(/\s+/g, ' ')) || below.some(picks)) return null;
+  // Only the row touching the box: older output that merely looks like a list is no list.
+  const above = lines.slice(Math.max(0, top - 3), top).findLast((line) => line.trim());
+  if (above && SUGGESTION.test(above) && (/◇/.test(above) || picks(above))) return null;
+  return typed;
 }
 
 /** The prompt holds exactly `text` (or the placeholder a long paste collapses into). */

@@ -437,6 +437,23 @@ test("Claude's prompt is read from the screen: a dialog, menu or other view is n
     'hold space to speak',
   ])
     assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), '', foot);
+  // A slash command typed in full selects its own row, above or below the box (measured).
+  const slash = (typed: string, row: string) =>
+    [
+      `  ❯ ${row}    Start a new session with empty context`,
+      `${RULE} ao-send-test ─`,
+      `❯ ${typed}`,
+      RULE,
+      '  ⏸ manual mode on',
+    ].join('\n');
+  assert.equal(readPrompt(slash('/clear', '/clear')), '/clear');
+  assert.equal(
+    readPrompt(`${claudeScreen('/clear')}\n  ❯ /clear    Start a new session`),
+    '/clear',
+  );
+  // Anything else selected would run instead of what was typed.
+  assert.equal(readPrompt(slash('/cl', '/clear')), null);
+  assert.equal(readPrompt(slash('/clear now', '/clear')), null);
   // A narrow pane truncates a hint: any "enter to …" below the box means Enter goes elsewhere.
   assert.equal(readPrompt(`${claudeScreen('hi')}\n  enter to inter…`), null);
   // A narrow pane wraps a hint across rows.
