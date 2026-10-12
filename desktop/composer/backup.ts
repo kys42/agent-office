@@ -1,4 +1,4 @@
-import { drawn } from './claude-code.js';
+import { drawn } from './screen.js';
 
 /** Lines as drawn, blank ones left out: spacing and wrapping never decide a match. */
 const lines = (text: string) => text.split('\n').map(drawn).filter(Boolean);

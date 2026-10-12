@@ -8,7 +8,7 @@ import type { Screen } from './screen.js';
  */
 
 /** Keys an adapter may press. Hosts translate them (tmux key names, raw bytes for Orca). */
-export type ComposerKey = 'C-k' | 'C-u' | 'BSpace';
+export type ComposerKey = 'C-k' | 'C-u';
 
 /** The terminal a composer is drawn in: tmux or Orca, as seen by an adapter. */
 export interface ComposerHost {
@@ -27,6 +27,8 @@ export interface ComposerHost {
  *   host could not show styles and the text was recognised by surviving the deletion keys.
  * - `draft`: text someone typed or pasted and has not submitted.
  * - `unknown`: text that cannot be told apart from a suggestion on this host (plain screens).
+ *   For both, `whole`: all of the text is known (on screen, or reported apart in full). A box
+ *   too short for its text shows only part of it; such a composer is never cleared from here.
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
@@ -34,8 +36,8 @@ export interface ComposerHost {
 export type ComposerState =
   | { kind: 'empty' }
   | { kind: 'suggestion'; text: string; inferred?: boolean }
-  | { kind: 'draft'; text: string }
-  | { kind: 'unknown'; text: string }
+  | { kind: 'draft'; text: string; whole: boolean }
+  | { kind: 'unknown'; text: string; whole: boolean }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
@@ -54,19 +56,20 @@ export interface ComposerCapabilities {
   canClear: boolean;
 }
 
-/** Saves what is about to be deleted (the clipboard): the whole text so far, each time. */
+/** Saves the composer's text (the clipboard) before anything of it is deleted. */
 export type ComposerBackup = (text: string) => Promise<void>;
 
 /**
  * How a clearing ended. `cleared`: the composer is verified ready for typing (`state` is empty
- * or a suggestion). `failed`: it could not be emptied (`state` is what it holds). `changed`:
- * new text appeared that is no part of what was confirmed (someone typing meanwhile); it was
- * left alone and must be shown again. `saved` is what the backup holds by then.
+ * or a suggestion). `failed`: it could not be emptied (`state` is what it holds; `partial` when
+ * not all of the text was known, so nothing was deleted). `changed`: the composer stopped
+ * matching the confirmed text minus what the keys deleted (someone typing meanwhile); it was
+ * left alone and must be shown again.
  */
 export type ClearResult =
-  | { status: 'cleared'; state: ComposerState; saved: string }
-  | { status: 'failed'; state: ComposerState; saved: string }
-  | { status: 'changed'; text: string; saved: string };
+  | { status: 'cleared'; state: ComposerState }
+  | { status: 'failed'; state: ComposerState; partial?: boolean }
+  | { status: 'changed'; text: string };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */

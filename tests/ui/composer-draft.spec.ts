@@ -6,7 +6,7 @@ import { demoSnapshot } from '../../src/lib/demo';
  * The desktop app found text in Claude's prompt: the reply box shows it, keeps the reply as
  * written, and only [Clear & send] sends again with that exact text to clear.
  */
-async function desktop(page: Page, hash = '', maybeSuggestion = false) {
+async function desktop(page: Page, hash = '', maybeSuggestion = false, clearable = true) {
   const fixture = demoSnapshot();
   // The big office and the row reply to the desk's own session; the pet speaks for the news.
   const now = Date.now();
@@ -37,6 +37,8 @@ async function desktop(page: Page, hash = '', maybeSuggestion = false) {
       const w = window as any;
       w.sends = [];
       w.maybeSuggestion = s.maybeSuggestion;
+      w.clearable = s.clearable;
+      w.jumped = [];
       w.office = {
         snapshot: async () => structuredClone(s),
         detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
@@ -45,6 +47,10 @@ async function desktop(page: Page, hash = '', maybeSuggestion = false) {
         artifacts: async () => [],
         subscribe: () => () => {},
         terminalSend: async () => true,
+        jump: async (id: string) => {
+          w.jumped.push(id);
+          return { action: 'focused', text: 'tmux work:1.0 패널을 선택했어요' };
+        },
         terminals: async (ids: string[]) =>
           Object.fromEntries(
             ids.map((id) => [
@@ -60,12 +66,13 @@ async function desktop(page: Page, hash = '', maybeSuggestion = false) {
               draft: 'half-written idea\nsecond line',
               agent: 'Claude',
               ...(w.maybeSuggestion && { maybeSuggestion: true }),
+              ...(!w.clearable && { clearable: false }),
             };
           return { status: 'sent', message: 'tmux work:1.0에 보냈어요', cleared: true };
         },
       };
     },
-    Object.assign(fixture, { maybeSuggestion }),
+    Object.assign(fixture, { maybeSuggestion, clearable }),
   );
   await page.goto(`/${hash}`);
 }
@@ -215,4 +222,23 @@ test('In the big office the question is never covered by the next project area',
     await reply.getByRole('button', { name: '답장 닫기' }).click();
     await expect(reply).toHaveCount(0);
   }
+});
+
+test('Text not all on screen is never cleared from here: the terminal is offered instead', async ({
+  page,
+}) => {
+  await desktop(page, '', false, false);
+  await page.getByRole('button', { name: '코코에게 바로 답장' }).click();
+  const reply = page.locator('.quick-reply');
+  const field = reply.getByRole('textbox', { name: '답장 내용' });
+  await field.fill('테스트를 먼저 돌려 주세요');
+  await field.press('Enter');
+  const confirm = reply.locator('.draft-confirm');
+  await expect(confirm).toContainText('입력창 글이 다 보이지 않아 여기서 지울 수 없어요');
+  await expect(confirm.getByRole('button', { name: '지우고 보내기' })).toHaveCount(0);
+  await confirm.getByRole('button', { name: '터미널로 이동' }).click();
+  expect(await page.evaluate(() => (window as any).jumped)).toEqual(['demo:0']);
+  // Nothing was cleared or sent again; the reply stays.
+  expect((await sends(page)).length).toBe(1);
+  await expect(field).toHaveValue('테스트를 먼저 돌려 주세요');
 });

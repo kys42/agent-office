@@ -16,8 +16,8 @@ export interface Screen {
    * the marker, and the suggestion Claude offers comes back here too (measured).
    */
   composer?: string;
-  /** Where the terminal's cursor is (cells, rows of `text`), when the host reports it (tmux). */
-  cursor?: { x: number; y: number };
+  /** The pane's height in rows, when the host reports it (tmux). */
+  height?: number;
 }
 
 /**

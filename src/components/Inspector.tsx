@@ -480,6 +480,7 @@ export function Inspector({
           {live && (
             <TerminalSend
               key={s.id}
+              onJump={api.jump ? () => void resume() : undefined}
               target={live}
               enabled={terminalSend}
               privacy={privacy}

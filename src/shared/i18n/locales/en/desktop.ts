@@ -62,6 +62,9 @@ export const desktop = {
     /** After clearing, the prompt did not show exactly the typed text: no Enter, the text stays. */
     notVerified:
       "Typed it into the emptied prompt, but couldn't confirm it holds only your text, so it wasn't submitted. Check the terminal.",
+    /** Not all of the composer's text is on screen (a box too short for it): nothing is cleared. */
+    notWhole:
+      "Not all of the text in the prompt is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
     /** Added to any failure once the composer's text was copied (it may be partly cleared). */
     clipboardKept: 'The text that was in the prompt is on your clipboard.',
     /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */

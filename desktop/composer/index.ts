@@ -27,11 +27,7 @@ export const codexQueueComposer: ComposerAdapter = {
     canClear: false,
   }),
   inspect: async () => ({ kind: 'unsupported' }),
-  clear: async (_host, from) => ({
-    status: 'failed',
-    state: { kind: 'unsupported' },
-    saved: from.text,
-  }),
+  clear: async () => ({ status: 'failed', state: { kind: 'unsupported' } }),
 };
 
 /**
@@ -47,11 +43,7 @@ export const unsupportedComposer = (agent: string): ComposerAdapter => ({
     canClear: false,
   }),
   inspect: async () => ({ kind: 'unsupported' }),
-  clear: async (_host, from) => ({
-    status: 'failed',
-    state: { kind: 'unsupported' },
-    saved: from.text,
-  }),
+  clear: async () => ({ status: 'failed', state: { kind: 'unsupported' } }),
 });
 
 const NAMES: Record<Provider, string> = { claude: 'Claude', codex: 'Codex', openclaw: 'OpenClaw' };

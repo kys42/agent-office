@@ -29,6 +29,8 @@ import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
+import { api } from '../lib/api';
+import { jumpOrCopy } from '../lib/resume';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -513,6 +515,11 @@ export function Office({
                           }
                           name={sessionName(byId.get(replying.id) ?? s)}
                           onClose={() => setReplying(null)}
+                          onJump={
+                            api.jump
+                              ? () => void jumpOrCopy(replying.id, () => {}).catch(() => {})
+                              : undefined
+                          }
                           onSend={async (text, replaceDraft) => {
                             const result = await onReply!(replying.id, text, replaceDraft);
                             if (result.status === 'sent') markSent(replying.id);

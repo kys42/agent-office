@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Expand, Flag, PanelRightOpen, RotateCw, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
@@ -142,6 +143,11 @@ export function DeskPet({
                 target={target!}
                 name={who?.name ?? d.someone}
                 onClose={() => setReplyFor(null)}
+                onJump={
+                  api.jump
+                    ? () => void jumpOrCopy(bubble.sessionId, () => {}).catch(() => {})
+                    : undefined
+                }
                 onSend={async (text, replaceDraft) => {
                   const result = await onReply!(bubble.sessionId, text, replaceDraft);
                   if (result.status === 'sent') markSent(bubble.sessionId);

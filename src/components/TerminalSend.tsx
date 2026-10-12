@@ -31,11 +31,14 @@ export function TerminalSend({
   enabled,
   privacy,
   onSend,
+  onJump,
 }: {
   target: TerminalTarget;
   enabled: boolean;
   privacy: boolean;
   onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
+  /** Brings the session's terminal to the front (offered when its text can't be cleared). */
+  onJump?: () => void;
 }) {
   const { t } = useI18n();
   const reply = useComposerSend(onSend, () => reply.setText(''));
@@ -106,6 +109,7 @@ export function TerminalSend({
           sending={sending}
           privacy={privacy}
           blocked={waiting}
+          onJump={target.canFocus ? onJump : undefined}
           onConfirm={() => void reply.confirm()}
           onCancel={reply.cancel}
         />

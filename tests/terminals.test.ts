@@ -129,6 +129,8 @@ function fakeDeps(
     fg?: string;
     /** The rendered terminal for what sits in the prompt; the nth read (from 0). */
     screen?: (typed: string, read: number) => string;
+    /** `#{pane_height}` (default 40: the prompt box shows up to 15 rows). */
+    paneHeight?: number;
     /** `#{pane_in_mode}`: 1 while the tmux pane is scrolled back. */
     paneMode?: string;
     /** `source` of `orca terminal read --screen`. */
@@ -167,14 +169,8 @@ function fakeDeps(
         if (args.includes('-ww')) return `${options.args ?? ARGS}\n`;
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg ?? 'S+ 4242 4242'}\n`;
       }
-      if (file === '/bin/tmux' && args.some((a) => a.startsWith('#{pane_in_mode}'))) {
-        // The cursor sits at the end of the prompt's last row, as after typing.
-        const rows = (options.screen ?? claudeScreen)(typed, reads).split('\n');
-        const bottom = rows.findLastIndex((row) => /^─+/.test(row));
-        const last = rows[bottom - 1] ?? '';
-        const x = 2 + [...last.slice(2)].reduce((n, c) => n + (/[가-힣]/.test(c) ? 2 : 1), 0);
-        return `${options.paneMode ?? '0'} ${x} ${bottom - 1}\n`;
-      }
+      if (file === '/bin/tmux' && args.some((a) => a.startsWith('#{pane_in_mode}')))
+        return `${options.paneMode ?? '0'} ${options.paneHeight ?? 40}\n`;
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
       if (file === '/bin/tmux' && args.includes('load-buffer')) loaded = runOptions?.input ?? '';
       if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
@@ -629,7 +625,7 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
       '-p',
       '-t',
       '%3',
-      '#{pane_in_mode} #{cursor_x} #{cursor_y}',
+      '#{pane_in_mode} #{pane_height}',
     ];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-e', '-t', '%3'];
     assert.equal(tmux.length, 9);
@@ -712,7 +708,8 @@ test("Text already in the prompt, a draft or a failed send's, is never added to"
       status: 'needs-confirm',
       draft: 'half-written idea',
       agent: 'Claude',
-      ...(live.host.kind === 'orca' && { maybeSuggestion: true }),
+      // Older Orca draws the composer on screen like a suggestion: never cleared from here.
+      ...(live.host.kind === 'orca' && { maybeSuggestion: true, clearable: false }),
     });
     // Without a way to back the text up first (no clipboard), it is refused as before.
     await assert.rejects(
@@ -811,8 +808,10 @@ test('Clear & send: clipboard, clear, verify empty, type, verify, then Enter', a
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     for (const live of [tmuxLive(), orcaLive()]) {
       let draft = 'half-written idea';
+      // Orca 1.4.216 reports the composer as `draft`; older Orca is never cleared from here.
       const { deps, calls } = fakeDeps(dir, {
         screen: (typed) => claudeScreen(typed || draft),
+        ...(live.host.kind === 'orca' && { orcaDraft: (typed: string) => typed || draft }),
       });
       // The fake prompt shows the draft until the clearing keys arrive.
       const run = deps.run;
@@ -829,20 +828,12 @@ test('Clear & send: clipboard, clear, verify empty, type, verify, then Enter', a
       assert.equal(result.status === 'sent' && result.cleared, true);
       assert.deepEqual(
         log.filter((step, i) => step !== log[i - 1]),
-        // After the copy, one more look (the cursor, and still the same text), then each key.
-        ['read', 'clipboard:half-written idea', 'read', 'clear', 'read', 'type', 'read', 'enter'],
+        ['read', 'clipboard:half-written idea', 'clear', 'read', 'type', 'read', 'enter'],
         live.host.kind,
       );
-      // One pair at a time: a pair reaches only what was on screen (and saved).
+      // One Ctrl+K·Ctrl+U pair at a time.
       if (live.host.kind === 'tmux')
-        assert.ok(
-          // Backspace once per character left of the cursor: exactly the visible draft.
-          calls.some(
-            (c) =>
-              c.args.includes('send-keys') &&
-              c.args.filter((a) => a === 'BSpace').length === 'half-written idea'.length,
-          ),
-        );
+        assert.ok(calls.some((c) => c.args.join(' ').endsWith('send-keys -t %3 C-k C-u')));
       else assert.ok(calls.some((c) => c.args.includes('--text=\x0b\x15')));
     }
   });
@@ -933,7 +924,7 @@ test('After clearing, only the exact text is submitted: a long reply over leftov
     assert.ok(typedAny(calls));
     assert.ok(!sent(calls), 'no Enter');
     // Everything the keys went over was saved first.
-    assert.equal(saved.at(-1), 'stale words here\nhalf-written idea');
+    assert.equal(saved.at(-1), 'half-written idea\nstale words here');
   });
 });
 
@@ -1006,6 +997,65 @@ test('A verified empty prompt takes a long reply as Claude shows it; an inferred
     });
   // The inferred case (Orca, text the keys never touch after the draft went) refuses a long
   // reply shown in part: tested below with what it would hide.
+});
+
+test('Blank rows in the box are no empty prompt, and a box that may hide text is never cleared', async () => {
+  // 'secret\n\n\n\n\nmore' with the cursor on the blank lines: a box of 3 rows (height 16)
+  // shows only blank rows; the secret is above, out of view.
+  const blank = [
+    '⏺ Done.',
+    '',
+    `${RULE} ao-send-test ─`,
+    '❯ ',
+    '  ',
+    '  ',
+    RULE,
+    '  ⏸ manual mode on',
+  ].join('\n');
+  const { deps, calls } = fakeDeps('/x', { screen: () => blank, paneHeight: 16 });
+  const asked = await sendToTerminal(tmuxLive(), 'hi', deps, { backup: async () => {} });
+  assert.equal(asked.status, 'needs-confirm');
+  assert.equal(asked.status === 'needs-confirm' && asked.clearable, false);
+  await assert.rejects(
+    sendToTerminal(tmuxLive(), 'hi', deps, {
+      replaceDraft: asked.status === 'needs-confirm' ? asked.draft : '',
+      backup: async () => {},
+    }),
+    /입력창 글이 다 보이지 않아 여기서 지울 수 없어요/,
+  );
+  assert.ok(!typedAny(calls) && !sent(calls) && !calls.some((c) => clears(c.args)));
+});
+
+test('The clipboard notice holds only while the clipboard still holds the earlier text', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let draft = 'first\nsecond';
+    const { deps } = fakeDeps(dir, { screen: (typed) => claudeScreen(typed || draft) });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      // The first step lets someone type on: the clearing stops with the backup made.
+      if (clears(args)) {
+        draft = 'first typed';
+        return '';
+      }
+      return run(file, args, options);
+    };
+    let clipboard = '';
+    const backup = async (text: string) => {
+      clipboard = text;
+    };
+    const first = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      replaceDraft: 'first\nsecond',
+      backup,
+      clipboardText: () => clipboard,
+    });
+    assert.equal(first.status === 'needs-confirm' && first.clipboard, true);
+    const again = () =>
+      sendToTerminal(tmuxLive(), 'hi', deps, { backup, clipboardText: () => clipboard });
+    assert.equal(((await again()) as { clipboard?: boolean }).clipboard, true);
+    // The person copied something else: the earlier text is gone from there, and so is the note.
+    clipboard = 'something else';
+    assert.equal(((await again()) as { clipboard?: boolean }).clipboard, undefined);
+  });
 });
 
 test('The send flow only types for agents whose composer it can read', async () => {

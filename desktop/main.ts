@@ -680,6 +680,7 @@ function setupIPC() {
         replaceDraft,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),
+        clipboardText: () => clipboard.readText(),
       });
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;

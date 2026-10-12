@@ -16,10 +16,13 @@ export function QuickReply({
   name,
   onSend,
   onClose,
+  onJump,
 }: {
   target: TerminalTarget;
   name: string;
   onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
+  /** Brings the session's terminal to the front (offered when its text can't be cleared). */
+  onJump?: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -94,6 +97,7 @@ export function QuickReply({
           draft={draft}
           sending={sending}
           blocked={blocked}
+          onJump={target.canFocus ? onJump : undefined}
           onConfirm={() => void reply.confirm()}
           onCancel={() => {
             reply.cancel();

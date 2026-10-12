@@ -31,6 +31,9 @@ export const terminal: Messages['terminal'] = {
   draftPartlySaved: '지금까지 지운 글은 클립보드에 있어요.',
   draftChanged: '그사이 입력창 글이 바뀌었어요. 다시 확인해 주세요.',
   draftHidden: '화면 내용 숨기기 중이라 가렸어요',
+  draftNotWhole:
+    '입력창 글이 다 보이지 않아 여기서 지울 수 없어요. 터미널에서 비운 뒤 다시 보내 주세요.',
+  openTerminal: '터미널로 이동',
   clearAndSend: '지우고 보내기',
   cancelClear: '취소',
   clearedToClipboard: '지운 글은 클립보드에 있어요',

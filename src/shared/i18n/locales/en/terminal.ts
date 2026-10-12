@@ -36,6 +36,10 @@ export const terminal = {
   draftChanged: 'The prompt changed in the meantime. Check it again.',
   /** In hidden-screen mode the text itself is not shown. */
   draftHidden: 'Hidden while the screen content is hidden',
+  /** Not all of the composer's text is on screen: it is never cleared from here. */
+  draftNotWhole:
+    "Not all of it is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
+  openTerminal: 'Open the terminal',
   clearAndSend: 'Clear & send',
   cancelClear: 'Cancel',
   clearedToClipboard: 'The cleared text is on your clipboard',

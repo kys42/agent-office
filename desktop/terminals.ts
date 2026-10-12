@@ -367,16 +367,15 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode} #{cursor_x} #{cursor_y}',
+        '#{pane_in_mode} #{pane_height}',
       ]);
-      const [mode, x, y] = state.trim().split(' ');
+      const [mode, height] = state.trim().split(' ');
       if (mode !== '0') return { text: '' };
       const screen = parseStyledScreen(
         await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
       );
-      return /^\d+$/.test(x ?? '') && /^\d+$/.test(y ?? '')
-        ? { ...screen, cursor: { x: Number(x), y: Number(y) } }
-        : screen;
+      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows).
+      return /^\d+$/.test(height ?? '') ? { ...screen, height: Number(height) } : screen;
     }
     const out = await deps.run(deps.bin('orca'), [
       'terminal',
@@ -399,7 +398,7 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
 }
 
 /** The bytes a key sends: what tmux `send-keys` writes for the same names. */
-const KEY_BYTES: Record<ComposerKey, string> = { 'C-k': '\x0b', 'C-u': '\x15', BSpace: '\x7f' };
+const KEY_BYTES: Record<ComposerKey, string> = { 'C-k': '\x0b', 'C-u': '\x15' };
 
 /** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */
 export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHost {
@@ -477,6 +476,8 @@ export interface TerminalSendOptions {
   replaceDraft?: string;
   /** Puts the composer's text on the clipboard before it is cleared. Without it nothing is. */
   backup?: (text: string) => void | Promise<void>;
+  /** What the clipboard holds now: an earlier backup counts only while it is still there. */
+  clipboardText?: () => string | Promise<string>;
   /** The agent whose composer this is. */
   composer?: ComposerAdapter;
 }
@@ -580,24 +581,36 @@ async function deliver(
   }
   // Never mixed into a draft, or into text a failed send left behind.
   if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
-  const ask = (draft: string, extra: { changed?: boolean } = {}): SendResult => ({
+  // What an earlier, interrupted clearing of this session put on the clipboard — only while the
+  // clipboard still holds it (the person may have copied something else since).
+  let base = memory.held(key);
+  if (base !== undefined && options.clipboardText) {
+    const now = await Promise.resolve(options.clipboardText()).catch(() => undefined);
+    if (now !== base) {
+      memory.drop(key);
+      base = undefined;
+    }
+  }
+  let saved = false;
+  const ask = (draft: string, whole: boolean, changed = false): SendResult => ({
     status: 'needs-confirm',
     draft,
     agent: composer.agent,
     ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
-    ...(extra.changed && { changed: true }),
-    // An earlier, interrupted clearing already put text on the clipboard.
-    ...(memory.held(key) !== undefined && { clipboard: true }),
+    ...(changed && { changed: true }),
+    ...((saved || base !== undefined) && { clipboard: true }),
+    // Not all of it is on screen: it is never cleared from here.
+    ...(!whole && { clearable: false }),
   });
   const confirmed = options.replaceDraft;
-  if (confirmed === undefined) return ask(state.text);
-  if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, { changed: true });
+  if (confirmed === undefined) return ask(state.text, state.whole);
+  if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+  if (!state.whole) throw new TerminalInputError(t.notWhole);
   const backup = options.backup;
-  let saved = false;
   try {
     const result = await composer.clear(io, state, async (text) => {
-      // Never less than an earlier, interrupted clearing of this session saved.
-      const merged = mergeBackup(memory.held(key), text);
+      // Never less than the earlier clearing saved; never more than that and this draft.
+      const merged = mergeBackup(base, text);
       try {
         await backup(merged);
       } catch {
@@ -606,12 +619,14 @@ async function deliver(
       memory.keep(key, merged);
       saved = true;
     });
-    if (result.status === 'changed') return ask(result.text, { changed: true });
+    if (result.status === 'changed') return ask(result.text, true, true);
     if (result.status === 'failed')
       throw new TerminalInputError(
-        result.state.kind === 'unknown'
-          ? t.clearFailedSuggestion(composer.agent)
-          : t.clearFailed(composer.agent),
+        result.partial
+          ? t.notWhole
+          : result.state.kind === 'unknown'
+            ? t.clearFailedSuggestion(composer.agent)
+            : t.clearFailed(composer.agent),
       );
     // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
     // prompt must hold exactly the text, never a collapsed or shortened view of it.
