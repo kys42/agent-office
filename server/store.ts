@@ -70,6 +70,8 @@ const isBusy = (e: unknown) =>
   /database is locked|SQLITE_BUSY/i.test(e instanceof Error ? e.message : String(e));
 /** Startup only: block this thread briefly (the collector runs in its own worker). */
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+/** Sessions newest first, then by id: one total order on disk and in memory alike. */
+const byIdDesc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
 /** Usage ledger access for one session: on disk, or staged in memory by the hot path. */
 interface LedgerIO {
   hasNative(): boolean;
@@ -811,14 +813,14 @@ export class OfficeStore {
         const x = this.staged.get(s.id);
         return x ? (full ? x.row : x.resident) : s;
       })
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => b.updatedAt - a.updatedAt || byIdDesc(a.id, b.id));
   }
   private diskRows(full = false): Session[] {
     const parse = (rows: { data: string }[]) => rows.map((r) => JSON.parse(r.data) as Session);
     const resident = (s: Session): Session => ({ ...s, events: snapshotEvents(s) });
     if (!this.cached || full)
       return parse(
-        this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC').all() as {
+        this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC, id DESC').all() as {
           data: string;
         }[],
       );
@@ -831,7 +833,7 @@ export class OfficeStore {
     }
     if (!this.cached.size) {
       const all = parse(
-        this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC').all() as {
+        this.db.prepare('SELECT data FROM sessions ORDER BY updated_at DESC, id DESC').all() as {
           data: string;
         }[],
       );
@@ -840,7 +842,9 @@ export class OfficeStore {
       return kept;
     }
     const read = this.db.prepare('SELECT data FROM sessions WHERE id=?');
-    const ids = this.db.prepare('SELECT id FROM sessions ORDER BY updated_at DESC').all() as {
+    const ids = this.db
+      .prepare('SELECT id FROM sessions ORDER BY updated_at DESC, id DESC')
+      .all() as {
       id: string;
     }[];
     const result: Session[] = [];
@@ -948,14 +952,14 @@ export class OfficeStore {
   /** Stored session ids in the order `officeView` lists them (newest first). */
   sessionOrder(): string[] {
     const rows = this.db
-      .prepare('SELECT id, updated_at FROM sessions ORDER BY updated_at DESC')
+      .prepare('SELECT id, updated_at FROM sessions ORDER BY updated_at DESC, id DESC')
       .all() as {
       id: string;
       updated_at: number;
     }[];
     if (this.staged.size) {
       for (const r of rows) r.updated_at = this.staged.get(r.id)?.row.updatedAt ?? r.updated_at;
-      rows.sort((a, b) => b.updated_at - a.updated_at);
+      rows.sort((a, b) => b.updated_at - a.updated_at || byIdDesc(a.id, b.id));
     }
     return rows.map((r) => r.id);
   }
