@@ -40,6 +40,7 @@ import { Modal } from './Modal';
 import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
 import { sendFollowUp } from '../lib/useTerminalSend';
+import { rememberSend, settlePending, usePendingSends } from '../lib/pendingSends';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Conversation } from './Conversation';
 import type { BookmarkFocus } from '../shared/bookmarks';
@@ -244,36 +245,11 @@ export function Inspector({
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
   // What was just sent, until the record shows it (a busy Claude reads queued input later).
-  // Kept per session: a send that resolves after switching colleagues stays with its own.
-  type Sent = { id: string; sessionId: string; text: string; at: number };
-  const [sentAll, setSent] = useState<Sent[]>([]);
-  const remember = (sessionId: string, text: string) =>
-    setSent((list) => [
-      ...list,
-      { id: `sent:${sessionId}:${Date.now()}`, sessionId, text: text.trim(), at: Date.now() },
-    ]);
+  // Kept per session outside this panel, so reopening the card or switching back still shows it.
+  const sentAll = usePendingSends();
+  const remember = rememberSend;
   useEffect(() => {
-    setSent((list) => {
-      // Each recorded request settles one send at most: the same words sent twice need two.
-      // The record may tidy the words (spacing, hidden secrets, long text cut), so compare loosely.
-      const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
-      const same = (a: string, b: string) =>
-        a === b || a.startsWith(b.slice(0, 60)) || b.startsWith(a.slice(0, 60));
-      const asked = view.session.events
-        .filter((e) => e.kind === 'user')
-        .map((e) => ({ text: plain(e.text), at: e.at, used: false }));
-      const next = list.filter((p) => {
-        if (Date.now() - p.at > 30 * 60_000) return false;
-        if (p.sessionId !== view.session.id) return true;
-        const match = asked.find(
-          (e) => !e.used && e.at >= p.at - 10_000 && same(e.text, plain(p.text)),
-        );
-        if (!match) return true;
-        match.used = true;
-        return false;
-      });
-      return next.length === list.length ? list : next;
-    });
+    settlePending(view.session.id, view.session.events);
   }, [view.session.events, view.session.id]);
   const sent = sentAll.filter((p) => p.sessionId === s.id);
   // Opening a bookmark: the conversation, read back far enough to hold its message.
