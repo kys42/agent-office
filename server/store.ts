@@ -165,6 +165,12 @@ export class OfficeStore {
           pause(500);
         }
       }
+      // Bookmarks from a build before their change time was kept: give them one.
+      const columns = this.db.prepare('PRAGMA table_info(bookmarks)').all() as { name: string }[];
+      if (!columns.some((c) => c.name === 'updated_at'))
+        this.db.exec(
+          'ALTER TABLE bookmarks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0; UPDATE bookmarks SET updated_at=created_at',
+        );
       chmodSync(file, 0o600);
       this.cached = new Map();
     } else this.db.exec('PRAGMA query_only=ON');
@@ -1205,7 +1211,9 @@ export class OfficeStore {
     );
     if (!b) throw new Error(m().server.store.noMessage);
     this.db
-      .prepare('INSERT INTO bookmarks VALUES (?,?,?,?,?,?)')
+      .prepare(
+        'INSERT INTO bookmarks(id, session_id, event_id, created_at, updated_at, data) VALUES (?,?,?,?,?,?)',
+      )
       .run(b.id, b.sessionId, b.eventId, b.createdAt, now, JSON.stringify(b));
     this.touchBookmarks();
     return b;

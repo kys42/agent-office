@@ -144,3 +144,63 @@
 .jump-button {
   top: 160px;
 }
+/* Zone signs (big office, office row, floor flag): one eye hides the whole project. It sits
+   just past the sign; its ::before bridges the gap so the pointer keeps it on the way. */
+.zone-veil {
+  left: calc(100% + 5px);
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  /* Unseen, it must not catch a click meant for the floor or the desks around it. */
+  pointer-events: none;
+}
+.zone-veil::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 -7px;
+}
+.desk-hover-btn.zone-veil:hover {
+  transform: translateY(-50%) scale(1.1);
+}
+.project-floor-mark:hover .zone-veil,
+.zone-flag:hover .zone-veil,
+.zone-veil:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* On the floor flag it hangs from the cloth, over its swallow-tail notch, so the pointer
+   coming down the cloth lands on it without leaving the flag. */
+.zone-flag .zone-veil {
+  position: relative;
+  left: auto;
+  top: auto;
+  flex-shrink: 0;
+  margin-top: -9px;
+  transform: none;
+}
+.zone-flag .desk-hover-btn.zone-veil:hover {
+  transform: scale(1.1);
+}
+.zone-flag .zone-veil::before {
+  inset: -4px;
+}
+/* The big office clips at its walls: a sign in the right half explains leftwards. */
+.project-floor-mark.tip-left .zone-veil .veil-tip {
+  left: auto;
+  right: -4px;
+}
+/* The row's signs stand at the screen's bottom edge: explain upwards. */
+.row-zone .zone-veil .veil-tip {
+  top: auto;
+  bottom: calc(100% + 7px);
+}
+/* While its explanation is open, the zone and its sign draw over every desk and bubble. */
+.project-area:has(.zone-veil:hover, .zone-veil:focus-visible),
+.row-zone:has(.zone-veil:hover, .zone-veil:focus-visible) {
+  z-index: 9;
+}
+.project-floor-mark:has(.zone-veil:hover, .zone-veil:focus-visible),
+.zone-flag:has(.zone-veil:hover, .zone-veil:focus-visible) {
+  z-index: 12;
+}

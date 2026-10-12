@@ -625,3 +625,22 @@ test('The row shows the request bubble above when its desk is pointed at; screen
     await page.mouse.move(5, 5);
   }
 });
+
+test('An unfolded bubble in the dock offers the pop-up card', async ({ page }) => {
+  const snapshot = answered();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini=row');
+  await page.reload();
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  const bubble = desk.locator('.speech-bubble');
+  await desk.locator('.office-pet').hover();
+  await expect(bubble.locator('.bubble-popup')).toHaveCount(0);
+  await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  const popup = bubble.getByRole('button', { name: /업무 카드 열기/ });
+  await expect(popup).toBeVisible();
+  await expect(popup).toContainText('팝업으로 보기');
+  await page.locator('.desk-row').screenshot({ path: '.local/bubble-popup-row.png' });
+  // In the browser preview the card opens in the office (the desktop opens the pop-up window).
+  await popup.click();
+  await expect(page).toHaveURL(/#session=demo%3A0$/);
+});

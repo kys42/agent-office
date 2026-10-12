@@ -288,6 +288,30 @@ test('Store: a message left only as a retained notice excerpt is bookmarked from
     assert.equal(b.text, notice!.text);
   }));
 
+test('A bookmarks table from before change times were kept gets them on open', async () => {
+  const d = await mkdtemp(path.join(os.tmpdir(), 'office-bookmarks-early-'));
+  try {
+    new OfficeStore(d).close();
+    const db = new DatabaseSync(path.join(d, 'office.sqlite'));
+    db.exec(
+      'DROP TABLE bookmarks; CREATE TABLE bookmarks(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(session_id,event_id))',
+    );
+    db.close();
+    const store = new OfficeStore(d);
+    try {
+      const s = session(turn);
+      store.upsert([s], 'codex');
+      const b = store.bookmark(s.id, 'f1');
+      assert.equal(store.bookmarkNote(b.id, '메모').note, '메모');
+      assert.equal(store.bookmarks().total, 1);
+    } finally {
+      store.close();
+    }
+  } finally {
+    await rm(d, { recursive: true });
+  }
+});
+
 test('Read-only store on a database from before bookmarks lists none', async () => {
   const d = await mkdtemp(path.join(os.tmpdir(), 'office-bookmarks-old-'));
   try {

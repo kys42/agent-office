@@ -42,7 +42,7 @@ import {
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
 } from '../shared/dock-geometry';
-import { residentLabel, type OfficeModel } from '../shared/office-model';
+import { residentLabel, zoneVeilIds, type OfficeModel } from '../shared/office-model';
 import { deskSpeech, hopping, shownSpeech } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
@@ -276,349 +276,370 @@ export function DeskRow({
               transform: `scale(${ROW_SCALE})`,
             }}
           >
-            {layout.zones.map((zone, index) => (
-              <div
-                className="row-zone"
-                key={zone.key}
-                data-project-key={privacy ? undefined : zone.key}
-                style={
-                  {
-                    left: zone.x,
-                    width: zone.width,
-                    '--project-color': projectColor(zone.key),
-                  } as CSSProperties
-                }
-              >
-                {floor ? (
-                  // A flag between zones: the pole stands on the floor, the cloth names the zone.
-                  // Only the pole, cloth and base take the mouse; the box around them lets clicks
-                  // through like the rest of the strip. The flag stands on the desks' floor line.
-                  <div
-                    className={`zone-flag ${zone.custom ? 'custom-area' : ''}`}
-                    style={{
-                      left: -FLOOR_ZONE_GAP / 2,
-                      bottom: FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT),
-                    }}
-                    title={
-                      privacy
-                        ? undefined
-                        : `${zone.name} · ${t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}${zone.custom ? ` · ${t.desk.customZone(zone.custom.join(', '))}` : ''}`
-                    }
-                  >
-                    <i className="zone-flag-pole" data-solid />
-                    <span className="zone-flag-cloth" data-solid>
-                      <b>{String(index + 1).padStart(2, '0')}</b>
-                      <span>{privacy ? t.desk.project : zone.name}</span>
-                    </span>
-                    <i className="zone-flag-base" data-solid />
-                  </div>
-                ) : (
-                  <>
-                    {/* The rug starts at chair height so heads and bubbles float over the desktop. */}
+            {layout.zones.map((zone, index) => {
+              const zoneName = privacy ? t.desk.project : zone.name;
+              const veilIds = zoneVeilIds(
+                model,
+                zone.stations.map((s) => s.id),
+              );
+              const zoneVeil = veilIds.length > 0 && (
+                <VeilButton zone name={zoneName} onVeil={() => onVeil(veilIds, true)} />
+              );
+              return (
+                <div
+                  className="row-zone"
+                  key={zone.key}
+                  data-project-key={privacy ? undefined : zone.key}
+                  style={
+                    {
+                      left: zone.x,
+                      width: zone.width,
+                      '--project-color': projectColor(zone.key),
+                    } as CSSProperties
+                  }
+                >
+                  {floor ? (
+                    // A flag between zones: the pole stands on the floor, the cloth names the zone.
+                    // Only the pole, cloth and base take the mouse; the box around them lets clicks
+                    // through like the rest of the strip. The flag stands on the desks' floor line.
                     <div
-                      className="project-area row-zone-floor"
-                      data-solid
-                      style={{ top: top + 96 }}
-                    />
-                    <div
-                      className={`project-floor-mark row-zone-mark ${zone.custom ? 'custom-area' : ''}`}
-                      data-solid
+                      className={`zone-flag ${zone.custom ? 'custom-area' : ''}`}
+                      style={{
+                        left: -FLOOR_ZONE_GAP / 2,
+                        bottom: FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT),
+                      }}
                       title={
                         privacy
                           ? undefined
-                          : zone.custom
-                            ? `${zone.name} · ${t.desk.customZone(zone.custom.join(', '))}`
-                            : zone.name
+                          : `${zone.name} · ${t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}${zone.custom ? ` · ${t.desk.customZone(zone.custom.join(', '))}` : ''}`
                       }
                     >
-                      <span>{String(index + 1).padStart(2, '0')}</span>
-                      <b>{privacy ? t.desk.project : zone.name}</b>
-                      <small>
-                        {t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}
-                      </small>
+                      <i className="zone-flag-pole" data-solid />
+                      {/* The eye hangs right under the cloth, so the pointer slides onto it. */}
+                      <div className="zone-flag-banner">
+                        <span className="zone-flag-cloth" data-solid>
+                          <b>{String(index + 1).padStart(2, '0')}</b>
+                          <span>{zoneName}</span>
+                        </span>
+                        {zoneVeil}
+                      </div>
+                      <i className="zone-flag-base" data-solid />
                     </div>
-                  </>
-                )}
-                {floor &&
-                  zone.benches.map((bench, i) => (
-                    <i
-                      className="floor-shadow"
-                      key={`shadow:${bench.key}:${i}`}
-                      style={{
-                        left: bench.x - 6,
-                        width: bench.width + 12,
-                        top: top + DESK_FOOT - 6,
-                      }}
+                  ) : (
+                    <>
+                      {/* The rug starts at chair height so heads and bubbles float over the desktop. */}
+                      <div
+                        className="project-area row-zone-floor"
+                        data-solid
+                        style={{ top: top + 96 }}
+                      />
+                      <div
+                        className={`project-floor-mark row-zone-mark ${zone.custom ? 'custom-area' : ''}`}
+                        data-solid
+                        title={
+                          privacy
+                            ? undefined
+                            : zone.custom
+                              ? `${zone.name} · ${t.desk.customZone(zone.custom.join(', '))}`
+                              : zone.name
+                        }
+                      >
+                        <span>{String(index + 1).padStart(2, '0')}</span>
+                        <b>{zoneName}</b>
+                        <small>
+                          {t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}
+                        </small>
+                        {zoneVeil}
+                      </div>
+                    </>
+                  )}
+                  {floor &&
+                    zone.benches.map((bench, i) => (
+                      <i
+                        className="floor-shadow"
+                        key={`shadow:${bench.key}:${i}`}
+                        style={{
+                          left: bench.x - 6,
+                          width: bench.width + 12,
+                          top: top + DESK_FOOT - 6,
+                        }}
+                      />
+                    ))}
+                  {zone.benches.map((bench, i) => (
+                    <Furniture
+                      kind="desk"
+                      key={`${bench.key}:${i}`}
+                      shared={bench.members.length > 1}
+                      assetKey={privacy ? undefined : bench.key}
+                      style={{ left: bench.x, top: benchY, width: bench.width }}
                     />
                   ))}
-                {zone.benches.map((bench, i) => (
-                  <Furniture
-                    kind="desk"
-                    key={`${bench.key}:${i}`}
-                    shared={bench.members.length > 1}
-                    assetKey={privacy ? undefined : bench.key}
-                    style={{ left: bench.x, top: benchY, width: bench.width }}
-                  />
-                ))}
-                {zone.stations.map((station) => {
-                  const s = byId.get(station.id)!;
-                  const v = model.view(s.id)!;
-                  const pose = v.pose;
-                  const label = residentLabel(s, privacy);
-                  const branch = branchInfo(s);
-                  // A just-arrived request plays on the desk and speaks first.
-                  const speech = speeches.get(s.id)!;
-                  const { arrival, hop } = speech;
-                  // Pointing at a desk shows its bubble — or the last thing it said, if closed.
-                  // An unfolded or replying bubble (a peek too) stays without the cursor.
-                  const pointing =
-                    (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
-                    closed !== s.id;
-                  const shown = shownSpeech(
-                    s,
-                    model.notices,
-                    model.bubbleHours,
-                    model.now,
-                    speech,
-                    hover === s.id || expanded === s.id || replying?.station === s.id,
-                    pointing,
-                  );
-                  const bubble = shown?.speech.bubble;
-                  const focus = focusLevel(s, model.now);
-                  const replyId = bubble?.sessionId ?? s.id;
-                  const replyTarget = targets[replyId];
-                  const canReply = !!onReply && !privacy && !!replyTarget?.canSend;
-                  const deskTarget = targets[s.id];
-                  const dark = !!v.quota && dimsDesk(s, pose.working);
-                  return (
-                    <div
-                      className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
-                      key={s.id}
-                      data-station-id={s.id}
-                      style={{ transform: `translate(${station.x}px, ${top}px)` }}
-                      onMouseEnter={() => setHover(s.id)}
-                      onMouseOver={(e) => {
-                        if (e.target instanceof Element && e.target.closest('[data-solid]'))
-                          setPointed(s.id);
-                      }}
-                      onMouseLeave={() => {
-                        setHover((h) => (h === s.id ? null : h));
-                        setPointed((p) => (p === s.id ? null : p));
-                        setClosed((c) => (c === s.id ? null : c));
-                      }}
-                    >
-                      <i className="desk-glow" aria-hidden="true" />
-                      <Furniture kind="chair" />
-                      <div className="pet-shadow" />
-                      <button
-                        className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}
-                        data-solid
-                        data-session-id={s.id}
-                        data-seat={s.officeSeat}
-                        aria-label={t.desk.openWork(label.name)}
-                        title={label.detail}
-                        onClick={() => open(s.id)}
+                  {zone.stations.map((station) => {
+                    const s = byId.get(station.id)!;
+                    const v = model.view(s.id)!;
+                    const pose = v.pose;
+                    const label = residentLabel(s, privacy);
+                    const branch = branchInfo(s);
+                    // A just-arrived request plays on the desk and speaks first.
+                    const speech = speeches.get(s.id)!;
+                    const { arrival, hop } = speech;
+                    // Pointing at a desk shows its bubble — or the last thing it said, if closed.
+                    // An unfolded or replying bubble (a peek too) stays without the cursor.
+                    const pointing =
+                      (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
+                      closed !== s.id;
+                    const shown = shownSpeech(
+                      s,
+                      model.notices,
+                      model.bubbleHours,
+                      model.now,
+                      speech,
+                      hover === s.id || expanded === s.id || replying?.station === s.id,
+                      pointing,
+                    );
+                    const bubble = shown?.speech.bubble;
+                    const focus = focusLevel(s, model.now);
+                    const replyId = bubble?.sessionId ?? s.id;
+                    const replyTarget = targets[replyId];
+                    const canReply = !!onReply && !privacy && !!replyTarget?.canSend;
+                    const deskTarget = targets[s.id];
+                    const dark = !!v.quota && dimsDesk(s, pose.working);
+                    return (
+                      <div
+                        className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
+                        key={s.id}
+                        data-station-id={s.id}
+                        style={{ transform: `translate(${station.x}px, ${top}px)` }}
+                        onMouseEnter={() => setHover(s.id)}
+                        onMouseOver={(e) => {
+                          if (e.target instanceof Element && e.target.closest('[data-solid]'))
+                            setPointed(s.id);
+                        }}
+                        onMouseLeave={() => {
+                          setHover((h) => (h === s.id ? null : h));
+                          setPointed((p) => (p === s.id ? null : p));
+                          setClosed((c) => (c === s.id ? null : c));
+                        }}
                       >
-                        <FocusEffects level={focus} />
-                        <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
-                        {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
-                      </button>
-                      {!v.needsPerson && (
-                        <VeilButton
-                          name={label.name}
-                          onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
-                        />
-                      )}
-                      <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
-                      <DeskActionButton
-                        className="card-button"
-                        label={t.desk.row.openCard(label.name)}
-                        title={t.desk.row.cardTitle}
-                        hint={t.desk.row.cardHint}
-                        icon={<PanelRightOpen size={13} strokeWidth={2.4} />}
-                        onClick={(el) => void open(s.id, el)}
-                      />
-                      {deskTarget?.canFocus && api.jump && (
-                        <DeskActionButton
-                          className="jump-button"
-                          label={t.terminal.jumpToTerminal(label.name)}
-                          title={t.terminal.jumpTo(deskTarget.kind === 'orca' ? 'Orca' : 'tmux')}
-                          hint={t.terminal.jumpHint(targetLine(deskTarget, privacy))}
-                          icon={<Terminal size={13} strokeWidth={2.4} />}
-                          onClick={() => void jump(s.id)}
-                        />
-                      )}
-                      <Furniture kind="equipment" />
-                      {v.quota && <QuotaBadge quota={v.quota} />}
-                      <PaperPile count={deskPapers(s, model.now)} level={focus} />
-                      {arrival && <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />}
-                      {pose.working && <WorkingBeacon level={focus} />}
-                      {floor ? (
-                        // A name plate on the desk front instead of a card on the rug.
+                        <i className="desk-glow" aria-hidden="true" />
+                        <Furniture kind="chair" />
+                        <div className="pet-shadow" />
                         <button
-                          className="floor-plate"
+                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}
                           data-solid
-                          title={
-                            privacy
-                              ? undefined
-                              : `${label.name} · ${
-                                  pose.working && s.resident && s.resident.activeCount > 1
-                                    ? t.desk.runningTasks(s.resident.activeCount)
-                                    : MOODS[s.status].label
-                                }`
-                          }
+                          data-session-id={s.id}
+                          data-seat={s.officeSeat}
+                          aria-label={t.desk.openWork(label.name)}
+                          title={label.detail}
                           onClick={() => open(s.id)}
                         >
-                          <i style={{ background: MOODS[s.status].color }} />
-                          <span>{label.name}</span>
-                          {s.pinned && <Pin size={8} />}
-                          {speech.unread > 0 && <em>{speech.unread}</em>}
+                          <FocusEffects level={focus} />
+                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
-                      ) : (
-                        <>
+                        {!v.needsPerson && (
+                          <VeilButton
+                            name={label.name}
+                            onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
+                          />
+                        )}
+                        <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
+                        <DeskActionButton
+                          className="card-button"
+                          label={t.desk.row.openCard(label.name)}
+                          title={t.desk.row.cardTitle}
+                          hint={t.desk.row.cardHint}
+                          icon={<PanelRightOpen size={13} strokeWidth={2.4} />}
+                          onClick={(el) => void open(s.id, el)}
+                        />
+                        {deskTarget?.canFocus && api.jump && (
+                          <DeskActionButton
+                            className="jump-button"
+                            label={t.terminal.jumpToTerminal(label.name)}
+                            title={t.terminal.jumpTo(deskTarget.kind === 'orca' ? 'Orca' : 'tmux')}
+                            hint={t.terminal.jumpHint(targetLine(deskTarget, privacy))}
+                            icon={<Terminal size={13} strokeWidth={2.4} />}
+                            onClick={() => void jump(s.id)}
+                          />
+                        )}
+                        <Furniture kind="equipment" />
+                        {v.quota && <QuotaBadge quota={v.quota} />}
+                        <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                        {arrival && (
+                          <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
+                        )}
+                        {pose.working && <WorkingBeacon level={focus} />}
+                        {floor ? (
+                          // A name plate on the desk front instead of a card on the rug.
                           <button
-                            className={`desk-branch branch-${branch.kind}`}
+                            className="floor-plate"
                             data-solid
-                            title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                            onClick={() => open(s.id)}
-                          >
-                            <GitBranch size={9} />
-                            <span>{privacy ? t.desk.hidden : branch.label}</span>
-                          </button>
-                          <button
-                            className="desk-name"
-                            data-solid
-                            title={privacy ? undefined : label.name}
-                            onClick={() => open(s.id)}
-                          >
-                            <strong>
-                              <i style={{ background: MOODS[s.status].color }} />
-                              <span>{label.name}</span>
-                              {s.pinned && <Pin size={9} />}
-                            </strong>
-                            <small>
-                              <span>
-                                {pose.working
-                                  ? s.resident && s.resident.activeCount > 1
-                                    ? t.desk.runningTasks(s.resident.activeCount)
-                                    : t.desk.working
-                                  : MOODS[s.status].label}
-                              </span>
-                              {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
-                            </small>
-                          </button>
-                        </>
-                      )}
-                      {shown && (
-                        <div className="row-speech" data-solid>
-                          <SpeechBubble
-                            session={s}
-                            speech={shown.speech}
-                            peek={shown.peek}
-                            quote={pointing}
-                            privacy={privacy}
-                            expanded={expanded === s.id}
-                            onExpandedChange={(on) => setExpanded(on ? s.id : null)}
-                            onOpen={() => {
-                              // Opening a bubble reads it in place; the card is one hover away.
-                              if (bubble && !privacy && expanded !== s.id)
-                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                              setExpanded(expanded === s.id ? null : s.id);
-                            }}
-                            reply={
-                              canReply
-                                ? {
-                                    title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
-                                    open: replying?.station === s.id,
-                                    onClick: () =>
-                                      setReplying(
-                                        replying?.station === s.id
-                                          ? null
-                                          : { station: s.id, id: replyId, target: replyTarget! },
-                                      ),
-                                  }
-                                : undefined
+                            title={
+                              privacy
+                                ? undefined
+                                : `${label.name} · ${
+                                    pose.working && s.resident && s.resident.activeCount > 1
+                                      ? t.desk.runningTasks(s.resident.activeCount)
+                                      : MOODS[s.status].label
+                                  }`
                             }
-                            onDismiss={() => {
-                              setClosed(s.id);
-                              if (bubble)
-                                onReceipt([{ id: bubble.id, version: bubble.version }], 'dismiss');
+                            onClick={() => open(s.id)}
+                          >
+                            <i style={{ background: MOODS[s.status].color }} />
+                            <span>{label.name}</span>
+                            {s.pinned && <Pin size={8} />}
+                            {speech.unread > 0 && <em>{speech.unread}</em>}
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              className={`desk-branch branch-${branch.kind}`}
+                              data-solid
+                              title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                              onClick={() => open(s.id)}
+                            >
+                              <GitBranch size={9} />
+                              <span>{privacy ? t.desk.hidden : branch.label}</span>
+                            </button>
+                            <button
+                              className="desk-name"
+                              data-solid
+                              title={privacy ? undefined : label.name}
+                              onClick={() => open(s.id)}
+                            >
+                              <strong>
+                                <i style={{ background: MOODS[s.status].color }} />
+                                <span>{label.name}</span>
+                                {s.pinned && <Pin size={9} />}
+                              </strong>
+                              <small>
+                                <span>
+                                  {pose.working
+                                    ? s.resident && s.resident.activeCount > 1
+                                      ? t.desk.runningTasks(s.resident.activeCount)
+                                      : t.desk.working
+                                    : MOODS[s.status].label}
+                                </span>
+                                {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
+                              </small>
+                            </button>
+                          </>
+                        )}
+                        {shown && (
+                          <div className="row-speech" data-solid>
+                            <SpeechBubble
+                              session={s}
+                              speech={shown.speech}
+                              peek={shown.peek}
+                              quote={pointing}
+                              privacy={privacy}
+                              expanded={expanded === s.id}
+                              onExpandedChange={(on) => setExpanded(on ? s.id : null)}
+                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el, !!bubble)}
+                              onOpen={() => {
+                                // Opening a bubble reads it in place; the card is one hover away.
+                                if (bubble && !privacy && expanded !== s.id)
+                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                                setExpanded(expanded === s.id ? null : s.id);
+                              }}
+                              reply={
+                                canReply
+                                  ? {
+                                      title: t.terminal.replyTitle(targetLine(replyTarget!, false)),
+                                      open: replying?.station === s.id,
+                                      onClick: () =>
+                                        setReplying(
+                                          replying?.station === s.id
+                                            ? null
+                                            : { station: s.id, id: replyId, target: replyTarget! },
+                                        ),
+                                    }
+                                  : undefined
+                              }
+                              onDismiss={() => {
+                                setClosed(s.id);
+                                if (bubble)
+                                  onReceipt(
+                                    [{ id: bubble.id, version: bubble.version }],
+                                    'dismiss',
+                                  );
+                              }}
+                            />
+                          </div>
+                        )}
+                        {onReply && !privacy && replying?.station === s.id && (
+                          <QuickReply
+                            key={replying.id}
+                            target={
+                              targets[replying.id] ?? {
+                                ...replying.target,
+                                status: 'gone',
+                                canSend: false,
+                              }
+                            }
+                            name={label.name}
+                            onClose={() => setReplying(null)}
+                            onSend={async (text) => {
+                              await onReply(replying.id, text);
+                              markSent(replying.id);
                             }}
                           />
-                        </div>
-                      )}
-                      {onReply && !privacy && replying?.station === s.id && (
-                        <QuickReply
-                          key={replying.id}
-                          target={
-                            targets[replying.id] ?? {
-                              ...replying.target,
-                              status: 'gone',
-                              canSend: false,
-                            }
-                          }
-                          name={label.name}
-                          onClose={() => setReplying(null)}
-                          onSend={async (text) => {
-                            await onReply(replying.id, text);
-                            markSent(replying.id);
-                          }}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-                {floor &&
-                  zone.helpers.map((helper) => (
-                    <i
-                      className="floor-shadow"
-                      key={`shadow:${helper.id}`}
-                      style={{ left: helper.x + 2, width: 64, top: top + DESK_FOOT - 6 }}
-                    />
-                  ))}
-                {zone.helpers.map((helper) => {
-                  const hasNews = (h: Session) =>
-                    model.notices.some(
-                      (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                        )}
+                      </div>
                     );
-                  if (helper.stack)
+                  })}
+                  {floor &&
+                    zone.helpers.map((helper) => (
+                      <i
+                        className="floor-shadow"
+                        key={`shadow:${helper.id}`}
+                        style={{ left: helper.x + 2, width: 64, top: top + DESK_FOOT - 6 }}
+                      />
+                    ))}
+                  {zone.helpers.map((helper) => {
+                    const hasNews = (h: Session) =>
+                      model.notices.some(
+                        (n) => n.sessionId === h.id && !n.seenAt && isInboxNotice(n),
+                      );
+                    if (helper.stack)
+                      return (
+                        <HelperStack
+                          key={`stack:${helper.parent}`}
+                          members={helper.stack.map((id) => byId.get(id)!)}
+                          parentId={helper.parent}
+                          at={{ x: helper.x, y: helperY }}
+                          pose={(h) => model.view(h.id)!.pose}
+                          news={hasNews}
+                          privacy={privacy}
+                          onOpen={open}
+                          canVeil={(h) => !model.view(h.id)?.needsPerson}
+                          onVeil={(h) => onVeil([h.id], true)}
+                        />
+                      );
+                    const s = byId.get(helper.id)!;
+                    const pose = model.view(s.id)!.pose;
                     return (
-                      <HelperStack
-                        key={`stack:${helper.parent}`}
-                        members={helper.stack.map((id) => byId.get(id)!)}
+                      <HelperDesk
+                        key={s.id}
+                        session={s}
                         parentId={helper.parent}
                         at={{ x: helper.x, y: helperY }}
-                        pose={(h) => model.view(h.id)!.pose}
-                        news={hasNews}
+                        mood={pose.mood}
+                        working={pose.working}
+                        news={model.notices.some(
+                          (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
+                        )}
                         privacy={privacy}
-                        onOpen={open}
-                        canVeil={(h) => !model.view(h.id)?.needsPerson}
-                        onVeil={(h) => onVeil([h.id], true)}
+                        onClick={() => open(s.id)}
+                        onVeil={
+                          model.view(s.id)?.needsPerson ? undefined : () => onVeil([s.id], true)
+                        }
                       />
                     );
-                  const s = byId.get(helper.id)!;
-                  const pose = model.view(s.id)!.pose;
-                  return (
-                    <HelperDesk
-                      key={s.id}
-                      session={s}
-                      parentId={helper.parent}
-                      at={{ x: helper.x, y: helperY }}
-                      mood={pose.mood}
-                      working={pose.working}
-                      news={model.notices.some(
-                        (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
-                      )}
-                      privacy={privacy}
-                      onClick={() => open(s.id)}
-                      onVeil={
-                        model.view(s.id)?.needsPerson ? undefined : () => onVeil([s.id], true)
-                      }
-                    />
-                  );
-                })}
-              </div>
-            ))}
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
         {!model.seats.length && (

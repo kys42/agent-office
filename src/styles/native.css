@@ -743,7 +743,7 @@ body.dock-mode {
     0 2px 8px -2px rgba(0, 0, 0, 0.4);
 }
 
-/* The card window is moved by its desk, not by dragging its header. */
+/* The office panel's top bar inside a card never drags (the chat card drags by its header). */
 .dock-card .inspector-top {
   -webkit-app-region: no-drag;
 }
@@ -788,4 +788,612 @@ body.dock-mode {
 .artifact-merged .artifact-symbol {
   color: var(--st-think);
   background: color-mix(in srgb, var(--st-think) 12%, transparent);
+}
+
+/* ── Card window as a glass chat (Issue #86): one header line with its tools, recent work, tabs
+   with the progress switch, the conversation, and actions + chat box at the bottom. Only
+   `.inspector-card`; the office panel keeps its layout. On macOS the window itself is vibrant
+   (desktop/main.ts), so the card is translucent over it. ── */
+/* One thin tint over the window's material (two layers made it ~77% opaque: it read as white). */
+body.card-mode.is-mac,
+body.card-mode.is-mac #root {
+  background: transparent;
+}
+body.card-mode.is-mac .dock-card {
+  background: color-mix(in srgb, var(--grouped) 22%, transparent);
+}
+body.card-mode.is-mac .dock-card > .inspector-card {
+  background: transparent;
+}
+body.card-mode:not(.is-mac) .dock-card {
+  background: color-mix(in srgb, var(--grouped) 90%, transparent);
+  backdrop-filter: blur(28px) saturate(1.6);
+}
+.dock-card > .inspector-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  background: transparent;
+}
+.inspector-card .card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 8px 10px 14px;
+  border-bottom: 0.5px solid var(--line-2);
+  /* Moved by the desktop following the cursor (no CSS drag region: see startCardDrag). */
+  cursor: grab;
+  user-select: none;
+}
+.inspector-card .card-head :is(button, input, form, .card-menu) {
+  cursor: auto;
+}
+.inspector-card .card-head .icon-btn.gold {
+  color: var(--st-error);
+}
+.card-avatar {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--p-claude) 26%, transparent);
+}
+.card-avatar.face-codex {
+  background: color-mix(in srgb, var(--p-codex) 26%, transparent);
+}
+.card-avatar.face-openclaw {
+  background: color-mix(in srgb, var(--p-openclaw) 26%, transparent);
+}
+.card-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card-title h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.card-title h2 small {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.card-title .name-editor input {
+  width: 100%;
+}
+.card-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.card-status i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.card-head-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.card-menu {
+  position: relative;
+}
+.card-menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+}
+.card-menu-list button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+}
+.card-menu-list button:is(:hover, :focus-visible):not(:disabled) {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.card-menu-list button:disabled {
+  opacity: 0.4;
+}
+/* Recent issues and PRs: two lines, the rest behind "n more". */
+.card-recent {
+  flex: none;
+}
+.card-recent:empty {
+  display: none;
+}
+.artifact-list {
+  /* Expanded, it scrolls within a bounded height: the chat keeps its room. */
+  max-height: min(150px, 24vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-bottom: 0.5px solid var(--line-2);
+}
+.artifact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  text-decoration: none;
+}
+.artifact-row svg {
+  flex: none;
+  color: var(--accent);
+}
+.artifact-row.kind-pull svg {
+  color: var(--st-work);
+}
+.artifact-row.artifact-merged.kind-pull svg {
+  color: var(--st-think);
+}
+.artifact-row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.artifact-row small {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.artifact-row:hover span {
+  text-decoration: underline;
+}
+.artifact-list-more {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+.card-tabs-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+}
+.inspector-card .inspector-tabs {
+  flex: 1;
+  min-width: 0;
+  /* Never under the filter or the switch: a narrow card scrolls its tabs sideways. */
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0;
+  padding: 0;
+  gap: 2px;
+  background: none;
+  box-shadow: none;
+}
+.inspector-card .inspector-tabs button {
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 99px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: transparent;
+  box-shadow: none;
+}
+.inspector-card .inspector-tabs button.active {
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-1) 85%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.card-progress-switch {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.card-progress-switch input {
+  appearance: none;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--text-3) 45%, transparent);
+  transition: background 0.15s;
+  cursor: pointer;
+}
+.card-progress-switch input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+.card-progress-switch input:checked {
+  background: var(--st-work);
+}
+.card-progress-switch input:checked::after {
+  transform: translateX(12px);
+}
+.card-progress-switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.inspector-card .inspector-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 14px 8px;
+}
+/* Bubbles without the coloured edge: answers on a clear glass bubble, progress lighter. */
+.inspector-card .conversation-message .message-bubble {
+  border-radius: 16px 16px 16px 5px;
+}
+.inspector-card .conversation-message:not(.message-user) .message-bubble {
+  max-width: 92%;
+  background: color-mix(in srgb, var(--bg-1) 82%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.inspector-card .conversation-message.category-progress .message-bubble {
+  background: color-mix(in srgb, var(--bg-1) 40%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+.inspector-card .conversation-message.category-progress :is(.message-bubble, .message-text, p) {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.inspector-card .message-user .message-bubble {
+  border-radius: 16px 16px 5px 16px;
+}
+.conversation-hidden-note {
+  margin: 8px 0 0;
+  font-size: 10.5px;
+  text-align: center;
+  color: var(--text-3);
+}
+/* The card's filters: a small icon at the top right that stays while the chat sits at its newest
+   message; opened, the filter row drops below it as one card. */
+.conversation-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  height: 0;
+  overflow: visible;
+}
+.conversation-sticky .conversation-toolbar {
+  position: static;
+  align-self: stretch;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+}
+.conversation-filters-block {
+  display: contents;
+}
+.card-filter-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-2);
+}
+.card-filter-button:hover,
+.card-filter-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.card-composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 0.5px solid var(--line-2);
+}
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.card-action {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.card-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-1) 95%, transparent);
+}
+.card-action.primary {
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--accent);
+  box-shadow: none;
+}
+.card-action.is-on {
+  color: var(--accent);
+}
+.card-action:disabled {
+  opacity: 0.45;
+}
+.card-composer .terminal-send-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--bg-1) 50%, transparent);
+}
+.terminal-send.terminal-send-chat {
+  /* The box and its send button on one line; where it goes, small underneath. */
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  column-gap: 8px;
+  row-gap: 3px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.terminal-send-chat textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-send-chat textarea {
+  min-height: 38px;
+  max-height: 140px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-1) 85%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-3);
+  resize: none;
+  field-sizing: content;
+}
+.terminal-send-chat .terminal-send-bar {
+  display: contents;
+}
+.terminal-send-chat .terminal-send-bar small {
+  /* The box's own placeholder already says where it goes. */
+  display: none;
+  grid-row: 2;
+  grid-column: 1 / -1;
+  padding: 0 12px;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+.terminal-send-chat .terminal-send-bar .button {
+  grid-row: 1;
+  grid-column: 2;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+}
+.terminal-send-chat .terminal-send-error {
+  grid-column: 1 / -1;
+}
+.inspector-card .persona-run-picker {
+  flex: none;
+  margin: 8px 14px 0;
+}
+
+/* Breathing room under the tabs. */
+.inspector-card .inspector-scroll {
+  padding-top: 10px;
+}
+/* Hover/focus explanations for the card's icon buttons (native tooltips are unreliable in a
+   panel window). */
+.inspector-card [data-tip] {
+  position: relative;
+}
+.inspector-card [data-tip]:is(:hover, :focus-visible)::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 220px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: left;
+  color: var(--text);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+}
+/* The card's details: grouped rows like the system settings. */
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 0 10px;
+}
+.info-group {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-1) 82%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.info-group h3 {
+  margin: 0;
+  padding: 9px 12px 5px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-top: 0.5px solid var(--line);
+  border-radius: 0;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+  background: none;
+}
+.info-group h3 + .info-row {
+  border-top: 0;
+}
+.info-row > span {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.info-row > span svg {
+  color: var(--text-3);
+}
+.info-row > b,
+.info-row > code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.info-row > code {
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: none;
+}
+.info-link {
+  width: 100%;
+  cursor: pointer;
+}
+.info-link:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.info-link > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.info-tokens {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 0.5px solid var(--line);
+}
+.info-tokens div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+}
+.info-tokens div + div {
+  border-left: 0.5px solid var(--line);
+}
+.info-tokens span {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.info-tokens b {
+  font-size: 14px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.info-context {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 0.5px solid var(--line);
+  font-size: 12px;
+}
+.info-context > div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-2);
+}
+.info-context progress {
+  width: 100%;
+  height: 6px;
+}
+.info-note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.card-info > .info-note {
+  padding: 0 4px;
+}
+
+/* A narrow card keeps the progress switch, drops its word (its name stays for assistive tech). */
+@media (max-width: 440px) {
+  .card-progress-switch span {
+    display: none;
+  }
 }

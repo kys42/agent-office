@@ -71,9 +71,21 @@ export function readPetSpot(raw: unknown): Point | null {
 }
 
 /** The dock card: the colleague card (same as the big office's right panel) in its own window. */
-export const CARD_SIZE = { width: 420, height: 680 };
-/** Shorter than this, the card would be cramped above a desk; it opens beside it instead. */
-export const CARD_MIN_HEIGHT = 420;
+export const CARD_SIZE = { width: 480, height: 760 };
+/** The smallest the person can resize the card to (it still holds a header, a chat and a box). */
+export const CARD_MIN = { width: 380, height: 480 };
+/** A remembered card size (`card-size.json`), or null when it is not a sane one. */
+export function readCardSize(v: unknown): { width: number; height: number } | null {
+  const p = v as { width?: unknown; height?: unknown } | null;
+  const ok = (n: unknown, min: number) =>
+    typeof n === 'number' && Number.isFinite(n) && n >= min && n <= 4000;
+  return p && ok(p.width, CARD_MIN.width) && ok(p.height, CARD_MIN.height)
+    ? { width: Math.round(p.width as number), height: Math.round(p.height as number) }
+    : null;
+}
+/** Shorter than this, the card would be cramped above a desk; it opens beside it instead.
+ * The window's own minimum: a shorter placement would be grown down over the desk. */
+export const CARD_MIN_HEIGHT = 480;
 const CARD_GAP = 10;
 const CARD_MARGIN = 12;
 
