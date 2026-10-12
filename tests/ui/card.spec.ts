@@ -8,6 +8,17 @@ async function card(
 ) {
   const snapshot = demoSnapshot();
   snapshot.preferences.privacy = !!opts.privacy;
+  // A helper of demo:0, to open as its own card.
+  snapshot.sessions.push({
+    ...snapshot.sessions[0],
+    id: 'demo:helper',
+    nativeId: 'demo-helper',
+    alias: '',
+    title: '보조 조사',
+    officeSeat: undefined,
+    relation: { kind: 'subagent', parentNativeId: 'demo-0', role: '조사', source: 'demo' },
+    parentId: 'demo-0',
+  });
   // An unread final answer from the opened colleague (its card shows the 'new' chip).
   const id = opts.id ?? 'demo:0';
   const at = Date.now() - 60_000;
@@ -242,4 +253,13 @@ test('Filters fold behind a small button in the card', async ({ page }) => {
   await aside.getByRole('button', { name: '필터' }).click();
   await expect(aside.locator('.conversation-toolbar')).toBeVisible();
   await expect(aside.locator('.conversation-range')).toHaveCount(0);
+});
+
+test("A helper's card leads back to the colleague it works for", async ({ page }) => {
+  const aside = await card(page, { id: 'demo:helper' });
+  await aside.getByRole('tab', { name: '작업 정보' }).click();
+  const parent = aside.getByRole('button', { name: /부모 작업/ });
+  await expect(parent).toBeVisible();
+  await parent.click();
+  await expect(aside.locator('.card-head h2')).toContainText('Coco');
 });

@@ -652,7 +652,11 @@ export function Inspector({
             onReceipt={onReceipt}
           />
         ) : tab === 'overview' ? (
-          overview
+          <>
+            {/* The card has no relation strip up top: branch and parent live with the details. */}
+            {card && relationStrip}
+            {overview}
+          </>
         ) : tab === 'history' ? (
           <Conversation
             key={s.id}
