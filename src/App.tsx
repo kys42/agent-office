@@ -220,7 +220,6 @@ export default function App() {
       }, new Map<string, { key: string; name: string; count: number }>())
       .values(),
   ];
-  // The office remembers its zone per data source; the sidebar mirrors it.
   // The office remembers its zone per data source; the sidebar and title mirror it from the start.
   const [officeZoneNow, setOfficeZoneNow] = useState<OfficeZone>(() => {
     try {
@@ -503,8 +502,9 @@ export default function App() {
               <button
                 key={zone}
                 className={`source-item ${view === 'office' && officeZoneNow === zone ? 'active' : ''}`}
-                aria-label={tab ? t.app.tabs.office.title : undefined}
-                title={tab ? t.app.tabs.office.title : undefined}
+                // Named even when a narrow window shows only the icon.
+                aria-label={tab ? t.app.tabs.office.title : t.office.zones[zone]}
+                title={tab ? t.app.tabs.office.title : t.office.zones[zone]}
                 onClick={() => {
                   setSelected(null);
                   goZone(zone);
@@ -526,7 +526,8 @@ export default function App() {
                 className="source-item"
                 disabled={!members.length}
                 onClick={() => {
-                  setView('office');
+                  // These colleagues sit in the office: show it, not the lounge or archive.
+                  goZone('office');
                   if (members[0]) choose(members[0].id);
                 }}
               >
@@ -548,6 +549,9 @@ export default function App() {
                   title={prefs?.privacy ? undefined : p.name}
                   onClick={() => {
                     setSelected(null);
+                    // The filtered roster shows where the inbox or usage panel would cover it.
+                    setInbox(false);
+                    setShowUsage(false);
                     setView('office');
                     setProjectRequest({ key: p.key, name: p.name, at: Date.now() });
                   }}
@@ -630,7 +634,12 @@ export default function App() {
             >
               <HelpCircle size={15} />
             </button>
-            <button className="icon-btn" title={t.app.help.title} onClick={() => setHelp(true)}>
+            <button
+              className="icon-btn"
+              title={t.app.help.title}
+              aria-label={t.app.help.title}
+              onClick={() => setHelp(true)}
+            >
               <Keyboard size={15} />
             </button>
           </div>

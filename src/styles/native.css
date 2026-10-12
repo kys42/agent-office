@@ -623,13 +623,14 @@
   color: #b9ab9b;
 }
 
-/* Narrow windows: the dock floats over the stage from the top of the window. */
+/* Narrow windows: the dock floats over the stage, under the toolbar — never over its buttons
+   (search, inbox, usage, hide and the desk pet stay reachable with a card open). */
 .app-body {
   position: relative;
 }
 @media (max-width: 1100px) and (min-width: 861px) {
   .app-body > .inspector {
-    top: 0;
+    top: var(--bar-h);
     bottom: 0;
     box-shadow:
       -0.5px 0 0 var(--line-2),

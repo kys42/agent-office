@@ -129,3 +129,52 @@ test('Appearance follows the system: light by default, dark when the system is d
     await context.close();
   }
 });
+
+test('With a card open in a narrow window the toolbar buttons stay clickable', async ({ page }) => {
+  // 1050 is the desktop app's minimum width; the card floats over the stage below 1100.
+  for (const width of [1050, 1080]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/?demo&lang=ko');
+    const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
+    await sidebar.getByRole('button', { name: /나를 기다려요/ }).click();
+    await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+    const covered = await page.locator('.toolbar button:visible').evaluateAll((buttons) =>
+      buttons
+        .map((b) => {
+          const r = b.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return hit && b.contains(hit) ? null : b.getAttribute('aria-label') || b.textContent;
+        })
+        .filter(Boolean),
+    );
+    expect(covered, `${width}px`).toEqual([]);
+  }
+});
+
+test('A to-do item seen from the lounge brings the office back with the card', async ({ page }) => {
+  await page.goto('/?demo&lang=ko');
+  const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
+  await sidebar.getByRole('button', { name: /대기 라운지/ }).click();
+  await expect(page.locator('.toolbar-title h1')).toHaveText('대기 라운지');
+  await sidebar.getByRole('button', { name: /나를 기다려요/ }).click();
+  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  await expect(page.getByRole('tab', { name: /^사무실/ })).toHaveAttribute('aria-selected', 'true');
+});
+
+test('Choosing a project shows its roster even with the inbox open', async ({ page }) => {
+  await page.goto('/?demo&lang=ko');
+  await page.keyboard.press('i');
+  await expect(page.locator('.app.has-dock')).toHaveCount(1);
+  const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
+  await sidebar.getByRole('button', { name: /my-notes/ }).click();
+  await expect(page.locator('.app.has-dock')).toHaveCount(0);
+  await expect(page.locator('.office-layout > .roster')).toBeVisible();
+});
+
+test('Narrow windows keep every space button named', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto('/?demo&lang=ko');
+  const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
+  for (const name of ['우리 사무실', '대기 라운지', '보관 공간'])
+    await expect(sidebar.getByRole('button', { name, exact: true })).toHaveCount(1);
+});
