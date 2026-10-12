@@ -220,8 +220,12 @@ export function Office({
             zoom === null
               ? { width: '100%', height: '100%' }
               : {
-                  width: Math.max(viewport.width, layout.width * scale + 48),
-                  height: Math.max(viewport.height, layout.height * scale + 92),
+                  // At least the view inside its own scrollbars (100%), never the card's
+                  // outer size: that would overflow by a scrollbar's width on both axes.
+                  width: layout.width * scale + 48,
+                  height: layout.height * scale + 92,
+                  minWidth: '100%',
+                  minHeight: '100%',
                 }
           }
         >

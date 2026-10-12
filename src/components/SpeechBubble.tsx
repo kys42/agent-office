@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   BellRing,
   Check,
@@ -103,16 +110,20 @@ export function SpeechBubble({
   // Unfolded, it folds back once the person turns to something else: a click outside it (its
   // reply box counts as inside) or another app (the window loses focus).
   const root = useRef<HTMLDivElement>(null);
-  const fold = useRef(setOpen);
-  fold.current = setOpen;
+  const fold = useEffectEvent(() => setOpen(false));
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
       const el = e.target instanceof Element ? e.target : null;
-      if (!el || root.current?.contains(el) || el.closest('.quick-reply')) return;
-      fold.current(false);
+      if (!el || root.current?.contains(el)) return;
+      // Its own reply box (drawn beside it in the same desk or pet) counts as inside; another
+      // desk's does not.
+      const reply = el.closest('.quick-reply');
+      const desk = root.current?.closest('.desk-station, .dock-pet-speech');
+      if (reply && desk?.contains(reply)) return;
+      fold();
     };
-    const blur = () => fold.current(false);
+    const blur = () => fold();
     document.addEventListener('pointerdown', away, true);
     window.addEventListener('blur', blur);
     return () => {

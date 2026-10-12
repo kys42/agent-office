@@ -477,6 +477,50 @@ test('Writing a reply keeps the unfolded bubble open', async ({ page }) => {
   await form.locator('textarea').click();
   await expect(bubble).toHaveClass(/is-expanded/);
   await expect(form).toBeVisible();
+  // Another desk's unfolded bubble folds when the person goes back to this reply box.
+  const other = page.locator('.desk-row [data-station-id="demo:1"]');
+  const otherBubble = other.locator('.speech-bubble');
+  await other.locator('.office-pet').hover();
+  await otherBubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await expect(otherBubble).toHaveClass(/is-expanded/);
+  await form.locator('textarea').click();
+  await expect(otherBubble).not.toHaveClass(/is-expanded/);
+});
+
+test('In the row, clicking another bubble while one is unfolded opens that one at once', async ({
+  page,
+}) => {
+  await bridge(page, answered());
+  await page.goto('/#mini=row');
+  const a = page.locator('.desk-row [data-station-id="demo:0"] .speech-bubble');
+  const b = page.locator('.desk-row [data-station-id="demo:1"] .speech-bubble');
+  await page.locator('.desk-row [data-station-id="demo:0"] .office-pet').hover();
+  await a.getByRole('button', { name: '말풍선 전체 보기' }).click();
+  await expect(a).toHaveClass(/is-expanded/);
+  // The press folds the first one; the click must still reach the second (its text).
+  await page.locator('.desk-row [data-station-id="demo:1"] .office-pet').hover();
+  await b.locator('.speech-open').click();
+  await expect(b).toHaveClass(/is-expanded/);
+  await expect(a).not.toHaveClass(/is-expanded/);
+});
+
+test('The pet folds its unfolded bubble on a click outside or another app', async ({ page }) => {
+  const snapshot = answered();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini');
+  await page.reload();
+  const bubble = page.locator('.dock-pet-speech .speech-bubble');
+  const unfold = async () => {
+    await page.locator('.dock-pet-anchor').hover();
+    await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
+    await expect(bubble).toHaveClass(/is-expanded/);
+  };
+  await unfold();
+  await page.mouse.click(10, 10);
+  await expect(bubble).not.toHaveClass(/is-expanded/);
+  await unfold();
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(bubble).not.toHaveClass(/is-expanded/);
 });
 
 test('The pet shows the request bubble only while hovered, inside its window', async ({ page }) => {
