@@ -842,6 +842,7 @@ export default function App() {
               projectRequest={projectRequest}
               onProjectHandled={() => setProjectRequest(null)}
               onReply={sendReply}
+              notify={notify}
               onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
             />
           ) : view === 'memory' ? (

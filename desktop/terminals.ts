@@ -2,8 +2,21 @@ import { existsSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import type { TerminalTarget } from '../src/shared/types.js';
+import type { SendResult, TerminalTarget } from '../src/shared/types.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
+import {
+  claudeCodeComposer,
+  drawn,
+  holdsText,
+  parseStyledScreen,
+  promptHolds,
+  readyToType,
+  mergeBackup,
+  type ComposerAdapter,
+  type ComposerHost,
+  type ComposerKey,
+  type Screen,
+} from './composer/index.js';
 import {
   findClaudeProcess,
   forget,
@@ -13,6 +26,7 @@ import {
   type ClaudeLiveDeps,
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
+export { promptHolds, readPrompt } from './composer/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
 // never reachable through OfficeService.call (shared with the web preview). Reading the
@@ -264,77 +278,6 @@ export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' :
 const OPEN = new Set(['idle', 'busy', 'shell']);
 export const acceptsInput = (status: string) => OPEN.has(status);
 
-/** A box border: dashes, or dashes around a session title that may fill the pane. */
-const RULE = /^─+(?: .* ─+)?$/;
-/**
- * Footer hints of a screen where Enter goes elsewhere: dialogs and pickers, the agents view
- * ("enter to create · esc to clear"), the transcript, history search, and a prompt where Enter
- * would interrupt the turn. The main prompt's own hints ("esc to interrupt", "ctrl+t to hide
- * tasks", "shift+tab to cycle") are not among them.
- */
-const FOOT =
-  /do you want|esc to (?:cancel|clear|close|return)|\benter to\b|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
-/** What an empty prompt shows in place of text: examples, and queued-message help. */
-const HINT = /^(?:Try "[\s\S]*"|Press (?:up|Enter) to [\s\S]*)$/;
-const PASTED = /^\[Pasted text #\d+[^\]]*\]$/;
-/** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
-const drawn = (value: string) => value.normalize('NFC').replace(/[\s​-‍⁠︎️]+/g, '');
-
-/**
- * What Claude Code's main prompt holds, read from the rendered screen: the last box, a `❯`
- * line between two rules, with nothing below that offers Enter to something else. A permission
- * prompt, plan approval or question replaces the box, `!` shell mode changes its marker, and
- * the agents view, menus and completion lists announce themselves around it; any of those is
- * `null` (closed). Measured on Claude Code 2.1.296.
- */
-export function readPrompt(screen: string): string | null {
-  const lines = screen.split('\n').map((line) => line.trimEnd());
-  const bottom = lines.findLastIndex((line) => RULE.test(line));
-  const top = lines.findLastIndex((line, i) => i < bottom && RULE.test(line));
-  if (top < 0) return null;
-  const box = lines.slice(top + 1, bottom);
-  if (!/^❯(\s|$)/.test(box[0] ?? '')) return null;
-  const typed = box
-    .map((line) => line.trim())
-    .join('\n')
-    .replace(/^❯\s?/, '');
-  // A slash command typed in full selects its own row: Enter then runs exactly that command.
-  const command = /^\/\S+$/.test(typed) ? typed : null;
-  // List rows are indented; queued messages and the person's turns sit at column 0.
-  const picks = (line: string) => {
-    const row = /^\s{2,}❯\s+(\S+)/.exec(line);
-    return !!row && row[1] !== command;
-  };
-  const below = lines.slice(bottom + 1);
-  // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
-  if (
-    FOOT.test(below.join(' ').replace(/\s+/g, ' ')) ||
-    below.some((line) => /^\s*❯/.test(line) && (!command || picks(` ${line}`)))
-  )
-    return null;
-  // The list touching the box (rows, wrapped descriptions) up to a blank line; older output
-  // that merely looks like a list is no list.
-  const start = lines.slice(0, top).findLastIndex((line) => !line.trim());
-  const list = lines.slice(Math.max(start + 1, top - 30), top);
-  if (list.some((line) => /^\s{2,}◇\s/.test(line) || picks(line))) return null;
-  return typed;
-}
-
-/**
- * The prompt holds exactly `text`, or the placeholder a long paste collapses into. The prompt
- * was empty before typing, so a long text the composer shows only the end of counts too.
- */
-export function promptHolds(screen: string, text: string): boolean {
-  const typed = readPrompt(screen);
-  if (typed === null) return false;
-  const shown = drawn(typed);
-  return (
-    shown === drawn(text) ||
-    PASTED.test(typed) ||
-    (shown.length >= 40 && drawn(text).endsWith(shown))
-  );
-}
-
 /** What the renderer may know: never the handle or socket, which main re-resolves per action. */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
   return {
@@ -409,24 +352,30 @@ export function cleanInput(text: unknown): string {
 }
 
 /**
- * The rendered screen as plain text, or `null` when it cannot be read. A tmux pane scrolled
- * back (copy mode) would take Enter itself, so it reads as no prompt at all.
+ * The rendered screen, or `null` when it cannot be read. tmux reports how each character is
+ * drawn (`capture-pane -e`); Orca's screen read is plain text. A tmux pane scrolled back (copy
+ * mode) would take Enter itself, so it reads as no prompt at all.
  */
-async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<string | null> {
+async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Screen | null> {
   try {
     if (host.kind === 'tmux') {
       const tmux = deps.bin('tmux');
-      const mode = await deps.run(tmux, [
+      const state = await deps.run(tmux, [
         '-S',
         host.socket,
         'display-message',
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode}',
+        '#{pane_in_mode} #{pane_height}',
       ]);
-      if (mode.trim() !== '0') return '';
-      return await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-t', host.pane]);
+      const [mode, height] = state.trim().split(' ');
+      if (mode !== '0') return { text: '' };
+      const screen = parseStyledScreen(
+        await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
+      );
+      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows).
+      return /^\d+$/.test(height ?? '') ? { ...screen, height: Number(height) } : screen;
     }
     const out = await deps.run(deps.bin('orca'), [
       'terminal',
@@ -439,10 +388,31 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<strin
     const terminal = JSON.parse(out)?.result?.terminal;
     // Without a rendered screen Orca falls back to past output, which is not what is shown now.
     if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
-    return terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
+    const text = terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
+    // Orca 1.4.216 reports the composer's text apart (`draft`) and leaves only the marker on
+    // screen; an older Orca draws it in the screen as tmux does.
+    return typeof terminal.draft === 'string' ? { text, composer: terminal.draft } : { text };
   } catch {
     return null;
   }
+}
+
+/** The bytes a key sends: what tmux `send-keys` writes for the same names. */
+const KEY_BYTES: Record<ComposerKey, string> = { 'C-k': '\x0b', 'C-u': '\x15' };
+
+/** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */
+export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHost {
+  return {
+    styled: host.kind === 'tmux',
+    read: () => readScreen(host, deps),
+    wait: deps.wait,
+    async press(keys) {
+      if (!keys.length) return;
+      if (host.kind === 'orca')
+        return orcaSend(host, [`--text=${keys.map((key) => KEY_BYTES[key]).join('')}`], deps);
+      await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
+    },
+  };
 }
 
 async function orcaSend(host: { handle: string }, input: string[], deps: TerminalDeps) {
@@ -498,24 +468,44 @@ const pressEnter = (host: TerminalHost, deps: TerminalDeps) =>
     ? orcaSend(host, ['--enter'], deps)
     : deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
 
+export interface TerminalSendOptions {
+  /**
+   * The composer text the person agreed to clear (exactly what `needs-confirm` showed). It is
+   * cleared only while the composer still holds that text; otherwise they are asked again.
+   */
+  replaceDraft?: string;
+  /** Puts the composer's text on the clipboard before it is cleared. Without it nothing is. */
+  backup?: (text: string) => void | Promise<void>;
+  /** What the clipboard holds now: an earlier backup counts only while it is still there. */
+  clipboardText?: () => string | Promise<string>;
+  /** The agent whose composer this is. */
+  composer?: ComposerAdapter;
+}
+
 /**
  * Types the text, then submits it only while Claude's own prompt holds exactly that. Enter is
  * the risk: on a permission prompt it picks the default choice (pasted text alone is ignored
  * there, measured on 2.1.296), and mid-turn such prompts come and go. So the record and then
  * the screen are checked as late as possible; one CLI call (~0.1s) and Claude's next frame are
  * left between the last look and Enter, and a prompt that opens right after is reported.
+ *
+ * Text already in the composer is never added to: a draft (or, on a plain screen, text that may
+ * be a draft) comes back as `needs-confirm`. Sent again with `replaceDraft`, that text goes to
+ * the clipboard, the adapter clears the composer and verifies it is empty, and only then is the
+ * new text typed and checked as above.
  */
 export function sendToTerminal(
   live: LiveTerminal,
   input: unknown,
   deps = defaultTerminalDeps(),
-): Promise<string> {
+  options: TerminalSendOptions = {},
+): Promise<SendResult> {
   // One send per session at a time: two surfaces sending at once would type into each other.
   const key = live.process.sessionId;
   const before = sending.get(key);
   const turn = (before ?? Promise.resolve())
     .catch(() => undefined)
-    .then(() => deliver(live, input, deps, !!before));
+    .then(() => deliver(live, input, deps, !!before, options));
   sending.set(key, turn);
   const done = () => {
     if (sending.get(key) === turn) sending.delete(key);
@@ -524,14 +514,37 @@ export function sendToTerminal(
   return turn;
 }
 
-const sending = new Map<string, Promise<string>>();
+const sending = new Map<string, Promise<SendResult>>();
+
+/**
+ * What clearing put on the clipboard, per session, until a send goes through: a clearing that
+ * was interrupted (someone typing, the prompt closing) and is confirmed again only ever adds to
+ * it. Short-lived, in memory only, kept with the deps (one shared instance in the app).
+ */
+const BACKUP_TTL = 10 * 60_000;
+const backupsOf = new WeakMap<TerminalDeps, Map<string, { text: string; at: number }>>();
+function backupMemory(deps: TerminalDeps) {
+  let memory = backupsOf.get(deps);
+  if (!memory) backupsOf.set(deps, (memory = new Map()));
+  return {
+    held(key: string): string | undefined {
+      const held = memory.get(key);
+      if (held && Date.now() - held.at < BACKUP_TTL) return held.text;
+      memory.delete(key);
+      return undefined;
+    },
+    keep: (key: string, text: string) => memory.set(key, { text, at: Date.now() }),
+    drop: (key: string) => memory.delete(key),
+  };
+}
 
 async function deliver(
   live: LiveTerminal,
   input: unknown,
   deps: TerminalDeps,
   waited: boolean,
-): Promise<string> {
+  options: TerminalSendOptions,
+): Promise<SendResult> {
   const text = cleanInput(input);
   const t = m().desktop.terminal;
   /** The same process, still on this session, open to input and in front of its terminal. */
@@ -551,37 +564,135 @@ async function deliver(
   if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
   if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
   const { host } = live;
+  const key = live.process.sessionId;
+  const memory = backupMemory(deps);
   const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
-  const screen = await readScreen(host, deps);
-  if (screen === null) throw new TerminalInputError(t.unreadable(hostName(host)));
-  const prompt = readPrompt(screen);
-  if (prompt === null) throw new TerminalInputError(t.notReady);
+  const composer = options.composer ?? claudeCodeComposer;
+  const io = composerHost(host, deps);
+  const can = composer.capabilities(io);
+  // Typing into a terminal is only for agents whose composer can be read first.
+  if (can.delivery !== 'terminal' || !can.canInspect)
+    throw new TerminalInputError(t.unsupportedAgent(composer.agent));
+  const state = await composer.inspect(io);
+  if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(hostName(host)));
+  if (!holdsText(state)) {
+    if (!readyToType(state)) throw new TerminalInputError(t.notReady);
+    return submit(false);
+  }
   // Never mixed into a draft, or into text a failed send left behind.
-  if (prompt && !HINT.test(prompt)) throw new TerminalInputError(t.draft);
-  await typeText(host, text, deps);
-  // The prompt may take a moment to draw the text.
-  let holds = false;
-  for (let tries = 0; !holds && tries < 3; tries++) {
-    await deps.wait(150);
-    holds = promptHolds((await readScreen(host, deps)) ?? '', text);
+  if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
+  // What an earlier, interrupted clearing of this session put on the clipboard — only while the
+  // clipboard still holds it (the person may have copied something else since).
+  let base = memory.held(key);
+  if (base !== undefined && options.clipboardText) {
+    const now = await Promise.resolve(options.clipboardText()).catch(() => undefined);
+    if (now !== base) {
+      memory.drop(key);
+      base = undefined;
+    }
   }
-  if (!holds) throw new TerminalInputError(t.stateChanged);
-  // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
-  // retries leaves Claude's last frame on screen over a shell.
-  const again = await current();
-  if (!again) throw new TerminalInputError(t.stateChanged);
-  // And the screen once more: a dialog may have opened during those checks.
-  if (!promptHolds((await readScreen(host, deps)) ?? '', text))
-    throw new TerminalInputError(t.stateChanged);
+  let saved = false;
+  const ask = (draft: string, whole: boolean, changed = false): SendResult => ({
+    status: 'needs-confirm',
+    draft,
+    agent: composer.agent,
+    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...(changed && { changed: true }),
+    ...((saved || base !== undefined) && { clipboard: true }),
+    // Not all of it is on screen: it is never cleared from here.
+    ...(!whole && { clearable: false }),
+  });
+  const confirmed = options.replaceDraft;
+  if (confirmed === undefined) return ask(state.text, state.whole);
+  if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+  if (!state.whole) throw new TerminalInputError(t.notWhole);
+  const backup = options.backup;
   try {
-    await pressEnter(host, deps);
+    const result = await composer.clear(
+      io,
+      state,
+      async (text) => {
+        // Never less than the earlier clearing saved; never more than that and this draft.
+        const merged = mergeBackup(base, text);
+        try {
+          await backup(merged);
+        } catch {
+          // A later copy (of text that showed up once the draft was gone) says what happened.
+          throw new TerminalInputError(saved ? t.backupFailedLater : t.backupFailed);
+        }
+        memory.keep(key, merged);
+        saved = true;
+      },
+      // Before every key: the same Claude, open to input and in front of its terminal.
+      async () => !!(await current()),
+    );
+    if (result.status === 'changed') return ask(result.text, result.whole, true);
+    if (result.status === 'failed')
+      throw new TerminalInputError(
+        result.partial
+          ? t.notWhole
+          : result.lost
+            ? t.clearStopped
+            : result.state.kind === 'unknown'
+              ? t.clearFailedSuggestion(composer.agent)
+              : t.clearFailed(composer.agent),
+      );
+    // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
+    // prompt must hold exactly the text, never a collapsed or shortened view of it.
+    const inferred = result.state.kind === 'suggestion' && !!result.state.inferred;
+    return await submit(true, inferred);
   } catch (error) {
-    // The text is in the prompt: a blind resend would type it twice.
-    if (error instanceof TerminalInputError) throw new TerminalInputError(t.notSubmitted(where));
-    throw error;
+    // Once something went to the clipboard, every failure says so (a failed copy says its own).
+    if (!saved) throw error;
+    const reason =
+      error instanceof TerminalInputError ? error.message : t.unconfirmed(hostName(host));
+    throw new TerminalInputError(
+      reason === t.backupFailed ||
+        reason === t.backupFailedLater ||
+        reason.includes(t.clipboardKept)
+        ? reason
+        : `${reason} ${t.clipboardKept}`,
+    );
   }
-  const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
-  if (after?.status === 'waiting') return t.sentThenPrompt(where);
-  if (again.status === 'busy') return t.queued(where);
-  return host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label);
+
+  /**
+   * Types the text and presses Enter once the prompt holds it: exactly, or (the prompt being
+   * verified empty) as the placeholder of a long paste or the end of a long text. `strict`
+   * after a clearing that could only infer the box was empty: the exact text only.
+   */
+  async function submit(cleared: boolean, strict = false): Promise<SendResult> {
+    await typeText(host, text, deps);
+    const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
+    // The prompt may take a moment to draw the text.
+    let shown = false;
+    for (let tries = 0; !shown && tries < 3; tries++) {
+      await deps.wait(150);
+      shown = await holds();
+    }
+    if (!shown) throw new TerminalInputError(cleared ? t.notVerified : t.stateChanged);
+    // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
+    // retries leaves Claude's last frame on screen over a shell.
+    const again = await current();
+    if (!again) throw new TerminalInputError(t.stateChanged);
+    // And the screen once more: a dialog may have opened during those checks.
+    if (!(await holds())) throw new TerminalInputError(t.stateChanged);
+    try {
+      await pressEnter(host, deps);
+    } catch (error) {
+      // The text is in the prompt: a blind resend would type it twice.
+      if (error instanceof TerminalInputError) throw new TerminalInputError(t.notSubmitted(where));
+      throw error;
+    }
+    memory.drop(key);
+    const sent = (message: string): SendResult => ({
+      status: 'sent',
+      message,
+      // The cleared text is on the clipboard (blank lines are not copied).
+      ...(cleared && saved && { cleared: true }),
+    });
+    const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
+    if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));
+    if (again.status === 'busy') return sent(t.queued(where));
+    return sent(host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label));
+  }
 }

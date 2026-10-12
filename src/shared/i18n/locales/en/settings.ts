@@ -53,7 +53,7 @@ export const settings = {
     privacyHint: 'Masks titles, projects and conversations.',
     terminal: 'Send to terminal',
     terminalHint:
-      "Keep talking to a resting Claude Code session in Orca or tmux, right from its work card. It's just like typing into that terminal yourself, so a session started without permission prompts runs it as-is. If there's a draft in its input box, your message is added after it. Only available in this desktop app. On by default — turn it off here; turning it back on asks you to confirm.",
+      "Keep talking to a resting Claude Code session in Orca or tmux, right from its work card. It's just like typing into that terminal yourself, so a session started without permission prompts runs it as-is. If its input box already has text, you'll see it first and can clear it (it goes to your clipboard) before sending. Only available in this desktop app. On by default — turn it off here; turning it back on asks you to confirm.",
   },
   records: {
     title: 'Recent records per tool',

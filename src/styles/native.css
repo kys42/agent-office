@@ -1227,7 +1227,8 @@ body.card-mode:not(.is-mac) .dock-card {
   padding: 0 12px;
   border-radius: 12px;
 }
-.terminal-send-chat .terminal-send-error {
+.terminal-send-chat .terminal-send-error,
+.terminal-send-chat .draft-confirm {
   grid-column: 1 / -1;
 }
 .inspector-card .persona-run-picker {

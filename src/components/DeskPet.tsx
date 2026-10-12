@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
 import { Expand, Flag, PanelRightOpen, RotateCw, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
-import { MOODS, type NoticeReceipt } from '../shared/types';
+import { MOODS, type NoticeReceipt, type ReplySender } from '../shared/types';
 import { QuotaBadge } from './QuotaBadge';
 import { dimsDesk } from '../shared/quota';
 import { petSummary, residentLabel, type OfficeModel } from '../shared/office-model';
@@ -33,6 +34,7 @@ export function DeskPet({
   onFloor,
   onReply,
   onRefresh,
+  notify,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
@@ -44,7 +46,9 @@ export function DeskPet({
   /** Unfold the floor desks: desks on the screen's bottom edge, zones marked by flags. */
   onFloor: () => void;
   /** Desktop, with Send to terminal on: the speaking colleague can be answered right under its bubble. */
-  onReply?: (sessionId: string, text: string) => Promise<void>;
+  onReply?: ReplySender;
+  /** Says what a jump to the terminal did (or the resume command it copied). */
+  notify?: (message: string) => void;
   /** Look at the session records again now (and restart a stopped collector). */
   onRefresh: () => void;
 }) {
@@ -148,9 +152,18 @@ export function DeskPet({
                 target={target!}
                 name={who?.name ?? d.someone}
                 onClose={() => setReplyFor(null)}
-                onSend={async (text) => {
-                  await onReply!(bubble.sessionId, text);
-                  markSent(bubble.sessionId);
+                onJump={
+                  api.jump
+                    ? () => {
+                        const say = notify ?? (() => {});
+                        jumpOrCopy(bubble.sessionId, say).catch((e) => say((e as Error).message));
+                      }
+                    : undefined
+                }
+                onSend={async (text, replaceDraft) => {
+                  const result = await onReply!(bubble.sessionId, text, replaceDraft);
+                  if (result.status === 'sent') markSent(bubble.sessionId);
+                  return result;
                 }}
               />
             )}

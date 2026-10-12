@@ -20,6 +20,7 @@ import type {
   DockAction,
   DockMode,
   JumpResult,
+  SendResult,
   Session,
   SessionIdentity,
   Snapshot,
@@ -52,6 +53,7 @@ import {
   TerminalInputError,
 } from './terminals.js';
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
+import { composerFor } from './composer/index.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 let main: BrowserWindow | null = null,
@@ -720,15 +722,28 @@ function setupIPC() {
     await writeFile(terminalSendFile(), JSON.stringify({ enabled: enable }), { mode: 0o600 });
     return enable;
   });
-  ipcMain.handle('office:send', async (e, id, text) => {
+  ipcMain.handle('office:send', async (e, id, text, options): Promise<SendResult> => {
     trusted(e);
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+    const replaceDraft: unknown = options?.replaceDraft;
+    if (
+      (options != null && typeof options !== 'object') ||
+      (replaceDraft !== undefined &&
+        (typeof replaceDraft !== 'string' || replaceDraft.length > 20000))
+    )
+      throw new Error(m().desktop.badRequest);
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
     const known = await identity(id);
-    const thread = await codex(known, true);
+    // Each agent's adapter says how a follow-up reaches it: its queue (Codex, no composer
+    // involved) or its terminal (the composer is read, and cleared only when confirmed).
+    const composer = composerFor(known.provider);
+    const delivery = composer.capabilities(null).delivery;
+    if (delivery === 'none') throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+    const thread = delivery === 'queue' ? await codex(known, true) : null;
+    if (delivery === 'queue' && !thread) throw new Error(m().desktop.terminal.noTarget);
     if (thread)
       try {
-        return await queueToCodex(thread, text);
+        return { status: 'sent', message: await queueToCodex(thread, text) };
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
         if ((error as NodeJS.ErrnoException).code === 'ENOENT')
@@ -738,7 +753,13 @@ function setupIPC() {
     const terminal = await live(known, true);
     if (!terminal) throw new Error(m().desktop.terminal.noTarget);
     try {
-      return await sendToTerminal(terminal, text);
+      return await sendToTerminal(terminal, text, undefined, {
+        composer,
+        replaceDraft,
+        // The main process writes the clipboard: no permission prompt, nothing in the renderer.
+        backup: async (draft) => clipboard.writeText(draft),
+        clipboardText: () => clipboard.readText(),
+      });
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
       // The text may already be in the terminal; never invite a blind resend.
