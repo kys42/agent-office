@@ -33,10 +33,14 @@ export function QuotaBadge({
   const q = t.desk.quota;
   const tip = useId();
   const tool = PROVIDERS[quota.provider].short;
-  // Esc puts the explanation away (pointed at or focused) until the pointer or focus leaves.
-  const [active, setActive] = useState(false);
+  // Esc puts the explanation away while it is pointed at or focused (tracked apart: either
+  // keeps it up), until both have left.
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const active = hovered || focused;
   useEffect(() => {
+    if (!active) setDismissed(false);
     if (!active || dismissed) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -46,18 +50,14 @@ export function QuotaBadge({
     window.addEventListener('keydown', key, true);
     return () => window.removeEventListener('keydown', key, true);
   }, [active, dismissed]);
-  const leave = () => {
-    setActive(false);
-    setDismissed(false);
-  };
   return (
     <button
       type="button"
       className={`quota-badge ${dismissed ? 'tip-dismissed' : ''} ${className}`}
-      onMouseEnter={() => setActive(true)}
-      onFocus={() => setActive(true)}
-      onMouseLeave={leave}
-      onBlur={leave}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       data-solid
       aria-label={q.label(tool)}
       aria-describedby={tip}

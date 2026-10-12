@@ -84,6 +84,12 @@ test('A desk whose tool used up its limit goes dark, with a badge that explains 
   await page.keyboard.press('Tab');
   await expect(badge).toBeFocused();
   await expect(tip).toBeVisible();
+  // Focused, pointed at, then the pointer leaves: focus still keeps it, and Esc still works.
+  await badge.hover();
+  await page.mouse.move(0, 0);
+  await expect(tip).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tip).toBeHidden();
 });
 
 test('In the light theme the explanation stays readable, and Esc puts it away', async ({
