@@ -34,6 +34,7 @@ export const roster = {
   sort: { recent: 'Recent', frequent: 'Most opened' },
   searchLabel: 'Search teammates',
   searchPlaceholder: 'Find by name or project',
+  clearScope: 'Show all projects',
   clearSearch: 'Clear search',
   filterLabel: 'Filter by tool',
   all: 'All',

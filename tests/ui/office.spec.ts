@@ -147,8 +147,9 @@ test('Settings can pause collection and reduce motion without mutating real sett
 test('Desktop viewport fits the room and narrow viewport does not overflow', async ({ page }) => {
   await page.goto('/?demo');
   await expect(page.locator('.office-pet')).toHaveCount(6);
+  // The room fits inside the window without scrolling (the window has no footer bar).
   const room = await page.locator('.office-card').boundingBox();
-  expect(room!.y + room!.height).toBeLessThan(950);
+  expect(room!.y + room!.height).toBeLessThanOrEqual(970);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.office-card')).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);

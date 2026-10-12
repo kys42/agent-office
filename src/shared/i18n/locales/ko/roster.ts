@@ -34,6 +34,7 @@ export const roster: Messages['roster'] = {
   sort: { recent: '최근 활동순', frequent: '자주 찾은 순' },
   searchLabel: '동료 이름 검색',
   searchPlaceholder: '이름 · 프로젝트로 찾기',
+  clearScope: '모든 프로젝트 보기',
   clearSearch: '검색어 지우기',
   filterLabel: '도구 필터',
   all: '전체',
