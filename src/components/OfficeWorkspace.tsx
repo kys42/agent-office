@@ -14,7 +14,7 @@ import {
   EyeOff,
 } from 'lucide-react';
 import type { OfficeZone, Provider, ReplySender, Session, Snapshot } from '../shared/types';
-import type { OfficeModel } from '../shared/office-model';
+import { zoneVeilIds, type OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
 import { helperName, projectKey, sessionName } from '../shared/office';
 import { ago } from '../lib/format';
@@ -228,6 +228,8 @@ export function OfficeWorkspace({
             onHover={setDeskHover}
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
             canVeil={(s) => !model.view(s.id)?.needsPerson}
+            zoneVeilIds={(ids) => zoneVeilIds(model, ids)}
+            onVeilZone={(ids) => onVeil(ids, true)}
             quotaOf={(s) => model.view(s.id)?.quota}
             onPin={onPin}
             onZoneDrop={onZoneDrop}
