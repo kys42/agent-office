@@ -129,6 +129,8 @@ function fakeDeps(
     screen?: (typed: string, read: number) => string;
     /** `#{pane_in_mode}`: 1 while the tmux pane is scrolled back. */
     paneMode?: string;
+    /** `source` of `orca terminal read --screen`. */
+    orcaSource?: string;
     /** Fails `orca terminal send --enter` only. */
     enterRefused?: boolean;
     fail?: (file: string, args: string[]) => Error | undefined;
@@ -166,7 +168,12 @@ function fakeDeps(
       if (file === '/bin/tmux' && args.includes('send-keys')) typed = '';
       if (file === '/bin/tmux' && args.includes('capture-pane')) return screen();
       if (file === '/bin/orca' && args[1] === 'read')
-        return JSON.stringify({ ok: true, result: { terminal: { tail: screen().split('\n') } } });
+        return JSON.stringify({
+          ok: true,
+          result: {
+            terminal: { tail: screen().split('\n'), source: options.orcaSource ?? 'screen' },
+          },
+        });
       if (file === '/bin/orca' && args[1] === 'list') {
         const t = (options.orcaShow as { result?: { terminal?: unknown } })?.result?.terminal;
         return JSON.stringify({ ok: true, result: { terminals: t ? [t] : [] } });
@@ -416,6 +423,23 @@ test("Claude's prompt is read from the screen: a dialog, menu or other view is n
   assert.equal(readPrompt(suggestScreen('see @src/ap')), null, 'completions');
   assert.equal(readPrompt(`${claudeScreen('')}\n esc to close`), null, 'lowercase hint');
   assert.equal(readPrompt(`${claudeScreen('')}\n  ❯ /model`), null, 'list below');
+  // Output that merely looks like a list, further up, is not one.
+  assert.equal(
+    readPrompt(
+      ['  /help    Show help', '  ◇ an old bullet', '⏺ Done.', '', claudeScreen('')].join('\n'),
+    ),
+    '',
+  );
+  // The main prompt's own hints never close it (default footer while working, tasks, voice).
+  for (const foot of [
+    '⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents',
+    '⏸ manual mode on · ctrl+t to hide tasks',
+    'hold space to speak',
+  ])
+    assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), '', foot);
+  // History search and the transcript take Enter themselves.
+  for (const foot of ['search prompts: fix', 'no matching prompt: xyz', 'ctrl+o to toggle'])
+    assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), null, foot);
   // The person's own footer stays fine: shift+tab, "? for shortcuts".
   assert.equal(
     readPrompt(`${claudeScreen('')}\n ⏵⏵ auto mode on (shift+tab to cycle) · ? for shortcuts`),
@@ -574,6 +598,23 @@ test("Text already in the prompt, a draft or a failed send's, is never added to"
     await sendToTerminal(tmuxLive('busy'), 'hi', deps);
     assert.ok(sent(calls));
   });
+  for (const hint of [
+    'Press up to edit queued messages, Enter to send them immediately',
+    'Press Enter to edit the selected message',
+    'Try "write a test for\nsrc/app.ts"',
+  ])
+    assert.equal(readPrompt(claudeScreen(hint)), hint);
+});
+
+test('While working, the default footer still lets a follow-up through', async () => {
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed) =>
+        `${claudeScreen(typed)}${typed ? '' : '\n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt'}`,
+    });
+    assert.match(await sendToTerminal(tmuxLive('busy'), 'stop, do B', deps), /대기열/);
+    assert.ok(sent(calls));
+  });
 });
 
 test('A leading ! never reaches the prompt, where it would switch to shell mode', async () => {
@@ -592,6 +633,10 @@ test('A scrolled-back tmux pane or an unreadable screen gets nothing', async () 
   });
   await assert.rejects(sendToTerminal(orcaLive(), 'hi', unreadable.deps), /화면을 읽지 못해서/);
   assert.ok(!typedAny(unreadable.calls));
+  // Past output standing in for a screen Orca cannot render is never trusted.
+  const fallback = fakeDeps('/x', { orcaSource: 'screen-unavailable' });
+  await assert.rejects(sendToTerminal(orcaLive(), 'hi', fallback.deps), /화면을 읽지 못해서/);
+  assert.ok(!typedAny(fallback.calls));
 });
 
 test('Orca taking the text but refusing Enter says the text is waiting there', async () => {

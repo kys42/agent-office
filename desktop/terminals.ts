@@ -265,12 +265,18 @@ const OPEN = new Set(['idle', 'busy', 'shell']);
 export const acceptsInput = (status: string) => OPEN.has(status);
 
 const RULE = /^─{3,}/;
-/** Footer hints of a dialog, a menu or the agents view ("enter to create · esc to clear"). */
-const FOOT = /do you want|\b(?:esc|enter|space|ctrl\+\w+) to \w/i;
-/** A completion list drawn by the prompt (`@` files, `/` commands); Enter would pick from it. */
-const SUGGESTION = /^\s{2,}(?:◇|❯\s|\/[\w:-]+\s{2,})/;
-/** What an empty prompt shows in place of text. */
-const HINT = /^(?:Try ".*"|Press up to edit queued messages)$/;
+/**
+ * Footer hints of a screen where Enter goes elsewhere: dialogs and pickers, the agents view
+ * ("enter to create · esc to clear"), the transcript, history search, and a prompt where Enter
+ * would interrupt the turn. The main prompt's own hints ("esc to interrupt", "ctrl+t to hide
+ * tasks", "shift+tab to cycle") are not among them.
+ */
+const FOOT =
+  /do you want|esc to (?:cancel|clear|close|return)|enter to (?:confirm|return|create|start|open|select|interrupt)|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
+/** An `@` completion row, drawn right above the prompt; Enter would pick from the list. */
+const SUGGESTION = /^\s{2,}(?:◇|❯)\s/;
+/** What an empty prompt shows in place of text: examples, and queued-message help. */
+const HINT = /^(?:Try "[\s\S]*"|Press (?:up|Enter) to [\s\S]*)$/;
 const PASTED = /^\[Pasted text #\d+[^\]]*\]$/;
 /** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
 const drawn = (value: string) => value.normalize('NFC').replace(/[\s​-‍⁠︎️]+/g, '');
@@ -290,7 +296,9 @@ export function readPrompt(screen: string): string | null {
   const box = lines.slice(top + 1, bottom);
   if (!/^❯(\s|$)/.test(box[0] ?? '')) return null;
   if (lines.slice(bottom + 1).some((line) => FOOT.test(line) || /^\s*❯/.test(line))) return null;
-  if (lines.slice(Math.max(0, top - 12), top).some((line) => SUGGESTION.test(line))) return null;
+  // Only the row touching the box: older output that merely looks like a list is no list.
+  const above = lines.slice(Math.max(0, top - 3), top).findLast((line) => line.trim());
+  if (above && SUGGESTION.test(above)) return null;
   return box
     .map((line) => line.trim())
     .join('\n')
@@ -404,8 +412,10 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<strin
       '--limit=200',
       '--json',
     ]);
-    const tail: unknown = JSON.parse(out)?.result?.terminal?.tail;
-    return Array.isArray(tail) ? tail.filter((line) => typeof line === 'string').join('\n') : null;
+    const terminal = JSON.parse(out)?.result?.terminal;
+    // Without a rendered screen Orca falls back to past output, which is not what is shown now.
+    if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
+    return terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
   } catch {
     return null;
   }
