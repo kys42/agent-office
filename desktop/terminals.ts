@@ -443,7 +443,9 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
 
 /** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
 async function typeText(host: TerminalHost, text: string, deps: TerminalDeps) {
-  if (host.kind === 'orca') return orcaSend(host, [`--text=${text}`], deps);
+  // Orca writes the bytes as they are: bracketed paste keeps tabs and line breaks as text.
+  // cleanInput removed every ESC, so the text itself can never close the paste early.
+  if (host.kind === 'orca') return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
   const tmux = deps.bin('tmux');
   const buffer = `agent-office-${randomUUID()}`;
   // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
@@ -479,11 +481,27 @@ const pressEnter = (host: TerminalHost, deps: TerminalDeps) =>
  * the screen are checked as late as possible; one CLI call (~0.1s) and Claude's next frame are
  * left between the last look and Enter, and a prompt that opens right after is reported.
  */
-export async function sendToTerminal(
+export function sendToTerminal(
   live: LiveTerminal,
   input: unknown,
   deps = defaultTerminalDeps(),
 ): Promise<string> {
+  // One send per session at a time: two surfaces sending at once would type into each other.
+  const key = live.process.sessionId;
+  const turn = (sending.get(key) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(() => deliver(live, input, deps));
+  sending.set(key, turn);
+  const done = () => {
+    if (sending.get(key) === turn) sending.delete(key);
+  };
+  turn.then(done, done);
+  return turn;
+}
+
+const sending = new Map<string, Promise<string>>();
+
+async function deliver(live: LiveTerminal, input: unknown, deps: TerminalDeps): Promise<string> {
   const text = cleanInput(input);
   const t = m().desktop.terminal;
   // A leading `!` turns Claude's prompt into shell mode: the text would run as a command.

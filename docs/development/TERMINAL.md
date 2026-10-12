@@ -66,8 +66,9 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 - **참고:** 백그라운드 서브에이전트(팀원)가 살아 있으면 Claude Code는 입력 대기 중에도 세션을 `busy`로 기록한다. 예전에는 이런 세션에 답장 버튼이 계속 안 떴다.
 - **터미널 앞에 있을 때만.** Ctrl+Z로 멈춘 Claude는 기록이 `idle`로 남은 채 셸이 앞으로 나온다. 보내기 직전 `ps -o stat,pgid,tpgid`로 멈춤(`T`)이 아니고 Claude의 프로세스 그룹이 터미널 전면 그룹인지 확인한다. 그렇지 않으면 셸 명령으로 실행될 수 있어 거부한다(실측: Ctrl+Z → 거부, `fg` → 다시 보내기 가능).
 - **평문만.** `\n`·`\t` 외 제어문자(ESC, BEL, C1 등)를 제거하고 trim, 1~4000자.
-- Orca: `orca terminal send --terminal=… --text=… --json`(Enter 없이, 여러 줄도 제출되지 않음) → 확인 → `orca terminal send --terminal=… --enter --json`. 글과 Enter를 한 번에 보내지 않으므로 `--wait-submit`의 차례 시작 관찰은 쓰지 않는다. `--flag=값` 형식이어야 `--`로 시작하는 글도 값으로 읽힌다. `result.send.accepted`가 아니면 `refusedReason`과 함께 알리고(거부 시 CLI가 0이 아닌 코드로 끝나도 출력을 읽음).
+- Orca: `orca terminal send --terminal=… --text=<ESC>[200~…<ESC>[201~ --json`(Enter 없이) → 확인 → `orca terminal send --terminal=… --enter --json`. Orca는 `--text`를 그대로 쓰므로 bracketed paste로 감싸야 탭·줄바꿈이 글로 남는다(실측: 감싸지 않으면 탭이 키로 먹힘). `cleanInput`이 ESC를 모두 지우므로 글이 붙여넣기를 일찍 닫을 수 없다. 글과 Enter를 한 번에 보내지 않으므로 `--wait-submit`의 차례 시작 관찰은 쓰지 않는다. `--flag=값` 형식이어야 `--`로 시작하는 글도 값으로 읽힌다. `result.send.accepted`가 아니면 `refusedReason`과 함께 알리고(거부 시 CLI가 0이 아닌 코드로 끝나도 출력을 읽음).
 - tmux: 고유 이름 버퍼에 **stdin으로** `load-buffer`(인수로 넘기면 끝의 `;`를 tmux가 명령 구분자로 먹음) → `paste-buffer -p -d`(bracketed paste라 줄바꿈이 조기 제출되지 않음, 실패하면 버퍼 삭제) → 150ms 후 상태·전면 소유를 **다시 확인**하고 `send-keys Enter`. 그사이 승인 화면(`waiting`)으로 바뀌었거나 화면에 입력창이 안 보이면 Enter를 누르지 않는다(작업 시작·종료는 그대로 제출). 작업 중이었으면 "대기열에 들어가 이어서 반영돼요"로 알린다.
+- **한 세션에 한 번에 하나.** 업무 카드와 말풍선에서 같은 세션으로 동시에 보내면 앞 보내기가 Enter까지 끝난 뒤 다음이 시작된다(main 프로세스 안 세션별 순서). 실측: 동시에 두 번 → 첫 글 제출, 둘째는 대기열 반영.
 - 결과를 확인하지 못한 실패(시간 초과 등)는 "보냈는지 확인하지 못했어요"로 알린다. 글이 이미 들어갔을 수 있어 그대로 다시 보내라고 하지 않는다.
 
 ## 경계

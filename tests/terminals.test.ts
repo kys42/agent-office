@@ -184,7 +184,7 @@ function fakeDeps(
         );
       if (file === '/bin/orca' && args[1] === 'send') {
         const text = args.find((arg) => arg.startsWith('--text='));
-        if (text) typed += text.slice('--text='.length);
+        if (text) typed += text.slice('--text='.length).replace(/\x1b\[20[01]~/g, '');
         if (args.includes('--enter')) {
           if (options.enterRefused)
             return JSON.stringify({ ok: true, result: { send: { accepted: false } } });
@@ -481,7 +481,13 @@ test('Orca types the text, looks again, then presses Enter on its own', async ()
     assert.deepEqual(orca, [
       read,
       // `--flag=value` keeps text that starts with dashes a value.
-      ['terminal', 'send', `--terminal=${HANDLE}`, '--text=--dry-run\nfirst', '--json'],
+      [
+        'terminal',
+        'send',
+        `--terminal=${HANDLE}`,
+        '--text=\x1b[200~--dry-run\nfirst\x1b[201~',
+        '--json',
+      ],
       read,
       ['terminal', 'send', `--terminal=${HANDLE}`, '--enter', '--json'],
     ]);
@@ -711,6 +717,31 @@ test('A working session takes a follow-up into its queue', async () => {
       const { deps, calls } = fakeDeps(dir);
       assert.match(await sendToTerminal(live, 'stop, do B', deps), /대기열/);
       assert.ok(sent(calls), live.host.kind);
+    }
+  });
+});
+
+test('Sends to one session wait their turn instead of typing into each other', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    for (const live of [orcaLive(), tmuxLive()]) {
+      const { deps, calls } = fakeDeps(dir);
+      const said = await Promise.all([
+        sendToTerminal(live, 'first', deps),
+        sendToTerminal(live, 'second', deps),
+      ]);
+      assert.equal(said.length, 2, live.host.kind);
+      const order = calls
+        .filter(
+          (c) =>
+            c.args.includes('send-keys') ||
+            c.args.includes('--enter') ||
+            c.args.includes('load-buffer') ||
+            c.args.some((a) => a.startsWith('--text=')),
+        )
+        .map((c) =>
+          c.args.includes('send-keys') || c.args.includes('--enter') ? 'enter' : 'type',
+        );
+      assert.deepEqual(order, ['type', 'enter', 'type', 'enter'], live.host.kind);
     }
   });
 });
