@@ -1070,7 +1070,8 @@ export class OfficeService extends EventEmitter {
         provider,
       );
     this.emitChanged(updates.map((s) => s.id));
-    // Only once taken in and sent: a pass that failed before leaves them to be taken again.
+    // Only once taken in and sent. If staging or sending fails, a changed live wait is retried
+    // by the next hot pass; transcript changes (already in the parse cache) by the next full collect.
     for (const { k, s, live } of taken)
       Object.assign(k, {
         mood: s.observedStatus ?? s.status,

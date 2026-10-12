@@ -727,15 +727,21 @@ async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpRe
   };
 }
 app.on('activate', () => showMain());
-/** The collector has been asked to stop and has stopped (or timed out): quitting may go on. */
+/** The collector has stopped (or timed out): quitting may go on. */
 let collectorClosed = false;
+/** A stop is in flight: repeated quit requests (a second ⌘Q, tray Quit) wait for it too. */
+let collectorClosing = false;
 app.on('before-quit', (event) => {
   quitting = true;
   if (collectorClosed || !bridge) return;
-  // Once: let the collector finish its pass and write what it staged, then quit for real.
+  // Let the collector finish its pass and write what it staged, then quit for real.
   event.preventDefault();
-  collectorClosed = true;
-  void bridge.close().finally(() => app.quit());
+  if (collectorClosing) return;
+  collectorClosing = true;
+  void bridge.close().finally(() => {
+    collectorClosed = true;
+    app.quit();
+  });
 });
 app.on('window-all-closed', () => {
   if (quitting) app.quit();
