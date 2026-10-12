@@ -125,7 +125,12 @@ export class OfficeStore {
     if (prefs.petAppearance) prefs.petAppearance = normalizePetCustomization(prefs.petAppearance);
     return prefs;
   }
-  upsert(sessions: Session[], provider: Provider) {
+  /**
+   * Stores one provider's collected sessions. A full pass (`partial` false) is the provider's
+   * whole list: stored sessions missing from it are deleted. A `partial` pass (the collector's hot
+   * path) writes only the sessions it carries and leaves every other one as it is.
+   */
+  upsert(sessions: Session[], provider: Provider, partial = false) {
     const put = this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?,?,?)');
     const get = this.db.prepare('SELECT data FROM sessions WHERE id=?');
     const remove = this.db.prepare('DELETE FROM session_search WHERE id=?');
@@ -214,9 +219,11 @@ export class OfficeStore {
         );
       }
       const present = new Set(sessions.map((s) => s.id));
-      for (const row of this.db
-        .prepare('SELECT id FROM sessions WHERE provider=?')
-        .all(provider) as { id: string }[]) {
+      for (const row of (partial
+        ? []
+        : this.db.prepare('SELECT id FROM sessions WHERE provider=?').all(provider)) as {
+        id: string;
+      }[]) {
         if (!present.has(row.id)) {
           this.db.prepare('DELETE FROM sessions WHERE id=?').run(row.id);
           remove.run(row.id);

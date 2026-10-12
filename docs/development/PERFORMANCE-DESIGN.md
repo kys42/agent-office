@@ -27,7 +27,7 @@
   - `detail(id, {before, limit=40})`은 최신 40개부터 cursor로 이전 페이지를 준다(`olderEvents`).
   - snapshot 소식은 살아 있는 화면에 필요한 것만 싣는다. `noticeStats`는 전체 기준으로 정확하다.
   - 지난 소식은 `noticePage`로, 분류 전체 읽음은 `noticeReadAll`로 처리한다.
-- 증분 수집(3.4)은 별도 PR이다.
+- 증분 수집(3.4): JSONL append 증분 읽기·metadata 캐시([#45](https://github.com/kys42/agent-office/issues/45)), 일하는 동료만 1초 hot path와 hot 파일 감시 힌트([#77](https://github.com/kys42/agent-office/issues/77)). 디렉터리 watcher·SQLite `data_version`·Git 무효화는 아직이다.
 
 핵심은 **변경 없는 기록을 다시 처리하지 않고, 필요한 화면에 필요한 요약만 전달하는 것**이다. 캐릭터 수를 줄이거나 실시간 소식을 늦추는 방식을 첫 해결책으로 삼지 않는다. 기존 [골든 정책](../golden/GOLDEN-OFFICE-POLICY.md), [관측 규격](../golden/OFFICE-OBSERVATION-PROTOCOL.md), [수집 계약](SESSION-INGESTION.md)을 유지한다.
 
@@ -181,6 +181,10 @@ watcher는 변경 힌트로만 쓴다. 파일 교체·inode·filename 누락·�
 파일 cursor는 `(source identity, dev/ino, generation, completeOffset, parserVersion)`을 포함한다. append 여부가 확실할 때만 증분 처리하고, 축소·교체·재작성 감지 시 기존 bounded reader로 복귀한다. 마지막 미완결 UTF-8/JSONL은 다음 append까지 보존하되 byte 상한을 둔다. 같은 크기 덮어쓰기까지 검출하도록 재검증 fingerprint와 주기적 대조를 둔다. offset과 파싱 상태는 저장 성공과 함께 반영해 crash 뒤 이벤트를 놓치지 않는다.
 
 > **구현됨 (#45)**: 폴링은 그대로 두고 JSONL append 증분 읽기(dev/ino·64바이트 guard·축소/교체/10분 대조 시 bounded reader 복귀)와 Codex index·DB/WAL, Claude index·sidecar의 mtime+size 캐시를 넣었다. cursor는 메모리에만 두므로 재시작 뒤에는 전체 경로로 읽어 누락이 없다. watcher·SQLite `data_version`·Git 무효화는 아직이다. 계약은 [세션 수집 문서](SESSION-INGESTION.md#jsonl-증분-읽기-45).
+
+> **부분 구현 (#77) — 일하는 동료만 빠르게**: 디렉터리 watcher 대신, 일하는(work/think/call, 최종 응답 뒤 10초 포함) JSONL 세션 최대 8개만 1초마다 stat하고 그 파일에만 `fs.watch` 힌트(150ms debounce)를 건다. 바뀐 세션은 전체 수집과 같은 파일 단계·캐시로 다시 만들고(탐색·metadata·Git 없이 직전 값 재사용) 부분 upsert 후 patch를 보낸다. Claude 실행 기록의 busy/waiting은 즉시 hot으로 승격하고 권한 대기 overlay도 이 경로에서 반영한다. 5초 전체 수집은 정본·복구 경로로 그대로다. 계약은 [세션 수집 문서](SESSION-INGESTION.md#일하는-동료-빠른-갱신-77).
+>
+> 측정(#77, Apple M3 Pro·Node 24, 수집기 단독 프로세스, Claude 세션 200개 + 일하는 세션, 60초): 진행 메시지 append → 그 내용을 담은 patch emit 지연은 20회 평균 **2,624ms → 196ms**(p90 4,763 → 497ms, 최대 5,006 → 737ms), 감시를 끈 stat 폴백만으로는 평균 442ms·최대 982ms. 수집기 CPU(단일 코어 기준)는 일하는 세션이 없을 때 0.65~0.90%(3회) → 0.72%로 잡음 범위 안(hot tick 하나 약 0.14ms: 실행 기록 폴더는 크기·mtime이 바뀐 파일만 다시 읽음)이다. 일하는 세션이 계속 쓰면 갱신 횟수가 5초당 1번에서 초당 최대 1번으로 늘어나는 만큼 저장·patch 비용이 늘어난다: 3개가 2초마다 쓰면 1.15% → 2.37%, 3개가 0.3초마다 쓰는 과부하에서 1.25% → 4.89%(emit 12 → 71회). 탐색·metadata·Git·ps는 늘지 않았고, 늘어난 몫은 갱신 1회당 파싱·notice·저장·snapshot diff(대략 세션당 3~5ms + patch당 6ms)다. 측정 스크립트는 저장소 밖 임시 도구로 썼다.
 
 SQLite `PRAGMA data_version`은 **같은 연결에서 관측한 값끼리만** 비교한다. 매번 새 연결에서 읽은 값을 비교하는 캐시는 잘못이다. DB 연결을 유지하더라도 장시간 read transaction은 유지하지 않는다. 연결 수/메모리를 제한하고 DB/WAL 교체를 처리한다. [SQLite data_version](https://www.sqlite.org/pragma.html#pragma_data_version)
 

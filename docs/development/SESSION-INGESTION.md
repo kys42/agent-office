@@ -5,7 +5,8 @@
 ## 처리 흐름
 
 ```text
-OfficeService (5초 폴링, 읽기 범위·오류 격리)
+OfficeService (5초 전체 수집, 읽기 범위·오류 격리
+               + 일하는 동료만 1초 hot path: stat·fs.watch 힌트 → 같은 파일 단계 → 부분 저장)
   ├─ JSONL 탐색 → RecordWindowCache(append 증분 / readRecords) → Orca byte reader
   │                            → resolveIdentity + parseRecords
   ├─ Codex/Claude index·DB·sidecar → 이름·작업 위치 보완
@@ -159,3 +160,17 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
 - **metadata 캐시**: Codex `session_index.jsonl`·가장 최신 `state_N.sqlite`·`-wal`의 mtime+size와 선택된 DB 이름이 같으면 지난 결과를 그대로 쓴다. DB나 존재하는 index 읽기가 실패한 결과는 기억하지 않는다. Claude는 프로젝트 목록은 매번 읽고 `sessions-index.json`을 파일별 mtime+size로, subagent `.meta.json`은 mtime+size로 기억한다(실제로 없는 경우는 기억하고, 있는데 읽기 실패한 경우는 다음에 다시 읽는다). 테스트는 `resetCodexMetadataCache`/`resetClaudeMetadataCache`로 초기화한다.
 
 검증은 `tests/record-window.test.ts`(단계별 append·3 MiB 경계·미완결 줄·UTF-8 분할·CRLF·무작위 분할이 `readRecords`와 같음, 축소/교체/guard/10분 대조/큰 첫 줄, 예산·prune)와 `tests/incremental-collect.test.ts`(서비스 append 수집과 revision, metadata 캐시)다.
+
+## 일하는 동료 빠른 갱신 (#77)
+
+5초 전체 수집은 그대로 정본·복구 경로다. 그 사이 일하는 동료만 `OfficeService`의 hot path가 1초 안에(파일 감시 힌트가 있으면 1초 미만) 다시 읽는다. 결과 계약: **같은 바이트에 대해 전체 수집이 만들 세션과 같은 세션(revision 포함)** 을 저장한다.
+
+- **파일 단계 공유**: 파일 하나를 세션으로 만드는 단계(파싱 캐시 stamp `office-v11:size:mtime` → `RecordWindowCache` 증분 읽기 → `parseRecords` → metadata 이름 → Claude subagent sidecar)는 `readSession` 하나다. 전체 수집과 hot path가 같은 `cache`·`windows`를 쓰므로 한 파일을 두 번 파싱하지 않는다. hot path가 먼저 읽은 파일은 다음 전체 수집에서 캐시 적중이고 revision도 같아 저장소 쓰기가 없다.
+- **직전 값 재사용**: 전체 수집이 저장 직전 세션마다 원본 파일 목록(병합 순서), metadata 맵, 작업 위치 입력(`provider·project·cwd·workingLocation.path`)과 그때 정한 workspace를 기억한다(`KnownSession`). hot path는 탐색·Codex/Claude metadata 읽기·Git을 하지 않는다. 같은 세션의 조각 파일이 여럿이면 전부 다시 단계에 넣어(바뀌지 않은 건 캐시) `mergeSessions`로 합친다. 작업 위치 입력이 바뀌었거나, 파일이 사라졌거나, 다른 ID가 나오면 그 세션은 건드리지 않고 전체 수집에 맡긴다. workspace는 같은 입력이면 같은 값이고(`enrichWorkspaces`와 같은 규칙으로 `locationSource`만 현재 값), Git 관측의 갱신은 다음 전체 수집이 반영한다.
+- **대상(hot 집합)**: Claude·Codex·OpenClaw **JSONL** 세션 중 시간 정책을 적용한 상태가 work/think/call이거나, 최종 응답(`done`) 뒤 10초 이내인 세션. OpenClaw DB에서도 나오는 세션은 제외한다(파일만으로 다시 만들 수 없음). 최근 활동순 최대 8개, 나머지는 5초 주기 그대로. 전체 수집 뒤와 hot 처리 뒤마다 다시 고르고, 빠지면 감시를 닫는다.
+- **Claude 실행 기록 승격**: hot pass마다 `<claude config>/sessions/*.json`을 한 번 읽는다. hot이 아닌 알려진 Claude 세션의 기록이 `busy`/`waiting`이면 기존 검증(`isLiveProcess`, PID·procStart 30초 메모)을 거쳐 hot으로 올린다(새 요청 도착이 transcript보다 먼저 보임). 승격은 그 세션의 기록이 busy/waiting인 동안 유지된다. hot Claude 세션에는 같은 읽기로 권한 대기 overlay(`applyLiveWait`)를 적용하고, 대기 기록이 바뀌면(`liveWaitSignature`) transcript가 그대로여도 다시 저장한다. ps 호출은 기존 메모를 넘지 않는다.
+- **주기와 경합**: 1초 타이머가 hot 파일만 stat해 파싱 캐시 stamp와 비교한다. 바뀐 세션들은 한 번에 처리해 공급자별 `store.upsert(sessions, provider, true)`(부분 저장: 목록에 없는 세션을 지우지 않음)를 하고 `emitSnapshot()`(의미 있는 변경만 patch)한다. 변경을 받아들이는 pass는 최소 1초 간격이라 세션별 최소 간격도 1초다. 전체 수집이 진행 중이면 hot pass는 아무것도 하지 않고, hot pass가 진행 중이면 전체 수집이 그 끝을 기다린 뒤 시작한다. 전체 수집은 아무것도 건너뛰지 않는다.
+- **fs.watch 힌트**: hot 파일에만 `fs.watch`(persistent:false)를 건다. 이벤트가 오면 150ms 모아(다음 허용 시각보다 이르지 않게) 바로 hot pass를 돈다. 감시 시작 실패·`error` 이벤트는 그 파일을 감시 없이(1초 stat) 두고, hot에서 빠질 때 다시 시도할 수 있게 잊는다. 놓친 이벤트는 1초 stat과 5초 전체 수집이 복구한다. `stop()`은 타이머·힌트·감시를 모두 닫는다.
+- **불변**: 저장 기록은 canonical, 소식 ID·버전·이벤트 ID는 그대로다. 일시정지·공급자 끄기에서는 hot 집합이 비워진다.
+
+검증은 `tests/hot-path.test.ts`(append가 전체 수집 없이 다음 tick에 저장·patch, 전체 수집·새 수집기와 같은 revision, 승격·유예·강등·상한 8, 실행 기록 승격과 권한 대기, 전체 수집과 겹치지 않음·한 번만 읽음, 감시 힌트와 감시 실패 시 stat 폴백, `stop()` 뒤 타이머·감시 없음, 부분 upsert)다.
