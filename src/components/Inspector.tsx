@@ -119,6 +119,8 @@ export function Inspector({
   const [view, setView] = useState(() => freshConversation(session));
   const s = view.session;
   const panelRef = useRef<HTMLElement>(null);
+  // The card is being moved by its header (see the card's header handlers).
+  const moving = useRef(false);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const el = panelRef.current!;
@@ -801,6 +803,11 @@ export function Inspector({
     </>
   );
   if (card) {
+    const endMove = () => {
+      if (!moving.current) return;
+      moving.current = false;
+      void api.card?.('drag-end');
+    };
     const item = (label: string, run: () => void, close: () => void, disabled = false) => (
       <button
         role="menuitem"
@@ -822,7 +829,20 @@ export function Inspector({
           ref={panelRef}
           tabIndex={-1}
         >
-          <div className="card-head">
+          <div
+            className="card-head"
+            // Pressing the header's empty space moves the card (the desktop follows the cursor).
+            onPointerDown={(e) => {
+              if (e.button !== 0 || !api.card) return;
+              if ((e.target as Element).closest('button, input, form, a, .card-menu')) return;
+              e.currentTarget.setPointerCapture(e.pointerId);
+              moving.current = true;
+              void api.card('drag-start');
+            }}
+            onPointerUp={endMove}
+            onPointerCancel={endMove}
+            onLostPointerCapture={endMove}
+          >
             <div className={`card-avatar face-${s.provider} status-${s.status}`}>
               <Sprite session={s} provider={s.provider} mood={s.status} size={36} />
             </div>
@@ -874,14 +894,24 @@ export function Inspector({
                 <PackageOpen size={15} />
               </button>
               <button
-                className="icon-btn"
-                aria-label={t.inspector.revealSource}
-                title={t.inspector.revealSource}
-                disabled={demo || !isDesktop || privacy}
-                onClick={() => api.reveal(s.id).catch((e) => notify(e.message))}
+                className={`icon-btn ${colleague.pinned ? 'gold' : ''}`}
+                aria-label={colleague.pinned ? t.inspector.unpin : t.inspector.pin}
+                aria-pressed={colleague.pinned}
+                title={colleague.pinned ? t.inspector.unpin : t.inspector.pinTitle}
+                onClick={() => onPin(colleague)}
               >
-                <Folder size={15} />
+                <Pin size={15} />
               </button>
+              {onExpand && (
+                <button
+                  className="icon-btn"
+                  aria-label={t.inspector.expand}
+                  title={t.inspector.expandTitle}
+                  onClick={onExpand}
+                >
+                  <Maximize2 size={15} />
+                </button>
+              )}
               <CardMenu label={t.inspector.card.more}>
                 {(close) => (
                   <>
@@ -893,6 +923,12 @@ export function Inspector({
                     {!privacy &&
                       onZoneRules &&
                       item(t.inspector.zone, () => setZoneOpen(true), close)}
+                    {item(
+                      t.inspector.revealSource,
+                      () => void api.reveal(s.id).catch((e) => notify(e.message)),
+                      close,
+                      demo || !isDesktop || privacy,
+                    )}
                     {item(
                       s.archived ? t.inspector.unarchive : t.inspector.archive,
                       () => void patch({ archived: !s.archived }),
@@ -959,20 +995,6 @@ export function Inspector({
                 <Terminal size={13} />
                 {resumeLabel}
               </button>
-              <button
-                className={`card-action ${colleague.pinned ? 'is-on' : ''}`}
-                aria-pressed={colleague.pinned}
-                onClick={() => onPin(colleague)}
-              >
-                <Pin size={13} />
-                {colleague.pinned ? t.inspector.unpin : t.inspector.pin}
-              </button>
-              {onExpand && (
-                <button className="card-action" onClick={onExpand} title={t.inspector.expandTitle}>
-                  <Maximize2 size={13} />
-                  {t.inspector.card.office}
-                </button>
-              )}
             </div>
             {live ? (
               <TerminalSend

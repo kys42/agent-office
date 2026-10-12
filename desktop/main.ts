@@ -477,7 +477,32 @@ function showCard(target: CardTarget, anchor: Rect) {
     reveal();
   }
 }
+/**
+ * Moving the card by its header follows the cursor from here, like the pet. A CSS drag region
+ * would make Chromium re-send the window's drag regions on every layout change of the live
+ * conversation, and the card's clicks felt slow and got lost.
+ */
+let cardDrag: ReturnType<typeof setInterval> | null = null;
+function startCardDrag() {
+  if (!card || card.isDestroyed()) return;
+  stopCardDrag();
+  const cursor = screen.getCursorScreenPoint();
+  const [x, y] = card.getPosition();
+  const offset = { x: cursor.x - x, y: cursor.y - y };
+  const started = Date.now();
+  cardDrag = setInterval(() => {
+    if (!card || card.isDestroyed() || Date.now() - started > 30_000) return stopCardDrag();
+    const c = screen.getCursorScreenPoint();
+    card.setPosition(c.x - offset.x, c.y - offset.y);
+  }, 16);
+}
+function stopCardDrag() {
+  if (!cardDrag) return;
+  clearInterval(cardDrag);
+  cardDrag = null;
+}
 function hideCard() {
+  stopCardDrag();
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
   if (card && !card.isDestroyed() && card.isVisible()) {
@@ -552,8 +577,10 @@ function setupIPC() {
   });
   ipcMain.handle('office:card', (e, action, target, anchor) => {
     trusted(e);
-    if (action === 'close') {
+    if (action === 'close' || action === 'drag-start' || action === 'drag-end') {
       if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
+      if (action === 'drag-start') return startCardDrag();
+      if (action === 'drag-end') return stopCardDrag();
       return hideCard();
     }
     const valid =

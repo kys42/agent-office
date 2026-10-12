@@ -138,14 +138,26 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   await expect(aside.locator('.now-card')).toHaveCount(0);
   await expect(aside.locator('.card-chip')).toHaveCount(0);
   await expect(aside.locator('.inspector-actions')).toHaveCount(0);
-  // Hand-off and the source folder sit in the header; pin, terminal and big office above the box.
+  // Hand-off, pin and the big office sit top right; the terminal button above the box.
   const head = aside.locator('.card-head');
-  await expect(head.getByRole('button', { name: '인수인계 꾸리기' })).toBeVisible();
-  await expect(head.getByRole('button', { name: '원본 위치 열기' })).toBeVisible();
+  for (const name of [
+    '인수인계 꾸리기',
+    '사무실에 고정',
+    '큰 사무실에서 보기',
+    '카드 메뉴',
+    '업무 카드 닫기',
+  ])
+    await expect(head.getByRole('button', { name })).toBeVisible();
   const actions = aside.locator('.card-actions');
-  await expect(actions.getByRole('button', { name: 'Orca로 이동' })).toBeVisible();
-  await expect(actions.getByRole('button', { name: '사무실에 고정' })).toBeVisible();
-  await expect(actions.getByRole('button', { name: /큰 사무실/ })).toBeVisible();
+  await expect(actions.getByRole('button')).toHaveText(['Orca로 이동']);
+  // The header moves the card by the desktop following the cursor: no CSS drag region.
+  expect(
+    await page.evaluate(() =>
+      [...document.querySelectorAll('*')].some(
+        (el) => getComputedStyle(el).getPropertyValue('-webkit-app-region') === 'drag',
+      ),
+    ),
+  ).toBe(false);
   // Recent issues and PRs above the tabs: two, the rest behind "n more".
   const recent = aside.locator('.artifact-list');
   await expect(recent.locator('.artifact-row')).toHaveCount(2);
@@ -200,7 +212,7 @@ test('The card menu holds the rest, and works from the keyboard', async ({ page 
   const more = aside.getByRole('button', { name: '카드 메뉴' });
   await more.click();
   const menu = aside.getByRole('menu');
-  for (const name of ['이름 바꾸기', '이 동료 꾸미기'])
+  for (const name of ['이름 바꾸기', '이 동료 꾸미기', '원본 위치 열기'])
     await expect(menu.getByRole('menuitem', { name })).toBeVisible();
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -234,8 +246,8 @@ test('A colleague waiting for the person makes the terminal button the primary o
   await expect(go).toHaveClass(/primary/);
   await go.click();
   await expect.poll(() => page.evaluate(() => (window as any).jumps)).toEqual(['demo:3']);
-  // Pin from the action row.
-  await aside.getByRole('button', { name: '사무실에 고정' }).click();
+  // Pin from the header.
+  await aside.locator('.card-head').getByRole('button', { name: '사무실에 고정' }).click();
 });
 
 test('Sharing the screen hides recent work and names but keeps the chat card usable', async ({
@@ -269,4 +281,19 @@ test("A helper's card leads back to the colleague it works for", async ({ page }
   await expect(parent).toBeVisible();
   await parent.click();
   await expect(aside.locator('.card-head h2')).toContainText('Coco');
+});
+
+test('Pressing the header moves the card; its buttons do not', async ({ page }) => {
+  const aside = await card(page);
+  const head = aside.locator('.card-head');
+  const box = (await head.boundingBox())!;
+  // The empty space between the name and the buttons.
+  await page.mouse.move(box.x + box.width * 0.55, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).cardCalls))
+    .toEqual(['drag-start', 'drag-end']);
+  await head.getByRole('button', { name: '사무실에 고정' }).click();
+  expect(await page.evaluate(() => (window as any).cardCalls)).toEqual(['drag-start', 'drag-end']);
 });

@@ -469,7 +469,7 @@ export interface OfficeAPI {
    * close it or go to the full office.
    */
   card?: (
-    action: 'open' | 'close' | 'expand',
+    action: 'open' | 'close' | 'expand' | 'drag-start' | 'drag-end',
     target?: CardTarget,
     anchor?: ScreenRect,
   ) => Promise<void>;

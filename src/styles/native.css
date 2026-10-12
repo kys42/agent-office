@@ -817,11 +817,15 @@ body.card-mode:not(.is-mac) .dock-card {
   gap: 10px;
   padding: 12px 8px 10px 14px;
   border-bottom: 0.5px solid var(--line-2);
-  /* The card moves by its header (its controls stay clickable). */
-  -webkit-app-region: drag;
+  /* Moved by the desktop following the cursor (no CSS drag region: see startCardDrag). */
+  cursor: grab;
+  user-select: none;
 }
-.inspector-card .card-head :is(button, input, form, .card-menu, h2) {
-  -webkit-app-region: no-drag;
+.inspector-card .card-head :is(button, input, form, .card-menu) {
+  cursor: auto;
+}
+.inspector-card .card-head .icon-btn.gold {
+  color: var(--st-error);
 }
 .card-avatar {
   flex: none;

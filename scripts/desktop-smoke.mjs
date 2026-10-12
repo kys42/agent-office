@@ -222,6 +222,9 @@ try {
       .getSize(),
   );
   assert.equal(reopenedWidth, 560, 'the card reopens at the size the person gave it');
+  // Its header moves it from the main process (no CSS drag region in the card).
+  await card.evaluate(() => window.office.card('drag-start'));
+  await card.evaluate(() => window.office.card('drag-end'));
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
