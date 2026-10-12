@@ -1087,44 +1087,41 @@ body.card-mode:not(.is-mac) .dock-card {
   text-align: center;
   color: var(--text-3);
 }
-/* The card's filters: the folded button and, opened, the filter row stick together at the top,
-   reachable while the chat sits scrolled to its newest message. */
+/* The card's filters: a small icon at the top right that stays while the chat sits at its newest
+   message; opened, the filter row drops below it as one card. */
 .conversation-sticky {
   position: sticky;
   top: 0;
   z-index: 6;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  padding-top: 6px;
+  align-items: flex-end;
+  height: 0;
+  overflow: visible;
 }
 .conversation-sticky .conversation-toolbar {
   position: static;
   align-self: stretch;
-  margin: 6px 0 0;
+  margin: 0;
   padding: 8px 10px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
-  box-shadow: inset 0 0 0 0.5px var(--line-2);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
 }
 .conversation-filters-block {
   display: contents;
 }
-.conversation-filter-toggle {
-  box-shadow: 0 2px 8px -4px rgba(0, 0, 0, 0.25);
-  align-self: flex-start;
-  width: fit-content;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin: 8px 0 2px;
-  padding: 2px 9px;
-  border-radius: 99px;
-  font-size: 11px;
-  color: var(--text-3);
-  background: var(--bg-3);
+.card-filter-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-2);
 }
-.conversation-filter-toggle.active {
+.card-filter-button:hover,
+.card-filter-button.active {
   color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1212,6 +1209,8 @@ body.card-mode:not(.is-mac) .dock-card {
   display: contents;
 }
 .terminal-send-chat .terminal-send-bar small {
+  /* The box's own placeholder already says where it goes. */
+  display: none;
   grid-row: 2;
   grid-column: 1 / -1;
   padding: 0 12px;
@@ -1231,4 +1230,160 @@ body.card-mode:not(.is-mac) .dock-card {
 .inspector-card .persona-run-picker {
   flex: none;
   margin: 8px 14px 0;
+}
+
+/* Breathing room under the tabs. */
+.inspector-card .inspector-scroll {
+  padding-top: 10px;
+}
+/* Hover/focus explanations for the card's icon buttons (native tooltips are unreliable in a
+   panel window). */
+.inspector-card [data-tip] {
+  position: relative;
+}
+.inspector-card [data-tip]:is(:hover, :focus-visible)::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 220px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: left;
+  color: var(--text);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+}
+/* The card's details: grouped rows like the system settings. */
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 0 10px;
+}
+.info-group {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-1) 82%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
+}
+.info-group h3 {
+  margin: 0;
+  padding: 9px 12px 5px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+}
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 0;
+  border-top: 0.5px solid var(--line);
+  border-radius: 0;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+  background: none;
+}
+.info-group h3 + .info-row {
+  border-top: 0;
+}
+.info-row > span {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.info-row > span svg {
+  color: var(--text-3);
+}
+.info-row > b,
+.info-row > code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.info-row > code {
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: none;
+}
+.info-link {
+  width: 100%;
+  cursor: pointer;
+}
+.info-link:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.info-link > svg {
+  flex: none;
+  color: var(--text-3);
+}
+.info-tokens {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 0.5px solid var(--line);
+}
+.info-tokens div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+}
+.info-tokens div + div {
+  border-left: 0.5px solid var(--line);
+}
+.info-tokens span {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.info-tokens b {
+  font-size: 14px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.info-context {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+  border-top: 0.5px solid var(--line);
+  font-size: 12px;
+}
+.info-context > div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-2);
+}
+.info-context progress {
+  width: 100%;
+  height: 6px;
+}
+.info-note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
+.card-info > .info-note {
+  padding: 0 4px;
 }

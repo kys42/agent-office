@@ -47,6 +47,9 @@ export const inspector = {
     progressLabel: 'Show progress notes',
     progressHidden: (n: number) => `${n} progress ${n === 1 ? 'note' : 'notes'} hidden`,
     office: 'Big office',
+    statusTitle: 'Status',
+    startPath: 'Started in',
+    model: 'Model',
   },
   tabs: {
     overview: 'Details',

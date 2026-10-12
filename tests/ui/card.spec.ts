@@ -161,6 +161,13 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   // Recent issues and PRs above the tabs: two, the rest behind "n more".
   const recent = aside.locator('.artifact-list');
   await expect(recent.locator('.artifact-row')).toHaveCount(2);
+  // Newest first.
+  await expect(recent.locator('.artifact-row').first()).toContainText('#95');
+  // Answers are signed with the colleague's name, not the tool's.
+  await expect(aside.locator('.message-assistant .message-meta').first()).toContainText('Coco');
+  await expect(aside.locator('.message-assistant .message-meta').first()).not.toContainText(
+    'Claude Code',
+  );
   await recent.getByRole('button', { name: /더 보기|1/ }).click();
   await expect(recent.locator('.artifact-row')).toHaveCount(3);
   // Only once: the office panel's tray stays out of the card (one read of the work, not two).
@@ -296,4 +303,14 @@ test('Pressing the header moves the card; its buttons do not', async ({ page }) 
     .toEqual(['drag-start', 'drag-end']);
   await head.getByRole('button', { name: '사무실에 고정' }).click();
   expect(await page.evaluate(() => (window as any).cardCalls)).toEqual(['drag-start', 'drag-end']);
+});
+
+test('Details read as grouped rows', async ({ page }) => {
+  const aside = await card(page);
+  await aside.getByRole('tab', { name: '작업 정보' }).click();
+  // Status, where it works, its helper (the fixture's), its usage.
+  await expect(aside.locator('.info-group')).toHaveCount(4);
+  await expect(aside.locator('.info-group').first()).toContainText('상태');
+  await expect(aside.getByRole('button', { name: /실행 경로/ })).toBeVisible();
+  await page.screenshot({ path: '.local/card-info.png' });
 });

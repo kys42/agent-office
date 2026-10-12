@@ -2,15 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
-import {
-  ChevronDown,
-  Copy,
-  Terminal,
-  Clock3,
-  MessageSquare,
-  ArrowDown,
-  ListFilter,
-} from 'lucide-react';
+import { ChevronDown, Copy, Terminal, Clock3, MessageSquare, ArrowDown } from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { parseArtifact } from '../shared/office';
@@ -31,9 +23,11 @@ function Message({
   expanded,
   onExpand,
   group,
+  name,
 }: {
   event: OfficeEvent;
   provider: Session['provider'];
+  name?: string;
   notify: (s: string) => void;
   expanded: boolean;
   onExpand: () => void;
@@ -52,7 +46,7 @@ function Message({
     event.kind === 'user'
       ? t.conversation.you
       : event.kind === 'assistant'
-        ? PROVIDERS[provider].name
+        ? (name ?? PROVIDERS[provider].name)
         : event.kind === 'tool'
           ? t.conversation.toolUse
           : event.kind === 'result'
@@ -140,6 +134,8 @@ export function Conversation({
   onOlder,
   compact = false,
   hideProgress = false,
+  name,
+  filtersOpen,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -152,6 +148,10 @@ export function Conversation({
   compact?: boolean;
   /** Progress notes left out of the whole conversation (the card's switch). */
   hideProgress?: boolean;
+  /** Who answers, as the office calls them (the card's chat); else the tool's name. */
+  name?: string;
+  /** The card opens its filters from a button beside its tabs. */
+  filtersOpen?: boolean;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -160,7 +160,6 @@ export function Conversation({
   const [count, setCount] = useState(24);
   const [newBelow, setNewBelow] = useState(false);
   const [filter, setFilter] = useState<ConversationFilter>('all');
-  const [showFilters, setShowFilters] = useState(false);
   const filterRef = useRef(filter);
   filterRef.current = filter;
   const [tools, setTools] = useState(false);
@@ -293,17 +292,7 @@ export function Conversation({
     >
       {/* One sticky block: the folded filters and, opened, the filters themselves. */}
       <div className={compact ? 'conversation-sticky' : 'conversation-filters-block'}>
-        {compact && (
-          <button
-            className={`conversation-filter-toggle ${showFilters ? 'active' : ''}`}
-            aria-expanded={showFilters}
-            onClick={() => setShowFilters((v) => !v)}
-          >
-            <ListFilter size={12} />
-            {filter === 'all' ? t.inspector.card.filters : CONVERSATION_LABELS[filter]}
-          </button>
-        )}
-        {(!compact || showFilters) && (
+        {(!compact || filtersOpen) && (
           <div className="conversation-toolbar">
             <div
               className="conversation-filters"
@@ -400,6 +389,7 @@ export function Conversation({
                 <Message
                   event={e}
                   provider={session.provider}
+                  name={name}
                   notify={notify}
                   key={e.id + i}
                   expanded={expanded.has(e.id)}
@@ -413,6 +403,7 @@ export function Conversation({
             key={g.id}
             event={g.events[0]}
             provider={session.provider}
+            name={name}
             notify={notify}
             expanded={expanded.has(g.id)}
             onExpand={() => toggleMessage(g.id)}

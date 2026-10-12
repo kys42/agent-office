@@ -68,7 +68,7 @@ export function CardMenu({
         ref={trigger}
         className="icon-btn"
         aria-label={label}
-        title={label}
+        data-tip={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}

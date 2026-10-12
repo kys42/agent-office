@@ -20,6 +20,7 @@ import {
   LayoutGrid,
   Maximize2,
   Sparkles,
+  ListFilter,
 } from 'lucide-react';
 import type {
   Session,
@@ -148,6 +149,7 @@ export function Inspector({
   const [packet, setPacket] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   // The card's chat shows progress notes unless the person switched them off (remembered).
   const [showProgress, setShowProgress] = useState(() => {
     try {
@@ -486,6 +488,162 @@ export function Inspector({
       </section>
     </>
   );
+  // The card's details: grouped rows, like the system settings (the office panel keeps its own).
+  const cardOverview = (
+    <div className="card-info">
+      <section className="info-group">
+        <h3>{t.inspector.card.statusTitle}</h3>
+        <div className="info-row">
+          <span>{t.inspector.overview.currentStatus}</span>
+          <b>{s.statusReason || MOODS[s.status].label}</b>
+        </div>
+        <div className="info-row">
+          <span>{t.inspector.overview.lastRun}</span>
+          <b>
+            {PHASE_LABELS[presentation.runtime.phase]} · {ago(presentation.runtime.at)}
+            {presentation.stale ? t.inspector.overview.staleRun : ''}
+          </b>
+        </div>
+        {s.relation?.role && (
+          <div className="info-row">
+            <span>{t.inspector.overview.role}</span>
+            <b>{s.relation.role}</b>
+          </div>
+        )}
+        {parent && (
+          <button className="info-row info-link" onClick={() => onSelect(parent.id)}>
+            <span>
+              {s.relation?.kind === 'fork' ? t.inspector.forkSource : t.inspector.parentTask}
+            </span>
+            <b>{sessionName(parent)}</b>
+            <ArrowRight size={13} />
+          </button>
+        )}
+      </section>
+      <section className="info-group">
+        <h3>{t.inspector.overview.whereTitle}</h3>
+        <div className="info-row">
+          <span>
+            <Folder size={13} />
+            {t.inspector.overview.project}
+          </span>
+          <b>{s.project}</b>
+        </div>
+        <div className="info-row">
+          <span>
+            <LayoutGrid size={13} />
+            {t.inspector.overview.zone}
+          </span>
+          <b>
+            {s.area
+              ? t.inspector.overview.zoneCustom(zoneLabel(s))
+              : t.inspector.overview.zoneByProject(s.project)}
+          </b>
+        </div>
+        <div className="info-row">
+          <span>
+            <GitBranch size={13} />
+            {t.inspector.overview.branch}
+          </span>
+          <b title={branchInfo(s).detail}>{branchInfo(s).label}</b>
+        </div>
+        <div className="info-row">
+          <span>
+            <Clock size={13} />
+            {t.inspector.overview.lastActive}
+          </span>
+          <b>
+            {date(s.updatedAt)} {time(s.updatedAt)}
+          </b>
+        </div>
+        <button
+          className="info-row info-link"
+          onClick={() => copy(s.cwd ?? '')}
+          disabled={!s.cwd}
+          title={s.cwd ?? ''}
+        >
+          <span>{t.inspector.card.startPath}</span>
+          <code>{shortPath(s.cwd)}</code>
+          <Copy size={12} />
+        </button>
+        {s.workingLocation && (
+          <div className="info-row">
+            <span>{t.inspector.overview.workingTitle}</span>
+            <code title={s.workingLocation.path}>{shortPath(s.workingLocation.path)}</code>
+          </div>
+        )}
+      </section>
+      {children.length > 0 && (
+        <section className="info-group">
+          <h3>{t.inspector.linkedRuns(children.length)}</h3>
+          {children.map((child) => (
+            <button
+              key={child.id}
+              className="info-row info-link"
+              onClick={() => onSelect(child.id)}
+            >
+              <span>
+                {child.relation?.kind === 'fork' ? t.inspector.fork : sessionScopeLabel(child)}
+              </span>
+              <b>{sessionName(child)}</b>
+              <ArrowRight size={13} />
+            </button>
+          ))}
+        </section>
+      )}
+      <section className="info-group">
+        <h3>{t.inspector.usage.title}</h3>
+        <div className="info-row">
+          <span>{t.inspector.card.model}</span>
+          <b>{s.model || t.inspector.usage.modelMissing}</b>
+        </div>
+        <div className="info-row">
+          <span>{t.inspector.usage.costLabel}</span>
+          <b>
+            {s.cost?.usd != null
+              ? `$${s.cost.usd.toLocaleString('en-US', { minimumFractionDigits: s.cost.usd < 0.01 ? 4 : 2, maximumFractionDigits: s.cost.usd < 0.01 ? 4 : 2 })}`
+              : t.inspector.usage.costUnknown}
+          </b>
+        </div>
+        <div className="info-tokens">
+          <div>
+            <span>{t.inspector.usage.inputTokens}</span>
+            <b>{compact(s.usage.input)}</b>
+          </div>
+          <div>
+            <span>{t.inspector.usage.outputTokens}</span>
+            <b>{compact(s.usage.output)}</b>
+          </div>
+          <div>
+            <span>{t.inspector.usage.totalTokens}</span>
+            <b>{compact(s.usage.total)}</b>
+          </div>
+        </div>
+        {s.usage.contextUsed !== null &&
+          s.usage.contextWindow !== null &&
+          s.usage.contextWindow > 0 && (
+            <div className="info-context">
+              <div>
+                <span>{t.inspector.usage.contextTitle}</span>
+                <b>
+                  {Math.min(100, Math.round((s.usage.contextUsed / s.usage.contextWindow) * 100))}%
+                </b>
+              </div>
+              <progress value={s.usage.contextUsed} max={s.usage.contextWindow} />
+            </div>
+          )}
+        <p className="info-note">{t.inspector.usage.costBasis}</p>
+      </section>
+      <p className="info-note">
+        {s.sourceKind === 'sqlite'
+          ? t.inspector.source.sqlite
+          : s.sourceKind === 'demo'
+            ? t.inspector.source.demo
+            : t.inspector.source.log}{' '}
+        · {s.partial ? t.inspector.source.partial : t.inspector.source.full}
+      </p>
+    </div>
+  );
   // Pinning belongs to the colleague: a persona is pinned when any of its runs is.
   const colleague = resident ?? s;
   const petEditor = (
@@ -613,7 +771,7 @@ export function Inspector({
   const scrollArea = (
     <>
       <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
-        {!privacy && children.length > 0 && (
+        {!card && !privacy && children.length > 0 && (
           <details className="related-runs">
             <summary>{t.inspector.linkedRuns(children.length)}</summary>
             {children.map((child) => (
@@ -654,11 +812,11 @@ export function Inspector({
             onReceipt={onReceipt}
           />
         ) : tab === 'overview' ? (
-          <>
-            {/* The card has no relation strip up top: branch and parent live with the details. */}
-            {card && relationStrip}
-            {overview}
-          </>
+          card ? (
+            cardOverview
+          ) : (
+            overview
+          )
         ) : tab === 'history' ? (
           <Conversation
             key={s.id}
@@ -670,6 +828,8 @@ export function Inspector({
             notify={notify}
             compact={card}
             hideProgress={card && !showProgress}
+            name={card ? (privacy ? undefined : sessionName(s)) : undefined}
+            filtersOpen={filtersOpen}
           />
         ) : (
           <div className="notes-editor">
@@ -887,7 +1047,7 @@ export function Inspector({
               <button
                 className="icon-btn"
                 aria-label={busy ? t.inspector.gathering : t.inspector.packHandoff}
-                title={t.inspector.packHandoff}
+                data-tip={t.inspector.packHandoff}
                 disabled={busy || privacy}
                 onClick={handoff}
               >
@@ -897,7 +1057,7 @@ export function Inspector({
                 className={`icon-btn ${colleague.pinned ? 'gold' : ''}`}
                 aria-label={colleague.pinned ? t.inspector.unpin : t.inspector.pin}
                 aria-pressed={colleague.pinned}
-                title={colleague.pinned ? t.inspector.unpin : t.inspector.pinTitle}
+                data-tip={colleague.pinned ? t.inspector.unpin : t.inspector.pinTitle}
                 onClick={() => onPin(colleague)}
               >
                 <Pin size={15} />
@@ -906,7 +1066,7 @@ export function Inspector({
                 <button
                   className="icon-btn"
                   aria-label={t.inspector.expand}
-                  title={t.inspector.expandTitle}
+                  data-tip={t.inspector.expandTitle}
                   onClick={onExpand}
                 >
                   <Maximize2 size={15} />
@@ -964,6 +1124,17 @@ export function Inspector({
           )}
           <div className="card-tabs-row">
             {tabBar}
+            {tab === 'history' && (
+              <button
+                className={`card-filter-button ${filtersOpen ? 'active' : ''}`}
+                aria-label={t.inspector.card.filters}
+                aria-expanded={filtersOpen}
+                data-tip={t.inspector.card.filters}
+                onClick={() => setFiltersOpen((v) => !v)}
+              >
+                <ListFilter size={14} />
+              </button>
+            )}
             {tab === 'history' && (
               <label className="card-progress-switch">
                 {t.inspector.card.progress}

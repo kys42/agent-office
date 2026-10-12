@@ -48,6 +48,9 @@ export const inspector: Messages['inspector'] = {
     progressLabel: '진행 소식 보이기',
     progressHidden: (n) => `진행 소식 ${n}개 숨김`,
     office: '큰 사무실',
+    statusTitle: '상태',
+    startPath: '실행 경로',
+    model: '모델',
   },
   tabs: {
     overview: '작업 정보',

@@ -50,10 +50,12 @@ export function ArtifactCards({
     e.preventDefault();
     void api.openArtifact(url).catch((err) => notify(err.message));
   };
+  // Newest first: issues and PRs share one rising number per repository.
+  const recent = [...items].sort((a, b) => b.number - a.number);
   if (variant === 'list')
     return (
       <section className="artifact-list" aria-label={t.artifacts.label}>
-        {(expanded ? items : items.slice(0, 2)).map((a) => (
+        {(expanded ? recent : recent.slice(0, 2)).map((a) => (
           <a
             className={`artifact-row artifact-${a.state || 'unknown'} kind-${a.kind}`}
             href={a.url}
