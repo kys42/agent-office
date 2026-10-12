@@ -23,7 +23,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { MOODS, type Session } from '../shared/types';
+import { MOODS, PROVIDERS, type Session } from '../shared/types';
 import { sessionName } from '../shared/office';
 import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
@@ -279,7 +279,7 @@ export function SpeechBubble({
       {onPopup && open && (
         <button
           className="bubble-popup"
-          aria-label={t.desk.row.openCard(privacy ? s.provider : sessionName(s))}
+          aria-label={t.desk.row.openCard(privacy ? PROVIDERS[s.provider].name : sessionName(s))}
           onClick={(e) => {
             e.stopPropagation();
             onPopup(e.currentTarget);
