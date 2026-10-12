@@ -15,11 +15,15 @@ export const QUOTA_BACKOFF_MS = 15 * 60_000;
  * privacy mode neither reads nor keeps any, like the usage panel (nothing is claimed then).
  * `privacy` is `null` until the preferences are known: no read before that.
  */
+/** One shared "no reading", so clearing never hands the model a new value to rebuild on. */
+const NONE: ProviderQuota[] = [];
+
 export function useQuotas(demo: boolean, privacy: boolean | null): ProviderQuota[] {
-  const [quotas, setQuotas] = useState<ProviderQuota[]>([]);
+  const [quotas, setQuotas] = useState<ProviderQuota[]>(NONE);
   useEffect(() => {
-    setQuotas([]);
-    if (demo || privacy !== false) return;
+    setQuotas(NONE);
+    // A host without the call (e.g. an older desktop bridge) has nothing to read.
+    if (demo || privacy !== false || typeof api.quotas !== 'function') return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     // The earliest next read: the pace after a success, the back-off after a failure. Timers
@@ -39,14 +43,14 @@ export function useQuotas(demo: boolean, privacy: boolean | null): ProviderQuota
       try {
         const read: unknown = await api.quotas();
         // Anything but a list of reads is no reading at all (unknown, never "used up").
-        const got = Array.isArray(read) ? (read as ProviderQuota[]) : [];
+        const got = Array.isArray(read) && read.length ? (read as ProviderQuota[]) : NONE;
         if (alive) setQuotas(got);
         // One tool not set up (e.g. no Codex) must not slow the others: back off only when
         // no tool gave a reading.
         if (!got.some((q) => q.state === 'ok')) wait = QUOTA_BACKOFF_MS;
       } catch {
         // A failed read leaves nothing claimed, like a provider error.
-        if (alive) setQuotas([]);
+        if (alive) setQuotas(NONE);
         wait = QUOTA_BACKOFF_MS;
       }
       next = Date.now() + wait;
