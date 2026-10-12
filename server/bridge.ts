@@ -58,13 +58,36 @@ export class ServiceBridge extends EventEmitter {
       this.worker.postMessage({ id, method, args });
     });
   }
-  async close() {
+  /**
+   * Asks the collector to stop cleanly (finish a pass in flight, write what the hot path staged,
+   * close its database) and waits up to `timeout` ms for it, then ends the worker either way.
+   */
+  async close(timeout = 3000) {
+    if (this.closing) return;
     this.closing = true;
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
       p.reject(new Error(m().server.rpc.closed));
     }
     this.pending.clear();
-    await this.worker.terminate();
+    const worker = this.worker;
+    if (!this.dead) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          const done = (message: { stopped?: boolean }) => {
+            if (!message?.stopped) return;
+            worker.off('message', done);
+            resolve();
+          };
+          worker.on('message', done);
+          worker.once('exit', () => resolve());
+          worker.postMessage({ stop: true });
+        }),
+        new Promise<void>((resolve) => (timer = setTimeout(resolve, timeout))),
+      ]);
+      clearTimeout(timer);
+    }
+    await worker.terminate();
   }
 }

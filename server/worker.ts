@@ -8,7 +8,13 @@ service.on('snapshot', (snapshot, patch) =>
     patch ? { event: 'patch', snapshot: patch } : { event: 'snapshot', snapshot },
   ),
 );
-parentPort?.on('message', async ({ id, method, args }) => {
+parentPort?.on('message', async ({ id, method, args, stop }) => {
+  // The app is quitting: finish what is in flight, write what the hot path staged, then say so.
+  if (stop) {
+    await service.shutdown().catch(() => {});
+    parentPort?.postMessage({ stopped: true });
+    return;
+  }
   try {
     parentPort?.postMessage({ id, result: await service.call(method, args) });
   } catch (e) {

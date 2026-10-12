@@ -56,7 +56,13 @@ const server = http.createServer(async (req, res) => {
 server.listen(4318, '127.0.0.1', () =>
   console.log('Agent Office collector · http://127.0.0.1:4318'),
 );
-process.on('SIGTERM', () => {
-  service.stop();
+// Finish a pass in flight and write what the hot path staged before exiting.
+let exiting = false;
+const exit = () => {
+  if (exiting) return;
+  exiting = true;
   server.close();
-});
+  void service.shutdown().finally(() => process.exit(0));
+};
+process.on('SIGTERM', exit);
+process.on('SIGINT', exit);

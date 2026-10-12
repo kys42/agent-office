@@ -269,7 +269,13 @@ export class OfficeService extends EventEmitter {
   readonly epoch = randomUUID();
   /** What was last sent, so a cycle that changed nothing sends nothing. */
   private sent: { index: SnapshotIndex; at: number; snapshot: Snapshot } | null = null;
-  /** Every visible notice as the office last listed it, for `emitChanged` to merge into. */
+  /** When a full office (with its check times) was last published; see `HEALTH_MS`. */
+  private healthAt = 0;
+  /**
+   * Every visible notice as the office last listed it, for `emitChanged` to merge into. Kept
+   * between passes: the same objects every full emit builds anyway, so its size follows the
+   * notices table (about what one `officeView` holds).
+   */
   private notices: { all: OfficeNotice[]; locale: Locale } | null = null;
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
@@ -382,10 +388,12 @@ export class OfficeService extends EventEmitter {
     const now = Date.now();
     const sent = this.sent;
     const change = sent ? diffSnapshot(sent.index, s, index) : null;
-    if (sent && change && !meaningful(change, sent.snapshot, s) && now - sent.at < HEALTH_MS)
+    if (sent && change && !meaningful(change, sent.snapshot, s) && now - this.healthAt < HEALTH_MS)
       // Nothing to publish: answer with what was published, the baseline of the next patch.
       return sent.snapshot;
     s.version = ++this.version;
+    // Only a whole office carries the check times: hot patches never push the next one back.
+    this.healthAt = now;
     return this.publish(s, index, sent && change);
   }
   /** Makes `s` (indexed as `index`) the published office; `change` from the last one, if any. */
@@ -473,6 +481,9 @@ export class OfficeService extends EventEmitter {
       if (changed.has(s.id)) {
         const was = before.get(s.id)!;
         if (s.attachedTo !== was.attachedTo || s.officeSeat !== was.officeSeat) return null;
+        // An unattached helper stands on its own desk only while it is shown at all
+        // (`helperPresence`): whether it still is depends on more than this session.
+        if (isHelper(s) && !s.attachedTo) return null;
         next.set(s.id, localizeSession(s, locale));
       }
     // Notices: these sessions' own, merged into the rest as last listed.
@@ -554,19 +565,45 @@ export class OfficeService extends EventEmitter {
       if (Date.now() - this.passedAt >= this.hot.tickMs - TICK_SLACK_MS) void this.hotTick();
     }, this.hot.tickMs);
   }
+  /** Stops at once: what a pass in flight had not written yet is written by `close` if it can. */
   stop() {
-    this.stopped = true;
+    this.halt();
+    this.close();
+  }
+  /**
+   * Stops and lets a full pass or hot pass in flight finish first, then closes the store, which
+   * writes whatever the hot path staged. For a clean quit (desktop, dev server).
+   */
+  async shutdown() {
+    // No new passes from here; the ones in flight run to their end (and stage what they read).
+    this.stopping = true;
+    this.clearTimers();
+    await Promise.allSettled([this.pending, this.hotRun]);
+    this.halt();
+    this.close();
+  }
+  private stopping = false;
+  private clearTimers() {
     if (this.timer) clearTimeout(this.timer);
     if (this.hotTimer) clearInterval(this.hotTimer);
     if (this.hintTimer) clearTimeout(this.hintTimer);
     this.timer = this.hotTimer = this.hintTimer = null;
+  }
+  private halt() {
+    this.stopped = true;
+    this.clearTimers();
     this.hotSet.clear();
     this.syncWatches();
+  }
+  private closed = false;
+  private close() {
+    if (this.closed) return;
+    this.closed = true;
     this.store.close();
   }
   async refresh(): Promise<Snapshot> {
-    if (this.stopped) throw new Error(m().server.rpc.stopped);
     if (this.pending) return this.pending;
+    if (this.stopped || this.stopping) throw new Error(m().server.rpc.stopped);
     // A hot pass in flight finishes first: the two never read the same file at once.
     const hot = this.hotRun ?? Promise.resolve();
     this.pending = hot
@@ -891,7 +928,15 @@ export class OfficeService extends EventEmitter {
     for (const file of wanted.keys()) {
       if (this.watchers.has(file) || this.unwatchable.has(file)) continue;
       try {
-        const watcher = watch(file, { persistent: false }, () => this.hint());
+        const watcher = watch(file, { persistent: false }, (event) => {
+          // Renamed or replaced: this watch follows the old inode. Drop it; the next pass
+          // watches whatever is at the path now (the stat tick covers the gap).
+          if (event === 'rename') {
+            watcher.close();
+            if (this.watchers.get(file) === watcher) this.watchers.delete(file);
+          }
+          this.hint();
+        });
         watcher.on('error', () => {
           watcher.close();
           this.watchers.delete(file);
@@ -905,7 +950,7 @@ export class OfficeService extends EventEmitter {
   }
   /** A hot file changed: process it shortly, once a burst of writes has settled. */
   private hint(delay = this.hot.debounceMs) {
-    if (this.stopped) return;
+    if (this.stopped || this.stopping) return;
     const now = Date.now();
     // Not before the next pass may take changes in: an earlier one would only find it too soon.
     const at = Math.max(now + delay, this.processedAt + this.hot.minMs);
@@ -922,7 +967,7 @@ export class OfficeService extends EventEmitter {
    * running (a hint then runs another right after). Never rejects.
    */
   hotTick(hinted = false): Promise<void> {
-    if (this.stopped || this.pending) return Promise.resolve();
+    if (this.stopped || this.stopping || this.pending) return Promise.resolve();
     if (this.hotRun) {
       if (hinted) this.hotAgain = true;
       return this.hotRun;
@@ -956,20 +1001,22 @@ export class OfficeService extends EventEmitter {
       const records = await readClaudeProcessesCached(this.live.sessionsDir, this.liveFiles);
       // Promotion: a busy or waiting process means its transcript is about to move.
       this.rehot(now, prefs);
-      const cold = new Set(claude.filter((k) => !this.hotSet.has(k.id)).map((k) => k.nativeId));
+      // Sessions not hot on their own, and those hot only by an earlier promotion: a promotion
+      // holds only while its process is verified alive (and the same process) on every pass,
+      // through the same memoized check, so a dead or recycled PID frees its slot.
+      const wanted = new Set(
+        claude
+          .filter((k) => !this.hotSet.has(k.id) || this.livePromoted.has(k.id))
+          .map((k) => k.nativeId),
+      );
       const active = records.some((r) => LIVE_ACTIVE.has(r.status))
-        ? await liveClaudeProcesses(this.live, cold, LIVE_ACTIVE, records).catch(() => new Map())
+        ? await liveClaudeProcesses(this.live, wanted, LIVE_ACTIVE, records).catch(() => new Map())
         : new Map<string, ClaudeProcess>();
       const promoted = new Map<string, number>();
       for (const k of claude) {
         const live = active.get(k.nativeId);
-        if (live) promoted.set(k.id, live.statusUpdatedAt ?? live.updatedAt);
-        // Still busy while hot: it stays promoted until its process goes quiet.
-        else if (
-          this.livePromoted.has(k.id) &&
-          records.some((r) => r.sessionId === k.nativeId && LIVE_ACTIVE.has(r.status))
-        )
-          promoted.set(k.id, this.livePromoted.get(k.id)!);
+        if (live)
+          promoted.set(k.id, this.livePromoted.get(k.id) ?? live.statusUpdatedAt ?? live.updatedAt);
       }
       this.livePromoted = promoted;
       this.rehot(now, prefs);
@@ -1008,28 +1055,30 @@ export class OfficeService extends EventEmitter {
     const wait = this.processedAt + this.hot.minMs - Date.now();
     if (wait > (hinted ? 0 : TICK_SLACK_MS)) return this.hint(wait);
     this.processedAt = Date.now();
-    const updates: Session[] = [];
+    const taken: { k: KnownSession; s: Session; live: ClaudeProcess | undefined }[] = [];
     for (const { k, files, live } of due) {
       if (this.stopped || this.pending) break;
       const s = await this.hotSession(k, files, live);
-      if (!s) continue;
-      updates.push(s);
-      Object.assign(k, {
-        mood: s.observedStatus ?? s.status,
-        updatedAt: s.updatedAt,
-        wait: liveWaitSignature(live),
-      });
+      if (s) taken.push({ k, s, live });
     }
-    if (this.stopped || !updates.length) return;
+    if (this.stopped || !taken.length) return;
+    const updates = taken.map(({ s }) => s);
     // Taken in memory only; the next full pass of each provider writes them (`OfficeStore.stage`).
     for (const provider of new Set(updates.map((s) => s.provider)))
       this.store.stage(
         updates.filter((s) => s.provider === provider),
         provider,
       );
+    this.emitChanged(updates.map((s) => s.id));
+    // Only once taken in and sent: a pass that failed before leaves them to be taken again.
+    for (const { k, s, live } of taken)
+      Object.assign(k, {
+        mood: s.observedStatus ?? s.status,
+        updatedAt: s.updatedAt,
+        wait: liveWaitSignature(live),
+      });
     // A final reply starts its grace period; idle sessions leave the hot set.
     this.rehot(Date.now(), prefs);
-    this.emitChanged(updates.map((s) => s.id));
   }
   /** One hot session rebuilt from its files, or null to leave it to the full pass. */
   private async hotSession(

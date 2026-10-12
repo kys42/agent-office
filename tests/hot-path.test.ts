@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { appendFile, mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { OfficeService, HOT_DEFAULTS } from '../server/service.js';
 import { OfficeStore } from '../server/store.js';
+import { ServiceBridge } from '../server/bridge.js';
 import { parseRecords } from '../server/adapters/normalize.js';
 import { readClaudeProcessesCached, type ClaudeLiveDeps } from '../server/adapters/claude-live.js';
 import type { Session, Snapshot } from '../src/shared/types.js';
@@ -696,5 +697,266 @@ test('Closing the collector writes what the hot path staged', async () => {
     }
   } finally {
     await rm(o.temp, { recursive: true, force: true });
+  }
+});
+
+test('A live wait shown only by the hot path is resolved when it ends before the full pass', async () => {
+  const o = await office();
+  const id = sid(19);
+  const now = Date.now();
+  try {
+    await writeFile(
+      o.file(id),
+      user(id, now - 5000, '테스트 돌려 줘') + progress(id, now - 4000, '돌립니다', 'toolu_bash'),
+    );
+    o.service.live = liveDeps(o.sessionsDir, [4242]);
+    const record = path.join(o.sessionsDir, '4242.json');
+    await o.service.refresh();
+    await writeFile(
+      record,
+      processRecord(4242, id, {
+        status: 'waiting',
+        waitingFor: 'permission prompt',
+        statusUpdatedAt: now - 3000,
+      }),
+    );
+    await o.service.hotTick();
+    assert.equal(o.stored(id).status, 'call');
+    const call = ((await o.service.call('snapshot')) as Snapshot).notices!.find(
+      (n) => n.kind === 'attention',
+    )!;
+    assert.ok(call && !call.resolvedAt);
+
+    // Approved; the transcript has not moved yet. The full pass comes before any hot pass.
+    await writeFile(
+      record,
+      processRecord(4242, id, { status: 'busy', statusUpdatedAt: now - 1000 }),
+    );
+    await o.service.refresh();
+    assert.notEqual(o.stored(id).status, 'call');
+    const after = (await o.service.call('snapshot')) as Snapshot;
+    assert.ok(after.notices!.find((n) => n.id === call.id)?.resolvedAt, 'the call is resolved');
+    assert.ok(
+      onDisk(o.service.store, call.sessionId).notices.find((n) => n.id === call.id).resolvedAt,
+    );
+  } finally {
+    await o.done();
+  }
+});
+
+test('A promotion is checked again every pass: a dead process frees its slot', async () => {
+  const o = await office();
+  const id = sid(20);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 3600_000, '옛일') + final(id, now - 3599_000, '끝'));
+    await o.service.refresh();
+    await writeFile(path.join(o.sessionsDir, '4242.json'), processRecord(4242, id));
+    o.service.live = liveDeps(o.sessionsDir, [4242]);
+    await o.service.hotTick();
+    assert.equal(o.service.hotSessions().length, 1, 'promoted');
+    // The process died; its record still says busy.
+    o.service.live = liveDeps(o.sessionsDir, []);
+    await o.service.hotTick();
+    assert.deepEqual(o.service.hotSessions(), [], 'demoted');
+  } finally {
+    await o.done();
+  }
+});
+
+test('A receipt on a hot-shown notice is on disk at once', async () => {
+  const o = await office();
+  const id = sid(21);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '질문') + progress(id, now - 4000, '보는 중'));
+    await o.service.refresh();
+    await appendFile(o.file(id), final(id, Date.now(), '바로 저장될 읽음'));
+    await o.service.hotTick();
+    const reply = ((await o.service.call('snapshot')) as Snapshot).notices!.find((n) =>
+      n.text.includes('바로 저장될 읽음'),
+    )!;
+    await o.service.call('notices', [[{ id: reply.id, version: reply.version }], 'read']);
+    const disk = onDisk(o.service.store, reply.sessionId).notices.find((n) => n.id === reply.id);
+    assert.ok(disk?.seenAt, 'written before any full pass');
+    const shown = ((await o.service.call('snapshot')) as Snapshot).notices!.find(
+      (n) => n.id === reply.id,
+    )!;
+    o.sent.length = 0;
+    await o.service.refresh();
+    assert.deepEqual(
+      onDisk(o.service.store, reply.sessionId).notices.find((n) => n.id === reply.id),
+      (({ background: _shownOnly, ...stored }) => stored)(JSON.parse(JSON.stringify(shown))),
+      'the full pass wrote the same notice',
+    );
+    assert.equal(o.sent.length, 0);
+  } finally {
+    await o.done();
+  }
+});
+
+test('shutdown() waits for passes in flight, then writes what was staged', async () => {
+  const o = await office();
+  const id = sid(22);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '일') + progress(id, now - 4000, '진행'));
+    await o.service.refresh();
+    const key = o.stored(id).id;
+    // A hot pass in flight (slow read) when the app quits.
+    o.slow.ms = 150;
+    await appendFile(o.file(id), final(id, Date.now(), '끝나기 직전'));
+    const hot = o.service.hotTick();
+    await sleep(20);
+    await o.service.shutdown();
+    await hot;
+    const store = new OfficeStore(path.join(o.temp, 'data'));
+    try {
+      assert.ok(
+        onDisk(store, key).notices.some((n) => n.text.includes('끝나기 직전')),
+        'the pass finished and its staged notice was written on close',
+      );
+    } finally {
+      store.close();
+    }
+    // A full pass in flight is waited for as well.
+    const again = new OfficeService(path.join(o.temp, 'data2'), o.temp);
+    again.roots.claude = o.service.roots.claude;
+    again.store.preferences({ enabledProviders: ['claude'] });
+    const read = again.windows.read.bind(again.windows);
+    again.windows.read = async (f) => (await sleep(100), read(f));
+    const full = again.refresh().catch(() => null);
+    await sleep(20);
+    await again.shutdown();
+    await full;
+    const second = new OfficeStore(path.join(o.temp, 'data2'));
+    try {
+      assert.ok(onDisk(second, key).revision, 'the full pass wrote before the store closed');
+    } finally {
+      second.close();
+    }
+  } finally {
+    await rm(o.temp, { recursive: true, force: true });
+  }
+});
+
+test('The bridge asks the collector to stop and waits, but not forever', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-bridge-'));
+  try {
+    const polite = path.join(dir, 'polite.mjs');
+    const stuck = path.join(dir, 'stuck.mjs');
+    await writeFile(
+      polite,
+      "import { parentPort } from 'node:worker_threads';\nparentPort.on('message', (m) => m.stop && setTimeout(() => parentPort.postMessage({ stopped: true }), 150));\nsetInterval(() => {}, 1000);\n",
+    );
+    await writeFile(stuck, 'setInterval(() => {}, 1000);\n');
+    let t = Date.now();
+    await new ServiceBridge(polite).close(3000);
+    const waited = Date.now() - t;
+    assert.ok(waited >= 140 && waited < 2000, `waited for the stop reply (${waited}ms)`);
+    t = Date.now();
+    await new ServiceBridge(stuck).close(300);
+    const gaveUp = Date.now() - t;
+    assert.ok(gaveUp >= 290 && gaveUp < 2000, `gave up after the timeout (${gaveUp}ms)`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('Hot patches do not hold back the once-a-minute check time', async () => {
+  const o = await office();
+  const id = sid(23);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '일') + progress(id, now - 4000, '진행'));
+    await o.service.refresh();
+    await appendFile(o.file(id), progress(id, Date.now(), '계속'));
+    await o.service.hotTick();
+    // A minute since the last whole office went out, but a hot patch just now.
+    (o.service as any).healthAt = Date.now() - 61_000;
+    o.sent.length = 0;
+    await o.service.refresh();
+    assert.equal(o.sent.length, 1, 'the check time went out');
+    assert.ok(o.sent[0].patch?.fields?.lastSync);
+  } finally {
+    await o.done();
+  }
+});
+
+test('A hot change of an unattached helper is sent from a full rebuild', async () => {
+  const o = await office();
+  const parent = sid(24);
+  const child = path.join(o.project, parent, 'subagents', 'agent-b2.jsonl');
+  const helper = (at: number, text: string) =>
+    line({
+      type: 'assistant',
+      sessionId: parent,
+      agentId: 'b2',
+      isSidechain: true,
+      uuid: `h-${at}`,
+      timestamp: iso(at),
+      cwd: '/tmp/hot-demo',
+      message: {
+        id: `hm-${at}`,
+        role: 'assistant',
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text },
+          { type: 'tool_use', id: `toolu_h${at}`, name: 'Read', input: {} },
+        ],
+      },
+    });
+  try {
+    // Only the helper's transcript is here: it has no parent desk to sit at.
+    await mkdir(path.dirname(child), { recursive: true });
+    await writeFile(child, helper(Date.now() - 4000, '혼자 시작'));
+    await o.service.refresh();
+    assert.equal(o.service.hotSessions().length, 1);
+    const view = o.service.store.officeView;
+    let rebuilt = 0;
+    o.service.store.officeView = function (...args) {
+      rebuilt++;
+      return view.apply(this, args);
+    };
+    o.sent.length = 0;
+    await appendFile(child, helper(Date.now(), '혼자 더 진행'));
+    await o.service.hotTick();
+    assert.equal(rebuilt, 1);
+    assert.equal(o.sent.length, 1);
+    assert.deepEqual(plain(o.sent[0].snapshot), plain(o.service.snapshot()));
+  } finally {
+    await o.done();
+  }
+});
+
+test('A watched file that is replaced gets a new watch', async () => {
+  const o = await office(true);
+  const id = sid(25);
+  const now = Date.now();
+  try {
+    o.service.hot.debounceMs = 10;
+    await writeFile(o.file(id), user(id, now - 5000, '일') + progress(id, now - 4000, '진행'));
+    await o.service.refresh();
+    const first = (o.service as any).watchers.get(o.file(id));
+    assert.ok(first);
+    // Atomic replace: a new file renamed over the old path.
+    const tmp = `${o.file(id)}.tmp`;
+    await writeFile(
+      tmp,
+      user(id, now - 5000, '일') +
+        progress(id, now - 4000, '진행') +
+        progress(id, Date.now(), '교체됨'),
+    );
+    await rename(tmp, o.file(id));
+    const started = Date.now();
+    while ((o.service as any).watchers.get(o.file(id)) === first) {
+      assert.ok(Date.now() - started < 3000, 'the old watch was dropped');
+      await sleep(10);
+    }
+    await o.service.hotTick();
+    const second = (o.service as any).watchers.get(o.file(id));
+    assert.ok(second && second !== first, 'watched again');
+  } finally {
+    await o.done();
   }
 });

@@ -217,7 +217,15 @@ export class OfficeStore {
         const legacyPlace = ['shell-cd', 'tool-workdir'].includes(
           previous?.workingLocation?.source ?? '',
         );
-        if (previous?.revision === s.revision && this.ingested.get(s.id) === seen && !legacyPlace)
+        // A staged version that differs (e.g. a live wait the hot path showed and that ended
+        // before this pass) still has to be taken in over: its notices may need resolving.
+        const stagedOther = !!base && base !== previous && base.revision !== s.revision;
+        if (
+          previous?.revision === s.revision &&
+          this.ingested.get(s.id) === seen &&
+          !legacyPlace &&
+          !stagedOther
+        )
           continue;
         this.ingestNotices(s, this.noticesOnDisk(s.id), standbyHours);
         this.ingested.set(s.id, seen);
@@ -314,7 +322,15 @@ export class OfficeStore {
     const byProvider = new Map<Provider, Session[]>();
     for (const x of this.staged.values())
       byProvider.set(x.provider, [...(byProvider.get(x.provider) ?? []), x.row]);
-    for (const [provider, rows] of byProvider) this.upsert(rows, provider, true);
+    // One provider failing (rolled back, still staged) does not keep the others from being written.
+    let failure: unknown;
+    for (const [provider, rows] of byProvider)
+      try {
+        this.upsert(rows, provider, true);
+      } catch (e) {
+        failure ??= e;
+      }
+    if (failure) throw failure;
   }
   /** Sessions staged by the hot path and not yet written (for tests and diagnostics). */
   stagedIds(): string[] {
@@ -560,9 +576,18 @@ export class OfficeStore {
       { data: string } | undefined;
     return row ? { n: JSON.parse(row.data) } : undefined;
   }
+  /**
+   * A person's receipt (read, dismissed, viewed, unread) goes to disk at once, even for a notice
+   * only the hot path has shown so far, so a quit before the next full pass cannot lose it. The
+   * staged copy is updated too, so writing what was staged later writes the same notice.
+   */
   private writeNotice(n: OfficeNotice, staged?: Staged) {
-    if (staged) staged.notices.set(n.id, n);
-    else this.db.prepare('UPDATE notices SET data=? WHERE id=?').run(JSON.stringify(n), n.id);
+    this.db
+      .prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)')
+      .run(n.id, n.sessionId, n.at, JSON.stringify(n));
+    if (!staged) return;
+    if (staged.notices.has(n.id)) staged.notices.set(n.id, n);
+    else staged.disk?.set(n.id, n);
   }
   private ingestNotices(s: Session, io: NoticeIO, standbyHours = DEFAULT_PREFS.standbyHours!) {
     const now = Date.now();
