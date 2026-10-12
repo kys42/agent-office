@@ -46,7 +46,9 @@ export const desktop = {
     empty: 'Type something to send.',
     tooLong: (max: string) => `Keep it to ${max} characters or fewer.`,
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
-    busy: "It's working right now. Send again once it's done.",
+    /** A permission prompt, plan approval or shell mode on screen would take the text. */
+    notReady:
+      "It isn't taking input right now (a permission prompt or plan approval may be open). Check the terminal.",
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */
     orcaRefused: (reason: string) => `Orca didn't accept the input${reason}.`,
     orcaStarted: 'Sent to the Orca terminal, and work has started',
@@ -54,6 +56,9 @@ export const desktop = {
     stateChanged:
       "Typed it into the prompt, but the state changed in the meantime, so it wasn't submitted. Check the terminal.",
     tmuxSent: (label: string) => `Sent to tmux ${label}`,
+    /** Sent mid-turn: Claude queues it and picks it up as it goes. */
+    queued: (target: string) =>
+      `Sent to ${target} · it's working, so it's queued for the current turn`,
     codexNoReply: "Couldn't confirm Codex's response. Check the Codex screen before sending again.",
     codexQueued: 'Passed to the Codex session',
   },

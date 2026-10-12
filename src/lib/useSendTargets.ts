@@ -45,7 +45,8 @@ export function useSendTargets(
   const wanted = new Set(active ? key.split('\n') : []);
   const shown: Targets = {};
   for (const [id, target] of Object.entries(targets)) if (wanted.has(id)) shown[id] = target;
-  const waiting = pollBusy && Object.values(shown).some((t) => t && !t.canSend);
+  const waiting =
+    pollBusy && Object.values(shown).some((t) => t && (!t.canSend || t.status === 'busy'));
   useEffect(() => {
     if (!active) return;
     const check = () => {
@@ -58,12 +59,13 @@ export function useSendTargets(
       stop();
     };
   }, [active, waiting]);
-  /** After sending, show the turn as started until the session reports idle again. */
+  /** After sending, show the turn as under way until the session reports again. */
   const markSent = useCallback((id: string) => {
     setTargets((all) => {
       const target = all[id];
-      if (!target || target.queues) return all;
-      return { ...all, [id]: { ...target, status: 'busy', canSend: false } };
+      if (!target || target.queues || target.status === 'busy') return all;
+      // A follow-up may still go in: Claude queues it for the turn just started.
+      return { ...all, [id]: { ...target, status: 'busy' } };
     });
   }, []);
   return { targets: shown, markSent };

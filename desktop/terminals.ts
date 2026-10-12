@@ -256,16 +256,19 @@ export const forgetTerminal = (sessionId: string) =>
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 
 /**
- * What the renderer may know: never the handle or socket, which main re-resolves per action.
- * Only an idle prompt takes typed text; `waiting` (a permission prompt or plan approval on
- * screen) would turn the text into an answer.
+ * The prompt takes typed text: at rest, or mid-turn, where Claude Code queues it for the turn
+ * in progress. `waiting` (a permission prompt or plan approval on screen) would turn the text
+ * into an answer and Enter into its default choice; `shell` would run it as a command.
  */
+export const acceptsInput = (status: string) => status === 'idle' || status === 'busy';
+
+/** What the renderer may know: never the handle or socket, which main re-resolves per action. */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
   return {
     kind: live.host.kind,
     label: live.host.kind === 'orca' ? live.host.title : live.host.label,
     status: live.process.status,
-    canSend: live.process.status === 'idle',
+    canSend: acceptsInput(live.process.status),
     canFocus: true,
   };
 }
@@ -338,7 +341,10 @@ export async function sendToTerminal(
   deps = defaultTerminalDeps(),
 ): Promise<string> {
   const text = cleanInput(input);
-  if (live.process.status !== 'idle') throw new TerminalInputError(m().desktop.terminal.busy);
+  if (!acceptsInput(live.process.status))
+    throw new TerminalInputError(m().desktop.terminal.notReady);
+  // Mid-turn the text waits in Claude's queue: no turn starts that Orca could wait for.
+  const queued = live.process.status === 'busy';
   if (!(await ownsTerminal(live.process.pid, deps)))
     throw new TerminalInputError(m().desktop.terminal.notOwner);
   const { host } = live;
@@ -346,7 +352,7 @@ export async function sendToTerminal(
     // `--flag=value` is the only form Orca reads for a value that starts with `--`.
     let out: string;
     try {
-      // Orca waits up to 5s for the turn to start, on top of its own startup.
+      // At rest Orca waits up to 5s for the turn to start, on top of its own startup.
       out = await deps.run(
         deps.bin('orca'),
         [
@@ -355,7 +361,7 @@ export async function sendToTerminal(
           `--terminal=${host.handle}`,
           `--text=${text}`,
           '--enter',
-          '--wait-submit=5',
+          ...(queued ? [] : ['--wait-submit=5']),
           '--json',
         ],
         { timeout: 20000 },
@@ -369,6 +375,7 @@ export async function sendToTerminal(
       const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
       throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
     }
+    if (queued) return m().desktop.terminal.queued('Orca');
     const stages: unknown = send.prompt?.stages;
     return Array.isArray(stages) && stages.includes('turn_started')
       ? m().desktop.terminal.orcaStarted
@@ -396,15 +403,17 @@ export async function sendToTerminal(
     throw error;
   }
   await deps.wait(150);
-  // A turn may have started meanwhile (a background task, a wake-up); Enter would then land
-  // in it or pick a default choice. Look once more before submitting.
+  // A permission prompt may have opened meanwhile (likelier mid-turn); Enter would then pick
+  // its default choice. Look once more before submitting.
   const again = await findClaudeProcess(live.process.sessionId, deps, true);
   if (
     again?.pid !== live.process.pid ||
-    again.status !== 'idle' ||
+    !acceptsInput(again.status) ||
     !(await ownsTerminal(again.pid, deps))
   )
     throw new TerminalInputError(m().desktop.terminal.stateChanged);
   await deps.run(tmux, ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
-  return m().desktop.terminal.tmuxSent(host.label);
+  return again.status === 'busy'
+    ? m().desktop.terminal.queued(`tmux ${host.label}`)
+    : m().desktop.terminal.tmuxSent(host.label);
 }

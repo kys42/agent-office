@@ -295,7 +295,7 @@ test('Locating combines process and host; the renderer view never carries a hand
       kind: 'orca',
       label: '✳ ao-send-test',
       status: 'busy',
-      canSend: false,
+      canSend: true,
       canFocus: true,
     });
     assert.ok(!JSON.stringify(view).includes(HANDLE));
@@ -388,16 +388,66 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
   });
 });
 
-test('tmux does not press Enter when the session started working after the paste', async () => {
-  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+test('tmux does not press Enter when a prompt opened after the paste', async () => {
+  for (const [from, to] of [
+    ['idle', 'waiting'],
+    ['busy', 'waiting'],
+    ['busy', 'shell'],
+  ]) {
+    await withSessions({ '4242.json': record(4242, { status: from }) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir);
+      const wait = deps.wait;
+      deps.wait = async (ms) => {
+        await writeFile(path.join(dir, '4242.json'), record(4242, { status: to }));
+        await wait(ms);
+      };
+      await assert.rejects(sendToTerminal(tmuxLive(from), 'hi', deps), TerminalInputError);
+      assert.ok(!calls.some((c) => c.args.includes('send-keys')), `${from} → ${to}`);
+    });
+  }
+});
+
+test('A turn starting or ending around the paste still submits', async () => {
+  for (const [from, to] of [
+    ['idle', 'busy'],
+    ['busy', 'idle'],
+  ]) {
+    await withSessions({ '4242.json': record(4242, { status: from }) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir);
+      const wait = deps.wait;
+      deps.wait = async (ms) => {
+        await writeFile(path.join(dir, '4242.json'), record(4242, { status: to }));
+        await wait(ms);
+      };
+      const said = await sendToTerminal(tmuxLive(from), 'hi', deps);
+      assert.ok(
+        calls.some((c) => c.args.includes('send-keys')),
+        `${from} → ${to}`,
+      );
+      assert.equal(/대기열/.test(said), to === 'busy', said);
+    });
+  }
+});
+
+test('A working session takes a follow-up into its queue', async () => {
+  assert.equal(terminalTarget(orcaLive('busy')).canSend, true);
+  // Orca: no turn starts that could be waited for, so the prompt goes in without waiting.
+  const orca = fakeDeps('/x', {
+    orcaSend: { ok: true, result: { send: { accepted: true, prompt: { stages: ['queued'] } } } },
+  });
+  assert.match(await sendToTerminal(orcaLive('busy'), 'stop, do B', orca.deps), /대기열/);
+  assert.deepEqual(orca.calls.at(-1)!.args, [
+    'terminal',
+    'send',
+    `--terminal=${HANDLE}`,
+    '--text=stop, do B',
+    '--enter',
+    '--json',
+  ]);
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
     const { deps, calls } = fakeDeps(dir);
-    const wait = deps.wait;
-    deps.wait = async (ms) => {
-      await writeFile(path.join(dir, '4242.json'), record(4242, { status: 'busy' }));
-      await wait(ms);
-    };
-    await assert.rejects(sendToTerminal(tmuxLive(), 'hi', deps), TerminalInputError);
-    assert.ok(!calls.some((c) => c.args.includes('send-keys')));
+    assert.match(await sendToTerminal(tmuxLive('busy'), 'stop, do B', deps), /대기열/);
+    assert.ok(calls.some((c) => c.args.includes('send-keys')));
   });
 });
 
@@ -411,8 +461,8 @@ test('A failed tmux paste removes the buffer holding the text', async () => {
   assert.ok(!calls.some((c) => c.args.includes('send-keys')));
 });
 
-test('A working or shell-mode session never receives input', async () => {
-  for (const status of ['busy', 'shell', 'waiting']) {
+test('A prompt awaiting an answer or shell mode never receives input', async () => {
+  for (const status of ['shell', 'waiting', 'starting']) {
     // A permission prompt or plan approval on screen would take the text as its answer.
     assert.equal(terminalTarget(orcaLive(status)).canSend, false, status);
     const { deps, calls } = fakeDeps('/x');

@@ -26,18 +26,18 @@ OfficeService (5초 폴링, 읽기 범위·오류 격리)
 
 ## 모듈 출처와 실제 실행 경계
 
-| 책임 | 실행 코드 | 출처와 수정 범위 |
-| --- | --- | --- |
-| JSONL 바이트/줄 경계, 불완전 꼬리, 레코드 예산 | [Orca runtime](../../vendor/orca/runtime/session-scanner-jsonl-reader.ts), `session-transcript-record-budget.ts` | **외부 모듈 직접 사용.** MIT, Orca `ea6a6d60774ac2b74bb6692d1798e3ab13b99ae0`. 바이트 fold 유지, 원본 WSL opener를 주입 가능한 stream으로 교체 |
-| Codex non-user source/부모·역할 해석 | [Orca origin classifier](../../vendor/orca/runtime/session-scanner-codex-non-user-origin.ts) | **외부 모듈 직접 사용.** 같은 고정 커밋. 로컬 value helper import만 조정 |
-| 탐색 범위, head/tail 선택, fd 소유·닫기, 큰 첫 metadata 복구 | [files.ts](../../server/adapters/files.ts) | **자체 통합 코드.** 위 외부 reader에 bounded async byte generator를 주입 |
-| Claude 중첩 subagent 경로, sidecar, 제목 우선순위 | [identity.ts](../../server/adapters/identity.ts), [claude.ts](../../server/adapters/claude.ts), [normalize.ts](../../server/adapters/normalize.ts) | **정책의 TypeScript 이식.** Agent Sessions `b7893c772b0014918211f1c45a5ab58add229703`, MIT. Swift 앱/파서 전체를 실행하지 않음 |
-| 공급자별 canonical ID 결정, continuation 정확 병합 | [identity.ts](../../server/adapters/identity.ts), [merge.ts](../../server/adapters/merge.ts) | **자체 구현.** 내부 ID와 파일 ID 분리 원칙은 비교 조사, Codex origin 해석은 위 외부 함수 호출 |
-| 공개 이벤트·phase·usage 정규화 | [normalize.ts](../../server/adapters/normalize.ts) | **자체 구현.** Claude 제목 정책 이식 부분은 위 출처에 해당 |
-| Codex 표시 이름/작업 위치 metadata | [codex.ts](../../server/adapters/codex.ts) | **자체 구현.** JSONL index와 read-only threads DB |
-| OpenClaw SQLite·rewrite watermark·namespace | [openclaw.ts](../../server/adapters/openclaw.ts) | **자체 구현.** 로컬 `session_nodes` / `transcript_events` 형식 지원 |
-| 관측·활동·공간·대화·소식 정책 | [shared](../../src/shared), [store.ts](../../server/store.ts), [workspaces.ts](../../server/workspaces.ts) | **자체 구현.** 외부 수집기가 UI 좌석이나 읽음 정책을 결정하지 않음 |
-| 4방향 BFS 경로 탐색 | [pathfinding.ts](../../src/lib/pathfinding.ts) | **Pixel Agents 이식.** `3537e14`, MIT. 현재 메인 좌석 이동에는 사용하지 않는 확장용 코드 |
+| 책임                                                         | 실행 코드                                                                                                                                          | 출처와 수정 범위                                                                                                                               |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| JSONL 바이트/줄 경계, 불완전 꼬리, 레코드 예산               | [Orca runtime](../../vendor/orca/runtime/session-scanner-jsonl-reader.ts), `session-transcript-record-budget.ts`                                   | **외부 모듈 직접 사용.** MIT, Orca `ea6a6d60774ac2b74bb6692d1798e3ab13b99ae0`. 바이트 fold 유지, 원본 WSL opener를 주입 가능한 stream으로 교체 |
+| Codex non-user source/부모·역할 해석                         | [Orca origin classifier](../../vendor/orca/runtime/session-scanner-codex-non-user-origin.ts)                                                       | **외부 모듈 직접 사용.** 같은 고정 커밋. 로컬 value helper import만 조정                                                                       |
+| 탐색 범위, head/tail 선택, fd 소유·닫기, 큰 첫 metadata 복구 | [files.ts](../../server/adapters/files.ts)                                                                                                         | **자체 통합 코드.** 위 외부 reader에 bounded async byte generator를 주입                                                                       |
+| Claude 중첩 subagent 경로, sidecar, 제목 우선순위            | [identity.ts](../../server/adapters/identity.ts), [claude.ts](../../server/adapters/claude.ts), [normalize.ts](../../server/adapters/normalize.ts) | **정책의 TypeScript 이식.** Agent Sessions `b7893c772b0014918211f1c45a5ab58add229703`, MIT. Swift 앱/파서 전체를 실행하지 않음                 |
+| 공급자별 canonical ID 결정, continuation 정확 병합           | [identity.ts](../../server/adapters/identity.ts), [merge.ts](../../server/adapters/merge.ts)                                                       | **자체 구현.** 내부 ID와 파일 ID 분리 원칙은 비교 조사, Codex origin 해석은 위 외부 함수 호출                                                  |
+| 공개 이벤트·phase·usage 정규화                               | [normalize.ts](../../server/adapters/normalize.ts)                                                                                                 | **자체 구현.** Claude 제목 정책 이식 부분은 위 출처에 해당                                                                                     |
+| Codex 표시 이름/작업 위치 metadata                           | [codex.ts](../../server/adapters/codex.ts)                                                                                                         | **자체 구현.** JSONL index와 read-only threads DB                                                                                              |
+| OpenClaw SQLite·rewrite watermark·namespace                  | [openclaw.ts](../../server/adapters/openclaw.ts)                                                                                                   | **자체 구현.** 로컬 `session_nodes` / `transcript_events` 형식 지원                                                                            |
+| 관측·활동·공간·대화·소식 정책                                | [shared](../../src/shared), [store.ts](../../server/store.ts), [workspaces.ts](../../server/workspaces.ts)                                         | **자체 구현.** 외부 수집기가 UI 좌석이나 읽음 정책을 결정하지 않음                                                                             |
+| 4방향 BFS 경로 탐색                                          | [pathfinding.ts](../../src/lib/pathfinding.ts)                                                                                                     | **Pixel Agents 이식.** `3537e14`, MIT. 현재 메인 좌석 이동에는 사용하지 않는 확장용 코드                                                       |
 
 Orca 원본, 파일별 checksum, 수정 설명은 [manifest](../../vendor/orca/manifest.json)에 있다. Agent Sessions 원본과 이식 위치는 [vendor README](../../vendor/agent-sessions/README.md)에 있다. 원본 보존용 `upstream/`은 실행 코드가 아니다. `.research/`는 비교용 clone이며 Git·빌드에서 제외한다. 런타임 의존성의 정확한 버전은 `package-lock.json`을 따른다.
 
@@ -45,11 +45,11 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 
 ## 세 종류의 ID
 
-| ID | 의미 | 사용처 |
-| --- | --- | --- |
-| native/canonical session ID | 공급자가 정한 대화 정체성에 provider/agent namespace를 더한 값 | 세션 병합, 개인 메모·좌석 연결 |
-| transport ID / source path | 해당 로그 파일·전송 조각의 식별자 | 읽기 캐시, 출처, 디버깅. 대화 ID의 대체물로 우선하지 않음 |
-| event ID | 대화 안의 실제 메시지/이벤트 식별자 | 중복 제거, 스트리밍 갱신, 소식·읽음 버전 |
+| ID                          | 의미                                                           | 사용처                                                    |
+| --------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- |
+| native/canonical session ID | 공급자가 정한 대화 정체성에 provider/agent namespace를 더한 값 | 세션 병합, 개인 메모·좌석 연결                            |
+| transport ID / source path  | 해당 로그 파일·전송 조각의 식별자                              | 읽기 캐시, 출처, 디버깅. 대화 ID의 대체물로 우선하지 않음 |
+| event ID                    | 대화 안의 실제 메시지/이벤트 식별자                            | 중복 제거, 스트리밍 갱신, 소식·읽음 버전                  |
 
 - Codex는 첫 owner `session_meta`의 `payload.id` → `session_id` → `thread_id`를 사용한다. 뒤에 상속된 부모 metadata가 있어도 owner를 바꾸지 않는다. 파일명이 달라도 native ID가 같으면 continuation으로 합친다.
 - Claude root는 `sessionId`; subagent는 마지막 `subagents` 경로 앞 부모 UUID와 agent ID를 함께 사용해 `subagent:<parent>:<agent>`로 범위를 나눈다. `parentUuid` 하나만으로 부모 세션을 추론하지 않는다.
@@ -61,11 +61,11 @@ Claude-Mem, AgentPet은 비교 조사만 했고 현재 수집 런타임에 포�
 
 ## 원본별로 읽는 범위
 
-| 소스 | 경로 / 형식 | 주요 보완과 경계 |
-| --- | --- | --- |
+| 소스        | 경로 / 형식                                                                                                                                            | 주요 보완과 경계                                                                                                                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Claude Code | `$CLAUDE_CONFIG_DIR/projects`, 기본 `~/.claude/projects`; JSONL, sessions-index, `.meta.json`. 실행 중 상태는 `$CLAUDE_CONFIG_DIR/sessions/<pid>.json` | custom/AI/agent title 우선순위와 sidecar 역할. tool-use는 진행, end_turn/stop은 최종 근거. AskUserQuestion·ExitPlanMode는 결과 전까지 호출. 실행 기록은 권한 확인 대기만 읽음([아래](#claude-실행-기록과-호출-office-v11)) |
-| Codex | `$CODEX_HOME/sessions`, 기본 `~/.codex/sessions`; `session_index.jsonl`, `state_N.sqlite`의 threads | 표시 이름은 threads.name → index → 정제된 threads.title. 명시 commentary/final 및 lifecycle; native metadata 우선 |
-| OpenClaw | `$OPENCLAW_STATE_DIR/agents`, 기본 `~/.openclaw/agents`; agent별 sessions와 `agent/openclaw-agent.sqlite` | JSONL이 이관되어 없어도 DB 수집. DB는 최근 180개 + 초기 12개 표본. seq 외 rewrite watermark로 변경 감지 |
+| Codex       | `$CODEX_HOME/sessions`, 기본 `~/.codex/sessions`; `session_index.jsonl`, `state_N.sqlite`의 threads                                                    | 표시 이름은 threads.name → index → 정제된 threads.title. 명시 commentary/final 및 lifecycle; native metadata 우선                                                                                                          |
+| OpenClaw    | `$OPENCLAW_STATE_DIR/agents`, 기본 `~/.openclaw/agents`; agent별 sessions와 `agent/openclaw-agent.sqlite`                                              | JSONL이 이관되어 없어도 DB 수집. DB는 최근 180개 + 초기 12개 표본. seq 외 rewrite watermark로 변경 감지                                                                                                                    |
 
 기본 수집 상한은 공급자당 최근 120개, 설정 범위는 60~300개다. JSONL은 파일 mtime 기준 탐색 후보에도 상한을 적용하므로 모든 대화 조각을 영구 보장하는 것이 아니다. DB/파일 결과는 병합 후 다시 상한을 적용한다. 오류 보존 경로에서 마지막 정상 기록을 추가로 남길 수 있다.
 
@@ -92,17 +92,17 @@ JSONL 읽기 캐시는 size+mtime+파서 버전([증분 읽기](#jsonl-증분-�
 
 ## 실패 사례와 회귀 근거
 
-| 증상 | 원인 / 방지 원칙 | 관련 검증 |
-| --- | --- | --- |
-| 한 Codex 대화가 여러 동료로 나뉨 | 파일 UUID를 owner ID보다 우선함. native identity와 continuation 병합으로 수정 | `ingestion-conformance.test.ts`, `adapters.test.ts` |
-| 자식과 부모가 합쳐지거나 서로 다른 Claude 자식이 충돌 | 상속 metadata 또는 짧은 agent ID만 사용. owner 고정·parent namespace 적용 | `ingestion-conformance.test.ts`, `orca-origin.test.ts` |
-| 중간 도구 호출이 공개 설명을 밀어냄 | tool 명칭을 주 행동으로 사용. 공개 activity와 tool을 분리 | `activity.test.ts`, UI public progress |
-| OpenClaw 이관 뒤 사라짐 / 재작성 내용이 안 바뀜 | JSONL만 읽거나 seq만 캐시. DB 어댑터·rewrite watermark 적용 | `adapters.test.ts`, `service.test.ts` |
-| 지난 소식이 분류 변경 후 다시 미확인으로 생김 | observed-only cursor의 버전 전환 누락. receipt와 관측 cursor 모두 재분류 | `conversation-news.test.ts`, `store.test.ts` |
-| 플랜 승인·권한 확인을 기다리는데 부르지 않음 | ExitPlanMode를 일반 도구로 봄, 권한 확인은 transcript에 없음. ExitPlanMode를 입력 요청으로, 실행 기록 `waiting`을 호출로 | `live-calls.test.ts` |
-| 업그레이드 뒤 지난 플랜 승인이 한꺼번에 '응답 필요'로 | 결과가 있는 지난 요청까지 소식 후보로 봄. 열린 요청만 후보, 퇴근 시간보다 오래된 요청은 소식으로 만들지 않음 | `live-calls.test.ts` |
-| 큰 첫 metadata를 읽다가 EBADF / 잘못된 ID | stream iterator가 공유 fd를 닫음. bounded generator가 fd를 소유 | `ingestion-conformance.test.ts` |
-| 모든 브랜치가 미확인 또는 main으로 오표시 | 기록 Git과 현재 Git 혼동. detached/비 Git/null을 별도 표시 | `office-layout.test.ts`, `office-policy.test.ts` |
+| 증상                                                  | 원인 / 방지 원칙                                                                                                         | 관련 검증                                              |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| 한 Codex 대화가 여러 동료로 나뉨                      | 파일 UUID를 owner ID보다 우선함. native identity와 continuation 병합으로 수정                                            | `ingestion-conformance.test.ts`, `adapters.test.ts`    |
+| 자식과 부모가 합쳐지거나 서로 다른 Claude 자식이 충돌 | 상속 metadata 또는 짧은 agent ID만 사용. owner 고정·parent namespace 적용                                                | `ingestion-conformance.test.ts`, `orca-origin.test.ts` |
+| 중간 도구 호출이 공개 설명을 밀어냄                   | tool 명칭을 주 행동으로 사용. 공개 activity와 tool을 분리                                                                | `activity.test.ts`, UI public progress                 |
+| OpenClaw 이관 뒤 사라짐 / 재작성 내용이 안 바뀜       | JSONL만 읽거나 seq만 캐시. DB 어댑터·rewrite watermark 적용                                                              | `adapters.test.ts`, `service.test.ts`                  |
+| 지난 소식이 분류 변경 후 다시 미확인으로 생김         | observed-only cursor의 버전 전환 누락. receipt와 관측 cursor 모두 재분류                                                 | `conversation-news.test.ts`, `store.test.ts`           |
+| 플랜 승인·권한 확인을 기다리는데 부르지 않음          | ExitPlanMode를 일반 도구로 봄, 권한 확인은 transcript에 없음. ExitPlanMode를 입력 요청으로, 실행 기록 `waiting`을 호출로 | `live-calls.test.ts`                                   |
+| 업그레이드 뒤 지난 플랜 승인이 한꺼번에 '응답 필요'로 | 결과가 있는 지난 요청까지 소식 후보로 봄. 열린 요청만 후보, 퇴근 시간보다 오래된 요청은 소식으로 만들지 않음             | `live-calls.test.ts`                                   |
+| 큰 첫 metadata를 읽다가 EBADF / 잘못된 ID             | stream iterator가 공유 fd를 닫음. bounded generator가 fd를 소유                                                          | `ingestion-conformance.test.ts`                        |
+| 모든 브랜치가 미확인 또는 main으로 오표시             | 기록 Git과 현재 Git 혼동. detached/비 Git/null을 별도 표시                                                               | `office-layout.test.ts`, `office-policy.test.ts`       |
 
 세션 중복을 조사할 때는 개인 본문 대신 provider, canonical ID, `identity.evidence`, transport ID, `sourcePaths`, relation, partial, revision을 먼저 비교한다. 관계가 잘못되었는지, 단순 공간 그룹이 잘못되었는지를 분리한다. 실제 읽음 이력을 삭제하거나 DB를 초기화해서 재현을 숨기지 않는다.
 
@@ -126,7 +126,6 @@ OpenClaw의 `session_nodes` optional 열은 PRAGMA로 확인한다. `created_via
 
 office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정제된 공통 이벤트에서 요청/명시적 턴 시작을 찾는 자체 `shared/lifecycle.ts`를 사용한다. 본문·소스명을 UI에서 다시 분석하지 않는다. 어댑터의 events 180개 절단과 store snapshot의 4개 절단 전에 경계를 추출하고, partial tail 재수집에서 이미 관측한 경계가 사라져 보조가 재등장하지 않도록 저장한다. 전체 native history가 제공되지 않으면 경계를 추측하지 않고 일반 대기 정책으로 제한한다. fixture는 `tests/lifecycle-settings.test.ts`와 `tests/residents.test.ts`다.
 
-
 ### office-v10 · 사용 표본과 실행 경로
 
 새 optional UsageEntry/WorkingLocation을 채우기 위해 JSONL/OpenClaw SQLite 캐시 버전을 올렸다. native Codex response 사용량을 token_count보다 우선하고, 메시지별 streaming 비용과 별도 ledger를 추가했다. 실제 shell workdir/cwd와 literal cd는 어댑터에서 읽고 Codex wrapper는 Acorn 구문만 분석한다. 값에 따라 실행하거나 UI에서 원본을 재분석하지 않는다. [사용량·실행 위치와 레퍼런스 근거](USAGE-AND-WORKSPACE.md).
@@ -142,7 +141,7 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
   - **같은 프로세스 확인**: `waiting`이고 이번 수집 목록에 있는 세션의 기록만 확인한다. PID가 살아 있고 `ps -o lstart=`(UTC·C 로케일)가 `procStart`와 같아야 한다. 확인 결과는 PID·procStart별로 30초 기억하고, 실패한 확인은 기억하지 않는다. 평소 비용은 수집당 폴더 읽기 한 번이다.
   - **최신 확인**: `statusUpdatedAt`(없으면 `updatedAt`) 뒤에 결과·메시지·턴 경계 이벤트가 있으면 지난 기록으로 보고 무시한다.
   - **적용 위치**: `OfficeService.collect`에서 병합·작업 위치 보완 뒤, 저장 직전에 매 수집 적용한다(`applyLiveWait`). 파싱 캐시에는 넣지 않는다: 대기는 transcript가 그대로여도 바뀐다. 적용하면 상태 `call`, 이유(권한 확인/플랜 승인/일반 대기), 현재 턴에서 결과가 없는 마지막 도구 호출을 `request-input`으로 표시하고 revision에 반영한다. 대기가 끝나면 다음 수집에서 overlay가 사라지고 revision이 다시 바뀌어 저장소와 화면이 갱신된다.
-  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`일 때만 입력한다(`waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
+  - **공유**: 읽기·검증 코드는 `server/adapters/claude-live.ts` 하나다. 데스크탑 `desktop/terminals.ts`가 같은 모듈로 세션의 터미널을 찾고, `idle`·`busy`일 때만 입력한다(작업 중이면 Claude가 대기열에 넣음. `waiting`이면 보낸 글이 승인 응답이 되므로 거절). 서버는 데스크탑 모듈을 import하지 않는다.
 - **소식**: 열린 요청만 '응답 필요' 후보다. 결과·이후 메시지·턴 경계가 기록되거나 대기 overlay가 사라지면 해당 소식을 해결한다. 퇴근 시간보다 오래된 미응답 요청은 관측으로만 기억하고 소식을 만들지 않는다. 그래서 업그레이드 뒤 재파싱해도 지난 플랜 승인은 새 미확인 소식이 되지 않는다.
 - **Codex 한계**: Codex rollout에는 승인·권한 요청 이벤트가 없다. `request_user_input`만 호출로 보이고, 명령 승인 대기는 보이지 않는다. 근거가 생기기 전에는 추측하지 않는다.
 
