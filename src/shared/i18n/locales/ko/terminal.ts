@@ -8,7 +8,7 @@ export const terminal: Messages['terminal'] = {
   queueLine: (host) => `${host} · 세션 대기열`,
   placeholder: {
     queues: 'Codex 세션에 바로 전달돼요 · 작업 중이면 끝난 뒤 처리돼요',
-    busy: '작업 중이에요 · 끝나면 보낼 수 있어요',
+    busy: '작업 중이에요 · 보내면 대기열에 들어가 이어서 반영돼요',
     notWaiting: '지금은 입력을 기다리지 않아요',
     direct: (host) => `${host} 터미널에 바로 입력돼요`,
   },

@@ -11,6 +11,8 @@ import {
   locateTerminal,
   parseClaudeProcess,
   parseProcessEnv,
+  promptHolds,
+  readPrompt,
   ptyOwner,
   sendToTerminal,
   terminalTarget,
@@ -57,6 +59,57 @@ const processTable = (owner: string, tty = 'ttys012') =>
     `  9999     1 ttys099  -zsh`,
   ].join('\n');
 
+const RULE = '─'.repeat(40);
+/** Claude Code 2.1.296 as rendered at rest or mid-turn: the prompt box is the last thing. */
+const claudeScreen = (typed: string) =>
+  [
+    '⏺ Done.',
+    '',
+    `${RULE} ao-send-test ─`,
+    `❯ ${typed.split('\n').join('\n  ')}`.trimEnd(),
+    RULE,
+    '  ⏸ manual mode on · ← for agents',
+  ].join('\n');
+/** A permission prompt replaces the prompt box (measured on 2.1.296). */
+const permissionScreen = [
+  `${RULE} earlier output`,
+  '⏺ Waiting 8 seconds',
+  '  ⎿  $ sleep 8 && date > out.txt',
+  '',
+  RULE,
+  ' Bash command',
+  ' sleep 8 && date > out.txt',
+  ' Do you want to proceed?',
+  ' ❯ 1. Yes',
+  '   2. Yes, and always allow access to this folder',
+  '   3. No',
+  '',
+  ' Esc to cancel · Tab to amend',
+].join('\n');
+/** The agents view (← for agents) has a prompt of its own: Enter there starts a new session. */
+const agentsScreen = (typed: string) =>
+  [
+    'Your conversation moved to the background — enter opens it · esc returns to it',
+    'Needs input',
+    ' ✻ current session  ao-send-test',
+    RULE,
+    `❯ ${typed || 'describe a task for a new session'}`,
+    RULE,
+    typed
+      ? '  enter to create · esc to clear · ctrl+f to find'
+      : '  enter to return · space to reply',
+  ].join('\n');
+/** `@` completions drawn above the prompt: Enter would pick a file. */
+const suggestScreen = (typed: string) =>
+  [
+    '    ◇ src/app.ts',
+    '    ◇ src/api.ts',
+    `${RULE} ao-send-test ─`,
+    `❯ ${typed}`,
+    RULE,
+    '  ⏸ manual mode on',
+  ].join('\n');
+
 /** Fake process table and CLIs. Every call is recorded so tests can check exact arguments. */
 function fakeDeps(
   sessionsDir: string,
@@ -72,10 +125,23 @@ function fakeDeps(
     orcaSwitch?: unknown;
     /** `ps -o stat=,pgid=,tpgid=` of the Claude process. */
     fg?: string;
+    /** The rendered terminal for what sits in the prompt; the nth read (from 0). */
+    screen?: (typed: string, read: number) => string;
+    /** `#{pane_in_mode}`: 1 while the tmux pane is scrolled back. */
+    paneMode?: string;
+    /** `source` of `orca terminal read --screen`. */
+    orcaSource?: string;
+    /** Fails `orca terminal send --enter` only. */
+    enterRefused?: boolean;
     fail?: (file: string, args: string[]) => Error | undefined;
   } = {},
 ) {
   const calls: { file: string; args: string[]; options?: RunOptions }[] = [];
+  // What the prompt holds: typed or pasted text, cleared by Enter.
+  let typed = '';
+  let loaded = '';
+  let reads = 0;
+  const screen = () => (options.screen ?? claudeScreen)(typed, reads++);
   const deps: TerminalDeps = {
     sessionsDir,
     codexHome: '/nonexistent/codex-home',
@@ -94,7 +160,20 @@ function fakeDeps(
         if (args.includes('-ww')) return `${options.args ?? ARGS}\n`;
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg ?? 'S+ 4242 4242'}\n`;
       }
+      if (file === '/bin/tmux' && args.includes('#{pane_in_mode}'))
+        return `${options.paneMode ?? '0'}\n`;
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
+      if (file === '/bin/tmux' && args.includes('load-buffer')) loaded = runOptions?.input ?? '';
+      if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
+      if (file === '/bin/tmux' && args.includes('send-keys')) typed = '';
+      if (file === '/bin/tmux' && args.includes('capture-pane')) return screen();
+      if (file === '/bin/orca' && args[1] === 'read')
+        return JSON.stringify({
+          ok: true,
+          result: {
+            terminal: { tail: screen().split('\n'), source: options.orcaSource ?? 'screen' },
+          },
+        });
       if (file === '/bin/orca' && args[1] === 'list') {
         const t = (options.orcaShow as { result?: { terminal?: unknown } })?.result?.terminal;
         return JSON.stringify({ ok: true, result: { terminals: t ? [t] : [] } });
@@ -103,10 +182,18 @@ function fakeDeps(
         return JSON.stringify(
           options.orcaSwitch ?? { ok: true, result: { focus: { navigated: true } } },
         );
-      if (file === '/bin/orca' && args[1] === 'send')
+      if (file === '/bin/orca' && args[1] === 'send') {
+        const text = args.find((arg) => arg.startsWith('--text='));
+        if (text) typed += text.slice('--text='.length).replace(/\x1b\[20[01]~/g, '');
+        if (args.includes('--enter')) {
+          if (options.enterRefused)
+            return JSON.stringify({ ok: true, result: { send: { accepted: false } } });
+          typed = '';
+        }
         return JSON.stringify(
           options.orcaSend ?? { ok: true, result: { send: { accepted: true } } },
         );
+      }
       return '';
     },
   };
@@ -295,7 +382,7 @@ test('Locating combines process and host; the renderer view never carries a hand
       kind: 'orca',
       label: '✳ ao-send-test',
       status: 'busy',
-      canSend: false,
+      canSend: true,
       canFocus: true,
     });
     assert.ok(!JSON.stringify(view).includes(HANDLE));
@@ -320,23 +407,148 @@ const tmuxLive = (status = 'idle'): LiveTerminal => ({
   host: { kind: 'tmux', socket: SOCKET, pane: '%3', label: 'work:1.0' },
 });
 
-test('Orca sends one submitted prompt, even text that starts with dashes', async () => {
-  const { deps, calls } = fakeDeps('/x', {
-    orcaSend: {
-      ok: true,
-      result: { send: { accepted: true, prompt: { stages: ['input_accepted', 'turn_started'] } } },
-    },
+const sent = (calls: { args: string[] }[]) =>
+  calls.some((c) => c.args.includes('send-keys') || c.args.includes('--enter'));
+const typedAny = (calls: { args: string[] }[]) =>
+  calls.some((c) => c.args.includes('paste-buffer') || c.args.some((a) => a.startsWith('--text=')));
+
+test("Claude's prompt is read from the screen: a dialog, menu or other view is never it", () => {
+  assert.equal(readPrompt(claudeScreen('')), '');
+  assert.equal(readPrompt(claudeScreen('Try "fix lint errors"')), 'Try "fix lint errors"');
+  assert.equal(readPrompt(claudeScreen('first\nsecond')), 'first\nsecond');
+  assert.equal(readPrompt(permissionScreen), null);
+  assert.equal(readPrompt(claudeScreen('').replace('❯', '!')), null, '! shell mode');
+  assert.equal(readPrompt(agentsScreen('')), null, 'agents view');
+  assert.equal(readPrompt(agentsScreen('hi')), null, 'agents view, typed');
+  assert.equal(readPrompt(suggestScreen('see @src/ap')), null, 'completions');
+  assert.equal(readPrompt(`${claudeScreen('')}\n esc to close`), null, 'lowercase hint');
+  assert.equal(readPrompt(`${claudeScreen('')}\n  ❯ /model`), null, 'list below');
+  // Output that merely looks like a list, further up, is not one.
+  assert.equal(
+    readPrompt(
+      ['  /help    Show help', '  ◇ an old bullet', '⏺ Done.', '', claudeScreen('')].join('\n'),
+    ),
+    '',
+  );
+  // The main prompt's own hints never close it (default footer while working, tasks, voice).
+  for (const foot of [
+    '⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents',
+    '⏸ manual mode on · ctrl+t to hide tasks',
+    'hold space to speak',
+  ])
+    assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), '', foot);
+  // A slash command typed in full selects its own row, above or below the box (measured).
+  const slash = (typed: string, row: string) =>
+    [
+      `  ❯ ${row}    Start a new session with empty context`,
+      `${RULE} ao-send-test ─`,
+      `❯ ${typed}`,
+      RULE,
+      '  ⏸ manual mode on',
+    ].join('\n');
+  assert.equal(readPrompt(slash('/clear', '/clear')), '/clear');
+  assert.equal(
+    readPrompt(`${claudeScreen('/clear')}\n  ❯ /clear    Start a new session`),
+    '/clear',
+  );
+  // Queued messages above the box are not a list (measured while working).
+  assert.equal(
+    readPrompt(
+      [
+        '❯ Add the word ONE.',
+        '❯ Add the word TWO.',
+        '  ctrl+x ctrl+s to send now',
+        '✻ Composing…',
+        `${RULE} x ─`,
+        '❯ Press up to edit queued messages',
+        RULE,
+      ].join('\n'),
+    ),
+    'Press up to edit queued messages',
+  );
+  // The selected row need not touch the box.
+  assert.equal(
+    readPrompt(
+      [
+        `  ❯ /clear    Start a new session`,
+        '    /compact  Summarize',
+        `${RULE} x ─`,
+        '❯ /c',
+        RULE,
+      ].join('\n'),
+    ),
+    null,
+  );
+  // Anything else selected would run instead of what was typed.
+  assert.equal(readPrompt(slash('/cl', '/clear')), null);
+  assert.equal(readPrompt(slash('/clear now', '/clear')), null);
+  // A narrow pane truncates a hint: any "enter to …" below the box means Enter goes elsewhere.
+  assert.equal(readPrompt(`${claudeScreen('hi')}\n  enter to inter…`), null);
+  // A narrow pane wraps a hint across rows.
+  assert.equal(readPrompt(`${claudeScreen('hi')}\n  enter to\n  interrupt and send`), null);
+  // History search and the transcript take Enter themselves.
+  for (const foot of ['search prompts: fix', 'no matching prompt: xyz', 'ctrl+o to toggle'])
+    assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), null, foot);
+  // The person's own footer stays fine: shift+tab, "? for shortcuts".
+  assert.equal(
+    readPrompt(`${claudeScreen('')}\n ⏵⏵ auto mode on (shift+tab to cycle) · ? for shortcuts`),
+    '',
+  );
+  // A title that fills a narrow pane leaves one dash before it.
+  assert.equal(readPrompt(['─ a title filling the pane ─', '❯', RULE].join('\n')), '');
+  // A long session name leaves fewer dashes before it.
+  assert.equal(
+    readPrompt(claudeScreen('').replace(`${RULE} ao-send-test ─`, '─── a very long name ─')),
+    '',
+  );
+  assert.equal(readPrompt(''), null);
+  assert.equal(readPrompt(RULE), null);
+});
+
+test('The prompt must hold exactly the typed text, as drawn', () => {
+  assert.equal(promptHolds(claudeScreen('first\nsecond'), 'first\nsecond'), true);
+  // Wrapping, a collapsed long paste, and emoji variation selectors all count.
+  assert.equal(
+    promptHolds(claudeScreen('가'.repeat(50) + '\n' + '가'.repeat(30)), '가'.repeat(80)),
+    true,
+  );
+  assert.equal(promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14)), true);
+  assert.equal(promptHolds(claudeScreen('good 👍'), 'good 👍️'), true);
+  // A long text the composer shows only the end of.
+  const long = Array.from({ length: 30 }, (_, i) => `line ${i} of a long reply`).join('\n');
+  assert.equal(promptHolds(claudeScreen(long.split('\n').slice(-8).join('\n')), long), true);
+  assert.equal(promptHolds(claudeScreen('reply'), long), false, 'too short to tell');
+  // Text left over from before would be submitted twice; a draft would be mixed in.
+  assert.equal(promptHolds(claudeScreen('hi hi'), 'hi'), false);
+  assert.equal(promptHolds(claudeScreen('draft then mine'), 'mine'), false);
+  assert.equal(promptHolds(agentsScreen('hi'), 'hi'), false);
+});
+
+test('Orca types the text, looks again, then presses Enter on its own', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir);
+    assert.equal(
+      await sendToTerminal(orcaLive(), '--dry-run\nfirst', deps),
+      'Orca 터미널에 보냈어요',
+    );
+    const orca = calls.filter((c) => c.file === '/bin/orca').map((c) => c.args);
+    const read = ['terminal', 'read', `--terminal=${HANDLE}`, '--screen', '--limit=200', '--json'];
+    assert.deepEqual(orca, [
+      read,
+      // `--flag=value` keeps text that starts with dashes a value.
+      [
+        'terminal',
+        'send',
+        `--terminal=${HANDLE}`,
+        '--text=\x1b[200~--dry-run\nfirst\x1b[201~',
+        '--json',
+      ],
+      read,
+      // Once more after the record and foreground checks.
+      read,
+      ['terminal', 'send', `--terminal=${HANDLE}`, '--enter', '--json'],
+    ]);
   });
-  assert.match(await sendToTerminal(orcaLive(), '--dry-run\nfirst', deps), /작업이 시작됐어요/);
-  assert.deepEqual(calls.at(-1)!.args, [
-    'terminal',
-    'send',
-    `--terminal=${HANDLE}`,
-    '--text=--dry-run\nfirst',
-    '--enter',
-    '--wait-submit=5',
-    '--json',
-  ]);
 });
 
 test('An Orca refusal is reported with its reason, also when the CLI exits non-zero', async () => {
@@ -355,7 +567,8 @@ test('An Orca refusal is reported with its reason, also when the CLI exits non-z
     return true;
   });
   const crashed = fakeDeps('/x', {
-    fail: (file) => (file === '/bin/orca' ? new Error('spawn failed') : undefined),
+    fail: (file, args) =>
+      file === '/bin/orca' && args[1] === 'send' ? new Error('spawn failed') : undefined,
   });
   await assert.rejects(sendToTerminal(orcaLive(), 'hi', crashed.deps), (e: Error) => {
     assert.ok(!(e instanceof TerminalInputError));
@@ -368,12 +581,16 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
     const { deps, calls } = fakeDeps(dir);
     await sendToTerminal(tmuxLive(), 'const a = 1;\nb', deps);
     const tmux = calls.filter((c) => c.file === '/bin/tmux');
-    assert.equal(tmux.length, 3);
-    const buffer = tmux[0].args[4];
+    const mode = ['-S', SOCKET, 'display-message', '-p', '-t', '%3', '#{pane_in_mode}'];
+    const capture = ['-S', SOCKET, 'capture-pane', '-p', '-t', '%3'];
+    assert.equal(tmux.length, 9);
+    assert.deepEqual(tmux[0].args, mode);
+    assert.deepEqual(tmux[1].args, capture);
+    const buffer = tmux[2].args[4];
     assert.match(buffer, /^agent-office-[\w-]+$/);
-    assert.deepEqual(tmux[0].args, ['-S', SOCKET, 'load-buffer', '-b', buffer, '-']);
-    assert.equal(tmux[0].options?.input, 'const a = 1;\nb');
-    assert.deepEqual(tmux[1].args, [
+    assert.deepEqual(tmux[2].args, ['-S', SOCKET, 'load-buffer', '-b', buffer, '-']);
+    assert.equal(tmux[2].options?.input, 'const a = 1;\nb');
+    assert.deepEqual(tmux[3].args, [
       '-S',
       SOCKET,
       'paste-buffer',
@@ -384,20 +601,251 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
       '-t',
       '%3',
     ]);
-    assert.deepEqual(tmux[2].args, ['-S', SOCKET, 'send-keys', '-t', '%3', 'Enter']);
+    assert.deepEqual(tmux[4].args, mode);
+    assert.deepEqual(tmux[5].args, capture);
+    // The screen once more after the record and foreground checks, right before Enter.
+    assert.deepEqual(tmux[6].args, mode);
+    assert.deepEqual(tmux[7].args, capture);
+    assert.deepEqual(tmux[8].args, ['-S', SOCKET, 'send-keys', '-t', '%3', 'Enter']);
   });
 });
 
-test('tmux does not press Enter when the session started working after the paste', async () => {
+test('Nothing is typed while a permission prompt, menu or shell mode holds the screen', async () => {
+  const screens = [
+    permissionScreen,
+    claudeScreen('').replace('❯', '!'),
+    agentsScreen(''),
+    suggestScreen(''),
+    '',
+  ];
+  for (const live of [orcaLive('busy'), tmuxLive('busy')])
+    for (const shown of screens) {
+      const { deps, calls } = fakeDeps('/x', { screen: () => shown });
+      await assert.rejects(sendToTerminal(live, 'hi', deps), TerminalInputError);
+      assert.ok(!typedAny(calls) && !sent(calls), `${live.host.kind}: ${shown.slice(0, 20)}`);
+    }
+});
+
+test('No Enter when a permission prompt opens after typing, before the record says so', async () => {
+  // Claude writes `waiting` after drawing the prompt: the screen is the later, surer sign.
+  for (const live of [orcaLive('busy'), tmuxLive('busy')])
+    await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir, {
+        screen: (typed, read) => (read === 0 ? claudeScreen(typed) : permissionScreen),
+      });
+      await assert.rejects(sendToTerminal(live, 'hi', deps), /제출하지 않았어요/);
+      assert.ok(typedAny(calls) && !sent(calls), live.host.kind);
+    });
+});
+
+test('The prompt gets a moment to draw the text, then a send that never shows stops', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const late = fakeDeps(dir, { screen: (typed, read) => claudeScreen(read < 2 ? '' : typed) });
+    await sendToTerminal(tmuxLive(), 'hi', late.deps);
+    assert.ok(sent(late.calls));
+    const never = fakeDeps(dir, { screen: () => claudeScreen('') });
+    await assert.rejects(sendToTerminal(tmuxLive(), 'hi', never.deps), TerminalInputError);
+    assert.ok(!sent(never.calls));
+    assert.equal(never.calls.filter((c) => c.args.includes('capture-pane')).length, 4);
+  });
+});
+
+test("Text already in the prompt, a draft or a failed send's, is never added to", async () => {
+  for (const live of [orcaLive('busy'), tmuxLive('busy')]) {
+    const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
+    await assert.rejects(sendToTerminal(live, 'hi', deps), /이미 글이 있어요/);
+    assert.ok(!typedAny(calls) && !sent(calls), live.host.kind);
+  }
+  // Hints an empty prompt shows are not drafts.
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed) => claudeScreen(typed || 'Press up to edit queued messages'),
+    });
+    await sendToTerminal(tmuxLive('busy'), 'hi', deps);
+    assert.ok(sent(calls));
+  });
+  for (const hint of [
+    'Press up to edit queued messages, Enter to send them immediately',
+    'Press Enter to edit the selected message',
+    'Try "write a test for\nsrc/app.ts"',
+  ])
+    assert.equal(readPrompt(claudeScreen(hint)), hint);
+});
+
+test('While working, the default footer still lets a follow-up through', async () => {
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed) =>
+        `${claudeScreen(typed)}${typed ? '' : '\n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt'}`,
+    });
+    assert.match(await sendToTerminal(tmuxLive('busy'), 'stop, do B', deps), /대기열/);
+    assert.ok(sent(calls));
+  });
+});
+
+test('A leading ! never reaches the prompt, where it would switch to shell mode', async () => {
+  const { deps, calls } = fakeDeps('/x');
+  await assert.rejects(sendToTerminal(tmuxLive(), '!rm -rf build', deps), /셸 명령/);
+  assert.equal(calls.length, 0);
+});
+
+test('A scrolled-back tmux pane or an unreadable screen gets nothing', async () => {
+  const scrolled = fakeDeps('/x', { paneMode: '1' });
+  await assert.rejects(sendToTerminal(tmuxLive(), 'hi', scrolled.deps), TerminalInputError);
+  assert.ok(!typedAny(scrolled.calls));
+  const unreadable = fakeDeps('/x', {
+    fail: (file, args) =>
+      file === '/bin/orca' && args[1] === 'read' ? new Error('old Orca') : undefined,
+  });
+  await assert.rejects(sendToTerminal(orcaLive(), 'hi', unreadable.deps), /화면을 읽지 못해서/);
+  assert.ok(!typedAny(unreadable.calls));
+  // Past output standing in for a screen Orca cannot render is never trusted.
+  const fallback = fakeDeps('/x', { orcaSource: 'screen-unavailable' });
+  await assert.rejects(sendToTerminal(orcaLive(), 'hi', fallback.deps), /화면을 읽지 못해서/);
+  assert.ok(!typedAny(fallback.calls));
+});
+
+test('Orca taking the text but refusing Enter says the text is waiting there', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps } = fakeDeps(dir, { enterRefused: true });
+    await assert.rejects(
+      sendToTerminal(orcaLive(), 'hi', deps),
+      /글은 넣었지만 Enter를 보내지 못했어요/,
+    );
+  });
+});
+
+test('A permission prompt opening right after Enter is reported, not hidden', async () => {
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps } = fakeDeps(dir);
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      const out = await run(file, args, options);
+      if (args.includes('send-keys'))
+        await writeFile(path.join(dir, '4242.json'), record(4242, { status: 'waiting' }));
+      return out;
+    };
+    assert.match(await sendToTerminal(tmuxLive('busy'), 'hi', deps), /바로 승인 창이 떴어요/);
+  });
+});
+
+test('tmux does not press Enter when the record shows a prompt after the paste', async () => {
+  for (const [from, to] of [
+    ['idle', 'waiting'],
+    ['busy', 'waiting'],
+    ['shell', 'waiting'],
+  ]) {
+    await withSessions({ '4242.json': record(4242, { status: from }) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir);
+      const wait = deps.wait;
+      deps.wait = async (ms) => {
+        await writeFile(path.join(dir, '4242.json'), record(4242, { status: to }));
+        await wait(ms);
+      };
+      await assert.rejects(sendToTerminal(tmuxLive(from), 'hi', deps), TerminalInputError);
+      assert.ok(!sent(calls), `${from} → ${to}`);
+    });
+  }
+});
+
+test('A turn starting or ending around the paste still submits', async () => {
+  for (const [from, to] of [
+    ['idle', 'busy'],
+    ['busy', 'idle'],
+    ['busy', 'shell'],
+  ]) {
+    await withSessions({ '4242.json': record(4242, { status: from }) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir);
+      const wait = deps.wait;
+      deps.wait = async (ms) => {
+        await writeFile(path.join(dir, '4242.json'), record(4242, { status: to }));
+        await wait(ms);
+      };
+      const said = await sendToTerminal(tmuxLive(from), 'hi', deps);
+      assert.ok(sent(calls), `${from} → ${to}`);
+      assert.equal(/대기열/.test(said), to === 'busy', said);
+    });
+  }
+});
+
+test('A working session takes a follow-up into its queue', async () => {
+  assert.equal(terminalTarget(orcaLive('busy')).canSend, true);
+  // At rest with a background shell running, the prompt is open too.
+  assert.equal(terminalTarget(orcaLive('shell')).canSend, true);
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    for (const live of [orcaLive('busy'), tmuxLive('busy')]) {
+      const { deps, calls } = fakeDeps(dir);
+      assert.match(await sendToTerminal(live, 'stop, do B', deps), /대기열/);
+      assert.ok(sent(calls), live.host.kind);
+    }
+  });
+});
+
+test('Sends to one session wait their turn instead of typing into each other', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    for (const live of [orcaLive(), tmuxLive()]) {
+      const { deps, calls } = fakeDeps(dir);
+      const said = await Promise.all([
+        sendToTerminal(live, 'first', deps),
+        sendToTerminal(live, 'second', deps),
+      ]);
+      assert.equal(said.length, 2, live.host.kind);
+      const order = calls
+        .filter(
+          (c) =>
+            c.args.includes('send-keys') ||
+            c.args.includes('--enter') ||
+            c.args.includes('load-buffer') ||
+            c.args.some((a) => a.startsWith('--text=')),
+        )
+        .map((c) =>
+          c.args.includes('send-keys') || c.args.includes('--enter') ? 'enter' : 'type',
+        );
+      assert.deepEqual(order, ['type', 'enter', 'type', 'enter'], live.host.kind);
+    }
+  });
+});
+
+test('A send that waited its turn looks again before typing', async () => {
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     const { deps, calls } = fakeDeps(dir);
-    const wait = deps.wait;
-    deps.wait = async (ms) => {
-      await writeFile(path.join(dir, '4242.json'), record(4242, { status: 'busy' }));
-      await wait(ms);
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      const out = await run(file, args, options);
+      // The first text was `/clear`: the same process moves on to a new session.
+      if (args.includes('send-keys'))
+        await writeFile(
+          path.join(dir, '4242.json'),
+          record(4242, { sessionId: 'another-session-0001' }),
+        );
+      return out;
     };
+    const [first, second] = await Promise.allSettled([
+      sendToTerminal(tmuxLive(), '/clear', deps),
+      sendToTerminal(tmuxLive(), 'follow-up', deps),
+    ]);
+    assert.equal(first.status, 'fulfilled');
+    assert.equal(second.status, 'rejected');
+    assert.equal(calls.filter((c) => c.args.includes('paste-buffer')).length, 1);
+  });
+});
+
+test('A pause during the screen checks stops Enter', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let paused = false;
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed, read) => {
+        if (read === 2) paused = true;
+        return claudeScreen(read < 2 ? '' : typed);
+      },
+    });
+    const run = deps.run;
+    deps.run = (file, args, options) =>
+      args.includes('stat=,pgid=,tpgid=') && paused
+        ? Promise.resolve('T 4242 4242\n')
+        : run(file, args, options);
     await assert.rejects(sendToTerminal(tmuxLive(), 'hi', deps), TerminalInputError);
-    assert.ok(!calls.some((c) => c.args.includes('send-keys')));
+    assert.ok(!sent(calls));
   });
 });
 
@@ -408,11 +856,11 @@ test('A failed tmux paste removes the buffer holding the text', async () => {
   await assert.rejects(sendToTerminal(tmuxLive(), 'secret draft', deps));
   const buffer = calls.find((c) => c.args.includes('load-buffer'))!.args[4];
   assert.ok(calls.some((c) => c.args.join(' ') === `-S ${SOCKET} delete-buffer -b ${buffer}`));
-  assert.ok(!calls.some((c) => c.args.includes('send-keys')));
+  assert.ok(!sent(calls));
 });
 
-test('A working or shell-mode session never receives input', async () => {
-  for (const status of ['busy', 'shell', 'waiting']) {
+test('A prompt awaiting an answer, or any status not known to be open, never receives input', async () => {
+  for (const status of ['waiting', 'starting', '']) {
     // A permission prompt or plan approval on screen would take the text as its answer.
     assert.equal(terminalTarget(orcaLive(status)).canSend, false, status);
     const { deps, calls } = fakeDeps('/x');
