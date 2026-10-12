@@ -1277,6 +1277,15 @@
   color: var(--text);
   background: var(--bg-4);
 }
+/* A bookmarked message keeps its mark in view; the one opened from its bookmark glows a moment. */
+.message-meta .message-bookmark.is-on {
+  opacity: 1;
+  color: var(--accent);
+}
+.conversation-message.is-focused .message-bubble {
+  box-shadow: 0 0 0 2px var(--accent-line);
+  transition: box-shadow 0.3s;
+}
 .message-meta .message-category {
   padding: 0 6px;
   border-radius: 5px;

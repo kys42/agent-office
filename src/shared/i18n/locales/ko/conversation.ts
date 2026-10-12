@@ -28,5 +28,11 @@ export const conversation: Messages['conversation'] = {
   replyHint: '진행 메시지나 구분 없는 응답은 완료로 표시하지 않아요.',
   working: '동료가 작업하고 있어요',
   lastEntry: '마지막 기록',
+  bookmark: '이 메시지 북마크',
+  bookmarkNear: '북마크한 메시지를 기록에서 찾지 못해 그 시점 근처를 보여 드려요',
+  bookmarkMissing: '북마크한 메시지가 기록에 더는 없어요 · 사본은 기억 서랍에 남아 있어요',
+  unbookmark: '북마크 해제',
+  bookmarked: '북마크했어요 · 기억 서랍에서 모아 볼 수 있어요',
+  unbookmarked: '북마크를 해제했어요',
   newEntries: '새 기록 보기',
 };

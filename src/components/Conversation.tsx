@@ -2,7 +2,16 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, Copy, Terminal, Clock3, MessageSquare, ArrowDown } from 'lucide-react';
+import {
+  ChevronDown,
+  Copy,
+  Terminal,
+  Clock3,
+  MessageSquare,
+  ArrowDown,
+  Bookmark,
+  BookmarkCheck,
+} from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { parseArtifact } from '../shared/office';
@@ -23,6 +32,9 @@ function Message({
   expanded,
   onExpand,
   group,
+  marked = false,
+  onMark,
+  focused = false,
   name,
 }: {
   event: OfficeEvent;
@@ -33,6 +45,11 @@ function Message({
   onExpand: () => void;
   /** Set on a message shown on its own: where the reading position is kept. */
   group?: string;
+  /** The message is bookmarked; `onMark` (absent where nothing is kept) toggles it. */
+  marked?: boolean;
+  onMark?: (on: boolean) => void;
+  /** Just opened from its bookmark. */
+  focused?: boolean;
 }) {
   const { t } = useI18n();
   const work = event.kind === 'tool' || event.kind === 'result';
@@ -54,9 +71,10 @@ function Message({
             : t.conversation.progressUpdate;
   return (
     <article
-      className={`conversation-message message-${event.kind} category-${conversationKind(event)}`}
+      className={`conversation-message message-${event.kind} category-${conversationKind(event)}${marked ? ' is-bookmarked' : ''}${focused ? ' is-focused' : ''}`}
       data-message-category={conversationKind(event)}
       data-group-id={group}
+      data-event-id={event.id}
     >
       <div className="message-meta">
         <b>{label}</b>
@@ -75,6 +93,17 @@ function Message({
         >
           <Copy size={12} />
         </button>
+        {onMark && event.kind !== 'lifecycle' && (
+          <button
+            className={`message-bookmark ${marked ? 'is-on' : ''}`}
+            aria-pressed={marked}
+            aria-label={marked ? t.conversation.unbookmark : t.conversation.bookmark}
+            title={marked ? t.conversation.unbookmark : t.conversation.bookmark}
+            onClick={() => onMark(!marked)}
+          >
+            {marked ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
+          </button>
+        )}
       </div>
       <div className="message-bubble">
         {event.excerpt && (
@@ -132,6 +161,10 @@ export function Conversation({
   older = false,
   loadingOlder = false,
   onOlder,
+  bookmarked = [],
+  onBookmark,
+  focus,
+  onFocused,
   compact = false,
   hideProgress = false,
   name,
@@ -144,6 +177,13 @@ export function Conversation({
   older?: boolean;
   loadingOlder?: boolean;
   onOlder?: () => void;
+  /** Ids of the bookmarked messages; `onBookmark` (absent where nothing is kept) toggles one. */
+  bookmarked?: string[];
+  onBookmark?: (eventId: string, on: boolean) => void;
+  /** A message to bring into view and mark for a moment (a bookmark being opened). */
+  focus?: { eventId: string; at: number; key: number; ready: boolean } | null;
+  /** The focused message was brought into view (or found missing): the opening is done. */
+  onFocused?: () => void;
   /** The card's chat: filters fold behind a small button, the range note goes away. */
   compact?: boolean;
   /** Progress notes left out of the whole conversation (the card's switch). */
@@ -271,16 +311,82 @@ export function Conversation({
     };
   }, []);
   useEffect(() => {
+    if (pending.current) return;
     const raf = requestAnimationFrame(() => {
       if (follow.current) scrollBottom();
       else setNewBelow(true);
     });
     return () => cancelAnimationFrame(raf);
   }, [last]);
+  // Opening a bookmark: once its message is loaded, it is shown (all kinds, its work group
+  // open, enough older ones listed) and brought into view, marked for a moment. Until then
+  // nothing else moves the reading position.
+  const pending = useRef<{ eventId: string; at: number } | null>(null);
+  const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
+    if (pending.current) return;
     const raf = requestAnimationFrame(scrollBottom);
     return () => cancelAnimationFrame(raf);
   }, [filter]);
+  const marks = useMemo(() => new Set(bookmarked), [bookmarked]);
+  useEffect(() => {
+    // Done elsewhere or given up (its page could not be read): nothing waits any more.
+    if (!focus) {
+      pending.current = null;
+      return;
+    }
+    pending.current = { eventId: focus.eventId, at: focus.at };
+    follow.current = false;
+    setNewBelow(false);
+    setFilter('all');
+  }, [focus?.key]);
+  useEffect(() => {
+    const want = pending.current;
+    // Only once the page reaching back to it is in: what the card holds before may be dropped
+    // by the newest page arriving after it.
+    if (!want || filter !== 'all' || !focus?.ready) return;
+    const exact = events.find((e) => e.id === want.eventId);
+    // Re-read under another id, or gone from the record: near its time once the reached page
+    // is in, without marking another message as it.
+    const target = exact ?? events.find((e) => e.at >= want.at);
+    if (!target) {
+      pending.current = null;
+      notify(t.conversation.bookmarkMissing);
+      onFocused?.();
+      return;
+    }
+    if (conversationKind(target) === 'work' && !tools) return setTools(true);
+    const index = groups.findIndex((g) => g.events.some((e) => e.id === target.id));
+    if (index < 0) return;
+    if (groups.length - index > count) return setCount(groups.length - index + 4);
+    const raf = requestAnimationFrame(() => {
+      const el = root.current?.querySelector<HTMLElement>(
+        `[data-event-id="${CSS.escape(target.id)}"]`,
+      );
+      if (!el || pending.current !== want) return;
+      pending.current = null;
+      const group = el.closest('details');
+      if (group) group.open = true;
+      programmaticAt.current = performance.now();
+      follow.current = false;
+      el.scrollIntoView({ block: 'center' });
+      setNewBelow(false);
+      if (exact) setFocused(target.id);
+      else notify(t.conversation.bookmarkNear);
+      onFocused?.();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [events, groups, count, tools, filter, focus?.ready, focus?.key]);
+  useEffect(() => {
+    if (!focused) return;
+    const timer = setTimeout(() => setFocused(null), 2400);
+    return () => clearTimeout(timer);
+  }, [focused]);
+  const markOf = (e: OfficeEvent) => ({
+    marked: marks.has(e.id),
+    onMark: onBookmark && ((on: boolean) => onBookmark(e.id, on)),
+    focused: focused === e.id,
+  });
   return (
     <div
       className="conversation"
@@ -393,6 +499,7 @@ export function Conversation({
                   key={e.id + i}
                   expanded={expanded.has(e.id)}
                   onExpand={() => toggleMessage(e.id)}
+                  {...markOf(e)}
                 />
               ))}
             </div>
@@ -407,6 +514,7 @@ export function Conversation({
             expanded={expanded.has(g.id)}
             onExpand={() => toggleMessage(g.id)}
             group={g.id}
+            {...markOf(g.events[0])}
           />
         ),
       )}

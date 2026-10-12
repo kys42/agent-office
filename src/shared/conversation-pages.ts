@@ -11,11 +11,14 @@ export const DETAIL_PAGE_MAX = 200;
  * bound); the oldest go first and can be read again.
  */
 export const LOADED_EVENTS = 400;
+/** Events a reached page holds before the event it reaches, so it does not open at the very top. */
+const REACH_MARGIN = 4;
 
 /**
  * The newest `limit` events before `before` (the newest page without it). A cursor event that
  * left the stored window (or was re-read under another id) is found again by its time
  * `beforeAt`: the page holds what is older than that, so paging and its excerpts go on.
+ * `reach` (or its time `reachAt`) stretches the newest page back to hold that event.
  */
 export function detailPage(
   s: Session,
@@ -30,7 +33,18 @@ export function detailPage(
   const end = found >= 0 ? found : page.beforeAt !== undefined ? byTime() : -1;
   // Neither id nor time to go by: nothing older can be told apart.
   if (end < 0) return { ...s, events: [], olderEvents: false, notices: [] };
-  const start = Math.max(0, end - (page.limit ?? DETAIL_PAGE));
+  let start = Math.max(0, end - (page.limit ?? DETAIL_PAGE));
+  if (!page.before && (page.reach || page.reachAt !== undefined)) {
+    const id = page.reach ? s.events.findIndex((e) => e.id === page.reach) : -1;
+    // By time: the first event at or after it, so an excerpt-only message is covered too.
+    const at =
+      id >= 0
+        ? id
+        : page.reachAt !== undefined
+          ? s.events.findIndex((e) => e.at >= page.reachAt!)
+          : -1;
+    if (at >= 0) start = Math.max(0, end - LOADED_EVENTS, Math.min(start, at - REACH_MARGIN));
+  }
   const events = s.events.slice(start, end);
   const from = start > 0 ? Math.min(...events.map((e) => e.at)) : -Infinity;
   const until = !page.before ? Infinity : found >= 0 ? s.events[end].at : page.beforeAt!;
