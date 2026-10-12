@@ -58,6 +58,10 @@ export const desktop: Messages['desktop'] = {
       '비운 입력창에 넣었지만 넣은 글만 있는지 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
     notWhole:
       '입력창 글이 다 보이지 않아 여기서 지울 수 없어요. 터미널에서 비운 뒤 다시 보내 주세요.',
+    backupFailedLater:
+      '초안은 지워서 클립보드에 있지만, 그 뒤에 나타난 글을 복사하지 못해 더 지우거나 보내지 않았어요. 터미널을 확인해 주세요.',
+    clearStopped:
+      '입력창을 비우는 사이 Claude 상태가 바뀌어 멈췄고 보내지 않았어요. 터미널을 확인해 주세요.',
     clipboardKept: '입력창에 있던 글은 클립보드에 있어요.',
     unsupportedAgent: (agent) => `${agent}에는 여기서 보낼 수 없어요.`,
     shellPrefix: '‘!’로 시작하는 글은 셸 명령으로 실행돼서 보내지 않아요.',

@@ -89,10 +89,11 @@ test('On tmux, a faint suggestion is told apart from typed and pasted drafts', (
     text: 'first line\nsecond line\nthird line',
     whole: true,
   });
+  // A collapsed paste stands for text not on screen: never known whole.
   assert.deepEqual(kind(FIXTURES.pasted), {
     kind: 'draft',
     text: 'note: [Pasted text #1 +12 lines] tail',
-    whole: true,
+    whole: false,
   });
   assert.deepEqual(kind(FIXTURES.busyDraft), {
     kind: 'draft',
@@ -271,7 +272,6 @@ test('A composer known whole is saved in full first, then cleared pair by pair',
     for (const draft of [
       'hello draft',
       'first line\nsecond line\nthird line',
-      '[Pasted text #1 +12 lines]',
       '안녕하세요 초안\n둘째 줄',
       'good 👍🏽 family 👨‍👩‍👧\nтест · … é',
       'keep\n\n\n\nlast',
@@ -326,6 +326,89 @@ test('A composer not known whole is never touched', async () => {
   }
 });
 
+test('Placeholders, a small pane or the task list: never known whole', () => {
+  // A collapsed paste or an image stands for content the box does not show.
+  for (const text of [
+    'note: [Pasted text #1 +12 lines] tail',
+    'see [Image #1]',
+    '[Pasted text #2]',
+  ])
+    assert.equal(
+      (classifyPrompt(tmux(box(`\x1b[39m❯\xa0${text}`))) as { whole: boolean }).whole,
+      false,
+      text,
+    );
+  assert.equal(
+    (
+      classifyPrompt({ text: strip(box('❯')), composer: '[Pasted text #1 +4 lines]' }) as {
+        whole: boolean;
+      }
+    ).whole,
+    false,
+  );
+  // Below height 12 the box's lower edge is cut off (measured): not counted whole either.
+  assert.equal((classifyPrompt(tmux(FIXTURES.typed, 11)) as { whole: boolean }).whole, false);
+  // The task list (ctrl+t) was not measured: fail closed.
+  const tasks = [
+    '  ☐ Write the tests',
+    '  ◼ Fix the bug',
+    `\x1b[38;5;244m${RULE}`,
+    '\x1b[39m❯\xa0hello draft',
+    `\x1b[38;5;244m${RULE}`,
+    '  ⏸ manual mode on · ctrl+t to hide tasks',
+  ].join('\n');
+  assert.equal((classifyPrompt(tmux(tasks)) as { whole: boolean }).whole, false);
+});
+
+test('Clearing stops at once when Claude is no longer the one at the terminal', async () => {
+  const prompt = fakePrompt({ draft: 'one\ntwo\nthree' });
+  const from = await claudeCodeComposer.inspect(prompt.host);
+  let asks = 0;
+  const result = await claudeCodeComposer.clear(
+    prompt.host,
+    from as Extract<typeof from, { kind: 'draft' }>,
+    async () => {},
+    // Paused (Ctrl+Z) after the first pair.
+    async () => ++asks === 1,
+  );
+  assert.equal(result.status === 'failed' && result.lost, true);
+  assert.equal(prompt.pressed.length, 1);
+});
+
+test('Text that shows up and cannot be known whole, or goes away, is never sent over', async () => {
+  // tmux: a paste shows up while clearing: never probed, asked again as not clearable here.
+  const pasted = fakePrompt({
+    draft: 'one\ntwo',
+    typing: (round) => (round === 0 ? ' [Pasted text #1 +9 lines]' : ''),
+  });
+  assert.deepEqual((await clearPrompt(pasted)).result, {
+    status: 'changed',
+    text: 'one\n[Pasted text #1 +9 lines]',
+    whole: false,
+  });
+  // Orca: text that showed up once the draft went, then went too, was typing (it is saved).
+  const typed = fakePrompt({
+    draft: 'hello',
+    host: 'orca',
+    typing: (round) => (round === 0 ? 'zz' : ''),
+  });
+  const { result, backups } = await clearPrompt(typed);
+  assert.deepEqual(result, { status: 'changed', text: 'zz', whole: true });
+  assert.deepEqual(backups, ['hello', 'hello\nzz']);
+  // Blank lines are cleared without touching the clipboard.
+  const blank = fakePrompt({ draft: '\n\n' });
+  const from = await claudeCodeComposer.inspect(blank.host);
+  assert.equal(from.kind, 'draft');
+  const copies: string[] = [];
+  const cleared = await claudeCodeComposer.clear(
+    blank.host,
+    from as Extract<typeof from, { kind: 'draft' }>,
+    async (text) => void copies.push(text),
+  );
+  assert.equal(cleared.status, 'cleared');
+  assert.deepEqual(copies, []);
+});
+
 test('Text the keys never change is never taken as cleared', async () => {
   // tmux: the plain draft is still there.
   const stuck = fakePrompt({ draft: 'hello draft', stuck: true });
@@ -361,7 +444,7 @@ test('Typing that shows up while clearing stops it and is shown again', async ()
     typing: (round) => (round === 0 ? 'new words' : ''),
   });
   const { result } = await clearPrompt(tmuxPrompt);
-  assert.deepEqual(result, { status: 'changed', text: 'line 0\nline 1\nnew words' });
+  assert.deepEqual(result, { status: 'changed', text: 'line 0\nline 1\nnew words', whole: true });
   assert.ok(tmuxPrompt.text().endsWith('new words'));
   // Orca: new text may be the suggestion back in the box, so it is saved first, then tried
   // once more; text that then moves was typing: it stops there, already on the clipboard.

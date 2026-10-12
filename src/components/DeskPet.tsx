@@ -34,6 +34,7 @@ export function DeskPet({
   onFloor,
   onReply,
   onRefresh,
+  notify,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
@@ -46,6 +47,8 @@ export function DeskPet({
   onFloor: () => void;
   /** Desktop, with Send to terminal on: the speaking colleague can be answered right under its bubble. */
   onReply?: ReplySender;
+  /** Says what a jump to the terminal did (or the resume command it copied). */
+  notify?: (message: string) => void;
   /** Look at the session records again now (and restart a stopped collector). */
   onRefresh: () => void;
 }) {
@@ -145,7 +148,10 @@ export function DeskPet({
                 onClose={() => setReplyFor(null)}
                 onJump={
                   api.jump
-                    ? () => void jumpOrCopy(bubble.sessionId, () => {}).catch(() => {})
+                    ? () => {
+                        const say = notify ?? (() => {});
+                        jumpOrCopy(bubble.sessionId, say).catch((e) => say((e as Error).message));
+                      }
                     : undefined
                 }
                 onSend={async (text, replaceDraft) => {

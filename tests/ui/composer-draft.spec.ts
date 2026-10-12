@@ -238,6 +238,8 @@ test('Text not all on screen is never cleared from here: the terminal is offered
   await expect(confirm.getByRole('button', { name: '지우고 보내기' })).toHaveCount(0);
   await confirm.getByRole('button', { name: '터미널로 이동' }).click();
   expect(await page.evaluate(() => (window as any).jumped)).toEqual(['demo:0']);
+  // What the jump did is said, as from the desk tools.
+  await expect(page.locator('.toast')).toContainText('tmux work:1.0 패널을 선택했어요');
   // Nothing was cleared or sent again; the reply stays.
   expect((await sends(page)).length).toBe(1);
   await expect(field).toHaveValue('테스트를 먼저 돌려 주세요');

@@ -857,40 +857,89 @@ test('A draft that changed since it was shown is shown again, untouched', async 
 });
 
 test('A prompt that cannot be emptied gets nothing typed and nothing sent', async () => {
-  const kept = /비우지 못해 보내지 않았어요.*입력창에 있던 글은 클립보드에 있어요/;
-  // The keys reach the terminal but the prompt keeps the text (on tmux, drawn plain).
-  const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
-  const { log, backup } = steps(deps);
-  await assert.rejects(
-    sendToTerminal(tmuxLive(), 'hi', deps, { replaceDraft: 'half-written idea', backup }),
-    kept,
-  );
-  assert.equal(log[1], 'clipboard:half-written idea');
-  assert.ok(log.includes('clear'));
-  assert.ok(!typedAny(calls) && !sent(calls));
-  // Orca: text that never moved is not taken for a suggestion (the keys may never have
-  // arrived), so nothing is typed.
-  const orca = fakeDeps('/x', { orcaDraft: () => 'half-written idea' });
-  await assert.rejects(
-    sendToTerminal(orcaLive(), 'hi', orca.deps, {
-      replaceDraft: 'half-written idea',
-      backup: async () => {},
-    }),
-    kept,
-  );
-  assert.ok(!typedAny(orca.calls) && !sent(orca.calls));
-  // A clipboard that fails leaves the prompt alone.
-  const failing = fakeDeps('/x', { screen: () => claudeScreen('half-written idea') });
-  await assert.rejects(
-    sendToTerminal(tmuxLive(), 'hi', failing.deps, {
-      replaceDraft: 'half-written idea',
-      backup: async () => {
-        throw new Error('no clipboard');
-      },
-    }),
-    /클립보드에 복사하지 못해/,
-  );
-  assert.ok(!failing.calls.some((c) => clears(c.args)) && !typedAny(failing.calls));
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const kept = /비우지 못해 보내지 않았어요.*입력창에 있던 글은 클립보드에 있어요/;
+    // The keys reach the terminal but the prompt keeps the text (on tmux, drawn plain).
+    const { deps, calls } = fakeDeps(dir, { screen: () => claudeScreen('half-written idea') });
+    const { log, backup } = steps(deps);
+    await assert.rejects(
+      sendToTerminal(tmuxLive(), 'hi', deps, { replaceDraft: 'half-written idea', backup }),
+      kept,
+    );
+    assert.equal(log[1], 'clipboard:half-written idea');
+    assert.ok(log.includes('clear'));
+    assert.ok(!typedAny(calls) && !sent(calls));
+    // Orca: text that never moved is not taken for a suggestion (the keys may never have
+    // arrived), so nothing is typed.
+    const orca = fakeDeps(dir, { orcaDraft: () => 'half-written idea' });
+    await assert.rejects(
+      sendToTerminal(orcaLive(), 'hi', orca.deps, {
+        replaceDraft: 'half-written idea',
+        backup: async () => {},
+      }),
+      kept,
+    );
+    assert.ok(!typedAny(orca.calls) && !sent(orca.calls));
+    // A clipboard that fails leaves the prompt alone.
+    const failing = fakeDeps(dir, { screen: () => claudeScreen('half-written idea') });
+    await assert.rejects(
+      sendToTerminal(tmuxLive(), 'hi', failing.deps, {
+        replaceDraft: 'half-written idea',
+        backup: async () => {
+          throw new Error('no clipboard');
+        },
+      }),
+      /클립보드에 복사하지 못해/,
+    );
+    assert.ok(!failing.calls.some((c) => clears(c.args)) && !typedAny(failing.calls));
+  });
+});
+
+test('A collapsed paste or an image in the prompt is never cleared from here', async () => {
+  for (const [live, options] of [
+    [tmuxLive(), { screen: () => claudeScreen('see [Pasted text #1 +12 lines]') }],
+    [orcaLive(), { orcaDraft: () => 'look at [Image #1]' }],
+  ] as const) {
+    const { deps, calls } = fakeDeps('/x', options);
+    const asked = await sendToTerminal(live, 'hi', deps, { backup: async () => {} });
+    assert.equal(asked.status === 'needs-confirm' && asked.clearable, false, live.host.kind);
+    await assert.rejects(
+      sendToTerminal(live, 'hi', deps, {
+        replaceDraft: asked.status === 'needs-confirm' ? asked.draft : '',
+        backup: async () => {},
+      }),
+      /입력창 글이 다 보이지 않아 여기서 지울 수 없어요/,
+    );
+    assert.ok(!typedAny(calls) && !sent(calls) && !calls.some((c) => clears(c.args)));
+  }
+});
+
+test('Clearing stops when Claude is paused or leaves the terminal mid-way', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let draft = 'first\nsecond\nthird';
+    let pairs = 0;
+    const { deps, calls } = fakeDeps(dir, { screen: (typed) => claudeScreen(typed || draft) });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (clears(args)) {
+        pairs++;
+        draft = draft.split('\n').slice(0, -1).join('\n');
+        return '';
+      }
+      // Ctrl+Z after the first pair: the shell takes the terminal's foreground.
+      if (pairs >= 1 && args.includes('stat=,pgid=,tpgid=')) return 'T 4242 9999\n';
+      return run(file, args, options);
+    };
+    await assert.rejects(
+      sendToTerminal(tmuxLive(), 'hi', deps, {
+        replaceDraft: 'first\nsecond\nthird',
+        backup: async () => {},
+      }),
+      /비우는 사이 Claude 상태가 바뀌어 멈췄고.*입력창에 있던 글은 클립보드에 있어요/,
+    );
+    assert.equal(pairs, 1, 'no key after the pause');
+    assert.ok(!typedAny(calls) && !sent(calls));
+  });
 });
 
 test('After clearing, only the exact text is submitted: a long reply over leftovers is not', async () => {

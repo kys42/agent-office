@@ -57,6 +57,7 @@ export function Office({
   onPin,
   onZoneDrop,
   onReply,
+  notify,
   quotaOf,
 }: {
   sessions: Session[];
@@ -85,6 +86,8 @@ export function Office({
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
   /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
   onReply?: ReplySender;
+  /** Says what a jump to the terminal did (or the resume command it copied). */
+  notify?: (message: string) => void;
   /** The usage limit this colleague's tool has used up, if any (desk lights go out). */
   quotaOf?: (s: Session) => QuotaExhaustion | undefined;
 }) {
@@ -173,6 +176,11 @@ export function Office({
   const replyFor = (s: Session) =>
     deskSpeech(s, notices, bubbleHours, clock).bubble?.sessionId ?? s.id;
   const quick = !!onReply && !privacy;
+  /** Like the desk tools: the result (or the copied resume command) is said, never swallowed. */
+  const jumpTo = (id: string) => {
+    const say = notify ?? (() => {});
+    jumpOrCopy(id, say).catch((e) => say((e as Error).message));
+  };
   // Helper desks carry no bubble; only the stations' own sessions can be replied to.
   const replyable = quick
     ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
@@ -611,11 +619,7 @@ export function Office({
                             }
                             name={sessionName(byId.get(replying.id) ?? s)}
                             onClose={() => setReplying(null)}
-                            onJump={
-                              api.jump
-                                ? () => void jumpOrCopy(replying.id, () => {}).catch(() => {})
-                                : undefined
-                            }
+                            onJump={api.jump ? () => void jumpTo(replying.id) : undefined}
                             onSend={async (text, replaceDraft) => {
                               const result = await onReply!(replying.id, text, replaceDraft);
                               if (result.status === 'sent') markSent(replying.id);

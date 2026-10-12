@@ -62,6 +62,7 @@ export function OfficeWorkspace({
   onPin,
   onZoneDrop,
   onReply,
+  notify,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -90,6 +91,7 @@ export function OfficeWorkspace({
   onPin: (s: Session) => void;
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
   onReply?: ReplySender;
+  notify?: (message: string) => void;
 }) {
   const { t } = useI18n();
   const key = `office:view:${demo ? 'demo' : 'live'}`;
@@ -234,6 +236,7 @@ export function OfficeWorkspace({
             onPin={onPin}
             onZoneDrop={onZoneDrop}
             onReply={onReply}
+            notify={notify}
             footer={
               <>
                 {model.veiled.length + model.veiledHelpers.length > 0 && (

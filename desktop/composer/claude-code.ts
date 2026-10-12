@@ -104,6 +104,16 @@ export function promptHolds(screen: string | Screen, text: string, strict = fals
  * this height may be hiding the start of its text.
  */
 export const maxBoxRows = (height: number) => Math.max(3, Math.floor((height - 10) / 2));
+// Below height 12 the box's lower edge is cut off (measured at 8–11): no prompt is read there
+// at all, and `wholeText` never counts one whole.
+
+/** Placeholders for content the box does not show: a collapsed paste, an attached image. */
+const PLACEHOLDER = /\[(?:Pasted text #\d+[^\]]*|Image #\d+[^\]]*)\]/;
+/** The task list's own hint below the box. */
+const TASKS = /ctrl\+t to (?:hide|show) tasks/i;
+/** Task rows right above the box (☐ pending, ◼ in progress, ✔ done). */
+const hasTaskList = (box: PromptBox) =>
+  box.lines.slice(Math.max(0, box.top - 30), box.top).some((line) => /^\s*[☐☒◻◼✔]\s/.test(line));
 
 /** Cells a text takes at most: every character but ASCII counted wide. */
 const widest = (text: string) =>
@@ -117,9 +127,18 @@ const widest = (text: string) =>
  * word wrap) is known whole. A plain screen without that report: never.
  */
 function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
+  // A collapsed paste or an attached image stands for content that is not on screen.
+  if (PLACEHOLDER.test(text)) return false;
+  // The task list (ctrl+t) takes rows of its own; the box's height there was not measured.
+  if (TASKS.test(box.lines.slice(box.bottom + 1).join(' ')) || hasTaskList(box)) return false;
   const rows = box.bottom - box.top - 1;
   if (screen.composer === undefined)
-    return !!screen.faint && screen.height !== undefined && rows < maxBoxRows(screen.height);
+    return (
+      !!screen.faint &&
+      screen.height !== undefined &&
+      screen.height >= 12 &&
+      rows < maxBoxRows(screen.height)
+    );
   const width = Math.max(...box.lines.slice(box.top, box.bottom + 1).map((line) => line.length));
   const room = width - 20;
   if (room < 10) return false;
@@ -225,22 +244,31 @@ export const claudeCodeComposer: ComposerAdapter = {
     canClear: !!host,
   }),
   inspect,
-  async clear(host, from, backup): Promise<ClearResult> {
+  async clear(host, from, backup, proceed): Promise<ClearResult> {
     if (!from.whole) return { status: 'failed', state: from, partial: true };
     const canTell = claudeCodeComposer.capabilities(host).canDetectSuggestion;
     const original = drawn(from.text);
-    await backup(from.text);
+    // Blank lines hold nothing worth keeping: the clipboard stays as it is.
+    if (from.text.trim()) await backup(from.text);
     let previous = from.text;
     let unchanged = 0;
     let moved = false;
     /** Orca: text no part of the draft, maybe the suggestion back in the emptied box. */
     let stranger: string | null = null;
     for (let round = 0; round < CLEAR_ROUNDS; round++) {
+      // Before every key: still the same Claude, in front of its terminal.
+      if (proceed && !(await proceed())) return { status: 'failed', state: from, lost: true };
       await host.press(['C-k', 'C-u']);
       await host.wait(REDRAW_MS);
       const state = await inspect(host);
-      if (readyToType(state)) return { status: 'cleared', state };
+      if (readyToType(state))
+        // The stranger was deleted after all: it was typing (saved), not the suggestion.
+        return stranger !== null
+          ? { status: 'changed', text: stranger, whole: true }
+          : { status: 'cleared', state };
       if (!holdsText(state)) return { status: 'failed', state };
+      // Text not known whole (someone typing a lot, a paste) is never probed: stop and ask.
+      if (!state.whole) return { status: 'changed', text: state.text, whole: false };
       if (state.text === previous) {
         // Untouched. A stranger that stays is the suggestion; the draft itself gets a few tries
         // (blank lines take a step each without changing what is drawn).
@@ -264,7 +292,7 @@ export const claudeCodeComposer: ComposerAdapter = {
       // the suggestion back in the emptied box — once, and nothing of the draft: saved first,
       // then it must stay untouched.
       if (canTell || stranger !== null || original.includes(now))
-        return { status: 'changed', text: state.text };
+        return { status: 'changed', text: state.text, whole: state.whole };
       stranger = state.text;
       await backup(`${from.text}\n${state.text}`);
       previous = state.text;

@@ -129,6 +129,7 @@ export function DeskDock() {
           onFloor={() => go('floor')}
           onReply={send.sendReply}
           onRefresh={() => void refresh()}
+          notify={notify}
         />
       ) : (
         <DeskRow

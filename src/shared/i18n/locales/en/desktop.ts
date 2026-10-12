@@ -65,6 +65,12 @@ export const desktop = {
     /** Not all of the composer's text is on screen (a box too short for it): nothing is cleared. */
     notWhole:
       "Not all of the text in the prompt is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
+    /** The draft was copied and cleared; copying what showed up after it failed. */
+    backupFailedLater:
+      'The draft was cleared and is on your clipboard, but copying the text that showed up after it failed, so nothing more was cleared or sent. Check the terminal.',
+    /** Claude paused, left, or stopped taking input while the prompt was being cleared. */
+    clearStopped:
+      "Claude's state changed while the prompt was being cleared, so clearing stopped and nothing was sent. Check the terminal.",
     /** Added to any failure once the composer's text was copied (it may be partly cleared). */
     clipboardKept: 'The text that was in the prompt is on your clipboard.',
     /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */

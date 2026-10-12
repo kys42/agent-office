@@ -608,25 +608,34 @@ async function deliver(
   if (!state.whole) throw new TerminalInputError(t.notWhole);
   const backup = options.backup;
   try {
-    const result = await composer.clear(io, state, async (text) => {
-      // Never less than the earlier clearing saved; never more than that and this draft.
-      const merged = mergeBackup(base, text);
-      try {
-        await backup(merged);
-      } catch {
-        throw new TerminalInputError(t.backupFailed);
-      }
-      memory.keep(key, merged);
-      saved = true;
-    });
-    if (result.status === 'changed') return ask(result.text, true, true);
+    const result = await composer.clear(
+      io,
+      state,
+      async (text) => {
+        // Never less than the earlier clearing saved; never more than that and this draft.
+        const merged = mergeBackup(base, text);
+        try {
+          await backup(merged);
+        } catch {
+          // A later copy (of text that showed up once the draft was gone) says what happened.
+          throw new TerminalInputError(saved ? t.backupFailedLater : t.backupFailed);
+        }
+        memory.keep(key, merged);
+        saved = true;
+      },
+      // Before every key: the same Claude, open to input and in front of its terminal.
+      async () => !!(await current()),
+    );
+    if (result.status === 'changed') return ask(result.text, result.whole, true);
     if (result.status === 'failed')
       throw new TerminalInputError(
         result.partial
           ? t.notWhole
-          : result.state.kind === 'unknown'
-            ? t.clearFailedSuggestion(composer.agent)
-            : t.clearFailed(composer.agent),
+          : result.lost
+            ? t.clearStopped
+            : result.state.kind === 'unknown'
+              ? t.clearFailedSuggestion(composer.agent)
+              : t.clearFailed(composer.agent),
       );
     // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
     // prompt must hold exactly the text, never a collapsed or shortened view of it.
@@ -638,7 +647,9 @@ async function deliver(
     const reason =
       error instanceof TerminalInputError ? error.message : t.unconfirmed(hostName(host));
     throw new TerminalInputError(
-      reason === t.backupFailed || reason.includes(t.clipboardKept)
+      reason === t.backupFailed ||
+        reason === t.backupFailedLater ||
+        reason.includes(t.clipboardKept)
         ? reason
         : `${reason} ${t.clipboardKept}`,
     );
@@ -676,7 +687,8 @@ async function deliver(
     const sent = (message: string): SendResult => ({
       status: 'sent',
       message,
-      ...(cleared && { cleared }),
+      // The cleared text is on the clipboard (blank lines are not copied).
+      ...(cleared && saved && { cleared: true }),
     });
     const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
     if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));

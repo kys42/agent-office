@@ -62,14 +62,15 @@ export type ComposerBackup = (text: string) => Promise<void>;
 /**
  * How a clearing ended. `cleared`: the composer is verified ready for typing (`state` is empty
  * or a suggestion). `failed`: it could not be emptied (`state` is what it holds; `partial` when
- * not all of the text was known, so nothing was deleted). `changed`: the composer stopped
+ * not all of the text was known, so nothing was deleted; `lost` when Claude stopped being the
+ * one at the terminal). `changed`: the composer stopped
  * matching the confirmed text minus what the keys deleted (someone typing meanwhile); it was
  * left alone and must be shown again.
  */
 export type ClearResult =
   | { status: 'cleared'; state: ComposerState }
-  | { status: 'failed'; state: ComposerState; partial?: boolean }
-  | { status: 'changed'; text: string };
+  | { status: 'failed'; state: ComposerState; partial?: boolean; lost?: boolean }
+  | { status: 'changed'; text: string; whole: boolean };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */
@@ -86,6 +87,8 @@ export interface ComposerAdapter {
     host: ComposerHost,
     from: Extract<ComposerState, { kind: 'draft' | 'unknown' }>,
     backup: ComposerBackup,
+    /** Asked before every key: false (Claude paused, gone, no longer in front) stops at once. */
+    proceed?: () => Promise<boolean>,
   ): Promise<ClearResult>;
 }
 
