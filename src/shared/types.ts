@@ -143,6 +143,82 @@ export interface DetailPage {
   /** The `before` event's time: where the page ends should that event have left the record. */
   beforeAt?: number;
   limit?: number;
+  /**
+   * The newest page, reaching back far enough to hold this event (a bookmark being opened), up
+   * to `LOADED_EVENTS`. Without `before` only.
+   */
+  reach?: string;
+  /** The `reach` event's time: found by it should that event have left the record. */
+  reachAt?: number;
+}
+/** One message as a bookmark keeps it: a copy, readable after its source is gone. */
+export interface BookmarkLine {
+  eventId: string;
+  kind: OfficeEvent['kind'];
+  phase?: OfficeEvent['phase'];
+  at: number;
+  text: string;
+  /** The copy stops short of the message. */
+  truncated?: boolean;
+  /** Only the retained notice excerpt was left of the message when it was bookmarked. */
+  excerpt?: boolean;
+}
+/**
+ * A message the person marked to keep (#97), copied with how it came about and where it was.
+ * The session's own record is never touched: the copy stays when the record moves on or goes.
+ */
+export interface Bookmark extends BookmarkLine {
+  id: string;
+  sessionId: string;
+  /** When it was bookmarked. */
+  createdAt: number;
+  note: string;
+  /** Whose message it was, as it was then. */
+  source: {
+    provider: Provider;
+    title: string;
+    alias: string;
+    project: string;
+    agentName?: string;
+    branch: string | null;
+    cwd: string | null;
+  };
+  /** What led to it: the person's request and what the colleague said on the way. */
+  context: {
+    /** The last request before it; absent when it is the request, or that left the record. */
+    request?: BookmarkLine;
+    /** Messages between the request and it, tool calls left out. */
+    progress: BookmarkLine[];
+    /** Messages of that stretch left out of `progress` (its middle) to keep it short. */
+    omitted: number;
+    /** Tool calls and results of that stretch, counted only. */
+    tools: number;
+  };
+  /** Where it was, to find it again: in the conversation now, in its source or resume later. */
+  anchor: {
+    nativeId: string;
+    sessionKey?: string;
+    sourcePath: string;
+    sourceRef: string;
+    legacyId?: string;
+    /** Its place in the conversation as shown when it was bookmarked (for reference only). */
+    index: number;
+  };
+}
+/** Which bookmarks a list shows: newest bookmarked first. */
+export interface BookmarkQuery {
+  /** Only these sessions' bookmarks; absent means all. */
+  sessionIds?: string[];
+  /** Words in the message, its note, request, or whose it was. */
+  text?: string;
+  before?: { createdAt: number; id: string } | null;
+  limit?: number;
+}
+export interface BookmarkPage {
+  bookmarks: Bookmark[];
+  more: boolean;
+  /** Every bookmark matching the query, all pages. */
+  total: number;
 }
 /** A session with one page of its conversation. */
 export type SessionDetail = Session & {
@@ -354,6 +430,10 @@ export interface Snapshot {
   notices?: OfficeNotice[];
   /** Exact over all visible notices, not only the ones carried in `notices`. */
   noticeStats?: { unread: number; total: number };
+  /** Bookmarked messages of the listed colleagues: event ids by session id. */
+  bookmarked?: Record<string, string[]>;
+  /** Changes whenever any bookmark is added, removed or edited: lists read again. */
+  bookmarkStamp?: string;
   /**
    * The collector's resolved language: its sessions, notices and messages are written in it.
    * With the `auto` preference the UI follows it, so both sides always agree. Demo snapshots
@@ -479,6 +559,18 @@ export interface OfficeAPI {
   /** Pin or unpin colleagues (e.g. all runs of a persona) in one step: all of them or none. */
   pin: (ids: string[], on: boolean) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
+  /** A page of the person's bookmarks. */
+  bookmarks: (query?: BookmarkQuery) => Promise<BookmarkPage>;
+  /** Bookmark a message (again: the same bookmark, `note` replacing its note when given). */
+  bookmark: (
+    sessionId: string,
+    eventId: string,
+    note?: string,
+  ) => Promise<{ bookmark: Bookmark; snapshot: Snapshot }>;
+  unbookmark: (id: string) => Promise<Snapshot>;
+  /** Take the bookmark of one message off (no-op when it has none). */
+  unbookmarkMessage: (sessionId: string, eventId: string) => Promise<Snapshot>;
+  bookmarkNote: (id: string, note: string) => Promise<Bookmark>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**

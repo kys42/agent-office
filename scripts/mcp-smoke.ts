@@ -23,6 +23,7 @@ const s = parseRecords(
   { provider: 'codex', sourcePath: '/tmp/synthetic.jsonl', mtime: Date.now() },
 );
 store.upsert([s], 'codex');
+store.bookmark(s.id, s.events.find((e) => e.kind === 'user')!.id, '계약 메모');
 store.close();
 const client = new Client({ name: 'office-smoke', version: '1' });
 const transport = new StdioClientTransport({
@@ -39,7 +40,7 @@ const transport = new StdioClientTransport({
 try {
   await client.connect(transport);
   const tools = await client.listTools();
-  assert.equal(tools.tools.length, 4);
+  assert.equal(tools.tools.length, 5);
   assert.ok(tools.tools.every((t) => t.annotations?.readOnlyHint));
   const result = await client.callTool({ name: 'office_search', arguments: { query: '계약' } });
   assert.equal(result.isError, undefined);
@@ -54,10 +55,16 @@ try {
     arguments: { id: 'codex:test', revision: s.revision },
   });
   assert.ok(JSON.stringify(packet).includes('MCP 계약'));
+  const marked = await client.callTool({
+    name: 'office_list_bookmarks',
+    arguments: { query: '계약 메모' },
+  });
+  assert.equal(marked.isError, undefined);
+  assert.ok(JSON.stringify(marked).includes('MCP 계약 검증'));
   console.log(
     JSON.stringify({
       ok: true,
-      tools: 4,
+      tools: 5,
       readOnly: true,
       search: true,
       handoff: true,

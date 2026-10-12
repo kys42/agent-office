@@ -54,6 +54,14 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 데이터 위치: `~/Library/Application Support/Agent Office/office.sqlite`. `AGENT_OFFICE_DATA_DIR`로 변경할 수 있다. 디렉터리 0700, DB 0600, WAL, busy_timeout. 원본과 사용자 메타데이터를 별도 테이블로 유지한다.
 
+메시지 북마크(#97)는 `bookmarks` 테이블에 둔다(`session_id`+`event_id` 유일, `data`는 `Bookmark` JSON).
+- **사본:** 서버가 저장된 세션에서 그 메시지와 맥락을 찾아 사본으로 남긴다. 렌더러가 보낸 글은 받지 않는다. 원문 창 밖이면 보관된 소식 발췌로 남긴다.
+  - 맥락: 직전 요청, 그 사이 진행 메시지 최대 12개(앞 4·뒤 8, 나머지는 개수만), 도구 사용 횟수. `src/shared/bookmarks.ts`의 `bookmarkContext`가 정한다.
+  - 출처와 위치(`anchor`: nativeId·sessionKey·sourcePath·sourceRef·legacyId·대화 순번)도 함께 남겨서, 세션 기록이 사라져도 읽히고 다시 찾아갈 수 있게 한다.
+- **조회:** 세션이 지워져도 북마크는 남는다. 제외 프로젝트·꺼진 도구의 북마크는 목록에서만 빼고, 읽기·메모·해제도 막는다. 판단 기준은 그 동료가 지금 기록된 도구·프로젝트이고, 기록이 사라졌으면 북마크 당시의 출처다.
+- **표시 동기화:** 스냅샷 `bookmarked`(세션별 eventId)로 모든 창의 표시를 맞춘다. 추가·메모·해제마다 오르는 `bookmarkStamp`(settings `bookmarks_revision`)를 받으면 열린 목록이 다시 읽는다.
+- **위치 이동:** 북마크를 열면 `detail(id, { reach, reachAt })`이 그 메시지까지 넓힌 최근 페이지(최대 400)를 돌려준다.
+
 프로젝트 제외·공급자 비활성은 list/search/detail/handoff/MCP 모두에 적용한다. 제외는 조회 정책이며 이미 저장된 데이터의 삭제를 뜻하지 않는다. 개인정보 화면 모드는 화면의 내용을 가리는 기능으로, 원문 삭제·암호화·OS 캡처 차단을 보장하지 않는다.
 
 검색은 제한된 로컬 코퍼스에 대해 대소문자 비구분 AND 부분 문자열을 사용한다. 한국어 부분 단어·기호를 지원한다. FTS5 테이블은 증분 색인으로 유지하되 현재 검색 결과에는 문자열 검증을 사용한다. 의미 검색/AI 요약이라고 표기하지 않는다.

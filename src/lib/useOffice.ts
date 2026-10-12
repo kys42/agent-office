@@ -306,6 +306,22 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       accept(await api.pin(ids.slice(i, i + BATCH), next));
     return next;
   };
+  /**
+   * Bookmark one of a colleague's messages (`on`), or take its bookmark off; every window then
+   * marks it from the office it receives. Nothing is kept in the demo.
+   */
+  const bookmark = async (sessionId: string, eventId: string, on: boolean) => {
+    if (demo) return;
+    accept(
+      on
+        ? (await api.bookmark(sessionId, eventId)).snapshot
+        : await api.unbookmarkMessage(sessionId, eventId),
+    );
+  };
+  /** Take a bookmark off by its id (the bookmark list). */
+  const unbookmark = async (id: string) => {
+    if (!demo) accept(await api.unbookmark(id));
+  };
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
     if (demo) {
       setSnapshot((s) =>
@@ -440,6 +456,8 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     visit,
     veil,
     returnToOffice,
+    bookmark,
+    unbookmark,
   };
 }
 export type OfficeCore = ReturnType<typeof useOffice>;
