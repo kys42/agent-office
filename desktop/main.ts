@@ -384,7 +384,15 @@ async function saveCardSize(size: { width: number; height: number }) {
 }
 /** The size the card was last placed at (to tell the person's resize from a fit to the room). */
 let cardPlaced = { width: 0, height: 0 };
+/** Whose card is up (to tell a second click on the same desk from a click on another). */
+let cardTarget: CardTarget | null = null;
 function showCard(target: CardTarget, anchor: Rect) {
+  // The same colleague clicked again while its card is up: put the card away (a toggle).
+  if (card && !card.isDestroyed() && card.isVisible() && cardTarget?.id === target.id) {
+    hideCard();
+    return;
+  }
+  cardTarget = target;
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
   const size = loadCardSize();
@@ -504,6 +512,7 @@ function stopCardDrag() {
 }
 function hideCard() {
   stopCardDrag();
+  cardTarget = null;
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
   if (card && !card.isDestroyed() && card.isVisible()) {

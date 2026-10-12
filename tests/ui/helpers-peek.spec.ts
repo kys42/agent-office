@@ -638,7 +638,7 @@ test('An unfolded bubble in the dock offers the pop-up card', async ({ page }) =
   await bubble.getByRole('button', { name: '말풍선 전체 보기' }).click();
   const popup = bubble.getByRole('button', { name: /업무 카드 열기/ });
   await expect(popup).toBeVisible();
-  await expect(popup).toContainText('팝업으로 보기');
+  await expect(popup).toHaveAttribute('title', '팝업으로 보기');
   await page.locator('.desk-row').screenshot({ path: '.local/bubble-popup-row.png' });
   // In the browser preview the card opens in the office (the desktop opens the pop-up window).
   await popup.click();

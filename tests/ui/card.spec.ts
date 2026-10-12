@@ -329,3 +329,15 @@ test('At the smallest card width the tabs never run under the filter or the swit
     'true',
   );
 });
+
+test('What the person sends shows at once, marked as waiting, until the record has it', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  const box = aside.locator('.card-composer textarea');
+  await box.fill('작업 끝나면 테스트도 돌려 줘');
+  await box.press('Enter');
+  const waiting = aside.locator('.message-pending');
+  await expect(waiting).toContainText('작업 끝나면 테스트도 돌려 줘');
+  await expect(waiting).toContainText('차례를 기다리는 중');
+});

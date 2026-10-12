@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
@@ -169,6 +169,7 @@ export function Conversation({
   hideProgress = false,
   name,
   filtersOpen,
+  sent = [],
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -192,6 +193,11 @@ export function Conversation({
   name?: string;
   /** The card opens its filters from a button beside its tabs. */
   filtersOpen?: boolean;
+  /**
+   * What the person just sent that the record does not show yet (a busy Claude reads queued
+   * input only when it gets to it): drawn as their own bubbles, marked as waiting.
+   */
+  sent?: { id: string; text: string; at: number }[];
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -238,7 +244,7 @@ export function Conversation({
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  const last = groups.at(-1)?.events.at(-1)?.id;
+  const last = `${groups.at(-1)?.events.at(-1)?.id}:${sent.length}`;
   // Our own scroll events arrive a frame later; by then content above may have grown, so they
   // must not be mistaken for the person scrolling up (which turns following off).
   const programmaticAt = useRef(0);
@@ -279,6 +285,50 @@ export function Conversation({
     programmaticAt.current = performance.now();
     scroller.scrollTop += moved;
   }, [groups, count]);
+  // Something the person just sent: follow it to the bottom.
+  const sentCount = sent.length;
+  const sentBefore = useRef(sentCount);
+  useEffect(() => {
+    if (sentCount > sentBefore.current) {
+      follow.current = true;
+      setNewBelow(false);
+      requestAnimationFrame(() => scrollBottom());
+    }
+    sentBefore.current = sentCount;
+  }, [sentCount]);
+  const canShowOlder = groups.length > count || older;
+  const showOlder = () => {
+    follow.current = false;
+    keepPosition();
+    // Shown ones first; the page before them once fewer than a step remain.
+    if (groups.length - count < 24 && older) onOlder?.();
+    setCount(count + 24);
+  };
+  // Scrolling up to the top brings the earlier conversation in by itself (the button stays for
+  // the keyboard and as the sign that there is more).
+  // When the "earlier" button comes into view (scrolled up to it), the earlier part comes in by
+  // itself — one step at a time: the page in flight and the kept position settle first.
+  const olderButton = useRef<HTMLButtonElement>(null);
+  const loadedAt = useRef(0);
+  // Only after the person has scrolled: opening the card never reads further back by itself.
+  const scrolledByPerson = useRef(false);
+  const reachTop = useEffectEvent(() => {
+    if (!scrolledByPerson.current || !canShowOlder || loadingOlder) return;
+    if (performance.now() - loadedAt.current < 800) return;
+    loadedAt.current = performance.now();
+    showOlder();
+  });
+  useEffect(() => {
+    const button = olderButton.current;
+    const scroller = root.current?.closest('.inspector-scroll');
+    if (!button || !scroller) return;
+    const seen = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && reachTop(),
+      { root: scroller, rootMargin: '400px 0px 0px 0px' },
+    );
+    seen.observe(button);
+    return () => seen.disconnect();
+  }, [canShowOlder]);
   useEffect(() => {
     const scroller = root.current?.closest('.inspector-scroll');
     if (!scroller) return;
@@ -289,6 +339,14 @@ export function Conversation({
       }
       // The person scrolls on their own: their position is theirs again.
       anchor.current = null;
+      scrolledByPerson.current = true;
+      // Already near the earlier button (the observer may have spoken before this scroll did).
+      const button = olderButton.current;
+      if (
+        button &&
+        button.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top - 400
+      )
+        reachTop();
       follow.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
       if (follow.current) setNewBelow(false);
     };
@@ -460,15 +518,10 @@ export function Conversation({
       )}
       {(groups.length > count || older) && (
         <button
+          ref={olderButton}
           className="older-messages"
           disabled={loadingOlder}
-          onClick={() => {
-            follow.current = false;
-            keepPosition();
-            // Shown ones first; the page before them once fewer than a step remain.
-            if (groups.length - count < 24 && older) onOlder?.();
-            setCount(count + 24);
-          }}
+          onClick={showOlder}
         >
           {loadingOlder
             ? t.conversation.loadingOlder
@@ -529,6 +582,24 @@ export function Conversation({
           {filter === 'reply' && <small>{t.conversation.replyHint}</small>}
         </div>
       )}
+      {filter === 'all' &&
+        sent.map((p) => (
+          <article
+            key={p.id}
+            className="conversation-message message-user message-pending"
+            data-message-category="request"
+          >
+            <div className="message-meta">
+              <span>{t.conversation.you}</span>
+              <small>{t.conversation.pending}</small>
+            </div>
+            <div className="message-bubble">
+              <div className="message-text">
+                <p>{p.text}</p>
+              </div>
+            </div>
+          </article>
+        ))}
       <div className="conversation-end" ref={bottom}>
         {['work', 'think'].includes(session.status) ? (
           <>

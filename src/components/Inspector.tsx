@@ -235,6 +235,24 @@ export function Inspector({
   });
   const live = targets[session.id] ?? null;
   const closePacket = useCallback(() => setPacket(null), []);
+  // What was just sent, until the record shows it (a busy Claude reads queued input later).
+  const [sent, setSent] = useState<{ id: string; text: string; at: number }[]>([]);
+  const remember = (text: string) =>
+    setSent((list) => [...list, { id: `sent:${Date.now()}`, text: text.trim(), at: Date.now() }]);
+  useEffect(() => setSent([]), [session.id]);
+  useEffect(() => {
+    setSent((list) => {
+      const asked = view.session.events
+        .filter((e) => e.kind === 'user')
+        .map((e) => ({ text: e.text.trim(), at: e.at }));
+      const next = list.filter(
+        (p) =>
+          Date.now() - p.at < 30 * 60_000 &&
+          !asked.some((e) => e.text === p.text && e.at >= p.at - 60_000),
+      );
+      return next.length === list.length ? list : next;
+    });
+  }, [view.session.events]);
   // Opening a bookmark: the conversation, read back far enough to hold its message.
   const [reached, setReached] = useState<number | null>(null);
   const focusHere = focus && focus.sessionId === session.id && !demo ? focus : null;
@@ -784,6 +802,7 @@ export function Inspector({
               const id = s.id;
               notify(await api.send!(id, text));
               markSent(id);
+              remember(text);
             }}
           />
         )}
@@ -872,6 +891,7 @@ export function Inspector({
             hideProgress={card && !showProgress}
             name={card ? (privacy ? undefined : sessionName(s)) : undefined}
             filtersOpen={filtersOpen}
+            sent={sent}
             bookmarked={bookmarked}
             onBookmark={demo ? undefined : mark}
             focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
@@ -1224,6 +1244,7 @@ export function Inspector({
                   const id = s.id;
                   notify(await api.send!(id, text));
                   markSent(id);
+                  remember(text);
                 }}
               />
             ) : (

@@ -225,6 +225,26 @@ try {
   // Its header moves it from the main process (no CSS drag region in the card).
   await card.evaluate(() => window.office.card('drag-start'));
   await card.evaluate(() => window.office.card('drag-end'));
+  // The same desk clicked again puts its card away (a toggle); clicked once more, it is back.
+  const cardShown = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .isVisible(),
+    );
+  const again = () =>
+    dock.evaluate(() =>
+      window.office.card(
+        'open',
+        { id: 'codex:codex-test', news: false },
+        { x: 400, y: 600, width: 200, height: 100 },
+      ),
+    );
+  await again();
+  assert.equal(await cardShown(), false, 'a second click on the same desk closes its card');
+  await again();
+  await card.waitForSelector('.inspector-card');
+  assert.equal(await cardShown(), true, 'and a third opens it again');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();

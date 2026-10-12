@@ -105,7 +105,7 @@ export function DeskPet({
               onPopup={(el) =>
                 void openColleague(bubble.sessionId, {
                   anchor: el.closest('.dock-pet-anchor'),
-                  news: true,
+                  news: false,
                 })
               }
               onOpen={() => {

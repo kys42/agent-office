@@ -279,14 +279,14 @@ export function SpeechBubble({
       {onPopup && open && (
         <button
           className="bubble-popup"
+          title={t.desk.row.cardTitle}
           aria-label={t.desk.row.openCard(privacy ? PROVIDERS[s.provider].name : sessionName(s))}
           onClick={(e) => {
             e.stopPropagation();
             onPopup(e.currentTarget);
           }}
         >
-          <PanelRightOpen size={11} strokeWidth={2.4} />
-          {t.desk.row.cardTitle}
+          <PanelRightOpen size={10} strokeWidth={2.6} />
         </button>
       )}
       {reply && (

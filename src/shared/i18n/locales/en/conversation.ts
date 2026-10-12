@@ -1,4 +1,5 @@
 export const conversation = {
+  pending: 'Sent · waiting for its turn',
   you: 'You',
   toolUse: 'Tool use',
   toolResult: 'Tool result',

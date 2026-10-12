@@ -70,16 +70,20 @@ test('A colleague card reads older messages by page, keeps the reading position 
   await expect(conversation.getByText(label(79))).toHaveCount(0);
   const older = conversation.locator('.older-messages');
   await expect(older).toHaveText('이전 대화 16개 더 보기');
-  // The person scrolls up to the oldest shown message and the button above it.
-  await older.scrollIntoViewIfNeeded();
-  const reading = conversation.getByText(label(96));
-  const top = async () => (await reading.boundingBox())!.y;
-  const before = await top();
-  // The last shown ones and the page before them; the message read stays put.
-  await older.click();
-  await expect(conversation.getByText(label(72))).toBeVisible();
-  await expect.poll(top).toBeCloseTo(before, 0);
-  expect(await page.evaluate(() => (window as any).pages)).toEqual([null, 'e80']);
+  // The person scrolls up toward the top: the earlier conversation comes in by itself (the last
+  // shown ones and the page before them), and the message being read stays put.
+  // (Scrolls within a moment of the card's own scroll to the newest count as the card's.)
+  await page.waitForTimeout(400);
+  await card
+    .locator('.inspector-scroll')
+    .evaluate((el) => el.scrollTo({ top: 300, behavior: 'instant' }));
+  await expect(conversation.getByText(label(72))).toBeAttached();
+  await expect.poll(() => page.evaluate(() => (window as any).pages)).toEqual([null, 'e80']);
+  // What was in view stays in view: the inserted earlier part goes above it, not under the eye.
+  await expect
+    .poll(() => card.locator('.inspector-scroll').evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(1000);
+
   for (let i = 0; i < 6 && (await older.count()); i++) await older.click();
   await expect(conversation.getByText(label(0))).toBeAttached();
   await expect(older).toHaveCount(0);
