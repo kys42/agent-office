@@ -599,7 +599,7 @@ body.dock-mode {
   align-items: center;
   pointer-events: none;
 }
-.zone-flag-banner > * {
+.zone-flag-banner > .zone-flag-cloth {
   pointer-events: auto;
 }
 /* A tall vertical banner (nobori) in the zone colour, swallow-tailed at the bottom. */
