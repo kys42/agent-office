@@ -437,6 +437,8 @@ test("Claude's prompt is read from the screen: a dialog, menu or other view is n
     'hold space to speak',
   ])
     assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), '', foot);
+  // A narrow pane wraps a hint across rows.
+  assert.equal(readPrompt(`${claudeScreen('hi')}\n  enter to\n  interrupt and send`), null);
   // History search and the transcript take Enter themselves.
   for (const foot of ['search prompts: fix', 'no matching prompt: xyz', 'ctrl+o to toggle'])
     assert.equal(readPrompt(`${claudeScreen('')}\n  ${foot}`), null, foot);

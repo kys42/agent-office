@@ -295,7 +295,10 @@ export function readPrompt(screen: string): string | null {
   if (top < 0) return null;
   const box = lines.slice(top + 1, bottom);
   if (!/^❯(\s|$)/.test(box[0] ?? '')) return null;
-  if (lines.slice(bottom + 1).some((line) => FOOT.test(line) || /^\s*❯/.test(line))) return null;
+  const below = lines.slice(bottom + 1);
+  // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
+  if (FOOT.test(below.join(' ').replace(/\s+/g, ' ')) || below.some((line) => /^\s*❯/.test(line)))
+    return null;
   // Only the row touching the box: older output that merely looks like a list is no list.
   const above = lines.slice(Math.max(0, top - 3), top).findLast((line) => line.trim());
   if (above && SUGGESTION.test(above)) return null;
