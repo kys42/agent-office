@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
-import { MOODS, type Session, type OfficeNotice, type TerminalTarget } from '../shared/types';
+import {
+  MOODS,
+  type Session,
+  type OfficeNotice,
+  type ReplySender,
+  type TerminalTarget,
+} from '../shared/types';
 import { sessionName, projectKey } from '../shared/office';
 import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
@@ -20,6 +26,8 @@ import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffe
 import type { ReceiptHandler } from './News';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
+import { api } from '../lib/api';
+import { jumpOrCopy } from '../lib/resume';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
@@ -49,6 +57,7 @@ export function Office({
   onPin,
   onZoneDrop,
   onReply,
+  notify,
   quotaOf,
 }: {
   sessions: Session[];
@@ -76,7 +85,9 @@ export function Office({
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
   /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
-  onReply?: (sessionId: string, text: string) => Promise<void>;
+  onReply?: ReplySender;
+  /** Says what a jump to the terminal did (or the resume command it copied). */
+  notify?: (message: string) => void;
   /** The usage limit this colleague's tool has used up, if any (desk lights go out). */
   quotaOf?: (s: Session) => QuotaExhaustion | undefined;
 }) {
@@ -165,6 +176,11 @@ export function Office({
   const replyFor = (s: Session) =>
     deskSpeech(s, notices, bubbleHours, clock).bubble?.sessionId ?? s.id;
   const quick = !!onReply && !privacy;
+  /** Like the desk tools: the result (or the copied resume command) is said, never swallowed. */
+  const jumpTo = (id: string) => {
+    const say = notify ?? (() => {});
+    jumpOrCopy(id, say).catch((e) => say((e as Error).message));
+  };
   // Helper desks carry no bubble; only the stations' own sessions can be replied to.
   const replyable = quick
     ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
@@ -603,9 +619,11 @@ export function Office({
                             }
                             name={sessionName(byId.get(replying.id) ?? s)}
                             onClose={() => setReplying(null)}
-                            onSend={async (text) => {
-                              await onReply!(replying.id, text);
-                              markSent(replying.id);
+                            onJump={api.jump ? () => void jumpTo(replying.id) : undefined}
+                            onSend={async (text, replaceDraft) => {
+                              const result = await onReply!(replying.id, text, replaceDraft);
+                              if (result.status === 'sent') markSent(replying.id);
+                              return result;
                             }}
                           />
                         )}

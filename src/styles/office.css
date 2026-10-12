@@ -542,6 +542,11 @@
 .project-area:has(.speech-request-bubble, .speech-bubble.is-expanded) {
   z-index: 2;
 }
+/* An open reply (and the question about the prompt under it) stays above every other area,
+   including one lifted by its request or unfolded bubble. */
+.project-area:has(.quick-reply) {
+  z-index: 4;
+}
 .phase-night .project-area {
   background:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),

@@ -13,7 +13,7 @@ import {
   SlidersHorizontal,
   EyeOff,
 } from 'lucide-react';
-import type { OfficeZone, Provider, Session, Snapshot } from '../shared/types';
+import type { OfficeZone, Provider, ReplySender, Session, Snapshot } from '../shared/types';
 import { zoneVeilIds, type OfficeModel } from '../shared/office-model';
 import { PROVIDERS } from '../shared/types';
 import { helperName, projectKey, sessionName } from '../shared/office';
@@ -62,6 +62,7 @@ export function OfficeWorkspace({
   onPin,
   onZoneDrop,
   onReply,
+  notify,
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
@@ -89,7 +90,8 @@ export function OfficeWorkspace({
   /** Keep a colleague in the office however long it stays quiet (toggles `pinned`). */
   onPin: (s: Session) => void;
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
-  onReply?: (sessionId: string, text: string) => Promise<void>;
+  onReply?: ReplySender;
+  notify?: (message: string) => void;
 }) {
   const { t } = useI18n();
   const key = `office:view:${demo ? 'demo' : 'live'}`;
@@ -234,6 +236,7 @@ export function OfficeWorkspace({
             onPin={onPin}
             onZoneDrop={onZoneDrop}
             onReply={onReply}
+            notify={notify}
             footer={
               <>
                 {model.veiled.length + model.veiledHelpers.length > 0 && (

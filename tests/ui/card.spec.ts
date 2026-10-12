@@ -95,7 +95,7 @@ async function card(
         terminalSend: async () => true,
         send: async (id: string, text: string) => {
           w.sent.push([id, text]);
-          return 'sent';
+          return { status: 'sent', message: '보냈어요' };
         },
         terminals: async (ids: string[]) =>
           Object.fromEntries(

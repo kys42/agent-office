@@ -50,6 +50,31 @@ export const desktop = {
     notReady:
       "It isn't taking input right now (a permission prompt, plan approval, menu or shell mode may be open). Check the terminal.",
     draft: 'There is already text in the prompt. Check the terminal before sending.',
+    /** Copying the composer's text to the clipboard failed, so it was left alone. */
+    backupFailed:
+      "Couldn't copy the text in the prompt to the clipboard, so nothing was cleared or sent.",
+    /** `agent` is the agent's name, e.g. Claude. The earlier text is already on the clipboard. */
+    clearFailed: (agent: string) =>
+      `Couldn't empty the ${agent} prompt, so nothing was sent. Check the terminal.`,
+    /** The text never moved: the keys may not have arrived, or it is the agent's own suggestion. */
+    clearFailedSuggestion: (agent: string) =>
+      `Couldn't empty the ${agent} prompt, so nothing was sent. If it's ${agent}'s suggestion, it can't be cleared from here: type over it in the terminal.`,
+    /** After clearing, the prompt did not show exactly the typed text: no Enter, the text stays. */
+    notVerified:
+      "Typed it into the emptied prompt, but couldn't confirm it holds only your text, so it wasn't submitted. Check the terminal.",
+    /** Not all of the composer's text is on screen (a box too short for it): nothing is cleared. */
+    notWhole:
+      "Not all of the text in the prompt is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
+    /** The draft was copied and cleared; copying what showed up after it failed. */
+    backupFailedLater:
+      'The draft was cleared and is on your clipboard, but copying the text that showed up after it failed, so nothing more was cleared or sent. Check the terminal.',
+    /** Claude paused, left, or stopped taking input while the prompt was being cleared. */
+    clearStopped:
+      "Claude's state changed while the prompt was being cleared, so clearing stopped and nothing was sent. Check the terminal.",
+    /** Added to any failure once the composer's text was copied (it may be partly cleared). */
+    clipboardKept: 'The text that was in the prompt is on your clipboard.',
+    /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */
+    unsupportedAgent: (agent: string) => `Sending to ${agent} from here isn't supported.`,
     shellPrefix: "Text starting with ‘!’ would run as a shell command, so it isn't sent.",
     unreadable: (host: string) => `Couldn't read the ${host} screen, so nothing was sent.`,
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */

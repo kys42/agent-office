@@ -1,5 +1,30 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { ReplySender, SendResult } from '../shared/types';
+import { m } from '../shared/i18n';
 import { api } from './api';
+
+/**
+ * Sends a follow-up through the desktop app and reports a finished send (and, when the agent's
+ * composer text was cleared for it, that the text is on the clipboard). Text found in the
+ * composer comes back as `needs-confirm` for the reply box to ask about; nothing was typed.
+ */
+export async function sendFollowUp(
+  id: string,
+  text: string,
+  replaceDraft: string | undefined,
+  notify: (message: string) => void,
+): Promise<SendResult> {
+  const result = await api.send!(
+    id,
+    text,
+    replaceDraft === undefined ? undefined : { replaceDraft },
+  );
+  if (result.status === 'sent')
+    notify(
+      result.cleared ? `${result.message} · ${m().terminal.clearedToClipboard}` : result.message,
+    );
+  return result;
+}
 
 /**
  * The desktop setting (on by default) for typing into terminals, and the send used by quick replies. Shared by
@@ -23,11 +48,11 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
     }
   };
   const on = enabled && !demo;
-  const sendReply =
+  const sendReply: ReplySender | undefined =
     on && api.send
-      ? async (id: string, text: string) => {
+      ? async (id, text, replaceDraft) => {
           try {
-            notify(await api.send!(id, text));
+            return await sendFollowUp(id, text, replaceDraft, notify);
           } catch (e) {
             // Also shown in the reply box; the toast survives if the box is gone.
             notify((e as Error).message);

@@ -49,6 +49,21 @@ export const desktop: Messages['desktop'] = {
     notReady:
       '지금은 입력을 받을 수 없어요(권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 터미널을 확인해 주세요.',
     draft: '입력창에 이미 글이 있어요. 터미널을 확인한 뒤 보내 주세요.',
+    backupFailed: '입력창의 글을 클립보드에 복사하지 못해 지우지도 보내지도 않았어요.',
+    clearFailed: (agent) =>
+      `${agent} 입력창을 비우지 못해 보내지 않았어요. 터미널을 확인해 주세요.`,
+    clearFailedSuggestion: (agent) =>
+      `${agent} 입력창을 비우지 못해 보내지 않았어요. ${agent}의 추천 글이면 여기서는 지울 수 없어요. 터미널에서 그 위에 입력해 주세요.`,
+    notVerified:
+      '비운 입력창에 넣었지만 넣은 글만 있는지 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
+    notWhole:
+      '입력창 글이 다 보이지 않아 여기서 지울 수 없어요. 터미널에서 비운 뒤 다시 보내 주세요.',
+    backupFailedLater:
+      '초안은 지워서 클립보드에 있지만, 그 뒤에 나타난 글을 복사하지 못해 더 지우거나 보내지 않았어요. 터미널을 확인해 주세요.',
+    clearStopped:
+      '입력창을 비우는 사이 Claude 상태가 바뀌어 멈췄고 보내지 않았어요. 터미널을 확인해 주세요.',
+    clipboardKept: '입력창에 있던 글은 클립보드에 있어요.',
+    unsupportedAgent: (agent) => `${agent}에는 여기서 보낼 수 없어요.`,
     shellPrefix: '‘!’로 시작하는 글은 셸 명령으로 실행돼서 보내지 않아요.',
     unreadable: (host) => `${host} 화면을 읽지 못해서 보내지 않았어요.`,
     orcaRefused: (reason) => `Orca가 입력을 받지 않았어요${reason}.`,

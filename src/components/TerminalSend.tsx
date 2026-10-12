@@ -1,8 +1,9 @@
-import { useState } from 'react';
 import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
-import type { TerminalTarget } from '../shared/types';
+import type { SendResult, TerminalTarget } from '../shared/types';
 import { m } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
+import { useComposerSend } from '../lib/useComposerSend';
+import { DraftConfirm } from './DraftConfirm';
 
 export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
@@ -30,19 +31,21 @@ export function TerminalSend({
   enabled,
   privacy,
   onSend,
+  onJump,
   chat = false,
 }: {
   target: TerminalTarget;
   enabled: boolean;
   privacy: boolean;
-  onSend: (text: string) => Promise<void>;
+  onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
+  /** Brings the session's terminal to the front (offered when its text can't be cleared). */
+  onJump?: () => void;
   /** The card's chat box: Enter sends, Shift+Enter breaks the line, and it grows as you type. */
   chat?: boolean;
 }) {
   const { t } = useI18n();
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
+  const reply = useComposerSend(onSend, () => reply.setText(''));
+  const { text, sending, error, draft } = reply;
   const host = HOSTS[target.kind];
   if (!enabled)
     return (
@@ -52,25 +55,22 @@ export function TerminalSend({
       </p>
     );
   const waiting = !target.canSend;
-  const submit = async () => {
-    if (!text.trim() || waiting || sending) return;
-    setSending(true);
-    setError('');
-    try {
-      await onSend(text);
-      setText('');
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSending(false);
-    }
+  const submit = () => {
+    if (!waiting) void reply.submit();
   };
   return (
     <form
       className={`terminal-send ${chat ? 'terminal-send-chat' : ''}`}
       onSubmit={(e) => {
         e.preventDefault();
-        void submit();
+        submit();
+      }}
+      onKeyDown={(e) => {
+        // Esc drops an open question about the composer's text; the message stays.
+        if (e.key === 'Escape' && draft && !e.nativeEvent.isComposing) {
+          e.stopPropagation();
+          reply.cancel();
+        }
       }}
     >
       <textarea
@@ -83,12 +83,12 @@ export function TerminalSend({
             ? targetPlaceholder(target)
             : `${targetPlaceholder(target)} · ${chat ? t.terminal.replyKeys : t.terminal.sendShortcut}`
         }
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => reply.setText(e.target.value)}
         onKeyDown={(e) => {
           const sends = chat ? !e.shiftKey : e.metaKey || e.ctrlKey;
           if (e.key === 'Enter' && sends && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            void submit();
+            submit();
           }
         }}
       />
@@ -107,6 +107,17 @@ export function TerminalSend({
           {t.terminal.send}
         </button>
       </div>
+      {draft && (
+        <DraftConfirm
+          draft={draft}
+          sending={sending}
+          privacy={privacy}
+          blocked={waiting}
+          onJump={target.canFocus ? onJump : undefined}
+          onConfirm={() => void reply.confirm()}
+          onCancel={reply.cancel}
+        />
+      )}
       {error && (
         <small className="terminal-send-error" role="alert">
           {error}

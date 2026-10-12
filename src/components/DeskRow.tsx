@@ -23,7 +23,13 @@ import { DeskActionButton } from './DeskActionButton';
 import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
-import { MOODS, type NoticeReceipt, type Session, type TerminalTarget } from '../shared/types';
+import {
+  MOODS,
+  type NoticeReceipt,
+  type ReplySender,
+  type Session,
+  type TerminalTarget,
+} from '../shared/types';
 import { branchInfo } from '../shared/branch';
 import {
   DESK_FOOT,
@@ -98,7 +104,7 @@ export function DeskRow({
   /** Switch between the office row and the floor desks. */
   onSwitch: () => void;
   /** Desktop, with Send to terminal on: an unfolded bubble whose session can take a follow-up offers a reply. */
-  onReply?: (sessionId: string, text: string) => Promise<void>;
+  onReply?: ReplySender;
   /** Short results and failures, shown by the dock. */
   notify: (message: string) => void;
   /** Look at the session records again now (and restart a stopped collector). */
@@ -579,9 +585,11 @@ export function DeskRow({
                             }
                             name={label.name}
                             onClose={() => setReplying(null)}
-                            onSend={async (text) => {
-                              await onReply(replying.id, text);
-                              markSent(replying.id);
+                            onJump={api.jump ? () => void jump(replying.id) : undefined}
+                            onSend={async (text, replaceDraft) => {
+                              const result = await onReply(replying.id, text, replaceDraft);
+                              if (result.status === 'sent') markSent(replying.id);
+                              return result;
                             }}
                           />
                         )}
