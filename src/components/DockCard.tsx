@@ -27,6 +27,21 @@ export function DockCard() {
     useOffice(false, notify);
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
+  // Stay open when clicking elsewhere (the card's own toggle, remembered on this computer).
+  const [keepOpen, setKeepOpen] = useState(() => {
+    try {
+      return localStorage.getItem('office:card-keep') === 'on';
+    } catch {
+      return false;
+    }
+  });
+  // The main process starts out closing on blur, so 'off' is only said after an 'on'.
+  const keepSaid = useRef(false);
+  useEffect(() => {
+    if (!keepOpen && !keepSaid.current) return;
+    keepSaid.current = keepOpen;
+    void api.card?.(keepOpen ? 'keep-on' : 'keep-off');
+  }, [keepOpen, target?.id]);
   // Bumped on every open so the card jumps to news again even for the same colleague.
   const [opened, setOpened] = useState(0);
   const { reload } = send;
@@ -102,6 +117,15 @@ export function DockCard() {
           bookmarked={snapshot?.bookmarked?.[session.id]}
           onBookmark={bookmark}
           variant="card"
+          keepOpen={keepOpen}
+          onKeepOpen={(on) => {
+            setKeepOpen(on);
+            try {
+              localStorage.setItem('office:card-keep', on ? 'on' : 'off');
+            } catch {
+              // Remembering is a convenience.
+            }
+          }}
         />
       ) : (
         <div className="dock-card-empty">

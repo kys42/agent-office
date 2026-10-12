@@ -50,6 +50,9 @@ export const inspector = {
     statusTitle: 'Status',
     startPath: 'Started in',
     model: 'Model',
+    keepOpen: 'Keep the card open',
+    keepOpenOn: 'Stays open when you click elsewhere · click to let it close',
+    keepOpenOff: 'Closes when you click elsewhere · click to keep it open',
   },
   tabs: {
     overview: 'Details',

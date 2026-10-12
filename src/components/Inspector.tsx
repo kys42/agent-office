@@ -21,6 +21,8 @@ import {
   Maximize2,
   Sparkles,
   ListFilter,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import type {
   Session,
@@ -85,6 +87,8 @@ export function Inspector({
   focus,
   onFocused,
   variant = 'panel',
+  keepOpen = false,
+  onKeepOpen,
 }: {
   session: Session;
   sessions: Session[];
@@ -125,6 +129,9 @@ export function Inspector({
    * folded at the top, the conversation, and a chat box at the bottom. The office panel is `panel`.
    */
   variant?: 'panel' | 'card';
+  /** The card stays open when the person clicks elsewhere. */
+  keepOpen?: boolean;
+  onKeepOpen?: (on: boolean) => void;
 }) {
   const card = variant === 'card';
   const { t } = useI18n();
@@ -247,13 +254,19 @@ export function Inspector({
   useEffect(() => {
     setSent((list) => {
       // Each recorded request settles one send at most: the same words sent twice need two.
+      // The record may tidy the words (spacing, hidden secrets, long text cut), so compare loosely.
+      const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
+      const same = (a: string, b: string) =>
+        a === b || a.startsWith(b.slice(0, 60)) || b.startsWith(a.slice(0, 60));
       const asked = view.session.events
         .filter((e) => e.kind === 'user')
-        .map((e) => ({ text: e.text.trim(), at: e.at, used: false }));
+        .map((e) => ({ text: plain(e.text), at: e.at, used: false }));
       const next = list.filter((p) => {
         if (Date.now() - p.at > 30 * 60_000) return false;
         if (p.sessionId !== view.session.id) return true;
-        const match = asked.find((e) => !e.used && e.text === p.text && e.at >= p.at - 10_000);
+        const match = asked.find(
+          (e) => !e.used && e.at >= p.at - 10_000 && same(e.text, plain(p.text)),
+        );
         if (!match) return true;
         match.used = true;
         return false;
@@ -1145,6 +1158,17 @@ export function Inspector({
                   onClick={onExpand}
                 >
                   <Maximize2 size={15} />
+                </button>
+              )}
+              {onKeepOpen && (
+                <button
+                  className={`icon-btn ${keepOpen ? 'is-on' : ''}`}
+                  aria-label={t.inspector.card.keepOpen}
+                  aria-pressed={keepOpen}
+                  data-tip={keepOpen ? t.inspector.card.keepOpenOn : t.inspector.card.keepOpenOff}
+                  onClick={() => onKeepOpen(!keepOpen)}
+                >
+                  {keepOpen ? <Lock size={14} /> : <LockOpen size={14} />}
                 </button>
               )}
               <CardMenu label={t.inspector.card.more}>

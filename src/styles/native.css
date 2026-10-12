@@ -1405,3 +1405,7 @@ body.card-mode:not(.is-mac) .dock-card {
 .message-pending .message-meta small {
   color: var(--text-3);
 }
+
+.inspector-card .card-head .icon-btn.is-on {
+  color: var(--accent);
+}

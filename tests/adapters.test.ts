@@ -341,3 +341,27 @@ test('OpenClaw isolates damaged metadata and invalidates rewritten transcripts a
     await rm(dir, { recursive: true });
   }
 });
+test('Claude input typed mid-turn (queued command) becomes a user message; hand-backs do not', () => {
+  const q = (uuid: string, prompt: unknown, origin?: string) => ({
+    type: 'attachment',
+    uuid,
+    timestamp: new Date(now).toISOString(),
+    attachment: {
+      type: 'queued_command',
+      prompt,
+      commandMode: 'prompt',
+      ...(origin ? { origin: { kind: origin } } : {}),
+    },
+  });
+  const s = parseRecords(
+    [
+      q('a', '작업 중에 보낸 말', 'human'),
+      q('b', [{ type: 'text', text: '두 번째 말' }]),
+      q('c', '<task-notification>done</task-notification>', 'task-notification'),
+      q('d', 'peer says hi', 'peer'),
+    ],
+    { ...opts, provider: 'claude', sourcePath: '/test/claude.jsonl' },
+  );
+  const users = s.events.filter((e) => e.kind === 'user').map((e) => e.text);
+  assert.deepEqual(users, ['작업 중에 보낸 말', '두 번째 말']);
+});

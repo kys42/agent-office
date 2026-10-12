@@ -351,3 +351,24 @@ test('The same words sent twice wait as two bubbles', async ({ page }) => {
   }
   await expect(aside.locator('.message-pending')).toHaveCount(2);
 });
+
+test('The card can be kept open when the person clicks elsewhere, and remembers it', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  const keep = aside.getByRole('button', { name: '카드 열어 두기' });
+  await expect(keep).toHaveAttribute('aria-pressed', 'false');
+  await keep.click();
+  await expect(keep).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-on');
+  await page.reload();
+  await expect(
+    page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).cardCalls.includes('keep-on')))
+    .toBe(true);
+  // Let go again: blur closes it once more.
+  await page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-off');
+});

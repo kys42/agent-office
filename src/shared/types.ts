@@ -561,7 +561,8 @@ export interface OfficeAPI {
    * close it or go to the full office.
    */
   card?: (
-    action: 'open' | 'close' | 'expand' | 'drag-start' | 'drag-end' | 'select',
+    action:
+      'open' | 'close' | 'expand' | 'drag-start' | 'drag-end' | 'select' | 'keep-on' | 'keep-off',
     target?: CardTarget,
     anchor?: ScreenRect,
   ) => Promise<void>;

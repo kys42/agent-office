@@ -1302,6 +1302,13 @@
   box-shadow: 0 0 0 2px #fffaf1;
   transition: transform 0.15s;
 }
+/* A finger-sized target around the small dot. */
+.bubble-popup::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+}
 .bubble-popup:hover,
 .bubble-popup:focus-visible {
   transform: scale(1.12);

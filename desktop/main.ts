@@ -384,11 +384,20 @@ async function saveCardSize(size: { width: number; height: number }) {
 }
 /** The size the card was last placed at (to tell the person's resize from a fit to the room). */
 let cardPlaced = { width: 0, height: 0 };
+/** The person asked the card to stay open when they click elsewhere (the card's own toggle). */
+let cardKeep = false;
 /** Whose card is up (to tell a second click on the same desk from a click on another). */
 let cardTarget: CardTarget | null = null;
 function showCard(target: CardTarget, anchor: Rect) {
-  // The same colleague clicked again while its card is up: put the card away (a toggle).
-  if (card && !card.isDestroyed() && card.isVisible() && cardTarget?.id === target.id) {
+  // The same colleague clicked again while its card is up: put the card away (a toggle). Asking
+  // for its news instead (or back) switches the card's view rather than closing it.
+  if (
+    card &&
+    !card.isDestroyed() &&
+    card.isVisible() &&
+    cardTarget?.id === target.id &&
+    cardTarget.news === target.news
+  ) {
     hideCard();
     return;
   }
@@ -439,7 +448,7 @@ function showCard(target: CardTarget, anchor: Rect) {
     card.on('blur', () => {
       // Opening shifts focus between the dock and the card for a moment; that is not a click
       // elsewhere. A blur during that moment is checked again once it has passed.
-      if (cardDialogs > 0) return;
+      if (cardDialogs > 0 || cardKeep) return;
       const settle = Math.max(150, cardShownAt + 500 - Date.now());
       if (cardHide) clearTimeout(cardHide);
       cardHide = setTimeout(() => {
@@ -587,6 +596,14 @@ function setupIPC() {
   });
   ipcMain.handle('office:card', (e, action, target, anchor) => {
     trusted(e);
+    if (action === 'keep-on' || action === 'keep-off') {
+      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
+      cardKeep = action === 'keep-on';
+      // A close already on its way from a blur just before is called off too.
+      if (cardKeep && cardHide) clearTimeout(cardHide);
+      if (cardKeep) cardHide = null;
+      return;
+    }
     if (action === 'close' || action === 'drag-start' || action === 'drag-end') {
       if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
       if (action === 'drag-start') return startCardDrag();

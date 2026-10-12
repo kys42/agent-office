@@ -251,6 +251,19 @@ try {
   );
   await again();
   assert.equal(await cardShown(), true, 'a desk other than the one shown switches the card');
+  // Kept open, a click elsewhere (the card losing focus) leaves it up; let go, it closes again.
+  const blurCard = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .emit('blur'),
+    );
+  await card.evaluate(() => window.office.card('keep-on'));
+  await card.waitForTimeout(700);
+  await blurCard();
+  await card.waitForTimeout(900);
+  assert.equal(await cardShown(), true, 'a kept-open card stays when focus goes elsewhere');
+  await card.evaluate(() => window.office.card('keep-off'));
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
