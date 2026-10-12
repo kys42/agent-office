@@ -48,6 +48,7 @@ export function Roster({
   privacy,
   filter,
   onFilter,
+  scope,
 }: {
   zone: OfficeZone;
   sessions: Session[];
@@ -68,6 +69,8 @@ export function Roster({
   privacy: boolean;
   filter: Provider | 'all';
   onFilter: (p: Provider | 'all') => void;
+  /** A project chosen in the sidebar; shown as a removable token above the list. */
+  scope?: { label: string; onClear: () => void };
 }) {
   const { t } = useI18n();
   const [clock, setClock] = useState(Date.now());
@@ -209,6 +212,18 @@ export function Roster({
             )}
           </label>
         </div>
+        {scope && (
+          <div className="roster-scope">
+            <span>{scope.label}</span>
+            <button
+              aria-label={t.roster.clearScope}
+              title={t.roster.clearScope}
+              onClick={scope.onClear}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        )}
         <div className="provider-filters" role="group" aria-label={t.roster.filterLabel}>
           {(['all', 'claude', 'codex', 'openclaw'] as const).map((p) => (
             <button

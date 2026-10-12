@@ -69,6 +69,17 @@ export const app: Messages['app'] = {
     toLive: '실제 연결로',
     toDemo: '데모 둘러보기',
   },
+  sidebar: {
+    spaces: '공간',
+    todo: '할 일',
+    projects: '프로젝트',
+    records: '기록',
+    hiddenProject: '프로젝트',
+  },
+  toolbar: {
+    zoneCount: (n) => `동료 ${n}명`,
+    officeSubtitle: (projects, desks) => `프로젝트 ${projects}개 · 책상 ${desks}개`,
+  },
   moveZone: '사무실 구역 옮기기',
   help: {
     title: '키보드 단축키',

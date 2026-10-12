@@ -13,6 +13,7 @@ docs/
 │   └── OFFICE-OBSERVATION-PROTOCOL.md # 플랫폼 독립 관측 계약
 ├── development/                  # 구현·연결·검증·개발 이력
 │   ├── ARCHITECTURE.md            # 실행·저장·보안 경계
+│   ├── DESIGN-SYSTEM.md           # 순정 맥 셸·토큰·라이트/다크
 │   ├── SESSION-INGESTION.md       # 수집 흐름·자체/외부 모듈·장애 분석
 │   ├── PERFORMANCE-DESIGN.md      # 경량화 측정·단계별 제안 (미구현)
 │   ├── OFFICE-ASSETS.md          # 가구·펫·소품 확장 계약

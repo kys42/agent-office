@@ -67,6 +67,18 @@ export const app = {
     toLive: 'Back to live',
     toDemo: 'Try the demo',
   },
+  sidebar: {
+    spaces: 'Spaces',
+    todo: 'To do',
+    projects: 'Projects',
+    records: 'Records',
+    hiddenProject: 'Project',
+  },
+  toolbar: {
+    zoneCount: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
+    officeSubtitle: (projects: number, desks: number) =>
+      `${projects} ${projects === 1 ? 'project' : 'projects'} · ${desks} ${desks === 1 ? 'desk' : 'desks'}`,
+  },
   moveZone: 'Move to a zone',
   help: {
     title: 'Keyboard shortcuts',

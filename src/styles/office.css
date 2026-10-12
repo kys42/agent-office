@@ -19,87 +19,82 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px 14px 14px;
+  padding: 14px;
 }
 .stage-toolbar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 38px;
+  gap: 10px;
+  min-width: 0;
 }
+/* Zone switcher = NSSegmentedControl in the window toolbar. */
 .zone-tabs {
   display: inline-flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  border-radius: 11px;
+  padding: 2px;
+  background: var(--bg-4);
+  border-radius: 7px;
 }
 .zone-tabs button {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 30px;
-  padding: 0 10px 0 11px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 540;
-  color: var(--text-3);
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
   white-space: nowrap;
-  transition:
-    color 0.15s,
-    background 0.15s;
 }
-.zone-tabs button:hover {
+.zone-tabs button + button::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 0.5px;
+  background: var(--line-3);
+}
+.zone-tabs button.active::before,
+.zone-tabs button.active + button::before {
+  opacity: 0;
+}
+.zone-tabs button svg {
   color: var(--text-2);
 }
 .zone-tabs button > span {
-  min-width: 20px;
-  padding: 0 5px;
-  border-radius: 5px;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  line-height: 18px;
-  color: var(--text-4);
-  background: rgba(255, 255, 255, 0.04);
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 .zone-tabs button.active {
-  color: var(--text);
-  background: var(--bg-4);
+  background: var(--control);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 0 0 0.5px var(--control-line),
+    0 1px 2px rgba(0, 0, 0, 0.12);
 }
 .zone-tabs button.active svg {
   color: var(--accent);
 }
-.zone-tabs button.active > span {
-  color: var(--text-2);
-  background: rgba(255, 255, 255, 0.07);
-}
 .stage-toolbar-end {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
 }
 .live-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 9px 0 8px;
-  border-radius: 99px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--st-work);
-  background: rgba(95, 214, 155, 0.08);
-  border: 1px solid rgba(95, 214, 155, 0.2);
+  background: color-mix(in srgb, var(--st-work) 11%, transparent);
 }
 .live-badge i {
   width: 6px;
@@ -117,14 +112,12 @@
   animation: ping-out 2s ease-out infinite;
 }
 .live-badge.demo {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent-line);
+  color: var(--st-error);
+  background: color-mix(in srgb, var(--st-error) 12%, transparent);
 }
 .live-badge.paused {
   color: var(--st-error);
-  background: rgba(246, 178, 79, 0.08);
-  border-color: rgba(246, 178, 79, 0.25);
+  background: color-mix(in srgb, var(--st-error) 12%, transparent);
 }
 /* A demo or paused office is not live: no pulse (it lives on the dot's ::after). */
 .live-badge:is(.demo, .paused) i::after {
@@ -132,22 +125,19 @@
   opacity: 0;
 }
 .office-policy {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
   height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  font-size: 11.5px;
-  color: var(--text-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.15s;
+  border-radius: 6px;
+  color: var(--text-2);
+}
+.office-policy .policy-text {
+  display: none;
 }
 .office-policy:hover {
   color: var(--text);
-  background: var(--bg-3);
+  background: var(--bg-4);
 }
 
 /* ───────────────────────── Stage ───────────────────────── */
@@ -155,12 +145,10 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(65% 55% at 50% 46%, rgba(244, 184, 108, 0.07), transparent 70%),
-    radial-gradient(120% 100% at 50% 40%, #19181c 0%, #111114 55%, #0b0b0e 100%);
+  background: var(--scene-backdrop);
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
   isolation: isolate;
 }
 .office-card.dynamic-office::before {
@@ -168,15 +156,12 @@
   position: absolute;
   inset: 0;
   z-index: -1;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1.2px);
-  background-size: 20px 20px;
-  mask-image: radial-gradient(90% 80% at 50% 50%, transparent 30%, #000 85%);
+  background-image: radial-gradient(var(--scene-dots) 1px, transparent 1.2px);
+  background-size: 18px 18px;
   pointer-events: none;
 }
 .office-card.phase-night {
-  background:
-    radial-gradient(65% 55% at 50% 46%, rgba(255, 196, 120, 0.06), transparent 70%),
-    radial-gradient(120% 100% at 50% 40%, #151826 0%, #0f1119 55%, #0a0b10 100%);
+  background: color-mix(in srgb, var(--scene-backdrop) 92%, #20264a);
 }
 .scene-viewport {
   position: absolute;
@@ -1664,18 +1649,19 @@
 .scene-controls {
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  border-radius: 10px;
+  height: 28px;
+  border-radius: 8px;
   /* Nearly opaque instead of blurring the scene behind: the office moves under it all the time,
      and a backdrop blur is recomputed on every frame it changes. */
-  background: rgba(17, 18, 22, 0.92);
-  border: 1px solid var(--line-2);
-  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6);
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--line-2),
+    0 4px 14px -6px rgba(0, 0, 0, 0.25);
 }
 .hud-pill {
   gap: 8px;
-  padding: 0 12px;
-  font-size: 11.5px;
+  padding: 0 11px;
+  font-size: 12px;
   color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
@@ -1701,23 +1687,23 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 26px;
-  min-width: 26px;
+  height: 22px;
+  min-width: 24px;
   padding: 0 7px;
-  border-radius: 7px;
-  font-size: 11.5px;
+  border-radius: 5px;
+  font-size: 12px;
   color: var(--text-2);
 }
 .scene-controls button:hover:not(:disabled) {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--bg-4);
 }
 .scene-controls button:disabled {
   opacity: 0.3;
 }
 .zoom-readout {
-  font-family: var(--font-mono);
-  font-size: 11px !important;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px !important;
   min-width: 82px !important;
 }
 .zoom-readout.is-fit {
@@ -1743,12 +1729,11 @@
   color: var(--text);
 }
 .background-records > summary b {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   padding: 0 5px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--bg-4);
   color: var(--text);
 }
 .background-records .chev {
@@ -1768,11 +1753,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border-radius: 14px;
-  background: rgba(22, 24, 29, 0.96);
-  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--bg-1);
   box-shadow: var(--shadow-pop);
-  backdrop-filter: blur(16px);
   animation: modal-in 0.22s var(--ease-out);
 }
 .background-pop > p {
@@ -1824,8 +1807,8 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border-radius: 16px;
-  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 0.5px var(--line-2);
   background: var(--bg-1);
 }
 .rest-lounge {
@@ -2300,10 +2283,12 @@
   transform: translateX(-50%);
   height: 32px;
   padding: 0 14px;
-  border-radius: 10px;
-  background: rgba(17, 18, 22, 0.86);
-  border: 1px solid var(--accent-line);
-  color: var(--accent-2);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-1) 94%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--accent-line),
+    0 4px 14px -6px rgba(0, 0, 0, 0.25);
+  color: var(--accent);
   font-size: 12px;
   pointer-events: none;
 }
