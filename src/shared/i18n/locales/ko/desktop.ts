@@ -46,9 +46,9 @@ export const desktop: Messages['desktop'] = {
     empty: '보낼 내용을 입력해 주세요.',
     tooLong: (max) => `${max}자 이하로 보내 주세요.`,
     notOwner: 'Claude가 지금 터미널 앞에 있지 않아요(일시정지 등). 터미널을 확인해 주세요.',
-    notReady: '지금은 입력을 받을 수 없어요(권한 확인·플랜 승인 대기 등). 터미널을 확인해 주세요.',
+    notReady:
+      '지금은 입력을 받을 수 없어요(권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 터미널을 확인해 주세요.',
     orcaRefused: (reason) => `Orca가 입력을 받지 않았어요${reason}.`,
-    orcaStarted: 'Orca 터미널에 보냈고 작업이 시작됐어요',
     orcaSent: 'Orca 터미널에 보냈어요',
     stateChanged:
       '입력창에 넣었지만 그사이 상태가 바뀌어 제출하지 않았어요. 터미널을 확인해 주세요.',

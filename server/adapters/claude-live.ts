@@ -13,7 +13,7 @@ import { hash, PLAN_APPROVAL_TOOL } from './normalize.js';
  * interactive CLI while it runs. It is a private, undocumented format, so every field is
  * validated, anything unexpected is ignored, and nothing here ever writes to it. The collector
  * reads it to see a permission prompt the transcript cannot show; the desktop shell reads it to
- * find a session's terminal and to type only into an idle one.
+ * find a session's terminal and to type only into an open prompt.
  */
 
 export interface RunOptions {
@@ -36,7 +36,10 @@ export interface ClaudeProcess {
   pid: number;
   sessionId: string;
   procStart: string;
-  /** Seen: `busy`, `idle`, `waiting`, `shell`. Only `idle` may receive typed input. */
+  /**
+   * Seen: `busy`, `idle`, `waiting`, `shell` (at rest while a background shell runs). All but
+   * `waiting` may receive typed input, once the screen confirms the prompt (desktop/terminals.ts).
+   */
   status: string;
   updatedAt: number;
   /** When `status` last changed (epoch ms), if the CLI wrote it. */

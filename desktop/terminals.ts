@@ -256,11 +256,36 @@ export const forgetTerminal = (sessionId: string) =>
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 
 /**
- * The prompt takes typed text: at rest, or mid-turn, where Claude Code queues it for the turn
- * in progress. `waiting` (a permission prompt or plan approval on screen) would turn the text
- * into an answer and Enter into its default choice; `shell` would run it as a command.
+ * Statuses whose screen may show the prompt: at rest (`shell` is at rest while a background
+ * shell runs), or mid-turn, where Claude Code queues what is typed. `waiting` (a permission
+ * prompt or plan approval) and anything unknown are refused outright. The record is written
+ * after the screen changes, so the screen itself is read right before typing and before Enter.
  */
-export const acceptsInput = (status: string) => status === 'idle' || status === 'busy';
+const OPEN = new Set(['idle', 'busy', 'shell']);
+export const acceptsInput = (status: string) => OPEN.has(status);
+
+const RULE = /^─{8,}/;
+const DIALOG = /Do you want|Esc to cancel|Enter to confirm/;
+const compact = (value: string) => value.replace(/\s+/g, '');
+
+/**
+ * Claude Code's prompt is the last box on screen: a `❯` line between two rules. A permission
+ * prompt, plan approval or menu replaces it, and `!` shell mode changes its marker, so any of
+ * those reads as closed. With `text`, the box must also end with that text, or with the
+ * placeholder a long paste collapses into.
+ */
+export function promptHolds(screen: string, text?: string): boolean {
+  const lines = screen.split('\n').map((line) => line.trimEnd());
+  const bottom = lines.findLastIndex((line) => RULE.test(line));
+  const top = lines.findLastIndex((line, i) => i < bottom && RULE.test(line));
+  if (top < 0) return false;
+  const box = lines.slice(top + 1, bottom);
+  if (!/^❯(\s|$)/.test(box[0] ?? '')) return false;
+  if (lines.slice(bottom + 1).some((line) => DIALOG.test(line))) return false;
+  if (text === undefined) return true;
+  const typed = compact(box.join('\n').slice(1));
+  return typed.endsWith(compact(text).slice(-40)) || /\[Pastedtext#\d+[^\]]*\]$/.test(typed);
+}
 
 /** What the renderer may know: never the handle or socket, which main re-resolves per action. */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
@@ -335,52 +360,53 @@ export function cleanInput(text: unknown): string {
   return value;
 }
 
-export async function sendToTerminal(
-  live: LiveTerminal,
-  input: unknown,
-  deps = defaultTerminalDeps(),
-): Promise<string> {
-  const text = cleanInput(input);
-  if (!acceptsInput(live.process.status))
-    throw new TerminalInputError(m().desktop.terminal.notReady);
-  // Mid-turn the text waits in Claude's queue: no turn starts that Orca could wait for.
-  const queued = live.process.status === 'busy';
-  if (!(await ownsTerminal(live.process.pid, deps)))
-    throw new TerminalInputError(m().desktop.terminal.notOwner);
-  const { host } = live;
-  if (host.kind === 'orca') {
-    // `--flag=value` is the only form Orca reads for a value that starts with `--`.
-    let out: string;
-    try {
-      // At rest Orca waits up to 5s for the turn to start, on top of its own startup.
-      out = await deps.run(
-        deps.bin('orca'),
-        [
-          'terminal',
-          'send',
-          `--terminal=${host.handle}`,
-          `--text=${text}`,
-          '--enter',
-          ...(queued ? [] : ['--wait-submit=5']),
-          '--json',
-        ],
-        { timeout: 20000 },
-      );
-    } catch (error) {
-      out = (error as { stdout?: string }).stdout ?? '';
-      if (!/"accepted"\s*:\s*false/.test(out)) throw error;
-    }
-    const send = JSON.parse(out)?.result?.send;
-    if (send?.accepted !== true) {
-      const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
-      throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
-    }
-    if (queued) return m().desktop.terminal.queued('Orca');
-    const stages: unknown = send.prompt?.stages;
-    return Array.isArray(stages) && stages.includes('turn_started')
-      ? m().desktop.terminal.orcaStarted
-      : m().desktop.terminal.orcaSent;
+/** The rendered screen as plain text; empty when it cannot be read, which reads as closed. */
+async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<string> {
+  if (host.kind === 'tmux')
+    return deps
+      .run(deps.bin('tmux'), ['-S', host.socket, 'capture-pane', '-p', '-t', host.pane])
+      .catch(() => '');
+  const out = await deps
+    .run(deps.bin('orca'), [
+      'terminal',
+      'read',
+      `--terminal=${host.handle}`,
+      '--screen',
+      '--limit=200',
+      '--json',
+    ])
+    .catch(() => '');
+  try {
+    const tail: unknown = JSON.parse(out)?.result?.terminal?.tail;
+    return Array.isArray(tail) ? tail.filter((line) => typeof line === 'string').join('\n') : '';
+  } catch {
+    return '';
   }
+}
+
+async function orcaSend(host: { handle: string }, input: string[], deps: TerminalDeps) {
+  let out: string;
+  try {
+    // `--flag=value` is the only form Orca reads for a value that starts with `--`.
+    out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'send', `--terminal=${host.handle}`, ...input, '--json'],
+      { timeout: 20000 },
+    );
+  } catch (error) {
+    out = (error as { stdout?: string }).stdout ?? '';
+    if (!/"accepted"\s*:\s*false/.test(out)) throw error;
+  }
+  const send = JSON.parse(out)?.result?.send;
+  if (send?.accepted !== true) {
+    const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
+    throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
+  }
+}
+
+/** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
+async function typeText(host: TerminalHost, text: string, deps: TerminalDeps) {
+  if (host.kind === 'orca') return orcaSend(host, [`--text=${text}`], deps);
   const tmux = deps.bin('tmux');
   const buffer = `agent-office-${randomUUID()}`;
   // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
@@ -402,9 +428,35 @@ export async function sendToTerminal(
     await deps.run(tmux, ['-S', host.socket, 'delete-buffer', '-b', buffer]).catch(() => '');
     throw error;
   }
+}
+
+const pressEnter = (host: TerminalHost, deps: TerminalDeps) =>
+  host.kind === 'orca'
+    ? orcaSend(host, ['--enter'], deps)
+    : deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
+
+/**
+ * Types the text, then submits it only while Claude's own prompt still holds it. Enter is the
+ * risk: on a permission prompt it picks the default choice (a pasted text alone is ignored
+ * there, measured on 2.1.296), and mid-turn such prompts come and go. So the record and then
+ * the screen are checked as late as possible; what is left is one CLI call (~0.1s) between the
+ * last look and Enter.
+ */
+export async function sendToTerminal(
+  live: LiveTerminal,
+  input: unknown,
+  deps = defaultTerminalDeps(),
+): Promise<string> {
+  const text = cleanInput(input);
+  if (!acceptsInput(live.process.status))
+    throw new TerminalInputError(m().desktop.terminal.notReady);
+  if (!(await ownsTerminal(live.process.pid, deps)))
+    throw new TerminalInputError(m().desktop.terminal.notOwner);
+  const { host } = live;
+  if (!promptHolds(await readScreen(host, deps)))
+    throw new TerminalInputError(m().desktop.terminal.notReady);
+  await typeText(host, text, deps);
   await deps.wait(150);
-  // A permission prompt may have opened meanwhile (likelier mid-turn); Enter would then pick
-  // its default choice. Look once more before submitting.
   const again = await findClaudeProcess(live.process.sessionId, deps, true);
   if (
     again?.pid !== live.process.pid ||
@@ -412,8 +464,17 @@ export async function sendToTerminal(
     !(await ownsTerminal(again.pid, deps))
   )
     throw new TerminalInputError(m().desktop.terminal.stateChanged);
-  await deps.run(tmux, ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
-  return again.status === 'busy'
-    ? m().desktop.terminal.queued(`tmux ${host.label}`)
+  // The prompt may take a moment to draw the text.
+  let holds = promptHolds(await readScreen(host, deps), text);
+  for (let tries = 1; !holds && tries < 3; tries++) {
+    await deps.wait(150);
+    holds = promptHolds(await readScreen(host, deps), text);
+  }
+  if (!holds) throw new TerminalInputError(m().desktop.terminal.stateChanged);
+  await pressEnter(host, deps);
+  const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
+  if (again.status === 'busy') return m().desktop.terminal.queued(where);
+  return host.kind === 'orca'
+    ? m().desktop.terminal.orcaSent
     : m().desktop.terminal.tmuxSent(host.label);
 }

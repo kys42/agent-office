@@ -50,7 +50,7 @@ Agent Office isn't another window to keep checking. It docks to your desktop, st
 - 🐾 **A pet that knows the news** — when a session finishes or asks you something, the pet becomes that teammate: name tag, speech bubble, and a **!** when someone's calling. Drag it anywhere.
 - 🪑 **The real office, in one row** — the same project zones, long shared desks for a branch, little helper desks for sub-agents. Arrows appear when the team outgrows the screen.
 - 💬 **Bubbles you can act on** — live progress in plain words. Expand a bubble in place to read and copy the whole update, open its links in your browser, open the work card as a popup right there, or reply from the bubble (desktop, on by default).
-- 🔥 **Alive, not a status light** — papers fly onto the desk when a request lands, the pile grows while it works, and long runs heat up from _Focused_ to _In the zone_ to _On fire_.
+- 🔥 **Alive, not a status light** — papers fly onto the desk when a request lands, the pile grows while it works, and long runs heat up from *Focused* to *In the zone* to *On fire*.
 - 🫥 **Never in your way** — clicks on the transparent parts pass straight through to your editor. Hover a desk to pin it, or hide it until its next conversation.
 
 ## Why Agent Office?
@@ -104,27 +104,27 @@ When you want the whole picture, open the full office: every project on its own 
 
 ### 💬 Jump in and reply
 
-- Claude Code sessions running in **Orca** or **tmux** get a _Jump to Orca / tmux_ button on their work card.
+- Claude Code sessions running in **Orca** or **tmux** get a *Jump to Orca / tmux* button on their work card.
 - **Send to terminal** (desktop only, on by default) lets you follow up from the work card or a speech bubble's reply button. Turn it off in Settings any time; turning it back on asks you to confirm in a native dialog. Claude Code sessions get your text typed into their own terminal (queued for the current turn while working, held back while a permission prompt is open); live Codex CLI sessions receive it through `codex queue`.
-- It never approves permission prompts, only types into an idle session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
+- It never approves permission prompts, only types into Claude's own prompt (resting or mid-task, checked on screen right before Enter) in a session that owns its terminal, and tells you when it couldn't confirm delivery. How targets are verified: [Terminal connection](docs/development/TERMINAL.md).
 
 ### Everything else
 
-|                                   |                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧭 **Real sessions, real names**  | Native session titles first, project second. Continuations are merged; real forks and sub-agents keep their relationship.                                                                                                                                                                                                                               |
-| 🗂️ **Custom zones for monorepos** | Split the floor by worktree, folder, branch pattern (`team/lab-*`) or a single session — or just drag a teammate to another zone.                                                                                                                                                                                                                       |
-| 🌿 **Git-aware desks**            | Each desk shows the recorded branch/commit and, separately, what's checked out right now (`main · now`, `HEAD · commit`).                                                                                                                                                                                                                               |
-| 🫥 **Hide a teammate**            | The eye button hides a desk until their next real conversation. Questions and errors still break through.                                                                                                                                                                                                                                               |
-| 💭 **Bubbles with meaning**       | My request, thinking, progress, final reply, needs your reply, needs a look — each has its own shape and expands in place.                                                                                                                                                                                                                              |
-| 📋 **Select, copy & open links**  | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
-| 📌 **Pin**                        | Keep a desk in the office no matter how long it's been quiet.                                                                                                                                                                                                                                                                                           |
-| 🔎 **Search across tools**        | One keyword search over Claude Code, Codex and OpenClaw history.                                                                                                                                                                                                                                                                                        |
-| 🤝 **Handoff Markdown**           | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save.                                                                                                                                                                                                                                                  |
-| 📊 **Usage & cost**               | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost.                                                                                                                                                                                                                                                    |
-| 🔗 **PR & issue cards**           | GitHub links found in a session become cards with live title and state via your existing `gh` login.                                                                                                                                                                                                                                                    |
-| 🙈 **Privacy controls**           | Hide screen content for screen sharing, exclude projects, pause collection per tool, reduce motion.                                                                                                                                                                                                                                                     |
-| 🌐 **English & 한국어**           | Follows your system language (English fallback). Switch any time in Settings.                                                                                                                                                                                                                                                                           |
+| | |
+| --- | --- |
+| 🧭 **Real sessions, real names** | Native session titles first, project second. Continuations are merged; real forks and sub-agents keep their relationship. |
+| 🗂️ **Custom zones for monorepos** | Split the floor by worktree, folder, branch pattern (`team/lab-*`) or a single session — or just drag a teammate to another zone. |
+| 🌿 **Git-aware desks** | Each desk shows the recorded branch/commit and, separately, what's checked out right now (`main · now`, `HEAD · commit`). |
+| 🫥 **Hide a teammate** | The eye button hides a desk until their next real conversation. Questions and errors still break through. |
+| 💭 **Bubbles with meaning** | My request, thinking, progress, final reply, needs your reply, needs a look — each has its own shape and expands in place. |
+| 📋 **Select, copy & open links** | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
+| 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
+| 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
+| 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
+| 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |
+| 🔗 **PR & issue cards** | GitHub links found in a session become cards with live title and state via your existing `gh` login. |
+| 🙈 **Privacy controls** | Hide screen content for screen sharing, exclude projects, pause collection per tool, reduce motion. |
+| 🌐 **English & 한국어** | Follows your system language (English fallback). Switch any time in Settings. |
 
 ## 🚀 Quick start
 
@@ -193,15 +193,15 @@ Choose each tool's default character in Settings, or personalize one colleague f
 - PR/issue lookups go through your existing `gh` login as read-only requests, and are skipped in demo and privacy modes.
 - **Send to terminal** is on by default in the desktop app and can be turned off in Settings (turning it back on asks for confirmation). The choice is stored in the desktop profile (not the shared settings), and it is never exposed to the web preview or MCP.
 - Excluding a project applies everywhere — office, search, handoff and MCP. It is a view policy, not deletion.
-- _Hide screen content_ masks what's on screen; it isn't OS-level capture blocking or encryption.
+- *Hide screen content* masks what's on screen; it isn't OS-level capture blocking or encryption.
 
-| Environment variable    | Default                                      | Purpose                                     |
-| ----------------------- | -------------------------------------------- | ------------------------------------------- |
-| `CLAUDE_CONFIG_DIR`     | `~/.claude`                                  | Claude Code sessions (`/projects`)          |
-| `CODEX_HOME`            | `~/.codex`                                   | Codex sessions (`/sessions`) and threads DB |
-| `OPENCLAW_STATE_DIR`    | `~/.openclaw`                                | OpenClaw agents (`/agents`)                 |
-| `AGENT_OFFICE_DATA_DIR` | `~/Library/Application Support/Agent Office` | App database                                |
-| `AGENT_OFFICE_LOCALE`   | system language                              | Force the collector language (`en` / `ko`)  |
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `CLAUDE_CONFIG_DIR` | `~/.claude` | Claude Code sessions (`/projects`) |
+| `CODEX_HOME` | `~/.codex` | Codex sessions (`/sessions`) and threads DB |
+| `OPENCLAW_STATE_DIR` | `~/.openclaw` | OpenClaw agents (`/agents`) |
+| `AGENT_OFFICE_DATA_DIR` | `~/Library/Application Support/Agent Office` | App database |
+| `AGENT_OFFICE_LOCALE` | system language | Force the collector language (`en` / `ko`) |
 
 ## 🤖 Let your agents read the office (MCP)
 
@@ -218,12 +218,12 @@ Agent Office ships a **read-only** MCP server over the same database, so an agen
 }
 ```
 
-| Tool                     | What it does                                                      |
-| ------------------------ | ----------------------------------------------------------------- |
-| `office_list_sessions`   | List recorded sessions (records, not a guarantee they're running) |
-| `office_search`          | Keyword search across allowed session history                     |
-| `office_get_session`     | Session detail with evidence and partial-collection flags         |
-| `office_prepare_handoff` | Handoff Markdown for a given snapshot                             |
+| Tool | What it does |
+| --- | --- |
+| `office_list_sessions` | List recorded sessions (records, not a guarantee they're running) |
+| `office_search` | Keyword search across allowed session history |
+| `office_get_session` | Session detail with evidence and partial-collection flags |
+| `office_prepare_handoff` | Handoff Markdown for a given snapshot |
 
 Requires Node 24+. If you moved the data directory, set `AGENT_OFFICE_DATA_DIR` for the MCP server too. Nothing is registered automatically, and existing configs are never overwritten. Search results are untrusted reference material — not instructions. A Codex TOML example lives in the [MCP guide](docs/development/MCP.md).
 

@@ -389,7 +389,7 @@ export interface TerminalTarget {
   canSend: boolean;
   /** The app can bring the session's terminal to the front. */
   canFocus: boolean;
-  /** Text sent while a turn runs waits for it instead of being refused. */
+  /** Goes through the session's own queue (Codex), never typed into a terminal. */
   queues?: boolean;
 }
 export interface JumpResult {

@@ -46,12 +46,11 @@ export const desktop = {
     empty: 'Type something to send.',
     tooLong: (max: string) => `Keep it to ${max} characters or fewer.`,
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
-    /** A permission prompt, plan approval or shell mode on screen would take the text. */
+    /** A permission prompt, plan approval, menu or `!` shell mode on screen would take the text. */
     notReady:
-      "It isn't taking input right now (a permission prompt or plan approval may be open). Check the terminal.",
+      "It isn't taking input right now (a permission prompt, plan approval or menu may be open). Check the terminal.",
     /** `reason` is Orca's own refusal, already wrapped as ` (reason)`, or empty. */
     orcaRefused: (reason: string) => `Orca didn't accept the input${reason}.`,
-    orcaStarted: 'Sent to the Orca terminal, and work has started',
     orcaSent: 'Sent to the Orca terminal',
     stateChanged:
       "Typed it into the prompt, but the state changed in the meantime, so it wasn't submitted. Check the terminal.",
