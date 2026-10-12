@@ -144,26 +144,21 @@ export function Office({
   const signature = layoutSignature(sessions);
   const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect, locale]);
   const focused = focusKey ? layout.projects.find((p) => p.key === focusKey) : undefined;
+  const fitScale = Math.max(
+    0.01,
+    Math.min(1.25, (viewport.width - 48) / layout.width, (viewport.height - 92) / layout.height),
+  );
+  // A zone's zoom never ends up smaller than the whole room (one wide zone fills it already).
   const scale = focused
-    ? Math.min(
-        2,
-        Math.max(
-          0.15,
-          Math.min(
-            (viewport.width - 48) / (focused.width + 32),
-            (viewport.height - 92) / (focused.height + 32),
-          ),
+    ? Math.max(
+        fitScale,
+        Math.min(
+          2,
+          (viewport.width - 48) / (focused.width + 32),
+          (viewport.height - 92) / (focused.height + 32),
         ),
       )
-    : (zoom ??
-      Math.max(
-        0.01,
-        Math.min(
-          1.25,
-          (viewport.width - 48) / layout.width,
-          (viewport.height - 92) / layout.height,
-        ),
-      ));
+    : (zoom ?? fitScale);
   const isFit = zoom === null && !focused;
   const byId = new Map(sessions.map((s) => [s.id, s]));
   // A reply goes to the session whose news the bubble shows, else the desk's own session.
@@ -217,6 +212,12 @@ export function Office({
     const owner = sessions.find(
       (s) => s.id === selected || s.resident?.sessionIds.includes(selected),
     );
+    const host = owner?.attachedTo ?? owner?.id;
+    // Choosing someone outside the zoomed zone keeps the zoom but leaves the zone behind.
+    if (focused && !focused.stations.some((st) => st.id === host)) {
+      setZoom(scale);
+      setFocusKey(null);
+    }
     const el = holder.current.querySelector<HTMLElement>(
       // A stacked helper is found through the shared desk's member list.
       `[data-station-id="${CSS.escape(owner?.id ?? selected)}"], .helper-desk[data-session-id="${CSS.escape(selected)}"], .helper-desk[data-members~="${CSS.escape(selected)}"]`,
@@ -230,15 +231,16 @@ export function Office({
       behavior: reducedMotion ? 'auto' : 'smooth',
     });
   }, [selected, isFit]);
-  // A zone that left the room (its last desk went) lets go of the zoom it asked for.
+  // A zone that left the room (its last desk went) goes back to the whole room.
   useEffect(() => {
-    if (focusKey && !focused) setFocusKey(null);
+    if (focusKey && !focused) fit();
   }, [focusKey, focused]);
-  // Centre the zoomed zone, after the selected-desk scroll above so the zone wins.
+  // Centre the zoomed zone, after the selected-desk scroll above so the zone wins. Again
+  // whenever it moves: another zone's desks coming or going, or the window resizing.
   const focusIndex = focused ? layout.projects.indexOf(focused) : -1;
   useEffect(() => {
     if (focusIndex < 0 || !holder.current) return;
-    const el = holder.current.querySelectorAll<HTMLElement>('.project-area')[focusIndex];
+    const el = holder.current.querySelector<HTMLElement>(`[data-zone-index="${focusIndex}"]`);
     if (!el) return;
     const box = el.getBoundingClientRect(),
       view = holder.current.getBoundingClientRect();
@@ -247,19 +249,32 @@ export function Office({
       top: holder.current.scrollTop + box.top - view.top - (view.height - box.height) / 2,
       behavior: reducedMotion ? 'auto' : 'smooth',
     });
-  }, [focusIndex, scale]);
-  // Esc goes back to the whole room (the app's own Esc still clears the selection).
+  }, [
+    focusIndex,
+    scale,
+    focused?.x,
+    focused?.y,
+    focused?.width,
+    focused?.height,
+    viewport.width,
+    viewport.height,
+  ]);
+  // Esc goes back to the whole room, one layer at a time like the app's own Esc: a field or
+  // an open colleague closes first.
   useEffect(() => {
     if (!focusKey) return;
     const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented) return;
-      if (e.target instanceof Element && e.target.closest('input, textarea, [role="dialog"]'))
+      if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || selected) return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')
+      )
         return;
       fit();
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [focusKey]);
+  }, [focusKey, selected]);
   const callers = primary.filter((s) => s.status === 'call' || s.status === 'error');
   return (
     <section
@@ -352,6 +367,7 @@ export function Office({
                   className={`project-area ${focusKey === area.key ? 'is-focus-zone' : ''} ${dragging && dropKey === area.key ? (dragFrom && projectKey(dragFrom) === area.key ? 'drop-home' : 'drop-target') : ''}`}
                   key={area.key}
                   data-project-key={privacy ? undefined : area.key}
+                  data-zone-index={index}
                   onDragOver={(e) => {
                     if (!dragging) return;
                     e.preventDefault();
@@ -374,11 +390,19 @@ export function Office({
                     } as CSSProperties
                   }
                 >
-                  <div className={`project-floor-mark ${area.custom ? 'custom-area' : ''}`}>
+                  <div
+                    className={`project-floor-mark ${area.custom ? 'custom-area' : ''} ${
+                      // The room clips at its walls: zones on the right explain leftwards.
+                      area.x + area.width / 2 > layout.width / 2 ? 'tip-left' : ''
+                    }`}
+                  >
                     <button
                       type="button"
                       className="zone-mark-focus"
-                      aria-label={t.office.zoom.zoneLabel(areaName)}
+                      aria-label={`${t.office.zoom.zoneLabel(areaName)}, ${t.desk.headcount(
+                        area.stations.length,
+                        area.stations.some((s) => s.children.length > 0),
+                      )}`}
                       aria-pressed={focusKey === area.key}
                       title={`${
                         privacy
@@ -692,7 +716,7 @@ export function Office({
       </div>
       <div className="stage-hud hud-bottom-right scene-controls">
         {focused && (
-          <button className="zone-back" aria-pressed onClick={fit}>
+          <button className="zone-back" onClick={fit}>
             <Maximize2 size={12} />
             <span>{t.office.zoom.zoneBack(privacy ? t.desk.project : focused.name)}</span>
           </button>

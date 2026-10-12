@@ -185,6 +185,11 @@
 .zone-flag .zone-veil::before {
   inset: -4px;
 }
+/* The big office clips at its walls: a sign in the right half explains leftwards. */
+.project-floor-mark.tip-left .zone-veil .veil-tip {
+  left: auto;
+  right: -4px;
+}
 /* The row's signs stand at the screen's bottom edge: explain upwards. */
 .row-zone .zone-veil .veil-tip {
   top: auto;

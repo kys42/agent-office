@@ -29,6 +29,8 @@ export function VeilButton({
       data-solid
       aria-label={zone ? v.zoneLabel(name) : v.label(name)}
       aria-describedby={tip}
+      // Its own explanation shows; never the zone sign's tooltip around it.
+      title={zone ? '' : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onVeil();

@@ -17,6 +17,9 @@ async function serve(page: Page) {
         ),
       };
     }
+    if (method === 'detail')
+      return route.fulfill({ json: { result: snapshot.sessions.find((x) => x.id === args[0]) } });
+    if (method === 'artifacts') return route.fulfill({ json: { result: [] } });
     return route.fulfill({ json: { result: snapshot } });
   });
   return veils;
@@ -119,4 +122,45 @@ test('The row sign and the floor flag hide their project too', async ({ page }) 
     await page.locator('.desk-row-veiled').click();
     await expect(page.locator('.desk-row [data-station-id="demo:2"]')).toBeVisible();
   }
+});
+
+test('The zone explanation stays inside the office, even on the rightmost zone', async ({
+  page,
+}) => {
+  await serve(page);
+  await page.goto('/');
+  const map = (await page.locator('.office-map').boundingBox())!;
+  for (const name of ['agent-office', 'daily-brief', 'design-system']) {
+    const area = page.locator('.project-area', { hasText: name });
+    await page.mouse.move(0, 0);
+    const sign = (await area.locator('.zone-mark-focus').boundingBox())!;
+    await page.mouse.move(sign.x + sign.width / 2, sign.y + sign.height / 2, { steps: 3 });
+    const eye = area.locator('.zone-veil');
+    const at = (await eye.boundingBox())!;
+    await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2, { steps: 5 });
+    const tip = eye.locator('.veil-tip');
+    await expect(tip).toBeVisible();
+    const box = (await tip.boundingBox())!;
+    expect(box.x, name).toBeGreaterThanOrEqual(map.x);
+    expect(box.x + box.width, name).toBeLessThanOrEqual(map.x + map.width);
+    // No browser tooltip from the sign on top of it.
+    await expect(eye).toHaveAttribute('title', '');
+  }
+});
+
+test('Choosing a colleague in another zone leaves the zone zoom but keeps the zoom', async ({
+  page,
+}) => {
+  await serve(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'api-server 확대해서 보기' }).click();
+  const card = page.locator('.office-card');
+  await expect(card).toHaveClass(/is-zone-focus/);
+  const scale = await page.locator('.map-holder').getAttribute('data-scale');
+  // The roster picks someone in daily-brief.
+  await page.locator('.session-row').filter({ hasText: '집사' }).click();
+  await expect(card).not.toHaveClass(/is-zone-focus/);
+  await expect(page.locator('.zone-back')).toHaveCount(0);
+  await expect(page.locator('.map-holder')).toHaveAttribute('data-scale', scale!);
+  await expect(page.locator('[data-station-id="demo:2"]')).toBeInViewport();
 });
