@@ -161,8 +161,8 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   // Recent issues and PRs above the tabs: two, the rest behind "n more".
   const recent = aside.locator('.artifact-list');
   await expect(recent.locator('.artifact-row')).toHaveCount(2);
-  // Newest first.
-  await expect(recent.locator('.artifact-row').first()).toContainText('#95');
+  // Most recently mentioned first (the service keeps them in the order the chat met them).
+  await expect(recent.locator('.artifact-row').first()).toContainText('#89');
   // Answers are signed with the colleague's name, not the tool's.
   await expect(aside.locator('.message-assistant .message-meta').first()).toContainText('Coco');
   await expect(aside.locator('.message-assistant .message-meta').first()).not.toContainText(

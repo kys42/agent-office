@@ -50,8 +50,9 @@ export function ArtifactCards({
     e.preventDefault();
     void api.openArtifact(url).catch((err) => notify(err.message));
   };
-  // Newest first: issues and PRs share one rising number per repository.
-  const recent = [...items].sort((a, b) => b.number - a.number);
+  // Most recently mentioned first: links are kept in the order the conversation met them
+  // (numbers from different repositories say nothing about which is newer).
+  const recent = [...items].reverse();
   if (variant === 'list')
     return (
       <section className="artifact-list" aria-label={t.artifacts.label}>
