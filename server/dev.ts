@@ -56,7 +56,15 @@ const server = http.createServer(async (req, res) => {
 server.listen(4318, '127.0.0.1', () =>
   console.log('Agent Office collector · http://127.0.0.1:4318'),
 );
-process.on('SIGTERM', () => {
-  service.stop();
+// Finish a pass in flight and write what the hot path staged before exiting. A second signal
+// (or a shutdown stuck past 5 s) exits right away.
+let exiting = false;
+const exit = () => {
+  if (exiting) process.exit(130);
+  exiting = true;
   server.close();
-});
+  setTimeout(() => process.exit(1), 5000).unref();
+  void service.shutdown().finally(() => process.exit(0));
+};
+process.on('SIGTERM', exit);
+process.on('SIGINT', exit);

@@ -5,7 +5,8 @@
 ## 처리 흐름
 
 ```text
-OfficeService (5초 폴링, 읽기 범위·오류 격리)
+OfficeService (5초 전체 수집, 읽기 범위·오류 격리
+               + 일하는 동료만 1초 hot path: stat·fs.watch 힌트 → 같은 파일 단계 → 부분 저장)
   ├─ JSONL 탐색 → RecordWindowCache(append 증분 / readRecords) → Orca byte reader
   │                            → resolveIdentity + parseRecords
   ├─ Codex/Claude index·DB·sidecar → 이름·작업 위치 보완
@@ -159,3 +160,24 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
 - **metadata 캐시**: Codex `session_index.jsonl`·가장 최신 `state_N.sqlite`·`-wal`의 mtime+size와 선택된 DB 이름이 같으면 지난 결과를 그대로 쓴다. DB나 존재하는 index 읽기가 실패한 결과는 기억하지 않는다. Claude는 프로젝트 목록은 매번 읽고 `sessions-index.json`을 파일별 mtime+size로, subagent `.meta.json`은 mtime+size로 기억한다(실제로 없는 경우는 기억하고, 있는데 읽기 실패한 경우는 다음에 다시 읽는다). 테스트는 `resetCodexMetadataCache`/`resetClaudeMetadataCache`로 초기화한다.
 
 검증은 `tests/record-window.test.ts`(단계별 append·3 MiB 경계·미완결 줄·UTF-8 분할·CRLF·무작위 분할이 `readRecords`와 같음, 축소/교체/guard/10분 대조/큰 첫 줄, 예산·prune)와 `tests/incremental-collect.test.ts`(서비스 append 수집과 revision, metadata 캐시)다.
+
+## 일하는 동료 빠른 갱신 (#77)
+
+5초 전체 수집은 그대로 정본·복구 경로다. 그 사이 일하는 동료만 `OfficeService`의 hot path가 1초 안에(파일 감시 힌트가 있으면 1초 미만) 다시 읽는다. 결과 계약: **같은 바이트에 대해 전체 수집이 만들 세션과 같은 세션(revision 포함)** 을 저장한다.
+
+- **파일 단계 공유**: 파일 하나를 세션으로 만드는 단계(파싱 캐시 stamp `office-v11:size:mtime` → `RecordWindowCache` 증분 읽기 → `parseRecords` → metadata 이름 → Claude subagent sidecar)는 `readSession` 하나다. 전체 수집과 hot path가 같은 `cache`·`windows`를 쓰므로 한 파일을 두 번 파싱하지 않는다. hot path가 먼저 읽은 파일은 다음 전체 수집에서 캐시 적중이고 revision도 같아 저장소 쓰기가 없다.
+- **직전 값 재사용**: 전체 수집이 저장 직전 세션마다 원본 파일 목록(병합 순서), metadata 맵, 작업 위치 입력(`provider·project·cwd·workingLocation.path`)과 그때 정한 workspace를 기억한다(`KnownSession`). hot path는 탐색·Codex/Claude metadata 읽기·Git을 하지 않는다. 같은 세션의 조각 파일이 여럿이면 전부 다시 단계에 넣어(바뀌지 않은 건 캐시) `mergeSessions`로 합친다. 작업 위치 입력이 바뀌었거나, 파일이 사라졌거나, 다른 ID가 나오면 그 세션은 건드리지 않고 전체 수집에 맡긴다. workspace는 같은 입력이면 같은 값이고(`enrichWorkspaces`와 같은 규칙으로 `locationSource`만 현재 값), Git 관측의 갱신은 다음 전체 수집이 반영한다.
+- **대상(hot 집합)**: Claude·Codex·OpenClaw **JSONL** 세션 중 시간 정책을 적용한 상태가 work/think/call이거나, 최종 응답(`done`) 뒤 10초 이내인 세션. OpenClaw DB에서도 나오는 세션은 제외한다(파일만으로 다시 만들 수 없음). 최근 활동순 최대 8개, 나머지는 5초 주기 그대로. 전체 수집 뒤와 hot 처리 뒤마다 다시 고르고, 빠지면 감시를 닫는다.
+- **Claude 실행 기록 승격**: hot pass마다 `<claude config>/sessions/*.json`을 한 번 읽는다. hot이 아닌 알려진 Claude 세션의 기록이 `busy`/`waiting`이면 기존 검증(`isLiveProcess`, PID·procStart 30초 메모)을 거쳐 hot으로 올린다(새 요청 도착이 transcript보다 먼저 보임). 승격은 그 세션의 기록이 busy/waiting인 동안 유지된다. hot Claude 세션에는 같은 읽기로 권한 대기 overlay(`applyLiveWait`)를 적용하고, 대기 기록이 바뀌면(`liveWaitSignature`) transcript가 그대로여도 다시 저장한다. ps 호출은 기존 메모를 넘지 않는다.
+- **주기와 경합**: 1초 타이머가 hot 파일만 stat해 파싱 캐시 stamp와 비교한다. 바뀐 세션들은 한 번에 처리해 공급자별 `store.stage(sessions, provider)`로 **메모리에만** 받아들이고(아래 '디스크 쓰기는 전체 수집에서') 그 세션들의 변경분만 patch로 보낸다(아래). 변경을 받아들이는 pass는 최소 1초 간격이라 세션별 최소 간격도 1초다. 전체 수집이 진행 중이면 hot pass는 아무것도 하지 않고, hot pass가 진행 중이면 전체 수집이 그 끝을 기다린 뒤 시작한다. 전체 수집은 아무것도 건너뛰지 않는다.
+- **변경분만 보내기**: hot pass는 사무실 전체를 다시 만들지 않는다(`emitChanged`). 바뀐 세션의 행만 하나씩 읽어 같은 규칙으로 꾸미고(설정·상태 파생·좌석·`snapshotEvents`), 게시된 동료들에 대해 붙임(`attachSessions`)과 현지화를 한다. 소식은 마지막 전체 목록에서 그 세션들 것만 다시 읽어 합치고, 실어 보낼 소식(`residentNotices`)과 `noticeStats`를 그 목록에서 다시 고른다. 순서는 id만 읽는 쿼리로 확인한다. 게시된 index와 비교해 patch를 만들고 `this.sent`(index·snapshot)·patch 기록을 전체 emit과 같은 방식으로 이어 가므로, 다음 전체 emit의 diff와 웹 폴러가 그대로 동작한다. 바뀐 세션이 다른 동료의 자리를 움직일 수 있으면(구역·핀·보관·관계·actor·background 여부, 붙임이나 책상이 바뀜, 붙지 않은 도우미가 매달림, 새로 보이거나 사라짐, 언어 변경) 전체 `emitSnapshot`으로 돌아간다. 다른 동료의 시간 경과에 따른 변화는 지금처럼 다음 전체 수집이 반영한다. 테스트가 hot patch를 직전 게시본에 적용한 결과와 직후 전체 재구성이 같음을 확인한다.
+- **디스크 쓰기는 전체 수집에서**: hot pass는 SQLite에 쓰지 않는다. `OfficeStore.stage`가 `upsert`와 같은 규칙(저장 형태 `storedForm`: 사용량 ledger 합산·작업 위치 유지·`taskStartedAt`, 소식 `ingestNotices`: 후보·ID·버전·receipt·호출 해결·cursor)을 메모리 위에서 그대로 돌린다. 소식·관측 버전·cursor·ledger는 디스크 내용 위에 겹친 사본에 쓰고, 세션 행은 디스크가 담을 형태(JSON 왕복) 그대로 둔다. 이 store의 모든 읽기(사무실 목록·순서·한 행, `get`/`detail`/검색/인수인계, 소식 목록·페이지·전체 읽음, `storedRecords`)가 겹친 내용을 본다. 그래서 열린 작업 카드의 `detail()`도 곧바로 새 내용을 받는다. 사람이 그사이 소식을 읽거나 숨기면(읽음·숨김·안 읽음·봄, 분류 전체 읽음) 그 receipt는 **곧바로 디스크에** 쓰고 겹친 사본도 같이 고친다. 그래서 다음 쓰기가 같은 소식을 쓰고, 그 전에 앱이 꺼져도 receipt는 남는다. 다음 전체 수집의 `upsert`(그 공급자)가 먼저 겹친 소식·관측·cursor·ledger를 **보인 그대로** 쓰고, 이어서 평소처럼 세션을 받아들인다(이때 이전 값은 겹친 행 기준이라 저장 형태가 같다). 소식은 이미 관측된 버전이라 새로 생기지 않으므로 중복·읽음 되돌림·미확인 수 깜빡임이 없다. 수집기가 닫힐 때(`close`)도 겹친 내용을 쓴다(공급자별로 따로, 하나가 실패해도 나머지는 쓴다). 데스크탑 종료는 `before-quit`에서 한 번 멈추고 worker에 stop을 보내 `OfficeService.shutdown()`(새 pass 거절 → 진행 중인 전체 수집·hot pass가 끝날 때까지 기다림 → 닫으며 쓰기)이 끝나거나 3초가 지나면 worker를 끝내고 종료한다. 개발 서버(`server/dev.ts`)도 SIGINT/SIGTERM에서 같은 순서다. 갑자기 죽으면 최대 5초치 겹친 내용이 사라질 수 있지만(receipt는 이미 디스크에 있음), 세션·소식은 다음 실행의 전체 수집이 JSONL에서 다시 만든다.
+- **순서**: 세션 목록 순서는 `updated_at` 내림차순, 같으면 id 내림차순이다(디스크 쿼리와 메모리 정렬이 같은 전체 순서를 쓰므로 hot에서 보인 순서가 디스크에 쓴 뒤에도 그대로다).
+- **확인 시각**: 1분마다 나가는 확인 시각(`lastSync`·connector)은 전체 office를 게시할 때만 기준을 갱신한다(`healthAt`). hot patch가 계속 나가도 화면의 마지막 동기화 시각은 1분마다 움직인다.
+- **메모리**: `emitChanged`가 합칠 기준으로 마지막 전체 소식 목록(`notices.all`)을 들고 있다. 전체 emit이 어차피 만드는 같은 객체들이라 크기는 소식 표 하나(한 번의 `officeView`) 정도다. 겹친 세션은 디스크 소식 사본을 겹쳐 있는 동안만(최대 5초) 가진다.
+- **지연되는 읽기**: 같은 store를 쓰지 않는 읽기, 즉 MCP 서버(별도 프로세스의 읽기 전용 연결)와 다른 수집기는 디스크만 보므로 hot 변경을 최대 5초 늦게 본다. `identities`(터미널 찾기)는 디스크의 정체성 필드만 읽으며 hot pass가 이를 바꾸지 않는다.
+- **소식 받아들이기 비용**: `ingestNotices`는 세션의 관측 버전을 한 번에 읽고, 버전이 바뀐 이벤트만 `notice_observed`에 쓴다(전에는 후보마다 읽고 매번 같은 값을 다시 썼다). 단계 분류용 기존 소식 확인도 후보마다가 아니라 한 쿼리다. 결과 DB 상태는 같다.
+- **fs.watch 힌트**: hot 파일에만 `fs.watch`(persistent:false)를 건다. 이벤트가 오면 150ms 모아(다음 허용 시각보다 이르지 않게) 바로 hot pass를 돈다. 감시 시작 실패·`error` 이벤트는 그 파일을 감시 없이(1초 stat) 두고, hot에서 빠질 때 다시 시도할 수 있게 잊는다. 놓친 이벤트는 1초 stat과 5초 전체 수집이 복구한다. `stop()`은 타이머·힌트·감시를 모두 닫는다.
+- **불변**: 저장 기록은 canonical, 소식 ID·버전·이벤트 ID는 그대로다. 일시정지·공급자 끄기에서는 hot 집합이 비워진다.
+
+검증은 `tests/hot-path.test.ts`(append가 전체 수집 없이 다음 tick에 저장·patch, 전체 수집·새 수집기와 같은 revision, 승격·유예·강등·상한 8, 실행 기록 승격과 권한 대기, 전체 수집과 겹치지 않음·한 번만 읽음, 감시 힌트와 감시 실패 시 stat 폴백, `stop()` 뒤 타이머·감시 없음, 부분 upsert, 실행 기록 캐시, hot patch를 직전 게시본에 적용한 결과와 전체 재구성의 동일성(부모·도우미·최종 응답·동시 변경), 전체 재구성으로 되돌아가는 경우, 실어 보내는 소식에서 밀려난 소식 제거, hot pass는 디스크에 쓰지 않고 다음 전체 수집이 보인 그대로 씀, 그사이 읽은 소식이 한 번만·읽은 채로 남음, 바로 쓴 경우와 같은 소식, 닫을 때 기록)다.

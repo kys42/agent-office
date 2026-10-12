@@ -2,21 +2,34 @@ import { QuotaService } from './quotas.js';
 import path from 'node:path';
 import os from 'node:os';
 import { stat } from 'node:fs/promises';
+import { watch, type FSWatcher } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { Connector, Provider, Session, Snapshot } from '../src/shared/types.js';
+import type {
+  Connector,
+  Mood,
+  OfficeNotice,
+  Preferences,
+  Provider,
+  Session,
+  Snapshot,
+  WorkspaceIdentity,
+} from '../src/shared/types.js';
 import { OfficeStore } from './store.js';
-import { discover } from './adapters/files.js';
+import { discover, type SourceFile } from './adapters/files.js';
 import { RecordWindowCache } from './adapters/record-window.js';
 import { parseRecords, hash } from './adapters/normalize.js';
-import { codexMetadata } from './adapters/codex.js';
+import { codexMetadata, type CodexMeta } from './adapters/codex.js';
 import { readOpenClawDatabases } from './adapters/openclaw.js';
 import { artifactDetails } from './artifacts.js';
 import { claudeMetadata, claudeSubagentMetadata } from './adapters/claude.js';
 import {
   applyLiveWait,
   defaultLiveDeps,
+  liveClaudeProcesses,
+  liveWaitSignature,
+  readClaudeProcessesCached,
   waitingClaudeProcesses,
   type ClaudeLiveDeps,
   type ClaudeProcess,
@@ -25,6 +38,7 @@ import { mergeSessions } from './adapters/merge.js';
 import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
 import {
+  applyPatch,
   composePatches,
   diffSnapshot,
   indexSnapshot,
@@ -33,6 +47,11 @@ import {
 } from '../src/shared/snapshot-patch.js';
 import { enrichWorkspaces, workspaceSignature } from './workspaces.js';
 import { syncLocale } from './locale.js';
+import { deriveState } from '../src/shared/runtime.js';
+import { attachSessions, parentSession } from '../src/shared/office.js';
+import { isBackground, isHelper, needsAttention } from '../src/shared/residents.js';
+import { noticeOrder, residentNotices } from '../src/shared/notice-pages.js';
+import { unreadNoticeCount } from '../src/shared/notices.js';
 import {
   LOCALES,
   getLocale,
@@ -40,7 +59,7 @@ import {
   type Locale,
   type LocalePreference,
 } from '../src/shared/i18n/index.js';
-import { CANONICAL, localizePreferences } from '../src/shared/canonical.js';
+import { CANONICAL, localizePreferences, localizeSession } from '../src/shared/canonical.js';
 import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
 import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
 const petLookSchema = z
@@ -145,6 +164,99 @@ function meaningful(change: ReturnType<typeof diffSnapshot>, before: Snapshot, a
   const plain = (s: Snapshot) => JSON.stringify(s.connectors.map((c) => ({ ...c, lastSync: 0 })));
   return !!fields?.connectors && plain(before) !== plain(after);
 }
+/**
+ * The hot path (#77): colleagues at work are re-read every `tickMs` (sooner on a file watch
+ * hint) instead of waiting for the 5-second full pass. See PERFORMANCE-DESIGN §3.4.
+ */
+export interface HotOptions {
+  /** How often hot files are stat'ed. */
+  tickMs: number;
+  /** One session is processed at most this often. */
+  minMs: number;
+  /** A file watch event waits this long for more before the session is processed. */
+  debounceMs: number;
+  /** A session stays hot this long after its final reply. */
+  graceMs: number;
+  /** At most this many sessions are hot; the rest wait for the full pass. */
+  max: number;
+  /** Watch hot files for changes (a hint only: the stat tick and the full pass still recover). */
+  watch: boolean;
+}
+export const HOT_DEFAULTS: HotOptions = {
+  tickMs: 1000,
+  minMs: 1000,
+  debounceMs: 150,
+  graceMs: 10_000,
+  max: 8,
+  watch: true,
+};
+/** A timer tick may come this much early; it must not push an update a whole tick back. */
+const TICK_SLACK_MS = 100;
+const WORKING: ReadonlySet<Mood> = new Set(['work', 'think', 'call']);
+const LIVE_ACTIVE: ReadonlySet<string> = new Set(['busy', 'waiting']);
+/**
+ * A JSONL session as the last pass stored it: enough to rebuild it from its files alone, reusing
+ * what only the full pass looks up (names from metadata, the workspace from Git).
+ */
+interface KnownSession {
+  id: string;
+  provider: Provider;
+  nativeId: string;
+  /** Source files, in the order the full pass merged them. */
+  files: string[];
+  /** What `enrichWorkspaces` resolved the workspace from (see `place`). */
+  place: string;
+  workspace: WorkspaceIdentity | undefined;
+  mood: Mood;
+  updatedAt: number;
+  /** `liveWaitSignature` of the wait applied last (Claude only). */
+  wait: string;
+}
+/** Everything `enrichWorkspaces` reads of a session: equal places resolve to the same workspace. */
+const place = (s: Session) =>
+  JSON.stringify([s.provider, s.project, s.cwd, s.workingLocation?.path ?? null]);
+/**
+ * `enrichWorkspaces` for a session whose place has not moved, with the workspace it resolved
+ * last time: the same workspace, project and revision, without Git.
+ */
+function placed(s: Session, last: WorkspaceIdentity | undefined): Session {
+  const workspace = last?.locationSource ? { ...last, locationSource: s.workingLocation } : last;
+  return {
+    ...s,
+    workspace,
+    project: !workspace || workspace.evidence === 'unknown' ? s.project : workspace.name,
+    revision: hash(`${s.revision}:${workspaceSignature(workspace)}`),
+  };
+}
+/**
+ * Whether a session's change leaves everyone else's place as it was: the same zone, standing
+ * (pinned, archived, background or not and, if background, calling or not), identity and
+ * relations, and no actor (an actor's runs share one desk). `was` as published, `now` decorated.
+ */
+function standsStill(was: Session, now: Session): boolean {
+  const relation = (s: Session) =>
+    JSON.stringify([
+      s.provider,
+      s.nativeId,
+      s.sessionKey ?? null,
+      s.agentName ?? null,
+      s.parentId ?? null,
+      s.relation?.kind ?? null,
+      s.relation?.parentNativeId ?? null,
+      s.relation?.parentSessionKey ?? null,
+    ]);
+  return (
+    !was.actor &&
+    !now.actor &&
+    !was.resident &&
+    was.zone === now.zone &&
+    !!was.pinned === !!now.pinned &&
+    !!was.archived === !!now.archived &&
+    isBackground(was) === isBackground(now) &&
+    (!isBackground(now) || needsAttention(was) === needsAttention(now)) &&
+    relation(was) === relation(now)
+  );
+}
 export class OfficeService extends EventEmitter {
   private quotaService = new QuotaService();
   store: OfficeStore;
@@ -157,6 +269,14 @@ export class OfficeService extends EventEmitter {
   readonly epoch = randomUUID();
   /** What was last sent, so a cycle that changed nothing sends nothing. */
   private sent: { index: SnapshotIndex; at: number; snapshot: Snapshot } | null = null;
+  /** When a full office (with its check times) was last published; see `HEALTH_MS`. */
+  private healthAt = 0;
+  /**
+   * Every visible notice as the office last listed it, for `emitChanged` to merge into. Kept
+   * between passes: the same objects every full emit builds anyway, so its size follows the
+   * notices table (about what one `officeView` holds).
+   */
+  private notices: { all: OfficeNotice[]; locale: Locale } | null = null;
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
   private polledAt = 0;
@@ -173,6 +293,30 @@ export class OfficeService extends EventEmitter {
   live: ClaudeLiveDeps;
   /** How each connector's message is phrased, so a language switch can re-phrase it in place. */
   private phrasing = new Map<Provider, () => string>();
+  /** Hot path settings (tests shorten them before `start`). */
+  hot: HotOptions = { ...HOT_DEFAULTS };
+  /** JSONL sessions of the last full pass (OpenClaw SQLite ones excluded), by id. */
+  private known = new Map<string, KnownSession>();
+  /** Names and places each provider's last full pass read from its metadata. */
+  private metadataOf = new Map<Provider, Map<string, CodexMeta>>();
+  /** Sessions on the hot path, the most recently active first. */
+  private hotSet = new Set<string>();
+  /** When a hot pass last took changes in; the next one waits `hot.minMs` after it. */
+  private processedAt = 0;
+  /** When a hot pass last ran: a timer tick right after a hinted pass has nothing to add. */
+  private passedAt = 0;
+  /** Claude sessions whose verified live process is busy or waiting → since when. */
+  private livePromoted = new Map<string, number>();
+  private hotTimer: ReturnType<typeof setInterval> | null = null;
+  private hintTimer: ReturnType<typeof setTimeout> | null = null;
+  private hintAt = 0;
+  private hotRun: Promise<void> | null = null;
+  private hotAgain = false;
+  /** File watches on hot files, by path; files whose watch failed rely on the stat tick. */
+  private watchers = new Map<string, FSWatcher>();
+  private unwatchable = new Set<string>();
+  /** Parsed live-process records by file name, re-read only when a file moves. */
+  private liveFiles = new Map<string, { stamp: string; record: ClaudeProcess | null }>();
   constructor(dir?: string, home = os.homedir()) {
     super();
     this.store = new OfficeStore(dir);
@@ -207,21 +351,28 @@ export class OfficeService extends EventEmitter {
     for (const c of this.connectors) c.message = this.phrasing.get(c.provider)?.() ?? c.message;
   }
   snapshot(): Snapshot {
+    return this.compose().snapshot;
+  }
+  /** The office now, and every visible notice its carried ones were chosen from. */
+  private compose(): { snapshot: Snapshot; all: OfficeNotice[] } {
     const locale: Locale = getLocale();
-    const { sessions, notices, noticeStats } = this.store.officeView(locale);
+    const { sessions, notices, noticeStats, all } = this.store.officeView(locale);
     return {
-      notices,
-      noticeStats,
-      sessions,
-      // A copy: the snapshot keeps describing its own version after the connectors move on.
-      connectors: this.connectors.map((c) => ({ ...c })),
-      preferences: localizePreferences(this.store.preferences(), locale),
-      syncing: this.syncing,
-      lastSync: this.lastSync,
-      error: this.error,
-      version: this.version,
-      epoch: this.epoch,
-      locale,
+      all,
+      snapshot: {
+        notices,
+        noticeStats,
+        sessions,
+        // A copy: the snapshot keeps describing its own version after the connectors move on.
+        connectors: this.connectors.map((c) => ({ ...c })),
+        preferences: localizePreferences(this.store.preferences(), locale),
+        syncing: this.syncing,
+        lastSync: this.lastSync,
+        error: this.error,
+        version: this.version,
+        epoch: this.epoch,
+        locale,
+      },
     };
   }
   /**
@@ -231,21 +382,33 @@ export class OfficeService extends EventEmitter {
    * content on the next pass. The check times alone go out once a minute.
    */
   emitSnapshot(): Snapshot {
-    const s = this.snapshot();
+    const { snapshot: s, all } = this.compose();
+    this.notices = { all, locale: s.locale! };
     const index = indexSnapshot(s);
     const now = Date.now();
     const sent = this.sent;
     const change = sent ? diffSnapshot(sent.index, s, index) : null;
-    if (sent && change && !meaningful(change, sent.snapshot, s) && now - sent.at < HEALTH_MS)
+    if (sent && change && !meaningful(change, sent.snapshot, s) && now - this.healthAt < HEALTH_MS)
       // Nothing to publish: answer with what was published, the baseline of the next patch.
       return sent.snapshot;
     s.version = ++this.version;
+    // Only a whole office carries the check times: hot patches never push the next one back.
+    this.healthAt = now;
+    return this.publish(s, index, sent && change);
+  }
+  /** Makes `s` (indexed as `index`) the published office; `change` from the last one, if any. */
+  private publish(
+    s: Snapshot,
+    index: SnapshotIndex,
+    change: ReturnType<typeof diffSnapshot> | null,
+  ): Snapshot {
+    const now = Date.now();
     const patch: SnapshotPatch | null =
-      sent && change
+      this.sent && change
         ? {
             kind: 'patch',
             epoch: this.epoch,
-            base: sent.snapshot.version,
+            base: this.sent.snapshot.version,
             version: s.version,
             ...change,
           }
@@ -256,6 +419,118 @@ export class OfficeService extends EventEmitter {
     else this.patches = [];
     this.emit('snapshot', s, patch);
     return s;
+  }
+  /**
+   * After a hot pass: sends what changed in just these sessions without rebuilding the office.
+   * Their rows are read and decorated one by one, attached against the published colleagues,
+   * their notices merged into the last full list of notices, and the carried notices and counts
+   * chosen again from it. The result is what `emitSnapshot` would publish, as long as nothing
+   * about these sessions can move anyone else: the same zone, desk, attachment, relations, actor
+   * and background standing, and no unattached helper hanging off them. Otherwise, and before
+   * anything was published, it is `emitSnapshot`. Time-driven changes of other colleagues wait
+   * for the next full pass, as they always have.
+   */
+  private emitChanged(ids: string[]) {
+    const sent = this.sent;
+    const base = this.notices;
+    const locale = getLocale();
+    const change =
+      sent && base?.locale === locale ? this.changeOf(sent, base.all, ids, locale) : null;
+    if (!change) return void this.emitSnapshot();
+    this.notices = { all: change.all, locale };
+    if (!change.patch) return;
+    const s = applyPatch(sent!.snapshot, {
+      kind: 'patch',
+      epoch: this.epoch,
+      base: sent!.snapshot.version,
+      version: ++this.version,
+      ...change.patch,
+    });
+    this.publish(s, change.index, change.patch);
+  }
+  /** `emitChanged`'s patch and index, null when only the whole office can tell. */
+  private changeOf(
+    sent: NonNullable<OfficeService['sent']>,
+    all: OfficeNotice[],
+    ids: string[],
+    locale: Locale,
+  ): {
+    patch: ReturnType<typeof diffSnapshot> | null;
+    index: SnapshotIndex;
+    all: OfficeNotice[];
+  } | null {
+    const published = sent.snapshot.sessions;
+    const before = new Map(published.map((s) => [s.id, s]));
+    const changed = new Set(ids);
+    const rows = new Map<string, Session>();
+    for (const id of changed) {
+      const was = before.get(id);
+      const row = this.store.officeRow(id);
+      if (!was || !row || !standsStill(was, row)) return null;
+      rows.set(id, row);
+    }
+    const list = published.map((s) => rows.get(s.id) ?? s);
+    // Anyone hanging off a changed session whose desk could depend on it.
+    for (const s of list)
+      if (!changed.has(s.id) && isHelper(s)) {
+        const parent = parentSession(s, list);
+        if (parent && changed.has(parent.id) && (isHelper(parent) || !s.attachedTo)) return null;
+      }
+    const next = new Map<string, Session>();
+    for (const s of attachSessions(list))
+      if (changed.has(s.id)) {
+        const was = before.get(s.id)!;
+        if (s.attachedTo !== was.attachedTo || s.officeSeat !== was.officeSeat) return null;
+        // An unattached helper stands on its own desk only while it is shown at all
+        // (`helperPresence`): whether it still is depends on more than this session.
+        if (isHelper(s) && !s.attachedTo) return null;
+        next.set(s.id, localizeSession(s, locale));
+      }
+    // Notices: these sessions' own, merged into the rest as last listed.
+    const background = new Set(
+      [...rows.values()].filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
+    );
+    const merged = all
+      .filter((n) => !changed.has(n.sessionId))
+      .concat(this.store.noticesOf([...changed], background, locale))
+      .sort(noticeOrder);
+    const carried = residentNotices(merged);
+    const noticeStats = { unread: unreadNoticeCount(merged), total: merged.length };
+    // The patch, against the published index.
+    const prev = sent.index;
+    const index: SnapshotIndex = {
+      sessions: new Map(prev.sessions),
+      notices: new Map(),
+      order: prev.order,
+      noticeOrder: carried.map((n) => n.id).join('\n'),
+      fields: new Map(prev.fields),
+    };
+    const patch: ReturnType<typeof diffSnapshot> = {};
+    for (const s of next.values()) {
+      const json = JSON.stringify(s);
+      if (prev.sessions.get(s.id) === json) continue;
+      index.sessions.set(s.id, json);
+      (patch.sessions ??= []).push(s);
+    }
+    const order = this.store.sessionOrder().filter((id) => before.has(id));
+    index.order = order.join('\n');
+    if (index.order !== prev.order) patch.order = order;
+    const sentNotices = new Map((sent.snapshot.notices ?? []).map((n) => [n.id, n]));
+    for (const n of carried) {
+      const old = prev.notices.get(n.id);
+      const json = sentNotices.get(n.id) === n && old ? old : JSON.stringify(n);
+      index.notices.set(n.id, json);
+      if (json !== old) (patch.notices ??= []).push(n);
+    }
+    const removedNotices = [...prev.notices.keys()].filter((id) => !index.notices.has(id));
+    if (removedNotices.length) patch.removedNotices = removedNotices;
+    if (index.noticeOrder !== prev.noticeOrder) patch.noticeOrder = carried.map((n) => n.id);
+    const stats = JSON.stringify(noticeStats);
+    if (prev.fields.get('noticeStats') !== stats) {
+      index.fields.set('noticeStats', stats);
+      patch.fields = { noticeStats };
+    }
+    return { patch: Object.keys(patch).length ? patch : null, index, all: merged };
   }
   /**
    * The office as last published. Every client must hold exactly what a version was published
@@ -285,18 +560,57 @@ export class OfficeService extends EventEmitter {
     };
     this.refresh().catch(() => {});
     tick();
+    this.hotTimer = setInterval(() => {
+      // Right after a hinted pass a tick has nothing to add.
+      if (Date.now() - this.passedAt >= this.hot.tickMs - TICK_SLACK_MS) void this.hotTick();
+    }, this.hot.tickMs);
   }
+  /** Stops at once: what a pass in flight had not written yet is written by `close` if it can. */
   stop() {
-    this.stopped = true;
+    this.halt();
+    this.close();
+  }
+  /**
+   * Stops and lets a full pass or hot pass in flight finish first, then closes the store, which
+   * writes whatever the hot path staged. For a clean quit (desktop, dev server).
+   */
+  async shutdown() {
+    // No new passes from here; the ones in flight run to their end (and stage what they read).
+    this.stopping = true;
+    this.clearTimers();
+    await Promise.allSettled([this.pending, this.hotRun]);
+    this.halt();
+    this.close();
+  }
+  private stopping = false;
+  private clearTimers() {
     if (this.timer) clearTimeout(this.timer);
+    if (this.hotTimer) clearInterval(this.hotTimer);
+    if (this.hintTimer) clearTimeout(this.hintTimer);
+    this.timer = this.hotTimer = this.hintTimer = null;
+  }
+  private halt() {
+    this.stopped = true;
+    this.clearTimers();
+    this.hotSet.clear();
+    this.syncWatches();
+  }
+  private closed = false;
+  private close() {
+    if (this.closed) return;
+    this.closed = true;
     this.store.close();
   }
   async refresh(): Promise<Snapshot> {
-    if (this.stopped) throw new Error(m().server.rpc.stopped);
     if (this.pending) return this.pending;
-    this.pending = this.collect().finally(() => {
-      this.pending = null;
-    });
+    if (this.stopped || this.stopping) throw new Error(m().server.rpc.stopped);
+    // A hot pass in flight finishes first: the two never read the same file at once.
+    const hot = this.hotRun ?? Promise.resolve();
+    this.pending = hot
+      .then(() => this.collect())
+      .finally(() => {
+        this.pending = null;
+      });
     return this.pending;
   }
   private async collect(): Promise<Snapshot> {
@@ -304,6 +618,7 @@ export class OfficeService extends EventEmitter {
     if (prefs.paused) {
       this.connectors = this.connectors.map((c) => ({ ...c, state: 'paused' }));
       for (const c of this.connectors) this.say(c, () => m().server.connector.paused);
+      this.forgetHot();
       return this.emitSnapshot();
     }
     this.syncing = true;
@@ -315,6 +630,7 @@ export class OfficeService extends EventEmitter {
         connector.state = 'paused';
         this.say(connector, () => m().server.connector.disabled);
         this.forget(provider, new Set());
+        this.forgetHot(provider);
         if (provider === 'openclaw') this.clawCache.clear();
         continue;
       }
@@ -327,7 +643,9 @@ export class OfficeService extends EventEmitter {
             ? await codexMetadata(path.dirname(this.roots.codex))
             : provider === 'claude'
               ? await claudeMetadata(this.roots.claude)
-              : new Map();
+              : new Map<string, CodexMeta>();
+        /** Sessions that come (also) from an OpenClaw database: never rebuilt from files alone. */
+        const fromDatabase = new Set<string>();
         if (provider === 'openclaw') {
           const r = await readOpenClawDatabases(
             this.roots.openclaw,
@@ -336,107 +654,53 @@ export class OfficeService extends EventEmitter {
           );
           sessions = r.sessions;
           errors = r.errors;
+          for (const s of r.sessions) fromDatabase.add(s.id);
         }
         const files = (await discover(this.roots[provider], provider === 'openclaw' ? 2 : 5)).slice(
           0,
           prefs.maxSessions,
         );
+        /** Each session's source files, in merge order. */
+        const sources = new Map<string, string[]>();
         for (const file of files) {
-          const stamp = `office-v11:${file.size}:${file.mtime}`;
-          const cached = this.cache.get(file.path);
-          let s = cached?.stamp === stamp ? cached.session : null;
-          let key = (s && cached?.key) || stamp;
-          // A window built by appends trusts its guard bytes; re-verify it in full on schedule
-          // even when the file has gone quiet, and re-parse only if that found other records.
-          if (s && this.windows.stale(file.path)) {
-            const check = await this.windows.verify(file).catch(() => null);
-            if (check?.drifted) {
-              s = null;
-              key = `${stamp}:verified:${Date.now()}`;
-            }
-          }
-          if (!s) {
-            try {
-              const { records, partial } = await this.windows.read(file);
-              if (!records.length) continue;
-              if (
-                provider === 'codex' &&
-                partial &&
-                !records.some((r) => r.type === 'session_meta')
-              )
-                throw new Error('Native identity header could not be read');
-              s = parseRecords(records, {
-                provider,
-                sourcePath: file.path,
-                mtime: file.mtime,
-                partial,
-                agentName:
-                  provider === 'openclaw'
-                    ? path.relative(this.roots.openclaw, file.path).split(path.sep)[0]
-                    : undefined,
-              });
-              const meta = metadata.get(s.nativeId);
-              if (meta) {
-                s = {
-                  ...s,
-                  title: provider === 'claude' && s.nativeTitle ? s.title : meta.title || s.title,
-                  nativeTitle: !!meta.title || s.nativeTitle,
-                  cwd: meta.cwd ?? s.cwd,
-                  branch: meta.branch ?? s.branch,
-                  gitCommit: meta.gitCommit ?? s.gitCommit,
-                  model: meta.model ?? s.model,
-                };
-                s.project = s.cwd ? path.basename(s.cwd) : s.project;
-              }
-              s.revision = hash(`${key}:${s.title}`);
-              // A copy, not the parse result itself: its texts are cut out of the raw records
-              // (string slices), which would keep every record's full text alive with it.
-              this.remember(file.path, { stamp, key, session: structuredClone(s) });
-            } catch {
-              errors++;
-              continue;
-            }
-          }
-          const latestMeta = metadata.get(s.nativeId);
-          if (latestMeta) {
-            s = {
-              ...s,
-              title: provider === 'claude' && s.nativeTitle ? s.title : latestMeta.title || s.title,
-              nativeTitle: !!latestMeta.title || s.nativeTitle,
-              cwd: latestMeta.cwd ?? s.cwd,
-              branch: latestMeta.branch ?? s.branch,
-              gitCommit: latestMeta.gitCommit ?? s.gitCommit,
-              model: latestMeta.model ?? s.model,
-            };
-            s.project = s.cwd ? path.basename(s.cwd) : s.project;
-            s.revision = hash(`${key}:${s.title}:${s.cwd}:${s.model}:${s.branch}:${s.gitCommit}`);
-          }
-          if (provider === 'claude') {
-            const sidecar = await claudeSubagentMetadata(file.path);
-            if (sidecar)
-              s = {
-                ...s,
-                title: s.nativeTitle ? s.title : sidecar.title || s.title,
-                relation: s.relation
-                  ? { ...s.relation, role: sidecar.role || s.relation.role }
-                  : undefined,
-                revision: hash(`${s.revision}:${sidecar.title}:${sidecar.role}`),
-              };
-          }
+          const s = await this.readSession(provider, file, metadata);
+          if (s === 'error') errors++;
+          if (!s || s === 'error') continue;
           sessions.push(s);
+          sources.set(s.id, [...(sources.get(s.id) ?? []), file.path]);
         }
         this.forget(provider, new Set(files.map((f) => f.path)));
         // Discovery is newest-first. Never let an older duplicate replace live activity.
         sessions = mergeSessions(sessions)
           .sort((a, b) => b.updatedAt - a.updatedAt)
           .slice(0, prefs.maxSessions);
+        const places = new Map(sessions.map((s) => [s.id, place(s)]));
         sessions = await enrichWorkspaces(sessions);
         sessions = sessions.map((s) => ({
           ...s,
           revision: hash(`${s.revision}:${workspaceSignature(s.workspace)}`),
         }));
-        if (provider === 'claude') sessions = await this.liveWaits(sessions);
+        let waits = new Map<string, ClaudeProcess>();
+        if (provider === 'claude') ({ sessions, waits } = await this.liveWaits(sessions));
         if (errors && sessions.length === 0) throw new Error(m().server.connector.unreadable);
+        // What the hot path rebuilds from: the sessions exactly as stored below.
+        this.forgetHot(provider, true);
+        this.metadataOf.set(provider, metadata);
+        for (const s of sessions) {
+          const paths = sources.get(s.id);
+          if (paths && !fromDatabase.has(s.id))
+            this.known.set(s.id, {
+              id: s.id,
+              provider,
+              nativeId: s.nativeId,
+              files: paths,
+              place: places.get(s.id)!,
+              workspace: s.workspace,
+              mood: s.observedStatus ?? s.status,
+              updatedAt: s.updatedAt,
+              wait: liveWaitSignature(waits.get(s.nativeId)),
+            });
+        }
         // On partial source failure, retain existing records instead of silently deleting their history.
         if (errors) {
           const ids = new Set(sessions.map((s) => s.id));
@@ -457,6 +721,7 @@ export class OfficeService extends EventEmitter {
             : `${m().server.connector.connected(count)}${provider === 'openclaw' ? ' · SQLite / JSONL' : ''}`,
         );
       } catch (e) {
+        this.forgetHot(provider);
         const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
         connector.state = missing ? 'missing' : 'error';
         this.say(connector, () =>
@@ -468,7 +733,97 @@ export class OfficeService extends EventEmitter {
     this.syncing = false;
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);
+    this.rehot(Date.now(), prefs);
     return this.emitSnapshot();
+  }
+  /**
+   * One source file up to the provider-wide steps: the parse cache or the incremental reader,
+   * metadata names, the subagent sidecar. Shared by the full pass and the hot path, through the
+   * same caches, so both make the same session (and revision) of the same bytes. Null when the
+   * file holds no records yet; 'error' when it could not be read or parsed.
+   */
+  private async readSession(
+    provider: Provider,
+    file: SourceFile,
+    metadata: Map<string, CodexMeta>,
+  ): Promise<Session | null | 'error'> {
+    const stamp = `office-v11:${file.size}:${file.mtime}`;
+    const cached = this.cache.get(file.path);
+    let s = cached?.stamp === stamp ? cached.session : null;
+    let key = (s && cached?.key) || stamp;
+    // A window built by appends trusts its guard bytes; re-verify it in full on schedule
+    // even when the file has gone quiet, and re-parse only if that found other records.
+    if (s && this.windows.stale(file.path)) {
+      const check = await this.windows.verify(file).catch(() => null);
+      if (check?.drifted) {
+        s = null;
+        key = `${stamp}:verified:${Date.now()}`;
+      }
+    }
+    if (!s) {
+      try {
+        const { records, partial } = await this.windows.read(file);
+        if (!records.length) return null;
+        if (provider === 'codex' && partial && !records.some((r) => r.type === 'session_meta'))
+          throw new Error('Native identity header could not be read');
+        s = parseRecords(records, {
+          provider,
+          sourcePath: file.path,
+          mtime: file.mtime,
+          partial,
+          agentName:
+            provider === 'openclaw'
+              ? path.relative(this.roots.openclaw, file.path).split(path.sep)[0]
+              : undefined,
+        });
+        const meta = metadata.get(s.nativeId);
+        if (meta) {
+          s = {
+            ...s,
+            title: provider === 'claude' && s.nativeTitle ? s.title : meta.title || s.title,
+            nativeTitle: !!meta.title || s.nativeTitle,
+            cwd: meta.cwd ?? s.cwd,
+            branch: meta.branch ?? s.branch,
+            gitCommit: meta.gitCommit ?? s.gitCommit,
+            model: meta.model ?? s.model,
+          };
+          s.project = s.cwd ? path.basename(s.cwd) : s.project;
+        }
+        s.revision = hash(`${key}:${s.title}`);
+        // A copy, not the parse result itself: its texts are cut out of the raw records
+        // (string slices), which would keep every record's full text alive with it.
+        this.remember(file.path, { stamp, key, session: structuredClone(s) });
+      } catch {
+        return 'error';
+      }
+    }
+    const latestMeta = metadata.get(s.nativeId);
+    if (latestMeta) {
+      s = {
+        ...s,
+        title: provider === 'claude' && s.nativeTitle ? s.title : latestMeta.title || s.title,
+        nativeTitle: !!latestMeta.title || s.nativeTitle,
+        cwd: latestMeta.cwd ?? s.cwd,
+        branch: latestMeta.branch ?? s.branch,
+        gitCommit: latestMeta.gitCommit ?? s.gitCommit,
+        model: latestMeta.model ?? s.model,
+      };
+      s.project = s.cwd ? path.basename(s.cwd) : s.project;
+      s.revision = hash(`${key}:${s.title}:${s.cwd}:${s.model}:${s.branch}:${s.gitCommit}`);
+    }
+    if (provider === 'claude') {
+      const sidecar = await claudeSubagentMetadata(file.path);
+      if (sidecar)
+        s = {
+          ...s,
+          title: s.nativeTitle ? s.title : sidecar.title || s.title,
+          relation: s.relation
+            ? { ...s.relation, role: sidecar.role || s.relation.role }
+            : undefined,
+          revision: hash(`${s.revision}:${sidecar.title}:${sidecar.role}`),
+        };
+    }
+    return s;
   }
   /** Parse cache with a size cap as a safety net; pruning to discovered files keeps it far below. */
   private remember(file: string, entry: { stamp: string; key: string; session: Session }) {
@@ -490,18 +845,260 @@ export class OfficeService extends EventEmitter {
    * after the parse cache on every pass, so the overlay appears and disappears with the record
    * (its revision changes either way). Unreadable or unexpected records change nothing.
    */
-  private async liveWaits(sessions: Session[]): Promise<Session[]> {
+  private async liveWaits(
+    sessions: Session[],
+    records?: ClaudeProcess[],
+  ): Promise<{ sessions: Session[]; waits: Map<string, ClaudeProcess> }> {
     const wanted = new Set(sessions.map((s) => s.nativeId));
-    const waiting: Map<string, ClaudeProcess> = await waitingClaudeProcesses(
+    const waits: Map<string, ClaudeProcess> = await waitingClaudeProcesses(
       this.live,
       wanted,
+      records,
     ).catch(() => new Map());
-    if (!waiting.size) return sessions;
+    if (!waits.size) return { sessions, waits };
     const now = Date.now();
-    return sessions.map((s) => {
-      const live = waiting.get(s.nativeId);
-      return (live && applyLiveWait(s, live, now)) || s;
-    });
+    return {
+      waits,
+      sessions: sessions.map((s) => {
+        const live = waits.get(s.nativeId);
+        return (live && applyLiveWait(s, live, now)) || s;
+      }),
+    };
+  }
+  /** Which known sessions take the hot path now, at most `hot.max`, the most recently active first. */
+  private rehot(now: number, prefs: Preferences) {
+    const hot = [...this.known.values()]
+      .filter((k) => {
+        if (!prefs.enabledProviders.includes(k.provider)) return false;
+        if (this.livePromoted.has(k.id)) return true;
+        const { status } = deriveState(
+          k.mood,
+          k.updatedAt,
+          now,
+          false,
+          prefs.standbyHours,
+          prefs.readyMinutes,
+          CANONICAL,
+        );
+        return WORKING.has(status) || (k.mood === 'done' && now - k.updatedAt < this.hot.graceMs);
+      })
+      .map((k) => ({ id: k.id, at: Math.max(k.updatedAt, this.livePromoted.get(k.id) ?? 0) }))
+      .sort((a, b) => b.at - a.at)
+      .slice(0, prefs.paused ? 0 : this.hot.max);
+    this.hotSet = new Set(hot.map(({ id }) => id));
+    this.syncWatches();
+  }
+  /**
+   * Leave the hot path for one provider (or all): its sessions wait for the next full pass.
+   * `relearn`: the full pass is about to list them again, so live promotions are kept.
+   */
+  private forgetHot(provider?: Provider, relearn = false) {
+    for (const [id, k] of this.known)
+      if (!provider || k.provider === provider) {
+        this.known.delete(id);
+        if (!relearn) {
+          this.hotSet.delete(id);
+          this.livePromoted.delete(id);
+        }
+      }
+    if (!provider) this.metadataOf.clear();
+    else this.metadataOf.delete(provider);
+    if (!relearn) this.syncWatches();
+  }
+  /** The hot sessions' ids, most recently active first (for tests and diagnostics). */
+  hotSessions(): string[] {
+    return [...this.hotSet];
+  }
+  /** Files watched right now (for tests and diagnostics). */
+  watchedFiles(): string[] {
+    return [...this.watchers.keys()];
+  }
+  /** Watch exactly the hot sessions' files; a watch that cannot start is left to the stat tick. */
+  private syncWatches() {
+    const wanted = new Map<string, string>();
+    if (this.hot.watch && !this.stopped)
+      for (const id of this.hotSet)
+        for (const file of this.known.get(id)?.files ?? []) wanted.set(file, id);
+    for (const [file, watcher] of this.watchers)
+      if (!wanted.has(file)) {
+        watcher.close();
+        this.watchers.delete(file);
+      }
+    for (const file of this.unwatchable) if (!wanted.has(file)) this.unwatchable.delete(file);
+    for (const file of wanted.keys()) {
+      if (this.watchers.has(file) || this.unwatchable.has(file)) continue;
+      try {
+        const watcher = watch(file, { persistent: false }, (event) => {
+          // Renamed or replaced: this watch follows the old inode. Drop it; the next pass
+          // watches whatever is at the path now (the stat tick covers the gap).
+          if (event === 'rename') {
+            watcher.close();
+            if (this.watchers.get(file) === watcher) this.watchers.delete(file);
+          }
+          this.hint();
+        });
+        watcher.on('error', () => {
+          watcher.close();
+          this.watchers.delete(file);
+          this.unwatchable.add(file);
+        });
+        this.watchers.set(file, watcher);
+      } catch {
+        this.unwatchable.add(file);
+      }
+    }
+  }
+  /** A hot file changed: process it shortly, once a burst of writes has settled. */
+  private hint(delay = this.hot.debounceMs) {
+    if (this.stopped || this.stopping) return;
+    const now = Date.now();
+    // Not before the next pass may take changes in: an earlier one would only find it too soon.
+    const at = Math.max(now + delay, this.processedAt + this.hot.minMs);
+    if (this.hintTimer && this.hintAt <= at) return;
+    if (this.hintTimer) clearTimeout(this.hintTimer);
+    this.hintAt = at;
+    this.hintTimer = setTimeout(() => {
+      this.hintTimer = null;
+      void this.hotTick(true);
+    }, at - now);
+  }
+  /**
+   * One hot pass, unless a full pass is running (it reads everything anyway) or one is already
+   * running (a hint then runs another right after). Never rejects.
+   */
+  hotTick(hinted = false): Promise<void> {
+    if (this.stopped || this.stopping || this.pending) return Promise.resolve();
+    if (this.hotRun) {
+      if (hinted) this.hotAgain = true;
+      return this.hotRun;
+    }
+    this.hotRun = this.hotPass(hinted)
+      .catch(() => {})
+      .finally(() => {
+        this.hotRun = null;
+        if (this.hotAgain) {
+          this.hotAgain = false;
+          this.hint(0);
+        }
+      });
+    return this.hotRun;
+  }
+  /**
+   * Re-reads the hot sessions whose files moved (or whose live wait did) through the full pass's
+   * own per-file step and caches, reusing its metadata and workspaces, and stores just those
+   * sessions. No discovery, metadata reads or Git; one read of the live-process directory, with
+   * the usual memoized `ps` check. Anything the full pass would resolve differently (a new place,
+   * another identity, a file gone) is left to it.
+   */
+  private async hotPass(hinted: boolean) {
+    this.passedAt = Date.now();
+    const prefs = this.store.preferences();
+    if (prefs.paused) return this.rehot(Date.now(), prefs);
+    let now = Date.now();
+    let waits = new Map<string, ClaudeProcess>();
+    const claude = [...this.known.values()].filter((k) => k.provider === 'claude');
+    if (claude.length && prefs.enabledProviders.includes('claude')) {
+      const records = await readClaudeProcessesCached(this.live.sessionsDir, this.liveFiles);
+      // Promotion: a busy or waiting process means its transcript is about to move.
+      this.rehot(now, prefs);
+      // Sessions not hot on their own, and those hot only by an earlier promotion: a promotion
+      // holds only while its process is verified alive (and the same process) on every pass,
+      // through the same memoized check, so a dead or recycled PID frees its slot.
+      const wanted = new Set(
+        claude
+          .filter((k) => !this.hotSet.has(k.id) || this.livePromoted.has(k.id))
+          .map((k) => k.nativeId),
+      );
+      const active = records.some((r) => LIVE_ACTIVE.has(r.status))
+        ? await liveClaudeProcesses(this.live, wanted, LIVE_ACTIVE, records).catch(() => new Map())
+        : new Map<string, ClaudeProcess>();
+      const promoted = new Map<string, number>();
+      for (const k of claude) {
+        const live = active.get(k.nativeId);
+        if (live)
+          promoted.set(k.id, this.livePromoted.get(k.id) ?? live.statusUpdatedAt ?? live.updatedAt);
+      }
+      this.livePromoted = promoted;
+      this.rehot(now, prefs);
+      const hotClaude = new Set(
+        [...this.hotSet]
+          .map((id) => this.known.get(id)!)
+          .filter((k) => k.provider === 'claude')
+          .map((k) => k.nativeId),
+      );
+      if (hotClaude.size)
+        waits = await waitingClaudeProcesses(this.live, hotClaude, records).catch(() => new Map());
+    } else this.rehot(now, prefs);
+    // Which hot sessions moved: a stat per file against the parse cache's stamp, or a new wait.
+    const due: { k: KnownSession; files: SourceFile[]; live: ClaudeProcess | undefined }[] = [];
+    for (const id of this.hotSet.keys()) {
+      const k = this.known.get(id);
+      if (!k) continue;
+      const live = k.provider === 'claude' ? waits.get(k.nativeId) : undefined;
+      const files: SourceFile[] = [];
+      let moved = liveWaitSignature(live) !== k.wait;
+      for (const file of k.files) {
+        const st = await stat(file).catch(() => null);
+        // Gone: the full pass decides what that means.
+        if (!st) {
+          moved = false;
+          break;
+        }
+        files.push({ path: file, size: st.size, mtime: st.mtimeMs });
+        if (this.cache.get(file)?.stamp !== `office-v11:${st.size}:${st.mtimeMs}`) moved = true;
+      }
+      if (moved) due.push({ k, files, live });
+    }
+    if (!due.length || this.stopped || this.pending) return;
+    // Everything that moved is taken in together, at most once every `minMs` (so every session
+    // at most that often): a burst of writes costs one store write and one patch per interval.
+    const wait = this.processedAt + this.hot.minMs - Date.now();
+    if (wait > (hinted ? 0 : TICK_SLACK_MS)) return this.hint(wait);
+    this.processedAt = Date.now();
+    const taken: { k: KnownSession; s: Session; live: ClaudeProcess | undefined }[] = [];
+    for (const { k, files, live } of due) {
+      if (this.stopped || this.pending) break;
+      const s = await this.hotSession(k, files, live);
+      if (s) taken.push({ k, s, live });
+    }
+    if (this.stopped || !taken.length) return;
+    const updates = taken.map(({ s }) => s);
+    // Taken in memory only; the next full pass of each provider writes them (`OfficeStore.stage`).
+    for (const provider of new Set(updates.map((s) => s.provider)))
+      this.store.stage(
+        updates.filter((s) => s.provider === provider),
+        provider,
+      );
+    this.emitChanged(updates.map((s) => s.id));
+    // Only once taken in and sent. If staging or sending fails, a changed live wait is retried
+    // by the next hot pass; transcript changes (already in the parse cache) by the next full collect.
+    for (const { k, s, live } of taken)
+      Object.assign(k, {
+        mood: s.observedStatus ?? s.status,
+        updatedAt: s.updatedAt,
+        wait: liveWaitSignature(live),
+      });
+    // A final reply starts its grace period; idle sessions leave the hot set.
+    this.rehot(Date.now(), prefs);
+  }
+  /** One hot session rebuilt from its files, or null to leave it to the full pass. */
+  private async hotSession(
+    k: KnownSession,
+    files: SourceFile[],
+    live: ClaudeProcess | undefined,
+  ): Promise<Session | null> {
+    const metadata = this.metadataOf.get(k.provider) ?? new Map<string, CodexMeta>();
+    const parts: Session[] = [];
+    for (const file of files) {
+      const s = await this.readSession(k.provider, file, metadata);
+      if (!s || s === 'error' || s.id !== k.id) return null;
+      parts.push(s);
+    }
+    const merged = mergeSessions(parts)[0];
+    // A new place may be another workspace: only the full pass asks Git.
+    if (place(merged) !== k.place) return null;
+    const s = placed(merged, k.workspace);
+    return (live && applyLiveWait(s, live, Date.now())) || s;
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {
     switch (method) {
