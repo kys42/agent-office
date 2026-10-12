@@ -32,7 +32,12 @@ import {
   requestClosedAt,
   unreadNoticeCount,
 } from '../src/shared/notices.js';
-import { matchesQuery, pageNotices, residentNotices } from '../src/shared/notice-pages.js';
+import {
+  matchesQuery,
+  noticeOrder,
+  pageNotices,
+  residentNotices,
+} from '../src/shared/notice-pages.js';
 import { detailPage } from '../src/shared/conversation-pages.js';
 import { applyZone } from '../src/shared/zones.js';
 import { snapshotEvents } from '../src/shared/speech.js';
@@ -65,6 +70,47 @@ const isBusy = (e: unknown) =>
   /database is locked|SQLITE_BUSY/i.test(e instanceof Error ? e.message : String(e));
 /** Startup only: block this thread briefly (the collector runs in its own worker). */
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+/** Usage ledger access for one session: on disk, or staged in memory by the hot path. */
+interface LedgerIO {
+  hasNative(): boolean;
+  dropFallback(): void;
+  get(entryId: string): UsageEntry | undefined;
+  put(entry: UsageEntry): void;
+  all(): UsageEntry[];
+}
+/** Notice, observation and cursor access for one session: on disk, or staged in memory. */
+interface NoticeIO {
+  cursor(): number | undefined;
+  setCursor(at: number): void;
+  /** Observed versions by event id; kept current by `setVersion`. */
+  versions(): Map<string, string>;
+  setVersion(eventId: string, version: string): void;
+  get(id: string): OfficeNotice | undefined;
+  put(n: OfficeNotice): void;
+  del(id: string): void;
+  /** Ids of notices with a phase, and unphased replies/progress (legacy rows to reclassify). */
+  phases(): { phased: Set<string>; unphased: Map<string, OfficeNotice> };
+  before(at: number): OfficeNotice[];
+  /** Unresolved calls. */
+  openCalls(): OfficeNotice[];
+}
+/** A session the hot path took in without writing it yet (`OfficeStore.stage`). */
+interface Staged {
+  provider: Provider;
+  /** The row as `upsert` will store it, and what the office keeps of it. */
+  row: Session;
+  resident: Session;
+  /** Notices written (null: deleted) since the disk. */
+  notices: Map<string, OfficeNotice | null>;
+  versions: Map<string, string> | null;
+  /** Event ids whose observed version moved. */
+  observed: Set<string>;
+  cursor: number | undefined;
+  /** The session's notices and cursor on disk when it was first staged (null: no cursor). */
+  disk?: Map<string, OfficeNotice>;
+  diskCursor?: number | null;
+  ledger: { entries: Map<string, UsageEntry>; dirty: Set<string>; dropped: boolean } | null;
+}
 export class OfficeStore {
   db: DatabaseSync;
   /**
@@ -82,6 +128,11 @@ export class OfficeStore {
    * an unchanged session costs nothing.
    */
   private ingested = new Map<string, string>();
+  /**
+   * Sessions the collector's hot path took in since their provider was last written, by id: read
+   * by every query of this store, written by the next `upsert` of that provider (or on close).
+   */
+  private staged = new Map<string, Staged>();
   constructor(dir = defaultDataDir(), readOnly = false) {
     if (!readOnly) mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, 'office.sqlite');
@@ -104,6 +155,13 @@ export class OfficeStore {
     } else this.db.exec('PRAGMA query_only=ON');
   }
   close() {
+    // What the hot path showed is written before the store goes (best effort: the next run
+    // re-derives every session from its source anyway).
+    try {
+      if (this.staged.size) this.persistStaged();
+    } catch {
+      /* the database is locked or gone: nothing more to do */
+    }
     this.db.close();
   }
   preferences(patch?: Partial<Preferences>): Preferences {
@@ -127,31 +185,29 @@ export class OfficeStore {
   }
   /**
    * Stores one provider's collected sessions. A full pass (`partial` false) is the provider's
-   * whole list: stored sessions missing from it are deleted. A `partial` pass (the collector's hot
-   * path) writes only the sessions it carries and leaves every other one as it is.
+   * whole list: stored sessions missing from it are deleted. A `partial` pass writes only the
+   * sessions it carries and leaves every other one as it is. Either way, what the hot path staged
+   * in memory for these sessions (all of the provider's, on a full pass) is written first, exactly
+   * as it was shown, then the sessions are taken in as always.
    */
   upsert(sessions: Session[], provider: Provider, partial = false) {
     const put = this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?,?,?)');
     const get = this.db.prepare('SELECT data FROM sessions WHERE id=?');
     const remove = this.db.prepare('DELETE FROM session_search WHERE id=?');
     const index = this.db.prepare('INSERT INTO session_search(id,title,body) VALUES (?,?,?)');
-    const ledgerPut = this.db.prepare('INSERT OR REPLACE INTO usage_ledger VALUES(?,?,?)');
-    const ledgerGet = this.db.prepare(
-      'SELECT data FROM usage_ledger WHERE session_id=? AND entry_id=?',
-    );
-    const ledgerAll = this.db.prepare('SELECT data FROM usage_ledger WHERE session_id=?');
-    const ledgerNative = this.db.prepare(
-      "SELECT 1 FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'response:%' LIMIT 1",
-    );
-    const ledgerDropFallback = this.db.prepare(
-      "DELETE FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'codex:%'",
-    );
     const standbyHours = this.preferences().standbyHours ?? DEFAULT_PREFS.standbyHours!;
+    const ids = new Set(sessions.map((s) => s.id));
+    const staged = [...this.staged].filter(([id, x]) =>
+      partial ? ids.has(id) : x.provider === provider,
+    );
     this.db.exec('BEGIN');
     try {
+      for (const [id, x] of staged) this.flushStaged(id, x);
       for (const s of sessions) {
         const prior = get.get(s.id) as { data: string } | undefined;
         const previous: Session | undefined = prior ? JSON.parse(prior.data) : undefined;
+        // What the stored form builds on: the staged row if the hot path showed one.
+        const base = this.staged.get(s.id)?.row ?? previous;
         // Unchanged since this run took it in: nothing about its notices can become new with time
         // alone (time only retires old requests), so a quiet cycle writes nothing.
         const seen = `${s.revision}\n${s.events.map((e) => e.id).join('\n')}`;
@@ -161,56 +217,12 @@ export class OfficeStore {
         );
         if (previous?.revision === s.revision && this.ingested.get(s.id) === seen && !legacyPlace)
           continue;
-        this.ingestNotices(s, standbyHours);
+        this.ingestNotices(s, this.noticesOnDisk(s.id), standbyHours);
         this.ingested.set(s.id, seen);
         if (previous?.revision === s.revision && !legacyPlace) continue;
         this.cached?.delete(s.id);
-        const taskStartedAt =
-          Math.max(s.taskStartedAt ?? 0, previous?.taskStartedAt ?? 0) || undefined;
-        const hasNative =
-          (s.usageEntries ?? []).some((e) => e.id.startsWith('response:')) ||
-          !!ledgerNative.get(s.id);
-        if (hasNative) ledgerDropFallback.run(s.id);
-        for (const entry of s.usageEntries ?? []) {
-          if (hasNative && entry.id.startsWith('codex:')) continue;
-          const old = ledgerGet.get(s.id, entry.id) as { data: string } | undefined;
-          const prev: UsageEntry | undefined = old ? JSON.parse(old.data) : undefined;
-          // Streaming snapshots sometimes regress; preserve the fullest message.
-          if (!prev || entry.output >= prev.output)
-            ledgerPut.run(
-              s.id,
-              entry.id,
-              JSON.stringify({ ...entry, model: entry.model ?? prev?.model ?? null }),
-            );
-        }
-        const entries = (ledgerAll.all(s.id) as { data: string }[]).map(
-          (r) => JSON.parse(r.data) as UsageEntry,
-        );
-        const { usageEntries: _transient, ...stored } = s;
-        // A partial tail may miss the evidence; keep the last one — but never an old cd-based guess.
-        const retainLocation =
-          !s.workingLocation &&
-          s.windowed &&
-          ['file-edit', 'git-write'].includes(previous?.workingLocation?.source ?? '') &&
-          previous?.workingLocation;
-        const location =
-          s.workingLocation ?? (retainLocation ? previous?.workingLocation : undefined);
-        const workspace = retainLocation ? previous?.workspace : s.workspace;
-        const project = retainLocation ? previous!.project : s.project;
-        put.run(
-          s.id,
-          provider,
-          project,
-          s.updatedAt,
-          JSON.stringify({
-            ...stored,
-            workingLocation: location,
-            workspace,
-            project,
-            cost: summarizeCost(entries),
-            taskStartedAt,
-          }),
-        );
+        const row = this.storedForm(s, base, this.ledgerOnDisk(s.id));
+        put.run(s.id, provider, row.project, s.updatedAt, JSON.stringify(row));
         remove.run(s.id);
         index.run(
           s.id,
@@ -232,73 +244,355 @@ export class OfficeStore {
         }
       }
       this.db.exec('COMMIT');
+      for (const [id] of staged) this.staged.delete(id);
     } catch (e) {
       this.db.exec('ROLLBACK');
-      // Nothing of this pass was kept: take everything in again next time.
+      // Nothing of this pass was kept: take everything in again next time (staged stays staged).
       this.ingested.clear();
       this.cached?.clear();
       throw e;
     }
   }
-  private ingestNotices(s: Session, standbyHours = DEFAULT_PREFS.standbyHours!) {
+  /**
+   * The collector's hot path: takes these sessions in exactly as `upsert` would (stored form,
+   * usage, notices with the person's receipts) but only in memory. Every read of this store sees
+   * them at once; the next `upsert` of their provider writes them. Nothing here touches the disk.
+   */
+  stage(sessions: Session[], provider: Provider) {
+    const standbyHours = this.preferences().standbyHours ?? DEFAULT_PREFS.standbyHours!;
+    for (const s of sessions) {
+      let x = this.staged.get(s.id);
+      const base =
+        x?.row ??
+        (() => {
+          const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(s.id) as
+            { data: string } | undefined;
+          return row ? (JSON.parse(row.data) as Session) : undefined;
+        })();
+      if (base?.revision === s.revision) continue;
+      x ??= {
+        provider,
+        row: base!,
+        resident: base!,
+        notices: new Map(),
+        versions: null,
+        observed: new Set(),
+        cursor: undefined,
+        ledger: null,
+      };
+      this.ingestNotices(s, this.noticesStaged(s.id, x), standbyHours);
+      const row = this.storedForm(s, base, this.ledgerStaged(s.id, x));
+      Object.assign(x, { row, resident: { ...row, events: snapshotEvents(row) } });
+      this.staged.set(s.id, x);
+    }
+  }
+  /** Writes what the hot path staged for one session: notices, observations, cursor, usage. */
+  private flushStaged(id: string, x: Staged) {
+    const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
+    const drop = this.db.prepare('DELETE FROM notices WHERE id=?');
+    for (const [nid, n] of x.notices)
+      if (n) put.run(n.id, n.sessionId, n.at, JSON.stringify(n));
+      else drop.run(nid);
+    const remember = this.db.prepare('INSERT OR REPLACE INTO notice_observed VALUES(?,?,?)');
+    for (const eventId of x.observed) remember.run(id, eventId, x.versions!.get(eventId)!);
+    if (x.cursor !== undefined)
+      this.db.prepare('INSERT OR REPLACE INTO notice_cursors VALUES(?,?)').run(id, x.cursor);
+    if (x.ledger) {
+      if (x.ledger.dropped)
+        this.db
+          .prepare("DELETE FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'codex:%'")
+          .run(id);
+      const ledgerPut = this.db.prepare('INSERT OR REPLACE INTO usage_ledger VALUES(?,?,?)');
+      for (const entryId of x.ledger.dirty)
+        ledgerPut.run(id, entryId, JSON.stringify(x.ledger.entries.get(entryId)));
+    }
+  }
+  /** Writes everything staged (sessions included), e.g. before the store closes. */
+  persistStaged() {
+    const byProvider = new Map<Provider, Session[]>();
+    for (const x of this.staged.values())
+      byProvider.set(x.provider, [...(byProvider.get(x.provider) ?? []), x.row]);
+    for (const [provider, rows] of byProvider) this.upsert(rows, provider, true);
+  }
+  /** Sessions staged by the hot path and not yet written (for tests and diagnostics). */
+  stagedIds(): string[] {
+    return [...this.staged.keys()];
+  }
+  /**
+   * The row `upsert` stores for `s` over `previous`: usage taken into the ledger (`ledger`) and
+   * summed, the working location kept from `previous` when a partial tail lost its evidence.
+   */
+  private storedForm(s: Session, previous: Session | undefined, ledger: LedgerIO): Session {
+    const taskStartedAt = Math.max(s.taskStartedAt ?? 0, previous?.taskStartedAt ?? 0) || undefined;
+    const hasNative =
+      (s.usageEntries ?? []).some((e) => e.id.startsWith('response:')) || ledger.hasNative();
+    if (hasNative) ledger.dropFallback();
+    for (const entry of s.usageEntries ?? []) {
+      if (hasNative && entry.id.startsWith('codex:')) continue;
+      const prev = ledger.get(entry.id);
+      // Streaming snapshots sometimes regress; preserve the fullest message.
+      if (!prev || entry.output >= prev.output)
+        ledger.put({ ...entry, model: entry.model ?? prev?.model ?? null });
+    }
+    const { usageEntries: _transient, ...stored } = s;
+    // A partial tail may miss the evidence; keep the last one — but never an old cd-based guess.
+    const retainLocation =
+      !s.workingLocation &&
+      s.windowed &&
+      ['file-edit', 'git-write'].includes(previous?.workingLocation?.source ?? '') &&
+      previous?.workingLocation;
+    const location = s.workingLocation ?? (retainLocation ? previous?.workingLocation : undefined);
+    const workspace = retainLocation ? previous?.workspace : s.workspace;
+    const project = retainLocation ? previous!.project : s.project;
+    // As stored and read back: a JSON round trip, so a staged row is the row the disk will hold.
+    return JSON.parse(
+      JSON.stringify({
+        ...stored,
+        workingLocation: location,
+        workspace,
+        project,
+        cost: summarizeCost(ledger.all()),
+        taskStartedAt,
+      }),
+    );
+  }
+  private ledgerOnDisk(id: string): LedgerIO {
+    return {
+      hasNative: () =>
+        !!this.db
+          .prepare(
+            "SELECT 1 FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'response:%' LIMIT 1",
+          )
+          .get(id),
+      dropFallback: () =>
+        void this.db
+          .prepare("DELETE FROM usage_ledger WHERE session_id=? AND entry_id LIKE 'codex:%'")
+          .run(id),
+      get: (entryId) => {
+        const row = this.db
+          .prepare('SELECT data FROM usage_ledger WHERE session_id=? AND entry_id=?')
+          .get(id, entryId) as { data: string } | undefined;
+        return row ? JSON.parse(row.data) : undefined;
+      },
+      put: (entry) =>
+        void this.db
+          .prepare('INSERT OR REPLACE INTO usage_ledger VALUES(?,?,?)')
+          .run(id, entry.id, JSON.stringify(entry)),
+      all: () =>
+        (
+          this.db
+            .prepare('SELECT data FROM usage_ledger WHERE session_id=? ORDER BY entry_id')
+            .all(id) as { data: string }[]
+        ).map((r) => JSON.parse(r.data) as UsageEntry),
+    };
+  }
+  private ledgerStaged(id: string, x: Staged): LedgerIO {
+    const ledger = (x.ledger ??= {
+      entries: new Map(
+        (
+          this.db.prepare('SELECT entry_id, data FROM usage_ledger WHERE session_id=?').all(id) as {
+            entry_id: string;
+            data: string;
+          }[]
+        ).map((r) => [r.entry_id, JSON.parse(r.data) as UsageEntry]),
+      ),
+      dirty: new Set(),
+      dropped: false,
+    });
+    return {
+      hasNative: () => [...ledger.entries.keys()].some((k) => k.startsWith('response:')),
+      dropFallback: () => {
+        ledger.dropped = true;
+        for (const k of [...ledger.entries.keys()])
+          if (k.startsWith('codex:')) {
+            ledger.entries.delete(k);
+            ledger.dirty.delete(k);
+          }
+      },
+      get: (entryId) => ledger.entries.get(entryId),
+      put: (entry) => {
+        // As the disk would hold it.
+        ledger.entries.set(entry.id, JSON.parse(JSON.stringify(entry)));
+        ledger.dirty.add(entry.id);
+      },
+      all: () =>
+        [...ledger.entries.keys()]
+          .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+          .map((k) => ledger.entries.get(k)!),
+    };
+  }
+  /** One session's notices, observations and cursor as stored. */
+  private noticesOnDisk(id: string): NoticeIO {
+    const parse = (rows: { data: string }[]) => rows.map((r) => JSON.parse(r.data) as OfficeNotice);
+    let versions: Map<string, string> | null = null;
+    return {
+      cursor: () =>
+        (
+          this.db.prepare('SELECT at FROM notice_cursors WHERE session_id=?').get(id) as
+            { at: number } | undefined
+        )?.at,
+      setCursor: (at) =>
+        void this.db.prepare('INSERT OR REPLACE INTO notice_cursors VALUES(?,?)').run(id, at),
+      versions: () =>
+        (versions ??= new Map(
+          (
+            this.db
+              .prepare('SELECT event_id, version FROM notice_observed WHERE session_id=?')
+              .all(id) as { event_id: string; version: string }[]
+          ).map((r) => [r.event_id, r.version]),
+        )),
+      setVersion: (eventId, version) => {
+        this.db
+          .prepare('INSERT OR REPLACE INTO notice_observed VALUES(?,?,?)')
+          .run(id, eventId, version);
+        versions?.set(eventId, version);
+      },
+      get: (nid) => {
+        const row = this.db.prepare('SELECT data FROM notices WHERE id=?').get(nid) as
+          { data: string } | undefined;
+        return row ? JSON.parse(row.data) : undefined;
+      },
+      put: (n) =>
+        void this.db
+          .prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)')
+          .run(n.id, n.sessionId, n.at, JSON.stringify(n)),
+      del: (nid) => void this.db.prepare('DELETE FROM notices WHERE id=?').run(nid),
+      phases: () => {
+        const phased = new Set<string>();
+        const unphased = new Map<string, OfficeNotice>();
+        for (const r of this.db
+          .prepare(
+            "SELECT id, COALESCE(json_extract(data,'$.phase'),'')<>'' AS phased, CASE WHEN COALESCE(json_extract(data,'$.phase'),'')='' AND json_extract(data,'$.kind') IN ('reply','progress') THEN data END AS legacy FROM notices WHERE session_id=?",
+          )
+          .all(id) as { id: string; phased: number; legacy: string | null }[]) {
+          if (r.phased) phased.add(r.id);
+          if (r.legacy !== null) unphased.set(r.id, JSON.parse(r.legacy));
+        }
+        return { phased, unphased };
+      },
+      before: (at) =>
+        parse(
+          this.db.prepare('SELECT data FROM notices WHERE session_id=? AND at<?').all(id, at) as {
+            data: string;
+          }[],
+        ),
+      openCalls: () =>
+        parse(
+          this.db
+            .prepare(
+              "SELECT data FROM notices WHERE session_id=? AND json_extract(data,'$.kind')='attention' AND json_extract(data,'$.resolvedAt') IS NULL",
+            )
+            .all(id) as { data: string }[],
+        ),
+    };
+  }
+  /** The same, for the hot path: reads the disk under what is staged, writes only to `x`. */
+  private noticesStaged(id: string, x: Staged): NoticeIO {
+    const disk = this.noticesOnDisk(id);
+    // The session's notices as on disk, read once while it stays staged; receipts on them go to
+    // `x.notices` too (`noticeById`), so this copy never goes stale.
+    const stored = (x.disk ??= new Map(
+      (
+        this.db.prepare('SELECT data FROM notices WHERE session_id=?').all(id) as {
+          data: string;
+        }[]
+      ).map((r) => {
+        const n = JSON.parse(r.data) as OfficeNotice;
+        return [n.id, n];
+      }),
+    ));
+    /** Those with the staged ones laid over them. */
+    const current = () => [
+      ...[...stored.values()].filter((n) => !x.notices.has(n.id)),
+      ...[...x.notices.values()].filter((n): n is OfficeNotice => !!n),
+    ];
+    if (x.cursor === undefined && x.diskCursor === undefined) x.diskCursor = disk.cursor() ?? null;
+    return {
+      cursor: () => x.cursor ?? x.diskCursor ?? undefined,
+      setCursor: (at) => void (x.cursor = at),
+      versions: () => (x.versions ??= new Map(disk.versions())),
+      setVersion: (eventId, version) => {
+        (x.versions ??= new Map(disk.versions())).set(eventId, version);
+        x.observed.add(eventId);
+      },
+      get: (nid) => (x.notices.has(nid) ? (x.notices.get(nid) ?? undefined) : stored.get(nid)),
+      put: (n) => void x.notices.set(n.id, JSON.parse(JSON.stringify(n))),
+      del: (nid) => void x.notices.set(nid, null),
+      phases: () => {
+        const phased = new Set<string>();
+        const unphased = new Map<string, OfficeNotice>();
+        for (const n of current())
+          if (n.phase) phased.add(n.id);
+          else if (['reply', 'progress'].includes(n.kind)) unphased.set(n.id, n);
+        return { phased, unphased };
+      },
+      before: (at) => current().filter((n) => n.at < at),
+      openCalls: () => current().filter((n) => n.kind === 'attention' && n.resolvedAt == null),
+    };
+  }
+  /** The session's notices with what the hot path staged laid over them, in `noticeOrder`. */
+  private withStagedNotices(rows: OfficeNotice[], sessionIds?: Set<string>): OfficeNotice[] {
+    const staged = [...this.staged].filter(
+      ([id, x]) => x.notices.size && (!sessionIds || sessionIds.has(id)),
+    );
+    if (!staged.length) return rows;
+    const replaced = new Set(staged.flatMap(([, x]) => [...x.notices.keys()]));
+    return rows
+      .filter((n) => !replaced.has(n.id))
+      .concat(
+        staged.flatMap(([, x]) => [...x.notices.values()].filter((n): n is OfficeNotice => !!n)),
+      )
+      .sort(noticeOrder);
+  }
+  /** A notice by id as the office sees it (staged first), and where to write a change to it. */
+  private noticeById(id: string): { n: OfficeNotice; staged?: Staged } | undefined {
+    for (const x of this.staged.values()) {
+      if (x.notices.has(id)) {
+        const n = x.notices.get(id);
+        return n ? { n, staged: x } : undefined;
+      }
+      const n = x.disk?.get(id);
+      if (n) return { n, staged: x };
+    }
+    const row = this.db.prepare('SELECT data FROM notices WHERE id=?').get(id) as
+      { data: string } | undefined;
+    return row ? { n: JSON.parse(row.data) } : undefined;
+  }
+  private writeNotice(n: OfficeNotice, staged?: Staged) {
+    if (staged) staged.notices.set(n.id, n);
+    else this.db.prepare('UPDATE notices SET data=? WHERE id=?').run(JSON.stringify(n), n.id);
+  }
+  private ingestNotices(s: Session, io: NoticeIO, standbyHours = DEFAULT_PREFS.standbyHours!) {
     const now = Date.now();
-    const cursor = this.db.prepare('SELECT at FROM notice_cursors WHERE session_id=?').get(s.id) as
-      { at: number } | undefined;
+    const cursor = io.cursor();
     // A conversation first seen within minutes of its start is live, not history: its first
     // request and replies are news (the arrival plays), unlike an old session found on scan.
-    const born = !cursor && now - s.startedAt < NEW_SESSION_MS;
-    const all = noticeCandidates(s, now, !cursor && !born);
-    const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
-    const observed = this.db.prepare(
-      'SELECT version FROM notice_observed WHERE session_id=? AND event_id=?',
-    );
-    const remember = this.db.prepare('INSERT OR REPLACE INTO notice_observed VALUES(?,?,?)');
+    const born = cursor === undefined && now - s.startedAt < NEW_SESSION_MS;
+    const all = noticeCandidates(s, now, cursor === undefined && !born);
     // Parser upgrades must not turn already-read messages into fresh notices.
     // Transfer ONLY when the old ordinal key has exactly the same content version.
     const legacyIds = new Map(s.events.filter((e) => e.legacyId).map((e) => [e.id, e.legacyId!]));
     for (const n of all) {
       const legacy = legacyIds.get(n.eventId);
       if (!legacy) continue;
-      const prior = observed.get(s.id, legacy) as { version: string } | undefined;
-      if (prior?.version === n.version) remember.run(s.id, n.eventId, n.version);
+      if (io.versions().get(legacy) === n.version) io.setVersion(n.eventId, n.version);
       const oldId = `${s.id}::${legacy}`;
-      const row = get.get(oldId) as { data: string } | undefined;
-      if (!row || get.get(n.id)) continue;
-      const old: OfficeNotice = JSON.parse(row.data);
+      const old = io.get(oldId);
+      if (!old || io.get(n.id)) continue;
       if (old.version !== n.version) continue;
-      const next = { ...old, id: n.id, eventId: n.eventId };
-      this.db
-        .prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)')
-        .run(next.id, next.sessionId, next.at, JSON.stringify(next));
-      this.db.prepare('DELETE FROM notices WHERE id=?').run(oldId);
+      io.put({ ...old, id: n.id, eventId: n.eventId });
+      io.del(oldId);
     }
     // What this session's events were last observed as, read once; written only when it moves
     // (rewriting the same version every pass was most of a busy colleague's write cost).
-    const versions = new Map(
-      (
-        this.db
-          .prepare('SELECT event_id, version FROM notice_observed WHERE session_id=?')
-          .all(s.id) as { event_id: string; version: string }[]
-      ).map((r) => [r.event_id, r.version]),
-    );
+    const versions = io.versions();
     const observe = (eventId: string, version: string) => {
-      if (versions.get(eventId) === version) return;
-      remember.run(s.id, eventId, version);
-      versions.set(eventId, version);
+      if (versions.get(eventId) !== version) io.setVersion(eventId, version);
     };
     // Classify legacy replies without turning a parser upgrade into a fresh notification.
     // Old rows outside the retained source window stay available in All, but never count as finals.
     // Stored notices with a phase need nothing here; unphased replies/progress may be reclassified.
-    const phased = new Set<string>();
-    const unphased = new Map<string, string>();
-    for (const r of this.db
-      .prepare(
-        "SELECT id, COALESCE(json_extract(data,'$.phase'),'')<>'' AS phased, CASE WHEN COALESCE(json_extract(data,'$.phase'),'')='' AND json_extract(data,'$.kind') IN ('reply','progress') THEN data END AS legacy FROM notices WHERE session_id=?",
-      )
-      .all(s.id) as { id: string; phased: number; legacy: string | null }[]) {
-      if (r.phased) phased.add(r.id);
-      if (r.legacy !== null) unphased.set(r.id, r.legacy);
-    }
+    const { phased, unphased } = io.phases();
     for (const n of all) {
       // Legacy unphased assistants used the reply kind, even when bootstrap suppressed
       // their notice rows. Advance that cursor too, rather than backfilling old progress.
@@ -308,28 +602,21 @@ export class OfficeStore {
         versions.get(n.eventId) === noticeContentVersion('reply', n.text, n.at)
       )
         observe(n.eventId, n.version);
-      const row = unphased.get(n.id);
-      if (!row) continue;
-      const old: OfficeNotice = JSON.parse(row);
-      if (old.text === n.text && old.at === n.at) {
-        this.db
-          .prepare('UPDATE notices SET data=? WHERE id=?')
-          .run(JSON.stringify({ ...old, kind: n.kind, phase: n.phase, version: n.version }), n.id);
-      }
+      const old = unphased.get(n.id);
+      if (old && old.text === n.text && old.at === n.at)
+        io.put({ ...old, kind: n.kind, phase: n.phase, version: n.version });
     }
     // An unanswered request older than the off-duty time belongs to a colleague who has gone
     // home (STATUS-POLICY §3): history, not news. E.g. a plan approval abandoned days ago that a
     // newer collector recognizes for the first time. It is remembered below, never notified.
     const news = all.filter((n) => n.kind !== 'attention' || now - n.at < standbyHours * 3600_000);
     const recent =
-      cursor || born
+      cursor !== undefined || born
         ? news.filter((n) => versions.get(n.eventId) !== n.version)
         : news.filter((n) => now - n.at <= 3 * 3600_000).slice(-1);
     for (const n of all) observe(n.eventId, n.version);
-    const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
     for (const n of recent) {
-      const row = get.get(n.id) as { data: string } | undefined;
-      const old: OfficeNotice | undefined = row ? JSON.parse(row.data) : undefined;
+      const old = io.get(n.id);
       if (old?.version === n.version) continue;
       if (
         old &&
@@ -337,18 +624,19 @@ export class OfficeStore {
         old.text.startsWith(n.text.replace(/…$/, ''))
       )
         continue;
-      const next = old
-        ? {
-            ...n,
-            receivedAt: now,
-            bootstrap: old.bootstrap,
-            seenAt: null,
-            viewedAt: null,
-            dismissedAt: null,
-            resolvedAt: old.resolvedAt,
-          }
-        : n;
-      put.run(next.id, next.sessionId, next.at, JSON.stringify(next));
+      io.put(
+        old
+          ? {
+              ...n,
+              receivedAt: now,
+              bootstrap: old.bootstrap,
+              seenAt: null,
+              viewedAt: null,
+              dismissedAt: null,
+              resolvedAt: old.resolvedAt,
+            }
+          : n,
+      );
     }
     // A later human request or resumed work resolves a prior attention cue, not its unread record.
     const resumed = s.events
@@ -361,31 +649,20 @@ export class OfficeStore {
       )
       .at(-1)?.at;
     if (resumed)
-      for (const row of this.db
-        .prepare('SELECT data FROM notices WHERE session_id=? AND at<?')
-        .all(s.id, resumed) as { data: string }[]) {
-        const n: OfficeNotice = JSON.parse(row.data);
+      for (const n of io.before(resumed))
         if (!n.resolvedAt && ['attention', 'error'].includes(n.kind))
-          put.run(n.id, n.sessionId, n.at, JSON.stringify({ ...n, resolvedAt: resumed }));
-      }
+          io.put({ ...n, resolvedAt: resumed });
     // A request that is no longer open resolves its own cue: answered (its result), moved past,
     // or no longer waiting live (a permission prompt that was approved). Requests outside the
     // read window are left to the rule above.
     const open = new Set(all.filter((n) => n.kind === 'attention').map((n) => n.eventId));
-    for (const row of this.db
-      .prepare(
-        "SELECT data FROM notices WHERE session_id=? AND json_extract(data,'$.kind')='attention' AND json_extract(data,'$.resolvedAt') IS NULL",
-      )
-      .all(s.id) as { data: string }[]) {
-      const n: OfficeNotice = JSON.parse(row.data);
+    for (const n of io.openCalls()) {
       const request = s.events.find((e) => e.id === n.eventId);
       if (!request || open.has(n.eventId)) continue;
       const resolvedAt = requestClosedAt(s.events, request) ?? now;
-      put.run(n.id, n.sessionId, n.at, JSON.stringify({ ...n, resolvedAt }));
+      io.put({ ...n, resolvedAt });
     }
-    this.db
-      .prepare('INSERT OR REPLACE INTO notice_cursors VALUES(?,?)')
-      .run(s.id, Math.max(cursor?.at ?? 0, s.updatedAt));
+    io.setCursor(Math.max(cursor ?? 0, s.updatedAt));
   }
   /** Every visible notice in `locale`, in `noticeOrder`; stored rows stay canonical. */
   noticeList(
@@ -399,8 +676,7 @@ export class OfficeStore {
     const rows = this.db.prepare('SELECT data FROM notices ORDER BY at DESC, id DESC').all() as {
       data: string;
     }[];
-    return rows
-      .map((r) => JSON.parse(r.data) as OfficeNotice)
+    return this.withStagedNotices(rows.map((r) => JSON.parse(r.data) as OfficeNotice))
       .filter((n) => visible.has(n.sessionId) && fresh(n))
       .map((n) => ({ ...localizeNotice(n, locale), background: background.has(n.sessionId) }));
   }
@@ -424,8 +700,6 @@ export class OfficeStore {
    * received after `asOf` (the person had not seen them yet, nor a newer version of one).
    */
   noticeReadAll(query: NoticeQuery, asOf: number) {
-    const put = this.db.prepare('UPDATE notices SET data=? WHERE id=?');
-    const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
     const now = Date.now();
     const ids = this.noticeList(CANONICAL)
       .filter((n) => matchesQuery(n, { ...query, includeRead: false }) && n.receivedAt <= asOf)
@@ -433,8 +707,8 @@ export class OfficeStore {
     this.db.exec('BEGIN');
     try {
       for (const id of ids) {
-        const row = get.get(id) as { data: string } | undefined;
-        if (row) put.run(JSON.stringify({ ...JSON.parse(row.data), seenAt: now }), id);
+        const found = this.noticeById(id);
+        if (found) this.writeNotice({ ...found.n, seenAt: now }, found.staged);
       }
       this.db.exec('COMMIT');
     } catch (e) {
@@ -443,12 +717,11 @@ export class OfficeStore {
     }
   }
   noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
-    const get = this.db.prepare('SELECT data FROM notices WHERE id=?');
-    const put = this.db.prepare('UPDATE notices SET data=? WHERE id=?');
     for (const receipt of receipts) {
-      const row = get.get(receipt.id) as { data: string } | undefined;
-      if (!row) continue;
-      const n: OfficeNotice = JSON.parse(row.data);
+      // A notice the hot path showed may not be written yet: its receipt goes with it.
+      const found = this.noticeById(receipt.id);
+      if (!found) continue;
+      const n = found.n;
       this.get(n.sessionId); // same exclusion policy as detail/search/MCP
       if (n.version !== receipt.version) continue;
       const next = {
@@ -461,7 +734,7 @@ export class OfficeStore {
               ? { seenAt: null }
               : { dismissedAt: Date.now() }),
       };
-      put.run(JSON.stringify(next), n.id);
+      this.writeNotice(next, found.staged);
     }
   }
   visible(s: Pick<Session, 'provider' | 'project'>, prefs = this.preferences()): boolean {
@@ -529,6 +802,18 @@ export class OfficeStore {
    * conversation: `full` reads (search, recovery) go to the database every time.
    */
   private rows(full = false): Session[] {
+    const rows = this.diskRows(full);
+    if (!this.staged.size) return rows;
+    // Staged sessions in place of their rows, and in their place by time (a stable sort keeps
+    // the database's order for everyone else).
+    return rows
+      .map((s) => {
+        const x = this.staged.get(s.id);
+        return x ? (full ? x.row : x.resident) : s;
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+  private diskRows(full = false): Session[] {
     const parse = (rows: { data: string }[]) => rows.map((r) => JSON.parse(r.data) as Session);
     const resident = (s: Session): Session => ({ ...s, events: snapshotEvents(s) });
     if (!this.cached || full)
@@ -607,7 +892,10 @@ export class OfficeStore {
       this.db.prepare('SELECT data FROM sessions WHERE provider=?').all(provider) as {
         data: string;
       }[]
-    ).map((r) => JSON.parse(r.data) as Session);
+    ).map((r) => {
+      const s = JSON.parse(r.data) as Session;
+      return this.staged.get(s.id)?.row ?? s;
+    });
   }
   /** Visible sessions in `locale` (the collector's stored rows are canonical). */
   list(full = false, locale: Locale = getLocale()): Session[] {
@@ -659,28 +947,38 @@ export class OfficeStore {
   }
   /** Stored session ids in the order `officeView` lists them (newest first). */
   sessionOrder(): string[] {
-    return (
-      this.db.prepare('SELECT id FROM sessions ORDER BY updated_at DESC').all() as { id: string }[]
-    ).map((r) => r.id);
+    const rows = this.db
+      .prepare('SELECT id, updated_at FROM sessions ORDER BY updated_at DESC')
+      .all() as {
+      id: string;
+      updated_at: number;
+    }[];
+    if (this.staged.size) {
+      for (const r of rows) r.updated_at = this.staged.get(r.id)?.row.updatedAt ?? r.updated_at;
+      rows.sort((a, b) => b.updated_at - a.updated_at);
+    }
+    return rows.map((r) => r.id);
   }
   /**
    * `noticeList` for just these (visible) sessions, in `noticeOrder`: what a collector pass that
    * changed only them merges into the office's notices. `background` as `noticeList` marks it.
    */
   noticesOf(ids: string[], background: Set<string>, locale: Locale = getLocale()): OfficeNotice[] {
-    return (
+    const rows = (
       this.db
         .prepare(
           'SELECT data FROM notices WHERE session_id IN (SELECT value FROM json_each(?)) ORDER BY at DESC, id DESC',
         )
         .all(JSON.stringify(ids)) as { data: string }[]
-    )
-      .map((r) => JSON.parse(r.data) as OfficeNotice)
+    ).map((r) => JSON.parse(r.data) as OfficeNotice);
+    return this.withStagedNotices(rows, new Set(ids))
       .filter(fresh)
       .map((n) => ({ ...localizeNotice(n, locale), background: background.has(n.sessionId) }));
   }
   /** One stored row as `rows` keeps it, through the same cache and invalidation. */
   private residentRow(id: string): Session | null {
+    const staged = this.staged.get(id);
+    if (staged) return staged.resident;
     const read = () => {
       const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
         { data: string } | undefined;
@@ -706,10 +1004,14 @@ export class OfficeStore {
   }
   /** The stored (canonical) session, if the person's settings let it be seen. */
   private stored(id: string, prefs: Preferences): Session {
-    const row = this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
-      { data: string } | undefined;
-    if (!row) throw new Error(m().server.store.notFound);
-    const s = JSON.parse(row.data) as Session;
+    // What the hot path took in shows at once (an open work card reads the newest page).
+    const staged = this.staged.get(id)?.row;
+    const row = staged
+      ? undefined
+      : (this.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
+          { data: string } | undefined);
+    if (!staged && !row) throw new Error(m().server.store.notFound);
+    const s = staged ?? (JSON.parse(row!.data) as Session);
     if (!this.visible(s, prefs)) throw new Error(m().server.store.excluded);
     return s;
   }
@@ -724,12 +1026,14 @@ export class OfficeStore {
   detail(id: string, page: DetailPage = {}, locale: Locale = getLocale()): SessionDetail {
     const s = this.get(id, locale);
     const background = isBackground(s) || isHelper(s);
-    const notices = (
-      this.db
-        .prepare('SELECT data FROM notices WHERE session_id=? ORDER BY at DESC, id DESC')
-        .all(id) as { data: string }[]
+    const notices = this.withStagedNotices(
+      (
+        this.db
+          .prepare('SELECT data FROM notices WHERE session_id=? ORDER BY at DESC, id DESC')
+          .all(id) as { data: string }[]
+      ).map((r) => JSON.parse(r.data) as OfficeNotice),
+      new Set([id]),
     )
-      .map((r) => JSON.parse(r.data) as OfficeNotice)
       .filter(fresh)
       .map((n) => ({ ...localizeNotice(n, locale), background }));
     return detailPage(s, page, notices);

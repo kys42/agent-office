@@ -1021,11 +1021,11 @@ export class OfficeService extends EventEmitter {
       });
     }
     if (this.stopped || !updates.length) return;
+    // Taken in memory only; the next full pass of each provider writes them (`OfficeStore.stage`).
     for (const provider of new Set(updates.map((s) => s.provider)))
-      this.store.upsert(
+      this.store.stage(
         updates.filter((s) => s.provider === provider),
         provider,
-        true,
       );
     // A final reply starts its grace period; idle sessions leave the hot set.
     this.rehot(Date.now(), prefs);

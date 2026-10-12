@@ -554,3 +554,147 @@ test('A hot notice that pushes an old one out of the carried set removes it in t
     await o.done();
   }
 });
+
+/** What is on disk for a session, bypassing everything staged in memory. */
+const onDisk = (store: OfficeStore, id: string) => {
+  const row = store.db.prepare('SELECT data FROM sessions WHERE id=?').get(id) as
+    { data: string } | undefined;
+  const notices = (
+    store.db.prepare('SELECT data FROM notices WHERE session_id=? ORDER BY id').all(id) as {
+      data: string;
+    }[]
+  ).map((r) => JSON.parse(r.data));
+  return { revision: row ? (JSON.parse(row.data) as Session).revision : null, notices };
+};
+
+test('A hot pass writes nothing; the next full pass writes exactly what was shown', async () => {
+  const o = await office();
+  const id = sid(15);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '일') + progress(id, now - 4000, '진행'));
+    await o.service.refresh();
+    const key = o.stored(id).id;
+    const before = onDisk(o.service.store, key);
+
+    await appendFile(o.file(id), final(id, Date.now(), '디스크에는 아직 없음'));
+    await o.service.hotTick();
+    const shown = (await o.service.call('snapshot')) as Snapshot;
+    assert.ok(JSON.stringify(shown).includes('디스크에는 아직 없음'), 'shown at once');
+    assert.deepEqual(onDisk(o.service.store, key), before, 'nothing written');
+    assert.deepEqual(o.service.store.stagedIds(), [key]);
+    // Every reader of the store sees it: the work card's newest page, search.
+    const page = o.service.store.detail(key);
+    assert.ok(JSON.stringify(page).includes('디스크에는 아직 없음'));
+    assert.ok(page.notices?.some((n) => n.text.includes('디스크에는 아직 없음')));
+    assert.ok(o.service.store.search('디스크에는').length);
+
+    o.sent.length = 0;
+    await o.service.refresh();
+    assert.deepEqual(o.service.store.stagedIds(), []);
+    const after = onDisk(o.service.store, key);
+    assert.equal(after.revision, o.stored(id).revision, 'the shown row is on disk');
+    assert.ok(after.notices.some((n) => n.text.includes('디스크에는 아직 없음')));
+    assert.equal(o.sent.length, 0, 'writing it changed nothing that is shown');
+  } finally {
+    await o.done();
+  }
+});
+
+test('A notice read before the full pass writes it stays read, once', async () => {
+  const o = await office();
+  const id = sid(16);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '질문') + progress(id, now - 4000, '보는 중'));
+    await o.service.refresh();
+    await appendFile(o.file(id), final(id, Date.now(), '답을 찾았어요'));
+    await o.service.hotTick();
+    const shown = (await o.service.call('snapshot')) as Snapshot;
+    const reply = shown.notices!.find((n) => n.text.includes('답을 찾았어요'))!;
+    assert.ok(reply && !reply.seenAt, 'arrives unread');
+    const unread = shown.noticeStats!.unread;
+
+    // The person reads it while it is only in memory.
+    const read = (await o.service.call('notices', [
+      [{ id: reply.id, version: reply.version }],
+      'read',
+    ])) as Snapshot;
+    assert.ok(read.notices!.find((n) => n.id === reply.id)!.seenAt);
+    assert.equal(read.noticeStats!.unread, unread - 1);
+
+    o.sent.length = 0;
+    await o.service.refresh();
+    const after = (await o.service.call('snapshot')) as Snapshot;
+    const kept = after.notices!.filter((n) => n.text.includes('답을 찾았어요'));
+    assert.equal(kept.length, 1, 'no duplicate');
+    assert.ok(kept[0].seenAt, 'still read');
+    assert.equal(kept[0].receivedAt, reply.receivedAt, 'the same notice, not a new arrival');
+    assert.equal(after.noticeStats!.unread, unread - 1, 'no unread flicker');
+    assert.equal(o.sent.length, 0);
+    assert.ok(
+      onDisk(o.service.store, reply.sessionId).notices.find((n) => n.id === reply.id).seenAt,
+    );
+  } finally {
+    await o.done();
+  }
+});
+
+test('Staged and written right away make the same notices', async () => {
+  const hot = await office();
+  const cold = await office();
+  const id = sid(17);
+  const now = Date.now();
+  const strip = (notices: Record<string, unknown>[]) =>
+    notices.map(({ receivedAt: _r, ...n }) => n);
+  try {
+    const start = user(id, now - 9000, '요청') + progress(id, now - 8000, '진행', 'toolu_a');
+    const more = [
+      progress(id, now - 3000, '더 진행', 'toolu_b'),
+      user(id, now - 2000, '추가 요청'),
+      final(id, now - 1000, '모두 끝'),
+    ];
+    for (const o of [hot, cold]) await writeFile(o.file(id), start);
+    await Promise.all([hot.service.refresh(), cold.service.refresh()]);
+    for (const line of more) {
+      await appendFile(hot.file(id), line);
+      await hot.service.hotTick();
+    }
+    await appendFile(cold.file(id), more.join(''));
+    await Promise.all([hot.service.refresh(), cold.service.refresh()]);
+    const key = hot.stored(id).id;
+    const a = onDisk(hot.service.store, key);
+    const b = onDisk(cold.service.store, key);
+    // Revisions differ (they hash each file's own size and mtime); the notices may not.
+    assert.ok(a.notices.length >= 3);
+    assert.deepEqual(strip(a.notices), strip(b.notices));
+  } finally {
+    await hot.done();
+    await cold.done();
+  }
+});
+
+test('Closing the collector writes what the hot path staged', async () => {
+  const o = await office();
+  const id = sid(18);
+  const now = Date.now();
+  try {
+    await writeFile(o.file(id), user(id, now - 5000, '일') + progress(id, now - 4000, '진행'));
+    await o.service.refresh();
+    await appendFile(o.file(id), final(id, Date.now(), '닫기 전에 끝남'));
+    await o.service.hotTick();
+    const key = o.stored(id).id;
+    const revision = o.stored(id).revision;
+    o.service.stop();
+    const store = new OfficeStore(path.join(o.temp, 'data'));
+    try {
+      const disk = onDisk(store, key);
+      assert.equal(disk.revision, revision);
+      assert.ok(disk.notices.some((n) => n.text.includes('닫기 전에 끝남')));
+    } finally {
+      store.close();
+    }
+  } finally {
+    await rm(o.temp, { recursive: true, force: true });
+  }
+});
