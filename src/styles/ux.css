@@ -843,3 +843,199 @@
     display: none;
   }
 }
+/* What a calling colleague asks (questions, a plan, a permission prompt), in the now card. */
+.request-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.request-question + .request-question {
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-2);
+}
+.request-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-3);
+}
+.request-head b {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+}
+.request-head small {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-4);
+}
+.request-head .now-more {
+  margin: 0 0 0 auto;
+}
+.request-chip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.request-chip.multi {
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+.request-text {
+  margin: 5px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.request-options {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.request-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+}
+.request-option svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.request-option span {
+  display: grid;
+  min-width: 0;
+}
+.request-option b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.request-option small {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+button.request-option:hover:not(:disabled) {
+  border-color: var(--accent-line);
+}
+.request-option.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+.request-option.other {
+  width: auto;
+  color: var(--text-2);
+}
+.request-option:disabled {
+  opacity: 0.55;
+}
+.request-other {
+  margin-top: 5px;
+}
+.request-other textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font: inherit;
+  color: var(--text);
+  background: var(--field, var(--bg-2));
+  border: 1px solid var(--accent-line);
+}
+.request-submit,
+.request-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.request-choices .button,
+.request-submit .button {
+  height: auto;
+  min-height: 28px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 12px;
+  text-align: left;
+  white-space: normal;
+}
+.request-choice-number {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  opacity: 0.7;
+}
+/* "Don't ask again" keeps allowing after this prompt: it never looks like the plain yes. */
+.request-choice.role-always {
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px dashed var(--st-call);
+}
+.request-choice {
+  flex-wrap: wrap;
+  column-gap: 5px;
+}
+.request-choice.role-always small {
+  flex-basis: 100%;
+  padding-left: 14px;
+  font-size: 10px;
+  color: var(--st-call);
+}
+.request-choice.role-deny {
+  color: var(--text-2);
+}
+.request-command {
+  margin: 6px 0 0;
+  max-height: 140px;
+  overflow: auto;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.request-plan-body {
+  max-height: 72px;
+  overflow: hidden;
+  margin-top: 5px;
+  font-size: 12px;
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
+  mask-image: linear-gradient(180deg, #000 55%, transparent);
+}
+.request-plan-body.open {
+  max-height: 360px;
+  overflow: auto;
+  -webkit-mask-image: none;
+  mask-image: none;
+  user-select: text;
+}
+.request-file,
+.request-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}

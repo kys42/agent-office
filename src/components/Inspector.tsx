@@ -60,6 +60,7 @@ import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
 import { TerminalSend } from './TerminalSend';
+import { RequestCard } from './RequestCard';
 import { useSendTargets } from '../lib/useSendTargets';
 import { useI18n } from '../lib/i18n';
 import { intlLocale } from '../shared/i18n';
@@ -790,6 +791,7 @@ export function Inspector({
           canType={!!live && terminalSend}
           typeQueues={!!live?.queues}
           onShowNews={() => setTab('news')}
+          request={<RequestCard session={s} target={live} notify={notify} demo={demo} />}
         />
         {live && (
           <TerminalSend

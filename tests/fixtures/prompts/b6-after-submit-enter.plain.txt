@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Opus 5.5 with medium effort · Claude Team
+ ▝▝   ▝▝   /…/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-a2
+
+
+❯ /clear
+
+❯ Use the AskUserQuestion tool to ask me exactly one question "Pick fruits" (header "Fruit") with multiSelect true,
+  options Apple, Banana, Cherry, each with a short description. Do nothing else.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+←  ☒ Fruit  ✔ Submit  →
+
+Review your answers
+
+ ● Pick fruits
+   → Apple, Cherry
+
+Ready to submit your answers?
+
+❯ 1. Submit answers
+  2. Cancel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

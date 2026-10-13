@@ -17,7 +17,7 @@ export const now = {
   ack: 'Got it',
   replyNote: 'Reply and approve in the original app. Agent Office only reads records.',
   typeNote:
-    "Answer approval requests in the original app. Resting or working, you can keep talking right below (mid-task it's queued).",
+    "Answer questions, plans and permission prompts above (asks once first) or in the terminal. Resting or working, you can keep talking right below (mid-task it's queued).",
   typeQueuedNote:
     'Answer approval requests in the original app. Anything you send below is handled once the current work wraps up.',
   progress: 'Recent progress',

@@ -32,6 +32,7 @@ import { api, isDesktop } from './lib/api';
 import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
 import { useOffice } from './lib/useOffice';
 import { useTerminalSend } from './lib/useTerminalSend';
+import { useAnswerSettings } from './lib/useAnswerSettings';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
@@ -253,6 +254,13 @@ export default function App() {
     toggle: toggleTerminalSend,
     sendReply,
   } = useTerminalSend(demo, notify);
+  // Desktop-only answering of questions, plans and permission prompts (both off by default).
+  const answers = useAnswerSettings(demo, notify);
+  // A first answer from a card may have turned one on: show it as saved.
+  const reloadAnswers = answers.reload;
+  useEffect(() => {
+    if (view === 'settings') reloadAnswers();
+  }, [view, reloadAnswers]);
   // The desk pin and the card pin are one switch on the colleague.
   const onPin = (s: Session) =>
     void pin(s)
@@ -881,6 +889,8 @@ export default function App() {
               notify={notify}
               terminalSend={terminalSendAvailable ? terminalSend : undefined}
               onTerminalSend={toggleTerminalSend}
+              answers={answers.available ? answers.settings : undefined}
+              onAnswers={(key) => void answers.toggle(key)}
               focusSection={settingsFocus}
               onSectionFocused={clearSettingsFocus}
             />

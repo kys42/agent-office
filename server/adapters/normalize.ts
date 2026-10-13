@@ -16,6 +16,7 @@ import { summarizeActivity } from '../../src/shared/activity.js';
 import { runtimeObservation, deriveState } from '../../src/shared/runtime.js';
 import { messagesFor, type Locale } from '../../src/shared/i18n/index.js';
 import { CANONICAL, canonical } from '../../src/shared/canonical.js';
+import { inputRequest, permissionRequest } from './requests.js';
 export { deriveState } from '../../src/shared/runtime.js';
 
 type Obj = Record<string, any>;
@@ -196,7 +197,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     tool?: string,
     suffix = '',
     metadata: Pick<OfficeEvent, 'phase' | 'lifecycle' | 'callId'> = {},
-  ) => {
+  ): OfficeEvent | undefined => {
     if (!text.trim()) return;
     // An ordinal is local to a transport page, not a native event ID. Using it
     // across continuation files silently overwrites different turns.
@@ -223,7 +224,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     };
     updatedAt = Math.max(updatedAt, at);
     startedAt = Math.min(startedAt, at);
+    return events[index];
   };
+  // Each tool call's input, by event id: read once the pass knows which calls are still open.
+  const inputs = new Map<string, unknown>();
   const set = (s: Mood, why: string) => {
     status = s;
     reason = why;
@@ -387,7 +391,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
         const tool = String(p.name ?? 'tool');
-        add(
+        const e = add(
           { ...r, id: p.call_id ?? p.id },
           at,
           'tool',
@@ -396,6 +400,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           '',
           call(p.call_id),
         );
+        if (e) inputs.set(e.id, p.arguments ?? p.input);
         set(
           tool.includes('request_user_input') ? 'call' : 'work',
           tool.includes('request_user_input') ? t.reason.inputTool : t.reason.toolCall,
@@ -500,7 +505,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         for (const [i, b] of m.content.entries()) {
           if (['tool_use', 'toolCall'].includes(b.type)) {
             const tool = String(b.name ?? 'tool');
-            add(
+            const e = add(
               { ...r, id: b.id ?? r.id ?? r.uuid },
               at,
               'tool',
@@ -509,6 +514,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               `:tool${i}`,
               call(b.id),
             );
+            if (e) inputs.set(e.id, b.input ?? b.arguments);
             set(
               REQUEST_INPUT_TOOL.test(tool) ? 'call' : 'work',
               PLAN_APPROVAL_TOOL.test(tool) ? t.reason.planApproval : t.reason.toolCall,
@@ -549,6 +555,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       total: sum('total'),
     };
   }
+  attachRequests(events, inputs, opt.provider === 'claude');
   nativeId = authoritativeId ?? nativeId;
   updatedAt = updatedAt || opt.mtime;
   const state = deriveState(status, updatedAt, now, false, undefined, undefined, CANONICAL);
@@ -618,4 +625,39 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     ),
     completed: false,
   };
+}
+
+/**
+ * What open calls ask, from their input (see requests.ts): every unanswered question or plan
+ * approval and, for Claude Code (`permissions`), the current turn's pending call — what a
+ * permission prompt would be about, shown once the live record says the prompt is open
+ * (claude-live.ts). Other tool arguments are never kept, and answered calls keep nothing.
+ */
+function attachRequests(events: OfficeEvent[], inputs: Map<string, unknown>, permissions: boolean) {
+  if (!inputs.size) return;
+  // The same pairing as isResultOf (shared/notices.ts), as sets: transcripts can be long.
+  const calls = new Set<string>();
+  const ids = new Set<string>();
+  for (const e of events)
+    if (e.kind === 'result') {
+      if (e.callId) calls.add(e.callId);
+      ids.add(e.id);
+    }
+  const open = (e: OfficeEvent) =>
+    !(e.callId && calls.has(e.callId)) && !ids.has(`${e.id.replace(/:tool\d+$/, '')}:result`);
+  const boundary = events.findLastIndex((e) => e.kind === 'user' || e.lifecycle === 'started');
+  const pending = events.findLastIndex((e, i) => i > boundary && e.kind === 'tool' && open(e));
+  events.forEach((e, i) => {
+    if (e.kind !== 'tool' || !inputs.has(e.id)) return;
+    const input = inputs.get(e.id);
+    const request =
+      e.intent === 'request-input'
+        ? open(e)
+          ? inputRequest(e.tool ?? '', input)
+          : undefined
+        : permissions && i === pending
+          ? permissionRequest(e.tool ?? '', input)
+          : undefined;
+    if (request) events[i] = { ...e, request };
+  });
 }

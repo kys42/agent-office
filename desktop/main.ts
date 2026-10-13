@@ -16,7 +16,11 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
 import { syncLocale } from '../server/locale.js';
 import type {
+  AnswerResult,
+  AnswerSettings,
   CardTarget,
+  PromptView,
+  SessionDetail,
   DockAction,
   DockMode,
   JumpResult,
@@ -54,6 +58,9 @@ import {
 } from './terminals.js';
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 import { composerFor } from './composer/index.js';
+import { promptsFor } from './prompts/index.js';
+import { answerRequest, inspectPrompt } from './answers.js';
+import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 let main: BrowserWindow | null = null,
@@ -822,6 +829,98 @@ function setupIPC() {
       forgetTerminal(terminal.process.sessionId);
     }
   });
+  // Answering a calling session's dialog by its own keys: desktop-only like sending, off until
+  // the person agrees (a native confirmation, per kind), and checked against the screen.
+  const asking = async (id: string) =>
+    openRequest((await bridge.call('detail', [id])) as SessionDetail);
+  const askAnswers = async (e: Electron.IpcMainInvokeEvent, which: keyof AnswerSettings) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const t = m().prompts.confirm;
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning',
+      buttons: [t.enable, t.cancel],
+      defaultId: 1,
+      cancelId: 1,
+      message: t[which].message,
+      detail: t[which].detail,
+    };
+    const fromCard = !!win && win === card;
+    if (fromCard) cardDialogs++;
+    try {
+      const { response } = win
+        ? await dialog.showMessageBox(win, options)
+        : await dialog.showMessageBox(options);
+      return response === 0;
+    } finally {
+      if (fromCard) {
+        cardDialogs--;
+        if (win && !win.isDestroyed()) win.focus();
+      }
+    }
+  };
+  ipcMain.handle('office:answer-settings', async (e, patch): Promise<AnswerSettings> => {
+    trusted(e);
+    const settings = await answerSettings();
+    if (patch == null) return settings;
+    if (typeof patch !== 'object') throw new Error(m().desktop.badRequest);
+    const next = { ...settings };
+    for (const key of ['questions', 'permissions'] as const) {
+      const value: unknown = (patch as Record<string, unknown>)[key];
+      if (value === undefined) continue;
+      if (typeof value !== 'boolean') throw new Error(m().desktop.badRequest);
+      // Turning one on always goes through the native confirmation.
+      if (value && !settings[key] && !(await askAnswers(e, key))) continue;
+      next[key] = value;
+    }
+    await writeFile(answerSettingsFile(), JSON.stringify(next), { mode: 0o600 });
+    return next;
+  });
+  ipcMain.handle('office:prompt', async (e, id): Promise<PromptView> => {
+    trusted(e);
+    const known = await identity(id);
+    const adapter = promptsFor(known.provider);
+    const terminal = known.provider === 'claude' ? await live(known) : null;
+    return inspectPrompt(adapter, await asking(known.id), terminal);
+  });
+  const answering = new Set<string>();
+  ipcMain.handle('office:answer', async (e, id, choice): Promise<AnswerResult> => {
+    trusted(e);
+    if (choice == null || typeof choice !== 'object' || JSON.stringify(choice).length > 20000)
+      throw new Error(m().desktop.badRequest);
+    const t = m().prompts.result;
+    const known = await identity(id);
+    const adapter = promptsFor(known.provider);
+    if (known.provider !== 'claude') throw new Error(t.unsupported(adapter.agent));
+    const open = await asking(known.id);
+    if (!open) throw new Error(t.notWaiting);
+    if (answering.has(known.id)) throw new Error(t.busy);
+    // Held from the confirmation on: a second click meanwhile is refused, never queued.
+    answering.add(known.id);
+    let terminal: Awaited<ReturnType<typeof live>> = null;
+    try {
+      const which = open.request.kind === 'permission' ? 'permissions' : 'questions';
+      const settings = await answerSettings();
+      if (!settings[which]) {
+        // The first answer of a kind asks once; the choice stays in the desktop profile.
+        if (!(await askAnswers(e, which))) return { status: 'cancelled', message: '' };
+        await writeFile(answerSettingsFile(), JSON.stringify({ ...settings, [which]: true }), {
+          mode: 0o600,
+        });
+      }
+      terminal = await live(known, true);
+      if (!terminal) throw new TerminalInputError(t.noTarget);
+      return await answerRequest(adapter, open, terminal, choice, {
+        sourcePath: known.sourcePath,
+      });
+    } catch (error) {
+      if (error instanceof TerminalInputError || !terminal) throw error;
+      // Keys may already be in the terminal; never invite a blind retry.
+      throw new Error(t.unconfirmed(hostName(terminal.host)));
+    } finally {
+      answering.delete(known.id);
+      if (terminal) forgetTerminal(terminal.process.sessionId);
+    }
+  });
   ipcMain.handle('office:export', async (e, name, content) => {
     trusted(e);
     if (typeof content !== 'string' || content.length > 30000 || typeof name !== 'string')
@@ -864,6 +963,19 @@ async function terminalSendEnabled() {
     return JSON.parse(saved).enabled !== false;
   } catch {
     return false;
+  }
+}
+const answerSettingsFile = () => path.join(app.getPath('userData'), 'answer-prompts.json');
+/**
+ * Both off unless the person agreed: no file, a broken one or anything but `true` is off. Kept
+ * in the desktop profile, never in the preferences the web preview shares.
+ */
+async function answerSettings(): Promise<AnswerSettings> {
+  try {
+    const saved = JSON.parse(await readFile(answerSettingsFile(), 'utf8'));
+    return { questions: saved?.questions === true, permissions: saved?.permissions === true };
+  } catch {
+    return { questions: false, permissions: false };
   }
 }
 async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpResult> {
