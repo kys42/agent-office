@@ -124,7 +124,7 @@ const widest = (text: string) =>
  * the pane height). Orca reports the composer apart, but only what the box shows (measured:
  * 1.4.216 gave the last 1,694 of 2,499 characters) and not the pane height, so only text that
  * surely fits in fewer rows than any box shows (2, at the widest count and leaving room for
- * word wrap) is known whole. A plain screen without that report: never.
+ * word wrap) is known whole. Text Orca draws on the prompt line (no styles) goes by the same rule.
  */
 function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   // A collapsed paste or an attached image stands for content that is not on screen.
@@ -166,7 +166,7 @@ export function classifyPrompt(screen: Screen): ComposerState {
     const shown = box.lines[box.top + 1].replace(/^❯\s?/, '').trim();
     return rows === 1 && (!shown || HINT.test(shown))
       ? { kind: 'empty' }
-      : { kind: 'unknown', text: shown, whole: false };
+      : { kind: 'unknown', text: shown, whole: whole(shown) };
   }
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
@@ -284,9 +284,11 @@ const REDRAW_MS = 120;
  * twice on an empty prompt it opens rewind. Measured on 2.1.296 (tmux, and Orca 1.4.216).
  *
  * A suggestion comes back as soon as the box is empty, and keys never touch it. tmux shows it
- * faint. Orca puts it in `draft` like typed text: text that is no part of the confirmed draft,
- * shows up once that is gone and survives two more pairs, is taken for it (`inferred`) — saved
- * first, and the send afterwards accepts only the exact typed text.
+ * faint. Orca (1.4.216, measured again) draws it plain on the prompt line, typed text kept apart
+ * in `draft`; it was also seen in `draft` like typed text. Either way, text the keys never move is
+ * told by a one-letter probe, and text that is no part of the confirmed draft, shows up once that
+ * is gone and survives two more pairs, is taken for it (`inferred`) — saved first, and the send
+ * afterwards accepts only the exact typed text.
  */
 export const claudeCodeComposer: ComposerAdapter = {
   agent: 'Claude',

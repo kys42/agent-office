@@ -13,7 +13,8 @@ export interface Screen {
   /**
    * The composer's text when the host reports it apart from the screen. Orca (1.4.216) returns
    * it as `draft` ("UI-only composer text excluded from tail"): the prompt line then shows only
-   * the marker, and the suggestion Claude offers comes back here too (measured).
+   * the marker. The suggestion Claude offers was seen here too, and later drawn plain on the
+   * prompt line instead (both measured): neither is told from typing without a probe.
    */
   composer?: string;
   /** The pane's height in rows, when the host reports it (tmux). */
