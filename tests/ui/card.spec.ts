@@ -405,8 +405,10 @@ test('A run of progress notes reads as one: who and when only on the first, a pa
   // The answer after the notes says who again.
   await expect(msg('f1')).not.toHaveClass(/is-continued/);
   await expect(msg('p2').locator('.message-meta')).toHaveCSS('opacity', '0');
-  await msg('p2').hover();
+  // Focus (the keyboard's hover) shows them, buttons included.
+  await msg('p2').locator('.message-meta button').first().focus();
   await expect(msg('p2').locator('.message-meta')).toHaveCSS('opacity', '1');
+  await expect(msg('p2').locator('.message-meta button').first()).toHaveCSS('opacity', '1');
   await expect(msg('p2').locator('.message-meta time')).toBeVisible();
   // Fifty minutes later: a time line before the next message, and it starts a new run.
   await expect(aside.locator('.conversation-pause')).toHaveCount(1);
