@@ -579,6 +579,10 @@ export function Office({
                             peek={shown.peek}
                             quote={hover === s.id && closed !== s.id}
                             privacy={privacy}
+                            onViewed={() => {
+                              if (bubble && !privacy)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                            }}
                             onOpen={() => {
                               if (bubble) {
                                 if (!privacy)

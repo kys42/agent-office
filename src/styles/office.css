@@ -694,7 +694,7 @@
 .desk-station.selected-station {
   z-index: 5;
 }
-.desk-station:has(.speech-bubble:hover) {
+.desk-station:has(.speech-bubble:is(:hover, :focus-within)) {
   z-index: 6;
 }
 .desk-glow {
@@ -1230,7 +1230,7 @@
   word-break: keep-all;
   overflow-wrap: anywhere;
 }
-.speech-bubble.unread::before {
+.speech-bubble.unread.bubble-new:not(.is-expanded):not(.is-peek)::before {
   content: '';
   position: absolute;
   left: -5px;
@@ -1276,14 +1276,16 @@
   background: #2a2128;
   box-shadow: 0 0 0 2px #fffaf1;
   opacity: 0;
+  pointer-events: none;
   transform: scale(0.8);
   transition:
     opacity 0.15s,
     transform 0.15s;
 }
-.speech-bubble:hover .bubble-dismiss,
+.speech-bubble:is(:hover, :focus-within) .bubble-dismiss,
 .bubble-dismiss:focus-visible {
   opacity: 1;
+  pointer-events: auto;
   transform: scale(1);
 }
 .bubble-dismiss:hover {

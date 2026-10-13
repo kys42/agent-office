@@ -289,6 +289,31 @@
   pointer-events: none;
   animation: glow-pulse 1.625s ease-in-out 0.375s infinite;
 }
+.speech-bubble:is(.bubble-opened, .is-expanded, .is-peek) .bubble-halo {
+  animation: none;
+  opacity: 0;
+}
+
+/* Row / floor tools stay quiet until pointed at or reached with the keyboard.
+   Hidden tools must not steal clicks from the transparent desktop around a bubble. */
+.desk-row .bubble-reply {
+  opacity: 0;
+  pointer-events: none;
+  color: var(--b-ink);
+  background: var(--b-bg);
+  box-shadow: 0 0 0 1px var(--b-line);
+  transition:
+    opacity 0.15s,
+    transform 0.15s;
+}
+.desk-row .speech-bubble:is(:hover, :focus-within) .bubble-reply,
+.desk-row .bubble-reply.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.desk-row .bubble-reply:is(:hover, :focus-visible, .open) {
+  background: var(--b-bg);
+}
 
 /* Error — a warning label: amber stripes along the top. */
 .speech-bubble.tone-error {
@@ -312,14 +337,20 @@
 
 .reduce-motion .bubble-typing i,
 .motion-paused .bubble-typing i,
+.reduce-motion .speech-bubble::before,
+.motion-paused .speech-bubble::before,
+.reduce-motion .bubble-halo,
+.motion-paused .bubble-halo,
 .reduce-motion .speech-bubble.tone-attention,
 .motion-paused .speech-bubble.tone-attention {
-  animation: none;
+  animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .bubble-typing i,
+  .speech-bubble::before,
+  .bubble-halo,
   .speech-bubble.tone-attention {
-    animation: none;
+    animation: none !important;
   }
 }
 

@@ -37,6 +37,7 @@ export function QuickReply({
   return (
     <form
       className="quick-reply"
+      tabIndex={-1}
       data-solid
       aria-label={t.terminal.replyTo(name)}
       onSubmit={(e) => {
@@ -52,6 +53,13 @@ export function QuickReply({
           if (draft) {
             reply.cancel();
             field.current?.focus({ preventScroll: true });
+          } else if (
+            e.target instanceof HTMLElement &&
+            e.target.closest('input, textarea, select')
+          ) {
+            // Leave the input first, keeping an unfinished reply. The next Esc closes it.
+            // Keep focus inside this form so the next Esc reaches onClose in every scene.
+            e.currentTarget.focus({ preventScroll: true });
           } else onClose();
         }
       }}

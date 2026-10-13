@@ -74,6 +74,7 @@ export function SpeechBubble({
   onPopup,
   expanded,
   onExpandedChange,
+  onViewed,
   quote = false,
 }: {
   session: Session;
@@ -93,6 +94,8 @@ export function SpeechBubble({
   /** Controlled unfolding, for scenes where opening a bubble means reading it in place. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /** Unfolding the text counts as a view, including the chevron / keyboard path. */
+  onViewed?: () => void;
   /** While pointed at: the person's request as its own bubble right above, to recall what was asked. */
   quote?: boolean;
 }) {
@@ -108,6 +111,7 @@ export function SpeechBubble({
   const open = expanded ?? ownOpen;
   const setOpen = (next: boolean | ((v: boolean) => boolean)) => {
     const value = typeof next === 'function' ? next(open) : next;
+    if (value && !open && !privacy) onViewed?.();
     if (expanded === undefined) setOwnOpen(value);
     onExpandedChange?.(value);
   };
