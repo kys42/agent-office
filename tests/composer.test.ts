@@ -136,18 +136,23 @@ test('A box at the most rows Claude shows may hide its start: never known whole'
 
 test('On Orca, any text in the prompt is unknown; only a short reported draft is whole', () => {
   const plain = (raw: string): Screen => ({ text: strip(raw) });
-  // Older Orca draws the composer on screen, as plain text: never cleared from here.
+  // Orca draws the suggestion on screen as plain text (an older one typed text too): unknown,
+  // and a short one is known whole, so it can be cleared (keys for typing, a probe otherwise).
   assert.deepEqual(classifyPrompt(plain(FIXTURES.empty)), { kind: 'empty' });
   assert.deepEqual(classifyPrompt(plain(FIXTURES.suggestion)), {
     kind: 'unknown',
     text: 'One more alternative, one short sentence, no tools.',
-    whole: false,
+    whole: true,
   });
   assert.deepEqual(classifyPrompt(plain(FIXTURES.typed)), {
     kind: 'unknown',
     text: 'hello draft',
-    whole: false,
+    whole: true,
   });
+  // More rows than the box is known to show whole, or a collapsed paste: not known whole.
+  const rows3 = classifyPrompt(plain(box('❯\xa0one', '  two', '  three')));
+  assert.equal((rows3 as { whole: boolean }).whole, false);
+  assert.equal((classifyPrompt(plain(FIXTURES.pasted)) as { whole: boolean }).whole, false);
   assert.deepEqual(classifyPrompt(plain(FIXTURES.permission)), { kind: 'closed' });
   assert.equal(classifyPrompt(plain(box('❯', '', ''))).kind, 'unknown');
   // Orca 1.4.216 reports the composer apart (`draft`); the prompt line keeps the marker only.
@@ -207,6 +212,10 @@ function fakePrompt(
     noDelete?: boolean;
     /** vim's normal mode: letters are commands ('l' moves right), nothing edits. */
     normal?: boolean;
+    /** Orca 1.4.216 as measured: the suggestion is drawn on screen, never in `draft`. */
+    suggestionOnScreen?: boolean;
+    /** An older Orca: typed text is drawn on screen too, with no `draft`. */
+    draftOnScreen?: boolean;
     height?: number;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
@@ -224,6 +233,10 @@ function fakePrompt(
     styled: !orca,
     read: async () => {
       const shown = text() ? lines.slice(-most).map((line) => line.join('')) : [];
+      if (orca && options.draftOnScreen)
+        return { text: strip(box(`❯\xa0${shown.join('\n  ') || options.suggestion || ''}`)) };
+      if (orca && options.suggestionOnScreen && !shown.length && options.suggestion)
+        return { text: strip(box(`❯\xa0${options.suggestion}`)) };
       if (orca) {
         const draft = shown.join('\n') || options.suggestion;
         return { text: strip(box('❯')), ...(draft && { composer: draft }) };
@@ -471,6 +484,23 @@ test('Text the keys never change is never taken as cleared', async () => {
   );
   assert.equal(left.status, 'failed');
   assert.ok(!gone.pressed.some((keys) => keys.includes('l')));
+  // As Orca draws it: the suggestion on screen, typed text in `draft`. The probe clears it.
+  const onScreen = fakePrompt({
+    suggestion: 'run the tests',
+    host: 'orca',
+    suggestionOnScreen: true,
+  });
+  assert.deepEqual((await clearPrompt(onScreen)).result, {
+    status: 'cleared',
+    state: { kind: 'suggestion', text: 'run the tests', inferred: true },
+  });
+  assert.equal(onScreen.text(), '');
+  // An older Orca draws typed text on screen too: the deletion keys take it, saved first.
+  const older = fakePrompt({ draft: 'hello draft', host: 'orca', draftOnScreen: true });
+  const olderCleared = await clearPrompt(older);
+  assert.equal(olderCleared.result.status, 'cleared');
+  assert.deepEqual(olderCleared.backups, ['hello draft']);
+  assert.equal(older.text(), '');
   // Only the suggestion: typing replaced it, so the box is ready once the letter is gone.
   const offered = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
   const { result, backups } = await clearPrompt(offered);

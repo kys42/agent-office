@@ -132,13 +132,9 @@ function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   // The task list (ctrl+t) takes rows of its own; the box's height there was not measured.
   if (TASKS.test(box.lines.slice(box.bottom + 1).join(' ')) || hasTaskList(box)) return false;
   const rows = box.bottom - box.top - 1;
-  if (screen.composer === undefined)
-    return (
-      !!screen.faint &&
-      screen.height !== undefined &&
-      screen.height >= 12 &&
-      rows < maxBoxRows(screen.height)
-    );
+  // tmux: the box's rows against the pane. Orca (styles never read) draws a short box whole.
+  if (screen.faint)
+    return screen.height !== undefined && screen.height >= 12 && rows < maxBoxRows(screen.height);
   const width = Math.max(...box.lines.slice(box.top, box.bottom + 1).map((line) => line.length));
   const room = width - 20;
   if (room < 10) return false;
@@ -174,8 +170,10 @@ export function classifyPrompt(screen: Screen): ComposerState {
   }
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
-    // Old Orca draws typed text and suggestions alike in the box: never cleared from here.
-    return { kind: 'unknown', text, whole: false };
+    // Orca draws the suggestion on screen with no styles (1.4.216 keeps typed text apart, in
+    // `draft`; an older one draws it here too): unknown, and a short one is known whole, so it
+    // can be cleared — the deletion keys take typing, the one-letter probe tells a suggestion.
+    return { kind: 'unknown', text, whole: whole(text) };
   }
   let faint = 0;
   let plain = 0;
