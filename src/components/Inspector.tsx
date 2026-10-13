@@ -54,6 +54,8 @@ import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
 import { TerminalSend } from './TerminalSend';
+import { RequestCard } from './RequestCard';
+import { openRequest } from '../shared/requests';
 import { useSendTargets } from '../lib/useSendTargets';
 import { useI18n } from '../lib/i18n';
 export function Inspector({
@@ -914,6 +916,12 @@ export function Inspector({
         </div>
         {scrollArea}
         <div className="card-composer">
+          {/* What a calling colleague asks, answerable here where the desktop app sees it. */}
+          {calling && !privacy && (
+            <div className="card-request">
+              <RequestCard session={s} target={live} notify={notify} demo={demo} />
+            </div>
+          )}
           <div className="card-actions">
             <button
               className={`card-action ${calling ? 'primary' : ''}`}
@@ -923,8 +931,10 @@ export function Inspector({
               <Terminal size={13} />
               {resumeLabel}
             </button>
-            {/* Agent Office only reads records: answers and approvals happen where it runs. */}
-            {calling && <span className="card-calling-note">{t.inspector.card.callingNote}</span>}
+            {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}
+            {calling && !openRequest(s) && (
+              <span className="card-calling-note">{t.inspector.card.callingNote}</span>
+            )}
           </div>
           {/* Always open to writing where a terminal can exist; the send checks again. */}
           {locatable && api.send ? (

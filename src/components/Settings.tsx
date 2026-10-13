@@ -18,8 +18,10 @@ import {
   Languages,
   X,
   Pencil,
+  MessageCircleQuestion,
+  ShieldQuestion,
 } from 'lucide-react';
-import type { Preferences, Snapshot, Provider } from '../shared/types';
+import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { Sprite } from './Sprite';
 import { shortPath, ago } from '../lib/format';
@@ -56,6 +58,8 @@ export function Settings({
   notify,
   terminalSend,
   onTerminalSend,
+  answers,
+  onAnswers,
   focusSection,
   onSectionFocused,
 }: {
@@ -66,6 +70,9 @@ export function Settings({
   /** Desktop only; undefined hides the setting (web preview, demo). */
   terminalSend?: boolean;
   onTerminalSend?: () => void;
+  /** Desktop only; undefined hides the answering settings (web preview, demo). */
+  answers?: AnswerSettings;
+  onAnswers?: (key: keyof AnswerSettings) => void;
   focusSection?: { section: SettingsSection; at: number };
   onSectionFocused?: () => void;
 }) {
@@ -378,6 +385,30 @@ export function Settings({
                 />
               </div>
             )}
+            {answers &&
+              onAnswers &&
+              (['questions', 'permissions'] as const).map((key) => (
+                <div className="setting-row" key={key}>
+                  {key === 'questions' ? (
+                    <MessageCircleQuestion size={18} />
+                  ) : (
+                    <ShieldQuestion size={18} />
+                  )}
+                  <div>
+                    <b>{t.prompts.settings[key]}</b>
+                    <p>
+                      {key === 'questions'
+                        ? t.prompts.settings.questionsHint
+                        : t.prompts.settings.permissionsHint}
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={answers[key] === 'on'}
+                    label={t.prompts.settings[key]}
+                    onChange={() => onAnswers(key)}
+                  />
+                </div>
+              ))}
           </section>
           <section className="settings-section">
             <h2>{s.records.title}</h2>

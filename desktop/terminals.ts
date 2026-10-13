@@ -26,6 +26,7 @@ import {
   type ClaudeLiveDeps,
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
+import type { PromptHost, PromptKey } from './prompts/types.js';
 export { promptHolds, readPrompt } from './composer/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
@@ -415,6 +416,37 @@ export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHo
       if (!keys.length) return;
       if (host.kind === 'orca')
         return orcaSend(host, [`--text=${keys.map((key) => KEY_BYTES[key]).join('')}`], deps);
+      await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
+    },
+  };
+}
+
+/** Dialog keys: tmux key names, and the bytes the same keys send for Orca. */
+const PROMPT_BYTES: Record<PromptKey, string> = {
+  Up: '\x1b[A',
+  Down: '\x1b[B',
+  Right: '\x1b[C',
+  Enter: '\r',
+  Space: ' ',
+};
+
+/** The terminal host as a prompt adapter sees it: read the screen, press dialog keys, type. */
+export function promptHost(host: TerminalHost, deps: TerminalDeps): PromptHost {
+  return {
+    kind: host.kind,
+    read: () => readScreen(host, deps),
+    wait: deps.wait,
+    type: (text) => typeText(host, text, deps),
+    async press(keys) {
+      if (!keys.length) return;
+      if (host.kind === 'orca') {
+        // Enter goes as Orca's own submit key, as for a follow-up.
+        const text = keys.filter((key) => key !== 'Enter');
+        if (text.length)
+          await orcaSend(host, [`--text=${text.map((key) => PROMPT_BYTES[key]).join('')}`], deps);
+        if (keys.includes('Enter')) await orcaSend(host, ['--enter'], deps);
+        return;
+      }
       await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
     },
   };

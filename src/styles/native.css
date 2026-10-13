@@ -1119,6 +1119,17 @@ body.card-mode:not(.is-mac) .dock-card {
   align-items: center;
   gap: 6px;
 }
+.card-request {
+  max-height: 45vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.card-request .request-card {
+  margin: 0 0 8px;
+}
+.card-request:empty {
+  display: none;
+}
 .card-calling-note {
   font-size: 11px;
   color: var(--st-call);

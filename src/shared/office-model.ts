@@ -11,6 +11,7 @@ import { zoneLabel } from './zones';
 import { m } from './i18n';
 import { liveLabels } from './labels';
 import { quotaExhaustion, type QuotaExhaustion } from './quota';
+import { layoutRow } from './office-layout';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -275,4 +276,36 @@ export function petSummary(model: OfficeModel) {
     label: PET_LABELS[group],
     calling: model.counts.attention > 0,
   };
+}
+
+/**
+ * Who the pet can stand for, in the desk row's order (zones side by side): the colleagues the
+ * scene draws, helpers left out.
+ */
+export function petChoices(model: OfficeModel): ResidentView[] {
+  return layoutRow(model.scene)
+    .zones.flatMap((z) => z.stations.map((st) => model.view(st.id)))
+    .filter((v): v is ResidentView => !!v && !v.veiled && !v.session.attachedTo);
+}
+
+/**
+ * The colleague the pet shows: the one the person picked with its arrows, while that one is
+ * still there and nobody else just spoke; otherwise who speaks, or the lead.
+ */
+export function petShown(
+  choices: ResidentView[],
+  pet: Pick<ReturnType<typeof petSummary>, 'speaker' | 'lead'>,
+  chosen: string | null,
+): { view: ResidentView | undefined; chosen: boolean } {
+  const picked = chosen ? choices.find((v) => v.session.id === chosen) : undefined;
+  if (picked) return { view: picked, chosen: true };
+  return { view: pet.speaker?.view ?? pet.lead, chosen: false };
+}
+
+/** The colleague next to `from` in the pet's order, going round at the ends. */
+export function petStep(choices: ResidentView[], from: string | undefined, step: -1 | 1) {
+  if (!choices.length) return undefined;
+  const at = choices.findIndex((v) => v.session.id === from);
+  const next = at < 0 ? (step > 0 ? 0 : choices.length - 1) : at + step;
+  return choices[(next + choices.length) % choices.length];
 }
