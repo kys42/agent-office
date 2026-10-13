@@ -94,6 +94,9 @@ export const inspector = {
     full: 'Shown from the collected source range.',
   },
   notes: {
+    manualTitle: 'Your notes',
+    bookmarksTitle: 'Saved conversations',
+    bookmarksBody: 'Bookmarks from this teammate. Add a short note or return to the conversation.',
     eyebrow: 'Note to future me',
     title: 'Leave the context you want to remember.',
     body: "Why you decided, what's left, what to check next — it all goes into the handoff.",

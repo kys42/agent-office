@@ -95,6 +95,9 @@ export const inspector: Messages['inspector'] = {
     full: '수집된 원본 구간을 바탕으로 보여드려요.',
   },
   notes: {
+    manualTitle: '직접 쓴 메모',
+    bookmarksTitle: '저장한 대화',
+    bookmarksBody: '이 동료의 북마크를 모았어요. 짧은 메모를 덧붙이거나 대화로 돌아갈 수 있어요.',
     eyebrow: '다음의 나에게',
     title: '기억하고 싶은 맥락을 남겨요.',
     body: '결정한 이유, 남은 일, 다음에 확인할 것을 적어두면 인수인계에 함께 담겨요.',

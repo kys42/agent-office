@@ -574,7 +574,45 @@
   color: var(--text-4);
 }
 
-/* Notes tab */
+/* Notes and saved conversations share a colleague's memory tab. */
+.inspector-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.inspector-card .notes-editor textarea {
+  min-height: 108px;
+}
+.inspector-bookmarks {
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.inspector-bookmarks > h3 {
+  font-size: 15px;
+  font-weight: 650;
+}
+.inspector-bookmarks > p {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-3);
+}
+.inspector-bookmarks .bookmark-card {
+  min-width: 0;
+  padding: 12px;
+}
+.inspector-bookmarks .bookmark-actions {
+  flex-wrap: wrap;
+}
+.inspector-bookmarks .bookmark-note {
+  overflow-wrap: anywhere;
+}
+.inspector-bookmarks .empty-state {
+  padding: 24px 8px;
+}
+
 .notes-editor {
   display: flex;
   flex-direction: column;

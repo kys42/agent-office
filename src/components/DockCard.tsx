@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
 import { useTerminalSend } from '../lib/useTerminalSend';
 import type { CardTarget, ZoneRule } from '../shared/types';
+import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
 import { NoticePagingContext } from '../lib/notice-paging';
@@ -23,10 +24,21 @@ export function DockCard() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { snapshot, model, setPrefs, patch, pin, receipt, readAll, returnToOffice, bookmark } =
-    useOffice(false, notify);
+  const {
+    snapshot,
+    model,
+    setPrefs,
+    patch,
+    pin,
+    receipt,
+    readAll,
+    returnToOffice,
+    bookmark,
+    unbookmark,
+  } = useOffice(false, notify);
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
+  const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   // Stay open when clicking elsewhere (the card's own toggle, remembered on this computer).
   const [keepOpen, setKeepOpen] = useState(() => {
     try {
@@ -50,6 +62,7 @@ export function DockCard() {
       api.onCard?.((next) => {
         // null: the card was put away. Showing nothing stops background detail polling and
         // keeps the next open from flashing the previous colleague.
+        setBookmarkFocus(null);
         setTarget(next);
         if (!next) return;
         setOpened(Date.now());
@@ -102,6 +115,7 @@ export function DockCard() {
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
           onSelect={(id) => {
+            setBookmarkFocus(null);
             setTarget({ id, news: false });
             void api.card?.('select', { id, news: false });
           }}
@@ -125,6 +139,26 @@ export function DockCard() {
           terminalSend={send.enabled}
           bookmarked={snapshot?.bookmarked?.[session.id]}
           onBookmark={bookmark}
+          bookmarkMarks={snapshot?.bookmarked}
+          bookmarkStamp={JSON.stringify([
+            snapshot?.bookmarkStamp,
+            snapshot?.bookmarked,
+            prefs?.excludedProjects,
+            prefs?.enabledProviders,
+          ])}
+          onUnbookmark={unbookmark}
+          onOpenBookmark={(b) => {
+            setTarget({ id: b.sessionId, news: false });
+            void api.card?.('select', { id: b.sessionId, news: false });
+            setBookmarkFocus({
+              sessionId: b.sessionId,
+              eventId: b.eventId,
+              at: b.at,
+              key: Date.now(),
+            });
+          }}
+          focus={bookmarkFocus}
+          onFocused={() => setBookmarkFocus(null)}
           movable
           keepOpen={keepOpen}
           onKeepOpen={(on) => {

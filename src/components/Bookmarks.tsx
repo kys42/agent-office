@@ -111,7 +111,12 @@ function BookmarkCard({
                 <button onClick={() => setEditing(false)}>{t.memory.noteCancel}</button>
                 <button
                   className="primary"
-                  onClick={() => void onNote(b, note).then(() => setEditing(false))}
+                  onClick={() =>
+                    void onNote(b, note).then(
+                      () => setEditing(false),
+                      () => {},
+                    )
+                  }
                 >
                   {t.memory.noteSave}
                 </button>
@@ -170,6 +175,7 @@ function BookmarkCard({
 export function Bookmarks({
   query,
   sessions,
+  sessionIds,
   privacy,
   demo,
   stamp,
@@ -179,6 +185,8 @@ export function Bookmarks({
 }: {
   query: string;
   sessions: Session[];
+  /** Only these runs; absent in the office-wide memory drawer. */
+  sessionIds?: string[];
   privacy: boolean;
   demo: boolean;
   /** Changes whenever the office's bookmarks do. */
@@ -188,6 +196,9 @@ export function Bookmarks({
   notify: (s: string) => void;
 }) {
   const { t } = useI18n();
+  // Stable across snapshots that allocate the same member ids again.
+  const scope = JSON.stringify(sessionIds ? [...new Set(sessionIds)].sort() : null);
+  const scopedIds = () => (JSON.parse(scope) as string[] | null) ?? undefined;
   const [list, setList] = useState<Bookmark[]>([]);
   const [more, setMore] = useState(false);
   const [total, setTotal] = useState(0);
@@ -210,6 +221,7 @@ export function Bookmarks({
       try {
         const page = await api.bookmarks({
           text: query,
+          sessionIds: scopedIds(),
           limit: Math.min(Math.max(latest.current.length, BOOKMARK_PAGE), BOOKMARK_PAGE_MAX),
         });
         if (!active || reading !== generation.current) return;
@@ -226,7 +238,7 @@ export function Bookmarks({
       active = false;
       clearTimeout(timer);
     };
-  }, [query, stamp, demo]);
+  }, [query, stamp, demo, scope]);
   /** The next page, after the last one listed. */
   const loadMore = async () => {
     const last = list.at(-1);
@@ -236,6 +248,7 @@ export function Bookmarks({
     try {
       const page = await api.bookmarks({
         text: query,
+        sessionIds: scopedIds(),
         before: { createdAt: last.createdAt, id: last.id },
       });
       // The list was read again meanwhile (another query, a change elsewhere): this page no
