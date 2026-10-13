@@ -589,6 +589,8 @@ export type PromptView =
       kind: InputRequest['kind'];
       /** The request event the dialog matched. */
       eventId: string;
+      /** The open call the screen shows: an answer must name it (the screen may move on). */
+      callId: string;
       /** Plan approval and permission prompts: the one-shot choices, exactly as drawn. */
       choices: DialogChoice[];
       /** The dialog also offers choices that keep applying or take words: terminal only. */
@@ -601,9 +603,10 @@ export type PromptView =
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
 /** One question's answer: picked options (indices into the recorded options) or typed words. */
 export type QuestionAnswer = { options: number[] } | { other: string };
+/** `callId`: the open call the card was shown (PromptView.callId); nothing else is answered. */
 export type AnswerChoice =
-  | { kind: 'question'; eventId: string; answers: QuestionAnswer[] }
-  | { kind: 'plan' | 'permission'; eventId: string; number: number; label: string };
+  | { kind: 'question'; eventId: string; callId: string; answers: QuestionAnswer[] }
+  | { kind: 'plan' | 'permission'; eventId: string; callId: string; number: number; label: string };
 export interface AnswerResult {
   /** `cancelled`: the person declined the first-use confirmation; nothing was sent. */
   status: 'answered' | 'cancelled';

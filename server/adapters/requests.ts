@@ -1,5 +1,5 @@
 import type { InputRequest, RequestOption, RequestQuestion } from '../../src/shared/types.js';
-import { redact } from './normalize.js';
+import { redactStrict } from './normalize.js';
 
 /*
  * What a request for input asks, from the tool call's own input: the questions of
@@ -31,7 +31,7 @@ interface Cut {
 }
 function text(value: unknown, limit: number, c: Cut) {
   if (typeof value !== 'string') return '';
-  const full = redact(value.replace(/\r\n?/g, '\n').trim(), Infinity);
+  const full = redactStrict(value.replace(/\r\n?/g, '\n').trim(), Infinity);
   if (full.length > limit) c.cut = true;
   return full.slice(0, limit);
 }

@@ -403,13 +403,13 @@ function asks(d: Dialog, r: InputRequest): boolean {
   }
   if (r.kind === 'plan') {
     if (d.kind !== 'plan') return false;
-    // The plan file when both name one, and always the beginning of the plan itself.
+    // The plan file when both name one, and the plan itself: everything the dialog shows must
+    // be the start of the plan the record holds (a plan edited in the meantime never matches).
     if (r.planFile && d.planFile && path.basename(r.planFile) !== path.basename(d.planFile))
       return false;
     const shown = planText(d.plan);
     const want = planText(r.plan);
-    const n = Math.min(80, want.length);
-    return n >= 8 && shown.length >= n && shown.slice(0, n) === want.slice(0, n);
+    return shown.length >= Math.min(8, want.length) && shown.length > 0 && want.startsWith(shown);
   }
   return false;
 }
@@ -548,8 +548,10 @@ class Flow {
     await this.host.press(keys);
   }
 
-  async type(text: string) {
+  /** Pastes words, right after the record, the foreground and the screen say where they go. */
+  async type(text: string, check: (d: Dialog) => boolean) {
     if (!(await this.proceed())) throw new Refusal('lost');
+    if (!check(await this.read())) throw new Refusal('unverified');
     this.pressed = true;
     await this.host.type(text);
   }
@@ -639,7 +641,14 @@ async function answerQuestions(
       const input = shown.rows.find((row) => row.input && !row.aside);
       if (!input) throw new Refusal('bad-choice');
       await s.goTo(input.number, here);
-      await s.type(text);
+      // Into the empty text row the marker is on, nothing else.
+      await s.type(
+        text,
+        (next) =>
+          here(next) &&
+          cursorAt(next) === input.number &&
+          TYPE_HINT.test(row(next, input.number)?.label ?? ''),
+      );
       // Typed in the row and nothing else: then Enter answers with exactly these words.
       const holds = (next: Dialog) =>
         here(next) &&

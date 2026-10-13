@@ -89,6 +89,7 @@ async function desktop(
           agent: 'Claude',
           kind: request.kind,
           eventId: 'toolu_q:tool0',
+          callId: 'toolu_q',
           choices: request.kind === 'question' ? [] : CHOICES[request.kind],
           ...(request.kind === 'question'
             ? { other: request.questions.map((q) => !q.multiSelect) }
@@ -167,7 +168,12 @@ test('A question shows its options; one click answers it through the desktop app
   expect(await answers(page)).toEqual([
     {
       id: 'demo:0',
-      choice: { kind: 'question', eventId: 'toolu_q:tool0', answers: [{ options: [2] }] },
+      choice: {
+        kind: 'question',
+        eventId: 'toolu_q:tool0',
+        callId: 'toolu_q',
+        answers: [{ options: [2] }],
+      },
     },
   ]);
   // Sent: the buttons go until the record says what happened.
@@ -197,6 +203,7 @@ test('Typed words and several questions are collected, then sent together', asyn
   expect((await answers(page))[0].choice).toEqual({
     kind: 'question',
     eventId: 'toolu_q:tool0',
+    callId: 'toolu_q',
     answers: [{ options: [0, 2] }, { other: '중간 크기' }],
   });
 });
@@ -220,6 +227,7 @@ test('A plan folds open; its approval buttons are the dialog’s own choices', a
   expect((await answers(page))[0].choice).toEqual({
     kind: 'plan',
     eventId: 'toolu_q:tool0',
+    callId: 'toolu_q',
     number: 2,
     label: 'Yes, manually approve edits',
   });
@@ -246,6 +254,7 @@ test('A permission prompt shows the command its screen shows; only Yes and No ar
   expect((await answers(page))[0].choice).toEqual({
     kind: 'permission',
     eventId: 'toolu_q:tool0',
+    callId: 'toolu_q',
     number: 3,
     label: 'No',
   });

@@ -44,48 +44,77 @@ export const hash = (value: string) =>
  */
 export function redact(value: unknown, limit = 6000, locale: Locale = CANONICAL): string {
   const t = messagesFor(locale).shared.redaction;
-  return (
-    String(value ?? '')
-      .replace(/\x1b\[[0-9;]*m/g, '')
-      .replace(
-        /-----BEGIN [\w ]*PRIVATE KEY-----[\s\S]*?-----END [\w ]*PRIVATE KEY-----/g,
-        t.privateKey,
-      )
-      .replace(
-        /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]+|hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16})\b/g,
-        t.token,
-      )
-      // The rules below never take a value that already is a placeholder (`[`…).
-      // Environment-style secrets: AWS_SECRET_ACCESS_KEY=…, GITHUB_TOKEN=…, DB_PASSWORD=…
-      .replace(
-        /\b([A-Z][A-Z0-9_]*_(?:SECRET_ACCESS_KEY|SECRET_KEY|SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)\s*=\s*["']?)(?!\[)[^\s"',;}&]+/g,
-        (_, prefix: string) => prefix + t.hidden,
-      )
-      // Command-line secrets: --password x, --token=x, mysql -pSECRET, curl -u user:pass.
-      .replace(
-        /(--(?:password|passwd|token|secret|api-key|access-token)(?:=|\s+)["']?)(?!\[)[^\s"',;}&]+/gi,
-        (_, prefix: string) => prefix + t.hidden,
-      )
-      .replace(
-        /(\b(?:mysql|mysqldump|mysqladmin|mariadb)\b[^\n]*?\s-p)(?!\[)[^\s"',;}&]+/g,
-        (_, prefix: string) => prefix + t.hidden,
-      )
-      .replace(
-        /((?:^|\s)(?:-u|--user)(?:=|\s+)["']?[^\s:"']+:)(?!\[)[^\s"']+/g,
-        (_, prefix: string) => prefix + t.hidden,
-      )
-      // Credentials in an address: scheme://user:pass@host.
-      .replace(
-        /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)(?!\[)[^\s@/]+@/gi,
-        (_, prefix: string) => `${prefix}${t.hidden}@`,
-      )
-      .replace(
-        /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)\s*["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}&]+/gi,
-        (_, prefix: string) => prefix + t.hidden,
-      )
-      .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, () => `Bearer ${t.hidden}`)
-      .slice(0, limit)
-  );
+  return String(value ?? '')
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .replace(
+      /-----BEGIN [\w ]*PRIVATE KEY-----[\s\S]*?-----END [\w ]*PRIVATE KEY-----/g,
+      t.privateKey,
+    )
+    .replace(
+      /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]+)\b/g,
+      t.token,
+    )
+    .replace(
+      /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)\s*["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}&]+/gi,
+      (_, prefix: string) => prefix + t.hidden,
+    )
+    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, () => `Bearer ${t.hidden}`)
+    .slice(0, limit);
+}
+/** A secret value: never one that already is a placeholder (`[`…) or a variable (`$`…). */
+const VALUE = String.raw`(?![\[$])[^\s"',;}&]+`;
+/**
+ * `redact` plus more secret shapes, for text that has no stored history: the questions and plans
+ * of open requests, and what a permission prompt's screen shows. Event text keeps `redact` as it
+ * was, so the notices built from it (their text and version) never change for existing data.
+ */
+export function redactStrict(value: unknown, limit = 6000, locale: Locale = CANONICAL): string {
+  const t = messagesFor(locale).shared.redaction;
+  const hide = (_: string, prefix: string) => prefix + t.hidden;
+  const text = String(value ?? '')
+    .replace(
+      /\b(?:hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16})\b/g,
+      t.token,
+    )
+    // Environment-style secrets: AWS_SECRET_ACCESS_KEY=…, GITHUB_TOKEN=…, DB_PASSWORD=… — never
+    // a pure number (MAX_TOKEN=4096) or a variable (`${{ secrets.X }}`).
+    .replace(
+      new RegExp(
+        String.raw`\b([A-Z][A-Z0-9_]*_(?:SECRET_ACCESS_KEY|SECRET_KEY|SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)\s*=\s*["']?)(?!\d+(?:[\s"',;}&]|$))${VALUE}`,
+        'g',
+      ),
+      hide,
+    )
+    // Command-line secrets: --password x, --token=x.
+    .replace(
+      new RegExp(
+        String.raw`(--(?:password|passwd|token|secret|api-key|access-token)(?:=|\s+)["']?)${VALUE}`,
+        'gi',
+      ),
+      hide,
+    )
+    // mysql -pSECRET, within the same command only.
+    .replace(
+      new RegExp(
+        String.raw`(\b(?:mysql|mysqldump|mysqladmin|mariadb)\b[^\n;&|]*?\s-p)${VALUE}`,
+        'g',
+      ),
+      hide,
+    )
+    // curl/wget -u user:pass, within the same command only.
+    .replace(
+      new RegExp(
+        String.raw`(\b(?:curl|wget)\b[^\n;&|]*?\s(?:-u|--user)(?:=|\s+)["']?[^\s:"']+:)(?![\[$])[^\s"']+`,
+        'g',
+      ),
+      hide,
+    )
+    // Credentials in an address: scheme://user:pass@host.
+    .replace(
+      /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)(?![[$])[^\s@/]+@/gi,
+      (_, prefix: string) => `${prefix}${t.hidden}@`,
+    );
+  return redact(text, limit, locale);
 }
 export const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
