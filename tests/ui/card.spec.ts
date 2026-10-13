@@ -384,7 +384,8 @@ test('The card can be kept open when the person clicks elsewhere, and remembers 
 test('A run of progress notes reads as one: who and when only on the first, a pause gets a time line', async ({
   page,
 }) => {
-  const now = Date.now();
+  // Late morning today: the hour of messages never crosses midnight.
+  const now = new Date().setHours(11, 0, 0, 0);
   const ev = (id: string, at: number, kind: OfficeEvent['kind'], text: string, phase?: string) =>
     ({ id, at, kind, text, phase, sourceRef: 'demo' }) as OfficeEvent;
   const aside = await card(page, {

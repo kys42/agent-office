@@ -1,4 +1,12 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
@@ -259,7 +267,9 @@ export function Conversation({
       if (g.work) {
         // Folded work sits inside a run without breaking it.
         info.set(g.id, { continued: false, pause });
-        if (prev) prev.at = g.events.at(-1)!.at;
+        // After a pause the next message starts afresh.
+        if (pause) prev = null;
+        else if (prev) prev.at = g.events.at(-1)!.at;
         continue;
       }
       const side = e.kind === 'user' ? 'you' : e.kind === 'lifecycle' ? 'system' : 'agent';
@@ -584,53 +594,55 @@ export function Conversation({
               : t.conversation.loadOlder}
         </button>
       )}
-      {shown.map((g) => [
-        runs.get(g.id)?.pause != null && (
-          <div className="conversation-pause" key={`pause:${g.id}`}>
-            <time title={date(runs.get(g.id)!.pause!)}>{pauseLabel(runs.get(g.id)!.pause!)}</time>
-          </div>
-        ),
-        g.work ? (
-          <details className="work-group" key={g.id} data-group-id={g.id}>
-            <summary>
-              <Terminal size={14} />
-              <span>
-                {g.events.find((e) => e.kind === 'tool')?.tool?.replace(/^.*__/, '') ||
-                  t.conversation.workLog}
-              </span>
-              <small>{t.conversation.entries(g.events.length)}</small>
-              <ChevronDown size={13} />
-            </summary>
-            <div>
-              {g.events.map((e, i) => (
-                <Message
-                  event={e}
-                  provider={session.provider}
-                  name={name}
-                  notify={notify}
-                  key={e.id + i}
-                  expanded={expanded.has(e.id)}
-                  onExpand={() => toggleMessage(e.id)}
-                  {...markOf(e)}
-                />
-              ))}
+      {shown.map((g) => (
+        <Fragment key={g.id}>
+          {runs.get(g.id)?.pause != null && (
+            <div className="conversation-pause">
+              <time title={date(runs.get(g.id)!.pause!)}>{pauseLabel(runs.get(g.id)!.pause!)}</time>
             </div>
-          </details>
-        ) : (
-          <Message
-            key={g.id}
-            event={g.events[0]}
-            provider={session.provider}
-            name={name}
-            notify={notify}
-            expanded={expanded.has(g.id)}
-            onExpand={() => toggleMessage(g.id)}
-            group={g.id}
-            continued={runs.get(g.id)?.continued}
-            {...markOf(g.events[0])}
-          />
-        ),
-      ])}
+          )}
+          {g.work ? (
+            <details className="work-group" key={g.id} data-group-id={g.id}>
+              <summary>
+                <Terminal size={14} />
+                <span>
+                  {g.events.find((e) => e.kind === 'tool')?.tool?.replace(/^.*__/, '') ||
+                    t.conversation.workLog}
+                </span>
+                <small>{t.conversation.entries(g.events.length)}</small>
+                <ChevronDown size={13} />
+              </summary>
+              <div>
+                {g.events.map((e, i) => (
+                  <Message
+                    event={e}
+                    provider={session.provider}
+                    name={name}
+                    notify={notify}
+                    key={e.id + i}
+                    expanded={expanded.has(e.id)}
+                    onExpand={() => toggleMessage(e.id)}
+                    {...markOf(e)}
+                  />
+                ))}
+              </div>
+            </details>
+          ) : (
+            <Message
+              key={g.id}
+              event={g.events[0]}
+              provider={session.provider}
+              name={name}
+              notify={notify}
+              expanded={expanded.has(g.id)}
+              onExpand={() => toggleMessage(g.id)}
+              group={g.id}
+              continued={runs.get(g.id)?.continued}
+              {...markOf(g.events[0])}
+            />
+          )}
+        </Fragment>
+      ))}
       {!groups.length && (
         <div className="empty-small">
           <MessageSquare size={26} />
