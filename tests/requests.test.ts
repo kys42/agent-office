@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { parseRecords } from '../server/adapters/normalize.js';
 import { applyLiveWait, type ClaudeProcess } from '../server/adapters/claude-live.js';
 import { inputRequest, REQUEST_LIMITS } from '../server/adapters/requests.js';
-import { redact } from '../server/adapters/normalize.js';
+import { redact, redactStrict } from '../server/adapters/normalize.js';
+import { OfficeStore } from '../server/store.js';
+import { unreadNoticeCount } from '../src/shared/notices.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { openRequest, requestHeadline } from '../src/shared/requests.js';
 import { stationSpeech } from '../src/shared/speech.js';
 import { localizeSession } from '../src/shared/canonical.js';
@@ -187,7 +192,22 @@ test('Requests are redacted and capped at rest', () => {
   );
 });
 
-test('Redaction covers environment, command-line and address secrets in every text', () => {
+const SECRETISH = [
+  'export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG',
+  'GITHUB_TOKEN=abc123 npm publish',
+  `use hf_${'a'.repeat(30)} now`,
+  `glpat-${'b'.repeat(20)}`,
+  `AIza${'c'.repeat(35)}`,
+  `AKIA${'D'.repeat(16)}`,
+  'psql --password hunter2 -h db',
+  'tool --token=abc',
+  'mysql -u root -psecret123 db',
+  'git clone https://bob:s3cret@github.com/x/y',
+  'curl -u admin:pa55 https://x',
+  'docker run -u 1000:1000 img',
+];
+
+test('Strict redaction (requests, screens) covers more secret shapes, and only secrets', () => {
   const t = ko.shared.redaction;
   const cases: [string, string][] = [
     [
@@ -208,17 +228,93 @@ test('Redaction covers environment, command-line and address secrets in every te
     ],
     ['curl -u admin:pa55 https://x', `curl -u admin:${t.hidden} https://x`],
     ['curl --user=admin:pa55 https://x', `curl --user=admin:${t.hidden} https://x`],
+    ['wget --user bob:pw https://x', `wget --user bob:${t.hidden} https://x`],
   ];
-  for (const [raw, want] of cases) assert.equal(redact(raw), want, raw);
-  // Ordinary text stays as it is.
+  for (const [raw, want] of cases) assert.equal(redactStrict(raw), want, raw);
+  // Not secrets: ids, numbers, variables, other commands' flags.
   for (const text of [
     'max_tokens=100 and a -p flag',
     'ssh -p 22 host',
     'mysql -P 3306 -u root',
     'see https://example.com/a:b',
     'curl -u admin https://x',
+    'docker run -u 1000:1000 img',
+    'useradd --user root:root x',
+    'ps -u postgres:x',
+    'MAX_TOKEN=4096 and MAX_TOKENS=4096',
+    'NEXT_PUBLIC_TOKEN=${{ secrets.X }} build',
+    'mysql -h db; make -parallel',
+    'mysql -h db && go test -p 4',
+    'tool --token=$TOKEN',
   ])
-    assert.equal(redact(text), text);
+    assert.equal(redactStrict(text), text, text);
+});
+
+test('Event text is redacted exactly as before: stored notices keep their text and version', async () => {
+  // The base branch's redact() left these as they are; event text (and the notices built from
+  // it) must stay byte-identical, or read notices come back unread after an upgrade.
+  for (const text of SECRETISH.slice(1)) {
+    if (/sk-|ghp_|password|secret|token|api_?key|authorization/i.test(text)) continue;
+    assert.equal(redact(text), text, text);
+  }
+  const at = iso(now - 3600_000);
+  const records = [
+    {
+      ...base,
+      type: 'user',
+      uuid: 'u1',
+      timestamp: at,
+      message: { role: 'user', content: 'deploy it' },
+    },
+    {
+      ...base,
+      type: 'assistant',
+      uuid: 'a1',
+      timestamp: at,
+      message: {
+        role: 'assistant',
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: `Done: ${SECRETISH.join(' ; ')}` }],
+      },
+    },
+  ];
+  const s = parseRecords(records, {
+    provider: 'claude',
+    sourcePath: '/tmp/ask-project/x.jsonl',
+    mtime: now,
+    now,
+  });
+  const reply = s.events.find((e) => e.kind === 'assistant')!;
+  assert.equal(reply.text, redact(`Done: ${SECRETISH.join(' ; ')}`));
+  // The same session stored, read, and stored again after a restart: nothing comes back unread.
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-redact-'));
+  try {
+    let store = new OfficeStore(dir);
+    store.upsert([s], 'claude');
+    store.upsert([s], 'claude');
+    const notices = store.noticeList();
+    assert.ok(notices.length > 0);
+    store.noticeReceipt(notices, 'read');
+    assert.equal(unreadNoticeCount(store.noticeList()), 0);
+    store.close();
+    store = new OfficeStore(dir);
+    const again = parseRecords(records, {
+      provider: 'claude',
+      sourcePath: '/tmp/ask-project/x.jsonl',
+      mtime: now,
+      now,
+    });
+    assert.equal(again.revision, s.revision);
+    store.upsert([again], 'claude');
+    assert.equal(unreadNoticeCount(store.noticeList()), 0);
+    assert.deepEqual(
+      store.noticeList().map((n) => [n.id, n.version]),
+      notices.map((n) => [n.id, n.version]),
+    );
+    store.close();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 const waiting = (over: Partial<ClaudeProcess> = {}): ClaudeProcess => ({

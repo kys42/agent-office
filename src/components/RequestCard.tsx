@@ -23,6 +23,12 @@ import { answerPrompt, usePrompt } from '../lib/usePrompt';
 import { BubbleMarkdown } from './BubbleMarkdown';
 
 const OTHER_LIMIT = 2000;
+/** A choice as picked on the card; the call it answers is the one the screen showed. */
+type Picked = AnswerChoice extends infer C
+  ? C extends AnswerChoice
+    ? Omit<C, 'callId'>
+    : never
+  : never;
 
 /**
  * What a calling colleague asks, in the card's "now" area: the questions with their options,
@@ -89,7 +95,9 @@ function RequestBody({
     view.eventId === eventId
       ? view
       : null;
-  const send = async (choice: AnswerChoice) => {
+  const send = async (picked: Picked) => {
+    if (!ready) return;
+    const choice = { ...picked, callId: ready.callId } as AnswerChoice;
     if (sending) return;
     setSending(true);
     const ok = await answerPrompt(sessionId, choice, notify);
@@ -171,7 +179,7 @@ function Questions({
   /** Per question: typed words can be sent (never for multi-select). */
   other: boolean[];
   sending: boolean;
-  onAnswer: (choice: AnswerChoice) => Promise<void>;
+  onAnswer: (choice: Picked) => Promise<void>;
 }) {
   const { t } = useI18n();
   const c = t.prompts.card;

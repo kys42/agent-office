@@ -61,7 +61,7 @@ import {
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 import { composerFor } from './composer/index.js';
 import { promptsFor } from './prompts/index.js';
-import { answerRequest, inspectPrompt } from './answers.js';
+import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
 import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
@@ -987,8 +987,6 @@ async function terminalSendEnabled() {
   }
 }
 const answerSettingsFile = () => path.join(app.getPath('userData'), 'answer-prompts.json');
-const setting = (value: unknown): AnswerSetting =>
-  value === 'on' || value === 'off' ? value : 'unset';
 /**
  * Never asked (no file, no value), on, or off. A file that cannot be read counts as off. Kept
  * in the desktop profile, never in the preferences the web preview shares.
@@ -1005,7 +1003,10 @@ async function answerSettings(): Promise<AnswerSettings> {
   }
   try {
     const saved = JSON.parse(text);
-    return { questions: setting(saved?.questions), permissions: setting(saved?.permissions) };
+    return {
+      questions: decodeSetting(saved?.questions),
+      permissions: decodeSetting(saved?.permissions),
+    };
   } catch {
     return { questions: 'off', permissions: 'off' };
   }

@@ -19,7 +19,7 @@ import {
   type OpenCall,
   type PromptKey,
 } from '../desktop/prompts/index.js';
-import { answerRequest, inspectPrompt } from '../desktop/answers.js';
+import { answerRequest, decodeSetting, inspectPrompt } from '../desktop/answers.js';
 import type { LiveTerminal, RunOptions } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
 import type { AskingEvent } from '../src/shared/requests.js';
@@ -347,6 +347,13 @@ test('Questions and plans: the open call whose input the dialog shows', () => {
     oneOf(dialog('d1-open'), [
       call('p', 'ExitPlanMode', { ...PLAN_INPUT, plan: '1. Delete everything\n2. Done' }),
     ]),
+    'none',
+  );
+  // A plan edited after its first 80 characters is another plan: the whole visible plan counts.
+  const edited = PLAN_INPUT.plan.replace('cat hello.txt', 'rm hello.txt');
+  assert.ok(PLAN_INPUT.plan.indexOf('cat hello.txt') > 40);
+  assert.equal(
+    oneOf(dialog('d1-open'), [call('p', 'ExitPlanMode', { ...PLAN_INPUT, plan: edited })]),
     'none',
   );
   // A long label wrapped in a narrow pane no longer equals the recorded option: none.
@@ -791,6 +798,7 @@ async function answer(
     const outcome = await answerRequest(claudeCodePrompts, event, h.target, {
       eventId: event.id,
       kind: request.kind,
+      callId: 'toolu_q',
       ...choice,
     }).catch((e: Error) => e);
     return { result: outcome, sim, calls: h.calls };
@@ -961,6 +969,88 @@ test('Permission: refused unless exactly the asked call equals the screen', asyn
   assert.deepEqual(ok.result, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
 });
 
+test('Several calls in one turn: the permission prompt is about the one the screen shows', async () => {
+  // Claude Code asks for the first call while the record marks the last as waiting.
+  const shown: Shown = { kind: 'bash', command: 'ls' };
+  const calls = [bashCall('ls'), bashCall('git status', 'toolu_last')];
+  const sim = new Claude(shown);
+  const h = await harness(sim, { calls });
+  try {
+    const card = asking(BASH, 'toolu_last');
+    const view = await inspectPrompt(claudeCodePrompts, card, h.target, 'on');
+    assert.equal(view.status, 'ready');
+    if (view.status !== 'ready') return;
+    assert.equal(view.callId, 'toolu_q');
+    assert.deepEqual(view.subject, { title: 'Bash command', command: 'ls' });
+    // An answer must name the call the card showed: another id is refused, nothing pressed.
+    const wrong = await answerRequest(claudeCodePrompts, card, h.target, {
+      eventId: card.id,
+      kind: 'permission',
+      callId: 'toolu_last',
+      number: 1,
+      label: 'Yes',
+    }).catch((e: Error) => e);
+    assert.match(failed(wrong), /확실하지 않아서 보내지 않았어요/);
+    assert.equal(sim.keys.length, 0);
+    const ok = await answerRequest(claudeCodePrompts, card, h.target, {
+      eventId: card.id,
+      kind: 'permission',
+      callId: view.callId,
+      number: 1,
+      label: 'Yes',
+    });
+    assert.deepEqual(ok, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
+    assert.deepEqual(sim.answer, { choice: '1' });
+  } finally {
+    await h.done();
+  }
+});
+
+test('The card gets the screen with secrets hidden; matching keeps what the screen says', async () => {
+  const command = 'curl --token=abc123 https://x';
+  const sim = new Claude({ kind: 'bash', command });
+  const h = await harness(sim, { calls: [bashCall(command)] });
+  try {
+    const view = await inspectPrompt(claudeCodePrompts, asking(BASH), h.target, 'on');
+    assert.equal(view.status, 'ready');
+    if (view.status !== 'ready') return;
+    assert.equal(view.subject?.command, 'curl --token=[숨김] https://x');
+    assert.ok(!JSON.stringify(view).includes('abc123'));
+    const ok = await answerRequest(claudeCodePrompts, asking(BASH), h.target, {
+      eventId: 'toolu_q:tool0',
+      kind: 'permission',
+      callId: view.callId,
+      number: 3,
+      label: 'No',
+    });
+    assert.equal(ok.status, 'answered');
+  } finally {
+    await h.done();
+  }
+});
+
+test('A plan matches only when everything the dialog shows is the recorded plan', () => {
+  const plan = `1. ${'Prepare the release notes and check every link. '.repeat(3)}\n2. Publish with npm`;
+  const screen = parseDialog({ text: new Claude({ kind: 'plan', plan }).render() }) as Dialog;
+  const planCallOf = (text: string) =>
+    call('p', 'ExitPlanMode', {
+      plan: text,
+      planFilePath: '/x/.claude/plans/plan-to-create-hello-txt-linear-tome.md',
+    });
+  assert.equal(oneOf(screen, [planCallOf(plan)]), 'p');
+  // Edited after the first 80 characters (ctrl+g): another plan, never approved from the card.
+  assert.equal(oneOf(screen, [planCallOf(plan.replace('npm', 'yarn'))]), 'none');
+});
+
+test('Settings stored by pre-release builds as booleans still read as on and off', () => {
+  assert.equal(decodeSetting(true), 'on');
+  assert.equal(decodeSetting(false), 'off');
+  assert.equal(decodeSetting('on'), 'on');
+  assert.equal(decodeSetting('off'), 'off');
+  assert.equal(decodeSetting(undefined), 'unset');
+  assert.equal(decodeSetting('yes'), 'unset');
+});
+
 test('Orca: the same keys as bytes, one at a time, Enter as its own submit', async () => {
   const {
     result: r,
@@ -1092,9 +1182,7 @@ test('The card is offered only one-shot choices, only for the exact call', async
       const view = await inspectPrompt(...args);
       return view.status === 'unavailable' ? view.reason : view.status;
     };
-    // Another call than the card's: mismatch. Turned off: off. Never set: still offered.
-    const other = asking(BASH, 'toolu_other');
-    assert.equal(await reason(claudeCodePrompts, other, h.target, 'on'), 'mismatch');
+    // Turned off: off. Never set: still offered.
     assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'off'), 'off');
     assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'unset'), 'ready');
     assert.equal(await reason(claudeCodePrompts, asking(BASH), null, 'on'), 'no-terminal');

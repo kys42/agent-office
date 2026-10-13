@@ -2,11 +2,13 @@ import type {
   AnswerChoice,
   AnswerResult,
   AnswerSetting,
+  PromptSubject,
   PromptUnavailable,
   PromptView,
 } from '../src/shared/types.js';
 import type { AskingEvent } from '../src/shared/requests.js';
-import { intlLocale, m } from '../src/shared/i18n/index.js';
+import { getLocale, intlLocale, m } from '../src/shared/i18n/index.js';
+import { redactStrict } from '../server/adapters/normalize.js';
 import { TerminalInputError } from './terminals.js';
 import type {
   Dialog,
@@ -31,6 +33,10 @@ import type {
  * before every key and the screen before and after it → the dialog must go and the transcript
  * must show that call's result. Anything unclear stops with nothing more sent.
  */
+
+/** A stored setting: `on`/`off`, or the booleans pre-release builds wrote; else never asked. */
+export const decodeSetting = (value: unknown): AnswerSetting =>
+  value === 'on' || value === true ? 'on' : value === 'off' || value === false ? 'off' : 'unset';
 
 /** Typed answers for a question's own text row: plain words, at most this long. */
 export const MAX_OTHER_LENGTH = 2000;
@@ -58,18 +64,35 @@ async function look(adapter: PromptAdapter, host: PromptHost): Promise<DialogSta
   return state;
 }
 
-/** The open call the screen is about, when it is exactly the one `asking` stands for. */
-function sameCall(found: Identified, asking: AskingEvent) {
-  return found.status === 'one' &&
-    found.asked.call.id === asking.callId &&
-    found.asked.request.kind === asking.request.kind
-    ? found.asked
-    : null;
+/**
+ * The open call the screen is about, when it is the one `asking` stands for. Questions and plans
+ * carry their call in the record. A permission prompt is about whichever open call of the
+ * current turn the screen shows (Claude Code asks for the first of several, while the record
+ * marks the last): exactly one must match, and an answer must name that very call (`callId`,
+ * as the card was shown it).
+ */
+function sameCall(found: Identified, asking: AskingEvent, callId?: string) {
+  if (found.status !== 'one' || found.asked.request.kind !== asking.request.kind) return null;
+  const id = found.asked.call.id;
+  if (asking.request.kind !== 'permission' && id !== asking.callId) return null;
+  if (callId !== undefined && id !== callId) return null;
+  return found.asked;
 }
 
 /** Why a request can never be checked against a screen (cut at rest, or no call id). */
 const uncheckable = (asking: AskingEvent) =>
-  !asking.callId || (asking.request.kind !== 'permission' && !!asking.request.truncated);
+  asking.request.kind !== 'permission' && (!asking.callId || !!asking.request.truncated);
+
+/** What the card may show of a screen: the same, with secrets hidden (matching keeps the raw). */
+function shown(subject: PromptSubject): PromptSubject {
+  const hide = (text: string) => redactStrict(text, Infinity, getLocale());
+  return {
+    title: subject.title,
+    ...(subject.command !== undefined ? { command: hide(subject.command) } : {}),
+    ...(subject.path !== undefined ? { path: hide(subject.path) } : {}),
+    ...(subject.url !== undefined ? { url: hide(subject.url) } : {}),
+  };
+}
 
 /**
  * What the card may offer for the open request: the dialog's one-shot choices once the screen
@@ -102,12 +125,13 @@ export async function inspectPrompt(
     agent: adapter.agent,
     kind: asking.request.kind,
     eventId: asking.id,
+    callId: asked.call.id,
     choices: adapter.choices(state),
     ...(adapter.hasMore(state) ? { more: true } : {}),
     ...(asked.request.kind === 'question'
       ? { other: adapter.takesText(state, asked.request) }
       : {}),
-    ...(asked.subject ? { subject: asked.subject } : {}),
+    ...(asked.subject ? { subject: shown(asked.subject) } : {}),
   };
 }
 
@@ -115,7 +139,14 @@ export async function inspectPrompt(
 export function readChoice(asking: AskingEvent, value: unknown): PromptChoice {
   const t = m().prompts.result;
   const c = value as AnswerChoice;
-  if (!c || typeof c !== 'object' || c.eventId !== asking.id || c.kind !== asking.request.kind)
+  if (
+    !c ||
+    typeof c !== 'object' ||
+    c.eventId !== asking.id ||
+    c.kind !== asking.request.kind ||
+    typeof c.callId !== 'string' ||
+    !c.callId
+  )
     throw new TerminalInputError(t.changed);
   if (c.kind === 'question') {
     const request = asking.request;
@@ -182,7 +213,10 @@ export async function answerRequest(
   const state = await look(adapter, target.host);
   if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(where));
   const calls = isDialog(state) ? await target.openCalls() : null;
-  const asked = isDialog(state) && calls ? sameCall(adapter.identify(state, calls), asking) : null;
+  const asked =
+    isDialog(state) && calls
+      ? sameCall(adapter.identify(state, calls), asking, (value as AnswerChoice).callId)
+      : null;
   if (!asked) throw new TerminalInputError(t.changed);
   const outcome = await adapter.answer(target.host, asked, choice, () => target.stillThere());
   if (outcome.status === 'refused') {
