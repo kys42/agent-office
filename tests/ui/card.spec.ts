@@ -246,10 +246,67 @@ test('The card menu holds the rest, and works from the keyboard', async ({ page 
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 
-test('Without a live terminal the chat box says why', async ({ page }) => {
+test('Without a terminal found the chat box still takes writing; the send says why', async ({
+  page,
+}) => {
   const aside = await card(page, { terminal: false });
-  await expect(aside.locator('.card-composer')).toContainText('입력할 수 있는 터미널이 없어요');
-  await expect(aside.locator('.card-composer textarea')).toHaveCount(0);
+  const box = aside.locator('.card-composer textarea');
+  await expect(box).toBeEditable();
+  await expect(aside.locator('.card-composer')).toContainText('보낼 때 다시 확인해요');
+  // The desktop app looks again on send and refuses: the reason shows, the text stays.
+  await page.evaluate(() => {
+    (window as any).office.send = async () => {
+      throw new Error('이 세션의 터미널을 찾지 못했어요');
+    };
+  });
+  await box.fill('테스트 돌려 줘');
+  await box.press('Enter');
+  await expect(aside.getByRole('alert')).toContainText('터미널을 찾지 못했어요');
+  await expect(box).toHaveValue('테스트 돌려 줘');
+  await expect(aside.locator('.message-pending')).toHaveCount(0);
+});
+
+test('Not waiting for input as last seen, a send still goes: the desktop app checks again', async ({
+  page,
+}) => {
+  const aside = await card(page, { canSend: false });
+  const box = aside.locator('.card-composer textarea');
+  await box.fill('계속해');
+  await box.press('Enter');
+  await expect.poll(() => page.evaluate(() => (window as any).sent.length)).toBe(1);
+});
+
+test('Text in the prompt: send it as it is, or clear it and send mine', async ({ page }) => {
+  const aside = await card(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.send = async (id: string, text: string, opts?: { replaceDraft?: string }) => {
+      if (!opts?.replaceDraft)
+        return {
+          status: 'needs-confirm',
+          draft: 'run the tests',
+          agent: 'Claude',
+          maybeSuggestion: true,
+        };
+      w.sent.push([id, text, opts.replaceDraft]);
+      return { status: 'sent', message: '보냈어요' };
+    };
+  });
+  const box = aside.locator('.card-composer textarea');
+  await box.fill('내 글');
+  await box.press('Enter');
+  await aside.getByRole('button', { name: '이 글 그대로 보내기' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).sent.at(-1)))
+    .toEqual(['demo:0', 'run the tests', 'run the tests']);
+  // What I wrote stays for later.
+  await expect(box).toHaveValue('내 글');
+  await box.press('Enter');
+  await aside.getByRole('button', { name: '지우고 내 글 보내기' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).sent.at(-1)))
+    .toEqual(['demo:0', '내 글', 'run the tests']);
+  await expect(box).toHaveValue('');
 });
 
 test('A colleague waiting for the person makes the terminal button the primary one', async ({

@@ -1247,7 +1247,8 @@ export function Inspector({
                 {resumeLabel}
               </button>
             </div>
-            {live ? (
+            {/* Always open to writing where a terminal can exist; the send checks again. */}
+            {locatable && api.send ? (
               <TerminalSend
                 key={s.id}
                 chat

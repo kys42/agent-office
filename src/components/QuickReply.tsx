@@ -107,6 +107,7 @@ export function QuickReply({
           blocked={blocked}
           onJump={target.canFocus ? onJump : undefined}
           onConfirm={() => void reply.confirm()}
+          onSendDraft={() => void reply.sendDraft()}
           onCancel={() => {
             reply.cancel();
             field.current?.focus({ preventScroll: true });

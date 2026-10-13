@@ -767,6 +767,26 @@ test('Orca reporting the composer apart (draft) is read as the prompt', async ()
   assert.ok(!typedAny(calls));
 });
 
+test('On Orca, only the suggestion in the prompt: confirmed, it is typed over and sent', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Orca reports the suggestion in `draft` like typing; keys never touch it.
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: (typed) => typed || 'run the tests' });
+    const backups: string[] = [];
+    const backup = async (text: string) => {
+      backups.push(text);
+    };
+    const first = await sendToTerminal(orcaLive(), 'hi', deps, { backup });
+    assert.equal(first.status, 'needs-confirm');
+    const result = await sendToTerminal(orcaLive(), 'hi', deps, {
+      backup,
+      replaceDraft: 'run the tests',
+    });
+    assert.equal(result.status, 'sent');
+    assert.ok(sent(calls));
+    assert.deepEqual(backups, ['run the tests']);
+  });
+});
+
 test('A faint suggestion in the tmux prompt is typed over without asking', async () => {
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     const { deps, calls } = fakeDeps(dir, {
@@ -869,8 +889,8 @@ test('A prompt that cannot be emptied gets nothing typed and nothing sent', asyn
     assert.equal(log[1], 'clipboard:half-written idea');
     assert.ok(log.includes('clear'));
     assert.ok(!typedAny(calls) && !sent(calls));
-    // Orca: text that never moved is not taken for a suggestion (the keys may never have
-    // arrived), so nothing is typed.
+    // Orca: text that never moved is probed with one '.'; when even that never shows (the
+    // keys never arrive), nothing more is typed.
     const orca = fakeDeps(dir, { orcaDraft: () => 'half-written idea' });
     await assert.rejects(
       sendToTerminal(orcaLive(), 'hi', orca.deps, {
@@ -879,7 +899,11 @@ test('A prompt that cannot be emptied gets nothing typed and nothing sent', asyn
       }),
       kept,
     );
-    assert.ok(!typedAny(orca.calls) && !sent(orca.calls));
+    const typed = orca.calls.flatMap((c) =>
+      c.args.filter((a) => a.startsWith('--text=') && /[^\x0b\x15]/.test(a.slice(7))),
+    );
+    assert.deepEqual(typed, ['--text=.']);
+    assert.ok(!sent(orca.calls));
     // A clipboard that fails leaves the prompt alone.
     const failing = fakeDeps(dir, { screen: () => claudeScreen('half-written idea') });
     await assert.rejects(

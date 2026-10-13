@@ -218,6 +218,45 @@ export function oneStretchGone(original: string, now: string): boolean {
   return head + tail === now.length;
 }
 
+/**
+ * Text the deletion keys never touched, on a host that cannot show styles. One '.' is typed:
+ * the box holding just '.' means the text was the suggestion (typing replaced it), so the '.'
+ * is deleted and the box is ready. The text with '.' after it means typing arrives but
+ * deletion does not (another key mode): the '.' is taken back and nothing more is tried.
+ * No change at all: the keys never arrive.
+ */
+async function probe(
+  host: ComposerHost,
+  from: ComposerState & { text: string },
+  stuck: ComposerState,
+): Promise<ClearResult> {
+  const original = drawn(from.text);
+  await host.press(['.']);
+  await host.wait(REDRAW_MS);
+  const typed = await inspect(host);
+  const shown = holdsText(typed) ? drawn(typed.text) : '';
+  if (shown === '.') {
+    await host.press(['C-k', 'C-u']);
+    await host.wait(REDRAW_MS);
+    const after = await inspect(host);
+    // The emptied box shows the suggestion again (or nothing).
+    if (readyToType(after) || (holdsText(after) && drawn(after.text) === original))
+      return { status: 'cleared', state: { kind: 'suggestion', text: from.text, inferred: true } };
+    return holdsText(after)
+      ? { status: 'changed', text: after.text, whole: after.whole }
+      : { status: 'failed', state: after };
+  }
+  if (shown === `${original}.`) {
+    await host.press(['BSpace']);
+    await host.wait(REDRAW_MS);
+    return { status: 'failed', state: stuck };
+  }
+  if (holdsText(typed) && shown === original) return { status: 'failed', state: stuck };
+  return holdsText(typed)
+    ? { status: 'changed', text: typed.text, whole: typed.whole }
+    : { status: 'failed', state: typed };
+}
+
 /** Rounds of deletion before giving up, and how long the prompt gets to redraw. */
 const CLEAR_ROUNDS = 60;
 const REDRAW_MS = 120;
@@ -277,7 +316,10 @@ export const claudeCodeComposer: ComposerAdapter = {
             status: 'cleared',
             state: { kind: 'suggestion', text: stranger, inferred: true },
           };
-        // Never moved at all: the keys may not arrive (or it is only the suggestion).
+        // Never moved at all: the suggestion (Orca draws it like typing), or keys that never
+        // arrive. One character typed tells them apart.
+        if (unchanged >= 2 && !moved && !canTell && stranger === null)
+          return probe(host, from, state);
         if (unchanged >= (moved ? 6 : 2)) return { status: 'failed', state };
         continue;
       }

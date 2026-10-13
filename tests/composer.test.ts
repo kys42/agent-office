@@ -203,6 +203,8 @@ function fakePrompt(
     host?: 'tmux' | 'orca';
     /** The keys never arrive. */
     stuck?: boolean;
+    /** Typing arrives, the deletion keys do nothing (another key mode). */
+    noDelete?: boolean;
     height?: number;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
@@ -233,7 +235,17 @@ function fakePrompt(
       pressed.push([...keys]);
       if (!options.stuck)
         for (const key of keys) {
-          if (key === 'C-k') {
+          if (key === '.') {
+            lines[row] = [...lines[row].slice(0, col), '.', ...lines[row].slice(col)];
+            col++;
+          } else if (key === 'BSpace') {
+            if (col > 0) {
+              lines[row] = [...lines[row].slice(0, col - 1), ...lines[row].slice(col)];
+              col--;
+            }
+          } else if (options.noDelete) {
+            continue;
+          } else if (key === 'C-k') {
             if (col < lines[row].length) lines[row] = lines[row].slice(0, col);
             else if (row < lines.length - 1)
               lines.splice(row, 2, [...lines[row], ...lines[row + 1]]);
@@ -416,12 +428,23 @@ test('Text the keys never change is never taken as cleared', async () => {
     status: 'failed',
     state: { kind: 'draft', text: 'hello draft', whole: true },
   });
-  // Orca: text that never moved may be a suggestion, or keys that never arrived: not cleared.
-  for (const options of [{ draft: 'hello draft', stuck: true }, { suggestion: 'run the tests' }]) {
-    const orca = fakePrompt({ ...options, host: 'orca' });
-    const { result } = await clearPrompt(orca);
-    assert.equal(result.status, 'failed', JSON.stringify(options));
-  }
+  // Orca: text that never moved is probed with one '.'. Keys that never arrive: not cleared.
+  const orcaStuck = fakePrompt({ draft: 'hello draft', stuck: true, host: 'orca' });
+  assert.equal((await clearPrompt(orcaStuck)).result.status, 'failed');
+  // Typing arrives but deletion does not: the '.' is taken back, the draft stays as it was.
+  const keyMode = fakePrompt({ draft: 'hello draft', noDelete: true, host: 'orca' });
+  assert.equal((await clearPrompt(keyMode)).result.status, 'failed');
+  assert.equal(keyMode.text(), 'hello draft');
+  assert.deepEqual(keyMode.pressed.slice(-1), [['BSpace']]);
+  // Only the suggestion: typing replaced it, so the box is ready once the '.' is gone.
+  const offered = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
+  const { result, backups } = await clearPrompt(offered);
+  assert.deepEqual(result, {
+    status: 'cleared',
+    state: { kind: 'suggestion', text: 'run the tests', inferred: true },
+  });
+  assert.equal(offered.text(), '');
+  assert.deepEqual(backups, ['run the tests']);
   // A closed prompt (a dialog opened) stops the clearing.
   const closed: ComposerHost = {
     ...fakePrompt({ draft: 'x' }).host,

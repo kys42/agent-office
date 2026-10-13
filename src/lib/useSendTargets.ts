@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TerminalTarget } from '../shared/types';
 import { api, isDesktop } from './api';
 import { isPageHidden, onPageVisibility } from './visibility';
@@ -30,11 +30,25 @@ export function useSendTargets(
   const active = enabled && isDesktop && !!api.terminals && key !== '';
   const [targets, setTargets] = useState<Targets>({});
   const [tick, setTick] = useState(0);
+  // One missed lookup (a terminal busy redrawing, a slow host) keeps the target last seen: the
+  // reply box does not blink away. Two in a row, and it is gone.
+  const misses = useRef<Record<string, number>>({});
   useEffect(() => {
     if (!active) return;
     let valid = true;
     lookup(key.split('\n'))
-      .then((found) => valid && setTargets(found))
+      .then((found) => {
+        if (!valid) return;
+        setTargets((old) => {
+          const next: Targets = { ...found };
+          for (const [id, target] of Object.entries(found)) {
+            if (target) misses.current[id] = 0;
+            else if (old[id] && (misses.current[id] = (misses.current[id] ?? 0) + 1) < 2)
+              next[id] = old[id];
+          }
+          return next;
+        });
+      })
       .catch(() => {
         /* keep what is known; the next poll tries again */
       });
