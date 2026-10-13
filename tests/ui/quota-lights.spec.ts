@@ -75,7 +75,7 @@ test('A desk whose tool used up its limit goes dark, with a badge that explains 
   await expect(tip).not.toContainText('1주');
   // Pressing it never opens the desk.
   await badge.click();
-  await expect(page.locator('.inspector-heading')).toHaveCount(0);
+  await expect(page.locator('.card-head')).toHaveCount(0);
   // From the keyboard too.
   await page.mouse.move(0, 0);
   await expect(tip).toBeHidden();

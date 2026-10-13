@@ -120,43 +120,7 @@
 }
 
 /* Session cost in the inspector */
-.cost-card {
-  display: grid;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 14px;
-  border-radius: var(--r-lg);
-  background: linear-gradient(140deg, var(--accent-soft), transparent 70%), var(--bg-2);
-  border: 1px solid var(--accent-line);
-}
-.cost-card > span {
-  font-size: 11px;
-  color: var(--text-3);
-}
-.cost-card > strong {
-  font-family: var(--font-mono);
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--accent-2);
-}
-.cost-card > b {
-  font-size: 11.5px;
-  color: var(--text-2);
-}
-.cost-card small,
-.cost-card p,
-.cost-card summary {
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--text-3);
-}
-.cost-card summary {
-  cursor: pointer;
-}
-.cost-card a {
-  color: var(--accent);
-}
+
 .working-location code {
   display: block;
   margin-top: 6px;

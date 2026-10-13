@@ -22,24 +22,32 @@ test('Roster is a to-do list: waiting, results, working — and tiles jump to ro
   await expect(page.locator('.session-row.is-hover')).toContainText('모모');
 });
 
-test('Now card routes calls to the original tool and lets results be read in place', async ({
+test('The card routes calls to the original tool and lets results be read in place', async ({
   page,
 }) => {
   await page.goto('/?demo');
   await page.locator('.group-attention .session-row').click();
-  const now = page.getByRole('region', { name: '지금 상태' });
-  await expect(now).toHaveClass(/tone-attention/);
-  await expect(now).toContainText('답변을 기다리고 있어요');
-  await expect(now).toContainText('원래 앱');
+  const card = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  // The panel's 'now' block (its tone and wording) is gone: the card's status line says it is
+  // calling, and the way back to the original tool is the card's main action.
+  await expect(card.locator('.card-head h2')).toHaveAttribute('title', '당근');
+  await expect(card.locator('.card-status')).toHaveClass(/is-calling/);
+  const resume = card.locator('.card-actions').getByRole('button', { name: '재개 명령 복사' });
+  await expect(resume).toHaveClass(/primary/);
   // Demo cannot resume real sessions; the action exists but is honest about it.
-  await expect(now.getByRole('button', { name: '재개 명령 복사' })).toBeDisabled();
+  await expect(resume).toBeDisabled();
   // The roster yields its column to the card; the room stays clickable.
   await page.getByRole('button', { name: '모모, 응답 완료', exact: true }).click();
-  await expect(now).toHaveClass(/tone-result/);
-  await expect(now).toContainText('새 결과가 도착했어요');
-  await now.getByRole('button', { name: '읽음으로 표시' }).click();
+  await expect(card.locator('.card-head h2')).toHaveAttribute('title', '모모');
+  await expect(card.locator('.card-status')).not.toHaveClass(/is-calling/);
+  await expect(resume).not.toHaveClass(/primary/);
+  // The new result is read in place, from the card's news tab.
+  const news = card.getByRole('tab', { name: /^소식/ });
+  await expect(news).toHaveText(/소식 1/);
+  await news.click();
+  await card.getByRole('button', { name: '읽음으로 표시' }).click();
   await expect(page.locator('.inbox-button b')).toHaveText('0');
-  await expect(now).not.toHaveClass(/tone-result/);
+  await expect(news).not.toHaveText(/1/);
   // Reading is a receipt only — the colleague's desk and bubble stay.
   await expect(page.locator('.office-pet[data-session-id="demo:5"]')).toBeVisible();
 });
@@ -56,7 +64,7 @@ test('Command palette finds colleagues and actions without leaving the office', 
   await page.keyboard.type('네모');
   await page.keyboard.press('Enter');
   await expect(palette).toBeHidden();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('네모');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '네모');
   await expect(page.locator('.office-map')).toBeVisible();
   await page.getByRole('button', { name: /동료, 기록, 명령 찾기/ }).click();
   await page.keyboard.type('라운지');
@@ -71,17 +79,17 @@ test('Keyboard triage walks the to-do order and marks results read', async ({ pa
   await page.goto('/?demo');
   await expect(page.locator('.office-pet')).toHaveCount(6);
   await page.keyboard.press('j');
-  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
   await page.keyboard.press('j');
-  await expect(page.locator('.inspector-heading h2')).toHaveText('모모');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '모모');
   await page.keyboard.press('r');
   await expect(page.locator('.inbox-button b')).toHaveText('0');
   // Reading does not reshuffle the cursor mid-triage: K returns, J continues.
   await page.keyboard.press('k');
-  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
   await page.keyboard.press('j');
   await page.keyboard.press('j');
-  await expect(page.locator('.inspector-heading h2')).toHaveText('코코');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '코코');
   await page.keyboard.press('?');
   await expect(page.getByRole('dialog', { name: '키보드 단축키' })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -172,7 +180,7 @@ test('Coming back summarises only what arrived while away', async ({ page }) => 
   await expect(banner).toContainText('자리 비운 5분 동안');
   await expect(banner).toContainText('새 결과 1건');
   await banner.getByRole('button', { name: '바로 보기' }).click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('집사');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '집사');
   await expect(banner).toBeHidden();
 });
 
@@ -184,7 +192,7 @@ test('Single-key shortcuts use physical keys, so they work with the Korean input
   await page.evaluate(() =>
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ㅓ', code: 'KeyJ', bubbles: true })),
   );
-  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
   // Esc inside a field leaves the field first instead of closing the card.
   await page.getByLabel('업무 메모').count();
   await page.getByRole('tab', { name: '기억 메모' }).click();
@@ -442,7 +450,8 @@ test('A colleague can be sent to a custom office area and returned to its projec
 }) => {
   await page.goto('/?demo');
   await page.getByRole('button', { name: '모모, 응답 완료', exact: true }).click();
-  await page.getByRole('button', { name: '구역', exact: true }).click();
+  await page.getByRole('button', { name: '카드 메뉴' }).click();
+  await page.getByRole('menuitem', { name: '구역', exact: true }).click();
   const editor = page.locator('.zone-editor');
   await expect(
     editor.locator('.zone-picker').getByRole('button', { name: /새 구역/ }),
@@ -454,12 +463,14 @@ test('A colleague can be sent to a custom office area and returned to its projec
   await expect(mark).toHaveCount(1);
   await expect(mark).toContainText('리서치');
   await expect(mark).toContainText('1명');
-  await expect(page.locator('.inspector-project')).toContainText('리서치');
+  // The card's title names the area next to the colleague.
+  await expect(page.locator('.card-head h2 small')).toContainText('리서치');
   await page.screenshot({ path: 'test-results/custom-area.png' });
 
   // A second colleague picks the existing area instead of retyping its name.
   await page.getByRole('button', { name: '코코, 일하는 중', exact: true }).click();
-  await page.getByRole('button', { name: '구역', exact: true }).click();
+  await page.getByRole('button', { name: '카드 메뉴' }).click();
+  await page.getByRole('menuitem', { name: '구역', exact: true }).click();
   await expect(
     editor.locator('.zone-picker').getByRole('button', { name: /리서치/ }),
   ).toHaveAttribute('aria-pressed', 'true');
@@ -474,7 +485,8 @@ test('A colleague can be sent to a custom office area and returned to its projec
   await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
 
   await page.getByRole('button', { name: '모모, 응답 완료', exact: true }).click();
-  await page.getByRole('button', { name: '구역', exact: true }).click();
+  await page.getByRole('button', { name: '카드 메뉴' }).click();
+  await page.getByRole('menuitem', { name: '구역', exact: true }).click();
   await page.getByRole('button', { name: /프로젝트 구역으로/ }).click();
   await expect(mark).toContainText('1명');
 });

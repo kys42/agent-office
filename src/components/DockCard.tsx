@@ -10,9 +10,9 @@ import { NoticePagingContext } from '../lib/notice-paging';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
- * Same office core and the very same card as the big office's right panel — only the frame
- * differs: it closes on Esc or when the person clicks elsewhere, and "전체 모드" moves to the
- * big office on that colleague.
+ * Same office core and the very same card as the big office's right column — only the frame
+ * differs: it is moved by its header, closes on Esc or when the person clicks elsewhere, and
+ * "전체 모드" moves to the big office on that colleague.
  */
 export function DockCard() {
   const { t } = useI18n();
@@ -125,7 +125,7 @@ export function DockCard() {
           terminalSend={send.enabled}
           bookmarked={snapshot?.bookmarked?.[session.id]}
           onBookmark={bookmark}
-          variant="card"
+          movable
           keepOpen={keepOpen}
           onKeepOpen={(on) => {
             setKeepOpen(on);

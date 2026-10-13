@@ -60,9 +60,7 @@
   flex-shrink: 0;
   overflow: hidden;
 }
-.pet-edit-button {
-  color: var(--accent);
-}
+
 .pet-customizer {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);

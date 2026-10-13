@@ -161,7 +161,7 @@ test('Persona uses one seat, selects individual runs and retains internal histor
   const picker = page.getByLabel('페르소나의 실행 기록');
   await expect(picker).toHaveValue('cron');
   await picker.selectOption('manual');
-  await expect(page.locator('.inspector-heading h2')).toHaveText('오늘의 요청');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '오늘의 요청');
   await expect(page.locator('.selected-station')).toHaveCount(1);
   expect(await page.locator('.office-pet').getAttribute('data-seat')).toEqual(seat);
   await page.locator('.background-records summary').click();
@@ -169,7 +169,7 @@ test('Persona uses one seat, selects individual runs and retains internal histor
     .locator('.background-records')
     .getByRole('button', { name: /내부 보조 기록/ })
     .click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('내부 보조 기록');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '내부 보조 기록');
   await page.screenshot({ path: '.local/persona-and-history.png', fullPage: true });
 });
 test('The card pin is the colleague pin: a persona pinned on any run reads pinned and unpins whole', async ({
@@ -204,7 +204,7 @@ test('The card pin is the colleague pin: a persona pinned on any run reads pinne
   await expect(desk.locator('.pin-button')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('.office-pet').click();
   await expect(page.getByLabel('페르소나의 실행 기록')).toHaveValue('cron');
-  const card = page.locator('.inspector-top');
+  const card = page.locator('.card-head');
   await expect(card.getByRole('button', { name: '고정 해제' })).toHaveClass(/gold/);
   await card.getByRole('button', { name: '고정 해제' }).click();
   await expect(card.getByRole('button', { name: '사무실에 고정' })).not.toHaveClass(/gold/);
@@ -239,7 +239,7 @@ test('Lounge has independent furniture and pet assets with readable names on nar
     true,
   );
   await page.locator('.rest-pod-open').click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('큐브');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '큐브');
 });
 
 test('Office settings support days until standby and optional automatic archiving', async ({
@@ -313,7 +313,7 @@ test('Helper stays after finishing and retires on main next task, with its resul
   await expect(page.locator('.helper-desk')).toHaveCount(1);
   await expect(page.locator('.helper-result')).toBeVisible();
   await page.locator('.helper-desk').click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('결과 남긴 보조');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '결과 남긴 보조');
   await page.evaluate(() => {
     const w = window as any;
     w.fixture.sessions[0].updatedAt = Date.now();
@@ -326,7 +326,7 @@ test('Helper stays after finishing and retires on main next task, with its resul
     w.publish(structuredClone(w.fixture));
   });
   await expect(page.locator('.helper-desk')).toHaveCount(0);
-  await expect(page.locator('.inspector-heading h2')).toHaveText('결과 남긴 보조');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '결과 남긴 보조');
   await page.locator('.background-records summary').click();
   await expect(
     page.locator('.background-records').getByRole('button', { name: /결과 남긴 보조/ }),

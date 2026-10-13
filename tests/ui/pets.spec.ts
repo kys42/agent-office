@@ -99,13 +99,15 @@ test('One colleague keeps an individual look while defaults change, and reset re
 }) => {
   await page.goto('/?demo');
   await page.locator('.session-row').filter({ hasText: '코코' }).click();
-  await page.getByRole('button', { name: '이 동료 꾸미기' }).click();
+  // The individual look is in the card menu.
+  await page.getByRole('button', { name: '카드 메뉴' }).click();
+  await page.getByRole('menuitem', { name: '이 동료 꾸미기' }).click();
   const dialog = page.getByRole('dialog', { name: '이 동료 꾸미기' });
   await dialog.getByRole('button', { name: '캐릭터 코딩냥', exact: true }).click();
   await dialog.getByRole('button', { name: '색상 복숭아' }).click();
   await dialog.getByRole('button', { name: '장식 베레모' }).click();
   await dialog.getByRole('button', { name: '이 모습으로 저장' }).click();
-  await expect(page.locator('.profile-avatar [data-asset-id="pet.devcat.v1"]')).toHaveCount(1);
+  await expect(page.locator('.card-avatar [data-asset-id="pet.devcat.v1"]')).toHaveCount(1);
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
   await page.getByRole('button', { name: 'Claude 캐릭터 꾸미기' }).click();
@@ -117,11 +119,13 @@ test('One colleague keeps an individual look while defaults change, and reset re
   await expect(page.locator('.office-pet [data-asset-id="pet.devcat.v1"]')).toHaveCount(1);
   await expect(page.locator('.office-pet [data-asset-id="pet.cloud.v1"]')).toHaveCount(2);
   await page.locator('.session-row').filter({ hasText: '코코' }).click();
-  await page.getByRole('button', { name: '이 동료 꾸미기' }).click();
+  // The individual look is in the card menu.
+  await page.getByRole('button', { name: '카드 메뉴' }).click();
+  await page.getByRole('menuitem', { name: '이 동료 꾸미기' }).click();
   await dialog.getByRole('button', { name: '도구 기본 모습으로' }).click();
   await expect(
     page.locator(
-      '.profile-avatar [data-asset-id="pet.cloud.v1"][data-pet-color="butter"][data-pet-accessory="sprout"]',
+      '.card-avatar [data-asset-id="pet.cloud.v1"][data-pet-color="butter"][data-pet-accessory="sprout"]',
     ),
   ).toHaveCount(1);
 });
