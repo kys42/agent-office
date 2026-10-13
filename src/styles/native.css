@@ -1084,6 +1084,50 @@ body.card-mode:not(.is-mac) .dock-card {
 .inspector-card .message-user .message-bubble {
   border-radius: 16px 16px 5px 16px;
 }
+/* A run from the same side reads as one: later bubbles sit close, and who and when (with copy
+   and bookmark) only appear on hover. */
+.inspector-card .conversation-message.is-continued {
+  position: relative;
+  margin-top: -8px;
+}
+.inspector-card .conversation-message.is-continued .message-meta {
+  position: absolute;
+  top: -9px;
+  left: 2px;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.inspector-card .conversation-message.message-user.is-continued .message-meta {
+  left: auto;
+  right: 2px;
+}
+.inspector-card .conversation-message.is-continued .message-meta :is(b, .message-category) {
+  display: none;
+}
+.inspector-card .conversation-message.is-continued:is(:hover, :focus-within) .message-meta {
+  opacity: 1;
+  pointer-events: auto;
+}
+.inspector-card .conversation-message.is-continued .message-bubble {
+  border-radius: 5px 16px 16px 5px;
+}
+.inspector-card .conversation-message.message-user.is-continued .message-bubble {
+  border-radius: 16px 5px 5px 16px;
+}
+/* A long pause, or a new day, between messages. */
+.conversation-pause {
+  align-self: center;
+  margin: 4px 0 -2px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-3);
+}
 .conversation-hidden-note {
   margin: 8px 0 0;
   font-size: 10.5px;
