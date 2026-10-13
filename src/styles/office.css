@@ -1218,10 +1218,9 @@
 .bubble-new.unread .bubble-exposure {
   color: #b02a44;
 }
-.speech-copy b {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.speech-text {
+  display: block;
+  max-height: calc(var(--speech-lines, 2) * 1lh);
   overflow: hidden;
   font-size: 11px;
   font-weight: 600;

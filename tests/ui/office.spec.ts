@@ -29,7 +29,9 @@ test('Public progress leads office, roster and inspector while tool names stay s
   }, fixture);
   await page.goto('/');
   const bubble = page.locator('.speech-bubble').filter({ hasText: '로그인 오류를 재현' });
-  await expect(bubble.locator('b')).toHaveText('로그인 오류를 재현하고 원인을 확인하고 있어요.');
+  await expect(bubble.locator('.speech-text')).toHaveText(
+    '로그인 오류를 재현하고 원인을 확인하고 있어요.',
+  );
   await expect(bubble.locator('em')).toContainText('터미널');
   await expect(page.locator('.session-row').filter({ hasText: '코코' })).toContainText(
     '로그인 오류를 재현',

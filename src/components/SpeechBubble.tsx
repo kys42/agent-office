@@ -29,7 +29,7 @@ import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
 import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/speech';
 import { ago } from '../lib/format';
-import { InlineMarkdown } from './InlineMarkdown';
+import { BubbleMarkdown } from './BubbleMarkdown';
 import { useI18n } from '../lib/i18n';
 import { LinkifiedText } from './WebLink';
 import { api } from '../lib/api';
@@ -105,7 +105,7 @@ export function SpeechBubble({
   const Icon = TONE_ICONS[tone];
   // The person's request and thinking read as themselves; others keep their precise label.
   const heading = tone === 'mine' || tone === 'thought' ? TONE_LABELS[tone] : label;
-  const body = useRef<HTMLElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [ownOpen, setOwnOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const open = expanded ?? ownOpen;
@@ -158,7 +158,19 @@ export function SpeechBubble({
   }, [request?.id]);
   useLayoutEffect(() => {
     const el = body.current;
-    if (el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
+    if (!el || open) return;
+    el.scrollTop = 0;
+    const measureBody = () =>
+      setLong(
+        el.scrollHeight > el.clientHeight + 1 ||
+          [...el.querySelectorAll<HTMLElement>('.bubble-table')].some(
+            (table) => table.scrollWidth > table.clientWidth + 1,
+          ),
+      );
+    measureBody();
+    const watch = new ResizeObserver(measureBody);
+    watch.observe(el);
+    return () => watch.disconnect();
   }, [text, markdown, open, privacy, request?.id]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
@@ -205,7 +217,7 @@ export function SpeechBubble({
         }}
         title={privacy ? t.desk.hidden : `${exposure ? `${exposure} · ` : ''}${text}`}
       >
-        <span className="speech-copy">
+        <div className="speech-copy">
           <small>
             <span className="bubble-label">
               <Icon size={9} strokeWidth={2.6} aria-hidden="true" />
@@ -225,17 +237,17 @@ export function SpeechBubble({
               {!privacy && activity.tool ? ` · ${toolLabel(activity.tool.name)}` : ''}
             </em>
           </small>
-          <b ref={body}>
+          <div className="speech-text" ref={body}>
             {privacy ? (
               MOODS[s.status].label
             ) : markdown ? (
-              <InlineMarkdown text={markdown} />
+              <BubbleMarkdown text={markdown} />
             ) : (
               <LinkifiedText text={text} />
             )}
-          </b>
+          </div>
           {detail && <span className="speech-detail">{detail}</span>}
-        </span>
+        </div>
       </div>
       {open && !privacy && (
         <button
