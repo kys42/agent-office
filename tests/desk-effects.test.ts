@@ -11,7 +11,13 @@ import {
   stationSpeech,
 } from '../src/shared/speech.js';
 import { deskPapers, FOCUS_LABELS, focusLevel, MAX_PAPERS } from '../src/shared/presentation.js';
-import { buildOfficeModel, petSummary } from '../src/shared/office-model.js';
+import {
+  buildOfficeModel,
+  petChoices,
+  petShown,
+  petStep,
+  petSummary,
+} from '../src/shared/office-model.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
 import { setLocale } from '../src/shared/i18n/index.js';
 // These tests assert the original Korean copy: pin the language so results never depend on the
@@ -183,4 +189,25 @@ test('a desk waiting for the person keeps saying so through an arrival', () => {
   const failed = deskSpeech(erroring, [fresh], 3, now);
   assert.equal(failed.bubble?.id, stationSpeech(erroring, [fresh], 3, now).bubble?.id);
   assert.equal(failed.hop, false);
+});
+
+test('the pet steps through visible colleagues in row order and keeps a pick while it is there', () => {
+  const a = make('a', { officeSeat: 1 });
+  const b = make('b', { officeSeat: 2 });
+  const c = make('c', { officeSeat: 3, hiddenAt: now - 1000 });
+  const model = buildOfficeModel(snap([a, b, c]), now);
+  const ids = petChoices(model).map((v) => v.session.id);
+  assert.deepEqual(ids, ['a', 'b'], 'hidden colleagues are left out');
+  const choices = petChoices(model);
+  assert.equal(petStep(choices, 'a', 1)?.session.id, 'b');
+  assert.equal(petStep(choices, 'b', 1)?.session.id, 'a', 'round at the end');
+  assert.equal(petStep(choices, 'a', -1)?.session.id, 'b', 'round at the start');
+  assert.equal(petStep(choices, 'gone', 1)?.session.id, 'a');
+  assert.equal(petStep([], 'a', 1), undefined);
+  const pet = petSummary(model);
+  assert.deepEqual(petShown(choices, pet, 'b'), { view: model.view('b'), chosen: true });
+  // A pick no longer there (hidden, archived) gives way to who speaks or leads.
+  assert.equal(petShown(choices, pet, 'c').chosen, false);
+  assert.equal(petShown(choices, pet, 'c').view?.session.id, pet.lead?.session.id);
+  assert.equal(petShown(choices, pet, null).chosen, false);
 });

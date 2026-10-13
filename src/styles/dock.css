@@ -240,7 +240,8 @@ body.dock-mode {
    the pointer keeps the hover on the way over from either. Under the speech layer (z 6), so
    the bubble's own buttons win where a wide one reaches the column. Hidden, it lets clicks
    through to the desktop instead of catching them unseen. */
-.dock-pet-tools {
+.dock-pet-tools,
+.dock-pet-actions {
   position: absolute;
   top: 20px;
   left: 100%;
@@ -256,7 +257,8 @@ body.dock-mode {
   pointer-events: none;
   transition: opacity 0.15s;
 }
-.dock-pet-tools::before {
+.dock-pet-tools::before,
+.dock-pet-actions::before {
   content: '';
   position: absolute;
   left: 0;
@@ -266,18 +268,76 @@ body.dock-mode {
 }
 /* Keyboard focus shows them; a mouse click (which also focuses) does not keep them up. */
 .dock-pet-anchor:hover .dock-pet-tools,
-.dock-pet-tools:has(:focus-visible) {
+.dock-pet-tools:has(:focus-visible),
+.dock-pet-anchor:hover .dock-pet-actions,
+.dock-pet-actions:has(:focus-visible) {
   opacity: 1;
   pointer-events: auto;
 }
 /* The open reply form spans the pet's width under the bubble: the tools step aside for it. */
-.dock-pet-anchor:has(.quick-reply) .dock-pet-tools {
+.dock-pet-anchor:has(.quick-reply) .dock-pet-tools,
+.dock-pet-anchor:has(.quick-reply) .dock-pet-actions {
   visibility: hidden;
 }
-.dock-pet-tools .icon-btn {
+.dock-pet-actions {
+  left: auto;
+  right: 100%;
+}
+.dock-pet-tools .icon-btn,
+.dock-pet-actions .icon-btn {
   width: 22px;
   height: 22px;
   border-radius: 6px;
+}
+
+/* The arrows beside the pet's body pick the colleague it stands for; shown on hover. */
+.dock-pet-nav {
+  position: absolute;
+  inset: 54px 0 auto;
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.dock-pet-anchor:hover .dock-pet-nav,
+.dock-pet-nav:has(:focus-visible) {
+  opacity: 1;
+}
+.dock-pet-anchor:hover .dock-pet-step,
+.dock-pet-step:focus-visible {
+  pointer-events: auto;
+}
+.dock-pet-step {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 28px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--line-2);
+  background: rgba(17, 18, 22, 0.86);
+  color: #f7ecdc;
+  cursor: pointer;
+  pointer-events: none;
+}
+.dock-pet-step:hover {
+  background: rgba(40, 42, 50, 0.96);
+}
+.dock-pet-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.dock-pet-place {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 3;
+  font-family: var(--font-pixel);
+  font-size: 9px;
+  color: #f7ecdc;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
 /* ───────── Row ─────────
