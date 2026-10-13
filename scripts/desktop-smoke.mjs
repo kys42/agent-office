@@ -230,6 +230,8 @@ try {
     window.office.bookmarks({ sessionIds: ['codex:codex-test'] }),
   );
   assert.equal(persisted.bookmarks.find((b) => b.id === saved.id)?.note, 'Remember this decision');
+  await card.bringToFront();
+  await card.waitForFunction(() => document.hasFocus());
   await card.screenshot({ path: '.local/native-card-memory.png' });
   // The card can be resized, and opens at the size it was given from then on.
   await app.evaluate(({ BrowserWindow }) => {

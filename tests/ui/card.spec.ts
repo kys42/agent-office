@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { OfficeEvent } from '../../src/shared/types';
 
@@ -141,7 +142,7 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   page,
 }) => {
   const aside = await card(page);
-  await expect(aside.locator('.card-head h2')).toContainText('Coco');
+  await expect(aside.locator('.card-head h2')).toContainText('코코');
   // No banners or chips above the conversation.
   await expect(aside.locator('.now-card')).toHaveCount(0);
   await expect(aside.locator('.card-chip')).toHaveCount(0);
@@ -172,7 +173,7 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   // Most recently mentioned first (the service keeps them in the order the chat met them).
   await expect(recent.locator('.artifact-row').first()).toContainText('#89');
   // Answers are signed with the colleague's name, not the tool's.
-  await expect(aside.locator('.message-assistant .message-meta').first()).toContainText('Coco');
+  await expect(aside.locator('.message-assistant .message-meta').first()).toContainText('코코');
   await expect(aside.locator('.message-assistant .message-meta').first()).not.toContainText(
     'Claude Code',
   );
@@ -340,7 +341,7 @@ test('Sharing the screen hides recent work and names but keeps the chat card usa
 }) => {
   const aside = await card(page, { privacy: true });
   await expect(aside.locator('.artifact-list')).toHaveCount(0);
-  await expect(aside.locator('.card-head h2')).not.toContainText('Coco');
+  await expect(aside.locator('.card-head h2')).not.toContainText('코코');
   await expect(aside.locator('.card-composer textarea')).toBeVisible();
 });
 
@@ -365,7 +366,7 @@ test("A helper's card leads back to the colleague it works for", async ({ page }
   const parent = aside.getByRole('button', { name: /부모 작업/ });
   await expect(parent).toBeVisible();
   await parent.click();
-  await expect(aside.locator('.card-head h2')).toContainText('Coco');
+  await expect(aside.locator('.card-head h2')).toContainText('코코');
 });
 
 test('Pressing the header moves the card; its buttons do not', async ({ page }) => {
