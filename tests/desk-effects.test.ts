@@ -205,9 +205,9 @@ test('the pet steps through visible colleagues in row order and keeps a pick whi
   assert.equal(petStep(choices, 'gone', 1)?.session.id, 'a');
   assert.equal(petStep([], 'a', 1), undefined);
   const pet = petSummary(model);
-  assert.deepEqual(petShown(model, pet, 'b'), { view: model.view('b'), chosen: true });
+  assert.deepEqual(petShown(choices, pet, 'b'), { view: model.view('b'), chosen: true });
   // A pick no longer there (hidden, archived) gives way to who speaks or leads.
-  assert.equal(petShown(model, pet, 'c').chosen, false);
-  assert.equal(petShown(model, pet, 'c').view?.session.id, pet.lead?.session.id);
-  assert.equal(petShown(model, pet, null).chosen, false);
+  assert.equal(petShown(choices, pet, 'c').chosen, false);
+  assert.equal(petShown(choices, pet, 'c').view?.session.id, pet.lead?.session.id);
+  assert.equal(petShown(choices, pet, null).chosen, false);
 });

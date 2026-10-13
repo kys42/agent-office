@@ -293,11 +293,11 @@ export function petChoices(model: OfficeModel): ResidentView[] {
  * still there and nobody else just spoke; otherwise who speaks, or the lead.
  */
 export function petShown(
-  model: OfficeModel,
+  choices: ResidentView[],
   pet: Pick<ReturnType<typeof petSummary>, 'speaker' | 'lead'>,
   chosen: string | null,
 ): { view: ResidentView | undefined; chosen: boolean } {
-  const picked = chosen ? petChoices(model).find((v) => v.session.id === chosen) : undefined;
+  const picked = chosen ? choices.find((v) => v.session.id === chosen) : undefined;
   if (picked) return { view: picked, chosen: true };
   return { view: pet.speaker?.view ?? pet.lead, chosen: false };
 }

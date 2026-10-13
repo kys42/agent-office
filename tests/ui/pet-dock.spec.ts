@@ -22,7 +22,15 @@ async function bridge(page: Page, snapshot: Snapshot) {
         };
         return () => {};
       },
-      notices: async () => structuredClone(w.fixture),
+      // Receipts apply like the service: closing a bubble records dismissedAt.
+      notices: async (receipts: any[], action: string) => {
+        w.fixture.notices = w.fixture.notices.map((n: any) =>
+          action === 'dismiss' && receipts.some((r) => r.id === n.id)
+            ? { ...n, dismissedAt: Date.now() }
+            : n,
+        );
+        return structuredClone(w.fixture);
+      },
       terminalSend: async () => true,
       send: async () => ({ status: 'sent', message: 'sent' }),
       jump: async (id: string) => {
@@ -135,4 +143,34 @@ test('Someone who just spoke takes the pet back from a pick', async ({ page }) =
   await page.evaluate(() => (window as any).push());
   await expect(page.locator('.desk-pet.is-speaking')).toBeVisible({ timeout: 15_000 });
   await expect(shownName(page)).toHaveText(speaker.alias!);
+});
+
+test('A reply started on what the pet showed stays when the pointer leaves', async ({ page }) => {
+  await bridge(page, quiet());
+  await page.goto('/#mini');
+  await page.locator('.dock-pet-anchor').hover();
+  const speech = page.locator('.dock-pet-speech');
+  await speech.locator('.bubble-reply').click();
+  const form = speech.locator('.quick-reply');
+  await form.locator('textarea').fill('이어서 해 줘');
+  await page.mouse.move(5, 5);
+  await expect(form.locator('textarea')).toHaveValue('이어서 해 줘');
+});
+
+test('A reply on the last thing said (a closed bubble shown again) stays too', async ({ page }) => {
+  await bridge(page, quiet());
+  await page.goto('/#mini');
+  const anchor = page.locator('.dock-pet-anchor');
+  const speech = page.locator('.dock-pet-speech');
+  await anchor.hover();
+  await speech.locator('.speech-bubble').hover();
+  await page.getByRole('button', { name: /말풍선 접기/ }).click();
+  await page.mouse.move(5, 5);
+  // Pointed at again: what it said last, as a peek, still answerable.
+  await anchor.hover();
+  await expect(speech.locator('.speech-bubble')).toBeVisible();
+  await speech.locator('.bubble-reply').click();
+  await speech.locator('.quick-reply textarea').fill('그거 다시 해 줘');
+  await page.mouse.move(5, 5);
+  await expect(speech.locator('.quick-reply textarea')).toHaveValue('그거 다시 해 줘');
 });

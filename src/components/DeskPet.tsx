@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -82,13 +82,17 @@ export function DeskPet({
   useEffect(() => {
     if (spoke) setChosen(null);
   }, [spoke]);
-  const choices = status ? [] : petChoices(model);
-  const shown = status ? { view: undefined, chosen: false } : petShown(model, pet, chosen);
+  // Laid out once per change of who is drawn (not per pointer move), as the row does.
+  const all = useMemo(() => petChoices(model), [model.scene]);
+  const choices = status ? [] : all;
+  const shown = status ? { view: undefined, chosen: false } : petShown(choices, pet, chosen);
   const view = shown.view;
   const id = view?.session.id ?? null;
-  const place = choices.findIndex((v) => v.session.id === id) + 1;
+  // A helper speaking stands at its colleague's place among the arrows.
+  const at = view?.session.attachedTo ?? id;
+  const place = choices.findIndex((v) => v.session.id === at) + 1;
   const step = (by: -1 | 1) => {
-    const next = petStep(choices, id ?? undefined, by);
+    const next = petStep(choices, at ?? undefined, by);
     if (next) setChosen(next.session.id);
   };
   const [hover, setHover] = useState(false);
@@ -116,7 +120,8 @@ export function DeskPet({
   const replying = !!key && replyFor === key;
   // Pointing at the pet shows what its colleague says — or the last thing it said, as a desk
   // does; otherwise it speaks only what just arrived.
-  const pointing = hover && !closed;
+  // An unfolded or replying bubble (a peek too) stays without the pointer, as on a desk.
+  const pointing = (hover || expanded || replying) && !closed;
   const reveal = pointing || expanded || replying;
   const speech =
     view && said
@@ -148,17 +153,32 @@ export function DeskPet({
     const say = notify ?? (() => {});
     jumpOrCopy(sessionId, say).catch((e) => say((e as Error).message));
   };
-  // Left and right pick the colleague before or after, as the row's arrows do.
+  // Left and right pick the colleague before or after, as the row's arrows do — never from a
+  // reply being written (its form keeps focus after Esc) or with a modifier held.
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (e.isComposing || e.defaultPrevented || e.metaKey || e.altKey || e.ctrlKey || e.shiftKey)
+      return;
+    if (e.target instanceof Element && e.target.closest('input, textarea, select, .quick-reply'))
+      return;
+    if (choices.length < 2) return;
+    e.preventDefault();
+    step(e.key === 'ArrowLeft' ? -1 : 1);
+  });
   useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.isComposing || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
-      if (e.target instanceof Element && e.target.closest('input, textarea, select')) return;
-      e.preventDefault();
-      step(e.key === 'ArrowLeft' ? -1 : 1);
+    const key = (e: KeyboardEvent) => onKey(e);
+    // The pointer leaving the window fast may skip the anchor's own leave.
+    const left = () => {
+      setHover(false);
+      setClosed(false);
     };
     window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  });
+    document.addEventListener('mouseleave', left);
+    return () => {
+      window.removeEventListener('keydown', key);
+      document.removeEventListener('mouseleave', left);
+    };
+  }, []);
   const lead = view ?? pet.lead;
   const dark = !status && !speaks && !!lead?.quota && dimsDesk(lead.session, lead.pose.working);
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -173,7 +193,10 @@ export function DeskPet({
     <div className="desk-pet-stage" style={PET_SIZE}>
       <div
         className="dock-pet-anchor"
-        onMouseEnter={() => setHover(true)}
+        // Only what is drawn counts: the window's see-through edges let the pointer pass by.
+        onMouseOver={(e) => {
+          if (e.target instanceof Element && e.target.closest('[data-solid]')) setHover(true);
+        }}
         onMouseLeave={() => {
           setHover(false);
           setClosed(false);
@@ -264,22 +287,20 @@ export function DeskPet({
         {/* As beside a desk of the row: this colleague's card and terminal, left of the pet. */}
         {view && (
           <div className="dock-pet-actions" data-solid>
-            {view && (
-              <button
-                className="icon-btn"
-                aria-label={d.openCard}
-                title={d.openCardTitle}
-                onClick={(e) =>
-                  void openColleague(bubble?.sessionId ?? view.session.id, {
-                    anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                    news: !!bubble,
-                  })
-                }
-              >
-                <PanelRightOpen size={12} />
-              </button>
-            )}
-            {view && deskTarget?.canFocus && api.jump && (
+            <button
+              className="icon-btn"
+              aria-label={d.openCard}
+              title={d.openCardTitle}
+              onClick={(e) =>
+                void openColleague(bubble?.sessionId ?? view.session.id, {
+                  anchor: e.currentTarget.closest('.dock-pet-anchor'),
+                  news: !!bubble,
+                })
+              }
+            >
+              <PanelRightOpen size={12} />
+            </button>
+            {deskTarget?.canFocus && api.jump && (
               <button
                 className="icon-btn"
                 aria-label={t.terminal.jumpToTerminal(who?.name ?? d.someone)}
