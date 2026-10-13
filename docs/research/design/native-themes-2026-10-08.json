@@ -1,0 +1,26 @@
+{
+  "id": "native-themes-2026-10-08",
+  "round": 3,
+  "version": 1,
+  "date": "2026-10-08",
+  "scope": "앱 창 전체(창 크롬·탐색·툴바·버튼·패널·사무실)를 네이티브 앱처럼 다시 그린 정적 시안",
+  "viewport": "1280x800 창, 좁은 화면은 비례 축소",
+  "preview": "index.html",
+  "source": "source/native-themes.src.html",
+  "build": "source/build.py",
+  "data": "모든 시안이 같은 데모 동료 6명과 같은 상황을 사용. 실제 세션·사용량 아님",
+  "themes": [
+    { "id": "sonoma", "name": "순정 맥", "en": "Sonoma Native", "status": "선택안 · 구현 진행", "preview": "previews/sonoma.png", "anchor": "index.html#sonoma" },
+    { "id": "toy", "name": "책상 위 기계", "en": "Desk Toy", "status": "탐색", "preview": "previews/toy.png", "anchor": "index.html#toy" },
+    { "id": "plat", "name": "픽셀 운영체제", "en": "Platinum OS", "status": "탐색", "preview": "previews/plat.png", "anchor": "index.html#plat" },
+    { "id": "studio", "name": "스튜디오 트랙", "en": "Studio Tracks", "status": "탐색", "preview": "previews/studio.png", "anchor": "index.html#studio" },
+    { "id": "note", "name": "업무 수첩", "en": "Notebook", "status": "탐색", "preview": "previews/note.png", "anchor": "index.html#note" },
+    { "id": "glass", "name": "유리 디오라마", "en": "Glass Diorama", "status": "탐색", "preview": "previews/glass.png", "anchor": "index.html#glass" }
+  ],
+  "feedback": [
+    { "date": "2026-10-08", "text": "기존 UI가 그라데이션 다크 웹처럼 느껴짐. 네이티브 앱처럼 독창적인 테마 요청" },
+    { "date": "2026-10-08", "text": "순정 맥 선택. 최신 코드 기준으로 실제 동작하는 리디자인 진행" }
+  ],
+  "assets": ["public/sprites/{claude,codex,openclaw}.png", "node_modules/galmuri/dist/Galmuri11.woff2 (OFL-1.1)"],
+  "fonts": "Google Fonts: Gothic A1, Gowun Batang, Gowun Dodum, IBM Plex Mono, IBM Plex Sans KR, Noto Sans KR. 오프라인에서는 시스템 글꼴로 대체됨"
+}
