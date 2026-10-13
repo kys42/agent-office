@@ -9,8 +9,7 @@
   background: var(--grouped);
   border-left: 0.5px solid var(--line-2);
 }
-.panel-tabs,
-.inspector-top {
+.panel-tabs {
   position: relative;
   flex-shrink: 0;
   height: var(--bar-h);
@@ -21,9 +20,7 @@
   border-bottom: 0.5px solid var(--line-2);
   -webkit-app-region: drag;
 }
-.panel-tabs button,
-.inspector-top button,
-.inspector-top a {
+.panel-tabs button {
   -webkit-app-region: no-drag;
 }
 .roster > .panel-tabs {
@@ -33,9 +30,7 @@
 .news-inbox > .panel-tabs {
   padding: 0 10px 0 16px;
 }
-.inspector-top {
-  padding: 0 8px 0 16px;
-}
+
 .panel-tabs .panel-switch {
   display: inline-flex;
   padding: 2px;
@@ -67,11 +62,6 @@
   line-height: 15px;
   color: #ffffff;
   background: var(--badge);
-}
-.inspector-crumb {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-2);
 }
 
 /* ── Roster as an inset-grouped list ── */
@@ -244,39 +234,7 @@
   color: var(--text-2);
 }
 
-/* ── Inspector: header on the grouped background, cards are white groups ── */
-.inspector-heading {
-  padding: 16px 16px 10px;
-}
-.profile-avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: 15px;
-  background:
-    linear-gradient(180deg, transparent 64%, rgba(0, 0, 0, 0.05) 64%),
-    linear-gradient(180deg, var(--face-hi), var(--face-lo));
-  box-shadow: 0 0 0 0.5px var(--line-2);
-}
-.inspector-heading h2 {
-  font-family: var(--font-display);
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-}
-.relation-strip > span,
-.relation-strip > button {
-  height: 22px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--bg-2);
-  box-shadow: 0 0 0 0.5px var(--line-2);
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-.relation-strip > button {
-  font-family: var(--font-ui);
-  color: var(--accent);
-}
+/* ── Inspector: cards are white groups on the grouped background ── */
 .inspector-tabs {
   margin: 2px 16px 10px;
   padding: 2px;
@@ -307,55 +265,15 @@
 .inspector-scroll {
   padding: 4px 16px 18px;
 }
-.now-card,
-.progress-summary,
 .artifact-card,
-.detail-section dl,
-.usage-grid,
-.related-runs,
 .completion-button,
-.activity-evidence,
-.news-item,
-.source-note {
+.news-item {
   background: var(--bg-2);
   border: 0;
   border-radius: 10px;
   box-shadow: 0 0 0 0.5px var(--line-2);
 }
-.now-card.tone-attention {
-  background: color-mix(in srgb, var(--st-call) 7%, var(--bg-2));
-  box-shadow:
-    0 0 0 0.5px color-mix(in srgb, var(--st-call) 35%, transparent),
-    inset 3px 0 0 var(--st-call);
-}
-.now-card.tone-result {
-  background: color-mix(in srgb, var(--st-done) 7%, var(--bg-2));
-  box-shadow:
-    0 0 0 0.5px color-mix(in srgb, var(--st-done) 35%, transparent),
-    inset 3px 0 0 var(--st-done);
-}
-.now-card.tone-working {
-  background: var(--bg-2);
-  box-shadow:
-    0 0 0 0.5px var(--line-2),
-    inset 3px 0 0 var(--st-work);
-}
-.detail-section dl > div + div,
-.usage-grid > div + div {
-  border-color: var(--line-2);
-}
-.detail-section h3 {
-  margin: 0 0 6px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: var(--text-2);
-}
-.path-copy {
-  background: var(--bg-2);
-  border: 0;
-  box-shadow: 0 0 0 0.5px var(--line-2);
-}
+
 .notes-editor textarea {
   background: var(--field);
   border: 0.5px solid var(--control-line);
@@ -364,14 +282,6 @@
 .notes-editor textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
-}
-.inspector-actions {
-  background: var(--grouped);
-  border-top: 0.5px solid var(--line-2);
-}
-.inspector-actions > .button.primary {
-  height: 30px;
-  font-size: 13px;
 }
 
 /* ── Conversation: Messages-style bubbles ── */
@@ -743,10 +653,6 @@ body.dock-mode {
     0 2px 8px -2px rgba(0, 0, 0, 0.4);
 }
 
-/* The office panel's top bar inside a card never drags (the chat card drags by its header). */
-.dock-card .inspector-top {
-  -webkit-app-region: no-drag;
-}
 /* Dialogs can rise into the window's top drag strip; keep their controls clickable. */
 .modal,
 .palette,
@@ -791,8 +697,8 @@ body.dock-mode {
 }
 
 /* ── Card window as a glass chat (Issue #86): one header line with its tools, recent work, tabs
-   with the progress switch, the conversation, and actions + chat box at the bottom. Only
-   `.inspector-card`; the office panel keeps its layout. On macOS the window itself is vibrant
+   with the progress switch, the conversation, and actions + chat box at the bottom. The big
+   office's right column is this same card. On macOS the card window itself is vibrant
    (desktop/main.ts), so the card is translucent over it. ── */
 /* One thin tint over the window's material (two layers made it ~77% opaque: it read as white). */
 body.card-mode.is-mac,
@@ -830,6 +736,30 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 .inspector-card .card-head :is(button, input, form, .card-menu) {
   cursor: auto;
+}
+/* In the big office the card is the right column: its header lines up with the toolbar and,
+   like the toolbar, moves the window (the card window instead follows the cursor). */
+.app-body > .inspector-card {
+  gap: 0;
+  padding: 0;
+  background: var(--grouped);
+}
+.app-body > .inspector-card .card-head {
+  height: var(--bar-h);
+  flex-shrink: 0;
+  padding-block: 0;
+  cursor: auto;
+  -webkit-app-region: drag;
+}
+.app-body
+  > .inspector-card
+  .card-head
+  :is(button, input, form, .card-menu, .card-avatar, .card-title) {
+  -webkit-app-region: no-drag;
+}
+/* The name can be selected and its full text read on hover (drag regions take the mouse). */
+.app-body > .inspector-card .card-title {
+  user-select: text;
 }
 .inspector-card .card-head .icon-btn.gold {
   color: var(--st-error);
@@ -1186,7 +1116,23 @@ body.card-mode:not(.is-mac) .dock-card {
 .card-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+.card-request {
+  max-height: 45vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.card-request .request-card {
+  margin: 0 0 8px;
+}
+.card-request:empty {
+  display: none;
+}
+.card-calling-note {
+  font-size: 11px;
+  color: var(--st-call);
 }
 .card-action {
   height: 28px;

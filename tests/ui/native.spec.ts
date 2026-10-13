@@ -30,9 +30,9 @@ test('Sidebar to-do items open the first teammate of that group', async ({ page 
   await page.goto('/?demo&lang=ko');
   const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
   await sidebar.getByRole('button', { name: /나를 기다려요/ }).click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
   await sidebar.getByRole('button', { name: /확인할 결과/ }).click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('모모');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '모모');
 });
 
 test('Sidebar projects filter the roster without moving desks', async ({ page }) => {
@@ -137,7 +137,7 @@ test('With a card open in a narrow window the toolbar buttons stay clickable', a
     await page.goto('/?demo&lang=ko');
     const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
     await sidebar.getByRole('button', { name: /나를 기다려요/ }).click();
-    await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+    await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
     const covered = await page.locator('.toolbar button:visible').evaluateAll((buttons) =>
       buttons
         .map((b) => {
@@ -157,7 +157,7 @@ test('A to-do item seen from the lounge brings the office back with the card', a
   await sidebar.getByRole('button', { name: /대기 라운지/ }).click();
   await expect(page.locator('.toolbar-title h1')).toHaveText('대기 라운지');
   await sidebar.getByRole('button', { name: /나를 기다려요/ }).click();
-  await expect(page.locator('.inspector-heading h2')).toHaveText('당근');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
   await expect(page.getByRole('tab', { name: /^사무실/ })).toHaveAttribute('aria-selected', 'true');
 });
 

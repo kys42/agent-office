@@ -4,7 +4,6 @@ import type { Messages } from '../en';
 import { common } from './common';
 import { app } from './app';
 import { palette } from './palette';
-import { now } from './now';
 import { inspector } from './inspector';
 import { conversation } from './conversation';
 import { memory } from './memory';
@@ -29,7 +28,6 @@ export const ko: Messages = {
   common,
   app,
   palette,
-  now,
   inspector,
   conversation,
   memory,

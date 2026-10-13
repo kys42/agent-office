@@ -103,7 +103,7 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
   await expect(list.locator('.helper-stack-open')).toHaveCount(5);
   await list.locator('.helper-stack-open', { hasText: '조사 4' }).click();
   await expect(list).toHaveCount(0);
-  await expect(page.locator('.inspector-heading h2')).toHaveText(/보조 조사 4/);
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', /보조 조사 4/);
   await expect(stack.locator('.helper-stack-desk')).toHaveClass(/chosen/);
   // Escape closes only the list: the chosen helper stays open in the inspector.
   await stack.locator('.helper-stack-desk').click();
@@ -111,7 +111,7 @@ test('Four or more helpers share one stacked desk whose list opens each of them'
   await expect(list.locator('[aria-current]')).toContainText('조사 4');
   await page.keyboard.press('Escape');
   await expect(list).toHaveCount(0);
-  await expect(page.locator('.inspector-heading h2')).toHaveText(/보조 조사 4/);
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', /보조 조사 4/);
   await page.locator('.office-card').screenshot({ path: '.local/helper-stack-office.png' });
 });
 
@@ -190,7 +190,7 @@ test('One helper can be hidden on its own, by mouse or keyboard, and brought bac
   await expect(page.locator('.helper-desk[data-session-id="demo:helper-0"]')).toHaveCount(0);
   await expect(desks).toHaveCount(2);
   await expect(page.locator('.desk-station[data-station-id="demo:0"]')).toBeVisible();
-  await expect(page.locator('.inspector-heading')).toHaveCount(0);
+  await expect(page.locator('.card-head')).toHaveCount(0);
   // From the keyboard too.
   await page.getByRole('button', { name: '조사 2 · 보조 조사 2 가리기' }).focus();
   await page.keyboard.press('Enter');
@@ -217,7 +217,7 @@ test('The ×N list hides each helper from its own row', async ({ page }) => {
   await expect(stack.locator('.helper-stack-count')).toHaveText('×4');
   await expect(list.locator('.helper-stack-open')).toHaveCount(4);
   await expect(list).not.toContainText('보조 조사 1');
-  await expect(page.locator('.inspector-heading')).toHaveCount(0);
+  await expect(page.locator('.card-head')).toHaveCount(0);
 });
 
 test('The row and floor hide a helper on its own and bring it back from the chip', async ({

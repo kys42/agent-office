@@ -37,10 +37,16 @@ test('Public progress leads office, roster and inspector while tool names stay s
     '로그인 오류를 재현',
   );
   await bubble.click();
-  await expect(page.locator('.progress-summary p')).toHaveText(
+  // The card has no progress summary of its own (the panel's 'now' block is gone): with the card
+  // open, the public progress still leads the desk bubble and the roster, the tool stays secondary.
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '코코');
+  await expect(bubble.locator('.speech-text')).toHaveText(
     '로그인 오류를 재현하고 원인을 확인하고 있어요.',
   );
-  await expect(page.locator('.activity-tool')).toContainText('최근 도구 · 터미널');
+  await expect(bubble.locator('em').filter({ hasText: '터미널' })).toBeVisible();
+  await expect(page.locator('.session-row').filter({ hasText: '코코' })).toContainText(
+    '로그인 오류를 재현',
+  );
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   await page.getByRole('button', { name: '화면 내용 숨기기' }).click();
   await expect(page.locator('.speech-bubble')).not.toContainText(['로그인 오류를 재현']);
@@ -108,7 +114,8 @@ test('Office, editable alias, notes, handoff and keyboard dismissal', async ({ p
   await page.getByRole('button', { name: '코코, 일하는 중', exact: true }).click();
   const panel = page.getByRole('complementary', { name: '동료의 업무 카드' });
   await expect(panel).toBeVisible();
-  await page.getByRole('button', { name: '이름 바꾸기' }).click();
+  await panel.getByRole('button', { name: '카드 메뉴' }).click();
+  await panel.getByRole('menuitem', { name: '이름 바꾸기' }).click();
   await page.getByLabel('새 별명').fill('우리 코코');
   await page.getByRole('button', { name: '별명 저장' }).click();
   await expect(panel.getByRole('heading', { name: '우리 코코' })).toBeVisible();
@@ -386,8 +393,11 @@ test('Waiting and archive rooms restore sessions without moving occupied desks',
   await page.getByRole('tab', { name: /보관 공간/ }).click();
   await expect(page.locator('.room-session h3')).toHaveText('꽃게');
   await page.locator('.room-session-main').click();
-  await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '사무실에 자리 마련하기' })).toBeVisible();
+  const card = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  await expect(card).toBeVisible();
+  // Bringing an archived colleague back is in the card menu.
+  await card.getByRole('button', { name: '카드 메뉴' }).click();
+  await expect(card.getByRole('menuitem', { name: '사무실에 자리 마련하기' })).toBeVisible();
 });
 test('Conversation bubbles expand independently and artifacts are actionable links', async ({
   page,
@@ -399,7 +409,8 @@ test('Conversation bubbles expand independently and artifacts are actionable lin
     'true',
   );
   await expect(page.locator('.message-user .message-meta b')).toHaveText('나');
-  await expect(page.locator('.message-assistant .message-meta b')).toHaveText('Claude Code');
+  // The card names the colleague on its replies (not the provider).
+  await expect(page.locator('.message-assistant .message-meta b')).toHaveText('코코');
   await expect
     .poll(() =>
       page
@@ -413,14 +424,13 @@ test('Conversation bubbles expand independently and artifacts are actionable lin
   await expect(more).toHaveAttribute('aria-expanded', 'true');
   await more.click();
   await expect(more).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.locator('.artifact-card').first()).toHaveAttribute(
-    'href',
-    'https://github.com/example/agent-office/pull/42',
+  // The card's recent work list (newest first): each link opens outside, safely.
+  const pr = page.locator(
+    '.card-recent .artifact-row[href="https://github.com/example/agent-office/pull/42"]',
   );
-  await expect(page.locator('.artifact-card').first()).toHaveAttribute(
-    'rel',
-    'noopener noreferrer',
-  );
+  await expect(pr).toBeVisible();
+  await expect(pr).toHaveAttribute('rel', 'noopener noreferrer');
+  await expect(page.locator('.card-recent .artifact-row')).toHaveCount(2);
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -492,7 +502,11 @@ test('Same branch shares a table and true children use accessible small desks', 
   await page.locator('.helper-desk').click();
   const panel = page.getByRole('complementary', { name: '동료의 업무 카드' });
   await expect(panel.getByRole('heading', { name: /^집사/ })).toBeVisible();
-  await panel.getByRole('button', { name: '부모 작업 · 코코', exact: true }).click();
+  // The parent link lives in the card's details tab.
+  await panel.getByRole('tab', { name: '작업 정보' }).click();
+  const parent = panel.locator('.info-link').filter({ hasText: '부모 작업' });
+  await expect(parent).toContainText('코코');
+  await parent.click();
   await expect(panel.getByRole('heading', { name: /^코코/ })).toBeVisible();
 });
 test('New work effect plays for 15 seconds after a request arrives, never for bootstrap history, and survives re-publishing', async ({
@@ -706,6 +720,8 @@ test('Conversation filters public phases, hides tools by default and preserves e
   }, fixture);
   await page.goto('/');
   await page.getByRole('button', { name: '코코, 일하는 중', exact: true }).click();
+  // The card keeps the conversation filters behind its filter button.
+  await page.getByRole('button', { name: '필터', exact: true }).click();
   const filters = page.getByRole('group', { name: '대화 종류' });
   await expect(page.locator('.work-group')).toHaveCount(0);
   await expect(page.locator('.message-category')).toHaveText([

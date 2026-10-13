@@ -303,9 +303,9 @@ test('When the screen differs (or it is hidden), it says why and offers no butto
   await expect(card.locator('.request-command')).toHaveCount(0);
   await expect(card).toContainText('이 요청인지 확실하지 않아요');
   await expect(card.locator('.request-choice')).toHaveCount(0);
-  // The card's own jump stays there.
+  // The card's own jump stays there, under it.
   await expect(
-    page.getByRole('region', { name: '지금 상태' }).getByRole('button', { name: 'tmux로 이동' }),
+    page.locator('.card-actions').getByRole('button', { name: 'tmux로 이동' }),
   ).toBeVisible();
 });
 
@@ -324,14 +324,15 @@ test('Turned off in Settings: no buttons, the reason, and the jump', async ({ pa
   await expect(card).toContainText('설정에서 답하기를 꺼 두었어요');
   await expect(card.getByRole('button', { name: /Blue/ })).toHaveCount(0);
   await expect(
-    page.getByRole('region', { name: '지금 상태' }).getByRole('button', { name: 'tmux로 이동' }),
+    page.locator('.card-actions').getByRole('button', { name: 'tmux로 이동' }),
   ).toBeVisible();
 });
 
 test('Hidden-screen mode never shows what is asked', async ({ page }) => {
   await desktop(page, BASH, { privacy: true });
   await openCoco(page);
-  await expect(page.locator('.now-card')).toContainText('내용을 숨기고 있어요');
+  // The card opens with the colleague hidden, and nothing of the request.
+  await expect(page.locator('.card-head h2')).toContainText('숨긴 동료');
   await expect(page.locator('.request-card')).toHaveCount(0);
   await expect(page.getByText('echo hi > hello.txt')).toHaveCount(0);
 });
