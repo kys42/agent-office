@@ -1,3 +1,22 @@
+# 2026-10-13 · 입력 대기 내용 보여 주기 + 앱에서 답하기 (PR #132, Issue #127)
+
+- 보여 주기: 질문(AskUserQuestion 질문·선택지)·플랜 승인(ExitPlanMode 플랜)·권한 확인(명령·파일 경로·URL)을 작업 카드·팝업 카드에 표시. Codex는 표시만
+  - 질문·플랜은 `OfficeEvent.request`로 저장(`truncated` 표시). 권한 요청은 도구 이름만 저장하고 명령은 화면에서 읽어 렌더러로만 보냄(저장 안 함)
+- 답하기(Orca/tmux의 Claude Code): 기본 꺼짐, 처음 쓸 때 네이티브 확인창. 질문·플랜 / 권한 따로 켬, `userData/answer-prompts.json`(0600, unset/on/off)
+  - 키는 ↑↓→ Space Enter만. 화살표 하나마다 화면 재확인, Enter는 마지막에 커서·라벨 재확인 뒤 단독. 직접 입력은 붙여넣기 직전 빈 'Type something' 줄 재확인
+  - 버튼은 일회성 선택지만: Yes/No, 플랜 'Yes, manually approve edits'. auto mode·always allow는 "터미널에서 골라 주세요"
+  - 대상 확인: 화면 대화상자가 현재 차례 열린 호출 중 정확히 하나와 맞아야 함(Bash 공백 정규화, 경로 그대로/cwd 상대/~, URL 정규형). 카드에 보인 callId와 다르면 키 안 누름. 플랜은 화면에 보인 플랜 전체가 기록 플랜의 앞부분이어야 함
+  - 검증: 대화상자 닫힘(못 읽으면 닫힘 아님) + 같은 `tool_use_id`의 `tool_result`를 JSONL에서 파싱해 확인
+  - 구조: `desktop/prompts/`(어댑터: claude-code 화면 파서, claude-target 프로세스·소유·기록 확인, unsupported) + 공통 흐름 `desktop/answers.ts` + `src/components/RequestCard.tsx`
+- 비밀값 가리기: 이벤트 글용 `redact()`는 main과 바이트 단위로 같게 유지. 강화 규칙은 `redactStrict()`로 새 필드(질문·플랜, 권한 화면 표시)에만
+  - **주의**: 이벤트 글 가리기를 바꾸면 소식 글·버전이 바뀌어(이벤트 id는 원문 해시라 그대로) 재시작 시 읽은 소식이 안 읽음으로, 알린 적 없는 옛 답변이 새 소식으로 뜸(재현 확인). 넓히려면 `redaction_version` 이동과 함께 별도 작업
+  - 오탐 좁힘: `-u`/`--user`는 curl/wget만, `mysql -p`는 같은 명령 안만, `$`/`${`·숫자 값 제외(MAX_TOKEN=4096, docker -u 1000:1000 등)
+- 한 응답에 호출이 여러 개: 권한 대상은 화면과 맞는 열린 호출, 카드 제목·내용도 그 호출 기준, '보냄' 상태는 호출 id별
+  - 한계(실측): 한 메시지의 병렬 Bash+Write는 첫 확인에 답하기 전까지 기록에 안 써져 첫 Bash는 카드에서 '답할 요청이 없어요'(키 안 누름), 이어지는 Write는 카드에서 답해짐
+- 측정: Claude Code 2.1.296, Orca·tmux에서 세 종류 모두 끝까지 답해짐. 미측정: 긴 플랜 스크롤, MCP·노트북 권한 화면(답하지 않음)
+- 후속: hook 기반 구조화 답하기(3단계), 이벤트 글 가리기 확장(+redaction_version)
+- 리뷰: 독립 Opus 2회 + Codex 4회(1회 용량 부족 재실행). CI는 결제 한도로 안 돌아 로컬 깨끗한 체크아웃 검증(npm test 415, Playwright 178, desktop·mcp)
+
 # 2026-10-13 · 앱 아이콘 시안 보관 (Issue #129)
 
 - 입체5·도트2 원본PNG·프롬프트·비교HTML을 docs/research/design/app-icons-2026-10-13에 보관하고 GitHub 그림 카탈로그와 문서 지도 링크를 추가했다.
