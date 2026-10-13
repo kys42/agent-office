@@ -259,7 +259,36 @@ export interface OfficeEvent {
   excerpt?: boolean;
   lifecycle?: 'started' | 'completed' | 'aborted';
   sourceRef: string;
+  /**
+   * What an open request for input asks: a question or a plan to approve. Optional: absent in
+   * older records and once answered. Permission prompts are never stored here (their tool input
+   * stays out of the store; the desktop app reads what they ask from the screen).
+   */
+  request?: InputRequest;
 }
+/** One option of a question, as the agent wrote it. */
+export interface RequestOption {
+  label: string;
+  description?: string;
+}
+export interface RequestQuestion {
+  /** A short chip-like title (AskUserQuestion `header`). */
+  header?: string;
+  question: string;
+  multiSelect: boolean;
+  options: RequestOption[];
+}
+/**
+ * What a request for input asks: questions (AskUserQuestion, Codex request_user_input) and a
+ * plan to approve (ExitPlanMode), as recorded — agent content (data), redacted and capped at
+ * rest, never translated; `truncated` when a cap cut something (never answered from the app
+ * then). `permission` is only ever derived on read (a live permission prompt): the tool's name,
+ * never its input.
+ */
+export type InputRequest =
+  | { kind: 'question'; questions: RequestQuestion[]; truncated?: true }
+  | { kind: 'plan'; plan: string; planFile?: string; truncated?: true }
+  | { kind: 'permission'; tool: string };
 export interface Activity {
   text: string;
   kind: 'progress' | 'reply' | 'message' | 'request' | 'status';
@@ -517,6 +546,89 @@ export interface JumpResult {
   text: string;
 }
 /**
+ * A one-shot choice drawn on the agent's dialog right now, as the screen shows it: allow this
+ * once (or approve the plan with every edit still asked), or deny. Choices that keep applying
+ * (don't ask again, always allow, switch to auto mode / accept edits) are never offered here.
+ */
+export interface DialogChoice {
+  /** The number the dialog draws in front of it (1-based). */
+  number: number;
+  label: string;
+  role: 'allow' | 'deny';
+}
+/** What a permission prompt on screen is about, read from the screen itself. */
+export interface PromptSubject {
+  /** The dialog's heading, e.g. "Bash command", "Create file", "Fetch". */
+  title: string;
+  command?: string;
+  path?: string;
+  url?: string;
+}
+/** Why a request cannot be answered from the app right now (the card says why and offers Jump). */
+export type PromptUnavailable =
+  | 'unsupported'
+  | 'no-terminal'
+  | 'not-waiting'
+  | 'closed'
+  | 'mismatch'
+  | 'unreadable'
+  | 'no-request'
+  /** The request cannot be checked against a screen (cut at rest, no call id, no transcript). */
+  | 'unverifiable'
+  /** The person turned answering this kind off in Settings. */
+  | 'off';
+/**
+ * The dialog on the session's terminal, read by the desktop app and checked against the open
+ * request it recorded. `ready` only when both say the same (same kind, same question and
+ * option texts, or the same tool and command).
+ */
+export type PromptView =
+  | {
+      status: 'ready';
+      agent: string;
+      kind: InputRequest['kind'];
+      /** The request event the dialog matched. */
+      eventId: string;
+      /** The open call the screen shows: an answer must name it (the screen may move on). */
+      callId: string;
+      /** Plan approval and permission prompts: the one-shot choices, exactly as drawn. */
+      choices: DialogChoice[];
+      /** The dialog also offers choices that keep applying or take words: terminal only. */
+      more?: boolean;
+      /** Questions: per question, whether typed words can be sent (never for multi-select). */
+      other?: boolean[];
+      /**
+       * Permission prompts: the tool of the call the screen shows (the record may mark another
+       * call of the same batch) and what the screen says it does. The card shows these.
+       */
+      tool?: string;
+      subject?: PromptSubject;
+    }
+  | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
+/** One question's answer: picked options (indices into the recorded options) or typed words. */
+export type QuestionAnswer = { options: number[] } | { other: string };
+/** `callId`: the open call the card was shown (PromptView.callId); nothing else is answered. */
+export type AnswerChoice =
+  | { kind: 'question'; eventId: string; callId: string; answers: QuestionAnswer[] }
+  | { kind: 'plan' | 'permission'; eventId: string; callId: string; number: number; label: string };
+export interface AnswerResult {
+  /** `cancelled`: the person declined the first-use confirmation; nothing was sent. */
+  status: 'answered' | 'cancelled';
+  message: string;
+}
+/**
+ * One answering setting: never asked yet (the first answer asks natively), turned on, or turned
+ * off explicitly (no answer buttons until turned on in Settings).
+ */
+export type AnswerSetting = 'unset' | 'on' | 'off';
+/** Desktop profile settings (never shared preferences): off until the person agrees. */
+export interface AnswerSettings {
+  /** Answer questions and plan approvals by keys. */
+  questions: AnswerSetting;
+  /** Answer permission prompts by keys. */
+  permissions: AnswerSetting;
+}
+/**
  * Desk pet window: a small floating pet, the office as one row (zones on rugs), or the
  * floor version (desks standing right on the screen's bottom edge, zones marked by flags).
  */
@@ -599,6 +711,17 @@ export interface OfficeAPI {
    * native confirmation.
    */
   terminalSend?: (enable?: boolean) => Promise<boolean>;
+  /** Desktop only: the dialog on the session's terminal, checked against its open request. */
+  prompt?: (id: string) => Promise<PromptView>;
+  /**
+   * Desktop only: answer the open request by pressing the dialog's keys, after checking the
+   * screen still shows the same request. Off until confirmed once (native dialog in main).
+   */
+  answer?: (id: string, choice: AnswerChoice) => Promise<AnswerResult>;
+  /** Desktop only: read, or change (turning on asks natively), the answering settings. */
+  answerSettings?: (
+    patch?: Partial<Record<keyof AnswerSettings, boolean>>,
+  ) => Promise<AnswerSettings>;
   /**
    * Desktop dock only: open the colleague card at a clicked desk or bubble, or (from the card)
    * close it or go to the full office.

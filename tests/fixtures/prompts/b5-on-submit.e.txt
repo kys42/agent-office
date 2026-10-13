@@ -1,0 +1,40 @@
+
+[38;5;174m ▐[48;5;16m▛███▛█[39m[49m   [1mClaude Code[0m [38;5;246mv2.1.296[39m
+[38;5;174m▝▜[48;5;16m█████[49m█▀[39m  [38;5;246mOpus 5.5 with medium effort · Claude Team[39m
+[38;5;174m ▝▝   ▝▝ [39m  [38;5;246m/…/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-a2[39m
+
+
+[38;5;246m[48;5;237m❯[39m [38;5;231m/clear[39m
+
+[38;5;246m❯ [38;5;231mUse the AskUserQuestion tool to ask me exactly one question "Pick fruits" (header "Fruit") with multiSelect true, [39m
+  [38;5;231moptions Apple, Banana, Cherry, each with a short description. Do nothing else.[39m
+[38;5;246m[49m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+← [38;5;16m[48;5;153m ☒ Fruit [39m[49m ✔ Submit  →
+
+[1m[38;5;231mPick fruits[0m
+
+  [38;5;246m1.[39m [38;5;114m[✔][39m Apple
+         [38;5;246m아삭하고 새콤달콤한 과일[39m
+  [38;5;246m2.[39m [ ] Banana
+         [38;5;246m부드럽고 달콤한 열대 과일[39m
+  [38;5;246m3.[39m [38;5;114m[✔][39m Cherry
+         [38;5;246m작고 빨간 새콤한 과일
+[39m  [38;5;246m4. [39m[ ] [38;5;246mType something[39m
+[38;5;153m❯[39m    [1m[38;5;153mSubmit[0m
+[38;5;246m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · ctrl+g to edit in VS Code · Esc to cancel[39m
+
+
+
+
+
+
+
+
+
+
+
+
+

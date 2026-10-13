@@ -1,0 +1,40 @@
+
+[38;5;174m ▐[48;5;16m▛███▛█[39m[49m   [1mClaude Code[0m [38;5;246mv2.1.296[39m
+[38;5;174m▝▜[48;5;16m█████[49m█▀[39m  [38;5;246mOpus 5.5 with medium effort · Claude Team[39m
+[38;5;174m ▝▝   ▝▝ [39m  [38;5;246m/…/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-e[39m
+
+
+[38;5;246m[48;5;237m❯ [38;5;231mRun the shell command: echo hi[39m
+
+[49m  [38;5;246mRan [1m1[0m[38;5;246m shell command [39m
+
+[38;5;231m⏺[39m [38;5;153mecho hi[39m를 실행했고, [38;5;153mhi[39m가 출력됐습니다.
+
+[38;5;246m✻[39m [38;5;246mSautéed for 6s · done 3:51 PM[39m
+
+[38;5;246m[48;5;237m❯ [38;5;231mRun exactly this shell command with the Bash tool (no other tools): echo hi > hello.txt[39m
+
+[38;5;246m[49m⏺[39m Writing hi to a text file
+[38;5;246m  ⎿  $ echo hi > hello.txt[39m
+
+[38;5;153m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[39m [1m[38;5;153mBash command[0m
+ [1mTip: auto mode handles these prompts for you — choose "switch to auto mode" below[0m
+ [38;5;246mWrite hi to a text file[39m
+[38;5;239m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+[39m echo hi > hello.txt
+[38;5;239m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+[39m Do you want to proceed?
+ [38;5;153m❯[39m [38;5;246m1. [38;5;153mYes[39m
+   [38;5;246m2. [39mYes, and always allow access to [1m/private/tmp/claude-501/-Users-someone-xyz-orca-workspaces-agent-office-global/ec8
+[0m      [1m4eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-e[0m from this project
+   [38;5;246m3. [39mYes, and switch to auto mode[38;5;246m · auto mode handles these prompts for you[39m
+   [38;5;246m4. [39mNo
+
+ [38;5;246mEsc to cancel · Tab to amend[39m
+
+
+
+
+
+

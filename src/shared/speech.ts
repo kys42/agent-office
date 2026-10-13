@@ -1,9 +1,16 @@
 import type { OfficeEvent, OfficeNotice, Session } from './types';
-import { bubbleNotice, isFinalNotice, noticeLabel, unreadNoticeCount } from './notices';
+import {
+  bubbleNotice,
+  isFinalNotice,
+  NOTICE_LABELS,
+  noticeLabel,
+  unreadNoticeCount,
+} from './notices';
 import { activityLabel, messageExcerpt, sessionActivity } from './activity';
 import { isBackground, isHelper } from './residents';
 import { liveLabels } from './labels';
 import { m } from './i18n';
+import { openRequest, requestHeadline } from './requests';
 
 const LIVE = ['work', 'think', 'call', 'error'];
 /**
@@ -166,6 +173,8 @@ export function stationSpeech(
           at: e.at,
           text: () => messageExcerpt(e.text, 800),
         };
+  // A call says what it asks when the record tells (the first question, the plan, the command).
+  const asking = tone === 'attention' ? openRequest(s) : undefined;
   const quoted: QuotedRequest | undefined =
     best && !bubble?.background
       ? { id: best.id, eventId: best.eventId, at: best.at, text: best.text() }
@@ -195,10 +204,14 @@ export function stationSpeech(
     tone,
     activity,
     unread: unreadNoticeCount(news),
-    text: bubble?.text ?? activity.text,
+    // A call says what it asks when the record tells (the first question, the plan, the command).
+    text:
+      (tone === 'attention' && asking ? requestHeadline(asking.request) : undefined) ??
+      bubble?.text ??
+      activity.text,
     /** Original markdown of the spoken message, or null to fall back to the plain `text`. */
-    markdown,
-    label: bubble ? noticeLabel(bubble) : activityLabel(s),
+    markdown: asking ? null : markdown,
+    label: asking ? NOTICE_LABELS.attention : bubble ? noticeLabel(bubble) : activityLabel(s),
     /**
      * A notice bubble always shows. Without any news, live progress shows while the colleague
      * is busy or calling, or when the person reveals it (hover / selection).

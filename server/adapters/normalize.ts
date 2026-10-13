@@ -16,6 +16,7 @@ import { summarizeActivity } from '../../src/shared/activity.js';
 import { runtimeObservation, deriveState } from '../../src/shared/runtime.js';
 import { messagesFor, type Locale } from '../../src/shared/i18n/index.js';
 import { CANONICAL, canonical } from '../../src/shared/canonical.js';
+import { inputRequest } from './requests.js';
 export { deriveState } from '../../src/shared/runtime.js';
 
 type Obj = Record<string, any>;
@@ -59,6 +60,61 @@ export function redact(value: unknown, limit = 6000, locale: Locale = CANONICAL)
     )
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, () => `Bearer ${t.hidden}`)
     .slice(0, limit);
+}
+/** A secret value: never one that already is a placeholder (`[`…) or a variable (`$`…). */
+const VALUE = String.raw`(?![\[$])[^\s"',;}&]+`;
+/**
+ * `redact` plus more secret shapes, for text that has no stored history: the questions and plans
+ * of open requests, and what a permission prompt's screen shows. Event text keeps `redact` as it
+ * was, so the notices built from it (their text and version) never change for existing data.
+ */
+export function redactStrict(value: unknown, limit = 6000, locale: Locale = CANONICAL): string {
+  const t = messagesFor(locale).shared.redaction;
+  const hide = (_: string, prefix: string) => prefix + t.hidden;
+  const text = String(value ?? '')
+    .replace(
+      /\b(?:hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16})\b/g,
+      t.token,
+    )
+    // Environment-style secrets: AWS_SECRET_ACCESS_KEY=…, GITHUB_TOKEN=…, DB_PASSWORD=… — never
+    // a pure number (MAX_TOKEN=4096) or a variable (`${{ secrets.X }}`).
+    .replace(
+      new RegExp(
+        String.raw`\b([A-Z][A-Z0-9_]*_(?:SECRET_ACCESS_KEY|SECRET_KEY|SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)\s*=\s*["']?)(?!\d+(?:[\s"',;}&]|$))${VALUE}`,
+        'g',
+      ),
+      hide,
+    )
+    // Command-line secrets: --password x, --token=x.
+    .replace(
+      new RegExp(
+        String.raw`(--(?:password|passwd|token|secret|api-key|access-token)(?:=|\s+)["']?)${VALUE}`,
+        'gi',
+      ),
+      hide,
+    )
+    // mysql -pSECRET, within the same command only.
+    .replace(
+      new RegExp(
+        String.raw`(\b(?:mysql|mysqldump|mysqladmin|mariadb)\b[^\n;&|]*?\s-p)${VALUE}`,
+        'g',
+      ),
+      hide,
+    )
+    // curl/wget -u user:pass, within the same command only.
+    .replace(
+      new RegExp(
+        String.raw`(\b(?:curl|wget)\b[^\n;&|]*?\s(?:-u|--user)(?:=|\s+)["']?[^\s:"']+:)(?![\[$])[^\s"']+`,
+        'g',
+      ),
+      hide,
+    )
+    // Credentials in an address: scheme://user:pass@host.
+    .replace(
+      /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)(?![[$])[^\s@/]+@/gi,
+      (_, prefix: string) => `${prefix}${t.hidden}@`,
+    );
+  return redact(text, limit, locale);
 }
 export const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
@@ -196,7 +252,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     tool?: string,
     suffix = '',
     metadata: Pick<OfficeEvent, 'phase' | 'lifecycle' | 'callId'> = {},
-  ) => {
+  ): OfficeEvent | undefined => {
     if (!text.trim()) return;
     // An ordinal is local to a transport page, not a native event ID. Using it
     // across continuation files silently overwrites different turns.
@@ -223,7 +279,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     };
     updatedAt = Math.max(updatedAt, at);
     startedAt = Math.min(startedAt, at);
+    return events[index];
   };
+  // Each tool call's input, by event id: read once the pass knows which calls are still open.
+  const inputs = new Map<string, unknown>();
   const set = (s: Mood, why: string) => {
     status = s;
     reason = why;
@@ -387,7 +446,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
         const tool = String(p.name ?? 'tool');
-        add(
+        const e = add(
           { ...r, id: p.call_id ?? p.id },
           at,
           'tool',
@@ -396,6 +455,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           '',
           call(p.call_id),
         );
+        if (e?.intent === 'request-input') inputs.set(e.id, p.arguments ?? p.input);
         set(
           tool.includes('request_user_input') ? 'call' : 'work',
           tool.includes('request_user_input') ? t.reason.inputTool : t.reason.toolCall,
@@ -500,7 +560,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         for (const [i, b] of m.content.entries()) {
           if (['tool_use', 'toolCall'].includes(b.type)) {
             const tool = String(b.name ?? 'tool');
-            add(
+            const e = add(
               { ...r, id: b.id ?? r.id ?? r.uuid },
               at,
               'tool',
@@ -509,6 +569,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               `:tool${i}`,
               call(b.id),
             );
+            if (e?.intent === 'request-input') inputs.set(e.id, b.input ?? b.arguments);
             set(
               REQUEST_INPUT_TOOL.test(tool) ? 'call' : 'work',
               PLAN_APPROVAL_TOOL.test(tool) ? t.reason.planApproval : t.reason.toolCall,
@@ -549,6 +610,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       total: sum('total'),
     };
   }
+  attachRequests(events, inputs);
   nativeId = authoritativeId ?? nativeId;
   updatedAt = updatedAt || opt.mtime;
   const state = deriveState(status, updatedAt, now, false, undefined, undefined, CANONICAL);
@@ -618,4 +680,27 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     ),
     completed: false,
   };
+}
+
+/**
+ * What open calls ask, from their input (see requests.ts): every unanswered question or plan
+ * approval. No other tool input is kept, and answered calls keep nothing.
+ */
+function attachRequests(events: OfficeEvent[], inputs: Map<string, unknown>) {
+  if (!inputs.size) return;
+  // The same pairing as isResultOf (shared/notices.ts), as sets: transcripts can be long.
+  const calls = new Set<string>();
+  const ids = new Set<string>();
+  for (const e of events)
+    if (e.kind === 'result') {
+      if (e.callId) calls.add(e.callId);
+      ids.add(e.id);
+    }
+  const open = (e: OfficeEvent) =>
+    !(e.callId && calls.has(e.callId)) && !ids.has(`${e.id.replace(/:tool\d+$/, '')}:result`);
+  events.forEach((e, i) => {
+    if (e.kind !== 'tool' || e.intent !== 'request-input' || !inputs.has(e.id) || !open(e)) return;
+    const request = inputRequest(e.tool ?? '', inputs.get(e.id));
+    if (request) events[i] = { ...e, request };
+  });
 }
