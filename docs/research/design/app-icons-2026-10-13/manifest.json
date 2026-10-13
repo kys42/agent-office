@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-13",
+  "generator": "image_gen",
+  "selected": "05-mini-robot-macbook",
+  "concepts": [
+    {
+      "id": "01-developer-cat",
+      "name": "A · 개발자 고양이",
+      "file": "01-developer-cat.png",
+      "status": "candidate",
+      "sha256": "710ed006a887d9fcde1efa84fb5c87f122f109f166efcb1b14b6bdf2bd3ca3b0",
+      "prompt": "prompts.md"
+    },
+    {
+      "id": "02-slime-coworker",
+      "name": "B · 슬라임 동료",
+      "file": "02-slime-coworker.png",
+      "status": "candidate",
+      "sha256": "1bfc683c4f5808d7b4c2da138886fb4e81c818c05cdd477703770dda642e97f8",
+      "prompt": "prompts.md"
+    },
+    {
+      "id": "03-little-office",
+      "name": "C · 작은 사무실",
+      "file": "03-little-office.png",
+      "status": "candidate",
+      "sha256": "12c7cddc9098ff539bdfb760c4ed89be62830f82adcea4be155642bf5d81f4e9",
+      "prompt": "prompts.md"
+    },
+    {
+      "id": "04-mini-robot",
+      "name": "D · 미니 로봇",
+      "file": "04-mini-robot.png",
+      "status": "candidate",
+      "sha256": "2d2e2bc2c51f99ab88ba3cde96e626db108f3af8f75179eec2b0f4dce2ec9b12",
+      "prompt": "prompts.md"
+    },
+    {
+      "id": "05-mini-robot-macbook",
+      "name": "D · 미니 로봇 + 맥북",
+      "file": "05-mini-robot-macbook.png",
+      "status": "selected",
+      "sha256": "295ac21901f1aa1c488310ba8e23c6d1074f7b77a0f03c688f451503beb5686b",
+      "prompt": "05-mini-robot-macbook.prompt.md",
+      "reference": "04-mini-robot.png"
+    },
+    {
+      "id": "06-robot-macbook-pixel-chunky",
+      "name": "A · 또렷한 도트",
+      "file": "06-robot-macbook-pixel-chunky.png",
+      "status": "candidate",
+      "sha256": "02a16e2f367fc45c8aaf69a268ca0d5d11cc81510b47ff8128e303f222bf3dbd",
+      "prompt": "06-robot-macbook-pixel-chunky.prompt.md",
+      "reference": "05-mini-robot-macbook.png",
+      "styleReference": "../../../../public/sprites/retrobot.png"
+    },
+    {
+      "id": "07-robot-macbook-pixel-soft",
+      "name": "B · 부드러운 도트",
+      "file": "07-robot-macbook-pixel-soft.png",
+      "status": "candidate",
+      "sha256": "27d034d5212ff5d76734abc1437dd3518ab9beaa12a832281d48087e12f62764",
+      "prompt": "07-robot-macbook-pixel-soft.prompt.md",
+      "reference": "05-mini-robot-macbook.png",
+      "styleReference": "../../../../public/sprites/retrobot.png"
+    }
+  ]
+}
