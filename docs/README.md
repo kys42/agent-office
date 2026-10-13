@@ -44,7 +44,7 @@ docs/
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
 | macOS 설치·DMG·배포 파이프라인 | [macOS 배포](development/MACOS-RELEASE.md) |
 | 실행과 검증 | [루트 README](../README.md), [검증 기록](development/QA.md), [MCP 연결](development/MCP.md) |
-| 시각 방향 비교 | [테마 시안](research/design/office-themes-2026-10-04.md) |
+| 시각 방향 비교 | [테마 시안](research/design/office-themes-2026-10-04.md), [앱 아이콘 시안](research/design/app-icons-2026-10-13/README.md) |
 
 각 폴더의 [golden 안내](golden/README.md), [development 안내](development/README.md), [research 안내](research/README.md)에 문서 역할과 추가 기준을 적었다.
 
