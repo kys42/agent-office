@@ -219,12 +219,14 @@ export function oneStretchGone(original: string, now: string): boolean {
 }
 
 /**
- * Text the deletion keys never touched, on a host that cannot show styles. One '.' is typed:
- * the box holding just '.' means the text was the suggestion (typing replaced it), so the '.'
- * is deleted and the box is ready. The text with '.' after it means typing arrives but
- * deletion does not (another key mode): the '.' is taken back and nothing more is tried.
- * No change at all: the keys never arrive.
+ * Text the deletion keys never touched, on a host that cannot show styles. One letter (`PROBE`)
+ * is typed: the box holding just it means the text was the suggestion (typing replaced it), so
+ * the letter is deleted and the box is ready. The text with the letter put in means typing
+ * arrives but deletion does not (another key mode): it is taken back and nothing more is tried.
+ * Anything else (no change, a vim normal mode moving the cursor, typing meanwhile) stops: the
+ * letter is a cursor move in vim's normal mode, never an edit ('.' would repeat one).
  */
+const PROBE = 'l';
 async function probe(
   host: ComposerHost,
   from: ComposerState & { text: string },
@@ -235,11 +237,11 @@ async function probe(
   // Before every key, as in the clearing: still the same Claude, in front of its terminal.
   const lost: ClearResult = { status: 'failed', state: from, lost: true };
   if (proceed && !(await proceed())) return lost;
-  await host.press(['.']);
+  await host.press([PROBE]);
   await host.wait(REDRAW_MS);
   const typed = await inspect(host);
   const shown = holdsText(typed) ? drawn(typed.text) : '';
-  if (shown === '.') {
+  if (shown === PROBE) {
     if (proceed && !(await proceed())) return lost;
     await host.press(['C-k', 'C-u']);
     await host.wait(REDRAW_MS);
@@ -247,28 +249,22 @@ async function probe(
     // The emptied box shows the suggestion again (or nothing).
     if (readyToType(after) || (holdsText(after) && drawn(after.text) === original))
       return { status: 'cleared', state: { kind: 'suggestion', text: from.text, inferred: true } };
-    return holdsText(after)
-      ? { status: 'changed', text: after.text, whole: after.whole }
-      : { status: 'failed', state: after };
+    return { status: 'failed', state: after };
   }
-  // Typing arrives, deletion does not: the '.' went in at the cursor, wherever that was.
-  if (oneDotAdded(original, shown)) {
+  // Typing arrives, deletion does not: the letter went in at the cursor, wherever that was.
+  if (oneAdded(original, shown, PROBE)) {
     if (proceed && !(await proceed())) return lost;
     await host.press(['BSpace']);
     await host.wait(REDRAW_MS);
-    return { status: 'failed', state: stuck };
   }
-  if (holdsText(typed) && shown === original) return { status: 'failed', state: stuck };
-  return holdsText(typed)
-    ? { status: 'changed', text: typed.text, whole: typed.whole }
-    : { status: 'failed', state: typed };
+  return { status: 'failed', state: stuck };
 }
 
-/** `now` is `original` with one '.' put in somewhere. */
-export function oneDotAdded(original: string, now: string): boolean {
+/** `now` is `original` with one `letter` put in somewhere. */
+export function oneAdded(original: string, now: string, letter: string): boolean {
   if (now.length !== original.length + 1) return false;
   for (let i = 0; i < now.length; i++)
-    if (now[i] === '.' && now.slice(0, i) + now.slice(i + 1) === original) return true;
+    if (now[i] === letter && now.slice(0, i) + now.slice(i + 1) === original) return true;
   return false;
 }
 

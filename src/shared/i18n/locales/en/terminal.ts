@@ -16,6 +16,8 @@ export const terminal = {
   },
   runningCodex: 'Running in Codex CLI',
   runningIn: (host: string) => `Running in a ${host} terminal`,
+  /** No terminal found so far. */
+  runningSomewhere: 'Running in a terminal',
   offHint: (running: string) =>
     `${running}. Turn on ‘Send to terminal’ in Settings to follow up right here.`,
   messageLabel: (host: string) => `Message for the ${host} terminal`,

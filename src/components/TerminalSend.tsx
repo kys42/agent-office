@@ -54,7 +54,13 @@ export function TerminalSend({
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
-        {t.terminal.offHint(target?.queues ? t.terminal.runningCodex : t.terminal.runningIn(host))}
+        {t.terminal.offHint(
+          target?.queues
+            ? t.terminal.runningCodex
+            : target
+              ? t.terminal.runningIn(host)
+              : t.terminal.runningSomewhere,
+        )}
       </p>
     );
   // Not taking input as last seen (or not found): still written and sent; the desktop app
@@ -115,7 +121,7 @@ export function TerminalSend({
       {error && (
         <small className="terminal-send-error" role="alert">
           {error}
-          {onJump && (
+          {onJump && target?.canFocus && (
             <button type="button" className="terminal-send-jump" onClick={onJump}>
               <Terminal size={11} />
               {t.terminal.openTerminal}

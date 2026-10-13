@@ -15,6 +15,7 @@ export const terminal: Messages['terminal'] = {
   },
   runningCodex: 'Codex CLI에서 실행 중이에요',
   runningIn: (host) => `${host} 터미널에서 실행 중이에요`,
+  runningSomewhere: '터미널에서 실행 중이에요',
   offHint: (running) =>
     `${running}. 설정에서 ‘터미널로 보내기’를 켜면 여기서 바로 이어서 말할 수 있어요.`,
   messageLabel: (host) => `${host} 터미널로 보낼 내용`,

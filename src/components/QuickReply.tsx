@@ -30,10 +30,8 @@ export function QuickReply({
   const { text, sending, error, draft } = reply;
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => field.current?.focus({ preventScroll: true }), []);
-  const blocked = !target.canSend;
-  const submit = () => {
-    if (!blocked) void reply.submit();
-  };
+  // Not taking input as last seen: still sent; the desktop app checks again and says why.
+  const submit = () => void reply.submit();
   return (
     <form
       className="quick-reply"
@@ -95,7 +93,7 @@ export function QuickReply({
           type="submit"
           className="quick-reply-send"
           aria-label={t.terminal.send}
-          disabled={sending || blocked || !text.trim()}
+          disabled={sending || !text.trim()}
         >
           {sending ? <Loader size={12} className="now-spin" /> : <CornerDownLeft size={12} />}
         </button>
@@ -104,7 +102,6 @@ export function QuickReply({
         <DraftConfirm
           draft={draft}
           sending={sending}
-          blocked={blocked}
           onJump={target.canFocus ? onJump : undefined}
           onConfirm={() => void reply.confirm()}
           onSendDraft={() => void reply.sendDraft()}

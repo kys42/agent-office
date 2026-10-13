@@ -401,7 +401,7 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
 const KEY_BYTES: Record<ComposerKey, string> = {
   'C-k': '\x0b',
   'C-u': '\x15',
-  '.': '.',
+  l: 'l',
   BSpace: '\x7f',
 };
 

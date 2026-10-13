@@ -889,7 +889,7 @@ test('A prompt that cannot be emptied gets nothing typed and nothing sent', asyn
     assert.equal(log[1], 'clipboard:half-written idea');
     assert.ok(log.includes('clear'));
     assert.ok(!typedAny(calls) && !sent(calls));
-    // Orca: text that never moved is probed with one '.'; when even that never shows (the
+    // Orca: text that never moved is probed with one letter; when even that never shows (the
     // keys never arrive), nothing more is typed.
     const orca = fakeDeps(dir, { orcaDraft: () => 'half-written idea' });
     await assert.rejects(
@@ -902,7 +902,7 @@ test('A prompt that cannot be emptied gets nothing typed and nothing sent', asyn
     const typed = orca.calls.flatMap((c) =>
       c.args.filter((a) => a.startsWith('--text=') && /[^\x0b\x15]/.test(a.slice(7))),
     );
-    assert.deepEqual(typed, ['--text=.']);
+    assert.deepEqual(typed, ['--text=l']);
     assert.ok(!sent(orca.calls));
     // A clipboard that fails leaves the prompt alone.
     const failing = fakeDeps(dir, { screen: () => claudeScreen('half-written idea') });

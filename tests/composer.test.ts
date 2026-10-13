@@ -205,6 +205,8 @@ function fakePrompt(
     stuck?: boolean;
     /** Typing arrives, the deletion keys do nothing (another key mode). */
     noDelete?: boolean;
+    /** vim's normal mode: letters are commands ('l' moves right), nothing edits. */
+    normal?: boolean;
     height?: number;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
@@ -235,8 +237,12 @@ function fakePrompt(
       pressed.push([...keys]);
       if (!options.stuck)
         for (const key of keys) {
-          if (key === '.') {
-            lines[row] = [...lines[row].slice(0, col), '.', ...lines[row].slice(col)];
+          if (options.normal) {
+            if (key === 'l') col = Math.min(col + 1, lines[row].length);
+            continue;
+          }
+          if (key === 'l') {
+            lines[row] = [...lines[row].slice(0, col), 'l', ...lines[row].slice(col)];
             col++;
           } else if (key === 'BSpace') {
             if (col > 0) {
@@ -428,18 +434,23 @@ test('Text the keys never change is never taken as cleared', async () => {
     status: 'failed',
     state: { kind: 'draft', text: 'hello draft', whole: true },
   });
-  // Orca: text that never moved is probed with one '.'. Keys that never arrive: not cleared.
+  // Orca: text that never moved is probed with one letter. Keys that never arrive: not cleared.
   const orcaStuck = fakePrompt({ draft: 'hello draft', stuck: true, host: 'orca' });
   assert.equal((await clearPrompt(orcaStuck)).result.status, 'failed');
-  // Typing arrives but deletion does not: the '.' is taken back, the draft stays as it was.
+  // Typing arrives but deletion does not: the letter is taken back, the draft stays as it was.
   const keyMode = fakePrompt({ draft: 'hello draft', noDelete: true, host: 'orca' });
   assert.equal((await clearPrompt(keyMode)).result.status, 'failed');
   assert.equal(keyMode.text(), 'hello draft');
   assert.deepEqual(keyMode.pressed.slice(-1), [['BSpace']]);
-  // With the cursor mid-text the '.' lands there, and is taken back all the same.
+  // With the cursor mid-text the letter lands there, and is taken back all the same.
   const mid = fakePrompt({ draft: 'hello draft', noDelete: true, host: 'orca', cursor: [0, 5] });
   assert.equal((await clearPrompt(mid)).result.status, 'failed');
   assert.equal(mid.text(), 'hello draft');
+  // vim's normal mode: the letter only moves the cursor; the draft is never edited.
+  const vim = fakePrompt({ draft: 'hello draft', normal: true, host: 'orca', cursor: [0, 2] });
+  assert.equal((await clearPrompt(vim)).result.status, 'failed');
+  assert.equal(vim.text(), 'hello draft');
+  assert.ok(!vim.pressed.some((keys) => keys.includes('BSpace')));
   // Claude no longer at the terminal: the probe types nothing.
   const gone = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
   const from = await claudeCodeComposer.inspect(gone.host);
@@ -452,8 +463,8 @@ test('Text the keys never change is never taken as cleared', async () => {
     async () => ++checks <= 2,
   );
   assert.equal(left.status, 'failed');
-  assert.ok(!gone.pressed.some((keys) => keys.includes('.')));
-  // Only the suggestion: typing replaced it, so the box is ready once the '.' is gone.
+  assert.ok(!gone.pressed.some((keys) => keys.includes('l')));
+  // Only the suggestion: typing replaced it, so the box is ready once the letter is gone.
   const offered = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
   const { result, backups } = await clearPrompt(offered);
   assert.deepEqual(result, {

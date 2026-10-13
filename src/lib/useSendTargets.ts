@@ -33,21 +33,22 @@ export function useSendTargets(
   // One missed lookup (a terminal busy redrawing, a slow host) keeps the target last seen: the
   // reply box does not blink away. Two in a row, and it is gone.
   const misses = useRef<Record<string, number>>({});
+  const known = useRef<Targets>({});
+  known.current = targets;
   useEffect(() => {
     if (!active) return;
     let valid = true;
     lookup(key.split('\n'))
       .then((found) => {
         if (!valid) return;
-        setTargets((old) => {
-          const next: Targets = { ...found };
-          for (const [id, target] of Object.entries(found)) {
-            if (target) misses.current[id] = 0;
-            else if (old[id] && (misses.current[id] = (misses.current[id] ?? 0) + 1) < 2)
-              next[id] = old[id];
-          }
-          return next;
-        });
+        // Counted here, not in the state updater (which may run twice).
+        const next: Targets = { ...found };
+        for (const [id, target] of Object.entries(found)) {
+          if (target) misses.current[id] = 0;
+          else if (known.current[id] && (misses.current[id] = (misses.current[id] ?? 0) + 1) < 2)
+            next[id] = known.current[id];
+        }
+        setTargets(next);
       })
       .catch(() => {
         /* keep what is known; the next poll tries again */
