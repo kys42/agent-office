@@ -82,6 +82,8 @@ else {
     process.env.AGENT_OFFICE_SYSTEM_LANGUAGES ??= app.getPreferredSystemLanguages().join(',');
     // System language until the first snapshot brings the saved preference.
     syncLocale(undefined);
+    // Use the same art as the bundle even when macOS remembers an older Dock icon.
+    if (process.platform === 'darwin') app.dock?.setIcon(path.join(root, 'dist', 'icon.png'));
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
     const windows = () =>
       [main, dock, card].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map(viewer);

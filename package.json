@@ -16,6 +16,7 @@
     "preview": "concurrently -k -n collector,ui \"tsx server/dev.ts\" \"vite preview\"",
     "build": "tsc --noEmit && vite build && node scripts/build.mjs",
     "build:desktop": "node scripts/build.mjs",
+    "icon:mac": "node scripts/icon.mjs",
     "start": "electron .",
     "test": "tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",

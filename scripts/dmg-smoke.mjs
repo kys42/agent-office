@@ -31,6 +31,16 @@ try {
     await readFile(path.join(installed, 'Contents/Resources/release.json'), 'utf8'),
   );
   assert.deepEqual(actual, info, 'Installed artifact metadata matches the package');
+  const iconFile = execFileSync(
+    'plutil',
+    ['-extract', 'CFBundleIconFile', 'raw', '-o', '-', path.join(installed, 'Contents/Info.plist')],
+    { encoding: 'utf8' },
+  ).trim();
+  assert.equal(
+    await sha256(path.join(installed, 'Contents/Resources', iconFile)),
+    await sha256(path.resolve('public/icon.icns')),
+    'Installed bundle contains the approved application icon',
+  );
   execFileSync('codesign', ['--verify', '--deep', '--strict', installed], { stdio: 'inherit' });
   execFileSync(process.execPath, ['scripts/desktop-smoke.mjs'], {
     stdio: 'inherit',
@@ -43,6 +53,7 @@ try {
     JSON.stringify({
       ok: true,
       installedFromDmg: true,
+      appIcon: iconFile,
       sourceCommit: actual.sourceCommit,
       arch,
       signing: actual.signing,

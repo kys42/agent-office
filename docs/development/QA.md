@@ -1,3 +1,9 @@
+# 맥북 앞 미니 로봇 앱 아이콘 · 2026-10-13 (Issue #122)
+- 사용자 승인한 D 로봇+맥북 시안을 투명 PNG1024px로 정규화하고 Mac ICNS16–1024px로 변환했다. ICNS에서 추출한1024px PNG와 원본 PNG의 SHA256이 같고 재생성 ICNS도 동일하다.
+- 번들은 ICNS, Mac 런타임 Dock은 dist/icon.png, 브라우저 favicon은 같은 PNG를 사용한다. 이전 미사용 SVG는 제거했다. 메뉴바 흑백 template 심벌은 유지한다. npm run icon:mac으로 재생성한다.
+- 단위380·build/format·native 합성3종/설정IPC/격리/온보딩/모드 전환 Dock 유지 통과. DMG 설치 검사에는 실제 번들의 CFBundleIconFile이 지정한 파일과 public/icon.icns의 SHA256 비교를 추가했다.
+- 최신 main de3df5d 기준으로 작업했다. 독립 리뷰·CI·clean DMG 및 설치 앱 교체/아이콘 검수 결과는 PR/작업 카드에 남긴다. 원본 작업 폴더 미커밋 변경·개인DB·이전 설치앱은 보존한다.
+
 # 말풍선 표·목록·줄바꿈 복원 · 2026-10-13 (Issue #98)
 - 원인: InlineMarkdown이 ul/ol/li/table을 unwrap하고 문단을 span으로 이어 붙였다. BubbleMarkdown은 제목·문단·soft break·중첩/번호/체크리스트·표를 보존하며 이미지·HTML·비웹 링크는 활성화하지 않는다. 기존 물결표/웹 링크/개인정보/원문 복사 정책을 유지한다.
 - 본문은 div로 바꿔 블록 요소를 유효하게 담고, 각 모드의 접힌 2/3/5줄 분량 및 펼친 92/96/112px 높이를 유지한다. 표는 자체 가로 스크롤과 정렬을 유지하고 방향키를 책상 넘김에 전달하지 않는다. snapshot 갱신에도 표 스크롤을 보존한다.
