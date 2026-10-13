@@ -307,6 +307,19 @@ test('Text in the prompt: send it as it is, or clear it and send mine', async ({
     .poll(() => page.evaluate(() => (window as any).sent.at(-1)))
     .toEqual(['demo:0', '내 글', 'run the tests']);
   await expect(box).toHaveValue('');
+  // A draft of several lines is never offered "as is" (read off the screen, indents trimmed).
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.send = async () => ({
+      status: 'needs-confirm',
+      draft: 'if True:\nprint(1)',
+      agent: 'Claude',
+    });
+  });
+  await box.fill('또');
+  await box.press('Enter');
+  await expect(aside.getByRole('button', { name: '지우고 내 글 보내기' })).toBeVisible();
+  await expect(aside.getByRole('button', { name: '이 글 그대로 보내기' })).toHaveCount(0);
 });
 
 test('A colleague waiting for the person makes the terminal button the primary one', async ({

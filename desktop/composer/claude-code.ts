@@ -246,7 +246,9 @@ async function probe(
   if (shown === original) return { status: 'failed', state: stuck };
   if (shown === PROBE) {
     if (proceed && !(await proceed())) return lost;
-    await host.press(['C-k', 'C-u']);
+    // The letter alone, the cursor after it: one Backspace takes it (and works where the
+    // deletion pairs may not).
+    await host.press(['BSpace']);
     await host.wait(REDRAW_MS);
     const after = await inspect(host);
     // The emptied box shows the suggestion again (or nothing).

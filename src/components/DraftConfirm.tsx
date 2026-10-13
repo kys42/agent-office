@@ -62,7 +62,9 @@ export function DraftConfirm({
           )
         ) : (
           <>
-            {onSendDraft && !privacy && (
+            {/* One line only: a longer draft is read off the screen with its indents trimmed,
+              so "as is" could not be kept. */}
+            {onSendDraft && !privacy && !draft.draft.includes('\n') && (
               <button
                 type="button"
                 className="draft-confirm-cancel"

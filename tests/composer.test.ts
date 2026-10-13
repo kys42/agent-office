@@ -451,6 +451,10 @@ test('Text the keys never change is never taken as cleared', async () => {
   assert.equal((await clearPrompt(vim)).result.status, 'failed');
   assert.equal(vim.text(), 'hello draft');
   assert.ok(!vim.pressed.some((keys) => keys.includes('BSpace')));
+  // The suggestion where only typing and Backspace work: the letter goes, nothing is left.
+  const plainKeys = fakePrompt({ suggestion: 'run the tests', noDelete: true, host: 'orca' });
+  assert.equal((await clearPrompt(plainKeys)).result.status, 'cleared');
+  assert.equal(plainKeys.text(), '');
   // A draft of just the letter, the keys never arriving: not a suggestion.
   const letter = fakePrompt({ draft: 'l', stuck: true, host: 'orca' });
   assert.equal((await clearPrompt(letter)).result.status, 'failed');
