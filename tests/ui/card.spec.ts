@@ -430,6 +430,16 @@ test('The same words sent twice wait as two bubbles', async ({ page }) => {
   await expect(aside.locator('.message-pending')).toHaveCount(2);
 });
 
+test('Pressing the text box asks for the keyboard (another app may still hold it)', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  await aside.locator('.card-composer textarea').click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).cardCalls.includes('focus')))
+    .toBe(true);
+});
+
 test('The card can be kept open when the person clicks elsewhere, and remembers it', async ({
   page,
 }) => {

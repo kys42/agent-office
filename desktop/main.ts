@@ -388,6 +388,17 @@ async function saveCardSize(size: { width: number; height: number }) {
 let cardPlaced = { width: 0, height: 0 };
 /** The person asked the card to stay open when they click elsewhere (the card's own toggle). */
 let cardKeep = false;
+/**
+ * Gives the card the keyboard. The card and the dock are non-activating panels, so a click on
+ * the dock leaves another app in front: focusing the card from there makes its caret blink while
+ * the keys still go to that app. Bring this app forward first (macOS only allows that on request).
+ */
+function focusCard(window: BrowserWindow, steal = true) {
+  if (window.isDestroyed()) return;
+  if (steal && process.platform === 'darwin') app.focus({ steal: true });
+  window.focus();
+  window.webContents.focus();
+}
 /** Whose card is up (to tell a second click on the same desk from a click on another). */
 let cardTarget: CardTarget | null = null;
 function showCard(target: CardTarget, anchor: Rect) {
@@ -404,6 +415,7 @@ function showCard(target: CardTarget, anchor: Rect) {
     return;
   }
   cardTarget = target;
+  const askedAt = Date.now();
   if (cardHide) clearTimeout(cardHide);
   cardHide = null;
   const size = loadCardSize();
@@ -484,7 +496,9 @@ function showCard(target: CardTarget, anchor: Rect) {
     if (window.isDestroyed()) return;
     cardShownAt = Date.now();
     window.show();
-    window.focus();
+    // A first card waits for its page; if that took long, the person may have moved on to
+    // another app, which must not be pulled away from them.
+    focusCard(window, Date.now() - askedAt < 2000);
   };
   // A new card window shows once its page is ready, so it never flashes empty.
   if (window.webContents.isLoadingMainFrame()) {
@@ -598,6 +612,11 @@ function setupIPC() {
   });
   ipcMain.handle('office:card', (e, action, target, anchor) => {
     trusted(e);
+    // A press on the card's text box: take the keyboard back after another app had it.
+    if (action === 'focus') {
+      if (!card || e.sender !== card.webContents) throw new Error(m().desktop.untrustedWindow);
+      return focusCard(card);
+    }
     if (action === 'keep-on' || action === 'keep-off') {
       if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
       cardKeep = action === 'keep-on';
