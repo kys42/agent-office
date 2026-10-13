@@ -436,6 +436,23 @@ test('Text the keys never change is never taken as cleared', async () => {
   assert.equal((await clearPrompt(keyMode)).result.status, 'failed');
   assert.equal(keyMode.text(), 'hello draft');
   assert.deepEqual(keyMode.pressed.slice(-1), [['BSpace']]);
+  // With the cursor mid-text the '.' lands there, and is taken back all the same.
+  const mid = fakePrompt({ draft: 'hello draft', noDelete: true, host: 'orca', cursor: [0, 5] });
+  assert.equal((await clearPrompt(mid)).result.status, 'failed');
+  assert.equal(mid.text(), 'hello draft');
+  // Claude no longer at the terminal: the probe types nothing.
+  const gone = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
+  const from = await claudeCodeComposer.inspect(gone.host);
+  assert.ok(from.kind === 'unknown');
+  let checks = 0;
+  const left = await claudeCodeComposer.clear(
+    gone.host,
+    from,
+    async () => {},
+    async () => ++checks <= 2,
+  );
+  assert.equal(left.status, 'failed');
+  assert.ok(!gone.pressed.some((keys) => keys.includes('.')));
   // Only the suggestion: typing replaced it, so the box is ready once the '.' is gone.
   const offered = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
   const { result, backups } = await clearPrompt(offered);

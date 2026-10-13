@@ -229,13 +229,18 @@ async function probe(
   host: ComposerHost,
   from: ComposerState & { text: string },
   stuck: ComposerState,
+  proceed?: () => Promise<boolean>,
 ): Promise<ClearResult> {
   const original = drawn(from.text);
+  // Before every key, as in the clearing: still the same Claude, in front of its terminal.
+  const lost: ClearResult = { status: 'failed', state: from, lost: true };
+  if (proceed && !(await proceed())) return lost;
   await host.press(['.']);
   await host.wait(REDRAW_MS);
   const typed = await inspect(host);
   const shown = holdsText(typed) ? drawn(typed.text) : '';
   if (shown === '.') {
+    if (proceed && !(await proceed())) return lost;
     await host.press(['C-k', 'C-u']);
     await host.wait(REDRAW_MS);
     const after = await inspect(host);
@@ -246,7 +251,9 @@ async function probe(
       ? { status: 'changed', text: after.text, whole: after.whole }
       : { status: 'failed', state: after };
   }
-  if (shown === `${original}.`) {
+  // Typing arrives, deletion does not: the '.' went in at the cursor, wherever that was.
+  if (oneDotAdded(original, shown)) {
+    if (proceed && !(await proceed())) return lost;
     await host.press(['BSpace']);
     await host.wait(REDRAW_MS);
     return { status: 'failed', state: stuck };
@@ -255,6 +262,14 @@ async function probe(
   return holdsText(typed)
     ? { status: 'changed', text: typed.text, whole: typed.whole }
     : { status: 'failed', state: typed };
+}
+
+/** `now` is `original` with one '.' put in somewhere. */
+export function oneDotAdded(original: string, now: string): boolean {
+  if (now.length !== original.length + 1) return false;
+  for (let i = 0; i < now.length; i++)
+    if (now[i] === '.' && now.slice(0, i) + now.slice(i + 1) === original) return true;
+  return false;
 }
 
 /** Rounds of deletion before giving up, and how long the prompt gets to redraw. */
@@ -319,7 +334,7 @@ export const claudeCodeComposer: ComposerAdapter = {
         // Never moved at all: the suggestion (Orca draws it like typing), or keys that never
         // arrive. One character typed tells them apart.
         if (unchanged >= 2 && !moved && !canTell && stranger === null)
-          return probe(host, from, state);
+          return probe(host, from, state, proceed);
         if (unchanged >= (moved ? 6 : 2)) return { status: 'failed', state };
         continue;
       }
