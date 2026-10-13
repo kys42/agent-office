@@ -28,12 +28,15 @@ test('The card routes calls to the original tool and lets results be read in pla
   await page.goto('/?demo');
   await page.locator('.group-attention .session-row').click();
   const card = page.getByRole('complementary', { name: '동료의 업무 카드' });
-  // The panel's 'now' block (its tone and wording) is gone: the card's status line says it is
-  // calling, and the way back to the original tool is the card's main action.
+  // The card's status line says it is calling, the way back to the original tool is its main
+  // action, and a note says answers and approvals happen there (Agent Office only reads).
   await expect(card.locator('.card-head h2')).toHaveAttribute('title', '당근');
   await expect(card.locator('.card-status')).toHaveClass(/is-calling/);
   const resume = card.locator('.card-actions').getByRole('button', { name: '재개 명령 복사' });
   await expect(resume).toHaveClass(/primary/);
+  await expect(card.locator('.card-calling-note')).toHaveText(
+    '답변과 승인은 원래 앱에서 해 주세요',
+  );
   // Demo cannot resume real sessions; the action exists but is honest about it.
   await expect(resume).toBeDisabled();
   // The roster yields its column to the card; the room stays clickable.
@@ -41,6 +44,7 @@ test('The card routes calls to the original tool and lets results be read in pla
   await expect(card.locator('.card-head h2')).toHaveAttribute('title', '모모');
   await expect(card.locator('.card-status')).not.toHaveClass(/is-calling/);
   await expect(resume).not.toHaveClass(/primary/);
+  await expect(card.locator('.card-calling-note')).toHaveCount(0);
   // The new result is read in place, from the card's news tab.
   const news = card.getByRole('tab', { name: /^소식/ });
   await expect(news).toHaveText(/소식 1/);

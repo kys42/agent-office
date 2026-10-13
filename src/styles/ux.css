@@ -229,8 +229,6 @@
   animation: ping-out 1.625s ease-out infinite;
 }
 
-/* Now card — the top of a colleague's card */
-
 .now-spin {
   animation: spin 2.375s linear infinite;
 }

@@ -42,9 +42,70 @@ test("The big office's right column is the same card as the pop-up, without the 
   await page.mouse.move(box.x + box.width + 40, box.y + box.height / 2);
   await page.mouse.up();
   expect(await page.evaluate(() => (window as any).cardCalls)).toEqual([]);
-  // Details live in the card's tab: branch and where it works.
+  // Instead the header's empty space is the window's drag region; the name and the controls
+  // still take the mouse (the full name shows on hover, the menu opens).
+  const regionOf = (el: Element) => getComputedStyle(el).getPropertyValue('-webkit-app-region');
+  const region = (selector: string) => head.locator(selector).first().evaluate(regionOf);
+  expect(await head.evaluate(regionOf)).toBe('drag');
+  for (const selector of ['.card-title', '.card-avatar', 'button'])
+    expect(await region(selector)).toBe('no-drag');
+  // Details live in the card's tab: where it works, branch, original name.
   await aside.getByRole('tab', { name: '작업 정보' }).click();
   await expect(aside.locator('.card-info')).toBeVisible();
+  // A nicknamed colleague keeps its original session name there.
+  await expect(
+    aside.locator('.card-info .info-row').filter({ hasText: '원래 이름' }),
+  ).toBeVisible();
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   await expect(aside).toHaveCount(0);
+});
+
+test('Opening a bookmarked progress note shows progress again when the switch had hidden it', async ({
+  page,
+}) => {
+  const snapshot = demoSnapshot();
+  const session = snapshot.sessions[0];
+  const note = session.events.find((e) => e.phase === 'commentary')!;
+  const bookmark = {
+    id: 'bm-1',
+    sessionId: session.id,
+    eventId: note.id,
+    kind: note.kind,
+    phase: note.phase,
+    at: note.at,
+    text: note.text,
+    createdAt: Date.now(),
+    note: '',
+    source: {
+      provider: session.provider,
+      title: session.title,
+      alias: session.alias,
+      project: session.project,
+      branch: null,
+      cwd: null,
+    },
+    context: { progress: [], omitted: 0, tools: 0 },
+    anchor: { nativeId: session.nativeId, sourcePath: '', sourceRef: '', index: 1 },
+  };
+  await page.addInitScript(
+    ({ s, b }) => {
+      localStorage.setItem('office:card-progress', 'off');
+      (window as any).office = {
+        snapshot: async () => structuredClone(s),
+        detail: async (id: string) => structuredClone(s.sessions.find((x: any) => x.id === id)),
+        visit: async () => structuredClone(s),
+        artifacts: async () => [],
+        subscribe: () => () => {},
+        bookmarks: async () => ({ bookmarks: [b], more: false, total: 1 }),
+      };
+    },
+    { s: snapshot, b: bookmark },
+  );
+  await page.goto('/');
+  await page.getByRole('button', { name: '기억 서랍' }).click();
+  await page.getByRole('tab', { name: '북마크' }).click();
+  await page.getByRole('button', { name: '대화로 이동' }).click();
+  const aside = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  await expect(aside.locator(`[data-event-id="${note.id}"]`)).toBeInViewport();
+  await expect(aside.getByRole('switch', { name: /진행/ })).toBeChecked();
 });

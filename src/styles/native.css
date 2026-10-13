@@ -266,33 +266,14 @@
   padding: 4px 16px 18px;
 }
 .artifact-card,
-.detail-section dl,
-.usage-grid,
 .completion-button,
-.news-item,
-.source-note {
+.news-item {
   background: var(--bg-2);
   border: 0;
   border-radius: 10px;
   box-shadow: 0 0 0 0.5px var(--line-2);
 }
 
-.detail-section dl > div + div,
-.usage-grid > div + div {
-  border-color: var(--line-2);
-}
-.detail-section h3 {
-  margin: 0 0 6px 4px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: var(--text-2);
-}
-.path-copy {
-  background: var(--bg-2);
-  border: 0;
-  box-shadow: 0 0 0 0.5px var(--line-2);
-}
 .notes-editor textarea {
   background: var(--field);
   border: 0.5px solid var(--control-line);
@@ -770,8 +751,15 @@ body.card-mode:not(.is-mac) .dock-card {
   cursor: auto;
   -webkit-app-region: drag;
 }
-.app-body > .inspector-card .card-head :is(button, input, form, .card-menu) {
+.app-body
+  > .inspector-card
+  .card-head
+  :is(button, input, form, .card-menu, .card-avatar, .card-title) {
   -webkit-app-region: no-drag;
+}
+/* The name can be selected and its full text read on hover (drag regions take the mouse). */
+.app-body > .inspector-card .card-title {
+  user-select: text;
 }
 .inspector-card .card-head .icon-btn.gold {
   color: var(--st-error);
@@ -1128,7 +1116,12 @@ body.card-mode:not(.is-mac) .dock-card {
 .card-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+.card-calling-note {
+  font-size: 11px;
+  color: var(--st-call);
 }
 .card-action {
   height: 28px;

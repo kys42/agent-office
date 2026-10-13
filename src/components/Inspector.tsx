@@ -366,6 +366,12 @@ export function Inspector({
             {presentation.stale ? t.inspector.overview.staleRun : ''}
           </b>
         </div>
+        {s.alias && s.alias !== s.title && (
+          <div className="info-row">
+            <span>{t.inspector.originalName}</span>
+            <b title={s.title}>{s.title}</b>
+          </div>
+        )}
         {s.relation?.role && (
           <div className="info-row">
             <span>{t.inspector.overview.role}</span>
@@ -614,6 +620,7 @@ export function Inspector({
             notify={notify}
             compact
             hideProgress={!showProgress}
+            onShowProgress={() => setShowProgress(true)}
             name={privacy ? undefined : sessionName(s)}
             filtersOpen={filtersOpen}
             sent={sent}
@@ -916,6 +923,8 @@ export function Inspector({
               <Terminal size={13} />
               {resumeLabel}
             </button>
+            {/* Agent Office only reads records: answers and approvals happen where it runs. */}
+            {calling && <span className="card-calling-note">{t.inspector.card.callingNote}</span>}
           </div>
           {/* Always open to writing where a terminal can exist; the send checks again. */}
           {locatable && api.send ? (
@@ -937,10 +946,13 @@ export function Inspector({
               }}
             />
           ) : (
-            <p className="terminal-send-hint">
-              <Terminal size={12} />
-              {t.inspector.card.noTarget}
-            </p>
+            // In a browser nothing is typed into terminals: no note about it either.
+            api.send && (
+              <p className="terminal-send-hint">
+                <Terminal size={12} />
+                {t.inspector.card.noTarget}
+              </p>
+            )
           )}
         </div>
       </aside>

@@ -178,6 +178,7 @@ export function Conversation({
   onFocused,
   compact = false,
   hideProgress = false,
+  onShowProgress,
   name,
   filtersOpen,
   sent = [],
@@ -200,6 +201,8 @@ export function Conversation({
   compact?: boolean;
   /** Progress notes left out of the whole conversation (the card's switch). */
   hideProgress?: boolean;
+  /** A bookmarked progress note is being opened while they are left out: show them again. */
+  onShowProgress?: () => void;
   /** Who answers, as the office calls them (the card's chat); else the tool's name. */
   name?: string;
   /** The card opens its filters from a button beside its tabs. */
@@ -476,6 +479,8 @@ export function Conversation({
       return;
     }
     if (conversationKind(target) === 'work' && !tools) return setTools(true);
+    if (conversationKind(target) === 'progress' && hideProgress && onShowProgress)
+      return onShowProgress();
     const index = groups.findIndex((g) => g.events.some((e) => e.id === target.id));
     if (index < 0) return;
     if (groups.length - index > count) return setCount(groups.length - index + 4);
@@ -496,7 +501,7 @@ export function Conversation({
       onFocused?.();
     });
     return () => cancelAnimationFrame(raf);
-  }, [events, groups, count, tools, filter, focus?.ready, focus?.key]);
+  }, [events, groups, count, tools, hideProgress, filter, focus?.ready, focus?.key]);
   useEffect(() => {
     if (!focused) return;
     const timer = setTimeout(() => setFocused(null), 2400);
