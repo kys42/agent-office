@@ -124,29 +124,36 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 
 ## 질문·플랜·권한 확인에 답하기 (#127)
 
-정본 `desktop/prompts/`(에이전트별 어댑터), `desktop/answers.ts`(공통 흐름), `desktop/main.ts`(IPC·설정·확인창), 렌더러 `src/components/RequestCard.tsx`·`src/lib/usePrompt.ts`. 수집 쪽은 `server/adapters/requests.ts`.
+정본 `desktop/prompts/`(에이전트별 어댑터: `claude-code.ts` 화면·키, `claude-target.ts` 세션·기록), `desktop/answers.ts`(공통 흐름), `desktop/main.ts`(IPC·설정·확인창), 렌더러 `src/components/RequestCard.tsx`·`src/lib/usePrompt.ts`. 수집 쪽은 `server/adapters/requests.ts`.
+
+**원칙: 화면이 기준이다.** 화면의 대화상자가 무엇을 묻는지 모호하지 않을 때만 키를 누른다. 확실하지 않으면 키를 누르지 않는다.
 
 ### 보여 주기 (모든 세션)
 
-- **수집:** 입력 요청 도구 호출 이벤트에 선택 필드 `request`를 붙인다(이벤트 id·소식 버전은 그대로). `question`(AskUserQuestion·Codex `request_user_input`의 `questions[{header?, question, multiSelect, options[{label, description?}]}]`, Codex의 문자열 선택지·`title`도 읽음), `plan`(ExitPlanMode `plan` 마크다운 2만 자, `planFilePath`), `permission`(Claude Code의 현재 차례에서 결과가 없는 **마지막 도구 호출 하나**의 요약: `command`·`file_path`·`url`·`pattern`… 또는 `description`, 1000자). 모두 `redact()` 후 길이 제한, 정본 그대로 저장하고 읽을 때 자리표시만 현지화한다. 답(결과)이 기록된 요청은 아무것도 남기지 않는다. 권한 요약은 실행 기록이 `waiting`일 때만(`applyLiveWait`) 요청으로 보인다. Codex 도구 인수는 여전히 저장하지 않는다.
-- **카드:** 업무 카드·팝업 카드의 '지금' 영역에 `RequestCard` 한 벌. 질문(머리표·복수 선택 표시·선택지 설명), 플랜(접기/펼치기, 마크다운), 권한(도구·명령·설명). 화면 숨기기에서는 '지금' 카드 전체가 가려진다. 터미널 이동은 '지금' 카드의 이동 버튼을 그대로 쓴다.
-- **말풍선:** 부르는 동료의 말풍선은 첫 질문의 첫 줄(질문이 여럿이면 "외 N개"), "플랜 승인", "Bash 허락할까요: <명령>"을 짧게 보여 준다(라벨 '응답 필요'). 소식 글과 버전은 바꾸지 않고 읽을 때만 바꾼다.
+- **수집:** 답이 아직 없는 입력 요청 이벤트에 선택 필드 `request`를 붙인다(이벤트 id·소식 버전은 그대로). `question`(AskUserQuestion·Codex `request_user_input`의 `questions[{header?, question, multiSelect, options[{label, description?}]}]`, Codex의 문자열 선택지·`title`도 읽음), `plan`(ExitPlanMode `plan` 마크다운 2만 자, `planFilePath`). 모두 `redact()` 후 길이 제한하고, 제한에 걸려 잘린 요청은 `truncated`로 표시한다(보여 주기만, 앱에서 답하지 않음). 정본 그대로 저장하고 읽을 때 자리표시만 현지화한다. 답이 기록된 요청은 아무것도 남기지 않는다.
+- **권한 확인은 저장하지 않는다:** 다른 도구의 입력(명령·파일·주소·MCP 인수)은 수집기가 저장하지 않는다. 실행 기록이 `waiting`일 때 `applyLiveWait`가 결과 없는 마지막 호출을 `request-input`으로 바꿀 뿐이고, 렌더러는 그 호출의 **도구 이름만**으로 권한 요청을 만든다(`openRequest`). 무엇을 실행하려는지는 데스크탑 앱이 그때그때 **화면에서** 읽어 카드에 보여 준다(`PromptView.subject`). 메모리에서만 쓰고 저장하지 않는다.
+- **카드:** 업무 카드·팝업 카드의 '지금' 영역에 `RequestCard` 한 벌. 질문(머리표·복수 선택 표시·선택지 설명), 플랜(접기/펼치기, 마크다운), 권한(도구 이름, 그리고 화면에서 읽은 명령·파일·주소). 화면 숨기기에서는 '지금' 카드 전체가 가려진다. 터미널 이동은 '지금' 카드의 이동 버튼을 그대로 쓴다.
+- **말풍선:** 첫 질문의 첫 줄(여럿이면 "외 N개"), "플랜 승인", "Bash 허락할까요?"(라벨 '응답 필요'). 소식 글과 버전은 바꾸지 않고 읽을 때만 바꾼다.
 
 ### 답하기 (Claude Code · Orca/tmux, 데스크탑)
 
-- **설정 두 개, 기본 꺼짐:** `questions`(질문·플랜 승인)와 `permissions`(권한 확인). Electron `userData/answer-prompts.json`(0600)에만 저장하고 IPC `office:answer-settings`로만 읽고 바꾼다. 파일이 없거나 깨졌거나 `true`가 아니면 꺼짐. 처음 답할 때(또는 설정에서 켤 때) main이 종류별 **네이티브 확인창**을 띄우고, 승낙하면 저장한 뒤 그 답을 이어서 보낸다. 거절하면 아무것도 보내지 않는다(`cancelled`). 자동으로 허락하는 일은 없다: 사람이 누른 버튼 하나만 보낸다.
-- **보여 줄 선택지:** 카드가 열려 있는 동안 `office:prompt`(5초마다, 키 없음)가 화면의 대화상자를 읽어 기록된 요청과 **같은지** 확인한다. 같을 때만 `ready`와 화면의 선택지(플랜·권한: 화면에 그려진 그대로, 역할 `allow`·`always`·`deny`·`text`)를 준다. 다르면 `mismatch`("화면의 질문이 이 요청과 달라요"), 대화상자가 없으면 `closed`, 그 밖에 `no-terminal`·`not-waiting`·`unreadable`·`unsupported`(Codex·OpenClaw)로 이유를 보여 준다. '다시 묻지 않기'류(`always`)는 점선 테두리와 "계속 적용돼요"로 따로 보인다. 글을 받는 줄(플랜의 "Tell Claude what to change", 권한의 Tab 수정 줄)은 버튼으로 내지 않는다. 질문의 'Type something' 줄은 단일 선택 질문에서만 "직접 입력"으로 받는다.
-- **같은 요청 판정:** 질문은 화면의 질문 글·선택지 글(순서까지)·복수 선택 여부·머리표가 기록과 같아야 한다(공백·줄바꿈·마크다운 기호 무시). 플랜은 화면 아래의 플랜 파일 이름이 `planFilePath`와 같아야 한다(없으면 플랜 본문 앞부분). 권한은 Bash면 제목에 Bash가 있고 화면에 **그 명령 전체**가 있어야 하고, 파일 도구면 제목이 파일 대화상자이고 그 파일 이름이 있어야 한다. 그 밖의 도구는 도구 이름이나 요약이 보여야 한다.
-- **공통 흐름(`answerRequest`):** 실행 기록(같은 pid·`waiting`)과 터미널 전면 소유 → 화면이 같은 요청인지 → 어댑터가 키를 누른다. 어댑터는 **매 키 전에** 기록·전면 소유를 다시 묻고(`proceed`), **매 키 뒤에** 화면을 다시 읽어(최대 4번, 120ms 간격) 그 키가 한 일(커서 위치, 체크 상태, 입력한 글, 다음 질문, 검토 화면)을 확인한다. Enter는 마지막에 기록·전면·화면(같은 요청, 커서가 고른 줄, 입력 글이 정확히 같음)을 한 번 더 본 뒤에만 혼자 누른다. 뒤이어 대화상자가 닫혔는지(최대 1.8초) 보고, 원본 기록 끝(512KB)에 그 호출의 `tool_use_id` 결과가 생겼는지(최대 2초) 본다. 허락한 명령은 끝나야 결과가 남으므로 닫힘으로 끝낸다. 한 세션에 한 번에 하나만 답한다. 실패는 모두 이유를 알리고, 이미 키를 눌렀으면 "터미널을 확인해 주세요"를 붙인다.
+- **설정 두 개, 세 상태:** `questions`(질문·플랜 승인)와 `permissions`(권한 확인). 각각 `unset`(아직 묻지 않음) / `on` / `off`(명시적으로 끔). Electron `userData/answer-prompts.json`(0600)에만 저장하고 IPC `office:answer-settings`로만 읽고 바꾼다. 파일이 없으면 `unset`, 읽을 수 없거나 깨졌으면 `off`. `unset`이면 처음 답할 때 main이 종류별 **네이티브 확인창**을 띄우고, 승낙하면 `on`으로 저장한 뒤 **열린 요청을 다시 읽어 같은 이벤트·같은 `tool_use` id일 때만** 이어서 보낸다. `off`면 버튼 없이 이유와 [터미널로 이동]만 보인다(설정에서 켜야 함). 설정 쓰기(설정 화면과 첫 답 모두)는 한 줄로 차례대로 실행하고, 매번 파일을 다시 읽어 바꾼 칸만 합친다.
+- **한 번짜리 선택지만:** 권한은 화면의 `Yes`(한 번 허락)와 `No`(Fetch는 `No, and tell Claude what to do differently (esc)` — 측정상 그냥 거절), 플랜은 `Yes, manually approve edits`만 버튼이 된다. '항상 허락'·'다시 묻지 않기'·'auto mode로 바꾸기'·'편집 자동 허락'·bypass, 그 밖에 모르는 `Yes, …`는 계속 적용되는 선택지로 보고 버튼으로 내지 않는다("터미널에서 골라 주세요"). 글을 받는 줄(플랜 수정 요청, Tab으로 바뀐 Yes/No)도 내지 않는다. 질문의 'Type something' 줄은 단일 선택 질문에서만 질문별로 "직접 입력"으로 받는다(복수 선택은 없음).
+- **어느 호출인지(`identify`):** 어댑터가 세션의 기록에서 **현재 차례에 결과가 없는 호출 전부**(사이드체인 제외, 줄 단위 JSON 파싱)를 읽고, 화면이 그중 **정확히 하나**와 같을 때만 답한다. 그 호출이 카드가 보여 준 이벤트의 `tool_use` id여야 한다. 둘 이상이 같으면(같은 명령을 동시에 둘) 답하지 않는다.
+  - 질문: 화면의 질문 글·선택지 글(순서까지)·복수 선택 여부·머리표가 그 호출의 입력과 같다(공백·마크다운 기호 무시). 잘린 요청은 비교하지 않는다.
+  - 플랜: 화면 아래의 플랜 파일 이름이 `planFilePath`와 같고(둘 다 있을 때), **플랜 본문 앞부분**(마크다운 기호·글머리 기호·공백 무시, 최대 80자)도 같다.
+  - 권한: 제목으로 도구를 정하고(`Bash command`↔Bash, `Create file`↔Write, `Edit file`↔Edit·MultiEdit, `Fetch`↔WebFetch — 측정한 제목만), 화면에서 읽은 것을 **그대로** 비교한다. Bash는 `╌` 칸 안의 명령(줄바꿈된 줄은 칸 폭을 채웠으면 붙여서 다시 잇고, 흐린 `│ ` 테두리 제거)을 공백만 정규화해 **완전히 같아야** 한다(셸 기호는 하나도 무시하지 않음: 접두·부분 문자열·`>`↔`|`·`~`↔`/` 모두 다름). 파일은 제목 다음 줄의 경로가 입력 경로 그대로이거나 그 호출의 작업 폴더 기준 상대 경로이거나 `~/…`여야 한다(파일 이름만 같으면 아님). Fetch는 `url:` 줄과 입력 URL이 URL 표준형으로 같아야 한다. 그 밖의 제목(MCP 도구, 노트북 등)은 답하지 않는다. 훅이 명령을 바꾼 경우(`git push` → `rtk git push`)·서브에이전트의 확인(부모 기록에는 Agent 호출뿐)은 같지 않아 답하지 않는다.
+- **공통 흐름(`answerRequest`, 에이전트를 모름):** 어댑터의 `target`(세션의 터미널·기록)으로 대기 중·같은 프로세스·터미널 전면 소유 → 화면(읽지 못하면 세 번 더) → `identify`가 그 호출 하나 → 어댑터가 키를 누른다. 어댑터는 **매 키 전에** 실행 기록·전면 소유를 다시 묻고 화면이 여전히 그 호출을 묻는지 확인하며, **매 키 뒤에** 화면을 다시 읽어(최대 4번, 120ms 간격) 그 키가 한 일을 확인한다. 화살표는 **한 번에 하나씩** 누른다. Enter는 마지막에 기록·전면·화면을 한 번 더 본 뒤에만 혼자 누른다. 뒤이어 대화상자가 사라졌는지 본다 — 화면을 읽지 못한 것은 닫힌 것이 아니므로 다시 읽고, 끝내 못 읽으면 "보냈지만 확인하지 못했어요"로 알린다. 그다음 기록에 **그 `tool_use` id의 `tool_result`**(줄 단위 파싱, 부분 문자열 아님)가 생겼는지 최대 3초 본다. 없으면(허락한 명령이 아직 실행 중 등) "보냈지만 기록에 아직 답이 보이지 않아요"로 솔직히 알린다. 한 세션에 한 번에 하나만 답한다. 이미 키를 눌렀으면 실패 문구에 "터미널을 확인해 주세요"를 붙인다.
 - **키 순서(어댑터):**
-  - 질문(하나·단일 선택): ↓/↑로 그 줄 → 확인 → Enter(바로 제출).
-  - 직접 입력: ↓로 'Type something' 줄 → 확인 → 글(한 줄로 정리, 2000자)을 bracketed paste(tmux `paste-buffer -p`, Orca `ESC[200~…ESC[201~`) → 줄이 정확히 그 글인지 확인 → Enter.
-  - 복수 선택: 고를 줄과 지금 체크가 다른 줄마다 이동 → Space → 체크 확인. 끝나면 →(다음 탭: 다음 질문이나 검토 화면).
-  - 질문 여럿: 질문마다 위 순서(단일 선택은 Enter가 다음 질문으로 넘어감) → 검토 화면에서 모든 질문의 답이 고른 것과 같고 경고("You have not answered all questions")가 없는지 확인 → "Submit answers"에서 Enter.
-  - 플랜·권한: 사람이 본 번호와 **글**이 화면의 그 줄과 같아야 한다 → 그 줄로 이동 → 확인 → Enter.
-  - 터미널에서 이미 고르던 답이 있으면(체크된 줄, 답한 탭, 입력된 글, 첫 질문이 아님) 손대지 않고 "터미널에서 마저 답해 주세요"로 돌려보낸다.
+  - 키를 누르기 전: 질문 글이 서로 같거나 한 질문 안에 선택지 글이 같으면, 또는 검토 화면이 창에 다 들어가지 않을 만큼 창이 낮으면(tmux 높이 < 14 + 질문 수×2) 답하지 않는다. 터미널에서 이미 고르던 답(체크된 줄, 답한 탭, 입력된 글, 첫 질문이 아님)이 있어도 손대지 않는다.
+  - 질문(하나·단일 선택): ↓/↑로 한 칸씩 그 줄까지 → Enter(바로 제출).
+  - 직접 입력: 'Type something' 줄로 → 글(한 줄로 정리, 2000자)을 bracketed paste(tmux `paste-buffer -p`, Orca `ESC[200~…ESC[201~`) → 줄이 정확히 그 글인지 확인 → Enter.
+  - 복수 선택: 고를 줄과 지금 체크가 다른 줄마다 이동 → Space → 체크 확인. 끝나면 →(다음 질문이나 검토 화면).
+  - 질문 여럿: 질문마다 위 순서 → 검토 화면에서 모든 질문의 답이 고른 것과 같고(질문마다 한 번씩) 경고가 없는지 확인 → "Submit answers"에서 Enter.
+  - 플랜·권한: 사람이 본 번호와 **글**이 화면의 그 줄과 같고 한 번짜리 선택지여야 한다 → 그 줄까지 한 칸씩 → Enter.
   - **누르지 않는 키:** 숫자(누르는 순간 고르고 제출), Tab(권한의 Yes/No를 글 입력 줄로 바꿈), Esc(도구 호출 전체 취소), Ctrl+C/D/Z, ←. "Chat about this"·"Cancel"·빈 글 줄의 Enter는 도구 호출을 거절하므로 고르지 않는다. 테스트로 고정했다.
 - **호스트 키:** tmux는 `send-keys`의 `Up`·`Down`·`Right`·`Space`·`Enter`. Orca는 같은 바이트(`ESC[A`·`ESC[B`·`ESC[C`·공백)를 `--text=`로, Enter는 `--enter`로 보낸다(Orca가 ESC 시퀀스를 그대로 쓰는 것을 `od -c`로 확인).
+- **호스트별 지원:** 세 종류(질문·플랜·권한) 모두 tmux와 Orca 실제 탭에서 처음부터 끝까지 답해 확인했다(아래). 어댑터의 `answers(host)`가 측정한 종류만 허용한다.
 - **경계:** Codex·OpenClaw는 보여 주기만 한다(어댑터 `unsupported`: Codex TUI의 승인·질문에 바깥에서 답하는 공개 경로가 없고, `codex queue`는 메시지만 더한다). 웹 미리보기는 답할 수 없다(IPC가 main에만 있음, 테스트로 고정). Claude Code의 백그라운드 팀원이 살아 있어 기록이 `busy`로 남는 동안은 `waiting`이 아니라서 답하지 않는다.
 
 ### 측정 (Claude Code 2.1.296, tmux 3.6a, Orca 1.4.216, 2026-10-13)
@@ -161,13 +168,14 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 | 질문 여럿 | 탭 줄 `☐/☒` 헤더, 안내 `Tab/Arrow keys to navigate` | 단일 선택은 고르면 다음 질문으로, ← 이전(고른 답에 `✔`), 마지막 뒤 검토 화면. 일부만 답하면 `⚠ You have not answered all questions`(그대로 제출 가능) |
 | 플랜 승인 | 들여쓴 가로줄 안 `Here is Claude's plan:` + `╌` 상자, `Would you like to proceed?`, `1. Yes, and use auto mode / 2. Yes, manually approve edits / 3. Tell Claude what to change`(+`shift+tab to approve with this feedback`), 아래 `ctrl+g to edit in … · ~/.claude/plans/<이름>.md` | 1·2 = 바로 승인(다른 화면 없음), 3은 입력 줄로 이동, 빈 3 + Enter = 거절 + 턴 중단, 글 + Enter = 거절과 그 글 |
 | Bash 권한 | `Bash command` · (Tip) · 설명 · `╌` 상자 안 명령(길면 흐린 `│ ` 줄바꿈) · `Do you want to proceed?` · `1. Yes / 2. Yes, and always allow access to <폴더> from this project`(또는 `don't ask again for: <패턴>`) / `3. Yes, and switch to auto mode` / `4. No` · `Esc to cancel · Tab to amend` | ↑/↓ 양쪽으로 돌아감, 숫자 = 바로 제출, Enter = 고른 줄, Tab = 그 줄을 글 입력 줄로 바꿈 |
-| 파일 권한 | `Create file` · 파일 이름 · 미리보기 · `Do you want to create <파일>?` · `1. Yes / 2. Yes, and switch to accept edits … (shift+tab) / 3. No` | 같음 |
+| 파일 권한 | `Create file`(Write)·`Edit file`(Edit) · 작업 폴더 기준 경로 · 미리보기/diff · `Do you want to create <파일>?`·`Do you want to make this edit to <파일>?` · `1. Yes / 2. Yes, and switch to accept edits … (shift+tab) / 3. No` | 같음 |
+| Fetch 권한 | `Fetch` · `Claude wants to fetch content from <호스트>` · `╌` 칸 안 `url: https://example.com/`(입력 `https://example.com`의 표준형)·`prompt: …` · `Do you want to allow Claude to fetch this content?` · `1. Yes / 2. Yes, and don't ask again for <호스트> / 3. No, and tell Claude what to do differently (esc)` | 3 + Enter = 그냥 거절(Interrupted) |
 
 - **실행 기록:** 질문은 `status: "waiting"`, `waitingFor: "input needed"`. 플랜·Bash·파일은 `waitingFor: "permission prompt"`. 답한 뒤 `busy` → `idle`.
 - **기록(JSONL):** 질문 답 `tool_result` = `Your questions have been answered: "Q"="A"…`(직접 입력은 `The user answered: …`), `toolUseResult.answers`는 질문 글 → 답(복수 선택은 `", "`로 이음). 거절 = `is_error: true`, `"User rejected tool use"` + `[Request interrupted by user for tool use]`. 플랜 승인 = `User has approved your plan…`, 권한 허락 = 그 도구의 결과.
 - **Orca:** `tail`은 빈 줄을 빼고 오른쪽 공백을 지운 같은 글이다. 대화상자가 떠 있는 동안 `draft`는 없다. `send --text=1`은 바로 승인했다(그래서 숫자를 쓰지 않는다).
 - **좁은 창(60×20):** 긴 선택지는 줄바꿈되고, 대화상자 윗부분(탭 칩)은 화면 밖으로 밀려 tmux 스크롤에도 없다. 선택지 글이 기록과 달라지므로 답하지 않는다(안전).
-- **실제 답하기 확인:** 이 어댑터와 공통 흐름으로 실제 Claude Code에 답했다(tmux): 단일 선택(Green), 복수 선택 + 단일 선택 두 질문(Apple·Cherry / Large), 한글 직접 입력, Bash No(거절 기록)·Yes(파일 생성), 플랜 "Yes, manually approve edits", 이어진 파일 권한 Yes. 플랜의 글 입력 줄은 "화면에 없는 선택지"로 거부됐다. PreToolUse 훅이 `cat`을 `rtk read`로 바꾼 Bash 확인은 화면 명령이 기록과 달라 `mismatch`로 막혔다(훅이 바꾼 명령은 터미널에서 답해야 한다).
+- **실제 답하기 확인:** 이 어댑터와 공통 흐름으로 실제 Claude Code에 답했다. tmux: 단일 선택(Green), 복수 선택 + 단일 선택 두 질문(Apple·Cherry / Large), 한글 직접 입력, Bash No(거절 기록)·Yes(파일 생성), 플랜 "Yes, manually approve edits", 이어진 파일 권한 Yes, Edit 권한 Yes(파일 바뀜), Fetch 거절. **Orca 실제 탭:** 복수 + 단일 두 질문, Bash Yes(파일 생성), 플랜 승인, 이어진 `Create file` Yes — 세 종류 모두 확인(답 하나에 Orca CLI 왕복 때문에 1~7초). 플랜의 글 입력 줄과 auto mode는 "한 번짜리 선택지가 아니에요"로 거부됐다. PreToolUse 훅이 `cat`을 `rtk read`로 바꾼 Bash 확인은 화면 명령이 기록과 달라 `mismatch`로 막혔다(tmux·Orca 모두, 훅이 바꾼 명령은 터미널에서 답해야 한다).
 
 ## 경계
 

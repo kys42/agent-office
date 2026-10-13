@@ -17,7 +17,9 @@ import { ServiceBridge } from '../server/bridge.js';
 import { syncLocale } from '../server/locale.js';
 import type {
   AnswerResult,
+  AnswerSetting,
   AnswerSettings,
+  InputRequest,
   CardTarget,
   PromptView,
   SessionDetail,
@@ -60,6 +62,7 @@ import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
 import { composerFor } from './composer/index.js';
 import { promptsFor } from './prompts/index.js';
 import { answerRequest, inspectPrompt } from './answers.js';
+import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
@@ -830,9 +833,12 @@ function setupIPC() {
     }
   });
   // Answering a calling session's dialog by its own keys: desktop-only like sending, off until
-  // the person agrees (a native confirmation, per kind), and checked against the screen.
+  // the person agrees (a native confirmation, per kind), and checked against the screen. Which
+  // agent and terminal is the adapter's business; nothing here depends on the provider.
   const asking = async (id: string) =>
     openRequest((await bridge.call('detail', [id])) as SessionDetail);
+  const settingFor = (kind: InputRequest['kind']): keyof AnswerSettings =>
+    kind === 'permission' ? 'permissions' : 'questions';
   const askAnswers = async (e: Electron.IpcMainInvokeEvent, which: keyof AnswerSettings) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const t = m().prompts.confirm;
@@ -858,29 +864,42 @@ function setupIPC() {
       }
     }
   };
+  /**
+   * Turns one setting on or off. Settings changes (from Settings and from a first answer) run
+   * one at a time, each re-reading the file and writing back only its own field.
+   */
+  const changeSetting = (
+    e: Electron.IpcMainInvokeEvent,
+    which: keyof AnswerSettings,
+    on: boolean,
+  ): Promise<AnswerSettings> =>
+    serially(async () => {
+      if (on && (await answerSettings())[which] !== 'on' && !(await askAnswers(e, which)))
+        return answerSettings();
+      const next = { ...(await answerSettings()), [which]: on ? 'on' : 'off' };
+      await writeFile(answerSettingsFile(), JSON.stringify(next), { mode: 0o600 });
+      return next;
+    });
   ipcMain.handle('office:answer-settings', async (e, patch): Promise<AnswerSettings> => {
     trusted(e);
-    const settings = await answerSettings();
-    if (patch == null) return settings;
+    if (patch == null) return answerSettings();
     if (typeof patch !== 'object') throw new Error(m().desktop.badRequest);
-    const next = { ...settings };
+    let settings = await answerSettings();
     for (const key of ['questions', 'permissions'] as const) {
       const value: unknown = (patch as Record<string, unknown>)[key];
       if (value === undefined) continue;
       if (typeof value !== 'boolean') throw new Error(m().desktop.badRequest);
-      // Turning one on always goes through the native confirmation.
-      if (value && !settings[key] && !(await askAnswers(e, key))) continue;
-      next[key] = value;
+      settings = await changeSetting(e, key, value);
     }
-    await writeFile(answerSettingsFile(), JSON.stringify(next), { mode: 0o600 });
-    return next;
+    return settings;
   });
   ipcMain.handle('office:prompt', async (e, id): Promise<PromptView> => {
     trusted(e);
     const known = await identity(id);
     const adapter = promptsFor(known.provider);
-    const terminal = known.provider === 'claude' ? await live(known) : null;
-    return inspectPrompt(adapter, await asking(known.id), terminal);
+    const open = await asking(known.id);
+    const setting = open ? (await answerSettings())[settingFor(open.request.kind)] : 'unset';
+    return inspectPrompt(adapter, open, await adapter.target(known, false), setting);
   });
   const answering = new Set<string>();
   ipcMain.handle('office:answer', async (e, id, choice): Promise<AnswerResult> => {
@@ -890,35 +909,37 @@ function setupIPC() {
     const t = m().prompts.result;
     const known = await identity(id);
     const adapter = promptsFor(known.provider);
-    if (known.provider !== 'claude') throw new Error(t.unsupported(adapter.agent));
+    if (!adapter.answers('tmux').size && !adapter.answers('orca').size)
+      throw new Error(t.unsupported(adapter.agent));
     const open = await asking(known.id);
     if (!open) throw new Error(t.notWaiting);
     if (answering.has(known.id)) throw new Error(t.busy);
     // Held from the confirmation on: a second click meanwhile is refused, never queued.
     answering.add(known.id);
-    let terminal: Awaited<ReturnType<typeof live>> = null;
+    let target: PromptTarget | null = null;
     try {
-      const which = open.request.kind === 'permission' ? 'permissions' : 'questions';
-      const settings = await answerSettings();
-      if (!settings[which]) {
+      const which = settingFor(open.request.kind);
+      const setting = (await answerSettings())[which];
+      if (setting === 'off') throw new TerminalInputError(t.off);
+      if (setting === 'unset') {
         // The first answer of a kind asks once; the choice stays in the desktop profile.
-        if (!(await askAnswers(e, which))) return { status: 'cancelled', message: '' };
-        await writeFile(answerSettingsFile(), JSON.stringify({ ...settings, [which]: true }), {
-          mode: 0o600,
-        });
+        if ((await changeSetting(e, which, true))[which] !== 'on')
+          return { status: 'cancelled', message: '' };
+        // The dialog may have changed while the confirmation was open: the same call, or nothing.
+        const again = await asking(known.id);
+        if (!again || again.id !== open.id || again.callId !== open.callId)
+          throw new TerminalInputError(t.changed);
       }
-      terminal = await live(known, true);
-      if (!terminal) throw new TerminalInputError(t.noTarget);
-      return await answerRequest(adapter, open, terminal, choice, {
-        sourcePath: known.sourcePath,
-      });
+      target = await adapter.target(known, true);
+      if (!target) throw new TerminalInputError(t.noTarget);
+      return await answerRequest(adapter, open, target, choice);
     } catch (error) {
-      if (error instanceof TerminalInputError || !terminal) throw error;
+      if (error instanceof TerminalInputError || !target) throw error;
       // Keys may already be in the terminal; never invite a blind retry.
-      throw new Error(t.unconfirmed(hostName(terminal.host)));
+      throw new Error(t.unconfirmed(target.where));
     } finally {
       answering.delete(known.id);
-      if (terminal) forgetTerminal(terminal.process.sessionId);
+      forgetTerminal(known.nativeId);
     }
   });
   ipcMain.handle('office:export', async (e, name, content) => {
@@ -966,17 +987,35 @@ async function terminalSendEnabled() {
   }
 }
 const answerSettingsFile = () => path.join(app.getPath('userData'), 'answer-prompts.json');
+const setting = (value: unknown): AnswerSetting =>
+  value === 'on' || value === 'off' ? value : 'unset';
 /**
- * Both off unless the person agreed: no file, a broken one or anything but `true` is off. Kept
+ * Never asked (no file, no value), on, or off. A file that cannot be read counts as off. Kept
  * in the desktop profile, never in the preferences the web preview shares.
  */
 async function answerSettings(): Promise<AnswerSettings> {
+  let text: string;
   try {
-    const saved = JSON.parse(await readFile(answerSettingsFile(), 'utf8'));
-    return { questions: saved?.questions === true, permissions: saved?.permissions === true };
-  } catch {
-    return { questions: false, permissions: false };
+    text = await readFile(answerSettingsFile(), 'utf8');
+  } catch (e) {
+    const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
+    return missing
+      ? { questions: 'unset', permissions: 'unset' }
+      : { questions: 'off', permissions: 'off' };
   }
+  try {
+    const saved = JSON.parse(text);
+    return { questions: setting(saved?.questions), permissions: setting(saved?.permissions) };
+  } catch {
+    return { questions: 'off', permissions: 'off' };
+  }
+}
+/** One settings change at a time (from Settings and from first answers alike). */
+let settingsQueue: Promise<unknown> = Promise.resolve();
+function serially<T>(change: () => Promise<T>): Promise<T> {
+  const next = settingsQueue.then(change, change);
+  settingsQueue = next.catch(() => undefined);
+  return next;
 }
 async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpResult> {
   if (s.provider === 'codex' && /^[\w-]+$/.test(s.nativeId)) {

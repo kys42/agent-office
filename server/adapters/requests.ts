@@ -3,10 +3,11 @@ import { redact } from './normalize.js';
 
 /*
  * What a request for input asks, from the tool call's own input: the questions of
- * AskUserQuestion (Codex request_user_input), the plan of ExitPlanMode, and — for a permission
- * prompt, which only the live process record shows — what the pending call is about. Agent
- * content is data: redacted (canonical placeholders, localized on read) and capped, never
- * translated. Anything malformed is left out rather than guessed.
+ * AskUserQuestion (Codex request_user_input) and the plan of ExitPlanMode. Agent content is
+ * data: redacted (canonical placeholders, localized on read) and capped, never translated; a
+ * request a cap cut is marked `truncated` (shown, never answered from the app). Anything
+ * malformed is left out rather than guessed. Permission prompts keep nothing here: the tool
+ * input of other calls is never stored.
  */
 
 type Obj = Record<string, unknown>;
@@ -21,19 +22,28 @@ export const REQUEST_LIMITS = {
   description: 600,
   plan: 20_000,
   planFile: 400,
-  tool: 120,
-  summary: 1000,
-  detail: 1200,
 } as const;
 
 const L = REQUEST_LIMITS;
-const text = (value: unknown, limit: number) =>
-  typeof value === 'string' ? redact(value.replace(/\r\n?/g, '\n').trim(), limit) : '';
-const line = (value: unknown, limit: number) =>
-  text(value, limit * 2)
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, limit);
+/** Whether any cap cut something while reading one request. */
+interface Cut {
+  cut: boolean;
+}
+function text(value: unknown, limit: number, c: Cut) {
+  if (typeof value !== 'string') return '';
+  const full = redact(value.replace(/\r\n?/g, '\n').trim(), Infinity);
+  if (full.length > limit) c.cut = true;
+  return full.slice(0, limit);
+}
+function line(value: unknown, limit: number, c: Cut) {
+  const one = text(value, Infinity, c).replace(/\s+/g, ' ').trim();
+  if (one.length > limit) c.cut = true;
+  return one.slice(0, limit);
+}
+function capped<T>(list: T[], limit: number, c: Cut) {
+  if (list.length > limit) c.cut = true;
+  return list.slice(0, limit);
+}
 
 /** Arguments arrive as an object (Claude) or as a JSON string (Codex function calls). */
 export function toolInput(value: unknown): Obj | null {
@@ -48,31 +58,30 @@ export function toolInput(value: unknown): Obj | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Obj) : null;
 }
 
-function option(value: unknown): RequestOption | null {
+function option(value: unknown, c: Cut): RequestOption | null {
   // Codex lists plain strings; Claude Code writes { label, description }.
   if (typeof value === 'string') {
-    const label = line(value, L.label);
+    const label = line(value, L.label, c);
     return label ? { label } : null;
   }
   if (!value || typeof value !== 'object') return null;
   const o = value as Obj;
-  const label = line(o.label ?? o.title ?? o.value, L.label);
+  const label = line(o.label ?? o.title ?? o.value, L.label, c);
   if (!label) return null;
-  const description = text(o.description, L.description);
+  const description = text(o.description, L.description, c);
   return description ? { label, description } : { label };
 }
 
-function question(value: unknown): RequestQuestion | null {
+function question(value: unknown, c: Cut): RequestQuestion | null {
   if (!value || typeof value !== 'object') return null;
   const q = value as Obj;
   // Claude Code: `question`; Codex request_user_input: `question`, or `title` in later builds.
-  const asked = text(q.question ?? q.title ?? q.prompt, L.question);
+  const asked = text(q.question ?? q.title ?? q.prompt, L.question, c);
   if (!asked) return null;
-  const options = (Array.isArray(q.options) ? q.options : [])
-    .slice(0, L.options)
-    .map(option)
+  const options = capped(Array.isArray(q.options) ? q.options : [], L.options, c)
+    .map((o) => option(o, c))
     .filter((o): o is RequestOption => !!o);
-  const header = line(q.header, L.header);
+  const header = line(q.header, L.header, c);
   return {
     ...(header ? { header } : {}),
     question: asked,
@@ -85,47 +94,19 @@ function question(value: unknown): RequestQuestion | null {
 export function inputRequest(tool: string, input: unknown): InputRequest | undefined {
   const args = toolInput(input);
   if (!args) return undefined;
+  const c: Cut = { cut: false };
+  const truncated = () => (c.cut ? { truncated: true as const } : {});
   if (/ExitPlanMode/.test(tool)) {
-    const plan = text(args.plan, L.plan);
+    const plan = text(args.plan, L.plan, c);
     if (!plan) return undefined;
-    const planFile = line(args.planFilePath ?? args.plan_file_path, L.planFile);
-    return { kind: 'plan', plan, ...(planFile ? { planFile } : {}) };
+    const planFile = line(args.planFilePath ?? args.plan_file_path, L.planFile, c);
+    return { kind: 'plan', plan, ...(planFile ? { planFile } : {}), ...truncated() };
   }
   if (/AskUserQuestion|request_user_input/.test(tool)) {
-    const questions = (Array.isArray(args.questions) ? args.questions : [])
-      .slice(0, L.questions)
-      .map(question)
+    const questions = capped(Array.isArray(args.questions) ? args.questions : [], L.questions, c)
+      .map((q) => question(q, c))
       .filter((q): q is RequestQuestion => !!q);
-    return questions.length ? { kind: 'question', questions } : undefined;
+    return questions.length ? { kind: 'question', questions, ...truncated() } : undefined;
   }
   return undefined;
-}
-
-/**
- * What a pending tool call would do, for the permission prompt that may be asking about it:
- * the command, file, address or pattern it names, else its own description. MCP and other
- * tools fall back to a compact view of their input.
- */
-export function permissionRequest(tool: string, input: unknown): InputRequest | undefined {
-  const args = toolInput(input);
-  const name = line(tool, L.tool);
-  if (!name) return undefined;
-  if (!args) return { kind: 'permission', tool: name, summary: '' };
-  const first = ['command', 'file_path', 'notebook_path', 'url', 'pattern', 'query', 'path']
-    .map((key) => args[key])
-    .find((value) => typeof value === 'string' && value.trim());
-  const description = text(args.description ?? args.prompt, L.detail);
-  let summary = text(first, L.summary);
-  if (!summary && description) summary = line(description, L.summary);
-  if (!summary) {
-    let compact = '';
-    try {
-      compact = JSON.stringify(args);
-    } catch {
-      /* circular input cannot come from JSON */
-    }
-    summary = compact && compact !== '{}' ? line(compact, L.summary) : '';
-  }
-  const detail = description && description !== summary ? description : '';
-  return { kind: 'permission', tool: name, summary, ...(detail ? { detail } : {}) };
 }

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseRecords } from '../server/adapters/normalize.js';
 import { applyLiveWait, type ClaudeProcess } from '../server/adapters/claude-live.js';
-import { inputRequest, permissionRequest, REQUEST_LIMITS } from '../server/adapters/requests.js';
+import { inputRequest, REQUEST_LIMITS } from '../server/adapters/requests.js';
+import { redact } from '../server/adapters/normalize.js';
 import { openRequest, requestHeadline } from '../src/shared/requests.js';
 import { stationSpeech } from '../src/shared/speech.js';
 import { localizeSession } from '../src/shared/canonical.js';
@@ -177,33 +178,47 @@ test('Requests are redacted and capped at rest', () => {
   assert.ok(many && many.kind === 'question');
   assert.equal(many.questions.length, REQUEST_LIMITS.questions);
   assert.equal(many.questions[0].options.length, REQUEST_LIMITS.options);
-  const p = permissionRequest('Bash', { command: `curl -H "Authorization: Bearer ${secret}"` });
-  assert.ok(p && p.kind === 'permission' && !p.summary.includes(secret));
+  // A cap that cut something marks the request: it is shown, never answered from the app.
+  assert.equal(r.truncated, true);
+  assert.equal(many.truncated, true);
+  assert.equal(
+    (inputRequest('AskUserQuestion', COLOR) as { truncated?: true }).truncated,
+    undefined,
+  );
 });
 
-test('A permission prompt shows the pending call: command, file, or a compact input', () => {
-  assert.deepEqual(permissionRequest('Bash', { command: 'echo hi', description: 'Print hi' }), {
-    kind: 'permission',
-    tool: 'Bash',
-    summary: 'echo hi',
-    detail: 'Print hi',
-  });
-  assert.deepEqual(permissionRequest('Write', { file_path: '/tmp/p/hello.txt', content: 'hi' }), {
-    kind: 'permission',
-    tool: 'Write',
-    summary: '/tmp/p/hello.txt',
-  });
-  assert.deepEqual(permissionRequest('WebFetch', { url: 'https://example.com', prompt: 'read' }), {
-    kind: 'permission',
-    tool: 'WebFetch',
-    summary: 'https://example.com',
-    detail: 'read',
-  });
-  assert.deepEqual(permissionRequest('mcp__x__do', { a: 1 }), {
-    kind: 'permission',
-    tool: 'mcp__x__do',
-    summary: '{"a":1}',
-  });
+test('Redaction covers environment, command-line and address secrets in every text', () => {
+  const t = ko.shared.redaction;
+  const cases: [string, string][] = [
+    [
+      'export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG',
+      `export AWS_SECRET_ACCESS_KEY=${t.hidden}`,
+    ],
+    ['GITHUB_TOKEN=abc123 npm publish', `GITHUB_TOKEN=${t.hidden} npm publish`],
+    [`use hf_${'a'.repeat(30)} now`, `use ${t.token} now`],
+    [`glpat-${'b'.repeat(20)}`, t.token],
+    [`AIza${'c'.repeat(35)}`, t.token],
+    [`AKIA${'D'.repeat(16)}`, t.token],
+    ['psql --password hunter2 -h db', `psql --password ${t.hidden} -h db`],
+    ['tool --token=abc', `tool --token=${t.hidden}`],
+    ['mysql -u root -psecret123 db', `mysql -u root -p${t.hidden} db`],
+    [
+      'git clone https://bob:s3cret@github.com/x/y',
+      `git clone https://bob:${t.hidden}@github.com/x/y`,
+    ],
+    ['curl -u admin:pa55 https://x', `curl -u admin:${t.hidden} https://x`],
+    ['curl --user=admin:pa55 https://x', `curl --user=admin:${t.hidden} https://x`],
+  ];
+  for (const [raw, want] of cases) assert.equal(redact(raw), want, raw);
+  // Ordinary text stays as it is.
+  for (const text of [
+    'max_tokens=100 and a -p flag',
+    'ssh -p 22 host',
+    'mysql -P 3306 -u root',
+    'see https://example.com/a:b',
+    'curl -u admin https://x',
+  ])
+    assert.equal(redact(text), text);
 });
 
 const waiting = (over: Partial<ClaudeProcess> = {}): ClaudeProcess => ({
@@ -217,39 +232,30 @@ const waiting = (over: Partial<ClaudeProcess> = {}): ClaudeProcess => ({
   ...over,
 });
 
-test('The live permission overlay carries what the pending Bash call would run', () => {
+test('A live permission prompt names its tool only: its input is never kept', () => {
   const s = parse([
-    user('u1', now - 5000, 'run echo hi'),
+    user('u1', now - 5000, 'say hi in the shell'),
     toolUse('a1', now - 4000, 'toolu_b', 'Bash', { command: 'echo hi', description: 'Print hi' }),
   ]);
-  // Not waiting yet: a running call is no request (the candidate is not shown).
+  // Not waiting yet: a running call is no request.
   assert.equal(openRequest(s), undefined);
   const live = applyLiveWait(s, waiting());
   assert.ok(live);
   const open = openRequest(live);
-  assert.deepEqual(open?.request, {
-    kind: 'permission',
-    tool: 'Bash',
-    summary: 'echo hi',
-    detail: 'Print hi',
-  });
-  // The bubble says what it asks, in the display language.
+  assert.deepEqual(open?.request, { kind: 'permission', tool: 'Bash' });
+  // Nothing of the call's input is in the session the collector stores.
+  assert.ok(!JSON.stringify(live).includes('echo hi'));
+  assert.ok(!JSON.stringify(live).includes('Print hi'));
+  // The bubble says which tool asks, in the display language.
   const speech = stationSpeech(live, []);
   assert.equal(speech.tone, 'attention');
-  assert.equal(speech.text, 'Bash 허락할까요: echo hi');
+  assert.equal(speech.text, 'Bash 허락할까요?');
   setLocale('en');
   try {
-    assert.equal(requestHeadline(open!.request), 'Allow Bash: echo hi');
+    assert.equal(requestHeadline(open!.request), 'Allow Bash?');
   } finally {
     setLocale('ko');
   }
-  // Once it ran, nothing of its input is kept.
-  const done = parse([
-    user('u1', now - 5000, 'say hi in the shell'),
-    toolUse('a1', now - 4000, 'toolu_b', 'Bash', { command: 'echo hi' }),
-    toolResult('r1', now - 3000, 'toolu_b', 'hi'),
-  ]);
-  assert.ok(!JSON.stringify(done).includes('echo hi'));
 });
 
 test('Codex tool arguments are never kept; its questions are', () => {

@@ -11,6 +11,7 @@ import type {
   AnswerChoice,
   DialogChoice,
   InputRequest,
+  PromptSubject,
   QuestionAnswer,
   Session,
   TerminalTarget,
@@ -121,14 +122,14 @@ function RequestBody({
           request={request}
           eventId={eventId}
           ready={!!ready}
-          other={!!ready?.other}
+          other={ready?.other ?? []}
           sending={sending}
           onAnswer={send}
         />
       ) : request.kind === 'plan' ? (
         <Plan request={request} />
       ) : (
-        <Permission request={request} />
+        <Permission tool={request.tool} subject={ready?.subject} />
       )}
       {ready && request.kind !== 'question' && (
         <Choices
@@ -144,6 +145,7 @@ function RequestBody({
           }
         />
       )}
+      {ready?.more && <small className="request-status">{c.more}</small>}
       {sending && (
         <small className="request-status" role="status">
           <Loader size={11} className="now-spin" />
@@ -166,7 +168,8 @@ function Questions({
   request: Extract<InputRequest, { kind: 'question' }>;
   eventId: string;
   ready: boolean;
-  other: boolean;
+  /** Per question: typed words can be sent (never for multi-select). */
+  other: boolean[];
   sending: boolean;
   onAnswer: (choice: AnswerChoice) => Promise<void>;
 }) {
@@ -254,7 +257,7 @@ function Questions({
               })}
             </ul>
           )}
-          {ready && other && (
+          {ready && other[qi] && !q.multiSelect && (
             <div className="request-other">
               {typed[qi] === null ? (
                 <button
@@ -334,26 +337,33 @@ function Plan({ request }: { request: Extract<InputRequest, { kind: 'plan' }> })
   );
 }
 
-function Permission({ request }: { request: Extract<InputRequest, { kind: 'permission' }> }) {
+/**
+ * A permission prompt: the tool by name and, once the desktop app has read it, what the
+ * screen says the call does. The call's input is never stored, so nothing else is shown.
+ */
+function Permission({ tool, subject }: { tool: string; subject?: PromptSubject }) {
   const { t } = useI18n();
   const c = t.prompts.card;
+  const what = subject?.command ?? subject?.path ?? subject?.url;
   return (
     <section className="request-permission">
       <div className="request-head">
         <ShieldQuestion size={13} />
-        <b>{c.permission(request.tool)}</b>
+        <b>{c.permission(tool)}</b>
       </div>
-      {request.summary ? (
-        <pre className="request-command">{request.summary}</pre>
-      ) : (
-        <small>{c.noSummary}</small>
+      {subject && what && (
+        <>
+          <small className="request-file">
+            {subject.title} · {c.onScreen}
+          </small>
+          <pre className="request-command">{what}</pre>
+        </>
       )}
-      {request.detail && <p className="request-text">{request.detail}</p>}
     </section>
   );
 }
 
-/** The dialog's own choices, as drawn: 'keep allowing' choices stand apart. */
+/** The dialog's one-shot choices, as drawn (allow once, deny, approve with edits asked). */
 function Choices({
   choices,
   sending,
@@ -363,22 +373,18 @@ function Choices({
   sending: boolean;
   onPick: (choice: DialogChoice) => void;
 }) {
-  const { t } = useI18n();
-  const shown = choices.filter((choice) => choice.role !== 'text');
   return (
     <div className="request-choices">
-      {shown.map((choice, i) => (
+      {choices.map((choice) => (
         <button
           key={choice.number}
           type="button"
-          className={`button request-choice role-${choice.role ?? 'plain'} ${i === 0 ? 'primary' : 'subtle'}`}
+          className={`button request-choice role-${choice.role} ${choice.role === 'allow' ? 'primary' : 'subtle'}`}
           disabled={sending}
-          title={choice.role === 'always' ? t.prompts.card.always : undefined}
           onClick={() => onPick(choice)}
         >
           <span className="request-choice-number">{choice.number}</span>
           {choice.label}
-          {choice.role === 'always' && <small>{t.prompts.card.always}</small>}
         </button>
       ))}
     </div>

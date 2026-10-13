@@ -1,12 +1,19 @@
-import type { DialogChoice, InputRequest, QuestionAnswer } from '../../src/shared/types.js';
+import type {
+  DialogChoice,
+  InputRequest,
+  PromptSubject,
+  QuestionAnswer,
+  SessionIdentity,
+} from '../../src/shared/types.js';
 import type { Screen } from '../composer/screen.js';
 
 /**
  * A dialog the agent draws in its terminal to ask the person something: a question with
- * options, a plan to approve, or a permission prompt. Agents differ in how it is drawn and which
- * keys answer it, so each agent has an adapter behind this one interface; the flow around it
- * (the opt-in, the live record, terminal ownership, matching the recorded request, verifying the
- * outcome) exists once, in desktop/answers.ts.
+ * options, a plan to approve, or a permission prompt. Agents differ in how it is drawn, which
+ * keys answer it, how their process and transcript are checked; each agent has an adapter behind
+ * this one interface, and the flow around it (the opt-in, identifying the open call, verifying
+ * the outcome) exists once, in desktop/answers.ts. The screen is the source of truth: a key is
+ * pressed only when the dialog on it is unambiguous.
  */
 
 /**
@@ -18,13 +25,42 @@ export type PromptKey = 'Up' | 'Down' | 'Right' | 'Enter' | 'Space';
 
 /** The terminal a dialog is drawn in: tmux or Orca, as an adapter sees it. */
 export interface PromptHost {
-  readonly styled: boolean;
+  readonly kind: 'tmux' | 'orca';
   /** The screen as shown now, or null when it cannot be read. */
   read(): Promise<Screen | null>;
   press(keys: readonly PromptKey[]): Promise<void>;
   /** Puts plain text where the cursor is (a text row of the dialog), without submitting it. */
   type(text: string): Promise<void>;
   wait(ms: number): Promise<void>;
+}
+
+/** A tool call the agent made in its current turn that has no result yet. */
+export interface OpenCall {
+  /** The native call id (Claude `tool_use.id`): what the answer's result will carry. */
+  id: string;
+  tool: string;
+  /** The call's input, as written: kept in memory for one check, never stored. */
+  input: Record<string, unknown>;
+  /** Where the agent was when it made the call (resolves relative paths a dialog shows). */
+  cwd?: string;
+}
+
+/**
+ * A live session an adapter can answer: its terminal and what the agent's own state says. All
+ * of it is re-checked per action; nothing here is cached by the common flow.
+ */
+export interface PromptTarget {
+  host: PromptHost;
+  /** Where answers go, as told to the person ("Orca", "tmux work:1.0"). */
+  where: string;
+  /** The agent's own record says it waits for the person right now. */
+  waiting: boolean;
+  /** The same process, still waiting, still in front of its terminal: asked before every key. */
+  stillThere(): Promise<boolean>;
+  /** The open calls of the current turn, from the agent's transcript; null when unreadable. */
+  openCalls(): Promise<OpenCall[] | null>;
+  /** The transcript holds a result for exactly this call id; null when unreadable. */
+  hasResult(callId: string): Promise<boolean | null>;
 }
 
 /** One numbered row of a dialog, as drawn. */
@@ -56,6 +92,8 @@ export type Dialog =
       rows: DialogRow[];
       /** Multi-select: the unnumbered "Submit" row, and whether the cursor is on it. */
       submit?: { cursor: boolean };
+      /** The pane's height, when the host reports it. */
+      height?: number;
     }
   | {
       kind: 'review';
@@ -66,7 +104,17 @@ export type Dialog =
       rows: DialogRow[];
     }
   | { kind: 'plan'; plan: string; planFile?: string; rows: DialogRow[] }
-  | { kind: 'permission'; title: string; body: string; ask: string; rows: DialogRow[] };
+  | {
+      kind: 'permission';
+      /** The heading ("Bash command", "Create file", "Edit file", "Fetch"). */
+      title: string;
+      /** Lines between the heading and the first fence (a file path, a description, a tip). */
+      lines: string[];
+      /** The first fenced block (`╌`), wrapped lines rejoined: a command, a diff, a fetch. */
+      fence: string | null;
+      ask: string;
+      rows: DialogRow[];
+    };
 
 /**
  * What the terminal shows. `closed`: no dialog (the prompt, output, another view).
@@ -79,6 +127,21 @@ export type DialogState =
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
 
+/** The open call the dialog asks about, with what it asks. */
+export interface Asked {
+  call: OpenCall;
+  /** What the call asks: questions and plans from its input; permission by tool name only. */
+  request: InputRequest;
+  /** Permission prompts: what the screen says the call does. */
+  subject?: PromptSubject;
+}
+
+/**
+ * Which open call a dialog is about: `one` only when exactly one call equals what the screen
+ * shows; `none` when none does; `many` when the screen cannot tell them apart.
+ */
+export type Identified = { status: 'one'; asked: Asked } | { status: 'none' | 'many' };
+
 /** What the person picked: options of each question, or one of the dialog's own choices. */
 export type PromptChoice =
   | { kind: 'question'; answers: QuestionAnswer[] }
@@ -86,43 +149,52 @@ export type PromptChoice =
 
 /**
  * How answering ended. `submitted`: the final key went in after the dialog was verified to hold
- * exactly the choice. Otherwise nothing more was pressed: `changed` the dialog stopped matching
- * the request, `partial` it was already partly answered there, `unverified` a key did not do
- * what it should, `lost` Claude stopped being the one at the terminal, `bad-choice` the choice is
- * not on the dialog, `unreadable` the screen could not be read.
+ * exactly the choice. Otherwise nothing more was pressed: `changed` the dialog stopped being
+ * this call's, `partial` it was already partly answered there, `ambiguous` the screen could not
+ * tell options or questions apart, `unverified` a key did not do what it should, `lost` the
+ * agent stopped being the one at the terminal, `bad-choice` the choice is not a one-shot choice
+ * on the dialog, `unreadable` the screen could not be read, `unsupported` no adapter answers here.
  */
 export type AnswerOutcome =
   | { status: 'submitted' }
   | {
       status: 'refused';
-      reason: 'changed' | 'partial' | 'unverified' | 'lost' | 'bad-choice' | 'unreadable';
+      reason:
+        | 'changed'
+        | 'partial'
+        | 'ambiguous'
+        | 'unverified'
+        | 'lost'
+        | 'bad-choice'
+        | 'unreadable'
+        | 'unsupported';
       /** Some keys were already pressed (the dialog may show a partial answer). */
       pressed: boolean;
     };
 
-export interface PromptCapabilities {
-  /** The adapter can read this agent's dialogs and answer them by keys on this host. */
-  canAnswer: boolean;
-}
-
 export interface PromptAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */
   readonly agent: string;
-  capabilities(host: Pick<PromptHost, 'styled'> | null): PromptCapabilities;
+  /** Request kinds this adapter answers on this host (measured end to end there). */
+  answers(host: PromptHost['kind']): ReadonlySet<InputRequest['kind']>;
+  /** The live session to answer in, or null (none found, or this agent has none). */
+  target(session: SessionIdentity, fresh: boolean): Promise<PromptTarget | null>;
   inspect(host: PromptHost): Promise<DialogState>;
-  /** The dialog asks exactly what `request` recorded: same kind and the same words. */
-  matches(dialog: Dialog, request: InputRequest): boolean;
-  /** Plan approval and permission prompts: the choices as drawn, for the person to pick from. */
+  /** Which of the open calls the dialog is about (exact, see Identified). */
+  identify(dialog: Dialog, calls: readonly OpenCall[]): Identified;
+  /** Plan approval and permission prompts: the one-shot choices as drawn, for the person. */
   choices(dialog: Dialog): DialogChoice[];
-  /** Questions: the dialog offers a row for typed words (single-select questions only). */
-  takesText(dialog: Dialog): boolean;
+  /** The dialog draws choices that are not offered here (they keep applying, or take words). */
+  hasMore(dialog: Dialog): boolean;
+  /** Questions: whether typed words can be sent, per question of the request. */
+  takesText(dialog: Dialog, request: InputRequest): boolean[];
   /**
-   * Presses the keys for `choice`, verifying the screen after every step. `proceed` is asked
-   * before every key: false (Claude paused, gone, no longer waiting) stops at once.
+   * Presses the keys for `choice`, verifying the screen before and after every key. `proceed` is
+   * asked before every key: false (paused, gone, no longer waiting) stops at once.
    */
   answer(
     host: PromptHost,
-    request: InputRequest,
+    asked: Asked,
     choice: PromptChoice,
     proceed: () => Promise<boolean>,
   ): Promise<AnswerOutcome>;

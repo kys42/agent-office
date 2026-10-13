@@ -6,13 +6,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseStyledScreen } from '../desktop/composer/index.js';
 import {
+  callShows,
   claudeCodePrompts,
+  claudeTarget,
+  openCallsIn,
   parseDialog,
   promptsFor,
+  resultIn,
+  subjectOf,
+  type ClaudeTargetDeps,
   type Dialog,
+  type OpenCall,
   type PromptKey,
 } from '../desktop/prompts/index.js';
-import { answerRequest, inspectPrompt, type AnswerDeps } from '../desktop/answers.js';
+import { answerRequest, inspectPrompt } from '../desktop/answers.js';
 import type { LiveTerminal, RunOptions } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
 import type { AskingEvent } from '../src/shared/requests.js';
@@ -31,13 +38,15 @@ const plainScreen = (name: string) => ({
   text: readFileSync(path.join(FIXTURES, `${name}.plain.txt`), 'utf8'),
 });
 const dialog = (name: string) => parseDialog(styled(name)) as Dialog;
+const permission = (name: string) => dialog(name) as Extract<Dialog, { kind: 'permission' }>;
+const MEASURE =
+  '/private/tmp/claude-501/-Users-someone-xyz-orca-workspaces-agent-office-global/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure';
 
-const COLOR: InputRequest = {
-  kind: 'question',
+const COLOR_INPUT = {
   questions: [
     {
-      header: 'Color',
       question: 'Pick a color',
+      header: 'Color',
       multiSelect: false,
       options: [
         { label: 'Red', description: '따뜻하고 강렬한 색' },
@@ -47,52 +56,52 @@ const COLOR: InputRequest = {
     },
   ],
 };
-const FRUITS: InputRequest = {
-  kind: 'question',
+const FRUITS_INPUT = {
   questions: [
     {
-      header: 'Fruit',
       question: 'Pick fruits',
+      header: 'Fruit',
       multiSelect: true,
       options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
     },
   ],
 };
-const TWO: InputRequest = {
-  kind: 'question',
+const TWO_INPUT = {
   questions: [
     {
-      header: 'Color',
       question: 'Pick a color',
+      header: 'Color',
       multiSelect: false,
       options: [{ label: 'Red' }, { label: 'Green' }, { label: 'Blue' }],
     },
     {
-      header: 'Size',
       question: 'Pick a size',
+      header: 'Size',
       multiSelect: false,
       options: [{ label: 'Small' }, { label: 'Medium' }, { label: 'Large' }],
     },
   ],
 };
-const PLAN: InputRequest = {
-  kind: 'plan',
+const PLAN_INPUT = {
   plan: '1. 작업 디렉터리에 `hello.txt` 파일을 만들고 내용으로 "hi"를 쓴다.\n2. 확인: `cat hello.txt`를 실행해 출력이 `hi`인지 본다.\n',
-  planFile: '/Users/someone.xyz/.claude/plans/plan-to-create-hello-txt-linear-tome.md',
+  planFilePath: '/Users/someone.xyz/.claude/plans/plan-to-create-hello-txt-linear-tome.md',
 };
-const BASH: InputRequest = {
-  kind: 'permission',
-  tool: 'Bash',
-  summary: 'echo hi > hello.txt',
-  detail: 'Write hi to a text file',
+const call = (
+  id: string,
+  tool: string,
+  input: Record<string, unknown>,
+  cwd?: string,
+): OpenCall => ({ id, tool, input, ...(cwd ? { cwd } : {}) });
+const oneOf = (d: Dialog, calls: OpenCall[]) => {
+  const found = claudeCodePrompts.identify(d, calls);
+  return found.status === 'one' ? found.asked.call.id : found.status;
 };
-const WRITE: InputRequest = { kind: 'permission', tool: 'Write', summary: '/tmp/p/hello.txt' };
 
 test('Every captured dialog reads the same from plain and styled captures', () => {
   const names = readdirSync(FIXTURES)
     .filter((f) => f.endsWith('.e.txt'))
     .map((f) => f.slice(0, -'.e.txt'.length));
-  assert.ok(names.length >= 20);
+  assert.ok(names.length >= 25);
   for (const name of names)
     assert.deepEqual(parseDialog(styled(name)), parseDialog(plainScreen(name)), name);
 });
@@ -114,7 +123,6 @@ test('Questions: rows, descriptions, the text row, the aside, tabs and the curso
       [5, 'Chat about this', '', false, false, true],
     ],
   );
-  assert.equal(claudeCodePrompts.takesText(d), true);
   // Typed words replace the text row's hint; the cursor sits there.
   const typed = dialog('a3-q-typed');
   assert.equal(typed.rows.find((r) => r.input)?.label, 'teal please');
@@ -128,7 +136,12 @@ test('Questions: rows, descriptions, the text row, the aside, tabs and the curso
     [true, false, true],
   );
   assert.deepEqual(multi.submit, { cursor: true });
-  assert.equal(claudeCodePrompts.takesText(multi), false);
+  // Typed words: per question, never for multi-select.
+  const mixed = {
+    kind: 'question',
+    questions: [...TWO_INPUT.questions, ...FRUITS_INPUT.questions],
+  } as InputRequest;
+  assert.deepEqual(claudeCodePrompts.takesText(d, mixed), [true, true, false]);
   // Two questions: the second shown after the first was answered.
   const second = dialog('c2-digit2');
   assert.ok(second.kind === 'question');
@@ -148,7 +161,7 @@ test('Questions: rows, descriptions, the text row, the aside, tabs and the curso
     );
 });
 
-test('Reviews, plans and permission prompts', () => {
+test('Reviews and plans; only one-shot choices are offered', () => {
   assert.deepEqual(dialog('c5-review'), {
     kind: 'review',
     complete: true,
@@ -167,63 +180,199 @@ test('Reviews, plans and permission prompts', () => {
   if (plan.kind !== 'plan') return;
   assert.equal(plan.planFile, '~/.claude/plans/plan-to-create-hello-txt-linear-tome.md');
   assert.ok(plan.plan.startsWith('1. 작업 디렉터리에 hello.txt'));
+  // Plans: only "manually approve edits" (never auto mode, never the text row).
   assert.deepEqual(claudeCodePrompts.choices(plan), [
-    { number: 1, label: 'Yes, and use auto mode', role: 'always' },
     { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
-    { number: 3, label: 'Tell Claude what to change', role: 'text' },
   ]);
-  const bash = dialog('e2-open');
-  assert.equal(bash.kind, 'permission');
-  if (bash.kind !== 'permission') return;
-  assert.equal(bash.title, 'Bash command');
-  assert.equal(bash.ask, 'Do you want to proceed?');
-  assert.ok(bash.body.includes('echo hi > hello.txt'));
-  const choices = claudeCodePrompts.choices(bash);
+  assert.equal(claudeCodePrompts.hasMore(plan), true);
+  // Bash: Yes and No; "always allow access" and "switch to auto mode" stay in the terminal.
+  assert.deepEqual(claudeCodePrompts.choices(dialog('e2-open')), [
+    { number: 1, label: 'Yes', role: 'allow' },
+    { number: 4, label: 'No', role: 'deny' },
+  ]);
+  // Files: "switch to accept edits" stays in the terminal.
   assert.deepEqual(
-    choices.map((c) => [c.number, c.role]),
-    [
-      [1, 'allow'],
-      [2, 'always'],
-      [3, 'always'],
-      [4, 'deny'],
-    ],
+    claudeCodePrompts.choices(dialog('f1-write-open')).map((c) => c.label),
+    ['Yes', 'No'],
   );
-  // A label wrapped at the pane's edge reads whole (the path breaks mid-word).
+  // Fetch: its plain No reads "No, and tell Claude what to do differently (esc)" (measured).
+  assert.deepEqual(claudeCodePrompts.choices(dialog('m-fetch')), [
+    { number: 1, label: 'Yes', role: 'allow' },
+    { number: 3, label: 'No, and tell Claude what to do differently (esc)', role: 'deny' },
+  ]);
+  // Tab turned Yes into a text row: nothing but No is offered then.
+  assert.deepEqual(
+    claudeCodePrompts.choices(dialog('f5-tab-amend')).map((c) => c.label),
+    ['No'],
+  );
+  // A hook's "don't ask again for: rtk read *" is never offered.
+  assert.deepEqual(
+    claudeCodePrompts.choices(dialog('k-bash-hook')).map((c) => c.label),
+    ['Yes', 'No'],
+  );
+});
+
+test('A permission dialog says what the call does: the command, the file or the address', () => {
+  assert.deepEqual(subjectOf(permission('e2-open')), {
+    title: 'Bash command',
+    command: 'echo hi > hello.txt',
+  });
+  assert.deepEqual(subjectOf(permission('f1-write-open')), {
+    title: 'Create file',
+    path: 'hello.txt',
+  });
+  assert.deepEqual(subjectOf(permission('l-edit')), { title: 'Edit file', path: 'hello.txt' });
+  assert.deepEqual(subjectOf(permission('m-fetch')), {
+    title: 'Fetch',
+    url: 'https://example.com/',
+  });
+  // A long command wraps behind a faint border, mid-path: read back whole.
+  assert.deepEqual(subjectOf(permission('k-bash-hook')), {
+    title: 'Bash command',
+    command: `rtk read ${MEASURE}/proj-e/e2e-plan.txt`,
+  });
+  const raw = JSON.parse(readFileSync(path.join(FIXTURES, 'o5-orca-bash.json'), 'utf8'));
+  const orca = parseDialog({ text: raw.result.terminal.tail.join('\n') });
+  assert.deepEqual(subjectOf(orca as Extract<Dialog, { kind: 'permission' }>), {
+    title: 'Bash command',
+    command: 'echo hi > hello3.txt',
+  });
+});
+
+test('Permission prompts: exactly one open call must equal the screen, character for character', () => {
+  const bash = permission('e2-open');
+  const subject = subjectOf(bash)!;
+  const shows = (input: Record<string, unknown>, tool = 'Bash') =>
+    callShows(call('x', tool, input), subject);
+  assert.ok(shows({ command: 'echo hi > hello.txt' }));
+  assert.ok(shows({ command: 'echo  hi >\n hello.txt  ' }), 'spacing only');
+  for (const command of [
+    'echo hi', // a prefix
+    'echo hi > hello.txt && rm -rf ~', // the screen shows a prefix of it
+    'echo hi | hello.txt', // > → |
+    'echo hi > ~/hello.txt', // ~ → /
+    'echo hi > hello.txt;',
+  ])
+    assert.ok(!shows({ command }), command);
+  assert.ok(!shows({ command: 'echo hi > hello.txt' }, 'Write'), 'another tool');
+  assert.ok(!shows({ description: 'Write hi to a text file' }), 'description only');
+  // A hook rewrote the command: the screen runs `rtk …`, the record says `cat …`.
+  const hook = subjectOf(permission('k-bash-hook'))!;
+  const file = `${MEASURE}/proj-e/e2e-plan.txt`;
+  assert.ok(!callShows(call('x', 'Bash', { command: `cat ${file}` }), hook));
+  assert.ok(callShows(call('x', 'Bash', { command: `rtk read ${file}` }), hook));
   assert.ok(
-    choices[1].label.endsWith(
-      '/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-e from this project',
+    !callShows(call('x', 'Bash', { command: 'git push' }), {
+      title: 'Bash command',
+      command: 'rtk git push',
+    }),
+  );
+  // Files: the path as shown, relative to where the call was made, or absolute.
+  const write = subjectOf(permission('f1-write-open'))!;
+  assert.ok(callShows(call('x', 'Write', { file_path: '/p/hello.txt' }, '/p'), write));
+  assert.ok(
+    !callShows(call('x', 'Write', { file_path: '/p/sub/hello.txt' }, '/p'), write),
+    'basename only',
+  );
+  assert.ok(!callShows(call('x', 'Write', { file_path: '/q/hello.txt' }, '/p'), write));
+  assert.ok(!callShows(call('x', 'Edit', { file_path: '/p/hello.txt' }, '/p'), write));
+  assert.ok(
+    callShows(
+      call('x', 'Edit', { file_path: '/p/hello.txt' }, '/p'),
+      subjectOf(permission('l-edit'))!,
     ),
   );
-  // Narrow pane: the wrapped choice reads whole too.
+  // Fetch: the same address (as a browser reads it), never another.
+  const fetch = subjectOf(permission('m-fetch'))!;
+  assert.ok(callShows(call('x', 'WebFetch', { url: 'https://example.com' }), fetch));
+  assert.ok(!callShows(call('x', 'WebFetch', { url: 'https://example.org' }), fetch));
+  assert.ok(!callShows(call('x', 'WebFetch', { url: 'https://example.com/x' }), fetch));
+  // Parallel calls: only the one that equals the screen; two equal ones cannot be told apart.
+  const ls: Extract<Dialog, { kind: 'permission' }> = { ...bash, fence: 'ls' };
   assert.equal(
-    claudeCodePrompts.choices(dialog('g3-narrow-write'))[1].label,
-    'Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)',
+    oneOf(ls, [
+      call('a', 'Bash', { command: 'rm -rf dist && ls' }),
+      call('b', 'Bash', { command: 'ls' }),
+    ]),
+    'b',
   );
-  // Tab turned Yes into a text row: never a plain Yes.
-  assert.equal(claudeCodePrompts.choices(dialog('f5-tab-amend'))[0].role, 'text');
+  assert.equal(
+    oneOf(ls, [call('a', 'Bash', { command: 'ls' }), call('b', 'Bash', { command: 'ls' })]),
+    'many',
+  );
+  // A subagent asks with its own Bash; the parent only has its open Agent call.
+  assert.equal(
+    oneOf(bash, [call('a', 'Agent', { prompt: 'echo hi > hello.txt', description: 'x' })]),
+    'none',
+  );
+  // Unknown headings (an MCP tool, a notebook) are never answered.
+  assert.equal(subjectOf({ ...bash, title: 'mcp__notion__search' }), null);
 });
 
-test('A hook that rewrote the command shows another command: never answered from here', () => {
-  // Measured: a PreToolUse hook turned `cat <file>` into `rtk read <file>`; the long command
-  // wraps behind a faint border, mid-path.
-  const file =
-    '/private/tmp/claude-501/-Users-someone-xyz-orca-workspaces-agent-office-global/ec84eaa1-6d0f-496d-a35d-8dcf586a1cf8/scratchpad/measure/proj-e/e2e-plan.txt';
-  const d = dialog('k-bash-hook');
-  assert.equal(d.kind, 'permission');
-  assert.ok(
-    claudeCodePrompts.matches(d, { kind: 'permission', tool: 'Bash', summary: `rtk read ${file}` }),
+test('Questions and plans: the open call whose input the dialog shows', () => {
+  const color = call('q1', 'AskUserQuestion', COLOR_INPUT);
+  assert.equal(oneOf(dialog('a2-q-open'), [color]), 'q1');
+  assert.equal(oneOf(dialog('b1-open'), [call('q2', 'AskUserQuestion', FRUITS_INPUT)]), 'q2');
+  assert.equal(oneOf(dialog('c1-open'), [call('q3', 'AskUserQuestion', TWO_INPUT)]), 'q3');
+  assert.equal(oneOf(dialog('c5-review'), [call('q3', 'AskUserQuestion', TWO_INPUT)]), 'q3');
+  // Other words, options, kinds, headers: none.
+  const variant = (q: Record<string, unknown>) =>
+    call('v', 'AskUserQuestion', { questions: [{ ...COLOR_INPUT.questions[0], ...q }] });
+  for (const q of [
+    { question: 'Pick a colour' },
+    { options: [{ label: 'Red' }, { label: 'Green' }] },
+    { multiSelect: true },
+    { header: 'Colour' },
+  ])
+    assert.equal(oneOf(dialog('a2-q-open'), [variant(q)]), 'none', JSON.stringify(q));
+  assert.equal(oneOf(dialog('a2-q-open'), [color, { ...color, id: 'q9' }]), 'many');
+  // A question cut at rest (too long) is never compared.
+  const long = call('l', 'AskUserQuestion', {
+    questions: [{ ...COLOR_INPUT.questions[0], question: 'Pick a color ' + 'x'.repeat(2000) }],
+  });
+  assert.equal(oneOf(dialog('a2-q-open'), [long]), 'none');
+  // Plans: the plan file and the beginning of the plan itself.
+  assert.equal(oneOf(dialog('d1-open'), [call('p', 'ExitPlanMode', PLAN_INPUT)]), 'p');
+  assert.equal(
+    oneOf(dialog('d1-open'), [call('p', 'ExitPlanMode', { plan: PLAN_INPUT.plan })]),
+    'p',
   );
-  assert.ok(
-    !claudeCodePrompts.matches(d, { kind: 'permission', tool: 'Bash', summary: `cat ${file}` }),
+  assert.equal(
+    oneOf(dialog('d1-open'), [
+      call('p', 'ExitPlanMode', { ...PLAN_INPUT, planFilePath: '/x/.claude/plans/other.md' }),
+    ]),
+    'none',
   );
-  assert.equal(claudeCodePrompts.choices(d)[1].label, 'Yes, and don’t ask again for: rtk read *');
-});
-
-test('Orca reports the same dialog (no blank lines, no draft)', () => {
-  const raw = JSON.parse(readFileSync(path.join(FIXTURES, 'o5-orca-bash.json'), 'utf8'));
-  const d = parseDialog({ text: raw.result.terminal.tail.join('\n') });
-  assert.equal(d.kind, 'permission');
-  assert.ok(claudeCodePrompts.matches(d as Dialog, { ...BASH, summary: 'echo hi > hello3.txt' }));
+  assert.equal(
+    oneOf(dialog('d1-open'), [
+      call('p', 'ExitPlanMode', { ...PLAN_INPUT, plan: '1. Delete everything\n2. Done' }),
+    ]),
+    'none',
+  );
+  // A long label wrapped in a narrow pane no longer equals the recorded option: none.
+  assert.equal(
+    oneOf(dialog('g1-narrow'), [
+      call('n', 'AskUserQuestion', {
+        questions: [
+          {
+            question:
+              'Which deployment strategy should we use for the staging environment rollout this week?',
+            header: 'Deploy',
+            multiSelect: false,
+            options: [
+              {
+                label:
+                  'Blue-green deployment with automatic traffic switching after health checks pass',
+              },
+              { label: 'Canary release to five percent of users first then gradually increase' },
+              { label: 'Rolling update' },
+            ],
+          },
+        ],
+      }),
+    ]),
+    'none',
+  );
 });
 
 test('No dialog: the open prompt, an unreadable screen, or nothing on it', () => {
@@ -231,89 +380,69 @@ test('No dialog: the open prompt, an unreadable screen, or nothing on it', () =>
   assert.deepEqual(parseDialog(null), { kind: 'unreadable' });
   assert.deepEqual(parseDialog({ text: '' }), { kind: 'closed' });
   // A numbered list in the output above the open prompt is no dialog.
-  assert.deepEqual(
-    parseDialog({
-      text: [
-        '⏺ Steps:',
-        '  1. one',
-        '  2. two',
-        '─'.repeat(40),
-        '❯ ',
-        '─'.repeat(40),
-        '  ⏸ manual',
-      ].join('\n'),
-    }),
-    { kind: 'closed' },
-  );
+  const text = ['⏺ Steps:', '  1. one', '  2. two', '─'.repeat(40), '❯ ', '─'.repeat(40), '  ⏸ x'];
+  assert.deepEqual(parseDialog({ text: text.join('\n') }), { kind: 'closed' });
 });
 
-test('The dialog must ask exactly what the record asked', () => {
-  const m = claudeCodePrompts.matches;
-  assert.ok(m(dialog('a2-q-open'), COLOR), 'case 1');
-  assert.ok(m(dialog('b1-open'), FRUITS), 'case 2');
-  assert.ok(m(dialog('c1-open'), TWO), 'case 3');
-  assert.ok(m(dialog('c2-digit2'), TWO), 'case 4');
-  assert.ok(m(dialog('c5-review'), TWO), 'case 5');
-  assert.ok(m(dialog('d1-open'), PLAN), 'case 6');
-  assert.ok(
-    m(dialog('d1-open'), { kind: 'plan', plan: PLAN.kind === 'plan' ? PLAN.plan : '' }),
-    'case 7',
+// ── Transcripts: open calls and results, parsed ──────────────────────────────────────────────
+
+const SID = '6dd9f1ee-30b0-4650-9b8f-6f2961115e8b';
+type Use = { id: string; name: string; input: Record<string, unknown> };
+const jsonl = (records: Record<string, unknown>[]) =>
+  records.map((r) => JSON.stringify(r)).join('\n') + '\n';
+const prompt = (text: string) => ({
+  type: 'user',
+  sessionId: SID,
+  message: { role: 'user', content: text },
+});
+const uses = (list: Use[], extra: Record<string, unknown> = {}) => ({
+  type: 'assistant',
+  sessionId: SID,
+  cwd: '/p',
+  ...extra,
+  message: { role: 'assistant', content: list.map((u) => ({ type: 'tool_use', ...u })) },
+});
+const result = (id: string, content = 'ok') => ({
+  type: 'user',
+  sessionId: SID,
+  message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content }] },
+});
+
+test('Open calls are the current turn’s calls without a result, never a sidechain’s', () => {
+  const text = jsonl([
+    prompt('earlier'),
+    uses([{ id: 'old', name: 'Bash', input: { command: 'ls' } }]),
+    prompt('now'),
+    uses([
+      { id: 'a', name: 'Bash', input: { command: 'rm -rf dist && ls' } },
+      { id: 'b', name: 'Bash', input: { command: 'ls' } },
+    ]),
+    result('a'),
+    uses([{ id: 's', name: 'Bash', input: { command: 'ls' } }], { isSidechain: true }),
+  ]);
+  assert.deepEqual(
+    openCallsIn(text).map((c) => [c.id, c.cwd]),
+    [['b', '/p']],
   );
-  assert.ok(m(dialog('e2-open'), BASH), 'case 8');
-  assert.ok(m(dialog('f1-write-open'), WRITE), 'case 9');
-  // Other words, other options, another kind, another command or file: never.
-  const other = (q: Partial<Extract<InputRequest, { kind: 'question' }>['questions'][0]>) =>
-    ({
-      kind: 'question',
-      questions: [{ ...(COLOR as Extract<InputRequest, { kind: 'question' }>).questions[0], ...q }],
-    }) as InputRequest;
-  assert.ok(!m(dialog('a2-q-open'), other({ question: 'Pick a colour' })), 'case 10');
-  assert.ok(
-    !m(dialog('a2-q-open'), other({ options: [{ label: 'Red' }, { label: 'Green' }] })),
-    'case 11',
-  );
-  assert.ok(!m(dialog('a2-q-open'), other({ multiSelect: true })), 'case 12');
-  assert.ok(!m(dialog('a2-q-open'), other({ header: 'Colour' })), 'case 13');
-  assert.ok(!m(dialog('a2-q-open'), FRUITS), 'case 14');
-  assert.ok(!m(dialog('a2-q-open'), BASH), 'case 15');
-  assert.ok(!m(dialog('e2-open'), { ...BASH, summary: 'echo hi > other.txt' }), 'case 16');
-  assert.ok(!m(dialog('e2-open'), { ...BASH, summary: 'rm -rf hello.txt' }), 'case 17');
-  assert.ok(!m(dialog('e2-open'), WRITE), 'case 18');
-  assert.ok(!m(dialog('f1-write-open'), { ...WRITE, summary: '/tmp/p/other.txt' }), 'case 19');
-  assert.ok(
-    !m(dialog('d1-open'), {
-      ...PLAN,
-      planFile: '/x/.claude/plans/another-plan.md',
-    } as InputRequest),
-    'case 20',
-  );
-  // A long label wrapped in a narrow pane no longer equals the recorded option: refused.
-  assert.ok(
-    !m(dialog('g1-narrow'), {
-      kind: 'question',
-      questions: [
-        {
-          question:
-            'Which deployment strategy should we use for the staging environment rollout this week?',
-          header: 'Deploy',
-          multiSelect: false,
-          options: [
-            {
-              label:
-                'Blue-green deployment with automatic traffic switching after health checks pass',
-            },
-            { label: 'Canary release to five percent of users first then gradually increase' },
-            { label: 'Rolling update' },
-          ],
-        },
-      ],
-    }),
-  );
+  // Results by exact id: a result that merely mentions an id does not count.
+  assert.equal(resultIn(jsonl([result('other', 'see "tool_use_id":"b"')]), 'b'), false);
+  assert.equal(resultIn(jsonl([result('b')]), 'b'), true);
+  assert.equal(resultIn('{"tool_use_id":"b"', 'b'), false);
 });
 
 // ── A simulated Claude Code dialog (the measured drawing and key behaviour) ────────────────
 
 const RULE = '─'.repeat(120);
+type Question = {
+  question: string;
+  header: string;
+  multiSelect: boolean;
+  options: { label: string; description?: string }[];
+};
+type Shown =
+  | { kind: 'question'; questions: Question[] }
+  | { kind: 'plan'; plan: string }
+  | { kind: 'bash'; command: string };
 type Answer = Record<string, string> | 'rejected' | 'chat' | { choice: string };
 
 /** One dialog as Claude Code 2.1.296 draws it and reacts to keys (TERMINAL.md, measured). */
@@ -329,8 +458,8 @@ class Claude {
   private typed: string[];
   private picked: (string | null)[];
   private choice = 0;
-  constructor(public request: InputRequest) {
-    const qs = request.kind === 'question' ? request.questions : [];
+  constructor(public shown: Shown) {
+    const qs = shown.kind === 'question' ? shown.questions : [];
     this.cursor = qs.map(() => 0);
     this.checked = qs.map((q) => q.options.map(() => false));
     this.typed = qs.map(() => '');
@@ -340,7 +469,7 @@ class Claude {
     return this.answer !== null;
   }
   private questions() {
-    return this.request.kind === 'question' ? this.request.questions : [];
+    return this.shown.kind === 'question' ? this.shown.questions : [];
   }
   /** Stops: options, the text row, (multi) Submit, Chat about this. */
   private stops(q = this.q) {
@@ -349,7 +478,7 @@ class Claude {
   }
   render(): string {
     if (this.closed) return ['⏺ Done.', RULE, '❯ ', RULE, '  ⏸ manual mode on'].join('\n');
-    const r = this.request;
+    const r = this.shown;
     if (r.kind === 'plan') {
       const rows = [
         'Yes, and use auto mode',
@@ -376,14 +505,14 @@ class Claude {
         '   ctrl+g to edit in VS Code · ~/.claude/plans/plan-to-create-hello-txt-linear-tome.md',
       ].join('\n');
     }
-    if (r.kind === 'permission') {
+    if (r.kind === 'bash') {
       const rows = ['Yes', "Yes, and don't ask again for echo commands in this project", 'No'];
       return [
         RULE,
         ' Bash command',
-        r.detail ?? '',
+        ' Write hi to a text file',
         '╌'.repeat(120),
-        ' ' + r.summary,
+        ' ' + r.command,
         '╌'.repeat(120),
         ' Do you want to proceed?',
         ...rows.map((l, i) => ` ${i === this.choice ? '❯' : ' '} ${i + 1}. ${l}`),
@@ -420,6 +549,7 @@ class Claude {
     const n = q.options.length;
     const mark = (i: number) => (c === i ? '❯' : ' ');
     const box = (i: number) => (q.multiSelect ? `[${this.checked[this.q][i] ? '✔' : ' '}] ` : '');
+    const hint = q.multiSelect ? 'Type something' : 'Type something.';
     return [
       RULE,
       bar,
@@ -430,7 +560,7 @@ class Claude {
         `${mark(i)} ${i + 1}. ${box(i)}${o.label}`,
         ...(o.description ? [`     ${o.description}`] : []),
       ]),
-      `${mark(n)} ${n + 1}. ${q.multiSelect ? '[ ] ' : ''}${this.typed[this.q] || (q.multiSelect ? 'Type something' : 'Type something.')}`,
+      `${mark(n)} ${n + 1}. ${q.multiSelect ? '[ ] ' : ''}${this.typed[this.q] || hint}`,
       ...(q.multiSelect ? [`${c === n + 1 ? '❯' : ' '}    Submit`] : []),
       RULE,
       `${mark(this.stops() - 1)} ${n + 2}. Chat about this`,
@@ -465,12 +595,12 @@ class Claude {
     );
   }
   type(text: string) {
-    if (this.closed || this.review || this.request.kind !== 'question') return;
+    if (this.closed || this.review || this.shown.kind !== 'question') return;
     if (this.cursor[this.q] === this.questions()[this.q].options.length) this.typed[this.q] += text;
   }
   key(name: string) {
     this.keys.push(name);
-    const r = this.request;
+    const r = this.shown;
     if (this.closed) return;
     if (r.kind !== 'question' || this.review) {
       const rows = r.kind === 'question' ? 2 : 3;
@@ -509,16 +639,26 @@ class Claude {
   }
 }
 
-const SID = '6dd9f1ee-30b0-4650-9b8f-6f2961115e8b';
 const START = 'Tue Oct 13 06:41:08 2026';
 const SOCKET = '/private/tmp/tmux-501/default';
 const ORCA = 'term_205af179-74b5-4973-9cd8-0fb07bf63fa9';
 
-/** Fake CLIs around a simulated Claude: tmux or Orca, the process table and its record. */
-async function harness(
-  sim: Claude,
-  options: { host?: 'tmux' | 'orca'; fg?: () => string; status?: () => string } = {},
-) {
+interface Harness {
+  host?: 'tmux' | 'orca';
+  fg?: () => string;
+  status?: () => string;
+  /** The open calls the transcript holds (the asked one is `toolu_q`). */
+  calls?: Use[];
+  /** The pane's height (tmux). */
+  height?: number;
+  /** Screen reads that fail. */
+  unreadable?: () => boolean;
+  /** The transcript never shows the result (a lagging record). */
+  noResult?: boolean;
+}
+
+/** Fake CLIs around a simulated Claude: tmux or Orca, the process table, record and transcript. */
+async function harness(sim: Claude, options: Harness = {}) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-prompts-'));
   const record = () =>
     JSON.stringify({
@@ -532,7 +672,11 @@ async function harness(
   await writeFile(path.join(dir, '4242.json'), record());
   const calls: string[][] = [];
   let loaded = '';
-  const deps: AnswerDeps = {
+  const screen = () => {
+    if (options.unreadable?.()) throw new Error('busy redrawing');
+    return sim.render();
+  };
+  const deps: ClaudeTargetDeps = {
     sessionsDir: dir,
     codexHome: '/nonexistent',
     alive: () => true,
@@ -540,7 +684,12 @@ async function harness(
     wait: async () => {
       await writeFile(path.join(dir, '4242.json'), record());
     },
-    readTail: async () => (sim.closed ? `{"tool_use_id":"toolu_q"}` : ''),
+    readTail: async () =>
+      jsonl([
+        prompt('please'),
+        uses(options.calls ?? []),
+        ...(sim.closed && !options.noResult ? [result('toolu_q')] : []),
+      ]),
     run: async (file: string, args: string[], run?: RunOptions) => {
       calls.push([file, ...args]);
       await writeFile(path.join(dir, '4242.json'), record());
@@ -549,8 +698,8 @@ async function harness(
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg?.() ?? 'S+ 4242 4242'}\n`;
       }
       if (file === '/bin/tmux') {
-        if (args.some((a) => a.startsWith('#{pane_in_mode}'))) return '0 40\n';
-        if (args.includes('capture-pane')) return sim.render();
+        if (args.some((a) => a.startsWith('#{pane_in_mode}'))) return `0 ${options.height ?? 40}\n`;
+        if (args.includes('capture-pane')) return screen();
         if (args.includes('load-buffer')) loaded = run?.input ?? '';
         if (args.includes('paste-buffer')) sim.type(loaded);
         if (args.includes('send-keys'))
@@ -562,8 +711,7 @@ async function harness(
             ok: true,
             result: {
               terminal: {
-                tail: sim
-                  .render()
+                tail: screen()
                   .split('\n')
                   .filter((l) => l.trim()),
                 source: 'screen',
@@ -572,18 +720,14 @@ async function harness(
           });
         if (args[1] === 'send') {
           const text = args.find((a) => a.startsWith('--text='))?.slice(7) ?? '';
+          const names: Record<string, string> = {
+            '\x1b[A': 'Up',
+            '\x1b[B': 'Down',
+            '\x1b[C': 'Right',
+            ' ': 'Space',
+          };
           if (text.startsWith('\x1b[200~')) sim.type(text.slice(6, -6));
-          else
-            for (const key of text.match(/\x1b\[[ABCD]|./gs) ?? [])
-              sim.key(
-                {
-                  '\x1b[A': 'Up',
-                  '\x1b[B': 'Down',
-                  '\x1b[C': 'Right',
-                  ' ': 'Space',
-                  '\r': 'Enter',
-                }[key] ?? key,
-              );
+          else for (const key of text.match(/\x1b\[[ABCD]|./gs) ?? []) sim.key(names[key] ?? key);
           if (args.includes('--enter')) sim.key('Enter');
           return JSON.stringify({ ok: true, result: { send: { accepted: true } } });
         }
@@ -598,10 +742,11 @@ async function harness(
         ? { kind: 'orca', handle: ORCA, title: 'claude' }
         : { kind: 'tmux', socket: SOCKET, pane: '%3', label: 'work:1.0' },
   };
-  return { deps, live, calls, done: () => rm(dir, { recursive: true, force: true }) };
+  const target = claudeTarget(live, '/tmp/x.jsonl', deps);
+  return { target, calls, done: () => rm(dir, { recursive: true, force: true }) };
 }
 
-const asking = (request: InputRequest): AskingEvent => ({
+const asking = (request: InputRequest, callId = 'toolu_q'): AskingEvent => ({
   id: 'toolu_q:tool0',
   at: 1,
   kind: 'tool',
@@ -611,35 +756,44 @@ const asking = (request: InputRequest): AskingEvent => ({
       ? 'ExitPlanMode'
       : request.kind === 'question'
         ? 'AskUserQuestion'
-        : 'Bash',
+        : request.tool,
   intent: 'request-input',
-  callId: 'toolu_q',
+  callId,
   sourceRef: 'x',
   request,
+});
+const QUESTION = (input: { questions: unknown[] }) =>
+  ({ kind: 'question', questions: input.questions }) as InputRequest;
+const BASH: InputRequest = { kind: 'permission', tool: 'Bash' };
+const PLAN: InputRequest = {
+  kind: 'plan',
+  plan: PLAN_INPUT.plan,
+  planFile: PLAN_INPUT.planFilePath,
+};
+const shownQuestions = (input: { questions: Question[] }): Shown => ({
+  kind: 'question',
+  questions: input.questions,
 });
 
 async function answer(
   request: InputRequest,
+  shown: Shown,
+  calls: Use[],
   choice: Record<string, unknown>,
   setup: (sim: Claude) => void = () => {},
-  options: Parameters<typeof harness>[1] = {},
+  options: Harness = {},
 ) {
-  const sim = new Claude(request);
+  const sim = new Claude(shown);
   setup(sim);
-  const h = await harness(sim, options);
+  const h = await harness(sim, { ...options, calls });
   try {
     const event = asking(request);
-    const result = await answerRequest(
-      claudeCodePrompts,
-      event,
-      h.live,
-      { eventId: event.id, kind: request.kind, ...choice },
-      {
-        sourcePath: '/tmp/x.jsonl',
-        deps: h.deps,
-      },
-    ).catch((e: Error) => e);
-    return { result, sim, calls: h.calls };
+    const outcome = await answerRequest(claudeCodePrompts, event, h.target, {
+      eventId: event.id,
+      kind: request.kind,
+      ...choice,
+    }).catch((e: Error) => e);
+    return { result: outcome, sim, calls: h.calls };
   } finally {
     await h.done();
   }
@@ -648,142 +802,318 @@ const keysOf = (calls: string[][]) =>
   calls
     .filter((c) => c.includes('send-keys'))
     .map((c) => c.slice(c.indexOf('send-keys') + 3).join(' '));
+const ask = (input: { questions: unknown[] }): Use => ({
+  id: 'toolu_q',
+  name: 'AskUserQuestion',
+  input,
+});
+const bashCall = (command: string, id = 'toolu_q'): Use => ({
+  id,
+  name: 'Bash',
+  input: { command },
+});
+const planCall: Use = { id: 'toolu_q', name: 'ExitPlanMode', input: PLAN_INPUT };
+const failed = (r: unknown) =>
+  r instanceof Error ? r.message : `not refused: ${JSON.stringify(r)}`;
 
-test('A single question: arrows to the option, verified, then Enter', async () => {
-  const { result, sim, calls } = await answer(COLOR, { answers: [{ options: [2] }] });
-  assert.deepEqual(result, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
+test('A single question: one arrow at a time, verified, then Enter alone', async () => {
+  const {
+    result: r,
+    sim,
+    calls,
+  } = await answer(QUESTION(COLOR_INPUT), shownQuestions(COLOR_INPUT), [ask(COLOR_INPUT)], {
+    answers: [{ options: [2] }],
+  });
+  assert.deepEqual(r, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
   assert.deepEqual(sim.answer, { 'Pick a color': 'Blue' });
-  // Never a digit, Tab or Esc: Down twice, then Enter alone.
-  assert.deepEqual(keysOf(calls), ['Down Down', 'Enter']);
+  // Never a digit, Tab or Esc: Down, Down, then Enter alone.
+  assert.deepEqual(keysOf(calls), ['Down', 'Down', 'Enter']);
 });
 
 test('Typed words go into the text row, verified before Enter', async () => {
-  const { result, sim, calls } = await answer(COLOR, { answers: [{ other: 'teal\nplease' }] });
-  assert.equal((result as { status: string }).status, 'answered');
+  const {
+    result: r,
+    sim,
+    calls,
+  } = await answer(QUESTION(COLOR_INPUT), shownQuestions(COLOR_INPUT), [ask(COLOR_INPUT)], {
+    answers: [{ other: 'teal\nplease' }],
+  });
+  assert.equal((r as { status: string }).status, 'answered');
   assert.deepEqual(sim.answer, { 'Pick a color': 'teal please' });
   assert.ok(calls.some((c) => c.includes('paste-buffer') && c.includes('-p')));
-  assert.deepEqual(keysOf(calls), ['Down Down Down', 'Enter']);
+  assert.deepEqual(keysOf(calls), ['Down', 'Down', 'Down', 'Enter']);
 });
 
 test('Multi-select: Space on each row that differs, then → and the review', async () => {
-  const { result, sim, calls } = await answer(FRUITS, { answers: [{ options: [0, 2] }] });
-  assert.equal((result as { status: string }).status, 'answered');
+  const {
+    result: r,
+    sim,
+    calls,
+  } = await answer(QUESTION(FRUITS_INPUT), shownQuestions(FRUITS_INPUT), [ask(FRUITS_INPUT)], {
+    answers: [{ options: [0, 2] }],
+  });
+  assert.equal((r as { status: string }).status, 'answered');
   assert.deepEqual(sim.answer, { 'Pick fruits': 'Apple, Cherry' });
-  assert.deepEqual(keysOf(calls), ['Space', 'Down Down', 'Space', 'Right', 'Enter']);
+  assert.deepEqual(keysOf(calls), ['Space', 'Down', 'Down', 'Space', 'Right', 'Enter']);
 });
 
 test('Two questions: each answered in turn, the review checked, then submitted', async () => {
-  const { result, sim, calls } = await answer(TWO, {
+  const {
+    result: r,
+    sim,
+    calls,
+  } = await answer(QUESTION(TWO_INPUT), shownQuestions(TWO_INPUT), [ask(TWO_INPUT)], {
     answers: [{ options: [1] }, { options: [0] }],
   });
-  assert.equal((result as { status: string }).status, 'answered');
+  assert.equal((r as { status: string }).status, 'answered');
   assert.deepEqual(sim.answer, { 'Pick a color': 'Green', 'Pick a size': 'Small' });
   assert.deepEqual(keysOf(calls), ['Down', 'Enter', 'Enter', 'Enter']);
 });
 
-test('Plan approval and permission: the row the person saw, by its words', async () => {
-  const plan = await answer(PLAN, { number: 2, label: 'Yes, manually approve edits' });
+test('Ambiguous questions and a pane too small for the review are left to the terminal', async () => {
+  const same = {
+    questions: [TWO_INPUT.questions[0], { ...TWO_INPUT.questions[1], question: 'Pick a color' }],
+  };
+  const dup = await answer(QUESTION(same), shownQuestions(same), [ask(same)], {
+    answers: [{ options: [0] }, { options: [0] }],
+  });
+  assert.ok(dup.result instanceof Error);
+  assert.equal(dup.sim.keys.length, 0);
+  const small = await answer(
+    QUESTION(TWO_INPUT),
+    shownQuestions(TWO_INPUT),
+    [ask(TWO_INPUT)],
+    { answers: [{ options: [0] }, { options: [0] }] },
+    () => {},
+    { height: 14 },
+  );
+  assert.match(failed(small.result), /구분되지 않는/);
+  assert.equal(small.sim.keys.length, 0);
+});
+
+test('Plan approval and permission: only the one-shot row the person saw, by its words', async () => {
+  const plan = await answer(PLAN, { kind: 'plan', plan: PLAN_INPUT.plan }, [planCall], {
+    number: 2,
+    label: 'Yes, manually approve edits',
+  });
   assert.equal((plan.result as { status: string }).status, 'answered');
   assert.deepEqual(plan.sim.answer, { choice: '2' });
   assert.deepEqual(keysOf(plan.calls), ['Down', 'Enter']);
-  const no = await answer(BASH, { number: 3, label: 'No' });
+  // Auto mode and the text row are never pressed from here.
+  for (const [number, label] of [
+    [1, 'Yes, and use auto mode'],
+    [3, 'Tell Claude what to change'],
+  ] as const) {
+    const refused = await answer(PLAN, { kind: 'plan', plan: PLAN_INPUT.plan }, [planCall], {
+      number,
+      label,
+    });
+    assert.match(failed(refused.result), /한 번짜리 선택지가 아니에요/);
+    assert.equal(refused.sim.keys.length, 0);
+  }
+  const bash: Shown = { kind: 'bash', command: 'echo hi > hello.txt' };
+  const no = await answer(BASH, bash, [bashCall('echo hi > hello.txt')], {
+    number: 3,
+    label: 'No',
+  });
   assert.deepEqual(no.sim.answer, { choice: '3' });
-  assert.deepEqual(keysOf(no.calls), ['Down Down', 'Enter']);
-  // The text row is never pressed from here, and a label that is not on screen is refused.
-  const text = await answer(PLAN, { number: 3, label: 'Tell Claude what to change' });
-  assert.match((text.result as Error).message, /화면에 없는 선택지/);
-  const wrong = await answer(BASH, { number: 2, label: 'Yes' });
-  assert.match((wrong.result as Error).message, /화면에 없는 선택지/);
-  assert.equal(wrong.sim.keys.length, 0);
+  assert.deepEqual(keysOf(no.calls), ['Down', 'Down', 'Enter']);
+  const always = await answer(BASH, bash, [bashCall('echo hi > hello.txt')], {
+    number: 2,
+    label: "Yes, and don't ask again for echo commands in this project",
+  });
+  assert.match(failed(always.result), /한 번짜리 선택지가 아니에요/);
+  assert.equal(always.sim.keys.length, 0);
 });
 
-test('Orca: the same keys as bytes, Enter as its own submit', async () => {
-  const { result, sim, calls } = await answer(BASH, { number: 1, label: 'Yes' }, () => {}, {
-    host: 'orca',
-  });
-  assert.equal((result as { status: string }).status, 'answered');
-  assert.deepEqual(sim.answer, { choice: '1' });
+test('Permission: refused unless exactly the asked call equals the screen', async () => {
+  const shown: Shown = { kind: 'bash', command: 'ls' };
+  const yes = { number: 1, label: 'Yes' };
+  // The screen shows `ls`; the asked call is `rm -rf dist && ls`, another open call is `ls`.
+  const other = await answer(
+    BASH,
+    shown,
+    [bashCall('rm -rf dist && ls'), bashCall('ls', 'toolu_other')],
+    yes,
+  );
+  assert.match(failed(other.result), /확실하지 않아서 보내지 않았어요/);
+  assert.equal(other.sim.keys.length, 0);
+  // Two open calls both read `ls`: which one the screen asks about cannot be told.
+  const twins = await answer(BASH, shown, [bashCall('ls'), bashCall('ls', 'toolu_twin')], yes);
+  assert.ok(twins.result instanceof Error);
+  assert.equal(twins.sim.keys.length, 0);
+  // A hook rewrote it: the record says `git push`, the screen runs `rtk git push`.
+  const hook = await answer(
+    BASH,
+    { kind: 'bash', command: 'rtk git push' },
+    [bashCall('git push')],
+    yes,
+  );
+  assert.ok(hook.result instanceof Error);
+  assert.equal(hook.sim.keys.length, 0);
+  // The exact one: answered, and the result read back from the transcript by its id.
+  const ok = await answer(
+    BASH,
+    shown,
+    [bashCall('ls'), bashCall('rm -rf dist && ls', 'toolu_other')],
+    yes,
+  );
+  assert.deepEqual(ok.result, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
+});
+
+test('Orca: the same keys as bytes, one at a time, Enter as its own submit', async () => {
+  const {
+    result: r,
+    sim,
+    calls,
+  } = await answer(
+    BASH,
+    { kind: 'bash', command: 'echo hi > hello.txt' },
+    [bashCall('echo hi > hello.txt')],
+    { number: 3, label: 'No' },
+    () => {},
+    { host: 'orca' },
+  );
+  assert.equal((r as { status: string }).status, 'answered');
+  assert.deepEqual(sim.answer, { choice: '3' });
   const sends = calls.filter((c) => c[0] === '/bin/orca' && c[2] === 'send');
   assert.deepEqual(
-    sends.map((c) => c.slice(3, -1)),
-    [[`--terminal=${ORCA}`, '--enter']],
+    sends.map((c) => c.slice(4, -1)),
+    [['--text=\x1b[B'], ['--text=\x1b[B'], ['--enter']],
   );
 });
 
-test('Refused: another dialog on screen, a dialog that changes mid-way, or Claude losing the terminal', async () => {
-  // The screen asks something else: nothing is pressed.
-  const other = await answer(BASH, { number: 1, label: 'Yes' }, (sim) => {
-    sim.request = { ...BASH, summary: 'rm -rf build' };
-  });
-  assert.match((other.result as Error).message, /화면의 질문이 달라요/);
-  assert.equal(other.sim.keys.length, 0);
+test('Refused mid-way: the dialog changes, or Claude loses the terminal', async () => {
+  const color = shownQuestions(COLOR_INPUT);
+  const pick = { answers: [{ options: [2] }] };
   // The dialog turns into another one after the first key: Enter never goes in.
-  const changed = await answer(COLOR, { answers: [{ options: [2] }] }, (sim) => {
+  const changed = await answer(QUESTION(COLOR_INPUT), color, [ask(COLOR_INPUT)], pick, (sim) => {
     sim.onKey = (s) => {
-      s.request = { ...BASH };
+      s.shown = { kind: 'bash', command: 'rm -rf build' };
     };
   });
-  assert.match((changed.result as Error).message, /화면이 바뀌어 멈췄어요/);
-  assert.ok(!changed.sim.keys.includes('Enter'));
+  assert.match(failed(changed.result), /화면이 바뀌어 멈췄어요/);
+  assert.deepEqual(changed.sim.keys, ['Down']);
   // Claude stops being in front (ctrl+z) after the first key: stops before the next one.
   let presses = 0;
   const lost = await answer(
-    COLOR,
-    { answers: [{ options: [2] }] },
+    QUESTION(COLOR_INPUT),
+    color,
+    [ask(COLOR_INPUT)],
+    pick,
     (sim) => {
       sim.onKey = () => presses++;
     },
     { fg: () => (presses ? 'T 4242 4000' : 'S+ 4242 4242') },
   );
-  assert.match((lost.result as Error).message, /터미널 앞에 있지 않아요/);
-  assert.deepEqual(lost.sim.keys, ['Down', 'Down']);
+  assert.match(failed(lost.result), /터미널 앞에 있지 않아요/);
+  assert.deepEqual(lost.sim.keys, ['Down']);
   // Not waiting any more (the record moved on): nothing is pressed.
-  const moved = await answer(COLOR, { answers: [{ options: [0] }] }, () => {}, {
+  const moved = await answer(QUESTION(COLOR_INPUT), color, [ask(COLOR_INPUT)], pick, () => {}, {
     status: () => 'busy',
   });
   assert.ok(moved.result instanceof Error);
+  assert.equal(moved.sim.keys.length, 0);
   // Already partly answered in the terminal: left to the terminal.
-  const partial = await answer(FRUITS, { answers: [{ options: [1] }] }, (sim) => {
-    sim.key('Space');
-    sim.keys = [];
-  });
-  assert.match((partial.result as Error).message, /이미 고르던 답/);
+  const partial = await answer(
+    QUESTION(FRUITS_INPUT),
+    shownQuestions(FRUITS_INPUT),
+    [ask(FRUITS_INPUT)],
+    { answers: [{ options: [1] }] },
+    (sim) => {
+      sim.key('Space');
+      sim.keys = [];
+    },
+  );
+  assert.match(failed(partial.result), /이미 고르던 답/);
   assert.equal(partial.sim.keys.length, 0);
-  // A choice for another request, or options that do not exist.
-  const stale = await answer(COLOR, { answers: [{ options: [5] }] });
-  assert.match((stale.result as Error).message, /화면에 없는 선택지/);
+  // Options that do not exist.
+  const stale = await answer(QUESTION(COLOR_INPUT), color, [ask(COLOR_INPUT)], {
+    answers: [{ options: [5] }],
+  });
+  assert.match(failed(stale.result), /한 번짜리 선택지가 아니에요/);
 });
 
-test('The card only offers answers when the screen shows the same request', async () => {
-  const sim = new Claude(BASH);
-  const h = await harness(sim);
+test('After the keys: an unreadable screen is not a closed dialog, and the record must show the id', async () => {
+  const color = shownQuestions(COLOR_INPUT);
+  // The screen cannot be read after Enter: sent, and said honestly that it is not confirmed.
+  let entered = false;
+  const blind = await answer(
+    QUESTION(COLOR_INPUT),
+    color,
+    [ask(COLOR_INPUT)],
+    { answers: [{ options: [0] }] },
+    (sim) => {
+      sim.onKey = (s) => {
+        if (s.keys.at(-1) === 'Enter') entered = true;
+      };
+    },
+    { unreadable: () => entered },
+  );
+  assert.deepEqual(blind.result, {
+    status: 'answered',
+    message:
+      'tmux work:1.0에 보냈지만 그 뒤 화면을 읽지 못해 확인하지 못했어요. 터미널을 확인해 주세요.',
+  });
+  // The dialog closed but the transcript has no result for that id (yet): said so.
+  const lag = await answer(
+    QUESTION(COLOR_INPUT),
+    color,
+    [ask(COLOR_INPUT)],
+    { answers: [{ options: [0] }] },
+    () => {},
+    { noResult: true },
+  );
+  assert.deepEqual(lag.result, {
+    status: 'answered',
+    message: 'tmux work:1.0에 보냈지만 기록에 아직 답이 보이지 않아요. 터미널을 확인해 주세요.',
+  });
+});
+
+test('The card is offered only one-shot choices, only for the exact call', async () => {
+  const sim = new Claude({ kind: 'bash', command: 'echo hi > hello.txt' });
+  const h = await harness(sim, { calls: [bashCall('echo hi > hello.txt')] });
   try {
-    const ready = await inspectPrompt(claudeCodePrompts, asking(BASH), h.live, h.deps);
+    const ready = await inspectPrompt(claudeCodePrompts, asking(BASH), h.target, 'on');
     assert.equal(ready.status, 'ready');
-    if (ready.status === 'ready')
+    if (ready.status === 'ready') {
       assert.deepEqual(
         ready.choices.map((c) => [c.label, c.role]),
         [
           ['Yes', 'allow'],
-          ["Yes, and don't ask again for echo commands in this project", 'always'],
           ['No', 'deny'],
         ],
       );
-    const mismatch = await inspectPrompt(
-      claudeCodePrompts,
-      asking({ ...BASH, summary: 'echo bye' }),
-      h.live,
-      h.deps,
-    );
-    assert.deepEqual(mismatch.status === 'unavailable' && mismatch.reason, 'mismatch');
-    assert.equal(
-      (await inspectPrompt(claudeCodePrompts, asking(BASH), null, h.deps)).status,
-      'unavailable',
-    );
-    // Codex and others: shown, never answered from here.
-    const codex = await inspectPrompt(promptsFor('codex'), asking(COLOR), h.live, h.deps);
-    assert.deepEqual(codex.status === 'unavailable' && codex.reason, 'unsupported');
+      assert.equal(ready.more, true);
+      // The card shows what the screen says.
+      assert.deepEqual(ready.subject, { title: 'Bash command', command: 'echo hi > hello.txt' });
+    }
+    const reason = async (...args: Parameters<typeof inspectPrompt>) => {
+      const view = await inspectPrompt(...args);
+      return view.status === 'unavailable' ? view.reason : view.status;
+    };
+    // Another call than the card's: mismatch. Turned off: off. Never set: still offered.
+    const other = asking(BASH, 'toolu_other');
+    assert.equal(await reason(claudeCodePrompts, other, h.target, 'on'), 'mismatch');
+    assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'off'), 'off');
+    assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'unset'), 'ready');
+    assert.equal(await reason(claudeCodePrompts, asking(BASH), null, 'on'), 'no-terminal');
+    // A question cut at rest cannot be checked; Codex and others are shown, never answered.
+    const cut = { ...QUESTION(COLOR_INPUT), truncated: true } as InputRequest;
+    assert.equal(await reason(claudeCodePrompts, asking(cut), h.target, 'on'), 'unverifiable');
+    const codex = promptsFor('codex');
+    assert.equal(await reason(codex, asking(QUESTION(COLOR_INPUT)), h.target, 'on'), 'unsupported');
     assert.equal(sim.keys.length, 0);
+    // Unsupported adapters say so when asked to answer, too.
+    assert.deepEqual(
+      await codex.answer(
+        h.target.host,
+        { call: call('x', 'Bash', {}), request: BASH },
+        { kind: 'permission', number: 1, label: 'Yes' },
+        async () => true,
+      ),
+      { status: 'refused', reason: 'unsupported', pressed: false },
+    );
   } finally {
     await h.done();
   }
@@ -812,4 +1142,6 @@ test('Adapter keys never include digits, Tab, Esc or control keys', () => {
   for (const key of source.matchAll(/press\(\[([^\]]*)\]\)/g))
     for (const name of key[1].match(/'([^']+)'/g) ?? [])
       assert.ok(allowed.includes(name.slice(1, -1) as PromptKey), name);
+  // Arrows go one at a time.
+  assert.ok(!/press\(\[[^\]]*,/.test(source));
 });

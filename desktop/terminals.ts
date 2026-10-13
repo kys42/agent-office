@@ -433,7 +433,7 @@ const PROMPT_BYTES: Record<PromptKey, string> = {
 /** The terminal host as a prompt adapter sees it: read the screen, press dialog keys, type. */
 export function promptHost(host: TerminalHost, deps: TerminalDeps): PromptHost {
   return {
-    styled: host.kind === 'tmux',
+    kind: host.kind,
     read: () => readScreen(host, deps),
     wait: deps.wait,
     type: (text) => typeText(host, text, deps),

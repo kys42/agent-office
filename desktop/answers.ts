@@ -1,44 +1,42 @@
-import { open } from 'node:fs/promises';
 import type {
   AnswerChoice,
   AnswerResult,
-  OfficeEvent,
+  AnswerSetting,
   PromptUnavailable,
   PromptView,
 } from '../src/shared/types.js';
 import type { AskingEvent } from '../src/shared/requests.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
-import {
-  defaultTerminalDeps,
-  findClaudeProcess,
-  hostName,
-  ownsTerminal,
-  promptHost,
-  TerminalInputError,
-  type LiveTerminal,
-  type TerminalDeps,
-} from './terminals.js';
-import type { Dialog, DialogState, PromptAdapter, PromptChoice } from './prompts/types.js';
+import { TerminalInputError } from './terminals.js';
+import type {
+  Dialog,
+  DialogState,
+  Identified,
+  PromptAdapter,
+  PromptChoice,
+  PromptHost,
+  PromptTarget,
+} from './prompts/types.js';
 
 /*
  * Answering a calling session's dialog from the app: the common flow around the per-agent
- * prompt adapters (desktop/prompts/). Desktop-only, like typing into terminals: these never
- * become reachable through OfficeService.call. The opt-in and its native confirmation live in
- * main; everything here assumes the person already agreed and pressed a choice.
+ * prompt adapters (desktop/prompts/). Desktop-only, like typing into terminals: never reachable
+ * through OfficeService.call. The opt-in and its native confirmation live in main; everything
+ * here assumes the person agreed and pressed a choice. Nothing here knows an agent: the adapter
+ * finds the session (`target`), reads its dialogs and presses their keys.
  *
- * Order: live record (same pid, still waiting) and terminal foreground → the dialog on screen
- * must ask exactly what the record asked → the adapter presses the fewest keys, re-checking the
- * record and the foreground before every key and the screen after it → the dialog must close
- * and the transcript show the call's result. Anything unexpected stops with nothing more sent.
+ * The screen is the source of truth. Order: the agent's record says it waits and it is in front
+ * of its terminal → the dialog on screen is about exactly one open call of the current turn,
+ * the very call the card showed → the adapter presses the fewest keys, re-checking the record
+ * before every key and the screen before and after it → the dialog must go and the transcript
+ * must show that call's result. Anything unclear stops with nothing more sent.
  */
 
 /** Typed answers for a question's own text row: plain words, at most this long. */
 export const MAX_OTHER_LENGTH = 2000;
 
-export interface AnswerDeps extends TerminalDeps {
-  /** The end of a transcript (to see the call's result arrive). */
-  readTail?: (file: string) => Promise<string>;
-}
+const isDialog = (s: DialogState): s is Dialog =>
+  s.kind === 'question' || s.kind === 'review' || s.kind === 'plan' || s.kind === 'permission';
 
 const unavailable = (agent: string, reason: PromptUnavailable): PromptView => {
   const t = m().prompts.unavailable;
@@ -50,34 +48,66 @@ const unavailable = (agent: string, reason: PromptUnavailable): PromptView => {
   };
 };
 
+/** The screen, read again while it cannot be read (a host busy redrawing). */
+async function look(adapter: PromptAdapter, host: PromptHost): Promise<DialogState> {
+  let state = await adapter.inspect(host);
+  for (let i = 0; i < 3 && state.kind === 'unreadable'; i++) {
+    await host.wait(150);
+    state = await adapter.inspect(host);
+  }
+  return state;
+}
+
+/** The open call the screen is about, when it is exactly the one `asking` stands for. */
+function sameCall(found: Identified, asking: AskingEvent) {
+  return found.status === 'one' &&
+    found.asked.call.id === asking.callId &&
+    found.asked.request.kind === asking.request.kind
+    ? found.asked
+    : null;
+}
+
+/** Why a request can never be checked against a screen (cut at rest, or no call id). */
+const uncheckable = (asking: AskingEvent) =>
+  !asking.callId || (asking.request.kind !== 'permission' && !!asking.request.truncated);
+
 /**
- * What the card may offer for the open request: the dialog's choices once the screen shows the
- * same request, else why not. Read-only: no key is pressed.
+ * What the card may offer for the open request: the dialog's one-shot choices once the screen
+ * shows exactly that call, else why not. Read-only: no key is pressed.
  */
 export async function inspectPrompt(
   adapter: PromptAdapter,
   asking: AskingEvent | undefined,
-  live: LiveTerminal | null,
-  deps: TerminalDeps = defaultTerminalDeps(),
+  target: PromptTarget | null,
+  setting: AnswerSetting,
 ): Promise<PromptView> {
-  if (!asking) return unavailable(adapter.agent, 'no-request');
-  if (!live) return unavailable(adapter.agent, 'no-terminal');
-  const io = promptHost(live.host, deps);
-  if (!adapter.capabilities(io).canAnswer) return unavailable(adapter.agent, 'unsupported');
-  if (live.process.status !== 'waiting') return unavailable(adapter.agent, 'not-waiting');
-  const state = await adapter.inspect(io);
-  if (state.kind === 'unreadable') return unavailable(adapter.agent, 'unreadable');
-  if (state.kind === 'unsupported') return unavailable(adapter.agent, 'unsupported');
-  if (state.kind === 'closed' || state.kind === 'unknown')
-    return unavailable(adapter.agent, 'closed');
-  if (!adapter.matches(state, asking.request)) return unavailable(adapter.agent, 'mismatch');
+  const no = (reason: PromptUnavailable) => unavailable(adapter.agent, reason);
+  if (!asking) return no('no-request');
+  if (!adapter.answers('tmux').size && !adapter.answers('orca').size) return no('unsupported');
+  if (setting === 'off') return no('off');
+  if (uncheckable(asking)) return no('unverifiable');
+  if (!target) return no('no-terminal');
+  if (!adapter.answers(target.host.kind).has(asking.request.kind)) return no('unsupported');
+  if (!target.waiting) return no('not-waiting');
+  const state = await look(adapter, target.host);
+  if (state.kind === 'unreadable') return no('unreadable');
+  if (state.kind === 'unsupported') return no('unsupported');
+  if (!isDialog(state)) return no('closed');
+  const calls = await target.openCalls();
+  if (!calls) return no('unverifiable');
+  const asked = sameCall(adapter.identify(state, calls), asking);
+  if (!asked) return no('mismatch');
   return {
     status: 'ready',
     agent: adapter.agent,
     kind: asking.request.kind,
     eventId: asking.id,
     choices: adapter.choices(state),
-    ...(adapter.takesText(state) ? { other: true } : {}),
+    ...(adapter.hasMore(state) ? { more: true } : {}),
+    ...(asked.request.kind === 'question'
+      ? { other: adapter.takesText(state, asked.request) }
+      : {}),
+    ...(asked.subject ? { subject: asked.subject } : {}),
   };
 }
 
@@ -130,29 +160,6 @@ export function readChoice(asking: AskingEvent, value: unknown): PromptChoice {
   return { kind: c.kind, number: c.number, label: c.label };
 }
 
-async function tail(file: string): Promise<string> {
-  const handle = await open(file, 'r');
-  try {
-    const { size } = await handle.stat();
-    const length = Math.min(size, 512 * 1024);
-    const buffer = Buffer.alloc(length);
-    await handle.read(buffer, 0, length, size - length);
-    return buffer.toString('utf8');
-  } finally {
-    await handle.close();
-  }
-}
-
-/** The transcript has the call's result (Claude Code writes it right after the answer). */
-async function resultWritten(deps: AnswerDeps, file: string, callId: string) {
-  try {
-    const text = await (deps.readTail ?? tail)(file);
-    return text.includes(`"tool_use_id":"${callId}"`);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Presses the dialog's keys for `value` (the person's choice), after verifying everything the
  * module comment lists. Resolves with what to tell the person; refusals throw a
@@ -160,75 +167,60 @@ async function resultWritten(deps: AnswerDeps, file: string, callId: string) {
  */
 export async function answerRequest(
   adapter: PromptAdapter,
-  asking: AskingEvent & Pick<OfficeEvent, 'callId'>,
-  live: LiveTerminal,
+  asking: AskingEvent,
+  target: PromptTarget,
   value: unknown,
-  options: { sourcePath?: string; deps?: AnswerDeps } = {},
 ): Promise<AnswerResult> {
-  const deps = options.deps ?? defaultTerminalDeps();
   const t = m().prompts.result;
-  const host = hostName(live.host);
-  const where = live.host.kind === 'orca' ? 'Orca' : `tmux ${live.host.label}`;
-  const io = promptHost(live.host, deps);
-  if (!adapter.capabilities(io).canAnswer)
-    throw new TerminalInputError(t.unsupported(adapter.agent));
+  const where = target.where;
   const choice = readChoice(asking, value);
-  /** The same process, still waiting on this session, and in front of its terminal. */
-  const current = async () => {
-    const now = await findClaudeProcess(live.process.sessionId, deps, true);
-    return (
-      now?.pid === live.process.pid &&
-      now.status === 'waiting' &&
-      (await ownsTerminal(now.pid, deps))
-    );
-  };
-  if (live.process.status !== 'waiting') throw new TerminalInputError(t.notWaiting);
-  if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
-  const state = await adapter.inspect(io);
-  if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(host));
-  const isDialog = (s: DialogState): s is Dialog =>
-    s.kind === 'question' || s.kind === 'review' || s.kind === 'plan' || s.kind === 'permission';
-  if (!isDialog(state) || !adapter.matches(state, asking.request))
-    throw new TerminalInputError(t.changed);
-  const outcome = await adapter.answer(io, asking.request, choice, current);
+  if (!adapter.answers(target.host.kind).has(asking.request.kind))
+    throw new TerminalInputError(t.unsupported(adapter.agent));
+  if (uncheckable(asking)) throw new TerminalInputError(t.unverifiable);
+  if (!target.waiting) throw new TerminalInputError(t.notWaiting);
+  if (!(await target.stillThere())) throw new TerminalInputError(t.notOwner);
+  const state = await look(adapter, target.host);
+  if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(where));
+  const calls = isDialog(state) ? await target.openCalls() : null;
+  const asked = isDialog(state) && calls ? sameCall(adapter.identify(state, calls), asking) : null;
+  if (!asked) throw new TerminalInputError(t.changed);
+  const outcome = await adapter.answer(target.host, asked, choice, () => target.stillThere());
   if (outcome.status === 'refused') {
-    const after = outcome.pressed ? ` ${t.pressedSome}` : '';
-    const message =
-      outcome.reason === 'changed'
-        ? outcome.pressed
-          ? t.stateChanged
-          : t.changed
-        : outcome.reason === 'lost'
-          ? t.notOwner
-          : outcome.reason === 'partial'
-            ? t.partial
-            : outcome.reason === 'bad-choice'
-              ? t.badChoice
-              : outcome.reason === 'unreadable'
-                ? t.unreadable(host)
-                : t.notVerified;
-    throw new TerminalInputError(message === t.stateChanged ? message : `${message}${after}`);
+    const reasons: Record<typeof outcome.reason, string> = {
+      changed: outcome.pressed ? t.stateChanged : t.changed,
+      lost: t.notOwner,
+      partial: t.partial,
+      ambiguous: t.ambiguous,
+      'bad-choice': t.badChoice,
+      unreadable: t.unreadable(where),
+      unverified: t.notVerified,
+      unsupported: t.unsupported(adapter.agent),
+    };
+    const message = reasons[outcome.reason];
+    throw new TerminalInputError(
+      outcome.pressed && message !== t.stateChanged ? `${message} ${t.pressedSome}` : message,
+    );
   }
-  // The dialog closes (or moves on to another request), and the transcript records the answer.
+  // The dialog must go. A screen that cannot be read is not a closed dialog: read again.
+  let seen = false;
   let open = true;
-  for (let i = 0; i < 12 && open; i++) {
-    await deps.wait(150);
-    const now = await adapter.inspect(io);
-    open = isDialog(now) && adapter.matches(now, asking.request);
+  for (let i = 0; i < 12 && (open || !seen); i++) {
+    await target.host.wait(150);
+    const now = await adapter.inspect(target.host);
+    if (now.kind === 'unreadable') continue;
+    seen = true;
+    open = isDialog(now) && adapter.identify(now, [asked.call]).status === 'one';
   }
+  if (!seen) return { status: 'answered', message: t.unconfirmedScreen(where) };
   if (open) throw new TerminalInputError(t.stillOpen);
-  let recorded = !asking.callId || !options.sourcePath;
-  for (let i = 0; i < 10 && !recorded; i++) {
-    recorded = await resultWritten(deps, options.sourcePath!, asking.callId!);
-    if (!recorded) await deps.wait(200);
+  // And the transcript must hold that call's result. An allowed command writes it when it ends.
+  let recorded: boolean | null = false;
+  for (let i = 0; i < 15 && recorded === false; i++) {
+    recorded = await target.hasResult(asked.call.id);
+    if (recorded === false) await target.host.wait(200);
   }
-  // An allowed command writes its result only when it ends: a closed prompt is the answer.
-  const allowed =
-    asking.request.kind === 'permission' &&
-    choice.kind === 'permission' &&
-    !/^No\b/i.test(choice.label);
   return {
     status: 'answered',
-    message: recorded || allowed ? t.answered(where) : t.answeredUnconfirmed(where),
+    message: recorded ? t.answered(where) : t.answeredUnconfirmed(where),
   };
 }
