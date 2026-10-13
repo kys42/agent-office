@@ -35,9 +35,8 @@
 }
 /* Unfolded text scrolls inside the bubble, within the headroom of a first-row desk
    (the office map clips above its wall: bubble bottom sits 164px below the map top). */
-.speech-bubble.is-expanded .speech-copy b {
+.speech-bubble.is-expanded .speech-text {
   display: block;
-  -webkit-line-clamp: unset;
   max-height: 92px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -47,7 +46,7 @@
 }
 /* The desk row's headroom ends at the tools band: bubble bottom 206px from the window top
    (44 band + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
-.desk-row .speech-bubble.is-expanded .speech-copy b {
+.desk-row .speech-bubble.is-expanded .speech-text {
   max-height: 112px;
 }
 .speech-detail {
@@ -74,9 +73,76 @@
   display: flex;
 }
 
-/* Original message style inside bubbles: inline only, small and quiet. */
-.speech-copy .md-p {
-  display: inline;
+/* Message structure survives in both previews and unfolded bubbles. A height limit on
+   the body also contains block content (line-clamp does not reliably contain tables). */
+.speech-text > * + * {
+  margin-top: 4px;
+}
+.speech-text :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1em;
+  font-weight: 800;
+  line-height: inherit;
+}
+.speech-text :is(ul, ol) {
+  padding-left: 16px;
+}
+.speech-text ul {
+  list-style: disc;
+}
+.speech-text ol {
+  list-style: decimal;
+}
+.speech-text li + li,
+.speech-text li > :is(p, ul, ol) + * {
+  margin-top: 2px;
+}
+.speech-text ul ul {
+  list-style: circle;
+}
+.speech-text .contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+.speech-text .task-list-item > input {
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  accent-color: var(--b-ink);
+}
+.speech-text blockquote {
+  padding-left: 6px;
+  border-left: 2px solid var(--b-line);
+}
+.speech-text hr {
+  border: 0;
+  border-top: 1px solid var(--b-line);
+}
+.bubble-table {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+.bubble-table:focus-visible {
+  outline: 1px solid var(--b-line);
+  outline-offset: -1px;
+}
+.bubble-table table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: inherit;
+}
+.bubble-table :is(th, td) {
+  min-width: 48px;
+  max-width: 160px;
+  padding: 3px 5px;
+  border: 1px solid color-mix(in srgb, var(--b-line) 30%, transparent);
+  vertical-align: top;
+}
+.bubble-table th {
+  font-weight: 800;
+  background: var(--b-chip);
+  color: var(--b-chip-ink);
 }
 .speech-copy strong {
   font-weight: 800;
@@ -94,8 +160,7 @@
   font-size: 0.92em;
   background: rgba(42, 33, 40, 0.08);
 }
-/* Unfolded (or hovered on the pet), a bubble grows sideways with its text, then down;
-   paragraphs get their own lines. */
+/* Unfolded (or hovered on the pet), a bubble grows sideways with its text, then down. */
 .speech-bubble.is-expanded {
   width: max-content;
   min-width: 158px;
@@ -103,12 +168,6 @@
 }
 .desk-row {
   --bubble-wide: 260px;
-}
-.speech-bubble.is-expanded .md-p {
-  display: block;
-}
-.speech-bubble.is-expanded .md-p + .md-p {
-  margin-top: 4px;
 }
 
 /* ───────── Bubble tones: each kind of speech has its own shape ─────────
@@ -184,7 +243,7 @@
 .tone-thought .speech-open {
   padding-inline: 11px;
 }
-.tone-thought .speech-copy b {
+.tone-thought .speech-text {
   font-style: italic;
   font-weight: 500;
 }
@@ -381,13 +440,13 @@
 .speech-open {
   cursor: pointer;
 }
-.speech-copy b {
+.speech-text {
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
 }
-.speech-copy b::selection,
-.speech-copy b *::selection {
+.speech-text::selection,
+.speech-text *::selection {
   background: rgba(244, 184, 108, 0.55);
 }
 .speech-copy .web-link {
@@ -506,8 +565,8 @@
 .speech-request-bubble.has-more .speech-request-text {
   mask-image: linear-gradient(#000 65%, transparent);
 }
-.desk-row .speech-bubble:has(> .speech-request-bubble) .speech-copy b {
-  -webkit-line-clamp: 3;
+.desk-row .speech-bubble:has(> .speech-request-bubble) .speech-text {
+  --speech-lines: 3;
 }
 /* Unfolded, the answer takes the headroom: the request bubble steps aside until folded. */
 .speech-bubble.is-expanded > .speech-request-bubble {

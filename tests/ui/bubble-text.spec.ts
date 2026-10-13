@@ -41,7 +41,7 @@ test('Bubble words can be selected without opening it, and web links open in the
   );
 
   // Dragging across the words selects them; that is reading, not opening.
-  const [from, to] = await bubble.locator('.speech-copy b').evaluate((b) => {
+  const [from, to] = await bubble.locator('.speech-text').evaluate((b) => {
     const node = [...b.childNodes].find((n) => n.nodeType === Node.TEXT_NODE)!;
     const at = (i: number) => {
       const range = document.createRange();

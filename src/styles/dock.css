@@ -46,14 +46,13 @@ body.dock-mode {
   height: 0;
   z-index: 6;
 }
-.dock-pet-speech .speech-copy b {
-  -webkit-line-clamp: 3;
+.dock-pet-speech .speech-text {
+  --speech-lines: 3;
 }
 /* Hovering the pet unfolds what it says, with who said it. */
-.dock-pet-anchor:hover .dock-pet-speech .speech-copy b,
-.dock-pet-speech .speech-bubble.is-expanded .speech-copy b {
+.dock-pet-anchor:hover .dock-pet-speech .speech-text,
+.dock-pet-speech .speech-bubble.is-expanded .speech-text {
   display: block;
-  -webkit-line-clamp: unset;
   max-height: 96px;
   overflow-y: auto;
 }
@@ -67,9 +66,6 @@ body.dock-mode {
   width: max-content;
   min-width: 158px;
   max-width: var(--bubble-wide);
-}
-.dock-pet-anchor:hover .dock-pet-speech .md-p {
-  display: block;
 }
 .dock-pet-name {
   position: relative;
@@ -355,8 +351,8 @@ body.dock-mode {
   display: contents;
 }
 /* The row has headroom: let a bubble say more than the big map's two lines. */
-.desk-row .speech-copy b {
-  -webkit-line-clamp: 5;
+.desk-row .speech-text {
+  --speech-lines: 5;
 }
 .desk-row-arrow {
   position: absolute;
@@ -775,7 +771,6 @@ body.card-mode {
 .dock-pet-anchor:hover
   .dock-pet-speech
   .speech-bubble:not(.is-expanded):has(> .speech-request-bubble)
-  .speech-copy
-  b {
+  .speech-text {
   max-height: 40px;
 }
