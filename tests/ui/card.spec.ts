@@ -384,8 +384,11 @@ test('The card can be kept open when the person clicks elsewhere, and remembers 
 test('A run of progress notes reads as one: who and when only on the first, a pause gets a time line', async ({
   page,
 }) => {
-  // Late morning today: the hour of messages never crosses midnight.
-  const now = new Date().setHours(11, 0, 0, 0);
+  // Late morning yesterday: the hour never crosses midnight, and the fixture's own notice (at
+  // the real clock) always comes after it.
+  const day = new Date();
+  day.setDate(day.getDate() - 1);
+  const now = day.setHours(11, 0, 0, 0);
   const ev = (id: string, at: number, kind: OfficeEvent['kind'], text: string, phase?: string) =>
     ({ id, at, kind, text, phase, sourceRef: 'demo' }) as OfficeEvent;
   const aside = await card(page, {
@@ -411,7 +414,13 @@ test('A run of progress notes reads as one: who and when only on the first, a pa
   await expect(msg('p2').locator('.message-meta button').first()).toHaveCSS('opacity', '1');
   await expect(msg('p2').locator('.message-meta time')).toBeVisible();
   // Fifty minutes later: a time line before the next message, and it starts a new run.
-  await expect(aside.locator('.conversation-pause')).toHaveCount(1);
+  // (The fixture's own notice lands at the real clock, so only this line is counted on.)
+  await expect(
+    aside.locator('.conversation-pause + .conversation-message[data-event-id="u2"]'),
+  ).toHaveCount(1);
+  await expect(
+    aside.locator('.conversation-pause + .conversation-message[data-event-id="p2"]'),
+  ).toHaveCount(0);
   await expect(msg('u2')).not.toHaveClass(/is-continued/);
   await page.screenshot({ path: '.local/card-runs.png' });
 });
