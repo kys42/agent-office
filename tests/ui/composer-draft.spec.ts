@@ -170,6 +170,7 @@ for (const [hash, stage] of [
       ? page.locator('.dock-pet-speech')
       : page.locator('.desk-row [data-station-id="demo:0"]');
     await (pet ? page.locator('.dock-pet-anchor') : desk.locator('.office-pet')).hover();
+    if (!pet) await desk.locator('.speech-bubble').hover();
     await desk.locator('.bubble-reply').click();
     const reply = page.locator('.quick-reply');
     const field = reply.getByRole('textbox', { name: '답장 내용' });

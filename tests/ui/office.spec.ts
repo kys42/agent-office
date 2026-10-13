@@ -446,6 +446,7 @@ test('Progress bubbles do not inflate the inbox; final read receipts preserve th
 }) => {
   await page.goto('/?demo');
   await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('1');
+  await page.getByRole('button', { name: '코코 말풍선 접기', exact: true }).locator('..').hover();
   await page.getByRole('button', { name: '코코 말풍선 접기', exact: true }).click();
   await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('1');
   await page.getByRole('button', { name: '소식함 열기' }).click();

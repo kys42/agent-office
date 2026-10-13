@@ -52,6 +52,12 @@ export function QuickReply({
           if (draft) {
             reply.cancel();
             field.current?.focus({ preventScroll: true });
+          } else if (
+            e.target instanceof HTMLElement &&
+            e.target.closest('input, textarea, select')
+          ) {
+            // Leave the input first, keeping an unfinished reply. The next Esc closes it.
+            e.target.blur();
           } else onClose();
         }
       }}

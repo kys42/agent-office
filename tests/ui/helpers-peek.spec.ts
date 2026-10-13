@@ -327,6 +327,7 @@ test('Closing a bubble does not bring it straight back; it peeks again once the 
   const bubble = desk.locator('.speech-bubble');
   await expect(bubble).toContainText('어제 맡긴 정리');
   await expect(bubble).not.toHaveClass(/is-peek/);
+  await bubble.hover();
   await bubble.locator('.bubble-dismiss').click();
   // The cursor is still on the desk: the closed bubble stays closed.
   await expect(bubble).toHaveCount(0);

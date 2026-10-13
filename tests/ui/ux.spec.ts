@@ -280,6 +280,7 @@ test('A just-arrived result turns the collapsed pet into that colleague with a b
   await page.locator('.dock-pet-anchor').hover();
   await expect(page.locator('.dock-pet-speech .speech-detail')).toContainText(speaker.project);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet-hover.png' });
+  await bubble.hover();
   await page.getByRole('button', { name: /말풍선 접기/ }).click();
   await expect(bubble).toHaveCount(0);
   await expect(page.locator('.desk-pet.is-speaking')).toHaveCount(0);

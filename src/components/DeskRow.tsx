@@ -199,7 +199,11 @@ export function DeskRow({
     if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
       // Fold what is open before the dock itself folds (DeskDock skips handled keys).
       e.preventDefault();
-      if (field && e.target instanceof HTMLElement) e.target.blur();
+      // First Esc leaves the input; a second closes it. Keep the person's draft intact.
+      if (field && e.target instanceof HTMLElement) {
+        e.target.blur();
+        return;
+      }
       if (replying) setReplying(null);
       else setExpanded(null);
       return;
@@ -541,6 +545,10 @@ export function DeskRow({
                               privacy={privacy}
                               expanded={expanded === s.id}
                               onExpandedChange={(on) => setExpanded(on ? s.id : null)}
+                              onViewed={() => {
+                                if (bubble && !privacy)
+                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                              }}
                               onPopup={(el) => void open(bubble?.sessionId ?? s.id, el)}
                               onOpen={() => {
                                 // Opening a bubble reads it in place; the card is one hover away.
