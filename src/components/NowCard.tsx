@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Check, CircleAlert, Hand, Hourglass, Inbox, Loader, Moon, Terminal } from 'lucide-react';
 import type { OfficeNotice, Session } from '../shared/types';
 import { isAttentionNotice, isFinalNotice, isInboxNotice } from '../shared/notices';
@@ -22,7 +22,8 @@ export function nowState(s: Session, notices: OfficeNotice[]): NowState {
 
 /**
  * The first thing in a colleague's card: what is going on and what *I* can do about it.
- * Answers and approvals always happen in the original tool; this card only routes there.
+ * A call shows what it asks (`request`); answering from here is the desktop app's opt-in
+ * (RequestCard), otherwise the card routes to the original tool.
  */
 export function NowCard({
   session: s,
@@ -35,6 +36,7 @@ export function NowCard({
   canType = false,
   typeQueues = false,
   onShowNews,
+  request,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -48,6 +50,8 @@ export function NowCard({
   /** Follow-ups wait for the current turn instead of needing an idle session (Codex CLI). */
   typeQueues?: boolean;
   onShowNews: () => void;
+  /** What the colleague asks (RequestCard), shown while it calls. */
+  request?: ReactNode;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -128,6 +132,7 @@ export function NowCard({
           <ActivitySummary session={s} />
           {state === 'attention' && (
             <>
+              {request}
               <div className="now-actions">
                 <button className="button primary" onClick={onResume} disabled={!canResume}>
                   <Terminal size={14} />

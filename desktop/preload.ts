@@ -51,6 +51,9 @@ const api: OfficeAPI = {
   jump: (id) => action('office:jump', id),
   send: (id, text, options) => action('office:send', id, text, options),
   terminalSend: (enable) => action('office:terminal-send', enable),
+  prompt: (id) => action('office:prompt', id),
+  answer: (id, choice) => action('office:answer', id, choice),
+  answerSettings: (patch) => action('office:answer-settings', patch),
   card: (what, target, anchor) => ipcRenderer.invoke('office:card', what, target, anchor),
   onCard: (cb) => {
     const f = (_: unknown, target: CardTarget | null) => cb(target);

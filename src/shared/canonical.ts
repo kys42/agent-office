@@ -1,5 +1,5 @@
 import { LOCALES, getLocale, messagesFor, type Locale, type Messages } from './i18n';
-import type { OfficeEvent, Preferences, Session } from './types';
+import type { InputRequest, OfficeEvent, Preferences, Session } from './types';
 
 /**
  * Canonical at rest, localized on read. Everything the collector writes itself (redaction
@@ -131,7 +131,29 @@ function localizeEvent(e: OfficeEvent, locale: Locale): OfficeEvent {
   else if (e.kind === 'result' && e.text === from.toolResult(e.tool ?? from.tool))
     text = to.toolResult(e.tool ?? to.tool);
   text ??= localizeText(e.text, locale);
-  return text === e.text ? e : { ...e, text };
+  const request = e.request && localizeRequest(e.request, locale);
+  if (text === e.text && request === e.request) return e;
+  return { ...e, text, ...(request ? { request } : {}) };
+}
+/** Agent content stays as written; only the redaction placeholders in it are localized. */
+function localizeRequest(r: InputRequest, locale: Locale): InputRequest {
+  const l = (text: string) => localizeText(text, locale);
+  if (r.kind === 'plan') return { ...r, plan: l(r.plan) };
+  if (r.kind === 'permission')
+    return { ...r, summary: l(r.summary), ...(r.detail ? { detail: l(r.detail) } : {}) };
+  return {
+    ...r,
+    questions: r.questions.map((q) => ({
+      ...q,
+      ...(q.header ? { header: l(q.header) } : {}),
+      question: l(q.question),
+      options: q.options.map((o) => ({
+        ...o,
+        label: l(o.label),
+        ...(o.description ? { description: l(o.description) } : {}),
+      })),
+    })),
+  };
 }
 /** Activity fallbacks are fixed phrases; excerpts of public messages only carry placeholders. */
 function activityText(text: string, kind: string | undefined, locale: Locale) {

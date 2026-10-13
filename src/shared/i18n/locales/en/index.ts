@@ -22,6 +22,7 @@ import { desktop } from './desktop';
 import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
+import { prompts } from './prompts';
 
 /** English is the source catalog: every other language must match its shape. */
 export const en = {
@@ -47,6 +48,7 @@ export const en = {
   dock,
   desk,
   terminal,
+  prompts,
   pets,
   guide,
 };

@@ -1,0 +1,310 @@
+import { test, expect, type Page } from '@playwright/test';
+import './korean';
+import { demoSnapshot } from '../../src/lib/demo';
+import type { InputRequest, PromptView } from '../../src/shared/types';
+
+const QUESTION: InputRequest = {
+  kind: 'question',
+  questions: [
+    {
+      header: 'Color',
+      question: 'Pick a color',
+      multiSelect: false,
+      options: [
+        { label: 'Red', description: '따뜻하고 강렬한 색' },
+        { label: 'Green', description: '자연스럽고 차분한 색' },
+        { label: 'Blue', description: '시원하고 안정적인 색' },
+      ],
+    },
+  ],
+};
+const TWO: InputRequest = {
+  kind: 'question',
+  questions: [
+    {
+      header: 'Fruit',
+      question: 'Pick fruits',
+      multiSelect: true,
+      options: [{ label: 'Apple' }, { label: 'Banana' }, { label: 'Cherry' }],
+    },
+    {
+      header: 'Size',
+      question: 'Pick a size',
+      multiSelect: false,
+      options: [{ label: 'Small' }, { label: 'Large' }],
+    },
+  ],
+};
+const PLAN: InputRequest = {
+  kind: 'plan',
+  plan: '## 계획\n\n1. hello.txt를 만든다\n2. 내용을 확인한다',
+  planFile: '~/.claude/plans/hello.md',
+};
+const BASH: InputRequest = {
+  kind: 'permission',
+  tool: 'Bash',
+  summary: 'echo hi > hello.txt',
+  detail: 'Write hi to a text file',
+};
+const CHOICES = {
+  plan: [
+    { number: 1, label: 'Yes, and use auto mode', role: 'always' },
+    { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
+    { number: 3, label: 'Tell Claude what to change', role: 'text' },
+  ],
+  permission: [
+    { number: 1, label: 'Yes', role: 'allow' },
+    { number: 2, label: "Yes, and don't ask again for echo commands", role: 'always' },
+    { number: 3, label: 'No', role: 'deny' },
+  ],
+};
+
+/** Coco (Claude) is calling with `request`; the desktop app reads the dialog as `view`. */
+async function desktop(
+  page: Page,
+  request: InputRequest,
+  options: { view?: 'ready' | PromptView; privacy?: boolean; cancel?: boolean } = {},
+) {
+  const s = demoSnapshot();
+  const now = Date.now();
+  const coco = s.sessions[0];
+  Object.assign(coco, {
+    status: 'call',
+    observedStatus: 'call',
+    updatedAt: now,
+    events: [
+      { id: 'u1', kind: 'user', text: '해 줘', at: now - 5000, sourceRef: 'x' },
+      {
+        id: 'toolu_q:tool0',
+        kind: 'tool',
+        text: '도구 실행',
+        tool: request.kind === 'permission' ? 'Bash' : 'AskUserQuestion',
+        intent: 'request-input',
+        callId: 'toolu_q',
+        at: now - 1000,
+        sourceRef: 'x',
+        request,
+      },
+    ],
+  });
+  s.preferences.privacy = !!options.privacy;
+  s.notices = [];
+  const view =
+    options.view === undefined || options.view === 'ready'
+      ? {
+          status: 'ready',
+          agent: 'Claude',
+          kind: request.kind,
+          eventId: 'toolu_q:tool0',
+          choices: request.kind === 'question' ? [] : CHOICES[request.kind],
+          ...(request.kind === 'question' ? { other: true } : {}),
+        }
+      : options.view;
+  await page.addInitScript(
+    ({ s, view, cancel }) => {
+      const w = window as any;
+      w.answers = [];
+      w.prompts = 0;
+      w.settings = { questions: false, permissions: false };
+      w.office = {
+        snapshot: async () => structuredClone(s),
+        detail: async (id: string) => structuredClone(s.sessions.find((x: any) => x.id === id)),
+        visit: async () => structuredClone(s),
+        preferences: async () => structuredClone(s),
+        artifacts: async () => [],
+        subscribe: () => () => {},
+        terminalSend: async () => true,
+        jump: async () => ({ action: 'focused', text: 'tmux work:1.0 패널을 선택했어요' }),
+        terminals: async (ids: string[]) =>
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              {
+                kind: 'tmux',
+                label: 'work:1.0',
+                status: 'waiting',
+                canSend: false,
+                canFocus: true,
+              },
+            ]),
+          ),
+        prompt: async () => {
+          w.prompts++;
+          return structuredClone(view);
+        },
+        answer: async (id: string, choice: unknown) => {
+          w.answers.push({ id, choice });
+          if (cancel) return { status: 'cancelled', message: '' };
+          return { status: 'answered', message: 'tmux work:1.0에서 답했어요' };
+        },
+        answerSettings: async (patch?: Record<string, boolean>) => {
+          if (patch) w.settings = { ...w.settings, ...patch };
+          return structuredClone(w.settings);
+        },
+      };
+    },
+    { s, view, cancel: !!options.cancel },
+  );
+  await page.goto('/');
+}
+const openCoco = (page: Page) =>
+  page.locator('[data-station-id="demo:0"] .office-pet').first().click();
+const answers = (page: Page) => page.evaluate(() => (window as any).answers);
+
+test('A question shows its options; one click answers it through the desktop app', async ({
+  page,
+}) => {
+  await desktop(page, QUESTION);
+  // The bubble says what it asks.
+  await expect(page.locator('[data-station-id="demo:0"] .speech-bubble')).toContainText(
+    'Pick a color',
+  );
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('Color');
+  await expect(card).toContainText('Pick a color');
+  await expect(card).toContainText('시원하고 안정적인 색');
+  await card.getByRole('button', { name: /Blue/ }).click();
+  await expect(page.locator('.toast')).toContainText('tmux work:1.0에서 답했어요');
+  expect(await answers(page)).toEqual([
+    {
+      id: 'demo:0',
+      choice: { kind: 'question', eventId: 'toolu_q:tool0', answers: [{ options: [2] }] },
+    },
+  ]);
+  // Sent: the buttons go until the record says what happened.
+  await expect(card).toContainText('보냈어요');
+  await expect(card.getByRole('button', { name: /Red/ })).toHaveCount(0);
+  await page.screenshot({ path: '.local/request-question.png' });
+});
+
+test('Typed words and several questions are collected, then sent together', async ({ page }) => {
+  await desktop(page, TWO);
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('여러 개 고르기');
+  const send = card.getByRole('button', { name: '답 보내기' });
+  await expect(send).toBeDisabled();
+  await card.getByRole('checkbox', { name: /Apple/ }).click();
+  await card.getByRole('checkbox', { name: /Cherry/ }).click();
+  await expect(card.getByRole('checkbox', { name: /Cherry/ })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(send).toBeDisabled();
+  // The second question (single choice) takes typed words instead.
+  await card.getByRole('button', { name: '직접 입력' }).last().click();
+  await card.getByRole('textbox', { name: '질문 2에 직접 쓴 답' }).fill('중간 크기');
+  await send.click();
+  expect((await answers(page))[0].choice).toEqual({
+    kind: 'question',
+    eventId: 'toolu_q:tool0',
+    answers: [{ options: [0, 2] }, { other: '중간 크기' }],
+  });
+});
+
+test('A plan folds open; its approval buttons are the dialog’s own choices', async ({ page }) => {
+  await desktop(page, PLAN);
+  await expect(page.locator('[data-station-id="demo:0"] .speech-bubble')).toContainText(
+    '플랜 승인',
+  );
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('승인할 플랜');
+  await card.getByRole('button', { name: '플랜 펼치기' }).click();
+  await expect(card.locator('.request-plan-body')).toHaveClass(/open/);
+  await expect(card.locator('.request-plan-body')).toContainText('hello.txt를 만든다');
+  // The text row is the terminal's: never a button here.
+  await expect(card.getByRole('button', { name: /Tell Claude/ })).toHaveCount(0);
+  await expect(card.locator('.role-always')).toContainText('계속 적용돼요');
+  await card.getByRole('button', { name: /manually approve/ }).click();
+  expect((await answers(page))[0].choice).toEqual({
+    kind: 'plan',
+    eventId: 'toolu_q:tool0',
+    number: 2,
+    label: 'Yes, manually approve edits',
+  });
+});
+
+test('A permission prompt shows the command; "don’t ask again" stands apart', async ({ page }) => {
+  await desktop(page, BASH);
+  await expect(page.locator('[data-station-id="demo:0"] .speech-bubble')).toContainText(
+    'Bash 허락할까요: echo hi > hello.txt',
+  );
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card.locator('.request-command')).toHaveText('echo hi > hello.txt');
+  await expect(card).toContainText('Write hi to a text file');
+  const always = card.locator('.request-choice.role-always');
+  await expect(always).toContainText("don't ask again");
+  await expect(always).toContainText('계속 적용돼요');
+  await expect(card.locator('.request-choice.role-allow')).toHaveClass(/primary/);
+  await page.screenshot({ path: '.local/request-permission.png' });
+  await card.getByRole('button', { name: /^3\s*No$/ }).click();
+  expect((await answers(page))[0].choice).toEqual({
+    kind: 'permission',
+    eventId: 'toolu_q:tool0',
+    number: 3,
+    label: 'No',
+  });
+});
+
+test('Declining the first-use confirmation sends nothing and keeps the buttons', async ({
+  page,
+}) => {
+  await desktop(page, BASH, { cancel: true });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await card.getByRole('button', { name: /^1\s*Yes$/ }).click();
+  await expect(card.getByRole('button', { name: /^1\s*Yes$/ })).toBeEnabled();
+  await expect(page.locator('.toast')).toHaveCount(0);
+  expect(await answers(page)).toHaveLength(1);
+});
+
+test('When the screen differs (or it is hidden), it says why and offers no buttons', async ({
+  page,
+}) => {
+  await desktop(page, BASH, {
+    view: {
+      status: 'unavailable',
+      agent: 'Claude',
+      reason: 'mismatch',
+      message: '화면의 질문이 이 요청과 달라요. 터미널을 확인해 주세요.',
+    },
+  });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('echo hi > hello.txt');
+  await expect(card).toContainText('화면의 질문이 이 요청과 달라요');
+  await expect(card.locator('.request-choice')).toHaveCount(0);
+  // The card's own jump stays there.
+  await expect(
+    page.getByRole('region', { name: '지금 상태' }).getByRole('button', { name: 'tmux로 이동' }),
+  ).toBeVisible();
+});
+
+test('Hidden-screen mode never shows what is asked', async ({ page }) => {
+  await desktop(page, BASH, { privacy: true });
+  await openCoco(page);
+  await expect(page.locator('.now-card')).toContainText('내용을 숨기고 있어요');
+  await expect(page.locator('.request-card')).toHaveCount(0);
+  await expect(page.getByText('echo hi > hello.txt')).toHaveCount(0);
+});
+
+test('Settings: both answering switches start off and turn on through the app', async ({
+  page,
+}) => {
+  await desktop(page, BASH);
+  await page.getByRole('button', { name: /설정/ }).first().click();
+  const questions = page.getByRole('switch', { name: '질문·플랜에 답하기' });
+  const permissions = page.getByRole('switch', { name: '권한 확인에 답하기' });
+  await expect(questions).toHaveAttribute('aria-checked', 'false');
+  await expect(permissions).toHaveAttribute('aria-checked', 'false');
+  await permissions.click();
+  await expect(permissions).toHaveAttribute('aria-checked', 'true');
+  await expect(questions).toHaveAttribute('aria-checked', 'false');
+  expect(await page.evaluate(() => (window as any).settings)).toEqual({
+    questions: false,
+    permissions: true,
+  });
+});

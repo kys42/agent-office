@@ -1,0 +1,20 @@
+
+[2m│[0m [1m[38;5;231mWhich deployment strategy should we use for the staging [0m
+[2m│[0m [1m[38;5;231menvironment rollout this week?[0m
+
+[38;5;153m❯[39m [38;5;246m1.[39m [38;5;153mBlue-green deployment with automatic traffic switching
+[39m     [38;5;153mafter health checks pass[39m
+     [38;5;246mRun two identical environments and switch all traffic [39m
+     [38;5;246monce the new version passes health checks.[39m
+  [38;5;246m2.[39m Canary release to five percent of users first then
+     gradually increase
+     [38;5;246mExpose the new version to a small user slice first, [39m
+     [38;5;246mthen expand as metrics stay healthy.[39m
+  [38;5;246m3.[39m Rolling update
+     [38;5;246mReplace instances incrementally in batches so the [39m
+     [38;5;246mservice stays available throughout the whole rollout.[39m
+  [38;5;246m4. Type something.[39m
+[38;5;246m────────────────────────────────────────────────────────────
+[39m  5. Chat about this
+
+[38;5;246mEnter to select · ↑/↓ to navigate · Esc to cancel[39m

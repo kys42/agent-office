@@ -23,6 +23,7 @@ import { desktop } from './desktop';
 import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
+import { prompts } from './prompts';
 
 export const ko: Messages = {
   common,
@@ -47,6 +48,7 @@ export const ko: Messages = {
   dock,
   desk,
   terminal,
+  prompts,
   pets,
   guide,
 };

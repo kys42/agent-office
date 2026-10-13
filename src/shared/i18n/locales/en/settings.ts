@@ -79,7 +79,7 @@ export const settings = {
   },
   local: {
     title: 'Only on this computer.',
-    body: "No auth files are imported and no models are called. Common token patterns in logs are masked, and sources are only ever read. What you write is typed into a terminal only when you send it with ‘Send to terminal’ (on by default, and you can turn it off). Hide screen content only changes the display; it doesn't block OS screen capture.",
+    body: "No auth files are imported and no models are called. Common token patterns in logs are masked, and sources are only ever read. What you write is typed into a terminal only when you send it with ‘Send to terminal’ (on by default, and you can turn it off), and a prompt is answered only when you press its button after turning answering on (off by default). Hide screen content only changes the display; it doesn't block OS screen capture.",
   },
   mcp: {
     title: 'Bring back memories with MCP',
