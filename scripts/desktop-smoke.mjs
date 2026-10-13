@@ -199,6 +199,40 @@ try {
   await notes.fill('');
   await notes.pressSequentially('Panel keyboard input');
   assert.equal(await notes.inputValue(), 'Panel keyboard input', 'popup panel accepts keyboard');
+  // A bookmark saved from another renderer arrives in the open memory tab via real IPC.
+  // These are synthetic provider files in this smoke's own profile and DB.
+  const saved = await page.evaluate(async () => {
+    const s = await window.office.detail('codex:codex-test');
+    const e = s.events.find((e) => e.kind === 'user');
+    if (!e) throw new Error('synthetic request missing');
+    return (await window.office.bookmark(s.id, e.id)).bookmark;
+  });
+  await card.waitForSelector('.inspector-bookmarks .bookmark-card');
+  assert.ok((await card.locator('.bookmark-card').innerText()).includes('작은 사무실 만들기'));
+  assert.equal(
+    await notes.inputValue(),
+    'Panel keyboard input',
+    'bookmark refresh preserves notes',
+  );
+  await card
+    .locator('.bookmark-card')
+    .getByRole('button', { name: '메모 추가', exact: true })
+    .click();
+  const annotation = card.locator('.bookmark-note-edit textarea');
+  await annotation.pressSequentially('Remember this decision');
+  await card
+    .locator('.bookmark-note-edit')
+    .getByRole('button', { name: '저장', exact: true })
+    .click();
+  await card.waitForSelector('.bookmark-note');
+  assert.equal(await card.locator('.bookmark-note').innerText(), 'Remember this decision');
+  const persisted = await page.evaluate(() =>
+    window.office.bookmarks({ sessionIds: ['codex:codex-test'] }),
+  );
+  assert.equal(persisted.bookmarks.find((b) => b.id === saved.id)?.note, 'Remember this decision');
+  await card.bringToFront();
+  await card.waitForFunction(() => document.hasFocus());
+  await card.screenshot({ path: '.local/native-card-memory.png' });
   // The card can be resized, and opens at the size it was given from then on.
   await app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().endsWith('#card'));

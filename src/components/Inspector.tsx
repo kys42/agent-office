@@ -21,6 +21,7 @@ import {
 import type {
   Session,
   SessionPatch,
+  Bookmark,
   Handoff,
   OfficeNotice,
   ZoneRule,
@@ -36,6 +37,7 @@ import { api, isDesktop } from '../lib/api';
 import { sendFollowUp } from '../lib/useTerminalSend';
 import { rememberSend, settlePending, usePendingSends } from '../lib/pendingSends';
 import { copyText, jumpOrCopy } from '../lib/resume';
+import { Bookmarks } from './Bookmarks';
 import { Conversation } from './Conversation';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import {
@@ -81,6 +83,10 @@ export function Inspector({
   onPrefs,
   bookmarked,
   onBookmark,
+  bookmarkStamp = '',
+  bookmarkMarks,
+  onOpenBookmark,
+  onUnbookmark,
   focus,
   onFocused,
   movable = false,
@@ -117,6 +123,10 @@ export function Inspector({
   /** This colleague's bookmarked messages; `onBookmark` (absent in the demo) toggles one. */
   bookmarked?: string[];
   onBookmark?: (sessionId: string, eventId: string, on: boolean) => Promise<void>;
+  bookmarkStamp?: string;
+  bookmarkMarks?: Record<string, string[]>;
+  onOpenBookmark?: (bookmark: Bookmark) => void;
+  onUnbookmark?: (id: string) => Promise<void>;
   /** A bookmarked message to open the conversation at (`key` tells two openings apart). */
   focus?: BookmarkFocus | null;
   /** The bookmarked message was brought into view: `focus` is used up. */
@@ -581,7 +591,8 @@ export function Inspector({
             {key === 'news'
               ? t.inspector.tabs.news(unreadNoticeCount(news))
               : t.inspector.tabs[key]}
-            {key === 'notes' && s.notes && <i />}
+            {key === 'notes' &&
+              (s.notes || [...members].some((id) => bookmarkMarks?.[id]?.length)) && <i />}
           </button>
         ))}
       </div>
@@ -632,27 +643,50 @@ export function Inspector({
             onFocused={onFocused}
           />
         ) : (
-          <div className="notes-editor">
-            <span className="eyebrow">{t.inspector.notes.eyebrow}</span>
-            <h3>{t.inspector.notes.title}</h3>
-            <p>{t.inspector.notes.body}</p>
-            <label className="sr-only" htmlFor="notes">
-              {t.inspector.notes.label}
-            </label>
-            <textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => {
-                setNotes(e.target.value);
-                setNotesDirty(true);
-              }}
-              maxLength={12000}
-              placeholder={t.inspector.notes.placeholder}
-            />
-            <button className="button primary" onClick={() => patch({ notes })}>
-              <Check size={16} />
-              {t.inspector.notes.save}
-            </button>
+          <div className="inspector-memory">
+            <section className="notes-editor">
+              <span className="eyebrow">{t.inspector.notes.eyebrow}</span>
+              <h3>{t.inspector.notes.manualTitle}</h3>
+              <p>{t.inspector.notes.body}</p>
+              <label className="sr-only" htmlFor="notes">
+                {t.inspector.notes.label}
+              </label>
+              <textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  setNotesDirty(true);
+                }}
+                maxLength={12000}
+                placeholder={t.inspector.notes.placeholder}
+              />
+              <button className="button primary" onClick={() => patch({ notes })}>
+                <Check size={16} />
+                {t.inspector.notes.save}
+              </button>
+            </section>
+            {onOpenBookmark && onUnbookmark && (
+              <section
+                className="inspector-bookmarks"
+                aria-label={t.inspector.notes.bookmarksTitle}
+              >
+                <h3>{t.inspector.notes.bookmarksTitle}</h3>
+                <p>{t.inspector.notes.bookmarksBody}</p>
+                <Bookmarks
+                  key={JSON.stringify([...members].sort())}
+                  query=""
+                  sessions={sessions}
+                  sessionIds={[...members]}
+                  privacy={privacy}
+                  demo={demo}
+                  stamp={bookmarkStamp}
+                  onOpen={onOpenBookmark}
+                  onRemove={onUnbookmark}
+                  notify={notify}
+                />
+              </section>
+            )}
             <button
               className={`completion-button ${s.completed ? 'checked' : ''}`}
               onClick={() => patch({ completed: !s.completed })}

@@ -60,6 +60,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
   - 출처와 위치(`anchor`: nativeId·sessionKey·sourcePath·sourceRef·legacyId·대화 순번)도 함께 남겨서, 세션 기록이 사라져도 읽히고 다시 찾아갈 수 있게 한다.
 - **조회:** 세션이 지워져도 북마크는 남는다. 제외 프로젝트·꺼진 도구의 북마크는 목록에서만 빼고, 읽기·메모·해제도 막는다. 판단 기준은 그 동료가 지금 기록된 도구·프로젝트이고, 기록이 사라졌으면 북마크 당시의 출처다.
 - **표시 동기화:** 스냅샷 `bookmarked`(세션별 eventId)로 모든 창의 표시를 맞춘다. 추가·메모·해제마다 오르는 `bookmarkStamp`(settings `bookmarks_revision`)를 받으면 열린 목록이 다시 읽는다.
+- **동료 카드:** 기억 메모의 `Bookmarks`도 같은 API를 사용하며 `sessionIds`를 동료의 연결된 실행 ID로 제한한다. 직접 업무 메모는 기존 `Session.notes`, 북마크별 덧붙인 메모는 `Bookmark.note`로 유지한다.
 - **위치 이동:** 북마크를 열면 `detail(id, { reach, reachAt })`이 그 메시지까지 넓힌 최근 페이지(최대 400)를 돌려준다.
 
 프로젝트 제외·공급자 비활성은 list/search/detail/handoff/MCP 모두에 적용한다. 제외는 조회 정책이며 이미 저장된 데이터의 삭제를 뜻하지 않는다. 개인정보 화면 모드는 화면의 내용을 가리는 기능으로, 원문 삭제·암호화·OS 캡처 차단을 보장하지 않는다.

@@ -921,6 +921,23 @@ export default function App() {
             terminalSend={terminalSend}
             bookmarked={snapshot?.bookmarked?.[current.id]}
             onBookmark={bookmark}
+            bookmarkMarks={snapshot?.bookmarked}
+            bookmarkStamp={JSON.stringify([
+              snapshot?.bookmarkStamp,
+              snapshot?.bookmarked,
+              prefs?.excludedProjects,
+              prefs?.enabledProviders,
+            ])}
+            onUnbookmark={unbookmark}
+            onOpenBookmark={(b) => {
+              choose(b.sessionId);
+              setBookmarkFocus({
+                sessionId: b.sessionId,
+                eventId: b.eventId,
+                at: b.at,
+                key: Date.now(),
+              });
+            }}
             focus={bookmarkFocus}
             onFocused={() => setBookmarkFocus(null)}
           />
