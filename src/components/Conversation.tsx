@@ -1,4 +1,12 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import { WebLink } from './WebLink';
 import remarkGfm from 'remark-gfm';
@@ -36,6 +44,7 @@ function Message({
   onMark,
   focused = false,
   name,
+  continued = false,
 }: {
   event: OfficeEvent;
   provider: Session['provider'];
@@ -50,6 +59,8 @@ function Message({
   onMark?: (on: boolean) => void;
   /** Just opened from its bookmark. */
   focused?: boolean;
+  /** Follows a message from the same side and kind: who and when only show on hover. */
+  continued?: boolean;
 }) {
   const { t } = useI18n();
   const work = event.kind === 'tool' || event.kind === 'result';
@@ -71,7 +82,7 @@ function Message({
             : t.conversation.progressUpdate;
   return (
     <article
-      className={`conversation-message message-${event.kind} category-${conversationKind(event)}${marked ? ' is-bookmarked' : ''}${focused ? ' is-focused' : ''}`}
+      className={`conversation-message message-${event.kind} category-${conversationKind(event)}${marked ? ' is-bookmarked' : ''}${focused ? ' is-focused' : ''}${continued ? ' is-continued' : ''}`}
       data-message-category={conversationKind(event)}
       data-group-id={group}
       data-event-id={event.id}
@@ -238,6 +249,43 @@ export function Conversation({
     }
     return out;
   }, [events, filter, tools, hideProgress]);
+  const shown = useMemo(() => groups.slice(-count), [groups, count]);
+  // In the card's chat a run from the same side and kind reads as one, like a messenger: only
+  // its first message says who and when. A long pause, or a new day, gets a time line between.
+  const runs = useMemo(() => {
+    const info = new Map<string, { continued: boolean; pause: number | null }>();
+    if (!compact) return info;
+    let prev: { side: string; kind: string; at: number } | null = null;
+    for (const g of shown) {
+      const e = g.events[0];
+      const pause =
+        prev &&
+        (e.at - prev.at >= 15 * 60_000 ||
+          new Date(e.at).toDateString() !== new Date(prev.at).toDateString())
+          ? e.at
+          : null;
+      if (g.work) {
+        // Folded work sits inside a run without breaking it.
+        info.set(g.id, { continued: false, pause });
+        // After a pause the next message starts afresh.
+        if (pause) prev = null;
+        else if (prev) prev.at = g.events.at(-1)!.at;
+        continue;
+      }
+      const side = e.kind === 'user' ? 'you' : e.kind === 'lifecycle' ? 'system' : 'agent';
+      const kind = conversationKind(e);
+      info.set(g.id, {
+        continued: !pause && !!prev && prev.side === side && prev.kind === kind,
+        pause,
+      });
+      prev = { side, kind, at: e.at };
+    }
+    return info;
+  }, [compact, shown]);
+  const pauseLabel = (at: number) =>
+    new Date(at).toDateString() === new Date().toDateString()
+      ? time(at)
+      : `${date(at)} ${time(at)}`;
   const toggleMessage = (id: string) =>
     setExpanded((old) => {
       const next = new Set(old);
@@ -546,47 +594,55 @@ export function Conversation({
               : t.conversation.loadOlder}
         </button>
       )}
-      {groups.slice(-count).map((g) =>
-        g.work ? (
-          <details className="work-group" key={g.id} data-group-id={g.id}>
-            <summary>
-              <Terminal size={14} />
-              <span>
-                {g.events.find((e) => e.kind === 'tool')?.tool?.replace(/^.*__/, '') ||
-                  t.conversation.workLog}
-              </span>
-              <small>{t.conversation.entries(g.events.length)}</small>
-              <ChevronDown size={13} />
-            </summary>
-            <div>
-              {g.events.map((e, i) => (
-                <Message
-                  event={e}
-                  provider={session.provider}
-                  name={name}
-                  notify={notify}
-                  key={e.id + i}
-                  expanded={expanded.has(e.id)}
-                  onExpand={() => toggleMessage(e.id)}
-                  {...markOf(e)}
-                />
-              ))}
+      {shown.map((g) => (
+        <Fragment key={g.id}>
+          {runs.get(g.id)?.pause != null && (
+            <div className="conversation-pause">
+              <time title={date(runs.get(g.id)!.pause!)}>{pauseLabel(runs.get(g.id)!.pause!)}</time>
             </div>
-          </details>
-        ) : (
-          <Message
-            key={g.id}
-            event={g.events[0]}
-            provider={session.provider}
-            name={name}
-            notify={notify}
-            expanded={expanded.has(g.id)}
-            onExpand={() => toggleMessage(g.id)}
-            group={g.id}
-            {...markOf(g.events[0])}
-          />
-        ),
-      )}
+          )}
+          {g.work ? (
+            <details className="work-group" key={g.id} data-group-id={g.id}>
+              <summary>
+                <Terminal size={14} />
+                <span>
+                  {g.events.find((e) => e.kind === 'tool')?.tool?.replace(/^.*__/, '') ||
+                    t.conversation.workLog}
+                </span>
+                <small>{t.conversation.entries(g.events.length)}</small>
+                <ChevronDown size={13} />
+              </summary>
+              <div>
+                {g.events.map((e, i) => (
+                  <Message
+                    event={e}
+                    provider={session.provider}
+                    name={name}
+                    notify={notify}
+                    key={e.id + i}
+                    expanded={expanded.has(e.id)}
+                    onExpand={() => toggleMessage(e.id)}
+                    {...markOf(e)}
+                  />
+                ))}
+              </div>
+            </details>
+          ) : (
+            <Message
+              key={g.id}
+              event={g.events[0]}
+              provider={session.provider}
+              name={name}
+              notify={notify}
+              expanded={expanded.has(g.id)}
+              onExpand={() => toggleMessage(g.id)}
+              group={g.id}
+              continued={runs.get(g.id)?.continued}
+              {...markOf(g.events[0])}
+            />
+          )}
+        </Fragment>
+      ))}
       {!groups.length && (
         <div className="empty-small">
           <MessageSquare size={26} />

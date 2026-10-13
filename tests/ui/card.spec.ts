@@ -1,12 +1,20 @@
 import { test, expect, type Page } from '@playwright/test';
 import { demoSnapshot } from '../../src/lib/demo';
+import type { OfficeEvent } from '../../src/shared/types';
 
 /** The dock's card window in the browser: the desktop bridge opens it on demo:0. */
 async function card(
   page: Page,
-  opts: { canSend?: boolean; terminal?: boolean; privacy?: boolean; id?: string } = {},
+  opts: {
+    canSend?: boolean;
+    terminal?: boolean;
+    privacy?: boolean;
+    id?: string;
+    events?: OfficeEvent[];
+  } = {},
 ) {
   const snapshot = demoSnapshot();
+  if (opts.events) snapshot.sessions[0].events = opts.events;
   snapshot.preferences.privacy = !!opts.privacy;
   // A helper of demo:0, to open as its own card.
   snapshot.sessions.push({
@@ -371,4 +379,48 @@ test('The card can be kept open when the person clicks elsewhere, and remembers 
   // Let go again: blur closes it once more.
   await page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-off');
+});
+
+test('A run of progress notes reads as one: who and when only on the first, a pause gets a time line', async ({
+  page,
+}) => {
+  // Late morning yesterday: the hour never crosses midnight, and the fixture's own notice (at
+  // the real clock) always comes after it.
+  const day = new Date();
+  day.setDate(day.getDate() - 1);
+  const now = day.setHours(11, 0, 0, 0);
+  const ev = (id: string, at: number, kind: OfficeEvent['kind'], text: string, phase?: string) =>
+    ({ id, at, kind, text, phase, sourceRef: 'demo' }) as OfficeEvent;
+  const aside = await card(page, {
+    events: [
+      ev('u1', now - 60 * 60_000, 'user', '정리해 줘'),
+      ev('p1', now - 59 * 60_000, 'assistant', '파일을 읽어요', 'commentary'),
+      ev('p2', now - 58 * 60_000, 'assistant', '고칠 곳을 찾았어요', 'commentary'),
+      ev('p3', now - 57 * 60_000, 'assistant', '테스트를 돌려요', 'commentary'),
+      ev('f1', now - 56 * 60_000, 'assistant', '다 했어요', 'final'),
+      ev('u2', now - 5 * 60_000, 'user', '고마워'),
+    ],
+  });
+  const msg = (id: string) => aside.locator(`.conversation-message[data-event-id="${id}"]`);
+  await expect(msg('p1')).not.toHaveClass(/is-continued/);
+  await expect(msg('p2')).toHaveClass(/is-continued/);
+  await expect(msg('p3')).toHaveClass(/is-continued/);
+  // The answer after the notes says who again.
+  await expect(msg('f1')).not.toHaveClass(/is-continued/);
+  await expect(msg('p2').locator('.message-meta')).toHaveCSS('opacity', '0');
+  // Focus (the keyboard's hover) shows them, buttons included.
+  await msg('p2').locator('.message-meta button').first().focus();
+  await expect(msg('p2').locator('.message-meta')).toHaveCSS('opacity', '1');
+  await expect(msg('p2').locator('.message-meta button').first()).toHaveCSS('opacity', '1');
+  await expect(msg('p2').locator('.message-meta time')).toBeVisible();
+  // Fifty minutes later: a time line before the next message, and it starts a new run.
+  // (The fixture's own notice lands at the real clock, so only this line is counted on.)
+  await expect(
+    aside.locator('.conversation-pause + .conversation-message[data-event-id="u2"]'),
+  ).toHaveCount(1);
+  await expect(
+    aside.locator('.conversation-pause + .conversation-message[data-event-id="p2"]'),
+  ).toHaveCount(0);
+  await expect(msg('u2')).not.toHaveClass(/is-continued/);
+  await page.screenshot({ path: '.local/card-runs.png' });
 });
