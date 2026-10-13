@@ -4,6 +4,8 @@
 
 ## 로컬 생성과 설치
 
+앱 아이콘 원본은 `public/icon.png`(투명 배경의 1024px PNG)다. 선택한 맥북 앞 미니 로봇 시안으로 교체했으며, 브라우저 favicon과 실행 중 Mac Dock도 같은 파일을 사용한다. 메뉴바의 흑백 template 심벌은 메뉴바용으로 유지한다. PNG를 변경하면 macOS에서 `npm run icon:mac`으로 16–1024px ICNS를 재생성해 `public/icon.icns`와 함께 커밋한다. 패키징은 커밋된 ICNS를 사용하며 Linux CI에서 Mac 변환 도구를 실행하지 않는다.
+
 Node 24+와 macOS가 필요하다. 릴리스용 checkout에서 아래 명령을 실행한다. 전달할 최종 산출물은 커밋을 확정한 깨끗한 checkout에서 다시 생성한다.
 
 ```bash
