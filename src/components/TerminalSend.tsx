@@ -25,6 +25,8 @@ export function targetPlaceholder(target: TerminalTarget) {
 /**
  * A follow-up typed into the colleague's live terminal, exactly as if typed there.
  * Desktop only, on unless turned off in Settings; the main process re-checks the terminal and its state.
+ * The box is always open to writing: whether it can go now (no terminal found, a question on
+ * screen) is checked again on send, and a refusal says why while the text stays.
  */
 export function TerminalSend({
   target,
@@ -34,7 +36,8 @@ export function TerminalSend({
   onJump,
   chat = false,
 }: {
-  target: TerminalTarget;
+  /** Where it goes, as last seen; null while none was found (the send looks again). */
+  target: TerminalTarget | null;
   enabled: boolean;
   privacy: boolean;
   onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
@@ -46,18 +49,23 @@ export function TerminalSend({
   const { t } = useI18n();
   const reply = useComposerSend(onSend, () => reply.setText(''));
   const { text, sending, error, draft } = reply;
-  const host = HOSTS[target.kind];
+  const host = target ? HOSTS[target.kind] : t.terminal.terminal;
   if (!enabled)
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
-        {t.terminal.offHint(target.queues ? t.terminal.runningCodex : t.terminal.runningIn(host))}
+        {t.terminal.offHint(
+          target?.queues
+            ? t.terminal.runningCodex
+            : target
+              ? t.terminal.runningIn(host)
+              : t.terminal.runningSomewhere,
+        )}
       </p>
     );
-  const waiting = !target.canSend;
-  const submit = () => {
-    if (!waiting) void reply.submit();
-  };
+  // Not taking input as last seen (or not found): still written and sent; the desktop app
+  // checks again and says why when it cannot.
+  const submit = () => void reply.submit();
   return (
     <form
       className={`terminal-send ${chat ? 'terminal-send-chat' : ''}`}
@@ -78,11 +86,7 @@ export function TerminalSend({
         rows={chat ? 1 : 2}
         maxLength={4000}
         value={text}
-        placeholder={
-          waiting
-            ? targetPlaceholder(target)
-            : `${targetPlaceholder(target)} · ${chat ? t.terminal.replyKeys : t.terminal.sendShortcut}`
-        }
+        placeholder={`${target ? targetPlaceholder(target) : t.terminal.placeholder.unknown} · ${chat ? t.terminal.replyKeys : t.terminal.sendShortcut}`}
         onChange={(e) => reply.setText(e.target.value)}
         onKeyDown={(e) => {
           const sends = chat ? !e.shiftKey : e.metaKey || e.ctrlKey;
@@ -95,14 +99,10 @@ export function TerminalSend({
       <div className="terminal-send-bar">
         <small>
           <Terminal size={11} />
-          {targetLine(target, privacy)}
-          {!target.queues && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
+          {target ? targetLine(target, privacy) : t.terminal.lookingAgain}
+          {target && !target.queues && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
         </small>
-        <button
-          className="button primary"
-          type="submit"
-          disabled={waiting || sending || !text.trim()}
-        >
+        <button className="button primary" type="submit" disabled={sending || !text.trim()}>
           {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}
           {t.terminal.send}
         </button>
@@ -112,15 +112,21 @@ export function TerminalSend({
           draft={draft}
           sending={sending}
           privacy={privacy}
-          blocked={waiting}
-          onJump={target.canFocus ? onJump : undefined}
+          onJump={target?.canFocus ? onJump : undefined}
           onConfirm={() => void reply.confirm()}
+          onSendDraft={() => void reply.sendDraft()}
           onCancel={reply.cancel}
         />
       )}
       {error && (
         <small className="terminal-send-error" role="alert">
           {error}
+          {onJump && target?.canFocus && (
+            <button type="button" className="terminal-send-jump" onClick={onJump}>
+              <Terminal size={11} />
+              {t.terminal.openTerminal}
+            </button>
+          )}
         </small>
       )}
     </form>

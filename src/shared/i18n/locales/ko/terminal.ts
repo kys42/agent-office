@@ -11,9 +11,11 @@ export const terminal: Messages['terminal'] = {
     busy: '작업 중이에요 · 보내면 대기열에 들어가 이어서 반영돼요',
     notWaiting: '지금은 입력을 기다리지 않아요',
     direct: (host) => `${host} 터미널에 바로 입력돼요`,
+    unknown: '보낼 때 터미널을 다시 찾아요',
   },
   runningCodex: 'Codex CLI에서 실행 중이에요',
   runningIn: (host) => `${host} 터미널에서 실행 중이에요`,
+  runningSomewhere: '터미널에서 실행 중이에요',
   offHint: (running) =>
     `${running}. 설정에서 ‘터미널로 보내기’를 켜면 여기서 바로 이어서 말할 수 있어요.`,
   messageLabel: (host) => `${host} 터미널로 보낼 내용`,
@@ -27,14 +29,18 @@ export const terminal: Messages['terminal'] = {
   closeReply: '답장 닫기',
   draftFound: (agent) => `${agent} 입력창에 이 글이 있어요`,
   draftMaybeSuggestion:
-    '입력창에 뜬 추천 글일 수도 있어요. 화면 글자만으로는 구분할 수 없어요. 지우면 이 글이 클립보드에 들어가 원래 클립보드 내용을 대신해요.',
+    '입력창에 뜬 추천 글일 수도 있어요. 지우면 이 글이 클립보드에 들어가 원래 클립보드 내용을 대신해요.',
   draftPartlySaved: '지금까지 지운 글은 클립보드에 있어요.',
   draftChanged: '그사이 입력창 글이 바뀌었어요. 다시 확인해 주세요.',
   draftHidden: '화면 내용 숨기기 중이라 가렸어요',
   draftNotWhole:
     '입력창 글이 다 보이지 않아 여기서 지울 수 없어요. 터미널에서 비운 뒤 다시 보내 주세요.',
   openTerminal: '터미널로 이동',
-  clearAndSend: '지우고 보내기',
+  terminal: '터미널',
+  lookingAgain: '연결된 터미널을 찾는 중 · 보낼 때 다시 확인해요',
+  clearAndSend: '지우고 내 글 보내기',
+  sendDraft: '이 글 그대로 보내기',
+  sendDraftTitle: '입력창의 이 글을 대신 보내요. 내가 쓴 글은 입력칸에 남아요.',
   cancelClear: '취소',
   clearedToClipboard: '지운 글은 클립보드에 있어요',
 };

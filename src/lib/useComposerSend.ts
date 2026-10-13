@@ -17,12 +17,14 @@ export function useComposerSend(
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<DraftPrompt | null>(null);
-  const send = async (replaceDraft?: string) => {
-    if (!text.trim() || sending) return;
+  /** `instead`: the composer's own text goes out in place of the reply, which then stays. */
+  const send = async (replaceDraft?: string, instead?: string) => {
+    const message = instead ?? text;
+    if (!message.trim() || sending) return;
     setSending(true);
     setError('');
     try {
-      const result = await onSend(text, replaceDraft);
+      const result = await onSend(message, replaceDraft);
       if (result.status === 'needs-confirm') {
         setDraft(result);
         setSending(false);
@@ -30,7 +32,7 @@ export function useComposerSend(
       }
       setDraft(null);
       setSending(false);
-      onSent();
+      if (instead === undefined) onSent();
     } catch (e) {
       setError((e as Error).message);
       setDraft(null);
@@ -45,6 +47,8 @@ export function useComposerSend(
     draft,
     submit: () => send(),
     confirm: () => (draft ? send(draft.draft) : undefined),
+    /** The composer's text, sent as it is (typed over itself after the same clearing). */
+    sendDraft: () => (draft ? send(draft.draft, draft.draft) : undefined),
     cancel: () => setDraft(null),
   };
 }

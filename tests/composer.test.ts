@@ -203,6 +203,10 @@ function fakePrompt(
     host?: 'tmux' | 'orca';
     /** The keys never arrive. */
     stuck?: boolean;
+    /** Typing arrives, the deletion keys do nothing (another key mode). */
+    noDelete?: boolean;
+    /** vim's normal mode: letters are commands ('l' moves right), nothing edits. */
+    normal?: boolean;
     height?: number;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
@@ -233,7 +237,21 @@ function fakePrompt(
       pressed.push([...keys]);
       if (!options.stuck)
         for (const key of keys) {
-          if (key === 'C-k') {
+          if (options.normal) {
+            if (key === 'l') col = Math.min(col + 1, lines[row].length);
+            continue;
+          }
+          if (key === 'l') {
+            lines[row] = [...lines[row].slice(0, col), 'l', ...lines[row].slice(col)];
+            col++;
+          } else if (key === 'BSpace') {
+            if (col > 0) {
+              lines[row] = [...lines[row].slice(0, col - 1), ...lines[row].slice(col)];
+              col--;
+            }
+          } else if (options.noDelete) {
+            continue;
+          } else if (key === 'C-k') {
             if (col < lines[row].length) lines[row] = lines[row].slice(0, col);
             else if (row < lines.length - 1)
               lines.splice(row, 2, [...lines[row], ...lines[row + 1]]);
@@ -416,12 +434,52 @@ test('Text the keys never change is never taken as cleared', async () => {
     status: 'failed',
     state: { kind: 'draft', text: 'hello draft', whole: true },
   });
-  // Orca: text that never moved may be a suggestion, or keys that never arrived: not cleared.
-  for (const options of [{ draft: 'hello draft', stuck: true }, { suggestion: 'run the tests' }]) {
-    const orca = fakePrompt({ ...options, host: 'orca' });
-    const { result } = await clearPrompt(orca);
-    assert.equal(result.status, 'failed', JSON.stringify(options));
-  }
+  // Orca: text that never moved is probed with one letter. Keys that never arrive: not cleared.
+  const orcaStuck = fakePrompt({ draft: 'hello draft', stuck: true, host: 'orca' });
+  assert.equal((await clearPrompt(orcaStuck)).result.status, 'failed');
+  // Typing arrives but deletion does not: the letter is taken back, the draft stays as it was.
+  const keyMode = fakePrompt({ draft: 'hello draft', noDelete: true, host: 'orca' });
+  assert.equal((await clearPrompt(keyMode)).result.status, 'failed');
+  assert.equal(keyMode.text(), 'hello draft');
+  assert.deepEqual(keyMode.pressed.slice(-1), [['BSpace']]);
+  // With the cursor mid-text the letter lands there, and is taken back all the same.
+  const mid = fakePrompt({ draft: 'hello draft', noDelete: true, host: 'orca', cursor: [0, 5] });
+  assert.equal((await clearPrompt(mid)).result.status, 'failed');
+  assert.equal(mid.text(), 'hello draft');
+  // vim's normal mode: the letter only moves the cursor; the draft is never edited.
+  const vim = fakePrompt({ draft: 'hello draft', normal: true, host: 'orca', cursor: [0, 2] });
+  assert.equal((await clearPrompt(vim)).result.status, 'failed');
+  assert.equal(vim.text(), 'hello draft');
+  assert.ok(!vim.pressed.some((keys) => keys.includes('BSpace')));
+  // The suggestion where only typing and Backspace work: the letter goes, nothing is left.
+  const plainKeys = fakePrompt({ suggestion: 'run the tests', noDelete: true, host: 'orca' });
+  assert.equal((await clearPrompt(plainKeys)).result.status, 'cleared');
+  assert.equal(plainKeys.text(), '');
+  // A draft of just the letter, the keys never arriving: not a suggestion.
+  const letter = fakePrompt({ draft: 'l', stuck: true, host: 'orca' });
+  assert.equal((await clearPrompt(letter)).result.status, 'failed');
+  // Claude no longer at the terminal: the probe types nothing.
+  const gone = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
+  const from = await claudeCodeComposer.inspect(gone.host);
+  assert.ok(from.kind === 'unknown');
+  let checks = 0;
+  const left = await claudeCodeComposer.clear(
+    gone.host,
+    from,
+    async () => {},
+    async () => ++checks <= 2,
+  );
+  assert.equal(left.status, 'failed');
+  assert.ok(!gone.pressed.some((keys) => keys.includes('l')));
+  // Only the suggestion: typing replaced it, so the box is ready once the letter is gone.
+  const offered = fakePrompt({ suggestion: 'run the tests', host: 'orca' });
+  const { result, backups } = await clearPrompt(offered);
+  assert.deepEqual(result, {
+    status: 'cleared',
+    state: { kind: 'suggestion', text: 'run the tests', inferred: true },
+  });
+  assert.equal(offered.text(), '');
+  assert.deepEqual(backups, ['run the tests']);
   // A closed prompt (a dialog opened) stops the clearing.
   const closed: ComposerHost = {
     ...fakePrompt({ draft: 'x' }).host,

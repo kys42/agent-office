@@ -11,9 +11,13 @@ export const terminal = {
     busy: 'Working · what you send is queued and picked up as it goes',
     notWaiting: 'Not waiting for input right now',
     direct: (host: string) => `Typed straight into the ${host} terminal`,
+    /** No terminal found as last seen. */
+    unknown: 'Its terminal is looked up again on send',
   },
   runningCodex: 'Running in Codex CLI',
   runningIn: (host: string) => `Running in a ${host} terminal`,
+  /** No terminal found so far. */
+  runningSomewhere: 'Running in a terminal',
   offHint: (running: string) =>
     `${running}. Turn on ‘Send to terminal’ in Settings to follow up right here.`,
   messageLabel: (host: string) => `Message for the ${host} terminal`,
@@ -29,7 +33,7 @@ export const terminal = {
   draftFound: (agent: string) => `This is already in the ${agent} prompt`,
   /** On screens without styles, the agent's own suggestion looks the same as a draft. */
   draftMaybeSuggestion:
-    'It may be a suggestion the prompt shows; the screen alone can’t tell. Clearing puts it on your clipboard, replacing what’s there.',
+    'It may be a suggestion the prompt shows. Clearing puts it on your clipboard, replacing what’s there.',
   /** Typing showed up while clearing: what was cleared so far is already on the clipboard. */
   draftPartlySaved: 'What was cleared so far is on your clipboard.',
   /** The text confirmed earlier was no longer what the prompt held. */
@@ -40,7 +44,14 @@ export const terminal = {
   draftNotWhole:
     "Not all of it is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
   openTerminal: 'Open the terminal',
-  clearAndSend: 'Clear & send',
+  /** A host not known yet (no terminal found so far). */
+  terminal: 'terminal',
+  /** No terminal found as last seen: the send looks again. */
+  lookingAgain: 'Looking for its terminal · checked again on send',
+  clearAndSend: 'Clear & send mine',
+  /** Sends the composer's text (a suggestion or a draft) instead of the reply being written. */
+  sendDraft: 'Send this as is',
+  sendDraftTitle: 'Sends the text in the prompt instead. What you wrote stays in the box.',
   cancelClear: 'Cancel',
   clearedToClipboard: 'The cleared text is on your clipboard',
 };

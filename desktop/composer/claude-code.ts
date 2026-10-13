@@ -218,6 +218,61 @@ export function oneStretchGone(original: string, now: string): boolean {
   return head + tail === now.length;
 }
 
+/**
+ * Text the deletion keys never touched, on a host that cannot show styles. One letter (`PROBE`)
+ * is typed: the box holding just it means the text was the suggestion (typing replaced it), so
+ * the letter is deleted and the box is ready. The text with the letter put in means typing
+ * arrives but deletion does not (another key mode): it is taken back and nothing more is tried.
+ * Anything else (no change, a vim normal mode moving the cursor, typing meanwhile) stops: the
+ * letter is a cursor move in vim's normal mode, never an edit ('.' would repeat one).
+ */
+const PROBE = 'l';
+async function probe(
+  host: ComposerHost,
+  from: ComposerState & { text: string },
+  stuck: ComposerState,
+  proceed?: () => Promise<boolean>,
+): Promise<ClearResult> {
+  const original = drawn(from.text);
+  // Before every key, as in the clearing: still the same Claude, in front of its terminal.
+  const lost: ClearResult = { status: 'failed', state: from, lost: true };
+  if (proceed && !(await proceed())) return lost;
+  await host.press([PROBE]);
+  await host.wait(REDRAW_MS);
+  const typed = await inspect(host);
+  const shown = holdsText(typed) ? drawn(typed.text) : '';
+  // Nothing changed (the keys never arrive, or a normal mode moved the cursor): even a draft
+  // that is just the letter is not taken for a suggestion.
+  if (shown === original) return { status: 'failed', state: stuck };
+  if (shown === PROBE) {
+    if (proceed && !(await proceed())) return lost;
+    // The letter alone, the cursor after it: one Backspace takes it (and works where the
+    // deletion pairs may not).
+    await host.press(['BSpace']);
+    await host.wait(REDRAW_MS);
+    const after = await inspect(host);
+    // The emptied box shows the suggestion again (or nothing).
+    if (readyToType(after) || (holdsText(after) && drawn(after.text) === original))
+      return { status: 'cleared', state: { kind: 'suggestion', text: from.text, inferred: true } };
+    return { status: 'failed', state: after };
+  }
+  // Typing arrives, deletion does not: the letter went in at the cursor, wherever that was.
+  if (oneAdded(original, shown, PROBE)) {
+    if (proceed && !(await proceed())) return lost;
+    await host.press(['BSpace']);
+    await host.wait(REDRAW_MS);
+  }
+  return { status: 'failed', state: stuck };
+}
+
+/** `now` is `original` with one `letter` put in somewhere. */
+export function oneAdded(original: string, now: string, letter: string): boolean {
+  if (now.length !== original.length + 1) return false;
+  for (let i = 0; i < now.length; i++)
+    if (now[i] === letter && now.slice(0, i) + now.slice(i + 1) === original) return true;
+  return false;
+}
+
 /** Rounds of deletion before giving up, and how long the prompt gets to redraw. */
 const CLEAR_ROUNDS = 60;
 const REDRAW_MS = 120;
@@ -277,7 +332,10 @@ export const claudeCodeComposer: ComposerAdapter = {
             status: 'cleared',
             state: { kind: 'suggestion', text: stranger, inferred: true },
           };
-        // Never moved at all: the keys may not arrive (or it is only the suggestion).
+        // Never moved at all: the suggestion (Orca draws it like typing), or keys that never
+        // arrive. One character typed tells them apart.
+        if (unchanged >= 2 && !moved && !canTell && stranger === null)
+          return probe(host, from, state, proceed);
         if (unchanged >= (moved ? 6 : 2)) return { status: 'failed', state };
         continue;
       }

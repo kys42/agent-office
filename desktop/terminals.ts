@@ -398,7 +398,12 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
 }
 
 /** The bytes a key sends: what tmux `send-keys` writes for the same names. */
-const KEY_BYTES: Record<ComposerKey, string> = { 'C-k': '\x0b', 'C-u': '\x15' };
+const KEY_BYTES: Record<ComposerKey, string> = {
+  'C-k': '\x0b',
+  'C-u': '\x15',
+  l: 'l',
+  BSpace: '\x7f',
+};
 
 /** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */
 export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHost {

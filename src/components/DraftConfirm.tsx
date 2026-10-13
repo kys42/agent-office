@@ -15,6 +15,7 @@ export function DraftConfirm({
   privacy = false,
   blocked = false,
   onConfirm,
+  onSendDraft,
   onCancel,
   onJump,
 }: {
@@ -24,6 +25,8 @@ export function DraftConfirm({
   /** The target is not taking input right now (waiting for an answer, gone): no clearing. */
   blocked?: boolean;
   onConfirm: () => void;
+  /** Sends the composer's text itself instead of the reply. */
+  onSendDraft?: () => void;
   onCancel: () => void;
   /** Brings the session's terminal to the front, when it can. */
   onJump?: () => void;
@@ -58,15 +61,30 @@ export function DraftConfirm({
             </button>
           )
         ) : (
-          <button
-            type="button"
-            className="draft-confirm-clear"
-            onClick={onConfirm}
-            disabled={sending || blocked}
-          >
-            {sending ? <Loader size={12} className="now-spin" /> : <Eraser size={12} />}
-            {t.terminal.clearAndSend}
-          </button>
+          <>
+            {/* One line only: a longer draft is read off the screen with its indents trimmed,
+              so "as is" could not be kept. */}
+            {onSendDraft && !privacy && !draft.draft.includes('\n') && (
+              <button
+                type="button"
+                className="draft-confirm-cancel"
+                title={t.terminal.sendDraftTitle}
+                onClick={onSendDraft}
+                disabled={sending || blocked}
+              >
+                {t.terminal.sendDraft}
+              </button>
+            )}
+            <button
+              type="button"
+              className="draft-confirm-clear"
+              onClick={onConfirm}
+              disabled={sending || blocked}
+            >
+              {sending ? <Loader size={12} className="now-spin" /> : <Eraser size={12} />}
+              {t.terminal.clearAndSend}
+            </button>
+          </>
         )}
       </div>
     </div>
