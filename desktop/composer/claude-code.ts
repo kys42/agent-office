@@ -241,6 +241,9 @@ async function probe(
   await host.wait(REDRAW_MS);
   const typed = await inspect(host);
   const shown = holdsText(typed) ? drawn(typed.text) : '';
+  // Nothing changed (the keys never arrive, or a normal mode moved the cursor): even a draft
+  // that is just the letter is not taken for a suggestion.
+  if (shown === original) return { status: 'failed', state: stuck };
   if (shown === PROBE) {
     if (proceed && !(await proceed())) return lost;
     await host.press(['C-k', 'C-u']);
