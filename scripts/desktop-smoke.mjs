@@ -258,7 +258,12 @@ try {
         .find((x) => x.webContents.getURL().endsWith('#card'))
         .emit('blur'),
     );
-  // A press on its text box gives the card the keyboard again.
+  // A press on its text box gives the card the keyboard again, after another window had it.
+  await app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find((x) => x.webContents.getURL().includes('#mini'))
+      ?.focus(),
+  );
   await card.evaluate(() => window.office.card('focus'));
   assert.equal(
     await app.evaluate(({ BrowserWindow }) =>
