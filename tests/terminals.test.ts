@@ -142,6 +142,8 @@ function fakeDeps(
      * shows the marker only. Given what the prompt holds (typed text), what `draft` reports.
      */
     orcaDraft?: (typed: string, read: number) => string | undefined;
+    /** With `orcaDraft`: the rendered prompt line (measured: the suggestion is drawn there). */
+    orcaTail?: (typed: string) => string;
     fail?: (file: string, args: string[]) => Error | undefined;
   } = {},
 ) {
@@ -180,7 +182,9 @@ function fakeDeps(
       if (file === '/bin/tmux' && args.includes('capture-pane')) return screen();
       if (file === '/bin/orca' && args[1] === 'read') {
         const draft = options.orcaDraft?.(typed, reads);
-        const tail = options.orcaDraft ? claudeScreen('').split('\n') : screen().split('\n');
+        const tail = (
+          options.orcaDraft ? (options.orcaTail?.(typed) ?? claudeScreen('')) : screen()
+        ).split('\n');
         if (options.orcaDraft) reads++;
         return JSON.stringify({
           ok: true,
@@ -204,6 +208,7 @@ function fakeDeps(
       if (file === '/bin/orca' && args[1] === 'send') {
         const text = args.find((arg) => arg.startsWith('--text='));
         if (clears(args)) typed = '';
+        else if (text === '--text=\x7f') typed = [...typed].slice(0, -1).join('');
         else if (text) typed += text.slice('--text='.length).replace(/\x1b\[20[01]~/g, '');
         if (args.includes('--enter')) {
           if (options.enterRefused)
@@ -708,8 +713,8 @@ test("Text already in the prompt, a draft or a failed send's, is never added to"
       status: 'needs-confirm',
       draft: 'half-written idea',
       agent: 'Claude',
-      // Older Orca draws the composer on screen like a suggestion: never cleared from here.
-      ...(live.host.kind === 'orca' && { maybeSuggestion: true, clearable: false }),
+      // On Orca, text on screen may be the suggestion: the person picks, and it can be cleared.
+      ...(live.host.kind === 'orca' && { maybeSuggestion: true }),
     });
     // Without a way to back the text up first (no clipboard), it is refused as before.
     await assert.rejects(
@@ -784,6 +789,36 @@ test('On Orca, only the suggestion in the prompt: confirmed, it is typed over an
     assert.equal(result.status, 'sent');
     assert.ok(sent(calls));
     assert.deepEqual(backups, ['run the tests']);
+  });
+});
+
+test('On Orca, the suggestion drawn on screen (no draft) is cleared with one letter and sent', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Measured on Orca 1.4.216: the suggestion sits on the prompt line, typing goes to `draft`.
+    const { deps, calls } = fakeDeps(dir, {
+      orcaDraft: (typed) => typed || undefined,
+      orcaTail: (typed) => claudeScreen(typed ? '' : '결과 나오면 추천안대로 ㄱㄱ'),
+    });
+    const backups: string[] = [];
+    const backup = async (text: string) => void backups.push(text);
+    const first = await sendToTerminal(orcaLive(), 'hi', deps, { backup });
+    assert.deepEqual(first, {
+      status: 'needs-confirm',
+      draft: '결과 나오면 추천안대로 ㄱㄱ',
+      agent: 'Claude',
+      maybeSuggestion: true,
+    });
+    for (const message of ['hi', '결과 나오면 추천안대로 ㄱㄱ']) {
+      const result = await sendToTerminal(orcaLive(), message, deps, {
+        backup,
+        replaceDraft: '결과 나오면 추천안대로 ㄱㄱ',
+      });
+      assert.equal(result.status, 'sent', message);
+      const typed = calls.flatMap((c) => c.args.filter((a) => a.startsWith('--text=')));
+      assert.ok(typed.includes('--text=l') && typed.includes('--text=\x7f'), 'probed');
+    }
+    assert.equal(calls.filter((c) => c.args.includes('--enter')).length, 2);
+    assert.deepEqual(backups, ['결과 나오면 추천안대로 ㄱㄱ', '결과 나오면 추천안대로 ㄱㄱ']);
   });
 });
 

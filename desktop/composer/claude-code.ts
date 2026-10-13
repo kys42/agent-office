@@ -124,7 +124,7 @@ const widest = (text: string) =>
  * the pane height). Orca reports the composer apart, but only what the box shows (measured:
  * 1.4.216 gave the last 1,694 of 2,499 characters) and not the pane height, so only text that
  * surely fits in fewer rows than any box shows (2, at the widest count and leaving room for
- * word wrap) is known whole. A plain screen without that report: never.
+ * word wrap) is known whole. Text Orca draws on the prompt line (no styles) goes by the same rule.
  */
 function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   // A collapsed paste or an attached image stands for content that is not on screen.
@@ -132,13 +132,9 @@ function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   // The task list (ctrl+t) takes rows of its own; the box's height there was not measured.
   if (TASKS.test(box.lines.slice(box.bottom + 1).join(' ')) || hasTaskList(box)) return false;
   const rows = box.bottom - box.top - 1;
-  if (screen.composer === undefined)
-    return (
-      !!screen.faint &&
-      screen.height !== undefined &&
-      screen.height >= 12 &&
-      rows < maxBoxRows(screen.height)
-    );
+  // tmux: the box's rows against the pane. Orca (styles never read) draws a short box whole.
+  if (screen.faint)
+    return screen.height !== undefined && screen.height >= 12 && rows < maxBoxRows(screen.height);
   const width = Math.max(...box.lines.slice(box.top, box.bottom + 1).map((line) => line.length));
   const room = width - 20;
   if (room < 10) return false;
@@ -170,12 +166,14 @@ export function classifyPrompt(screen: Screen): ComposerState {
     const shown = box.lines[box.top + 1].replace(/^❯\s?/, '').trim();
     return rows === 1 && (!shown || HINT.test(shown))
       ? { kind: 'empty' }
-      : { kind: 'unknown', text: shown, whole: false };
+      : { kind: 'unknown', text: shown, whole: whole(shown) };
   }
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
-    // Old Orca draws typed text and suggestions alike in the box: never cleared from here.
-    return { kind: 'unknown', text, whole: false };
+    // Orca draws the suggestion on screen with no styles (1.4.216 keeps typed text apart, in
+    // `draft`; an older one draws it here too): unknown, and a short one is known whole, so it
+    // can be cleared — the deletion keys take typing, the one-letter probe tells a suggestion.
+    return { kind: 'unknown', text, whole: whole(text) };
   }
   let faint = 0;
   let plain = 0;
@@ -286,9 +284,11 @@ const REDRAW_MS = 120;
  * twice on an empty prompt it opens rewind. Measured on 2.1.296 (tmux, and Orca 1.4.216).
  *
  * A suggestion comes back as soon as the box is empty, and keys never touch it. tmux shows it
- * faint. Orca puts it in `draft` like typed text: text that is no part of the confirmed draft,
- * shows up once that is gone and survives two more pairs, is taken for it (`inferred`) — saved
- * first, and the send afterwards accepts only the exact typed text.
+ * faint. Orca (1.4.216, measured again) draws it plain on the prompt line, typed text kept apart
+ * in `draft`; it was also seen in `draft` like typed text. Either way, text the keys never move is
+ * told by a one-letter probe, and text that is no part of the confirmed draft, shows up once that
+ * is gone and survives two more pairs, is taken for it (`inferred`) — saved first, and the send
+ * afterwards accepts only the exact typed text.
  */
 export const claudeCodeComposer: ComposerAdapter = {
   agent: 'Claude',
