@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   CheckSquare,
   ClipboardList,
@@ -84,31 +84,36 @@ function RequestBody({
   const { t } = useI18n();
   const c = t.prompts.card;
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  // The calls answered from here: one request (a batch of permission prompts) can ask about
+  // several calls in turn, and each is answered once.
+  const [sent, setSent] = useState<string[]>([]);
+  const busy = useRef(false);
   const canAsk = !demo && isDesktop && !!api.answer;
-  const { view, refresh } = usePrompt(sessionId, eventId, target, canAsk && !sent);
-  const ready =
-    canAsk &&
-    !sent &&
-    view?.status === 'ready' &&
-    view.kind === request.kind &&
-    view.eventId === eventId
+  const { view, refresh } = usePrompt(sessionId, eventId, target, canAsk);
+  const shown =
+    canAsk && view?.status === 'ready' && view.kind === request.kind && view.eventId === eventId
       ? view
       : null;
+  const answered = !!shown && sent.includes(shown.callId);
+  const ready = shown && !answered ? shown : null;
   const send = async (picked: Picked) => {
-    if (!ready) return;
-    const choice = { ...picked, callId: ready.callId } as AnswerChoice;
-    if (sending) return;
+    // Once per call, and one at a time (a double click never sends twice).
+    if (!ready || busy.current || sent.includes(ready.callId)) return;
+    busy.current = true;
+    const callId = ready.callId;
+    const choice = { ...picked, callId } as AnswerChoice;
     setSending(true);
     const ok = await answerPrompt(sessionId, choice, notify);
+    busy.current = false;
     setSending(false);
-    if (ok) setSent(true);
-    else refresh();
+    if (ok) setSent((all) => [...all, callId]);
+    // The next prompt of a batch may follow: look again soon.
+    setTimeout(refresh, ok ? 800 : 0);
   };
   // Why the buttons are not there: the desktop app's reason, or what is already known here.
   const why = ready
     ? null
-    : sent
+    : answered || (sent.length > 0 && !view)
       ? c.sent
       : !canAsk
         ? demo
@@ -137,7 +142,8 @@ function RequestBody({
       ) : request.kind === 'plan' ? (
         <Plan request={request} />
       ) : (
-        <Permission tool={request.tool} subject={ready?.subject} />
+        // The heading and what it does come from the call the buttons answer, when there is one.
+        <Permission tool={ready?.tool ?? request.tool} subject={ready?.subject} />
       )}
       {ready && request.kind !== 'question' && (
         <Choices
