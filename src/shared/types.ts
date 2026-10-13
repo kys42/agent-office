@@ -260,8 +260,9 @@ export interface OfficeEvent {
   lifecycle?: 'started' | 'completed' | 'aborted';
   sourceRef: string;
   /**
-   * What an open request for input asks (a question, a plan to approve) or, on a call that may
-   * wait for permission, what it is about. Optional: absent in older records and once answered.
+   * What an open request for input asks: a question or a plan to approve. Optional: absent in
+   * older records and once answered. Permission prompts are never stored here (their tool input
+   * stays out of the store; the desktop app reads what they ask from the screen).
    */
   request?: InputRequest;
 }
@@ -278,14 +279,16 @@ export interface RequestQuestion {
   options: RequestOption[];
 }
 /**
- * What a request for input asks, as recorded: questions (AskUserQuestion, Codex
- * request_user_input), a plan to approve (ExitPlanMode), or the pending tool call a permission
- * prompt is about. Agent content (data): redacted and capped at rest, never translated.
+ * What a request for input asks: questions (AskUserQuestion, Codex request_user_input) and a
+ * plan to approve (ExitPlanMode), as recorded — agent content (data), redacted and capped at
+ * rest, never translated; `truncated` when a cap cut something (never answered from the app
+ * then). `permission` is only ever derived on read (a live permission prompt): the tool's name,
+ * never its input.
  */
 export type InputRequest =
-  | { kind: 'question'; questions: RequestQuestion[] }
-  | { kind: 'plan'; plan: string; planFile?: string }
-  | { kind: 'permission'; tool: string; summary: string; detail?: string };
+  | { kind: 'question'; questions: RequestQuestion[]; truncated?: true }
+  | { kind: 'plan'; plan: string; planFile?: string; truncated?: true }
+  | { kind: 'permission'; tool: string };
 export interface Activity {
   text: string;
   kind: 'progress' | 'reply' | 'message' | 'request' | 'status';
@@ -542,16 +545,24 @@ export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
   text: string;
 }
-/** A choice drawn on the agent's dialog right now, as the screen shows it. */
+/**
+ * A one-shot choice drawn on the agent's dialog right now, as the screen shows it: allow this
+ * once (or approve the plan with every edit still asked), or deny. Choices that keep applying
+ * (don't ask again, always allow, switch to auto mode / accept edits) are never offered here.
+ */
 export interface DialogChoice {
   /** The number the dialog draws in front of it (1-based). */
   number: number;
   label: string;
-  /**
-   * What picking it does, when known: `allow` once, `always` (allow and stop asking, for a
-   * command, a folder or the session), `deny`, or `text` (a row that takes typed words).
-   */
-  role?: 'allow' | 'always' | 'deny' | 'text';
+  role: 'allow' | 'deny';
+}
+/** What a permission prompt on screen is about, read from the screen itself. */
+export interface PromptSubject {
+  /** The dialog's heading, e.g. "Bash command", "Create file", "Fetch". */
+  title: string;
+  command?: string;
+  path?: string;
+  url?: string;
 }
 /** Why a request cannot be answered from the app right now (the card says why and offers Jump). */
 export type PromptUnavailable =
@@ -561,7 +572,11 @@ export type PromptUnavailable =
   | 'closed'
   | 'mismatch'
   | 'unreadable'
-  | 'no-request';
+  | 'no-request'
+  /** The request cannot be checked against a screen (cut at rest, no call id, no transcript). */
+  | 'unverifiable'
+  /** The person turned answering this kind off in Settings. */
+  | 'off';
 /**
  * The dialog on the session's terminal, read by the desktop app and checked against the open
  * request it recorded. `ready` only when both say the same (same kind, same question and
@@ -574,10 +589,14 @@ export type PromptView =
       kind: InputRequest['kind'];
       /** The request event the dialog matched. */
       eventId: string;
-      /** Plan approval and permission prompts: the choices exactly as drawn. */
+      /** Plan approval and permission prompts: the one-shot choices, exactly as drawn. */
       choices: DialogChoice[];
-      /** Questions: the dialog offers a row for typed words. */
-      other?: boolean;
+      /** The dialog also offers choices that keep applying or take words: terminal only. */
+      more?: boolean;
+      /** Questions: per question, whether typed words can be sent (never for multi-select). */
+      other?: boolean[];
+      /** Permission prompts: what the screen says the call does (shown instead of the record). */
+      subject?: PromptSubject;
     }
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
 /** One question's answer: picked options (indices into the recorded options) or typed words. */
@@ -590,12 +609,17 @@ export interface AnswerResult {
   status: 'answered' | 'cancelled';
   message: string;
 }
-/** Desktop profile settings (never shared preferences): both off until the person agrees. */
+/**
+ * One answering setting: never asked yet (the first answer asks natively), turned on, or turned
+ * off explicitly (no answer buttons until turned on in Settings).
+ */
+export type AnswerSetting = 'unset' | 'on' | 'off';
+/** Desktop profile settings (never shared preferences): off until the person agrees. */
 export interface AnswerSettings {
   /** Answer questions and plan approvals by keys. */
-  questions: boolean;
+  questions: AnswerSetting;
   /** Answer permission prompts by keys. */
-  permissions: boolean;
+  permissions: AnswerSetting;
 }
 /**
  * Desk pet window: a small floating pet, the office as one row (zones on rugs), or the
@@ -688,7 +712,9 @@ export interface OfficeAPI {
    */
   answer?: (id: string, choice: AnswerChoice) => Promise<AnswerResult>;
   /** Desktop only: read, or change (turning on asks natively), the answering settings. */
-  answerSettings?: (patch?: Partial<AnswerSettings>) => Promise<AnswerSettings>;
+  answerSettings?: (
+    patch?: Partial<Record<keyof AnswerSettings, boolean>>,
+  ) => Promise<AnswerSettings>;
   /**
    * Desktop dock only: open the colleague card at a clicked desk or bubble, or (from the card)
    * close it or go to the full office.

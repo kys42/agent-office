@@ -1,9 +1,24 @@
-import type { Provider } from '../../src/shared/types.js';
-import { claudeCodePrompts } from './claude-code.js';
+import type { InputRequest, Provider } from '../../src/shared/types.js';
+import { claudeCodeDialogs } from './claude-code.js';
+import { findClaudeTarget } from './claude-target.js';
 import type { PromptAdapter } from './types.js';
 
-export { claudeCodePrompts, parseDialog } from './claude-code.js';
+export { claudeCodeDialogs, parseDialog, subjectOf, callShows } from './claude-code.js';
+export { claudeTarget, openCallsIn, resultIn, type ClaudeTargetDeps } from './claude-target.js';
 export * from './types.js';
+
+const ALL: ReadonlySet<InputRequest['kind']> = new Set(['question', 'plan', 'permission']);
+const NONE: ReadonlySet<InputRequest['kind']> = new Set();
+
+/**
+ * Claude Code in Orca or tmux. Every kind was answered end to end on both hosts (measured,
+ * docs/development/TERMINAL.md).
+ */
+export const claudeCodePrompts: PromptAdapter = {
+  ...claudeCodeDialogs,
+  answers: () => ALL,
+  target: findClaudeTarget,
+};
 
 /**
  * Agents whose dialogs cannot be answered from here: Codex CLI (its approvals and questions
@@ -12,12 +27,14 @@ export * from './types.js';
  */
 export const unsupportedPrompts = (agent: string): PromptAdapter => ({
   agent,
-  capabilities: () => ({ canAnswer: false }),
+  answers: () => NONE,
+  target: async () => null,
   inspect: async () => ({ kind: 'unsupported' }),
-  matches: () => false,
+  identify: () => ({ status: 'none' }),
   choices: () => [],
-  takesText: () => false,
-  answer: async () => ({ status: 'refused', reason: 'changed', pressed: false }),
+  hasMore: () => false,
+  takesText: () => [],
+  answer: async () => ({ status: 'refused', reason: 'unsupported', pressed: false }),
 });
 
 const NAMES: Record<Provider, string> = { claude: 'Claude', codex: 'Codex', openclaw: 'OpenClaw' };

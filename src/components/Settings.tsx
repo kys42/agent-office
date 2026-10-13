@@ -403,7 +403,7 @@ export function Settings({
                     </p>
                   </div>
                   <Toggle
-                    checked={answers[key]}
+                    checked={answers[key] === 'on'}
                     label={t.prompts.settings[key]}
                     onChange={() => onAnswers(key)}
                   />

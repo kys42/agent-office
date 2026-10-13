@@ -16,7 +16,7 @@ import { summarizeActivity } from '../../src/shared/activity.js';
 import { runtimeObservation, deriveState } from '../../src/shared/runtime.js';
 import { messagesFor, type Locale } from '../../src/shared/i18n/index.js';
 import { CANONICAL, canonical } from '../../src/shared/canonical.js';
-import { inputRequest, permissionRequest } from './requests.js';
+import { inputRequest } from './requests.js';
 export { deriveState } from '../../src/shared/runtime.js';
 
 type Obj = Record<string, any>;
@@ -44,22 +44,48 @@ export const hash = (value: string) =>
  */
 export function redact(value: unknown, limit = 6000, locale: Locale = CANONICAL): string {
   const t = messagesFor(locale).shared.redaction;
-  return String(value ?? '')
-    .replace(/\x1b\[[0-9;]*m/g, '')
-    .replace(
-      /-----BEGIN [\w ]*PRIVATE KEY-----[\s\S]*?-----END [\w ]*PRIVATE KEY-----/g,
-      t.privateKey,
-    )
-    .replace(
-      /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]+)\b/g,
-      t.token,
-    )
-    .replace(
-      /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)\s*["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}&]+/gi,
-      (_, prefix: string) => prefix + t.hidden,
-    )
-    .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, () => `Bearer ${t.hidden}`)
-    .slice(0, limit);
+  return (
+    String(value ?? '')
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .replace(
+        /-----BEGIN [\w ]*PRIVATE KEY-----[\s\S]*?-----END [\w ]*PRIVATE KEY-----/g,
+        t.privateKey,
+      )
+      .replace(
+        /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,}|xox[baprs]-[A-Za-z0-9-]+|hf_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16})\b/g,
+        t.token,
+      )
+      // The rules below never take a value that already is a placeholder (`[`…).
+      // Environment-style secrets: AWS_SECRET_ACCESS_KEY=…, GITHUB_TOKEN=…, DB_PASSWORD=…
+      .replace(
+        /\b([A-Z][A-Z0-9_]*_(?:SECRET_ACCESS_KEY|SECRET_KEY|SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)\s*=\s*["']?)(?!\[)[^\s"',;}&]+/g,
+        (_, prefix: string) => prefix + t.hidden,
+      )
+      // Command-line secrets: --password x, --token=x, mysql -pSECRET, curl -u user:pass.
+      .replace(
+        /(--(?:password|passwd|token|secret|api-key|access-token)(?:=|\s+)["']?)(?!\[)[^\s"',;}&]+/gi,
+        (_, prefix: string) => prefix + t.hidden,
+      )
+      .replace(
+        /(\b(?:mysql|mysqldump|mysqladmin|mariadb)\b[^\n]*?\s-p)(?!\[)[^\s"',;}&]+/g,
+        (_, prefix: string) => prefix + t.hidden,
+      )
+      .replace(
+        /((?:^|\s)(?:-u|--user)(?:=|\s+)["']?[^\s:"']+:)(?!\[)[^\s"']+/g,
+        (_, prefix: string) => prefix + t.hidden,
+      )
+      // Credentials in an address: scheme://user:pass@host.
+      .replace(
+        /\b([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)(?!\[)[^\s@/]+@/gi,
+        (_, prefix: string) => `${prefix}${t.hidden}@`,
+      )
+      .replace(
+        /((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)\s*["']?\s*[:=]\s*["']?)(?:Bearer\s+)?[^\s"',;}&]+/gi,
+        (_, prefix: string) => prefix + t.hidden,
+      )
+      .replace(/Bearer\s+[A-Za-z0-9._~+/-]+/gi, () => `Bearer ${t.hidden}`)
+      .slice(0, limit)
+  );
 }
 export const num = (v: unknown): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
@@ -400,7 +426,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           '',
           call(p.call_id),
         );
-        if (e) inputs.set(e.id, p.arguments ?? p.input);
+        if (e?.intent === 'request-input') inputs.set(e.id, p.arguments ?? p.input);
         set(
           tool.includes('request_user_input') ? 'call' : 'work',
           tool.includes('request_user_input') ? t.reason.inputTool : t.reason.toolCall,
@@ -514,7 +540,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               `:tool${i}`,
               call(b.id),
             );
-            if (e) inputs.set(e.id, b.input ?? b.arguments);
+            if (e?.intent === 'request-input') inputs.set(e.id, b.input ?? b.arguments);
             set(
               REQUEST_INPUT_TOOL.test(tool) ? 'call' : 'work',
               PLAN_APPROVAL_TOOL.test(tool) ? t.reason.planApproval : t.reason.toolCall,
@@ -555,7 +581,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       total: sum('total'),
     };
   }
-  attachRequests(events, inputs, opt.provider === 'claude');
+  attachRequests(events, inputs);
   nativeId = authoritativeId ?? nativeId;
   updatedAt = updatedAt || opt.mtime;
   const state = deriveState(status, updatedAt, now, false, undefined, undefined, CANONICAL);
@@ -629,11 +655,9 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
 
 /**
  * What open calls ask, from their input (see requests.ts): every unanswered question or plan
- * approval and, for Claude Code (`permissions`), the current turn's pending call — what a
- * permission prompt would be about, shown once the live record says the prompt is open
- * (claude-live.ts). Other tool arguments are never kept, and answered calls keep nothing.
+ * approval. No other tool input is kept, and answered calls keep nothing.
  */
-function attachRequests(events: OfficeEvent[], inputs: Map<string, unknown>, permissions: boolean) {
+function attachRequests(events: OfficeEvent[], inputs: Map<string, unknown>) {
   if (!inputs.size) return;
   // The same pairing as isResultOf (shared/notices.ts), as sets: transcripts can be long.
   const calls = new Set<string>();
@@ -645,19 +669,9 @@ function attachRequests(events: OfficeEvent[], inputs: Map<string, unknown>, per
     }
   const open = (e: OfficeEvent) =>
     !(e.callId && calls.has(e.callId)) && !ids.has(`${e.id.replace(/:tool\d+$/, '')}:result`);
-  const boundary = events.findLastIndex((e) => e.kind === 'user' || e.lifecycle === 'started');
-  const pending = events.findLastIndex((e, i) => i > boundary && e.kind === 'tool' && open(e));
   events.forEach((e, i) => {
-    if (e.kind !== 'tool' || !inputs.has(e.id)) return;
-    const input = inputs.get(e.id);
-    const request =
-      e.intent === 'request-input'
-        ? open(e)
-          ? inputRequest(e.tool ?? '', input)
-          : undefined
-        : permissions && i === pending
-          ? permissionRequest(e.tool ?? '', input)
-          : undefined;
+    if (e.kind !== 'tool' || e.intent !== 'request-input' || !inputs.has(e.id) || !open(e)) return;
+    const request = inputRequest(e.tool ?? '', inputs.get(e.id));
     if (request) events[i] = { ...e, request };
   });
 }

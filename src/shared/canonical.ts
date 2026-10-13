@@ -139,8 +139,7 @@ function localizeEvent(e: OfficeEvent, locale: Locale): OfficeEvent {
 function localizeRequest(r: InputRequest, locale: Locale): InputRequest {
   const l = (text: string) => localizeText(text, locale);
   if (r.kind === 'plan') return { ...r, plan: l(r.plan) };
-  if (r.kind === 'permission')
-    return { ...r, summary: l(r.summary), ...(r.detail ? { detail: l(r.detail) } : {}) };
+  if (r.kind === 'permission') return r;
   return {
     ...r,
     questions: r.questions.map((q) => ({
