@@ -189,3 +189,22 @@ test('reduced motion keeps a fresh unread cue still', async ({ page }) => {
   expect((await dot(page)).animation).toBe('none');
   await expect(bubble.locator('.bubble-halo')).toHaveCSS('animation-name', 'none');
 });
+
+for (const mode of ['#mini', '']) {
+  test(`Esc keeps the reply draft then closes on the second press ${mode || 'office'}`, async ({
+    page,
+  }) => {
+    const bubble = await fixture(page, mode);
+    await bubble.hover();
+    await bubble.locator('.bubble-reply').click();
+    const form = page.locator('.quick-reply');
+    const input = form.getByRole('textbox', { name: '답장 내용' });
+    await input.fill('마저 쓸 초안');
+    await input.press('Escape');
+    await expect(input).toHaveValue('마저 쓸 초안');
+    await expect(form).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(form).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
+  });
+}
