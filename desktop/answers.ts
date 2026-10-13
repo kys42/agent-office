@@ -131,6 +131,7 @@ export async function inspectPrompt(
     ...(asked.request.kind === 'question'
       ? { other: adapter.takesText(state, asked.request) }
       : {}),
+    ...(asked.request.kind === 'permission' ? { tool: asked.request.tool } : {}),
     ...(asked.subject ? { subject: shown(asked.subject) } : {}),
   };
 }

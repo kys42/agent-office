@@ -55,7 +55,17 @@ const CHOICES = {
 async function desktop(
   page: Page,
   request: InputRequest,
-  options: { view?: 'ready' | PromptView; privacy?: boolean; cancel?: boolean } = {},
+  options: {
+    view?: 'ready' | PromptView;
+    /** The screen in turn: the next one after every answer (a batch of prompts). */
+    views?: PromptView[];
+    /** The tool the record marks as waiting (a batch: its last call). */
+    eventTool?: string;
+    privacy?: boolean;
+    cancel?: boolean;
+    /** How long an answer takes (ms). */
+    slow?: number;
+  } = {},
 ) {
   const s = demoSnapshot();
   const now = Date.now();
@@ -70,7 +80,7 @@ async function desktop(
         id: 'toolu_q:tool0',
         kind: 'tool',
         text: '도구 실행',
-        tool: request.kind === 'permission' ? 'Bash' : 'AskUserQuestion',
+        tool: options.eventTool ?? (request.kind === 'permission' ? 'Bash' : 'AskUserQuestion'),
         intent: 'request-input',
         callId: 'toolu_q',
         at: now - 1000,
@@ -100,8 +110,9 @@ async function desktop(
         }
       : options.view;
   await page.addInitScript(
-    ({ s, view, cancel }) => {
+    ({ s, views, cancel, slow }) => {
       const w = window as any;
+      w.step = 0;
       w.answers = [];
       w.prompts = 0;
       w.settings = { questions: 'unset', permissions: 'unset' };
@@ -129,11 +140,13 @@ async function desktop(
           ),
         prompt: async () => {
           w.prompts++;
-          return structuredClone(view);
+          return structuredClone(views[Math.min(w.step, views.length - 1)]);
         },
         answer: async (id: string, choice: unknown) => {
           w.answers.push({ id, choice });
+          if (slow) await new Promise((r) => setTimeout(r, slow));
           if (cancel) return { status: 'cancelled', message: '' };
+          w.step++;
           return { status: 'answered', message: 'tmux work:1.0에서 답했어요' };
         },
         answerSettings: async (patch?: Record<string, boolean>) => {
@@ -142,7 +155,7 @@ async function desktop(
         },
       };
     },
-    { s, view, cancel: !!options.cancel },
+    { s, views: options.views ?? [view], cancel: !!options.cancel, slow: options.slow ?? 0 },
   );
   await page.goto('/');
 }
@@ -346,4 +359,54 @@ test('Settings: both answering switches start off and turn on through the app', 
     questions: 'unset',
     permissions: 'off',
   });
+});
+
+const permissionView = (
+  callId: string,
+  tool: string,
+  title: string,
+  what: Record<string, string>,
+) =>
+  ({
+    status: 'ready',
+    agent: 'Claude',
+    kind: 'permission',
+    eventId: 'toolu_q:tool0',
+    callId,
+    choices: CHOICES.permission,
+    more: true,
+    tool,
+    subject: { title, ...what },
+  }) as PromptView;
+
+test('A batch: each call is named by the screen, answered once, and the next one follows', async ({
+  page,
+}) => {
+  // Bash first, then Write: the record marks Write; the screen asks about Bash, then Write.
+  await desktop(page, BASH, {
+    eventTool: 'Write',
+    slow: 300,
+    views: [
+      permissionView('toolu_bash', 'Bash', 'Bash command', { command: 'ls' }),
+      permissionView('toolu_write', 'Write', 'Create file', { path: 'a.txt' }),
+    ],
+  });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  // The heading is the call the buttons answer (Bash), never the record's (Write).
+  await expect(card).toContainText('권한 확인 · Bash');
+  await expect(card).not.toContainText('권한 확인 · Write');
+  await expect(card.locator('.request-command')).toHaveText('ls');
+  // A double click sends once.
+  await card.getByRole('button', { name: /^1\s*Yes$/ }).dblclick();
+  await expect(page.locator('.toast')).toContainText('tmux work:1.0에서 답했어요');
+  // The next call of the batch comes back with its own heading and buttons.
+  await expect(card).toContainText('권한 확인 · Write', { timeout: 10_000 });
+  await expect(card.locator('.request-command')).toHaveText('a.txt');
+  await card.getByRole('button', { name: /^3\s*No$/ }).click();
+  await expect.poll(async () => (await answers(page)).length).toBe(2);
+  expect((await answers(page)).map((a: any) => [a.choice.callId, a.choice.label])).toEqual([
+    ['toolu_bash', 'Yes'],
+    ['toolu_write', 'No'],
+  ]);
 });

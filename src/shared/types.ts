@@ -597,7 +597,11 @@ export type PromptView =
       more?: boolean;
       /** Questions: per question, whether typed words can be sent (never for multi-select). */
       other?: boolean[];
-      /** Permission prompts: what the screen says the call does (shown instead of the record). */
+      /**
+       * Permission prompts: the tool of the call the screen shows (the record may mark another
+       * call of the same batch) and what the screen says it does. The card shows these.
+       */
+      tool?: string;
       subject?: PromptSubject;
     }
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };

@@ -981,6 +981,7 @@ test('Several calls in one turn: the permission prompt is about the one the scre
     assert.equal(view.status, 'ready');
     if (view.status !== 'ready') return;
     assert.equal(view.callId, 'toolu_q');
+    assert.equal(view.tool, 'Bash');
     assert.deepEqual(view.subject, { title: 'Bash command', command: 'ls' });
     // An answer must name the call the card showed: another id is refused, nothing pressed.
     const wrong = await answerRequest(claudeCodePrompts, card, h.target, {
@@ -1001,6 +1002,29 @@ test('Several calls in one turn: the permission prompt is about the one the scre
     });
     assert.deepEqual(ok, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
     assert.deepEqual(sim.answer, { choice: '1' });
+  } finally {
+    await h.done();
+  }
+});
+
+test('A mixed batch: the card names the tool of the call the screen shows, not the record’s', async () => {
+  // Bash first, then Write: Claude Code asks about Bash, the record marks Write as waiting.
+  const sim = new Claude({ kind: 'bash', command: 'ls' });
+  const write: Use = {
+    id: 'toolu_w',
+    name: 'Write',
+    input: { file_path: '/p/a.txt', content: 'x' },
+  };
+  const h = await harness(sim, { calls: [bashCall('ls'), write] });
+  try {
+    const card = asking({ kind: 'permission', tool: 'Write' }, 'toolu_w');
+    const view = await inspectPrompt(claudeCodePrompts, card, h.target, 'on');
+    assert.equal(view.status, 'ready');
+    if (view.status !== 'ready') return;
+    assert.deepEqual(
+      [view.callId, view.tool, view.subject?.title],
+      ['toolu_q', 'Bash', 'Bash command'],
+    );
   } finally {
     await h.done();
   }
