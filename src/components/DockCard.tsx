@@ -69,10 +69,19 @@ export function DockCard() {
       if (field instanceof HTMLElement) field.blur();
       else void api.card?.('close');
     };
+    // A press on a text box asks for the keyboard: after another app was used (the card kept
+    // open, or a jump to the terminal) the caret would blink while keys go to that app.
+    const press = (e: PointerEvent) => {
+      const field =
+        e.target instanceof Element ? e.target.closest('input, textarea, [contenteditable]') : null;
+      if (field) void api.card?.('focus');
+    };
     window.addEventListener('keydown', key);
+    window.addEventListener('pointerdown', press, true);
     return () => {
       document.body.classList.remove('card-mode');
       window.removeEventListener('keydown', key);
+      window.removeEventListener('pointerdown', press, true);
     };
   }, []);
   const sessions = snapshot?.sessions ?? [];
