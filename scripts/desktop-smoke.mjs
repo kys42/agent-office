@@ -15,6 +15,18 @@ const jsonl = async (file, rows) => {
   await writeFile(file, rows.map((x) => JSON.stringify(x)).join('\n') + '\n');
 };
 await jsonl(path.join(sources.claude, 'projects', 'demo', 'claude.jsonl'), [
+  ...Array.from({ length: 120 }, (_, i) => ({
+    type: i % 2 ? 'assistant' : 'user',
+    sessionId: 'claude-test',
+    timestamp: new Date(Date.parse(now) - (120 - i) * 60_000).toISOString(),
+    cwd: '/tmp/native-test',
+    message: {
+      id: `history-${i}`,
+      role: i % 2 ? 'assistant' : 'user',
+      content: `합성 지난 대화 ${i} · ${'스크롤 위치를 확인합니다. '.repeat(8)}`,
+      ...(i % 2 ? { stop_reason: 'end_turn' } : {}),
+    },
+  })),
   {
     type: 'user',
     sessionId: 'claude-test',
@@ -315,9 +327,40 @@ try {
   await card.waitForSelector('.inspector-card');
   assert.equal(await cardShown(), true, 'and a third opens it again');
   // Moved on inside the card to another colleague, the first one's desk opens it rather than closing.
+  await dock.evaluate(() =>
+    window.office.card(
+      'open',
+      { id: 'claude:claude-test', news: false },
+      { x: 400, y: 600, width: 200, height: 100 },
+    ),
+  );
   await card.evaluate(() =>
     window.office.card('select', { id: 'claude:claude-test', news: false }),
   );
+  await card.bringToFront();
+  await card.waitForFunction(() => document.hasFocus());
+  await card.waitForFunction(() => document.querySelectorAll('.conversation-message').length >= 24);
+  const scroll = card.locator('.inspector-scroll');
+  await scroll.hover();
+  await card.mouse.wheel(0, -260);
+  await card.waitForFunction(() => {
+    const el = document.querySelector('.inspector-scroll');
+    return el.scrollHeight - el.scrollTop - el.clientHeight > 200;
+  });
+  // Actual collector/IPC pages, reached by scrolling alone, including their end marker.
+  for (let i = 0; i < 10 && (await card.locator('.older-messages').count()); i++) {
+    await card.mouse.wheel(0, -10000);
+    await card.waitForTimeout(900);
+  }
+  assert.equal(
+    await card.locator('.older-messages').count(),
+    0,
+    'native scrolling reaches the oldest page',
+  );
+  assert.ok(
+    (await card.locator('.conversation-message').first().innerText()).includes('합성 지난 대화 0'),
+  );
+  await card.screenshot({ path: '.local/native-card-conversation-scroll.png' });
   await again();
   assert.equal(await cardShown(), true, 'a desk other than the one shown switches the card');
   // Kept open, a click elsewhere (the card losing focus) leaves it up; let go, it closes again.

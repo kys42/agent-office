@@ -296,15 +296,18 @@ export function Conversation({
       return next;
     });
   const last = `${groups.at(-1)?.events.at(-1)?.id}:${sent.length}`;
-  // Our own scroll events arrive a frame later; by then content above may have grown, so they
-  // must not be mistaken for the person scrolling up (which turns following off).
-  const programmaticAt = useRef(0);
+  // A delayed scroll event belongs to us only while it still matches the position we set.
+  // Time-based grace periods also swallow the person's first wheel/keyboard input.
+  const programmaticTop = useRef<number | null>(null);
+  const moveScroll = (scroller: Element, top: number) => {
+    scroller.scrollTop = top;
+    programmaticTop.current = scroller.scrollTop;
+  };
   const scrollBottom = () => {
     const scroller = root.current?.closest('.inspector-scroll');
     if (!scroller) return;
-    programmaticAt.current = performance.now();
     if (filterRef.current === 'all') {
-      scroller.scrollTop = scroller.scrollHeight;
+      moveScroll(scroller, scroller.scrollHeight);
       return;
     }
     const messages = root.current?.querySelectorAll('.conversation-message');
@@ -313,16 +316,23 @@ export function Conversation({
     // The filter row covers the top while open (the card's folded filters cover nothing).
     const toolbar = root.current?.querySelector('.conversation-toolbar');
     if (lastMessage)
-      scroller.scrollTop +=
-        lastMessage.getBoundingClientRect().top -
-        scroller.getBoundingClientRect().top -
-        (toolbar?.getBoundingClientRect().height ?? 0) -
-        12;
+      moveScroll(
+        scroller,
+        scroller.scrollTop +
+          lastMessage.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top -
+          (toolbar?.getBoundingClientRect().height ?? 0) -
+          12,
+      );
   };
   // Showing older messages keeps the one the person was reading where it was.
   const anchor = useRef<{ id: string; top: number } | null>(null);
   const keepPosition = () => {
-    const el = root.current?.querySelector<HTMLElement>('[data-group-id]');
+    const scroller = root.current?.closest('.inspector-scroll');
+    const top = scroller?.getBoundingClientRect().top ?? 0;
+    const el = Array.from(
+      root.current?.querySelectorAll<HTMLElement>('[data-group-id]') ?? [],
+    ).find((el) => el.getBoundingClientRect().bottom > top);
     anchor.current = el ? { id: el.dataset.groupId!, top: el.getBoundingClientRect().top } : null;
   };
   useLayoutEffect(() => {
@@ -333,8 +343,8 @@ export function Conversation({
     if (!a || !el || !scroller) return;
     const moved = el.getBoundingClientRect().top - a.top;
     if (!moved) return;
-    programmaticAt.current = performance.now();
-    scroller.scrollTop += moved;
+    moveScroll(scroller, scroller.scrollTop + moved);
+    a.top = el.getBoundingClientRect().top;
   }, [groups, count]);
   // Something the person just sent: follow it to the bottom.
   const sentCount = sent.length;
@@ -353,7 +363,7 @@ export function Conversation({
     keepPosition();
     // Shown ones first; the page before them once fewer than a step remain.
     if (groups.length - count < 24 && older) onOlder?.();
-    setCount(count + 24);
+    setCount((previous) => previous + 24);
   };
   // Scrolling up to the top brings the earlier conversation in by itself (the button stays for
   // the keyboard and as the sign that there is more).
@@ -361,28 +371,36 @@ export function Conversation({
   // itself — one step at a time: the page in flight and the kept position settle first.
   const olderButton = useRef<HTMLButtonElement>(null);
   const loadedAt = useRef(0);
+  const topTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Only after the person has scrolled: opening the card never reads further back by itself.
   const scrolledByPerson = useRef(false);
   const reachTop = useEffectEvent(() => {
+    if (topTimer.current) clearTimeout(topTimer.current);
+    topTimer.current = null;
     if (!scrolledByPerson.current || !canShowOlder || loadingOlder) return;
-    if (performance.now() - loadedAt.current < 800) return;
+    const button = olderButton.current;
+    const scroller = root.current?.closest('.inspector-scroll');
+    if (!button || !scroller) return;
+    const bounds = button.getBoundingClientRect();
+    const viewport = scroller.getBoundingClientRect();
+    if (bounds.bottom < viewport.top - 400 || bounds.top > viewport.bottom) return;
+    const wait = 800 - (performance.now() - loadedAt.current);
+    if (wait > 0) {
+      topTimer.current = setTimeout(() => reachTop(), wait + 20);
+      return;
+    }
     loadedAt.current = performance.now();
     showOlder();
   });
   // Still at the top once a page settled or the pause passed (the observer only tells changes):
   // look again, so staying up there keeps reading back.
   useEffect(() => {
-    if (loadingOlder || !canShowOlder) return;
-    const wait = Math.max(0, 800 - (performance.now() - loadedAt.current)) + 50;
-    const timer = setTimeout(() => {
-      const button = olderButton.current;
-      const scroller = root.current?.closest('.inspector-scroll');
-      if (!button || !scroller) return;
-      if (button.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top - 400)
-        reachTop();
-    }, wait);
-    return () => clearTimeout(timer);
-  }, [loadingOlder, count, groups.length, canShowOlder]);
+    reachTop();
+    return () => {
+      if (topTimer.current) clearTimeout(topTimer.current);
+      topTimer.current = null;
+    };
+  }, [loadingOlder, count, groups.length, canShowOlder, session.events[0]?.id]);
   useEffect(() => {
     const button = olderButton.current;
     const scroller = root.current?.closest('.inspector-scroll');
@@ -398,24 +416,45 @@ export function Conversation({
     const scroller = root.current?.closest('.inspector-scroll');
     if (!scroller) return;
     const onScroll = () => {
-      if (performance.now() - programmaticAt.current < 250) {
-        if (follow.current) scrollBottom();
-        return;
-      }
+      const expected = programmaticTop.current;
+      if (expected !== null && Math.abs(scroller.scrollTop - expected) < 1) return;
+      programmaticTop.current = null;
       // The person scrolls on their own: their position is theirs again.
-      anchor.current = null;
       scrolledByPerson.current = true;
-      // Already near the earlier button (the observer may have spoken before this scroll did).
-      const button = olderButton.current;
-      if (
-        button &&
-        button.getBoundingClientRect().bottom > scroller.getBoundingClientRect().top - 400
-      )
-        reachTop();
       follow.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 120;
       if (follow.current) setNewBelow(false);
+      if (follow.current) anchor.current = null;
+      else keepPosition();
+      reachTop();
+    };
+    const readBack = () => {
+      programmaticTop.current = null;
+      follow.current = false;
+      scrolledByPerson.current = true;
+      keepPosition();
+      // A short/filtered page cannot emit a scroll event, but upward input still reads back.
+      reachTop();
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) readBack();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('input, textarea, [contenteditable="true"]')) return;
+      if (
+        ['ArrowUp', 'PageUp', 'Home'].includes(event.key) ||
+        (event.key === ' ' && event.shiftKey)
+      )
+        readBack();
+    };
+    const onTouch = () => {
+      programmaticTop.current = null;
+      follow.current = false;
     };
     scroller.addEventListener('scroll', onScroll);
+    scroller.addEventListener('wheel', onWheel as EventListener, { passive: true });
+    scroller.addEventListener('keydown', onKey as EventListener);
+    scroller.addEventListener('touchstart', onTouch, { passive: true });
     const observer = new ResizeObserver(() => {
       if (follow.current) scrollBottom();
     });
@@ -429,6 +468,9 @@ export function Conversation({
     mutations.observe(scroller, { childList: true });
     return () => {
       scroller.removeEventListener('scroll', onScroll);
+      scroller.removeEventListener('wheel', onWheel as EventListener);
+      scroller.removeEventListener('keydown', onKey as EventListener);
+      scroller.removeEventListener('touchstart', onTouch);
       observer.disconnect();
       mutations.disconnect();
     };
@@ -492,9 +534,10 @@ export function Conversation({
       pending.current = null;
       const group = el.closest('details');
       if (group) group.open = true;
-      programmaticAt.current = performance.now();
       follow.current = false;
+      anchor.current = null;
       el.scrollIntoView({ block: 'center' });
+      programmaticTop.current = root.current?.closest('.inspector-scroll')?.scrollTop ?? null;
       setNewBelow(false);
       if (exact) setFocused(target.id);
       else notify(t.conversation.bookmarkNear);
