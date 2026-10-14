@@ -261,3 +261,21 @@ test('Privacy and English labels expose no project names in drag controls', asyn
   await expect.poll(() => left(page.locator('.row-zone'))).toBe(0);
   await expect(page.getByRole('button', { name: 'Reset zone positions' })).toBeVisible();
 });
+
+test('Wheel scroll during a drag updates the preview and release keeps those coordinates', async ({
+  page,
+}) => {
+  await setup(page, 'row', { crowded: true });
+  const zone = page.locator('.row-zone[data-project-key="/tmp/team-a"]');
+  await drag(page, zone.locator('.row-zone-handle'), 80, false);
+  await page.mouse.wheel(0, 400);
+  await expect
+    .poll(() => page.locator('.desk-row-track').evaluate((el) => el.scrollLeft))
+    .toBeGreaterThanOrEqual(400);
+  await expect.poll(() => left(zone)).toBeGreaterThan(100);
+  const preview = await left(zone);
+  await page.mouse.up();
+  await expect.poll(() => left(zone)).toBeCloseTo(preview, 0);
+  await page.reload();
+  await expect.poll(() => left(zone)).toBeCloseTo(preview, 0);
+});

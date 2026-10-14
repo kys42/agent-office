@@ -118,9 +118,12 @@ export function useRowPlacement({
             ? 10
             : 0
         : 0;
-      const before = el.scrollLeft;
       if (step) el.scrollLeft += step;
-      if (el.scrollLeft !== before) setMoving((m) => m && { ...m, x: wanted(g) });
+      // The wheel, trackpad or a track scroll can move the lane too. Preview the same
+      // coordinates finish() will save, rather than jumping when the pointer is released.
+      const x = wanted(g);
+      if (Math.abs(x - g.startX) * ROW_SCALE >= 5) g.moved = true;
+      if (g.moved) setMoving((m) => (m && m.x !== x ? { ...m, x } : m));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
