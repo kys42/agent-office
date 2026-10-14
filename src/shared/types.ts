@@ -29,6 +29,8 @@ export interface RuntimeObservation {
 export interface WorkspaceIdentity {
   key: string;
   name: string;
+  /** Recovered team label only; Session.project remains the original exclusion/filter name. */
+  zoneName?: string;
   root: string | null;
   worktree: string | null;
   evidence: 'git-common-dir' | 'record-path' | 'unknown';
@@ -532,6 +534,8 @@ export type SendResult =
        * cannot report it apart): it is never cleared from here. Clear it in the terminal.
        */
       clearable?: boolean;
+      /** A failed send can offer this freshly read draft as an explicit recovery. */
+      reason?: string;
     };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */
@@ -707,6 +711,8 @@ export interface OfficeAPI {
    * Text already in the composer is never added to: it comes back as `needs-confirm`.
    */
   send?: (id: string, text: string, options?: SendOptions) => Promise<SendResult>;
+  /** Desktop only: reads the owned terminal's current draft without typing or submitting. */
+  inspectDraft?: (id: string) => Promise<Extract<SendResult, { status: 'needs-confirm' }> | null>;
   /**
    * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
    * profile, outside the preferences shared with the web preview; turning it back on asks for

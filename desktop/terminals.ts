@@ -187,6 +187,28 @@ export const MAX_SEND_LENGTH = 4000;
 /** A refusal the person can act on, shown as is. Other failures are reported generically. */
 export class TerminalInputError extends Error {}
 
+/** Read-only recovery after a send error: no key, paste, clipboard write or Enter. */
+export async function inspectTerminalDraft(
+  live: LiveTerminal,
+  composer: ComposerAdapter = claudeCodeComposer,
+  deps = defaultTerminalDeps(),
+): Promise<Extract<SendResult, { status: 'needs-confirm' }> | null> {
+  if (!acceptsInput(live.process.status) || !(await ownsTerminal(live.process.pid, deps)))
+    return null;
+  const io = composerHost(live.host, deps);
+  const can = composer.capabilities(io);
+  if (can.delivery !== 'terminal' || !can.canInspect) return null;
+  const state = await composer.inspect(io);
+  if (!holdsText(state)) return null;
+  return {
+    status: 'needs-confirm',
+    agent: composer.agent,
+    draft: state.text,
+    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...((!can.canClear || !state.whole) && { clearable: false }),
+  };
+}
+
 /** Plain typed text only: escape sequences and other control characters never reach the pty. */
 export function cleanInput(text: unknown): string {
   if (typeof text !== 'string') throw new TerminalInputError(m().desktop.terminal.empty);

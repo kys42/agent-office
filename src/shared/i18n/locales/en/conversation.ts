@@ -1,5 +1,8 @@
 export const conversation = {
-  pending: 'Sent · waiting for its turn',
+  pending: 'Sent · awaiting the transcript',
+  hideSent: 'Hide temporary sent message',
+  hideSentHint:
+    'Hide this local receipt only. The submitted message stays in the terminal or queue.',
   you: 'You',
   toolUse: 'Tool use',
   toolResult: 'Tool result',

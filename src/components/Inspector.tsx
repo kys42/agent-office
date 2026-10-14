@@ -36,7 +36,7 @@ import { Modal } from './Modal';
 import { ago, compact, shortPath, time, date } from '../lib/format';
 import { api, isDesktop } from '../lib/api';
 import { sendFollowUp } from '../lib/useTerminalSend';
-import { rememberSend, settlePending, usePendingSends } from '../lib/pendingSends';
+import { dismissSend, rememberSend, settlePending, usePendingSends } from '../lib/pendingSends';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Bookmarks } from './Bookmarks';
 import { Conversation } from './Conversation';
@@ -254,9 +254,6 @@ export function Inspector({
   // Kept per session outside this panel, so reopening the card or switching back still shows it.
   const sentAll = usePendingSends();
   const remember = rememberSend;
-  useEffect(() => {
-    settlePending(view.session.id, view.session.events);
-  }, [view.session.events, view.session.id]);
   const sent = sentAll.filter((p) => p.sessionId === s.id);
   // Opening a bookmark: the conversation, read back far enough to hold its message.
   const [reached, setReached] = useState<number | null>(null);
@@ -339,6 +336,21 @@ export function Inspector({
   // Excerpts in the conversation: the carried notices (freshest) and those read with its pages.
   const carried = new Set(news.map((n) => n.id));
   const conversationNotices = [...news, ...view.notices.filter((n) => !carried.has(n.id))];
+  useEffect(() => {
+    // The transcript may arrive before the send's IPC reply, and a retained request can be
+    // visible even after it left the source window. Both settle the temporary receipt.
+    settlePending(view.session.id, [
+      ...view.session.events,
+      ...conversationNotices
+        .filter((n) => n.kind === 'request')
+        .map((n) => ({
+          id: n.eventId,
+          kind: 'user',
+          text: n.text,
+          at: n.at,
+        })),
+    ]);
+  }, [view.session.events, view.session.id, notices, view.notices, sentAll]);
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
@@ -638,6 +650,7 @@ export function Inspector({
             name={privacy ? undefined : sessionName(s)}
             filtersOpen={filtersOpen}
             sent={sent}
+            onDismissSent={dismissSend}
             bookmarked={bookmarked}
             onBookmark={demo ? undefined : mark}
             focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
@@ -983,10 +996,11 @@ export function Inspector({
               onJump={api.jump ? () => void resume() : undefined}
               onSend={async (text, replaceDraft) => {
                 const id = s.id;
+                const startedAt = Date.now();
                 const result = await sendFollowUp(id, text, replaceDraft, notify);
                 if (result.status === 'sent') {
                   markSent(id);
-                  remember(id, text);
+                  remember(id, text, startedAt);
                 }
                 return result;
               }}

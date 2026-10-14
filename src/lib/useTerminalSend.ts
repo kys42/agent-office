@@ -14,11 +14,16 @@ export async function sendFollowUp(
   replaceDraft: string | undefined,
   notify: (message: string) => void,
 ): Promise<SendResult> {
-  const result = await api.send!(
-    id,
-    text,
-    replaceDraft === undefined ? undefined : { replaceDraft },
-  );
+  let result: SendResult;
+  try {
+    result = await api.send!(id, text, replaceDraft === undefined ? undefined : { replaceDraft });
+  } catch (error) {
+    // A failed paste/submit or an older refusal may have left text in the composer. Reading
+    // it again offers a manual decision, never a blind resend or an automatic clearing.
+    const draft = await api.inspectDraft?.(id).catch(() => null);
+    if (!draft) throw error;
+    return { ...draft, reason: (error as Error).message };
+  }
   if (result.status === 'sent')
     notify(
       result.cleared ? `${result.message} · ${m().terminal.clearedToClipboard}` : result.message,

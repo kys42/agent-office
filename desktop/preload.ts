@@ -50,6 +50,7 @@ const api: OfficeAPI = {
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),
   send: (id, text, options) => action('office:send', id, text, options),
+  inspectDraft: (id) => action('office:inspect-draft', id),
   terminalSend: (enable) => action('office:terminal-send', enable),
   prompt: (id) => action('office:prompt', id),
   answer: (id, choice) => action('office:answer', id, choice),

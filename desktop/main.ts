@@ -55,6 +55,7 @@ import {
   hostName,
   locateTerminal,
   sendToTerminal,
+  inspectTerminalDraft,
   terminalTarget,
   TerminalInputError,
 } from './terminals.js';
@@ -792,6 +793,15 @@ function setupIPC() {
     }
     await writeFile(terminalSendFile(), JSON.stringify({ enabled: enable }), { mode: 0o600 });
     return enable;
+  });
+  ipcMain.handle('office:inspect-draft', async (e, id) => {
+    trusted(e);
+    if (!(await terminalSendEnabled())) return null;
+    const known = await identity(id);
+    const composer = composerFor(known.provider);
+    if (composer.capabilities(null).delivery !== 'terminal') return null;
+    const terminal = await live(known, true);
+    return terminal ? inspectTerminalDraft(terminal, composer) : null;
   });
   ipcMain.handle('office:send', async (e, id, text, options): Promise<SendResult> => {
     trusted(e);

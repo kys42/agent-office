@@ -1,4 +1,9 @@
 import { summarizeCost } from './pricing.js';
+import {
+  recoverWorkspace,
+  recoverWorkspaces,
+  workspaceProof,
+} from '../src/shared/workspace-recovery.js';
 import { validOfficeSchedule } from '../src/shared/lifecycle.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
@@ -916,8 +921,10 @@ export class OfficeStore {
         this.db.prepare('SELECT id, data FROM personal').all() as { id: string; data: string }[]
       ).map((r) => [r.id, r.data]),
     );
-    return this.rows(full)
-      .filter((s) => this.visible(s, prefs))
+    const rows = this.rows(full).filter((s) => this.visible(s, prefs));
+    this.workspacePeers = workspaceProof(rows);
+    return rows
+      .map((s) => recoverWorkspace(s, this.workspacePeers.get(s.workspace?.root ?? '')))
       .map((s) => {
         const d = {
           ...this.decorate(s, prefs, personal),
@@ -931,6 +938,8 @@ export class OfficeStore {
       { value: string } | undefined;
     return row ? JSON.parse(row.value) : {};
   }
+  /** Last complete view's exact-worktree proof: hot row patches must keep the same grouping. */
+  private workspacePeers: ReturnType<typeof workspaceProof> = new Map();
   /**
    * One provider's stored records exactly as collected: no settings, no visibility filter. For
    * the collector to keep what it could not read this pass (a hidden project's records included).
@@ -990,7 +999,8 @@ export class OfficeStore {
     const prefs = this.preferences();
     if (!this.visible(s, prefs)) return null;
     const seats = this.seats();
-    const d = { ...this.decorate(s, prefs), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
+    const recovered = recoverWorkspace(s, this.workspacePeers.get(s.workspace?.root ?? ''));
+    const d = { ...this.decorate(recovered, prefs), officeSeat: seats[seatKey(s)] ?? seats[s.id] };
     return { ...d, events: snapshotEvents(d) };
   }
   /** Stored session ids in the order `officeView` lists them (newest first). */
@@ -1065,7 +1075,12 @@ export class OfficeStore {
   }
   get(id: string, locale: Locale = getLocale()): Session {
     const prefs = this.preferences();
-    return localizeSession(this.decorate(this.stored(id, prefs), prefs), locale);
+    const stored = this.stored(id, prefs);
+    const s =
+      stored.workspace?.evidence === 'record-path'
+        ? recoverWorkspaces([stored, ...this.rows().filter((s) => this.visible(s, prefs))])[0]
+        : stored;
+    return localizeSession(this.decorate(s, prefs), locale);
   }
   /**
    * One page of the conversation (the newest without `before`), with the same visibility as

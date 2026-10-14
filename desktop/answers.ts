@@ -242,7 +242,7 @@ export async function answerRequest(
   for (let i = 0; i < 12 && (open || !seen); i++) {
     await target.host.wait(150);
     const now = await adapter.inspect(target.host);
-    if (now.kind === 'unreadable') continue;
+    if (now.kind === 'unreadable' || now.kind === 'unknown') continue;
     seen = true;
     open = isDialog(now) && adapter.identify(now, [asked.call]).status === 'one';
   }

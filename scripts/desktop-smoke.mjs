@@ -145,6 +145,11 @@ try {
   );
   assert.deepEqual(Object.keys(targets).sort(), [...ids, 'codex:missing'].sort());
   assert.equal(targets['codex:missing'], null);
+  assert.equal(
+    await page.evaluate(() => window.office.inspectDraft('claude:claude-test')),
+    null,
+    'read-only draft recovery returns no draft for a synthetic colleague without a live terminal',
+  );
   // The collector re-localizes its own copy with the renderer: switch to English and check, then
   // pin Korean so the rest of the run doesn't depend on the machine's language.
   const english = await page.evaluate(() => window.office.preferences({ locale: 'en' }));

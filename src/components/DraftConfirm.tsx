@@ -36,6 +36,7 @@ export function DraftConfirm({
     // A status region read once, as its text: no label repeating the heading.
     <div className="draft-confirm" role="status">
       <strong>{t.terminal.draftFound(draft.agent)}</strong>
+      {draft.reason && <small>{draft.reason}</small>}
       {draft.changed && <small>{t.terminal.draftChanged}</small>}
       {draft.clipboard && <small>{t.terminal.draftPartlySaved}</small>}
       <pre className="draft-confirm-text">{privacy ? t.terminal.draftHidden : draft.draft}</pre>
