@@ -182,7 +182,7 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 - IPC `office:terminals`·`office:jump`·`office:send`·`office:terminal-send`·`office:prompt`·`office:answer`·`office:answer-settings`는 `desktop/main.ts`에만 있다. `OfficeService.call`(개발 HTTP `/api/rpc`와 공유)에는 없어 웹 미리보기·Tailscale로는 도달할 수 없다. 테스트로 고정했다.
 - 켜짐 여부는 main이 데스크탑 프로필 파일에서 매번 확인한다(터미널로 보내기: 파일 없음 → 기본 켜짐, 읽을 수 없음 → 꺼짐. 답하기 두 개: 파일 없음·읽을 수 없음 → 꺼짐). 공유 설정·웹 미리보기와 무관하다.
 - 외부 명령은 shell 없이 `execFile`과 인수 배열, timeout·출력 한도로 실행한다. `orca`·`tmux`·`codex`는 Finder 실행의 좁은 PATH를 고려해 고정 경로 후보에서 찾는다.
-- 로그·DB·렌더러에 handle과 입력 내용을 남기지 않는다. 보낸 내용은 원본 세션 기록에만 남는다. 입력창에 있던 글은 확인 미리보기로만 렌더러에 잠깐 전해지고(저장하지 않음), 지울 때는 main이 클립보드에 넣는다.
+- 로그·DB에 handle과 입력 내용을 남기지 않는다. 터미널에서 읽은 입력창 글은 확인 미리보기로만 렌더러에 잠깐 전해지고(저장하지 않음), 지울 때는 main이 클립보드에 넣는다. 내가 업무 카드에서 작성한 미전송 채팅은 실행별 로컬 프로필에 즉시 임시 저장하며 팝업·전체 카드가 공유한다. 성공 전송 시 같은 초안만 지우고 실패·확인 취소·터미널 글 대신 보내기는 유지한다. 서버 DB·공유 환경설정·인수인계에는 초안을 넣지 않는다.
 
 ## 쓰지 않는 방법
 

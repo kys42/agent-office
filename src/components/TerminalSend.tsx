@@ -35,6 +35,7 @@ export function TerminalSend({
   onSend,
   onJump,
   chat = false,
+  draftKey,
 }: {
   /** Where it goes, as last seen; null while none was found (the send looks again). */
   target: TerminalTarget | null;
@@ -45,9 +46,11 @@ export function TerminalSend({
   onJump?: () => void;
   /** The card's chat box: Enter sends, Shift+Enter breaks the line, and it grows as you type. */
   chat?: boolean;
+  /** Stable colleague identity, independent of the terminal's availability or label. */
+  draftKey: string;
 }) {
   const { t } = useI18n();
-  const reply = useComposerSend(onSend, () => reply.setText(''));
+  const reply = useComposerSend(onSend, (sent) => reply.clearText(sent), draftKey);
   const { text, sending, error, draft } = reply;
   const host = target ? HOSTS[target.kind] : t.terminal.terminal;
   if (!enabled)

@@ -81,6 +81,7 @@ When you want the whole picture, open the full office: every project on its own 
       <img src="docs/images/en/detail.png" alt="Work card" /><br/>
       <b>Work card</b><br/>
       Click any teammate for a side panel that never covers the office: what you asked, live progress, the final reply, tool history on demand, branch & worktree, tokens and API-equivalent cost, PR/issue cards and your own notes.
+      Chat drafts are saved on this Mac for each session and shared with the popup card. Close and reopen a card to continue writing; a successful send clears only the text that was sent.
     </td>
     <td width="50%" valign="top">
       <img src="docs/images/en/inbox.png" alt="Inbox" /><br/>

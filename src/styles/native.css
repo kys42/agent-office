@@ -1204,6 +1204,10 @@ body.card-mode:not(.is-mac) .dock-card {
 .terminal-send-chat .terminal-send-bar {
   display: contents;
 }
+.terminal-send-chat textarea:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
 .terminal-send-chat .terminal-send-bar small {
   /* The box's own placeholder already says where it goes. */
   display: none;
