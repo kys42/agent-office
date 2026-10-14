@@ -45,7 +45,8 @@ import type {
  *
  * Keys (measured): ↑/↓ move the `❯` marker (wrapping at the ends, never needed here); Enter
  * picks the row (single-select: answers it and moves to the next question, or submits a lone
- * question); Space toggles a multi-select row; → moves to the next tab (the review after the
+ * question, with an optional review in other TUI variants); Space toggles a multi-select row;
+ * → moves to the next tab (the review after the
  * last); a text row takes typing as soon as the marker is on it. Never pressed here: digits
  * (pick *and* submit in one key), Tab (amends a permission's Yes into a text row), Esc (cancels
  * the whole tool call), Ctrl+C/D. "Chat about this" and "Cancel" end the tool call: never used.
@@ -196,7 +197,7 @@ export function parseDialog(screen: Screen | null): DialogState {
   const footText = foot.join(' ');
   const { rows, submit } = parseRows(lines, block);
   if (!rows.length) return { kind: 'unknown' };
-  if (/Ready to submit your answers\?/.test(headText)) {
+  if (/Ready to submit your answers?\?/i.test(headText)) {
     const answers: { question: string; answer: string }[] = [];
     for (let i = 0; i < head.length; i++) {
       const q = /^\s*●\s+(.*)$/.exec(head[i]);
@@ -523,6 +524,23 @@ class Flow {
     return state;
   }
 
+  /** A lone choice may close immediately or open a review; neither warrants a blind Enter. */
+  async afterSingleChoice(): Promise<'closed' | 'review' | 'unconfirmed'> {
+    let last = new Refusal('unverified');
+    let final: DialogState = { kind: 'unreadable' };
+    for (let i = 0; i < TRIES; i++) {
+      if (i) await this.host.wait(STEP_MS);
+      const state = parseDialog(await this.host.read());
+      final = state;
+      if (state.kind === 'review' && stillAsks(state, this.asked)) return 'review';
+      if (state.kind === 'unreadable') last = new Refusal('unreadable');
+      else if (isDialog(state) && !stillAsks(state, this.asked)) throw new Refusal('changed');
+    }
+    if (final.kind === 'closed') return 'closed';
+    if (final.kind === 'unreadable') return 'unconfirmed';
+    throw last;
+  }
+
   /** Reads until `ok` holds (the screen may lag a frame), else refuses. */
   async expect<T extends Dialog>(ok: (d: Dialog) => d is T): Promise<T>;
   async expect(ok: (d: Dialog) => boolean): Promise<Dialog>;
@@ -656,7 +674,7 @@ async function answerQuestions(
         plain(row(next, input.number)?.label ?? '') === plain(text);
       await s.expect(holds);
       await s.commit(holds);
-      if (lone) return;
+      if (lone && (await s.afterSingleChoice()) !== 'review') return;
       continue;
     }
     const picks = [...new Set(answer.options)].sort((a, b) => a - b);
@@ -667,7 +685,7 @@ async function answerQuestions(
       const target = picks[0] + 1;
       await s.goTo(target, here);
       await s.commit((next) => here(next) && cursorAt(next) === target);
-      if (lone) return;
+      if (lone && (await s.afterSingleChoice()) !== 'review') return;
       continue;
     }
     // Multi-select: toggle each row that differs, verifying its box, then on to the next tab.
@@ -703,7 +721,7 @@ async function answerQuestions(
     });
   const review = await s.expect((d2) => d2.kind === 'review');
   if (!fits(review)) throw new Refusal('unverified');
-  const submit = review.rows.filter((r2) => /^Submit answers$/i.test(r2.label));
+  const submit = review.rows.filter((r2) => /^Submit answers?$/i.test(r2.label));
   if (submit.length !== 1) throw new Refusal('unverified');
   await s.goTo(submit[0].number, fits);
   await s.commit((d2) => fits(d2) && cursorAt(d2) === submit[0].number);

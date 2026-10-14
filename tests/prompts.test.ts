@@ -455,6 +455,9 @@ type Answer = Record<string, string> | 'rejected' | 'chat' | { choice: string };
 /** One dialog as Claude Code 2.1.296 draws it and reacts to keys (TERMINAL.md, measured). */
 class Claude {
   answer: Answer | null = null;
+  /** TUI variants that review even one single-select/text question before submission. */
+  reviewSingle = false;
+  singularReview = false;
   keys: string[] = [];
   /** Called after every key: tests change the screen mid-way. */
   onKey?: (sim: Claude) => void;
@@ -528,7 +531,7 @@ class Claude {
       ].join('\n');
     }
     const qs = this.questions();
-    const many = qs.length > 1 || qs.some((q) => q.multiSelect);
+    const many = this.reviewSingle || qs.length > 1 || qs.some((q) => q.multiSelect);
     const bar = many
       ? `←  ${qs.map((q, i) => `${this.done(i) ? '☒' : '☐'} ${q.header}`).join('  ')}  ✔ Submit  →`
       : ` ☐ ${qs[0].header}`;
@@ -538,16 +541,16 @@ class Claude {
         RULE,
         bar,
         '',
-        'Review your answers',
+        this.singularReview ? 'Review your answer' : 'Review your answers',
         ...(all ? [] : ['', '⚠ You have not answered all questions']),
         '',
         ...qs.flatMap((q, i) =>
           this.done(i) ? [` ● ${q.question}`, `   → ${this.answerOf(i)}`] : [],
         ),
         '',
-        'Ready to submit your answers?',
+        this.singularReview ? 'Ready to submit your answer?' : 'Ready to submit your answers?',
         '',
-        `${this.choice === 0 ? '❯' : ' '} 1. Submit answers`,
+        `${this.choice === 0 ? '❯' : ' '} 1. Submit ${this.singularReview ? 'answer' : 'answers'}`,
         `${this.choice === 1 ? '❯' : ' '} 2. Cancel`,
       ].join('\n');
     }
@@ -589,7 +592,7 @@ class Claude {
   }
   private next() {
     const qs = this.questions();
-    if (qs.length === 1 && !qs[0].multiSelect) return this.submit();
+    if (qs.length === 1 && !qs[0].multiSelect && !this.reviewSingle) return this.submit();
     if (this.q < qs.length - 1) this.q++;
     else {
       this.review = true;
@@ -852,6 +855,90 @@ test('Typed words go into the text row, verified before Enter', async () => {
   assert.deepEqual(keysOf(calls), ['Down', 'Down', 'Down', 'Enter']);
 });
 
+test('A single question with a review step submits the verified choice or typed answer on both hosts', async () => {
+  for (const host of ['tmux', 'orca'] as const) {
+    for (const typed of [false, true]) {
+      for (const singular of [false, true]) {
+        const { result: r, sim } = await answer(
+          QUESTION(COLOR_INPUT),
+          shownQuestions(COLOR_INPUT),
+          [ask(COLOR_INPUT)],
+          { answers: [typed ? { other: 'teal please' } : { options: [2] }] },
+          (sim) => {
+            sim.reviewSingle = true;
+            sim.singularReview = singular;
+          },
+          { host },
+        );
+        assert.deepEqual(sim.answer, { 'Pick a color': typed ? 'teal please' : 'Blue' }, host);
+        assert.equal((r as { status: string }).status, 'answered');
+        assert.equal(
+          sim.keys.filter((k) => k === 'Enter').length,
+          2,
+          'choice then final submission',
+        );
+      }
+    }
+  }
+});
+
+test('A single-question review may appear after stale or blank redraws, and the cursor may start on Cancel', async () => {
+  for (const blank of [false, true]) {
+    const { result: r, sim } = await answer(
+      QUESTION(COLOR_INPUT),
+      shownQuestions(COLOR_INPUT),
+      [ask(COLOR_INPUT)],
+      { answers: [{ options: [2] }] },
+      (sim) => {
+        sim.reviewSingle = true;
+        const render = sim.render.bind(sim);
+        const initial = render();
+        let redraws = 0;
+        sim.onKey = (s) => {
+          if (s.keys.at(-1) === 'Enter' && !s.closed) {
+            redraws = 2;
+            s.key('Down'); // The review initially selects Cancel.
+          }
+        };
+        sim.render = () => (redraws-- > 0 ? (blank ? '' : initial) : render());
+      },
+      { host: 'orca' },
+    );
+    assert.equal((r as { status: string }).status, 'answered');
+    assert.deepEqual(sim.answer, { 'Pick a color': 'Blue' });
+    assert.equal(sim.keys.filter((k) => k === 'Enter').length, 2);
+    assert.ok(sim.keys.includes('Up'));
+  }
+});
+
+test('An altered, incomplete or unrelated review never receives the final Enter', async () => {
+  for (const change of ['answer', 'question', 'incomplete', 'unknown'] as const) {
+    const { result: r, sim } = await answer(
+      QUESTION(COLOR_INPUT),
+      shownQuestions(COLOR_INPUT),
+      [ask(COLOR_INPUT)],
+      { answers: [{ options: [2] }] },
+      (sim) => {
+        sim.reviewSingle = true;
+        const render = sim.render.bind(sim);
+        sim.render = () => {
+          const text = render();
+          if (!text.includes('Ready to submit')) return text;
+          if (change === 'answer') return text.replace('→ Blue', '→ Red');
+          if (change === 'question') return text.replace('● Pick a color', '● Another question');
+          if (change === 'incomplete')
+            return text.replace('Review your answers', 'You have not answered all questions');
+          return text.replace('Ready to submit your answers?', 'Unrecognized confirmation');
+        };
+      },
+      { host: 'orca' },
+    );
+    assert.ok(r instanceof Error, change);
+    assert.equal(sim.answer, null);
+    assert.equal(sim.keys.filter((k) => k === 'Enter').length, 1, change);
+  }
+});
+
 test('Multi-select: Space on each row that differs, then → and the review', async () => {
   const {
     result: r,
@@ -876,6 +963,22 @@ test('Two questions: each answered in turn, the review checked, then submitted',
   assert.equal((r as { status: string }).status, 'answered');
   assert.deepEqual(sim.answer, { 'Pick a color': 'Green', 'Pick a size': 'Small' });
   assert.deepEqual(keysOf(calls), ['Down', 'Enter', 'Enter', 'Enter']);
+});
+
+test('Multi-question review accepts the singular submit label on Orca', async () => {
+  const { result: r, sim } = await answer(
+    QUESTION(TWO_INPUT),
+    shownQuestions(TWO_INPUT),
+    [ask(TWO_INPUT)],
+    { answers: [{ options: [1] }, { options: [0] }] },
+    (sim) => {
+      sim.singularReview = true;
+    },
+    { host: 'orca' },
+  );
+  assert.equal((r as { status: string }).status, 'answered');
+  assert.deepEqual(sim.answer, { 'Pick a color': 'Green', 'Pick a size': 'Small' });
+  assert.equal(sim.keys.filter((k) => k === 'Enter').length, 3);
 });
 
 test('Ambiguous questions and a pane too small for the review are left to the terminal', async () => {
@@ -1182,6 +1285,24 @@ test('After the keys: an unreadable screen is not a closed dialog, and the recor
     status: 'answered',
     message: 'tmux work:1.0에 보냈지만 기록에 아직 답이 보이지 않아요. 터미널을 확인해 주세요.',
   });
+});
+
+test('An unknown screen after final review is reported as unconfirmed, not as verified closure', async () => {
+  const { result: r, sim } = await answer(
+    QUESTION(TWO_INPUT),
+    shownQuestions(TWO_INPUT),
+    [ask(TWO_INPUT)],
+    { answers: [{ options: [1] }, { options: [0] }] },
+    (sim) => {
+      const render = sim.render.bind(sim);
+      sim.render = () =>
+        sim.closed ? `${RULE}\nUnrecognized dialog\n❯ 1. Continue\n  2. Cancel` : render();
+    },
+    { host: 'orca' },
+  );
+  assert.ok(sim.closed);
+  assert.match((r as { message: string }).message, /그 뒤 화면을 읽지 못해 확인하지 못했어요/);
+  assert.equal(sim.keys.filter((k) => k === 'Enter').length, 3);
 });
 
 test('The card is offered only one-shot choices, only for the exact call', async () => {
