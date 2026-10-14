@@ -216,6 +216,18 @@ try {
   await notes.fill('');
   await notes.pressSequentially('Panel keyboard input');
   assert.equal(await notes.inputValue(), 'Panel keyboard input', 'popup panel accepts keyboard');
+  const chat = card.locator('.terminal-send-chat textarea');
+  await chat.pressSequentially('Unsent reply draft');
+  assert.equal(await chat.inputValue(), 'Unsent reply draft', 'popup chat accepts OS keyboard');
+  await page.waitForFunction(
+    () =>
+      localStorage.getItem('office:reply-draft:v1:live:codex:codex-test') === 'Unsent reply draft',
+  );
+  assert.equal(
+    await page.evaluate(() => localStorage.getItem('office:reply-draft:v1:live:codex:codex-test')),
+    'Unsent reply draft',
+    'draft is stored in the shared native profile immediately',
+  );
   // A bookmark saved from another renderer arrives in the open memory tab via real IPC.
   // These are synthetic provider files in this smoke's own profile and DB.
   const saved = await page.evaluate(async () => {
@@ -273,6 +285,12 @@ try {
       .getSize(),
   );
   assert.equal(reopenedWidth, 560, 'the card reopens at the size the person gave it');
+  assert.equal(
+    await chat.inputValue(),
+    'Unsent reply draft',
+    'closing the native popup keeps its draft',
+  );
+  await card.screenshot({ path: '.local/native-card-reply-draft.png' });
   // Its header moves it from the main process (no CSS drag region in the card).
   await card.evaluate(() => window.office.card('drag-start'));
   await card.evaluate(() => window.office.card('drag-end'));

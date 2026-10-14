@@ -974,6 +974,7 @@ export function Inspector({
           {locatable && api.send ? (
             <TerminalSend
               key={s.id}
+              draftKey={`${demo ? 'demo' : 'live'}:${s.id}`}
               chat
               target={live}
               enabled={terminalSend}

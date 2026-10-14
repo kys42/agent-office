@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { SendResult } from '../shared/types';
+import { useComposerDraft } from './useComposerDraft';
 
 export type DraftPrompt = Extract<SendResult, { status: 'needs-confirm' }>;
 
@@ -11,9 +12,10 @@ export type DraftPrompt = Extract<SendResult, { status: 'needs-confirm' }>;
  */
 export function useComposerSend(
   onSend: (text: string, replaceDraft?: string) => Promise<SendResult>,
-  onSent: () => void,
+  onSent: (sent: string) => void,
+  draftKey?: string,
 ) {
-  const [text, setText] = useState('');
+  const { text, setText, clearText } = useComposerDraft(draftKey);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<DraftPrompt | null>(null);
@@ -32,7 +34,7 @@ export function useComposerSend(
       }
       setDraft(null);
       setSending(false);
-      if (instead === undefined) onSent();
+      if (instead === undefined) onSent(message);
     } catch (e) {
       setError((e as Error).message);
       setDraft(null);
@@ -42,6 +44,7 @@ export function useComposerSend(
   return {
     text,
     setText,
+    clearText,
     sending,
     error,
     draft,
