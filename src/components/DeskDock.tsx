@@ -73,6 +73,16 @@ export function DeskDock() {
     }
   };
   const solid = useRef<boolean | null>(null);
+  const arranging = useRef(false);
+  const arrange = useCallback((active: boolean, point?: { x: number; y: number }) => {
+    arranging.current = active;
+    if (!api.dock) return;
+    const hit = point && document.elementFromPoint(point.x, point.y);
+    const over = active || !!hit?.closest('[data-solid]');
+    if (solid.current === over) return;
+    solid.current = over;
+    void api.dock(over ? 'solid' : 'through');
+  }, []);
   useEffect(
     () =>
       api.onDock?.((next) => {
@@ -102,6 +112,7 @@ export function DeskDock() {
   useEffect(() => {
     if (!api.dock) return;
     const claim = (over: boolean) => {
+      over ||= arranging.current;
       if (over === solid.current) return;
       solid.current = over;
       void api.dock?.(over ? 'solid' : 'through');
@@ -133,6 +144,8 @@ export function DeskDock() {
         />
       ) : (
         <DeskRow
+          demo={demo}
+          onArrange={arrange}
           variant={mode === 'floor' ? 'floor' : 'office'}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}

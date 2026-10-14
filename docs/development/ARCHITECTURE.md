@@ -106,3 +106,10 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 `src/shared/conversation.ts`가 OfficeEvent의 공개 단계에 따라 사용자 요청/진행/최종/미분류/도구를 나누고 중복 공개 이벤트를 정리한다. Conversation은 이 기준으로 종류 필터와 말풍선 라벨을 적용하며 도구 기록은 기본 숨긴다. 분류를 바꿔도 메시지 확장 상태를 보존한다.
 
 소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 배지와 snapshot.noticeStats.unread가 같은 selector를 사용한다. NewsFeed는 최종/확인/전체 필터, 읽은 항목 포함, version별 일괄 read를 공유한다. snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식이 있으면 NewsFeed는 `noticePage`(cursor `(at,id)`, 범위별 정확한 미확인 수)로 읽고, 일괄 읽음은 `noticeReadAll(query, asOf)`로 범위 전체에 적용한다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
+
+
+## 한줄 모드 구역 위치
+
+`row-placement.ts`는 기존 `layoutRow`의 구역 내부 공동 책상/보조 구조를 유지하며 구역의 x좌표만 계산한다. 사용한 공간 안에서 수평 위치를 비율로 저장하고, 가까운 구역은 간격을 보존하며 밀어 겹침을 막는다. canvas는 기본 가구 폭보다 줄어들지 않는다. 시각적 순서를 바꿔도 DOM key/순서는 유지하여 Chromium pointer capture가 중간에 풀리지 않게 한다.
+
+`useRowPlacement`는 pointer capture, 끝부분 자동 스크롤, Esc/blur/구조 변경 취소, 키보드 이동을 처리한다. 저장은 `office:row-zones:v1:live`/`demo` localStorage이며 서버 DB/업무 자리 번호를 수정하지 않는다. 화면에 잠시 없는 구역도 한도500개 안에서 기억한다. DeskDock은 제스처 동안 그려진 표지에서 시작한 native 마우스 입력을 붙잡고 끝나면 실제 hit-test로 클릭 통과를 복원한다.

@@ -834,3 +834,60 @@ body.card-mode {
   .speech-text {
   max-height: 40px;
 }
+
+/* Drag only the drawn project sign/flag; gaps keep passing clicks to the desktop. */
+.row-zone-handle,
+.zone-flag-cloth,
+.zone-flag-pole,
+.zone-flag-base {
+  cursor: grab;
+  touch-action: none;
+}
+.row-zone-handle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.row-zone-handle > span {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background: var(--project-color);
+  color: #1d1410;
+  font-family: 'Galmuri9', var(--font-pixel);
+  font-size: 9px;
+}
+.row-zone-handle > b {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.row-zone-handle > small {
+  flex-shrink: 0;
+  font-family: 'Galmuri9', var(--font-pixel);
+  font-size: 9px;
+  color: #bca788;
+}
+.row-zone-handle:focus-visible,
+.zone-flag-cloth:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.row-zone.is-arranging {
+  z-index: 50;
+}
+.row-zone.is-arranging :is(.row-zone-handle, .zone-flag-cloth, .zone-flag-pole, .zone-flag-base) {
+  cursor: grabbing;
+}
+.row-zone.is-arranging .zone-flag-cloth {
+  animation-play-state: paused;
+}

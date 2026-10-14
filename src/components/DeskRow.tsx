@@ -12,9 +12,11 @@ import {
   PanelRightOpen,
   Pin,
   RotateCw,
+  Undo2,
   Terminal,
   X,
 } from 'lucide-react';
+import { useRowPlacement } from '../lib/useRowPlacement';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
@@ -91,6 +93,8 @@ export function DeskRow({
   notify,
   onRefresh,
   refreshing = false,
+  demo = false,
+  onArrange,
 }: {
   variant?: 'office' | 'floor';
   model: OfficeModel;
@@ -110,6 +114,8 @@ export function DeskRow({
   /** Look at the session records again now (and restart a stopped collector). */
   onRefresh: () => void;
   refreshing?: boolean;
+  demo?: boolean;
+  onArrange?: (active: boolean, point?: { x: number; y: number }) => void;
 }) {
   const { t, locale } = useI18n();
   const floor = variant === 'floor';
@@ -158,10 +164,19 @@ export function DeskRow({
   // Hidden colleagues and helpers hidden on their own: all come back from one chip.
   const veiledCount = model.veiled.length + model.veiledHelpers.length;
   const signature = layoutSignature(sessions);
-  const layout = useMemo(
+  const baseLayout = useMemo(
     () => layoutRow(sessions, floor ? { zoneGap: FLOOR_ZONE_GAP } : {}),
     [signature, floor, locale],
   );
+  const placement = useRowPlacement({
+    base: baseLayout,
+    available: view.width / ROW_SCALE - (LANE_PAD * 2) / ROW_SCALE,
+    track,
+    storageKey: `office:row-zones:v1:${demo ? 'demo' : 'live'}`,
+    onArrange,
+    onSaveFailed: () => notify(t.dock.arrange.saveFailed),
+  });
+  const { layout } = placement;
   // Track what is in view, so each arrow knows who is hidden on its side.
   useEffect(() => {
     const el = track.current;
@@ -194,6 +209,7 @@ export function DeskRow({
     el.scrollBy({ left: direction * step, behavior: reducedMotion ? 'auto' : 'smooth' });
   };
   const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.defaultPrevented) return;
     const field =
       e.target instanceof Element && e.target.closest('input, textarea, select') !== null;
     if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
@@ -288,6 +304,7 @@ export function DeskRow({
           >
             {layout.zones.map((zone, index) => {
               const zoneName = privacy ? t.desk.project : zone.name;
+              const dragHandle = placement.handle(zone.key);
               const veilIds = zoneVeilIds(
                 model,
                 zone.stations.map((s) => s.id),
@@ -297,7 +314,7 @@ export function DeskRow({
               );
               return (
                 <div
-                  className="row-zone"
+                  className={`row-zone ${placement.dragging === zone.key ? 'is-arranging' : ''}`}
                   key={zone.key}
                   data-project-key={privacy ? undefined : zone.key}
                   style={
@@ -324,16 +341,23 @@ export function DeskRow({
                           : `${zone.name} · ${t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}${zone.custom ? ` · ${t.desk.customZone(zone.custom.join(', '))}` : ''}`
                       }
                     >
-                      <i className="zone-flag-pole" data-solid />
+                      <i className="zone-flag-pole" data-solid {...dragHandle} aria-hidden="true" />
                       {/* The eye hangs right under the cloth, so the pointer slides onto it. */}
                       <div className="zone-flag-banner">
-                        <span className="zone-flag-cloth" data-solid>
+                        <button
+                          type="button"
+                          className="zone-flag-cloth"
+                          data-solid
+                          {...dragHandle}
+                          aria-label={t.dock.arrange.move(zoneName)}
+                          title={t.dock.arrange.hint}
+                        >
                           <b>{String(index + 1).padStart(2, '0')}</b>
                           <span>{zoneName}</span>
-                        </span>
+                        </button>
                         {zoneVeil}
                       </div>
-                      <i className="zone-flag-base" data-solid />
+                      <i className="zone-flag-base" data-solid {...dragHandle} aria-hidden="true" />
                     </div>
                   ) : (
                     <>
@@ -354,11 +378,20 @@ export function DeskRow({
                               : zone.name
                         }
                       >
-                        <span>{String(index + 1).padStart(2, '0')}</span>
-                        <b>{zoneName}</b>
-                        <small>
-                          {t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}
-                        </small>
+                        <button
+                          type="button"
+                          className="row-zone-handle"
+                          data-solid
+                          {...dragHandle}
+                          aria-label={t.dock.arrange.move(zoneName)}
+                          title={t.dock.arrange.hint}
+                        >
+                          <span>{String(index + 1).padStart(2, '0')}</span>
+                          <b>{zoneName}</b>
+                          <small>
+                            {t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}
+                          </small>
+                        </button>
                         {zoneVeil}
                       </div>
                     </>
@@ -689,6 +722,16 @@ export function DeskRow({
         </button>
       )}
       <div className="desk-row-tools" data-solid>
+        {placement.customized && (
+          <button
+            className="icon-btn"
+            aria-label={t.dock.arrange.reset}
+            title={t.dock.arrange.reset}
+            onClick={placement.reset}
+          >
+            <Undo2 size={14} />
+          </button>
+        )}
         <span
           className="desk-row-summary"
           title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
