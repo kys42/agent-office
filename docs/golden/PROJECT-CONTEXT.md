@@ -78,4 +78,4 @@ Claude Code, Codex, OpenClaw에서 진행하는 실제 작업을 한 사무실�
 
 ### 2026-10-14 · 공통 화면 연결과 공급자별 전송
 
-사용자는 Codex도 Orca/tmux의 원래 화면으로 이동하고 Claude와 공통 연결을 쓰길 요청했다. 전송과 이동을 분리하는 정책으로 진행을 승인했다. 공통 호스트 검증/이동을 재사용하고, Codex 전송은 `codex queue`로 유지한다. 현재 전체 대화 ID를 확인할 수 없는 화면이나 여러 화면은 임의 연결하지 않는다. Codex 제목 ID 설정과 구현의 한계는 [터미널 연결](../development/TERMINAL.md)에 기록한다.
+사용자는 Codex도 Orca/tmux의 원래 화면으로 이동하고 Claude와 공통 연결을 쓰길 요청했다. 전송과 이동을 분리하는 정책으로 진행을 승인했다. 공통 호스트 검증/이동을 재사용하고, Codex 전송은 `codex queue`로 유지한다. 현재 대화 ID를 확인할 수 없는 화면이나 여러 화면은 임의 연결하지 않는다. Codex 0.162.1의 32자 축약 제목 ID는 살아 있는 writer-lock의 전체 ID에 유일하게 일치할 때만 복원하고 클릭 직전에 다시 확인한다. Codex 제목 ID 설정과 구현의 한계는 [터미널 연결](../development/TERMINAL.md)에 기록한다.

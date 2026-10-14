@@ -2,17 +2,35 @@ import { remember, forget } from '../server/adapters/claude-live.js';
 import { defaultTerminalDeps, ownsTerminal } from './terminals.js';
 import { findHost, inspectProcess, type TerminalHost } from './terminal-host.js';
 import type { TerminalDeps } from './terminals.js';
+import { codexLoadedThreads } from './codex-queue.js';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 const THREAD = new RegExp(`^${UUID}$`, 'i');
+// Codex 0.162.1 truncates each title item to 32 characters (29 plus ASCII ellipsis).
+const SHORT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{5}\\.\\.\\.';
 
 /**
- * Codex's title items are separated by " | ". Put thread-id first so long names cannot
- * truncate it. Only this current, full identifier is evidence: argv, history, name and cwd
- * cannot say which thread a screen is showing after /resume or /new.
+ * Codex's title items are separated by " | ". Put thread-id first. Only this current
+ * identifier (full or Codex's 32-character abbreviation) is evidence: argv, history,
+ * name and cwd cannot say which thread a screen shows after /resume or /new.
  */
 export function codexTitleThread(title: string): string | null {
-  return new RegExp(`^(${UUID})(?: \\| |$)`, 'i').exec(title)?.[1].toLowerCase() ?? null;
+  return (
+    new RegExp(`^(${UUID}|${SHORT_UUID})(?: \\| |$)`, 'i').exec(title)?.[1].toLowerCase() ?? null
+  );
+}
+
+/** Open writer locks supply full IDs, never screen addresses. Collisions stay unknown. */
+export function resolveCodexTitleThread(reference: string, loaded: Set<string>): string | null {
+  if (THREAD.test(reference)) return reference.toLowerCase();
+  if (!new RegExp(`^${SHORT_UUID}$`, 'i').test(reference)) return null;
+  const prefix = reference.slice(0, -3).toLowerCase();
+  const matches = new Set(
+    [...loaded]
+      .filter((id) => THREAD.test(id) && id.toLowerCase().startsWith(prefix))
+      .map((id) => id.toLowerCase()),
+  );
+  return matches.size === 1 ? [...matches][0] : null;
 }
 
 export interface CodexTerminal {
@@ -59,6 +77,7 @@ async function readScreen(
   pid: number,
   deps: TerminalDeps,
   fresh = false,
+  loaded = () => codexLoadedThreads(deps, { strict: true }),
 ): Promise<CodexTerminal | null> {
   const start = () =>
     deps
@@ -82,7 +101,13 @@ async function readScreen(
     return null;
   }
   const title = await screenTitle(host, deps);
-  const threadId = title === null ? null : codexTitleThread(title);
+  const reference = title === null ? null : codexTitleThread(title);
+  let threadId = reference;
+  if (reference && !THREAD.test(reference)) {
+    threadId = resolveCodexTitleThread(reference, await loaded());
+    // An unresolved screen could duplicate another screen with a full title ID.
+    if (!threadId) throw new Error('Cannot resolve abbreviated screen identity');
+  }
   if (!threadId || (await start()) !== procStart || !(await ownsTerminal(pid, deps))) return null;
   return { threadId, pid, procStart, host };
 }
@@ -95,11 +120,13 @@ async function screenInventory(deps: TerminalDeps, fresh: boolean) {
     }
     const table = await deps.run('/bin/ps', ['-axo', 'pid=,tty=,comm=']).catch(() => '');
     let uncertain = false;
+    let loaded: Promise<Set<string>> | undefined;
+    const load = () => (loaded ??= codexLoadedThreads(deps, { strict: true }));
     const screens = await Promise.all(
       codexScreenPids(table).map(async (pid) => {
         try {
           // One host inventory per scan; each screen title below is read afresh.
-          return await readScreen(pid, deps);
+          return await readScreen(pid, deps, false, load);
         } catch {
           // A supported screen we could not read may be another view of the same thread.
           // Do not turn missing evidence into a unique target.

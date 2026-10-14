@@ -43,7 +43,7 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 
 - `TerminalTarget.kind`와 `queues`는 전송 방식이다. 별도 `focus { kind, label }`는 화면 이동 위치다. Codex가 Orca로 이동해도 전송 대상은 `codex`, `queues: true`이고 초안 검사나 터미널 입력을 실행하지 않는다. 렌더러에 핸들·소켓·PID를 전달하지 않는다.
 - 로컬 native `codex` 중 tty가 있고 foreground에 있는 프로세스만 화면 후보로 본다. 공용 데몬의 잠금/PID/상속된 Orca 환경은 화면의 증거가 아니다. 일반 exec/보조 프로세스, 종료·일시정지·PTY 소유자 불일치·PID 재사용은 제외한다.
-- Orca의 현재 `terminal show` 제목 또는 tmux의 현재 `pane_title` **첫 항목에 전체 thread UUID**가 있어야 한다. `codex resume` 실행 인수, 제목/폴더 유사성, 과거 터미널 출력·대화 본문에서 ID를 찾지 않는다. 대화 전환 시 Codex가 갱신한 제목을 다시 읽는다.
+- Orca의 현재 `terminal show` 제목 또는 tmux의 현재 `pane_title` **첫 항목에 thread UUID 또는 Codex의 32자 축약형(29자 UUID 접두부 + `...`)**이 있어야 한다. 축약형은 살아 있는 Codex가 연 writer-lock의 전체 ID 중 하나에만 일치할 때 연결한다. 접두부 충돌·잠금 조회 실패·ID 누락은 미확인으로 보류하고, 클릭 직전에도 잠금 목록을 다시 읽는다. 데몬 잠금은 ID를 복원하는 근거이며 화면 주소의 근거가 아니다. 복원용 조회는 `lsof -Fcn -c /^codex$/`의 정상 완료만 인정하고 설정한 Codex home의 실제 writer-lock 디렉터리만 읽는다. macOS `+d`는 일부 닫힌 파일 때문에 열린 파일이 있어도 exit 1이므로 전송용 기존 조회와 구분한다([lsof exit status](https://github.com/lsof-org/lsof/blob/master/docs/tutorial.md)). `codex resume` 실행 인수, 제목/폴더 유사성, 과거 터미널 출력·대화 본문에서 ID를 찾지 않는다. 대화 전환 시 Codex가 갱신한 제목을 다시 읽는다.
 - 한 대화가 두 화면에 연결되면 이동을 추측하지 않는다. 지원 화면 조회에 실패하면 후보를 삭제해 유일하다고 판단하지 않고 미확인으로 보류한다. ID 표시가 없는 제목·명시적으로 지원되지 않는 호스트는 연결 대상에서 제외한다. 64개를 넘는 후보도 미확인이다. 폴링은 2초간 같은 화면 inventory를 공유하고 클릭은 프로세스·호스트·제목을 새로 확인하고, 모든 후보 조회가 끝난 뒤 선택 화면을 다시 검증한다. 확인과 이동 사이 대화가 바뀌는 작은 race는 OS/호스트의 원자적 대화-ID 비교 API가 없어 완전히 제거할 수 없다. 이동은 입력을 보내지 않는다.
 
 Codex에서 `/title`로 **thread-id를 첫 항목**으로 선택하고, 다음 항목은 thread-name/project-name 등 텍스트를 선택한다. 첫 ID 바로 뒤에 activity/spinner를 두면 공백 구분이 되므로 현재 parser는 연결하지 않는다. 설정 파일로 구성한다면 기존 `[tui]`의 `terminal_title` 항목을 다음처럼 편집한다(앱은 사용자 Codex 설정을 자동 변경하지 않는다).
@@ -53,9 +53,9 @@ Codex에서 `/title`로 **thread-id를 첫 항목**으로 선택하고, 다음 �
 terminal_title = ["session-id", "thread-name", "project"]
 ```
 
-`session-id`는 thread-id 표시 항목의 호환 이름이다. 기존 제목 구성과 합치되 ID를 맨 앞에 두어 240자 제목 제한에 잘리지 않게 한다. 이미 실행 중인 화면은 `/title`에서 적용하거나 설정 후 다시 연다. Orca 탭의 사용자 지정 제목이 ID 표시를 가리면 자동 제목을 사용해야 한다.
+`session-id`는 thread-id 표시 항목의 호환 이름이다. 기존 제목 구성과 합치되 ID를 맨 앞에 둔다. Codex 0.162.1은 ID 항목 자체를 32자로 축약하므로 전체 UUID만 허용해서는 실제 화면에 연결되지 않는다. 이미 실행 중인 화면은 `/title`에서 적용하거나 설정 후 다시 연다. Orca 탭의 사용자 지정 제목이 ID 표시를 가리면 자동 제목을 사용해야 한다.
 
-근거: [Codex title items](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/bottom_pane/title_setup.rs), [OSC 제목 갱신](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/terminal_title.rs). Codex 0.162.1 환경을 조사했으며 외부 소스를 제품 코드에 복사하지 않았다.
+근거: [Codex title items](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/bottom_pane/title_setup.rs), [ID 항목 32자 축약](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/chatwidget/status_surfaces.rs), [OSC 제목 갱신](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/terminal_title.rs). Codex 0.162.1 환경을 조사했으며 외부 소스를 제품 코드에 복사하지 않았다.
 
 ## 말풍선 빠른 답장
 
@@ -224,5 +224,5 @@ terminal_title = ["session-id", "thread-name", "project"]
 - Orca 경로는 상태 확인과 제출 사이를 Orca가 처리하므로, 그 짧은 사이에 턴이 시작되는 경우는 막지 못한다. tmux는 Enter 직전에 다시 확인한다.
 - 셸 없이 tmux 패널의 첫 프로세스로 `claude`를 띄우면 Ctrl+Z가 실제로 멈추지 못한다(작업 제어 없음). Claude 화면만 일시정지 안내가 되고 입력은 셸 없이 tty에 찍힐 뿐 실행되지 않는다.
 - 첫 조회는 전체 프로세스 표와 Orca CLI 때문에 기기 부하에 따라 1~2초 걸린다. 이후에는 Orca 약 0.5초, tmux 수십 ms. Codex 조회는 수 ms다.
-- Codex 화면 제목에 현재 전체 대화 ID가 없으면 이동할 수 없다. 아래 설정 후의 화면만 지원한다. 대화가 여러 화면에 열려 있으면 임의 선택하지 않고 재개 명령을 복사한다.
+- Codex 화면 제목에 현재 대화 ID(전체 또는 유일하게 복원되는 32자 축약형)가 없으면 이동할 수 없다. 아래 설정 후의 화면만 지원한다. 대화가 여러 화면에 열려 있으면 임의 선택하지 않고 재개 명령을 복사한다.
 - Codex가 맡고 있지 않은 세션(화면을 닫은 지 오래됨 등)에는 보내지 않는다. 그 세션을 Codex에서 다시 열면 다시 대상이 된다.
