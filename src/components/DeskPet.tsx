@@ -1,3 +1,4 @@
+import { focusLine } from '../shared/terminal-target';
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
@@ -304,7 +305,7 @@ export function DeskPet({
               <button
                 className="icon-btn"
                 aria-label={t.terminal.jumpToTerminal(who?.name ?? d.someone)}
-                title={t.terminal.jumpHint(targetLine(deskTarget, privacy))}
+                title={t.terminal.jumpHint(focusLine(deskTarget, privacy))}
                 onClick={() => jump(view.session.id)}
               >
                 <Terminal size={12} />

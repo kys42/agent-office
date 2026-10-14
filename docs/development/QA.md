@@ -1,3 +1,11 @@
+# 2026-10-14 · Codex 공통 화면 연결 (#148)
+
+- 관련 테스트 67개·전체 단위 테스트 430개, 타입 검사, 웹+데스크톱 빌드, 포맷 검사, MCP 5도구 smoke 통과.
+- 테스트 범위: 정확한 현재 제목 ID, 별도 전송/이동 목적지, named tmux 우선, 오래된 resume 인수 무시, 대화 전환의 fresh 조회, 중복 화면, 프로세스/호스트 종료, PID 재사용, foreground/PTY 소유자 확인, 공개 응답의 private 주소 제외, 기존 Claude 전송/입력/이동 회귀.
+- 실제 tmux smoke: 임시 native codex 형태의 C 테스트 화면으로 OSC 제목→프로세스→named tmux 패널 발견, 공통 이동, 제목의 대화 변경으로 이전 대상 해제, 종료 후 대상 해제를 확인했다. 실제 사용자 Codex 화면이나 모델 입력을 변경하지 않았다. 임시 tmux 서버/바이너리는 정리했다.
+- Orca smoke: 합성 응답 검증은 통과했다. 격리 worktree에 테스트 화면을 만들려는 CLI 요청이 `Timed out waiting for terminal handle after creation`으로 실패했다. 이후 해당 worktree의 live terminal 목록은 비어 있었다. 실제 Orca 이동은 이번 검증에서 성공으로 보고하지 않는다.
+- 현재 ID가 없는 Codex 제목과 중복 화면은 자동 이동하지 않는다. 제목 설정은 사용자가 `/title` 또는 기존 `[tui].terminal_title`에서 적용하며 앱은 설정 파일을 변경하지 않는다. 화면 검증 직후의 대화 전환을 원자적으로 막는 호스트 API는 없다.
+
 # 대화 스크롤 및 이전 대화 자동 로딩 · 2026-10-14 (Issue #144)
 
 - 최신 main b2ad14c에서 별도 worktree와 Vite5196을 사용했다. 빠른 위로 wheel, 느린 페이지 로딩 중 추가 이동, 스크롤바 없는 도구 페이지에서 자동 로딩이 실패하는 것을 합성 데이터로 재현했다.

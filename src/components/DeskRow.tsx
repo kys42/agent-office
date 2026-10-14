@@ -1,3 +1,4 @@
+import { focusName, focusLine } from '../shared/terminal-target';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   ChevronDown,
@@ -499,8 +500,8 @@ export function DeskRow({
                           <DeskActionButton
                             className="jump-button"
                             label={t.terminal.jumpToTerminal(label.name)}
-                            title={t.terminal.jumpTo(deskTarget.kind === 'orca' ? 'Orca' : 'tmux')}
-                            hint={t.terminal.jumpHint(targetLine(deskTarget, privacy))}
+                            title={t.terminal.jumpTo(focusName(deskTarget))}
+                            hint={t.terminal.jumpHint(focusLine(deskTarget, privacy))}
                             icon={<Terminal size={13} strokeWidth={2.4} />}
                             onClick={() => void jump(s.id)}
                           />

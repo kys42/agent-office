@@ -59,6 +59,7 @@ import {
   TerminalInputError,
 } from './terminals.js';
 import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
+import { findCodexTerminal } from './codex-focus.js';
 import { composerFor } from './composer/index.js';
 import { promptsFor } from './prompts/index.js';
 import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
@@ -735,7 +736,9 @@ function setupIPC() {
           if (!known) return [id, null] as const;
           const terminal = await live(known);
           if (terminal) return [id, terminalTarget(terminal)] as const;
-          return [id, (await codex(known)) ? codexTarget() : null] as const;
+          const thread = await codex(known);
+          const screen = thread ? await findCodexTerminal(thread.threadId) : null;
+          return [id, thread ? codexTarget(screen?.host) : null] as const;
         } catch {
           return [id, null] as const;
         }
@@ -746,11 +749,15 @@ function setupIPC() {
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
     const known = await identity(id);
-    // A terminal Codex session lives in the CLI daemon, not the desktop app: hand back the command.
+    // The message queue and the visible screen are separate destinations.
     const thread = await codex(known, true);
-    if (thread) return { action: 'copy', text: `codex resume ${shellQuote(thread.threadId)}` };
-    const terminal = await live(known, true);
-    if (!terminal) return resume(known);
+    const terminal = thread
+      ? await findCodexTerminal(thread.threadId, { fresh: true })
+      : await live(known, true);
+    if (!terminal)
+      return thread
+        ? { action: 'copy', text: `codex resume ${shellQuote(thread.threadId)}` }
+        : resume(known);
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.

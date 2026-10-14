@@ -498,6 +498,8 @@ export interface TerminalTarget {
   canSend: boolean;
   /** The app can bring the session's terminal to the front. */
   canFocus: boolean;
+  /** Current screen destination, independent of the message transport. No handles or sockets. */
+  focus?: { kind: 'orca' | 'tmux'; label: string };
   /** Goes through the session's own queue (Codex), never typed into a terminal. */
   queues?: boolean;
 }

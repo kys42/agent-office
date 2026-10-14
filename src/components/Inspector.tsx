@@ -1,3 +1,4 @@
+import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -342,7 +343,7 @@ export function Inspector({
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
   const resumeLabel = live?.canFocus
-    ? t.terminal.jumpTo(live.kind === 'orca' ? 'Orca' : 'tmux')
+    ? t.terminal.jumpTo(focusName(live))
     : live?.kind === 'codex'
       ? t.inspector.copyResume
       : s.provider === 'codex' && isDesktop

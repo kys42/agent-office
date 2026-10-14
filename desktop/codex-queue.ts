@@ -3,6 +3,7 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
 import { m } from '../src/shared/i18n/index.js';
+import { focusTarget, type TerminalHost } from './terminal-host.js';
 import {
   cleanInput,
   defaultTerminalDeps,
@@ -175,13 +176,14 @@ export async function findCodexThread(
   return (await loaded.value).has(nativeId.toLowerCase()) ? { threadId: nativeId } : null;
 }
 
-export function codexTarget(): TerminalTarget {
+export function codexTarget(host?: TerminalHost | null): TerminalTarget {
   return {
     kind: 'codex',
     label: '',
     status: 'queue',
     canSend: true,
-    canFocus: false,
+    canFocus: !!host,
+    ...(host ? { focus: focusTarget(host) } : {}),
     queues: true,
   };
 }
