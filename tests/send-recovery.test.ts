@@ -6,6 +6,7 @@ import path from 'node:path';
 import { demoSnapshot } from '../src/lib/demo.js';
 import { recoverWorkspaces } from '../src/shared/workspace-recovery.js';
 import { projectKey } from '../src/shared/office.js';
+import { officeTopology } from '../src/shared/office-layout.js';
 import { OfficeStore } from '../server/store.js';
 import { settleSends, type PendingSend } from '../src/lib/pendingSends.js';
 
@@ -59,8 +60,51 @@ test('The exact same worktree recovers its repository identity without borrowing
   const [g, f] = recoverWorkspaces([git, fallback]);
   assert.equal(projectKey(f), projectKey(g));
   assert.equal(f.workspace!.git, undefined);
+  assert.equal(f.project, fallback.project);
   assert.equal(fallback.workspace.evidence, 'record-path');
   assert.equal(fallback.workspace.key, 'path:/repo');
+});
+
+test('A shared flag preserves both original project names for exclusion settings on a linked worktree', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-project-exclusion-'));
+  const store = new OfficeStore(path.join(temp, 'office.sqlite'));
+  try {
+    const { git, fallback } = peers();
+    const linked = '/worktrees/fix';
+    const g = { ...git, project: 'repo', workspace: { ...git.workspace, worktree: linked } };
+    const f = {
+      ...fallback,
+      project: 'fix',
+      workspace: {
+        ...fallback.workspace,
+        root: linked,
+        worktree: linked,
+        name: 'fix',
+        key: `path:${linked}`,
+      },
+    };
+    store.upsert([g, f], git.provider);
+    const visible = store.list();
+    assert.deepEqual([...new Set(visible.map((s) => s.project))].sort(), ['fix', 'repo']);
+    assert.equal(officeTopology(visible).projects.length, 1);
+    assert.equal(officeTopology(visible).projects[0].name, 'repo');
+    store.preferences({ excludedProjects: ['repo'] });
+    assert.deepEqual(
+      store.list().map((s) => s.project),
+      ['fix'],
+    );
+    store.preferences({ excludedProjects: ['fix'] });
+    assert.deepEqual(
+      store.list().map((s) => s.project),
+      ['repo'],
+    );
+    store.preferences({ excludedProjects: ['repo', 'fix'] });
+    assert.deepEqual(store.list(), []);
+    assert.throws(() => store.get(f.id), /excluded|제외/);
+  } finally {
+    store.close();
+    await rm(temp, { recursive: true, force: true });
+  }
 });
 
 test('Same names, prefixes, unrelated clones, ambiguous evidence and explicit areas never merge by inference', () => {

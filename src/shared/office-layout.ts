@@ -1,6 +1,6 @@
 import type { Session } from './types';
 import { benchKey, projectKey } from './office';
-import { isCustomZone } from './zones';
+import { isCustomZone, zoneLabel } from './zones';
 
 export const STATION_WIDTH = 164;
 export const STATION_HEIGHT = 238;
@@ -78,7 +78,7 @@ export function officeTopology(sessions: Session[]): OfficeTopology {
     for (const s of members) benches.set(benchKey(s), [...(benches.get(benchKey(s)) ?? []), s]);
     return {
       key,
-      name: members[0].area?.name ?? members[0].project,
+      name: zoneLabel(members[0]),
       custom: isCustomZone(key) ? [...new Set(members.map((s) => s.project))] : undefined,
       benches: [...benches].map(([key, members]) => ({ key, members })),
     };
@@ -98,7 +98,11 @@ export function helperSlots(helpers: Session[]): { id: string; stack?: string[] 
 /** Only topology/ordering changes furniture. Activity, selection and recent-use sorting do not. */
 export function layoutSignature(sessions: Session[]) {
   return sessions
-    .map((s) => [s.id, s.project, projectKey(s), benchKey(s), s.attachedTo, s.officeSeat].join('|'))
+    .map((s) =>
+      [s.id, s.project, zoneLabel(s), projectKey(s), benchKey(s), s.attachedTo, s.officeSeat].join(
+        '|',
+      ),
+    )
     .sort()
     .join('\n');
 }

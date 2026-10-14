@@ -28,11 +28,11 @@ export function recoverWorkspace(s: Session, peer: WorkspaceIdentity | null | un
     return s;
   return {
     ...s,
-    project: peer.name,
     workspace: {
       ...w,
       key: peer.key,
       name: peer.name,
+      zoneName: peer.name,
       root: peer.root,
       evidence: 'git-common-dir',
     },

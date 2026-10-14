@@ -4,6 +4,7 @@
 - 신규 단위6 및 전체 단위427 통과: 입력 정규화·실행별 이벤트 소비, 정확한 worktree만 복구/별도 clone·폴더 접두사·충돌 근거·명시적 구역 분리, snapshot/detail/hot row 일관성과 원본 보존, terminal draft 검사에 키 입력이 없음·앞자리 소유권·승인 창 거부·partial 표시.
 - 신규 UI6 및 기존 관련 UI35 통과(Vite5198): 기록이 전송 결과보다 먼저 도착/30초 늦은 응답, 발췌 요청 확인, 정상 밝기·개별 숨김/재전송 없음, 이전의 이미 글이 있다는 오류를 fresh draft 확인 창으로 복구, 명시적 교체·바뀐 글 재확인·partial 터미널 이동·검사 실패 시 오류/내 초안 보존. 380×480 작은 카드에서도 오류 이유와 교체 버튼이 화면 안에 표시됨을 확인했다.
 - typecheck/build/format/MCP 및 실제 Electron 전체 smoke 통과. 새 readonly draft IPC의 실제 preload/main 연결과 live terminal 없는 합성 동료의 null 결과를 검증했다. 기존 대화 스크롤·메모/초안·3종 수집·모드 전환·Dock도 함께 통과. 독립 리뷰·원격 CI·최종 clean DMG 및 실제 앱 교체 근거는 PR/작업 카드에 기록한다.
+- 독립 리뷰의 P2: 연결 worktree 이름이 Git 표시명과 다를 때 구역 복구가 `Session.project`를 바꿔 설정의 원래 제외 대상을 없앴다. `workspace.zoneName`으로 표시 이름만 분리하고 원래 프로젝트 필터 이름은 보존했다. 한 깃발 표시와 두 원래 이름의 개별/전체 제외를 합성 DB로 검증했다. 숨겨진 동료를 새 복구 근거로 사용하지 않는다. 최종 source·재검증 결과는 PR/작업 카드에 기록한다.
 
 # 2026-10-14 · Codex 공통 화면 연결 (#148)
 

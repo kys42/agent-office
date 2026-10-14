@@ -29,6 +29,8 @@ export interface RuntimeObservation {
 export interface WorkspaceIdentity {
   key: string;
   name: string;
+  /** Recovered team label only; Session.project remains the original exclusion/filter name. */
+  zoneName?: string;
   root: string | null;
   worktree: string | null;
   evidence: 'git-common-dir' | 'record-path' | 'unknown';
