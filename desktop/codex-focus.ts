@@ -77,7 +77,7 @@ async function readScreen(
   pid: number,
   deps: TerminalDeps,
   fresh = false,
-  loaded = () => codexLoadedThreads(deps),
+  loaded = () => codexLoadedThreads(deps, { strict: true }),
 ): Promise<CodexTerminal | null> {
   const start = () =>
     deps
@@ -121,7 +121,7 @@ async function screenInventory(deps: TerminalDeps, fresh: boolean) {
     const table = await deps.run('/bin/ps', ['-axo', 'pid=,tty=,comm=']).catch(() => '');
     let uncertain = false;
     let loaded: Promise<Set<string>> | undefined;
-    const load = () => (loaded ??= codexLoadedThreads(deps));
+    const load = () => (loaded ??= codexLoadedThreads(deps, { strict: true }));
     const screens = await Promise.all(
       codexScreenPids(table).map(async (pid) => {
         try {

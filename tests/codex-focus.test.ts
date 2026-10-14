@@ -33,6 +33,7 @@ function fixture(
     loaded?: string[];
     nextLoaded?: string[];
     locksFailed?: boolean;
+    partialLocks?: boolean;
   } = {},
 ) {
   let title = options.title ?? `${THREAD} | My task | project`;
@@ -50,7 +51,12 @@ function fixture(
       if (options.failed) throw new Error('unavailable');
       const pid = args[args.indexOf('-p') + 1];
       if (file === '/usr/sbin/lsof') {
-        if (options.locksFailed) throw new Error('lock inventory unavailable');
+        if (options.locksFailed || options.partialLocks)
+          throw Object.assign(new Error('lock inventory unavailable'), {
+            stdout: options.partialLocks
+              ? `p5000\nccodex\nn/home/codex/thread-writer-locks/${THREAD}.lock\n`
+              : '',
+          });
         const ids = ++lockReads > 1 ? (options.nextLoaded ?? options.loaded) : options.loaded;
         return (
           `p5000\nccodex\n` +
@@ -183,7 +189,12 @@ test('Real 0.162.1 abbreviated title resolves to its live thread and focuses Orc
 });
 
 test('Unresolvable abbreviations do not hide possible duplicates of full-ID screens', async () => {
-  for (const options of [{ loaded: [] }, { loaded: [THREAD, OTHER] }, { locksFailed: true }]) {
+  for (const options of [
+    { loaded: [] },
+    { loaded: [THREAD, OTHER] },
+    { locksFailed: true },
+    { partialLocks: true },
+  ]) {
     const f = fixture({
       ...options,
       duplicate: true,

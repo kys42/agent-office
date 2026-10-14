@@ -139,10 +139,18 @@ const cachedOrigin = codexOriginCache();
 let loaded: { at: number; home: string; value: Promise<Set<string>> } | undefined;
 
 /** Threads whose lock a live Codex process holds open: one `lsof` over the lock folder (~0.1s). */
-export async function codexLoadedThreads(deps: TerminalDeps): Promise<Set<string>> {
+export async function codexLoadedThreads(
+  deps: TerminalDeps,
+  options: { strict?: boolean } = {},
+): Promise<Set<string>> {
   const out = await deps
     .run('/usr/sbin/lsof', ['-Fcn', '+d', path.join(deps.codexHome, 'thread-writer-locks')])
-    .catch((error: { stdout?: string }) => error.stdout ?? ''); // exit 1 when nothing is open
+    .catch((error: { stdout?: string }) => {
+      // Queue ownership needs positive evidence; abbreviated-ID uniqueness needs a complete
+      // inventory. A timeout's partial stdout can omit another matching thread.
+      if (options.strict) throw error;
+      return error.stdout ?? ''; // exit 1 when nothing is open
+    });
   const threads = new Set<string>();
   let command = '';
   for (const line of out.split('\n')) {
