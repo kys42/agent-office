@@ -5,7 +5,7 @@
 업무 카드에서 확인한 세션에 바로 이어서 말하고, 부르는 세션의 질문·플랜 승인·권한 확인에 답한다(선택, [아래](#질문플랜권한-확인에-답하기-127)). 데스크탑 앱 전용이다. 웹 미리보기와 MCP에는 없다.
 
 - **Claude Code**가 Orca나 tmux 터미널에 떠 있으면 그 탭/패널로 이동하고, 입력창이 열려 있으면(쉬는 중·작업 중) 그 터미널에 입력한다.
-- **Codex CLI**는 공용 데몬에 올라와 있는 세션에 `codex queue`로 전달한다. 어느 터미널에서 띄웠는지와 무관하다. 이동은 하지 않는다.
+- **Codex CLI**는 공용 데몬에 올라와 있는 세션에 `codex queue`로 전달한다. 어느 터미널에서 띄웠는지와 무관하다. 현재 화면의 대화 ID와 호스트가 검증되면 Claude와 같은 Orca/tmux 이동을 사용한다.
 - 같은 판단을 업무 카드와 사무실 말풍선이 함께 쓴다(`src/lib/useSendTargets.ts`). 보낼 수 있는 세션의 말풍선에는 답장 버튼이 붙는다.
 
 ## 세션에서 터미널까지
@@ -22,14 +22,34 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 
 ## Codex CLI: 대기열로 전달
 
-정본 `desktop/codex-queue.ts`. Codex CLI(0.158~)의 터미널 화면은 앱 서버의 클라이언트다. 서버는 보통 공용 백그라운드 데몬(`codex app-server --managed-daemon`)이고, `-c` 같은 실행 옵션을 주면 화면이 내장 서버로 뜬다(화면 경고: "command-line configuration overrides … requires embedded mode"). 어느 쪽이든 세션에서 화면으로 가는 근거가 없어 **이동은 하지 않고**, 공식 명령 `codex queue --thread=<id> --message=<글>`로 Codex 공용 대기열에 넣는다. 그 세션을 맡은 서버(데몬이든 내장이든)가 가져가 처리한다.
+정본 `desktop/codex-queue.ts`. Codex CLI(0.158~)의 터미널 화면은 앱 서버의 클라이언트다. 서버는 보통 공용 백그라운드 데몬(`codex app-server --managed-daemon`)이고, `-c` 같은 실행 옵션을 주면 화면이 내장 서버로 뜬다(화면 경고: "command-line configuration overrides … requires embedded mode"). 전송은 화면 연결과 독립적이며, 어느 쪽이든 공식 명령 `codex queue --thread=<id> --message=<글>`로 Codex 공용 대기열에 넣는다. 그 세션을 맡은 서버(데몬이든 내장이든)가 가져가 처리한다.
 
 - **실측:** 화면이 쉬는 중이면 1초 안에 사용자 요청으로 뜨고 답한다. 작업 중에 넣으면 그 작업이 끝난 뒤 별도 요청으로 처리된다(그래서 Codex는 작업 중에도 보낼 수 있다, `queues: true`). 내장 서버 모드 화면에도 전달된다. 기록 파일에 일반 사용자 메시지로 남아 수집기가 그대로 읽는다.
 - **살아 있는 Codex가 맡은 세션만.** 세션을 맡은 프로세스는 `${CODEX_HOME:-~/.codex}/thread-writer-locks/<id>.lock`을 열어 둔다. `lsof -Fcn +d <잠금 폴더>`(약 0.1초)로 이름이 `codex`인 프로세스가 연 잠금만 인정한다. 잠금 파일은 세션이 끝나도 남기 때문에 존재만으로는 판단하지 않는다(실측: 종료한 세션의 잠금 파일이 남아 있었음). 아무도 맡지 않은 세션에 넣은 메시지는 다음에 그 세션을 열 때까지 처리되지 않아 "보냈는데 아무 일도 없음"이 되기 때문이다.
 - **터미널 CLI 세션만:** 기록 첫 `session_meta`의 `originator === 'codex-tui'`이고 보조(subagent) 세션이 아니어야 한다. 데스크탑 앱(`Codex Desktop`)은 별도 서버를 써서 화면과 어긋날 수 있고, `codex_exec`은 답을 볼 화면이 없다. 머리말을 읽지 못한 경우(아직 쓰는 중 등)는 기억하지 않고 다음에 다시 읽는다.
 - **실행 파일:** 데몬 패키지의 `app-server-daemon/releases/<최신>/bin/codex`를 먼저 쓰고, 없으면 npm 설치의 네이티브 바이너리를 쓴다. `/opt/homebrew/bin/codex`는 node 스크립트라 Finder에서 띄운 앱(좁은 PATH)에서는 실행되지 않는다.
 - `--flag=값` 형식이라 `-`로 시작하는 글도 값으로 읽힌다. 명령은 성공했는데 응답에 `for thread <id>`가 없으면 "다시 보내기 전에 확인"을 안내한다(이미 들어갔을 수 있음). 실행 파일이 없으면(ENOENT) "보내지 않았어요"로 구분한다.
-- **재개 버튼:** Codex CLI가 맡고 있는 세션은 데스크탑 앱 링크 대신 `codex resume '<id>'` 명령을 복사한다.
+- **재개 버튼:** 검증된 화면이 하나면 Orca/tmux로 이동한다. 화면 없음/중복/검증 실패는 데스크탑 앱 링크 대신 `codex resume '<id>'` 명령을 복사한다.
+
+## Codex 화면 연결 · 2026-10-14 (#148)
+
+정본 `desktop/codex-focus.ts`. 공급자별 세션→화면 발견과 공통 호스트 검증/이동을 분리한다. `desktop/terminal-host.ts`의 `findHost`·`focusHost`를 Claude와 Codex가 공유한다. Claude의 입력 상태/화면 읽기/직접 전송은 `desktop/terminals.ts`, Codex 전송은 `desktop/codex-queue.ts`에 남는다.
+
+- `TerminalTarget.kind`와 `queues`는 전송 방식이다. 별도 `focus { kind, label }`는 화면 이동 위치다. Codex가 Orca로 이동해도 전송 대상은 `codex`, `queues: true`이고 초안 검사나 터미널 입력을 실행하지 않는다. 렌더러에 핸들·소켓·PID를 전달하지 않는다.
+- 로컬 native `codex` 중 tty가 있고 foreground에 있는 프로세스만 화면 후보로 본다. 공용 데몬의 잠금/PID/상속된 Orca 환경은 화면의 증거가 아니다. 일반 exec/보조 프로세스, 종료·일시정지·PTY 소유자 불일치·PID 재사용은 제외한다.
+- Orca의 현재 `terminal show` 제목 또는 tmux의 현재 `pane_title` **첫 항목에 전체 thread UUID**가 있어야 한다. `codex resume` 실행 인수, 제목/폴더 유사성, 과거 터미널 출력·대화 본문에서 ID를 찾지 않는다. 대화 전환 시 Codex가 갱신한 제목을 다시 읽는다.
+- 한 대화가 두 화면에 연결되면 이동을 추측하지 않는다. 지원 화면 조회에 실패하면 후보를 삭제해 유일하다고 판단하지 않고 미확인으로 보류한다. ID 표시가 없는 제목·명시적으로 지원되지 않는 호스트는 연결 대상에서 제외한다. 64개를 넘는 후보도 미확인이다. 폴링은 2초간 같은 화면 inventory를 공유하고 클릭은 프로세스·호스트·제목을 새로 확인하고, 모든 후보 조회가 끝난 뒤 선택 화면을 다시 검증한다. 확인과 이동 사이 대화가 바뀌는 작은 race는 OS/호스트의 원자적 대화-ID 비교 API가 없어 완전히 제거할 수 없다. 이동은 입력을 보내지 않는다.
+
+Codex에서 `/title`로 **thread-id를 첫 항목**으로 선택하고, 다음 항목은 thread-name/project-name 등 텍스트를 선택한다. 첫 ID 바로 뒤에 activity/spinner를 두면 공백 구분이 되므로 현재 parser는 연결하지 않는다. 설정 파일로 구성한다면 기존 `[tui]`의 `terminal_title` 항목을 다음처럼 편집한다(앱은 사용자 Codex 설정을 자동 변경하지 않는다).
+
+```toml
+[tui]
+terminal_title = ["session-id", "thread-name", "project"]
+```
+
+`session-id`는 thread-id 표시 항목의 호환 이름이다. 기존 제목 구성과 합치되 ID를 맨 앞에 두어 240자 제목 제한에 잘리지 않게 한다. 이미 실행 중인 화면은 `/title`에서 적용하거나 설정 후 다시 연다. Orca 탭의 사용자 지정 제목이 ID 표시를 가리면 자동 제목을 사용해야 한다.
+
+근거: [Codex title items](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/bottom_pane/title_setup.rs), [OSC 제목 갱신](https://github.com/openai/codex/blob/95273b84fbff40f9df7d71d50f1ca52c6489b25d/codex-rs/tui/src/terminal_title.rs). Codex 0.162.1 환경을 조사했으며 외부 소스를 제품 코드에 복사하지 않았다.
 
 ## 말풍선 빠른 답장
 
@@ -198,5 +218,5 @@ Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행�
 - Orca 경로는 상태 확인과 제출 사이를 Orca가 처리하므로, 그 짧은 사이에 턴이 시작되는 경우는 막지 못한다. tmux는 Enter 직전에 다시 확인한다.
 - 셸 없이 tmux 패널의 첫 프로세스로 `claude`를 띄우면 Ctrl+Z가 실제로 멈추지 못한다(작업 제어 없음). Claude 화면만 일시정지 안내가 되고 입력은 셸 없이 tty에 찍힐 뿐 실행되지 않는다.
 - 첫 조회는 전체 프로세스 표와 Orca CLI 때문에 기기 부하에 따라 1~2초 걸린다. 이후에는 Orca 약 0.5초, tmux 수십 ms. Codex 조회는 수 ms다.
-- Codex 세션으로는 이동할 수 없다(어느 화면인지 근거가 없음). 재개 버튼은 기존처럼 Codex 앱 링크를 연다.
+- Codex 화면 제목에 현재 전체 대화 ID가 없으면 이동할 수 없다. 아래 설정 후의 화면만 지원한다. 대화가 여러 화면에 열려 있으면 임의 선택하지 않고 재개 명령을 복사한다.
 - Codex가 맡고 있지 않은 세션(화면을 닫은 지 오래됨 등)에는 보내지 않는다. 그 세션을 Codex에서 다시 열면 다시 대상이 된다.

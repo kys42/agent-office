@@ -409,6 +409,7 @@ test('Locating combines process and host; the renderer view never carries a hand
       status: 'busy',
       canSend: true,
       canFocus: true,
+      focus: { kind: 'orca', label: '✳ ao-send-test' },
     });
     assert.ok(!JSON.stringify(view).includes(HANDLE));
   });
@@ -1394,6 +1395,12 @@ test('Focus switches the exact Orca terminal or tmux pane', async () => {
     orcaSwitch: { ok: true, result: { focus: { navigated: false } } },
   });
   await assert.rejects(focusTerminal(orcaLive(), lost.deps), TerminalInputError);
+  const transportError = new Error('private command details');
+  const broken = fakeDeps('/x', { fail: () => transportError });
+  await assert.rejects(
+    focusTerminal(orcaLive(), broken.deps),
+    (error) => error === transportError && !(error instanceof TerminalInputError),
+  );
   const tmux = fakeDeps('/x', {
     fail: (_file, args) => (args.includes('switch-client') ? new Error('no client') : undefined),
   });
