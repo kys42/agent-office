@@ -2,7 +2,8 @@
 
 - Claude/Codex의 Orca·tmux 호스트 검증/이동을 desktop/terminal-host.ts로 분리했다. 전송 목적지와 화면 목적지를 별도로 표현하며 Codex 전송은 기존 codex queue를 유지한다. 업무 카드·한 줄·데스크 펫의 이동 라벨은 실제 화면 위치를 사용한다.
 - Codex native foreground TUI와 현재 제목 첫 항목의 전체 대화 ID를 검증한다. 데몬 환경·resume 인수·이름/폴더/과거 출력은 연결 근거가 아니다. 중복/종료/전환/PID 재사용/확인 실패는 명령 복사를 유지하고 클릭은 새로 조회한다. 제목 ID 설정(session-id/thread-id), 64개 후보 상한과 확인→이동 race 한계를 정책·개발 문서에 기록했다.
-- 관련 67·전체 단위 430·type/build/format·MCP 5도구 smoke 통과. 실제 named tmux에서 격리된 native Codex 형태의 테스트 프로세스와 OSC ID로 연결/공통 이동/대화 전환/종료 처리를 확인했다(실제 Codex 모델 실행·전송은 하지 않음). Orca는 합성 연결/이동 테스트 통과, 실제 테스트 pane 생성은 runtime timeout으로 검증하지 못했고 해당 worktree의 live pane이 없음을 확인했다.
+- 관련 69·전체 단위 432·type/build/format·MCP 5도구 smoke 통과. 실제 named tmux에서 격리된 native Codex 형태의 테스트 프로세스와 OSC ID로 연결/공통 이동/대화 전환/종료 처리를 확인했다(실제 Codex 모델 실행·전송은 하지 않음). Orca는 합성 연결/이동 테스트 통과, 실제 테스트 pane 생성은 runtime timeout으로 검증하지 못했고 해당 worktree의 live pane이 없음을 확인했다.
+- 독립 리뷰에서 찾은 stale inventory·부분 실패의 중복 판정을 보완했다. 선택 화면은 모든 조회가 끝난 뒤 다시 확인하고, 지원 화면 조회 실패는 미확인으로 보존한다. 재현 테스트 2개 추가 및 재리뷰 통과. 첫 커밋 원격 UI217 통과/개인기록 의존1 제외.
 - 최신 main b370686 기반 독립 worktree/feat/codex-terminal-focus에서 구현했다. 원본 펫 변경과 개인 세션/설정은 보존했다. 독립 리뷰와 CI 결과는 PR/이슈에 기록한다.
 
 # 2026-10-14 · 대화 스크롤 및 이전 대화 자동 로딩 안정화 (Issue #144)

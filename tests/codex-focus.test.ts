@@ -22,6 +22,9 @@ function fixture(
     reused?: boolean;
     closed?: boolean;
     failed?: boolean;
+    secondTitle?: string;
+    secondFailed?: boolean;
+    onSecondShow?: () => Promise<void>;
   } = {},
 ) {
   let title = options.title ?? `${THREAD} | My task | project`;
@@ -47,7 +50,7 @@ function fixture(
         if (args.includes('stat=,pgid=,tpgid=')) return options.stat ?? `S+ ${pid} ${pid}`;
         if (args.includes('-wwE'))
           return (
-            `codex resume ${OTHER} ORCA_TERMINAL_HANDLE=${HANDLE} ORCA_TAB_ID=${TAB}` +
+            `codex resume ${OTHER} ORCA_TERMINAL_HANDLE=${pid === '4243' ? HANDLE + '-second' : HANDLE} ORCA_TAB_ID=${TAB}` +
             (options.host === 'tmux' ? ` TMUX=${SOCKET},3146,0 TMUX_PANE=%3` : '')
           );
         if (args.includes('-ww')) return `codex resume ${OTHER}`;
@@ -62,8 +65,36 @@ function fixture(
           orphaned: false,
         };
         if (args.includes('list'))
-          return JSON.stringify({ ok: true, result: { terminals: [terminal] } });
-        if (args.includes('show')) return JSON.stringify({ ok: true, result: { terminal } });
+          return JSON.stringify({
+            ok: true,
+            result: {
+              terminals: [
+                terminal,
+                {
+                  ...terminal,
+                  handle: HANDLE + '-second',
+                  title: options.secondTitle ?? title,
+                },
+              ],
+            },
+          });
+        if (args.includes('show')) {
+          if (args.includes(`--terminal=${HANDLE}-second`)) {
+            await options.onSecondShow?.();
+            if (options.secondFailed) throw new Error('second screen timeout');
+            return JSON.stringify({
+              ok: true,
+              result: {
+                terminal: {
+                  ...terminal,
+                  handle: HANDLE + '-second',
+                  title: options.secondTitle ?? title,
+                },
+              },
+            });
+          }
+          return JSON.stringify({ ok: true, result: { terminal } });
+        }
         if (args.includes('switch'))
           return JSON.stringify({ ok: true, result: { focus: { navigated: true } } });
       }
@@ -153,6 +184,29 @@ test('Fresh lookup detects a screen switching threads rather than returning a ca
   f.setTitle(`${OTHER} | changed`);
   assert.equal(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }), null);
   assert.ok(await findCodexTerminal(OTHER, { deps: f.deps, fresh: true }));
+});
+
+test('After waiting for another screen, a click rechecks the selected screen instead of its old title', async () => {
+  const f = fixture({
+    duplicate: true,
+    secondTitle: OTHER,
+    onSecondShow: async () => {
+      f.setTitle(`${OTHER} | now showing another thread`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    },
+  });
+  assert.equal(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }), null);
+  assert.equal(
+    f.calls.filter((c) => c.args.includes('show') && c.args.includes(`--terminal=${HANDLE}`))
+      .length,
+    2,
+  );
+});
+
+test('A failed supported screen lookup cannot erase a possible duplicate to make one target', async () => {
+  const f = fixture({ duplicate: true, secondFailed: true });
+  assert.equal(await findCodexTerminal(THREAD, { deps: f.deps }), null);
+  assert.equal(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }), null);
 });
 
 test('Ambiguous screens, closed hosts, PID reuse and unverified owners never yield a target', async () => {

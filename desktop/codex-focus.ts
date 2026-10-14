@@ -1,6 +1,6 @@
 import { remember, forget } from '../server/adapters/claude-live.js';
 import { defaultTerminalDeps, ownsTerminal } from './terminals.js';
-import { findHost, type TerminalHost } from './terminal-host.js';
+import { findHost, inspectProcess, type TerminalHost } from './terminal-host.js';
 import type { TerminalDeps } from './terminals.js';
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
@@ -50,48 +50,65 @@ async function screenTitle(host: TerminalHost, deps: TerminalDeps): Promise<stri
     await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json']),
   );
   const t = result?.result?.terminal;
-  return result.ok === true &&
-    t?.handle === host.handle &&
-    t.connected === true &&
-    t.writable !== false &&
-    t.orphaned !== true &&
-    typeof t.title === 'string'
-    ? t.title
-    : null;
+  if (result.ok !== true || t?.handle !== host.handle || typeof t.title !== 'string')
+    throw new Error('Cannot verify current terminal title');
+  return t.connected === true && t.writable !== false && t.orphaned !== true ? t.title : null;
 }
 
-async function screenInventory(deps: TerminalDeps, fresh: boolean): Promise<CodexTerminal[]> {
+async function readScreen(
+  pid: number,
+  deps: TerminalDeps,
+  fresh = false,
+): Promise<CodexTerminal | null> {
+  const start = () =>
+    deps
+      .run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
+        env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+      })
+      .then((out) => out.trim());
+  const procStart = await start();
+  if (!procStart || !deps.alive(pid) || !(await ownsTerminal(pid, deps))) return null;
+  const inspected = inspectProcess(pid, deps);
+  const host = await findHost(pid, deps, inspected, fresh);
+  if (!host) {
+    const view = await inspected;
+    // A known unsupported owner is excluded; a failed supported-host lookup is unknown.
+    if (
+      !view.owner ||
+      view.owner.command.includes('/Orca.app/Contents/') ||
+      /(?:^|\/)tmux(?::|\s|$)/.test(view.owner.command)
+    )
+      throw new Error('Cannot verify screen host');
+    return null;
+  }
+  const title = await screenTitle(host, deps);
+  const threadId = title === null ? null : codexTitleThread(title);
+  if (!threadId || (await start()) !== procStart || !(await ownsTerminal(pid, deps))) return null;
+  return { threadId, pid, procStart, host };
+}
+
+async function screenInventory(deps: TerminalDeps, fresh: boolean) {
   return remember(deps, 'codex-focus-screens', 2000, fresh, async () => {
     if (fresh) {
       forget(deps, 'process-table');
       forget(deps, 'orca-terminals');
     }
     const table = await deps.run('/bin/ps', ['-axo', 'pid=,tty=,comm=']).catch(() => '');
+    let uncertain = false;
     const screens = await Promise.all(
       codexScreenPids(table).map(async (pid) => {
         try {
-          const start = () =>
-            deps
-              .run('/bin/ps', ['-o', 'lstart=', '-p', String(pid)], {
-                env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
-              })
-              .then((out) => out.trim());
-          const procStart = await start();
-          if (!procStart || !deps.alive(pid) || !(await ownsTerminal(pid, deps))) return null;
           // One host inventory per scan; each screen title below is read afresh.
-          const host = await findHost(pid, deps);
-          if (!host) return null;
-          const title = await screenTitle(host, deps);
-          const threadId = title === null ? null : codexTitleThread(title);
-          if (!threadId || (await start()) !== procStart || !(await ownsTerminal(pid, deps)))
-            return null;
-          return { threadId, pid, procStart, host };
+          return await readScreen(pid, deps);
         } catch {
+          // A supported screen we could not read may be another view of the same thread.
+          // Do not turn missing evidence into a unique target.
+          uncertain = true;
           return null;
         }
       }),
     );
-    return screens.filter((s): s is CodexTerminal => s !== null);
+    return { screens: screens.filter((s): s is CodexTerminal => s !== null), uncertain };
   });
 }
 
@@ -101,8 +118,18 @@ export async function findCodexTerminal(
   options: { fresh?: boolean; deps?: TerminalDeps } = {},
 ): Promise<CodexTerminal | null> {
   if (!THREAD.test(threadId)) return null;
-  const matches = (
-    await screenInventory(options.deps ?? defaultTerminalDeps(), !!options.fresh)
-  ).filter((s) => s.threadId === threadId.toLowerCase());
-  return matches.length === 1 ? matches[0] : null;
+  const deps = options.deps ?? defaultTerminalDeps();
+  const inventory = await screenInventory(deps, !!options.fresh);
+  if (inventory.uncertain) return null;
+  const matches = inventory.screens.filter((s) => s.threadId === threadId.toLowerCase());
+  if (matches.length !== 1) return null;
+  const selected = matches[0];
+  if (!options.fresh) return selected;
+  // A slow other candidate may have kept us waiting for seconds after this title was read.
+  // Re-check the selected process, host and title after the entire inventory has settled.
+  forget(deps, 'process-table');
+  const current = await readScreen(selected.pid, deps, true).catch(() => null);
+  return current?.threadId === selected.threadId && current.procStart === selected.procStart
+    ? current
+    : null;
 }
