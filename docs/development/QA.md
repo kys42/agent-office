@@ -1,3 +1,10 @@
+# 대화 스크롤 및 이전 대화 자동 로딩 · 2026-10-14 (Issue #144)
+
+- 최신 main b2ad14c에서 별도 worktree와 Vite5196을 사용했다. 빠른 위로 wheel, 느린 페이지 로딩 중 추가 이동, 스크롤바 없는 도구 페이지에서 자동 로딩이 실패하는 것을 합성 데이터로 재현했다.
+- 신규 UI6 통과: 자동 이동 직후 wheel/PageUp, 아래로 돌아오면 최신 대화 따라가기, 상단 cooldown 뒤 자동 재개, 상단을 벗어나면 예약 취소, 느린 응답 중 읽던 메시지 위치 보존, 숨긴 도구 페이지 자동 탐색 및 끝 표시 제거. 기존 관련 UI40(업무 카드·팝업·북마크·페이징·초안) 통과. PageUp 뒤 Mac Chromium의 End 키가 스크롤하지 않아 복귀 검수는 실제 wheel 입력으로 확인한다.
+- 단위421, typecheck/build/format/MCP 통과. 실제 Electron의 합성 Claude120개 이력과 수집기·IPC로 위로 wheel, 클릭 없이 가장 오래된 메시지까지 페이지 조회, 버튼 제거를 검증하고 전체 native smoke 통과. 독립 리뷰·원격 CI·clean DMG 및 설치 앱 교체 결과는 PR/작업 카드에 기록한다.
+- 원본 checkout의 미커밋 변경과 실제 사용자 DB는 테스트에 사용하지 않았다.
+
 # 맥북 앞 미니 로봇 앱 아이콘 · 2026-10-13 (Issue #122)
 - 사용자 승인한 D 로봇+맥북 시안을 투명 PNG1024px로 정규화하고 Mac ICNS16–1024px로 변환했다. ICNS에서 추출한1024px PNG와 원본 PNG의 SHA256이 같고 재생성 ICNS도 동일하다.
 - 번들은 ICNS, Mac 런타임 Dock은 dist/icon.png, 브라우저 favicon은 같은 PNG를 사용한다. 이전 미사용 SVG는 제거했다. 메뉴바 흑백 template 심벌은 유지한다. npm run icon:mac으로 재생성한다.
