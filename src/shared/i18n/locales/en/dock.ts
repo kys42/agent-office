@@ -1,6 +1,12 @@
 /** The floating dock window: the desk pet, the desk row / floor desks, and the dock card. */
 export const dock = {
   /** Short toast after pinning from the dock. */
+  arrange: {
+    move: (name: string) => `Move zone · ${name}`,
+    hint: 'Drag left or right · ← → (Shift: larger step) · Home/End: edges · Esc: cancel',
+    reset: 'Reset zone positions',
+    saveFailed: 'Could not remember positions. You can still use this layout in this window.',
+  },
   pinned: 'Pinned',
   status: {
     check: 'Check connection',

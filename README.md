@@ -121,6 +121,7 @@ When you want the whole picture, open the full office: every project on its own 
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
 | 🔖 **Message bookmarks** | Bookmark an important message in a conversation; Memory and the teammate’s Notes tab collect them with context and short annotations; open the conversation right at the saved message. |
+| ↔ **Place your teams** | Drag a project sign or floor flag to move its desks together across the row. Positions are remembered; reset from the dock toolbar. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
 | 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |
 | 🔗 **PR & issue cards** | GitHub links found in a session become cards with live title and state via your existing `gh` login. |

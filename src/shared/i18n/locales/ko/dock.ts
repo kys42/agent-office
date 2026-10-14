@@ -1,6 +1,12 @@
 import type { Messages } from '../en';
 
 export const dock: Messages['dock'] = {
+  arrange: {
+    move: (name) => `구역 옮기기 · ${name}`,
+    hint: '끌어서 좌우로 옮기기 · ← → (Shift: 크게) · Home/End: 양 끝 · Esc: 취소',
+    reset: '기본 배치로 되돌리기',
+    saveFailed: '위치를 기억하지 못했어요. 이번 창에서는 그대로 사용할 수 있어요.',
+  },
   pinned: '고정했어요',
   status: {
     check: '연결 확인',

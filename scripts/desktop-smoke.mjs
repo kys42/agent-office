@@ -168,6 +168,23 @@ try {
   await dock.waitForTimeout(400);
   await checkMacDock('desk row');
   await dock.screenshot({ path: '.local/native-row.png' });
+  // Synthetic providers share one project. Its sign moves their benches together.
+  const rowZone = dock.locator('.row-zone').first();
+  const originalX = await rowZone.evaluate((el) => parseFloat(el.style.left));
+  const sign = await dock.locator('.row-zone-handle').first().boundingBox();
+  assert.ok(sign, 'project sign is drawn');
+  await dock.mouse.move(sign.x + sign.width / 2, sign.y + sign.height / 2);
+  await dock.mouse.down();
+  await dock.mouse.move(sign.x + sign.width / 2 - 100, sign.y + sign.height / 2, { steps: 8 });
+  await dock.mouse.up();
+  await dock.waitForFunction(
+    (before) => parseFloat(document.querySelector('.row-zone').style.left) < before - 80,
+    originalX,
+  );
+  const arrangedX = await rowZone.evaluate((el) => parseFloat(el.style.left));
+  assert.equal(await dock.locator('.row-station').count(), 3, 'all desks move together');
+  assert.ok(await dock.evaluate(() => localStorage.getItem('office:row-zones:v1:live')));
+  await dock.screenshot({ path: '.local/native-row-arranged.png' });
   // Keep this test's card open if someone uses another app during local QA. Production still
   // closes it on blur; we test its panel focus/keyboard without racing the user's desktop.
   await app.evaluate(({ app }) =>
@@ -316,6 +333,13 @@ try {
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
   await dock.waitForSelector('.desk-row.desk-floor');
+  await dock.waitForFunction(
+    (expected) =>
+      Math.abs(parseFloat(document.querySelector('.row-zone').style.left) - expected) < 1,
+    arrangedX,
+  );
+  await dock.getByRole('button', { name: '기본 배치로 되돌리기', exact: true }).click();
+  await dock.waitForFunction(() => !localStorage.getItem('office:row-zones:v1:live'));
   const floor = await dockBounds();
   assert.equal(floor.width, floor.area.width, 'floor desks span the work area');
   assert.equal(floor.y + floor.height, floor.area.y + floor.area.height, 'standing on the bottom');
