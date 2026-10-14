@@ -26,7 +26,17 @@ export function rememberSend(sessionId: string, text: string, now = Date.now()) 
   ]);
 }
 
-const plain = (text: string) => text.replace(/\s+/g, ' ').trim();
+/** Hide only this local receipt. Never withdraws input from the agent's queue or terminal. */
+export function dismissSend(id: string) {
+  publish(pending.filter((p) => p.id !== id));
+}
+
+const plain = (text: string) =>
+  text
+    .normalize('NFC')
+    .replace(/[\u200b\u2060\ufeff]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 // The record may tidy the words (spacing, hidden secrets, long text cut), so compare loosely.
 // Short words must match whole ("ok" is not "ok then run tests"); long ones by their start.
 const same = (a: string, b: string) =>
@@ -44,16 +54,17 @@ export function settleSends(
   now = Date.now(),
 ): PendingSend[] {
   const asked = events
-    .filter((e) => e.kind === 'user' && !taken.has(e.id))
+    .filter((e) => e.kind === 'user' && !taken.has(`${sessionId}:${e.id}`))
     .map((e) => ({ id: e.id, text: plain(e.text), at: e.at }));
   const next = list.filter((p) => {
     if (now - p.at > LIFETIME) return false;
     if (p.sessionId !== sessionId) return true;
     const match = asked.find(
-      (e) => !taken.has(e.id) && e.at >= p.at - 10_000 && same(e.text, plain(p.text)),
+      (e) =>
+        !taken.has(`${sessionId}:${e.id}`) && e.at >= p.at - 10_000 && same(e.text, plain(p.text)),
     );
     if (!match) return true;
-    taken.add(match.id);
+    taken.add(`${sessionId}:${match.id}`);
     return false;
   });
   return next.length === list.length ? list : next;

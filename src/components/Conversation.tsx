@@ -182,6 +182,7 @@ export function Conversation({
   name,
   filtersOpen,
   sent = [],
+  onDismissSent,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -212,6 +213,8 @@ export function Conversation({
    * input only when it gets to it): drawn as their own bubbles, marked as waiting.
    */
   sent?: { id: string; text: string; at: number }[];
+  /** Hides a temporary local receipt only; never cancels a submitted message. */
+  onDismissSent?: (id: string) => void;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -712,6 +715,15 @@ export function Conversation({
             <div className="message-meta">
               <span>{t.conversation.you}</span>
               <small>{t.conversation.pending}</small>
+              {onDismissSent && (
+                <button
+                  aria-label={t.conversation.hideSent}
+                  title={t.conversation.hideSentHint}
+                  onClick={() => onDismissSent(p.id)}
+                >
+                  ×
+                </button>
+              )}
             </div>
             <div className="message-bubble">
               <div className="message-text">

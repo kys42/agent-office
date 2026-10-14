@@ -15,6 +15,7 @@ import {
   readPrompt,
   ptyOwner,
   sendToTerminal,
+  inspectTerminalDraft,
   terminalTarget,
   TerminalInputError,
   type LiveTerminal,
@@ -23,7 +24,7 @@ import {
 } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
 import type { SendResult } from '../src/shared/types.js';
-import { codexQueueComposer, composerFor } from '../desktop/composer/index.js';
+import { claudeCodeComposer, codexQueueComposer, composerFor } from '../desktop/composer/index.js';
 import { setLocale } from '../src/shared/i18n/index.js';
 // These tests assert the original Korean copy: pin the language so results never depend on the
 // machine (services resolve `auto` through AGENT_OFFICE_LOCALE first).
@@ -431,6 +432,36 @@ const orcaLive = (status = 'idle'): LiveTerminal => ({
 const tmuxLive = (status = 'idle'): LiveTerminal => ({
   process: { pid: 4242, sessionId: SESSION, procStart: START, status, updatedAt: 0 },
   host: { kind: 'tmux', socket: SOCKET, pane: '%3', label: 'work:1.0' },
+});
+
+test('A failed send can inspect the current whole draft without any input or clipboard changes', async () => {
+  for (const live of [tmuxLive(), orcaLive()]) {
+    const { deps, calls } = fakeDeps('/x', { screen: () => claudeScreen('existing message') });
+    const draft = await inspectTerminalDraft(live, claudeCodeComposer, deps);
+    assert.equal(draft?.status, 'needs-confirm');
+    assert.equal(draft?.draft, 'existing message');
+    assert.notEqual(draft?.clearable, false);
+    assert.ok(
+      !calls.some(
+        (c) =>
+          c.args.includes('send-keys') || c.args.includes('send') || c.args.includes('load-buffer'),
+      ),
+    );
+  }
+});
+
+test('Read-only draft recovery refuses dialogs or a foreign foreground and marks partial text uncleared', async () => {
+  const foreign = fakeDeps('/x', { fg: 'T 4242 4000', screen: () => claudeScreen('mine') });
+  assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, foreign.deps), null);
+  const partial = fakeDeps('/x', { screen: () => claudeScreen('[Pasted text #1 +12 lines]') });
+  assert.equal(
+    (await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, partial.deps))?.clearable,
+    false,
+  );
+  const closed = fakeDeps('/x', {
+    screen: () => 'Do you want to allow this command? Enter to confirm · Esc to cancel',
+  });
+  assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, closed.deps), null);
 });
 
 const sent = (calls: { args: string[] }[]) =>

@@ -418,7 +418,7 @@ test('What the person sends shows at once, marked as waiting, until the record h
   await box.press('Enter');
   const waiting = aside.locator('.message-pending');
   await expect(waiting).toContainText('작업 끝나면 테스트도 돌려 줘');
-  await expect(waiting).toContainText('차례를 기다리는 중');
+  await expect(waiting).toContainText('대화 기록 확인 중');
 });
 
 test('The same words sent twice wait as two bubbles', async ({ page }) => {
