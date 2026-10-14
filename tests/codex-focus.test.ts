@@ -34,6 +34,7 @@ function fixture(
     nextLoaded?: string[];
     locksFailed?: boolean;
     partialLocks?: boolean;
+    foreignLocks?: string[];
   } = {},
 ) {
   let title = options.title ?? `${THREAD} | My task | project`;
@@ -60,7 +61,10 @@ function fixture(
         const ids = ++lockReads > 1 ? (options.nextLoaded ?? options.loaded) : options.loaded;
         return (
           `p5000\nccodex\n` +
-          (ids ?? [THREAD]).map((id) => `n/home/codex/thread-writer-locks/${id}.lock`).join('\n')
+          (ids ?? [THREAD]).map((id) => `n/home/codex/thread-writer-locks/${id}.lock`).join('\n') +
+          (options.foreignLocks ?? [])
+            .map((id) => `\nn/other/home/thread-writer-locks/${id}.lock`)
+            .join('')
         );
       }
       if (file === '/bin/ps') {
@@ -184,6 +188,11 @@ test('Real 0.162.1 abbreviated title resolves to its live thread and focuses Orc
     assert.equal(screen.host.kind, host);
     await focusTerminal(screen, f.deps);
     assert.equal(f.calls.filter((c) => c.file === '/usr/sbin/lsof').length, 2);
+    assert.ok(
+      f.calls
+        .filter((c) => c.file === '/usr/sbin/lsof')
+        .every((c) => c.args.join(' ') === '-Fcn -c /^codex$/'),
+    );
     assert.ok(!f.calls.some((c) => c.args.includes('send') || c.args.includes('queue')));
   }
 });
@@ -211,6 +220,14 @@ test('A click rechecks abbreviated ID uniqueness after inventory completes', asy
     nextLoaded: [THREAD, OTHER],
   });
   assert.equal(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }), null);
+});
+
+test('The complete Codex file scan only resolves locks from the configured home', async () => {
+  const title = `${THREAD.slice(0, 29)}... | project`;
+  const f = fixture({ title, foreignLocks: [OTHER] });
+  assert.ok(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }));
+  const foreignOnly = fixture({ title, loaded: [], foreignLocks: [THREAD] });
+  assert.equal(await findCodexTerminal(THREAD, { deps: foreignOnly.deps, fresh: true }), null);
 });
 
 test('Inventory excludes daemons, tools, wrappers, malformed PIDs and unexpected large inventories', () => {

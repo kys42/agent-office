@@ -1,4 +1,4 @@
-import { open, stat } from 'node:fs/promises';
+import { open, stat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
@@ -143,8 +143,12 @@ export async function codexLoadedThreads(
   deps: TerminalDeps,
   options: { strict?: boolean } = {},
 ): Promise<Set<string>> {
+  const locks = path.join(deps.codexHome, 'thread-writer-locks');
+  const directory = options.strict ? await realpath(locks).catch(() => locks) : locks;
   const out = await deps
-    .run('/usr/sbin/lsof', ['-Fcn', '+d', path.join(deps.codexHome, 'thread-writer-locks')])
+    // On macOS +d returns 1 even with matches if some directory entries are not open.
+    // Strict scans select Codex processes instead and filter their complete open-file list.
+    .run('/usr/sbin/lsof', options.strict ? ['-Fcn', '-c', '/^codex$/'] : ['-Fcn', '+d', directory])
     .catch((error: { stdout?: string }) => {
       // Queue ownership needs positive evidence; abbreviated-ID uniqueness needs a complete
       // inventory. A timeout's partial stdout can omit another matching thread.
@@ -156,7 +160,11 @@ export async function codexLoadedThreads(
   for (const line of out.split('\n')) {
     if (line.startsWith('p')) command = '';
     else if (line.startsWith('c')) command = line.slice(1);
-    else if (line.startsWith('n') && command === 'codex') {
+    else if (
+      line.startsWith('n') &&
+      command === 'codex' &&
+      (!options.strict || line.startsWith(`n${directory}${path.sep}`))
+    ) {
       const m = /\/([0-9a-f-]{36})\.lock$/i.exec(line);
       if (m && THREAD.test(m[1])) threads.add(m[1].toLowerCase());
     }
