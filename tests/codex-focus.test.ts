@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { codexScreenPids, codexTitleThread, findCodexTerminal } from '../desktop/codex-focus.js';
+import {
+  codexScreenPids,
+  codexTitleThread,
+  findCodexTerminal,
+  resolveCodexTitleThread,
+} from '../desktop/codex-focus.js';
 import { codexTarget } from '../desktop/codex-queue.js';
 import { focusTerminal, type TerminalDeps } from '../desktop/terminals.js';
 import { focusLine, focusName } from '../src/shared/terminal-target.js';
@@ -25,10 +30,14 @@ function fixture(
     secondTitle?: string;
     secondFailed?: boolean;
     onSecondShow?: () => Promise<void>;
+    loaded?: string[];
+    nextLoaded?: string[];
+    locksFailed?: boolean;
   } = {},
 ) {
   let title = options.title ?? `${THREAD} | My task | project`;
   let starts = 0;
+  let lockReads = 0;
   const calls: { file: string; args: string[] }[] = [];
   const deps: TerminalDeps = {
     sessionsDir: '/no-claude-records',
@@ -40,6 +49,14 @@ function fixture(
       calls.push({ file, args });
       if (options.failed) throw new Error('unavailable');
       const pid = args[args.indexOf('-p') + 1];
+      if (file === '/usr/sbin/lsof') {
+        if (options.locksFailed) throw new Error('lock inventory unavailable');
+        const ids = ++lockReads > 1 ? (options.nextLoaded ?? options.loaded) : options.loaded;
+        return (
+          `p5000\nccodex\n` +
+          (ids ?? [THREAD]).map((id) => `n/home/codex/thread-writer-locks/${id}.lock`).join('\n')
+        );
+      }
       if (file === '/bin/ps') {
         if (args.includes('pid=,tty=,comm='))
           return `4242 ttys012 /bin/codex\n5000 ?? /bin/codex\n${options.duplicate ? '4243 ttys013 /bin/codex' : ''}`;
@@ -118,9 +135,12 @@ function fixture(
   };
 }
 
-test('Only a leading full current thread ID is a title identity, never text or partial UUIDs', () => {
+test('Only a leading current UUID or the exact Codex abbreviation is a title identity', () => {
   assert.equal(codexTitleThread(`${THREAD.toUpperCase()} | task`), THREAD);
   assert.equal(codexTitleThread(THREAD), THREAD);
+  const abbreviated = `${THREAD.slice(0, 29)}...`;
+  assert.equal(codexTitleThread(`${abbreviated} | project ⠏ task`), abbreviated);
+  assert.equal(codexTitleThread(abbreviated.toUpperCase()), abbreviated);
   for (const title of [
     `task | ${THREAD}`,
     `codex resume ${THREAD}`,
@@ -128,8 +148,58 @@ test('Only a leading full current thread ID is a title identity, never text or p
     `${THREAD.slice(0, 12)} | task`,
     ` ${THREAD} | task`,
     `task mentioning ${THREAD}`,
+    `${THREAD.slice(0, 12)}... | task`,
+    `${THREAD.slice(0, 28)}... | task`,
+    `${THREAD.slice(0, 29)}… | task`,
+    `${abbreviated}extra | task`,
+    `${abbreviated} ⠏ | task`,
   ])
     assert.equal(codexTitleThread(title), null, title);
+});
+
+test('Resolve only unique full live IDs, rejecting collisions, invalid locks and missing evidence', () => {
+  const reference = `${THREAD.slice(0, 29)}...`;
+  assert.equal(resolveCodexTitleThread(reference, new Set([THREAD, 'not-a-thread'])), THREAD);
+  assert.equal(
+    resolveCodexTitleThread(reference.toUpperCase(), new Set([THREAD.toUpperCase()])),
+    THREAD,
+  );
+  assert.equal(resolveCodexTitleThread(reference, new Set([THREAD, OTHER])), null);
+  assert.equal(resolveCodexTitleThread(reference, new Set()), null);
+  assert.equal(resolveCodexTitleThread(`${THREAD.slice(0, 12)}...`, new Set([THREAD])), null);
+});
+
+test('Real 0.162.1 abbreviated title resolves to its live thread and focuses Orca or tmux', async () => {
+  for (const host of ['orca', 'tmux'] as const) {
+    const f = fixture({ host, title: `${THREAD.slice(0, 29)}... | project ⠏ task` });
+    const screen = await findCodexTerminal(THREAD, { deps: f.deps, fresh: true });
+    assert.ok(screen);
+    assert.equal(screen.threadId, THREAD);
+    assert.equal(screen.host.kind, host);
+    await focusTerminal(screen, f.deps);
+    assert.equal(f.calls.filter((c) => c.file === '/usr/sbin/lsof').length, 2);
+    assert.ok(!f.calls.some((c) => c.args.includes('send') || c.args.includes('queue')));
+  }
+});
+
+test('Unresolvable abbreviations do not hide possible duplicates of full-ID screens', async () => {
+  for (const options of [{ loaded: [] }, { loaded: [THREAD, OTHER] }, { locksFailed: true }]) {
+    const f = fixture({
+      ...options,
+      duplicate: true,
+      secondTitle: `${THREAD.slice(0, 29)}... | project`,
+    });
+    assert.equal(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }), null);
+  }
+});
+
+test('A click rechecks abbreviated ID uniqueness after inventory completes', async () => {
+  const f = fixture({
+    title: `${THREAD.slice(0, 29)}... | project`,
+    loaded: [THREAD],
+    nextLoaded: [THREAD, OTHER],
+  });
+  assert.equal(await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }), null);
 });
 
 test('Inventory excludes daemons, tools, wrappers, malformed PIDs and unexpected large inventories', () => {
