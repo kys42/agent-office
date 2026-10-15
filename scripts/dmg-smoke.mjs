@@ -42,13 +42,14 @@ try {
     'Installed bundle contains the approved application icon',
   );
   execFileSync('codesign', ['--verify', '--deep', '--strict', installed], { stdio: 'inherit' });
-  execFileSync(process.execPath, ['scripts/desktop-smoke.mjs'], {
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      AGENT_OFFICE_EXECUTABLE: path.join(installed, 'Contents/MacOS/Agent Office'),
-    },
-  });
+  for (const smoke of ['scripts/desktop-smoke.mjs', 'scripts/card-windows-smoke.mjs'])
+    execFileSync(process.execPath, [smoke], {
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        AGENT_OFFICE_EXECUTABLE: path.join(installed, 'Contents/MacOS/Agent Office'),
+      },
+    });
   console.log(
     JSON.stringify({
       ok: true,

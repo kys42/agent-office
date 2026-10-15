@@ -35,10 +35,6 @@ import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
 import { webLink } from '../src/shared/links.js';
 import {
-  cardBounds,
-  CARD_MIN,
-  CARD_SIZE,
-  readCardSize,
   clampInto,
   FLOOR_HEIGHT,
   ROW_HEIGHT,
@@ -67,18 +63,14 @@ import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
 import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
+import { CardWindows } from './card-windows.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
-  // The dock card: a colleague's card opened at a desk in the dock (presentation only).
-  card: BrowserWindow | null = null,
-  cardHide: ReturnType<typeof setTimeout> | null = null,
-  cardShownAt = 0,
-  // A save or confirm sheet on the card takes focus; that is not a click elsewhere.
-  cardDialogs = 0,
   tray: Tray | null = null,
   bridge: ServiceBridge,
   quitting = false;
+let cards: CardWindows;
 // Desk pet: presentation-only window state. Office data comes from the same snapshot.
 let dockMode: DockMode = 'pet',
   petEnabled = false,
@@ -97,8 +89,18 @@ else {
     // Use the same art as the bundle even when macOS remembers an older Dock icon.
     if (process.platform === 'darwin') app.dock?.setIcon(path.join(root, 'dist', 'icon.png'));
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
+    cards = new CardWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      watch,
+    });
+    app.on('before-quit', () => cards.dispose());
     const windows = () =>
-      [main, dock, card].filter((w): w is BrowserWindow => !!w && !w.isDestroyed()).map(viewer);
+      [main, dock, ...cards.windows()]
+        .filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
+        .map(viewer);
     // Follow the language the collector actually resolved, so tray and windows always agree.
     const followLanguage = (s: Snapshot) => {
       if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
@@ -127,6 +129,7 @@ else {
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
       if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
+      cards.reseat();
     };
     screen.on('display-removed', reseat);
     screen.on('display-metrics-changed', reseat);
@@ -376,195 +379,11 @@ function stopDrag(save: boolean) {
   petSpot = feet;
   void savePetSpot();
 }
-/**
- * The colleague card for the dock: the same card as the big office's right panel, in a small
- * focusable window above the clicked desk. The dock itself stays see-through and unfocused.
- */
-const cardFile = () =>
-  path.join(process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'), 'card-size.json');
-/** The size the person last gave the card (it opens at that size from then on). */
-function loadCardSize() {
-  try {
-    return readCardSize(JSON.parse(readFileSync(cardFile(), 'utf8'))) ?? CARD_SIZE;
-  } catch {
-    return CARD_SIZE;
-  }
-}
-async function saveCardSize(size: { width: number; height: number }) {
-  try {
-    await mkdir(path.dirname(cardFile()), { recursive: true, mode: 0o700 });
-    await writeFile(cardFile(), JSON.stringify(size), { mode: 0o600 });
-  } catch (e) {
-    console.error('Card size:', e);
-  }
-}
-/** The size the card was last placed at (to tell the person's resize from a fit to the room). */
-let cardPlaced = { width: 0, height: 0 };
-/** The person asked the card to stay open when they click elsewhere (the card's own toggle). */
-let cardKeep = false;
-/**
- * Gives the card the keyboard. The card and the dock are non-activating panels, so a click on
- * the dock leaves another app in front: focusing the card from there makes its caret blink while
- * the keys still go to that app. Bring this app forward first (macOS only allows that on request).
- */
-function focusCard(window: BrowserWindow, steal = true) {
-  if (window.isDestroyed()) return;
-  if (steal && process.platform === 'darwin') app.focus({ steal: true });
-  window.focus();
-  window.webContents.focus();
-}
-/** Whose card is up (to tell a second click on the same desk from a click on another). */
-let cardTarget: CardTarget | null = null;
-function showCard(target: CardTarget, anchor: Rect) {
-  // The same colleague clicked again while its card is up: put the card away (a toggle). Asking
-  // for its news instead (or back) switches the card's view rather than closing it.
-  if (
-    card &&
-    !card.isDestroyed() &&
-    card.isVisible() &&
-    cardTarget?.id === target.id &&
-    cardTarget.news === target.news
-  ) {
-    hideCard();
-    return;
-  }
-  cardTarget = target;
-  const askedAt = Date.now();
-  if (cardHide) clearTimeout(cardHide);
-  cardHide = null;
-  const size = loadCardSize();
-  if (!card || card.isDestroyed()) {
-    card = new BrowserWindow({
-      ...cardBounds(anchor, workAreaFor(anchor), size),
-      show: false,
-      resizable: true,
-      minWidth: CARD_MIN.width,
-      minHeight: CARD_MIN.height,
-      // A double click on the header (its drag strip) must not fill the screen.
-      maximizable: false,
-      // macOS: the card is real glass — the system's popover material behind a translucent page.
-      ...(process.platform === 'darwin'
-        ? {
-            // A material the desktop shows through ('popover' reads as near-opaque white).
-            vibrancy: 'under-window' as const,
-            visualEffectState: 'active' as const,
-            roundedCorners: true,
-          }
-        : {}),
-      frame: false,
-      transparent: true,
-      fullscreenable: false,
-      skipTaskbar: true,
-      type: process.platform === 'darwin' ? 'panel' : undefined,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-    secure(card);
-    watch(card);
-    // Above the dock, which is itself always on top.
-    card.setAlwaysOnTop(true, 'pop-up-menu');
-    card.setVisibleOnAllWorkspaces(true, {
-      visibleOnFullScreen: true,
-      skipTransformProcessType: true,
-    });
-    // Clicking anywhere else puts the card away. A short delay lets a click on another desk
-    // reopen it in place instead of flickering.
-    card.on('blur', () => {
-      // Opening shifts focus between the dock and the card for a moment; that is not a click
-      // elsewhere. A blur during that moment is checked again once it has passed.
-      if (cardDialogs > 0 || cardKeep) return;
-      const settle = Math.max(150, cardShownAt + 500 - Date.now());
-      if (cardHide) clearTimeout(cardHide);
-      cardHide = setTimeout(() => {
-        if (card && !card.isDestroyed() && !card.isFocused()) hideCard();
-      }, settle);
-    });
-    card.on('closed', () => {
-      card = null;
-    });
-    // The person resized it: open at this size from now on. Only the sides they changed —
-    // a card shortened to fit above a desk must not make the shorter height the new size.
-    card.on('resized', () => {
-      if (!card || card.isDestroyed()) return;
-      const [width, height] = card.getSize();
-      const stored = loadCardSize();
-      void saveCardSize({
-        width: width !== cardPlaced.width ? width : stored.width,
-        height: height !== cardPlaced.height ? height : stored.height,
-      });
-      cardPlaced = { width, height };
-    });
-    void card.loadFile(index, { hash: 'card' });
-  } else card.setBounds(cardBounds(anchor, workAreaFor(anchor), size));
-  const [placedWidth, placedHeight] = card.getSize();
-  cardPlaced = { width: placedWidth, height: placedHeight };
-  const window = card;
-  const send = () => {
-    if (!window.isDestroyed()) window.webContents.send('office:card', target);
-  };
-  const reveal = () => {
-    if (window.isDestroyed()) return;
-    cardShownAt = Date.now();
-    window.show();
-    // A first card waits for its page; if that took long, the person may have moved on to
-    // another app, which must not be pulled away from them.
-    focusCard(window, Date.now() - askedAt < 2000);
-  };
-  // A new card window shows once its page is ready, so it never flashes empty.
-  if (window.webContents.isLoadingMainFrame()) {
-    window.webContents.once('did-finish-load', () => {
-      send();
-      reveal();
-    });
-  } else {
-    send();
-    reveal();
-  }
-}
-/**
- * Moving the card by its header follows the cursor from here, like the pet. A CSS drag region
- * would make Chromium re-send the window's drag regions on every layout change of the live
- * conversation, and the card's clicks felt slow and got lost.
- */
-let cardDrag: ReturnType<typeof setInterval> | null = null;
-function startCardDrag() {
-  if (!card || card.isDestroyed()) return;
-  stopCardDrag();
-  const cursor = screen.getCursorScreenPoint();
-  const [x, y] = card.getPosition();
-  const offset = { x: cursor.x - x, y: cursor.y - y };
-  const started = Date.now();
-  cardDrag = setInterval(() => {
-    if (!card || card.isDestroyed() || Date.now() - started > 30_000) return stopCardDrag();
-    const c = screen.getCursorScreenPoint();
-    card.setPosition(c.x - offset.x, c.y - offset.y);
-  }, 16);
-}
-function stopCardDrag() {
-  if (!cardDrag) return;
-  clearInterval(cardDrag);
-  cardDrag = null;
-}
-function hideCard() {
-  stopCardDrag();
-  cardTarget = null;
-  if (cardHide) clearTimeout(cardHide);
-  cardHide = null;
-  if (card && !card.isDestroyed() && card.isVisible()) {
-    // A put-away card shows nothing: no background polling, no stale flash on the next open.
-    card.webContents.send('office:card', null);
-    card.hide();
-  }
-}
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
 function trusted(e: Electron.IpcMainInvokeEvent) {
   if (
-    ![main?.webContents, dock?.webContents, card?.webContents].includes(e.sender) ||
+    (![main?.webContents, dock?.webContents].includes(e.sender) && !cards.owns(e.sender)) ||
     e.senderFrame !== e.sender.mainFrame
   )
     throw new Error(m().desktop.untrustedWindow);
@@ -624,49 +443,48 @@ function setupIPC() {
     else if (action === 'through') dock.setIgnoreMouseEvents(true, { forward: true });
     else throw new Error(m().desktop.badRequest);
   });
-  ipcMain.handle('office:card', (e, action, target, anchor) => {
+  ipcMain.handle('office:card-state', (e) => {
     trusted(e);
-    // A press on the card's text box: take the keyboard back after another app had it.
-    if (action === 'focus') {
-      if (!card || e.sender !== card.webContents) throw new Error(m().desktop.untrustedWindow);
-      return focusCard(card);
+    return cards.state(e.sender);
+  });
+  ipcMain.handle('office:card', async (e, action, target, anchor) => {
+    trusted(e);
+    if (typeof action !== 'string') throw new Error(m().desktop.badRequest);
+    if (action === 'open' || action === 'select' || action === 'expand') {
+      if (
+        !target ||
+        typeof target.id !== 'string' ||
+        !target.id.length ||
+        target.id.length > 400 ||
+        typeof target.news !== 'boolean'
+      )
+        throw new Error(m().desktop.badRequest);
+      if (
+        target.bookmark !== undefined &&
+        (!target.bookmark ||
+          typeof target.bookmark.eventId !== 'string' ||
+          !target.bookmark.eventId.length ||
+          target.bookmark.eventId.length > 1000 ||
+          typeof target.bookmark.at !== 'number' ||
+          !Number.isSafeInteger(target.bookmark.at) ||
+          target.bookmark.at < 0 ||
+          target.news)
+      )
+        throw new Error(m().desktop.badRequest);
     }
-    if (action === 'keep-on' || action === 'keep-off') {
-      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
-      cardKeep = action === 'keep-on';
-      // A close already on its way from a blur just before is called off too.
-      if (cardKeep && cardHide) clearTimeout(cardHide);
-      if (cardKeep) cardHide = null;
+    const chosen: CardTarget | undefined = target && {
+      id: target.id,
+      news: target.news,
+      ...(target.bookmark
+        ? { bookmark: { eventId: target.bookmark.eventId, at: target.bookmark.at } }
+        : {}),
+    };
+    if (action !== 'open') {
+      const expanded = await cards.action(e.sender, action, chosen);
+      if (expanded) showMain(expanded);
       return;
     }
-    if (action === 'close' || action === 'drag-start' || action === 'drag-end') {
-      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
-      if (action === 'drag-start') return startCardDrag();
-      if (action === 'drag-end') return stopCardDrag();
-      return hideCard();
-    }
-    const valid =
-      target &&
-      typeof target.id === 'string' &&
-      target.id.length > 0 &&
-      target.id.length <= 400 &&
-      typeof target.news === 'boolean';
-    if (!valid) throw new Error(m().desktop.badRequest);
-    const chosen: CardTarget = { id: target.id, news: target.news };
-    // The card moved on to another colleague inside it (a helper, another run): clicks on the
-    // dock now toggle against that one.
-    if (action === 'select') {
-      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
-      cardTarget = chosen;
-      return;
-    }
-    if (action === 'expand') {
-      if (e.sender !== card?.webContents) throw new Error(m().desktop.untrustedWindow);
-      hideCard();
-      return showMain(chosen.id);
-    }
-    if (action !== 'open' || e.sender !== dock?.webContents)
-      throw new Error(m().desktop.badRequest);
+    if (e.sender !== dock?.webContents) throw new Error(m().desktop.untrustedWindow);
     if (
       !anchor ||
       !finite(anchor.x) ||
@@ -677,7 +495,7 @@ function setupIPC() {
       anchor.height < 0
     )
       throw new Error(m().desktop.badRequest);
-    showCard(chosen, {
+    cards.open(chosen!, {
       x: Math.round(anchor.x),
       y: Math.round(anchor.y),
       width: Math.round(anchor.width),
@@ -763,7 +581,7 @@ function setupIPC() {
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.
-      if (e.sender === card?.webContents) hideCard();
+      cards.afterJump(e.sender);
       return { action: 'focused', text };
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
@@ -868,18 +686,14 @@ function setupIPC() {
       message: t[which].message,
       detail: t[which].detail,
     };
-    const fromCard = !!win && win === card;
-    if (fromCard) cardDialogs++;
+    const endCardDialog = cards.dialog(e.sender);
     try {
       const { response } = win
         ? await dialog.showMessageBox(win, options)
         : await dialog.showMessageBox(options);
       return response === 0;
     } finally {
-      if (fromCard) {
-        cardDialogs--;
-        if (win && !win.isDestroyed()) win.focus();
-      }
+      endCardDialog();
     }
   };
   /**
@@ -965,8 +779,7 @@ function setupIPC() {
     if (typeof content !== 'string' || content.length > 30000 || typeof name !== 'string')
       throw new Error(m().desktop.badFile);
     const win = BrowserWindow.fromWebContents(e.sender)!;
-    const fromCard = win === card;
-    if (fromCard) cardDialogs++;
+    const endCardDialog = cards.dialog(e.sender);
     let result: Electron.SaveDialogReturnValue;
     try {
       result = await dialog.showSaveDialog(win, {
@@ -974,10 +787,7 @@ function setupIPC() {
         filters: [{ name: 'Markdown', extensions: ['md'] }],
       });
     } finally {
-      if (fromCard) {
-        cardDialogs--;
-        if (!win.isDestroyed()) win.focus();
-      }
+      endCardDialog();
     }
     if (result.canceled || !result.filePath) return false;
     await writeFile(result.filePath, content, { mode: 0o600 });

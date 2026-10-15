@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
 import { useTerminalSend } from '../lib/useTerminalSend';
-import type { CardTarget, ZoneRule } from '../shared/types';
+import type { CardTarget, CardWindowState, ZoneRule } from '../shared/types';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
@@ -38,38 +38,72 @@ export function DockCard() {
   } = useOffice(false, notify);
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
+  const targetRef = useRef<CardTarget | null>(null);
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
-  // Stay open when clicking elsewhere (the card's own toggle, remembered on this computer).
-  const [keepOpen, setKeepOpen] = useState(() => {
-    try {
-      return localStorage.getItem('office:card-keep') === 'on';
-    } catch {
-      return false;
-    }
-  });
-  // The main process starts out closing on blur, so 'off' is only said after an 'on'.
-  const keepSaid = useRef(false);
-  useEffect(() => {
-    if (!keepOpen && !keepSaid.current) return;
-    keepSaid.current = keepOpen;
-    void api.card?.(keepOpen ? 'keep-on' : 'keep-off');
-  }, [keepOpen, target?.id]);
-  // Bumped on every open so the card jumps to news again even for the same colleague.
+  const focusSerial = useRef(0);
+  const receivedTarget = useRef(false);
   const [opened, setOpened] = useState(0);
   const { reload } = send;
-  useEffect(
-    () =>
-      api.onCard?.((next) => {
-        // null: the card was put away. Showing nothing stops background detail polling and
-        // keeps the next open from flashing the previous colleague.
-        setBookmarkFocus(null);
-        setTarget(next);
-        if (!next) return;
-        setOpened(Date.now());
-        reload(); // the setting may have changed in the big office meanwhile
-      }),
+  const acceptTarget = useCallback(
+    (next: CardTarget | null) => {
+      receivedTarget.current = true;
+      const previous = targetRef.current;
+      targetRef.current = next;
+      setTarget(next);
+      setBookmarkFocus(
+        next?.bookmark
+          ? {
+              sessionId: next.id,
+              eventId: next.bookmark.eventId,
+              at: next.bookmark.at,
+              key: ++focusSerial.current,
+            }
+          : null,
+      );
+      if (!next) return;
+      // A bookmark in the same card preserves notes and the pages already read.
+      if (previous?.id !== next.id || previous.news !== next.news) setOpened((n) => n + 1);
+      reload();
+    },
     [reload],
   );
+  const [windowState, setWindowState] = useState<CardWindowState>({
+    pinned: false,
+    positionRemembered: false,
+  });
+  const [windowBusy, setWindowBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const stop = api.onCardState?.((state) => {
+      if (active) setWindowState(state);
+    });
+    void api
+      .cardState?.()
+      .then((state) => {
+        if (!active) return;
+        setWindowState(state);
+        if (!receivedTarget.current && state.target !== undefined) acceptTarget(state.target);
+      })
+      .catch((e) => notify(e.message));
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, [notify, acceptTarget]);
+  const changeWindow = async (action: 'pin-on' | 'pin-off' | 'position-on' | 'position-off') => {
+    setWindowBusy(true);
+    try {
+      await api.card?.(action);
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setWindowBusy(false);
+    }
+  };
+  const select = (next: CardTarget) => {
+    void api.card?.('select', next).catch((e) => notify(e.message));
+  };
+  useEffect(() => api.onCard?.(acceptTarget), [acceptTarget]);
   useEffect(() => {
     document.body.classList.add('card-mode');
     // On a Mac the window is vibrant glass (desktop/main.ts): the page lets it show through.
@@ -114,11 +148,7 @@ export function DockCard() {
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
-          onSelect={(id) => {
-            setBookmarkFocus(null);
-            setTarget({ id, news: false });
-            void api.card?.('select', { id, news: false });
-          }}
+          onSelect={(id) => select({ id, news: false })}
           showNews={target.news ? `${session.id}:${opened}` : null}
           onClose={close}
           onExpand={() => void api.card?.('expand', { id: session.id, news: false })}
@@ -147,28 +177,17 @@ export function DockCard() {
             prefs?.enabledProviders,
           ])}
           onUnbookmark={unbookmark}
-          onOpenBookmark={(b) => {
-            setTarget({ id: b.sessionId, news: false });
-            void api.card?.('select', { id: b.sessionId, news: false });
-            setBookmarkFocus({
-              sessionId: b.sessionId,
-              eventId: b.eventId,
-              at: b.at,
-              key: Date.now(),
-            });
-          }}
+          onOpenBookmark={(b) =>
+            select({ id: b.sessionId, news: false, bookmark: { eventId: b.eventId, at: b.at } })
+          }
           focus={bookmarkFocus}
           onFocused={() => setBookmarkFocus(null)}
           movable
-          keepOpen={keepOpen}
-          onKeepOpen={(on) => {
-            setKeepOpen(on);
-            try {
-              localStorage.setItem('office:card-keep', on ? 'on' : 'off');
-            } catch {
-              // Remembering is a convenience.
-            }
-          }}
+          cardPinned={windowState.pinned}
+          positionRemembered={windowState.positionRemembered}
+          windowBusy={windowBusy}
+          onCardPin={(on) => void changeWindow(on ? 'pin-on' : 'pin-off')}
+          onPositionRemember={(on) => void changeWindow(on ? 'position-on' : 'position-off')}
         />
       ) : (
         <div className="dock-card-empty">

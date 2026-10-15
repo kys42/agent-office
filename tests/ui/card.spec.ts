@@ -12,6 +12,7 @@ async function card(
     privacy?: boolean;
     id?: string;
     events?: OfficeEvent[];
+    handshakeOnly?: boolean;
     artifactCount?: number;
     codex?: boolean;
   } = {},
@@ -55,13 +56,14 @@ async function card(
   ];
   await page.setViewportSize({ width: 480, height: 760 });
   await page.addInitScript(
-    ({ s, canSend, terminal, artifactCount }) => {
+    ({ s, canSend, terminal, handshakeOnly, artifactCount }) => {
       const w = window as any;
       w.fixture = s;
       w.sent = [];
       w.receipts = [];
       w.cardCalls = [];
       w.jumps = [];
+      w.windowState = { pinned: false, positionRemembered: false };
       w.resumes = [];
       w.office = {
         snapshot: async () => structuredClone(w.fixture),
@@ -151,15 +153,31 @@ async function card(
             ]),
           ),
         handoff: async () => ({ markdown: '# 인수인계', revision: 'r', createdAt: Date.now() }),
-        card: async (what: string) => {
+        card: async (what: string, target: any) => {
           w.cardCalls.push(what);
+          if (what === 'select') w.cardListener?.(target);
+          if (what === 'pin-on' || what === 'pin-off') w.windowState.pinned = what === 'pin-on';
+          if (what === 'position-on' || what === 'position-off')
+            w.windowState.positionRemembered = what === 'position-on';
+          w.windowStateListener?.({ ...w.windowState });
         },
         jump: async (id: string) => {
           w.jumps.push(id);
           return { action: 'focused', text: '' };
         },
+        cardState: async () => ({
+          ...w.windowState,
+          ...(handshakeOnly ? { target: { id: w.cardId, news: false } } : {}),
+        }),
+        onCardState: (cb: any) => {
+          w.windowStateListener = cb;
+          return () => {
+            w.windowStateListener = null;
+          };
+        },
         onCard: (cb: any) => {
-          setTimeout(() => cb({ id: w.cardId, news: false }), 50);
+          w.cardListener = cb;
+          if (!handshakeOnly) setTimeout(() => cb({ id: w.cardId, news: false }), 50);
           return () => {};
         },
       };
@@ -168,6 +186,7 @@ async function card(
       s: snapshot,
       canSend: opts.canSend ?? true,
       terminal: opts.terminal ?? true,
+      handshakeOnly: opts.handshakeOnly ?? false,
       artifactCount: opts.artifactCount,
     },
   );
@@ -177,6 +196,13 @@ async function card(
   await expect(aside).toBeVisible();
   return aside;
 }
+
+test('A cold popup recovers its target when the opening event preceded subscription', async ({
+  page,
+}) => {
+  const aside = await card(page, { handshakeOnly: true });
+  await expect(aside.locator('.card-head h2')).toContainText('코코');
+});
 
 test('Codex app navigation stays available while Orca lookup and queue availability change', async ({
   page,
@@ -254,11 +280,11 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   await expect(aside.locator('.now-card')).toHaveCount(0);
   await expect(aside.locator('.card-chip')).toHaveCount(0);
   await expect(aside.locator('.inspector-actions')).toHaveCount(0);
-  // Hand-off, pin and the big office sit top right; the terminal button above the box.
+  // Popup location and independent card pin sit top right; the office pin is in the menu.
   const head = aside.locator('.card-head');
   for (const name of [
-    '인수인계 꾸리기',
-    '사무실에 고정',
+    '위치 기억',
+    '이 카드 고정',
     '큰 사무실에서 보기',
     '카드 메뉴',
     '업무 카드 닫기',
@@ -338,7 +364,7 @@ test('The card menu holds the rest, and works from the keyboard', async ({ page 
   const more = aside.getByRole('button', { name: '카드 메뉴' });
   await more.click();
   const menu = aside.getByRole('menu');
-  for (const name of ['이름 바꾸기', '이 동료 꾸미기', '원본 위치 열기'])
+  for (const name of ['사무실에 고정', '이름 바꾸기', '이 동료 꾸미기', '원본 위치 열기'])
     await expect(menu.getByRole('menuitem', { name })).toBeVisible();
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -352,9 +378,7 @@ test('The card menu holds the rest, and works from the keyboard', async ({ page 
   // A second Esc is for the card.
   await page.keyboard.press('Escape');
   await expect.poll(() => page.evaluate(() => (window as any).cardCalls)).toEqual(['close']);
-  // Hand-off from the header.
-  await aside.getByRole('button', { name: '인수인계 꾸리기' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(aside.getByRole('button', { name: '인수인계 꾸리기' })).toHaveCount(0);
 });
 
 test('Without a terminal found the chat box still takes writing; the send says why', async ({
@@ -442,8 +466,11 @@ test('A colleague waiting for the person makes the terminal button the primary o
   await expect(go).toHaveClass(/primary/);
   await go.click();
   await expect.poll(() => page.evaluate(() => (window as any).jumps)).toEqual(['demo:3']);
-  // Pin from the header.
-  await aside.locator('.card-head').getByRole('button', { name: '사무실에 고정' }).click();
+  // The independent window pin stays distinct from the office pin in the menu.
+  await aside
+    .locator('.card-head')
+    .getByRole('button', { name: '이 카드 고정', exact: true })
+    .click();
 });
 
 test('Sharing the screen hides recent work and names but keeps the chat card usable', async ({
@@ -490,7 +517,7 @@ test('Pressing the header moves the card; its buttons do not', async ({ page }) 
   await expect
     .poll(() => page.evaluate(() => (window as any).cardCalls))
     .toEqual(['drag-start', 'drag-end']);
-  await head.getByRole('button', { name: '사무실에 고정' }).click();
+  await head.getByRole('button', { name: '카드 메뉴', exact: true }).click();
   expect(await page.evaluate(() => (window as any).cardCalls)).toEqual(['drag-start', 'drag-end']);
 });
 
@@ -551,25 +578,53 @@ test('Pressing the text box asks for the keyboard (another app may still hold it
     .toBe(true);
 });
 
-test('The card can be kept open when the person clicks elsewhere, and remembers it', async ({
+test('Position memory and pinning this card are independent native actions', async ({ page }) => {
+  const aside = await card(page);
+  const position = aside.getByRole('button', { name: '위치 기억', exact: true });
+  const pin = aside.getByRole('button', { name: '이 카드 고정', exact: true });
+  await expect(position).toHaveAttribute('aria-pressed', 'false');
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await position.click();
+  await expect(position).toHaveAttribute('aria-pressed', 'true');
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await expect(position).toHaveAttribute('aria-pressed', 'true');
+  await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await expect(position).toHaveAttribute('aria-pressed', 'true');
+  await position.click();
+  await expect(position).toHaveAttribute('aria-pressed', 'false');
+  expect(await page.evaluate(() => (window as any).cardCalls)).toEqual([
+    'position-on',
+    'pin-on',
+    'pin-off',
+    'position-off',
+  ]);
+  // An independent window is an explicit choice; an old keep-open preference never pins it.
+  await page.evaluate(() => localStorage.setItem('office:card-keep', 'on'));
+  await page.reload();
+  await expect(page.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+});
+
+test('Failed native window actions leave the displayed state unchanged and show the error', async ({
   page,
 }) => {
   const aside = await card(page);
-  const keep = aside.getByRole('button', { name: '카드 열어 두기' });
-  await expect(keep).toHaveAttribute('aria-pressed', 'false');
-  await keep.click();
-  await expect(keep).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-on');
-  await page.reload();
-  await expect(
-    page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }),
-  ).toHaveAttribute('aria-pressed', 'true');
-  await expect
-    .poll(() => page.evaluate(() => (window as any).cardCalls.includes('keep-on')))
-    .toBe(true);
-  // Let go again: blur closes it once more.
-  await page.locator('.inspector-card').getByRole('button', { name: '카드 열어 두기' }).click();
-  await expect.poll(() => page.evaluate(() => (window as any).cardCalls.at(-1))).toBe('keep-off');
+  await page.evaluate(() => {
+    (window as any).office.card = async () => {
+      throw Error('위치를 저장하지 못했어요');
+    };
+  });
+  await aside.getByRole('button', { name: '위치 기억', exact: true }).click();
+  await expect(aside.getByRole('button', { name: '위치 기억', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  );
+  await expect(page.getByRole('status')).toContainText('위치를 저장하지 못했어요');
 });
 
 test('A run of progress notes reads as one: who and when only on the first, a pause gets a time line', async ({

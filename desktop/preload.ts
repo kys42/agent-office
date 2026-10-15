@@ -61,6 +61,12 @@ const api: OfficeAPI = {
     ipcRenderer.on('office:card', f);
     return () => ipcRenderer.removeListener('office:card', f);
   },
+  cardState: () => action('office:card-state'),
+  onCardState: (cb) => {
+    const f = (_: unknown, state: import('../src/shared/types.js').CardWindowState) => cb(state);
+    ipcRenderer.on('office:card-state', f);
+    return () => ipcRenderer.removeListener('office:card-state', f);
+  },
   exportFile: (name, content) => ipcRenderer.invoke('office:export', name, content),
   onSelect: (cb) => {
     const f = (_: unknown, id: string) => cb(id);

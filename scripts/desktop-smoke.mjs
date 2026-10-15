@@ -402,12 +402,12 @@ try {
     true,
     'the card holds the keyboard after asking for it',
   );
-  await card.evaluate(() => window.office.card('keep-on'));
+  await card.evaluate(() => window.office.card('pin-on'));
   await card.waitForTimeout(700);
   await blurCard();
   await card.waitForTimeout(900);
   assert.equal(await cardShown(), true, 'a kept-open card stays when focus goes elsewhere');
-  await card.evaluate(() => window.office.card('keep-off'));
+  await card.evaluate(() => window.office.card('pin-off'));
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();

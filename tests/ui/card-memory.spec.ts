@@ -158,10 +158,12 @@ async function memory(
         openLink: async (url: string) => {
           w.opened.push(url);
         },
-        card: async (what: string) => {
-          w.cardCalls.push(what);
+        card: async (action: string, target: any) => {
+          w.cardCalls.push(action);
+          if (action === 'select') w.cardListener?.(target);
         },
         onCard: (cb: any) => {
+          w.cardListener = cb;
           setTimeout(() => cb({ id: 'demo:0', news: false }), 20);
           return () => {};
         },

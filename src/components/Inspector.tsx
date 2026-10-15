@@ -16,8 +16,8 @@ import {
   LayoutGrid,
   Maximize2,
   ListFilter,
-  Lock,
-  LockOpen,
+  MapPin,
+  PinOff,
 } from 'lucide-react';
 import type {
   Session,
@@ -91,8 +91,11 @@ export function Inspector({
   focus,
   onFocused,
   movable = false,
-  keepOpen = false,
-  onKeepOpen,
+  cardPinned = false,
+  onCardPin,
+  positionRemembered = false,
+  onPositionRemember,
+  windowBusy = false,
 }: {
   session: Session;
   sessions: Session[];
@@ -138,9 +141,12 @@ export function Inspector({
    * the big office's right column. `movable`: it is the card window, moved by its header.
    */
   movable?: boolean;
-  /** The card stays open when the person clicks elsewhere. */
-  keepOpen?: boolean;
-  onKeepOpen?: (on: boolean) => void;
+  /** Independent native window, separate from keeping a colleague in the office. */
+  cardPinned?: boolean;
+  onCardPin?: (on: boolean) => void;
+  positionRemembered?: boolean;
+  onPositionRemember?: (on: boolean) => void;
+  windowBusy?: boolean;
 }) {
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
@@ -843,24 +849,54 @@ export function Inspector({
             </span>
           </div>
           <div className="card-head-tools">
-            <button
-              className="icon-btn"
-              aria-label={busy ? t.inspector.gathering : t.inspector.packHandoff}
-              data-tip={t.inspector.packHandoff}
-              disabled={busy || privacy}
-              onClick={handoff}
-            >
-              <PackageOpen size={15} />
-            </button>
-            <button
-              className={`icon-btn ${colleague.pinned ? 'gold' : ''}`}
-              aria-label={colleague.pinned ? t.inspector.unpin : t.inspector.pin}
-              aria-pressed={colleague.pinned}
-              data-tip={colleague.pinned ? t.inspector.unpin : t.inspector.pinTitle}
-              onClick={() => onPin(colleague)}
-            >
-              <Pin size={15} />
-            </button>
+            {!movable && (
+              <>
+                <button
+                  className="icon-btn"
+                  aria-label={busy ? t.inspector.gathering : t.inspector.packHandoff}
+                  data-tip={t.inspector.packHandoff}
+                  disabled={busy || privacy}
+                  onClick={handoff}
+                >
+                  <PackageOpen size={15} />
+                </button>
+                <button
+                  className={`icon-btn ${colleague.pinned ? 'gold' : ''}`}
+                  aria-label={colleague.pinned ? t.inspector.unpin : t.inspector.pin}
+                  aria-pressed={colleague.pinned}
+                  data-tip={colleague.pinned ? t.inspector.unpin : t.inspector.pinTitle}
+                  onClick={() => onPin(colleague)}
+                >
+                  <Pin size={15} />
+                </button>
+              </>
+            )}
+            {onPositionRemember && (
+              <button
+                className={`icon-btn ${positionRemembered ? 'is-on' : ''}`}
+                aria-label={t.inspector.card.rememberPosition}
+                aria-pressed={positionRemembered}
+                data-tip={
+                  positionRemembered ? t.inspector.card.positionOn : t.inspector.card.positionOff
+                }
+                disabled={windowBusy}
+                onClick={() => onPositionRemember(!positionRemembered)}
+              >
+                <MapPin size={15} />
+              </button>
+            )}
+            {onCardPin && (
+              <button
+                className={`icon-btn ${cardPinned ? 'is-on' : ''}`}
+                aria-label={t.inspector.card.pinCard}
+                aria-pressed={cardPinned}
+                data-tip={cardPinned ? t.inspector.card.pinOn : t.inspector.card.pinOff}
+                disabled={windowBusy}
+                onClick={() => onCardPin(!cardPinned)}
+              >
+                {cardPinned ? <PinOff size={15} /> : <Pin size={15} />}
+              </button>
+            )}
             {onExpand && (
               <button
                 className="icon-btn"
@@ -871,20 +907,15 @@ export function Inspector({
                 <Maximize2 size={15} />
               </button>
             )}
-            {onKeepOpen && (
-              <button
-                className={`icon-btn ${keepOpen ? 'is-on' : ''}`}
-                aria-label={t.inspector.card.keepOpen}
-                aria-pressed={keepOpen}
-                data-tip={keepOpen ? t.inspector.card.keepOpenOn : t.inspector.card.keepOpenOff}
-                onClick={() => onKeepOpen(!keepOpen)}
-              >
-                {keepOpen ? <Lock size={14} /> : <LockOpen size={14} />}
-              </button>
-            )}
             <CardMenu label={t.inspector.card.more}>
               {(close) => (
                 <>
+                  {movable &&
+                    item(
+                      colleague.pinned ? t.inspector.unpin : t.inspector.pin,
+                      () => onPin(colleague),
+                      close,
+                    )}
                   {s.zone &&
                     s.zone !== 'office' &&
                     item(t.inspector.returnToOffice, () => onReturn(s.id), close)}

@@ -107,9 +107,11 @@ test('A colleague card reads older messages by page, keeps the reading position 
     w.publish(structuredClone(w.fixture));
   });
   await expect(conversation.getByText('대화 #120 새로 왔어요.')).toBeAttached();
-  // Still loaded: showing the first one again reads no page.
-  await expect(older).toHaveText('이전 대화 1개 더 보기');
-  await older.click();
+  // Still loaded: reading back to the first one fetches no page. The automatic
+  // reader may reveal it before a click can reach the one-message button.
+  await card
+    .locator('.inspector-scroll')
+    .evaluate((el) => el.scrollTo({ top: 0, behavior: 'instant' }));
   await expect(conversation.getByText(label(0))).toBeAttached();
   expect((await page.evaluate(() => (window as any).pages)).filter(Boolean)).toEqual([
     'e80',
