@@ -7,9 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import ReactMarkdown from 'react-markdown';
-import { WebLink } from './WebLink';
-import remarkGfm from 'remark-gfm';
+import { MessageMarkdown } from './MessageMarkdown';
 import {
   ChevronDown,
   Copy,
@@ -22,7 +20,6 @@ import {
 } from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
-import { parseArtifact } from '../shared/office';
 import {
   conversationKind,
   retainedConversation,
@@ -30,7 +27,7 @@ import {
   type ConversationFilter,
 } from '../shared/conversation';
 import { time, date } from '../lib/format';
-import { api, isDesktop } from '../lib/api';
+import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { intlLocale } from '../shared/i18n';
 function Message({
@@ -123,35 +120,7 @@ function Message({
           </small>
         )}
         <div className="message-text">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              a: ({ href, children }) => {
-                const link = href ? parseArtifact(href) : null;
-                return link ? (
-                  <a
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => {
-                      if (isDesktop) {
-                        e.preventDefault();
-                        void api.openArtifact(link.url).catch((e) => notify(e.message));
-                      }
-                    }}
-                  >
-                    {children}
-                  </a>
-                ) : (
-                  // Any other web page opens in the browser; other schemes stay text.
-                  <WebLink href={href}>{children}</WebLink>
-                );
-              },
-              img: () => null,
-            }}
-          >
-            {text}
-          </ReactMarkdown>
+          <MessageMarkdown text={text} notify={notify} />
         </div>
         {long && (
           <button className="message-expand" aria-expanded={expanded} onClick={onExpand}>

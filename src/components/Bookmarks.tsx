@@ -12,18 +12,28 @@ import type { Bookmark, BookmarkLine, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { api } from '../lib/api';
 import { ago, time, date } from '../lib/format';
-import { messageExcerpt } from '../shared/activity';
+import { MessageMarkdown } from './MessageMarkdown';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE, BOOKMARK_PAGE_MAX } from '../shared/bookmarks';
 import { useI18n } from '../lib/i18n';
 
 /** One saved line of a bookmark's context, clipped like the cards' excerpts. */
-function Line({ line, label }: { line: BookmarkLine; label: string }) {
+function Line({
+  line,
+  label,
+  notify,
+}: {
+  line: BookmarkLine;
+  label: string;
+  notify: (s: string) => void;
+}) {
   return (
     <li className={`bookmark-line kind-${line.kind}`}>
       <span>
         {label} · <time title={date(line.at)}>{time(line.at)}</time>
       </span>
-      <p>{messageExcerpt(line.text, 600)}</p>
+      <div className="bookmark-line-text message-text">
+        <MessageMarkdown text={line.text} notify={notify} />
+      </div>
     </li>
   );
 }
@@ -65,12 +75,15 @@ function BookmarkCard({
       </div>
       <h3>{privacy ? t.memory.hiddenTitle : name}</h3>
       {privacy ? (
-        <p className="bookmark-text">{t.memory.hiddenBody}</p>
+        <p className="bookmark-text message-text">{t.memory.hiddenBody}</p>
       ) : (
         <>
-          <p className={`bookmark-text ${open ? 'is-open' : ''}`}>
-            {open || !long ? b.text : messageExcerpt(b.text, 240)}
-          </p>
+          <div
+            className={`bookmark-text message-text ${open ? 'is-open' : long ? 'is-collapsed' : ''}`}
+            onFocusCapture={() => long && setOpen(true)}
+          >
+            <MessageMarkdown text={b.text} notify={notify} />
+          </div>
           {(b.truncated || b.excerpt) && (
             <small className="bookmark-flag">
               {b.truncated ? t.memory.truncated : t.memory.excerpt}
@@ -78,7 +91,7 @@ function BookmarkCard({
           )}
           {open && hasContext && (
             <ol className="bookmark-context">
-              {request && <Line line={request} label={t.memory.request} />}
+              {request && <Line line={request} label={t.memory.request} notify={notify} />}
               {progress.length > 0 && (
                 <li className="bookmark-context-head">
                   {t.memory.progress(progress.length)}
@@ -86,7 +99,12 @@ function BookmarkCard({
                 </li>
               )}
               {progress.map((line) => (
-                <Line key={line.eventId} line={line} label={PROVIDERS[b.source.provider].name} />
+                <Line
+                  key={line.eventId}
+                  line={line}
+                  label={PROVIDERS[b.source.provider].name}
+                  notify={notify}
+                />
               ))}
               {tools > 0 && <li className="bookmark-context-head">{t.memory.tools(tools)}</li>}
             </ol>
@@ -123,7 +141,11 @@ function BookmarkCard({
               </div>
             </div>
           ) : (
-            b.note && <p className="bookmark-note">{b.note}</p>
+            b.note && (
+              <div className="bookmark-note message-text">
+                <MessageMarkdown text={b.note} notify={notify} />
+              </div>
+            )
           )}
         </>
       )}
