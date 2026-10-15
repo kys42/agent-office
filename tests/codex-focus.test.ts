@@ -354,4 +354,11 @@ test('A focusable Codex target still sends through its queue; screen labels do n
   assert.equal(focusName(tmux), 'tmux');
   assert.ok(!JSON.stringify(tmux).includes(SOCKET));
   assert.equal(codexTarget().canFocus, false);
+  const screenOnly = codexTarget({ kind: 'orca', handle: HANDLE, title: 'Codex task' }, false);
+  assert.equal(screenOnly.canSend, false);
+  assert.equal(screenOnly.canFocus, true);
+  assert.equal(focusName(screenOnly), 'Orca');
+  const unavailable = codexTarget(null, false);
+  assert.equal(unavailable.canSend, false);
+  assert.equal(unavailable.canFocus, false);
 });

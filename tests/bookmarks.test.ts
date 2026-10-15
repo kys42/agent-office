@@ -14,6 +14,7 @@ import {
   PROGRESS_TAIL,
   bookmarkContext,
   makeBookmark,
+  savedConversation,
 } from '../src/shared/bookmarks.js';
 import { detailPage, LOADED_EVENTS } from '../src/shared/conversation-pages.js';
 import type { OfficeEvent, Session } from '../src/shared/types.js';
@@ -81,6 +82,37 @@ const turn = [
   ev('f1', 'assistant', '결정: 캐시를 5분으로 둡니다.', 7, 'final'),
   ev('l1', 'lifecycle', '완료', 8),
 ];
+
+test('Saved reading order keeps roles, sorts context and de-duplicates the saved message without changing its copy', () => {
+  const events = [
+    ev('u', 'user', 'My request', 0),
+    ev('p', 'assistant', 'Progress', 1, 'commentary'),
+    ev('f', 'assistant', 'Saved reply', 2, 'final'),
+  ];
+  const b = makeBookmark(session(events), events, 'f', 'saved', 100)!;
+  b.context.progress = [{ ...b, text: 'Old duplicate' }, ...b.context.progress];
+  const original = structuredClone(b);
+  const lines = savedConversation(b);
+  assert.deepEqual(
+    lines.map((x) => [x.eventId, x.kind, x.text]),
+    [
+      ['u', 'user', 'My request'],
+      ['p', 'assistant', 'Progress'],
+      ['f', 'assistant', 'Saved reply'],
+    ],
+  );
+  assert.deepEqual(b, original);
+  const request = makeBookmark(session(events), events, 'u', 'saved-user', 100)!;
+  assert.deepEqual(
+    savedConversation(request).map((x) => x.kind),
+    ['user'],
+  );
+  b.context.progress = [{ ...b, eventId: 'same-time', text: 'Earlier update' }];
+  assert.deepEqual(
+    savedConversation(b).map((x) => x.eventId),
+    ['u', 'same-time', 'f'],
+  );
+});
 
 test('Context: the last request, what was said since, tool calls only counted', () => {
   const c = bookmarkContext(turn, 7, turn[7]);

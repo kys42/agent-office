@@ -5,12 +5,21 @@ import { api, isDesktop } from '../lib/api';
 import { WebLink } from './WebLink';
 
 /** The same message formatting in conversations, saved messages and their notes/context. */
-export function MessageMarkdown({ text, notify }: { text: string; notify: (s: string) => void }) {
+export function MessageMarkdown({
+  text,
+  notify,
+  interactive = true,
+}: {
+  text: string;
+  notify: (s: string) => void;
+  interactive?: boolean;
+}) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
         a: ({ href, children }) => {
+          if (!interactive) return <span>{children}</span>;
           const link = href ? parseArtifact(href) : null;
           return link ? (
             <a

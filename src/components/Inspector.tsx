@@ -354,15 +354,18 @@ export function Inspector({
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
-  const resumeLabel = live?.canFocus
-    ? t.terminal.jumpTo(focusName(live))
-    : live?.kind === 'codex'
-      ? t.inspector.copyResume
-      : s.provider === 'codex' && isDesktop
-        ? t.inspector.openInCodex
-        : t.inspector.copyResume;
+  const codexApp = s.provider === 'codex' && isDesktop;
+  const resumeLabel = codexApp
+    ? t.inspector.openInCodex
+    : live?.canFocus
+      ? t.terminal.jumpTo(focusName(live))
+      : t.inspector.copyResume;
   const resume = async () => {
     try {
+      if (codexApp) {
+        notify(await api.resume(s.id));
+        return;
+      }
       if (api.jump) {
         await jumpOrCopy(s.id, notify);
         return;
@@ -979,6 +982,16 @@ export function Inspector({
               <Terminal size={13} />
               {resumeLabel}
             </button>
+            {codexApp && live?.canFocus && (
+              <button
+                className="card-action"
+                disabled={demo}
+                onClick={() => void jumpOrCopy(s.id, notify).catch((e) => notify(e.message))}
+              >
+                <Terminal size={13} />
+                {t.terminal.jumpTo(focusName(live))}
+              </button>
+            )}
             {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}
             {calling && !openRequest(s) && (
               <span className="card-calling-note">{t.inspector.card.callingNote}</span>

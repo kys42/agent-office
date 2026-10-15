@@ -20,6 +20,19 @@ export interface BookmarkFocus {
 }
 export const BOOKMARK_PAGE_MAX = 200;
 
+/** Saved context in reading order; repeated forms appear once and the saved message wins. */
+export function savedConversation(bookmark: Bookmark): BookmarkLine[] {
+  const lines = new Map<string, BookmarkLine>();
+  for (const line of [bookmark.context.request, ...bookmark.context.progress, bookmark]) {
+    if (line) lines.set(line.eventId, line);
+  }
+  return [...lines.values()].sort(
+    (a, b) =>
+      a.at - b.at ||
+      Number(a.eventId === bookmark.eventId) - Number(b.eventId === bookmark.eventId),
+  );
+}
+
 /** `text` cut to `max` characters, never inside a surrogate pair. */
 function clip(text: string, max: number): { text: string; truncated?: boolean } {
   if (text.length <= max) return { text };
