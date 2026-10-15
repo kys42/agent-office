@@ -1,42 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  ArrowUpRight,
-  BookmarkCheck,
-  ChevronDown,
-  Copy,
-  LoaderCircle,
-  PencilLine,
-  Trash2,
-} from 'lucide-react';
-import type { Bookmark, BookmarkLine, Session } from '../shared/types';
+import { ArrowUpRight, BookmarkCheck, Copy, LoaderCircle, PencilLine, Trash2 } from 'lucide-react';
+import type { Bookmark, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { api } from '../lib/api';
 import { ago, time, date } from '../lib/format';
 import { MessageMarkdown } from './MessageMarkdown';
+import { BookmarkReader } from './BookmarkReader';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE, BOOKMARK_PAGE_MAX } from '../shared/bookmarks';
 import { useI18n } from '../lib/i18n';
 
-/** One saved line of a bookmark's context, clipped like the cards' excerpts. */
-function Line({
-  line,
-  label,
-  notify,
-}: {
-  line: BookmarkLine;
-  label: string;
-  notify: (s: string) => void;
-}) {
-  return (
-    <li className={`bookmark-line kind-${line.kind}`}>
-      <span>
-        {label} · <time title={date(line.at)}>{time(line.at)}</time>
-      </span>
-      <div className="bookmark-line-text message-text">
-        <MessageMarkdown text={line.text} notify={notify} />
-      </div>
-    </li>
-  );
-}
 function BookmarkCard({
   bookmark: b,
   session,
@@ -56,7 +28,7 @@ function BookmarkCard({
   notify: (s: string) => void;
 }) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
+  const [reading, setReading] = useState(false);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState(b.note);
   useEffect(() => {
@@ -64,8 +36,9 @@ function BookmarkCard({
   }, [b.note, editing]);
   const name = session ? session.alias || session.title : b.source.alias || b.source.title;
   const long = b.text.length > 240;
-  const { request, progress, omitted, tools } = b.context;
-  const hasContext = !!request || progress.length > 0 || tools > 0;
+  useEffect(() => {
+    if (privacy) setReading(false);
+  }, [privacy]);
   return (
     <article className="bookmark-card">
       <div className="memory-card-top">
@@ -78,43 +51,22 @@ function BookmarkCard({
         <p className="bookmark-text message-text">{t.memory.hiddenBody}</p>
       ) : (
         <>
-          <div
-            className={`bookmark-text message-text ${open ? 'is-open' : long ? 'is-collapsed' : ''}`}
-            onFocusCapture={() => long && setOpen(true)}
-          >
-            <MessageMarkdown text={b.text} notify={notify} />
+          <span className="bookmark-preview-role">
+            {b.kind === 'user' ? t.conversation.you : PROVIDERS[b.source.provider].name} ·{' '}
+            {t.memory.savedMessage}
+          </span>
+          <div className={`bookmark-text message-text ${long ? 'is-collapsed' : ''}`}>
+            <MessageMarkdown text={b.text} notify={notify} interactive={false} />
           </div>
           {(b.truncated || b.excerpt) && (
             <small className="bookmark-flag">
               {b.truncated ? t.memory.truncated : t.memory.excerpt}
             </small>
           )}
-          {open && hasContext && (
-            <ol className="bookmark-context">
-              {request && <Line line={request} label={t.memory.request} notify={notify} />}
-              {progress.length > 0 && (
-                <li className="bookmark-context-head">
-                  {t.memory.progress(progress.length)}
-                  {omitted > 0 && ` · ${t.memory.omitted(omitted)}`}
-                </li>
-              )}
-              {progress.map((line) => (
-                <Line
-                  key={line.eventId}
-                  line={line}
-                  label={PROVIDERS[b.source.provider].name}
-                  notify={notify}
-                />
-              ))}
-              {tools > 0 && <li className="bookmark-context-head">{t.memory.tools(tools)}</li>}
-            </ol>
-          )}
-          {(long || hasContext) && (
-            <button className="bookmark-expand" aria-expanded={open} onClick={() => setOpen(!open)}>
-              {open ? t.memory.hideContext : hasContext ? t.memory.showContext : t.memory.more}
-              <ChevronDown size={13} />
-            </button>
-          )}
+          <button className="bookmark-expand" onClick={() => setReading(true)}>
+            {t.memory.read}
+            <ArrowUpRight size={13} />
+          </button>
           {editing ? (
             <div className="bookmark-note-edit">
               <textarea
@@ -142,8 +94,11 @@ function BookmarkCard({
             </div>
           ) : (
             b.note && (
-              <div className="bookmark-note message-text">
-                <MessageMarkdown text={b.note} notify={notify} />
+              <div className="bookmark-note">
+                <span className="bookmark-note-label">{t.memory.myNote}</span>
+                <div className="message-text">
+                  <MessageMarkdown text={b.note} notify={notify} />
+                </div>
               </div>
             )
           )}
@@ -187,6 +142,19 @@ function BookmarkCard({
           </button>
         )}
       </div>
+      {reading && !privacy && (
+        <BookmarkReader
+          bookmark={b}
+          name={name}
+          canOpen={!!session}
+          notify={notify}
+          onClose={() => setReading(false)}
+          onOpen={() => {
+            setReading(false);
+            onOpen(b);
+          }}
+        />
+      )}
     </article>
   );
 }

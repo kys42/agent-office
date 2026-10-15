@@ -13,9 +13,12 @@ async function card(
     id?: string;
     events?: OfficeEvent[];
     handshakeOnly?: boolean;
+    artifactCount?: number;
+    codex?: boolean;
   } = {},
 ) {
   const snapshot = demoSnapshot();
+  if (opts.codex) snapshot.sessions[0].provider = 'codex';
   if (opts.events) snapshot.sessions[0].events = opts.events;
   snapshot.preferences.privacy = !!opts.privacy;
   // A helper of demo:0, to open as its own card.
@@ -53,7 +56,7 @@ async function card(
   ];
   await page.setViewportSize({ width: 480, height: 760 });
   await page.addInitScript(
-    ({ s, canSend, terminal, handshakeOnly }) => {
+    ({ s, canSend, terminal, handshakeOnly, artifactCount }) => {
       const w = window as any;
       w.fixture = s;
       w.sent = [];
@@ -61,39 +64,53 @@ async function card(
       w.cardCalls = [];
       w.jumps = [];
       w.windowState = { pinned: false, positionRemembered: false };
+      w.resumes = [];
       w.office = {
         snapshot: async () => structuredClone(w.fixture),
         detail: async (id: string) =>
           structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
         visit: async () => structuredClone(w.fixture),
         // The colleague's recent work, as the service reads it from GitHub.
-        artifacts: async () => [
-          {
-            url: 'https://github.com/kys42/agent-office/pull/95',
-            kind: 'pull',
-            repo: 'kys42/agent-office',
-            number: 95,
-            title: '팝업 업무 카드를 채팅형으로',
-            state: 'open',
-          },
-          {
-            url: 'https://github.com/kys42/agent-office/issues/86',
-            kind: 'issues',
-            repo: 'kys42/agent-office',
-            number: 86,
-            title: '크기 조절·아래 입력창·윗줄 정리',
-            state: 'open',
-          },
-          {
-            url: 'https://github.com/kys42/agent-office/pull/89',
-            kind: 'pull',
-            repo: 'kys42/agent-office',
-            number: 89,
-            title: '스크롤 깜박임 막기',
-            state: 'merged',
-          },
-        ],
-        subscribe: () => () => {},
+        artifacts: async () =>
+          artifactCount
+            ? Array.from({ length: artifactCount }, (_, i) => ({
+                url: `https://github.com/example/demo/pull/${i + 1}`,
+                kind: 'pull',
+                repo: 'example/demo',
+                number: i + 1,
+                title: `Saved change ${i + 1}`,
+                state: 'open',
+              }))
+            : [
+                {
+                  url: 'https://github.com/kys42/agent-office/pull/95',
+                  kind: 'pull',
+                  repo: 'kys42/agent-office',
+                  number: 95,
+                  title: '팝업 업무 카드를 채팅형으로',
+                  state: 'open',
+                },
+                {
+                  url: 'https://github.com/kys42/agent-office/issues/86',
+                  kind: 'issues',
+                  repo: 'kys42/agent-office',
+                  number: 86,
+                  title: '크기 조절·아래 입력창·윗줄 정리',
+                  state: 'open',
+                },
+                {
+                  url: 'https://github.com/kys42/agent-office/pull/89',
+                  kind: 'pull',
+                  repo: 'kys42/agent-office',
+                  number: 89,
+                  title: '스크롤 깜박임 막기',
+                  state: 'merged',
+                },
+              ],
+        subscribe: (cb: any) => {
+          w.publish = cb;
+          return () => {};
+        },
         notices: async (receipts: any[], action: string) => {
           w.receipts.push([action, receipts.map((r: any) => r.id)]);
           w.fixture.notices = w.fixture.notices.map((n: any) =>
@@ -104,6 +121,10 @@ async function card(
           return structuredClone(w.fixture);
         },
         terminalSend: async () => true,
+        resume: async (id: string) => {
+          w.resumes.push(id);
+          return 'Codex app opened';
+        },
         send: async (id: string, text: string) => {
           w.sent.push([id, text]);
           return { status: 'sent', message: '보냈어요' };
@@ -112,9 +133,23 @@ async function card(
           Object.fromEntries(
             ids.map((id) => [
               id,
-              terminal
-                ? { kind: 'orca', label: 'Orca', status: 'idle', canSend, canFocus: true }
-                : null,
+              w.codexPhase
+                ? w.codexPhase === 'none'
+                  ? null
+                  : {
+                      kind: 'codex',
+                      label: '',
+                      status: 'queue',
+                      canSend: w.codexPhase !== 'screen-only',
+                      queues: true,
+                      canFocus: w.codexPhase !== 'queue',
+                      ...(w.codexPhase !== 'queue' && {
+                        focus: { kind: 'orca', label: 'Session screen' },
+                      }),
+                    }
+                : terminal
+                  ? { kind: 'orca', label: 'Orca', status: 'idle', canSend, canFocus: true }
+                  : null,
             ]),
           ),
         handoff: async () => ({ markdown: '# 인수인계', revision: 'r', createdAt: Date.now() }),
@@ -152,6 +187,7 @@ async function card(
       canSend: opts.canSend ?? true,
       terminal: opts.terminal ?? true,
       handshakeOnly: opts.handshakeOnly ?? false,
+      artifactCount: opts.artifactCount,
     },
   );
   await page.addInitScript((id) => ((window as any).cardId = id), id);
@@ -166,6 +202,73 @@ test('A cold popup recovers its target when the opening event preceded subscript
 }) => {
   const aside = await card(page, { handshakeOnly: true });
   await expect(aside.locator('.card-head h2')).toContainText('코코');
+});
+
+test('Codex app navigation stays available while Orca lookup and queue availability change', async ({
+  page,
+}) => {
+  const aside = await card(page, { codex: true });
+  const app = aside.getByRole('button', { name: 'Codex에서 열기', exact: true });
+  await expect(app).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).codexPhase = 'none';
+  });
+  await app.click();
+  expect(await page.evaluate(() => (window as any).resumes)).toEqual(['demo:0']);
+  expect(await page.evaluate(() => (window as any).jumps)).toEqual([]);
+  for (const phase of ['queue', 'screen-only', 'both']) {
+    await page.evaluate((phase) => {
+      const w = window as any;
+      w.codexPhase = phase;
+      w.fixture.sessions[0].updatedAt += 1000;
+      w.fixture.version++;
+      w.publish(structuredClone(w.fixture));
+    }, phase);
+    await expect(app).toBeVisible();
+    const orca = aside.getByRole('button', { name: 'Orca로 이동', exact: true });
+    if (phase === 'queue') await expect(orca).toHaveCount(0);
+    else {
+      await expect(orca).toBeVisible();
+      await orca.click();
+      await expect(app).toBeVisible();
+    }
+    await expect(aside.getByRole('button', { name: '재개 명령 복사', exact: true })).toHaveCount(0);
+  }
+  expect(await page.evaluate(() => (window as any).jumps)).toEqual(['demo:0', 'demo:0']);
+  expect(await page.evaluate(() => (window as any).resumes)).toEqual(['demo:0']);
+});
+
+test('The floating work-list arrow stays reachable while scrolling and collapsing a short popup', async ({
+  page,
+}) => {
+  const aside = await card(page, { artifactCount: 40 });
+  await page.setViewportSize({ width: 380, height: 480 });
+  const shell = aside.locator('.artifact-list-shell');
+  const list = shell.locator('.artifact-list');
+  const toggle = shell.locator('.artifact-list-more');
+  await expect(toggle).toHaveAttribute('aria-label', '38개 더 보기');
+  await expect(list.locator('.artifact-row')).toHaveCount(2);
+  await toggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(list.locator('.artifact-row')).toHaveCount(40);
+  await list.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  expect(await list.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const close = shell.getByRole('button', { name: '접기', exact: true });
+  await expect(close).toBeInViewport();
+  expect(
+    await close.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    }),
+  ).toBe(true);
+  await close.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(list.locator('.artifact-row')).toHaveCount(2);
+  expect(await list.evaluate((el) => el.scrollTop)).toBe(0);
+  await expect(aside.locator('textarea')).toBeInViewport();
 });
 
 test('The card opens as a glass chat: header tools, recent work, tabs, actions and a chat box', async ({
@@ -207,7 +310,10 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   await expect(aside.locator('.message-assistant .message-meta').first()).not.toContainText(
     'Claude Code',
   );
-  await recent.getByRole('button', { name: /더 보기|1/ }).click();
+  await aside
+    .locator('.artifact-list-shell')
+    .getByRole('button', { name: /더 보기|1/ })
+    .click();
   await expect(recent.locator('.artifact-row')).toHaveCount(3);
   // Only once: the office panel's tray stays out of the card (one read of the work, not two).
   await expect(aside.locator('.artifact-tray')).toHaveCount(0);

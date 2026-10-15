@@ -161,7 +161,7 @@ try {
   await a.getByRole('tab', { name: '기억 메모', exact: true }).click();
   await a
     .locator('.bookmark-card')
-    .getByRole('button', { name: '대화로 이동', exact: true })
+    .getByRole('button', { name: '원문 대화로 이동', exact: true })
     .click();
   await expect(a.locator('.conversation-message.is-focused')).toHaveCount(1);
   await a.getByRole('tab', { name: '작업 정보', exact: true }).click();

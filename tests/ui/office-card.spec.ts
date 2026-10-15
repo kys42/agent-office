@@ -104,7 +104,7 @@ test('Opening a bookmarked progress note shows progress again when the switch ha
   await page.goto('/');
   await page.getByRole('button', { name: '기억 서랍' }).click();
   await page.getByRole('tab', { name: '북마크' }).click();
-  await page.getByRole('button', { name: '대화로 이동' }).click();
+  await page.getByRole('button', { name: '원문 대화로 이동', exact: true }).click();
   const aside = page.getByRole('complementary', { name: '동료의 업무 카드' });
   await expect(aside.locator(`[data-event-id="${note.id}"]`)).toBeInViewport();
   await expect(aside.getByRole('switch', { name: /진행/ })).toBeChecked();
