@@ -459,8 +459,26 @@ function setupIPC() {
         typeof target.news !== 'boolean'
       )
         throw new Error(m().desktop.badRequest);
+      if (
+        target.bookmark !== undefined &&
+        (!target.bookmark ||
+          typeof target.bookmark.eventId !== 'string' ||
+          !target.bookmark.eventId.length ||
+          target.bookmark.eventId.length > 1000 ||
+          typeof target.bookmark.at !== 'number' ||
+          !Number.isSafeInteger(target.bookmark.at) ||
+          target.bookmark.at < 0 ||
+          target.news)
+      )
+        throw new Error(m().desktop.badRequest);
     }
-    const chosen: CardTarget | undefined = target && { id: target.id, news: target.news };
+    const chosen: CardTarget | undefined = target && {
+      id: target.id,
+      news: target.news,
+      ...(target.bookmark
+        ? { bookmark: { eventId: target.bookmark.eventId, at: target.bookmark.at } }
+        : {}),
+    };
     if (action !== 'open') {
       const expanded = await cards.action(e.sender, action, chosen);
       if (expanded) showMain(expanded);

@@ -118,8 +118,9 @@ async function card(
             ]),
           ),
         handoff: async () => ({ markdown: '# 인수인계', revision: 'r', createdAt: Date.now() }),
-        card: async (what: string) => {
+        card: async (what: string, target: any) => {
           w.cardCalls.push(what);
+          if (what === 'select') w.cardListener?.(target);
           if (what === 'pin-on' || what === 'pin-off') w.windowState.pinned = what === 'pin-on';
           if (what === 'position-on' || what === 'position-off')
             w.windowState.positionRemembered = what === 'position-on';
@@ -140,6 +141,7 @@ async function card(
           };
         },
         onCard: (cb: any) => {
+          w.cardListener = cb;
           if (!handshakeOnly) setTimeout(() => cb({ id: w.cardId, news: false }), 50);
           return () => {};
         },

@@ -650,6 +650,8 @@ export interface ScreenRect {
 export interface CardTarget {
   id: string;
   news: boolean;
+  /** Explicit navigation intent, also delivered when reusing another pinned window. */
+  bookmark?: { eventId: string; at: number };
 }
 /** Native popup presentation state; independent of the colleague's office pin. */
 export interface CardWindowState {

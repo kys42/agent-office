@@ -151,12 +151,67 @@ try {
   await open('codex:codex-test');
   assert.equal(cardsCount(), count, 'opening a pinned colleague reuses its window');
   await expect(a.locator('.card-composer textarea')).toHaveValue('A의 미전송 글');
+  const bookmark = await a.evaluate(async () => {
+    const s = await window.office.detail('codex:codex-test');
+    const e = s.events.find((e) => e.kind === 'user');
+    if (!e) throw Error('Synthetic bookmark event missing');
+    return (await window.office.bookmark(s.id, e.id, '')).bookmark;
+  });
+  await a.bringToFront();
+  await a.getByRole('tab', { name: '기억 메모', exact: true }).click();
+  await a
+    .locator('.bookmark-card')
+    .getByRole('button', { name: '대화로 이동', exact: true })
+    .click();
+  await expect(a.locator('.conversation-message.is-focused')).toHaveCount(1);
+  await a.getByRole('tab', { name: '작업 정보', exact: true }).click();
+  const titleB = await b.locator('.card-head h2').textContent();
+  await b.evaluate(
+    (bookmark) =>
+      window.office.card('select', {
+        id: bookmark.sessionId,
+        news: false,
+        bookmark: { eventId: bookmark.eventId, at: bookmark.at },
+      }),
+    bookmark,
+  );
+  await expect(a.getByRole('tab', { name: '대화', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(a.locator('.conversation-message.is-focused')).toHaveCount(1);
+  assert.equal(
+    await b.locator('.card-head h2').textContent(),
+    titleB,
+    'bookmark reuse leaves its source pinned card alone',
+  );
+  assert.equal(cardsCount(), count, 'bookmark navigation reuses the destination pinned card');
+  await assert.rejects(() =>
+    b.evaluate(() =>
+      window.office.card('select', {
+        id: 'codex:codex-test',
+        news: false,
+        bookmark: { eventId: 'x'.repeat(1001), at: 1 },
+      }),
+    ),
+  );
   const clawId = await main.evaluate(
     async () =>
       (await window.office.snapshot()).sessions.find((s) => s.provider === 'openclaw')?.id,
   );
   assert.ok(clawId);
   const c = await newCard(clawId);
+  await b.evaluate((id) => window.office.card('select', { id, news: false }), clawId);
+  await expect
+    .poll(() => b.evaluate(async () => (await window.office.cardState()).target.id))
+    .toBe(clawId);
+  await expect.poll(() => visible(c)).toBe(false);
+  await assert.rejects(() => c.evaluate(() => window.office.card('pin-on')));
+  assert.equal((await b.evaluate(() => window.office.cardState())).pinned, true);
+  await b.evaluate(() => window.office.card('select', { id: 'claude:claude-test', news: false }));
+  await open(clawId);
+  await c.locator('.inspector-card').waitFor();
+  await c.bringToFront();
   await c.waitForTimeout(600);
   await aw.evaluate((w) => w.focus());
   await expect.poll(() => visible(c)).toBe(false);
@@ -245,6 +300,8 @@ try {
       positionRestart: true,
       positionOff: true,
       ipcIsolation: true,
+      bookmarkFocus: true,
+      uniquePinnedTarget: true,
     }),
   );
 } finally {

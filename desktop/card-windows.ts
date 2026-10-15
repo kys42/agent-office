@@ -141,7 +141,7 @@ export class CardWindows {
     const pinned = [...this.entries].find((e) => e.pinned && e.target?.id === target.id);
     if (pinned) {
       this.cancelHide(pinned);
-      if (pinned.target?.news !== target.news) {
+      if (target.bookmark || pinned.target?.news !== target.news) {
         pinned.target = target;
         this.reveal(pinned);
       } else {
@@ -310,6 +310,14 @@ export class CardWindows {
       return this.remember(e, action === 'position-on');
     if (action === 'pin-on') {
       if (!e.target) throw new Error(m().desktop.badRequest);
+      const other = [...this.entries].find(
+        (w) => w !== e && w.pinned && w.target?.id === e.target!.id,
+      );
+      if (other) {
+        this.hide(e);
+        this.focus(other);
+        return;
+      }
       e.pinned = true;
       this.cancelHide(e);
       if (this.preview === e) this.preview = null;
@@ -334,11 +342,14 @@ export class CardWindows {
         (w) => w !== e && w.pinned && w.target?.id === target.id,
       );
       if (other) {
-        if (e.pinned) e.window.webContents.send('office:card', e.target);
-        else this.hide(e);
-        this.focus(other);
+        if (!e.pinned) this.hide(e);
+        if (target.bookmark) {
+          other.target = target;
+          this.reveal(other);
+        } else this.focus(other);
         return;
       }
+      if (e.pinned && this.preview?.target?.id === target.id) this.hide(this.preview);
       e.target = target;
       e.window.webContents.send('office:card', target);
       return;
