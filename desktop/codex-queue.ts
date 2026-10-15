@@ -192,12 +192,12 @@ export async function findCodexThread(
   return (await loaded.value).has(nativeId.toLowerCase()) ? { threadId: nativeId } : null;
 }
 
-export function codexTarget(host?: TerminalHost | null): TerminalTarget {
+export function codexTarget(host?: TerminalHost | null, canSend = true): TerminalTarget {
   return {
     kind: 'codex',
     label: '',
-    status: 'queue',
-    canSend: true,
+    status: canSend ? 'queue' : 'unavailable',
+    canSend,
     canFocus: !!host,
     ...(host ? { focus: focusTarget(host) } : {}),
     queues: true,

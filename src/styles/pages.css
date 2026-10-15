@@ -217,10 +217,6 @@
   max-height: 10.5em;
   overflow: hidden;
 }
-.bookmark-text.is-open {
-  max-height: 60vh;
-  overflow: auto;
-}
 .bookmark-flag {
   font-size: 10.5px;
   color: var(--text-4);
@@ -233,28 +229,84 @@
   font-size: 11.5px;
   color: var(--accent);
 }
-.bookmark-expand[aria-expanded='true'] svg {
-  transform: rotate(180deg);
-}
-.bookmark-context {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 2px 0;
-  padding: 8px 10px;
-  list-style: none;
-  border-radius: 10px;
-  background: var(--bg-2);
-}
-.bookmark-line > span,
-.bookmark-context-head {
-  font-size: 10.5px;
-  color: var(--text-4);
-}
 .bookmark-note {
   padding: 6px 10px;
   border-radius: 8px;
   background: var(--accent-soft);
+}
+.bookmark-preview-role,
+.bookmark-note-label {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.bookmark-note-label {
+  margin-bottom: 4px;
+}
+.modal-backdrop:has(.bookmark-reader) {
+  padding: 12px;
+}
+.modal:has(> .bookmark-reader) {
+  width: min(760px, calc(100vw - 24px));
+  min-width: 0;
+  max-width: 100%;
+  max-height: calc(100dvh - 24px);
+  padding: 14px;
+}
+.modal:has(> .bookmark-reader) > header,
+.bookmark-reader-actions {
+  flex: none;
+}
+.bookmark-reader {
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px 8px;
+}
+.bookmark-reader-heading {
+  margin-bottom: 18px;
+  overflow-wrap: anywhere;
+}
+.bookmark-reader-heading p,
+.bookmark-reader-heading small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.bookmark-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  list-style: none;
+}
+.bookmark-timeline > li {
+  min-width: 0;
+}
+.bookmark-saved-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+}
+.bookmark-reader-note {
+  margin-top: 18px;
+}
+.bookmark-reader-note > h3 {
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.bookmark-reader-actions {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-2);
 }
 .bookmark-note-edit {
   display: flex;

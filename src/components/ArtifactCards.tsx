@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
 import { GitPullRequest, CircleDot, ArrowUpRight, LoaderCircle, ChevronDown } from 'lucide-react';
 import type { Artifact } from '../shared/types';
 import { parseArtifact } from '../shared/office';
@@ -24,6 +24,8 @@ export function ArtifactCards({
   const [items, setItems] = useState<Artifact[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const listId = useId();
+  const listRef = useRef<HTMLDivElement>(null);
   const key = urls.join('|');
   useEffect(() => {
     setExpanded(false);
@@ -55,32 +57,45 @@ export function ArtifactCards({
   const recent = [...items].reverse();
   if (variant === 'list')
     return (
-      <section className="artifact-list" aria-label={t.artifacts.label}>
-        {(expanded ? recent : recent.slice(0, 2)).map((a) => (
-          <a
-            className={`artifact-row artifact-${a.state || 'unknown'} kind-${a.kind}`}
-            href={a.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            key={a.url}
-            onClick={(e) => open(e, a.url)}
-          >
-            {a.kind === 'pull' ? <GitPullRequest size={14} /> : <CircleDot size={14} />}
-            <span>
-              <b>#{a.number}</b>{' '}
-              {a.title ||
-                (demo
-                  ? a.kind === 'pull'
-                    ? t.artifacts.demoPull
-                    : t.artifacts.demoIssue
-                  : a.repo)}
-            </span>
-            <small>{a.state ? t.artifacts.state[a.state] : t.artifacts.stateUnknown}</small>
-          </a>
-        ))}
+      <section className="artifact-list-shell" aria-label={t.artifacts.label}>
+        <div className="artifact-list" id={listId} ref={listRef}>
+          {(expanded ? recent : recent.slice(0, 2)).map((a) => (
+            <a
+              className={`artifact-row artifact-${a.state || 'unknown'} kind-${a.kind}`}
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              key={a.url}
+              onClick={(e) => open(e, a.url)}
+            >
+              {a.kind === 'pull' ? <GitPullRequest size={14} /> : <CircleDot size={14} />}
+              <span>
+                <b>#{a.number}</b>{' '}
+                {a.title ||
+                  (demo
+                    ? a.kind === 'pull'
+                      ? t.artifacts.demoPull
+                      : t.artifacts.demoIssue
+                    : a.repo)}
+              </span>
+              <small>{a.state ? t.artifacts.state[a.state] : t.artifacts.stateUnknown}</small>
+            </a>
+          ))}
+        </div>
         {items.length > 2 && (
-          <button className="artifact-list-more" onClick={() => setExpanded(!expanded)}>
-            {expanded ? t.artifacts.showLess : t.artifacts.more(items.length - 2)}
+          <button
+            className="artifact-list-more"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            aria-label={expanded ? t.artifacts.showLess : t.artifacts.more(items.length - 2)}
+            title={expanded ? t.artifacts.showLess : t.artifacts.more(items.length - 2)}
+            onClick={() => {
+              if (expanded && listRef.current) listRef.current.scrollTop = 0;
+              setExpanded(!expanded);
+            }}
+          >
+            {!expanded && <span aria-hidden="true">+{items.length - 2}</span>}
+            <ChevronDown size={14} aria-hidden="true" />
           </button>
         )}
       </section>

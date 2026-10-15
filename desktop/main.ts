@@ -737,9 +737,13 @@ function setupIPC() {
           if (!known) return [id, null] as const;
           const terminal = await live(known);
           if (terminal) return [id, terminalTarget(terminal)] as const;
-          const thread = await codex(known);
-          const screen = thread ? await findCodexTerminal(thread.threadId) : null;
-          return [id, thread ? codexTarget(screen?.host) : null] as const;
+          if (known.provider !== 'codex') return [id, null] as const;
+          // A screen can be present even while the queue's loaded-thread lookup is unavailable.
+          const [thread, screen] = await Promise.all([
+            Promise.resolve(codex(known)).catch(() => null),
+            findCodexTerminal(known.nativeId).catch(() => null),
+          ]);
+          return [id, codexTarget(screen?.host, !!thread)] as const;
         } catch {
           return [id, null] as const;
         }
@@ -751,14 +755,11 @@ function setupIPC() {
     trusted(e);
     const known = await identity(id);
     // The message queue and the visible screen are separate destinations.
-    const thread = await codex(known, true);
-    const terminal = thread
-      ? await findCodexTerminal(thread.threadId, { fresh: true })
-      : await live(known, true);
-    if (!terminal)
-      return thread
-        ? { action: 'copy', text: `codex resume ${shellQuote(thread.threadId)}` }
-        : resume(known);
+    const terminal =
+      known.provider === 'codex'
+        ? await findCodexTerminal(known.nativeId, { fresh: true })
+        : await live(known, true);
+    if (!terminal) return resume(known);
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.

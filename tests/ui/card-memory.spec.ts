@@ -60,7 +60,7 @@ async function memory(
     makeBookmark(s, events, e.id, `b-${i}`, e.at, i === 0 ? '덧붙인 메모' : '')!,
   );
   const other = snapshot.sessions[1];
-  if (opts.markdown) saved[2].note = '**덧붙인 강조**\n\n- 메모 목록';
+  if (opts.markdown) saved[2].note = '### 덧붙인 제목\n\n**덧붙인 강조**\n\n- 메모 목록';
   other.events = [{ ...events[0], id: 'other-event', text: '다른 동료의 북마크' }];
   saved.push(makeBookmark(other, other.events, 'other-event', 'unrelated', Date.now())!);
   if (opts.grouped) {
@@ -92,6 +92,7 @@ async function memory(
       w.details = [];
       w.copied = [];
       w.opened = [];
+      w.cardCalls = [];
       const bump = () => {
         w.fixture.version++;
         w.fixture.bookmarkStamp = String(Number(w.fixture.bookmarkStamp) + 1);
@@ -157,7 +158,9 @@ async function memory(
         openLink: async (url: string) => {
           w.opened.push(url);
         },
-        card: async () => {},
+        card: async (what: string) => {
+          w.cardCalls.push(what);
+        },
         onCard: (cb: any) => {
           setTimeout(() => cb({ id: 'demo:0', news: false }), 20);
           return () => {};
@@ -183,6 +186,7 @@ for (const popup of [false, true]) {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     const card = await memory(page, { popup, count: 3, markdown: true });
+    if (popup) await page.setViewportSize({ width: 380, height: 480 });
     const saved = card.locator('.bookmark-card').first();
     const text = saved.locator('.bookmark-text');
     await expect(text.locator('h3')).toHaveText('저장한 결정');
@@ -191,39 +195,67 @@ for (const popup of [false, true]) {
     await expect(text.locator('table td')).toHaveCount(2);
     await expect(text.locator('pre code')).toContainText('const saved');
     await expect(text).toHaveClass(/is-collapsed/);
-    // A keyboard user reaching a clipped link should be able to see it.
-    await text.getByRole('link', { name: '참고', exact: true }).focus();
-    await expect(text).toHaveClass(/is-open/);
-    await saved.locator('.bookmark-expand').click();
-    await expect(text).toHaveClass(/is-collapsed/);
-    await saved.locator('.bookmark-expand').click();
-    await expect(text).toHaveClass(/is-open/);
-    await expect(saved.locator('.bookmark-context strong')).toHaveText('요청 내용');
-    await expect(saved.locator('.bookmark-line-text h3')).toHaveText('진행 내용');
-    await expect(saved.locator('.bookmark-note strong')).toHaveText('덧붙인 강조');
-    await expect(saved.locator('.bookmark-note li')).toHaveText('메모 목록');
-    await expect(text.locator('img, script, a[href^="javascript:"]')).toHaveCount(0);
+    await expect(saved.locator('.bookmark-context')).toHaveCount(0);
+    await card.locator('#notes').fill('Keep my draft while reading');
+    await saved.getByRole('button', { name: '저장한 대화 읽기', exact: true }).click();
+    const reader = page.getByRole('dialog', { name: '저장한 대화 읽기' });
+    await expect(reader).toBeVisible();
+    const lines = reader.locator('.bookmark-timeline > li');
+    await expect(lines).toHaveCount(3);
+    await expect(lines.nth(0)).toContainText('요청 내용');
+    await expect(lines.nth(1)).toContainText('진행 내용');
+    await expect(lines.nth(2)).toContainText('저장한 결정');
+    await expect(reader.locator('.message-user .message-meta b')).toHaveText('나');
+    await expect(reader.locator('[data-saved="true"] .bookmark-saved-label')).toHaveText(
+      '저장한 메시지',
+    );
+    const full = reader.locator('[data-saved="true"] .message-text');
+    await expect(full.locator('strong')).toHaveText('강조');
+    await expect(full.locator('table td')).toHaveCount(2);
+    await expect(full.locator('pre code')).toContainText('const saved');
+    await expect(reader.locator('.bookmark-reader-note strong')).toHaveText('덧붙인 강조');
+    await expect(reader.locator('.bookmark-reader-note .message-text h3')).toHaveText(
+      '덧붙인 제목',
+    );
+    const headingStyle = (el: HTMLElement) => {
+      const s = getComputedStyle(el);
+      return [s.fontSize, s.color];
+    };
+    expect(
+      await reader.locator('.bookmark-reader-note .message-text h3').evaluate(headingStyle),
+    ).toEqual(await full.locator('h3').evaluate(headingStyle));
+    await expect(reader.locator('.bookmark-reader-note li')).toHaveText('메모 목록');
+    await expect(reader.locator('img, script, a[href^="javascript:"]')).toHaveCount(0);
     expect(await page.evaluate(() => (window as any).unsafe)).toBeUndefined();
-    await text.getByRole('link', { name: '참고', exact: true }).click();
+    await reader.getByRole('link', { name: '참고', exact: true }).click();
     expect(await page.evaluate(() => (window as any).opened)).toEqual([
       'https://example.com/bookmark',
     ]);
-    expect(await text.locator('pre').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-    expect(await saved.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-    expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-    const style = await text.evaluate((el) => {
+    expect(await full.locator('pre').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(await reader.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const style = await full.evaluate((el) => {
       const s = getComputedStyle(el);
       return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
     });
     expect(
-      await saved.locator('.bookmark-note').evaluate((el) => {
+      await reader.locator('.bookmark-reader-note .message-text').evaluate((el) => {
         const s = getComputedStyle(el);
         return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
       }),
     ).toEqual(style);
+    const footer = await reader.locator('.bookmark-reader-actions').boundingBox();
+    expect(footer!.y + footer!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(footer!.x + footer!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    await reader.press('Escape');
+    await expect(reader).toHaveCount(0);
+    await expect(saved.locator('.bookmark-expand')).toBeFocused();
+    await expect(card.locator('#notes')).toHaveValue('Keep my draft while reading');
+    expect(await page.evaluate(() => (window as any).cardCalls)).not.toContain('close');
     await saved.getByRole('button', { name: '메시지 복사' }).click();
     expect(await page.evaluate(() => (window as any).copied)).toEqual([richBookmark]);
-    await saved.getByRole('button', { name: '대화로 이동' }).click();
+    await saved.locator('.bookmark-expand').click();
+    await reader.getByRole('button', { name: '원문 대화로 이동', exact: true }).click();
+    await expect(reader).toHaveCount(0);
     const original = card.locator('.conversation-message.is-focused .message-text');
     await expect(original.locator('strong')).toHaveText('강조');
     expect(
@@ -236,11 +268,10 @@ for (const popup of [false, true]) {
       await page.getByRole('button', { name: '기억 서랍', exact: true }).click();
       await page.getByRole('tab', { name: '북마크', exact: true }).click();
       const global = page.locator('.memory-page .bookmark-card').filter({ hasText: '저장한 결정' });
-      await expect(global.locator('.bookmark-text strong')).toHaveText('강조');
       await global.locator('.bookmark-expand').click();
-      await expect(global.locator('.bookmark-text pre code')).toContainText('const saved');
-      await expect(global.locator('.bookmark-note li')).toHaveText('메모 목록');
-      expect(await global.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await expect(reader.locator('.bookmark-timeline > li')).toHaveCount(3);
+      await reader.getByRole('button', { name: '목록으로 돌아가기' }).click();
+      await expect(reader).toHaveCount(0);
     }
     expect(errors).toEqual([]);
   });
@@ -262,7 +293,9 @@ for (const popup of [false, true]) {
     await cards.first().getByRole('button', { name: '메모 추가', exact: true }).click();
     await cards.first().getByRole('textbox', { name: '메모 고치기' }).fill('다음에 확인할 내용');
     await cards.first().getByRole('button', { name: '저장', exact: true }).click();
-    await expect(cards.first().locator('.bookmark-note')).toHaveText('다음에 확인할 내용');
+    await expect(cards.first().locator('.bookmark-note .message-text')).toHaveText(
+      '다음에 확인할 내용',
+    );
     await expect(card.locator('#notes')).toHaveValue('작성 중인 메모');
     await cards.first().getByRole('button', { name: '메시지 복사' }).click();
     expect(await page.evaluate(() => (window as any).copied)).toEqual(['저장한 결정 1']);
@@ -274,7 +307,7 @@ for (const popup of [false, true]) {
     await expect
       .poll(() => page.evaluate(() => (window as any).fixture.sessions[0].notes))
       .toBe('작성 중인 메모');
-    await cards.first().getByRole('button', { name: '대화로 이동', exact: true }).click();
+    await cards.first().getByRole('button', { name: '원문 대화로 이동', exact: true }).click();
     await expect(card.getByRole('tab', { name: '대화', exact: true })).toHaveAttribute(
       'aria-selected',
       'true',
@@ -286,6 +319,54 @@ for (const popup of [false, true]) {
   });
 }
 
+test('The reader keeps a saved copy when its original run is missing and closes on privacy changes', async ({
+  page,
+}) => {
+  await memory(page, { count: 3, markdown: true });
+  await page.evaluate(() => {
+    const w = window as any;
+    w.saved.find((b: any) => b.eventId === 'saved-2').sessionId = 'missing-run';
+    w.bump();
+  });
+  await page.getByRole('button', { name: '기억 서랍', exact: true }).click();
+  await page.getByRole('tab', { name: '북마크', exact: true }).click();
+  const saved = page.locator('.memory-page .bookmark-card').filter({ hasText: '저장한 결정' });
+  await saved.locator('.bookmark-expand').click();
+  const reader = page.getByRole('dialog', { name: '저장한 대화 읽기' });
+  await expect(reader.locator('.bookmark-timeline > li')).toHaveCount(3);
+  await expect(
+    reader.getByText('원본 대화가 더 이상 보이지 않아요 · 저장해 둔 사본이에요'),
+  ).toBeVisible();
+  await expect(reader.getByRole('button', { name: '원문 대화로 이동' })).toHaveCount(0);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.preferences.privacy = true;
+    w.bump();
+  });
+  await expect(reader).toHaveCount(0);
+  await expect(page.locator('.bookmark-timeline')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '저장한 대화 읽기' })).toHaveCount(0);
+});
+
+test('The reader shows a bookmarked user message once and restores the draft on backdrop close', async ({
+  page,
+}) => {
+  const card = await memory(page, { popup: true, count: 3, markdown: true });
+  await card.locator('#notes').fill('Unsent note');
+  // A saved user request has no earlier context, so it must stay a user bubble, not an answer.
+  const saved = card
+    .locator('.bookmark-card')
+    .filter({ has: page.locator('.bookmark-text strong', { hasText: '요청 내용' }) });
+  await saved.locator('.bookmark-expand').click();
+  const reader = page.getByRole('dialog', { name: '저장한 대화 읽기' });
+  await expect(reader.locator('.bookmark-timeline > li')).toHaveCount(1);
+  await expect(reader.locator('.message-user[data-saved="true"] .message-meta b')).toHaveText('나');
+  await page.locator('.modal-backdrop').click({ position: { x: 2, y: 2 } });
+  await expect(reader).toHaveCount(0);
+  await expect(card.locator('#notes')).toHaveValue('Unsent note');
+  expect(await page.evaluate(() => (window as any).cardCalls)).not.toContain('close');
+});
+
 test('Grouped colleague bookmarks include earlier runs and open that run', async ({ page }) => {
   const card = await memory(page, { popup: true, grouped: true });
   await expect(card.locator('.bookmark-card')).toHaveCount(3);
@@ -294,7 +375,11 @@ test('Grouped colleague bookmarks include earlier runs and open that run', async
     'demo:0',
     'prior-run',
   ]);
-  await card.locator('.bookmark-card').first().getByRole('button', { name: '대화로 이동' }).click();
+  await card
+    .locator('.bookmark-card')
+    .first()
+    .getByRole('button', { name: '원문 대화로 이동', exact: true })
+    .click();
   await expect(card.locator('.conversation-message.is-focused')).toContainText(
     '이 동료의 지난 실행 메모',
   );
@@ -376,6 +461,6 @@ test('Failed bookmark note save keeps the editor and draft, then can retry', asy
   await expect(first.getByRole('textbox')).toHaveValue('놓치면 안 되는 메모');
   await page.evaluate(() => ((window as any).failSave = false));
   await first.getByRole('button', { name: '저장', exact: true }).click();
-  await expect(first.locator('.bookmark-note')).toHaveText('놓치면 안 되는 메모');
+  await expect(first.locator('.bookmark-note .message-text')).toHaveText('놓치면 안 되는 메모');
   expect(errors).toEqual([]);
 });
