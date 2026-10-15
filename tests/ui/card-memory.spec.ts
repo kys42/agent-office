@@ -215,6 +215,12 @@ for (const popup of [false, true]) {
       const s = getComputedStyle(el);
       return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
     });
+    expect(
+      await saved.locator('.bookmark-note').evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
+      }),
+    ).toEqual(style);
     await saved.getByRole('button', { name: '메시지 복사' }).click();
     expect(await page.evaluate(() => (window as any).copied)).toEqual([richBookmark]);
     await saved.getByRole('button', { name: '대화로 이동' }).click();

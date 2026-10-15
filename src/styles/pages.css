@@ -254,8 +254,6 @@
 .bookmark-note {
   padding: 6px 10px;
   border-radius: 8px;
-  font-size: 12px;
-  color: var(--text-2);
   background: var(--accent-soft);
 }
 .bookmark-note-edit {
