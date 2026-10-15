@@ -4,6 +4,27 @@ import { demoSnapshot } from '../../src/lib/demo';
 import { makeBookmark } from '../../src/shared/bookmarks';
 import type { OfficeEvent } from '../../src/shared/types';
 
+const richBookmark = `### 저장한 결정
+
+**강조**와 \`inline code\`
+
+- 첫 작업
+- 둘째 작업
+
+| 이름 | 상태 |
+| --- | --- |
+| ${'아주긴항목'.repeat(18)} | 완료 |
+
+\`\`\`ts
+const saved = "${'x'.repeat(90)}";
+\`\`\`
+
+[참고](https://example.com/bookmark)
+
+<script>window.unsafe = true</script>
+![외부 이미지](https://example.com/tracker.png)
+[실행](javascript:alert(1))`;
+
 async function memory(
   page: Page,
   opts: {
@@ -12,6 +33,7 @@ async function memory(
     count?: number;
     grouped?: boolean;
     english?: boolean;
+    markdown?: boolean;
   } = {},
 ) {
   const snapshot = demoSnapshot();
@@ -28,11 +50,17 @@ async function memory(
     sourceRef: 'fixture',
   }));
   s.events = events;
+  if (opts.markdown) {
+    events[0] = { ...events[0], kind: 'user', text: '**요청 내용**\n\n- 확인해 주세요' };
+    events[1] = { ...events[1], phase: 'commentary', text: '### 진행 내용\n\n- 진행 확인' };
+    events[2] = { ...events[2], text: richBookmark };
+  }
   s.activity = undefined;
   const saved = events.map((e, i) =>
     makeBookmark(s, events, e.id, `b-${i}`, e.at, i === 0 ? '덧붙인 메모' : '')!,
   );
   const other = snapshot.sessions[1];
+  if (opts.markdown) saved[2].note = '**덧붙인 강조**\n\n- 메모 목록';
   other.events = [{ ...events[0], id: 'other-event', text: '다른 동료의 북마크' }];
   saved.push(makeBookmark(other, other.events, 'other-event', 'unrelated', Date.now())!);
   if (opts.grouped) {
@@ -63,6 +91,7 @@ async function memory(
       w.reads = [];
       w.details = [];
       w.copied = [];
+      w.opened = [];
       const bump = () => {
         w.fixture.version++;
         w.fixture.bookmarkStamp = String(Number(w.fixture.bookmarkStamp) + 1);
@@ -85,6 +114,7 @@ async function memory(
         },
         visit: async () => structuredClone(w.fixture),
         artifacts: async () => [],
+        search: async () => [],
         subscribe: (cb: any) => {
           w.publish = cb;
           return () => {};
@@ -124,6 +154,9 @@ async function memory(
         copyText: async (s: string) => {
           w.copied.push(s);
         },
+        openLink: async (url: string) => {
+          w.opened.push(url);
+        },
         card: async () => {},
         onCard: (cb: any) => {
           setTimeout(() => cb({ id: 'demo:0', news: false }), 20);
@@ -141,6 +174,76 @@ async function memory(
   await expect(card).toBeVisible();
   await card.getByRole('tab', { name: opts.english ? 'Notes' : '기억 메모', exact: true }).click();
   return card;
+}
+
+for (const popup of [false, true]) {
+  test(`Saved markdown shares conversation styles without breaking a narrow ${popup ? 'popup' : 'panel'}`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    const card = await memory(page, { popup, count: 3, markdown: true });
+    const saved = card.locator('.bookmark-card').first();
+    const text = saved.locator('.bookmark-text');
+    await expect(text.locator('h3')).toHaveText('저장한 결정');
+    await expect(text.locator('strong')).toHaveText('강조');
+    await expect(text.locator('ul > li')).toHaveCount(2);
+    await expect(text.locator('table td')).toHaveCount(2);
+    await expect(text.locator('pre code')).toContainText('const saved');
+    await expect(text).toHaveClass(/is-collapsed/);
+    // A keyboard user reaching a clipped link should be able to see it.
+    await text.getByRole('link', { name: '참고', exact: true }).focus();
+    await expect(text).toHaveClass(/is-open/);
+    await saved.locator('.bookmark-expand').click();
+    await expect(text).toHaveClass(/is-collapsed/);
+    await saved.locator('.bookmark-expand').click();
+    await expect(text).toHaveClass(/is-open/);
+    await expect(saved.locator('.bookmark-context strong')).toHaveText('요청 내용');
+    await expect(saved.locator('.bookmark-line-text h3')).toHaveText('진행 내용');
+    await expect(saved.locator('.bookmark-note strong')).toHaveText('덧붙인 강조');
+    await expect(saved.locator('.bookmark-note li')).toHaveText('메모 목록');
+    await expect(text.locator('img, script, a[href^="javascript:"]')).toHaveCount(0);
+    expect(await page.evaluate(() => (window as any).unsafe)).toBeUndefined();
+    await text.getByRole('link', { name: '참고', exact: true }).click();
+    expect(await page.evaluate(() => (window as any).opened)).toEqual([
+      'https://example.com/bookmark',
+    ]);
+    expect(await text.locator('pre').evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    expect(await saved.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect(await card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    const style = await text.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
+    });
+    expect(
+      await saved.locator('.bookmark-note').evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
+      }),
+    ).toEqual(style);
+    await saved.getByRole('button', { name: '메시지 복사' }).click();
+    expect(await page.evaluate(() => (window as any).copied)).toEqual([richBookmark]);
+    await saved.getByRole('button', { name: '대화로 이동' }).click();
+    const original = card.locator('.conversation-message.is-focused .message-text');
+    await expect(original.locator('strong')).toHaveText('강조');
+    expect(
+      await original.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.fontFamily, s.fontSize, s.lineHeight, s.color];
+      }),
+    ).toEqual(style);
+    if (!popup) {
+      await page.getByRole('button', { name: '기억 서랍', exact: true }).click();
+      await page.getByRole('tab', { name: '북마크', exact: true }).click();
+      const global = page.locator('.memory-page .bookmark-card').filter({ hasText: '저장한 결정' });
+      await expect(global.locator('.bookmark-text strong')).toHaveText('강조');
+      await global.locator('.bookmark-expand').click();
+      await expect(global.locator('.bookmark-text pre code')).toContainText('const saved');
+      await expect(global.locator('.bookmark-note li')).toHaveText('메모 목록');
+      expect(await global.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
 }
 
 for (const popup of [false, true]) {
