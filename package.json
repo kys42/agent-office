@@ -24,6 +24,7 @@
     "mcp": "node dist-desktop/mcp.cjs",
     "test:ui": "playwright test",
     "test:desktop": "node scripts/desktop-smoke.mjs",
+    "test:cards": "node scripts/card-windows-smoke.mjs",
     "test:mcp": "tsx scripts/mcp-smoke.ts",
     "format": "prettier --write \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",

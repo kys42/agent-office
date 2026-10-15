@@ -651,6 +651,13 @@ export interface CardTarget {
   id: string;
   news: boolean;
 }
+/** Native popup presentation state; independent of the colleague's office pin. */
+export interface CardWindowState {
+  pinned: boolean;
+  positionRemembered: boolean;
+  /** Initial state handshake also recovers a target sent before the renderer subscribed. */
+  target?: CardTarget | null;
+}
 export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   quotas: () => Promise<ProviderQuota[]>;
@@ -742,14 +749,18 @@ export interface OfficeAPI {
       | 'drag-start'
       | 'drag-end'
       | 'select'
-      | 'keep-on'
-      | 'keep-off'
+      | 'pin-on'
+      | 'pin-off'
+      | 'position-on'
+      | 'position-off'
       | 'focus',
     target?: CardTarget,
     anchor?: ScreenRect,
   ) => Promise<void>;
   /** The dock card window: which colleague to show. */
   onCard?: (callback: (target: CardTarget | null) => void) => () => void;
+  cardState?: () => Promise<CardWindowState>;
+  onCardState?: (callback: (state: CardWindowState) => void) => () => void;
   /** Desktop: whether this window is on screen, and each time that changes. */
   visible?: () => Promise<boolean>;
   onVisibility?: (callback: (shown: boolean) => void) => () => void;

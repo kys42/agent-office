@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
 import { useTerminalSend } from '../lib/useTerminalSend';
-import type { CardTarget, ZoneRule } from '../shared/types';
+import type { CardTarget, CardWindowState, ZoneRule } from '../shared/types';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
@@ -39,27 +39,53 @@ export function DockCard() {
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
-  // Stay open when clicking elsewhere (the card's own toggle, remembered on this computer).
-  const [keepOpen, setKeepOpen] = useState(() => {
-    try {
-      return localStorage.getItem('office:card-keep') === 'on';
-    } catch {
-      return false;
-    }
+  const receivedTarget = useRef(false);
+  const [windowState, setWindowState] = useState<CardWindowState>({
+    pinned: false,
+    positionRemembered: false,
   });
-  // The main process starts out closing on blur, so 'off' is only said after an 'on'.
-  const keepSaid = useRef(false);
+  const [windowBusy, setWindowBusy] = useState(false);
   useEffect(() => {
-    if (!keepOpen && !keepSaid.current) return;
-    keepSaid.current = keepOpen;
-    void api.card?.(keepOpen ? 'keep-on' : 'keep-off');
-  }, [keepOpen, target?.id]);
+    let active = true;
+    const stop = api.onCardState?.((state) => {
+      if (active) setWindowState(state);
+    });
+    void api
+      .cardState?.()
+      .then((state) => {
+        if (active) {
+          setWindowState(state);
+          if (!receivedTarget.current && state.target) {
+            receivedTarget.current = true;
+            setTarget(state.target);
+            setOpened(Date.now());
+            send.reload();
+          }
+        }
+      })
+      .catch((e) => notify(e.message));
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, [notify]);
+  const changeWindow = async (action: 'pin-on' | 'pin-off' | 'position-on' | 'position-off') => {
+    setWindowBusy(true);
+    try {
+      await api.card?.(action);
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setWindowBusy(false);
+    }
+  };
   // Bumped on every open so the card jumps to news again even for the same colleague.
   const [opened, setOpened] = useState(0);
   const { reload } = send;
   useEffect(
     () =>
       api.onCard?.((next) => {
+        receivedTarget.current = true;
         // null: the card was put away. Showing nothing stops background detail polling and
         // keeps the next open from flashing the previous colleague.
         setBookmarkFocus(null);
@@ -160,15 +186,11 @@ export function DockCard() {
           focus={bookmarkFocus}
           onFocused={() => setBookmarkFocus(null)}
           movable
-          keepOpen={keepOpen}
-          onKeepOpen={(on) => {
-            setKeepOpen(on);
-            try {
-              localStorage.setItem('office:card-keep', on ? 'on' : 'off');
-            } catch {
-              // Remembering is a convenience.
-            }
-          }}
+          cardPinned={windowState.pinned}
+          positionRemembered={windowState.positionRemembered}
+          windowBusy={windowBusy}
+          onCardPin={(on) => void changeWindow(on ? 'pin-on' : 'pin-off')}
+          onPositionRemember={(on) => void changeWindow(on ? 'position-on' : 'position-off')}
         />
       ) : (
         <div className="dock-card-empty">
