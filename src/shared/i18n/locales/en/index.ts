@@ -1,3 +1,4 @@
+import { mobile } from './mobile';
 import { guide } from './guide';
 import { federation } from './federation';
 import { pets } from './pets';
@@ -26,6 +27,7 @@ import { prompts } from './prompts';
 
 /** English is the source catalog: every other language must match its shape. */
 export const en = {
+  mobile,
   federation,
   common,
   app,

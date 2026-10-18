@@ -1,6 +1,7 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
 import { useEffect, useRef, useState } from 'react';
 import { PetCustomizer } from './PetCustomizer';
+import { MobileSettings } from './MobileSettings';
 import { FederationSettings } from './FederationSettings';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
@@ -217,6 +218,7 @@ export function Settings({
         </section>
         <div>
           {!demo && <FederationSettings snapshot={snapshot.federation} />}
+          {!demo && <MobileSettings privacy={p.privacy} />}
           <section className="settings-section">
             <div className="setting-row">
               <Languages size={18} />

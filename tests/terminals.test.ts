@@ -1490,3 +1490,31 @@ test('A failed process inspection is not remembered', async () => {
     assert.ok(await locateTerminal(SESSION, { deps, fresh: true }));
   });
 });
+
+test('Optional mobile authority is checked before paste and again before Enter', async () => {
+  for (const live of [orcaLive(), tmuxLive()]) {
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const first = fakeDeps(dir);
+      await assert.rejects(
+        sendToTerminal(live, 'hi', first.deps, {
+          beforeSend: () => {
+            throw new Error('revoked');
+          },
+        }),
+        /revoked/,
+      );
+      assert.ok(!typedAny(first.calls) && !sent(first.calls));
+      const second = fakeDeps(dir);
+      let checks = 0;
+      await assert.rejects(
+        sendToTerminal(live, 'hi', second.deps, {
+          beforeSend: () => {
+            if (++checks === 2) throw new Error('revoked');
+          },
+        }),
+        /revoked/,
+      );
+      assert.ok(typedAny(second.calls) && !sent(second.calls));
+    });
+  }
+});
