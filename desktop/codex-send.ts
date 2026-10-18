@@ -65,12 +65,12 @@ export async function sendToCodex(
   destination: CodexDestination,
   text: unknown,
   deps = defaultTerminalDeps(),
-  beforeSend: () => void = () => {},
+  beforeSend: () => void | Promise<void> = () => {},
 ) {
   if (destination.transport === 'desktop')
     return sendToCodexDesktop(deps.codexHome, destination.threadId, text, 15000, beforeSend);
   try {
-    beforeSend();
+    await beforeSend();
     return await queueToCodex(destination, text, deps);
   } catch (error) {
     if (error instanceof TerminalInputError) throw error;

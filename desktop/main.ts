@@ -665,7 +665,13 @@ function setupIPC() {
     if (delivery === 'queue' && !thread) throw new Error(m().desktop.terminal.noTarget);
     if (thread)
       try {
-        return { status: 'sent', message: await sendToCodex(thread, text) };
+        return {
+          status: 'sent',
+          message: await sendToCodex(thread, text, undefined, async () => {
+            if (!(await terminalSendEnabled()))
+              throw new TerminalInputError(m().desktop.terminal.enableFirst);
+          }),
+        };
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
         if ((error as NodeJS.ErrnoException).code === 'ENOENT')

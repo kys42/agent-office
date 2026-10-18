@@ -188,7 +188,7 @@ export async function sendToCodexDesktop(
   threadId: string,
   input: unknown,
   timeout = 15000,
-  beforeSend: () => void = () => {},
+  beforeSend: () => void | Promise<void> = () => {},
 ) {
   const text = cleanInput(input);
   let ipc: DesktopIPC | undefined;
@@ -196,7 +196,7 @@ export async function sendToCodexDesktop(
   try {
     ipc = await DesktopIPC.connect(home, 1500);
     const targetClientId = await owner(ipc, threadId, 3000);
-    beforeSend();
+    await beforeSend();
     dispatched = true;
     const reply = await ipc.request(
       'thread-follower-start-turn',
