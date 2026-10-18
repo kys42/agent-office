@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from '@playwright/test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -31,7 +32,11 @@ try {
   await page.getByRole('button', { name: '직접 둘러볼게요' }).click();
   await page.locator('[data-station-id="office:manager"] .office-pet').click();
   await page.getByRole('button', { name: '매니저 출근', exact: true }).click();
-  await page.waitForFunction(async () => (await window.office.manager({ action: 'status' })).ready);
+  await expect
+    .poll(() =>
+      page.evaluate(async () => (await window.office.manager({ action: 'status' })).ready),
+    )
+    .toBe(true);
   // The manager has an ordinary project desk, bubble and card in every dock view.
   await page.evaluate(() => window.office.window('mini'));
   const dock =
@@ -64,12 +69,16 @@ try {
   assert.equal((await card.evaluate(() => window.office.cardState())).pinned, true);
   await input.fill('A second request from the flag view.');
   await card.getByRole('button', { name: '보내기', exact: true }).click();
-  await card.waitForFunction(
-    async () =>
-      (await window.office.manager({ action: 'status' })).jobs.filter(
-        (j) => j.status === 'completed',
-      ).length === 2,
-  );
+  await expect
+    .poll(() =>
+      card.evaluate(
+        async () =>
+          (await window.office.manager({ action: 'status' })).jobs.filter(
+            (j) => j.status === 'completed',
+          ).length,
+      ),
+    )
+    .toBe(2);
   await card
     .locator('.conversation-message.category-reply')
     .filter({ hasText: 'Office verified: 0' })
@@ -83,12 +92,16 @@ try {
     window.office.send('codex:native-manager-smoke', 'Old card route'),
   );
   assert.equal(sent.status, 'sent');
-  await page.waitForFunction(
-    async () =>
-      (await window.office.manager({ action: 'status' })).jobs.filter(
-        (j) => j.status === 'completed',
-      ).length === 3,
-  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        async () =>
+          (await window.office.manager({ action: 'status' })).jobs.filter(
+            (j) => j.status === 'completed',
+          ).length,
+      ),
+    )
+    .toBe(3);
   await page.evaluate(() => window.office.manager({ action: 'stop' }));
   assert.equal(
     (await page.evaluate(() => window.office.manager({ action: 'status' }))).running,
