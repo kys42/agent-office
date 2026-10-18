@@ -63,7 +63,7 @@ npm run start:beta
 
 - 조회와 전송 자격증명은 다르다. 기존 읽기 연결은 계속 조회만 가능하며 UI/IPC 응답에 어느 token도 반환하지 않는다. 송신기의 `allowSend`, `sendToken`, 기존 앱의 `terminal-send.json`, 공유 프로젝트 범위가 모두 허용해야 한다. 수신 앱의 기존 터미널 보내기 설정도 적용한다.
 - `targets`는 공유된 해시 ID 최대 20개의 현재 전송 가능 여부만 반환한다. 로컬 경로·터미널 핸들·프로세스 ID는 전송하지 않는다. `send`는 대상 ID, 메시지, 서버 epoch, requestId만 받는다. 실행 명령/대상 경로/임의 RPC는 받지 않는다.
-- 송신기에서 현재 대상을 다시 찾고 권한을 재확인한 뒤 기존 `queueToCodex` 또는 `sendToTerminal`을 호출한다. 기존에 지원하는 Codex CLI queue, Claude의 검증된 Orca/tmux 대상만 가능하다. Codex Desktop/exec, OpenClaw, 종료된 세션은 새로 열거나 우회 전송하지 않는다. 기존 입력 덮어쓰기와 승인/질문 응답은 미지원이다.
+- 송신기에서 현재 대상을 다시 찾고 권한을 재확인한 뒤 공통 `sendToCodex` 또는 `sendToTerminal`을 호출한다. Codex CLI queue, 이미 열린 Codex Desktop 사용자 대화, Claude의 검증된 Orca/tmux 대상이 가능하다. Desktop은 전송 직전 owner 조회 후 다시 권한을 확인한다. exec, OpenClaw, owner 없는 세션은 새로 열거나 우회 전송하지 않는다. Desktop의 비공개 IPC 호환 한계는 [전송 문서](TERMINAL.md#codex-desktop-대화-전송)를 따른다. 기존 v1 wire의 kind=codex/status=desktop으로 구분하여 새 wire 필드는 추가하지 않는다. 기존 입력 덮어쓰기와 승인/질문 응답은 미지원이다.
 - 채팅 입력창에 목적지 컴퓨터를 표시한다. 연결 끊김/일시정지/권한 없음/전송 불가 상태에서 보내기를 막고, 서버에서도 매번 검증한다. 네이티브 호출이 이미 시작된 뒤의 연결 해제는 취소나 미전송을 보장하지 않는다.
 - `config/commands.sqlite`에 requestId·본문 해시·시도 상태만 별도로 기록한다. 사용자 메시지나 원본 DB를 저장/수정하지 않는다. dispatch 전에 pending을 durable 저장하며 재시작 후에도 같은 ID는 다시 실행하지 않는다. pending/네이티브 실패/응답 유실은 미확인으로 안내하고 자동 재전송하지 않는다. 새 요청은 새 서버 epoch가 필요하다. 최대 100,000개 기록 후 신규 전송을 거절하며 자동 삭제하지 않는다.
 - 같은 서버의 동일 세션 전송은 겹치지 않게 막는다. 별도로 실행 중인 원래 앱의 동시 입력과 OS 네이티브 호출은 하나의 원자적 트랜잭션이 아니다. 기존 어댑터의 fresh 대상/입력창 검사 경계를 유지한다.

@@ -5,7 +5,11 @@ import {
   sendToTerminal,
   forgetTerminal,
 } from '../../desktop/terminals.js';
-import { findCodexThread, queueToCodex, codexTarget } from '../../desktop/codex-queue.js';
+import {
+  findCodexDestination,
+  sendToCodex,
+  codexDestinationTarget,
+} from '../../desktop/codex-send.js';
 import { composerFor } from '../../desktop/composer/index.js';
 
 /** Only the owning computer resolves native paths/processes. No handles come from the client. */
@@ -15,8 +19,10 @@ export interface PeerSender {
 }
 export const nativePeerSender: PeerSender = {
   async target(s) {
-    if (s.provider === 'codex')
-      return (await findCodexThread(s.nativeId, s.sourcePath)) ? codexTarget(null, true) : null;
+    if (s.provider === 'codex') {
+      const destination = await findCodexDestination(s.nativeId, s.sourcePath);
+      return destination ? codexDestinationTarget(destination) : null;
+    }
     if (s.provider !== 'claude') return null;
     const live = await locateTerminal(s.nativeId);
     if (!live) return null;
@@ -25,10 +31,9 @@ export const nativePeerSender: PeerSender = {
   },
   async send(s, text, authorized) {
     if (s.provider === 'codex') {
-      const thread = await findCodexThread(s.nativeId, s.sourcePath, { fresh: true });
+      const thread = await findCodexDestination(s.nativeId, s.sourcePath, { fresh: true });
       if (!thread) throw new Error('unavailable');
-      authorized();
-      await queueToCodex(thread, text);
+      await sendToCodex(thread, text, undefined, authorized);
       return;
     }
     if (s.provider !== 'claude') throw new Error('unsupported');

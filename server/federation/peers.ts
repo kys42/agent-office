@@ -326,7 +326,13 @@ export class PeerManager extends EventEmitter {
           for (const { id, ref } of batch) {
             const target = response.targets[ref.id];
             if (target)
-              result[id] = { ...target, label: '', canFocus: false, remoteOffice: peer.label };
+              result[id] = {
+                ...target,
+                desktop: target.kind === 'codex' && target.status === 'desktop',
+                label: '',
+                canFocus: false,
+                remoteOffice: peer.label,
+              };
           }
         } catch {
           held.commandEpoch = undefined;

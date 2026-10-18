@@ -509,6 +509,8 @@ export interface TerminalTarget {
   focus?: { kind: 'orca' | 'tmux'; label: string };
   /** Goes through the session's own queue (Codex), never typed into a terminal. */
   queues?: boolean;
+  /** Delivered to the existing local Codex Desktop owner, without terminal typing. */
+  desktop?: boolean;
 }
 /**
  * What a follow-up send did. `needs-confirm`: the agent's composer already holds text (a draft,
