@@ -2,6 +2,7 @@ import type { TerminalTarget } from './types';
 
 /** Navigation describes the screen, independently of where follow-ups are delivered. */
 export function focusLocation(target: TerminalTarget) {
+  if (target.kind === 'manager') return null;
   return (
     target.focus ??
     (target.kind === 'codex'

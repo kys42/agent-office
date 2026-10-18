@@ -1,3 +1,4 @@
+import { ManagerTools } from './ManagerTools';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -363,7 +364,8 @@ export function Inspector({
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   const state = nowState(s, colleagueNews);
-  const codexApp = s.provider === 'codex' && isDesktop;
+  const manager = s.builtin === 'manager';
+  const codexApp = !manager && s.provider === 'codex' && isDesktop;
   const resumeLabel = codexApp
     ? t.inspector.openInCodex
     : live?.canFocus
@@ -540,11 +542,13 @@ export function Inspector({
         <p className="info-note">{t.inspector.usage.costBasis}</p>
       </section>
       <p className="info-note">
-        {s.sourceKind === 'sqlite'
-          ? t.inspector.source.sqlite
-          : s.sourceKind === 'demo'
-            ? t.inspector.source.demo
-            : t.inspector.source.log}{' '}
+        {s.sourceKind === 'internal'
+          ? t.manager.title
+          : s.sourceKind === 'sqlite'
+            ? t.inspector.source.sqlite
+            : s.sourceKind === 'demo'
+              ? t.inspector.source.demo
+              : t.inspector.source.log}{' '}
         · {s.partial ? t.inspector.source.partial : t.inspector.source.full}
       </p>
     </div>
@@ -1037,14 +1041,17 @@ export function Inspector({
             </div>
           )}
           <div className="card-actions">
-            <button
-              className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo || !!s.remote}
-              onClick={resume}
-            >
-              <Terminal size={13} />
-              {resumeLabel}
-            </button>
+            {!manager && (
+              <button
+                className={`card-action ${calling ? 'primary' : ''}`}
+                disabled={demo || !!s.remote}
+                onClick={resume}
+              >
+                <Terminal size={13} />
+                {resumeLabel}
+              </button>
+            )}
+            {manager && !s.remote && !demo && <ManagerTools privacy={privacy} notify={notify} />}
             {codexApp && live?.canFocus && (
               <button
                 className="card-action"
@@ -1070,9 +1077,9 @@ export function Inspector({
               remoteOffice={
                 s.remote ? (privacy ? t.federation.remoteOffice : s.remote.label) : undefined
               }
-              enabled={terminalSend}
+              enabled={(manager && !s.remote) || terminalSend}
               privacy={privacy}
-              onJump={!s.remote && api.jump ? () => void resume() : undefined}
+              onJump={!manager && !s.remote && api.jump ? () => void resume() : undefined}
               onSend={async (text, replaceDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();

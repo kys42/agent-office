@@ -11,6 +11,12 @@ const action = (channel: string, ...args: unknown[]) =>
 const api: OfficeAPI = {
   mobile: (command) => action('office:mobile', command),
   federation: (command) => action('office:federation', command),
+  manager: (request) => action('office:manager', request),
+  onManager: (cb) => {
+    const fn = () => cb();
+    ipcRenderer.on('office:manager-open', fn);
+    return () => ipcRenderer.removeListener('office:manager-open', fn);
+  },
   quotas: () => call('quotas'),
   snapshot: () => call('snapshot'),
   detail: (id, page) => call('detail', id, page),

@@ -89,7 +89,7 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 패키지는 기본적으로 HTTP 서버를 열지 않는다. 사용자가 설정에서 켜는 [모바일 웹](MOBILE-WEB.md)은 Desktop이 소유하는 별도 인증 서버로, 선택한 loopback/Tailscale 주소에서 목록·대화·전송만 제공한다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
 
-서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 제어·계정 기반 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
+서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 기반 요약 제어, 앱 종료 중 예약, 원격 제어·계정 기반 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
 
 ## 사용자에게 보이는 진행 설명
 
@@ -119,3 +119,7 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 `row-placement.ts`는 기존 `layoutRow`의 구역 내부 공동 책상/보조 구조를 유지하며 구역의 x좌표만 계산한다. 사용한 공간 안에서 수평 위치를 비율로 저장하고, 가까운 구역은 간격을 보존하며 밀어 겹침을 막는다. canvas는 기본 가구 폭보다 줄어들지 않는다. 시각적 순서를 바꿔도 DOM key/순서는 유지하여 Chromium pointer capture가 중간에 풀리지 않게 한다.
 
 `useRowPlacement`는 pointer capture, 끝부분 자동 스크롤, Esc/blur/구조 변경 취소, 키보드 이동을 처리한다. 저장은 `office:row-zones:v1:live`/`demo` localStorage이며 서버 DB/업무 자리 번호를 수정하지 않는다. 화면에 잠시 없는 구역도 한도500개 안에서 기억한다. DeskDock은 제스처 동안 그려진 표지에서 시작한 native 마우스 입력을 붙잡고 끝나면 실제 hit-test로 클릭 통과를 복원한다.
+
+## 전담 오피스 매니저
+
+2026-10-18: Electron 전용 `office:manager` IPC로 전담 tmux 세션을 관리한다. 스킬과 로컬 CLI가 인증된 Unix socket으로 기존 OfficeService의 조회·구역 이동·복귀·핀과 main의 동료 열기를 호출한다. MCP 설정은 필요하지 않다. 매니저 대화/예약 상태는 별도 `manager/state.json`에 저장한다. 예약 요약은 읽기 전용이며 앱 실행 중에만 동작한다. 실행·저장·검증·지원 범위는 [오피스 매니저](OFFICE-MANAGER.md)가 정본이다.

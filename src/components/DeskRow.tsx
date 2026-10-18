@@ -412,6 +412,7 @@ export function DeskRow({
                   {zone.benches.map((bench, i) => (
                     <Furniture
                       kind="desk"
+                      manager={bench.members.some((id) => byId.get(id)?.builtin === 'manager')}
                       key={`${bench.key}:${i}`}
                       shared={bench.members.length > 1}
                       assetKey={privacy ? undefined : bench.key}
@@ -466,7 +467,10 @@ export function DeskRow({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture
+                          kind="chair"
+                          appearance={s.builtin === 'manager' ? { palette: 'sea' } : undefined}
+                        />
                         <div className="pet-shadow" />
                         <button
                           className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}

@@ -1,3 +1,4 @@
+import { ManagerRichContent } from './ManagerTools';
 import { createPortal } from 'react-dom';
 import { ArrowUpRight, BookmarkCheck } from 'lucide-react';
 import type { Bookmark } from '../shared/types';
@@ -72,6 +73,9 @@ export function BookmarkReader({
                     )}
                     <div className="message-text">
                       <MessageMarkdown text={line.text} notify={notify} />
+                      {line.rich?.length ? (
+                        <ManagerRichContent cards={line.rich} notify={notify} />
+                      ) : null}
                     </div>
                   </div>
                 </article>

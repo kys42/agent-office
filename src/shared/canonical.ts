@@ -105,14 +105,18 @@ export const localizeReason = (reason: string, locale: Locale = getLocale()) =>
 /** Any locale's "unknown workspace" is one project: compare and store the canonical name. */
 export function canonicalProject(project: string): string {
   const unknown = canonical().server.session.unknownWorkspace;
-  for (const locale of Object.keys(LOCALES) as Locale[])
+  for (const locale of Object.keys(LOCALES) as Locale[]) {
     if (project === messagesFor(locale).server.session.unknownWorkspace) return unknown;
+    if (project === messagesFor(locale).manager.title) return 'Office Manager';
+  }
   return project;
 }
 export const localizeProject = (project: string, locale: Locale = getLocale()) =>
   project === canonical().server.session.unknownWorkspace
     ? messagesFor(locale).server.session.unknownWorkspace
-    : project;
+    : project === 'Office Manager'
+      ? messagesFor(locale).manager.title
+      : project;
 /** Excluded projects are stored canonical; settings list them in the display language. */
 export const localizePreferences = (p: Preferences, locale: Locale = getLocale()): Preferences => ({
   ...p,
@@ -178,6 +182,10 @@ function localizeTitle(s: Session, locale: Locale) {
  * fields derived at read time (e.g. runtime reasons) are already in the active language.
  */
 export function localizeSession<T extends Session>(s: T, locale: Locale = getLocale()): T {
+  if (s.builtin === 'manager') {
+    const name = messagesFor(locale).manager.title;
+    s = { ...s, title: name, project: name, workspace: s.workspace && { ...s.workspace, name } };
+  }
   if (locale === CANONICAL) return s;
   const notCollected = canonical().server.session.usageNotCollected;
   return {

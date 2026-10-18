@@ -103,6 +103,7 @@ const visible = (s: Snapshot) =>
     ? []
     : s.sessions.filter(
         (a) =>
+          !a.builtin &&
           s.preferences.enabledProviders.includes(a.provider) &&
           !s.preferences.excludedProjects.includes(a.project) &&
           !isVeiled([a], s.notices ?? []),

@@ -42,6 +42,7 @@ function clip(text: string, max: number): { text: string; truncated?: boolean } 
 export function bookmarkLine(e: OfficeEvent, max: number): BookmarkLine {
   return {
     eventId: e.id,
+    ...(e.rich ? { rich: e.rich } : {}),
     kind: e.kind,
     ...(e.phase ? { phase: e.phase } : {}),
     at: e.at,

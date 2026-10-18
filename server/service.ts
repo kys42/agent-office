@@ -1,3 +1,6 @@
+import { managerSession } from './manager/projection.js';
+import type { ManagerState } from '../src/shared/manager.js';
+import { sendToZone, zoneOptions } from '../src/shared/zones.js';
 import { QuotaService } from './quotas.js';
 import path from 'node:path';
 import os from 'node:os';
@@ -365,6 +368,11 @@ export class OfficeService extends EventEmitter {
    */
   private relocalize() {
     for (const c of this.connectors) c.message = this.phrasing.get(c.provider)?.() ?? c.message;
+  }
+  /** Trusted desktop controller only; never exposed as a renderer/HTTP RPC method. */
+  syncManager(state: ManagerState) {
+    this.store.setManager(managerSession(state), state.ownedSessionIds ?? []);
+    return this.emitSnapshot();
   }
   snapshot(): Snapshot {
     return this.compose().snapshot;
@@ -1176,6 +1184,36 @@ export class OfficeService extends EventEmitter {
       case 'identities':
         // Read-only and no more than `detail` already returns, for the desktop's terminal lookup.
         return this.store.identities(z.array(z.string().max(400)).max(500).parse(args[0]));
+      case 'managerMove': {
+        const a = z
+          .object({
+            id: z.string().min(1).max(400),
+            zoneKey: z.string().max(1100).optional(),
+            name: z.string().trim().min(1).max(40).optional(),
+          })
+          .strict()
+          .parse(args[0]);
+        if (Boolean(a.zoneKey) === Boolean(a.name)) throw new Error('Choose one destination.');
+        this.store.get(a.id);
+        const snapshot = this.published();
+        const session = snapshot.sessions.find((s) => s.id === a.id);
+        if (!session) throw new Error('Session is not available.');
+        const rules = this.store.preferences().zoneRules ?? [];
+        const zone = a.zoneKey
+          ? zoneOptions(snapshot.sessions, rules).find((z) => z.key === a.zoneKey)
+          : { key: `area:${a.name}`, name: a.name! };
+        if (!zone) throw new Error('Zone is no longer available.');
+        const next = sendToZone(
+          session,
+          rules,
+          { match: 'session', value: a.id },
+          zone,
+          randomUUID,
+        );
+        this.store.preferences(prefsSchema.parse({ zoneRules: next }));
+        this.emitSnapshot();
+        return { id: a.id, area: zone };
+      }
       case 'preferences':
         if (syncLocale(this.store.preferences(prefsSchema.parse(args[0])).locale))
           this.relocalize();

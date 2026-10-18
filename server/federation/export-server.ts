@@ -87,7 +87,11 @@ export async function startExportServer(dataDir: string, configDir: string, send
           const prefs = store.preferences();
           const sessions = store
             .list()
-            .filter((s) => config.projects.includes('*') || config.projects.includes(s.project));
+            .filter(
+              (s) =>
+                !s.builtin &&
+                (config.projects.includes('*') || config.projects.includes(s.project)),
+            );
           if (sessions.length > 900) {
             send(413, { error: 'too-many-sessions' });
             return;

@@ -193,8 +193,16 @@ test('DTOs omit native paths and handles, respect privacy and project exclusions
   await f.login();
   const agent = f.s.sessions[0];
   agent.sourcePath = '/secret/native-source';
+  f.s.sessions.push({ ...agent, id: 'office:manager', builtin: 'manager' });
   const state = await (await f.post('state')).json();
   assert.ok(state.agents.length);
+  assert.ok(!state.agents.some((a: { id: string }) => a.id === 'office:manager'));
+  assert.equal((await f.post('detail', { id: 'office:manager' })).status, 403);
+  assert.equal(
+    (await f.post('send', { id: 'office:manager', text: 'move somebody', requestId: randomUUID() }))
+      .status,
+    403,
+  );
   assert.ok(!JSON.stringify(state).includes('/secret'));
   const targets = await (await f.post('targets', { ids: [agent.id] })).json();
   assert.equal(targets[agent.id].canSend, true);

@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from '@playwright/test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,10 +107,32 @@ try {
   };
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // The built-in desk is available before providers finish collecting on slower machines.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const s = await window.office.snapshot();
+          return (
+            s.sessions.filter((x) => !x.builtin).length === 3 &&
+            s.sessions.some((x) => x.builtin === 'manager') &&
+            s.connectors.every((c) => c.state === 'connected')
+          );
+        }),
+      { timeout: 30000 },
+    )
+    .toBe(true);
   await page.waitForSelector('.office-pet');
   await checkMacDock('startup');
   const s = await page.evaluate(() => window.office.snapshot());
-  assert.equal(s.sessions.length, 3);
+  assert.equal(s.sessions.filter((x) => !x.builtin).length, 3);
+  assert.equal(s.sessions.filter((x) => x.builtin === 'manager').length, 1);
+  // Verify ordinary archiving for the built-in colleague, then keep the original three-provider
+  // geometry fixture. A fourth project packs narrow Windows rows with no free drag space.
+  const archivedManager = await page.evaluate(() =>
+    window.office.patch('office:manager', { archived: true }),
+  );
+  assert.equal(archivedManager.sessions.find((x) => x.id === 'office:manager').zone, 'archive');
   assert.deepEqual(
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
@@ -456,7 +479,8 @@ try {
   console.log(
     JSON.stringify({
       ok: true,
-      sessions: 3,
+      sessions: 4,
+      builtinManager: true,
       providers: 3,
       deskPet: true,
       deskRow: true,

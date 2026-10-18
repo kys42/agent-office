@@ -1,3 +1,4 @@
+import { ManagerRichContent } from './ManagerTools';
 import {
   Fragment,
   useEffect,
@@ -126,6 +127,7 @@ function Message({
         <div className="message-text">
           <MessageMarkdown text={text} notify={notify} />
         </div>
+        {!!event.rich?.length && <ManagerRichContent cards={event.rich} notify={notify} />}
         {long && (
           <button className="message-expand" aria-expanded={expanded} onClick={onExpand}>
             {expanded

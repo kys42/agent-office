@@ -263,7 +263,10 @@ test('HTTPS export is read-only, authenticates before data and scopes every deta
   mkdirSync(configDir);
   const writer = new OfficeStore(data);
   const session = fixture();
-  writer.upsert([session], session.provider);
+  writer.upsert(
+    [session, { ...session, id: 'office:manager', builtin: 'manager', nativeId: 'manager-native' }],
+    session.provider,
+  );
   writer.close();
   const dbBefore = readFileSync(path.join(data, 'office.sqlite'));
   execFileSync(
@@ -310,6 +313,7 @@ test('HTTPS export is read-only, authenticates before data and scopes every deta
     if ('unchanged' in snapshot) throw new Error();
     assert.equal(snapshot.sessions.length, 1);
     assert.equal(snapshot.sessions[0].id, wireId(session.id));
+    await assert.rejects(peerRequest(p, `/office/v1/detail?id=${wireId('office:manager')}`));
     const same = (await peerRequest(
       p,
       `/office/v1/snapshot?epoch=${snapshot.epoch}&version=${snapshot.version}`,

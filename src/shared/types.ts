@@ -155,6 +155,7 @@ export interface DetailPage {
 }
 /** One message as a bookmark keeps it: a copy, readable after its source is gone. */
 export interface BookmarkLine {
+  rich?: OfficeEvent['rich'];
   eventId: string;
   kind: OfficeEvent['kind'];
   phase?: OfficeEvent['phase'];
@@ -202,6 +203,8 @@ export interface Bookmark extends BookmarkLine {
     sessionKey?: string;
     sourcePath: string;
     sourceRef: string;
+    /** Validated service data selected by an agent for display inside its response. */
+    rich?: import('./manager').ManagerCard[];
     legacyId?: string;
     /** Its place in the conversation as shown when it was bookmarked (for reference only). */
     index: number;
@@ -261,6 +264,8 @@ export interface OfficeEvent {
   excerpt?: boolean;
   lifecycle?: 'started' | 'completed' | 'aborted';
   sourceRef: string;
+  /** Validated service data selected by an agent for display inside its response. */
+  rich?: import('./manager').ManagerCard[];
   /**
    * What an open request for input asks: a question or a plan to approve. Optional: absent in
    * older records and once answered. Permission prompts are never stored here (their tool input
@@ -353,6 +358,7 @@ export interface ProviderQuota {
 export interface Session {
   /** Beta view only; never stored by the local collector. */
   remote?: import('./federation').RemoteSource;
+  builtin?: 'manager';
   protocolVersion?: 1;
   id: string;
   nativeId: string;
@@ -392,7 +398,7 @@ export interface Session {
   action: string;
   activity?: Activity;
   sourcePath: string;
-  sourceKind: 'jsonl' | 'sqlite' | 'demo';
+  sourceKind: 'jsonl' | 'sqlite' | 'demo' | 'internal';
   sourceVersion: string;
   partial: boolean;
   /** Only the head and tail of the source were read (a large file): evidence in between is unseen. */
@@ -498,7 +504,7 @@ export type SessionPatch = Partial<
 export interface TerminalTarget {
   /** Display-only destination; remote responses never carry handles. */
   remoteOffice?: string;
-  kind: 'orca' | 'tmux' | 'codex';
+  kind: 'orca' | 'tmux' | 'codex' | 'manager';
   label: string;
   /** Agent CLI process state, e.g. idle, busy, shell. */
   status: string;
@@ -676,6 +682,10 @@ export interface OfficeAPI {
   federation?: (
     command: import('./federation').FederationCommand,
   ) => Promise<import('./federation').FederationState>;
+  manager?: (
+    request: import('./manager').ManagerRequest,
+  ) => Promise<import('./manager').ManagerState>;
+  onManager?: (cb: () => void) => () => void;
   quotas: () => Promise<ProviderQuota[]>;
   /** One page of a colleague's conversation; without `page`, the newest one. */
   detail: (id: string, page?: DetailPage) => Promise<SessionDetail>;
