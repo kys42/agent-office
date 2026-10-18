@@ -265,3 +265,7 @@ terminal_title = ["session-id", "thread-name", "project"]
 origin/owner 검증, 설정 상속, 잘못된 권한/프로토콜, 응답 유실 시 단일 dispatch를
 확인한다. UI는 합성 카드만 사용한다. 개인 대화에 실제 테스트 메시지를 보내는
 검증과는 구분한다. Playwright 수집기 홈/DB는 `.local/ui-tests`로 격리한다.
+
+## 모바일 웹 전송
+
+설정에서 켜는 [모바일 웹](MOBILE-WEB.md)은 Desktop main의 동일 전송 함수를 사용한다. 접속 세션·현재 공유 범위·기존 전송 설정을 확인하며, 터미널 입력과 Enter 직전에 선택적 권한 콜백으로 재확인한다. 웹에는 초안 교체·승인 자동 응답을 노출하지 않는다. 일반 Desktop IPC의 기존 동작은 이 선택적 콜백 없이 유지된다.

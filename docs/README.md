@@ -43,6 +43,7 @@ docs/
 | 원래 터미널 이동·바로 보내기 | [터미널 연결](development/TERMINAL.md) |
 | 팝업 위치 기억·독립 고정 카드 | [팝업 카드](development/POPUP-CARDS.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
+| 휴대폰에서 오피스 조회·메시지 전송 | [모바일 웹](development/MOBILE-WEB.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
 | 여러 컴퓨터의 Office 연결 | [여러 Office 베타](development/MULTI-OFFICE.md) |
 | CPU·메모리 경량화 계획 | [측정과 경량화 설계 — 제안](development/PERFORMANCE-DESIGN.md) |

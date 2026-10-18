@@ -16,6 +16,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { MobileServer } from '../server/mobile/server.js';
 import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
@@ -75,6 +76,7 @@ let main: BrowserWindow | null = null,
   bridge: ServiceBridge,
   quitting = false;
 let cards: CardWindows;
+let mobile: MobileServer | undefined;
 // Desk pet: presentation-only window state. Office data comes from the same snapshot.
 let dockMode: DockMode = 'pet',
   petEnabled = false,
@@ -575,8 +577,7 @@ function setupIPC() {
     known.provider === 'codex'
       ? findCodexDestination(known.nativeId, known.sourcePath, { fresh })
       : null;
-  ipcMain.handle('office:terminals', async (e, ids) => {
-    trusted(e);
+  const sendTargets = async (ids: unknown) => {
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error(m().desktop.badRequest);
     const unique = [...new Set(ids as string[])];
@@ -603,6 +604,10 @@ function setupIPC() {
     const remote = unique.filter(isRemoteId);
     const remoteTargets = remote.length ? await bridge.call('remote-targets', [remote]) : {};
     return { ...Object.fromEntries(entries), ...remoteTargets };
+  };
+  ipcMain.handle('office:terminals', (e, ids) => {
+    trusted(e);
+    return sendTargets(ids);
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
@@ -657,8 +662,12 @@ function setupIPC() {
     const terminal = await live(known, true);
     return terminal ? inspectTerminalDraft(terminal, composer) : null;
   });
-  ipcMain.handle('office:send', async (e, id, text, options): Promise<SendResult> => {
-    trusted(e);
+  const sendMessage = async (
+    id: unknown,
+    text: unknown,
+    options?: { replaceDraft?: string },
+    authorized?: () => Promise<void>,
+  ): Promise<SendResult> => {
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
     const replaceDraft: unknown = options?.replaceDraft;
     if (
@@ -668,9 +677,10 @@ function setupIPC() {
     )
       throw new Error(m().desktop.badRequest);
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+    await authorized?.();
     if (isRemoteId(id)) {
       if (replaceDraft !== undefined) throw new Error(m().federation.remoteDraft);
-      return bridge.call('remote-send', [id, text, randomUUID()]);
+      return bridge.call('remote-send', [id, text, randomUUID()], authorized);
     }
     const known = await identity(id);
     // Each agent's adapter says how a follow-up reaches it: its queue (Codex, no composer
@@ -685,6 +695,7 @@ function setupIPC() {
         return {
           status: 'sent',
           message: await sendToCodex(thread, text, undefined, async () => {
+            await authorized?.();
             if (!(await terminalSendEnabled()))
               throw new TerminalInputError(m().desktop.terminal.enableFirst);
           }),
@@ -701,6 +712,7 @@ function setupIPC() {
       return await sendToTerminal(terminal, text, undefined, {
         composer,
         replaceDraft,
+        beforeSend: authorized,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),
         clipboardText: () => clipboard.readText(),
@@ -712,7 +724,24 @@ function setupIPC() {
     } finally {
       forgetTerminal(terminal.process.sessionId);
     }
+  };
+  ipcMain.handle('office:send', (e, id, text, options) => {
+    trusted(e);
+    return sendMessage(id, text, options);
   });
+  mobile = new MobileServer(app.getPath('userData'), path.join(root, 'dist'), {
+    snapshot: () => bridge.call('snapshot'),
+    detail: (id, page) => bridge.call('detail', [id, page]),
+    targets: sendTargets,
+    send: (id, text, authorized) => sendMessage(id, text, undefined, authorized),
+    sendEnabled: terminalSendEnabled,
+  });
+  void mobile.restore();
+  ipcMain.handle('office:mobile', (e, command) => {
+    trusted(e);
+    return mobile!.command(command);
+  });
+
   // Answering a calling session's dialog by its own keys: desktop-only like sending, off until
   // the person agrees (a native confirmation, per kind), and checked against the screen. Which
   // agent and terminal is the adapter's business; nothing here depends on the provider.
@@ -916,7 +945,10 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   if (collectorClosing) return;
   collectorClosing = true;
-  void bridge.close().finally(() => {
+  void (async () => {
+    await mobile?.close();
+    await bridge.close();
+  })().finally(() => {
     collectorClosed = true;
     app.quit();
   });

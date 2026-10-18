@@ -343,7 +343,12 @@ export class PeerManager extends EventEmitter {
     }
     return result;
   }
-  async send(id: string, text: string, requestId: string): Promise<SendResult> {
+  async send(
+    id: string,
+    text: string,
+    requestId: string,
+    authorized?: () => Promise<void>,
+  ): Promise<SendResult> {
     const ref = parseRemoteId(id),
       peer = this.config.peers.find((p) => p.officeId === ref.officeId);
     const held = this.held.get(ref.officeId);
@@ -357,6 +362,7 @@ export class PeerManager extends EventEmitter {
       throw new Error(m().federation.sendUnavailable);
     const generation = this.generation;
     const target = (await this.targets([id]))[id];
+    await authorized?.();
     if (generation !== this.generation || !target?.canSend || !held.commandEpoch)
       throw new Error(m().federation.sendUnavailable);
     const controller = new AbortController();

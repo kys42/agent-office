@@ -1,3 +1,4 @@
+import { mobile } from './mobile';
 import { guide } from './guide';
 import { federation } from './federation';
 import { pets } from './pets';
@@ -26,6 +27,7 @@ import { terminal } from './terminal';
 import { prompts } from './prompts';
 
 export const ko: Messages = {
+  mobile,
   federation,
   common,
   app,

@@ -18,15 +18,44 @@ service.on('snapshot', (snapshot, patch) =>
     patch ? { event: 'patch', snapshot: patch } : { event: 'snapshot', snapshot },
   ),
 );
-parentPort?.on('message', async ({ id, method, args, stop }) => {
+let nextCheck = 0;
+const checks = new Map<number, (allowed: boolean) => void>();
+function authorize(id: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const check = ++nextCheck;
+    const timer = setTimeout(() => {
+      checks.delete(check);
+      reject(new Error('authorization-timeout'));
+    }, 10000);
+    checks.set(check, (allowed) => {
+      clearTimeout(timer);
+      checks.delete(check);
+      allowed ? resolve() : reject(new Error('authorization-revoked'));
+    });
+    parentPort?.postMessage({ authorize: id, check });
+  });
+}
+parentPort?.on('message', async ({ id, method, args, stop, guarded, authorization, allowed }) => {
+  if (authorization !== undefined) {
+    checks.get(authorization)?.(allowed === true);
+    return;
+  }
   // The app is quitting: finish what is in flight, write what the hot path staged, then say so.
   if (stop) {
+    for (const check of checks.values()) check(false);
     await service.shutdown().catch(() => {});
     parentPort?.postMessage({ stopped: true });
     return;
   }
   try {
-    parentPort?.postMessage({ id, result: await service.call(method, args) });
+    parentPort?.postMessage({
+      id,
+      result: await service.call(
+        method,
+        args,
+        guarded && method === 'remote-send' ? () => authorize(id) : undefined,
+      ),
+    });
   } catch (e) {
     parentPort?.postMessage({ id, error: e instanceof Error ? e.message : m().server.rpc.failed });
   }

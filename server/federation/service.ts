@@ -116,7 +116,11 @@ export class FederatedService extends EventEmitter {
     );
     return next;
   }
-  async call(method: string, args: unknown[] = []): Promise<unknown> {
+  async call(
+    method: string,
+    args: unknown[] = [],
+    authorized?: () => Promise<void>,
+  ): Promise<unknown> {
     if (method === 'federation') return this.peers.command(args[0]);
     if (method === 'remote-targets') {
       const ids = args[0];
@@ -135,7 +139,7 @@ export class FederatedService extends EventEmitter {
         if (method === 'remote-send') {
           if (typeof args[1] !== 'string' || args[1].length > 20000 || typeof args[2] !== 'string')
             throw new Error('Invalid send');
-          return this.peers.send(id, args[1], args[2]);
+          return this.peers.send(id, args[1], args[2], authorized);
         }
         return this.peers.detail(id);
       }

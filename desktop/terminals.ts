@@ -378,6 +378,8 @@ const pressEnter = (host: TerminalHost, deps: TerminalDeps) =>
     : deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
 
 export interface TerminalSendOptions {
+  /** Recheck optional network authority immediately before typing and submitting. */
+  beforeSend?: () => void | Promise<void>;
   /**
    * The composer text the person agreed to clear (exactly what `needs-confirm` showed). It is
    * cleared only while the composer still holds that text; otherwise they are asked again.
@@ -570,6 +572,7 @@ async function deliver(
    * after a clearing that could only infer the box was empty: the exact text only.
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
+    await options.beforeSend?.();
     await typeText(host, text, deps);
     const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
     // The prompt may take a moment to draw the text.
@@ -586,6 +589,7 @@ async function deliver(
     // And the screen once more: a dialog may have opened during those checks.
     if (!(await holds())) throw new TerminalInputError(t.stateChanged);
     try {
+      await options.beforeSend?.();
       await pressEnter(host, deps);
     } catch (error) {
       // The text is in the prompt: a blind resend would type it twice.

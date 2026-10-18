@@ -1,0 +1,64 @@
+.mobile-settings h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mobile-settings > p {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.mobile-network {
+  display: flex;
+  gap: 12px;
+  margin: 16px 0;
+}
+.mobile-network label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.mobile-network label:last-child {
+  max-width: 100px;
+}
+.mobile-network select,
+.mobile-network input {
+  min-width: 0;
+  width: 100%;
+  padding: 8px;
+}
+.mobile-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mobile-link code {
+  overflow-wrap: anywhere;
+}
+.mobile-code {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 12px;
+}
+.mobile-code code {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.mobile-code > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.mobile-settings button:not(.toggle) {
+  padding: 7px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: var(--control);
+  color: var(--text);
+  font-size: 12px;
+}

@@ -669,6 +669,9 @@ export interface CardWindowState {
 }
 export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
+  mobile?: (
+    command: import('./mobile').MobileCommand,
+  ) => Promise<import('./mobile').MobileSettings>;
   /** Separate desktop IPC; not part of the collector HTTP API. */
   federation?: (
     command: import('./federation').FederationCommand,

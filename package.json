@@ -35,7 +35,8 @@
     "format": "prettier --write \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "package:dmg": "npm run package && node scripts/dmg.mjs",
-    "test:package": "node scripts/dmg-smoke.mjs"
+    "test:package": "node scripts/dmg-smoke.mjs",
+    "test:mobile": "node scripts/mobile-smoke.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",

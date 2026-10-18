@@ -237,6 +237,16 @@ test('receiver routes remote chat through the command credential and never retur
     assert.ok(!JSON.stringify(manager.state()).includes(f.config.token));
     assert.equal((await manager.send(remote.id, 'receiver fixture', randomUUID())).status, 'sent');
     assert.deepEqual(f.sent, ['receiver fixture']);
+    let checked = 0;
+    await assert.rejects(
+      manager.send(remote.id, 'revoked mobile', randomUUID(), async () => {
+        checked++;
+        throw new Error('revoked');
+      }),
+      /revoked/,
+    );
+    assert.equal(checked, 1);
+    assert.deepEqual(f.sent, ['receiver fixture']);
     manager.command({ action: 'enable', enabled: false });
     await assert.rejects(manager.send(remote.id, 'must not send', randomUUID()));
     assert.equal(f.sent.length, 1);

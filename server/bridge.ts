@@ -6,7 +6,12 @@ export class ServiceBridge extends EventEmitter {
   nextId = 0;
   pending = new Map<
     number,
-    { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
+    {
+      resolve: (v: any) => void;
+      reject: (e: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+      authorize?: () => Promise<void>;
+    }
   >();
   /** The collector crashed or exited (e.g. its database was locked); the next call restarts it. */
   dead = false;
@@ -23,6 +28,22 @@ export class ServiceBridge extends EventEmitter {
     const worker = new Worker(this.file, { workerData: { dataDir: this.dataDir } });
     this.worker = worker;
     worker.on('message', (m) => {
+      if (m.authorize !== undefined) {
+        const pending = this.pending.get(m.authorize);
+        const guard = pending?.authorize;
+        void (async () => {
+          try {
+            if (!guard || this.closing || worker !== this.worker) throw new Error('revoked');
+            await guard();
+            if (this.pending.get(m.authorize) !== pending || this.closing)
+              throw new Error('revoked');
+            worker.postMessage({ authorization: m.check, allowed: true });
+          } catch {
+            worker.postMessage({ authorization: m.check, allowed: false });
+          }
+        })();
+        return;
+      }
       if (m.event) {
         this.emit(m.event, m.snapshot);
         return;
@@ -46,7 +67,7 @@ export class ServiceBridge extends EventEmitter {
     worker.on('error', (e) => fail(e.message));
     worker.on('exit', () => fail(m().server.rpc.stopped));
   }
-  call(method: string, args: unknown[] = []): Promise<any> {
+  call(method: string, args: unknown[] = [], authorize?: () => Promise<void>): Promise<any> {
     if (this.dead && !this.closing) this.start();
     return new Promise((resolve, reject) => {
       const id = ++this.nextId;
@@ -54,8 +75,8 @@ export class ServiceBridge extends EventEmitter {
         this.pending.delete(id);
         reject(new Error(m().server.rpc.timeout));
       }, 45000);
-      this.pending.set(id, { resolve, reject, timer });
-      this.worker.postMessage({ id, method, args });
+      this.pending.set(id, { resolve, reject, timer, authorize });
+      this.worker.postMessage({ id, method, args, guarded: !!authorize });
     });
   }
   /**

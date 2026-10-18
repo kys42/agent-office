@@ -18,5 +18,8 @@ export default defineConfig({
     proxy: { '/api': 'http://127.0.0.1:4318' },
     watch: { ignored: ['**/.research/**', '**/.local/**', '**/release/**', '**/docs/images/**'] },
   },
-  build: { chunkSizeWarningLimit: 700 },
+  build: {
+    chunkSizeWarningLimit: 700,
+    rolldownOptions: { input: { main: 'index.html', mobile: 'mobile.html' } },
+  },
 });
