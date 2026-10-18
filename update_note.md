@@ -4,6 +4,7 @@
 - collector/MCP의 Windows 기본 데이터를 APPDATA에 두되 명시한 override와 기존 다른 플랫폼 경로를 유지한다. 데이터 자동 이관은 하지 않는다. Git CRLF 출력과 vendor checkout 바이트 보존을 고쳤다.
 - portable Windows 패키지·ICO 생성·source manifest·Windows native PR CI와 격리 smoke를 추가했다. 실제 packaged EXE의 창/테마/편집/트레이와 기존 합성3종·펫/카드·IPC 검증 및 MCP를 통과했다.
 - 전체 기능 지원/미지원/미검증을 [Windows 가이드](docs/development/WINDOWS.md)와 #165에 정리하고 네이티브 입력/WSL은 #166, 정식 배포·운영은 #167로 연결했다. Windows 전체 단위의 기존8개 플랫폼 가정은 남아 있으며 관련 vendor 오류는 해결했다. CI·독립 리뷰·병합·기존 설치본 교체는 구분해 기록한다.
+- 관련 browser UI46개 통과. 독립 리뷰의 반복 패키징 skip 문제를 고유 staging/output과 산출물 검사로 보완했다.
 
 # 팝업 위치 기억과 독립 카드 고정 · 2026-10-15 (Issue #157)
 

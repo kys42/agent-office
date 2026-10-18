@@ -1,5 +1,5 @@
 import { packager } from '@electron/packager';
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { releaseInfo } from './release-utils.mjs';
@@ -10,8 +10,10 @@ const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const git = (...args) => execFileSync('git', args, { encoding: 'utf8', windowsHide: true }).trim();
 const commit = git('rev-parse', 'HEAD');
 const stamp = `${commit.slice(0, 7)}${git('status', '--porcelain') ? '-dirty' : ''}`;
-const source = path.resolve('.local', `windows-${arch}-${stamp}`);
-await mkdir(source, { recursive: true });
+await mkdir('.local', { recursive: true });
+// A build of the same dirty HEAD can contain different code. Never merge staging trees or
+// let packager silently skip an older output directory.
+const source = await mkdtemp(path.resolve('.local', `windows-${arch}-${stamp}-`));
 for (const folder of ['dist', 'dist-desktop'])
   await cp(folder, path.join(source, folder), { recursive: true });
 await writeFile(
@@ -44,7 +46,7 @@ const result = await packager({
   arch,
   electronVersion: pkg.devDependencies.electron,
   appVersion: pkg.version,
-  out: path.resolve('release', `windows-${stamp}`),
+  out: path.resolve('release', path.basename(source)),
   overwrite: false,
   asar: true,
   prune: true,
@@ -56,4 +58,6 @@ const result = await packager({
     FileDescription: pkg.description,
   },
 });
+if (result.length !== 1)
+  throw new Error('No Windows package was produced; existing output was not replaced.');
 console.log(result.join('\n'));

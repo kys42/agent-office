@@ -49,7 +49,7 @@ npm run test:windows
 npm run test:desktop
 ```
 
-`icon:win`은 기존 승인 PNG를 Electron nativeImage로 256px PNG-compressed ICO로 변환한다. 별도 디자인/그림 생성은 하지 않는다. `package:win`은 source SHA와 dirty 표시가 있는 별도 release 경로에 최소 앱 파일만 묶으며 기존 설치본을 덮어쓰지 않는다. `resources/release.json`의 platform·sourceCommit·sourceDirty·arch·signing을 확인한다. preview는 **unsigned**이며 installer/공식 업데이트 채널이 아니다.
+`icon:win`은 기존 승인 PNG를 Electron nativeImage로 256px PNG-compressed ICO로 변환한다. 별도 디자인/그림 생성은 하지 않는다. `package:win`은 source SHA·dirty 표시·고유 빌드 ID가 있는 별도 staging/release 경로에 최소 앱 파일만 묶으며 기존 설치본을 덮어쓰지 않는다. 같은 dirty HEAD를 다시 빌드해도 이전 EXE를 성공으로 skip하거나 삭제된 파일이 staging에 남지 않는다. 산출물이 정확히1개가 아니면 실패한다. `resources/release.json`의 platform·sourceCommit·sourceDirty·arch·signing을 확인한다. preview는 **unsigned**이며 installer/공식 업데이트 채널이 아니다.
 
 `.github/workflows/windows-preview.yml`은 관련 PR과 수동 실행에서 Windows runner를 사용한다. portable EXE에 대해 격리된 native smoke를 실행하고 패키지와 합성 화면을 artifact로 보관한다. Linux Verify와 기존 Mac DMG workflow는 유지한다.
 

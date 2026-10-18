@@ -5,6 +5,8 @@
 - 같은 packaged EXE의 기존 `test:desktop` 통과: 합성3종 수집·펫/줄/바닥·팝업·IPC 저장·렌더러 격리·온보딩. MCP5도구 smoke와 관련 Windows/카드/vendor 단위16개 통과.
 - Windows 전체 단위456 중447통과/9실패 관찰. 미수정 main의 해당40개에서도 같은9실패 재현(31통과). POSIX 경로·shebang·chmod 가정8개는 #166에서 추적한다. vendor checksum1개는 `.gitattributes`의 LF 보존 후 관련16개 재실행에서 통과했다. 전체 Windows 단위가 모두 통과했다고 주장하지 않는다. Linux 전체 Verify와 Windows PR CI는 별도로 확인한다.
 - 첫 native 테마 검수는 Playwright의 기본 light emulation 때문에 dark media 확인이 실패했다. `emulateMedia({colorScheme:null})`로 OS 테마 관측을 복원한 뒤 nativeTheme 갱신을 검증했다. caption 배경은 대소문자 정규화해서 대조한다.
+- 격리된 빈 공급자 경로/전용 DB로 관련 browser UI46개 통과. 최초 실행은 Chromium 미설치로 시작되지 않았고 해당 런타임 설치 후 재실행했다. 개인 공급자 경로를 테스트 수집기에 주지 않았다.
+- 독립 diff 리뷰에서 같은 dirty HEAD의 두 번째 패키징이 기존 output을 skip하고 성공할 수 있음을 발견했다. staging과 release를 빌드마다 고유 경로로 분리하고 산출물1개를 강제 검사해 오래된 EXE 전달을 막는다. 재실행 검수/최종 CI는 PR에 연결한다.
 - Snap/Win+Z는 Windows11 수동 검수 대상이며 이 Windows10 검증에 포함하지 않았다. 다중 배율·Narrator·WSL·실제 Windows↔Mac LAN·서명/업데이트는 미검증. 기존 #81과 새 #165/#166/#167에 작업 경계를 남겼다.
 
 # 2026-10-15 · 팝업 위치와 독립 카드 창 (#157)
