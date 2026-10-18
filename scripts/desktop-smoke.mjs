@@ -189,19 +189,25 @@ try {
   // Synthetic providers share one project. Its sign moves their benches together.
   const rowZone = dock.locator('.row-zone:has([data-station-id="codex:codex-test"])');
   const originalX = await rowZone.evaluate((el) => parseFloat(el.style.left));
+  // The extra manager project can put this group against the left edge on small displays.
+  const dragDelta = originalX > 120 ? -100 : 100;
   const sign = await rowZone.locator('.row-zone-handle').boundingBox();
   assert.ok(sign, 'project sign is drawn');
   await dock.mouse.move(sign.x + sign.width / 2, sign.y + sign.height / 2);
   await dock.mouse.down();
-  await dock.mouse.move(sign.x + sign.width / 2 - 100, sign.y + sign.height / 2, { steps: 8 });
+  await dock.mouse.move(sign.x + sign.width / 2 + dragDelta, sign.y + sign.height / 2, {
+    steps: 8,
+  });
   await dock.mouse.up();
   await dock.waitForFunction(
-    (before) =>
-      parseFloat(
+    ({ before, delta }) =>
+      (parseFloat(
         document.querySelector('.row-zone:has([data-station-id="codex:codex-test"])').style.left,
-      ) <
-      before - 80,
-    originalX,
+      ) -
+        before) *
+        Math.sign(delta) >
+      60,
+    { before: originalX, delta: dragDelta },
   );
   const arrangedX = await rowZone.evaluate((el) => parseFloat(el.style.left));
   assert.equal(await dock.locator('.row-station').count(), 4, 'all desks move together');

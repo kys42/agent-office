@@ -19,7 +19,8 @@ export function managerSession(state: ManagerState): Session {
     ];
     if (job.status === 'running')
       result.push({
-        id: `${job.id}:progress`,
+        // A public draft becomes the final message in place; it must not survive as a second excerpt.
+        id: `${job.id}:answer`,
         kind: 'assistant',
         phase: 'commentary',
         at: job.startedAt ?? job.createdAt,

@@ -50,6 +50,7 @@ test('Manager uses ordinary persisted sessions, receipts, bookmarks and personal
     });
     store.setManager(managerSession(s), s.ownedSessionIds!);
     assert.equal(store.get(MANAGER_ID).status, 'work');
+    assert.equal(store.detail(MANAGER_ID).events.at(-1)?.id, 'one:answer');
     assert.ok(!store.detail(MANAGER_ID).events.some((e) => e.phase === 'final'));
     Object.assign(s.jobs[0], {
       status: 'completed',
@@ -59,6 +60,8 @@ test('Manager uses ordinary persisted sessions, receipts, bookmarks and personal
     store.setManager(managerSession(s), s.ownedSessionIds!);
     const detail = store.detail(MANAGER_ID);
     assert.equal(detail.events.at(-1)?.rich?.[0].type, 'briefing');
+    assert.equal(detail.notices?.filter((n) => n.kind === 'progress').length, 0);
+    assert.equal(detail.events.filter((e) => e.kind === 'assistant').length, 1);
     const notice = detail.notices?.find((n) => n.eventId === 'one:answer');
     assert.ok(notice);
     store.noticeReceipt([{ id: notice.id, version: notice.version }], 'read');
