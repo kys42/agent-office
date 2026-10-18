@@ -13,6 +13,7 @@ import { startFrameClock } from './lib/frame-clock';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
+import './components/chat/messages.css';
 import './styles/panel.css';
 import './styles/pages.css';
 import './styles/ux.css';

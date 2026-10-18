@@ -23,7 +23,7 @@ export const mobile = {
   sendTerminal: 'Send to the open terminal',
   back: 'Back to agents',
   loading: 'Loading…',
-  pageLimit: 'Showing up to 1,000 recent events',
+  pageLimit: 'Conversation display limit reached',
   older: 'Earlier messages',
   loadingChat: 'Loading conversation…',
   emptyChat: 'No messages to show.',

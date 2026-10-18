@@ -24,7 +24,7 @@ export const mobile = {
   sendTerminal: '열린 터미널로 보내기',
   back: '목록으로',
   loading: '불러오는 중…',
-  pageLimit: '최근 1,000개까지 표시합니다',
+  pageLimit: '대화 표시 한도에 도달했습니다',
   older: '이전 대화 보기',
   loadingChat: '대화를 불러오는 중…',
   emptyChat: '표시할 대화가 없습니다.',

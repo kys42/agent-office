@@ -155,3 +155,80 @@ test('read-only remote office retains projects without exposing a composer', asy
   await expect(page.locator('.remote-source')).toContainText('읽기 전용');
   await expect(page.locator('.terminal-send-chat')).toHaveCount(0);
 });
+
+test('desktop remote conversation requests tools only on demand and ignores a late old view', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.detailViews = [];
+    w.office.detail = async (id: string, options: any) => {
+      w.detailViews.push({ id, view: options?.view });
+      const s = structuredClone(w.mockSnapshot.sessions.find((s: any) => s.id === id));
+      const result = {
+        ...s,
+        olderEvents: false,
+        notices: [],
+        events: [
+          { id: 'request', at: 1, kind: 'user', text: '원격 사용자 요청', sourceRef: '' },
+          {
+            id: 'progress',
+            at: 2,
+            kind: 'assistant',
+            phase: 'commentary',
+            text: '원격 진행 메시지',
+            sourceRef: '',
+          },
+          ...(options?.view === 'all'
+            ? [{ id: 'tool', at: 3, kind: 'tool', text: '도구 전문', sourceRef: '' }]
+            : []),
+          {
+            id: 'reply',
+            at: 4,
+            kind: 'assistant',
+            phase: 'final',
+            text: '원격 최종 답변',
+            sourceRef: '',
+          },
+        ],
+      };
+      if (options?.view === 'all')
+        return new Promise((resolve) => {
+          w.releaseTools = () => resolve(result);
+        });
+      return result;
+    };
+  });
+  await page
+    .getByRole('tablist', { name: '사무실', exact: true })
+    .getByRole('tab', { name: /MacBook Pro/ })
+    .click();
+  await page.locator('.roster .session-row').first().click();
+  await expect(page.getByText('원격 최종 답변', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).detailViews.at(-1).view)).toBe('conversation');
+  await page.getByRole('button', { name: '필터', exact: true }).click();
+  const toggle = page.locator('.conversation-tools-toggle input');
+  await toggle.check();
+  await expect.poll(() => page.evaluate(() => !!(window as any).releaseTools)).toBe(true);
+  await toggle.uncheck();
+  await expect(page.getByText('원격 최종 답변', { exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).releaseTools());
+  await page.waitForTimeout(100);
+  await expect(page.locator('.work-group')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).detailViews.map((x: any) => x.view))).toEqual([
+    'conversation',
+    'all',
+    'conversation',
+  ]);
+  // A subsequent explicit tool request loads its own data, rather than un-hiding a prefetch.
+  await page.evaluate(() => {
+    (window as any).releaseTools = null;
+  });
+  await toggle.check();
+  await expect.poll(() => page.evaluate(() => !!(window as any).releaseTools)).toBe(true);
+  await page.evaluate(() => (window as any).releaseTools());
+  await expect(page.locator('.work-group')).toHaveCount(1);
+  await page.locator('.work-group summary').click();
+  await expect(page.getByText('도구 전문', { exact: true })).toBeVisible();
+});

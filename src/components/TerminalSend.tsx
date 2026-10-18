@@ -1,3 +1,4 @@
+import { ChatComposer } from './chat/ChatComposer';
 import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
 import type { SendResult, TerminalTarget } from '../shared/types';
 import { m } from '../shared/i18n';
@@ -85,12 +86,20 @@ export function TerminalSend({
     if (!remoteOffice || target?.canSend) void reply.submit();
   };
   return (
-    <form
+    <ChatComposer
       className={`terminal-send ${chat ? 'terminal-send-chat' : ''}`}
-      onSubmit={(e) => {
-        e.preventDefault();
-        submit();
+      text={text}
+      onTextChange={reply.setText}
+      onSend={submit}
+      sendDisabled={sending || (!!remoteOffice && !target?.canSend)}
+      submitKey={chat ? 'enter' : 'modifier-enter'}
+      field={{
+        'aria-label': t.terminal.messageLabel(host),
+        rows: chat ? 1 : 2,
+        maxLength: 4000,
+        placeholder: `${target ? targetPlaceholder(target) : t.terminal.placeholder.unknown} · ${chat ? t.terminal.replyKeys : platformKeys(t.terminal.sendShortcut)}`,
       }}
+
       onKeyDown={(e) => {
         // Esc drops an open question about the composer's text; the message stays.
         if (e.key === 'Escape' && draft && !e.nativeEvent.isComposing) {
@@ -99,21 +108,6 @@ export function TerminalSend({
         }
       }}
     >
-      <textarea
-        aria-label={t.terminal.messageLabel(host)}
-        rows={chat ? 1 : 2}
-        maxLength={4000}
-        value={text}
-        placeholder={`${target ? targetPlaceholder(target) : t.terminal.placeholder.unknown} · ${chat ? t.terminal.replyKeys : platformKeys(t.terminal.sendShortcut)}`}
-        onChange={(e) => reply.setText(e.target.value)}
-        onKeyDown={(e) => {
-          const sends = chat ? !e.shiftKey : e.metaKey || e.ctrlKey;
-          if (e.key === 'Enter' && sends && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-      />
       <div className="terminal-send-bar">
         <small>
           <Terminal size={11} />
@@ -155,6 +149,6 @@ export function TerminalSend({
           )}
         </small>
       )}
-    </form>
+    </ChatComposer>
   );
 }

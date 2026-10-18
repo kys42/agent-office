@@ -67,7 +67,9 @@ async function mock(
                 at: Date.now(),
                 text: '진행 중입니다.\n\n- API 확인\n- 화면 검증\n\n<script>alert(1)</script>\n![remote](https://example.com/private.png)',
               },
-              { id: 'tool', kind: 'tool', at: Date.now(), text: '합성 도구 기록' },
+              ...(input.tools
+                ? [{ id: 'tool', kind: 'tool', at: Date.now(), text: '합성 도구 기록' }]
+                : []),
             ],
       });
     if (name === 'send') {
@@ -99,6 +101,70 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('shared popup message expands, copies full text on HTTP and validates links', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined });
+    document.execCommand = () => {
+      (window as any).copied = (document.activeElement as HTMLTextAreaElement).value;
+      return true;
+    };
+  });
+  await mock(page);
+  const text =
+    '**공통 메시지**\n\n[웹 링크](https://example.com/page) [불가](https://user:secret@example.com/)\n\n' +
+    '긴 대화 내용 '.repeat(80);
+  await page.route('**/mobile/api/detail', (route) =>
+    route.fulfill({
+      json: {
+        id: local.id,
+        older: false,
+        events: [{ id: 'shared', kind: 'assistant', phase: 'final', at: 1, text }],
+      },
+    }),
+  );
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.conversation-message.category-reply')).toHaveCount(1);
+  await expect(page.getByRole('link', { name: '웹 링크' })).toHaveAttribute(
+    'href',
+    'https://example.com/page',
+  );
+  await expect(page.getByRole('link', { name: '불가' })).toHaveCount(0);
+  await page.getByRole('button', { name: /더 보기/ }).click();
+  await expect(page.locator('.message-text')).toContainText('긴 대화 내용 '.repeat(80).trim());
+  await page.getByRole('button', { name: '메시지 복사', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).copied)).toBe(text);
+  await expect(page.getByRole('status')).toContainText('복사');
+  await expect(page.locator('textarea')).toHaveCount(1);
+});
+test('shared mobile composer keeps Enter and IME as text, modifier Enter submits once', async ({
+  page,
+}) => {
+  const f = await mock(page);
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  const input = page.getByLabel('메시지', { exact: true });
+  await input.fill('한글');
+  await input.press('Enter');
+  await expect(input).toHaveValue('한글\n');
+  await input.dispatchEvent('keydown', {
+    key: 'Enter',
+    ctrlKey: true,
+    isComposing: true,
+    bubbles: true,
+  });
+  await input.dispatchEvent('keydown', {
+    key: 'Enter',
+    ctrlKey: true,
+    keyCode: 229,
+    bubbles: true,
+  });
+  expect(f.sends).toHaveLength(0);
+  await input.press('Control+Enter');
+  await expect.poll(() => f.sends.length).toBe(1);
+});
 test('a late older page cannot bridge a gap after the latest page resets', async ({ page }) => {
   await mock(page);
   let advanced = false;
@@ -220,8 +286,8 @@ test('mobile filters offices/projects, reads older conversation, hides tools and
   await expect(page.locator('.chat')).toBeVisible();
   await expect(page.locator('.roster')).toBeHidden();
   await expect(page.getByText('합성 도구 기록')).toHaveCount(0);
-  await expect(page.locator('.message-body img')).toHaveCount(0);
-  await expect(page.locator('.message-body script')).toHaveCount(0);
+  await expect(page.locator('.message-text img')).toHaveCount(0);
+  await expect(page.locator('.message-text script')).toHaveCount(0);
   await page.getByLabel('도구 기록', { exact: true }).check();
   await expect(page.getByText('합성 도구 기록')).toBeVisible();
   await page.getByRole('button', { name: '이전 대화 보기' }).click();
@@ -320,4 +386,92 @@ test('late response from an old chat cannot erase the next pending send', async 
   await expect(page.getByLabel('메시지', { exact: true })).toHaveValue('second');
   await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '접수 확인', exact: true })).toBeVisible();
+});
+
+test('turning tools off discards a late tools response and sends a fresh filtered request', async ({
+  page,
+}) => {
+  await mock(page);
+  let pending: import('@playwright/test').Route | undefined;
+  const views: boolean[] = [];
+  await page.route('**/mobile/api/detail', async (route) => {
+    const { tools } = route.request().postDataJSON();
+    views.push(tools);
+    if (tools) {
+      pending = route;
+      return;
+    }
+    await route.fulfill({
+      json: {
+        id: local.id,
+        older: false,
+        events: [{ id: 'human', kind: 'user', at: 1, text: '요청만 표시' }],
+      },
+    });
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.getByText('요청만 표시')).toBeVisible();
+  await page.getByLabel('도구 기록', { exact: true }).check();
+  await expect.poll(() => !!pending).toBe(true);
+  await page.getByLabel('도구 기록', { exact: true }).uncheck();
+  await expect(page.getByText('요청만 표시')).toBeVisible();
+  await pending!.fulfill({
+    json: {
+      id: local.id,
+      older: false,
+      events: [{ id: 'stale', kind: 'assistant', at: 1, text: '오래된 도구 보기 응답' }],
+    },
+  });
+  await page.waitForTimeout(100);
+  await expect(page.getByText('오래된 도구 보기 응답')).toHaveCount(0);
+  expect(views).toEqual([false, true, false]);
+});
+test('long conversations stop paging at the text budget before the event count limit', async ({
+  page,
+}) => {
+  await mock(page);
+  await page.route('**/mobile/api/detail', (route) =>
+    route.fulfill({
+      json: {
+        id: local.id,
+        older: true,
+        events: Array.from({ length: 40 }, (_, i) => ({
+          id: String(i),
+          kind: 'assistant',
+          at: i,
+          text: String(i).padStart(5, '0') + 'x'.repeat(63995),
+        })),
+      },
+    }),
+  );
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.conversation-message')).toHaveCount(8);
+  await expect(page.getByRole('button', { name: '대화 표시 한도에 도달했습니다' })).toBeDisabled();
+});
+
+test('a send finishing after switching tools refreshes the current view', async ({ page }) => {
+  await mock(page);
+  let send: import('@playwright/test').Route | undefined;
+  const views: boolean[] = [];
+  page.on('request', (request) => {
+    if (request.url().endsWith('/mobile/api/detail')) views.push(request.postDataJSON().tools);
+  });
+  await page.route('**/mobile/api/send', (route) => {
+    send = route;
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await page.getByLabel('메시지', { exact: true }).fill('합성 요청');
+  await page.getByRole('button', { name: '메시지 보내기', exact: true }).click();
+  await expect.poll(() => !!send).toBe(true);
+  await page.getByLabel('도구 기록', { exact: true }).check();
+  await expect(page.getByText('합성 도구 기록')).toBeVisible();
+  await send!.fulfill({
+    json: { requestId: send!.request().postDataJSON().requestId, status: 'sent' },
+  });
+  await expect.poll(() => views.length).toBe(3);
+  expect(views).toEqual([false, true, true]);
+  await expect(page.getByText('합성 도구 기록')).toBeVisible();
 });

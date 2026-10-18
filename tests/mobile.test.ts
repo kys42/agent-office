@@ -307,3 +307,39 @@ test('disabling a server still works after its interface disappears', async (t) 
     false,
   );
 });
+
+test('mobile requests human conversation by default, tools on demand and bounds event text', async (t) => {
+  const f = await fixture(t);
+  await f.on();
+  await f.login();
+  const s = f.s.sessions[0];
+  const views: unknown[] = [];
+  f.backend.detail = async (_id, page) => {
+    views.push(page?.view);
+    return {
+      ...s,
+      olderEvents: false,
+      events: [
+        { id: 'human', kind: 'user', at: 1, text: 'request', sourceRef: '' },
+        {
+          id: 'progress',
+          kind: 'assistant',
+          phase: 'commentary',
+          at: 2,
+          text: 'working',
+          sourceRef: '',
+        },
+        { id: 'tool', kind: 'tool', at: 3, text: 'x'.repeat(100000), sourceRef: '' },
+      ],
+    };
+  };
+  const plain = await (await f.post('detail', { id: s.id })).json();
+  assert.deepEqual(
+    plain.events.map((e: { id: string }) => e.id),
+    ['human', 'progress'],
+  );
+  const all = await (await f.post('detail', { id: s.id, tools: true })).json();
+  assert.deepEqual(views, ['conversation', 'all']);
+  assert.equal(all.events[2].text.length, 64000);
+  assert.equal(all.events[2].excerpt, true);
+});

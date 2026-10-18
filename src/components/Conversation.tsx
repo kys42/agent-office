@@ -7,20 +7,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { MessageMarkdown } from './MessageMarkdown';
-import {
-  ChevronDown,
-  Copy,
-  Terminal,
-  Clock3,
-  MessageSquare,
-  ArrowDown,
-  Bookmark,
-  BookmarkCheck,
-} from 'lucide-react';
+import { ConversationMessage as Message } from './chat/ConversationMessage';
+import { desktopChatActions } from '../lib/chat-actions';
+import { ChevronDown, Terminal, Clock3, MessageSquare, ArrowDown } from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
-import { isRemoteId } from '../shared/federation';
-import { PROVIDERS } from '../shared/types';
 import {
   conversationKind,
   retainedConversation,
@@ -30,114 +20,6 @@ import {
 import { time, date } from '../lib/format';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
-import { intlLocale } from '../shared/i18n';
-function Message({
-  event,
-  provider,
-  notify,
-  expanded,
-  onExpand,
-  group,
-  marked = false,
-  onMark,
-  focused = false,
-  name,
-  continued = false,
-}: {
-  event: OfficeEvent;
-  provider: Session['provider'];
-  name?: string;
-  notify: (s: string) => void;
-  expanded: boolean;
-  onExpand: () => void;
-  /** Set on a message shown on its own: where the reading position is kept. */
-  group?: string;
-  /** The message is bookmarked; `onMark` (absent where nothing is kept) toggles it. */
-  marked?: boolean;
-  onMark?: (on: boolean) => void;
-  /** Just opened from its bookmark. */
-  focused?: boolean;
-  /** Follows a message from the same side and kind: who and when only show on hover. */
-  continued?: boolean;
-}) {
-  const { t } = useI18n();
-  const work = event.kind === 'tool' || event.kind === 'result';
-  const limit = work ? 200 : 300;
-  const long = event.text.length > limit || event.text.split('\n').length > 12;
-  const text =
-    expanded || !long
-      ? event.text
-      : event.text.slice(0, limit).split('\n').slice(0, 12).join('\n') + '…';
-  const label =
-    event.kind === 'user'
-      ? t.conversation.you
-      : event.kind === 'assistant'
-        ? (name ?? PROVIDERS[provider].name)
-        : event.kind === 'tool'
-          ? t.conversation.toolUse
-          : event.kind === 'result'
-            ? t.conversation.toolResult
-            : t.conversation.progressUpdate;
-  return (
-    <article
-      className={`conversation-message message-${event.kind} category-${conversationKind(event)}${marked ? ' is-bookmarked' : ''}${focused ? ' is-focused' : ''}${continued ? ' is-continued' : ''}`}
-      data-message-category={conversationKind(event)}
-      data-group-id={group}
-      data-event-id={event.id}
-    >
-      <div className="message-meta">
-        <b>{label}</b>
-        <span className={`message-category category-${conversationKind(event)}`}>
-          {CONVERSATION_LABELS[conversationKind(event)]}
-        </span>
-        <time title={date(event.at)}>{time(event.at)}</time>
-        <button
-          aria-label={t.conversation.copyMessage}
-          onClick={() =>
-            navigator.clipboard
-              .writeText(event.text)
-              .then(() => notify(t.conversation.copied))
-              .catch(() => notify(t.conversation.copyFailed))
-          }
-        >
-          <Copy size={12} />
-        </button>
-        {onMark && event.kind !== 'lifecycle' && (
-          <button
-            className={`message-bookmark ${marked ? 'is-on' : ''}`}
-            aria-pressed={marked}
-            aria-label={marked ? t.conversation.unbookmark : t.conversation.bookmark}
-            title={marked ? t.conversation.unbookmark : t.conversation.bookmark}
-            onClick={() => onMark(!marked)}
-          >
-            {marked ? <BookmarkCheck size={12} /> : <Bookmark size={12} />}
-          </button>
-        )}
-      </div>
-      <div className="message-bubble">
-        {event.excerpt && (
-          <small
-            className="retained-excerpt"
-            title={isRemoteId(event.id) ? t.federation.excerptTitle : t.conversation.excerptTitle}
-          >
-            {isRemoteId(event.id) ? t.federation.excerpt : t.conversation.excerpt}
-          </small>
-        )}
-        <div className="message-text">
-          <MessageMarkdown text={text} notify={notify} />
-        </div>
-        {long && (
-          <button className="message-expand" aria-expanded={expanded} onClick={onExpand}>
-            {expanded
-              ? t.conversation.showLess
-              : t.conversation.showMore(event.text.length.toLocaleString(intlLocale()))}
-            <ChevronDown size={13} />
-          </button>
-        )}
-      </div>
-    </article>
-  );
-}
 export function Conversation({
   session,
   notices,
@@ -156,6 +38,8 @@ export function Conversation({
   filtersOpen,
   sent = [],
   onDismissSent,
+  remoteTools,
+  onRemoteTools,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -188,6 +72,9 @@ export function Conversation({
   sent?: { id: string; text: string; at: number }[];
   /** Hides a temporary local receipt only; never cancels a submitted message. */
   onDismissSent?: (id: string) => void;
+  /** Remote records are requested only when this controlled switch is on. */
+  remoteTools?: boolean;
+  onRemoteTools?: (on: boolean) => void;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -198,7 +85,9 @@ export function Conversation({
   const [filter, setFilter] = useState<ConversationFilter>('all');
   const filterRef = useRef(filter);
   filterRef.current = filter;
-  const [tools, setTools] = useState(false);
+  const [localTools, setLocalTools] = useState(false);
+  const tools = remoteTools ?? localTools;
+  const setTools = onRemoteTools ?? setLocalTools;
   const [expanded, setExpanded] = useState(new Set<string>());
   // Excerpts fill gaps only within what is loaded: an older notice waits for its page, so a
   // message not yet read is never shown as if the record had lost it.
@@ -209,6 +98,12 @@ export function Conversation({
       first === undefined ? notices : notices.filter((n) => n.at >= first),
     );
   }, [session.events, notices, older]);
+  useEffect(() => {
+    const ids = new Set(events.map((e) => e.id));
+    setExpanded((old) =>
+      [...old].some((id) => !ids.has(id)) ? new Set([...old].filter((id) => ids.has(id))) : old,
+    );
+  }, [events]);
   const counts = Object.fromEntries(
     ['request', 'progress', 'reply', 'message', 'work'].map((kind) => [
       kind,
@@ -587,7 +482,7 @@ export function Conversation({
                 onChange={(e) => setTools(e.target.checked)}
               />
               {t.conversation.includeTools}
-              <span>{counts.work}</span>
+              {(!session.remote || tools) && <span>{counts.work}</span>}
             </label>
           </div>
         )}
@@ -639,6 +534,7 @@ export function Conversation({
               <div>
                 {g.events.map((e, i) => (
                   <Message
+                    actions={desktopChatActions}
                     event={e}
                     provider={session.provider}
                     name={name}
@@ -654,6 +550,7 @@ export function Conversation({
           ) : (
             <Message
               key={g.id}
+              actions={desktopChatActions}
               event={g.events[0]}
               provider={session.provider}
               name={name}

@@ -84,7 +84,17 @@ test('A colleague card reads older messages by page, keeps the reading position 
     .poll(() => card.locator('.inspector-scroll').evaluate((el) => el.scrollTop))
     .toBeGreaterThan(1000);
 
-  for (let i = 0; i < 6 && (await older.count()); i++) await older.click();
+  // Scrolling a click target into view can itself load the last page and remove
+  // the button before Playwright clicks it. Keep reading upward and wait for the
+  // content instead of waiting for a button that has correctly disappeared.
+  await expect
+    .poll(async () => {
+      await card
+        .locator('.inspector-scroll')
+        .evaluate((el) => el.scrollTo({ top: 0, behavior: 'instant' }));
+      return conversation.getByText(label(0)).count();
+    })
+    .toBe(1);
   await expect(conversation.getByText(label(0))).toBeAttached();
   await expect(older).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).pages)).toEqual([null, 'e80', 'e40']);
@@ -288,6 +298,7 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
 test('A paged list stays whole while it changes: no gap from a page racing a re-read, no shrinking past one page, one re-read per burst', async ({
   page,
 }) => {
+  await page.clock.install();
   await newsOffice(page, 300, () => true);
   await page.goto('/');
   await page.getByRole('button', { name: '소식함 열기' }).click();
@@ -329,20 +340,23 @@ test('A paged list stays whole while it changes: no gap from a page racing a re-
   await page.evaluate(() => ((window as any).cap = 100));
   for (let i = 0; i < 12 && (await more.count()); i++) await more.click();
   await expect(items).toHaveCount(301);
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
   const reads = await tops();
   const pages = (await calls()).length;
-  // A burst of changes is read once, after it settles.
-  await page.evaluate(async () => {
-    const w = window as any;
-    for (let i = 0; i < 3; i++) {
+  // Keep each update inside the debounce window even on a busy CI runner.
+  for (let i = 0; i < 3; i++) {
+    await page.evaluate((i) => {
+      const w = window as any;
       w.all[0] = { ...w.all[0], text: `새 소식 ${i}`, version: `v${i + 2}` };
       w.push();
-      await new Promise((r) => setTimeout(r, 50));
-    }
-  });
-  await expect(inbox.getByText('새 소식 2')).toBeVisible();
+    }, i);
+    await page.clock.runFor(50);
+    await expect(inbox.getByText(`새 소식 ${i}`, { exact: true })).toBeVisible();
+  }
+  expect(await tops()).toBe(reads);
+  await page.clock.runFor(400);
   await expect.poll(tops).toBe(reads + 1);
-  await page.waitForTimeout(600);
+  await page.clock.runFor(600);
   expect(await tops()).toBe(reads + 1);
   expect((await calls()).length - pages).toBeGreaterThanOrEqual(3);
   await expect(items).toHaveCount(301);

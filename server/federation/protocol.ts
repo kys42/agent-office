@@ -81,8 +81,19 @@ export const snapshotSchema = z
   })
   .strict();
 export type WireSnapshot = z.infer<typeof snapshotSchema>;
+export const deltaSchema = snapshotSchema
+  .omit({ protocol: true })
+  .extend({
+    delta: z.literal(true),
+    base: z.number().int().nonnegative(),
+    removed: z.array(idSchema).max(900),
+    order: z.array(idSchema).max(900),
+  })
+  .strict();
+export type WireDelta = z.infer<typeof deltaSchema>;
 export const responseSchema = z.union([
   snapshotSchema,
+  deltaSchema,
   z
     .object({
       unchanged: z.literal(true),
@@ -156,6 +167,10 @@ export function exportSession(s: Session, peers: Session[], detail = false): Wir
   const limit = detail ? 180 : 4;
   const eventLimit = detail ? 64000 : 2000;
   const activityKinds = ['request', 'progress', 'reply', 'status'];
+  // Summary synchronization carries what people said, not tool payloads.
+  const events = detail
+    ? s.events
+    : s.events.filter((e) => e.kind === 'user' || e.kind === 'assistant');
   return sessionSchema.parse({
     id: wireId(s.id),
     provider: s.provider,
@@ -181,7 +196,7 @@ export function exportSession(s: Session, peers: Session[], detail = false): Wir
     relation: s.relation?.kind ?? 'root',
     actor: s.actor ? { id: wireId(s.actor.id), name: s.actor.name.slice(0, 4000) } : null,
     origin: s.origin?.kind ?? 'unknown',
-    events: s.events.slice(-limit).map((e) => ({
+    events: events.slice(-limit).map((e) => ({
       id: wireId(e.id),
       at: e.at,
       kind: e.kind,
