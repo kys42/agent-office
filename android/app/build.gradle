@@ -1,0 +1,36 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'dev.kys.agentoffice.mobile'
+    compileSdk 35
+    buildFeatures { buildConfig true }
+    defaultConfig {
+        applicationId 'dev.kys.agentoffice.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        testInstrumentationRunner 'dev.kys.agentoffice.mobile.SmokeInstrumentation'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    // Release signing is supplied locally; credentials and keys never enter the repository.
+    signingConfigs {
+        release {
+            if (System.getenv('AO_ANDROID_KEYSTORE')) {
+                storeFile file(System.getenv('AO_ANDROID_KEYSTORE'))
+                storePassword System.getenv('AO_ANDROID_STORE_PASSWORD')
+                keyAlias System.getenv('AO_ANDROID_KEY_ALIAS') ?: 'agent-office'
+                keyPassword System.getenv('AO_ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig signingConfigs.release }
+    }
+    lint { abortOnError true }
+}
+
+dependencies { testImplementation 'junit:junit:4.13.2' }
