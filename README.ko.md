@@ -130,6 +130,8 @@ Agent Office는 계속 들여다봐야 하는 또 하나의 창이 아니에요.
 
 ## 🚀 빠르게 시작하기
 
+Windows 미리보기: `npm ci` → `npm run package:win`을 실행한 뒤 `release/windows-*/` 아래의 `Agent Office.exe`를 엽니다. 서명되지 않은 portable 미리보기이며, 지원 기능·데이터 경로·검수 방법은 [Windows 안내](docs/development/WINDOWS.md)를 참고하세요.
+
 > **Apple Silicon macOS**와 **Node.js 24 이상**에서 개발·검증했습니다.
 
 ```bash

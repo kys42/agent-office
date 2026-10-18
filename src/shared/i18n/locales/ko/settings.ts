@@ -1,6 +1,8 @@
 import type { Messages } from '../en';
 
 export const settings: Messages['settings'] = {
+  windowsSupport:
+    'Windows 미리보기에서는 세션 조회·검색·메모·데스크 펫을 사용할 수 있어요. 이 컴퓨터의 터미널 이동·전송·질문 응답은 아직 지원하지 않아요. 원격 사무실은 해당 컴퓨터의 지원 기능과 권한을 따라요.',
   title: '연결과 설정',
   subtitle: '어떤 동료를 만나고, 어떤 기록을 남길지 직접 정하세요.',
   projectHidden: '프로젝트',

@@ -8,6 +8,7 @@ import App from './App';
 import { DeskDock } from './components/DeskDock';
 import { DockCard } from './components/DockCard';
 import { bootLocale, useI18n } from './lib/i18n';
+import { isWindows } from './lib/platform';
 import { startFrameClock } from './lib/frame-clock';
 import './styles/tokens.css';
 import './styles/shell.css';
@@ -23,6 +24,7 @@ import './styles/effects.css';
 import './styles/pets.css';
 import './styles/guide.css';
 import './styles/native.css';
+import './styles/windows.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
@@ -45,6 +47,7 @@ function Crashed() {
   );
 }
 bootLocale();
+document.body.classList.toggle('is-windows', !!window.office && isWindows);
 // The office's own frame rate for every looping animation (see frame-clock.ts).
 startFrameClock();
 // Same office core, three presentations: the big office window, the floating desk pet, and
