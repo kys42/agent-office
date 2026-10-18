@@ -14,6 +14,7 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
+import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
 import type {
   AnswerResult,
@@ -414,9 +415,19 @@ function setupIPC() {
   });
   ipcMain.handle('office:call', async (e, method, args) => {
     trusted(e);
-    if (typeof method !== 'string' || !Array.isArray(args) || args.length > 3)
+    if (
+      typeof method !== 'string' ||
+      method === 'federation' ||
+      !Array.isArray(args) ||
+      args.length > 3
+    )
       throw new Error(m().desktop.badRequest);
     return bridge.call(method, args);
+  });
+  ipcMain.handle('office:federation', async (e, command) => {
+    trusted(e);
+    if (JSON.stringify(command)?.length > 30000) throw new Error(m().desktop.badRequest);
+    return bridge.call('federation', [command]);
   });
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
@@ -504,11 +515,13 @@ function setupIPC() {
   });
   ipcMain.handle('office:reveal', async (e, id) => {
     trusted(e);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const s: Session = await bridge.call('detail', [id]);
     shell.showItemInFolder(s.sourcePath);
   });
   ipcMain.handle('office:resume', async (e, id) => {
     trusted(e);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     return (await resume(await bridge.call('detail', [id]))).text;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
@@ -518,6 +531,7 @@ function setupIPC() {
     const found = new Map<string, SessionIdentity>();
     const unknown: string[] = [];
     for (const id of ids) {
+      if (isRemoteId(id)) continue;
       const known = identities.get(id);
       if (known) found.set(id, known);
       else if (id.length <= 400) unknown.push(id); // longer ones are no session's id
@@ -532,6 +546,7 @@ function setupIPC() {
   };
   const identity = async (id: unknown) => {
     if (typeof id !== 'string') throw new Error(m().desktop.badRequest);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const known = (await identify([id])).get(id);
     if (!known) throw new Error(m().server.store.notFound);
     return known;

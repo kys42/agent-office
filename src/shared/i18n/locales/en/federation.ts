@@ -1,0 +1,26 @@
+export const federation = {
+  title: 'Connected offices',
+  beta: 'Beta',
+  enable: 'Enable connected offices beta',
+  hint: 'See sessions from your other computers here. Local collection stays separate. Remote offices are read-only.',
+  import: 'Add connection file',
+  importHint:
+    'Choose the private connection.json from the other computer. It contains a credential; keep it private.',
+  label: 'Office room name',
+  tags: 'Tags (comma separated)',
+  projects: 'Project links (remote name = local name, one per line)',
+  save: 'Save',
+  remove: 'Disconnect',
+  empty: 'No connected offices.',
+  connected: 'Connected',
+  connecting: 'Connecting',
+  offline: 'Offline',
+  rejected: 'Access rejected',
+  disabled: 'Beta is off. No remote connections are running.',
+  readOnly: 'Remote office · read-only',
+  stale: 'Last observation · connection or collection unavailable',
+  recentOnly:
+    'Only the recent conversation shared by this office is available. Remote editing and terminal actions are disabled.',
+  invalid: 'Invalid connection file or project links.',
+  count: (n: number) => `${n} sessions`,
+};

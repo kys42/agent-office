@@ -7,7 +7,8 @@ import { m } from './i18n';
 export const isHelper = (s: Session) => ['subagent', 'child'].includes(s.relation?.kind ?? '');
 export const isBackground = (s: Session) =>
   ['scheduled', 'internal'].includes(s.origin?.kind ?? '');
-export const needsAttention = (s: Session) => !s.archived && ['call', 'error'].includes(s.status);
+export const needsAttention = (s: Session) =>
+  !s.remote?.stale && !s.archived && ['call', 'error'].includes(s.status);
 
 /** Retain a helper's result for its parent's current task, independent of silence duration. */
 export function helperPresence(s: Session, sessions: Session[], now = Date.now()) {

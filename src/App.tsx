@@ -883,6 +883,7 @@ export default function App() {
             />
           ) : view === 'settings' ? (
             <Settings
+              demo={demo}
               snapshot={snapshot}
               onPrefs={onPrefs}
               onRefresh={refresh}

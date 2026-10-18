@@ -351,6 +351,8 @@ export interface ProviderQuota {
   message: string;
 }
 export interface Session {
+  /** Beta view only; never stored by the local collector. */
+  remote?: import('./federation').RemoteSource;
   protocolVersion?: 1;
   id: string;
   nativeId: string;
@@ -445,6 +447,7 @@ export interface Preferences {
   petAppearance?: PetCustomization;
 }
 export interface Snapshot {
+  federation?: import('./federation').FederationState;
   sessions: Session[];
   connectors: Connector[];
   preferences: Preferences;
@@ -662,6 +665,10 @@ export interface CardWindowState {
 }
 export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
+  /** Separate desktop IPC; not part of the collector HTTP API. */
+  federation?: (
+    command: import('./federation').FederationCommand,
+  ) => Promise<import('./federation').FederationState>;
   quotas: () => Promise<ProviderQuota[]>;
   /** One page of a colleague's conversation; without `page`, the newest one. */
   detail: (id: string, page?: DetailPage) => Promise<SessionDetail>;

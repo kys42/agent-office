@@ -12,6 +12,10 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다. 새 창 요청 중 http·https 웹 링크만 기본 브라우저로 넘기고(`webLink`, IPC `office:open-link`도 같은 검사), 그 밖의 주소는 열지 않는다.
 - `server/mcp.ts`: 같은 SQLite를 readOnly로 열어 4개 조회 도구만 노출한다. 추가 수집기·모델 실행·외부 전송을 시작하지 않는다.
 
+## 여러 Office 베타
+
+데스크톱 워커의 `FederatedService`가 기존 `OfficeService`와 별도 `PeerManager`를 합성한다. 꺼짐일 때 원래 snapshot/API를 유지하고 네트워크를 시작하지 않는다. 원격 내용은 메모리에만 두며 기존 SQLite에 저장하지 않는다. 송신기는 같은 앱의 별도 readOnly HTTPS 번들이다. 프로토콜·권한·운영 계약은 [여러 Office 베타](MULTI-OFFICE.md)를 따른다.
+
 ## 지원 소스
 
 | 공급자      | 입력                                                                                                                       | 확인하는 정보                                                                                                                                                 |
@@ -85,7 +89,7 @@ PR·이슈는 HTTPS GitHub URL만 열 수 있다. 상세를 열 때 최대 8개�
 
 패키지에는 로컬 HTTP 서버를 열지 않는다. 개발용 HTTP는 127.0.0.1:4318로 바인딩, Origin/Host 및 비표준 헤더를 검사하며 Vite에서 프록시한다. Electron 앱에는 수집기 워커와 MCP 번들을 포함한다. 데스크 펫 창은 별도 투명 창이며 입력과 실제 작업 상태를 같은 서비스에서 읽는다. 그려진 요소(`[data-solid]`) 위에서만 마우스를 받고 나머지 영역의 클릭은 뒤 앱으로 통과시킨다(`setIgnoreMouseEvents` forward). 알림 업데이트는 focus를 호출하지 않는다.
 
-서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
+서명·공증, auto-update, login item, 다중 모니터/Spaces/Stage Manager 전체 조합 검증, 공식 이벤트 스트림 기반 승인 전달, 토큰 예산 모델 요약/예약, 원격 제어·계정 기반 다중 기기, 장기 Employee/XP 객체는 후속 범위다. 배포 준비 여부와 로컬 기능 검증을 구분한다.
 
 ## 사용자에게 보이는 진행 설명
 

@@ -98,7 +98,7 @@ export function CommandPalette({
           !q ||
           (!privacy &&
             norm(
-              `${sessionName(s)} ${s.project} ${s.area?.name ?? ''} ${s.title} ${s.alias}`,
+              `${sessionName(s)} ${s.project} ${s.area?.name ?? ''} ${s.title} ${s.alias} ${s.remote?.label ?? ''} ${s.remote?.tags.join(' ') ?? ''}`,
             ).includes(q)) ||
           norm(PROVIDERS[s.provider].name).includes(q),
       )

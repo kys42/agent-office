@@ -9,6 +9,7 @@ const action = (channel: string, ...args: unknown[]) =>
     throw new Error(e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
   });
 const api: OfficeAPI = {
+  federation: (command) => action('office:federation', command),
   quotas: () => call('quotas'),
   snapshot: () => call('snapshot'),
   detail: (id, page) => call('detail', id, page),

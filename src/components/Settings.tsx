@@ -1,6 +1,7 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
 import { useEffect, useRef, useState } from 'react';
 import { PetCustomizer } from './PetCustomizer';
+import { FederationSettings } from './FederationSettings';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
   Plug,
@@ -52,6 +53,7 @@ function Toggle({
   );
 }
 export function Settings({
+  demo = false,
   snapshot,
   onPrefs,
   onRefresh,
@@ -63,6 +65,7 @@ export function Settings({
   focusSection,
   onSectionFocused,
 }: {
+  demo?: boolean;
   snapshot: Snapshot;
   onPrefs: (p: Partial<Preferences>) => Promise<boolean>;
   onRefresh: () => void;
@@ -211,6 +214,7 @@ export function Settings({
           ))}
         </section>
         <div>
+          {!demo && <FederationSettings snapshot={snapshot.federation} />}
           <section className="settings-section">
             <div className="setting-row">
               <Languages size={18} />

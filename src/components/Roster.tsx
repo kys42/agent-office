@@ -306,6 +306,13 @@ export function Roster({
                           </strong>
                           <span className="session-meta">
                             {privacy ? t.roster.hidden : zoneLabel(s)}
+                            {s.remote && (
+                              <>
+                                {' '}
+                                · {privacy ? t.federation.readOnly : s.remote.label}
+                                {s.remote.stale ? ` · ${t.federation.offline}` : ''}
+                              </>
+                            )}
                             <i>·</i>
                             {sort === 'frequent'
                               ? t.roster.opened(s.openCount || 0)

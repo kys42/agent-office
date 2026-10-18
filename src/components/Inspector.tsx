@@ -249,7 +249,8 @@ export function Inspector({
   }, [session.alias, editing]);
   // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
   // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
-  const locatable = !demo && (session.provider === 'claude' || session.provider === 'codex');
+  const locatable =
+    !demo && !session.remote && (session.provider === 'claude' || session.provider === 'codex');
   const { targets, markSent } = useSendTargets(locatable ? [session.id] : [], {
     enabled: locatable,
     stamp: session.updatedAt,
@@ -286,9 +287,9 @@ export function Inspector({
     };
   }, [focusHere?.key, session.id]);
   const mark =
-    onBookmark &&
+    (s.remote ? undefined : onBookmark) &&
     ((eventId: string, on: boolean) =>
-      void onBookmark(s.id, eventId, on)
+      void onBookmark!(s.id, eventId, on)
         .then(() => notify(on ? t.conversation.bookmarked : t.conversation.unbookmarked))
         .catch((e) => notify((e as Error).message)));
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -602,21 +603,23 @@ export function Inspector({
   const tabBar = (
     <>
       <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
-        {(['history', 'news', 'overview', 'notes'] as const).map((key) => (
-          <button
-            key={key}
-            role="tab"
-            aria-selected={tab === key}
-            className={tab === key ? 'active' : ''}
-            onClick={() => setTab(key)}
-          >
-            {key === 'news'
-              ? t.inspector.tabs.news(unreadNoticeCount(news))
-              : t.inspector.tabs[key]}
-            {key === 'notes' &&
-              (s.notes || [...members].some((id) => bookmarkMarks?.[id]?.length)) && <i />}
-          </button>
-        ))}
+        {(['history', 'news', 'overview', 'notes'] as const)
+          .filter((key) => !s.remote || key === 'history' || key === 'overview')
+          .map((key) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              className={tab === key ? 'active' : ''}
+              onClick={() => setTab(key)}
+            >
+              {key === 'news'
+                ? t.inspector.tabs.news(unreadNoticeCount(news))
+                : t.inspector.tabs[key]}
+              {key === 'notes' &&
+                (s.notes || [...members].some((id) => bookmarkMarks?.[id]?.length)) && <i />}
+            </button>
+          ))}
       </div>
     </>
   );
@@ -676,6 +679,7 @@ export function Inspector({
               </label>
               <textarea
                 id="notes"
+                readOnly={!!s.remote}
                 value={notes}
                 onChange={(e) => {
                   setNotes(e.target.value);
@@ -684,7 +688,11 @@ export function Inspector({
                 maxLength={12000}
                 placeholder={t.inspector.notes.placeholder}
               />
-              <button className="button primary" onClick={() => patch({ notes })}>
+              <button
+                className="button primary"
+                disabled={!!s.remote}
+                onClick={() => patch({ notes })}
+              >
                 <Check size={16} />
                 {t.inspector.notes.save}
               </button>
@@ -712,6 +720,7 @@ export function Inspector({
             )}
             <button
               className={`completion-button ${s.completed ? 'checked' : ''}`}
+              disabled={!!s.remote}
               onClick={() => patch({ completed: !s.completed })}
             >
               <span>{s.completed && <Check size={14} />}</span>
@@ -849,7 +858,7 @@ export function Inspector({
             </span>
           </div>
           <div className="card-head-tools">
-            {!movable && (
+            {!movable && !s.remote && (
               <>
                 <button
                   className="icon-btn"
@@ -907,37 +916,39 @@ export function Inspector({
                 <Maximize2 size={15} />
               </button>
             )}
-            <CardMenu label={t.inspector.card.more}>
-              {(close) => (
-                <>
-                  {movable &&
-                    item(
-                      colleague.pinned ? t.inspector.unpin : t.inspector.pin,
-                      () => onPin(colleague),
+            {!s.remote && (
+              <CardMenu label={t.inspector.card.more}>
+                {(close) => (
+                  <>
+                    {movable &&
+                      item(
+                        colleague.pinned ? t.inspector.unpin : t.inspector.pin,
+                        () => onPin(colleague),
+                        close,
+                      )}
+                    {s.zone &&
+                      s.zone !== 'office' &&
+                      item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
+                    {item(t.inspector.rename, () => setEditing(true), close)}
+                    {item(t.pets.individualTitle, () => setPetOpen(true), close)}
+                    {!privacy &&
+                      onZoneRules &&
+                      item(t.inspector.zone, () => setZoneOpen(true), close)}
+                    {item(
+                      t.inspector.revealSource,
+                      () => void api.reveal(s.id).catch((e) => notify(e.message)),
+                      close,
+                      demo || !isDesktop || privacy,
+                    )}
+                    {item(
+                      s.archived ? t.inspector.unarchive : t.inspector.archive,
+                      () => void patch({ archived: !s.archived }),
                       close,
                     )}
-                  {s.zone &&
-                    s.zone !== 'office' &&
-                    item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
-                  {item(t.inspector.rename, () => setEditing(true), close)}
-                  {item(t.pets.individualTitle, () => setPetOpen(true), close)}
-                  {!privacy &&
-                    onZoneRules &&
-                    item(t.inspector.zone, () => setZoneOpen(true), close)}
-                  {item(
-                    t.inspector.revealSource,
-                    () => void api.reveal(s.id).catch((e) => notify(e.message)),
-                    close,
-                    demo || !isDesktop || privacy,
-                  )}
-                  {item(
-                    s.archived ? t.inspector.unarchive : t.inspector.archive,
-                    () => void patch({ archived: !s.archived }),
-                    close,
-                  )}
-                </>
-              )}
-            </CardMenu>
+                  </>
+                )}
+              </CardMenu>
+            )}
             <button
               className="icon-btn"
               aria-label={t.inspector.close}
@@ -948,6 +959,20 @@ export function Inspector({
             </button>
           </div>
         </div>
+        {s.remote && (
+          <p className="remote-source" role="status">
+            {t.federation.readOnly} · {privacy ? t.inspector.hiddenTeammate : s.remote.label}
+            {s.remote.stale && (
+              <>
+                {' '}
+                · {t.federation.stale} ({ago(s.remote.receivedAt)})
+              </>
+            )}
+            {!privacy && s.remote.tags.length > 0 && <> · {s.remote.tags.join(' · ')}</>}
+            <br />
+            {t.federation.recentOnly}
+          </p>
+        )}
         {petEditor}
         {zoneEditor}
         {personaPicker}
@@ -999,7 +1024,7 @@ export function Inspector({
         {scrollArea}
         <div className="card-composer">
           {/* What a calling colleague asks, answerable here where the desktop app sees it. */}
-          {calling && !privacy && (
+          {calling && !privacy && !s.remote && (
             <div className="card-request">
               <RequestCard session={s} target={live} notify={notify} demo={demo} />
             </div>
@@ -1007,7 +1032,7 @@ export function Inspector({
           <div className="card-actions">
             <button
               className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo}
+              disabled={demo || !!s.remote}
               onClick={resume}
             >
               <Terminal size={13} />

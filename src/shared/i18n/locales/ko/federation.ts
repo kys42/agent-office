@@ -1,0 +1,26 @@
+export const federation = {
+  title: '연결된 사무실',
+  beta: '베타',
+  enable: '여러 사무실 연결 베타 켜기',
+  hint: '다른 컴퓨터의 세션을 함께 봅니다. 로컬 수집은 따로 유지하며 원격 사무실은 읽기 전용입니다.',
+  import: '연결 파일 추가',
+  importHint:
+    '다른 컴퓨터에서 만든 connection.json을 선택하세요. 접속 정보가 담긴 파일이므로 비공개로 보관하세요.',
+  label: '사무실 방 이름',
+  tags: '태그 (쉼표로 구분)',
+  projects: '프로젝트 연결 (원격 이름 = 로컬 이름, 한 줄에 하나)',
+  save: '저장',
+  remove: '연결 삭제',
+  empty: '연결된 사무실이 없습니다.',
+  connected: '연결됨',
+  connecting: '연결 중',
+  offline: '연결 끊김',
+  rejected: '접근 거부',
+  disabled: '베타가 꺼져 있습니다. 원격 연결을 실행하지 않습니다.',
+  readOnly: '원격 사무실 · 읽기 전용',
+  stale: '마지막 관측 · 연결 또는 수집 확인 불가',
+  recentOnly:
+    '이 사무실이 공유한 최근 대화만 표시합니다. 원격 편집과 터미널 조작은 지원하지 않습니다.',
+  invalid: '연결 파일 또는 프로젝트 연결 형식을 확인하세요.',
+  count: (n: number) => `세션 ${n}개`,
+};
