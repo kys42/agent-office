@@ -116,31 +116,40 @@ function Chat({
   pendingRef.current = pending;
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const readVersion = useRef(0);
+  const remote = agent.officeId !== 'local';
   const read = useCallback(async () => {
+    const version = ++readVersion.current;
     try {
       const [next, targets] = await Promise.all([
         api<MobileDetail>('detail', { id: agent.id }),
         api<Record<string, typeof target>>('targets', { ids: [agent.id] }),
       ]);
-      if (!live.current) return;
+      if (!live.current || version !== readVersion.current) return;
       setDetail((old) => {
-        const merged = new Map((old?.events ?? []).map((e) => [e.id, e]));
-        next.events.forEach((e) => merged.set(e.id, e));
+        // Remote detail is a bounded snapshot, not pageable history. A server may
+        // reduce sharing to excerpts at any refresh, so never retain old full text.
+        if (remote) return { ...next, older: false };
+        const head = next.events[0];
+        const joins = head ? (old?.events.findIndex((e) => e.id === head.id) ?? -1) : -1;
+        if (!old || !next.older || joins < 0) return next;
+        const events = [...old.events.slice(0, joins), ...next.events];
         return {
           ...next,
-          older: old ? old.older : next.older,
-          events: [...merged.values()].sort((a, b) => a.at - b.at).slice(-1000),
+          older: old.older || events.length > 1000,
+          events: events.slice(-1000),
         };
       });
       setTarget(targets[agent.id] ?? null);
       setError('');
     } catch (e) {
-      if (!live.current) return;
+      if (!live.current || version !== readVersion.current) return;
+      if (remote) setDetail(null);
       setError(e instanceof Error ? e.message : m().mobile.connectionFailed);
       setTarget(null);
       if (e instanceof ApiError && e.status === 401) onExpired();
     }
-  }, [agent.id, onExpired]);
+  }, [agent.id, remote, onExpired]);
   useEffect(() => {
     live.current = true;
     let running = false;
@@ -155,6 +164,7 @@ function Chat({
     document.addEventListener('visibilitychange', poll);
     return () => {
       live.current = false;
+      readVersion.current++;
       clearInterval(timer);
       document.removeEventListener('visibilitychange', poll);
     };
@@ -167,7 +177,7 @@ function Chat({
   }, [detail]);
   const older = async () => {
     const first = detail?.events[0];
-    if (!first || olderBusy) return;
+    if (!first || olderBusy || remote) return;
     setOlderBusy(true);
     atBottom.current = false;
     const top = scroller.current?.scrollTop ?? 0,

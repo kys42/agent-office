@@ -99,6 +99,71 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('a gap after backgrounding resets the latest page and preserves older-page access', async ({
+  page,
+}) => {
+  await mock(page);
+  let advanced = false;
+  await page.route('**/mobile/api/detail', async (route) =>
+    route.fulfill({
+      json: {
+        id: local.id,
+        older: advanced,
+        events: [
+          {
+            id: advanced ? 'new' : 'old',
+            kind: 'user',
+            at: advanced ? 100 : 1,
+            text: advanced ? '한 페이지 이상 진행된 대화' : '처음 열었던 대화',
+          },
+        ],
+      },
+    }),
+  );
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.getByText('처음 열었던 대화', { exact: true })).toBeVisible();
+  advanced = true;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByText('한 페이지 이상 진행된 대화', { exact: true })).toBeVisible();
+  await expect(page.getByText('처음 열었던 대화', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '이전 대화 보기', exact: true })).toBeVisible();
+});
+test('remote sharing reduction replaces full history and failed refresh clears it', async ({
+  page,
+}) => {
+  await mock(page);
+  let reduced = false;
+  let unavailable = false;
+  await page.route('**/mobile/api/detail', async (route) => {
+    if (unavailable) return route.fulfill({ status: 403, json: {} });
+    return route.fulfill({
+      json: {
+        id: remote.id,
+        older: false,
+        events: [
+          {
+            id: reduced ? 'summary' : 'full',
+            kind: 'user',
+            at: 1,
+            text: reduced ? '공유된 짧은 발췌' : '이전 공유 전문',
+            excerpt: reduced,
+          },
+        ],
+      },
+    });
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: remote.name }).click();
+  await expect(page.getByText('이전 공유 전문', { exact: true })).toBeVisible();
+  reduced = true;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByText('공유된 짧은 발췌', { exact: true })).toBeVisible();
+  await expect(page.getByText('이전 공유 전문', { exact: true })).toHaveCount(0);
+  unavailable = true;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByText('공유된 짧은 발췌', { exact: true })).toHaveCount(0);
+});
 test('mobile filters offices/projects, reads older conversation, hides tools and sends once', async ({
   page,
 }) => {
