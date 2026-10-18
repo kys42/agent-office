@@ -333,11 +333,10 @@ test('Floor desks: helpers stand on the floor and screen sharing hides zone and 
   expect(await strip.locator('.zone-flag').first().getAttribute('title')).toBeNull();
 });
 
-test('Real local collector reports all three providers without modifying source data', async ({
+test('Isolated local collector reports all providers without opening personal records', async ({
   request,
   page,
 }) => {
-  test.skip(!!process.env.CI, 'Requires local Claude, Codex and OpenClaw records.');
   const response = await request.post('/api/rpc', {
     headers: { 'X-Agent-Office': '1' },
     data: { method: 'snapshot', args: [] },
@@ -349,11 +348,12 @@ test('Real local collector reports all three providers without modifying source 
     'codex',
     'openclaw',
   ]);
-  expect(result.sessions.length).toBeGreaterThan(0);
+  expect(result.sessions).toEqual([]);
   const denied = await request.post('/api/rpc', { data: { method: 'snapshot', args: [] } });
   expect(denied.status()).toBe(403);
   await page.goto('/');
-  await expect(page.locator('.office-pet').first()).toBeVisible();
+  await expect(page.locator('.app')).toBeVisible();
+  await expect(page.locator('.office-pet')).toHaveCount(0);
   expect(await page.locator('.app').innerText()).not.toContain('구경하는 사무실');
 });
 
