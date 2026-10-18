@@ -40,6 +40,7 @@ docs/
 | 플랫폼 추가·공통 필드 변경 | [관측 규격](golden/OFFICE-OBSERVATION-PROTOCOL.md) |
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
+| 전담 매니저·스킬·정기 요약 | [오피스 매니저](development/OFFICE-MANAGER.md) |
 | 원래 터미널 이동·바로 보내기 | [터미널 연결](development/TERMINAL.md) |
 | 팝업 위치 기억·독립 고정 카드 | [팝업 카드](development/POPUP-CARDS.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |

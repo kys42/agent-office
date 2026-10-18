@@ -1,9 +1,12 @@
+import { MANAGER_ID } from './shared/manager';
+import { Manager } from './components/Manager';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bot,
   Gauge,
   Home,
   BookOpen,
@@ -58,6 +61,7 @@ import { NoticePagingContext } from './lib/notice-paging';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
   { id: 'office', icon: Home },
+  { id: 'manager', icon: Bot },
   { id: 'memory', icon: BookOpen },
   { id: 'activity', icon: Clock3 },
   { id: 'settings', icon: Settings2 },
@@ -145,6 +149,14 @@ export default function App() {
       api.onSelect?.((id) => {
         setView('office');
         setSelected(id);
+      }),
+    [],
+  );
+  useEffect(
+    () =>
+      api.onManager?.(() => {
+        setView('office');
+        setSelected(MANAGER_ID);
       }),
     [],
   );
@@ -410,6 +422,15 @@ export default function App() {
   };
   const actions: PaletteAction[] = [
     {
+      id: 'manager',
+      label: t.manager.title,
+      icon: <Bot size={15} />,
+      run: () => {
+        setView('office');
+        choose(MANAGER_ID);
+      },
+    },
+    {
       id: 'guide',
       label: t.guide.title,
       keywords: `${t.guide.tour} ${t.guide.features} onboarding help`,
@@ -625,7 +646,7 @@ export default function App() {
           )}
           <div className="source-group">
             <h6>{t.app.sidebar.records}</h6>
-            {(['memory', 'activity'] as const).map((id) => {
+            {(['manager', 'memory', 'activity'] as const).map((id) => {
               const tab = tabs.find((x) => x.id === id)!;
               return (
                 <button
@@ -634,6 +655,11 @@ export default function App() {
                   aria-label={t.app.tabs[id].title}
                   title={t.app.tabs[id].title}
                   onClick={() => {
+                    if (id === 'manager' && !demo && api.manager) {
+                      setView('office');
+                      choose(MANAGER_ID);
+                      return;
+                    }
                     setView(id);
                     setSelected(null);
                     if (id === 'memory') setMemoryQuery('');
@@ -909,6 +935,8 @@ export default function App() {
                 if (!sessions.find((s) => s.id === id)?.remote) setAreaDrop({ id, zone });
               }}
             />
+          ) : view === 'manager' ? (
+            <Manager demo={demo} notify={notify} />
           ) : view === 'memory' ? (
             <Memory
               key={memoryQuery}

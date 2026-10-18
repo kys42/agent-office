@@ -54,7 +54,7 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
   };
   const on = enabled && !demo;
   const sendReply: ReplySender | undefined =
-    on && api.send
+    !demo && (on || !!api.manager) && api.send
       ? async (id, text, replaceDraft) => {
           try {
             return await sendFollowUp(id, text, replaceDraft, notify);

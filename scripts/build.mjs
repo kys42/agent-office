@@ -1,3 +1,4 @@
+import { copyFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 await build({
   entryPoints: {
@@ -6,6 +7,8 @@ await build({
     worker: 'server/worker.ts',
     mcp: 'server/mcp.ts',
     'office-peer': 'server/federation/cli.ts',
+    'manager-runner': 'server/manager/runner.ts',
+    'manager-cli': 'server/manager/cli.ts',
   },
   outdir: 'dist-desktop',
   outExtension: { '.js': '.cjs' },
@@ -16,3 +19,5 @@ await build({
   external: ['electron'],
   sourcemap: true,
 });
+
+await copyFile('skills/office-manager/SKILL.md', 'dist-desktop/office-manager.SKILL.md');

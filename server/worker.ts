@@ -35,9 +35,13 @@ function authorize(id: number): Promise<void> {
     parentPort?.postMessage({ authorize: id, check });
   });
 }
-parentPort?.on('message', async ({ id, method, args, stop, guarded, authorization, allowed }) => {
+parentPort?.on('message', async ({ id, method, args, stop, guarded, authorization, allowed, managerState }) => {
   if (authorization !== undefined) {
     checks.get(authorization)?.(allowed === true);
+    return;
+  }
+  if (managerState) {
+    try { service.syncManager(managerState); } catch(e) {console.error(e);}
     return;
   }
   // The app is quitting: finish what is in flight, write what the hot path staged, then say so.

@@ -18,12 +18,14 @@ export function Furniture({
   shared = false,
   appearance = {},
   assetKey,
+  manager = false,
 }: {
   kind: keyof typeof FURNITURE_ASSETS;
   style?: CSSProperties;
   shared?: boolean;
   appearance?: OfficeAppearance;
   assetKey?: string;
+  manager?: boolean;
 }) {
   const className = {
     desk: `team-bench ${shared ? 'shared-bench' : ''}`,
@@ -35,8 +37,10 @@ export function Furniture({
   }[kind];
   return (
     <div
-      className={className}
-      data-asset-id={FURNITURE_ASSETS[kind]}
+      className={`${className} ${manager ? 'manager-furniture' : ''}`}
+      data-asset-id={
+        manager && kind === 'desk' ? 'furniture.manager-reception.v2' : FURNITURE_ASSETS[kind]
+      }
       data-furniture={kind === 'helper' ? 'helper-desk' : kind}
       data-bench-key={assetKey}
       style={{ ...appearanceStyle(appearance), ...style }}

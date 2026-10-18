@@ -4,6 +4,13 @@ import { m } from './i18n';
 /** Keep session history separate from what is currently checked out on disk. */
 export function branchInfo(s: Session) {
   const t = m().shared.branch;
+  if (s.builtin === 'manager')
+    return {
+      label: m().manager.reception,
+      detail: m().manager.setup,
+      key: 'office-manager',
+      kind: 'record' as const,
+    };
   if (
     s.workspace?.locationSource &&
     s.workspace.worktree &&

@@ -1,3 +1,4 @@
+import { MANAGER_ID } from '../src/shared/manager.js';
 import { summarizeCost } from './pricing.js';
 import {
   recoverWorkspace,
@@ -189,6 +190,10 @@ export class OfficeStore {
     this.db.close();
   }
   preferences(patch?: Partial<Preferences>): Preferences {
+    const owned = this.db
+      .prepare("SELECT value FROM settings WHERE key='manager-owned-sessions'")
+      .get() as { value: string } | undefined;
+    this.managedIds = new Set(owned ? JSON.parse(owned.value) : []);
     const value = this.db.prepare("SELECT value FROM settings WHERE key='preferences'").get() as
       { value: string } | undefined;
     const prefs = { ...DEFAULT_PREFS, ...(value ? JSON.parse(value.value) : {}) };
@@ -214,6 +219,19 @@ export class OfficeStore {
    * in memory for these sessions (all of the provider's, on a full pass) is written first, exactly
    * as it was shown, then the sessions are taken in as always.
    */
+  private managedIds = new Set<string>();
+  setManager(session: Session, ownedIds: string[]) {
+    const value = JSON.stringify([...new Set(ownedIds)].sort());
+    const previous = this.db
+      .prepare("SELECT value FROM settings WHERE key='manager-owned-sessions'")
+      .get() as { value: string } | undefined;
+    if (previous?.value !== value)
+      this.db
+        .prepare("INSERT OR REPLACE INTO settings VALUES ('manager-owned-sessions',?)")
+        .run(value);
+    this.managedIds = new Set(ownedIds);
+    this.upsert([session], session.provider, true);
+  }
   upsert(sessions: Session[], provider: Provider, partial = false) {
     const put = this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?,?,?)');
     const get = this.db.prepare('SELECT data FROM sessions WHERE id=?');
@@ -268,7 +286,7 @@ export class OfficeStore {
         : this.db.prepare('SELECT id FROM sessions WHERE provider=?').all(provider)) as {
         id: string;
       }[]) {
-        if (!present.has(row.id)) {
+        if (!present.has(row.id) && row.id !== MANAGER_ID) {
           this.db.prepare('DELETE FROM sessions WHERE id=?').run(row.id);
           remove.run(row.id);
           this.cached?.delete(row.id);
@@ -786,11 +804,15 @@ export class OfficeStore {
       this.writeNotice(next, found.staged);
     }
   }
-  visible(s: Pick<Session, 'provider' | 'project'>, prefs = this.preferences()): boolean {
+  visible(
+    s: Pick<Session, 'provider' | 'project'> & { id?: string },
+    prefs = this.preferences(),
+  ): boolean {
     // Canonical on both sides: an exclusion made in any language keeps matching after a switch.
     const project = canonicalProject(s.project);
     return (
-      prefs.enabledProviders.includes(s.provider) &&
+      !this.managedIds.has(s.id ?? '') &&
+      (s.id === MANAGER_ID || prefs.enabledProviders.includes(s.provider)) &&
       !prefs.excludedProjects.some((x) => canonicalProject(x) === project)
     );
   }
@@ -803,14 +825,17 @@ export class OfficeStore {
             { data: string } | undefined
         )?.data;
     const session = { ...s, ...(data ? JSON.parse(data) : {}) };
-    const state = deriveState(
-      s.observedStatus ?? s.status,
-      s.updatedAt,
-      Date.now(),
-      session.archived,
-      prefs.standbyHours,
-      prefs.readyMinutes,
-    );
+    const state =
+      s.builtin === 'manager'
+        ? { status: s.status, reason: undefined }
+        : deriveState(
+            s.observedStatus ?? s.status,
+            s.updatedAt,
+            Date.now(),
+            session.archived,
+            prefs.standbyHours,
+            prefs.readyMinutes,
+          );
     return {
       ...applyZone(session, prefs.zoneRules),
       status: state.status,
@@ -1266,7 +1291,7 @@ export class OfficeStore {
     prefs: Preferences,
     places: Map<string, Pick<Session, 'provider' | 'project'>>,
   ) {
-    return this.visible(places.get(b.sessionId) ?? b.source, prefs);
+    return this.visible({ ...(places.get(b.sessionId) ?? b.source), id: b.sessionId }, prefs);
   }
   unbookmark(id: string) {
     if (!this.bookmarkRow('id=?', id)) return;

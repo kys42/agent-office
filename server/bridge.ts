@@ -1,3 +1,4 @@
+import type { ManagerState } from '../src/shared/manager.js';
 import { Worker } from 'node:worker_threads';
 import { EventEmitter } from 'node:events';
 import { m } from '../src/shared/i18n/index.js';
@@ -23,10 +24,21 @@ export class ServiceBridge extends EventEmitter {
     super();
     this.start();
   }
+  private managerState?: ManagerState;
+  private managerSignature = '';
+  syncManager(state: ManagerState) {
+    const signature = JSON.stringify(state);
+    if (signature === this.managerSignature && !this.dead) return;
+    this.managerState = state;
+    this.managerSignature = signature;
+    if (this.dead && !this.closing) this.start();
+    else if (!this.closing) this.worker.postMessage({ managerState: state });
+  }
   private start() {
     this.dead = false;
     const worker = new Worker(this.file, { workerData: { dataDir: this.dataDir } });
     this.worker = worker;
+    if (this.managerState) worker.postMessage({ managerState: this.managerState });
     worker.on('message', (m) => {
       if (m.authorize !== undefined) {
         const pending = this.pending.get(m.authorize);

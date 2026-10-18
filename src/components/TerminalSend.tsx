@@ -6,10 +6,16 @@ import { platformKeys } from '../lib/platform';
 import { useComposerSend } from '../lib/useComposerSend';
 import { DraftConfirm } from './DraftConfirm';
 
-export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
+export const HOSTS = {
+  orca: 'Orca',
+  tmux: 'tmux',
+  codex: 'Codex',
+  manager: 'Office Manager',
+} as const;
 
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {
+  if (target.kind === 'manager') return m().manager.title;
   const host = target.desktop ? 'Codex Desktop' : HOSTS[target.kind];
   if (target.remoteOffice)
     return `${privacy ? m().federation.remoteOffice : target.remoteOffice} · ${host}`;
@@ -19,6 +25,7 @@ export function targetLine(target: TerminalTarget, privacy: boolean) {
 }
 
 export function targetPlaceholder(target: TerminalTarget) {
+  if (target.kind === 'manager') return m().manager.placeholder;
   const text = m().terminal.placeholder;
   if (target.desktop) return text.desktop;
   if (target.queues) return text.queues;

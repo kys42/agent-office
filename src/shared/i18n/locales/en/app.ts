@@ -2,6 +2,7 @@ export const app = {
   docTitle: 'Agent Office',
   docTitleUnread: (n: number) => `(${n}) Agent Office`,
   tabs: {
+    manager: { title: 'Office Manager', short: 'Manager' },
     office: { title: 'Our Office', short: 'Office' },
     memory: { title: 'Memory Drawer', short: 'Memory' },
     activity: { title: 'Activity', short: 'Activity' },

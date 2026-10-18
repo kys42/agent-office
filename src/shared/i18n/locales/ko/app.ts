@@ -4,6 +4,7 @@ export const app: Messages['app'] = {
   docTitle: 'Agent Office · 우리 사무실',
   docTitleUnread: (n) => `(${n}) Agent Office`,
   tabs: {
+    manager: { title: '오피스 매니저', short: '매니저' },
     office: { title: '우리 사무실', short: '사무실' },
     memory: { title: '기억 서랍', short: '기억' },
     activity: { title: '활동 기록', short: '활동' },

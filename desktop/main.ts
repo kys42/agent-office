@@ -1,5 +1,9 @@
+import { isManagerSession, MANAGER_ID } from '../src/shared/manager.js';
+import { OfficeManager } from '../server/manager/controller.js';
+import { defaultDataDir } from '../server/store.js';
 import {
   app,
+  Notification,
   BrowserWindow,
   ipcMain,
   Tray,
@@ -77,6 +81,8 @@ let main: BrowserWindow | null = null,
   quitting = false;
 let cards: CardWindows;
 let mobile: MobileServer | undefined;
+let manager: OfficeManager;
+let managerReady: Promise<void>;
 // Desk pet: presentation-only window state. Office data comes from the same snapshot.
 let dockMode: DockMode = 'pet',
   petEnabled = false,
@@ -99,6 +105,33 @@ else {
     // Use the same art as the bundle even when macOS remembers an older Dock icon.
     if (process.platform === 'darwin') app.dock?.setIcon(path.join(root, 'dist', 'icon.png'));
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
+    manager = new OfficeManager({
+      dataDir: defaultDataDir(),
+      bundleDir: __dirname,
+      node: process.execPath,
+      office: { call: (method, args) => bridge.call(method, args), focus: (id) => showMain(id) },
+      notify: (job) => {
+        if (!Notification.isSupported()) return;
+        const notice = new Notification({
+          title: m().manager.title,
+          body:
+            job.status === 'completed'
+              ? m().manager.notificationReady
+              : m().manager.notificationFailed,
+        });
+        notice.on('click', () => {
+          showMain();
+          main?.webContents.send('office:manager-open');
+        });
+        notice.show();
+      },
+    });
+    managerReady = manager.init().then(() => {
+      bridge.syncManager(manager.state());
+      const timer = setInterval(() => bridge.syncManager(manager.state()), 1000);
+      app.once('before-quit', () => clearInterval(timer));
+    });
+    managerReady.catch((e) => console.error('Office Manager:', e.message));
     cards = new CardWindows({
       index,
       preload: path.join(__dirname, 'preload.cjs'),
@@ -410,6 +443,13 @@ function trusted(e: Electron.IpcMainInvokeEvent) {
     throw new Error(m().desktop.untrustedWindow);
 }
 function setupIPC() {
+  ipcMain.handle('office:manager', async (e, request) => {
+    trusted(e);
+    await managerReady;
+    const state = await manager.call(request);
+    bridge.syncManager(state);
+    return state;
+  });
   ipcMain.handle('office:open-artifact', async (e, url) => {
     trusted(e);
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;
@@ -503,8 +543,10 @@ function setupIPC() {
       )
         throw new Error(m().desktop.badRequest);
     }
+    await managerReady.catch(() => {});
+    const managerTarget = target && isManagerSession(target.id, manager.state());
     const chosen: CardTarget | undefined = target && {
-      id: target.id,
+      id: managerTarget ? MANAGER_ID : target.id,
       news: target.news,
       ...(target.bookmark
         ? { bookmark: { eventId: target.bookmark.eventId, at: target.bookmark.at } }
@@ -515,7 +557,8 @@ function setupIPC() {
       if (expanded) showMain(expanded);
       return;
     }
-    if (e.sender !== dock?.webContents) throw new Error(m().desktop.untrustedWindow);
+    if (e.sender !== dock?.webContents && !(e.sender === main?.webContents && managerTarget))
+      throw new Error(m().desktop.untrustedWindow);
     if (
       !anchor ||
       !finite(anchor.x) ||
@@ -580,22 +623,41 @@ function setupIPC() {
   const sendTargets = async (ids: unknown) => {
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error(m().desktop.badRequest);
+    const sendEnabled = await terminalSendEnabled();
     const unique = [...new Set(ids as string[])];
     const found = await identify(unique).catch(() => new Map<string, SessionIdentity>());
     const entries = await Promise.all(
       unique.map(async (id) => {
         try {
+          if (isManagerSession(id, manager.state())) {
+            const state = manager.state();
+            return [
+              id,
+              {
+                kind: 'manager',
+                label: m().manager.title,
+                status: state.ready ? 'idle' : 'offline',
+                canSend: state.ready,
+                canFocus: false,
+                queues: true,
+              },
+            ] as const;
+          }
           const known = found.get(id);
           if (!known) return [id, null] as const;
           const terminal = await live(known);
-          if (terminal) return [id, terminalTarget(terminal)] as const;
+          if (terminal) {
+            const target = terminalTarget(terminal);
+            return [id, { ...target, canSend: target.canSend && sendEnabled }] as const;
+          }
           if (known.provider !== 'codex') return [id, null] as const;
           // A screen can be present even while the queue's loaded-thread lookup is unavailable.
           const [thread, screen] = await Promise.all([
             Promise.resolve(codex(known)).catch(() => null),
             findCodexTerminal(known.nativeId).catch(() => null),
           ]);
-          return [id, codexDestinationTarget(thread, screen?.host)] as const;
+          const target = codexDestinationTarget(thread, screen?.host);
+          return [id, {...target, canSend:target.canSend && sendEnabled}] as const;
         } catch {
           return [id, null] as const;
         }
@@ -676,6 +738,11 @@ function setupIPC() {
         (typeof replaceDraft !== 'string' || replaceDraft.length > 20000))
     )
       throw new Error(m().desktop.badRequest);
+    await managerReady.catch(() => {});
+    if (typeof id === 'string' && isManagerSession(id, manager.state())) {
+      bridge.syncManager(await manager.call({ action: 'chat', text }));
+      return { status: 'sent', message: m().manager.queued };
+    }
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
     await authorized?.();
     if (isRemoteId(id)) {
@@ -947,6 +1014,8 @@ app.on('before-quit', (event) => {
   collectorClosing = true;
   void (async () => {
     await mobile?.close();
+    await managerReady?.catch(() => {});
+    await manager?.close();
     await bridge.close();
   })().finally(() => {
     collectorClosed = true;
