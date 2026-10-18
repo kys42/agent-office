@@ -20,6 +20,7 @@ import { PeerManager, importSession } from '../server/federation/peers.js';
 import { FederatedService } from '../server/federation/service.js';
 import { parentSession } from '../src/shared/office.js';
 import { remoteId, type PeerInput } from '../src/shared/federation.js';
+import { freshConversation, mergeNewest, mergeLive } from '../src/shared/conversation-pages.js';
 import { isWorking } from '../src/shared/presentation.js';
 import type { OfficeService } from '../server/service.js';
 
@@ -58,6 +59,7 @@ const packet = (p: PeerInput): WireSnapshot => ({
   version: 1,
   sampledAt: Date.now(),
   paused: false,
+  conversation: true,
   sessions: [exportSession(fixture(), [])],
 });
 async function changed(manager: PeerManager, action: () => void) {
@@ -359,4 +361,73 @@ test('project links and tags affect only the composed view and survive restart',
   assert.equal(restarted.sessions()[0].area?.name, 'Unified project');
   restarted.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('summary-only peer cards do not request forbidden detail or evict the office', async () => {
+  const dir = temp(),
+    p = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  let calls = 0;
+  const manager = new PeerManager(dir, async () => {
+    calls++;
+    return { ...packet(p), conversation: false };
+  });
+  try {
+    await changed(manager, () => manager.start());
+    const summary = manager.sessions()[0];
+    assert.equal(summary.remote?.conversation, false);
+    const detail = await manager.detail(summary.id);
+    assert.equal(detail.partial, true);
+    assert.equal(calls, 1);
+    assert.equal(manager.sessions().length, 1);
+    assert.equal(manager.state().peers[0].state, 'connected');
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('narrowing conversation permission removes previously loaded detail from an open card', () => {
+  const p = peer(),
+    session = exportSession(fixture(), []);
+  const permitted = importSession(session, p, Date.now(), false, true);
+  const detail = {
+    ...permitted,
+    events: [
+      ...permitted.events,
+      { ...permitted.events[0], id: 'full-only', text: 'Detailed earlier text' },
+    ],
+    olderEvents: false,
+    notices: [],
+  };
+  const loaded = mergeNewest(freshConversation(permitted), detail);
+  assert.equal(loaded.session.events.length, 2);
+  const narrowed = importSession(session, p, Date.now(), false, false);
+  assert.notEqual(narrowed.revision, permitted.revision);
+  const next = mergeLive(loaded, narrowed);
+  assert.equal(next.session.events.length, 1);
+  assert.equal(
+    next.session.events.some((e) => e.id === 'full-only'),
+    false,
+  );
+  assert.deepEqual(next.notices, []);
+});
+
+test('unchanged peer heartbeats do not shorten a loaded full conversation message', () => {
+  const source = fixture();
+  source.events[0].text = 'x'.repeat(5000);
+  const p = peer();
+  const summary = importSession(exportSession(source, []), p, Date.now(), false);
+  const full = importSession(exportSession(source, [], true), p, Date.now(), false);
+  assert.equal(summary.events[0].text.length, 2000);
+  assert.equal(summary.events[0].excerpt, true);
+  assert.equal(full.events[0].excerpt, false);
+  const loaded = mergeNewest(freshConversation(summary), {
+    ...full,
+    olderEvents: false,
+    notices: [],
+  });
+  const heartbeat = { ...summary, remote: { ...summary.remote!, receivedAt: Date.now() + 5000 } };
+  assert.equal(heartbeat.revision, full.revision);
+  assert.equal(mergeLive(loaded, heartbeat).session.events[0].text.length, 5000);
 });

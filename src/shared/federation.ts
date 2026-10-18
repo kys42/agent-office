@@ -6,6 +6,7 @@ export interface RemoteSource {
   tags: string[];
   receivedAt: number;
   stale: boolean;
+  conversation: boolean;
 }
 export interface PeerInput {
   officeId: string;

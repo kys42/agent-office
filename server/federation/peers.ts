@@ -41,6 +41,7 @@ export function importSession(
   peer: PeerInput,
   receivedAt: number,
   stale: boolean,
+  conversation = true,
 ): Session {
   const id = (value: string) => remoteId(peer.officeId, value);
   const linked = Object.hasOwn(peer.projects, s.project) ? peer.projects[s.project] : undefined;
@@ -92,7 +93,7 @@ export function importSession(
     events: s.events.map((e) => ({ ...e, id: id(e.id), sourceRef: '' })),
     usage: s.usage,
     artifacts: [],
-    revision: `${s.revision}:${stale}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects]))}`,
+    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects]))}`,
     zone: s.zone,
     officeSeat: s.officeSeat,
     area: {
@@ -108,6 +109,7 @@ export function importSession(
       tags: peer.tags,
       receivedAt,
       stale,
+      conversation,
     },
   };
 }
@@ -229,7 +231,12 @@ export class PeerManager extends EventEmitter {
             response.version !== h.snapshot.version
           )
             throw new PeerError(409, 'Invalid snapshot cursor');
-          h.snapshot = { ...h.snapshot, sampledAt: response.sampledAt, paused: response.paused };
+          h.snapshot = {
+            ...h.snapshot,
+            sampledAt: response.sampledAt,
+            paused: response.paused,
+            conversation: response.conversation,
+          };
         } else {
           if (h.snapshot?.epoch === response.epoch && response.version < h.snapshot.version)
             throw new PeerError(409, 'Snapshot moved backwards');
@@ -271,7 +278,9 @@ export class PeerManager extends EventEmitter {
       if (!h?.snapshot || !h.receivedAt) return [];
       const stale =
         h.state !== 'connected' || h.snapshot.paused || Date.now() - h.receivedAt > 15000;
-      return h.snapshot.sessions.map((s) => importSession(s, p, h.receivedAt!, stale));
+      return h.snapshot.sessions.map((s) =>
+        importSession(s, p, h.receivedAt!, stale, h.snapshot!.conversation),
+      );
     });
   }
   linkedProjects() {
@@ -283,7 +292,12 @@ export class PeerManager extends EventEmitter {
     const held = this.held.get(ref.officeId);
     if (!this.enabled || !peer || !held?.snapshot?.sessions.some((s) => s.id === ref.id))
       throw new Error('Remote session unavailable');
+    if (!held.snapshot.conversation) {
+      const summary = this.sessions().find((s) => s.id === id)!;
+      return { ...summary, partial: true, olderEvents: false, notices: [] };
+    }
     const generation = this.generation;
+    const epoch = held.snapshot.epoch;
     const controller = new AbortController();
     this.details.add(controller);
     try {
@@ -294,6 +308,9 @@ export class PeerManager extends EventEmitter {
       if (
         generation !== this.generation ||
         !this.enabled ||
+        held.snapshot?.epoch !== epoch ||
+        !held.snapshot?.conversation ||
+        !held.snapshot.sessions.some((s) => s.id === ref.id) ||
         result.officeId !== ref.officeId ||
         result.session.id !== ref.id
       )

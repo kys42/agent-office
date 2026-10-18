@@ -19,6 +19,9 @@ export const federation = {
   disabled: 'Beta is off. No remote connections are running.',
   readOnly: 'Remote office · read-only',
   stale: 'Last observation · connection or collection unavailable',
+  excerpt: 'Remote office excerpt · partial source',
+  excerptTitle: 'A bounded excerpt shared by the remote office.',
+  summaryOnly: 'This office shares recent excerpts only. Full conversation access is not enabled.',
   recentOnly:
     'Only the recent conversation shared by this office is available. Remote editing and terminal actions are disabled.',
   invalid: 'Invalid connection file or project links.',

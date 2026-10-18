@@ -970,7 +970,7 @@ export function Inspector({
             )}
             {!privacy && s.remote.tags.length > 0 && <> · {s.remote.tags.join(' · ')}</>}
             <br />
-            {t.federation.recentOnly}
+            {s.remote.conversation ? t.federation.recentOnly : t.federation.summaryOnly}
           </p>
         )}
         {petEditor}

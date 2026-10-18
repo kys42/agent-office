@@ -118,6 +118,7 @@ export async function startExportServer(dataDir: string, configDir: string) {
             version,
             sampledAt: Date.now(),
             paused: prefs.paused,
+            conversation: config.conversation,
           };
           if (
             url.searchParams.get('epoch') === epoch &&

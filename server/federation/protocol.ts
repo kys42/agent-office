@@ -15,6 +15,7 @@ export const eventSchema = z
     at: time,
     kind: z.enum(['user', 'assistant', 'tool', 'result', 'lifecycle']),
     text: z.string().max(64000),
+    excerpt: z.boolean(),
     tool: z.string().max(200).optional(),
     phase: z.enum(['commentary', 'final']).optional(),
   })
@@ -75,6 +76,7 @@ export const snapshotSchema = z
     version: z.number().int().nonnegative(),
     sampledAt: time,
     paused: z.boolean(),
+    conversation: z.boolean(),
     sessions: z.array(sessionSchema).max(900),
   })
   .strict();
@@ -89,6 +91,7 @@ export const responseSchema = z.union([
       version: z.number().int().nonnegative(),
       sampledAt: time,
       paused: z.boolean(),
+      conversation: z.boolean(),
     })
     .strict(),
 ]);
@@ -171,6 +174,7 @@ export function exportSession(s: Session, peers: Session[], detail = false): Wir
       at: e.at,
       kind: e.kind,
       text: e.text.slice(0, eventLimit),
+      excerpt: !detail || !!e.excerpt || e.text.length > eventLimit,
       ...(e.tool ? { tool: e.tool.slice(0, 200) } : {}),
       ...(e.phase ? { phase: e.phase } : {}),
     })),
