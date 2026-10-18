@@ -84,7 +84,17 @@ test('A colleague card reads older messages by page, keeps the reading position 
     .poll(() => card.locator('.inspector-scroll').evaluate((el) => el.scrollTop))
     .toBeGreaterThan(1000);
 
-  for (let i = 0; i < 6 && (await older.count()); i++) await older.click();
+  // Scrolling a click target into view can itself load the last page and remove
+  // the button before Playwright clicks it. Keep reading upward and wait for the
+  // content instead of waiting for a button that has correctly disappeared.
+  await expect
+    .poll(async () => {
+      await card
+        .locator('.inspector-scroll')
+        .evaluate((el) => el.scrollTo({ top: 0, behavior: 'instant' }));
+      return conversation.getByText(label(0)).count();
+    })
+    .toBe(1);
   await expect(conversation.getByText(label(0))).toBeAttached();
   await expect(older).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).pages)).toEqual([null, 'e80', 'e40']);
