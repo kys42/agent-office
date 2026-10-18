@@ -141,9 +141,10 @@ async function card(
                       label: '',
                       status: 'queue',
                       canSend: w.codexPhase !== 'screen-only',
-                      queues: true,
-                      canFocus: w.codexPhase !== 'queue',
-                      ...(w.codexPhase !== 'queue' && {
+                      desktop: w.codexPhase === 'desktop',
+                      queues: w.codexPhase !== 'desktop',
+                      canFocus: !['queue', 'desktop'].includes(w.codexPhase),
+                      ...(!['queue', 'desktop'].includes(w.codexPhase) && {
                         focus: { kind: 'orca', label: 'Session screen' },
                       }),
                     }
@@ -669,4 +670,27 @@ test('A run of progress notes reads as one: who and when only on the first, a pa
   ).toHaveCount(0);
   await expect(msg('u2')).not.toHaveClass(/is-continued/);
   await page.screenshot({ path: '.local/card-runs.png' });
+});
+
+test('Codex Desktop identifies the destination and sends a card reply without queue claims', async ({
+  page,
+}) => {
+  const aside = await card(page, { codex: true });
+  await page.evaluate(() => {
+    const w = window as any;
+    w.codexPhase = 'desktop';
+    w.fixture.sessions[0].updatedAt += 1000;
+    w.fixture.version++;
+    w.publish(structuredClone(w.fixture));
+  });
+  const input = aside.getByPlaceholder(/Codex Desktop의 이 대화로 보내요/);
+  await expect(input).toBeVisible();
+  await expect(aside.locator('.terminal-send-bar')).toContainText('Codex Desktop');
+  await expect(aside.locator('.terminal-send-bar')).not.toContainText('세션 대기열');
+  await input.fill('Desktop 연결 합성 검증');
+  await aside.getByRole('button', { name: '보내기', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).sent)).toEqual([
+    ['demo:0', 'Desktop 연결 합성 검증'],
+  ]);
+  await expect(input).toHaveValue('');
 });

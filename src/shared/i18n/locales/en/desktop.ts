@@ -31,9 +31,14 @@ export const desktop = {
       cancel: 'Cancel',
       message: 'Turn on Send to terminal?',
       detail:
-        "What you write on the work card is typed straight into the terminal of an idle Claude Code session in Orca or tmux, and handed to the Codex queue for a running Codex CLI session. It's the same as typing it yourself, so a session started without permission prompts runs it as is.",
+        "What you write on the work card is typed straight into the terminal of an idle Claude Code session in Orca or tmux, handed to the Codex queue for a running Codex CLI session, or sent to an open conversation in Codex Desktop. It's the same as typing it yourself, so a session started without permission prompts runs it as is.",
     },
     enableFirst: 'Turn on ‘Send to terminal’ in Settings.',
+    codexDesktopSent: 'Sent to the conversation in Codex Desktop',
+    codexDesktopUnavailable:
+      'No compatible Codex Desktop owner is available. Open this conversation in Codex Desktop and try again. Nothing was sent.',
+    codexDesktopUnconfirmed:
+      'Could not confirm delivery to Codex Desktop. Check the conversation before sending again; the app may have received it or rejected it while busy.',
     codexMissing: "Couldn't find the Codex CLI, so nothing was sent.",
     codexUnconfirmed:
       "Couldn't confirm it reached Codex. Check the Codex screen before sending again.",
