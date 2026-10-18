@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/ui',
@@ -20,6 +21,16 @@ export default defineConfig({
       ],
     },
   },
-  webServer: { command: 'npm run dev', url: 'http://127.0.0.1:5173', reuseExistingServer: true },
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://127.0.0.1:5173',
+    reuseExistingServer: false,
+    env: {
+      AGENT_OFFICE_DATA_DIR: path.resolve('.local/ui-tests/data'),
+      CLAUDE_CONFIG_DIR: path.resolve('.local/ui-tests/claude'),
+      CODEX_HOME: path.resolve('.local/ui-tests/codex'),
+      OPENCLAW_STATE_DIR: path.resolve('.local/ui-tests/openclaw'),
+    },
+  },
   reporter: 'list',
 });

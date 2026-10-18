@@ -6,6 +6,7 @@
 
 - **Claude Code**가 Orca나 tmux 터미널에 떠 있으면 그 탭/패널로 이동하고, 입력창이 열려 있으면(쉬는 중·작업 중) 그 터미널에 입력한다.
 - **Codex CLI**는 공용 데몬에 올라와 있는 세션에 `codex queue`로 전달한다. 어느 터미널에서 띄웠는지와 무관하다. 현재 화면의 대화 ID와 호스트가 검증되면 Claude와 같은 Orca/tmux 이동을 사용한다.
+- **Codex Desktop**은 이미 열린 사용자 대화의 owner를 확인해 앱 IPC로 보낸다. [호환 계약과 한계](#codex-desktop-대화-전송)를 따른다.
 - 같은 판단을 업무 카드와 사무실 말풍선이 함께 쓴다(`src/lib/useSendTargets.ts`). 보낼 수 있는 세션의 말풍선에는 답장 버튼이 붙는다.
 
 ## 전송 표시와 오류 복구 (#146)
@@ -22,7 +23,7 @@
 2. **프로세스 → 호스트.** `ps -wwE`(인수+환경)에서 `ps -ww`(인수)를 잘라낸 나머지만 환경으로 읽는다. 인수 속 `ORCA_TERMINAL_HANDLE=…` 같은 글자는 무시된다. 값은 엄격한 정규식(`term_…`, `%숫자`, 절대 경로 소켓)만 허용한다. 환경변수는 상속되므로 **pty 소유자**로 진짜 호스트를 정한다. 부모를 따라 올라가며 같은 tty를 쓰는 동안 계속 오르고, 처음으로 다른 tty(또는 없음)에 있는 조상이 그 pty를 연 프로그램이다(`ps -axo pid,ppid,tty,comm`). 환경과 소유자는 프로세스 수명 동안 바뀌지 않아 `pid:procStart`로 캐시한다.
    - **tmux**(`TMUX`, `TMUX_PANE`)가 직접 호스트이므로 먼저 본다. 소유자가 tmux 서버이고 `tmux -S <socket> display-message -t <pane> '#{pane_tty}…'`의 tty가 같아야 인정한다. tmux 표식이 있는데 확인이 안 되면 **대상 없음**이다. Orca 안에서 띄운 tmux는 바깥 Orca 핸들을 물려받지만, 그 탭은 다른 패널이나 셸을 보여 줄 수 있다.
    - **Orca**(`ORCA_TERMINAL_HANDLE`, `ORCA_TAB_ID`)는 소유자가 `Orca.app` 프로세스이고 `orca terminal show --json`이 connected·writable·not orphaned·같은 `tabId`여야 인정한다. Orca 탭 안의 screen·zellij·nvim `:terminal`에서 띄운 Claude는 핸들을 물려받아도 소유자가 달라 제외된다. 라벨은 탭 제목이다. 탭 제목만으로 매칭하지 않는다(실측에서 제목과 세션 이름이 다른 경우가 있었다).
-3. **렌더러에는 `TerminalTarget { kind, label, status, canSend, canFocus, queues? }`만** 보낸다. handle·소켓·pane은 넘기지 않고, main이 이동·보내기마다 다시 찾는다. 반복 조회가 가볍도록 세션 기록 디렉터리는 1초, 호스트 확인(Orca CLI)은 15초 재사용한다. 이동·보내기는 캐시 없이 새로 확인하고 보낸 뒤 캐시를 지운다.
+3. **렌더러에는 `TerminalTarget { kind, label, status, canSend, canFocus, queues?, desktop? }`만** 보낸다. handle·소켓·pane은 넘기지 않고, main이 이동·보내기마다 다시 찾는다. 반복 조회가 가볍도록 세션 기록 디렉터리는 1초, 호스트 확인(Orca CLI)은 15초 재사용한다. 이동·보내기는 캐시 없이 새로 확인하고 보낸 뒤 캐시를 지운다.
 
 Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행한 Claude 세션은 이동·보내기 대상이 아니다.
 
@@ -226,3 +227,37 @@ terminal_title = ["session-id", "thread-name", "project"]
 - 첫 조회는 전체 프로세스 표와 Orca CLI 때문에 기기 부하에 따라 1~2초 걸린다. 이후에는 Orca 약 0.5초, tmux 수십 ms. Codex 조회는 수 ms다.
 - Codex 화면 제목에 현재 대화 ID(전체 또는 유일하게 복원되는 32자 축약형)가 없으면 이동할 수 없다. 아래 설정 후의 화면만 지원한다. 대화가 여러 화면에 열려 있으면 임의 선택하지 않고 재개 명령을 복사한다.
 - Codex가 맡고 있지 않은 세션(화면을 닫은 지 오래됨 등)에는 보내지 않는다. 그 세션을 Codex에서 다시 열면 다시 대상이 된다.
+
+## Codex Desktop 대화 전송
+
+일반 앱의 `desktop/codex-send.ts`가 rollout의 originator로 CLI 대기열과 Desktop
+연결을 구분한다. 베타 플래그나 저장소 migration 없이 기존 `office:terminals`와
+`office:send`를 사용한다. LAN 베타 exporter도 이 공통 모듈을 사용하고, 원격
+인증·중복 방지는 베타 API 계층이 담당한다.
+
+- `Codex Desktop` originator인 사용자 대화만 같은 사용자의
+  `$CODEX_HOME/ipc/ipc.sock`에 연결한다. subagent·exec는 제외한다.
+- `desktop/codex-desktop.ts`는 길이(4바이트 LE)+JSON 프레임을 사용한다.
+  `initialize` v0 → `thread-owner-discovery` v1 → 해당 owner를 지정한
+  `thread-follower-read-model-settings` v1로 확인한다. resumed/default/user만 허용한다.
+- 전송 직전에 다시 확인한 owner에 `thread-follower-start-turn` v2를 한 번 보낸다.
+  conversationId/threadId와 text input을 지정하고 `inheritThreadSettings: true`로
+  모델·권한·작업 폴더 등은 Desktop의 기존 설정을 따른다. turn ID를 포함한 응답을
+  받아야 성공이다. 응답 유실·프로토콜 불일치·연결 종료는 자동 재전송하지 않는다.
+- Endpoint는 같은 UID, 비공개 디렉터리/소켓이어야 한다. symlink·없는 소켓·잘못된
+  권한은 거절하고 파일을 생성/수정하지 않는다. 연결은 요청 후 닫는다. 들어오는
+  owner discovery에는 항상 false로 답하며 방송·승인 요청을 처리하지 않는다.
+- Desktop을 시작하거나 owner 없는 대화를 새 서버에서 resume하지 않는다. DB,
+  인증 파일, Desktop 설정, 대화의 approval policy를 수정하지 않는다.
+- UI는 `TerminalTarget.desktop`으로 Desktop 전송을 표시한다. CLI처럼 작업 종료 후
+  대기열 처리를 보장하지 않는다. 실행 중 거절/응답 불명확 시 원래 대화 확인을 안내한다.
+
+이 IPC는 2026-10-18 설치된 Desktop의 로컬 코드와 양쪽 Mac의 읽기 전용 조회에서
+확인한 **비공개 호환 계약**이다. [공개 App Server API](https://learn.chatgpt.com/docs/app-server)의
+공식 Desktop 연결 API로 간주하지 않는다. 앱 업데이트로 버전/메서드가 바뀌면
+전송 불가로 처리하며, 다시 프로토콜을 검증해야 한다. 외부 소스 코드를 복사하지 않았다.
+
+검증: `tests/codex-desktop.test.ts`는 실제 임시 Unix socket owner로 분할 프레임,
+origin/owner 검증, 설정 상속, 잘못된 권한/프로토콜, 응답 유실 시 단일 dispatch를
+확인한다. UI는 합성 카드만 사용한다. 개인 대화에 실제 테스트 메시지를 보내는
+검증과는 구분한다. Playwright 수집기 홈/DB는 `.local/ui-tests`로 격리한다.

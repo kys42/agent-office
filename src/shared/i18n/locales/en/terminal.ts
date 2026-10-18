@@ -7,6 +7,7 @@ export const terminal = {
   /** Target line when messages wait in the Codex CLI queue. */
   queueLine: (host: string) => `${host} · session queue`,
   placeholder: {
+    desktop: 'Send to this conversation in Codex Desktop',
     queues: "Goes straight to the Codex session · if it's busy, it runs after the current turn",
     busy: 'Working · what you send is queued and picked up as it goes',
     notWaiting: 'Not waiting for input right now',
@@ -14,13 +15,14 @@ export const terminal = {
     /** No terminal found as last seen. */
     unknown: 'Its terminal is looked up again on send',
   },
+  runningDesktop: 'Connected to Codex Desktop',
   runningCodex: 'Running in Codex CLI',
   runningIn: (host: string) => `Running in a ${host} terminal`,
   /** No terminal found so far. */
   runningSomewhere: 'Running in a terminal',
   offHint: (running: string) =>
     `${running}. Turn on ‘Send to terminal’ in Settings to follow up right here.`,
-  messageLabel: (host: string) => `Message for the ${host} terminal`,
+  messageLabel: (host: string) => `Message for ${host}`,
   sendShortcut: '⌘↵ to send',
   busy: 'working',
   send: 'Send',

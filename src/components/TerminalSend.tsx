@@ -10,13 +10,15 @@ export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {
-  const host = HOSTS[target.kind];
+  const host = target.desktop ? 'Codex Desktop' : HOSTS[target.kind];
+  if (target.desktop) return host;
   if (target.queues) return m().terminal.queueLine(host);
   return privacy || !target.label ? host : `${host} · ${target.label}`;
 }
 
 export function targetPlaceholder(target: TerminalTarget) {
   const text = m().terminal.placeholder;
+  if (target.desktop) return text.desktop;
   if (target.queues) return text.queues;
   if (!target.canSend) return text.notWaiting;
   // Mid-turn Claude queues what is typed, so a follow-up can steer the work in progress.
@@ -53,17 +55,23 @@ export function TerminalSend({
   const { t } = useI18n();
   const reply = useComposerSend(onSend, (sent) => reply.clearText(sent), draftKey);
   const { text, sending, error, draft } = reply;
-  const host = target ? HOSTS[target.kind] : t.terminal.terminal;
+  const host = target?.desktop
+    ? 'Codex Desktop'
+    : target
+      ? HOSTS[target.kind]
+      : t.terminal.terminal;
   if (!enabled)
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
         {t.terminal.offHint(
-          target?.queues
-            ? t.terminal.runningCodex
-            : target
-              ? t.terminal.runningIn(host)
-              : t.terminal.runningSomewhere,
+          target?.desktop
+            ? t.terminal.runningDesktop
+            : target?.queues
+              ? t.terminal.runningCodex
+              : target
+                ? t.terminal.runningIn(host)
+                : t.terminal.runningSomewhere,
         )}
       </p>
     );

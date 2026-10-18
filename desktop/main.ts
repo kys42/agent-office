@@ -57,7 +57,7 @@ import {
   terminalTarget,
   TerminalInputError,
 } from './terminals.js';
-import { codexTarget, findCodexThread, queueToCodex } from './codex-queue.js';
+import { codexDestinationTarget, findCodexDestination, sendToCodex } from './codex-send.js';
 import { findCodexTerminal } from './codex-focus.js';
 import { composerFor } from './composer/index.js';
 import { promptsFor } from './prompts/index.js';
@@ -557,7 +557,7 @@ function setupIPC() {
     known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
   const codex = (known: SessionIdentity, fresh = false) =>
     known.provider === 'codex'
-      ? findCodexThread(known.nativeId, known.sourcePath, { fresh })
+      ? findCodexDestination(known.nativeId, known.sourcePath, { fresh })
       : null;
   ipcMain.handle('office:terminals', async (e, ids) => {
     trusted(e);
@@ -578,7 +578,7 @@ function setupIPC() {
             Promise.resolve(codex(known)).catch(() => null),
             findCodexTerminal(known.nativeId).catch(() => null),
           ]);
-          return [id, codexTarget(screen?.host, !!thread)] as const;
+          return [id, codexDestinationTarget(thread, screen?.host)] as const;
         } catch {
           return [id, null] as const;
         }
@@ -660,7 +660,13 @@ function setupIPC() {
     if (delivery === 'queue' && !thread) throw new Error(m().desktop.terminal.noTarget);
     if (thread)
       try {
-        return { status: 'sent', message: await queueToCodex(thread, text) };
+        return {
+          status: 'sent',
+          message: await sendToCodex(thread, text, undefined, async () => {
+            if (!(await terminalSendEnabled()))
+              throw new TerminalInputError(m().desktop.terminal.enableFirst);
+          }),
+        };
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
         if ((error as NodeJS.ErrnoException).code === 'ENOENT')

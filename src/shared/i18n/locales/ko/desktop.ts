@@ -31,9 +31,14 @@ export const desktop: Messages['desktop'] = {
       cancel: '취소',
       message: '터미널로 보내기를 켤까요?',
       detail:
-        'Orca·tmux에서 쉬고 있는 Claude Code 세션에는 업무 카드에서 쓴 글을 그 터미널에 직접 입력하고, 실행 중인 Codex CLI 세션에는 Codex 대기열로 전달해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
+        'Orca·tmux에서 쉬고 있는 Claude Code 세션에는 업무 카드에서 쓴 글을 그 터미널에 직접 입력하고, 실행 중인 Codex CLI 세션에는 대기열로, Codex Desktop에서 열린 대화에는 앱 연결로 전달해요. 내가 친 것과 같아서 권한 확인 없이 띄운 세션이면 그대로 실행돼요.',
     },
     enableFirst: '설정에서 ‘터미널로 보내기’를 켜 주세요.',
+    codexDesktopSent: 'Codex Desktop 대화에 전달했어요',
+    codexDesktopUnavailable:
+      '연결 가능한 Codex Desktop 대화를 찾지 못했어요. Desktop에서 이 대화를 열어 주세요. 메시지는 보내지 않았어요.',
+    codexDesktopUnconfirmed:
+      'Codex Desktop의 수신을 확인하지 못했어요. 이미 전달됐거나 작업 중이라 거절됐을 수 있으니, 다시 보내기 전에 대화를 확인해 주세요.',
     codexMissing: 'Codex CLI를 찾지 못해 보내지 않았어요.',
     codexUnconfirmed:
       'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',

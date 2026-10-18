@@ -1,3 +1,10 @@
+# Codex Desktop 대화 전송 · 2026-10-18 (Issue #163)
+
+- 일반 앱에서 Codex Desktop이 담당 중인 사용자 대화에 메시지를 전달한다. CLI 대기열·Claude 터미널 전송은 유지하고 `desktop/codex-send.ts`에서 분기한다. LAN 베타에서도 같은 모듈을 재사용한다.
+- 비공개 Desktop IPC의 버전·owner·설정·소켓 권한을 확인하고 기존 설정을 상속한다. owner 없는 대화를 재개하거나 DB/인증/설정을 수정하지 않는다. 수신 불확실 시 재전송하지 않고 대화 확인을 안내한다.
+- 단위 464개와 추가 라우팅/권한 회귀 2개, 카드 UI 24개, 타입·웹/데스크탑 빌드·격리된 Electron→합성 Desktop 단일 전송 검증 통과. 양쪽 Mac의 실제 owner 조회는 읽기 전용으로 확인했으며 개인 대화 전송은 하지 않았다.
+- 별도 main 기준 워크트리와 PR로 제공한다. 메인 병합·설치 앱 교체는 별도 단계이며, 최신 리뷰/CI와 LAN 베타 반영 근거는 PR에 기록한다. 정본 전송 문서에 비공개 IPC 호환 계약과 한계를 추가했다.
+
 # Windows 기본 사용성과 preview 빌드 · 2026-10-18 (#81, #165)
 
 - 실제 Windows 화면의 중복 제목줄/기본 메뉴를 전용 제목줄·native caption으로 정리했다. 테마별 native 배경/버튼·Segoe UI·Ctrl 단축키·컬러 앱/트레이 아이콘·최소화 복귀를 보완하고 macOS vibrancy/traffic lights는 보존한다.
