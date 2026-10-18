@@ -9,7 +9,9 @@ import {
   shell,
   dialog,
   clipboard,
+  nativeTheme,
 } from 'electron';
+import { windowStyle } from './window-style.js';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -84,6 +86,10 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => showMain());
   app.whenReady().then(() => {
+    if (process.platform === 'win32') app.setAppUserModelId('dev.kys.agentoffice');
+    // Keep edit accelerators while removing Electron's default File/Edit/View/Window bar.
+    if (process.platform !== 'darwin')
+      Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'editMenu' }]));
     // The collector worker inherits this: `auto` then follows the OS language list, not just LANG.
     process.env.AGENT_OFFICE_SYSTEM_LANGUAGES ??= app.getPreferredSystemLanguages().join(',');
     // System language until the first snapshot brings the saved preference.
@@ -124,10 +130,23 @@ else {
     const icon = nativeImage.createFromDataURL(
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAABXUlEQVQ4T6WTsUoDQRRFz8yuJGKhSLEKCgYK/gMLC5sQv8BCsPEHbCxs7WwsLC3sLSz8BxYSa2uxCIJYCCKCYmwUzGRnHLGZnWQFV3hmzpw7d96bBcEEIAIwBPQBHEWzXxdQB2ABuAK8eAsaASaADWAB2LVNgAkgC+QF2AGWQgCWgCeArYhS2K1ICxzqfwEOI+gjmgGmAW0xDdCUkcSOKuAMQF9EQ0ClCzgFlEVSJr9wAU8BxSLmBRwnDEAzABeAWUKBggaITRXoBgRbVKktsCsA50XMpPMCUFdIj68twDxAb8AOoAfolOEhGnT0EMH2noPnsSqTOIVmIZdGTuOA1V8PqxCAY4AkOmR01YAQdBgXMSbMNTE62CEawEqGwGUyJvrb1+ksHlEGQ6MvCSAaQAuCpTOZY/gjgNP17c/gDKr0jdGwXuMK4FnAUjQYZ4wA75pM3fEn8rwAPcApYOvPCZ3hF1cCPzdlP+RhAAAAAElFTkSuQmCC',
     );
-    icon.setTemplateImage(true);
-    tray = new Tray(icon);
+    if (process.platform === 'darwin') icon.setTemplateImage(true);
+    const trayIcon =
+      process.platform === 'win32'
+        ? nativeImage
+            .createFromPath(path.join(root, 'dist', 'icon.png'))
+            .resize({ width: 20, height: 20 })
+        : icon;
+    tray = new Tray(trayIcon);
     buildTray();
     tray.on('click', () => showMain());
+    nativeTheme.on('updated', () => {
+      if (!main || main.isDestroyed() || process.platform === 'darwin') return;
+      const style = windowStyle(process.platform, nativeTheme.shouldUseDarkColors);
+      main.setBackgroundColor(style.backgroundColor!);
+      if (process.platform === 'win32')
+        main.setTitleBarOverlay(style.titleBarOverlay as Electron.TitleBarOverlay);
+    });
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
       if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
@@ -233,16 +252,9 @@ function createMain() {
     minWidth: 1050,
     minHeight: 740,
     title: 'Agent Office',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 20 },
-    // The sidebar shows the system's own translucent material; the content column paints itself.
-    ...(process.platform === 'darwin'
-      ? {
-          vibrancy: 'sidebar' as const,
-          visualEffectState: 'followWindow' as const,
-          backgroundColor: '#00000000',
-        }
-      : { backgroundColor: '#f5f5f7' }),
+    icon: path.join(root, 'dist', 'icon.png'),
+    autoHideMenuBar: process.platform !== 'darwin',
+    ...windowStyle(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -250,6 +262,10 @@ function createMain() {
       sandbox: true,
     },
   });
+  if (process.platform !== 'darwin') {
+    main.removeMenu();
+    main.setMenuBarVisibility(false);
+  }
   secure(main);
   watch(main);
   void main.loadFile(index);
@@ -267,6 +283,7 @@ function showMain(id?: string) {
   stopDrag(false);
   if (dock && !dock.isDestroyed()) dock.hide();
   const window = main!;
+  if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
   if (id) {

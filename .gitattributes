@@ -1,0 +1,8 @@
+# Keep formatter input and pinned vendor checksums identical on Windows and Unix.
+* text=auto eol=lf
+*.png binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
