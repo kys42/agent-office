@@ -99,6 +99,47 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('a late older page cannot bridge a gap after the latest page resets', async ({ page }) => {
+  await mock(page);
+  let advanced = false;
+  let olderRequest: import('@playwright/test').Route | undefined;
+  await page.route('**/mobile/api/detail', async (route) => {
+    if (route.request().postDataJSON().before) {
+      olderRequest = route;
+      return;
+    }
+    return route.fulfill({
+      json: {
+        id: local.id,
+        older: true,
+        events: [
+          {
+            id: advanced ? 'new' : 'old',
+            kind: 'user',
+            at: advanced ? 200 : 40,
+            text: advanced ? '연속성이 바뀐 최신 페이지' : '기존 페이지',
+          },
+        ],
+      },
+    });
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await page.getByRole('button', { name: '이전 대화 보기', exact: true }).click();
+  await expect.poll(() => !!olderRequest).toBe(true);
+  advanced = true;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(page.getByText('연속성이 바뀐 최신 페이지', { exact: true })).toBeVisible();
+  await olderRequest!.fulfill({
+    json: {
+      id: local.id,
+      older: false,
+      events: [{ id: 'ancient', kind: 'user', at: 1, text: '늦게 도착한 이전 페이지' }],
+    },
+  });
+  await expect(page.getByRole('button', { name: '이전 대화 보기', exact: true })).toBeEnabled();
+  await expect(page.getByText('늦게 도착한 이전 페이지', { exact: true })).toHaveCount(0);
+});
 test('a gap after backgrounding resets the latest page and preserves older-page access', async ({
   page,
 }) => {

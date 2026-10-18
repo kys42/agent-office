@@ -189,6 +189,8 @@ function Chat({
       });
       if (!live.current) return;
       setDetail((old) => {
+        // A latest-page reset may have happened while this older page was loading.
+        if (!old?.events.some((e) => e.id === first.id)) return old;
         const events = new Map([...next.events, ...(old?.events ?? [])].map((e) => [e.id, e]));
         return { ...next, events: [...events.values()] };
       });
