@@ -5,6 +5,14 @@
 - 단위 464개와 추가 라우팅/권한 회귀 2개, 카드 UI 24개, 타입·웹/데스크탑 빌드·격리된 Electron→합성 Desktop 단일 전송 검증 통과. 양쪽 Mac의 실제 owner 조회는 읽기 전용으로 확인했으며 개인 대화 전송은 하지 않았다.
 - 별도 main 기준 워크트리와 PR로 제공한다. 메인 병합·설치 앱 교체는 별도 단계이며, 최신 리뷰/CI와 LAN 베타 반영 근거는 PR에 기록한다. 정본 전송 문서에 비공개 IPC 호환 계약과 한계를 추가했다.
 
+# Windows 기본 사용성과 preview 빌드 · 2026-10-18 (#81, #165)
+
+- 실제 Windows 화면의 중복 제목줄/기본 메뉴를 전용 제목줄·native caption으로 정리했다. 테마별 native 배경/버튼·Segoe UI·Ctrl 단축키·컬러 앱/트레이 아이콘·최소화 복귀를 보완하고 macOS vibrancy/traffic lights는 보존한다.
+- collector/MCP의 Windows 기본 데이터를 APPDATA에 두되 명시한 override와 기존 다른 플랫폼 경로를 유지한다. 데이터 자동 이관은 하지 않는다. Git CRLF 출력과 vendor checkout 바이트 보존을 고쳤다.
+- portable Windows 패키지·ICO 생성·source manifest·Windows native PR CI와 격리 smoke를 추가했다. 실제 packaged EXE의 창/테마/편집/트레이와 기존 합성3종·펫/카드·IPC 검증 및 MCP를 통과했다.
+- 전체 기능 지원/미지원/미검증을 [Windows 가이드](docs/development/WINDOWS.md)와 #165에 정리하고 네이티브 입력/WSL은 #166, 정식 배포·운영은 #167로 연결했다. Windows 전체 단위의 기존8개 플랫폼 가정은 남아 있으며 관련 vendor 오류는 해결했다. CI·독립 리뷰·병합·기존 설치본 교체는 구분해 기록한다.
+- 관련 browser UI46개 통과. 독립 리뷰의 반복 패키징 skip 문제를 고유 staging/output과 산출물 검사로 보완했다.
+
 # 팝업 위치 기억과 독립 카드 고정 · 2026-10-15 (Issue #157)
 
 - 팝업 헤더에서 인수인계 꾸리기를 빼고 사무실 동료 핀은 더보기로 옮겼다. 위치 기억과 이 카드 고정을 서로 다른 토글로 제공한다.

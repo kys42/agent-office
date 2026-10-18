@@ -29,6 +29,7 @@ import { ZONE_MATCH_LABELS, isCustomZone, ruleZoneKey } from '../shared/zones';
 import { projectKey } from '../shared/office';
 import { LOCALES, type LocalePreference } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
+import { isWindows } from '../lib/platform';
 export type SettingsSection = 'appearance' | 'connections' | 'office' | 'rhythm';
 function Toggle({
   checked,
@@ -158,6 +159,7 @@ export function Settings({
       )}
       <div className="settings-grid">
         <section className="settings-section" data-guide-section="connections" tabIndex={-1}>
+          {isWindows && <p className="windows-support-note">{s.windowsSupport}</p>}
           <div className="section-title">
             <h2>{s.connectors.title}</h2>
             <button className="icon-btn" aria-label={s.connectors.refresh} onClick={onRefresh}>

@@ -131,6 +131,8 @@ When you want the whole picture, open the full office: every project on its own 
 
 ## 🚀 Quick start
 
+Windows preview: `npm ci` → `npm run package:win`. Open the generated `Agent Office.exe` under `release/windows-*/`. This is an unsigned portable preview; see [Windows support and limits](docs/development/WINDOWS.md) for the supported features, data path and verification commands.
+
 > Built and tested on **Apple Silicon macOS** with **Node.js 24+**.
 
 ```bash

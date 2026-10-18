@@ -29,6 +29,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
+import { isWindows, modifierKey, platformKeys } from './lib/platform';
 import { PROVIDERS, type Session, type ZoneRule } from './shared/types';
 import { useOffice } from './lib/useOffice';
 import { useTerminalSend } from './lib/useTerminalSend';
@@ -174,6 +175,7 @@ export default function App() {
     document.body.classList.toggle('is-desktop', isDesktop);
     // Only macOS windows get the translucent sidebar material (see desktop/main.ts).
     document.body.classList.toggle('is-mac', isDesktop && /Mac/i.test(navigator.userAgent));
+    document.body.classList.toggle('is-windows', isDesktop && isWindows);
   }, []);
   const sessions = snapshot?.sessions ?? [];
   // J/K walks what the office shows: hidden colleagues stay out until they talk again.
@@ -490,6 +492,12 @@ export default function App() {
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
     >
+      {isDesktop && isWindows && (
+        <div className="windows-titlebar">
+          <img src="./icon.png" alt="" width="18" height="18" />
+          <span>Agent Office</span>
+        </div>
+      )}
       <aside className="sidebar" aria-label={t.app.mainMenu}>
         <div className="sidebar-top">
           <div className="brand">
@@ -692,11 +700,11 @@ export default function App() {
               className="global-search"
               onClick={openSearch}
               aria-label={t.palette.search}
-              title={`${t.palette.search} · ⌘K`}
+              title={`${t.palette.search} · ${platformKeys('⌘K')}`}
             >
               <Search size={13} />
               <span>{t.palette.search}</span>
-              <kbd>⌘K</kbd>
+              <kbd>{platformKeys('⌘K')}</kbd>
             </button>
             <div className="header-actions">
               <button
@@ -1014,7 +1022,7 @@ export default function App() {
           <div className="shortcut-grid">
             {(
               [
-                ['find', [['⌘', 'K'], ['/']]],
+                ['find', [[modifierKey, 'K'], ['/']]],
                 ['next', [['J']]],
                 ['previous', [['K']]],
                 ['markRead', [['R']]],

@@ -20,6 +20,7 @@ import {
 import type { Snapshot } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { useI18n } from '../lib/i18n';
+import { platformKeys } from '../lib/platform';
 import { Modal } from './Modal';
 import { Sprite } from './Sprite';
 
@@ -260,8 +261,8 @@ export function OfficeGuide({
                     <section className="guide-feature" key={id}>
                       <Icon className="guide-feature-icon" size={22} />
                       <h3>{card.title}</h3>
-                      <p>{card.body}</p>
-                      <small>{card.where}</small>
+                      <p>{platformKeys(card.body)}</p>
+                      <small>{platformKeys(card.where)}</small>
                       <button disabled={!!reason} onClick={() => onAction(id)}>
                         {reason ?? card.action}
                         {!reason && <ArrowRight size={14} />}

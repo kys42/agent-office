@@ -27,6 +27,8 @@
 
 ## 데스크탑 창
 
+Windows는 [Windows 지원 가이드](WINDOWS.md)의 독립 제목줄과 native caption overlay를 사용한다. Segoe UI·Ctrl 표기·테마별 caption 색을 적용하며 macOS 표현과 데이터/관측 정책을 분리한다.
+
 `desktop/main.ts`: macOS에서 `vibrancy: 'sidebar'`, 투명 창 배경, 신호등 `{ x: 18, y: 20 }`. `body.is-mac`이면 사이드바만 반투명(`--sidebar-tint`)으로 시스템 재질이 비치고 콘텐츠 열은 불투명하다. 그 외 플랫폼은 단색 배경.
 
 ## 변경할 때
