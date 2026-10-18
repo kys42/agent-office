@@ -1,3 +1,4 @@
+import { ChatComposer } from './chat/ChatComposer';
 import { useEffect, useRef } from 'react';
 import { CornerDownLeft, Loader, X } from 'lucide-react';
 import type { SendResult, TerminalTarget } from '../shared/types';
@@ -33,15 +34,22 @@ export function QuickReply({
   // Not taking input as last seen: still sent; the desktop app checks again and says why.
   const submit = () => void reply.submit();
   return (
-    <form
+    <ChatComposer
       className="quick-reply"
+      text={text}
+      onTextChange={reply.setText}
+      onSend={submit}
+      sendDisabled={sending}
+      fieldRef={field}
+      field={{
+        rows: 2,
+        maxLength: 4000,
+        'aria-label': t.terminal.replyLabel,
+        placeholder: targetPlaceholder(target),
+      }}
       tabIndex={-1}
       data-solid
       aria-label={t.terminal.replyTo(name)}
-      onSubmit={(e) => {
-        e.preventDefault();
-        submit();
-      }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
@@ -62,21 +70,6 @@ export function QuickReply({
         }
       }}
     >
-      <textarea
-        ref={field}
-        rows={2}
-        maxLength={4000}
-        value={text}
-        aria-label={t.terminal.replyLabel}
-        placeholder={targetPlaceholder(target)}
-        onChange={(e) => reply.setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-      />
       <div className="quick-reply-bar">
         <small>
           {targetLine(target, false)} · {t.terminal.replyKeys}
@@ -116,6 +109,6 @@ export function QuickReply({
           {error}
         </small>
       )}
-    </form>
+    </ChatComposer>
   );
 }

@@ -38,6 +38,8 @@ export interface MobileDetail {
   id: string;
   events: Pick<OfficeEvent, 'id' | 'kind' | 'phase' | 'at' | 'text' | 'excerpt'>[];
   older: boolean;
+  /** Client window reached its retention budget; not a server pagination cursor. */
+  capped?: boolean;
 }
 export interface MobileReceipt {
   requestId: string;

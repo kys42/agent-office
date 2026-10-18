@@ -25,6 +25,8 @@ export function detailPage(
   page: DetailPage = {},
   notices: OfficeNotice[] = [],
 ): SessionDetail {
+  if (page.view === 'conversation')
+    s = { ...s, events: s.events.filter((e) => e.kind === 'user' || e.kind === 'assistant') };
   const found = page.before ? s.events.findIndex((e) => e.id === page.before) : s.events.length;
   const byTime = () => {
     const at = s.events.findIndex((e) => e.at >= page.beforeAt!);

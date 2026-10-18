@@ -103,15 +103,25 @@ export async function startExportServer(dataDir: string, configDir: string, send
               send(404, { error: 'not-found' });
               return;
             }
-            const detail = store.detail(s.id, { limit: 180 });
-            send(200, {
-              officeId: config.officeId,
-              session: exportSession(
-                { ...detail, partial: detail.partial || !!detail.olderEvents },
-                sessions,
-                true,
-              ),
+            const limit = Number(url.searchParams.get('limit') ?? 180);
+            if (!Number.isInteger(limit) || limit < 1 || limit > 180) {
+              send(400, { error: 'invalid-page' });
+              return;
+            }
+            const detail = store.detail(s.id, {
+              limit,
+              view: url.searchParams.get('view') === 'conversation' ? 'conversation' : 'all',
             });
+            const session = exportSession(
+              { ...detail, partial: detail.partial || !!detail.olderEvents },
+              sessions,
+              true,
+            );
+            const revision = wireId(JSON.stringify(session));
+            // Authorization and current sharing scope were checked above, even for cache hits.
+            if (url.searchParams.get('since') === revision)
+              send(200, { officeId: config.officeId, unchanged: true, revision });
+            else send(200, { officeId: config.officeId, session });
             return;
           }
           const exported = sessions.map((s) => exportSession(s, sessions));

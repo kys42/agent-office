@@ -127,6 +127,7 @@ const prefsSchema = z
   .strict();
 const detailPageSchema = z
   .object({
+    view: z.enum(['conversation', 'all']).optional(),
     before: z.string().max(1000).optional(),
     beforeAt: z.number().optional(),
     limit: z.number().int().min(1).max(DETAIL_PAGE_MAX).optional(),

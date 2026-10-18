@@ -141,6 +141,8 @@ export interface NoticePage {
 }
 /** A page of a conversation: the newest `limit` events before the `before` event. */
 export interface DetailPage {
+  /** Opt-in lightweight view. Omitted preserves the existing desktop full-record contract. */
+  view?: 'conversation' | 'all';
   before?: string;
   /** The `before` event's time: where the page ends should that event have left the record. */
   beforeAt?: number;

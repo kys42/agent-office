@@ -4,7 +4,14 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { FederationState, PeerInput } from '../../src/shared/federation.js';
 import { parseRemoteId, remoteId } from '../../src/shared/federation.js';
-import type { Session, SessionDetail, TerminalTarget, SendResult } from '../../src/shared/types.js';
+import type {
+  Session,
+  SessionDetail,
+  TerminalTarget,
+  SendResult,
+  DetailPage,
+} from '../../src/shared/types.js';
+import { DetailCache } from './detail-cache.js';
 import {
   peerSchema,
   responseSchema,
@@ -31,6 +38,8 @@ const commandSchema = z.discriminatedUnion('action', [
 interface Held {
   snapshot?: WireSnapshot;
   receivedAt: number | null;
+  contentAt?: number;
+  imported?: { key: string; sessions: Session[] };
   state: FederationState['peers'][number]['state'];
   error: string | null;
   failures: number;
@@ -126,6 +135,11 @@ export class PeerManager extends EventEmitter {
   private held = new Map<string, Held>();
   private generation = 0;
   private details = new Set<AbortController>();
+  private detailCache = new DetailCache<{
+    epoch: string;
+    revision: string;
+    session: WireSession;
+  }>();
   private closed = false;
   configError: string | null = null;
   constructor(
@@ -209,6 +223,7 @@ export class PeerManager extends EventEmitter {
     }
     for (const c of this.details) c.abort();
     this.details.clear();
+    this.detailCache.clear();
     this.held.clear();
   }
   close() {
@@ -222,6 +237,15 @@ export class PeerManager extends EventEmitter {
     const current = () => this.enabled && !this.closed && this.generation === generation;
     const poll = async () => {
       if (!current()) return;
+      this.detailCache.prune();
+      const before = [
+        h.state,
+        h.error,
+        !!h.snapshot,
+        h.snapshot?.paused,
+        h.snapshot?.conversation,
+      ].join(':');
+      let changed = false;
       h.controller = new AbortController();
       try {
         const cursor = h.snapshot ? `?epoch=${h.snapshot.epoch}&version=${h.snapshot.version}` : '';
@@ -250,6 +274,9 @@ export class PeerManager extends EventEmitter {
           if (new Set(response.sessions.map((s) => s.id)).size !== response.sessions.length)
             throw new PeerError(400, 'Duplicate session identities');
           h.snapshot = response;
+          h.contentAt = Date.now();
+          h.imported = undefined;
+          changed = true;
         }
         h.state = 'connected';
         h.receivedAt = Date.now();
@@ -271,7 +298,16 @@ export class PeerManager extends EventEmitter {
         if (h.receivedAt && Date.now() - h.receivedAt > 86400_000) h.snapshot = undefined;
       }
       if (!current()) return;
-      this.emit('change');
+      if (!h.snapshot) {
+        h.imported = undefined;
+        this.detailCache.clear();
+      }
+      if (
+        changed ||
+        before !==
+          [h.state, h.error, !!h.snapshot, h.snapshot?.paused, h.snapshot?.conversation].join(':')
+      )
+        this.emit('change');
       const delay = h.failures ? Math.min(60000, 5000 * 2 ** Math.min(h.failures - 1, 4)) : 5000;
       h.timer = setTimeout(() => void poll(), delay);
       h.timer.unref();
@@ -285,9 +321,15 @@ export class PeerManager extends EventEmitter {
       if (!h?.snapshot || !h.receivedAt) return [];
       const stale =
         h.state !== 'connected' || h.snapshot.paused || Date.now() - h.receivedAt > 15000;
-      return h.snapshot.sessions.map((s) =>
-        importSession(s, p, h.receivedAt!, stale, h.snapshot!.conversation),
-      );
+      const key = `${h.snapshot.epoch}:${h.snapshot.version}:${stale}:${h.snapshot.conversation}`;
+      if (h.imported?.key !== key)
+        h.imported = {
+          key,
+          sessions: h.snapshot.sessions.map((s) =>
+            importSession(s, p, h.contentAt ?? h.receivedAt!, stale, h.snapshot!.conversation),
+          ),
+        };
+      return h.imported.sessions;
     });
   }
   linkedProjects() {
@@ -392,7 +434,7 @@ export class PeerManager extends EventEmitter {
       this.details.delete(controller);
     }
   }
-  async detail(id: string): Promise<SessionDetail> {
+  async detail(id: string, page: DetailPage = {}): Promise<SessionDetail> {
     const ref = parseRemoteId(id);
     const peer = this.config.peers.find((p) => p.officeId === ref.officeId);
     const held = this.held.get(ref.officeId);
@@ -404,13 +446,38 @@ export class PeerManager extends EventEmitter {
     }
     const generation = this.generation;
     const epoch = held.snapshot.epoch;
+    const view = page.view === 'conversation' ? 'conversation' : 'all';
+    // Existing desktop callers use local paging options; remote cards historically read 180.
+    const limit = page.view ? Math.min(180, Math.max(1, page.limit ?? 180)) : 180;
+    const cacheKey = `${id}:${view}:${limit}`;
+    const saved = this.detailCache.get(cacheKey);
+    const cached = saved?.epoch === epoch ? saved : undefined;
     const controller = new AbortController();
     this.details.add(controller);
     try {
+      const raw = await this.request(
+        peer,
+        `/office/v1/detail?id=${ref.id}&view=${view}&limit=${limit}${cached ? `&since=${cached.revision}` : ''}`,
+        controller.signal,
+      );
       const result = z
-        .object({ officeId: z.uuid(), session: sessionSchema })
-        .strict()
-        .parse(await this.request(peer, `/office/v1/detail?id=${ref.id}`, controller.signal));
+        .union([
+          z.object({ officeId: z.uuid(), session: sessionSchema }).strict(),
+          z
+            .object({
+              officeId: z.uuid(),
+              unchanged: z.literal(true),
+              revision: z.string().regex(/^[a-f0-9]{64}$/),
+            })
+            .strict(),
+        ])
+        .parse(raw);
+      const session =
+        'session' in result
+          ? result.session
+          : cached && result.revision === cached.revision
+            ? cached.session
+            : undefined;
       if (
         generation !== this.generation ||
         !this.enabled ||
@@ -418,12 +485,23 @@ export class PeerManager extends EventEmitter {
         !held.snapshot?.conversation ||
         !held.snapshot.sessions.some((s) => s.id === ref.id) ||
         result.officeId !== ref.officeId ||
-        result.session.id !== ref.id
+        !session ||
+        session.id !== ref.id
       )
         throw new Error('Remote session changed');
+      this.detailCache.set(cacheKey, { epoch, session, revision: wireId(JSON.stringify(session)) });
+      const selected =
+        view === 'conversation'
+          ? session.events.filter((e) => e.kind === 'user' || e.kind === 'assistant')
+          : session.events;
       // Recent bounded conversation only. Older paging is deliberately not advertised.
       return {
-        ...importSession(result.session, peer, Date.now(), !!held.snapshot?.paused),
+        ...importSession(
+          { ...session, events: selected.slice(-limit) },
+          peer,
+          Date.now(),
+          !!held.snapshot?.paused,
+        ),
         olderEvents: false,
         notices: [],
       };
@@ -434,6 +512,8 @@ export class PeerManager extends EventEmitter {
         [401, 403, 404].includes(e.code)
       ) {
         held.snapshot = undefined;
+        held.imported = undefined;
+        this.detailCache.clear();
         held.state = 'rejected';
         held.error = e.message;
         this.emit('change');

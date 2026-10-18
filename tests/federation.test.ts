@@ -319,6 +319,13 @@ test('HTTPS export is read-only, authenticates before data and scopes every deta
       session: { events: unknown[] };
     };
     assert.equal(detail.session.events.length, 1);
+    const revision = wireId(JSON.stringify(detail.session));
+    const unchangedDetail = await peerRequest(
+      p,
+      `/office/v1/detail?id=${wireId(session.id)}&since=${revision}`,
+    );
+    assert.deepEqual(unchangedDetail, { officeId: p.officeId, unchanged: true, revision });
+
     await assert.rejects(
       peerRequest({ ...p, token: 'wrong'.repeat(10) }, '/office/v1/snapshot'),
       (e: unknown) => e instanceof PeerError && e.code === 401,
@@ -335,6 +342,10 @@ test('HTTPS export is read-only, authenticates before data and scopes every deta
     );
     config.projects = [];
     save();
+    await assert.rejects(
+      peerRequest(p, `/office/v1/detail?id=${wireId(session.id)}&since=${revision}`),
+      (e: unknown) => e instanceof PeerError && e.code === 404,
+    );
     await assert.rejects(
       peerRequest(p, `/office/v1/detail?id=${wireId(session.id)}`),
       (e: unknown) => e instanceof PeerError && e.code === 404,
@@ -494,4 +505,112 @@ test('unchanged peer heartbeats do not shorten a loaded full conversation messag
   const heartbeat = { ...summary, remote: { ...summary.remote!, receivedAt: Date.now() + 5000 } };
   assert.equal(heartbeat.revision, full.revision);
   assert.equal(mergeLive(loaded, heartbeat).session.events[0].text.length, 5000);
+});
+
+test('summary omits tool payloads while preserving human progress and final replies', () => {
+  const s = fixture();
+  const events = [
+    { ...s.events[0], id: 'request', kind: 'user' as const },
+    { ...s.events[0], id: 'progress', phase: 'commentary' as const },
+    ...Array.from({ length: 180 }, (_, i) => ({
+      ...s.events[0],
+      id: `tool${i}`,
+      kind: 'tool' as const,
+      text: 'x'.repeat(1000),
+    })),
+    { ...s.events[0], id: 'final' },
+  ];
+  const summary = exportSession({ ...s, events }, []);
+  assert.deepEqual(
+    summary.events.map((e) => e.id),
+    ['request', 'progress', 'final'].map(wireId),
+  );
+  assert.ok(JSON.stringify(summary).length < JSON.stringify(events).length / 20);
+});
+test('unchanged peer heartbeat reuses imported sessions without publishing a whole update', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const dir = temp(),
+    p = peer(),
+    snapshot = packet(p);
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  let calls = 0,
+    updates = 0;
+  const manager = new PeerManager(dir, async () => {
+    if (calls++ === 0) return snapshot;
+    return {
+      officeId: p.officeId,
+      unchanged: true,
+      epoch: snapshot.epoch,
+      version: snapshot.version,
+      sampledAt: Date.now(),
+      paused: false,
+      conversation: true,
+    };
+  });
+  manager.on('change', () => updates++);
+  try {
+    await changed(manager, () => manager.start());
+    const session = manager.sessions()[0];
+    for (let i = 0; i < 100; i++) {
+      t.mock.timers.tick(5000);
+      await Promise.resolve();
+      await Promise.resolve();
+      assert.equal(manager.sessions()[0], session);
+    }
+    assert.equal(calls, 101);
+    assert.equal(updates, 1);
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('detail conditional reads reuse only a matching authorized view and accept legacy full responses', async () => {
+  const dir = temp(),
+    p = peer(),
+    snapshot = packet(p);
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  const session = exportSession(fixture(), [], true);
+  const revision = wireId(JSON.stringify(session));
+  const urls: string[] = [];
+  let legacy = false,
+    deny = false,
+    invalid = false;
+  const manager = new PeerManager(dir, async (_peer, route) => {
+    if (route.includes('/snapshot')) return snapshot;
+    urls.push(route);
+    if (deny) throw new PeerError(403, 'Revoked');
+    if (route.includes('since=') && !legacy)
+      return {
+        officeId: p.officeId,
+        unchanged: true,
+        revision: invalid ? '0'.repeat(64) : revision,
+      };
+    return { officeId: p.officeId, session };
+  });
+  try {
+    await changed(manager, () => manager.start());
+    const id = manager.sessions()[0].id;
+    const first = await manager.detail(id, { view: 'conversation', limit: 40 });
+    assert.deepEqual(
+      (await manager.detail(id, { view: 'conversation', limit: 40 })).events,
+      first.events,
+    );
+    assert.ok(urls[1].includes(`since=${revision}`));
+    await manager.detail(id, { view: 'all', limit: 40 });
+    assert.ok(!urls[2].includes('since='), 'different views have separate cursors');
+    invalid = true;
+    await assert.rejects(manager.detail(id, { view: 'all', limit: 40 }));
+    invalid = false;
+    legacy = true;
+    assert.deepEqual(
+      (await manager.detail(id, { view: 'conversation', limit: 40 })).events,
+      first.events,
+    );
+    deny = true;
+    await assert.rejects(manager.detail(id, { view: 'conversation', limit: 40 }));
+    assert.equal(manager.sessions().length, 0, 'cached full text cannot outlive revocation');
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

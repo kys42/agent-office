@@ -333,59 +333,40 @@ nav button[aria-pressed='true'] {
   padding: 12px 20px 20px;
   overscroll-behavior: contain;
 }
-.message {
+.messages .conversation-message {
   margin: 15px 0 22px;
-  max-width: 95%;
 }
-.message.mine {
-  margin-left: auto;
+.messages .message-meta {
+  gap: 6px;
 }
-.message-meta {
-  font-size: 10px;
-  color: var(--text-3);
-  margin: 0 3px 6px;
+.messages .message-meta button {
+  opacity: 1;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: transparent;
+  border: 0;
 }
-.mine .message-meta {
-  text-align: right;
+.messages .message-bubble {
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 16px 16px 16px 5px;
 }
-.message-body {
-  background: var(--bg-3);
-  border-radius: 4px 16px 16px;
-  padding: 12px 14px;
-  font-size: 14px;
-  line-height: 1.65;
-}
-.mine .message-body {
+.messages .message-user .message-bubble {
+  border-radius: 16px 16px 5px 16px;
   background: var(--accent-soft);
-  border-radius: 16px 4px 16px 16px;
 }
-.message-body p + p {
-  margin-top: 12px;
+.messages .message-text {
+  font-size: 14px;
 }
-.message-body pre {
-  overflow: auto;
-  max-width: 100%;
-  font-size: 12px;
-  background: var(--bg-4);
-  padding: 10px;
-  border-radius: 8px;
-}
-.message-body table {
-  display: block;
-  overflow: auto;
-  border-collapse: collapse;
+.messages .message-text pre,
+.messages .message-text table {
   max-width: 100%;
 }
-.message-body td,
-.message-body th {
-  border: 1px solid var(--line-2);
-  padding: 5px;
-}
-.message-body a {
-  color: var(--accent);
-}
-.message-body img {
-  display: none;
+.messages .message-expand {
+  min-height: 40px;
+  background: transparent;
+  border: 0;
 }
 .older {
   display: block;

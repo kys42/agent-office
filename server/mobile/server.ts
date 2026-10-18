@@ -69,6 +69,7 @@ const sendSchema = z
 const detailSchema = z
   .object({
     id,
+    tools: z.boolean().optional(),
     before: z
       .object({ at: z.number().finite(), id: z.string().max(1000) })
       .strict()
@@ -423,6 +424,7 @@ export class MobileServer {
         const input = detailSchema.parse(value);
         await this.agent(req, generation, input.id);
         const detail = await this.backend.detail(input.id, {
+          view: input.tools ? 'all' : 'conversation',
           before: input.before?.id,
           beforeAt: input.before?.at,
           limit: 40,
@@ -430,14 +432,16 @@ export class MobileServer {
         await this.agent(req, generation, input.id);
         result = {
           id: input.id,
-          events: detail.events.map(({ id, kind, phase, at, text, excerpt }) => ({
-            id,
-            kind,
-            phase,
-            at,
-            text,
-            excerpt,
-          })),
+          events: detail.events
+            .filter((e) => input.tools || e.kind === 'user' || e.kind === 'assistant')
+            .map(({ id, kind, phase, at, text, excerpt }) => ({
+              id,
+              kind,
+              phase,
+              at,
+              text: text.slice(0, 64000),
+              excerpt: excerpt || text.length > 64000,
+            })),
           older: !!detail.olderEvents,
         } satisfies MobileDetail;
       } else if (route === '/mobile/api/targets') {

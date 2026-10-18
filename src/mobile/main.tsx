@@ -1,7 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { ConversationMessage } from '../components/chat/ConversationMessage';
+import { ChatComposer } from '../components/chat/ChatComposer';
+import { ApiError, mobileRequest as api, createRequestId as uuid } from './transport';
 import {
   ArrowLeft,
   ArrowUp,
@@ -13,52 +14,17 @@ import {
   Smartphone,
 } from 'lucide-react';
 import type { MobileAgent, MobileDetail, MobileReceipt, MobileSnapshot } from '../shared/mobile';
-import { conversationEvents, conversationKind } from '../shared/conversation';
+import { conversationEvents } from '../shared/conversation';
 import { MOODS } from '../shared/types';
+import { boundMobileDetail, MOBILE_EVENT_LIMIT } from '../shared/mobile-detail';
 import { m, setLocale, resolveLocale, getLocale } from '../shared/i18n';
 import '../styles/tokens.css';
+import '../components/chat/messages.css';
 import './mobile.css';
 setLocale(resolveLocale('auto', navigator.languages));
 document.documentElement.lang = getLocale();
-class ApiError extends Error {
-  constructor(readonly status: number) {
-    super(
-      status === 401
-        ? m().mobile.badCode
-        : status === 429
-          ? m().mobile.rateLimit
-          : m().mobile.connectionSend,
-    );
-  }
-}
-async function api<T>(route: string, value: unknown = {}): Promise<T> {
-  const res = await fetch(`/mobile/api/${route}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Agent-Office-Mobile': '1' },
-    body: JSON.stringify(value),
-    signal: AbortSignal.timeout(60000),
-  });
-  if (!res.ok) throw new ApiError(res.status);
-  return res.json();
-}
-// randomUUID requires HTTPS; getRandomValues also works on the encrypted tailnet HTTP link.
-function uuid() {
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  b[6] = (b[6] & 15) | 64;
-  b[8] = (b[8] & 63) | 128;
-  const s = [...b].map((v) => v.toString(16).padStart(2, '0')).join('');
-  return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
-}
 const time = (at: number) =>
   new Date(at).toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' });
-const labels = {
-  request: m().mobile.me,
-  progress: m().mobile.progress,
-  reply: m().mobile.reply,
-  message: m().mobile.message,
-  work: m().mobile.tools,
-};
-const safeLink = (href?: string) => (href && /^https?:\/\//i.test(href) ? href : undefined);
 function load<T>(key: string, fallback: T): T {
   try {
     return JSON.parse(sessionStorage.getItem(key) ?? 'null') ?? fallback;
@@ -98,6 +64,7 @@ function Chat({
     queues: boolean;
   } | null>(null);
   const [tools, setTools] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const draftKey = `mobile:draft:${agent.id}`,
     pendingKey = `mobile:pending:${agent.id}`;
   const [draft, setDraft] = useState(() => load(draftKey, ''));
@@ -117,28 +84,30 @@ function Chat({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const readVersion = useRef(0);
+  const viewGeneration = useRef(0);
   const remote = agent.officeId !== 'local';
   const read = useCallback(async () => {
     const version = ++readVersion.current;
     try {
       const [next, targets] = await Promise.all([
-        api<MobileDetail>('detail', { id: agent.id }),
+        api<MobileDetail>('detail', { id: agent.id, tools }),
         api<Record<string, typeof target>>('targets', { ids: [agent.id] }),
       ]);
       if (!live.current || version !== readVersion.current) return;
       setDetail((old) => {
         // Remote detail is a bounded snapshot, not pageable history. A server may
         // reduce sharing to excerpts at any refresh, so never retain old full text.
-        if (remote) return { ...next, older: false };
+        if (remote) return { ...boundMobileDetail(next), older: false };
         const head = next.events[0];
         const joins = head ? (old?.events.findIndex((e) => e.id === head.id) ?? -1) : -1;
-        if (!old || !next.older || joins < 0) return next;
+        if (!old || !next.older || joins < 0) return boundMobileDetail(next);
         const events = [...old.events.slice(0, joins), ...next.events];
-        return {
+        return boundMobileDetail({
           ...next,
-          older: old.older || events.length > 1000,
-          events: events.slice(-1000),
-        };
+          older: old.older,
+          capped: old.capped,
+          events,
+        });
       });
       setTarget(targets[agent.id] ?? null);
       setError('');
@@ -149,7 +118,16 @@ function Chat({
       setTarget(null);
       if (e instanceof ApiError && e.status === 401) onExpired();
     }
-  }, [agent.id, remote, onExpired]);
+  }, [agent.id, remote, tools, onExpired]);
+  // A send may settle after switching views; refresh the currently selected view.
+  const latestRead = useRef(read);
+  latestRead.current = read;
+  useEffect(() => {
+    const ids = new Set(detail?.events.map((e) => e.id) ?? []);
+    setExpanded((old) =>
+      [...old].some((id) => !ids.has(id)) ? new Set([...old].filter((id) => ids.has(id))) : old,
+    );
+  }, [detail]);
   useEffect(() => {
     live.current = true;
     let running = false;
@@ -182,17 +160,19 @@ function Chat({
     atBottom.current = false;
     const top = scroller.current?.scrollTop ?? 0,
       height = scroller.current?.scrollHeight ?? 0;
+    const generation = viewGeneration.current;
     try {
       const next = await api<MobileDetail>('detail', {
         id: agent.id,
+        tools,
         before: { id: first.id, at: first.at },
       });
-      if (!live.current) return;
+      if (!live.current || generation !== viewGeneration.current) return;
       setDetail((old) => {
         // A latest-page reset may have happened while this older page was loading.
         if (!old?.events.some((e) => e.id === first.id)) return old;
         const events = new Map([...next.events, ...(old?.events ?? [])].map((e) => [e.id, e]));
-        return { ...next, events: [...events.values()] };
+        return boundMobileDetail({ ...next, events: [...events.values()] });
       });
       requestAnimationFrame(() => {
         if (scroller.current)
@@ -215,7 +195,7 @@ function Chat({
         setPending(null);
         if (draftRef.current === input.text) setDraft('');
         setNotice(m().mobile.sent);
-        void read();
+        void latestRead.current();
       }
     } else if (receipt.status === 'blocked') {
       save(pendingKey, null);
@@ -283,7 +263,16 @@ function Chat({
       <div className="chat-tools">
         <span>{MOODS[agent.status].label}</span>
         <label>
-          <input type="checkbox" checked={tools} onChange={(e) => setTools(e.target.checked)} />{' '}
+          <input
+            type="checkbox"
+            checked={tools}
+            onChange={(e) => {
+              viewGeneration.current++;
+              readVersion.current++;
+              setDetail(null);
+              setTools(e.target.checked);
+            }}
+          />{' '}
           {m().mobile.tools}
         </label>
       </div>
@@ -303,43 +292,34 @@ function Chat({
         {detail?.older && (
           <button
             className="older"
-            disabled={olderBusy || detail.events.length >= 1000}
+            disabled={olderBusy || detail.capped || detail.events.length >= MOBILE_EVENT_LIMIT}
             onClick={() => void older()}
           >
             {olderBusy
               ? m().mobile.loading
-              : detail.events.length >= 1000
+              : detail.capped || detail.events.length >= MOBILE_EVENT_LIMIT
                 ? m().mobile.pageLimit
                 : m().mobile.older}
           </button>
         )}
         {!detail && !error && <p className="empty">{m().mobile.loadingChat}</p>}
         {detail && !events.length && <p className="empty">{m().mobile.emptyChat}</p>}
-        {events.map((e) => (
-          <article className={`message ${e.kind === 'user' ? 'mine' : ''}`} key={e.id}>
-            <div className="message-meta">
-              {labels[conversationKind(e)]} · {time(e.at)}
-              {e.excerpt && m().mobile.excerpt}
-            </div>
-            <div className="message-body">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  img: () => null,
-                  a: ({ href, children }) =>
-                    safeLink(href) ? (
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        {children}
-                      </a>
-                    ) : (
-                      <span>{children}</span>
-                    ),
-                }}
-              >
-                {e.text}
-              </ReactMarkdown>
-            </div>
-          </article>
+        {events.map((event) => (
+          <ConversationMessage
+            key={event.id}
+            event={event}
+            provider={agent.provider}
+            name={agent.name}
+            notify={setNotice}
+            expanded={expanded.has(event.id)}
+            onExpand={() =>
+              setExpanded((old) => {
+                const next = new Set(old);
+                next.has(event.id) ? next.delete(event.id) : next.add(event.id);
+                return next;
+              })
+            }
+          />
         ))}
       </div>
       <footer className="composer">
@@ -359,23 +339,22 @@ function Chat({
             </button>
           </div>
         )}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send();
+        <ChatComposer
+          text={draft}
+          onTextChange={(value) => {
+            setDraft(value);
+            save(draftKey, value);
+          }}
+          onSend={() => void send()}
+          submitKey="modifier-enter"
+          sendDisabled={busy || !!pending || !enabled || !target?.canSend || agent.stale}
+          field={{
+            'aria-label': m().mobile.message,
+            placeholder: m().mobile.placeholder,
+            maxLength: 20000,
+            rows: 2,
           }}
         >
-          <textarea
-            aria-label={m().mobile.message}
-            placeholder={m().mobile.placeholder}
-            maxLength={20000}
-            rows={2}
-            value={draft}
-            onChange={(e) => {
-              setDraft(e.target.value);
-              save(draftKey, e.target.value);
-            }}
-          />
           <button
             className="send-button"
             type="submit"
@@ -386,7 +365,7 @@ function Chat({
           >
             <ArrowUp size={22} />
           </button>
-        </form>
+        </ChatComposer>
       </footer>
     </section>
   );

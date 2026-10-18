@@ -141,7 +141,10 @@ export class FederatedService extends EventEmitter {
             throw new Error('Invalid send');
           return this.peers.send(id, args[1], args[2], authorized);
         }
-        return this.peers.detail(id);
+        return this.peers.detail(
+          id,
+          args[1] as import('../../src/shared/types.js').DetailPage | undefined,
+        );
       }
       if (method === 'visit') return this.call('snapshot'); // Read-only: no local visit record.
       if (method === 'artifacts') return [];

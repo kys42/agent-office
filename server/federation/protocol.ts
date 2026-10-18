@@ -156,6 +156,10 @@ export function exportSession(s: Session, peers: Session[], detail = false): Wir
   const limit = detail ? 180 : 4;
   const eventLimit = detail ? 64000 : 2000;
   const activityKinds = ['request', 'progress', 'reply', 'status'];
+  // Summary synchronization carries what people said, not tool payloads.
+  const events = detail
+    ? s.events
+    : s.events.filter((e) => e.kind === 'user' || e.kind === 'assistant');
   return sessionSchema.parse({
     id: wireId(s.id),
     provider: s.provider,
@@ -181,7 +185,7 @@ export function exportSession(s: Session, peers: Session[], detail = false): Wir
     relation: s.relation?.kind ?? 'root',
     actor: s.actor ? { id: wireId(s.actor.id), name: s.actor.name.slice(0, 4000) } : null,
     origin: s.origin?.kind ?? 'unknown',
-    events: s.events.slice(-limit).map((e) => ({
+    events: events.slice(-limit).map((e) => ({
       id: wireId(e.id),
       at: e.at,
       kind: e.kind,
