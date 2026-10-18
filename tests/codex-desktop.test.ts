@@ -264,7 +264,8 @@ test('Authorization can be revoked during owner discovery; no turn is dispatched
   const f = await fixture();
   try {
     await assert.rejects(
-      sendToCodexDesktop(f.home, THREAD, 'hello', 100, () => {
+      sendToCodexDesktop(f.home, THREAD, 'hello', 100, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
         throw Error('revoked');
       }),
       /Nothing was sent/,
