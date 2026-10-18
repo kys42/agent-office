@@ -56,8 +56,9 @@ const server = await startExportServer(data, configDir, {
     label: '',
     canFocus: false,
     canSend: true,
-    status: 'queue',
-    queues: true,
+    status: 'desktop',
+    desktop: true,
+    queues: false,
   }),
   send: async (s, text, authorize) => {
     authorize();
@@ -129,10 +130,19 @@ try {
     } catch {
       disabledDenied = true;
     }
-    return { target: targets[id]?.canSend, sent: sent.status, replaceDenied, disabledDenied };
+    return {
+      target: targets[id]?.canSend,
+      desktop: targets[id]?.desktop,
+      queues: targets[id]?.queues,
+      sent: sent.status,
+      replaceDenied,
+      disabledDenied,
+    };
   });
   assert.deepEqual(result, {
     target: true,
+    desktop: true,
+    queues: false,
     sent: 'sent',
     replaceDenied: true,
     disabledDenied: true,
