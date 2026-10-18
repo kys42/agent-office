@@ -77,7 +77,10 @@ export class PeerCommands {
     const s = this.store
       .list()
       .find(
-        (s) => wireId(s.id) === id && (c.projects.includes('*') || c.projects.includes(s.project)),
+        (s) =>
+          !s.builtin &&
+          wireId(s.id) === id &&
+          (c.projects.includes('*') || c.projects.includes(s.project)),
       );
     if (!s) throw new CommandError(404);
     return s;

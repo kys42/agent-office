@@ -32,6 +32,7 @@ export function ManagerTools({
       setPending(false);
     }
   };
+  if (!api.manager) return <p className="terminal-send-hint">{t.manager.desktopOnly}</p>;
   return (
     <>
       <div className="manager-tools">

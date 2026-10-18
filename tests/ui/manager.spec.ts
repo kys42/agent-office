@@ -11,7 +11,7 @@ const initial: ManagerState = {
   jobs: [],
   availability: { tmux: true, codex: true, claude: false },
 };
-async function setup(page: import('@playwright/test').Page, popup = false) {
+async function setup(page: import('@playwright/test').Page, popup = false, unavailable = false) {
   const snapshot = demoSnapshot();
   snapshot.sessions.unshift(managerSession(initial));
   snapshot.notices = [];
@@ -110,6 +110,10 @@ async function setup(page: import('@playwright/test').Page, popup = false) {
     },
     { snapshot, initial },
   );
+  if (unavailable)
+    await page.addInitScript(() => {
+      delete (window as any).office.manager;
+    });
   await page.goto(popup ? '/#card' : '/');
   if (!popup) await page.getByRole('button', { name: '오피스 매니저', exact: true }).click();
 }
@@ -172,4 +176,12 @@ test('Manager native card uses the same draft, Enter send and narrow layout as c
   await expect(page.locator('.manager-rich-card')).toBeVisible();
   await expect(page.getByRole('button', { name: '보내기', exact: true })).toBeInViewport();
   await page.screenshot({ path: '.local/manager-common-card.png' });
+});
+
+test('a stored manager without the desktop controller offers a desktop hint instead of start controls', async ({
+  page,
+}) => {
+  await setup(page, true, true);
+  await expect(page.getByText('데스크톱 앱에서 전담 매니저를 시작할 수 있어요.')).toBeVisible();
+  await expect(page.getByRole('button', { name: '매니저 출근', exact: true })).toHaveCount(0);
 });

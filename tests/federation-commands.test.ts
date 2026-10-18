@@ -22,7 +22,10 @@ async function setup() {
   mkdirSync(configDir);
   const writer = new OfficeStore(data);
   const s = demoSnapshot().sessions[0];
-  writer.upsert([s], s.provider);
+  writer.upsert(
+    [s, { ...s, id: 'office:manager', builtin: 'manager', nativeId: 'manager-native' }],
+    s.provider,
+  );
   writer.close();
   const original = readFileSync(path.join(data, 'office.sqlite'));
   execFileSync(
@@ -281,6 +284,31 @@ test('sending requires an explicit desktop profile and honors its setting indepe
     f.save();
     assert.equal((await f.send(command)).status, 'sent');
     assert.deepEqual(f.sent, ['profile fixture']);
+  } finally {
+    await f.close();
+  }
+});
+
+test('dedicated managers cannot enter the generic remote target or send path even with wildcard sharing', async () => {
+  const f = await setup();
+  try {
+    const target = await f.targets();
+    await assert.rejects(
+      peerRequest(f.peer, '/office/v1/commands/targets', undefined, {
+        body: { ids: [wireId('office:manager')] },
+      }),
+      (e) => e instanceof PeerError && e.code === 404,
+    );
+    await assert.rejects(
+      f.send({
+        epoch: target.epoch,
+        requestId: randomUUID(),
+        id: wireId('office:manager'),
+        text: 'must not dispatch',
+      }),
+      (e) => e instanceof PeerError && e.code === 404,
+    );
+    assert.deepEqual(f.sent, []);
   } finally {
     await f.close();
   }
