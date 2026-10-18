@@ -1,3 +1,18 @@
+# 2026-10-18 · Desktop 공통 전송을 LAN 베타에 반영
+
+- 일반 앱용 PR164 공통 adapter를 베타에 병합했다. v1 wire의 kind=codex/status=desktop으로 표시하고 새로운 인증/API 필드는 추가하지 않았다. sender는 owner 조회 후 dispatch 직전 기존 authorized 검사를 다시 호출한다.
+- 베타 전체 단위484, 관련 UI26, 실제 Electron→합성 HTTPS 단일 dispatch/베타 해제/draft 교체 거절, Electron→합성 Desktop owner 전송 통과.
+- 실행 코드 59e7911의 exporter 번들을 MacBook Pro에 반영하고 로컬 격리 베타 프로필을 재시작했다. 실제 LAN targets: 20개 중 9개 전송 가능, 로컬 공통 adapter: Codex 10개 중 Desktop 3개 확인. 모두 읽기 전용 조회이며 실제 사용자 대화 전송은 0회다.
+- 원격 endpoint의 번들 SHA256과 로컬 빌드 동일 확인. 기존 설치 앱·원본 DB·credentials를 교체하지 않았다. 개인 대화 실전송과 Desktop 업데이트 후 호환성은 별도 검증 범위다. 최신 CI는 PR162에 기록한다.
+
+# 2026-10-18 · Codex Desktop 공통 전송 (#163 / PR #164)
+
+- main 기준 별도 worktree에서 구현했다. CLI 대기열과 Desktop IPC를 공통 router에서 구분하고 일반 앱·LAN 베타가 재사용한다. 베타 flag 없이 일반 앱 경로도 동작한다.
+- 전체 단위 464개 + 추가 CLI 라우팅/권한 회귀 2개, 카드 UI24, 타입·포맷·웹/데스크탑 빌드 통과. 실제 Electron renderer→trusted IPC→격리된 합성 Desktop owner에서 정확한 대화·설정 상속·단일 dispatch를 확인했다.
+- 같은 UID의 비공개 socket, owner/settings 확인, 부분 프레임, 잘못된 응답/연결 종료/권한 회수·불확실성 시 재전송 금지를 검증했다. 독립 리뷰에서 발견한 owner 조회 중 설정 해제 경쟁을 dispatch 직전 비동기 재검사로 보완했고 관련20 테스트 재통과 및 재리뷰 완료.
+- 실제 양쪽 Mac에서는 읽기 전용 discovery/settings만 확인했다. 실제 사용자 대화 전송은 미검증이다. 비공개 IPC 업데이트 호환성 한계는 TERMINAL.md를 따른다. 앱 DB/인증/설정은 수정하지 않는다.
+- 메인 병합/설치 앱 교체는 하지 않았다. 최종 CI와 LAN 베타 미리보기/송신기 반영 근거는 PR164·PR162에 기록한다.
+
 # 2026-10-18 · 사무실 분리와 원격 채팅 후속 (#161)
 
 - 합성 UI에서 내 컴퓨터/MacBook Pro 전환, 각각의 프로젝트 구역, 원격 입력창 목적지, 읽기 전용 연결의 입력창 미노출을 확인했다.
