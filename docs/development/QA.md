@@ -1,3 +1,17 @@
+# 2026-10-18 · LAN 베타 병합 전 로컬 호환성 리뷰
+
+- 최신 main의 Windows 창·데이터 경로 변경을 공통 Desktop 전송과 베타에 통합했다. 충돌은 QA/작업 기록의 추가 섹션이며 두 이력을 보존했다.
+- 독립 리뷰에서 베타 비활성 상태에도 `remote-office:`로 시작하는 일반 로컬 메모·검색이 거절되는 문제를 재현했다. 참조가 들어가는 인자만 검사하도록 수정하고 기본 꺼짐/연결 없는 켜짐의 텍스트 보존 및 원격 batch·규칙 쓰기 거절을 함께 검증한다.
+- Mac mini의 구버전 Codex는 필요한 IPC를 지원하지 않았다. 지원 버전 업데이트와 사용자 대화 복원 후 target 1개 및 실제 Office 전송 journal sent/native turn-start 성공을 확인했다. 에이전트의 임의 테스트 메시지는 보내지 않았다. 다른 과거 대화는 자동 재개하지 않는다.
+- 최종 통합 SHA의 단위·UI·Electron/HTTPS 합성 smoke·Linux/Windows CI와 리뷰 결과는 PR162/164에 기록한다. main 병합은 설치된 앱/별도 exporter를 자동 업데이트하지 않는다.
+
+# 2026-10-18 · Desktop 공통 전송을 LAN 베타에 반영
+
+- 일반 앱용 PR164 공통 adapter를 베타에 병합했다. v1 wire의 kind=codex/status=desktop으로 표시하고 새로운 인증/API 필드는 추가하지 않았다. sender는 owner 조회 후 dispatch 직전 기존 authorized 검사를 다시 호출한다.
+- 베타 전체 단위484, 관련 UI26, 실제 Electron→합성 HTTPS 단일 dispatch/베타 해제/draft 교체 거절, Electron→합성 Desktop owner 전송 통과.
+- 실행 코드 59e7911의 exporter 번들을 MacBook Pro에 반영하고 로컬 격리 베타 프로필을 재시작했다. 실제 LAN targets: 20개 중 9개 전송 가능, 로컬 공통 adapter: Codex 10개 중 Desktop 3개 확인. 모두 읽기 전용 조회이며 실제 사용자 대화 전송은 0회다.
+- 원격 endpoint의 번들 SHA256과 로컬 빌드 동일 확인. 기존 설치 앱·원본 DB·credentials를 교체하지 않았다. 개인 대화 실전송과 Desktop 업데이트 후 호환성은 별도 검증 범위다. 최신 CI는 PR162에 기록한다.
+
 # 2026-10-18 · Codex Desktop 공통 전송 (#163 / PR #164)
 
 - main 기준 별도 worktree에서 구현했다. CLI 대기열과 Desktop IPC를 공통 router에서 구분하고 일반 앱·LAN 베타가 재사용한다. 베타 flag 없이 일반 앱 경로도 동작한다.
@@ -5,6 +19,27 @@
 - 같은 UID의 비공개 socket, owner/settings 확인, 부분 프레임, 잘못된 응답/연결 종료/권한 회수·불확실성 시 재전송 금지를 검증했다. 독립 리뷰에서 발견한 owner 조회 중 설정 해제 경쟁을 dispatch 직전 비동기 재검사로 보완했고 관련20 테스트 재통과 및 재리뷰 완료.
 - 실제 양쪽 Mac에서는 읽기 전용 discovery/settings만 확인했다. 실제 사용자 대화 전송은 미검증이다. 비공개 IPC 업데이트 호환성 한계는 TERMINAL.md를 따른다. 앱 DB/인증/설정은 수정하지 않는다.
 - 메인 병합/설치 앱 교체는 하지 않았다. 최종 CI와 LAN 베타 미리보기/송신기 반영 근거는 PR164·PR162에 기록한다.
+
+# 2026-10-18 · 사무실 분리와 원격 채팅 후속 (#161)
+
+- 합성 UI에서 내 컴퓨터/MacBook Pro 전환, 각각의 프로젝트 구역, 원격 입력창 목적지, 읽기 전용 연결의 입력창 미노출을 확인했다.
+- 실제 HTTPS와 가짜 native sender로 읽기 token의 전송 거절, 기존 terminal-send 설정과 scope, requestId 중복/충돌/재시작/진행 중 중복, native 조회 중 권한 회수, 수신기 전송 라우팅과 비밀 제외, 원본 DB 바이트 불변을 검증한다.
+- QA 격리 보완: 최초 UI 실행은 기존 Playwright 기본 개발 서버를 띄운 후 브라우저 미설치로 즉시 실패했다. 이때 기본 수집기가 기존 로컬 DB를 잠시 열었으므로 자동 관측값이 갱신됐을 수 있다. 설정 변경 RPC·채팅 전송은 없었고 해당 테스트 프로세스 종료를 확인했다. 원본 DB를 되돌리지는 않았다. 이후 webServer를 `.local/ui-tests/`의 전용 DB·빈 공급자 경로로 고정하고 기존 서버 재사용을 금지했다. 개인 앱/다른 작업의 브라우저 설치 프로세스는 중단하지 않았다.
+- LAN smoke는 private connection의 sendToken을 제거한 사본으로만 실행한다. 실제 사용자 에이전트에는 테스트 메시지를 보내지 않는다. 실제 LAN Electron smoke에서 원격 19개 조회·상세·읽기 전용 권한 거절·베타 해제·UI 오류 0을 확인했다. 실제 원격 command targets는 현재 전송 가능 0개를 반환했다. 전송 API 허용과 실행 중인 지원 대상 존재 여부는 구분한다.
+
+- 관련 단위 18개와 전체 단위 471개(이후 profile 경로 회귀 1개 추가), 방/기존 전송 복구 UI 8개, typecheck/build/format 통과. 실제 Electron→HTTPS→합성 sender 전송 1회 및 draft 교체/베타 해제 후 전송 거절 통과. 독립 리뷰의 profile 경로와 원격 구역 편집 경계를 수정·재검토했다. 최종 CI는 PR에서 확인한다.
+
+# 2026-10-18 · 여러 Office 연결 베타 (#161)
+
+- 독립 diff 리뷰에서 summary-only 서버의 카드 열기가 전체 peer를 거절 처리하는 문제와 heartbeat 발췌가 읽은 긴 상세를 덮는 문제를 재현·수정했다. capability를 wire/화면에 명시하고 발췌/full 이벤트를 구분한다. 권한 축소 시 열린 상세를 초기화하고 늦은 상세 응답의 epoch/멤버십/권한을 다시 검사한다. 관련 회귀를 추가했다.
+
+- 별도 worktree에서 구현하고 기존 main의 미커밋 문서와 설치 앱을 보존했다. 원격 실행 중인 Office의 SQLite를 readOnly로 읽는 별도 번들만 LAN 인터페이스에서 기동했다. 테스트 출력에는 실제 대화 대신 집계만 남겼다.
+- 실제 LAN 조회: 원격 Codex 세션 19개, 현재 컴퓨터의 읽기 전용 DB 조회 7개를 메모리에서 합쳐 26개의 고유 ID를 확인했다. 실행 중 세션 수는 변할 수 있다.
+- 격리 Electron 프로필의 합성 로컬 세션 1개 + 실제 원격 19개: 베타 기본 꺼짐, UI 토글과 연결 파일 등록, 원격 상세, resume/reveal/send/patch 거절, 원격 카드와 composer 미노출, 베타 해제 뒤 로컬만 표시, pageerror 0을 확인했다.
+- 최종 전체 단위 466개, federation 12개와 기존 paging 11개 통과. 재접속/epoch 교체/권한 회수/중복 start 방지, 프로젝트 태그 복원, summary-only 카드, 권한 축소와 긴 상세 본문 보존을 포함한다. 타입 검사·build·전체 format·MCP 5도구 smoke 통과. 초기 PR CI core와 UI 회귀가 통과했고 리뷰 수정 후 최종 SHA 결과는 PR에서 확인한다.
+- 기존 `test:desktop`은 초기 두 실행에서 창 포커스와 비동기 DOM 선택 실패가 있었다. 변경 전 main e621e2d의 임시 빌드와 최종 변경 빌드 모두 별도 실행에서 통과했다. 기존 테스트의 환경/타이밍 민감성을 관측했으며, 이번 기능 전용 smoke는 async 상태 조회를 명시적으로 polling한다.
+- DB 바이트 불변·실제 TLS·잘못된 pin에서 HTTP 요청 0·인증 실패·범위 축소·송신 비활성화는 합성 DB/인증서 단위 테스트로 검증한다. 원격 로컬 DB를 복제하거나 덮어쓰지 않았다.
+- 실제 Tailscale, 외부 계정, 인터넷 공개 운영, 원격 쓰기/터미널 제어, 원격 전문 검색/소식/이전 대화 페이지는 검증/구현 범위 밖이다. 기존 설치 앱 교체·main merge·DMG 배포는 수행하지 않았다.
 
 # 2026-10-18 · Windows 기본 셸과 portable (#81, #165)
 

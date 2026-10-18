@@ -268,7 +268,7 @@ Tests use synthetic data and never modify your sources; only the live-connection
 
 ## 🗺️ Roadmap
 
-Not built yet, and deliberately not faked in the UI: automatic approvals, answering Codex prompts, controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, remote sync, and signing / notarization / auto-update.
+Not built yet, and deliberately not faked in the UI: automatic approvals, answering Codex prompts, controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, account-based remote sync, and signing / notarization / auto-update.
 
 ## 📄 License
 
@@ -286,3 +286,7 @@ The design docs are currently written in Korean.
 <br/>
 <sub>Made with 🧡 for everyone running more agents than they have monitors.</sub>
 </div>
+
+### Multi-office beta (desktop, opt-in)
+
+The same app can combine read-only observations from directly connected offices over LAN. It is off by default, uses a separate HTTPS API and peer configuration, and keeps remote content out of the local database. See [setup, isolation, and limitations](docs/development/MULTI-OFFICE.md). `npm run start:beta` opens the worktree build with an isolated development profile.

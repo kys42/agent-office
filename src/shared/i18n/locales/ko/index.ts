@@ -1,4 +1,5 @@
 import { guide } from './guide';
+import { federation } from './federation';
 import { pets } from './pets';
 import type { Messages } from '../en';
 import { common } from './common';
@@ -25,6 +26,7 @@ import { terminal } from './terminal';
 import { prompts } from './prompts';
 
 export const ko: Messages = {
+  federation,
   common,
   app,
   palette,

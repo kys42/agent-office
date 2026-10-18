@@ -102,10 +102,19 @@ function bounded(view: LoadedConversation, events: OfficeEvent[]): LoadedConvers
  * last requests) wait for their page, so the card never shows a gap as if it were continuous.
  */
 export function mergeLive(view: LoadedConversation, live: Session): LoadedConversation {
-  if (view.session.id !== live.id) return freshConversation(live);
+  if (view.session.id !== live.id || (live.remote && !live.remote.conversation))
+    return freshConversation(live);
   const first = view.session.events[0]?.at;
-  const fresh =
+  let fresh =
     view.older && first !== undefined ? live.events.filter((e) => e.at >= first) : live.events;
+  if (live.remote) {
+    // Peer heartbeats carry bounded excerpts, which must not shorten a loaded full message.
+    const loaded = new Map(view.session.events.map((e) => [e.id, e]));
+    fresh = fresh.map((e) => {
+      const full = loaded.get(e.id);
+      return e.excerpt && full && !full.excerpt ? full : e;
+    });
+  }
   return bounded(
     { ...view, session: { ...view.session, ...live } },
     union(view.session.events, fresh),

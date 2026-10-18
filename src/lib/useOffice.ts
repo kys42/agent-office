@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
+import { isRemoteId } from '../shared/federation';
 import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
 import { demoDeriver, demoSnapshot, reconcileDemo } from './demo';
@@ -287,6 +288,10 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
    * another run starts speaking for it. Resolves to the new state; rejects so callers can tell.
    */
   const pin = async (s: Session) => {
+    if (s.remote) {
+      notify(m().federation.readOnly);
+      return false;
+    }
     const next = !s.pinned;
     const ids = s.resident?.key.startsWith('actor:') ? s.resident.sessionIds : [s.id];
     if (demo) {
@@ -386,6 +391,10 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   };
   /** Hide colleagues until their next conversation (`on`), or bring them back now. */
   const veil = async (ids: string[], on: boolean) => {
+    if (ids.some(isRemoteId)) {
+      notify(m().federation.readOnly);
+      return;
+    }
     const hiddenAt = on ? Date.now() : null;
     if (demo) {
       setSnapshot((s) =>

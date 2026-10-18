@@ -13,9 +13,11 @@ import {
 } from 'electron';
 import { windowStyle } from './window-style.js';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
+import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
 import type {
   AnswerResult,
@@ -431,9 +433,19 @@ function setupIPC() {
   });
   ipcMain.handle('office:call', async (e, method, args) => {
     trusted(e);
-    if (typeof method !== 'string' || !Array.isArray(args) || args.length > 3)
+    if (
+      typeof method !== 'string' ||
+      ['federation', 'remote-send', 'remote-targets'].includes(method) ||
+      !Array.isArray(args) ||
+      args.length > 3
+    )
       throw new Error(m().desktop.badRequest);
     return bridge.call(method, args);
+  });
+  ipcMain.handle('office:federation', async (e, command) => {
+    trusted(e);
+    if (JSON.stringify(command)?.length > 30000) throw new Error(m().desktop.badRequest);
+    return bridge.call('federation', [command]);
   });
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
@@ -521,11 +533,13 @@ function setupIPC() {
   });
   ipcMain.handle('office:reveal', async (e, id) => {
     trusted(e);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const s: Session = await bridge.call('detail', [id]);
     shell.showItemInFolder(s.sourcePath);
   });
   ipcMain.handle('office:resume', async (e, id) => {
     trusted(e);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     return (await resume(await bridge.call('detail', [id]))).text;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
@@ -535,6 +549,7 @@ function setupIPC() {
     const found = new Map<string, SessionIdentity>();
     const unknown: string[] = [];
     for (const id of ids) {
+      if (isRemoteId(id)) continue;
       const known = identities.get(id);
       if (known) found.set(id, known);
       else if (id.length <= 400) unknown.push(id); // longer ones are no session's id
@@ -549,6 +564,7 @@ function setupIPC() {
   };
   const identity = async (id: unknown) => {
     if (typeof id !== 'string') throw new Error(m().desktop.badRequest);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const known = (await identify([id])).get(id);
     if (!known) throw new Error(m().server.store.notFound);
     return known;
@@ -584,7 +600,9 @@ function setupIPC() {
         }
       }),
     );
-    return Object.fromEntries(entries);
+    const remote = unique.filter(isRemoteId);
+    const remoteTargets = remote.length ? await bridge.call('remote-targets', [remote]) : {};
+    return { ...Object.fromEntries(entries), ...remoteTargets };
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
@@ -632,7 +650,7 @@ function setupIPC() {
   });
   ipcMain.handle('office:inspect-draft', async (e, id) => {
     trusted(e);
-    if (!(await terminalSendEnabled())) return null;
+    if (!(await terminalSendEnabled()) || isRemoteId(id)) return null;
     const known = await identity(id);
     const composer = composerFor(known.provider);
     if (composer.capabilities(null).delivery !== 'terminal') return null;
@@ -650,6 +668,10 @@ function setupIPC() {
     )
       throw new Error(m().desktop.badRequest);
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+    if (isRemoteId(id)) {
+      if (replaceDraft !== undefined) throw new Error(m().federation.remoteDraft);
+      return bridge.call('remote-send', [id, text, randomUUID()]);
+    }
     const known = await identity(id);
     // Each agent's adapter says how a follow-up reaches it: its queue (Codex, no composer
     // involved) or its terminal (the composer is read, and cleared only when confirmed).

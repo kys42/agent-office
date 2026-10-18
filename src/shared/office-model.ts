@@ -115,7 +115,7 @@ export function buildOfficeModel(
           notices,
         ),
       needsPerson: group === 'attention',
-      quota: quotas.length ? quotaExhaustion(s, quotas, now) : undefined,
+      quota: !s.remote && quotas.length ? quotaExhaustion(s, quotas, now) : undefined,
     };
   });
   const byId = new Map(views.map((v) => [v.session.id, v]));

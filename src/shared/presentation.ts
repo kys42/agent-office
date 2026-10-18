@@ -6,7 +6,10 @@ import { liveLabels, liveList } from './labels';
 export { runtimeObservation } from './runtime';
 
 export const isWorking = (s: Session, now = Date.now()) =>
-  !s.archived && ['work', 'think'].includes(s.status) && now - s.updatedAt <= QUIET_MS;
+  !s.remote?.stale &&
+  !s.archived &&
+  ['work', 'think'].includes(s.status) &&
+  now - s.updatedAt <= QUIET_MS;
 
 /**
  * Just finished and still at the desk ('대기 중'): the derived ready state, or — before the

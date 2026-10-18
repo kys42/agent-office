@@ -11,6 +11,8 @@ export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {
   const host = target.desktop ? 'Codex Desktop' : HOSTS[target.kind];
+  if (target.remoteOffice)
+    return `${privacy ? m().federation.remoteOffice : target.remoteOffice} · ${host}`;
   if (target.desktop) return host;
   if (target.queues) return m().terminal.queueLine(host);
   return privacy || !target.label ? host : `${host} · ${target.label}`;
@@ -39,6 +41,7 @@ export function TerminalSend({
   onJump,
   chat = false,
   draftKey,
+  remoteOffice,
 }: {
   /** Where it goes, as last seen; null while none was found (the send looks again). */
   target: TerminalTarget | null;
@@ -51,6 +54,7 @@ export function TerminalSend({
   chat?: boolean;
   /** Stable colleague identity, independent of the terminal's availability or label. */
   draftKey: string;
+  remoteOffice?: string;
 }) {
   const { t } = useI18n();
   const reply = useComposerSend(onSend, (sent) => reply.clearText(sent), draftKey);
@@ -77,7 +81,9 @@ export function TerminalSend({
     );
   // Not taking input as last seen (or not found): still written and sent; the desktop app
   // checks again and says why when it cannot.
-  const submit = () => void reply.submit();
+  const submit = () => {
+    if (!remoteOffice || target?.canSend) void reply.submit();
+  };
   return (
     <form
       className={`terminal-send ${chat ? 'terminal-send-chat' : ''}`}
@@ -111,10 +117,18 @@ export function TerminalSend({
       <div className="terminal-send-bar">
         <small>
           <Terminal size={11} />
-          {target ? targetLine(target, privacy) : t.terminal.lookingAgain}
+          {remoteOffice
+            ? `${remoteOffice} · ${target?.canSend ? t.federation.sendReady : t.federation.sendUnavailable}`
+            : target
+              ? targetLine(target, privacy)
+              : t.terminal.lookingAgain}
           {target && !target.queues && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
         </small>
-        <button className="button primary" type="submit" disabled={sending || !text.trim()}>
+        <button
+          className="button primary"
+          type="submit"
+          disabled={sending || !text.trim() || (!!remoteOffice && !target?.canSend)}
+        >
           {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}
           {t.terminal.send}
         </button>

@@ -44,6 +44,7 @@ docs/
 | 팝업 위치 기억·독립 고정 카드 | [팝업 카드](development/POPUP-CARDS.md) |
 | 책상·펫·소품 꾸미기 확장 | [에셋 계약](development/OFFICE-ASSETS.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
+| 여러 컴퓨터의 Office 연결 | [여러 Office 베타](development/MULTI-OFFICE.md) |
 | CPU·메모리 경량화 계획 | [측정과 경량화 설계 — 제안](development/PERFORMANCE-DESIGN.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
 | macOS 설치·DMG·배포 파이프라인 | [macOS 배포](development/MACOS-RELEASE.md) |

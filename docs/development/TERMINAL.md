@@ -228,6 +228,10 @@ terminal_title = ["session-id", "thread-name", "project"]
 - Codex 화면 제목에 현재 대화 ID(전체 또는 유일하게 복원되는 32자 축약형)가 없으면 이동할 수 없다. 아래 설정 후의 화면만 지원한다. 대화가 여러 화면에 열려 있으면 임의 선택하지 않고 재개 명령을 복사한다.
 - Codex가 맡고 있지 않은 세션(화면을 닫은 지 오래됨 등)에는 보내지 않는다. 그 세션을 Codex에서 다시 열면 다시 대상이 된다.
 
+## 여러 Office 베타의 원격 채팅
+
+독립 command API가 원격 컴퓨터의 기존 전송 어댑터를 호출한다. 조회 token과 별도 sendToken/allowSend, 양쪽 앱의 기존 전송 설정, 공유 프로젝트 범위, fresh 대상 검사를 통과해야 한다. 원격은 draft 덮어쓰기·질문 답변·재개·터미널 이동을 제공하지 않는다. 요청 중복/미확인 처리와 운영 절차는 [여러 Office 베타](MULTI-OFFICE.md)의 원격 채팅 계약을 따른다.
+
 ## Codex Desktop 대화 전송
 
 일반 앱의 `desktop/codex-send.ts`가 rollout의 originator로 CLI 대기열과 Desktop

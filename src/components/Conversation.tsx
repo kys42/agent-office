@@ -19,6 +19,7 @@ import {
   BookmarkCheck,
 } from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
+import { isRemoteId } from '../shared/federation';
 import { PROVIDERS } from '../shared/types';
 import {
   conversationKind,
@@ -115,8 +116,11 @@ function Message({
       </div>
       <div className="message-bubble">
         {event.excerpt && (
-          <small className="retained-excerpt" title={t.conversation.excerptTitle}>
-            {t.conversation.excerpt}
+          <small
+            className="retained-excerpt"
+            title={isRemoteId(event.id) ? t.federation.excerptTitle : t.conversation.excerptTitle}
+          >
+            {isRemoteId(event.id) ? t.federation.excerpt : t.conversation.excerpt}
           </small>
         )}
         <div className="message-text">

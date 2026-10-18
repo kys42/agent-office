@@ -2,7 +2,7 @@ import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Gauge,
   Home,
@@ -36,6 +36,8 @@ import { useTerminalSend } from './lib/useTerminalSend';
 import { useAnswerSettings } from './lib/useAnswerSettings';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
+import { OfficeRooms } from './components/OfficeRooms';
+import { LOCAL_ROOM, sessionRoom, roomModel } from './shared/rooms';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
 import { projectKey, sessionName } from './shared/office';
 import { projectColor } from './shared/office-layout';
@@ -104,7 +106,7 @@ export default function App() {
     snapshot,
     error,
     refreshing,
-    model,
+    model: allModel,
     refresh,
     setPrefs: onPrefs,
     patch: onPatch,
@@ -117,6 +119,25 @@ export default function App() {
     bookmark,
     unbookmark,
   } = useOffice(demo, notify);
+  const [room, setRoom] = useState(() => localStorage.getItem('office:beta-room') || LOCAL_ROOM);
+  const roomsEnabled = !demo && !!snapshot?.federation?.enabled;
+  const activeRoom =
+    roomsEnabled &&
+    (room === LOCAL_ROOM || snapshot?.federation?.peers.some((p) => p.officeId === room))
+      ? room
+      : LOCAL_ROOM;
+  const model = useMemo(
+    () => (roomsEnabled ? roomModel(allModel, activeRoom) : allModel),
+    [allModel, roomsEnabled, activeRoom],
+  );
+  useEffect(() => {
+    if (roomsEnabled) localStorage.setItem('office:beta-room', activeRoom);
+  }, [roomsEnabled, activeRoom]);
+  const chosenSession = snapshot?.sessions.find((s) => s.id === selected);
+  const chosenRoom = chosenSession ? sessionRoom(chosenSession) : undefined;
+  useEffect(() => {
+    if (chosenRoom && roomsEnabled) setRoom(chosenRoom);
+  }, [chosenRoom, roomsEnabled]);
   // A bookmark being opened: its colleague's card, at its message.
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
@@ -511,6 +532,21 @@ export default function App() {
             {demo && <span className="brand-tag">DEMO</span>}
           </div>
         </div>
+        {roomsEnabled && snapshot && (
+          <OfficeRooms
+            snapshot={snapshot}
+            selected={activeRoom}
+            onSelect={(id) => {
+              setRoom(id);
+              setSelected(null);
+              setProjectRequest(null);
+              setInbox(false);
+              setShowUsage(false);
+              setView('office');
+            }}
+            onSettings={() => setView('settings')}
+          />
+        )}
         <nav className="source-list">
           <div className="source-group">
             <h6>{t.app.sidebar.spaces}</h6>
@@ -680,7 +716,17 @@ export default function App() {
         <main className={`main-content view-${view}`}>
           <header className="toolbar app-header">
             <div className="toolbar-title">
-              <h1>{view === 'office' ? t.office.zones[officeZoneNow] : t.app.tabs[view].title}</h1>
+              <h1>
+                {view === 'office' && roomsEnabled
+                  ? activeRoom === LOCAL_ROOM
+                    ? t.federation.localOffice
+                    : prefs?.privacy
+                      ? t.federation.remoteOffice
+                      : snapshot?.federation?.peers.find((p) => p.officeId === activeRoom)?.label
+                  : view === 'office'
+                    ? t.office.zones[officeZoneNow]
+                    : t.app.tabs[view].title}
+              </h1>
               <small>
                 {view === 'office' && officeZoneNow !== 'office'
                   ? t.app.toolbar.zoneCount(model.zones[officeZoneNow].length)
@@ -830,7 +876,7 @@ export default function App() {
             </div>
           ) : view === 'office' ? (
             <OfficeWorkspace
-              key={demo ? 'demo' : 'live'}
+              key={demo ? 'demo' : `live:${activeRoom}`}
               snapshot={snapshot}
               model={model}
               onVeil={(ids, on) => {
@@ -859,7 +905,9 @@ export default function App() {
               onProjectHandled={() => setProjectRequest(null)}
               onReply={sendReply}
               notify={notify}
-              onZoneDrop={(id, zone) => setAreaDrop({ id, zone })}
+              onZoneDrop={(id, zone) => {
+                if (!sessions.find((s) => s.id === id)?.remote) setAreaDrop({ id, zone });
+              }}
             />
           ) : view === 'memory' ? (
             <Memory
@@ -891,6 +939,7 @@ export default function App() {
             />
           ) : view === 'settings' ? (
             <Settings
+              demo={demo}
               snapshot={snapshot}
               onPrefs={onPrefs}
               onRefresh={refresh}
@@ -993,11 +1042,11 @@ export default function App() {
       {areaDrop &&
         (() => {
           const moving = sessions.find((s) => s.id === areaDrop.id);
-          return moving ? (
+          return moving && !moving.remote ? (
             <Modal title={t.app.moveZone} onClose={() => setAreaDrop(null)}>
               <ZoneEditor
                 session={moving}
-                sessions={sessions}
+                sessions={sessions.filter((session) => !session.remote)}
                 rules={prefs?.zoneRules ?? []}
                 onRules={saveZoneRules}
                 onClose={() => setAreaDrop(null)}

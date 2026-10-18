@@ -5,6 +5,7 @@ await build({
     preload: 'desktop/preload.ts',
     worker: 'server/worker.ts',
     mcp: 'server/mcp.ts',
+    'office-peer': 'server/federation/cli.ts',
   },
   outdir: 'dist-desktop',
   outExtension: { '.js': '.cjs' },
