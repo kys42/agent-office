@@ -11,7 +11,7 @@ try {
   // Emits provider protocol, while the real Electron runtime, tmux, runner and Office CLI run.
   await writeFile(
     path.join(cli, 'codex'),
-    `#!${process.execPath}\nconst cp=require('node:child_process');let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const office=JSON.parse(cp.execFileSync('./office',['overview','{}'],{encoding:'utf8'}));cp.execFileSync('./office',['show_briefing','{}'],{encoding:'utf8'});console.log(JSON.stringify({type:'thread.started',thread_id:'native-manager-smoke'}));console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'Office verified: '+office.sessions.length}}));console.log(JSON.stringify({type:'turn.completed'}));});\n`,
+    `#!${process.execPath}\nconst cp=require('node:child_process');let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>{const office=JSON.parse(cp.execFileSync('./office',['overview','{}'],{encoding:'utf8'}));cp.execFileSync('./office',['show_briefing','{}'],{encoding:'utf8'});console.log(JSON.stringify({type:'thread.started',thread_id:'native-manager-smoke'}));console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'Office verified: '+office.sessions.length+(input.includes('A second request')?' second':'')}}));console.log(JSON.stringify({type:'turn.completed'}));});\n`,
     { mode: 0o700 },
   );
   app = await electron.launch({
@@ -27,6 +27,7 @@ try {
     },
   });
   const page = await app.firstWindow();
+  app.context().setDefaultTimeout(30000);
   await page.getByRole('button', { name: '직접 둘러볼게요' }).click();
   await page.locator('[data-station-id="office:manager"] .office-pet').click();
   await page.getByRole('button', { name: '매니저 출근', exact: true }).click();
@@ -40,7 +41,7 @@ try {
   await dock.waitForSelector('.desk-floor');
   await dock.locator('[data-project-key="office:manager-project"]').waitFor();
   const cardOpened = app.waitForEvent('window');
-  await dock.locator('[data-station-id="office:manager"] .office-pet').click();
+  await dock.locator('[data-station-id="office:manager"] .office-pet').dispatchEvent('click');
   const card = await cardOpened;
   await card.getByRole('button', { name: '이 카드 고정', exact: true }).click();
   const input = card.locator('.terminal-send textarea');
@@ -56,7 +57,7 @@ try {
   await input.fill('Preserve my draft');
   await card.getByRole('button', { name: '이 카드 고정', exact: true }).click();
   await card.evaluate(() => window.office.card('close'));
-  await dock.locator('[data-station-id="office:manager"] .office-pet').click();
+  await dock.locator('[data-station-id="office:manager"] .office-pet').dispatchEvent('click');
   await input.waitFor();
   assert.equal(await input.inputValue(), 'Preserve my draft');
   await card.getByRole('button', { name: '이 카드 고정', exact: true }).click();

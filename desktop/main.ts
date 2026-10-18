@@ -630,6 +630,7 @@ function setupIPC() {
       unique.map(async (id) => {
         try {
           if (isManagerSession(id, manager.state())) {
+            await bridge.call('detail', [MANAGER_ID]);
             const state = manager.state();
             return [
               id,
@@ -657,7 +658,7 @@ function setupIPC() {
             findCodexTerminal(known.nativeId).catch(() => null),
           ]);
           const target = codexDestinationTarget(thread, screen?.host);
-          return [id, {...target, canSend:target.canSend && sendEnabled}] as const;
+          return [id, { ...target, canSend: target.canSend && sendEnabled }] as const;
         } catch {
           return [id, null] as const;
         }
@@ -740,6 +741,8 @@ function setupIPC() {
       throw new Error(m().desktop.badRequest);
     await managerReady.catch(() => {});
     if (typeof id === 'string' && isManagerSession(id, manager.state())) {
+      await bridge.call('detail', [MANAGER_ID]);
+      await authorized?.();
       bridge.syncManager(await manager.call({ action: 'chat', text }));
       return { status: 'sent', message: m().manager.queued };
     }

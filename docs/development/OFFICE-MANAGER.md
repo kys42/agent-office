@@ -60,12 +60,12 @@ Office 데이터 디렉터리 아래 `manager/state.json`에 설정, 전담 대�
 
 디렉터리 0700, 연결 정보·상태 0600, 임시 socket 디렉터리 0700을 사용한다. runner 인증과 요청별 CLI 인증을 분리하고 요청 완료/중지 시 CLI 인증을 폐기한다. TCP/HTTP 포트나 원격 서버를 열지 않는다. 같은 OS 사용자 권한으로 실행되는 CLI에 대한 보안 격리 경계는 아니다.
 
-요약 완료/실패는 선택한 알림 설정에 따라 네이티브 알림으로 알린다. 원문은 알림에 넣지 않는다. 내용 숨기기는 매니저 대화·입력창도 가리며 기존 정책처럼 저장 삭제나 모델 접근 차단을 뜻하지 않는다. 데모/웹 미리보기에서는 실제 매니저를 실행하지 않는다.
+요약 완료/실패는 선택한 알림 설정에 따라 네이티브 알림으로 알린다. 원문은 알림에 넣지 않는다. 내용 숨기기는 매니저 대화·입력창도 가리며 기존 정책처럼 저장 삭제나 모델 접근 차단을 뜻하지 않는다. 데모/웹 미리보기에서는 실제 매니저를 실행하지 않는다. 매니저의 제어와 대화는 로컬 데스크톱 범위이며 LAN export와 모바일 공유 목록에서는 제외한다. tmux/Unix socket 기반이라 Windows 네이티브 실행은 지원하지 않는다.
 
 ## 검증
 
-- `npx tsx --test tests/manager.test.ts`: 구역 보존·제외 정책·요약 읽기 제한, 예약 시각, provider 실패, 실제 tmux/CLI 연결·재개·인증 폐기·종료·예약 복구. tmux가 없으면 tmux 통합 사례만 skip. 테스트 자체가 runner를 임시 번들로 빌드하므로 앱 빌드 전에도 실행 가능하다.
-- `npx playwright test tests/ui/manager.spec.ts`: 출근·예약 설정·대화·실패한 초안 보존·내용 숨기기·데모 격리, 작은 팝업의 Enter 전송·닫기 후 초안 복원·긴 답변 스크롤.
+- `npx tsx --test tests/manager.test.ts tests/manager-projection.test.ts`: 공통 세션·소식·북마크·재시작·중복 제외·표시 도구, 구역 보존·제외 정책·요약 읽기 제한, 예약 시각, provider 실패, 실제 tmux/CLI 연결·재개·인증 폐기·종료·예약 복구. tmux가 없으면 tmux 통합 사례만 skip. 테스트 자체가 runner를 임시 번들로 빌드하므로 앱 빌드 전에도 실행 가능하다.
+- `npx playwright test tests/ui/manager.spec.ts`: 공통 카드·프로젝트 구역·출근·예약 설정·대화·실패한 초안 보존·검증된 상태 카드·데모 격리, 작은 팝업의 Enter 전송·닫기 후 초안 복원.
 - `npm run build && node scripts/manager-desktop-smoke.mjs`: 실제 Electron IPC, Electron Node 모드, tmux, CLI helper를 연결하고 합성 provider 응답으로 검증. 사무실/깃발뷰 팝업 전송, 초안 복원, 고정, 이전 native ID 전송도 확인한다. tmux 필요.
 - 실제 Codex 인증으로 공통 팝업에서 조회 요청 전송·응답을 확인했다. 추가로 합성 사무실 조회, 같은 전담 세션 재개, QA 구역 생성·이동, 영속 소식 조회 기반 요약을 확인했다. Claude는 프로토콜/오류 처리를 검증했으나 이 맥에 CLI가 없어 로그인된 실제 실행은 미검증이다.
 
