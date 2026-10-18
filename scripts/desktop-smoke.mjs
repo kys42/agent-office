@@ -111,6 +111,12 @@ try {
   const s = await page.evaluate(() => window.office.snapshot());
   assert.equal(s.sessions.filter((x) => !x.builtin).length, 3);
   assert.equal(s.sessions.filter((x) => x.builtin === 'manager').length, 1);
+  // Verify ordinary archiving for the built-in colleague, then keep the original three-provider
+  // geometry fixture. A fourth project packs narrow Windows rows with no free drag space.
+  const archivedManager = await page.evaluate(() =>
+    window.office.patch('office:manager', { archived: true }),
+  );
+  assert.equal(archivedManager.sessions.find((x) => x.id === 'office:manager').zone, 'archive');
   assert.deepEqual(
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
@@ -178,7 +184,7 @@ try {
   await dock.screenshot({ path: '.local/native-pet.png' });
   await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
   await dock.waitForSelector('.desk-row [data-station-id]');
-  assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 4);
+  assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();
   assert.equal(row.width, row.area.width, 'row spans the whole work area');
   assert.equal(row.x, row.area.x);
@@ -187,30 +193,20 @@ try {
   await checkMacDock('desk row');
   await dock.screenshot({ path: '.local/native-row.png' });
   // Synthetic providers share one project. Its sign moves their benches together.
-  const rowZone = dock.locator('.row-zone:has([data-station-id="codex:codex-test"])');
+  const rowZone = dock.locator('.row-zone').first();
   const originalX = await rowZone.evaluate((el) => parseFloat(el.style.left));
-  // The extra manager project can put this group against the left edge on small displays.
-  const dragDelta = originalX > 120 ? -100 : 100;
-  const sign = await rowZone.locator('.row-zone-handle').boundingBox();
+  const sign = await dock.locator('.row-zone-handle').first().boundingBox();
   assert.ok(sign, 'project sign is drawn');
   await dock.mouse.move(sign.x + sign.width / 2, sign.y + sign.height / 2);
   await dock.mouse.down();
-  await dock.mouse.move(sign.x + sign.width / 2 + dragDelta, sign.y + sign.height / 2, {
-    steps: 8,
-  });
+  await dock.mouse.move(sign.x + sign.width / 2 - 100, sign.y + sign.height / 2, { steps: 8 });
   await dock.mouse.up();
   await dock.waitForFunction(
-    ({ before, delta }) =>
-      (parseFloat(
-        document.querySelector('.row-zone:has([data-station-id="codex:codex-test"])').style.left,
-      ) -
-        before) *
-        Math.sign(delta) >
-      60,
-    { before: originalX, delta: dragDelta },
+    (before) => parseFloat(document.querySelector('.row-zone').style.left) < before - 80,
+    originalX,
   );
   const arrangedX = await rowZone.evaluate((el) => parseFloat(el.style.left));
-  assert.equal(await dock.locator('.row-station').count(), 4, 'all desks move together');
+  assert.equal(await dock.locator('.row-station').count(), 3, 'all desks move together');
   assert.ok(await dock.evaluate(() => localStorage.getItem('office:row-zones:v1:live')));
   await dock.screenshot({ path: '.local/native-row-arranged.png' });
   // Keep this test's card open if someone uses another app during local QA. Production still
@@ -425,11 +421,7 @@ try {
   await dock.waitForSelector('.desk-row.desk-floor');
   await dock.waitForFunction(
     (expected) =>
-      Math.abs(
-        parseFloat(
-          document.querySelector('.row-zone:has([data-station-id="codex:codex-test"])').style.left,
-        ) - expected,
-      ) < 1,
+      Math.abs(parseFloat(document.querySelector('.row-zone').style.left) - expected) < 1,
     arrangedX,
   );
   await dock.getByRole('button', { name: '기본 배치로 되돌리기', exact: true }).click();
