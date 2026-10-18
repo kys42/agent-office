@@ -34,7 +34,7 @@ export async function resolveWorkspace(
         ],
         { timeout: 1800, maxBuffer: 8192, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' } },
       );
-      const [worktree, common] = stdout.trim().split('\n');
+      const [worktree, common] = stdout.trim().split(/\r?\n/);
       if (!path.isAbsolute(worktree) || !path.isAbsolute(common))
         throw new Error('unsupported git result');
       const key = await realpath(common).catch(() => common);

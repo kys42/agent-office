@@ -16,6 +16,7 @@ import { Sprite } from './Sprite';
 import { ago } from '../lib/format';
 import { messageExcerpt } from '../shared/activity';
 import { useI18n } from '../lib/i18n';
+import { platformKeys } from '../lib/platform';
 import { Bookmarks } from './Bookmarks';
 function Highlight({ text, query }: { text: string; query: string }) {
   const q = query.trim();
@@ -128,7 +129,7 @@ export function Memory({
             <X size={15} />
           </button>
         )}
-        <kbd>⌘K</kbd>
+        <kbd>{platformKeys('⌘K')}</kbd>
       </div>
       {mode === 'bookmarks' ? (
         <Bookmarks

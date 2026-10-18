@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, chmodSync } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import { officeDataDir } from './data-dir.js';
 import type {
   Bookmark,
   BookmarkPage,
@@ -65,9 +65,7 @@ import { mergePetCustomization, normalizePetCustomization } from '../src/shared/
 
 /** A session first seen this soon after its start is a live one, not history. */
 export const NEW_SESSION_MS = 2 * 60_000;
-export const defaultDataDir = () =>
-  process.env.AGENT_OFFICE_DATA_DIR ??
-  path.join(os.homedir(), 'Library', 'Application Support', 'Agent Office');
+export const defaultDataDir = officeDataDir;
 export const DEFAULT_PREFS: Preferences = {
   paused: false,
   reducedMotion: false,

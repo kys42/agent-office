@@ -1,4 +1,6 @@
 export const settings = {
+  windowsSupport:
+    'Windows preview: session browsing, search, notes and desk pets are available. Local terminal focus, sending and prompt answers are not supported yet. A remote office has its own host capabilities and permissions.',
   title: 'Connections & Settings',
   subtitle: 'Choose which teammates you meet and which records you keep.',
   projectHidden: 'Project',

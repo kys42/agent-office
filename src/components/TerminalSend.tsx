@@ -2,6 +2,7 @@ import { CornerDownLeft, Loader, Terminal } from 'lucide-react';
 import type { SendResult, TerminalTarget } from '../shared/types';
 import { m } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
+import { platformKeys } from '../lib/platform';
 import { useComposerSend } from '../lib/useComposerSend';
 import { DraftConfirm } from './DraftConfirm';
 
@@ -89,7 +90,7 @@ export function TerminalSend({
         rows={chat ? 1 : 2}
         maxLength={4000}
         value={text}
-        placeholder={`${target ? targetPlaceholder(target) : t.terminal.placeholder.unknown} · ${chat ? t.terminal.replyKeys : t.terminal.sendShortcut}`}
+        placeholder={`${target ? targetPlaceholder(target) : t.terminal.placeholder.unknown} · ${chat ? t.terminal.replyKeys : platformKeys(t.terminal.sendShortcut)}`}
         onChange={(e) => reply.setText(e.target.value)}
         onKeyDown={(e) => {
           const sends = chat ? !e.shiftKey : e.metaKey || e.ctrlKey;
