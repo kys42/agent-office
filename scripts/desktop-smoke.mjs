@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from '@playwright/test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -106,6 +107,21 @@ try {
   };
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // The built-in desk is available before providers finish collecting on slower machines.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const s = await window.office.snapshot();
+          return (
+            s.sessions.filter((x) => !x.builtin).length === 3 &&
+            s.sessions.some((x) => x.builtin === 'manager') &&
+            s.connectors.every((c) => c.state === 'connected')
+          );
+        }),
+      { timeout: 30000 },
+    )
+    .toBe(true);
   await page.waitForSelector('.office-pet');
   await checkMacDock('startup');
   const s = await page.evaluate(() => window.office.snapshot());
