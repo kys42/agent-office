@@ -1,3 +1,10 @@
+# 2026-10-18 · LAN 베타 병합 전 로컬 호환성 리뷰
+
+- 최신 main의 Windows 창·데이터 경로 변경을 공통 Desktop 전송과 베타에 통합했다. 충돌은 QA/작업 기록의 추가 섹션이며 두 이력을 보존했다.
+- 독립 리뷰에서 베타 비활성 상태에도 `remote-office:`로 시작하는 일반 로컬 메모·검색이 거절되는 문제를 재현했다. 참조가 들어가는 인자만 검사하도록 수정하고 기본 꺼짐/연결 없는 켜짐의 텍스트 보존 및 원격 batch·규칙 쓰기 거절을 함께 검증한다.
+- Mac mini의 구버전 Codex는 필요한 IPC를 지원하지 않았다. 지원 버전 업데이트와 사용자 대화 복원 후 target 1개 및 실제 Office 전송 journal sent/native turn-start 성공을 확인했다. 에이전트의 임의 테스트 메시지는 보내지 않았다. 다른 과거 대화는 자동 재개하지 않는다.
+- 최종 통합 SHA의 단위·UI·Electron/HTTPS 합성 smoke·Linux/Windows CI와 리뷰 결과는 PR162/164에 기록한다. main 병합은 설치된 앱/별도 exporter를 자동 업데이트하지 않는다.
+
 # 2026-10-18 · Desktop 공통 전송을 LAN 베타에 반영
 
 - 일반 앱용 PR164 공통 adapter를 베타에 병합했다. v1 wire의 kind=codex/status=desktop으로 표시하고 새로운 인증/API 필드는 추가하지 않았다. sender는 owner 조회 후 dispatch 직전 기존 authorized 검사를 다시 호출한다.

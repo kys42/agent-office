@@ -11,6 +11,43 @@ import {
 import { attachSessions } from '../../src/shared/office.js';
 import { PeerManager } from './peers.js';
 
+const sessionMethods = new Set([
+  'detail',
+  'visit',
+  'returnToOffice',
+  'artifacts',
+  'patch',
+  'bookmark',
+  'unbookmarkMessage',
+  'handoff',
+  'remote-send',
+]);
+const record = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+/** Inspect references, never arbitrary notes, titles, search text or project names. */
+function remoteReferences(method: string, args: unknown[]): boolean {
+  const input = record(args[0]);
+  let references: unknown[] = [];
+  if (['veil', 'pin', 'identities'].includes(method)) references = list(args[0]);
+  if (['bookmarks', 'noticePage', 'noticeReadAll'].includes(method))
+    references = list(input.sessionIds);
+  if (method === 'notices') references = list(args[0]).map((item) => record(item).id);
+  if (['unbookmark', 'bookmarkNote'].includes(method)) references = [args[0]];
+  if (['bookmark', 'unbookmarkMessage'].includes(method)) references = [args[1]];
+  if (method === 'preferences') {
+    references = list(input.zoneRules)
+      .map(record)
+      .filter((rule) => rule.match === 'session')
+      .map((rule) => rule.value);
+    references.push(...Object.keys(record(record(input.petAppearance).colleagues)));
+  }
+  return references.some(isRemoteId);
+}
+
 /** Desktop-only composition. Existing HTTP/MCP and local store retain their original API. */
 export class FederatedService extends EventEmitter {
   private localSnapshot?: Snapshot;
@@ -90,7 +127,7 @@ export class FederatedService extends EventEmitter {
       return this.peers.targets(ids.filter((id) => visible.has(id)));
     }
     const id = args[0];
-    if (isRemoteId(id)) {
+    if (sessionMethods.has(method) && isRemoteId(id)) {
       if (method === 'detail' || method === 'remote-send') {
         const local = (await this.local.call('snapshot')) as Snapshot;
         const visible = this.compose(local).sessions.some((s) => s.id === id);
@@ -106,13 +143,8 @@ export class FederatedService extends EventEmitter {
       if (method === 'artifacts') return [];
       throw new Error('Remote Office is read-only in this beta');
     }
-    // Reject remote IDs hidden in batch mutations/query objects before reaching the local store.
-    const hasRemote = (v: unknown): boolean =>
-      isRemoteId(v) ||
-      (Array.isArray(v)
-        ? v.some(hasRemote)
-        : !!v && typeof v === 'object' && Object.values(v).some(hasRemote));
-    if (hasRemote(args)) {
+    // Remote references still cannot reach local writes, even after the beta is disabled.
+    if (remoteReferences(method, args)) {
       if (method === 'bookmarks') return { bookmarks: [], more: false, total: 0 };
       throw new Error('Remote Office is read-only in this beta');
     }

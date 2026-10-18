@@ -192,6 +192,70 @@ test('composition leaves local data untouched and blocks remote IDs in mutations
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('local text and snapshots remain compatible with beta off or enabled without peers', async () => {
+  const dir = temp();
+  const manager = new PeerManager(path.join(dir, 'config'), async () => {
+    throw new Error('No peer request expected');
+  });
+  const snapshot = demoSnapshot();
+  const local = new EventEmitter() as EventEmitter & {
+    call: (m: string, a?: unknown[]) => Promise<unknown>;
+  };
+  const forwarded: unknown[][] = [];
+  const result = { ok: true };
+  local.call = async (method, args) => {
+    forwarded.push([method, args]);
+    return method === 'snapshot' ? snapshot : result;
+  };
+  const service = new FederatedService(local as unknown as OfficeService, manager);
+  try {
+    assert.equal(await service.call('snapshot'), snapshot);
+    const remote = remoteId(randomUUID(), wireId('remote'));
+    const text = 'remote-office: connection reference';
+    for (const enabled of [false, true]) {
+      if (enabled) manager.command({ action: 'enable', enabled });
+      for (const [method, args] of [
+        ['search', [text]],
+        ['search', [remote]],
+        ['patch', ['codex:local', { notes: text, alias: text }]],
+        ['bookmark', ['codex:local', 'message', remote]],
+        ['bookmarkNote', ['bookmark-id', text]],
+        ['bookmarks', [{ sessionIds: ['codex:local'], text }]],
+        [
+          'preferences',
+          [{ excludedProjects: [text], zoneRules: [{ match: 'branch', value: text, name: text }] }],
+        ],
+      ] as [string, unknown[]][]) {
+        assert.equal(await service.call(method, args), result);
+        assert.deepEqual(forwarded.at(-1), [method, args]);
+      }
+      const before = forwarded.length;
+      for (const [method, args] of [
+        ['patch', [remote, { notes: 'blocked' }]],
+        ['pin', [['codex:local', remote], true]],
+        ['veil', [[remote], true]],
+        ['identities', [[remote]]],
+        ['bookmark', ['codex:local', remote, 'note']],
+        ['noticeReadAll', [{ filter: 'all', sessionIds: [remote] }, Date.now()]],
+        ['notices', [[{ id: remote, version: '1' }], 'read']],
+        ['preferences', [{ zoneRules: [{ match: 'session', value: remote, name: 'blocked' }] }]],
+        ['preferences', [{ petAppearance: { colleagues: { [remote]: null } } }]],
+      ] as [string, unknown[]][]) {
+        await assert.rejects(service.call(method, args), /read-only/);
+      }
+      assert.deepEqual(await service.call('bookmarks', [{ sessionIds: [remote] }]), {
+        bookmarks: [],
+        more: false,
+        total: 0,
+      });
+      assert.equal(forwarded.length, before);
+    }
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('HTTPS export is read-only, authenticates before data and scopes every detail request', async () => {
   const dir = temp(),
     data = path.join(dir, 'data'),
