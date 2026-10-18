@@ -235,8 +235,10 @@ export function OfficeWorkspace({
             spotlight={listHover && model.view(listHover)?.veiled ? null : listHover}
             onHover={setDeskHover}
             onVeil={(s) => onVeil(s.resident?.sessionIds ?? [s.id], true)}
-            canVeil={(s) => !model.view(s.id)?.needsPerson}
-            zoneVeilIds={(ids) => zoneVeilIds(model, ids)}
+            canVeil={(s) => !s.remote && !model.view(s.id)?.needsPerson}
+            zoneVeilIds={(ids) =>
+              zoneVeilIds(model, ids).filter((id) => !model.view(id)?.session.remote)
+            }
             onVeilZone={(ids) => onVeil(ids, true)}
             quotaOf={(s) => model.view(s.id)?.quota}
             onPin={onPin}

@@ -496,6 +496,8 @@ export type SessionPatch = Partial<
  * to the shared Codex CLI daemon (`codex queue`), which every attached screen shows.
  */
 export interface TerminalTarget {
+  /** Display-only destination; remote responses never carry handles. */
+  remoteOffice?: string;
   kind: 'orca' | 'tmux' | 'codex';
   label: string;
   /** Agent CLI process state, e.g. idle, busy, shell. */

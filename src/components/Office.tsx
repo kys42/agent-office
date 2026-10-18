@@ -114,7 +114,8 @@ export function Office({
   const drop = (zoneKey: string | null) => {
     const from = dragFrom;
     endDrag();
-    if (from && onZoneDrop && zoneKey !== projectKey(from)) onZoneDrop(from.id, zoneKey);
+    if (from && !from.remote && onZoneDrop && zoneKey !== projectKey(from))
+      onZoneDrop(from.id, zoneKey);
   };
   useEffect(() => {
     // Measure the card around the scroller, not the scroller: its own scrollbar would change
@@ -503,12 +504,16 @@ export function Office({
                             MOODS[s.status].label,
                           )}
                           title={
-                            draggable
+                            draggable && !s.remote
                               ? t.office.dragToZone(POSTURE_LABELS[pose.posture])
                               : POSTURE_LABELS[pose.posture]
                           }
-                          draggable={draggable}
+                          draggable={draggable && !s.remote}
                           onDragStart={(e) => {
+                            if (s.remote) {
+                              e.preventDefault();
+                              return;
+                            }
                             e.dataTransfer.setData('text/plain', s.id);
                             e.dataTransfer.effectAllowed = 'move';
                             setDragging(s.id);

@@ -113,7 +113,8 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
               }}
             >
               <b>
-                {f[peer.state]} · {f.count(peer.count)}
+                {f[peer.state]} · {f.count(peer.count)} ·{' '}
+                {peer.canSend ? f.sendPermission : f.readPermission}
               </b>
               <p>
                 <code>{peer.endpoint}</code>

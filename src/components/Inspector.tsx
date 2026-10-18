@@ -250,7 +250,9 @@ export function Inspector({
   // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
   // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
   const locatable =
-    !demo && !session.remote && (session.provider === 'claude' || session.provider === 'codex');
+    !demo &&
+    (!session.remote || (session.remote.send && !session.remote.stale)) &&
+    (session.provider === 'claude' || session.provider === 'codex');
   const { targets, markSent } = useSendTargets(locatable ? [session.id] : [], {
     enabled: locatable,
     stamp: session.updatedAt,
@@ -564,11 +566,11 @@ export function Inspector({
   );
   const zoneEditor = (
     <>
-      {zoneOpen && !privacy && onZoneRules && (
+      {zoneOpen && !s.remote && !privacy && onZoneRules && (
         <ZoneEditor
           key={s.id}
           session={s}
-          sessions={sessions}
+          sessions={sessions.filter((session) => !session.remote)}
           rules={zoneRules ?? []}
           onRules={onZoneRules}
           onClose={() => setZoneOpen(false)}
@@ -961,7 +963,8 @@ export function Inspector({
         </div>
         {s.remote && (
           <p className="remote-source" role="status">
-            {t.federation.readOnly} · {privacy ? t.inspector.hiddenTeammate : s.remote.label}
+            {s.remote.send ? t.federation.remoteOffice : t.federation.readOnly} ·{' '}
+            {privacy ? t.inspector.hiddenTeammate : s.remote.label}
             {s.remote.stale && (
               <>
                 {' '}
@@ -970,7 +973,11 @@ export function Inspector({
             )}
             {!privacy && s.remote.tags.length > 0 && <> · {s.remote.tags.join(' · ')}</>}
             <br />
-            {s.remote.conversation ? t.federation.recentOnly : t.federation.summaryOnly}
+            {s.remote.conversation
+              ? s.remote.send
+                ? t.federation.remoteChat
+                : t.federation.recentOnly
+              : t.federation.summaryOnly}
           </p>
         )}
         {petEditor}
@@ -1060,9 +1067,12 @@ export function Inspector({
               draftKey={`${demo ? 'demo' : 'live'}:${s.id}`}
               chat
               target={live}
+              remoteOffice={
+                s.remote ? (privacy ? t.federation.remoteOffice : s.remote.label) : undefined
+              }
               enabled={terminalSend}
               privacy={privacy}
-              onJump={api.jump ? () => void resume() : undefined}
+              onJump={!s.remote && api.jump ? () => void resume() : undefined}
               onSend={async (text, replaceDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();

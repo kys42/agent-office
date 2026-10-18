@@ -4,7 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { FederationState, PeerInput } from '../../src/shared/federation.js';
 import { parseRemoteId, remoteId } from '../../src/shared/federation.js';
-import type { Session, SessionDetail } from '../../src/shared/types.js';
+import type { Session, SessionDetail, TerminalTarget, SendResult } from '../../src/shared/types.js';
 import {
   peerSchema,
   responseSchema,
@@ -13,6 +13,8 @@ import {
   type WireSnapshot,
   type WireSession,
 } from './protocol.js';
+import { targetResponseSchema, sendResponseSchema } from './command-protocol.js';
+import { m } from '../../src/shared/i18n/index.js';
 import { peerRequest, PeerError } from './transport.js';
 
 const configSchema = z.object({ enabled: z.boolean(), peers: z.array(peerSchema).max(5) }).strict();
@@ -32,6 +34,7 @@ interface Held {
   state: FederationState['peers'][number]['state'];
   error: string | null;
   failures: number;
+  commandEpoch?: string;
   timer?: ReturnType<typeof setTimeout>;
   controller?: AbortController;
 }
@@ -93,12 +96,14 @@ export function importSession(
     events: s.events.map((e) => ({ ...e, id: id(e.id), sourceRef: '' })),
     usage: s.usage,
     artifacts: [],
-    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects]))}`,
+    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
     zone: s.zone,
     officeSeat: s.officeSeat,
     area: {
-      key: linked ? linkedProjectKey(linked) : `remote-room:${peer.officeId}`,
-      name: linked ?? peer.label,
+      key: linked
+        ? linkedProjectKey(linked)
+        : `remote-project:${peer.officeId}:${wireId(s.project)}`,
+      name: linked ?? s.project,
       ruleId: `remote:${peer.officeId}`,
       match: 'session',
     },
@@ -110,6 +115,7 @@ export function importSession(
       receivedAt,
       stale,
       conversation,
+      send: !!peer.sendToken,
     },
   };
 }
@@ -150,10 +156,11 @@ export class PeerManager extends EventEmitter {
     return {
       enabled: this.enabled,
       error: this.configError,
-      peers: this.config.peers.map(({ token: _token, ...peer }) => {
+      peers: this.config.peers.map(({ token: _token, sendToken, ...peer }) => {
         const h = this.held.get(peer.officeId);
         return {
           ...peer,
+          canSend: !!sendToken,
           state: h?.state ?? 'offline',
           count: h?.snapshot?.sessions.length ?? 0,
           receivedAt: h?.receivedAt ?? null,
@@ -285,6 +292,93 @@ export class PeerManager extends EventEmitter {
   }
   linkedProjects() {
     return new Set(this.enabled ? this.config.peers.flatMap((p) => Object.values(p.projects)) : []);
+  }
+  async targets(ids: string[]): Promise<Record<string, TerminalTarget | null>> {
+    const result: Record<string, TerminalTarget | null> = Object.fromEntries(
+      ids.map((id) => [id, null]),
+    );
+    if (!this.enabled) return result;
+    const generation = this.generation;
+    for (const peer of this.config.peers) {
+      const held = this.held.get(peer.officeId);
+      if (!peer.sendToken || held?.state !== 'connected' || held.snapshot?.paused) continue;
+      const selected = ids
+        .map((id) => ({ id, ref: parseRemoteId(id) }))
+        .filter(
+          ({ ref }) =>
+            ref.officeId === peer.officeId && held.snapshot?.sessions.some((s) => s.id === ref.id),
+        );
+      for (let i = 0; i < selected.length; i += 20) {
+        const batch = selected.slice(i, i + 20);
+        const controller = new AbortController();
+        this.details.add(controller);
+        try {
+          const response = targetResponseSchema.parse(
+            await this.request(
+              { ...peer, token: peer.sendToken },
+              '/office/v1/commands/targets',
+              controller.signal,
+              { body: { ids: batch.map((x) => x.ref.id) }, timeoutMs: 15000 },
+            ),
+          );
+          if (generation !== this.generation || response.officeId !== peer.officeId) continue;
+          held.commandEpoch = response.epoch;
+          for (const { id, ref } of batch) {
+            const target = response.targets[ref.id];
+            if (target)
+              result[id] = { ...target, label: '', canFocus: false, remoteOffice: peer.label };
+          }
+        } catch {
+          held.commandEpoch = undefined;
+        } finally {
+          this.details.delete(controller);
+        }
+      }
+    }
+    return result;
+  }
+  async send(id: string, text: string, requestId: string): Promise<SendResult> {
+    const ref = parseRemoteId(id),
+      peer = this.config.peers.find((p) => p.officeId === ref.officeId);
+    const held = this.held.get(ref.officeId);
+    if (
+      !this.enabled ||
+      !peer?.sendToken ||
+      held?.state !== 'connected' ||
+      held.snapshot?.paused ||
+      !held.snapshot?.sessions.some((s) => s.id === ref.id)
+    )
+      throw new Error(m().federation.sendUnavailable);
+    const generation = this.generation;
+    const target = (await this.targets([id]))[id];
+    if (generation !== this.generation || !target?.canSend || !held.commandEpoch)
+      throw new Error(m().federation.sendUnavailable);
+    const controller = new AbortController();
+    this.details.add(controller);
+    try {
+      const result = sendResponseSchema.parse(
+        await this.request(
+          { ...peer, token: peer.sendToken },
+          '/office/v1/commands/send',
+          controller.signal,
+          {
+            body: { epoch: held.commandEpoch, requestId, id: ref.id, text },
+            timeoutMs: 45000,
+          },
+        ),
+      );
+      if (
+        result.officeId !== peer.officeId ||
+        result.requestId !== requestId ||
+        result.status !== 'sent'
+      )
+        throw new Error('uncertain');
+      return { status: 'sent', message: m().federation.sent };
+    } catch {
+      throw new Error(m().federation.sendUncertain);
+    } finally {
+      this.details.delete(controller);
+    }
   }
   async detail(id: string): Promise<SessionDetail> {
     const ref = parseRemoteId(id);

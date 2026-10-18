@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TerminalTarget } from '../shared/types';
 import { api, isDesktop } from './api';
-import { isRemoteId } from '../shared/federation';
 import { isPageHidden, onPageVisibility } from './visibility';
 
 type Targets = Record<string, TerminalTarget | null>;
@@ -27,7 +26,7 @@ export function useSendTargets(
   options: { enabled?: boolean; stamp?: number; pollBusy?: boolean } = {},
 ) {
   const { enabled = true, stamp = 0, pollBusy = true } = options;
-  const key = [...new Set(ids.filter((id) => !isRemoteId(id)))].sort().join('\n');
+  const key = [...new Set(ids)].sort().join('\n');
   const active = enabled && isDesktop && !!api.terminals && key !== '';
   const [targets, setTargets] = useState<Targets>({});
   const [tick, setTick] = useState(0);

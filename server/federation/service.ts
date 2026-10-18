@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import type { OfficeService } from '../service.js';
-import type { Snapshot, Session } from '../../src/shared/types.js';
+import type { Snapshot } from '../../src/shared/types.js';
 import { isRemoteId } from '../../src/shared/federation.js';
 import {
   diffSnapshot,
@@ -9,7 +9,7 @@ import {
   type SnapshotPatch,
 } from '../../src/shared/snapshot-patch.js';
 import { attachSessions } from '../../src/shared/office.js';
-import { PeerManager, linkedProjectKey } from './peers.js';
+import { PeerManager } from './peers.js';
 
 /** Desktop-only composition. Existing HTTP/MCP and local store retain their original API. */
 export class FederatedService extends EventEmitter {
@@ -40,20 +40,7 @@ export class FederatedService extends EventEmitter {
     });
   }
   private compose(local: Snapshot): Snapshot {
-    const linked = this.peers.linkedProjects();
-    const sessions: Session[] = local.sessions.map((s) =>
-      linked.has(s.project)
-        ? {
-            ...s,
-            area: {
-              key: linkedProjectKey(s.project),
-              name: s.project,
-              ruleId: 'federation-local-view',
-              match: 'session',
-            },
-          }
-        : s,
-    );
+    const sessions = local.sessions;
     const remote = this.peers
       .sessions()
       .filter(
@@ -94,12 +81,25 @@ export class FederatedService extends EventEmitter {
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {
     if (method === 'federation') return this.peers.command(args[0]);
+    if (method === 'remote-targets') {
+      const ids = args[0];
+      if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => !isRemoteId(id)))
+        throw new Error('Invalid targets');
+      const local = (await this.local.call('snapshot')) as Snapshot;
+      const visible = new Set(this.compose(local).sessions.map((s) => s.id));
+      return this.peers.targets(ids.filter((id) => visible.has(id)));
+    }
     const id = args[0];
     if (isRemoteId(id)) {
-      if (method === 'detail') {
+      if (method === 'detail' || method === 'remote-send') {
         const local = (await this.local.call('snapshot')) as Snapshot;
         const visible = this.compose(local).sessions.some((s) => s.id === id);
         if (!visible) throw new Error('Remote session unavailable');
+        if (method === 'remote-send') {
+          if (typeof args[1] !== 'string' || args[1].length > 20000 || typeof args[2] !== 'string')
+            throw new Error('Invalid send');
+          return this.peers.send(id, args[1], args[2]);
+        }
         return this.peers.detail(id);
       }
       if (method === 'visit') return this.call('snapshot'); // Read-only: no local visit record.

@@ -27,6 +27,9 @@ async function main() {
         ? ['*']
         : args.flatMap((a, i) => (a === '--project' ? [args[i + 1]] : [])),
       conversation: args.includes('--conversation'),
+      allowSend: args.includes('--allow-send'),
+      ...(args.includes('--allow-send') ? { sendToken: randomBytes(32).toString('hex') } : {}),
+      ...(args.includes('--profile-dir') ? { profileDir: option('--profile-dir') } : {}),
     });
     if (!config.projects.length)
       throw new Error('Choose --project NAME or --all-visible explicitly');
@@ -63,6 +66,7 @@ async function main() {
           endpoint: `https://${config.host.includes(':') ? `[${config.host}]` : config.host}:${config.port}/`,
           fingerprint,
           token: config.token,
+          ...(config.sendToken ? { sendToken: config.sendToken } : {}),
           label: 'Remote Office',
           tags: [],
           projects: {},
@@ -80,7 +84,7 @@ async function main() {
   if (!args.includes('--serve'))
     throw new Error('Use --init or --serve; see docs/development/MULTI-OFFICE.md');
   const exporter = await startExportServer(dataDir, dir);
-  console.log('Agent Office beta read-only export listening', exporter.server.address());
+  console.log('Agent Office beta peer listening', exporter.server.address());
   let stopping = false;
   const stop = () => {
     if (!stopping) {

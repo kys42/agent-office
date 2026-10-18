@@ -13,10 +13,13 @@ async function poll(page, predicate) {
 }
 const file = process.argv[2];
 if (!file) throw new Error('Pass a private connection.json path');
-const peer = JSON.parse(await readFile(file, 'utf8'));
+const { sendToken: _sendToken, ...peer } = JSON.parse(await readFile(file, 'utf8'));
 const temp = await mkdtemp(path.join(os.tmpdir(), 'office-peer-desktop-'));
 let app;
 try {
+  // The real-LAN smoke must NEVER dispatch to a user's running agent. Import read-only credentials.
+  const readOnlyFile = path.join(temp, 'connection.json');
+  await writeFile(readOnlyFile, JSON.stringify(peer), { mode: 0o600 });
   const claude = path.join(temp, 'claude');
   await mkdir(path.join(claude, 'projects', 'test'), { recursive: true });
   await writeFile(
@@ -53,7 +56,7 @@ try {
   );
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
   await page.getByRole('switch', { name: '여러 사무실 연결 베타 켜기' }).click();
-  await page.locator('.federation-settings input[type=file]').setInputFiles(file);
+  await page.locator('.federation-settings input[type=file]').setInputFiles(readOnlyFile);
   await poll(page, async () => (await window.office.snapshot()).sessions.some((s) => s.remote));
   const summary = await page.evaluate(async () => {
     const s = await window.office.snapshot();

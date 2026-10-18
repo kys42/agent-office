@@ -104,8 +104,19 @@ export const exportConfigSchema = z
     token: z.string().min(32).max(256),
     projects: z.array(z.string().max(4000)).max(100),
     conversation: z.boolean(),
+    allowSend: z.boolean().default(false),
+    sendToken: z.string().min(32).max(256).optional(),
+    profileDir: z.string().min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (c) => !c.sendToken || c.sendToken !== c.token,
+    'Read and send credentials must be different',
+  )
+  .refine(
+    (c) => !c.allowSend || !!c.profileDir,
+    'Sending requires the owning desktop profile directory',
+  );
 export type ExportConfig = z.infer<typeof exportConfigSchema>;
 export const peerSchema = z
   .object({
@@ -130,6 +141,7 @@ export const peerSchema = z
       .regex(/^[a-fA-F0-9]{64}$/)
       .transform((s) => s.toLowerCase()),
     token: z.string().min(32).max(256),
+    sendToken: z.string().min(32).max(256).optional(),
     label: z.string().trim().min(1).max(80),
     tags: z.array(z.string().trim().min(1).max(40)).max(12),
     projects: z

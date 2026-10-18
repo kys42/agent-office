@@ -7,12 +7,14 @@ export interface RemoteSource {
   receivedAt: number;
   stale: boolean;
   conversation: boolean;
+  send: boolean;
 }
 export interface PeerInput {
   officeId: string;
   endpoint: string;
   fingerprint: string;
   token: string;
+  sendToken?: string;
   label: string;
   tags: string[];
   /** Explicit remote project name -> local project name. View only. */
@@ -21,7 +23,8 @@ export interface PeerInput {
 export interface FederationState {
   enabled: boolean;
   error?: string | null;
-  peers: (Omit<PeerInput, 'token'> & {
+  peers: (Omit<PeerInput, 'token' | 'sendToken'> & {
+    canSend: boolean;
     state: 'connecting' | 'connected' | 'offline' | 'rejected';
     count: number;
     receivedAt: number | null;

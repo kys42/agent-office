@@ -11,6 +11,7 @@ import {
   clipboard,
 } from 'electron';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { ServiceBridge } from '../server/bridge.js';
@@ -417,7 +418,7 @@ function setupIPC() {
     trusted(e);
     if (
       typeof method !== 'string' ||
-      method === 'federation' ||
+      ['federation', 'remote-send', 'remote-targets'].includes(method) ||
       !Array.isArray(args) ||
       args.length > 3
     )
@@ -582,7 +583,9 @@ function setupIPC() {
         }
       }),
     );
-    return Object.fromEntries(entries);
+    const remote = unique.filter(isRemoteId);
+    const remoteTargets = remote.length ? await bridge.call('remote-targets', [remote]) : {};
+    return { ...Object.fromEntries(entries), ...remoteTargets };
   });
   ipcMain.handle('office:jump', async (e, id): Promise<JumpResult> => {
     trusted(e);
@@ -630,7 +633,7 @@ function setupIPC() {
   });
   ipcMain.handle('office:inspect-draft', async (e, id) => {
     trusted(e);
-    if (!(await terminalSendEnabled())) return null;
+    if (!(await terminalSendEnabled()) || isRemoteId(id)) return null;
     const known = await identity(id);
     const composer = composerFor(known.provider);
     if (composer.capabilities(null).delivery !== 'terminal') return null;
@@ -648,6 +651,10 @@ function setupIPC() {
     )
       throw new Error(m().desktop.badRequest);
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+    if (isRemoteId(id)) {
+      if (replaceDraft !== undefined) throw new Error(m().federation.remoteDraft);
+      return bridge.call('remote-send', [id, text, randomUUID()]);
+    }
     const known = await identity(id);
     // Each agent's adapter says how a follow-up reaches it: its queue (Codex, no composer
     // involved) or its terminal (the composer is read, and cleared only when confirmed).

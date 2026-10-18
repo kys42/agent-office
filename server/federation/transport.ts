@@ -17,6 +17,7 @@ export function peerRequest(
   peer: PeerInput,
   route: string,
   signal?: AbortSignal,
+  options: { body?: unknown; timeoutMs?: number } = {},
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const agent = new https.Agent({ keepAlive: false, maxSockets: 1 });
@@ -48,6 +49,7 @@ export function peerRequest(
           return;
         }
         handedOff = true;
+        socket.setTimeout(0);
         callback?.(null, socket);
       });
       // Async callback: returning the socket here would let HTTP write before pin verification.
@@ -57,8 +59,12 @@ export function peerRequest(
       new URL(route, peer.endpoint),
       {
         agent,
-        method: 'GET',
-        headers: { Authorization: `Bearer ${peer.token}`, Accept: 'application/json' },
+        method: options.body === undefined ? 'GET' : 'POST',
+        headers: {
+          Authorization: `Bearer ${peer.token}`,
+          Accept: 'application/json',
+          ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
         signal,
       },
       (response) => {
@@ -88,7 +94,7 @@ export function peerRequest(
     );
     const timer = setTimeout(
       () => request.destroy(new PeerError(408, 'Peer request timed out')),
-      5000,
+      options.timeoutMs ?? 5000,
     );
     request.once('error', (e) =>
       reject(e instanceof PeerError ? e : new PeerError(0, 'Peer connection unavailable')),
@@ -97,6 +103,6 @@ export function peerRequest(
       clearTimeout(timer);
       agent.destroy();
     });
-    request.end();
+    request.end(options.body === undefined ? undefined : JSON.stringify(options.body));
   });
 }

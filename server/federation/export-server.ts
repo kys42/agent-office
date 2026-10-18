@@ -1,3 +1,5 @@
+import { PeerCommands } from './commands.js';
+import type { PeerSender } from './sender.js';
 import https from 'node:https';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -13,11 +15,12 @@ import {
 } from './protocol.js';
 
 /** Separate API. Never constructs OfficeService or opens the source database for writing. */
-export async function startExportServer(dataDir: string, configDir: string) {
+export async function startExportServer(dataDir: string, configDir: string, sender?: PeerSender) {
   const readConfig = () =>
     exportConfigSchema.parse(JSON.parse(readFileSync(path.join(configDir, 'export.json'), 'utf8')));
   const initial = readConfig();
   const store = new OfficeStore(dataDir, true);
+  const commands = new PeerCommands(configDir, store, readConfig, sender);
   let epoch = randomUUID(),
     version = 0,
     signature = '',
@@ -29,7 +32,7 @@ export async function startExportServer(dataDir: string, configDir: string) {
       minVersion: 'TLSv1.2',
       maxHeaderSize: 8192,
     },
-    (req, res) => {
+    async (req, res) => {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -44,6 +47,11 @@ export async function startExportServer(dataDir: string, configDir: string) {
         }
       };
       try {
+        const route = new URL(req.url ?? '/', 'https://office.invalid').pathname;
+        if (route.startsWith('/office/v1/commands/')) {
+          await commands.handle(req, res, route);
+          return;
+        }
         // Reread to apply revocation and scope narrowing even to existing connections.
         const config = readConfig();
         const expected = Buffer.from(`Bearer ${config.token}`);
@@ -157,6 +165,7 @@ export async function startExportServer(dataDir: string, configDir: string) {
   return {
     server,
     close: async () => {
+      await commands.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       store.close();

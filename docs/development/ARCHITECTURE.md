@@ -14,7 +14,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 
 ## 여러 Office 베타
 
-데스크톱 워커의 `FederatedService`가 기존 `OfficeService`와 별도 `PeerManager`를 합성한다. 꺼짐일 때 원래 snapshot/API를 유지하고 네트워크를 시작하지 않는다. 원격 내용은 메모리에만 두며 기존 SQLite에 저장하지 않는다. 송신기는 같은 앱의 별도 readOnly HTTPS 번들이다. 프로토콜·권한·운영 계약은 [여러 Office 베타](MULTI-OFFICE.md)를 따른다.
+데스크톱 워커의 `FederatedService`가 기존 `OfficeService`와 별도 `PeerManager`를 합성한다. 꺼짐일 때 원래 snapshot/API를 유지하고 네트워크를 시작하지 않는다. 원격 내용은 메모리에만 두며 기존 SQLite에 저장하지 않는다. 송신기는 같은 앱의 별도 HTTPS 번들로 원본 DB를 readOnly로 연다. 전송은 독립 command token과 별도 시도 journal을 통해 기존 native adapter에 위임한다. 화면은 컴퓨터별 사무실 안에서 프로젝트 구역을 나눈다. 프로토콜·권한·운영 계약은 [여러 Office 베타](MULTI-OFFICE.md)를 따른다.
 
 ## 지원 소스
 
