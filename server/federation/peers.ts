@@ -1,3 +1,5 @@
+import { applyDelta } from './snapshot-delta.js';
+import { remoteEventWindow } from '../../src/shared/remote-conversation.js';
 import { EventEmitter } from 'node:events';
 import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
@@ -39,7 +41,7 @@ interface Held {
   snapshot?: WireSnapshot;
   receivedAt: number | null;
   contentAt?: number;
-  imported?: { key: string; sessions: Session[] };
+  imported?: { key: string; wire: WireSession[]; sessions: Session[] };
   state: FederationState['peers'][number]['state'];
   error: string | null;
   failures: number;
@@ -140,6 +142,7 @@ export class PeerManager extends EventEmitter {
     revision: string;
     session: WireSession;
   }>();
+  private detailReads = new Map<string, Promise<SessionDetail>>();
   private closed = false;
   configError: string | null = null;
   constructor(
@@ -224,6 +227,7 @@ export class PeerManager extends EventEmitter {
     for (const c of this.details) c.abort();
     this.details.clear();
     this.detailCache.clear();
+    this.detailReads.clear();
     this.held.clear();
   }
   close() {
@@ -248,7 +252,9 @@ export class PeerManager extends EventEmitter {
       let changed = false;
       h.controller = new AbortController();
       try {
-        const cursor = h.snapshot ? `?epoch=${h.snapshot.epoch}&version=${h.snapshot.version}` : '';
+        const cursor = h.snapshot
+          ? `?epoch=${h.snapshot.epoch}&version=${h.snapshot.version}&delta=1`
+          : '';
         const response = responseSchema.parse(
           await this.request(peer, `/office/v1/snapshot${cursor}`, h.controller.signal),
         );
@@ -269,13 +275,13 @@ export class PeerManager extends EventEmitter {
             conversation: response.conversation,
           };
         } else {
-          if (h.snapshot?.epoch === response.epoch && response.version < h.snapshot.version)
+          const next = 'delta' in response ? applyDelta(h.snapshot, response) : response;
+          if (h.snapshot?.epoch === next.epoch && next.version < h.snapshot.version)
             throw new PeerError(409, 'Snapshot moved backwards');
-          if (new Set(response.sessions.map((s) => s.id)).size !== response.sessions.length)
+          if (new Set(next.sessions.map((s) => s.id)).size !== next.sessions.length)
             throw new PeerError(400, 'Duplicate session identities');
-          h.snapshot = response;
+          h.snapshot = next;
           h.contentAt = Date.now();
-          h.imported = undefined;
           changed = true;
         }
         h.state = 'connected';
@@ -321,14 +327,28 @@ export class PeerManager extends EventEmitter {
       if (!h?.snapshot || !h.receivedAt) return [];
       const stale =
         h.state !== 'connected' || h.snapshot.paused || Date.now() - h.receivedAt > 15000;
-      const key = `${h.snapshot.epoch}:${h.snapshot.version}:${stale}:${h.snapshot.conversation}`;
-      if (h.imported?.key !== key)
+      const key = `${h.snapshot.epoch}:${stale}:${h.snapshot.conversation}`;
+      if (h.imported?.key !== key || h.imported.wire !== h.snapshot.sessions) {
+        const reusable =
+          h.imported?.key === key
+            ? new Map(
+                h.imported.wire.map((wire, i) => [
+                  wire.id,
+                  { wire, session: h.imported!.sessions[i] },
+                ]),
+              )
+            : new Map();
         h.imported = {
           key,
-          sessions: h.snapshot.sessions.map((s) =>
-            importSession(s, p, h.contentAt ?? h.receivedAt!, stale, h.snapshot!.conversation),
-          ),
+          wire: h.snapshot.sessions,
+          sessions: h.snapshot.sessions.map((s) => {
+            const old = reusable.get(s.id);
+            return old?.wire === s
+              ? old.session
+              : importSession(s, p, h.contentAt ?? h.receivedAt!, stale, h.snapshot!.conversation);
+          }),
         };
+      }
       return h.imported.sessions;
     });
   }
@@ -435,6 +455,17 @@ export class PeerManager extends EventEmitter {
     }
   }
   async detail(id: string, page: DetailPage = {}): Promise<SessionDetail> {
+    const key = `${this.generation}:${id}:${page.view ?? 'all'}:${page.view ? (page.limit ?? 180) : 180}`;
+    const held = this.detailReads.get(key);
+    if (held) return held;
+    if (this.detailReads.size >= 16) throw new Error('Too many remote detail reads');
+    const pending = this.readDetail(id, page).finally(() => {
+      if (this.detailReads.get(key) === pending) this.detailReads.delete(key);
+    });
+    this.detailReads.set(key, pending);
+    return pending;
+  }
+  private async readDetail(id: string, page: DetailPage = {}): Promise<SessionDetail> {
     const ref = parseRemoteId(id);
     const peer = this.config.peers.find((p) => p.officeId === ref.officeId);
     const held = this.held.get(ref.officeId);
@@ -494,10 +525,11 @@ export class PeerManager extends EventEmitter {
         view === 'conversation'
           ? session.events.filter((e) => e.kind === 'user' || e.kind === 'assistant')
           : session.events;
+      const events = remoteEventWindow(selected.slice(-limit));
       // Recent bounded conversation only. Older paging is deliberately not advertised.
       return {
         ...importSession(
-          { ...session, events: selected.slice(-limit) },
+          { ...session, events, partial: session.partial || events.length < selected.length },
           peer,
           Date.now(),
           !!held.snapshot?.paused,

@@ -38,6 +38,8 @@ export function Conversation({
   filtersOpen,
   sent = [],
   onDismissSent,
+  remoteTools,
+  onRemoteTools,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -70,6 +72,9 @@ export function Conversation({
   sent?: { id: string; text: string; at: number }[];
   /** Hides a temporary local receipt only; never cancels a submitted message. */
   onDismissSent?: (id: string) => void;
+  /** Remote records are requested only when this controlled switch is on. */
+  remoteTools?: boolean;
+  onRemoteTools?: (on: boolean) => void;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -80,7 +85,9 @@ export function Conversation({
   const [filter, setFilter] = useState<ConversationFilter>('all');
   const filterRef = useRef(filter);
   filterRef.current = filter;
-  const [tools, setTools] = useState(false);
+  const [localTools, setLocalTools] = useState(false);
+  const tools = remoteTools ?? localTools;
+  const setTools = onRemoteTools ?? setLocalTools;
   const [expanded, setExpanded] = useState(new Set<string>());
   // Excerpts fill gaps only within what is loaded: an older notice waits for its page, so a
   // message not yet read is never shown as if the record had lost it.
@@ -91,6 +98,12 @@ export function Conversation({
       first === undefined ? notices : notices.filter((n) => n.at >= first),
     );
   }, [session.events, notices, older]);
+  useEffect(() => {
+    const ids = new Set(events.map((e) => e.id));
+    setExpanded((old) =>
+      [...old].some((id) => !ids.has(id)) ? new Set([...old].filter((id) => ids.has(id))) : old,
+    );
+  }, [events]);
   const counts = Object.fromEntries(
     ['request', 'progress', 'reply', 'message', 'work'].map((kind) => [
       kind,
@@ -469,7 +482,7 @@ export function Conversation({
                 onChange={(e) => setTools(e.target.checked)}
               />
               {t.conversation.includeTools}
-              <span>{counts.work}</span>
+              {(!session.remote || tools) && <span>{counts.work}</span>}
             </label>
           </div>
         )}

@@ -1,3 +1,6 @@
+import { DetailCache } from './detail-cache.js';
+import { SnapshotVersions } from './snapshot-delta.js';
+import { remoteEventWindow } from '../../src/shared/remote-conversation.js';
 import { PeerCommands } from './commands.js';
 import type { PeerSender } from './sender.js';
 import https from 'node:https';
@@ -12,6 +15,7 @@ import {
   idSchema,
   MAX_BYTES,
   type WireSnapshot,
+  type WireSession,
 } from './protocol.js';
 
 /** Separate API. Never constructs OfficeService or opens the source database for writing. */
@@ -22,9 +26,17 @@ export async function startExportServer(dataDir: string, configDir: string, send
   const store = new OfficeStore(dataDir, true);
   const commands = new PeerCommands(configDir, store, readConfig, sender);
   let epoch = randomUUID(),
-    version = 0,
-    signature = '',
     policy = '';
+  const versions = new SnapshotVersions();
+  // One wire-only view. Never retain full stored conversations in a source-side list cache.
+  const views = new DetailCache<{
+    sessions: WireSession[];
+    ids: Record<string, string>;
+    paused: boolean;
+    signature: string;
+  }>(Date.now, MAX_BYTES, 1, 3000);
+  const expiry = setInterval(() => views.prune(), 3000);
+  expiry.unref();
   const server = https.createServer(
     {
       key: readFileSync(path.join(configDir, 'server-key.pem')),
@@ -78,19 +90,35 @@ export async function startExportServer(dataDir: string, configDir: string, send
         if (scope !== policy) {
           policy = scope;
           epoch = randomUUID();
-          signature = '';
-          version = 0;
+          versions.clear();
+          views.clear();
         }
         // Consistent read transaction, including the visibility policy and detail.
         store.db.exec('BEGIN');
         try {
+          // Establish the read transaction before consulting a cached view/version.
           const prefs = store.preferences();
-          const sessions = store
-            .list()
-            .filter((s) => config.projects.includes('*') || config.projects.includes(s.project));
-          if (sessions.length > 900) {
-            send(413, { error: 'too-many-sessions' });
-            return;
+          const { data_version } = store.db.prepare('PRAGMA data_version').get() as {
+            data_version: number;
+          };
+          const key = `${policy}:${data_version}`;
+          let view = views.get(key);
+          if (!view) {
+            const sessions = store
+              .list()
+              .filter((s) => config.projects.includes('*') || config.projects.includes(s.project));
+            if (sessions.length > 900) {
+              send(413, { error: 'too-many-sessions' });
+              return;
+            }
+            const exported = sessions.map((s) => exportSession(s, sessions));
+            view = {
+              sessions: exported,
+              ids: Object.fromEntries(sessions.map((s) => [wireId(s.id), s.id])),
+              paused: prefs.paused,
+              signature: wireId(JSON.stringify([exported, prefs.paused])),
+            };
+            views.set(key, view);
           }
           if (url.pathname.endsWith('/detail')) {
             if (!config.conversation) {
@@ -98,7 +126,7 @@ export async function startExportServer(dataDir: string, configDir: string, send
               return;
             }
             const parsed = idSchema.safeParse(url.searchParams.get('id'));
-            const s = parsed.success ? sessions.find((x) => wireId(x.id) === parsed.data) : null;
+            const s = parsed.success ? view.sessions.find((x) => x.id === parsed.data) : null;
             if (!s) {
               send(404, { error: 'not-found' });
               return;
@@ -108,15 +136,28 @@ export async function startExportServer(dataDir: string, configDir: string, send
               send(400, { error: 'invalid-page' });
               return;
             }
-            const detail = store.detail(s.id, {
+            const detail = store.exportDetail(view.ids[s.id], {
               limit,
               view: url.searchParams.get('view') === 'conversation' ? 'conversation' : 'all',
             });
-            const session = exportSession(
+            // Truncate each event before applying the aggregate budget, so a huge
+            // final tool output cannot evict the entire conversation.
+            const exported = exportSession(
               { ...detail, partial: detail.partial || !!detail.olderEvents },
-              sessions,
+              [],
               true,
             );
+            // New readers opt into the bounded view. Older readers retain their v1 window.
+            const events = url.searchParams.has('view')
+              ? remoteEventWindow(exported.events)
+              : exported.events;
+            const session = {
+              ...exported,
+              events,
+              partial: exported.partial || events.length < exported.events.length,
+              parentId: s.parentId,
+              workspace: s.workspace,
+            };
             const revision = wireId(JSON.stringify(session));
             // Authorization and current sharing scope were checked above, even for cache hits.
             if (url.searchParams.get('since') === revision)
@@ -124,18 +165,13 @@ export async function startExportServer(dataDir: string, configDir: string, send
             else send(200, { officeId: config.officeId, session });
             return;
           }
-          const exported = sessions.map((s) => exportSession(s, sessions));
-          const next = wireId(JSON.stringify([exported, prefs.paused]));
-          if (next !== signature) {
-            signature = next;
-            version++;
-          }
+          const version = versions.update(view.signature, view.sessions);
           const common = {
             officeId: config.officeId,
             epoch,
             version,
             sampledAt: Date.now(),
-            paused: prefs.paused,
+            paused: view.paused,
             conversation: config.conversation,
           };
           if (
@@ -144,8 +180,22 @@ export async function startExportServer(dataDir: string, configDir: string, send
           ) {
             send(200, { unchanged: true, ...common });
           } else {
-            const snapshot: WireSnapshot = { protocol: 1, ...common, sessions: exported };
-            send(200, snapshot);
+            const snapshot: WireSnapshot = { protocol: 1, ...common, sessions: view.sessions };
+            const delta =
+              url.searchParams.get('delta') === '1'
+                ? versions.delta(
+                    snapshot,
+                    url.searchParams.get('epoch'),
+                    url.searchParams.get('version'),
+                  )
+                : undefined;
+            // Small offices or broad changes can cost less as a whole snapshot.
+            send(
+              200,
+              delta && JSON.stringify(delta).length < JSON.stringify(snapshot).length
+                ? delta
+                : snapshot,
+            );
           }
         } finally {
           store.db.exec('COMMIT');
@@ -169,12 +219,17 @@ export async function startExportServer(dataDir: string, configDir: string, send
       });
     });
   } catch (e) {
+    clearInterval(expiry);
+    views.clear();
     store.close();
     throw e;
   }
   return {
     server,
     close: async () => {
+      clearInterval(expiry);
+      views.clear();
+      versions.clear();
       await commands.close();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

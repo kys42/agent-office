@@ -1080,6 +1080,15 @@ export class OfficeStore {
         : stored;
     return localizeSession(this.decorate(s, prefs), locale);
   }
+  /** Export-only page: no local notice history or whole-office workspace recovery.
+   * The exporter supplies workspace/parent metadata from its authorized summary view. */
+  exportDetail(id: string, page: DetailPage = {}): SessionDetail {
+    const prefs = this.preferences();
+    return detailPage(
+      localizeSession(this.decorate(this.stored(id, prefs), prefs), getLocale()),
+      page,
+    );
+  }
   /**
    * One page of the conversation (the newest without `before`), with the same visibility as
    * `get`, and the session's notices the page's excerpts need.

@@ -1,3 +1,4 @@
+import { remoteEventWindow } from './remote-conversation';
 import type { DetailPage, OfficeEvent, OfficeNotice, Session, SessionDetail } from './types';
 
 /**
@@ -88,6 +89,19 @@ const unionNotices = (a: OfficeNotice[], b: OfficeNotice[]) => [
 ];
 /** At most `LOADED_EVENTS`, dropping the oldest (which can be read again). */
 function bounded(view: LoadedConversation, events: OfficeEvent[]): LoadedConversation {
+  if (view.session.remote) {
+    const kept = remoteEventWindow(events);
+    return {
+      ...view,
+      session: {
+        ...view.session,
+        events: kept,
+        partial: view.session.partial || kept.length < events.length,
+      },
+      older: false,
+      notices: [],
+    };
+  }
   if (events.length <= LOADED_EVENTS) return { ...view, session: { ...view.session, events } };
   const kept = events.slice(-LOADED_EVENTS);
   return {
@@ -137,12 +151,9 @@ export function mergeNewest(view: LoadedConversation, page: SessionDetail): Load
     view.session.events.some((e) => e.id === head.id);
   const { olderEvents, notices = [], ...session } = page;
   if (!joins)
-    return {
-      session,
-      older: !!olderEvents,
-      paged: true,
-      notices,
-    };
+    return session.remote
+      ? bounded({ session, older: false, paged: true, notices }, session.events)
+      : { session, older: !!olderEvents, paged: true, notices };
   // Everything before the page's first event, by place: the same time can straddle the edge.
   const kept = view.session.events.slice(
     0,

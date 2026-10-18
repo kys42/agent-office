@@ -44,6 +44,8 @@ Desktop 프로필에 다음 두 파일만 별도로 둔다.
 
 ## 공통 대화 UI와 호스트 경계
 
+기본 LAN/Tailscale 연동의 delta 전송·송신 캐시·Desktop 원격 상세 제한도 같은 최적화 범위다. 모바일 전용 기능이 아니며 자세한 상한과 호환 계약은 [여러 Office](MULTI-OFFICE.md#기본-연동-모드의-처리량과-보관-상한)를 따른다.
+
 `src/components/chat/`의 `ConversationMessage`, `ChatMarkdown`, `ChatComposer`, 메시지 CSS를 Desktop 팝업·모바일이 함께 사용한다. 메시지 분류·접기·전체 복사·Markdown·한글 조합 중 Enter 방지는 공통이고, 북마크·초안 확인·접수 확인은 각 화면이 소유한다. Desktop의 아티팩트·외부 링크 열기는 `src/lib/chat-actions.ts`가 담당한다. 모바일은 검증된 HTTP(S) 링크와 브라우저 복사만 사용하며 `src/mobile/transport.ts`를 통해 모바일 API에 접근한다. 직접 Tailscale HTTP에서 Clipboard API가 없으면 클릭 시 textarea 복사로 대체한다.
 
 공통 UI는 Electron/RPC/서버 코드를 import하지 않는다. 번들 경계 테스트로 이 계약을 검증한다. 향후 APK의 WebView 셸도 이 UI와 transport 경계를 재사용할 수 있지만 APK 패키징·네이티브 인증/링크 정책은 아직 구현하지 않았다.

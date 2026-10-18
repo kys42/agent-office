@@ -81,8 +81,19 @@ export const snapshotSchema = z
   })
   .strict();
 export type WireSnapshot = z.infer<typeof snapshotSchema>;
+export const deltaSchema = snapshotSchema
+  .omit({ protocol: true })
+  .extend({
+    delta: z.literal(true),
+    base: z.number().int().nonnegative(),
+    removed: z.array(idSchema).max(900),
+    order: z.array(idSchema).max(900),
+  })
+  .strict();
+export type WireDelta = z.infer<typeof deltaSchema>;
 export const responseSchema = z.union([
   snapshotSchema,
+  deltaSchema,
   z
     .object({
       unchanged: z.literal(true),

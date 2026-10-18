@@ -7,9 +7,11 @@ import {
   diffSnapshot,
   indexSnapshot,
   type SnapshotPatch,
+  type SnapshotIndex,
 } from '../../src/shared/snapshot-patch.js';
 import { attachSessions } from '../../src/shared/office.js';
 import { PeerManager } from './peers.js';
+import { wireId } from './protocol.js';
 
 const sessionMethods = new Set([
   'detail',
@@ -52,6 +54,7 @@ function remoteReferences(method: string, args: unknown[]): boolean {
 export class FederatedService extends EventEmitter {
   private localSnapshot?: Snapshot;
   private published?: Snapshot;
+  private publishedIndex?: SnapshotIndex;
   private epoch = randomUUID();
   private version = 0;
   constructor(
@@ -63,6 +66,7 @@ export class FederatedService extends EventEmitter {
       this.localSnapshot = s;
       if (!peers.enabled) {
         this.published = undefined;
+        this.publishedIndex = undefined;
         this.emit('snapshot', s, patch);
       } else this.publish();
     });
@@ -70,6 +74,7 @@ export class FederatedService extends EventEmitter {
       if (peers.enabled) this.publish();
       else {
         this.published = undefined;
+        this.publishedIndex = undefined;
         this.epoch = randomUUID();
         this.version = 0;
         if (this.localSnapshot) this.emit('snapshot', this.localSnapshot);
@@ -97,10 +102,17 @@ export class FederatedService extends EventEmitter {
     if (!this.localSnapshot || !this.peers.enabled) return;
     const next = this.compose(this.localSnapshot);
     const previous = this.published;
-    const diff = previous ? diffSnapshot(indexSnapshot(previous), next) : undefined;
+    const index = indexSnapshot(next);
+    // Keep fingerprints, not a second serialized copy of every local/remote message.
+    for (const map of [index.sessions, index.notices])
+      for (const [id, text] of map) map.set(id, wireId(text));
+    for (const [key, text] of index.fields) index.fields.set(key, wireId(text));
+    const diff =
+      previous && this.publishedIndex ? diffSnapshot(this.publishedIndex, next, index) : undefined;
     if (diff && !Object.keys(diff).length) return previous;
     next.version = ++this.version;
     this.published = next;
+    this.publishedIndex = index;
     this.emit(
       'snapshot',
       next,

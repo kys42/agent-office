@@ -151,6 +151,21 @@ export function Inspector({
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
   const [view, setView] = useState(() => freshConversation(session));
+  const [remoteToolsFor, setRemoteToolsFor] = useState<string | null>(null);
+  const remoteTools = remoteToolsFor === session.id;
+  const remoteView = session.remote ? (remoteTools ? 'all' : 'conversation') : undefined;
+  const remoteGeneration = useRef(0);
+  const setRemoteTools = (on: boolean) => {
+    remoteGeneration.current++;
+    setRemoteToolsFor(on ? session.id : null);
+    // Drop a previously loaded all-record window immediately, before the next request.
+    setView(
+      freshConversation({
+        ...session,
+        events: session.events.filter((e) => e.kind === 'user' || e.kind === 'assistant'),
+      }),
+    );
+  };
   const s = view.session;
   const panelRef = useRef<HTMLElement>(null);
   // The card is being moved by its header (see the card's header handlers).
@@ -202,21 +217,27 @@ export function Inspector({
   const latestEvents = JSON.stringify(session.events);
   useEffect(() => {
     let valid = true;
+    const generation = remoteGeneration.current;
     setLoadError('');
     if (!demo)
       api
-        .detail(session.id)
+        .detail(session.id, remoteView ? { view: remoteView, limit: 180 } : undefined)
         .then((page) => {
-          if (valid) setView((previous) => mergeNewest(previous, page));
+          if (valid && generation === remoteGeneration.current)
+            setView((previous) => mergeNewest(previous, page));
         })
         .catch((e) => {
-          if (valid) setLoadError(e.message);
+          if (valid && generation === remoteGeneration.current) {
+            setLoadError(e.message);
+            if (session.remote) setView(freshConversation({ ...session, events: [] }));
+          }
         });
     return () => {
       valid = false;
     };
   }, [
     session.id,
+    remoteView,
     session.revision,
     latestEvents,
     session.alias,
@@ -663,6 +684,8 @@ export function Inspector({
             onShowProgress={() => setShowProgress(true)}
             name={privacy ? undefined : sessionName(s)}
             filtersOpen={filtersOpen}
+            remoteTools={session.remote ? remoteTools : undefined}
+            onRemoteTools={session.remote ? setRemoteTools : undefined}
             sent={sent}
             onDismissSent={dismissSend}
             bookmarked={bookmarked}
