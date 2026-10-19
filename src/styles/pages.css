@@ -550,16 +550,160 @@
 }
 
 /* ───────────────────────── Settings ───────────────────────── */
-.settings-grid {
+/* Categories (#87): a left list on the big office's page, top tabs in the settings window.
+   The container query lets the same page fall back to top tabs when it is narrow. */
+.settings-page {
+  container-type: inline-size;
+}
+.settings-layout {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 14px;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
 }
-.settings-grid > div {
+.settings-nav {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: left;
+  white-space: nowrap;
+}
+.settings-nav button:hover {
+  background: var(--bg-3);
+}
+.settings-nav button[aria-selected='true'] {
+  background: var(--selection);
+  color: var(--text);
+  font-weight: 600;
+}
+.settings-nav button[aria-selected='true'] svg {
+  color: var(--accent);
+}
+.settings-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
+  max-width: 760px;
+  outline: none;
+}
+.settings-panel-head h2 {
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+.settings-panel-head p {
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+/* Top tabs: the settings window always, the page when it is narrow (phones). */
+.settings-popup .settings-layout {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+.settings-popup .settings-nav {
+  top: 0;
+  z-index: 2;
+  flex-direction: row;
+  gap: 2px;
+  margin: 0 -16px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: color-mix(in srgb, var(--bg-0) 92%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 0.5px solid var(--line-2);
+}
+.settings-popup .settings-nav button {
+  flex: 1 0 auto;
+  justify-content: center;
+  height: 30px;
+  padding: 0 10px;
+}
+.settings-popup .settings-panel {
+  max-width: none;
+}
+@container (max-width: 640px) {
+  .settings-page.page .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .settings-page.page .settings-nav {
+    top: 0;
+    z-index: 2;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 4px 0;
+    background: var(--bg-0);
+  }
+  .settings-page.page .settings-nav button {
+    flex: 0 0 auto;
+  }
+}
+@container (max-width: 520px) {
+  .settings-popup .settings-nav button {
+    padding: 0 8px;
+  }
+  .settings-popup .settings-nav button svg {
+    display: none;
+  }
+}
+/* The settings window: a title bar that moves the window, then the scrolling page. */
+body.settings-mode,
+body.settings-mode #root {
+  height: 100dvh;
+  overflow: hidden;
+}
+.settings-window {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+}
+.settings-window-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+body.is-mac .settings-window-bar {
+  height: var(--bar-h);
+}
+body.is-windows .settings-window-bar {
+  height: 36px;
+  justify-content: flex-start;
+  padding-left: 14px;
+}
+.settings-window > .settings-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 16px 28px;
+}
+.settings-window-opening {
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-3);
 }
 .settings-section {
   padding: 18px;
@@ -811,9 +955,6 @@
 }
 
 @media (max-width: 860px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
   .activity-summary {
     grid-template-columns: 1fr;
   }

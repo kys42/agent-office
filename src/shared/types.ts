@@ -804,6 +804,16 @@ export interface OfficeAPI {
   /** Desktop only. Browser previews switch the dock layout locally. */
   dock?: (action: DockAction) => Promise<void>;
   onDock?: (callback: (mode: DockMode) => void) => () => void;
+  /**
+   * Desktop only: the settings window (`#settings`), which stays open when it loses focus.
+   * `open` shows it at a section; the window hears later opens through `onOpen`.
+   */
+  settings?: {
+    open: (section?: import('./settings').SettingsSection) => Promise<void>;
+    onOpen: (
+      callback: (section: import('./settings').SettingsSection | null) => void,
+    ) => () => void;
+  };
 }
 // Labels are getters: they read the active language at use time, never at import time.
 const provider = (key: Provider, name: string, short: string, color: string) => ({

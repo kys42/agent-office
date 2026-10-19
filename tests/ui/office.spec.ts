@@ -160,8 +160,10 @@ test('Settings can pause collection and reduce motion without mutating real sett
     'aria-checked',
     'true',
   );
+  await page.getByRole('tab', { name: '모습' }).click();
   await page.getByRole('switch', { name: '움직임 줄이기' }).click();
   await expect(page.locator('.app')).toHaveClass(/reduce-motion/);
+  await page.getByRole('tab', { name: '연결' }).click();
   await expect(page.locator('.connector-card')).toHaveCount(3);
 });
 test('Desktop viewport fits the room and narrow viewport does not overflow', async ({ page }) => {

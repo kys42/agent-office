@@ -6,6 +6,16 @@ export const settings: Messages['settings'] = {
   title: '연결과 설정',
   subtitle: '어떤 동료를 만나고, 어떤 기록을 남길지 직접 정하세요.',
   projectHidden: '프로젝트',
+  categoriesAria: '설정 분류',
+  categories: {
+    general: { label: '일반', hint: '언어, 내용 숨기기, 앱이 대신 해도 되는 일을 정해요.' },
+    appearance: { label: '모습', hint: '동료들의 생김새와 움직임을 골라요.' },
+    office: { label: '사무실', hint: '동료가 대기 중 → 퇴근 → 보관으로 옮겨 가는 시점을 정해요.' },
+    spaces: { label: '공간', hint: '직접 나눈 사무실 구역을 살펴보고 고쳐요.' },
+    connections: { label: '연결', hint: '도구, 다른 사무실, 휴대폰 연결을 관리해요.' },
+    records: { label: '기록', hint: '불러올 기록과 뺄 프로젝트, MCP를 정해요.' },
+  },
+  window: { title: '설정', opening: '설정을 여는 중…' },
   language: {
     title: '언어',
     hint: '지원하지 않는 시스템 언어는 영어로 표시돼요.',
@@ -45,6 +55,7 @@ export const settings: Messages['settings'] = {
     helperNote:
       '보조 동료는 결과를 남겨두고 메인의 다음 요청이 시작되면 자리에서 빠져요. 아직 일하거나 확인을 기다리면 남아 있어요. 메인이 퇴근하면 이전 작업 기록으로 접어둬요.',
   },
+  terminalTitle: '터미널과 답하기',
   rhythm: {
     title: '내 작업 리듬에 맞게',
     pause: '수집 잠시 쉬기',

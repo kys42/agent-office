@@ -90,6 +90,15 @@ const api: OfficeAPI = {
     ipcRenderer.on('office:select', f);
     return () => ipcRenderer.removeListener('office:select', f);
   },
+  settings: {
+    open: (section) => ipcRenderer.invoke('office:settings', section ?? null),
+    onOpen: (cb) => {
+      const f = (_: unknown, section: import('../src/shared/settings.js').SettingsSection | null) =>
+        cb(section);
+      ipcRenderer.on('office:settings', f);
+      return () => ipcRenderer.removeListener('office:settings', f);
+    },
+  },
   dock: (action) => ipcRenderer.invoke('office:dock', action),
   onDock: (cb) => {
     const f = (_: unknown, mode: DockMode) => cb(mode);

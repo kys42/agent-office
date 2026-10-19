@@ -96,6 +96,7 @@ test('Dialogs opened inside a page cover the whole window', async ({ page }) => 
     .getByRole('button', { name: '연결과 설정' })
     .click();
   // The pet customizer is a Modal rendered inside the settings page.
+  await page.getByRole('tab', { name: '모습' }).click();
   await page.locator('.settings-page button[aria-label*="Claude"]').first().click();
   const backdrop = (await page.locator('.modal-backdrop').boundingBox())!;
   const viewport = page.viewportSize()!;

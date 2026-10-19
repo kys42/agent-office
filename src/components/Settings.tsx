@@ -1,17 +1,13 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { PetCustomizer } from './PetCustomizer';
 import { MobileSettings } from './MobileSettings';
 import { FederationSettings } from './FederationSettings';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
-  Plug,
   ShieldCheck,
-  Folder,
   RotateCw,
   Check,
-  ChevronRight,
-  Copy,
   Eye,
   Pause,
   Sparkles,
@@ -22,6 +18,12 @@ import {
   Pencil,
   MessageCircleQuestion,
   ShieldQuestion,
+  SlidersHorizontal,
+  Palette,
+  Building2,
+  Plug,
+  Database,
+  type LucideIcon,
 } from 'lucide-react';
 import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
@@ -32,7 +34,22 @@ import { projectKey } from '../shared/office';
 import { LOCALES, type LocalePreference } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
 import { isWindows } from '../lib/platform';
-export type SettingsSection = 'appearance' | 'connections' | 'office' | 'rhythm';
+import {
+  SETTINGS_CATEGORIES,
+  settingsAnchor,
+  settingsCategory,
+  type SettingsCategory,
+  type SettingsSection,
+} from '../shared/settings';
+export type { SettingsSection } from '../shared/settings';
+const CATEGORY_ICONS: Record<SettingsCategory, LucideIcon> = {
+  general: SlidersHorizontal,
+  appearance: Palette,
+  office: Building2,
+  spaces: LayoutGrid,
+  connections: Plug,
+  records: Database,
+};
 function Toggle({
   checked,
   onChange,
@@ -54,8 +71,13 @@ function Toggle({
     </button>
   );
 }
+/**
+ * One settings surface, two frames: the big office's page (category list on the left) and the
+ * settings window (tabs on top). Every control and deep link is the same in both.
+ */
 export function Settings({
   demo = false,
+  layout = 'page',
   snapshot,
   onPrefs,
   onRefresh,
@@ -68,6 +90,7 @@ export function Settings({
   onSectionFocused,
 }: {
   demo?: boolean;
+  layout?: 'page' | 'popup';
   snapshot: Snapshot;
   onPrefs: (p: Partial<Preferences>) => Promise<boolean>;
   onRefresh: () => void;
@@ -85,16 +108,48 @@ export function Settings({
   const s = t.settings;
   const p = snapshot.preferences;
   const [customizing, setCustomizing] = useState<Provider | null>(null);
+  const [category, setCategory] = useState<SettingsCategory>(() =>
+    focusSection ? settingsCategory(focusSection.section) : 'general',
+  );
+  // A deep link first switches category, then scrolls once that category is drawn.
+  const [pending, setPending] = useState<SettingsSection | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const ids = useId();
   useEffect(() => {
     if (!focusSection) return;
-    const section = root.current?.querySelector<HTMLElement>(
-      `[data-guide-section="${focusSection.section}"]`,
-    );
-    section?.scrollIntoView({ block: 'start' });
-    section?.focus({ preventScroll: true });
+    setCategory(settingsCategory(focusSection.section));
+    setPending(focusSection.section);
     onSectionFocused?.();
   }, [focusSection, onSectionFocused]);
+  useEffect(() => {
+    if (!pending) return;
+    // A desktop-only section missing here (web preview) falls back to its category's top.
+    const section =
+      root.current?.querySelector<HTMLElement>(
+        `[data-guide-section="${settingsAnchor(pending)}"]`,
+      ) ?? panel.current;
+    section?.scrollIntoView({ block: 'start' });
+    section?.focus({ preventScroll: true });
+    setPending(null);
+  }, [pending, category]);
+  const choose = (next: SettingsCategory) => {
+    setCategory(next);
+    panel.current?.scrollIntoView({ block: 'nearest' });
+  };
+  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    const edge = e.key === 'Home' ? 0 : e.key === 'End' ? SETTINGS_CATEGORIES.length - 1 : null;
+    if (step === undefined && edge === null) return;
+    e.preventDefault();
+    const at = SETTINGS_CATEGORIES.indexOf(category);
+    const next =
+      SETTINGS_CATEGORIES[
+        edge ?? (at + step! + SETTINGS_CATEGORIES.length) % SETTINGS_CATEGORIES.length
+      ];
+    choose(next);
+    root.current?.querySelector<HTMLElement>(`#${CSS.escape(`${ids}-tab-${next}`)}`)?.focus();
+  };
   const projects = [
     ...new Set([...snapshot.sessions.map((s) => s.project), ...p.excludedProjects]),
   ].sort();
@@ -106,15 +161,106 @@ export function Settings({
     snapshot.sessions.filter(
       (s) => s.area && projectKey(s) === key && s.zone === 'office' && !s.attachedTo,
     ).length;
-  return (
-    <div className="settings-page page" ref={root}>
-      <header className="page-head">
-        <div>
-          <span className="eyebrow">Settings</span>
-          <h1>{s.title}</h1>
-          <p>{s.subtitle}</p>
+  const general = (
+    <>
+      <section className="settings-section" data-guide-section="language" tabIndex={-1}>
+        <div className="setting-row">
+          <Languages size={18} />
+          <div>
+            <b>{s.language.title}</b>
+            <p>{s.language.hint}</p>
+          </div>
+          <select
+            aria-label={s.language.title}
+            value={p.locale ?? 'auto'}
+            onChange={(e) => onPrefs({ locale: e.target.value as LocalePreference })}
+          >
+            <option value="auto">{t.common.language.auto}</option>
+            {(Object.keys(LOCALES) as (keyof typeof LOCALES)[]).map((locale) => (
+              <option key={locale} value={locale}>
+                {LOCALES[locale].label}
+              </option>
+            ))}
+          </select>
         </div>
-      </header>
+      </section>
+      <section className="settings-section" data-guide-section="privacy" tabIndex={-1}>
+        <h2>{s.rhythm.title}</h2>
+        <div className="setting-row">
+          <Pause size={18} />
+          <div>
+            <b>{s.rhythm.pause}</b>
+            <p>{s.rhythm.pauseHint}</p>
+          </div>
+          <Toggle
+            checked={p.paused}
+            label={s.rhythm.pauseAria}
+            onChange={() => onPrefs({ paused: !p.paused })}
+          />
+        </div>
+        <div className="setting-row">
+          <Eye size={18} />
+          <div>
+            <b>{s.rhythm.privacy}</b>
+            <p>{s.rhythm.privacyHint}</p>
+          </div>
+          <Toggle
+            checked={p.privacy}
+            label={s.rhythm.privacyAria}
+            onChange={() => onPrefs({ privacy: !p.privacy })}
+          />
+        </div>
+      </section>
+      {((terminalSend !== undefined && onTerminalSend) || (answers && onAnswers)) && (
+        <section className="settings-section" data-guide-section="terminal" tabIndex={-1}>
+          <h2>{s.terminalTitle}</h2>
+          {terminalSend !== undefined && onTerminalSend && (
+            <div className="setting-row">
+              <Terminal size={18} />
+              <div>
+                <b>{s.rhythm.terminal}</b>
+                <p>{s.rhythm.terminalHint}</p>
+              </div>
+              <Toggle checked={terminalSend} label={s.rhythm.terminal} onChange={onTerminalSend} />
+            </div>
+          )}
+          {answers &&
+            onAnswers &&
+            (['questions', 'permissions'] as const).map((key) => (
+              <div className="setting-row" key={key}>
+                {key === 'questions' ? (
+                  <MessageCircleQuestion size={18} />
+                ) : (
+                  <ShieldQuestion size={18} />
+                )}
+                <div>
+                  <b>{t.prompts.settings[key]}</b>
+                  <p>
+                    {key === 'questions'
+                      ? t.prompts.settings.questionsHint
+                      : t.prompts.settings.permissionsHint}
+                  </p>
+                </div>
+                <Toggle
+                  checked={answers[key] === 'on'}
+                  label={t.prompts.settings[key]}
+                  onChange={() => onAnswers(key)}
+                />
+              </div>
+            ))}
+        </section>
+      )}
+      <section className="local-promise">
+        <ShieldCheck size={25} />
+        <div>
+          <h3>{s.local.title}</h3>
+          <p>{s.local.body}</p>
+        </div>
+      </section>
+    </>
+  );
+  const appearance = (
+    <>
       <section
         className="pet-settings settings-section"
         data-guide-section="appearance"
@@ -154,6 +300,371 @@ export function Settings({
           })}
         </div>
       </section>
+      <section className="settings-section" data-guide-section="motion" tabIndex={-1}>
+        <div className="setting-row">
+          <Sparkles size={18} />
+          <div>
+            <b>{s.rhythm.motion}</b>
+            <p>{s.rhythm.motionHint}</p>
+          </div>
+          <Toggle
+            checked={p.reducedMotion}
+            label={s.rhythm.motion}
+            onChange={() => onPrefs({ reducedMotion: !p.reducedMotion })}
+          />
+        </div>
+      </section>
+    </>
+  );
+  const office = (
+    <section className="settings-section" data-guide-section="office" tabIndex={-1}>
+      <h2>{s.office.title}</h2>
+      <p>{s.office.body}</p>
+      <div className="setting-row">
+        <div>
+          <b>{s.office.autoArchive}</b>
+          <p>{s.office.autoArchiveHint}</p>
+        </div>
+        <Toggle
+          checked={p.autoArchive !== false}
+          label={s.office.autoArchive}
+          onChange={() =>
+            onPrefs({
+              autoArchive: p.autoArchive === false,
+              archiveDays: Math.max(p.archiveDays ?? 7, Math.floor((p.standbyHours ?? 4) / 24) + 1),
+            })
+          }
+        />
+      </div>
+      <div className="lifecycle-settings">
+        <label>
+          {s.office.bubble}
+          <select
+            aria-label={s.office.bubbleAria}
+            value={p.bubbleHours ?? 3}
+            onChange={(e) => onPrefs({ bubbleHours: Number(e.target.value) })}
+          >
+            {[1, 3, 6, 12, 24].map((h) => (
+              <option key={h} value={h}>
+                {s.office.hours(h)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          {s.office.ready}
+          <select
+            aria-label={s.office.readyAria}
+            value={p.readyMinutes ?? 30}
+            onChange={(e) => onPrefs({ readyMinutes: Number(e.target.value) })}
+          >
+            {[...new Set([10, 20, 30, 60, p.readyMinutes ?? 30])]
+              .sort((a, b) => a - b)
+              .map((m) => (
+                <option key={m} value={m} disabled={m >= (p.standbyHours ?? 4) * 60}>
+                  {s.office.forMinutes(m)}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          {s.office.standby}
+          <select
+            aria-label={s.office.standbyAria}
+            value={p.standbyHours ?? 4}
+            onChange={(e) => {
+              const standbyHours = Number(e.target.value);
+              const ready = p.readyMinutes ?? 30;
+              onPrefs({
+                standbyHours,
+                archiveDays: Math.max(p.archiveDays ?? 7, Math.floor(standbyHours / 24) + 1),
+                // Standing by must end before going home.
+                ...(ready >= standbyHours * 60 ? { readyMinutes: 30 } : {}),
+              });
+            }}
+          >
+            {[...new Set([1, 2, 4, 8, 24, 48, 72, 168, 336, 720, 2160, p.standbyHours ?? 4])]
+              .sort((a, b) => a - b)
+              .map((h) => (
+                <option key={h} value={h}>
+                  {s.office.after(durationLabel(h))}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label>
+          {s.office.archive}
+          <select
+            aria-label={s.office.archiveAria}
+            disabled={p.autoArchive === false}
+            value={p.archiveDays ?? 7}
+            onChange={(e) => onPrefs({ archiveDays: Number(e.target.value) })}
+          >
+            {[...new Set([1, 3, 7, 14, 30, 60, 90, 180, 365, p.archiveDays ?? 7])]
+              .sort((a, b) => a - b)
+              .map((d) => (
+                <option key={d} value={d} disabled={d * 24 <= (p.standbyHours ?? 4)}>
+                  {s.office.afterDays(d)}
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
+      <p className="office-schedule-preview" aria-live="polite">
+        {s.office.schedule(officeSchedule(p))}
+      </p>
+      <p className="helper-lifecycle-note">{s.office.helperNote}</p>
+    </section>
+  );
+  const spaces = (
+    <section className="settings-section zone-settings" data-guide-section="zones" tabIndex={-1}>
+      <h2>
+        <LayoutGrid size={16} /> {s.zones.title}
+      </h2>
+      <p>{s.zones.body}</p>
+      {zones.length === 0 ? (
+        <small>{s.zones.empty}</small>
+      ) : (
+        <ul className="zone-list">
+          {zones.map((key) => {
+            const rules = zoneRules.filter((r) => ruleZoneKey(r) === key);
+            const name = rules[0].name;
+            return (
+              <li key={key}>
+                <div className="zone-list-head">
+                  {isCustomZone(key) ? (
+                    <input
+                      aria-label={s.zones.nameAria(name)}
+                      defaultValue={name}
+                      maxLength={40}
+                      onBlur={(e) => {
+                        const next = e.target.value.trim();
+                        if (!next) e.target.value = name;
+                        else if (next !== name)
+                          onPrefs({
+                            zoneRules: zoneRules.map((r) =>
+                              ruleZoneKey(r) === key ? { ...r, name: next } : r,
+                            ),
+                          });
+                      }}
+                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    />
+                  ) : (
+                    <b title={s.zones.projectRuleTitle}>
+                      {p.privacy ? s.projectHidden : name}
+                      <em>{s.zones.projectZone}</em>
+                    </b>
+                  )}
+                  <small>{s.zones.sent(members(key))}</small>
+                </div>
+                <div className="project-chips">
+                  {rules.map((r) => (
+                    <button
+                      key={r.id}
+                      title={s.zones.removeRule(r.value)}
+                      onClick={() => onPrefs({ zoneRules: zoneRules.filter((x) => x.id !== r.id) })}
+                    >
+                      {ZONE_MATCH_LABELS[r.match]} ·{' '}
+                      {p.privacy
+                        ? s.zones.hidden
+                        : r.match === 'session'
+                          ? s.zones.oneSession
+                          : r.match === 'branch'
+                            ? r.value
+                            : shortPath(r.value)}
+                      <X size={11} />
+                    </button>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+  const connections = (
+    <>
+      <section className="settings-section" data-guide-section="connections" tabIndex={-1}>
+        {isWindows && <p className="windows-support-note">{s.windowsSupport}</p>}
+        <div className="section-title">
+          <h2>{s.connectors.title}</h2>
+          <button className="icon-btn" aria-label={s.connectors.refresh} onClick={onRefresh}>
+            <RotateCw size={16} />
+          </button>
+        </div>
+        {snapshot.connectors.map((c) => (
+          <div className="connector-card" key={c.provider}>
+            <div className="connector-title">
+              <div className={`face face-lg face-${c.provider}`}>
+                <Sprite
+                  provider={c.provider}
+                  mood={c.state === 'connected' ? 'idle' : 'sleep'}
+                  size={40}
+                />
+              </div>
+              <div>
+                <h3>
+                  {PROVIDERS[c.provider].name}
+                  <em>{s.connectors.count(c.count)}</em>
+                </h3>
+                <span className={`connection-state connection-${c.state}`}>
+                  {c.state === 'connected'
+                    ? s.connectors.connected
+                    : c.state === 'paused'
+                      ? s.connectors.paused
+                      : c.state === 'missing'
+                        ? s.connectors.missing
+                        : s.connectors.error}
+                </span>
+              </div>
+              <Toggle
+                checked={p.enabledProviders.includes(c.provider)}
+                label={s.connectors.collect(PROVIDERS[c.provider].name)}
+                onChange={() =>
+                  onPrefs({
+                    enabledProviders: p.enabledProviders.includes(c.provider)
+                      ? p.enabledProviders.filter((x) => x !== c.provider)
+                      : [...p.enabledProviders, c.provider],
+                  })
+                }
+              />
+            </div>
+            <code>{p.privacy ? s.connectors.pathHidden : shortPath(c.path)}</code>
+            <p>{c.message}</p>
+            <small>
+              {c.lastSync ? s.connectors.checkedAgo(ago(c.lastSync)) : s.connectors.notChecked} ·{' '}
+              {s.connectors.readOnly}
+            </small>
+          </div>
+        ))}
+      </section>
+      {!demo && (
+        <div className="settings-anchor" data-guide-section="federation" tabIndex={-1}>
+          <FederationSettings snapshot={snapshot.federation} />
+        </div>
+      )}
+      {!demo && (
+        <div className="settings-anchor" data-guide-section="mobile" tabIndex={-1}>
+          <MobileSettings privacy={p.privacy} />
+        </div>
+      )}
+    </>
+  );
+  const records = (
+    <>
+      <section className="settings-section" data-guide-section="records" tabIndex={-1}>
+        <h2>{s.records.title}</h2>
+        <p>{s.records.body}</p>
+        <select
+          className="record-limit"
+          aria-label={s.records.aria}
+          value={p.maxSessions}
+          onChange={(e) => onPrefs({ maxSessions: Number(e.target.value) })}
+        >
+          {[60, 120, 300].map((n) => (
+            <option key={n} value={n}>
+              {s.records.recent(n)}
+            </option>
+          ))}
+        </select>
+      </section>
+      <section
+        className="settings-section scope-settings"
+        data-guide-section="exclude"
+        tabIndex={-1}
+      >
+        <h2>{s.exclude.title}</h2>
+        <p>{s.exclude.body}</p>
+        <div className="project-chips">
+          {projects.map((project) => (
+            <button
+              key={project}
+              className={p.excludedProjects.includes(project) ? 'excluded' : ''}
+              onClick={() =>
+                onPrefs({
+                  excludedProjects: p.excludedProjects.includes(project)
+                    ? p.excludedProjects.filter((x) => x !== project)
+                    : [...p.excludedProjects, project],
+                })
+              }
+            >
+              {p.excludedProjects.includes(project) && <Check size={12} />}{' '}
+              {p.privacy ? s.projectHidden : project}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="settings-section mcp-card" data-guide-section="mcp" tabIndex={-1}>
+        <span className="eyebrow">MEMORY, WITH YOUR AGENTS</span>
+        <h2>{s.mcp.title}</h2>
+        <p>
+          {s.mcp.bodyBefore}
+          <code>npm run mcp</code>
+          {s.mcp.bodyAfter}
+        </p>
+        <small>{s.mcp.footnote}</small>
+      </section>
+    </>
+  );
+  const content = { general, appearance, office, spaces, connections, records }[category];
+  return (
+    <div
+      className={`settings-page settings-${layout}${layout === 'page' ? ' page' : ''}`}
+      ref={root}
+    >
+      {layout === 'page' && (
+        <header className="page-head">
+          <div>
+            <span className="eyebrow">Settings</span>
+            <h1>{s.title}</h1>
+            <p>{s.subtitle}</p>
+          </div>
+        </header>
+      )}
+      <div className="settings-layout">
+        <div
+          className="settings-nav"
+          role="tablist"
+          aria-label={s.categoriesAria}
+          aria-orientation={layout === 'page' ? 'vertical' : 'horizontal'}
+        >
+          {SETTINGS_CATEGORIES.map((c) => {
+            const Icon = CATEGORY_ICONS[c];
+            return (
+              <button
+                key={c}
+                id={`${ids}-tab-${c}`}
+                role="tab"
+                aria-selected={c === category}
+                aria-controls={`${ids}-panel`}
+                tabIndex={c === category ? 0 : -1}
+                data-category={c}
+                onClick={() => choose(c)}
+                onKeyDown={onTabKey}
+              >
+                <Icon size={15} />
+                <span>{s.categories[c].label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div
+          className="settings-panel"
+          role="tabpanel"
+          id={`${ids}-panel`}
+          aria-labelledby={`${ids}-tab-${category}`}
+          data-category={category}
+          tabIndex={-1}
+          ref={panel}
+        >
+          <header className="settings-panel-head">
+            <h2>{s.categories[category].label}</h2>
+            <p>{s.categories[category].hint}</p>
+          </header>
+          {content}
+        </div>
+      </div>
       {customizing && (
         <PetCustomizer
           provider={customizing}
@@ -161,387 +672,6 @@ export function Settings({
           onClose={() => setCustomizing(null)}
         />
       )}
-      <div className="settings-grid">
-        <section className="settings-section" data-guide-section="connections" tabIndex={-1}>
-          {isWindows && <p className="windows-support-note">{s.windowsSupport}</p>}
-          <div className="section-title">
-            <h2>{s.connectors.title}</h2>
-            <button className="icon-btn" aria-label={s.connectors.refresh} onClick={onRefresh}>
-              <RotateCw size={16} />
-            </button>
-          </div>
-          {snapshot.connectors.map((c) => (
-            <div className="connector-card" key={c.provider}>
-              <div className="connector-title">
-                <div className={`face face-lg face-${c.provider}`}>
-                  <Sprite
-                    provider={c.provider}
-                    mood={c.state === 'connected' ? 'idle' : 'sleep'}
-                    size={40}
-                  />
-                </div>
-                <div>
-                  <h3>
-                    {PROVIDERS[c.provider].name}
-                    <em>{s.connectors.count(c.count)}</em>
-                  </h3>
-                  <span className={`connection-state connection-${c.state}`}>
-                    {c.state === 'connected'
-                      ? s.connectors.connected
-                      : c.state === 'paused'
-                        ? s.connectors.paused
-                        : c.state === 'missing'
-                          ? s.connectors.missing
-                          : s.connectors.error}
-                  </span>
-                </div>
-                <Toggle
-                  checked={p.enabledProviders.includes(c.provider)}
-                  label={s.connectors.collect(PROVIDERS[c.provider].name)}
-                  onChange={() =>
-                    onPrefs({
-                      enabledProviders: p.enabledProviders.includes(c.provider)
-                        ? p.enabledProviders.filter((x) => x !== c.provider)
-                        : [...p.enabledProviders, c.provider],
-                    })
-                  }
-                />
-              </div>
-              <code>{p.privacy ? s.connectors.pathHidden : shortPath(c.path)}</code>
-              <p>{c.message}</p>
-              <small>
-                {c.lastSync ? s.connectors.checkedAgo(ago(c.lastSync)) : s.connectors.notChecked} ·{' '}
-                {s.connectors.readOnly}
-              </small>
-            </div>
-          ))}
-        </section>
-        <div>
-          {!demo && <FederationSettings snapshot={snapshot.federation} />}
-          {!demo && <MobileSettings privacy={p.privacy} />}
-          <section className="settings-section">
-            <div className="setting-row">
-              <Languages size={18} />
-              <div>
-                <b>{s.language.title}</b>
-                <p>{s.language.hint}</p>
-              </div>
-              <select
-                aria-label={s.language.title}
-                value={p.locale ?? 'auto'}
-                onChange={(e) => onPrefs({ locale: e.target.value as LocalePreference })}
-              >
-                <option value="auto">{t.common.language.auto}</option>
-                {(Object.keys(LOCALES) as (keyof typeof LOCALES)[]).map((locale) => (
-                  <option key={locale} value={locale}>
-                    {LOCALES[locale].label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </section>
-          <section className="settings-section" data-guide-section="office" tabIndex={-1}>
-            <h2>{s.office.title}</h2>
-            <p>{s.office.body}</p>
-            <div className="setting-row">
-              <div>
-                <b>{s.office.autoArchive}</b>
-                <p>{s.office.autoArchiveHint}</p>
-              </div>
-              <Toggle
-                checked={p.autoArchive !== false}
-                label={s.office.autoArchive}
-                onChange={() =>
-                  onPrefs({
-                    autoArchive: p.autoArchive === false,
-                    archiveDays: Math.max(
-                      p.archiveDays ?? 7,
-                      Math.floor((p.standbyHours ?? 4) / 24) + 1,
-                    ),
-                  })
-                }
-              />
-            </div>
-            <div className="lifecycle-settings">
-              <label>
-                {s.office.bubble}
-                <select
-                  aria-label={s.office.bubbleAria}
-                  value={p.bubbleHours ?? 3}
-                  onChange={(e) => onPrefs({ bubbleHours: Number(e.target.value) })}
-                >
-                  {[1, 3, 6, 12, 24].map((h) => (
-                    <option key={h} value={h}>
-                      {s.office.hours(h)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {s.office.ready}
-                <select
-                  aria-label={s.office.readyAria}
-                  value={p.readyMinutes ?? 30}
-                  onChange={(e) => onPrefs({ readyMinutes: Number(e.target.value) })}
-                >
-                  {[...new Set([10, 20, 30, 60, p.readyMinutes ?? 30])]
-                    .sort((a, b) => a - b)
-                    .map((m) => (
-                      <option key={m} value={m} disabled={m >= (p.standbyHours ?? 4) * 60}>
-                        {s.office.forMinutes(m)}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                {s.office.standby}
-                <select
-                  aria-label={s.office.standbyAria}
-                  value={p.standbyHours ?? 4}
-                  onChange={(e) => {
-                    const standbyHours = Number(e.target.value);
-                    const ready = p.readyMinutes ?? 30;
-                    onPrefs({
-                      standbyHours,
-                      archiveDays: Math.max(p.archiveDays ?? 7, Math.floor(standbyHours / 24) + 1),
-                      // Standing by must end before going home.
-                      ...(ready >= standbyHours * 60 ? { readyMinutes: 30 } : {}),
-                    });
-                  }}
-                >
-                  {[...new Set([1, 2, 4, 8, 24, 48, 72, 168, 336, 720, 2160, p.standbyHours ?? 4])]
-                    .sort((a, b) => a - b)
-                    .map((h) => (
-                      <option key={h} value={h}>
-                        {s.office.after(durationLabel(h))}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label>
-                {s.office.archive}
-                <select
-                  aria-label={s.office.archiveAria}
-                  disabled={p.autoArchive === false}
-                  value={p.archiveDays ?? 7}
-                  onChange={(e) => onPrefs({ archiveDays: Number(e.target.value) })}
-                >
-                  {[...new Set([1, 3, 7, 14, 30, 60, 90, 180, 365, p.archiveDays ?? 7])]
-                    .sort((a, b) => a - b)
-                    .map((d) => (
-                      <option key={d} value={d} disabled={d * 24 <= (p.standbyHours ?? 4)}>
-                        {s.office.afterDays(d)}
-                      </option>
-                    ))}
-                </select>
-              </label>
-            </div>
-            <p className="office-schedule-preview" aria-live="polite">
-              {s.office.schedule(officeSchedule(p))}
-            </p>
-            <p className="helper-lifecycle-note">{s.office.helperNote}</p>
-          </section>
-          <section className="settings-section" data-guide-section="rhythm" tabIndex={-1}>
-            <h2>{s.rhythm.title}</h2>
-            <div className="setting-row">
-              <Pause size={18} />
-              <div>
-                <b>{s.rhythm.pause}</b>
-                <p>{s.rhythm.pauseHint}</p>
-              </div>
-              <Toggle
-                checked={p.paused}
-                label={s.rhythm.pauseAria}
-                onChange={() => onPrefs({ paused: !p.paused })}
-              />
-            </div>
-            <div className="setting-row">
-              <Sparkles size={18} />
-              <div>
-                <b>{s.rhythm.motion}</b>
-                <p>{s.rhythm.motionHint}</p>
-              </div>
-              <Toggle
-                checked={p.reducedMotion}
-                label={s.rhythm.motion}
-                onChange={() => onPrefs({ reducedMotion: !p.reducedMotion })}
-              />
-            </div>
-            <div className="setting-row">
-              <Eye size={18} />
-              <div>
-                <b>{s.rhythm.privacy}</b>
-                <p>{s.rhythm.privacyHint}</p>
-              </div>
-              <Toggle
-                checked={p.privacy}
-                label={s.rhythm.privacyAria}
-                onChange={() => onPrefs({ privacy: !p.privacy })}
-              />
-            </div>
-            {terminalSend !== undefined && onTerminalSend && (
-              <div className="setting-row">
-                <Terminal size={18} />
-                <div>
-                  <b>{s.rhythm.terminal}</b>
-                  <p>{s.rhythm.terminalHint}</p>
-                </div>
-                <Toggle
-                  checked={terminalSend}
-                  label={s.rhythm.terminal}
-                  onChange={onTerminalSend}
-                />
-              </div>
-            )}
-            {answers &&
-              onAnswers &&
-              (['questions', 'permissions'] as const).map((key) => (
-                <div className="setting-row" key={key}>
-                  {key === 'questions' ? (
-                    <MessageCircleQuestion size={18} />
-                  ) : (
-                    <ShieldQuestion size={18} />
-                  )}
-                  <div>
-                    <b>{t.prompts.settings[key]}</b>
-                    <p>
-                      {key === 'questions'
-                        ? t.prompts.settings.questionsHint
-                        : t.prompts.settings.permissionsHint}
-                    </p>
-                  </div>
-                  <Toggle
-                    checked={answers[key] === 'on'}
-                    label={t.prompts.settings[key]}
-                    onChange={() => onAnswers(key)}
-                  />
-                </div>
-              ))}
-          </section>
-          <section className="settings-section">
-            <h2>{s.records.title}</h2>
-            <p>{s.records.body}</p>
-            <select
-              className="record-limit"
-              aria-label={s.records.aria}
-              value={p.maxSessions}
-              onChange={(e) => onPrefs({ maxSessions: Number(e.target.value) })}
-            >
-              {[60, 120, 300].map((n) => (
-                <option key={n} value={n}>
-                  {s.records.recent(n)}
-                </option>
-              ))}
-            </select>
-          </section>
-          <section className="settings-section zone-settings">
-            <h2>
-              <LayoutGrid size={16} /> {s.zones.title}
-            </h2>
-            <p>{s.zones.body}</p>
-            {zones.length === 0 ? (
-              <small>{s.zones.empty}</small>
-            ) : (
-              <ul className="zone-list">
-                {zones.map((key) => {
-                  const rules = zoneRules.filter((r) => ruleZoneKey(r) === key);
-                  const name = rules[0].name;
-                  return (
-                    <li key={key}>
-                      <div className="zone-list-head">
-                        {isCustomZone(key) ? (
-                          <input
-                            aria-label={s.zones.nameAria(name)}
-                            defaultValue={name}
-                            maxLength={40}
-                            onBlur={(e) => {
-                              const next = e.target.value.trim();
-                              if (!next) e.target.value = name;
-                              else if (next !== name)
-                                onPrefs({
-                                  zoneRules: zoneRules.map((r) =>
-                                    ruleZoneKey(r) === key ? { ...r, name: next } : r,
-                                  ),
-                                });
-                            }}
-                            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-                          />
-                        ) : (
-                          <b title={s.zones.projectRuleTitle}>
-                            {p.privacy ? s.projectHidden : name}
-                            <em>{s.zones.projectZone}</em>
-                          </b>
-                        )}
-                        <small>{s.zones.sent(members(key))}</small>
-                      </div>
-                      <div className="project-chips">
-                        {rules.map((r) => (
-                          <button
-                            key={r.id}
-                            title={s.zones.removeRule(r.value)}
-                            onClick={() =>
-                              onPrefs({ zoneRules: zoneRules.filter((x) => x.id !== r.id) })
-                            }
-                          >
-                            {ZONE_MATCH_LABELS[r.match]} ·{' '}
-                            {p.privacy
-                              ? s.zones.hidden
-                              : r.match === 'session'
-                                ? s.zones.oneSession
-                                : r.match === 'branch'
-                                  ? r.value
-                                  : shortPath(r.value)}
-                            <X size={11} />
-                          </button>
-                        ))}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </section>
-          <section className="settings-section scope-settings">
-            <h2>{s.exclude.title}</h2>
-            <p>{s.exclude.body}</p>
-            <div className="project-chips">
-              {projects.map((project) => (
-                <button
-                  key={project}
-                  className={p.excludedProjects.includes(project) ? 'excluded' : ''}
-                  onClick={() =>
-                    onPrefs({
-                      excludedProjects: p.excludedProjects.includes(project)
-                        ? p.excludedProjects.filter((x) => x !== project)
-                        : [...p.excludedProjects, project],
-                    })
-                  }
-                >
-                  {p.excludedProjects.includes(project) && <Check size={12} />}{' '}
-                  {p.privacy ? s.projectHidden : project}
-                </button>
-              ))}
-            </div>
-          </section>
-          <section className="local-promise">
-            <ShieldCheck size={25} />
-            <div>
-              <h3>{s.local.title}</h3>
-              <p>{s.local.body}</p>
-            </div>
-          </section>
-          <section className="settings-section mcp-card">
-            <span className="eyebrow">MEMORY, WITH YOUR AGENTS</span>
-            <h2>{s.mcp.title}</h2>
-            <p>
-              {s.mcp.bodyBefore}
-              <code>npm run mcp</code>
-              {s.mcp.bodyAfter}
-            </p>
-            <small>{s.mcp.footnote}</small>
-          </section>
-        </div>
-      </div>
     </div>
   );
 }

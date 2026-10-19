@@ -114,6 +114,44 @@ try {
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
   );
+  // The settings window (#87): opened at a section, shares preferences, stays open on blur.
+  const settingsWindow = (fn) =>
+    app.evaluate(
+      ({ BrowserWindow }, fn) =>
+        new Function('w', `return (${fn})(w)`)(
+          BrowserWindow.getAllWindows().find(
+            (w) => !w.isDestroyed() && w.webContents.getURL().includes('#settings'),
+          ),
+        ),
+      fn.toString(),
+    );
+  const [settings] = await Promise.all([
+    app.waitForEvent('window'),
+    page.evaluate(() => window.office.settings.open('office')),
+  ]);
+  settings.on('pageerror', (e) => errors.push(e.message));
+  const tab = (category) => settings.locator(`[role=tab][data-category="${category}"]`);
+  await settings.waitForSelector('.settings-popup [data-guide-section="office"]');
+  assert.equal(await tab('office').getAttribute('aria-selected'), 'true');
+  await assert.rejects(page.evaluate(() => window.office.settings.open('nope')));
+  await settingsWindow((w) => w.blur());
+  await page.bringToFront();
+  await settings.waitForTimeout(400);
+  assert.equal(await settingsWindow((w) => !!w && w.isVisible()), true, 'kept open on blur');
+  // Opening again reuses the window at the asked section.
+  await page.evaluate(() => window.office.settings.open('records'));
+  await settings.waitForSelector('[data-guide-section="records"]');
+  assert.equal(await tab('records').getAttribute('aria-selected'), 'true');
+  // A preference saved here reaches the big office through the shared snapshot.
+  await tab('appearance').click();
+  const motion = settings.locator('[data-guide-section="motion"] [role=switch]');
+  await motion.click();
+  await page.waitForSelector('.app.reduce-motion');
+  await motion.click();
+  await page.waitForSelector('.app:not(.reduce-motion)');
+  await tab('general').click();
+  await settings.screenshot({ path: '.local/native-settings.png' });
+  await settingsWindow((w) => w.close());
   // Unsupported platforms expose no process-launch capability.
   const supportsTmux = ['darwin', 'linux'].includes(process.platform);
   assert.equal(
@@ -491,6 +529,7 @@ try {
       ipcPersistence: true,
       rendererIsolation: true,
       firstRunGuide: true,
+      settingsWindow: true,
       macDockIcon: process.platform === 'darwin',
     }),
   );

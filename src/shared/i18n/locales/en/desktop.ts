@@ -5,6 +5,7 @@ export const desktop = {
     pet: 'Desk pet',
     row: 'Unfold desk row',
     floor: 'Unfold floor desks',
+    settings: 'Settings…',
     quit: 'Quit',
   },
   /** Right-click menu in every window. */

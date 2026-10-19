@@ -77,7 +77,7 @@ export const guide = {
     appearance: {
       title: 'Make your teammates yours',
       body: 'Choose from eight characters, six colors and accessories. Set defaults per tool, or customize one teammate on their card.',
-      where: 'Settings → Little colleagues',
+      where: 'Settings → Appearance → Little colleagues',
       action: 'Choose characters',
     },
     memory: {
@@ -95,7 +95,7 @@ export const guide = {
     terminal: {
       title: 'Follow up from the office',
       body: 'Resume older local Claude or Codex conversations with Resume in tmux on the work card. Confirm before starting, then use the session name and reconnect command or open it in Terminal. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
-      where: 'Work card or bubble → reply · Settings',
+      where: 'Work card or bubble → reply · Settings → General',
       action: 'View reply settings',
     },
     activity: {
@@ -113,7 +113,7 @@ export const guide = {
     privacy: {
       title: 'Share your screen comfortably',
       body: 'Hide screen content from the top bar. Settings lets you exclude projects, pause collection, reduce motion and change language.',
-      where: 'Top bar → eye icon · Settings',
+      where: 'Top bar → eye icon · Settings → General',
       action: 'Open Settings',
     },
     keys: {
