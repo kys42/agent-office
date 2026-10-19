@@ -11,7 +11,6 @@ import {
   EyeOff,
   Flag,
   GitBranch,
-  PanelRightOpen,
   Pin,
   RotateCw,
   Undo2,
@@ -526,14 +525,6 @@ export function DeskRow({
                           />
                         )}
                         <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
-                        <DeskActionButton
-                          className="card-button"
-                          label={t.desk.row.openCard(label.name)}
-                          title={t.desk.row.cardTitle}
-                          hint={t.desk.row.cardHint}
-                          icon={<PanelRightOpen size={13} strokeWidth={2.4} />}
-                          onClick={(el) => void open(s.id, el)}
-                        />
                         {deskTarget?.canFocus && api.jump && (
                           <DeskActionButton
                             className="jump-button"
