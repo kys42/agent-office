@@ -2,14 +2,21 @@ export const tmux = {
   summonTitle: 'Summon a new agent',
   summonIntro:
     'Name a new agent for this project. tmux keeps its terminal session running so you can reconnect and work directly whenever needed.',
+  summonDescription: 'Set up a new colleague for this project.',
+  resumeDescription:
+    'Continue this conversation in a separate terminal. Reconnect whenever you need.',
+  agentSettings: 'New colleague settings',
+  agentType: 'Agent',
+  sessionDetails: 'Terminal session details',
+  guide: 'Managing a session with tmux',
+  summonDiscovery: 'The agent appears in the office after its first conversation is detected.',
   agentName: 'Agent name',
   invalidName: 'Use 1–40 letters, numbers, spaces, hyphens or underscores.',
   nameHint:
-    'Used in the tmux name and the agent’s office name after its first conversation is detected. A short suffix keeps names unique.',
+    'Used in the office and tmux. The office name appears after the first conversation is detected.',
   initialMessage: 'First message (optional)',
   messagePlaceholder: 'For example: Explore this project and suggest the next tasks',
-  messageHint:
-    'Up to 4,000 characters. Sent when a new session starts. Leave blank to type in the terminal. Reconnecting never sends it again.',
+  messageHint: 'Up to 4,000 characters · Sent once when a new session starts.',
   invalidMessage: 'Use at most 4,000 characters without control characters for the first message.',
   summonRunning: 'tmux is running',
   existingTitle: 'Already connected in this project',

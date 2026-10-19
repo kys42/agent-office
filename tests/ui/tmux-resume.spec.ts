@@ -189,7 +189,7 @@ for (const route of ['/', '/#mini=floor'])
       await expect(
         modal.getByRole('textbox', { name: '첫 메시지 (선택)', exact: true }),
       ).toBeDisabled();
-      await expect(modal.getByText(/오피스에는 첫 대화 기록/)).toBeVisible();
+      await expect(modal.locator('.tmux-discovery')).toContainText('첫 대화 기록');
       await expect(
         page.getByRole('button', { name: '터미널에서 열기', exact: true }),
       ).toBeVisible();
@@ -281,3 +281,74 @@ for (const colorScheme of ['light', 'dark'] as const)
       animations: 'disabled',
     });
   });
+
+for (const colorScheme of ['light', 'dark'] as const)
+  for (const summon of [false, true])
+    test(`terminal sheet ${summon ? 'summon' : 'resume'} uses native controls in ${colorScheme}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ colorScheme });
+      await setup(page, false, summon ? '/' : '/#card');
+      await page.setViewportSize({ width: 760, height: 900 });
+      await page
+        .getByRole('button', { name: summon ? '새 에이전트 소환' : 'tmux로 재개', exact: true })
+        .first()
+        .click();
+      const modal = page.getByRole('dialog', { name: summon ? '새 에이전트 소환' : 'tmux로 재개' });
+      const primary = modal.locator('.tmux-resume-actions .primary');
+      await expect(primary).toBeVisible();
+      if (summon) {
+        const field = modal.getByRole('textbox', { name: '첫 메시지 (선택)', exact: true });
+        await field.fill('프로젝트를 살펴보고 다음 할 일을 정리해줘.');
+        await expect(modal.getByRole('button', { name: 'Claude', exact: true })).toHaveAttribute(
+          'aria-pressed',
+          'true',
+        );
+      }
+      await expect(modal.locator('.tmux-help > p')).not.toBeVisible();
+      const box = (await primary.boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(900);
+      expect(await modal.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await page.screenshot({
+        path: `.local/tmux-design-${summon ? 'summon' : 'resume'}-${colorScheme}.png`,
+        animations: 'disabled',
+      });
+      // The compact footer stays usable after opening longer session help.
+      await modal.locator('.tmux-help summary').click();
+      await expect(modal.locator('.tmux-help > p')).toBeVisible();
+      await expect(primary).toBeInViewport();
+      await page.keyboard.press('Escape');
+      await expect(modal).toHaveCount(0);
+    });
+
+test('session help stays keyboard-accessible while the connection check disables controls', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const status = w.office.tmuxResume;
+    w.office.tmuxResume = (...args: any[]) =>
+      new Promise((resolve) => {
+        w.finishTmuxCheck = async () => resolve(await status(...args));
+      });
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  const close = modal.getByRole('button', { name: '닫기', exact: true });
+  const help = modal.locator('.tmux-help summary');
+  await expect(modal.getByRole('button', { name: '확인 중…', exact: true })).toBeDisabled();
+  await close.focus();
+  await page.keyboard.press('Tab');
+  await expect(help).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(modal.locator('.tmux-help > p')).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(help).toBeFocused();
+  await page.evaluate(() => (window as any).finishTmuxCheck());
+  await expect(modal.locator('.tmux-resume-actions .primary')).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+});
