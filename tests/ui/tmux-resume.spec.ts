@@ -158,6 +158,8 @@ for (const route of ['/', '/#mini=floor'])
       ' chooses provider, starts a new conversation and reconnects after reopening',
     async ({ page }) => {
       await setup(page, false, route);
+      if (await page.locator('.zone-flag-cloth').count())
+        await page.locator('.zone-flag-cloth').first().hover();
       await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
       await expect(page.getByText('office-claude-fresh', { exact: true })).toBeVisible();
       const modal = page.getByRole('dialog', { name: '새 에이전트 소환' });
@@ -178,6 +180,8 @@ for (const route of ['/', '/#mini=floor'])
       });
       await page.keyboard.press('Escape');
       await expect(modal).toHaveCount(0);
+      if (await page.locator('.zone-flag-cloth').count())
+        await page.locator('.zone-flag-cloth').first().hover();
       await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
       await expect(
         page.getByRole('button', { name: '터미널에서 열기', exact: true }),
@@ -192,6 +196,8 @@ for (const route of ['/', '/#mini=floor'])
 
 test('project membership changes cannot launch a stale session folder', async ({ page }) => {
   await setup(page, false, '/#mini=floor');
+  if (await page.locator('.zone-flag-cloth').count())
+    await page.locator('.zone-flag-cloth').first().hover();
   await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
   const modal = page.getByRole('dialog', { name: '새 에이전트 소환' });
   const folder = modal.getByRole('combobox');
@@ -208,7 +214,7 @@ test('project membership changes cannot launch a stale session folder', async ({
 });
 
 for (const colorScheme of ['light', 'dark'] as const)
-  test(`floor flag controls stay visible in ${colorScheme} and the pole is draggable`, async ({
+  test(`floor flag controls reveal on hover in ${colorScheme} and the pole is draggable`, async ({
     page,
   }) => {
     await page.emulateMedia({ colorScheme });
@@ -219,11 +225,24 @@ for (const colorScheme of ['light', 'dark'] as const)
       .toBeGreaterThan(2000);
     const zone = page.locator('.row-zone').first();
     const plus = zone.getByRole('button', { name: '새 에이전트 소환', exact: true });
-    await expect(plus).toHaveCSS('background-color', 'rgb(255, 247, 231)');
-    await expect(plus).toHaveCSS('color', 'rgb(56, 43, 34)');
+    await expect(plus).toHaveCSS('opacity', '0');
+    await expect(plus).toHaveCSS('pointer-events', 'none');
+    await zone.locator('.zone-flag-cloth').hover();
+    await expect(plus).toHaveCSS('opacity', '1');
+    await expect(plus).toHaveCSS('background-color', 'rgb(34, 34, 34)');
+    await expect(plus).toHaveCSS('color', 'rgb(255, 255, 255)');
     const hide = zone.locator('.zone-veil');
     await expect(hide).toBeVisible();
     await expect(hide).toHaveCSS('opacity', '1');
+    await plus.hover();
+    await hide.hover();
+    await expect(plus).toHaveCSS('opacity', '1');
+    await page.mouse.move(0, 0);
+    await expect(plus).toHaveCSS('opacity', '0');
+    await expect(hide).toHaveCSS('opacity', '0');
+    await plus.focus();
+    await expect(plus).toHaveCSS('opacity', '1');
+    await plus.evaluate((el) => (el as HTMLElement).blur());
     const a = (await plus.boundingBox())!,
       b = (await hide.boundingBox())!;
     expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
