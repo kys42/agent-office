@@ -198,12 +198,26 @@ export function parseDialog(screen: Screen | null): DialogState {
   const { rows, submit } = parseRows(lines, block);
   if (!rows.length) return { kind: 'unknown' };
   if (/Ready to submit your answers?\?/i.test(headText)) {
+    // `● question` then `→ answer`; a long question or answer wraps onto indented lines below
+    // it (measured: a question wider than the pane went on under itself).
     const answers: { question: string; answer: string }[] = [];
-    for (let i = 0; i < head.length; i++) {
-      const q = /^\s*●\s+(.*)$/.exec(head[i]);
-      const a = q && /^\s*→\s+(.*)$/.exec(head[i + 1] ?? '');
-      if (q && a) answers.push({ question: q[1].trim(), answer: a[1].trim() });
+    let item: { question: string[]; answer: string[] | null } | null = null;
+    const done = () => {
+      if (item?.answer)
+        answers.push({ question: item.question.join(' '), answer: item.answer.join(' ') });
+      item = null;
+    };
+    for (const line of head) {
+      const q = /^\s*●\s+(.*)$/.exec(line);
+      const a = /^\s*→\s+(.*)$/.exec(line);
+      if (q) {
+        done();
+        item = { question: [q[1].trim()], answer: null };
+      } else if (a && item && !item.answer) item.answer = [a[1].trim()];
+      else if (item && /^\s{2,}\S/.test(line)) (item.answer ?? item.question).push(line.trim());
+      else done();
     }
+    done();
     return {
       kind: 'review',
       complete: !/You have not answered all questions/.test(headText),

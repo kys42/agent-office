@@ -458,6 +458,8 @@ class Claude {
   /** TUI variants that review even one single-select/text question before submission. */
   reviewSingle = false;
   singularReview = false;
+  /** The pane's width for the review: longer questions and answers wrap onto indented lines. */
+  reviewWidth?: number;
   keys: string[] = [];
   /** Called after every key: tests change the screen mid-way. */
   onKey?: (sim: Claude) => void;
@@ -485,6 +487,20 @@ class Claude {
   private stops(q = this.q) {
     const question = this.questions()[q];
     return question.options.length + 1 + (question.multiSelect ? 1 : 0) + 1;
+  }
+  /** Word-wrapped at `reviewWidth`, going on under itself (as measured in a narrow pane). */
+  private wrap(line: string): string[] {
+    const width = this.reviewWidth;
+    if (!width || line.length <= width) return [line];
+    const out: string[] = [];
+    let current = '';
+    for (const word of line.split(/(?<=\S) /)) {
+      if (current && (current + ' ' + word).length > width) {
+        out.push(current);
+        current = '   ' + word.trimStart();
+      } else current = current ? current + ' ' + word : word;
+    }
+    return [...out, current];
   }
   render(): string {
     if (this.closed) return ['⏺ Done.', RULE, '❯ ', RULE, '  ⏸ manual mode on'].join('\n');
@@ -545,7 +561,9 @@ class Claude {
         ...(all ? [] : ['', '⚠ You have not answered all questions']),
         '',
         ...qs.flatMap((q, i) =>
-          this.done(i) ? [` ● ${q.question}`, `   → ${this.answerOf(i)}`] : [],
+          this.done(i)
+            ? [...this.wrap(` ● ${q.question}`), ...this.wrap(`   → ${this.answerOf(i)}`)]
+            : [],
         ),
         '',
         this.singularReview ? 'Ready to submit your answer?' : 'Ready to submit your answers?',
@@ -1377,4 +1395,56 @@ test('Adapter keys never include digits, Tab, Esc or control keys', () => {
       assert.ok(allowed.includes(name.slice(1, -1) as PromptKey), name);
   // Arrows go one at a time.
   assert.ok(!/press\(\[[^\]]*,/.test(source));
+});
+
+test('A long question wrapping in the review is still read, checked and submitted', async () => {
+  const long = {
+    questions: [
+      {
+        ...TWO_INPUT.questions[0],
+        question:
+          '작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유지 변경이 들어 있어야 해서 dev-aix 는 그보다 뒤에 있습니다)',
+      },
+      TWO_INPUT.questions[1],
+    ],
+  };
+  const { result: r, sim } = await answer(
+    QUESTION(long),
+    shownQuestions(long),
+    [ask(long)],
+    { answers: [{ options: [1] }, { options: [0] }] },
+    (sim) => (sim.reviewWidth = 60),
+  );
+  assert.equal((r as { status: string }).status, 'answered', failed(r));
+  assert.deepEqual(sim.answer, { [long.questions[0].question]: 'Green', 'Pick a size': 'Small' });
+  const review = parseDialog({
+    text: [
+      RULE,
+      '←  ☒ Color  ☒ Size  ✔ Submit  →',
+      '',
+      'Review your answers',
+      '',
+      ' ● 작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유',
+      '   dev-aix 는 그보다 뒤에 있습니다)',
+      '   → feat/agent-playground',
+      '   (Recommended)',
+      ' ● Pick a size',
+      '   → Small',
+      '',
+      'Ready to submit your answers?',
+      '',
+      '❯ 1. Submit answers',
+      '  2. Cancel',
+    ].join('\n'),
+  });
+  assert.ok(review.kind === 'review');
+  if (review.kind === 'review')
+    assert.deepEqual(review.answers, [
+      {
+        question:
+          '작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유 dev-aix 는 그보다 뒤에 있습니다)',
+        answer: 'feat/agent-playground (Recommended)',
+      },
+      { question: 'Pick a size', answer: 'Small' },
+    ]);
 });
