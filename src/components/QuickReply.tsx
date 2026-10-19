@@ -20,7 +20,7 @@ export function QuickReply({
 }: {
   target: TerminalTarget;
   name: string;
-  onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
+  onSend: (text: string, replaceDraft?: string, allowPartialDraft?: boolean) => Promise<SendResult>;
   /** Brings the session's terminal to the front (offered when its text can't be cleared). */
   onJump?: () => void;
   onClose: () => void;

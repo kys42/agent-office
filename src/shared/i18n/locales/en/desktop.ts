@@ -78,6 +78,8 @@ export const desktop = {
     clearStopped:
       "Claude's state changed while the prompt was being cleared, so clearing stopped and nothing was sent. Check the terminal.",
     /** Added to any failure once the composer's text was copied (it may be partly cleared). */
+    partialClipboardKept:
+      'Readable content is on the clipboard. Hidden content may not be recoverable.',
     clipboardKept: 'The text that was in the prompt is on your clipboard.',
     /** A send reached an agent whose input box can't be read (OpenClaw, anything new). */
     unsupportedAgent: (agent: string) => `Sending to ${agent} from here isn't supported.`,

@@ -45,7 +45,7 @@ async function office(page: Page) {
           status: 'needs-confirm',
           agent: 'Claude',
           draft: w.draft,
-          ...(w.partial && { clearable: false }),
+          ...(w.partial && { partial: true }),
         };
       },
       send: async (id: string, text: string, options?: { replaceDraft?: string }) => {

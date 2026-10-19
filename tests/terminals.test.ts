@@ -455,8 +455,8 @@ test('Read-only draft recovery refuses dialogs or a foreign foreground and marks
   assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, foreign.deps), null);
   const partial = fakeDeps('/x', { screen: () => claudeScreen('[Pasted text #1 +12 lines]') });
   assert.equal(
-    (await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, partial.deps))?.clearable,
-    false,
+    (await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, partial.deps))?.partial,
+    true,
   );
   const closed = fakeDeps('/x', {
     screen: () => 'Do you want to allow this command? Enter to confirm · Esc to cancel',
@@ -993,13 +993,15 @@ test('A collapsed paste or an image in the prompt is never cleared from here', a
   ] as const) {
     const { deps, calls } = fakeDeps('/x', options);
     const asked = await sendToTerminal(live, 'hi', deps, { backup: async () => {} });
-    assert.equal(asked.status === 'needs-confirm' && asked.clearable, false, live.host.kind);
-    await assert.rejects(
-      sendToTerminal(live, 'hi', deps, {
-        replaceDraft: asked.status === 'needs-confirm' ? asked.draft : '',
-        backup: async () => {},
-      }),
-      /입력창 글이 다 보이지 않아 여기서 지울 수 없어요/,
+    assert.equal(asked.status === 'needs-confirm' && asked.partial, true, live.host.kind);
+    assert.equal(
+      (
+        await sendToTerminal(live, 'hi', deps, {
+          replaceDraft: asked.status === 'needs-confirm' ? asked.draft : '',
+          backup: async () => {},
+        })
+      ).status,
+      'needs-confirm',
     );
     assert.ok(!typedAny(calls) && !sent(calls) && !calls.some((c) => clears(c.args)));
   }
@@ -1155,13 +1157,15 @@ test('Blank rows in the box are no empty prompt, and a box that may hide text is
   const { deps, calls } = fakeDeps('/x', { screen: () => blank, paneHeight: 16 });
   const asked = await sendToTerminal(tmuxLive(), 'hi', deps, { backup: async () => {} });
   assert.equal(asked.status, 'needs-confirm');
-  assert.equal(asked.status === 'needs-confirm' && asked.clearable, false);
-  await assert.rejects(
-    sendToTerminal(tmuxLive(), 'hi', deps, {
-      replaceDraft: asked.status === 'needs-confirm' ? asked.draft : '',
-      backup: async () => {},
-    }),
-    /입력창 글이 다 보이지 않아 여기서 지울 수 없어요/,
+  assert.equal(asked.status === 'needs-confirm' && asked.partial, true);
+  assert.equal(
+    (
+      await sendToTerminal(tmuxLive(), 'hi', deps, {
+        replaceDraft: asked.status === 'needs-confirm' ? asked.draft : '',
+        backup: async () => {},
+      })
+    ).status,
+    'needs-confirm',
   );
   assert.ok(!typedAny(calls) && !sent(calls) && !calls.some((c) => clears(c.args)));
 });
@@ -1517,4 +1521,64 @@ test('Optional mobile authority is checked before paste and again before Enter',
       assert.ok(typedAny(second.calls) && !sent(second.calls));
     });
   }
+});
+
+test('Partial replacement needs its own opt-in, then verifies empty and sends with a partial backup notice', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    for (const live of [tmuxLive(), orcaLive()]) {
+      let draft = 'see [Pasted text #1 +12 lines]';
+      const { deps, calls } = fakeDeps(dir, {
+        screen: (typed) => claudeScreen(typed || draft),
+        ...(live.host.kind === 'orca' && { orcaDraft: (typed: string) => typed || draft }),
+      });
+      const { log, backup } = steps(deps);
+      const first = await sendToTerminal(live, 'hi', deps, { backup });
+      assert.equal(first.status === 'needs-confirm' && first.partial, true);
+      assert.ok(!typedAny(calls) && !sent(calls));
+      const again = await sendToTerminal(live, 'hi', deps, { replaceDraft: draft, backup });
+      assert.equal(again.status, 'needs-confirm');
+      assert.ok(!calls.some((c) => clears(c.args)));
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        if (clears(args)) draft = '';
+        return run(file, args, options);
+      };
+      const result = await sendToTerminal(live, 'hi', deps, {
+        replaceDraft: draft,
+        allowPartialDraft: true,
+        backup,
+      });
+      assert.equal(result.status, 'sent');
+      assert.equal(result.status === 'sent' && result.partialBackup, true);
+      assert.ok(sent(calls));
+      assert.ok(log.indexOf('clipboard:see [Pasted text #1 +12 lines]') < log.indexOf('clear'));
+    }
+  });
+});
+
+test('Even opted-in partial clearing rechecks changed content and never submits if clearing stays stuck', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const draft = '[Image #1]';
+    const { deps, calls } = fakeDeps(dir, { screen: () => claudeScreen(draft) });
+    assert.equal(
+      (
+        await sendToTerminal(tmuxLive(), 'hi', deps, {
+          replaceDraft: 'different',
+          allowPartialDraft: true,
+          backup: async () => {},
+        })
+      ).status,
+      'needs-confirm',
+    );
+    assert.ok(!calls.some((c) => clears(c.args)));
+    await assert.rejects(
+      sendToTerminal(tmuxLive(), 'hi', deps, {
+        replaceDraft: draft,
+        allowPartialDraft: true,
+        backup: async () => {},
+      }),
+      /비우지 못해/,
+    );
+    assert.ok(!typedAny(calls) && !sent(calls));
+  });
 });
