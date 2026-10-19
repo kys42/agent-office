@@ -892,25 +892,31 @@ body.card-mode {
   animation-play-state: paused;
 }
 
-/* A visible control surface, independent of the desktop wallpaper and app theme. */
+/* Reveal both actions only while using the flag; keep the path between them solid. */
 .zone-flag-actions {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
+  padding-top: 4px;
   pointer-events: none;
 }
-.zone-flag .zone-flag-actions .project-summon-button {
+.zone-flag .zone-flag-actions :is(.project-summon-button, .zone-veil) {
+  opacity: 0;
   margin: 0;
-  background: #fff7e7;
-  color: #382b22;
-  border: 2px solid #68513c;
+  background: #222;
+  color: #fff;
+  border: 1px solid #222;
   box-shadow: 0 1px 3px #0003;
+  pointer-events: none;
+  transition: opacity 120ms ease;
 }
-.zone-flag .zone-flag-actions .zone-veil {
+.zone-flag:is(:hover, :has(:focus-visible)) .zone-flag-banner,
+.zone-flag:is(:hover, :has(:focus-visible)) .zone-flag-actions,
+.zone-flag:is(:hover, :has(:focus-visible))
+  .zone-flag-actions
+  :is(.project-summon-button, .zone-veil) {
   opacity: 1;
-  margin: 0;
   pointer-events: auto;
 }
 /* Keep the same three-pixel pole, with a forgiving fifteen-pixel grab target. */

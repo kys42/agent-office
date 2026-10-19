@@ -345,7 +345,7 @@ export function DeskRow({
                     >
                       <i className="zone-flag-pole" data-solid {...dragHandle} aria-hidden="true" />
                       {/* The eye hangs right under the cloth, so the pointer slides onto it. */}
-                      <div className="zone-flag-banner">
+                      <div className="zone-flag-banner" data-solid>
                         <button
                           type="button"
                           className="zone-flag-cloth"
