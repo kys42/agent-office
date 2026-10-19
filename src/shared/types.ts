@@ -726,6 +726,11 @@ export interface OfficeAPI {
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
   /** Local desktop only. Starting requires confirmation in the main process. */
+  tmuxSummon?: (
+    id: string,
+    action: 'status' | 'start' | 'open',
+    provider: 'claude' | 'codex',
+  ) => Promise<TmuxResumeInfo>;
   tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */

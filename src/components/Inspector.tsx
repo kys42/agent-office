@@ -1070,6 +1070,15 @@ export function Inspector({
                 {t.terminal.jumpTo(focusName(live))}
               </button>
             )}
+            {api.tmuxSummon && !demo && !s.remote && (
+              <TmuxResume
+                key={'summon-' + s.id}
+                id={s.id}
+                privacy={privacy}
+                notify={notify}
+                summon
+              />
+            )}
             {api.tmuxResume && !demo && !s.remote && ['claude', 'codex'].includes(s.provider) && (
               <TmuxResume key={s.id} id={s.id} privacy={privacy} notify={notify} />
             )}

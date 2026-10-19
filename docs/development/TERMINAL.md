@@ -279,3 +279,7 @@ origin/owner 검증, 설정 상속, 잘못된 권한/프로토콜, 응답 유실
 실행은 `claude --resume <id>` 또는 `codex resume <id>`이며 승인 우회 옵션이나 프롬프트를 추가하지 않는다. 폴더와 실행 인수는 문자열 셸 코드로 합치지 않는다. Finder 환경에서도 사용자 `.local/bin`, Homebrew, PATH에서 실행 파일을 찾고 자식의 PATH를 보완한다. 원래 프로필 환경을 전달하며 tmux 서버의 오래된 CLAUDE_CONFIG_DIR/CODEX_HOME/CLAUDECODE가 섞이지 않게 한다.
 
 재접속 명령 복사는 macOS/Linux에서 제공하고 macOS는 Terminal에서 열기도 제공한다. 터미널을 닫아도 tmux는 유지되지만 재부팅·프로세스 종료 후에는 다시 재개해야 한다. Windows/OpenClaw·웹/모바일·다른 오피스 세션에는 프로세스 시작 API를 제공하지 않는다. 네이티브 확인창 동안 `cards.dialog`로 카드 blur 숨김을 보류한다.
+
+## 새 에이전트 소환
+
+로컬 업무 카드 → 새 에이전트 소환 → Claude/Codex → 폴더·이름 확인 → tmux에 소환하기. macOS/Linux에서 tmux와 선택한 CLI가 필요하다. 실행 중인 프로젝트·종류별 소환 세션은 재사용한다. 종료 후 소환은 새 대화이며 이전 대화 재개는 해당 대화 카드에서 한다. Terminal 열기(macOS) 또는 재접속 명령 복사로 첫 메시지를 보낸다. 원격·웹·Windows에서는 노출하지 않는다.

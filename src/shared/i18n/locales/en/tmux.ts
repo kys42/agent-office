@@ -1,4 +1,12 @@
 export const tmux = {
+  summonTitle: 'Summon a new agent',
+  summonIntro:
+    'Start a new Claude or Codex conversation in this project. A running summoned agent of the same kind is reused.',
+  summonConfirm: 'Start a new agent in this project?',
+  summonStart: 'Summon in tmux',
+  summonReady: 'Ready for a new conversation',
+  summonHint:
+    'Open the terminal to send your first message. Close it or press Ctrl+B, then D to detach. Reconnect here while the agent is running. After it exits, summoning starts a new conversation; use the conversation card to resume its history.',
   title: 'Resume in tmux',
   intro:
     'Continue this saved conversation in a separate terminal session. This does not create a new conversation.',

@@ -8,7 +8,11 @@ import { m } from '../src/shared/i18n/index.js';
 import type { Session, TmuxResumeInfo } from '../src/shared/types.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
-type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'>;
+type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & { fresh?: boolean };
+/** One reconnectable fresh conversation slot per project and provider. */
+export function summonSession(cwd: string, provider: 'claude' | 'codex'): SavedSession {
+  return { cwd, provider, nativeId: 'new', fresh: true };
+}
 export interface ResumeDeps {
   run: typeof runCommand;
   binary: (name: string) => Promise<string>;
@@ -53,7 +57,9 @@ export class TmuxResume {
       throw new Error(m().tmux.unsupported);
     if (!s.cwd || !path.isAbsolute(s.cwd) || /[\x00-\x1f\x7f]/.test(s.cwd))
       throw new Error(m().tmux.folderMissing);
-    const token = createHash('sha256').update(`${s.provider}:${s.nativeId}`).digest('hex');
+    const token = createHash('sha256')
+      .update(s.fresh ? `new:${s.provider}:${path.resolve(s.cwd)}` : `${s.provider}:${s.nativeId}`)
+      .digest('hex');
     const name = `office-${s.provider}-${token.slice(0, 16)}`;
     return { token, name, cwd: s.cwd };
   }
@@ -134,7 +140,11 @@ export class TmuxResume {
       current = await this.inspect(s);
       if (current.info.running) return current.info;
       if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
-      const args = s.provider === 'claude' ? ['--resume', s.nativeId] : ['resume', s.nativeId];
+      const args = s.fresh
+        ? []
+        : s.provider === 'claude'
+          ? ['--resume', s.nativeId]
+          : ['resume', s.nativeId];
       // Multiple command arguments use tmux execvp, not its shell-command parser.
       // Set the ownership marker in the same tmux command queue as session creation.
       const env: NodeJS.ProcessEnv = {

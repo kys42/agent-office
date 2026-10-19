@@ -50,6 +50,11 @@ const api: OfficeAPI = {
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
   ...(['darwin', 'linux'].includes(process.platform)
     ? {
+        tmuxSummon: (
+          id: string,
+          actionName: 'status' | 'start' | 'open',
+          provider: 'claude' | 'codex',
+        ) => action('office:tmux-summon', id, actionName, provider),
         tmuxResume: (id: string, actionName: 'status' | 'start' | 'open') =>
           action('office:tmux-resume', id, actionName),
       }
