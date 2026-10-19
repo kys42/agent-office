@@ -26,6 +26,24 @@ body.is-mac .app {
 body.is-mac .sidebar {
   background: var(--sidebar-tint);
 }
+/* The left menu folded away for room (wide windows only: phones keep their bottom bar). On a
+   Mac the toolbar then keeps clear of the traffic lights the sidebar used to hold. */
+@media (min-width: 861px) {
+  .app.sidebar-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app.sidebar-hidden > .sidebar {
+    display: none;
+  }
+  body.is-mac .app.sidebar-hidden .app-header {
+    padding-left: 84px;
+  }
+}
+@media (max-width: 860px) {
+  .sidebar-toggle {
+    display: none;
+  }
+}
 .sidebar-top {
   flex-shrink: 0;
   height: var(--bar-h);

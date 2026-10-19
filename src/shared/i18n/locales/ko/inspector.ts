@@ -15,6 +15,7 @@ export const inspector: Messages['inspector'] = {
   expand: '큰 사무실에서 보기',
   expandTitle: '전체 모드 · 큰 사무실에서 보기',
   close: '업무 카드 닫기',
+  backToList: '명단으로 돌아가기',
   closeTitle: '닫기 · Esc',
   nicknameLabel: '새 별명',
   nicknamePlaceholder: '별명을 붙여 주세요',

@@ -28,6 +28,7 @@ export const palette: Messages['palette'] = {
     loungeKeywords: '쉬는 퇴근',
     archive: '보관 공간 보기',
     archiveKeywords: '오래된',
+    sidebarKeywords: '사이드바 메뉴 접기 펼치기 숨기기',
     memory: '기억 서랍',
     memoryHint: '모든 도구의 기록 검색',
     activity: '활동 기록',

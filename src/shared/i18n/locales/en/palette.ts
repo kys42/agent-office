@@ -26,6 +26,7 @@ export const palette = {
     loungeKeywords: 'waiting idle resting off duty',
     archive: 'Go to Archive',
     archiveKeywords: 'old stale archived',
+    sidebarKeywords: 'sidebar menu hide show collapse',
     memory: 'Memory Drawer',
     memoryHint: 'Search records from every tool',
     activity: 'Activity',

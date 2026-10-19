@@ -10,6 +10,9 @@ export const app: Messages['app'] = {
     settings: { title: '연결과 설정', short: '설정' },
   },
   mainMenu: '주 메뉴',
+  sidebarToggle: '왼쪽 메뉴',
+  hideSidebar: '왼쪽 메뉴 접기',
+  showSidebar: '왼쪽 메뉴 펼치기',
   close: '닫기',
   toast: {
     demoRefresh: '데모 화면이에요. 실제 연결을 보려면 데모를 종료해 주세요.',
