@@ -1,3 +1,4 @@
+import { TmuxResume } from './TmuxResume';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -1068,6 +1069,9 @@ export function Inspector({
                 <Terminal size={13} />
                 {t.terminal.jumpTo(focusName(live))}
               </button>
+            )}
+            {api.tmuxResume && !demo && !s.remote && ['claude', 'codex'].includes(s.provider) && (
+              <TmuxResume key={s.id} id={s.id} privacy={privacy} notify={notify} />
             )}
             {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}
             {calling && !openRequest(s) && (

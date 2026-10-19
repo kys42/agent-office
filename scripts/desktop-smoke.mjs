@@ -114,6 +114,21 @@ try {
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
   );
+  // Unsupported platforms expose no process-launch capability.
+  const supportsTmux = ['darwin', 'linux'].includes(process.platform);
+  assert.equal(
+    await page.evaluate(() => typeof window.office.tmuxResume),
+    supportsTmux ? 'function' : 'undefined',
+  );
+  if (supportsTmux) {
+    await assert.rejects(
+      page.evaluate(() => window.office.tmuxResume('remote-office:test:claude:demo', 'start')),
+    );
+    const openclawSession = s.sessions.find((session) => session.provider === 'openclaw');
+    await assert.rejects(
+      page.evaluate((id) => window.office.tmuxResume(id, 'start'), openclawSession.id),
+    );
+  }
   const firstNotice = s.notices?.[0];
   assert.ok(firstNotice, 'Native collector emits normalized news');
   const read = await page.evaluate(

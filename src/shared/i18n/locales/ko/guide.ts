@@ -95,7 +95,7 @@ export const guide: Messages['guide'] = {
     },
     terminal: {
       title: '사무실에서 바로 이어서 말하기',
-      body: '연결된 Claude의 Orca·tmux 터미널로 이동해요. 터미널로 보내기는 받을 수 있는 쉬는 Claude 세션에 입력하거나 실행 중인 Codex CLI에 답장을 대기열로 보내요. 권한 승인은 원래 도구에서 해요.',
+      body: '로컬 Claude·Codex의 오래된 대화는 업무 카드의 ‘tmux로 재개’에서 확인 후 따로 띄울 수 있어요. tmux 이름과 재접속 명령을 안내하며 터미널에서 다시 열 수 있어요. 연결된 Claude의 Orca·tmux 터미널로 이동해요. 터미널로 보내기는 받을 수 있는 쉬는 Claude 세션에 입력하거나 실행 중인 Codex CLI에 답장을 대기열로 보내요. 권한 승인은 원래 도구에서 해요.',
       where: '업무 카드·말풍선 → 답장 · 설정',
       action: '답장 설정 보기',
     },

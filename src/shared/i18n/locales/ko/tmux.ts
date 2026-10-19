@@ -1,0 +1,27 @@
+import type { Messages } from '../en';
+export const tmux: Messages['tmux'] = {
+  title: 'tmux로 재개',
+  intro: '저장된 이 대화를 별도 터미널에서 이어갑니다. 새 대화를 만드는 동작은 아니에요.',
+  name: 'tmux 이름',
+  folder: '프로젝트 폴더',
+  command: '다시 들어가는 명령',
+  ready: '재개할 준비가 됐어요',
+  running: '다시 들어갈 tmux가 있어요',
+  hint: '터미널을 닫거나 Ctrl+B를 누른 뒤 D를 누르면 화면에서만 나옵니다. 컴퓨터가 깨어 있는 동안 에이전트는 계속 실행돼요. 재부팅하거나 에이전트가 종료되면 여기서 다시 재개하세요.',
+  caution:
+    '이 대화가 다른 곳에서 작업 중이라면 먼저 그 작업을 마쳐주세요. 같은 대화를 두 곳에서 동시에 진행할 수 있어요.',
+  start: 'tmux로 따로 띄우기',
+  open: '터미널에서 열기',
+  copy: '재접속 명령 복사',
+  refresh: '다시 확인',
+  loading: '확인 중…',
+  cancel: '취소',
+  confirm: '이 대화를 tmux로 따로 띄울까요?',
+  failed: 'tmux를 시작하지 못했어요. tmux와 에이전트 CLI 설치 상태를 확인한 뒤 다시 시도해주세요.',
+  missing: 'tmux와 해당 에이전트 CLI를 설치한 뒤 다시 시도해주세요.',
+  folderMissing: '원래 프로젝트 폴더를 찾을 수 없어요. 폴더를 복구한 뒤 재개해주세요.',
+  unsupported: 'macOS·Linux의 로컬 Claude·Codex 세션에서 tmux 재개를 지원해요.',
+  conflict: '같은 tmux 이름을 다른 세션이 사용 중이에요. 기존 세션은 변경하지 않았어요.',
+  ended: '이 tmux는 종료됐어요. 다시 재개한 뒤 접속해주세요.',
+  openFailed: '터미널을 열지 못했어요. 재접속 명령을 복사해 터미널에서 실행해주세요.',
+};

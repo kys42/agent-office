@@ -1434,3 +1434,40 @@ body.card-mode:not(.is-mac) .dock-card {
 .inspector-card .card-head .icon-btn.is-on {
   color: var(--accent);
 }
+
+.modal-backdrop:has(.tmux-resume) {
+  padding: 12px;
+}
+.modal:has(> .tmux-resume) {
+  max-width: 100%;
+  width: min(560px, calc(100vw - 24px));
+  min-width: 0;
+  max-height: calc(100dvh - 24px);
+}
+.tmux-resume {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+.tmux-resume dl {
+  margin: 16px 0;
+}
+.tmux-resume dt {
+  font-weight: 600;
+  margin-top: 12px;
+}
+.tmux-resume dd {
+  margin: 4px 0 0;
+  user-select: text;
+}
+.tmux-resume-actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.tmux-resume-actions button {
+  padding: 8px 12px;
+}

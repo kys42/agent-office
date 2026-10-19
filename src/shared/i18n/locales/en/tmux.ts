@@ -1,0 +1,27 @@
+export const tmux = {
+  title: 'Resume in tmux',
+  intro:
+    'Continue this saved conversation in a separate terminal session. This does not create a new conversation.',
+  name: 'tmux session',
+  folder: 'Project folder',
+  command: 'Reconnect command',
+  ready: 'Ready to resume',
+  running: 'A tmux session is available',
+  hint: 'Close the terminal or press Ctrl+B, then D to detach. The agent keeps running while this computer is awake. After a restart or the agent exits, resume it here again.',
+  caution:
+    'If this conversation is already running elsewhere, finish that run first to avoid working on it in two places.',
+  start: 'Start in tmux',
+  open: 'Open in Terminal',
+  copy: 'Copy reconnect command',
+  refresh: 'Check again',
+  loading: 'Checking…',
+  cancel: 'Cancel',
+  confirm: 'Resume this conversation in a separate tmux session?',
+  failed: 'Could not start tmux. Check that tmux and the agent CLI are installed and try again.',
+  missing: 'Install tmux and this agent’s CLI, then try again.',
+  folderMissing: 'The original project folder is unavailable. Restore it before resuming.',
+  unsupported: 'tmux resume supports local Claude and Codex sessions on macOS and Linux.',
+  conflict: 'This tmux name belongs to another session. It was not changed.',
+  ended: 'This tmux session has ended. Resume it again to reconnect.',
+  openFailed: 'Could not open Terminal. Copy the reconnect command and run it in your terminal.',
+};

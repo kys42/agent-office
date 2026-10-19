@@ -1,3 +1,10 @@
+# tmux 기존 대화 재개 · 2026-10-19 (Issue #178)
+
+- 단위505개 통과(동시 실행2). 기본 병렬 전체 실행은 기존 hot-path stop 타이밍 테스트가 한 번 실패했고 동시 실행을 줄인 전체 재실행에서 통과했다. 신규8개는 취소·중복/충돌·재검사·미설치·종료·dead pane을 검증한다.
+- 신규 UI3·기존 카드UI24 통과. 380×480 팝업의 재개 안내/고정 footer·재접속/복사·취소·오류재시도·privacy·remote를 확인하고 합성 캡처로 시각 검수했다.
+- `node --import tsx scripts/tmux-resume-smoke.ts`는 이 Mac의 Homebrew tmux에 독립 서버와 임시 합성 CLI만 띄워 생성/인수/재조회/재사용/dead pane 재개/종료를 검증한다. 서버와 임시 파일은 finally에서 정리한다. 실제 사용자 대화/모델 실행은 하지 않았다.
+- 타입·웹/데스크톱 빌드·Electron 격리 smoke·MCP 통과. native smoke는 새 preload API와 원격/OpenClaw 실행 거부도 확인한다. 독립 리뷰의 확인창 blur 보류·dead pane 처리를 반영하고 재검토 승인. 최종 CI·배포는 PR에 기록한다.
+
 # 2026-10-18 · 모바일 웹 (#169)
 
 - PR164/162가 병합된 main `8c7fd56`에서 별도 worktree와 프로필로 구현했다. 기본 꺼짐/미사용 무저장, 기존 IPC·로컬 DB 보존, 인증·가시 범위·중복 방지·권한 회수 경계를 검증했다.
