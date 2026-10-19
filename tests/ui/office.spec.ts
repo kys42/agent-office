@@ -478,13 +478,15 @@ test('Same branch shares a table and true children use accessible small desks', 
   page,
 }) => {
   const fixture = demoSnapshot();
+  // A helper of 네모, the last at the shared table: its small desk joins right beside 네모, so
+  // the table stays whole (a helper of 코코 would sit between them and break it in two).
   fixture.sessions[2] = {
     ...fixture.sessions[2],
-    provider: 'claude',
-    parentId: 'demo-0',
-    attachedTo: 'demo:0',
-    officeSeat: 0,
-    relation: { kind: 'subagent', parentNativeId: 'demo-0', source: 'fixture', role: '검증' },
+    provider: 'codex',
+    parentId: 'demo-1',
+    attachedTo: 'demo:1',
+    officeSeat: 1,
+    relation: { kind: 'subagent', parentNativeId: 'demo-1', source: 'fixture', role: '검증' },
   };
   await page.addInitScript((s) => {
     (window as any).office = {
@@ -505,9 +507,9 @@ test('Same branch shares a table and true children use accessible small desks', 
   // The parent link lives in the card's details tab.
   await panel.getByRole('tab', { name: '작업 정보' }).click();
   const parent = panel.locator('.info-link').filter({ hasText: '부모 작업' });
-  await expect(parent).toContainText('코코');
+  await expect(parent).toContainText('네모');
   await parent.click();
-  await expect(panel.getByRole('heading', { name: /^코코/ })).toBeVisible();
+  await expect(panel.getByRole('heading', { name: /^네모/ })).toBeVisible();
 });
 test('New work effect plays for 15 seconds after a request arrives, never for bootstrap history, and survives re-publishing', async ({
   page,
