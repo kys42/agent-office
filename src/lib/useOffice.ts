@@ -8,7 +8,7 @@ import { applyNoticeReceipt } from '../shared/notices';
 import { matchesQuery } from '../shared/notice-pages';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
-import { allocateSeats, officeZone, seatKey } from '../shared/office';
+import { allocateSeats, officeZone, reorderSeatMap, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
 import type {
   NoticeQuery,
@@ -26,7 +26,7 @@ import { isPageHidden, onPageVisibility } from './visibility';
 
 /**
  * The demo rewritten in the active language, carrying over what the viewer did in it: preferences
- * (the language choice lives there), pins, hides, archive/return and notice receipts.
+ * (the language choice lives there), pins, hides, archive/return, desk order and notice receipts.
  */
 function relocalizedDemo(prev: Snapshot): Snapshot {
   const fresh = demoSnapshot();
@@ -38,10 +38,20 @@ function relocalizedDemo(prev: Snapshot): Snapshot {
     sessions: fresh.sessions.map((s) => {
       const was = sessions.get(s.id);
       if (!was) return s;
-      const { pinned, archived, completed, notes, hiddenAt, openCount, lastViewedAt, returnedAt } =
-        was;
+      const {
+        pinned,
+        archived,
+        completed,
+        notes,
+        hiddenAt,
+        openCount,
+        lastViewedAt,
+        returnedAt,
+        officeSeat,
+      } = was;
       return {
         ...s,
+        officeSeat,
         pinned,
         archived,
         completed,
@@ -415,6 +425,41 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       notify((e as Error).message);
     }
   };
+  /** Desks of one zone in this order (`moveDesk`); the service keeps it for every window. */
+  const reorderSeats = async (ids: string[]) => {
+    if (ids.some(isRemoteId)) {
+      notify(m().federation.readOnly);
+      return;
+    }
+    if (demo) {
+      setSnapshot((s) => {
+        if (!s) return s;
+        const byId = new Map(s.sessions.map((x) => [x.id, x]));
+        const seats = Object.fromEntries(
+          s.sessions
+            .filter((x) => !x.attachedTo && x.officeSeat !== undefined)
+            .map((x) => [seatKey(x), x.officeSeat!]),
+        );
+        const keys = ids.flatMap((id) => (byId.has(id) ? [seatKey(byId.get(id)!)] : []));
+        const next = reorderSeatMap(seats, keys);
+        // Every run of a persona carries its seat key, so all of them move.
+        return reconcileDemo({
+          ...s,
+          sessions: s.sessions.map((x) =>
+            x.attachedTo || next[seatKey(x)] === undefined
+              ? x
+              : { ...x, officeSeat: next[seatKey(x)] },
+          ),
+        });
+      });
+      return;
+    }
+    try {
+      accept(await api.reorderSeats(ids));
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
   const returnToOffice = async (id: string) => {
     if (!demo) {
       try {
@@ -464,6 +509,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
     readAll,
     visit,
     veil,
+    reorderSeats,
     returnToOffice,
     bookmark,
     unbookmark,

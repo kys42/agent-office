@@ -28,6 +28,7 @@ const api: OfficeAPI = {
   patch: (id, p) => call('patch', id, p),
   veil: (ids, on) => call('veil', ids, on),
   pin: (ids, on) => call('pin', ids, on),
+  reorderSeats: (ids) => call('reorderSeats', ids),
   search: (q, p) => call('search', q, p),
   bookmarks: (query) => call('bookmarks', query),
   bookmark: (sessionId, eventId, note) => call('bookmark', sessionId, eventId, note),

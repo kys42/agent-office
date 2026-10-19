@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRowPlacement } from '../lib/useRowPlacement';
+import { useDeskReorder } from '../lib/useDeskReorder';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
@@ -98,6 +99,7 @@ export function DeskRow({
   refreshing = false,
   demo = false,
   onArrange,
+  onReorder,
 }: {
   variant?: 'office' | 'floor';
   model: OfficeModel;
@@ -119,6 +121,8 @@ export function DeskRow({
   refreshing?: boolean;
   demo?: boolean;
   onArrange?: (active: boolean, point?: { x: number; y: number }) => void;
+  /** Dragging a desk within its zone: the zone's station ids in the new order. */
+  onReorder?: (ids: string[]) => void;
 }) {
   const { t, locale } = useI18n();
   const floor = variant === 'floor';
@@ -180,6 +184,13 @@ export function DeskRow({
     onSaveFailed: () => notify(t.dock.arrange.saveFailed),
   });
   const { layout } = placement;
+  const reorder = useDeskReorder({
+    layout,
+    track,
+    enabled: !!onReorder && !privacy,
+    onArrange,
+    onReorder: (ids) => onReorder?.(ids),
+  });
   // Track what is in view, so each arrow knows who is hidden on its side.
   useEffect(() => {
     const el = track.current;
@@ -470,7 +481,7 @@ export function DeskRow({
                     const dark = !!v.quota && dimsDesk(s, pose.working);
                     return (
                       <div
-                        className={`desk-station row-station status-${s.status} group-${v.group} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
+                        className={`desk-station row-station status-${s.status} group-${v.group} ${reorder.marker(s.id)} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
                         key={s.id}
                         data-station-id={s.id}
                         style={{ transform: `translate(${station.x}px, ${top}px)` }}
@@ -494,8 +505,15 @@ export function DeskRow({
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
                           aria-label={t.desk.openWork(label.name)}
-                          title={label.detail}
-                          onClick={() => open(s.id)}
+                          title={
+                            onReorder && !privacy && !s.remote
+                              ? `${label.detail}\n${t.desk.row.reorderHint}`
+                              : label.detail
+                          }
+                          {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
+                          onClick={(e) => {
+                            if (!reorder.consumeClick(e)) open(s.id);
+                          }}
                         >
                           <FocusEffects level={focus} />
                           <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />

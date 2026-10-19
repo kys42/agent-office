@@ -70,6 +70,7 @@ export const desk = {
   },
   // The office row and floor desks along the screen edge.
   row: {
+    reorderHint: 'Drag to reorder within the zone',
     refresh: 'Refresh',
     refreshTitle: 'Refresh · check the records again now (restarts a stalled collector too)',
     openCard: (name: string) => `Open ${name}'s work card`,

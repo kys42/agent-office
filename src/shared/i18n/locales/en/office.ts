@@ -2,7 +2,7 @@ export const office = {
   region: 'Pixel office',
   phase: { dawn: 'Early morning', day: 'Daytime', dusk: 'Dusk', night: 'Night' },
   station: (name: string, status: string) => `${name}, ${status}`,
-  dragToZone: (posture: string) => `${posture} · Drag to another zone`,
+  dragToZone: (posture: string) => `${posture} · Drag to reorder or to another zone`,
   empty: {
     title: 'Waiting for the next teammate',
     body: "A desk appears as soon as there's new activity.",
@@ -11,7 +11,8 @@ export const office = {
   drop: {
     newZone: 'Drop here to start a new zone',
     moveTo: (zone?: string) => (zone ? `Move to the ${zone} zone` : 'Move to this zone'),
-    elsewhere: 'Drop on another zone or on empty floor',
+    elsewhere: 'Drop on a desk in this zone to reorder, or on another zone or empty floor',
+    reorder: 'Drop to put the desk here',
   },
   hud: {
     counts: (projects: number, desks: number) =>

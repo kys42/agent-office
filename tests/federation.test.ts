@@ -234,6 +234,7 @@ test('local text and snapshots remain compatible with beta off or enabled withou
         ['patch', [remote, { notes: 'blocked' }]],
         ['pin', [['codex:local', remote], true]],
         ['veil', [[remote], true]],
+        ['reorderSeats', [['codex:local', remote]]],
         ['identities', [[remote]]],
         ['bookmark', ['codex:local', remote, 'note']],
         ['noticeReadAll', [{ filter: 'all', sessionIds: [remote] }, Date.now()]],

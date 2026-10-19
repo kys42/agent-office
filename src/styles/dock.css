@@ -843,6 +843,14 @@ body.card-mode {
   cursor: grab;
   touch-action: none;
 }
+/* A desk's character drags it within its zone: touch goes to the drag, not the row's scroll. */
+[data-desk-handle] {
+  cursor: grab;
+  touch-action: none;
+}
+.desk-station.is-desk-dragging [data-desk-handle] {
+  cursor: grabbing;
+}
 .row-zone-handle {
   display: flex;
   align-items: center;

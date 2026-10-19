@@ -2361,6 +2361,28 @@
   outline: 2px dashed rgba(246, 230, 204, 0.4);
   outline-offset: 4px;
 }
+/* Where a desk dragged within its zone would go in: a bar at that edge of the desk. */
+.desk-station:is(.drop-before, .drop-after)::before {
+  content: '';
+  position: absolute;
+  top: 46px;
+  bottom: 40px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
+  z-index: 8;
+  pointer-events: none;
+}
+.desk-station.drop-before::before {
+  left: -2px;
+}
+.desk-station.drop-after::before {
+  right: -2px;
+}
+.desk-station.is-desk-dragging {
+  opacity: 0.55;
+}
 .office-map.drop-new {
   outline: 3px dashed rgba(246, 230, 204, 0.55);
   outline-offset: -10px;

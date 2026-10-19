@@ -64,6 +64,7 @@ export const desk: Messages['desk'] = {
     dismissTitle: '말풍선만 접기 · 미확인 소식은 남아요',
   },
   row: {
+    reorderHint: '같은 구역 안에서는 끌어서 순서를 바꿀 수 있어요',
     refresh: '새로고침',
     refreshTitle: '새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)',
     openCard: (name) => `${name} 업무 카드 열기`,

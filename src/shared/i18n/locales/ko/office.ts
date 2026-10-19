@@ -4,7 +4,7 @@ export const office: Messages['office'] = {
   region: '픽셀 사무실',
   phase: { dawn: '이른 아침', day: '낮', dusk: '해질녘', night: '밤' },
   station: (name, status) => `${name}, ${status}`,
-  dragToZone: (posture) => `${posture} · 끌어서 다른 구역으로`,
+  dragToZone: (posture) => `${posture} · 끌어서 순서를 바꾸거나 다른 구역으로`,
   empty: {
     title: '다음 동료를 기다리고 있어요',
     body: '새 활동이 생기면 책상이 놓여요.',
@@ -13,7 +13,8 @@ export const office: Messages['office'] = {
   drop: {
     newZone: '여기에 놓으면 새 구역을 만들어요',
     moveTo: (zone) => `${zone ?? '이'} 구역으로 옮겨요`,
-    elsewhere: '다른 구역 바닥이나 빈 바닥에 놓아 주세요',
+    elsewhere: '같은 구역 책상 위에 놓으면 순서가 바뀌고, 다른 구역이나 빈 바닥에 놓으면 옮겨요',
+    reorder: '여기에 놓으면 책상 순서가 바뀌어요',
   },
   hud: {
     counts: (projects, desks) => `${projects}개 프로젝트 · ${desks}개 책상`,

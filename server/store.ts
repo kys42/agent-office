@@ -32,7 +32,14 @@ import type {
 } from '../src/shared/types.js';
 import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
-import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
+import {
+  allocateSeats,
+  officeZone,
+  attachSessions,
+  reorderSeatMap,
+  projectKey,
+  seatKey,
+} from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import {
   localizeNotice,
@@ -830,6 +837,29 @@ export class OfficeStore {
     if (row?.value !== value)
       this.db.prepare("INSERT OR REPLACE INTO settings VALUES ('office_seats',?)").run(value);
     return next;
+  }
+  /**
+   * Desks in the order the person dragged them to. A resident speaks through any of its runs,
+   * so ids go to their seat keys; ids without a desk (helpers, unknown) are left out.
+   */
+  reorderSeats(ids: string[]) {
+    // One read of the visible sessions, as the office shows them (zones from their settings).
+    const previous = this.seats();
+    const shown = new Map(this.decorated(false, previous).map((s) => [s.id, s]));
+    // Desks reorder only within their own zone: a list spanning zones reorders each zone's
+    // part with that zone's own tokens, never trading a token across zones.
+    const zones = new Map<string, string[]>();
+    for (const id of ids) {
+      const s = shown.get(id);
+      if (!s) continue;
+      const zone = projectKey(s);
+      zones.set(zone, [...(zones.get(zone) ?? []), seatKey(s)]);
+    }
+    let next = previous;
+    for (const keys of zones.values()) next = reorderSeatMap(next, keys);
+    const value = JSON.stringify(next);
+    if (value !== JSON.stringify(previous))
+      this.db.prepare("INSERT OR REPLACE INTO settings VALUES ('office_seats',?)").run(value);
   }
   visit(id: string, returnToOffice = false) {
     this.get(id);

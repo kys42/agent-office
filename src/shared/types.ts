@@ -706,6 +706,8 @@ export interface OfficeAPI {
   veil: (ids: string[], on: boolean) => Promise<Snapshot>;
   /** Pin or unpin colleagues (e.g. all runs of a persona) in one step: all of them or none. */
   pin: (ids: string[], on: boolean) => Promise<Snapshot>;
+  /** Desks of one zone in this order (ids of any of a persona's runs), for every presentation. */
+  reorderSeats: (ids: string[]) => Promise<Snapshot>;
   search: (query: string, provider?: Provider) => Promise<SearchHit[]>;
   /** A page of the person's bookmarks. */
   bookmarks: (query?: BookmarkQuery) => Promise<BookmarkPage>;
