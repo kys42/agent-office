@@ -488,6 +488,22 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* A file on this computer: a document icon before its label; the path shows on hover. */
+.file-link svg {
+  display: inline-block;
+  margin-right: 2px;
+  vertical-align: -1px;
+}
+.file-link.is-missing {
+  opacity: 0.6;
+  text-decoration-style: dashed;
+}
+/* In a browser the file can't open: its path stays beside the label, as written. */
+.file-link.is-text code {
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
+}
 
 /* While pointed at: the person's own request as its own bubble right above (what was asked).
    Same width as the bubble below, the person's dark style with a tail; long requests scroll

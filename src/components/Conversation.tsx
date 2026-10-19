@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { MessageMarkdown } from './MessageMarkdown';
+import { FilesHere } from './WebLink';
 import {
   ChevronDown,
   Copy,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
 import { isRemoteId } from '../shared/federation';
+import { clipMarkdown } from '../shared/activity';
 import { PROVIDERS } from '../shared/types';
 import {
   conversationKind,
@@ -63,11 +65,10 @@ function Message({
   const { t } = useI18n();
   const work = event.kind === 'tool' || event.kind === 'result';
   const limit = work ? 200 : 300;
-  const long = event.text.length > limit || event.text.split('\n').length > 12;
-  const text =
-    expanded || !long
-      ? event.text
-      : event.text.slice(0, limit).split('\n').slice(0, 12).join('\n') + '…';
+  // Folded at about `limit` characters (never through a link); "more" only if anything is left.
+  const folded = clipMarkdown(event.text, limit);
+  const long = folded !== event.text;
+  const text = expanded || !long ? event.text : folded;
   const label =
     event.kind === 'user'
       ? t.conversation.you
@@ -124,7 +125,9 @@ function Message({
           </small>
         )}
         <div className="message-text">
-          <MessageMarkdown text={text} notify={notify} />
+          <FilesHere.Provider value={!isRemoteId(event.id)}>
+            <MessageMarkdown text={text} notify={notify} />
+          </FilesHere.Provider>
         </div>
         {long && (
           <button className="message-expand" aria-expanded={expanded} onClick={onExpand}>

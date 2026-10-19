@@ -10,6 +10,9 @@ import { Modal } from './Modal';
 import { MessageMarkdown } from './MessageMarkdown';
 
 /** Read the saved copy in order, without replacing the notes or fetching the live conversation. */
+import { FilesHere } from './WebLink';
+import { isRemoteId } from '../shared/federation';
+
 export function BookmarkReader({
   bookmark: b,
   name,
@@ -71,7 +74,10 @@ export function BookmarkReader({
                       </small>
                     )}
                     <div className="message-text">
-                      <MessageMarkdown text={line.text} notify={notify} />
+                      {/* A connected office's paths are on its own computer: shown, not opened. */}
+                      <FilesHere.Provider value={!isRemoteId(b.sessionId)}>
+                        <MessageMarkdown text={line.text} notify={notify} />
+                      </FilesHere.Provider>
                     </div>
                   </div>
                 </article>
