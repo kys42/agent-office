@@ -179,6 +179,27 @@ test('Resolve only unique full live IDs, rejecting collisions, invalid locks and
   assert.equal(resolveCodexTitleThread(`${THREAD.slice(0, 12)}...`, new Set([THREAD])), null);
 });
 
+test('Action Required title decoration preserves the leading thread identity', async () => {
+  for (const marker of ['.', '!']) {
+    for (const reference of [THREAD, `${THREAD.slice(0, 29)}...`]) {
+      const title = `[ ${marker} ] Action Required | ${reference} | project | task`;
+      assert.equal(codexTitleThread(title), reference);
+      const f = fixture({ title });
+      assert.equal(
+        (await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }))?.threadId,
+        THREAD,
+      );
+    }
+  }
+  for (const title of [
+    `Action Required | ${THREAD}`,
+    `[ x ] Action Required | ${THREAD}`,
+    `[ ! ] Action Required | task | ${THREAD}`,
+    `[ ! ] Action Required | [ . ] Action Required | ${THREAD}`,
+  ])
+    assert.equal(codexTitleThread(title), null, title);
+});
+
 test('Real 0.162.1 abbreviated title resolves to its live thread and focuses Orca or tmux', async () => {
   for (const host of ['orca', 'tmux'] as const) {
     const f = fixture({ host, title: `${THREAD.slice(0, 29)}... | project ⠏ task` });

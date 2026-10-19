@@ -11,12 +11,15 @@ const SHORT_UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{5}\
 
 /**
  * Codex's title items are separated by " | ". Put thread-id first. Only this current
- * identifier (full or Codex's 32-character abbreviation) is evidence: argv, history,
+ * identifier (full or Codex's 32-character abbreviation) is evidence. A known attention
+ * decoration can precede that first item; arbitrary title items cannot. Argv, history,
  * name and cwd cannot say which thread a screen shows after /resume or /new.
  */
 export function codexTitleThread(title: string): string | null {
+  // Orca's attention title alternates these two markers while waiting for input.
+  const current = title.replace(/^\[ [.!] \] Action Required \| /, '');
   return (
-    new RegExp(`^(${UUID}|${SHORT_UUID})(?: \\| |$)`, 'i').exec(title)?.[1].toLowerCase() ?? null
+    new RegExp(`^(${UUID}|${SHORT_UUID})(?: \\| |$)`, 'i').exec(current)?.[1].toLowerCase() ?? null
   );
 }
 
