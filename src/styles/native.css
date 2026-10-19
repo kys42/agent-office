@@ -1521,3 +1521,16 @@ body.card-mode:not(.is-mac) .dock-card {
 .modal-backdrop:has(.tmux-resume) {
   pointer-events: auto;
 }
+
+.summon-field input,
+.summon-field select {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 38px;
+  line-height: 1.4;
+}
+.summon-field input:focus-visible,
+.summon-field select:focus-visible {
+  outline: 2px solid #8c8c8c;
+  outline-offset: 2px;
+}
