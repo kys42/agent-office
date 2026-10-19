@@ -3,6 +3,7 @@ import type { Session } from '../../src/shared/types.js';
 import { hash } from './normalize.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
 import { CANONICAL } from '../../src/shared/canonical.js';
+import { lastMentions } from '../../src/shared/links.js';
 
 // Platform-independent: multiple transport fragments may describe one native conversation.
 export function mergeSessions(input: Session[]): Session[] {
@@ -64,7 +65,11 @@ export function mergeSessions(input: Session[]): Session[] {
         events: events.slice(-180),
         partial: group.some((s) => s.partial) || events.length > 180,
         windowed: group.some((s) => s.windowed) || undefined,
-        artifacts: [...new Set(group.flatMap((s) => s.artifacts))].slice(-12),
+        // The group runs oldest to newest: a link the newer record mentions again is recent.
+        artifacts: lastMentions(
+          group.flatMap((s) => s.artifacts),
+          12,
+        ),
         activity,
         action: activity.text,
         revision: hash(group.map((s) => s.revision).join(':')),
