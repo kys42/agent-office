@@ -190,3 +190,17 @@ for (const mode of ['row', 'floor'] as const) {
     await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['c', 'a', 'b']);
   });
 }
+
+test('The row scrolling under a still pointer moves the drop target with it', async ({ page }) => {
+  await page.setViewportSize({ width: 460, height: 760 });
+  await dock(page, 'row');
+  await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['a', 'b', 'c']);
+  const y = await press(page, 'a');
+  await over(page, 'b', 0.75, y);
+  await expect(page.locator('[data-station-id="b"]')).toHaveClass(/drop-after/);
+  // The wheel scrolls the row by a desk; the pointer stays where it is, now over c.
+  await page.locator('.desk-row-track').evaluate((el) => (el.scrollLeft += 164));
+  await expect(page.locator('[data-station-id="c"]')).toHaveClass(/drop-after/);
+  await page.mouse.up();
+  await expect.poll(() => reorders(page)).toEqual([['reorderSeats', 'b', 'c', 'a']]);
+});

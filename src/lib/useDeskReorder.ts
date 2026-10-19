@@ -89,6 +89,22 @@ export function useDeskReorder({
   useEffect(() => {
     if (!enabled) finish(false);
   }, [enabled]);
+  // The row scrolling under a still pointer (wheel, trackpad) moves the desks beneath it.
+  useEffect(() => {
+    const root = track.current;
+    if (!root) return;
+    const scrolled = () => {
+      const g = gesture.current;
+      if (!g?.moved) return;
+      const target = locate(g);
+      if (target?.id !== g.target?.id || target?.side !== g.target?.side) {
+        g.target = target;
+        setDrag({ id: g.id, target });
+      }
+    };
+    root.addEventListener('scroll', scrolled, { passive: true });
+    return () => root.removeEventListener('scroll', scrolled);
+  }, [track.current]);
   useEffect(() => {
     const blur = () => finish(false);
     const key = (e: KeyboardEvent) => {
@@ -143,7 +159,13 @@ export function useDeskReorder({
             }
           },
           onPointerUp: (e: PointerEvent<HTMLElement>) => {
-            if (gesture.current?.pointer === e.pointerId) finish(true);
+            const g = gesture.current;
+            if (g?.pointer !== e.pointerId) return;
+            // Where it is let go decides, not where the pointer last moved (the row may have
+            // scrolled under it since).
+            g.point = { x: e.clientX, y: e.clientY };
+            if (g.moved) g.target = locate(g);
+            finish(true);
           },
           onPointerCancel: (e: PointerEvent<HTMLElement>) => {
             if (gesture.current?.pointer === e.pointerId) finish(false);
