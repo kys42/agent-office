@@ -35,27 +35,51 @@ export function useSendTargets(
   const misses = useRef<Record<string, number>>({});
   const known = useRef<Targets>({});
   known.current = targets;
+  const refresh = useRef<() => void>(() => {});
   useEffect(() => {
     if (!active) return;
     let valid = true;
-    lookup(key.split('\n'))
-      .then((found) => {
-        if (!valid) return;
-        // Counted here, not in the state updater (which may run twice).
-        const next: Targets = { ...found };
-        for (const [id, target] of Object.entries(found)) {
-          if (target) misses.current[id] = 0;
-          else if (known.current[id] && (misses.current[id] = (misses.current[id] ?? 0) + 1) < 2)
-            next[id] = known.current[id];
-        }
-        setTargets(next);
-      })
-      .catch(() => {
-        /* keep what is known; the next poll tries again */
-      });
+    let pending = false;
+    let again = false;
+    const load = () => {
+      if (pending) {
+        again = true;
+        return;
+      }
+      pending = true;
+      void lookup(key.split('\n'))
+        .then((found) => {
+          if (!valid) return;
+          // Counted here, not in the state updater (which may run twice).
+          const next: Targets = { ...found };
+          for (const [id, target] of Object.entries(found)) {
+            if (target) misses.current[id] = 0;
+            else if (known.current[id] && (misses.current[id] = (misses.current[id] ?? 0) + 1) < 2)
+              next[id] = known.current[id];
+          }
+          setTargets(next);
+        })
+        .catch(() => {
+          /* keep what is known; the next poll tries again */
+        })
+        .finally(() => {
+          pending = false;
+          if (valid && again) {
+            again = false;
+            load();
+          }
+        });
+    };
+    refresh.current = load;
     return () => {
       valid = false;
+      refresh.current = () => {};
     };
+  }, [active, key]);
+  useEffect(() => {
+    // Activity requests a refresh without discarding a slow lookup for the same sessions.
+    // Coalesce updates while it runs; only a changed session list invalidates its result.
+    refresh.current();
   }, [active, key, stamp, tick]);
   const wanted = new Set(active ? key.split('\n') : []);
   const shown: Targets = {};
