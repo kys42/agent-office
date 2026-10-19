@@ -1091,10 +1091,16 @@ export function Inspector({
               enabled={terminalSend}
               privacy={privacy}
               onJump={!s.remote && api.jump ? () => void resume() : undefined}
-              onSend={async (text, replaceDraft) => {
+              onSend={async (text, replaceDraft, allowPartialDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();
-                const result = await sendFollowUp(id, text, replaceDraft, notify);
+                const result = await sendFollowUp(
+                  id,
+                  text,
+                  replaceDraft,
+                  notify,
+                  allowPartialDraft,
+                );
                 if (result.status === 'sent') {
                   markSent(id);
                   remember(id, text, startedAt);

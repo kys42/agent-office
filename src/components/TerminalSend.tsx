@@ -47,7 +47,7 @@ export function TerminalSend({
   target: TerminalTarget | null;
   enabled: boolean;
   privacy: boolean;
-  onSend: (text: string, replaceDraft?: string) => Promise<SendResult>;
+  onSend: (text: string, replaceDraft?: string, allowPartialDraft?: boolean) => Promise<SendResult>;
   /** Brings the session's terminal to the front (offered when its text can't be cleared). */
   onJump?: () => void;
   /** The card's chat box: Enter sends, Shift+Enter breaks the line, and it grows as you type. */

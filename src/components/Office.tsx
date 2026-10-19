@@ -705,8 +705,13 @@ export function Office({
                             name={sessionName(byId.get(replying.id) ?? s)}
                             onClose={() => setReplying(null)}
                             onJump={api.jump ? () => void jumpTo(replying.id) : undefined}
-                            onSend={async (text, replaceDraft) => {
-                              const result = await onReply!(replying.id, text, replaceDraft);
+                            onSend={async (text, replaceDraft, allowPartialDraft) => {
+                              const result = await onReply!(
+                                replying.id,
+                                text,
+                                replaceDraft,
+                                allowPartialDraft,
+                              );
                               if (result.status === 'sent') markSent(replying.id);
                               return result;
                             }}

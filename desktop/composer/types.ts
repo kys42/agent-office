@@ -29,7 +29,7 @@ export interface ComposerHost {
  * - `draft`: text someone typed or pasted and has not submitted.
  * - `unknown`: text that cannot be told apart from a suggestion on this host (plain screens).
  *   For both, `whole`: all of the text is known (on screen, or reported apart in full). A box
- *   too short for its text shows only part of it; such a composer is never cleared from here.
+ *   too short for its text shows only part of it; such a composer needs explicit permission to clear hidden content.
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
@@ -80,9 +80,9 @@ export interface ComposerAdapter {
   capabilities(host: Pick<ComposerHost, 'styled'> | null): ComposerCapabilities;
   inspect(host: ComposerHost): Promise<ComposerState>;
   /**
-   * Empties the composer that `from` (a fresh inspection the person confirmed) describes. Every
-   * text is passed to `backup` before any key could delete it, including parts that only show
-   * once the visible part is gone.
+   * Empties the composer that `from` (a fresh inspection the person confirmed) describes.
+   * Readable text is backed up before deletion. With allowPartial, the person also accepted
+   * losing hidden content that cannot be fully read or backed up.
    */
   clear(
     host: ComposerHost,
@@ -90,6 +90,7 @@ export interface ComposerAdapter {
     backup: ComposerBackup,
     /** Asked before every key: false (Claude paused, gone, no longer in front) stops at once. */
     proceed?: () => Promise<boolean>,
+    options?: { allowPartial?: boolean },
   ): Promise<ClearResult>;
 }
 

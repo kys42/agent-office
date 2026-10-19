@@ -588,3 +588,78 @@ test('Each agent states what its composer supports', () => {
     canClear: false,
   });
 });
+
+for (const host of ['tmux', 'orca'] as const)
+  test(`Explicit partial replacement clears hidden rows on ${host} and keeps readable fragments`, async () => {
+    const draft = Array.from({ length: 12 }, (_, i) => `row-${i}`).join('\n');
+    const prompt = fakePrompt({ draft, host, height: 16 });
+    const from = await claudeCodeComposer.inspect(prompt.host);
+    assert.ok(from.kind === 'draft' || from.kind === 'unknown');
+    assert.equal(from.whole, false);
+    const backups: string[] = [];
+    const cleared = await claudeCodeComposer.clear(
+      prompt.host,
+      from,
+      async (t) => {
+        backups.push(t);
+      },
+      undefined,
+      { allowPartial: true },
+    );
+    assert.equal(cleared.status, 'cleared');
+    assert.equal(prompt.text(), '');
+    assert.ok(backups.at(-1)?.includes('row-0'));
+    assert.ok(backups.at(-1)?.includes('row-11'));
+    assert.ok(prompt.pressed.every((keys) => keys.join() === 'C-k,C-u'));
+  });
+
+test('Partial replacement stops on a closed prompt, failed backup, lost owner or stuck keys', async () => {
+  const draft = Array.from({ length: 12 }, (_, i) => `row-${i}`).join('\n');
+  const blocked = fakePrompt({ draft, host: 'tmux', height: 16 });
+  const from = await claudeCodeComposer.inspect(blocked.host);
+  assert.ok(from.kind === 'draft' || from.kind === 'unknown');
+  await assert.rejects(
+    claudeCodeComposer.clear(
+      blocked.host,
+      from,
+      async () => {
+        throw new Error('clipboard failed');
+      },
+      undefined,
+      { allowPartial: true },
+    ),
+    /clipboard failed/,
+  );
+  assert.equal(blocked.pressed.length, 0);
+  const lost = await claudeCodeComposer.clear(
+    blocked.host,
+    from,
+    async () => {},
+    async () => false,
+    { allowPartial: true },
+  );
+  assert.equal(lost.status, 'failed');
+  assert.equal(blocked.pressed.length, 0);
+  const original = blocked.host.read;
+  blocked.host.read = async () =>
+    blocked.pressed.length ? { text: 'Permission required' } : original();
+  assert.equal(
+    (
+      await claudeCodeComposer.clear(blocked.host, from, async () => {}, undefined, {
+        allowPartial: true,
+      })
+    ).status,
+    'failed',
+  );
+  assert.equal(blocked.pressed.length, 1);
+  const stuck = fakePrompt({ draft, host: 'tmux', height: 16, stuck: true });
+  assert.equal(
+    (
+      await claudeCodeComposer.clear(stuck.host, from, async () => {}, undefined, {
+        allowPartial: true,
+      })
+    ).status,
+    'failed',
+  );
+  assert.ok(stuck.pressed.length <= 60);
+});

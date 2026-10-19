@@ -35,11 +35,15 @@ export const terminal: Messages['terminal'] = {
   draftPartlySaved: '지금까지 지운 글은 클립보드에 있어요.',
   draftChanged: '그사이 입력창 글이 바뀌었어요. 다시 확인해 주세요.',
   draftHidden: '화면 내용 숨기기 중이라 가렸어요',
-  draftNotWhole:
-    '입력창 글이 다 보이지 않아 여기서 지울 수 없어요. 터미널에서 비운 뒤 다시 보내 주세요.',
+  draftNotWhole: '이 연결에서는 입력창을 비울 수 없어요. 터미널에서 비운 뒤 다시 보내 주세요.',
   openTerminal: '터미널로 이동',
   terminal: '터미널',
   lookingAgain: '연결된 터미널을 찾는 중 · 보낼 때 다시 확인해요',
+  partialDraftWarning:
+    '입력창 일부만 보여요. 지우면 가려진 내용·첨부도 함께 사라질 수 있고, 클립보드에는 읽을 수 있었던 부분만 남을 수 있어요.',
+  clearPartialAndSend: '가려진 내용도 지우고 보내기',
+  partialClearedToClipboard:
+    '읽을 수 있었던 입력창 내용은 클립보드에 있어요. 가려진 내용은 복원되지 않을 수 있어요.',
   clearAndSend: '지우고 내 글 보내기',
   sendDraft: '이 글 그대로 보내기',
   sendDraftTitle: '입력창의 이 글을 대신 보내요. 내가 쓴 글은 입력칸에 남아요.',

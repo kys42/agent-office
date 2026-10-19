@@ -515,7 +515,8 @@ export interface TerminalTarget {
 /**
  * What a follow-up send did. `needs-confirm`: the agent's composer already holds text (a draft,
  * or text the screen cannot tell from a suggestion), so nothing was typed; sending again with
- * `replaceDraft` set to exactly that text clears it (after copying it to the clipboard) first.
+ * `replaceDraft` set to exactly that text clears it (after backing up readable text) first.
+ * Partial drafts require allowPartialDraft as well, because hidden content may be lost.
  */
 export type SendResult =
   | {
@@ -523,6 +524,8 @@ export type SendResult =
       message: string;
       /** The composer's earlier text was cleared and is on the clipboard. */
       cleared?: boolean;
+      /** Only the readable parts of a partially hidden composer could be backed up. */
+      partialBackup?: boolean;
     }
   | {
       status: 'needs-confirm';
@@ -536,23 +539,25 @@ export type SendResult =
       changed?: boolean;
       /** Text an earlier, interrupted clearing took is on the clipboard. */
       clipboard?: boolean;
-      /**
-       * False when not all of the text can be seen (a box too short for it, or a screen that
-       * cannot report it apart): it is never cleared from here. Clear it in the terminal.
-       */
+      /** False when this adapter cannot clear the composer. */
       clearable?: boolean;
+      /** Some content may be hidden; replacing it requires an explicit additional opt-in. */
+      partial?: boolean;
       /** A failed send can offer this freshly read draft as an explicit recovery. */
       reason?: string;
     };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */
   replaceDraft?: string;
+  /** The person accepted losing content that the screen could not fully show or back up. */
+  allowPartialDraft?: boolean;
 }
 /** Sends a follow-up to a session; `replaceDraft` is the composer text the person agreed to clear. */
 export type ReplySender = (
   sessionId: string,
   text: string,
   replaceDraft?: string,
+  allowPartialDraft?: boolean,
 ) => Promise<SendResult>;
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
