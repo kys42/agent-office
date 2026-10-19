@@ -75,6 +75,34 @@ test('Stopping the collector ends polling without touching the closed store', as
   }
 });
 
+test('Reordering desks is one validated call and one snapshot', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-reorder-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  try {
+    const sessions = ['a', 'b'].map((id) =>
+      parseRecords([{ type: 'session_meta', payload: { id, cwd: '/test/project' } }], {
+        provider: 'codex',
+        sourcePath: `/test/${id}.jsonl`,
+        mtime: Date.now(),
+      }),
+    );
+    service.store.upsert(sessions, 'codex');
+    const seats = (snapshot: Snapshot) =>
+      [...snapshot.sessions].sort((x, y) => x.officeSeat! - y.officeSeat!).map((s) => s.id);
+    const first = seats((await service.call('snapshot', [])) as Snapshot);
+    let emitted = 0;
+    service.on('snapshot', () => emitted++);
+    const snapshot = (await service.call('reorderSeats', [[...first].reverse()])) as Snapshot;
+    assert.deepEqual(seats(snapshot), [...first].reverse());
+    assert.equal(emitted, 1);
+    for (const args of [['a'], [[1]], [Array.from({ length: 501 }, () => first[0])]])
+      await assert.rejects(service.call('reorderSeats', args));
+    assert.equal(emitted, 1, 'a refused request emits nothing');
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
 test('Pinning a persona is one validated call and one snapshot; identities are read-only', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'office-pin-'));
   const service = new OfficeService(path.join(temp, 'data'), temp);

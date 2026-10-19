@@ -8,7 +8,8 @@ import {
   type ReplySender,
   type TerminalTarget,
 } from '../shared/types';
-import { sessionName, projectKey } from '../shared/office';
+import { sessionName, projectKey, benchKey } from '../shared/office';
+import { moveDesk } from '../shared/desk-order';
 import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
@@ -57,6 +58,7 @@ export function Office({
   onVeilZone,
   onPin,
   onZoneDrop,
+  onReorder,
   onReply,
   notify,
   quotaOf,
@@ -87,6 +89,8 @@ export function Office({
   onPin?: (s: Session) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  /** Dropping a desk on another desk of its own zone: the zone's station ids in the new order. */
+  onReorder?: (ids: string[]) => void;
   /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
   onReply?: ReplySender;
   /** Says what a jump to the terminal did (or the resume command it copied). */
@@ -110,9 +114,12 @@ export function Office({
   const [dropKey, setDropKey] = useState<string | null | undefined>(undefined);
   const draggable = !!onZoneDrop && !privacy;
   const dragFrom = dragging ? sessions.find((s) => s.id === dragging) : undefined;
+  // Over a desk of the dragged desk's own zone: which edge it would go in at.
+  const [insert, setInsert] = useState<{ id: string; side: 'before' | 'after' } | null>(null);
   const endDrag = () => {
     setDragging(null);
     setDropKey(undefined);
+    setInsert(null);
   };
   const drop = (zoneKey: string | null) => {
     const from = dragFrom;
@@ -394,6 +401,7 @@ export function Office({
                     e.stopPropagation();
                     e.dataTransfer.dropEffect = 'move';
                     setDropKey(area.key);
+                    setInsert(null);
                   }}
                   onDrop={(e) => {
                     if (!dragging) return;
@@ -491,11 +499,45 @@ export function Office({
                     const dark = !!quota && dimsDesk(s, pose.working);
                     return (
                       <div
-                        className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
+                        className={`desk-station status-${s.status} ${insert?.id === s.id ? `drop-${insert.side}` : ''} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
                         data-working={pose.working}
                         key={s.id}
                         data-station-id={s.id}
                         style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
+                        // Within its own zone a desk goes in before or after the desk it is
+                        // dropped on; other zones' desks leave the drop to their zone.
+                        onDragOver={(e) => {
+                          if (!dragFrom || projectKey(dragFrom) !== area.key) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDropKey(area.key);
+                          const box = e.currentTarget.getBoundingClientRect();
+                          const side = e.clientX < box.left + box.width / 2 ? 'before' : 'after';
+                          // Its own bench is where it already is: no marker there.
+                          setInsert(
+                            benchKey(s) === benchKey(dragFrom)
+                              ? null
+                              : (i) => (i?.id === s.id && i.side === side ? i : { id: s.id, side }),
+                          );
+                        }}
+                        onDrop={(e) => {
+                          if (!dragFrom || projectKey(dragFrom) !== area.key) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const at = insert;
+                          const from = dragFrom;
+                          endDrag();
+                          if (!at || !onReorder) return;
+                          const ids = area.stations.map((x) => x.id);
+                          const next = moveDesk(
+                            ids.map((id) => ({ id, bench: benchKey(byId.get(id)!) })),
+                            from.id,
+                            at.id,
+                            at.side,
+                          );
+                          if (next.some((id, i) => id !== ids[i])) onReorder(next);
+                        }}
                         // The whole desk (bubble included) is what the person points at.
                         onMouseEnter={() => setHover(s.id)}
                         onMouseLeave={() => {
@@ -716,7 +758,9 @@ export function Office({
             ? t.office.drop.newZone
             : dropKey && dragFrom && dropKey !== projectKey(dragFrom)
               ? t.office.drop.moveTo(layout.projects.find((p) => p.key === dropKey)?.name)
-              : t.office.drop.elsewhere}
+              : insert
+                ? t.office.drop.reorder
+                : t.office.drop.elsewhere}
         </div>
       )}
       <div className="stage-hud hud-bottom-left office-card-bottom">

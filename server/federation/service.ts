@@ -32,7 +32,7 @@ const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 function remoteReferences(method: string, args: unknown[]): boolean {
   const input = record(args[0]);
   let references: unknown[] = [];
-  if (['veil', 'pin', 'identities'].includes(method)) references = list(args[0]);
+  if (['veil', 'pin', 'reorderSeats', 'identities'].includes(method)) references = list(args[0]);
   if (['bookmarks', 'noticePage', 'noticeReadAll'].includes(method))
     references = list(input.sessionIds);
   if (method === 'notices') references = list(args[0]).map((item) => record(item).id);

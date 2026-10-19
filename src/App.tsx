@@ -167,6 +167,7 @@ export default function App() {
     readAll,
     visit,
     veil,
+    reorderSeats,
     returnToOffice,
     bookmark,
     unbookmark,
@@ -1012,6 +1013,7 @@ export default function App() {
               onZoneDrop={(id, zone) => {
                 if (!sessions.find((s) => s.id === id)?.remote) setAreaDrop({ id, zone });
               }}
+              onReorder={(ids) => void reorderSeats(ids)}
             />
           ) : view === 'memory' ? (
             <Memory

@@ -61,6 +61,7 @@ export function OfficeWorkspace({
   onVeil,
   onPin,
   onZoneDrop,
+  onReorder,
   onReply,
   notify,
 }: {
@@ -90,6 +91,8 @@ export function OfficeWorkspace({
   /** Keep a colleague in the office however long it stays quiet (toggles `pinned`). */
   onPin: (s: Session) => void;
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  /** A zone's station ids in the order the person dragged them to. */
+  onReorder?: (ids: string[]) => void;
   onReply?: ReplySender;
   notify?: (message: string) => void;
 }) {
@@ -244,6 +247,7 @@ export function OfficeWorkspace({
             quotaOf={(s) => model.view(s.id)?.quota}
             onPin={onPin}
             onZoneDrop={onZoneDrop}
+            onReorder={onReorder}
             onReply={onReply}
             notify={notify}
             footer={

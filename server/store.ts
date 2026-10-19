@@ -32,7 +32,13 @@ import type {
 } from '../src/shared/types.js';
 import { redact } from './adapters/normalize.js';
 import { deriveState } from '../src/shared/runtime.js';
-import { allocateSeats, officeZone, attachSessions, seatKey } from '../src/shared/office.js';
+import {
+  allocateSeats,
+  officeZone,
+  attachSessions,
+  reorderSeatMap,
+  seatKey,
+} from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import {
   localizeNotice,
@@ -830,6 +836,23 @@ export class OfficeStore {
     if (row?.value !== value)
       this.db.prepare("INSERT OR REPLACE INTO settings VALUES ('office_seats',?)").run(value);
     return next;
+  }
+  /**
+   * Desks in the order the person dragged them to. A resident speaks through any of its runs,
+   * so ids go to their seat keys; ids without a desk (helpers, unknown) are left out.
+   */
+  reorderSeats(ids: string[]) {
+    const keys = ids.flatMap((id) => {
+      try {
+        return [seatKey(this.get(id))];
+      } catch {
+        return [];
+      }
+    });
+    const previous = this.seats();
+    const value = JSON.stringify(reorderSeatMap(previous, keys));
+    if (value !== JSON.stringify(previous))
+      this.db.prepare("INSERT OR REPLACE INTO settings VALUES ('office_seats',?)").run(value);
   }
   visit(id: string, returnToOffice = false) {
     this.get(id);

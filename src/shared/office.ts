@@ -108,6 +108,20 @@ export function allocateSeats(
   }
   return result;
 }
+/**
+ * Puts `keys` in the given order by handing them their own tokens, sorted. Only those keys
+ * change and the set of tokens stays the same, so other desks and the zone order hold still.
+ */
+export function reorderSeatMap(
+  seats: Record<string, number>,
+  keys: string[],
+): Record<string, number> {
+  const seated = [...new Set(keys)].filter((k) => Number.isInteger(seats[k]));
+  const tokens = seated.map((k) => seats[k]).sort((a, b) => a - b);
+  const next = { ...seats };
+  seated.forEach((k, i) => (next[k] = tokens[i]));
+  return next;
+}
 export function parseArtifact(url: string): Artifact | null {
   const match =
     /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(pull|issues)\/(\d+)(?:[?#][^\s]*)?$/.exec(url);

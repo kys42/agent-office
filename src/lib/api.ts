@@ -43,6 +43,7 @@ export const api: OfficeAPI = window.office ?? {
   patch: (id, p) => rpc('patch', id, p),
   veil: (ids, on) => rpc('veil', ids, on),
   pin: (ids, on) => rpc('pin', ids, on),
+  reorderSeats: (ids) => rpc('reorderSeats', ids),
   search: (q, p) => rpc('search', q, p),
   bookmarks: (query) => rpc('bookmarks', query),
   bookmark: (sessionId, eventId, note) => rpc('bookmark', sessionId, eventId, note),
