@@ -99,7 +99,7 @@ test('The row sign and the floor flag hide their project too', async ({ page }) 
     const zone = page.locator('.desk-row .row-zone', { hasText: 'daily-brief' });
     await expect(zone.locator('[data-station-id="demo:2"]')).toBeVisible();
     const eye = zone.getByRole('button', { name: 'daily-brief 모두 가리기' });
-    await expect(eye).toHaveCSS('pointer-events', 'none');
+    await expect(eye).toHaveCSS('pointer-events', hash === '#mini=floor' ? 'auto' : 'none');
     await page.mouse.move(0, 0);
     const sign = zone.locator(hash === '#mini=floor' ? '.zone-flag-cloth' : '.row-zone-mark');
     const box = (await sign.boundingBox())!;
