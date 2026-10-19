@@ -268,8 +268,8 @@ export function DeskPet({
                 name={who?.name ?? d.someone}
                 onClose={() => setReplyFor(null)}
                 onJump={api.jump ? () => jump(replyId!) : undefined}
-                onSend={async (text, replaceDraft) => {
-                  const result = await onReply!(replyId!, text, replaceDraft);
+                onSend={async (text, replaceDraft, allowPartialDraft) => {
+                  const result = await onReply!(replyId!, text, replaceDraft, allowPartialDraft);
                   if (result.status === 'sent') markSent(replyId!);
                   return result;
                 }}

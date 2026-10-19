@@ -648,8 +648,13 @@ export function DeskRow({
                             name={label.name}
                             onClose={() => setReplying(null)}
                             onJump={api.jump ? () => void jump(replying.id) : undefined}
-                            onSend={async (text, replaceDraft) => {
-                              const result = await onReply(replying.id, text, replaceDraft);
+                            onSend={async (text, replaceDraft, allowPartialDraft) => {
+                              const result = await onReply(
+                                replying.id,
+                                text,
+                                replaceDraft,
+                                allowPartialDraft,
+                              );
                               if (result.status === 'sent') markSent(replying.id);
                               return result;
                             }}

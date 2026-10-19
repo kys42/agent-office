@@ -11,7 +11,7 @@ export type DraftPrompt = Extract<SendResult, { status: 'needs-confirm' }>;
  * and [Clear & send] sends again with that exact text to clear. Cancel only drops the question.
  */
 export function useComposerSend(
-  onSend: (text: string, replaceDraft?: string) => Promise<SendResult>,
+  onSend: (text: string, replaceDraft?: string, allowPartialDraft?: boolean) => Promise<SendResult>,
   onSent: (sent: string) => void,
   draftKey?: string,
 ) {
@@ -20,13 +20,13 @@ export function useComposerSend(
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<DraftPrompt | null>(null);
   /** `instead`: the composer's own text goes out in place of the reply, which then stays. */
-  const send = async (replaceDraft?: string, instead?: string) => {
+  const send = async (replaceDraft?: string, instead?: string, allowPartialDraft?: boolean) => {
     const message = instead ?? text;
     if (!message.trim() || sending) return;
     setSending(true);
     setError('');
     try {
-      const result = await onSend(message, replaceDraft);
+      const result = await onSend(message, replaceDraft, allowPartialDraft);
       if (result.status === 'needs-confirm') {
         setDraft(result);
         setSending(false);
@@ -49,7 +49,7 @@ export function useComposerSend(
     error,
     draft,
     submit: () => send(),
-    confirm: () => (draft ? send(draft.draft) : undefined),
+    confirm: () => (draft ? send(draft.draft, undefined, draft.partial === true) : undefined),
     /** The composer's text, sent as it is (typed over itself after the same clearing). */
     sendDraft: () => (draft ? send(draft.draft, draft.draft) : undefined),
     cancel: () => setDraft(null),

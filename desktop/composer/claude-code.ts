@@ -1,3 +1,4 @@
+import { mergeBackup } from './backup.js';
 import { drawn, type Screen } from './screen.js';
 import {
   holdsText,
@@ -276,8 +277,8 @@ const CLEAR_ROUNDS = 60;
 const REDRAW_MS = 120;
 
 /**
- * Claude Code in a terminal (tmux or Orca). Only a composer whose whole text is known is ever
- * cleared: that text goes to the backup in full before the first key. Each step is one
+ * Claude Code in a terminal (tmux or Orca). Full drafts are backed up before the first key.
+ * Partially hidden drafts use clearPartial only with explicit permission to lose hidden content. Each step is one
  * Ctrl+K·Ctrl+U pair (deletes the cursor's line, or the break next to it; with the cursor at the
  * end, n lines take 2n−1 steps); after each, the composer must be the confirmed text with one
  * stretch taken out, until it is empty. Esc is never used: mid-turn it interrupts the turn, and
@@ -299,8 +300,11 @@ export const claudeCodeComposer: ComposerAdapter = {
     canClear: !!host,
   }),
   inspect,
-  async clear(host, from, backup, proceed): Promise<ClearResult> {
-    if (!from.whole) return { status: 'failed', state: from, partial: true };
+  async clear(host, from, backup, proceed, options): Promise<ClearResult> {
+    if (!from.whole) {
+      if (!options?.allowPartial) return { status: 'failed', state: from, partial: true };
+      return clearPartial(host, from, backup, proceed);
+    }
     const canTell = claudeCodeComposer.capabilities(host).canDetectSuggestion;
     const original = drawn(from.text);
     // Blank lines hold nothing worth keeping: the clipboard stays as it is.
@@ -358,3 +362,39 @@ export const claudeCodeComposer: ComposerAdapter = {
     return { status: 'failed', state: { kind: 'unknown', text: previous, whole: true } };
   },
 };
+
+/** Explicitly accepted loss of hidden content: collect readable fragments before each pair.
+ * Nothing is sent until the composer is empty or its suggestion is verified. Once its whole
+ * text fits again, the normal clearing path checks every remaining edit for concurrent typing.
+ */
+async function clearPartial(
+  host: ComposerHost,
+  from: Extract<ComposerState, { kind: 'draft' | 'unknown' }>,
+  backup: (text: string) => Promise<void>,
+  proceed?: () => Promise<boolean>,
+): Promise<ClearResult> {
+  let state = from;
+  let collected: string | undefined;
+  let unchanged = 0;
+  const keep = async (text: string) => {
+    collected = mergeBackup(collected, text);
+    await backup(collected);
+  };
+  for (let round = 0; round < CLEAR_ROUNDS; round++) {
+    if (state.whole) return claudeCodeComposer.clear(host, state, keep, proceed);
+    if (state.text.trim()) await keep(state.text);
+    if (proceed && !(await proceed())) return { status: 'failed', state, lost: true };
+    await host.press(['C-k', 'C-u']);
+    await host.wait(REDRAW_MS);
+    const next = await inspect(host);
+    if (readyToType(next)) return { status: 'cleared', state: next };
+    if (!holdsText(next)) return { status: 'failed', state: next };
+    unchanged = next.text === state.text ? unchanged + 1 : 0;
+    if (unchanged >= 6) {
+      if (!host.styled) return probe(host, state, next, proceed);
+      return { status: 'failed', state: next };
+    }
+    state = next;
+  }
+  return { status: 'failed', state };
+}

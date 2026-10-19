@@ -44,12 +44,17 @@ export const terminal = {
   draftHidden: 'Hidden while the screen content is hidden',
   /** Not all of the composer's text is on screen: it is never cleared from here. */
   draftNotWhole:
-    "Not all of it is visible, so it can't be cleared from here. Clear it in the terminal, then send again.",
+    'This connection cannot clear the input. Clear it in the terminal, then send again.',
   openTerminal: 'Open the terminal',
   /** A host not known yet (no terminal found so far). */
   terminal: 'terminal',
   /** No terminal found as last seen: the send looks again. */
   lookingAgain: 'Looking for its terminal · checked again on send',
+  partialDraftWarning:
+    'Only part of the input is visible. Clearing may also remove hidden text or attachments. The clipboard may contain only the parts we could read.',
+  clearPartialAndSend: 'Clear hidden content and send',
+  partialClearedToClipboard:
+    'Readable input is on the clipboard. Hidden content may not be recoverable.',
   clearAndSend: 'Clear & send mine',
   /** Sends the composer's text (a suggestion or a draft) instead of the reply being written. */
   sendDraft: 'Send this as is',

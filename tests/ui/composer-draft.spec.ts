@@ -58,7 +58,11 @@ async function desktop(page: Page, hash = '', maybeSuggestion = false, clearable
               { kind: 'tmux', label: 'work:1.0', status: 'idle', canSend: true, canFocus: true },
             ]),
           ),
-        send: async (id: string, text: string, options?: { replaceDraft?: string }) => {
+        send: async (
+          id: string,
+          text: string,
+          options?: { replaceDraft?: string; allowPartialDraft?: boolean },
+        ) => {
           w.sends.push({ id, text, options: options ?? null });
           if (options?.replaceDraft !== 'half-written idea\nsecond line')
             return {
@@ -66,9 +70,14 @@ async function desktop(page: Page, hash = '', maybeSuggestion = false, clearable
               draft: 'half-written idea\nsecond line',
               agent: 'Claude',
               ...(w.maybeSuggestion && { maybeSuggestion: true }),
-              ...(!w.clearable && { clearable: false }),
+              ...(!w.clearable && { partial: true }),
             };
-          return { status: 'sent', message: 'tmux work:1.0에 보냈어요', cleared: true };
+          return {
+            status: 'sent',
+            message: 'tmux work:1.0에 보냈어요',
+            cleared: true,
+            ...(options.allowPartialDraft && { partialBackup: true }),
+          };
         },
       };
     },
@@ -225,9 +234,10 @@ test('In the big office the question is never covered by the next project area',
   }
 });
 
-test('Text not all on screen is never cleared from here: the terminal is offered instead', async ({
+test('A partial draft warns and offers explicit replacement alongside the terminal', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 380, height: 480 });
   await desktop(page, '', false, false);
   await page.getByRole('button', { name: '코코에게 바로 답장' }).click();
   const reply = page.locator('.quick-reply');
@@ -235,8 +245,13 @@ test('Text not all on screen is never cleared from here: the terminal is offered
   await field.fill('테스트를 먼저 돌려 주세요');
   await field.press('Enter');
   const confirm = reply.locator('.draft-confirm');
-  await expect(confirm).toContainText('입력창 글이 다 보이지 않아 여기서 지울 수 없어요');
-  await expect(confirm.getByRole('button', { name: '지우고 내 글 보내기' })).toHaveCount(0);
+  await expect(confirm).toContainText('클립보드에는 읽을 수 있었던 부분만');
+  const replace = confirm.getByRole('button', { name: '가려진 내용도 지우고 보내기' });
+  await expect(replace).toBeVisible();
+  const bounds = (await replace.boundingBox())!;
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(380);
+  await page.screenshot({ path: '.local/partial-draft-confirm.png' });
+  await expect(confirm.getByRole('button', { name: '이 글 그대로 보내기' })).toHaveCount(0);
   await confirm.getByRole('button', { name: '터미널로 이동' }).click();
   expect(await page.evaluate(() => (window as any).jumped)).toEqual(['demo:0']);
   // What the jump did is said, as from the desk tools.
@@ -244,6 +259,16 @@ test('Text not all on screen is never cleared from here: the terminal is offered
   // Nothing was cleared or sent again; the reply stays.
   expect((await sends(page)).length).toBe(1);
   await expect(field).toHaveValue('테스트를 먼저 돌려 주세요');
+  await field.press('Enter');
+  expect((await sends(page)).at(-1).options).toBeNull();
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: '가려진 내용도 지우고 보내기' }).click();
+  const all = await sends(page);
+  expect(all.at(-1).options).toEqual({
+    replaceDraft: 'half-written idea\nsecond line',
+    allowPartialDraft: true,
+  });
+  await expect(page.locator('.toast')).toContainText('가려진 내용은 복원되지 않을 수 있어요');
 });
 
 test('The card chat box asks about text in the prompt the same way, inside the card', async ({

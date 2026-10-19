@@ -13,10 +13,17 @@ export async function sendFollowUp(
   text: string,
   replaceDraft: string | undefined,
   notify: (message: string) => void,
+  allowPartialDraft?: boolean,
 ): Promise<SendResult> {
   let result: SendResult;
   try {
-    result = await api.send!(id, text, replaceDraft === undefined ? undefined : { replaceDraft });
+    result = await api.send!(
+      id,
+      text,
+      replaceDraft === undefined
+        ? undefined
+        : { replaceDraft, ...(allowPartialDraft && { allowPartialDraft: true }) },
+    );
   } catch (error) {
     // A failed paste/submit or an older refusal may have left text in the composer. Reading
     // it again offers a manual decision, never a blind resend or an automatic clearing.
@@ -26,7 +33,9 @@ export async function sendFollowUp(
   }
   if (result.status === 'sent')
     notify(
-      result.cleared ? `${result.message} · ${m().terminal.clearedToClipboard}` : result.message,
+      result.cleared
+        ? `${result.message} · ${result.partialBackup ? m().terminal.partialClearedToClipboard : m().terminal.clearedToClipboard}`
+        : result.message,
     );
   return result;
 }
@@ -55,9 +64,9 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
   const on = enabled && !demo;
   const sendReply: ReplySender | undefined =
     on && api.send
-      ? async (id, text, replaceDraft) => {
+      ? async (id, text, replaceDraft, allowPartialDraft) => {
           try {
-            return await sendFollowUp(id, text, replaceDraft, notify);
+            return await sendFollowUp(id, text, replaceDraft, notify, allowPartialDraft);
           } catch (e) {
             // Also shown in the reply box; the toast survives if the box is gone.
             notify((e as Error).message);

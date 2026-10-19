@@ -205,7 +205,8 @@ export async function inspectTerminalDraft(
     agent: composer.agent,
     draft: state.text,
     ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
-    ...((!can.canClear || !state.whole) && { clearable: false }),
+    ...(!can.canClear && { clearable: false }),
+    ...(!state.whole && { partial: true }),
   };
 }
 
@@ -385,6 +386,8 @@ export interface TerminalSendOptions {
    * cleared only while the composer still holds that text; otherwise they are asked again.
    */
   replaceDraft?: string;
+  /** Explicit confirmation that hidden content may be lost. */
+  allowPartialDraft?: boolean;
   /** Puts the composer's text on the clipboard before it is cleared. Without it nothing is. */
   backup?: (text: string) => void | Promise<void>;
   /** What the clipboard holds now: an earlier backup counts only while it is still there. */
@@ -510,13 +513,13 @@ async function deliver(
     ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
     ...(changed && { changed: true }),
     ...((saved || base !== undefined) && { clipboard: true }),
-    // Not all of it is on screen: it is never cleared from here.
-    ...(!whole && { clearable: false }),
+    // A partial preview needs explicit acceptance of hidden-content loss.
+    ...(!whole && { partial: true }),
   });
   const confirmed = options.replaceDraft;
   if (confirmed === undefined) return ask(state.text, state.whole);
   if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
-  if (!state.whole) throw new TerminalInputError(t.notWhole);
+  if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
   const backup = options.backup;
   try {
     const result = await composer.clear(
@@ -536,6 +539,7 @@ async function deliver(
       },
       // Before every key: the same Claude, open to input and in front of its terminal.
       async () => !!(await current()),
+      { allowPartial: options.allowPartialDraft === true },
     );
     if (result.status === 'changed') return ask(result.text, result.whole, true);
     if (result.status === 'failed')
@@ -551,18 +555,18 @@ async function deliver(
     // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
     // prompt must hold exactly the text, never a collapsed or shortened view of it.
     const inferred = result.state.kind === 'suggestion' && !!result.state.inferred;
-    return await submit(true, inferred);
+    return await submit(true, inferred || !state.whole);
   } catch (error) {
+    // A partial clearing can back up only readable fragments.
+    const backupNotice = state.whole ? t.clipboardKept : t.partialClipboardKept;
     // Once something went to the clipboard, every failure says so (a failed copy says its own).
     if (!saved) throw error;
     const reason =
       error instanceof TerminalInputError ? error.message : t.unconfirmed(hostName(host));
     throw new TerminalInputError(
-      reason === t.backupFailed ||
-        reason === t.backupFailedLater ||
-        reason.includes(t.clipboardKept)
+      reason === t.backupFailed || reason === t.backupFailedLater || reason.includes(backupNotice)
         ? reason
-        : `${reason} ${t.clipboardKept}`,
+        : `${reason} ${backupNotice}`,
     );
   }
 
@@ -601,7 +605,11 @@ async function deliver(
       status: 'sent',
       message,
       // The cleared text is on the clipboard (blank lines are not copied).
-      ...(cleared && saved && { cleared: true }),
+      ...(cleared &&
+        saved && {
+          cleared: true,
+          ...(holdsText(state) && !state.whole && { partialBackup: true }),
+        }),
     });
     const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
     if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));
