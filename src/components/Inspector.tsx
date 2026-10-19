@@ -8,6 +8,7 @@ import {
   GitBranch,
   Clock,
   Copy,
+  ChevronLeft,
   PackageOpen,
   Check,
   ArrowRight,
@@ -81,6 +82,7 @@ export function Inspector({
   onZoneRules,
   terminalSend = false,
   onExpand,
+  onBack,
   onPrefs,
   bookmarked,
   onBookmark,
@@ -123,6 +125,8 @@ export function Inspector({
   terminalSend?: boolean;
   /** Shown in the dock card: open this colleague in the big office. */
   onExpand?: () => void;
+  /** The big office's column: back to the list the card took the place of. */
+  onBack?: () => void;
   onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
   /** This colleague's bookmarked messages; `onBookmark` (absent in the demo) toggles one. */
   bookmarked?: string[];
@@ -819,6 +823,16 @@ export function Inspector({
           onPointerCancel={endMove}
           onLostPointerCapture={endMove}
         >
+          {onBack && (
+            <button
+              className="icon-btn card-back"
+              aria-label={t.inspector.backToList}
+              title={t.inspector.backToList}
+              onClick={onBack}
+            >
+              <ChevronLeft size={17} />
+            </button>
+          )}
           <div className={`card-avatar face-${s.provider} status-${s.status}`}>
             <Sprite session={s} provider={s.provider} mood={s.status} size={36} />
           </div>
