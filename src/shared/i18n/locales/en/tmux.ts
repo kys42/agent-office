@@ -1,7 +1,16 @@
 export const tmux = {
   summonTitle: 'Summon a new agent',
   summonIntro:
-    'Start a new Claude or Codex conversation in this project. A running summoned agent of the same kind is reused.',
+    'Name a new agent for this project. tmux keeps its terminal session running so you can reconnect and work directly whenever needed.',
+  agentName: 'Agent name',
+  invalidName: 'Use 1–40 letters, numbers, spaces, hyphens or underscores.',
+  nameHint:
+    'Used in the tmux name and the agent’s office name after its first conversation is detected. A short suffix keeps names unique.',
+  existingTitle: 'Already connected in this project',
+  existingConfirm: 'There are connected agents in this project. Start another tmux session anyway?',
+  existingOpen: 'Open existing session',
+  summonCheck: 'Check connections and name',
+  summonDefault: 'New agent',
   summonConfirm: 'Start a new agent in this project?',
   summonStart: 'Summon in tmux',
   summonReady: 'Ready for a new conversation',

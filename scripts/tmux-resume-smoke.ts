@@ -55,11 +55,33 @@ try {
     '=' + result.name,
   ]);
   assert.equal((await manager.status(s)).running, false);
-  const fresh = summonSession(dir, 'claude');
+  const fresh = summonSession(dir, 'claude', '리뷰 봇');
   assert.equal((await manager.start(fresh, async () => true)).running, true);
   await new Promise((r) => setTimeout(r, 500));
   assert.equal(await readFile(path.join(dir, 'args'), 'utf8'), '\n');
   assert.equal((await new TmuxResume(deps).status(fresh)).running, true);
+  assert.ok((await manager.namedFolders()).has(dir));
+  const named = await manager.status(fresh);
+  const connections = await manager.connections(dir);
+  assert.equal(connections.length, 1);
+  assert.equal(connections[0].command, named.command);
+  const [socket, pane] = (
+    await runCommand('/opt/homebrew/bin/tmux', [
+      '-L',
+      server,
+      'display-message',
+      '-p',
+      '-t',
+      named.name,
+      '#{socket_path}\t#{pane_id}',
+    ])
+  )
+    .trim()
+    .split('\t');
+  const host = { kind: 'tmux' as const, socket, pane, label: named.name };
+  assert.equal(await manager.aliasFor(host, 'claude:fake'), '리뷰 봇');
+  await manager.claimAlias(host, 'claude:fake');
+  assert.equal(await manager.aliasFor(host, 'claude:fake'), null);
   console.log(
     'Actual isolated tmux: create, literal resume arguments, rediscover, reuse, dead-pane resume, termination PASS',
   );

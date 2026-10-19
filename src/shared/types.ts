@@ -730,6 +730,7 @@ export interface OfficeAPI {
     id: string,
     action: 'status' | 'start' | 'open',
     provider: 'claude' | 'codex',
+    name: string,
   ) => Promise<TmuxResumeInfo>;
   tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
 
@@ -831,6 +832,7 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
 };
 
 export interface TmuxResumeInfo {
+  connections?: { id?: string; name: string; label: string; command?: string }[];
   name: string;
   cwd: string;
   command: string;
