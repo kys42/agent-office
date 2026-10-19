@@ -690,6 +690,8 @@ export interface OfficeAPI {
   openArtifact: (url: string) => Promise<void>;
   /** Open a web page (http/https only) from session text in the default browser. */
   openLink?: (url: string) => Promise<void>;
+  /** Desktop only: a file named in session text — opened if a document, else shown in its folder. */
+  openFile?: (path: string) => Promise<'opened' | 'revealed' | 'missing'>;
   /** Put text on the clipboard (desktop: through the main process, no permission prompt). */
   copyText?: (text: string) => Promise<void>;
   snapshot: () => Promise<Snapshot>;

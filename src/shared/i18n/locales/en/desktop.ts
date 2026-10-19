@@ -19,6 +19,7 @@ export const desktop = {
   untrustedWindow: 'This window is not allowed.',
   unsupportedLink: 'Unsupported result link.',
   webLinksOnly: 'Only web links (http or https) can be opened.',
+  fileMissing: "Couldn't find this file",
   badRequest: 'Invalid request',
   badFile: 'Invalid file request',
   codexOpened: 'Asked Codex to open the session',

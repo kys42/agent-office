@@ -13,10 +13,11 @@ import {
   nativeTheme,
 } from 'electron';
 import { windowStyle } from './window-style.js';
+import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { MobileServer } from '../server/mobile/server.js';
 import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
@@ -39,7 +40,7 @@ import type {
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
-import { webLink } from '../src/shared/links.js';
+import { OPENABLE_FILE, fileLink, webLink } from '../src/shared/links.js';
 import {
   clampInto,
   FLOOR_HEIGHT,
@@ -422,6 +423,27 @@ function setupIPC() {
     const link = webLink(url);
     if (!link) throw new Error(m().desktop.webLinksOnly);
     await shell.openExternal(link);
+  });
+  // A file named in session text, on the person's click: documents open in their app; anything
+  // else (an app, a script) is only shown in its folder, never run.
+  // A file named in session text, on the person's click: documents open in their app; anything
+  // else (an app, a script, a bundle folder like X.app) is only shown in its folder, never run.
+  // Judged by the real path, so a link named like a document can't open what it points to.
+  ipcMain.handle('office:open-file', async (e, raw) => {
+    trusted(e);
+    const named = fileLink(raw);
+    if (!named) throw new Error(m().desktop.badRequest);
+    const given = path.resolve(
+      named.startsWith('~/') ? path.join(os.homedir(), named.slice(2)) : named,
+    );
+    const file = await realpath(given).catch(() => null);
+    const found = file ? await stat(file).catch(() => null) : null;
+    if (!file || !found) return 'missing';
+    const plainFolder = found.isDirectory() && !path.extname(file);
+    const document = found.isFile() && OPENABLE_FILE.test(file);
+    if ((plainFolder || document) && !(await shell.openPath(file))) return 'opened';
+    shell.showItemInFolder(file);
+    return 'revealed';
   });
   ipcMain.handle('office:copy', (e, text) => {
     trusted(e);
