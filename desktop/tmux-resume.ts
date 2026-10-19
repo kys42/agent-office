@@ -12,17 +12,32 @@ const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
 type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
   fresh?: boolean;
   agentName?: string;
+  initialMessage?: string;
 };
 /** One reconnectable fresh conversation slot per project and provider. */
 export function summonSession(
   cwd: string,
   provider: 'claude' | 'codex',
   name?: string,
+  initialMessage = '',
 ): SavedSession {
   const agentName = name?.trim().normalize('NFC');
   if (name !== undefined && (!agentName || !/^[\p{L}\p{N} _-]{1,40}$/u.test(agentName)))
     throw new Error(m().tmux.invalidName);
-  return { cwd, provider, nativeId: 'new', fresh: true, agentName };
+  if (
+    typeof initialMessage !== 'string' ||
+    initialMessage.length > 4000 ||
+    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(initialMessage)
+  )
+    throw new Error(m().tmux.invalidMessage);
+  return {
+    cwd,
+    provider,
+    nativeId: 'new',
+    fresh: true,
+    agentName,
+    initialMessage: initialMessage.trim() ? initialMessage : undefined,
+  };
 }
 export interface ResumeDeps {
   run: typeof runCommand;
@@ -157,8 +172,12 @@ export class TmuxResume {
       current = await this.inspect(s);
       if (current.info.running) return current.info;
       if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
+      // tmux treats a trailing semicolon as a command separator even in a separate argv.
+      // Escape it for tmux only; execvp still receives the original literal prompt.
       const args = s.fresh
-        ? []
+        ? s.initialMessage
+          ? ['--', s.initialMessage.replace(/;$/, '\\;')]
+          : []
         : s.provider === 'claude'
           ? ['--resume', s.nativeId]
           : ['resume', s.nativeId];

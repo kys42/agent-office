@@ -27,12 +27,14 @@ export function TmuxResume({
         title: t.tmux.summonTitle,
         intro: t.tmux.summonIntro,
         ready: t.tmux.summonReady,
+        running: t.tmux.summonRunning,
         start: t.tmux.summonStart,
         hint: t.tmux.summonHint,
       }
     : t.tmux;
   const [projectId, setProjectId] = useState(id);
   const [agentName, setAgentName] = useState(t.tmux.summonDefault);
+  const [initialMessage, setInitialMessage] = useState('');
   const [provider, setProvider] = useState<'claude' | 'codex'>('claude');
   const body = useRef<HTMLDivElement>(null);
   const request = useRef(0);
@@ -67,7 +69,7 @@ export function TmuxResume({
     setError('');
     try {
       const result = summon
-        ? await api.tmuxSummon!(projectId, action, selected, agentName)
+        ? await api.tmuxSummon!(projectId, action, selected, agentName, initialMessage)
         : await api.tmuxResume!(id, action);
       if (ticket === request.current) setInfo(result);
     } catch (e) {
@@ -140,6 +142,18 @@ export function TmuxResume({
                     />
                   </label>
                   <p>{text.nameHint}</p>
+                  <label className="summon-field">
+                    {text.initialMessage}
+                    <textarea
+                      rows={3}
+                      maxLength={4000}
+                      placeholder={text.messagePlaceholder}
+                      disabled={busy || !!info?.running}
+                      value={initialMessage}
+                      onChange={(e) => setInitialMessage(e.target.value)}
+                    />
+                  </label>
+                  <p>{text.messageHint}</p>
                 </>
               )}
               {summon && (

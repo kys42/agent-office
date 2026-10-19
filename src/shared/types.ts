@@ -731,6 +731,7 @@ export interface OfficeAPI {
     action: 'status' | 'start' | 'open',
     provider: 'claude' | 'codex',
     name: string,
+    initialMessage?: string,
   ) => Promise<TmuxResumeInfo>;
   tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
 

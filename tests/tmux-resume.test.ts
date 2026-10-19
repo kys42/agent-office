@@ -219,3 +219,39 @@ test('alias adoption requires the exact tmux server and valid owned metadata; cl
   await f.manager.claimAlias(host, 'codex:123');
   assert.equal(await f.manager.aliasFor(host, 'codex:123'), null);
 });
+
+for (const provider of ['claude', 'codex'] as const)
+  test(`${provider} starts with a literal optional first message only once`, async () => {
+    const f = fixture();
+    const prompt = '--help\nreview $(touch /tmp/not-run) `echo nope` ";';
+    const fresh = summonSession(session.cwd, provider, 'Review', prompt);
+    const empty = summonSession(session.cwd, provider, 'Review');
+    assert.equal((await f.manager.status(fresh)).name, (await f.manager.status(empty)).name);
+    await f.manager.start(fresh, async () => false);
+    assert.equal(
+      f.calls.some((x) => x.args.includes('new-session')),
+      false,
+    );
+    await f.manager.start(fresh, async () => true);
+    const args = f.calls.find((x) => x.args.includes('new-session'))!.args;
+    const at = args.indexOf('/bin/' + provider);
+    assert.deepEqual(args.slice(at + 1, at + 3), ['--', prompt.slice(0, -1) + '\\;']);
+    await f.manager.start(summonSession(session.cwd, provider, 'Review', 'second'), async () => {
+      throw new Error('Existing session must not restart or send another message');
+    });
+    assert.equal(f.calls.filter((x) => x.args.includes('new-session')).length, 1);
+    assert.equal(
+      f.calls.some((x) => x.args.includes('send-keys')),
+      false,
+    );
+  });
+
+test('first-message validation allows multiline Unicode, optional blank, rejects controls and oversized IPC', () => {
+  for (const bad of [null, 123, 'x'.repeat(4001), 'hi\0there', '\x1b[31m'])
+    assert.throws(() => summonSession(session.cwd, 'claude', 'Review', bad as string));
+  assert.equal(summonSession(session.cwd, 'claude', 'Review', ' \n\t').initialMessage, undefined);
+  assert.equal(
+    summonSession(session.cwd, 'claude', 'Review', '안녕\n다음 줄').initialMessage,
+    '안녕\n다음 줄',
+  );
+});

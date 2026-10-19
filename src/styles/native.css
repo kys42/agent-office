@@ -1501,6 +1501,7 @@ body.card-mode:not(.is-mac) .dock-card {
   margin: 12px 0;
 }
 .summon-field input,
+.summon-field textarea,
 .summon-field select {
   width: 100%;
   min-width: 0;
@@ -1523,14 +1524,21 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 
 .summon-field input,
+.summon-field textarea,
 .summon-field select {
   box-sizing: border-box;
   height: auto;
   min-height: 38px;
   line-height: 1.4;
 }
+.summon-field textarea:focus-visible,
 .summon-field input:focus-visible,
 .summon-field select:focus-visible {
   outline: 2px solid #8c8c8c;
   outline-offset: 2px;
+}
+
+.summon-field textarea {
+  resize: vertical;
+  max-height: 180px;
 }
