@@ -8,6 +8,8 @@ export const app = {
     settings: { title: 'Connections & Settings', short: 'Settings' },
   },
   mainMenu: 'Main menu',
+  hideSidebar: 'Hide the sidebar',
+  showSidebar: 'Show the sidebar',
   close: 'Close',
   toast: {
     demoRefresh: 'This is the demo office. Exit the demo to see your real connections.',

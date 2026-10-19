@@ -751,6 +751,14 @@ body.card-mode:not(.is-mac) .dock-card {
   cursor: auto;
   -webkit-app-region: drag;
 }
+/* Back to the list sits at the header's very start. */
+.app-body > .inspector-card .card-head:has(.card-back) {
+  padding-left: 6px;
+}
+.card-back {
+  flex: none;
+  margin-right: -4px;
+}
 .app-body
   > .inspector-card
   .card-head

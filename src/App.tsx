@@ -27,6 +27,8 @@ import {
   Building2,
   Coffee,
   HelpCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import { isWindows, modifierKey, platformKeys } from './lib/platform';
@@ -79,6 +81,22 @@ export default function App() {
     if (!demo && !hasSeenOnboarding(false)) setGuide('tour');
   }, [demo]);
   const [inbox, setInbox] = useState(false);
+  // The left menu folded away for room (remembered on this computer).
+  const [sidebarHidden, setSidebarHiddenState] = useState(() => {
+    try {
+      return localStorage.getItem('office:sidebar') === 'hidden';
+    } catch {
+      return false;
+    }
+  });
+  const setSidebarHidden = (hidden: boolean) => {
+    setSidebarHiddenState(hidden);
+    try {
+      localStorage.setItem('office:sidebar', hidden ? 'hidden' : 'shown');
+    } catch {
+      // Remembering is a convenience.
+    }
+  };
   const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
@@ -509,9 +527,20 @@ export default function App() {
     },
   ];
   const docked = !!current || inbox || showUsage;
+  const sidebarToggle = (
+    <button
+      className="icon-btn sidebar-toggle"
+      aria-label={sidebarHidden ? t.app.showSidebar : t.app.hideSidebar}
+      aria-expanded={!sidebarHidden}
+      title={sidebarHidden ? t.app.showSidebar : t.app.hideSidebar}
+      onClick={() => setSidebarHidden(!sidebarHidden)}
+    >
+      {sidebarHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+    </button>
+  );
   const content = (
     <div
-      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
+      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''} ${sidebarHidden ? 'sidebar-hidden' : ''}`}
     >
       {isDesktop && isWindows && (
         <div className="windows-titlebar">
@@ -715,6 +744,7 @@ export default function App() {
       <div className="app-body">
         <main className={`main-content view-${view}`}>
           <header className="toolbar app-header">
+            {sidebarToggle}
             <div className="toolbar-title">
               <h1>
                 {view === 'office' && roomsEnabled
@@ -967,6 +997,7 @@ export default function App() {
             onSelect={choose}
             showNews={showNews}
             onClose={() => setSelected(null)}
+            onBack={() => setSelected(null)}
             onPatch={onPatch}
             onPin={onPin}
             onReturn={returnToOffice}

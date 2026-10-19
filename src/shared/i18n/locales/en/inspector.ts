@@ -13,6 +13,7 @@ export const inspector = {
   expand: 'View in the big office',
   expandTitle: 'Full view · View in the big office',
   close: 'Close work card',
+  backToList: 'Back to the list',
   closeTitle: 'Close · Esc',
   nicknameLabel: 'New nickname',
   nicknamePlaceholder: 'Give them a nickname',

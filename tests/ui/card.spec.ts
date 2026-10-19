@@ -281,6 +281,8 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   await expect(aside.locator('.now-card')).toHaveCount(0);
   await expect(aside.locator('.card-chip')).toHaveCount(0);
   await expect(aside.locator('.inspector-actions')).toHaveCount(0);
+  // A window of its own: nothing to go back to (the big office's column has '명단으로 돌아가기').
+  await expect(aside.getByRole('button', { name: '명단으로 돌아가기' })).toHaveCount(0);
   // Popup location and independent card pin sit top right; the office pin is in the menu.
   const head = aside.locator('.card-head');
   for (const name of [
