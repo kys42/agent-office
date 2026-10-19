@@ -3,14 +3,19 @@ export const tmux: Messages['tmux'] = {
   summonTitle: '새 에이전트 소환',
   summonIntro:
     '이 프로젝트에 새 에이전트를 소환해요. tmux로 터미널 세션을 유지하므로 필요할 때 직접 들어가 작업하고 언제든 다시 연결할 수 있어요.',
+  summonDescription: '프로젝트에 함께할 새 동료를 설정하세요.',
+  resumeDescription: '저장된 대화를 별도 터미널에서 이어가요. 언제든 다시 연결할 수 있어요.',
+  agentSettings: '새 동료 설정',
+  agentType: '에이전트',
+  sessionDetails: '터미널 세션 정보',
+  guide: 'tmux로 세션 관리하기',
+  summonDiscovery: '오피스에는 첫 대화 기록이 감지되면 자동으로 나타나요.',
   agentName: '에이전트 이름',
   invalidName: '이름은 글자·숫자·공백·하이픈·밑줄로 1~40자 입력해주세요.',
-  nameHint:
-    'tmux 이름과 앱의 에이전트 이름에 사용해요. 앱 이름은 첫 대화가 감지되면 반영돼요. tmux에는 구분용 짧은 번호가 붙어요.',
+  nameHint: '오피스와 tmux에서 사용할 이름이에요. 첫 대화가 감지되면 오피스에 반영돼요.',
   initialMessage: '첫 메시지 (선택)',
   messagePlaceholder: '예: 이 프로젝트를 살펴보고 해야 할 일을 정리해줘',
-  messageHint:
-    '최대 4,000자. 새 세션을 시작할 때 함께 보내요. 비워두면 터미널에서 직접 입력하세요. 이미 실행 중인 세션에는 다시 보내지 않아요.',
+  messageHint: '최대 4,000자 · 새 세션을 시작할 때 한 번만 보내요.',
   invalidMessage: '첫 메시지는 제어 문자 없이 4,000자 이내로 입력해주세요.',
   summonRunning: 'tmux가 실행 중이에요',
   existingTitle: '이 프로젝트에 이미 연결된 에이전트',
