@@ -85,7 +85,15 @@ test('tmux resume explains first, preserves cancelled state, reconnects on reope
   await expect(modal.getByText('다시 들어갈 tmux가 있어요')).toBeVisible();
   await modal.getByRole('button', { name: '재접속 명령 복사' }).click();
   expect(await page.evaluate(() => (window as any).copied)).toContain('attach-session');
+  await page.evaluate(() => {
+    (window as any).error = '터미널을 열지 못했어요';
+  });
   await modal.getByRole('button', { name: '터미널에서 열기' }).click();
+  await expect(modal.getByRole('alert')).toHaveText('터미널을 열지 못했어요');
+  await expect(modal.getByRole('button', { name: '재접속 명령 복사' })).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).error = '';
+  });
   const box = await modal.boundingBox();
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(380);

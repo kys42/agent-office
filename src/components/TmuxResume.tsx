@@ -32,7 +32,7 @@ export function TmuxResume({
     try {
       setInfo(await api.tmuxResume(id, action));
     } catch (e) {
-      setInfo(null);
+      if (action !== 'open') setInfo(null);
       setError((e as Error).message);
     } finally {
       setBusy(false);
