@@ -207,7 +207,9 @@ export function parseDialog(screen: Screen | null): DialogState {
         answers.push({ question: item.question.join(' '), answer: item.answer.join(' ') });
       item = null;
     };
-    for (const line of head) {
+    // Only below its own title: a review taller than the pane must not read what is above it.
+    const title = head.findIndex((line) => /^\s*Review your answers?\s*$/.test(line));
+    for (const line of title < 0 ? [] : head.slice(title + 1)) {
       const q = /^\s*●\s+(.*)$/.exec(line);
       const a = /^\s*→\s+(.*)$/.exec(line);
       if (q) {

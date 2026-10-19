@@ -1424,8 +1424,8 @@ test('A long question wrapping in the review is still read, checked and submitte
       '',
       'Review your answers',
       '',
-      ' ● 작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유',
-      '   dev-aix 는 그보다 뒤에 있습니다)',
+      ' ● 작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유지 변경이 들어 있어야',
+      '   해서 dev-aix 는 그보다 뒤에 있습니다)',
       '   → feat/agent-playground',
       '   (Recommended)',
       ' ● Pick a size',
@@ -1442,9 +1442,32 @@ test('A long question wrapping in the review is still read, checked and submitte
     assert.deepEqual(review.answers, [
       {
         question:
-          '작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유 dev-aix 는 그보다 뒤에 있습니다)',
+          '작업 브랜치 base 는 어디로 할까요? (#886 ReAct 캐시 유지 변경이 들어 있어야 해서 dev-aix 는 그보다 뒤에 있습니다)',
         answer: 'feat/agent-playground (Recommended)',
       },
       { question: 'Pick a size', answer: 'Small' },
     ]);
+});
+
+test('A review is read only below its own title (a taller review never reads what is above)', () => {
+  const screen = (title: boolean) =>
+    parseDialog({
+      text: [
+        RULE,
+        '←  ☒ Color  ☒ Size  ✔ Submit  →',
+        ...(title ? ['', 'Review your answers'] : []),
+        '',
+        ' ● Pick a color',
+        '   → Green',
+        '',
+        'Ready to submit your answers?',
+        '',
+        '❯ 1. Submit answers',
+        '  2. Cancel',
+      ].join('\n'),
+    });
+  const seen = screen(true);
+  assert.ok(seen.kind === 'review' && seen.answers.length === 1);
+  const cut = screen(false);
+  assert.ok(cut.kind === 'review' && cut.answers.length === 0, 'nothing to check: refused');
 });
