@@ -206,3 +206,40 @@ test('project membership changes cannot launch a stale session folder', async ({
   await modal.getByRole('button', { name: '연결과 이름 확인' }).click();
   expect(await page.evaluate(() => (window as any).lastId)).toBe(await folder.inputValue());
 });
+
+for (const colorScheme of ['light', 'dark'] as const)
+  test(`floor flag controls stay visible in ${colorScheme} and the pole is draggable`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await setup(page, false, '/#mini=floor');
+    await page.setViewportSize({ width: 2400, height: 720 });
+    await expect
+      .poll(() => page.locator('.desk-row-lane').evaluate((el) => el.getBoundingClientRect().width))
+      .toBeGreaterThan(2000);
+    const zone = page.locator('.row-zone').first();
+    const plus = zone.getByRole('button', { name: '새 에이전트 소환', exact: true });
+    await expect(plus).toHaveCSS('background-color', 'rgb(255, 247, 231)');
+    await expect(plus).toHaveCSS('color', 'rgb(56, 43, 34)');
+    const hide = zone.locator('.zone-veil');
+    await expect(hide).toBeVisible();
+    await expect(hide).toHaveCSS('opacity', '1');
+    const a = (await plus.boundingBox())!,
+      b = (await hide.boundingBox())!;
+    expect(b.y).toBeGreaterThanOrEqual(a.y + a.height);
+    const pole = zone.locator('.zone-flag-pole');
+    const box = (await pole.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(15);
+    const before = await zone.evaluate((el) => parseFloat((el as HTMLElement).style.left));
+    await page.mouse.move(box.x + 2, box.y + box.height - 30);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 82, box.y + box.height - 30, { steps: 8 });
+    await page.mouse.up();
+    await expect
+      .poll(() => zone.evaluate((el) => parseFloat((el as HTMLElement).style.left)))
+      .toBeGreaterThan(before);
+    await page.screenshot({
+      path: `.local/flag-controls-${colorScheme}.png`,
+      animations: 'disabled',
+    });
+  });

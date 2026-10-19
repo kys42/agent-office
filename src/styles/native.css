@@ -1485,7 +1485,7 @@ body.card-mode:not(.is-mac) .dock-card {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: var(--surface, #fff);
+  background: var(--control);
   color: var(--text, #222);
   border: 1px solid currentColor;
   cursor: pointer;

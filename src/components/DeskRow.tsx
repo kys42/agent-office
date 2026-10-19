@@ -357,17 +357,7 @@ export function DeskRow({
                           <b>{String(index + 1).padStart(2, '0')}</b>
                           <span>{zoneName}</span>
                         </button>
-                        {!api.tmuxSummon ||
-                        demo ||
-                        privacy ||
-                        !sessions.some(
-                          (s) =>
-                            !s.remote &&
-                            s.cwd &&
-                            zone.stations.some((station) => station.id === s.id),
-                        ) ? (
-                          zoneVeil
-                        ) : (
+                        <div className="zone-flag-actions">
                           <ProjectSummon
                             sessions={sessions.filter((s) =>
                               zone.stations.some((station) => station.id === s.id),
@@ -376,7 +366,8 @@ export function DeskRow({
                             notify={notify}
                             demo={demo}
                           />
-                        )}
+                          {zoneVeil}
+                        </div>
                       </div>
                       <i className="zone-flag-base" data-solid {...dragHandle} aria-hidden="true" />
                     </div>
