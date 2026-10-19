@@ -44,6 +44,51 @@ body.is-mac .sidebar {
     display: none;
   }
 }
+/* Column edges dragged to resize the left menu and the right column (wide windows only: narrower
+   ones float the card over the office, phones stack). The right edge follows --dock-w. */
+.sidebar {
+  position: relative;
+}
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 60;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+.panel-resizer.is-left {
+  right: -5px;
+}
+.panel-resizer.is-right {
+  right: var(--dock-w);
+  transform: translateX(50%);
+}
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after,
+body.is-resizing .panel-resizer:active::after {
+  background: var(--accent);
+}
+body.is-resizing,
+body.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+@media (max-width: 1100px) {
+  .panel-resizer {
+    display: none;
+  }
+}
 .sidebar-top {
   flex-shrink: 0;
   height: var(--bar-h);

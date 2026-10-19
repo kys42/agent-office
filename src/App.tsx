@@ -2,7 +2,8 @@ import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { PanelResizer } from './components/PanelResizer';
 import {
   Gauge,
   Home,
@@ -97,6 +98,24 @@ export default function App() {
       // Remembering is a convenience.
     }
   };
+  // Widths the person dragged the left menu and the right column to (remembered here).
+  const [widths, setWidthsState] = useState<{ side?: number; dock?: number }>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('office:panel-widths') ?? '{}') ?? {};
+    } catch {
+      return {};
+    }
+  });
+  const setWidths = (patch: { side?: number; dock?: number }) =>
+    setWidthsState((was) => {
+      const next = { ...was, ...patch };
+      try {
+        localStorage.setItem('office:panel-widths', JSON.stringify(next));
+      } catch {
+        // Remembering is a convenience.
+      }
+      return next;
+    });
   const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
@@ -549,6 +568,12 @@ export default function App() {
   const content = (
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''} ${sidebarHidden ? 'sidebar-hidden' : ''}`}
+      style={
+        {
+          ...(widths.side ? { '--side-w': `${widths.side}px` } : {}),
+          ...(widths.dock ? { '--dock-w': `min(${widths.dock}px, 60vw)` } : {}),
+        } as CSSProperties
+      }
     >
       {isDesktop && isWindows && (
         <div className="windows-titlebar">
@@ -748,8 +773,37 @@ export default function App() {
             {demo ? t.app.footer.toLive : t.app.footer.toDemo}
           </button>
         </div>
+        <PanelResizer
+          edge="left"
+          width={widths.side ?? defaultSideWidth()}
+          min={SIDE_MIN}
+          max={() =>
+            Math.min(
+              SIDE_MAX,
+              window.innerWidth -
+                (view === 'office' || docked ? (widths.dock ?? defaultDockWidth()) : 0) -
+                STAGE_MIN,
+            )
+          }
+          label={t.app.resizeSidebar}
+          onWidth={(side) => setWidths({ side })}
+          onReset={() => setWidths({ side: undefined })}
+        />
       </aside>
       <div className="app-body">
+        {(view === 'office' || docked) && (
+          <PanelResizer
+            edge="right"
+            width={widths.dock ?? defaultDockWidth()}
+            min={DOCK_MIN}
+            max={() =>
+              Math.min(DOCK_MAX, window.innerWidth - (sidebarHidden ? 0 : sideWidth()) - STAGE_MIN)
+            }
+            label={t.app.resizeDock}
+            onWidth={(dock) => setWidths({ dock })}
+            onReset={() => setWidths({ dock: undefined })}
+          />
+        )}
         <main className={`main-content view-${view}`}>
           <header className="toolbar app-header">
             {sidebarToggle}
@@ -1280,4 +1334,24 @@ function Activity({
       )}
     </div>
   );
+}
+
+/** Column widths: the defaults follow tokens.css (wide and ≤1180px windows). */
+const SIDE_MIN = 180;
+const SIDE_MAX = 360;
+const DOCK_MIN = 300;
+const DOCK_MAX = 760;
+/** Room the office keeps between the columns, however wide they are dragged. */
+const STAGE_MIN = 480;
+function defaultDockWidth() {
+  const w = window.innerWidth;
+  return w <= 1180 ? 330 : Math.round(Math.min(Math.max(w * 0.25, 330), 380));
+}
+function defaultSideWidth() {
+  return window.innerWidth <= 1180 ? 200 : 224;
+}
+/** The left menu's width as drawn now (the person's, or the default). */
+function sideWidth() {
+  const side = document.querySelector('.app > .sidebar');
+  return side ? side.getBoundingClientRect().width : defaultSideWidth();
 }

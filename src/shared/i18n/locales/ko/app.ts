@@ -11,6 +11,8 @@ export const app: Messages['app'] = {
   },
   mainMenu: '주 메뉴',
   sidebarToggle: '왼쪽 메뉴',
+  resizeSidebar: '왼쪽 메뉴 폭 조절 · 더블클릭하면 기본 폭',
+  resizeDock: '오른쪽 칸 폭 조절 · 더블클릭하면 기본 폭',
   hideSidebar: '왼쪽 메뉴 접기',
   showSidebar: '왼쪽 메뉴 펼치기',
   close: '닫기',

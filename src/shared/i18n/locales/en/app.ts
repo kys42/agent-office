@@ -9,6 +9,8 @@ export const app = {
   },
   mainMenu: 'Main menu',
   sidebarToggle: 'Sidebar',
+  resizeSidebar: 'Resize the sidebar · double-click for the default width',
+  resizeDock: 'Resize the right column · double-click for the default width',
   hideSidebar: 'Hide the sidebar',
   showSidebar: 'Show the sidebar',
   close: 'Close',
