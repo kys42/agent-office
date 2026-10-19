@@ -66,6 +66,8 @@ export function DeskDock() {
   const [tiny, setTiny] = useState(initialTiny);
   const keepTiny = (on: boolean) => {
     setTiny(on);
+    // The desktop main process remembers tiny (dock.json); only a browser preview keeps it here.
+    if (api.dock) return;
     try {
       localStorage.setItem(TINY_KEY, on ? '1' : '0');
     } catch {

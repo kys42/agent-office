@@ -257,18 +257,25 @@ export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =
 
 /**
  * The tiny row's contentless bubble: a call or error keeps it while the desk waits for the
- * person (read or not); anything else new shows until read. `id` changes with each new notice
- * so the dot pops again.
+ * person (read or not); otherwise the desk's latest unread final reply shows it until read —
+ * even after that reply left the bubble (expired past `bubbleHours`, or replaced by a later
+ * progress note), like a helper's news mark. `id` changes with each new notice so the dot pops
+ * again.
  */
 export function speechDot(
   s: Session,
-  speech: Pick<StationSpeech, 'bubble' | 'tone'>,
+  speech: Pick<StationSpeech, 'bubble' | 'tone' | 'news'>,
 ): { tone: 'attention' | 'error' | 'reply'; id: string } | undefined {
   const b = speech.bubble;
   const id = b?.id ?? s.id;
   if (speech.tone === 'attention' && (b || s.status === 'call')) return { tone: 'attention', id };
   if (speech.tone === 'error' && (b || s.status === 'error')) return { tone: 'error', id };
-  if (b && !b.seenAt && isInboxNotice(b)) return { tone: 'reply', id };
+  let reply: OfficeNotice | undefined;
+  for (const n of speech.news)
+    if (!n.seenAt && isInboxNotice(n) && isFinalNotice(n))
+      if (!reply || n.at > reply.at || (n.at === reply.at && n.receivedAt > reply.receivedAt))
+        reply = n;
+  if (reply) return { tone: 'reply', id: reply.id };
 }
 
 /**

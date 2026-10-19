@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { MobileServer } from '../server/mobile/server.js';
 import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
@@ -327,13 +327,22 @@ function loadDockTiny(): boolean {
     return false;
   }
 }
-async function saveDockTiny() {
-  try {
-    await mkdir(path.dirname(dockFile()), { recursive: true, mode: 0o700 });
-    await writeFile(dockFile(), JSON.stringify({ v: 1, tiny: dockTiny }), { mode: 0o600 });
-  } catch (e) {
-    console.error('Dock size:', e);
-  }
+// Writes run one after another (a quick on/off must never land out of order), each writing
+// the size current when it runs, through a temp file so a crash never leaves half a file.
+let dockSaving: Promise<void> = Promise.resolve();
+function saveDockTiny() {
+  dockSaving = dockSaving.then(async () => {
+    try {
+      const file = dockFile();
+      await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+      const temp = `${file}.${process.pid}.tmp`;
+      await writeFile(temp, JSON.stringify({ v: 1, tiny: dockTiny }), { mode: 0o600 });
+      await rename(temp, file);
+    } catch (e) {
+      console.error('Dock size:', e);
+    }
+  });
+  return dockSaving;
 }
 const workAreaFor = (b: Rect) => screen.getDisplayMatching(b).workArea;
 function dockBounds(mode: DockMode): Rect {
@@ -360,6 +369,9 @@ function setDockTiny(tiny: boolean) {
   void saveDockTiny();
   // The pet keeps its size; the row or floor resizes and re-renders at once.
   if (dockMode === 'pet') return;
+  // Shrinking: let the renderer draw tiny before the window shrinks, so the full-size row
+  // never shows clipped for a frame (growing is safe: the window gets taller first).
+  if (tiny && dock && !dock.isDestroyed()) dock.webContents.send('office:dock', dockMode, true);
   setDockMode(dockMode);
 }
 function showDock(mode: DockMode = 'pet') {

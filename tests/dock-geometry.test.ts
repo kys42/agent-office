@@ -15,10 +15,8 @@ import {
   ROW_TOOLS_BAND,
   dockHeight,
   readDockPrefs,
-  TINY_FLOOR_HEIGHT,
-  TINY_FLOOR_SCENE_HEIGHT,
-  TINY_ROW_HEIGHT,
-  TINY_ROW_SCENE_HEIGHT,
+  TINY_HEIGHT,
+  TINY_SCENE_HEIGHT,
   TINY_SCALE,
   TINY_TOOLS_BAND,
   TINY_TOP,
@@ -154,21 +152,16 @@ test('the card opens at the size the person gave it, and a bad remembered size i
 test('tiny drops the bubble headroom and draws the scene at helper-desk size', () => {
   assert.ok(Math.abs(TINY_SCALE - 68 / 164) < 1e-9);
   // The scene ends at the desk legs (plus shadow) and starts just above the heads.
-  assert.equal(TINY_ROW_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4);
-  assert.equal(TINY_FLOOR_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4);
-  assert.equal(TINY_ROW_HEIGHT, Math.ceil(TINY_ROW_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND);
-  assert.equal(
-    TINY_FLOOR_HEIGHT,
-    Math.ceil(TINY_FLOOR_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND,
-  );
-  assert.ok(TINY_ROW_HEIGHT < 100 && TINY_ROW_HEIGHT < ROW_HEIGHT / 4);
-  assert.ok(TINY_FLOOR_HEIGHT < FLOOR_HEIGHT / 3);
+  assert.equal(TINY_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4);
+  assert.equal(TINY_HEIGHT, Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND);
+  assert.ok(TINY_HEIGHT < 100 && TINY_HEIGHT < ROW_HEIGHT / 4);
+  assert.ok(TINY_HEIGHT < FLOOR_HEIGHT / 3);
   assert.equal(dockHeight(false, false), ROW_HEIGHT);
   assert.equal(dockHeight(true, false), FLOOR_HEIGHT);
-  assert.equal(dockHeight(false, true), TINY_ROW_HEIGHT);
-  assert.equal(dockHeight(true, true), TINY_FLOOR_HEIGHT);
+  assert.equal(dockHeight(false, true), TINY_HEIGHT);
+  assert.equal(dockHeight(true, true), TINY_HEIGHT);
   // The tiny strip still rests on the work area's bottom edge.
-  const strip = rowBounds(area, TINY_ROW_HEIGHT);
+  const strip = rowBounds(area, TINY_HEIGHT);
   assert.equal(strip.y + strip.height, area.y + area.height);
 });
 

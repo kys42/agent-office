@@ -44,6 +44,8 @@ export const desk: Messages['desk'] = {
     stackLabel: (count, calling) =>
       `보조 동료 ${count}명${calling ? ', 부르는 보조 있음' : ''} · 명단 보기`,
     stackCount: (count) => `보조 ${count}명`,
+    stackOpen: (count, calling, name) =>
+      `보조 동료 ${count}명${calling ? ', 부르는 보조 있음' : ''} · ${name} 업무 카드 열기`,
     stackList: '보조 동료 명단',
     responded: '응답을 남겼어요',
     label: (name, responded) => `${name}, 보조 동료${responded ? ', 결과 남김' : ''}`,
@@ -93,6 +95,11 @@ export const desk: Messages['desk'] = {
     tinyTitle: '작게 보기 · 말풍선과 깃발 없이 상태만',
     normal: '크게 보기',
     normalTitle: '크게 보기 · 말풍선과 이름표를 다시 보여요',
+    tinyDesk: (work, dot) =>
+      dot
+        ? `${work}, ${dot === 'attention' ? '호출' : dot === 'error' ? '오류' : '새 답장'}`
+        : work,
+    tinyWaiting: (n) => `기다리는 동료 ${n}명`,
     hide: '데스크 펫 숨기기',
     hideTitle: '숨기기 · 트레이에서 다시 열 수 있어요',
   },

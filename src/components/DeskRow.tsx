@@ -53,8 +53,7 @@ import {
   FLOOR_SCENE_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
-  TINY_FLOOR_SCENE_HEIGHT,
-  TINY_ROW_SCENE_HEIGHT,
+  TINY_SCENE_HEIGHT,
   TINY_SCALE,
   TINY_TOP,
 } from '../shared/dock-geometry';
@@ -141,13 +140,7 @@ export function DeskRow({
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
   // Tiny has no bubbles to make room for: the scene starts just above the heads.
   const top = tiny ? TINY_TOP : floor ? FLOOR_TOP : ROW_TOP;
-  const sceneHeight = tiny
-    ? floor
-      ? TINY_FLOOR_SCENE_HEIGHT
-      : TINY_ROW_SCENE_HEIGHT
-    : floor
-      ? FLOOR_SCENE_HEIGHT
-      : ROW_SCENE_HEIGHT;
+  const sceneHeight = tiny ? TINY_SCENE_HEIGHT : floor ? FLOOR_SCENE_HEIGHT : ROW_SCENE_HEIGHT;
   const scale = tiny ? TINY_SCALE : ROW_SCALE;
   const benchY = top + 134;
   // Office: helpers beside their colleague's desk, table at desk height. Floor: on the floor.
@@ -245,11 +238,33 @@ export function DeskRow({
     const step = Math.max(STATION_WIDTH * scale, el.clientWidth - STATION_WIDTH * scale);
     el.scrollBy({ left: direction * step, behavior: reducedMotion ? 'auto' : 'smooth' });
   };
+  // Tiny draws no bubbles or replies: drop what was open, so a hidden reply or unfolded bubble
+  // never eats the first Esc there (it folds the dock to the pet, as in the full size) and
+  // never reappears unexpectedly on the way back.
+  useEffect(() => {
+    if (!tiny) return;
+    setReplying(null);
+    setExpanded(null);
+  }, [tiny]);
+  // The size toggle hides the button that was pressed: focus moves to its counterpart once the
+  // new size is drawn (the desktop answers through the main process, a frame or more later).
+  const toggled = useRef(false);
+  const tinyButton = useRef<HTMLButtonElement>(null);
+  const normalButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!toggled.current) return;
+    toggled.current = false;
+    (tiny ? normalButton : tinyButton).current?.focus();
+  }, [tiny]);
+  const toggleTiny = (on: boolean) => {
+    toggled.current = true;
+    onTiny?.(on);
+  };
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented) return;
     const field =
       e.target instanceof Element && e.target.closest('input, textarea, select') !== null;
-    if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
+    if (e.key === 'Escape' && !e.isComposing && !tiny && (replying || expanded)) {
       // Fold what is open before the dock itself folds (DeskDock skips handled keys).
       e.preventDefault();
       // First Esc leaves the input; a second closes it. Keep the person's draft intact.
@@ -486,15 +501,18 @@ export function DeskRow({
                     const pointing =
                       (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
                       closed !== s.id;
-                    const shown = shownSpeech(
-                      s,
-                      model.notices,
-                      model.bubbleHours,
-                      model.now,
-                      speech,
-                      hover === s.id || expanded === s.id || replying?.station === s.id,
-                      pointing,
-                    );
+                    // Tiny shows no bubble, so it never works out which one would show.
+                    const shown = tiny
+                      ? undefined
+                      : shownSpeech(
+                          s,
+                          model.notices,
+                          model.bubbleHours,
+                          model.now,
+                          speech,
+                          hover === s.id || expanded === s.id || replying?.station === s.id,
+                          pointing,
+                        );
                     const bubble = shown?.speech.bubble;
                     const focus = focusLevel(s, model.now);
                     const replyId = bubble?.sessionId ?? s.id;
@@ -529,7 +547,12 @@ export function DeskRow({
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
-                          aria-label={t.desk.openWork(label.name)}
+                          // Tiny's dot is drawn only: its meaning goes into the name (call, reply, error).
+                          aria-label={
+                            tiny
+                              ? t.desk.row.tinyDesk(t.desk.openWork(label.name), dot?.tone)
+                              : t.desk.openWork(label.name)
+                          }
                           // Tiny has no name plates: the name on hover instead (never in privacy).
                           title={
                             tiny
@@ -741,6 +764,7 @@ export function DeskRow({
                           privacy={privacy}
                           onOpen={open}
                           canVeil={(h) => !tiny && !model.view(h.id)?.needsPerson}
+                          direct={tiny}
                           onVeil={(h) => onVeil([h.id], true)}
                         />
                       );
@@ -811,14 +835,21 @@ export function DeskRow({
           >
             <span className="live-dot" />
             {model.seats.length}
-            {model.counts.attention > 0 && <em>{model.counts.attention}</em>}
+            {model.counts.attention > 0 && (
+              // A bare number on screen; assistive tech hears who it counts.
+              <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
+                <span aria-hidden="true">{model.counts.attention}</span>
+                <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
+              </em>
+            )}
           </span>
           {onTiny && (
             <button
+              ref={normalButton}
               className="icon-btn"
               aria-label={t.desk.row.normal}
               title={t.desk.row.normalTitle}
-              onClick={() => onTiny(false)}
+              onClick={() => toggleTiny(false)}
             >
               <Maximize2 size={12} />
             </button>
@@ -888,10 +919,11 @@ export function DeskRow({
         </button>
         {onTiny && (
           <button
+            ref={tinyButton}
             className="icon-btn"
             aria-label={t.desk.row.tiny}
             title={t.desk.row.tinyTitle}
-            onClick={() => onTiny(true)}
+            onClick={() => toggleTiny(true)}
           >
             <Minimize2 size={14} />
           </button>

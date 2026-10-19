@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
-import { TINY_FLOOR_HEIGHT, TINY_ROW_HEIGHT } from '../../src/shared/dock-geometry';
+import { TINY_HEIGHT } from '../../src/shared/dock-geometry';
 
 /**
  * Three colleagues: run-0 has an unread final reply, run-1 is calling the person, run-2 is
@@ -11,7 +11,9 @@ import { TINY_FLOOR_HEIGHT, TINY_ROW_HEIGHT } from '../../src/shared/dock-geomet
 async function setup(
   page: Page,
   hash: string,
-  opts: { bridge?: boolean; privacy?: boolean } = { bridge: true },
+  opts: { bridge?: boolean; privacy?: boolean; helpers?: number; reply?: boolean } = {
+    bridge: true,
+  },
 ) {
   const snapshot = demoSnapshot();
   const template = snapshot.sessions[0];
@@ -45,6 +47,26 @@ async function setup(
     actor: undefined,
     origin: undefined,
   }));
+  // run-0's helpers (from four they share one stacked desk); helper-2 calls the person.
+  for (let i = 0; i < (opts.helpers ?? 0); i++)
+    snapshot.sessions.push({
+      ...snapshot.sessions[0],
+      id: `run-0:helper-${i}`,
+      nativeId: `run-0-helper-${i}`,
+      alias: '',
+      title: `보조 조사 ${i + 1}`,
+      status: i === 2 ? 'call' : 'work',
+      updatedAt: now - i * 1000,
+      officeSeat: undefined,
+      events: [],
+      relation: {
+        kind: 'subagent',
+        parentNativeId: 'run-0',
+        role: `조사 ${i + 1}`,
+        source: 'demo',
+      },
+      parentId: 'run-0',
+    });
   snapshot.notices = [0, 1].map((i) => ({
     ...notice,
     id: `notice-${i}`,
@@ -65,7 +87,7 @@ async function setup(
   snapshot.preferences.privacy = !!opts.privacy;
   await page.setViewportSize({ width: 1440, height: 720 });
   await page.addInitScript(
-    ({ s, bridge }) => {
+    ({ s, bridge, reply }) => {
       const w = window as any;
       w.fixture = s;
       w.calls = [];
@@ -76,7 +98,22 @@ async function setup(
           structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
         visit: async () => structuredClone(w.fixture),
         artifacts: async () => [],
-        terminals: async () => ({}),
+        // `reply`: every desk sits in a tmux pane that takes a reply.
+        terminals: async (ids: string[]) =>
+          reply
+            ? Object.fromEntries(
+                ids.map((id) => [
+                  id,
+                  { kind: 'tmux', label: 'work:1.0', status: 'idle', canSend: true },
+                ]),
+              )
+            : {},
+        ...(reply
+          ? {
+              terminalSend: async () => true,
+              send: async () => ({ status: 'sent', message: '보냈어요' }),
+            }
+          : {}),
         subscribe: (cb: any) => {
           w.publish = () => {
             w.fixture.version++;
@@ -104,7 +141,7 @@ async function setup(
         };
       }
     },
-    { s: snapshot, bridge: !!opts.bridge },
+    { s: snapshot, bridge: !!opts.bridge, reply: !!opts.reply },
   );
   await page.goto(`/?lang=ko${hash}`);
   await expect(page.locator('.row-zone')).toHaveCount(2);
@@ -122,10 +159,7 @@ for (const mode of ['row', 'floor'] as const) {
     expect(await calls(page)).toContain('tiny-on');
     const row = page.locator('.desk-row');
     await expect(row).toHaveClass(/is-tiny/);
-    await expect(row).toHaveCSS(
-      'height',
-      `${mode === 'floor' ? TINY_FLOOR_HEIGHT : TINY_ROW_HEIGHT}px`,
-    );
+    await expect(row).toHaveCSS('height', `${TINY_HEIGHT}px`);
     await expect(page.locator('.speech-bubble')).toHaveCount(0);
     await expect(
       page.locator('.zone-flag, .row-zone-mark, .row-zone-floor, .desk-name, .floor-plate'),
@@ -207,4 +241,79 @@ test('The window hash opens the floor tiny', async ({ page }) => {
   await setup(page, '#mini=floor&tiny', { bridge: false });
   await expect(page.locator('.desk-row.desk-floor')).toHaveClass(/is-tiny/);
   await expect(page.locator('.zone-flag')).toHaveCount(0);
+});
+
+test('Tiny helper stack opens the front helper directly, no unreadable list', async ({ page }) => {
+  await setup(page, '#mini=row&tiny', { bridge: true, helpers: 5 });
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  const stack = page.locator('.desk-row .helper-stack');
+  await expect(stack).toHaveCount(1);
+  const desk = stack.locator('.helper-stack-desk');
+  await expect(desk).toHaveText(/×5/);
+  // The front helper is the one calling; the name says the click opens its card.
+  await expect(desk).toHaveAttribute('data-session-id', 'run-0:helper-2');
+  await expect(desk).toHaveAttribute(
+    'aria-label',
+    /보조 동료 5명, 부르는 보조 있음 · .+ 업무 카드 열기/,
+  );
+  await expect(desk).not.toHaveAttribute('aria-expanded', /.*/);
+  await desk.click();
+  await expect.poll(() => page.evaluate(() => (window as any).opens)).toEqual(['run-0:helper-2']);
+  await expect(page.locator('.helper-stack-list')).toHaveCount(0);
+
+  // Full size keeps the roster list.
+  await page.getByRole('button', { name: '크게 보기' }).click();
+  await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
+  await desk.click();
+  await expect(stack.getByRole('list', { name: '보조 동료 명단' })).toBeVisible();
+  // A list left open folds away in tiny and does not come back with the full size.
+  await page.getByRole('button', { name: '작게 보기' }).click();
+  await expect(page.locator('.helper-stack-list')).toHaveCount(0);
+  await page.getByRole('button', { name: '크게 보기' }).click();
+  await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
+  await expect(page.locator('.helper-stack-list')).toHaveCount(0);
+});
+
+test('Focus follows the size toggle, and tiny desks say their dot', async ({ page }) => {
+  await setup(page, '#mini=row');
+  await page.getByRole('button', { name: '작게 보기' }).click();
+  await expect(page.getByRole('button', { name: '크게 보기' })).toBeFocused();
+  await expect(pet(page, 0)).toHaveAttribute('aria-label', /동료 0.*, 새 답장$/);
+  await expect(pet(page, 1)).toHaveAttribute('aria-label', /동료 1.*, 호출$/);
+  await expect(pet(page, 2)).toHaveAttribute('aria-label', /동료 2[^,]*$/);
+  await expect(page.locator('.tiny-tools .desk-row-summary em')).toContainText('기다리는 동료 1명');
+  await page.getByRole('button', { name: '크게 보기' }).click();
+  await expect(page.getByRole('button', { name: '작게 보기' })).toBeFocused();
+});
+
+test('An open reply or unfolded bubble closes in tiny; Esc there folds to the pet', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row', { bridge: true, reply: true });
+  const bubble = page.locator('[data-station-id="run-0"] .speech-bubble');
+  await bubble.hover();
+  await bubble.locator('.bubble-reply').click();
+  const input = page.getByRole('textbox', { name: '답장 내용' });
+  await input.fill('쓰다 만 답장');
+  await page.getByRole('button', { name: '작게 보기' }).click();
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  await expect(page.locator('.quick-reply')).toHaveCount(0);
+  // Nothing hidden is left to fold: the first Esc folds the dock, as in the full size.
+  await page.keyboard.press('Escape');
+  await expect.poll(() => calls(page)).toContain('pet');
+});
+
+test('Back from tiny, a bubble unfolded before does not reopen', async ({ page }) => {
+  await setup(page, '#mini=row');
+  const bubble = page.locator('[data-station-id="run-0"] .speech-bubble');
+  await bubble.click();
+  await expect(bubble).toHaveClass(/is-expanded/);
+  await page.getByRole('button', { name: '작게 보기' }).click();
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  await page.getByRole('button', { name: '크게 보기' }).click();
+  await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
+  await expect(page.locator('.speech-bubble.is-expanded')).toHaveCount(0);
+  // Esc folds the dock straight away (nothing open to fold first).
+  await page.keyboard.press('Escape');
+  await expect.poll(() => calls(page)).toContain('pet');
 });
