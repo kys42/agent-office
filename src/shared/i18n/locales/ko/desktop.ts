@@ -20,6 +20,7 @@ export const desktop: Messages['desktop'] = {
   untrustedWindow: '허용되지 않은 창입니다.',
   unsupportedLink: '지원하지 않는 결과 링크입니다.',
   webLinksOnly: '웹 링크(http·https)만 열 수 있어요.',
+  fileMissing: '이 파일을 찾을 수 없어요',
   badRequest: '잘못된 요청',
   badFile: '잘못된 파일 요청',
   codexOpened: 'Codex에서 세션 열기를 요청했어요',

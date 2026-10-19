@@ -22,6 +22,7 @@ const api: OfficeAPI = {
   artifacts: (id) => call('artifacts', id),
   openArtifact: (url) => ipcRenderer.invoke('office:open-artifact', url),
   openLink: (url) => action('office:open-link', url),
+  openFile: (path) => action('office:open-file', path),
   copyText: (text) => action('office:copy', text),
   refresh: () => call('refresh'),
   patch: (id, p) => call('patch', id, p),

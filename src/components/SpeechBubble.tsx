@@ -31,7 +31,7 @@ import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/spee
 import { ago } from '../lib/format';
 import { BubbleMarkdown } from './BubbleMarkdown';
 import { useI18n } from '../lib/i18n';
-import { LinkifiedText } from './WebLink';
+import { FilesHere, LinkifiedText } from './WebLink';
 import { api } from '../lib/api';
 
 /** A non-empty text selection inside this element (the person is selecting, not clicking). */
@@ -241,7 +241,9 @@ export function SpeechBubble({
             {privacy ? (
               MOODS[s.status].label
             ) : markdown ? (
-              <BubbleMarkdown text={markdown} />
+              <FilesHere.Provider value={!s.remote}>
+                <BubbleMarkdown text={markdown} />
+              </FilesHere.Provider>
             ) : (
               <LinkifiedText text={text} />
             )}
