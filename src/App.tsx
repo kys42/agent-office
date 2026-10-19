@@ -467,6 +467,13 @@ export default function App() {
       run: () => goZone('archive'),
     },
     {
+      id: 'sidebar',
+      label: sidebarHidden ? t.app.showSidebar : t.app.hideSidebar,
+      icon: sidebarHidden ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />,
+      keywords: t.palette.actions.sidebarKeywords,
+      run: () => setSidebarHidden(!sidebarHidden),
+    },
+    {
       id: 'memory',
       label: t.palette.actions.memory,
       hint: t.palette.actions.memoryHint,
@@ -530,8 +537,9 @@ export default function App() {
   const sidebarToggle = (
     <button
       className="icon-btn sidebar-toggle"
-      aria-label={sidebarHidden ? t.app.showSidebar : t.app.hideSidebar}
+      aria-label={t.app.sidebarToggle}
       aria-expanded={!sidebarHidden}
+      aria-controls="main-menu"
       title={sidebarHidden ? t.app.showSidebar : t.app.hideSidebar}
       onClick={() => setSidebarHidden(!sidebarHidden)}
     >
@@ -548,7 +556,7 @@ export default function App() {
           <span>Agent Office</span>
         </div>
       )}
-      <aside className="sidebar" aria-label={t.app.mainMenu}>
+      <aside className="sidebar" id="main-menu" aria-label={t.app.mainMenu}>
         <div className="sidebar-top">
           <div className="brand">
             <div className="brand-mark" aria-hidden="true">
@@ -997,7 +1005,8 @@ export default function App() {
             onSelect={choose}
             showNews={showNews}
             onClose={() => setSelected(null)}
-            onBack={() => setSelected(null)}
+            // In the office the card takes the list's place; elsewhere it just closes.
+            onBack={view === 'office' ? () => setSelected(null) : undefined}
             onPatch={onPatch}
             onPin={onPin}
             onReturn={returnToOffice}

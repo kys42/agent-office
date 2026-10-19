@@ -755,7 +755,7 @@ body.card-mode:not(.is-mac) .dock-card {
 .app-body > .inspector-card .card-head:has(.card-back) {
   padding-left: 6px;
 }
-.card-back {
+.app-body > .inspector-card .card-back {
   flex: none;
   margin-right: -4px;
 }

@@ -8,6 +8,7 @@ export const app = {
     settings: { title: 'Connections & Settings', short: 'Settings' },
   },
   mainMenu: 'Main menu',
+  sidebarToggle: 'Sidebar',
   hideSidebar: 'Hide the sidebar',
   showSidebar: 'Show the sidebar',
   close: 'Close',

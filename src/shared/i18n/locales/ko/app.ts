@@ -10,6 +10,7 @@ export const app: Messages['app'] = {
     settings: { title: '연결과 설정', short: '설정' },
   },
   mainMenu: '주 메뉴',
+  sidebarToggle: '왼쪽 메뉴',
   hideSidebar: '왼쪽 메뉴 접기',
   showSidebar: '왼쪽 메뉴 펼치기',
   close: '닫기',
