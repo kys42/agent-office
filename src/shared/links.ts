@@ -66,3 +66,11 @@ export function keepFileLinks(fallback: (url: string) => string) {
 /** Kinds of file a click opens in its default app; anything else is shown in its folder. */
 export const OPENABLE_FILE =
   /\.(md|markdown|txt|log|csv|tsv|json|jsonl|ya?ml|toml|html?|pdf|png|jpe?g|gif|webp|svg|heic|mp4|mov|webm|mp3|wav)$/i;
+
+/**
+ * Links in the order they were last mentioned, oldest first, each once, the latest `limit`
+ * kept: a link brought up again counts as recent (the card lists the newest first).
+ */
+export function lastMentions(links: string[], limit: number): string[] {
+  return [...new Set([...links].reverse())].reverse().slice(-limit);
+}
