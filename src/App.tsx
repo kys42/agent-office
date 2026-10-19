@@ -2,7 +2,9 @@ import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { PanelResizer } from './components/PanelResizer';
+import { PANEL, fitPanels, readWidths, type PanelWidths } from './shared/panel-widths';
 import {
   Gauge,
   Home,
@@ -97,6 +99,38 @@ export default function App() {
       // Remembering is a convenience.
     }
   };
+  // Widths the person dragged the left menu and the right column to (remembered here), fitted to
+  // the window as it is now.
+  const [widths, setWidthsState] = useState<PanelWidths>(() => {
+    try {
+      return readWidths(localStorage.getItem('office:panel-widths'));
+    } catch {
+      return {};
+    }
+  });
+  const setWidths = (patch: PanelWidths) => setWidthsState((was) => ({ ...was, ...patch }));
+  useEffect(() => {
+    // Saved once the edge rests, not on every step of a drag (and on leaving, if sooner).
+    const save = () => {
+      try {
+        localStorage.setItem('office:panel-widths', JSON.stringify(widths));
+      } catch {
+        // Remembering is a convenience.
+      }
+    };
+    const timer = setTimeout(save, 300);
+    window.addEventListener('pagehide', save);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pagehide', save);
+    };
+  }, [widths]);
+  const [viewport, setViewport] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const resized = () => setViewport(window.innerWidth);
+    window.addEventListener('resize', resized);
+    return () => window.removeEventListener('resize', resized);
+  }, []);
   const [showUsage, setShowUsage] = useState(false);
   const [showNews, setShowNews] = useState<string | null>(null);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
@@ -534,6 +568,9 @@ export default function App() {
     },
   ];
   const docked = !!current || inbox || showUsage;
+  // The right column: the office's list, or a card, inbox or usage beside any view.
+  const rightColumn = (view === 'office' && !!snapshot) || docked;
+  const panels = fitPanels(widths, viewport, { sidebar: !sidebarHidden, dock: rightColumn });
   const sidebarToggle = (
     <button
       className="icon-btn sidebar-toggle"
@@ -549,6 +586,12 @@ export default function App() {
   const content = (
     <div
       className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''} ${sidebarHidden ? 'sidebar-hidden' : ''}`}
+      style={
+        {
+          ...(panels.css.side ? { '--side-w': `${panels.css.side}px` } : {}),
+          ...(panels.css.dock ? { '--dock-w': `${panels.css.dock}px` } : {}),
+        } as CSSProperties
+      }
     >
       {isDesktop && isWindows && (
         <div className="windows-titlebar">
@@ -748,8 +791,31 @@ export default function App() {
             {demo ? t.app.footer.toLive : t.app.footer.toDemo}
           </button>
         </div>
+        <PanelResizer
+          edge="left"
+          width={panels.side}
+          min={PANEL.sideMin}
+          max={panels.sideMax}
+          label={t.app.resizeSidebar}
+          hint={t.app.resizeHint}
+          controls="main-menu"
+          onWidth={(side) => setWidths({ side })}
+          onReset={() => setWidths({ side: undefined })}
+        />
       </aside>
       <div className="app-body">
+        {rightColumn && (
+          <PanelResizer
+            edge="right"
+            width={panels.dock}
+            min={PANEL.dockMin}
+            max={panels.dockMax}
+            label={t.app.resizeDock}
+            hint={t.app.resizeHint}
+            onWidth={(dock) => setWidths({ dock })}
+            onReset={() => setWidths({ dock: undefined })}
+          />
+        )}
         <main className={`main-content view-${view}`}>
           <header className="toolbar app-header">
             {sidebarToggle}
