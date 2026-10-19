@@ -5,13 +5,24 @@ import os from 'node:os';
 import path from 'node:path';
 import { runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
+import type { TerminalHost } from './terminal-host.js';
 import type { Session, TmuxResumeInfo } from '../src/shared/types.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
-type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & { fresh?: boolean };
+type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
+  fresh?: boolean;
+  agentName?: string;
+};
 /** One reconnectable fresh conversation slot per project and provider. */
-export function summonSession(cwd: string, provider: 'claude' | 'codex'): SavedSession {
-  return { cwd, provider, nativeId: 'new', fresh: true };
+export function summonSession(
+  cwd: string,
+  provider: 'claude' | 'codex',
+  name?: string,
+): SavedSession {
+  const agentName = name?.trim().normalize('NFC');
+  if (name !== undefined && (!agentName || !/^[\p{L}\p{N} _-]{1,40}$/u.test(agentName)))
+    throw new Error(m().tmux.invalidName);
+  return { cwd, provider, nativeId: 'new', fresh: true, agentName };
 }
 export interface ResumeDeps {
   run: typeof runCommand;
@@ -58,9 +69,15 @@ export class TmuxResume {
     if (!s.cwd || !path.isAbsolute(s.cwd) || /[\x00-\x1f\x7f]/.test(s.cwd))
       throw new Error(m().tmux.folderMissing);
     const token = createHash('sha256')
-      .update(s.fresh ? `new:${s.provider}:${path.resolve(s.cwd)}` : `${s.provider}:${s.nativeId}`)
+      .update(
+        s.fresh
+          ? `new:${s.provider}:${path.resolve(s.cwd)}${s.agentName ? ':' + s.agentName : ''}`
+          : `${s.provider}:${s.nativeId}`,
+      )
       .digest('hex');
-    const name = `office-${s.provider}-${token.slice(0, 16)}`;
+    const name = s.agentName
+      ? `${s.agentName.replace(/ /g, '-')}-${s.provider}-${token.slice(0, 8)}`
+      : `office-${s.provider}-${token.slice(0, 16)}`;
     return { token, name, cwd: s.cwd };
   }
   private async inspect(s: SavedSession) {
@@ -187,6 +204,24 @@ export class TmuxResume {
             'set-option',
             '-t',
             current.name,
+            '@agent_office_cwd',
+            Buffer.from(current.cwd).toString('base64'),
+            ';',
+            'set-option',
+            '-t',
+            current.name,
+            '@agent_office_alias',
+            Buffer.from(s.agentName ?? '').toString('base64'),
+            ';',
+            'set-option',
+            '-t',
+            current.name,
+            '@agent_office_claimed',
+            '',
+            ';',
+            'set-option',
+            '-t',
+            current.name,
             '@agent_office_resume',
             current.token,
           ],
@@ -201,6 +236,97 @@ export class TmuxResume {
     });
     this.queue = task.catch(() => undefined);
     return task;
+  }
+  async connections(cwd: string): Promise<NonNullable<TmuxResumeInfo['connections']>> {
+    const tmux = await this.deps.binary('tmux');
+    let rows: string;
+    try {
+      rows = await this.deps.run(tmux, [
+        '-L',
+        this.deps.server,
+        'list-sessions',
+        '-F',
+        '#{session_name}\t#{@agent_office_resume}\t#{@agent_office_cwd}\t#{@agent_office_alias}',
+      ]);
+    } catch (error) {
+      const e = error as Error & { stderr?: string };
+      if (/no server running|No such file or directory/i.test(`${e.message} ${e.stderr ?? ''}`))
+        return [];
+      throw error;
+    }
+    const result: NonNullable<TmuxResumeInfo['connections']> = [];
+    for (const line of rows.split('\n')) {
+      const [name, token, encodedCwd, encodedAlias] = line.split('\t');
+      const folder = Buffer.from(encodedCwd ?? '', 'base64').toString('utf8');
+      if (!path.isAbsolute(folder) || path.resolve(folder) !== path.resolve(cwd)) continue;
+      const provider = /-(claude|codex)-[a-f0-9]{8}$/.exec(name)?.[1] as
+        'claude' | 'codex' | undefined;
+      const alias = Buffer.from(encodedAlias ?? '', 'base64').toString('utf8');
+      if (!provider || !/^[\p{L}\p{N} _-]{1,40}$/u.test(alias)) continue;
+      const saved = summonSession(folder, provider, alias);
+      const expected = this.describe(saved);
+      if (expected.name !== name || expected.token !== token) continue;
+      const info = await this.status(saved);
+      if (info.running) result.push({ name: alias, label: name, command: info.command });
+    }
+    return result;
+  }
+  async namedFolders(): Promise<Set<string>> {
+    if (!['darwin', 'linux'].includes(this.deps.platform)) return new Set();
+    try {
+      const rows = await this.deps.run(await this.deps.binary('tmux'), [
+        '-L',
+        this.deps.server,
+        'list-sessions',
+        '-F',
+        '#{@agent_office_cwd}\t#{@agent_office_alias}',
+      ]);
+      return new Set(
+        rows.split('\n').flatMap((line) => {
+          const [cwd, alias] = line.split('\t');
+          const folder = Buffer.from(cwd ?? '', 'base64').toString('utf8');
+          return alias && path.isAbsolute(folder) ? [path.resolve(folder)] : [];
+        }),
+      );
+    } catch {
+      return new Set();
+    }
+  }
+  /** Only names from our dedicated server and the exact discovered pane may be adopted. */
+  async aliasFor(host: TerminalHost, id: string): Promise<string | null> {
+    if (host.kind !== 'tmux') return null;
+    const tmux = await this.deps.binary('tmux');
+    const row = (
+      await this.deps.run(tmux, [
+        '-L',
+        this.deps.server,
+        'display-message',
+        '-p',
+        '-t',
+        host.pane,
+        '#{socket_path}\t#{@agent_office_resume}\t#{@agent_office_alias}\t#{@agent_office_claimed}',
+      ])
+    )
+      .trim()
+      .split('\t');
+    if (row[0] !== host.socket || !/^[a-f0-9]{64}$/.test(row[1] ?? '') || row[3] === id)
+      return null;
+    const alias = Buffer.from(row[2] ?? '', 'base64').toString('utf8');
+    if (!/^[\p{L}\p{N} _-]{1,40}$/u.test(alias)) return null;
+    return alias;
+  }
+  async claimAlias(host: TerminalHost, id: string) {
+    if (host.kind !== 'tmux' || !(await this.aliasFor(host, id))) return;
+    await this.deps.run(await this.deps.binary('tmux'), [
+      '-L',
+      this.deps.server,
+      'set-option',
+      '-p',
+      '-t',
+      host.pane,
+      '@agent_office_claimed',
+      id,
+    ]);
   }
   async open(s: SavedSession) {
     const { info } = await this.inspect(s);

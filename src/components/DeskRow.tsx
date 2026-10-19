@@ -1,3 +1,4 @@
+import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -356,7 +357,26 @@ export function DeskRow({
                           <b>{String(index + 1).padStart(2, '0')}</b>
                           <span>{zoneName}</span>
                         </button>
-                        {zoneVeil}
+                        {!api.tmuxSummon ||
+                        demo ||
+                        privacy ||
+                        !sessions.some(
+                          (s) =>
+                            !s.remote &&
+                            s.cwd &&
+                            zone.stations.some((station) => station.id === s.id),
+                        ) ? (
+                          zoneVeil
+                        ) : (
+                          <ProjectSummon
+                            sessions={sessions.filter((s) =>
+                              zone.stations.some((station) => station.id === s.id),
+                            )}
+                            privacy={privacy}
+                            notify={notify}
+                            demo={demo}
+                          />
+                        )}
                       </div>
                       <i className="zone-flag-base" data-solid {...dragHandle} aria-hidden="true" />
                     </div>
@@ -393,6 +413,14 @@ export function DeskRow({
                             {t.desk.headcount(zone.stations.length, zone.helpers.length > 0)}
                           </small>
                         </button>
+                        <ProjectSummon
+                          sessions={sessions.filter((s) =>
+                            zone.stations.some((station) => station.id === s.id),
+                          )}
+                          privacy={privacy}
+                          notify={notify}
+                          demo={demo}
+                        />
                         {zoneVeil}
                       </div>
                     </>

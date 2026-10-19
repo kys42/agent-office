@@ -1,3 +1,4 @@
+import { ProjectSummon } from './ProjectSummon';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import {
@@ -59,7 +60,9 @@ export function Office({
   onReply,
   notify,
   quotaOf,
+  demo = false,
 }: {
+  demo?: boolean;
   sessions: Session[];
   notices: OfficeNotice[];
   bubbleHours: number;
@@ -439,6 +442,14 @@ export function Office({
                         )}
                       </small>
                     </button>
+                    <ProjectSummon
+                      sessions={sessions.filter((s) =>
+                        area.stations.some((station) => station.id === s.id),
+                      )}
+                      privacy={privacy}
+                      notify={notify ?? (() => {})}
+                      demo={demo}
+                    />
                     {onVeilZone && veilIds.length > 0 && (
                       <VeilButton zone name={areaName} onVeil={() => onVeilZone(veilIds)} />
                     )}

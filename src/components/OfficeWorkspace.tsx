@@ -239,6 +239,7 @@ export function OfficeWorkspace({
             zoneVeilIds={(ids) =>
               zoneVeilIds(model, ids).filter((id) => !model.view(id)?.session.remote)
             }
+            demo={demo}
             onVeilZone={(ids) => onVeil(ids, true)}
             quotaOf={(s) => model.view(s.id)?.quota}
             onPin={onPin}

@@ -52,6 +52,7 @@ export function Modal({
   return (
     <div
       className="modal-backdrop"
+      data-solid
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
