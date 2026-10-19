@@ -478,6 +478,8 @@ test('Same branch shares a table and true children use accessible small desks', 
   page,
 }) => {
   const fixture = demoSnapshot();
+  // A helper of 코코, the first at the shared table: its small desk joins right beside 코코, so
+  // the table goes on after it in two pieces, both still the shared table of that branch.
   fixture.sessions[2] = {
     ...fixture.sessions[2],
     provider: 'claude',
@@ -496,7 +498,7 @@ test('Same branch shares a table and true children use accessible small desks', 
     };
   }, fixture);
   await page.goto('/');
-  await expect(page.locator('.shared-bench')).toHaveCount(1);
+  await expect(page.locator('.shared-bench')).toHaveCount(2);
   await expect(page.locator('.office-pet')).toHaveCount(5);
   await expect(page.locator('.helper-desk')).toHaveCount(1);
   await page.locator('.helper-desk').click();

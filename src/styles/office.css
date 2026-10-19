@@ -1573,12 +1573,12 @@
   background: var(--st-call);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
 }
-/* One desk wide and anchored to the colleague's column (the stack is always its first slot),
-   so the list never runs off the map; long names ellipsize. */
+/* One desk wide, opening leftwards over the colleague's own desk (the stack sits right beside
+   it), so the list never runs off the map's right edge; long names ellipsize. */
 .helper-stack-list {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: -10px;
+  right: -10px;
   z-index: 30;
   width: 164px;
   max-height: 200px;
