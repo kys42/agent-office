@@ -94,7 +94,7 @@ export const guide = {
     },
     terminal: {
       title: 'Follow up from the office',
-      body: 'Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
+      body: 'Resume older local Claude or Codex conversations with Resume in tmux on the work card. Confirm before starting, then use the session name and reconnect command or open it in Terminal. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
       where: 'Work card or bubble → reply · Settings',
       action: 'View reply settings',
     },

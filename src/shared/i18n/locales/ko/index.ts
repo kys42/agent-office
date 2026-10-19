@@ -1,3 +1,4 @@
+import { tmux } from './tmux';
 import { mobile } from './mobile';
 import { guide } from './guide';
 import { federation } from './federation';
@@ -27,6 +28,7 @@ import { terminal } from './terminal';
 import { prompts } from './prompts';
 
 export const ko: Messages = {
+  tmux,
   mobile,
   federation,
   common,

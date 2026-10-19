@@ -1,3 +1,4 @@
+import { TmuxResume } from './tmux-resume.js';
 import {
   app,
   BrowserWindow,
@@ -543,6 +544,38 @@ function setupIPC() {
     trusted(e);
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     return (await resume(await bridge.call('detail', [id]))).text;
+  });
+  const tmuxResume = new TmuxResume();
+  ipcMain.handle('office:tmux-resume', async (e, id, action) => {
+    trusted(e);
+    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
+      throw new Error(m().desktop.badRequest);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
+    const session: Session = await bridge.call('detail', [id]);
+    if (action === 'status') return tmuxResume.status(session);
+    if (action === 'open') return tmuxResume.open(session);
+    return tmuxResume.start(session, async (info) => {
+      const owner = BrowserWindow.fromWebContents(e.sender);
+      const t = m().tmux;
+      const options = {
+        type: 'question' as const,
+        title: t.title,
+        message: t.confirm,
+        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}`,
+        buttons: [t.cancel, t.start],
+        defaultId: 0,
+        cancelId: 0,
+      };
+      const endCardDialog = cards.dialog(e.sender);
+      try {
+        const result = owner
+          ? await dialog.showMessageBox(owner, options)
+          : await dialog.showMessageBox(options);
+        return result.response === 1;
+      } finally {
+        endCardDialog();
+      }
+    });
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();

@@ -48,6 +48,7 @@ const api: OfficeAPI = {
   },
   window: (action, id) => ipcRenderer.invoke('office:window', action, id),
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
+  tmuxResume: (id, actionName) => action('office:tmux-resume', id, actionName),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),

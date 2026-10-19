@@ -725,6 +725,9 @@ export interface OfficeAPI {
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
+  /** Local desktop only. Starting requires confirmation in the main process. */
+  tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
+
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
   /** Desktop only: focus the live terminal, or fall back to resume. */
@@ -821,3 +824,11 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
   sleep: mood('sleep', '#85818d', 7),
   leave: mood('leave', '#6d6975', 8),
 };
+
+export interface TmuxResumeInfo {
+  name: string;
+  cwd: string;
+  command: string;
+  running: boolean;
+  canOpen: boolean;
+}
