@@ -75,7 +75,6 @@ export const desk = {
     refreshTitle: 'Refresh · check the records again now (restarts a stalled collector too)',
     openCard: (name: string) => `Open ${name}'s work card`,
     cardTitle: 'Open as popup',
-    cardHint: "Opens the work card right here. The card's full mode takes you to the big office.",
     empty: 'Waiting for teammate activity.',
     left: (n: number) => `Show ${n} ${n === 1 ? 'teammate' : 'teammates'} to the left`,
     leftTitle: 'Previous desks · ←',
