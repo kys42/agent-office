@@ -48,6 +48,7 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
       }),
       tmuxSummon: async (id: string, action: string, provider: string, name: string) => {
         w.lastName = name;
+        w.lastId = id;
         w.actions.push(provider + ':' + action);
         if (action === 'start') w['running_' + provider] = true;
         return {
@@ -188,3 +189,20 @@ for (const route of ['/', '/#mini=floor'])
       ).toEqual(['codex:start']);
     },
   );
+
+test('project membership changes cannot launch a stale session folder', async ({ page }) => {
+  await setup(page, false, '/#mini=floor');
+  await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
+  const modal = page.getByRole('dialog', { name: '새 에이전트 소환' });
+  const folder = modal.getByRole('combobox');
+  const previous = await folder.inputValue();
+  await page.evaluate(() => {
+    const w = window as any;
+    for (const s of w.fixture.sessions) s.id += '-replacement';
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(folder).not.toHaveValue(previous);
+  await expect(modal.getByRole('button', { name: 'tmux에 소환하기' })).toHaveCount(0);
+  await modal.getByRole('button', { name: '연결과 이름 확인' }).click();
+  expect(await page.evaluate(() => (window as any).lastId)).toBe(await folder.inputValue());
+});

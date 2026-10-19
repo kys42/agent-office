@@ -35,10 +35,23 @@ export function TmuxResume({
   const [agentName, setAgentName] = useState(t.tmux.summonDefault);
   const [provider, setProvider] = useState<'claude' | 'codex'>('claude');
   const body = useRef<HTMLDivElement>(null);
+  const request = useRef(0);
   const [open, setOpen] = useState(false);
   const [info, setInfo] = useState<TmuxResumeInfo | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const projectIds = projects?.map((p) => p.id).join('\n');
+  useEffect(() => {
+    const ids = projectIds?.split('\n');
+    const next = ids?.length && !ids.includes(projectId) ? ids[0] : null;
+    if (next) {
+      request.current++;
+      setProjectId(next);
+      setInfo(null);
+      setError('');
+      setBusy(false);
+    }
+  }, [projectIds, projectId]);
   useEffect(() => {
     if (open && !busy && document.activeElement === document.body)
       body.current?.closest<HTMLElement>('[role=dialog]')?.focus();
@@ -48,19 +61,21 @@ export function TmuxResume({
   }, [privacy]);
   const act = async (action: 'status' | 'start' | 'open', selected = provider) => {
     if (busy || (summon ? !api.tmuxSummon : !api.tmuxResume)) return;
+    if (projects && !projects.some((p) => p.id === projectId)) return;
+    const ticket = ++request.current;
     setBusy(true);
     setError('');
     try {
-      setInfo(
-        summon
-          ? await api.tmuxSummon!(projectId, action, selected, agentName)
-          : await api.tmuxResume!(id, action),
-      );
+      const result = summon
+        ? await api.tmuxSummon!(projectId, action, selected, agentName)
+        : await api.tmuxResume!(id, action);
+      if (ticket === request.current) setInfo(result);
     } catch (e) {
+      if (ticket !== request.current) return;
       if (action !== 'open') setInfo(null);
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (ticket === request.current) setBusy(false);
     }
   };
   return (
