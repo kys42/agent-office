@@ -72,6 +72,11 @@ const api: OfficeAPI = {
   prompt: (id) => action('office:prompt', id),
   answer: (id, choice) => action('office:answer', id, choice),
   answerSettings: (patch) => action('office:answer-settings', patch),
+  onDesktopSettings: (cb) => {
+    const f = () => cb();
+    ipcRenderer.on('office:desktop-settings', f);
+    return () => ipcRenderer.removeListener('office:desktop-settings', f);
+  },
   card: (what, target, anchor) => ipcRenderer.invoke('office:card', what, target, anchor),
   onCard: (cb) => {
     const f = (_: unknown, target: CardTarget | null) => cb(target);

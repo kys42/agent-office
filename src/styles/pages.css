@@ -599,6 +599,15 @@
   max-width: 760px;
   outline: none;
 }
+.settings-category {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.settings-category[hidden] {
+  display: none;
+}
 .settings-panel-head h2 {
   font-size: 18px;
   font-weight: 680;

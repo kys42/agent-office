@@ -42,6 +42,17 @@ import {
   type SettingsSection,
 } from '../shared/settings';
 export type { SettingsSection } from '../shared/settings';
+const CATEGORY_KEY = 'agent-office:settings-category';
+function lastPageCategory(): SettingsCategory {
+  try {
+    const saved = sessionStorage.getItem(CATEGORY_KEY);
+    return (SETTINGS_CATEGORIES as readonly string[]).includes(saved ?? '')
+      ? (saved as SettingsCategory)
+      : 'general';
+  } catch {
+    return 'general';
+  }
+}
 const CATEGORY_ICONS: Record<SettingsCategory, LucideIcon> = {
   general: SlidersHorizontal,
   appearance: Palette,
@@ -109,8 +120,21 @@ export function Settings({
   const p = snapshot.preferences;
   const [customizing, setCustomizing] = useState<Provider | null>(null);
   const [category, setCategory] = useState<SettingsCategory>(() =>
-    focusSection ? settingsCategory(focusSection.section) : 'general',
+    focusSection
+      ? settingsCategory(focusSection.section)
+      : layout === 'page'
+        ? lastPageCategory()
+        : 'general',
   );
+  // The page comes back to the category last open in this session.
+  useEffect(() => {
+    if (layout !== 'page') return;
+    try {
+      sessionStorage.setItem(CATEGORY_KEY, category);
+    } catch {
+      /* storage blocked: start at the first category next time */
+    }
+  }, [layout, category]);
   // A deep link first switches category, then scrolls once that category is drawn.
   const [pending, setPending] = useState<SettingsSection | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -124,11 +148,11 @@ export function Settings({
   }, [focusSection, onSectionFocused]);
   useEffect(() => {
     if (!pending) return;
-    // A desktop-only section missing here (web preview) falls back to its category's top.
-    const section =
-      root.current?.querySelector<HTMLElement>(
-        `[data-guide-section="${settingsAnchor(pending)}"]`,
-      ) ?? panel.current;
+    // A desktop-only section missing or empty here (web preview) falls back to its category's top.
+    const found = panel.current?.querySelector<HTMLElement>(
+      `.settings-category[data-category="${category}"] [data-guide-section="${settingsAnchor(pending)}"]`,
+    );
+    const section = found && found.offsetHeight > 0 ? found : panel.current;
     section?.scrollIntoView({ block: 'start' });
     section?.focus({ preventScroll: true });
     setPending(null);
@@ -138,7 +162,12 @@ export function Settings({
     panel.current?.scrollIntoView({ block: 'nearest' });
   };
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const step = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    // The page's list is vertical (Up/Down), the window's tabs horizontal (Left/Right).
+    const step = (
+      layout === 'page'
+        ? { ArrowDown: 1, ArrowUp: -1 }
+        : ({ ArrowRight: 1, ArrowLeft: -1 } as Record<string, number>)
+    )[e.key];
     const edge = e.key === 'Home' ? 0 : e.key === 'End' ? SETTINGS_CATEGORIES.length - 1 : null;
     if (step === undefined && edge === null) return;
     e.preventDefault();
@@ -607,7 +636,9 @@ export function Settings({
       </section>
     </>
   );
-  const content = { general, appearance, office, spaces, connections, records }[category];
+  // Every category stays mounted and only the open one is shown, so stateful parts (the
+  // federation and phone pairing panels) keep their state across tab switches.
+  const panels = { general, appearance, office, spaces, connections, records };
   return (
     <div
       className={`settings-page settings-${layout}${layout === 'page' ? ' page' : ''}`}
@@ -662,7 +693,11 @@ export function Settings({
             <h2>{s.categories[category].label}</h2>
             <p>{s.categories[category].hint}</p>
           </header>
-          {content}
+          {SETTINGS_CATEGORIES.map((c) => (
+            <div key={c} className="settings-category" data-category={c} hidden={c !== category}>
+              {panels[c]}
+            </div>
+          ))}
         </div>
       </div>
       {customizing && (

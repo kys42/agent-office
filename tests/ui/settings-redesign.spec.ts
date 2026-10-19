@@ -13,6 +13,12 @@ async function desktop(page: Page) {
   await page.addInitScript((s) => {
     const w = window as any;
     w.opened = [];
+    w.desk = { send: true, answers: { questions: 'unset', permissions: 'unset' } };
+    w.listeners = new Set();
+    w.changed = (next: any) => {
+      Object.assign(w.desk, next);
+      for (const cb of w.listeners) cb();
+    };
     w.office = {
       snapshot: async () => structuredClone(s),
       subscribe: () => () => {},
@@ -23,8 +29,21 @@ async function desktop(page: Page) {
         s.preferences = { ...s.preferences, ...p };
         return structuredClone(s);
       },
-      terminalSend: async (enable?: boolean) => enable ?? true,
-      answerSettings: async () => ({ questions: 'unset', permissions: 'unset' }),
+      // Desktop-only settings, as the main process keeps them; `w.changed()` is its broadcast.
+      terminalSend: async (enable?: boolean) =>
+        enable === undefined ? w.desk.send : (w.desk.send = enable),
+      answerSettings: async (patch?: Record<string, boolean>) => {
+        for (const [k, on] of Object.entries(patch ?? {})) w.desk.answers[k] = on ? 'on' : 'off';
+        return { ...w.desk.answers };
+      },
+      onDesktopSettings: (cb: () => void) => {
+        w.listeners.add(cb);
+        return () => w.listeners.delete(cb);
+      },
+      terminals: async (ids: string[]) =>
+        Object.fromEntries(ids.map((id) => [id, { kind: 'tmux', status: 'idle', canSend: true }])),
+      send: async () => ({ status: 'sent', message: 'Sent' }),
+      inspectDraft: async () => null,
       settings: {
         open: async (section?: string) => void w.opened.push(section ?? null),
         onOpen: () => () => {},
@@ -194,4 +213,122 @@ test('the page switches to top tabs at phone width without overflowing', async (
   await tabs.getByRole('tab', { name: '연결', exact: true }).click();
   await expect(page.locator('.connector-card')).toHaveCount(3);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('desktop-only settings changed in another window reach the office and the settings', async ({
+  page,
+}) => {
+  await desktop(page);
+  await page.addInitScript(() => ((window as any).desk.send = false));
+  await page.goto('/?lang=ko');
+  // Off at first: the colleague's card offers no reply box.
+  await page.locator('.roster .session-row').first().click();
+  await expect(page.locator('.terminal-send-hint').first()).toBeVisible();
+  await expect(page.locator('.terminal-send-chat')).toHaveCount(0);
+  // The settings window turns it on: the reply box appears without reopening anything.
+  await page.evaluate(() => (window as any).changed({ send: true }));
+  await expect(page.locator('.terminal-send-chat textarea')).toBeVisible();
+  // The settings page shows what was saved elsewhere, live.
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  const send = page.getByRole('switch', { name: '터미널로 보내기' });
+  const questions = page.getByRole('switch', { name: '질문·플랜에 답하기' });
+  await expect(send).toHaveAttribute('aria-checked', 'true');
+  await expect(questions).toHaveAttribute('aria-checked', 'false');
+  await page.evaluate(() =>
+    (window as any).changed({ send: false, answers: { questions: 'on', permissions: 'unset' } }),
+  );
+  await expect(send).toHaveAttribute('aria-checked', 'false');
+  await expect(questions).toHaveAttribute('aria-checked', 'true');
+  // A change missed meanwhile still shows when the window comes back into focus.
+  await page.evaluate(() => {
+    (window as any).desk.send = true;
+    window.dispatchEvent(new Event('focus'));
+  });
+  await expect(send).toHaveAttribute('aria-checked', 'true');
+});
+
+test('the settings window follows desktop-only changes and reduced motion live', async ({
+  page,
+}) => {
+  await desktop(page);
+  await page.goto('/?lang=ko#settings');
+  const send = page.getByRole('switch', { name: '터미널로 보내기' });
+  await expect(send).toHaveAttribute('aria-checked', 'true');
+  await page.evaluate(() => (window as any).changed({ send: false }));
+  await expect(send).toHaveAttribute('aria-checked', 'false');
+  const root = page.locator('.settings-window');
+  await expect(root).not.toHaveClass(/reduce-motion/);
+  await page.getByRole('tab', { name: '모습', exact: true }).click();
+  await page.getByRole('switch', { name: '움직임 줄이기' }).click();
+  await expect(root).toHaveClass(/reduce-motion/);
+  await page.getByRole('switch', { name: '움직임 줄이기' }).click();
+  await expect(root).not.toHaveClass(/reduce-motion/);
+});
+
+test('categories keep their state, the page remembers the last one, and keys follow the layout', async ({
+  page,
+}) => {
+  await desktop(page);
+  await page.goto('/?lang=ko');
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  const tabs = page.getByRole('tablist', { name: '설정 분류' });
+  // Every category stays drawn; only the open one is visible.
+  await expect(page.locator('.settings-category')).toHaveCount(6);
+  await expect(page.locator('.settings-category:not([hidden])')).toHaveCount(1);
+  // An unsaved edit in one category survives a trip to another.
+  await tabs.getByRole('tab', { name: '공간', exact: true }).click();
+  const name = page.getByLabel('리서치 구역 이름');
+  await name.evaluate((el: HTMLInputElement) => (el.value = '편집 중'));
+  await tabs.getByRole('tab', { name: '기록', exact: true }).click();
+  await tabs.getByRole('tab', { name: '공간', exact: true }).click();
+  await expect(name).toHaveValue('편집 중');
+  // The vertical list moves with Up/Down only.
+  await tabs.getByRole('tab', { name: '공간', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(tabs.getByRole('tab', { name: '공간', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.keyboard.press('ArrowUp');
+  await expect(tabs.getByRole('tab', { name: '사무실', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  // Leaving the page and coming back opens the category last open.
+  await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await expect(tabs.getByRole('tab', { name: '사무실', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  // The window's tabs are horizontal: Left/Right move, Up/Down do nothing.
+  // (A new load: a hash change alone would keep the big office.)
+  await page.goto('/?lang=ko&window#settings');
+  const top = page.getByRole('tablist', { name: '설정 분류' });
+  await top.getByRole('tab', { name: '일반', exact: true }).focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(top.getByRole('tab', { name: '일반', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.keyboard.press('ArrowRight');
+  await expect(top.getByRole('tab', { name: '모습', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(top.getByRole('tab', { name: '모습', exact: true })).toBeFocused();
+});
+
+test('a deep link to a section the browser preview does not draw lands on its category', async ({
+  page,
+}) => {
+  // No phone pairing or federation bridge (as in the browser preview): they render nothing.
+  await desktop(page);
+  await page.goto('/?lang=ko#settings=mobile');
+  const tabs = page.getByRole('tablist', { name: '설정 분류' });
+  await expect(tabs.getByRole('tab', { name: '연결', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(page.getByRole('tabpanel')).toBeFocused();
 });

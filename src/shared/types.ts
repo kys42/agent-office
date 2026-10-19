@@ -773,6 +773,11 @@ export interface OfficeAPI {
     patch?: Partial<Record<keyof AnswerSettings, boolean>>,
   ) => Promise<AnswerSettings>;
   /**
+   * Desktop only: called after the desktop-only settings (terminal send, answering) change in
+   * any window, so every window re-reads them.
+   */
+  onDesktopSettings?: (callback: () => void) => () => void;
+  /**
    * Desktop dock only: open the colleague card at a clicked desk or bubble, or (from the card)
    * close it or go to the full office.
    */

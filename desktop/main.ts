@@ -309,12 +309,16 @@ function showMain(id?: string) {
  * The settings window (#87): the same Settings as the big office's page, as top tabs. Unlike
  * the card window it stays open when it loses focus, so it can sit beside the work it tunes.
  */
+const settingsReady = new WeakSet<BrowserWindow>();
 function showSettings(section: SettingsSection | null = null) {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     const window = settingsWindow;
-    if (window.isMinimized()) window.restore();
-    window.show();
-    window.focus();
+    // Still loading: ready-to-show shows it, never a blank window before that.
+    if (settingsReady.has(window)) {
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
+    }
     const tell = () => !window.isDestroyed() && window.webContents.send('office:settings', section);
     if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', tell);
     else tell();
@@ -343,6 +347,7 @@ function showSettings(section: SettingsSection | null = null) {
   secure(window);
   watch(window);
   window.once('ready-to-show', () => {
+    settingsReady.add(window);
     window.show();
     window.focus();
   });
@@ -859,6 +864,8 @@ function setupIPC() {
   ipcMain.handle('office:terminal-send', async (e, enable) => {
     trusted(e);
     if (typeof enable !== 'boolean') return terminalSendEnabled();
+    // Already on (another window turned it on meanwhile): no second confirmation.
+    if (enable && (await terminalSendEnabled())) return true;
     if (enable) {
       const owner = BrowserWindow.fromWebContents(e.sender);
       const t = m().desktop.terminal.confirm;
@@ -876,6 +883,7 @@ function setupIPC() {
       if (response !== 0) return terminalSendEnabled();
     }
     await writeFile(terminalSendFile(), JSON.stringify({ enabled: enable }), { mode: 0o600 });
+    desktopSettingsChanged();
     return enable;
   });
   ipcMain.handle('office:inspect-draft', async (e, id) => {
@@ -1013,6 +1021,7 @@ function setupIPC() {
         return answerSettings();
       const next = { ...(await answerSettings()), [which]: on ? 'on' : 'off' };
       await writeFile(answerSettingsFile(), JSON.stringify(next), { mode: 0o600 });
+      desktopSettingsChanged();
       return next;
     });
   ipcMain.handle('office:answer-settings', async (e, patch): Promise<AnswerSettings> => {
@@ -1096,6 +1105,14 @@ function setupIPC() {
     await writeFile(result.filePath, content, { mode: 0o600 });
     return true;
   });
+}
+/**
+ * The desktop-only settings (terminal send, answering) live outside the shared snapshot; after
+ * one changes, every app window re-reads them so a switch flipped in one window shows in all.
+ */
+function desktopSettingsChanged() {
+  for (const w of [main, dock, settingsWindow, ...(cards?.windows() ?? [])])
+    if (w && !w.isDestroyed()) w.webContents.send('office:desktop-settings');
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');

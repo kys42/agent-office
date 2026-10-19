@@ -338,11 +338,6 @@ export default function App() {
   } = useTerminalSend(demo, notify);
   // Desktop-only answering of questions, plans and permission prompts (both off by default).
   const answers = useAnswerSettings(demo, notify);
-  // A first answer from a card may have turned one on: show it as saved.
-  const reloadAnswers = answers.reload;
-  useEffect(() => {
-    if (view === 'settings') reloadAnswers();
-  }, [view, reloadAnswers]);
   // The desk pin and the card pin are one switch on the colleague.
   const onPin = (s: Session) =>
     void pin(s)

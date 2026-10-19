@@ -147,9 +147,36 @@ try {
   const motion = settings.locator('[data-guide-section="motion"] [role=switch]');
   await motion.click();
   await page.waitForSelector('.app.reduce-motion');
+  // The settings window itself follows reduced motion live.
+  await settings.waitForSelector('.settings-window.reduce-motion');
   await motion.click();
   await page.waitForSelector('.app:not(.reduce-motion)');
+  await settings.waitForSelector('.settings-window:not(.reduce-motion)');
   await tab('general').click();
+  // Desktop-only settings live outside the snapshot: a switch flipped in the settings window
+  // reaches the big office through the desktop-settings broadcast.
+  await page.locator('.source-icon.icon-settings').click();
+  await page.locator('.settings-nav [role=tab][data-category="general"]').click();
+  const sendSwitch = (p) => p.locator('[data-guide-section="terminal"] [role=switch]').first();
+  await sendSwitch(page).waitFor();
+  assert.equal(await sendSwitch(page).getAttribute('aria-checked'), 'true');
+  await sendSwitch(settings).click();
+  await page.waitForSelector('[data-guide-section="terminal"] [role=switch][aria-checked=false]');
+  // Turning it back on confirms natively once; already on, it never asks again.
+  await app.evaluate(({ dialog }) => {
+    globalThis.__confirms = 0;
+    globalThis.__showMessageBox = dialog.showMessageBox;
+    dialog.showMessageBox = async () => (globalThis.__confirms++, { response: 0 });
+  });
+  await sendSwitch(settings).click();
+  await page.waitForSelector('[data-guide-section="terminal"] [role=switch][aria-checked=true]');
+  assert.equal(await page.evaluate(() => window.office.terminalSend(true)), true);
+  assert.equal(await app.evaluate(() => globalThis.__confirms), 1, 'no second confirmation');
+  await app.evaluate(({ dialog }) => {
+    dialog.showMessageBox = globalThis.__showMessageBox;
+  });
+  await page.locator('.source-icon.icon-office').click();
+  await page.waitForSelector('.office-pet');
   await settings.screenshot({ path: '.local/native-settings.png' });
   await settingsWindow((w) => w.close());
   // Unsupported platforms expose no process-launch capability.

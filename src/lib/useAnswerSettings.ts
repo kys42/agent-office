@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { AnswerSettings } from '../shared/types';
 import { api } from './api';
+import { followDesktopSettings } from './desktop-settings';
 
 const UNSET: AnswerSettings = { questions: 'unset', permissions: 'unset' };
 
@@ -19,6 +20,8 @@ export function useAnswerSettings(demo: boolean, notify: (message: string) => vo
       .catch(() => setSettings(UNSET));
   }, []);
   useEffect(reload, [reload]);
+  // A change from another window (or a first answer from a card) shows here too.
+  useEffect(() => followDesktopSettings(api, window, reload), [reload]);
   const toggle = async (key: keyof AnswerSettings) => {
     try {
       setSettings(await api.answerSettings!({ [key]: settings[key] !== 'on' }));

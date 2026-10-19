@@ -33,8 +33,8 @@ export function SettingsWindow() {
   const clearFocus = useCallback(() => setFocus(undefined), []);
   const { reload: reloadSend } = send;
   const { reload: reloadAnswers } = answers;
-  // Opened again (tray, palette, a deep link): go to that section and show what a card may
-  // have changed meanwhile (a first answer turns answering on).
+  // Opened again (tray, palette, a deep link): go to that section and re-read the desktop
+  // settings (other windows' changes also arrive through onDesktopSettings).
   useEffect(
     () =>
       api.settings?.onOpen((section) => {
@@ -66,7 +66,8 @@ export function SettingsWindow() {
   const prefs = snapshot?.preferences;
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <div className="settings-window">
+      {/* Reduced motion follows the shared preference live, as in the big office. */}
+      <div className={`settings-window${prefs?.reducedMotion ? ' reduce-motion' : ''}`}>
         <header className="settings-window-bar">
           <b>{t.settings.window.title}</b>
         </header>
