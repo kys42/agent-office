@@ -50,6 +50,10 @@ test.describe('English system', () => {
     await expect(page.getByRole('button', { name: /^코코, / })).toBeVisible();
     await expect(page.getByRole('button', { name: '소식함 열기' })).toBeVisible();
     await page.getByRole('button', { name: '연결과 설정' }).click();
+    // The page comes back to the category last open (모습); language is under 일반.
+    const tabs2 = page.getByRole('tablist', { name: '설정 분류' });
+    await expect(tabs2.getByRole('tab', { name: '모습' })).toHaveAttribute('aria-selected', 'true');
+    await tabs2.getByRole('tab', { name: '일반' }).click();
     await page.getByRole('combobox', { name: '언어' }).selectOption('en');
     await expect(page.getByRole('combobox', { name: 'Language' })).toHaveValue('en');
   });
