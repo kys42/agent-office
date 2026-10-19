@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { lastMentions } from '../src/shared/links.js';
 import { mergeSessions } from '../server/adapters/merge.js';
+import { parseRecords } from '../server/adapters/normalize.js';
 import { demoSnapshot } from '../src/lib/demo.js';
 
 const pr = (n: number) => `https://github.com/org/repo/pull/${n}`;
@@ -28,4 +29,18 @@ test('Merged records list the links the newer record mentioned last', () => {
     [newer, older],
   ])
     assert.deepEqual(mergeSessions(input)[0].artifacts, [pr(889), pr(890), pr(886)]);
+});
+
+test('A collected session lists a PR it brings up again as the latest', () => {
+  const now = Date.parse('2026-10-19T10:00:00Z');
+  const say = (text: string, offset: number) => ({
+    type: 'response_item',
+    payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] },
+    timestamp: new Date(now + offset).toISOString(),
+  });
+  const s = parseRecords(
+    [say(`올렸어요 ${pr(886)}`, 0), say(`새 PR ${pr(890)}`, 10), say(`${pr(886)} 리뷰 반영`, 20)],
+    { provider: 'codex', sourcePath: '/test/artifacts.jsonl', mtime: now, now },
+  );
+  assert.deepEqual(s.artifacts, [pr(890), pr(886)]);
 });

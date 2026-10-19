@@ -52,7 +52,7 @@ export function ArtifactCards({
     e.preventDefault();
     void api.openArtifact(url).catch((err) => notify(err.message));
   };
-  // Most recently mentioned first: links are kept in the order the conversation met them
+  // Most recently mentioned first: links come in the order the conversation last mentioned them
   // (numbers from different repositories say nothing about which is newer).
   const recent = [...items].reverse();
   if (variant === 'list')
