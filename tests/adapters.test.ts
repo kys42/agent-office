@@ -114,6 +114,77 @@ test('Explicit input request becomes call; tool output clears it', () => {
     'work',
   );
 });
+test('A Claude turn stopped by the person ends as an aborted turn, not ongoing work', () => {
+  const base = { sessionId: 'c1', cwd: '/tmp/project' };
+  const at = (n: number) => new Date(now - 60_000 + n * 1000).toISOString();
+  const tool = {
+    ...base,
+    type: 'assistant',
+    uuid: 'a1',
+    timestamp: at(0),
+    message: {
+      id: 'm1',
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 't1', name: 'Bash' }],
+    },
+  };
+  const claude = { ...opts, provider: 'claude' as const };
+  assert.equal(parseRecords([tool], claude).status, 'work');
+  // The main transcript: a rejected tool result, then the note as user text.
+  const rejected = {
+    ...base,
+    type: 'user',
+    uuid: 'u1',
+    timestamp: at(1),
+    message: {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'rejected' }],
+    },
+  };
+  const note = {
+    ...base,
+    type: 'user',
+    uuid: 'u2',
+    timestamp: at(2),
+    message: {
+      role: 'user',
+      content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }],
+    },
+  };
+  const stopped = parseRecords([tool, rejected, note], claude);
+  assert.equal(stopped.status, 'idle');
+  assert.equal(stopped.observedStatus, 'idle');
+  assert.match(stopped.statusReason, /turn_aborted/);
+  assert.equal(stopped.events.at(-1)?.lifecycle, 'aborted');
+  assert.equal(stopped.events.filter((e) => e.kind === 'user').length, 0);
+  // A subagent: the note is the tool's error result itself.
+  const inResult = {
+    ...rejected,
+    message: {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 't1',
+          is_error: true,
+          content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }],
+        },
+      ],
+    },
+  };
+  assert.equal(parseRecords([tool, inResult], claude).status, 'idle');
+  // A failed tool is not a stop: the turn goes on.
+  assert.equal(parseRecords([tool, rejected], claude).status, 'work');
+  // The person's next request resumes the turn.
+  const next = {
+    ...base,
+    type: 'user',
+    uuid: 'u3',
+    timestamp: at(3),
+    message: { role: 'user', content: 'go on' },
+  };
+  assert.equal(parseRecords([tool, rejected, note, next], claude).status, 'think');
+});
 test('Claude streaming messages use the largest usage snapshot per message', () => {
   const base = {
     type: 'assistant',
