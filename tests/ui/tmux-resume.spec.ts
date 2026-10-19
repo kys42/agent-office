@@ -320,3 +320,35 @@ for (const colorScheme of ['light', 'dark'] as const)
       await page.keyboard.press('Escape');
       await expect(modal).toHaveCount(0);
     });
+
+test('session help stays keyboard-accessible while the connection check disables controls', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    const status = w.office.tmuxResume;
+    w.office.tmuxResume = (...args: any[]) =>
+      new Promise((resolve) => {
+        w.finishTmuxCheck = async () => resolve(await status(...args));
+      });
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  const close = modal.getByRole('button', { name: '닫기', exact: true });
+  const help = modal.locator('.tmux-help summary');
+  await expect(modal.getByRole('button', { name: '확인 중…', exact: true })).toBeDisabled();
+  await close.focus();
+  await page.keyboard.press('Tab');
+  await expect(help).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(modal.locator('.tmux-help > p')).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(help).toBeFocused();
+  await page.evaluate(() => (window as any).finishTmuxCheck());
+  await expect(modal.locator('.tmux-resume-actions .primary')).toBeEnabled();
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+});
