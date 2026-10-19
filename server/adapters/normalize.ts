@@ -2,6 +2,7 @@ import { admissible, editLocation, toolLocation, wrappedLocations } from './work
 import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { lastMentions } from '../../src/shared/links.js';
 import { resolveIdentity } from './identity.js';
 import type {
   Mood,
@@ -617,13 +618,12 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   const project = cwd ? path.basename(cwd) : (opt.agentName ?? t.session.unknownWorkspace);
   const activity = summarizeActivity(events, status, updatedAt, CANONICAL);
   const action = activity.text;
-  const artifacts = [
-    ...new Set(
-      events.flatMap(
-        (e) => e.text.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+/g) ?? [],
-      ),
+  const artifacts = lastMentions(
+    events.flatMap(
+      (e) => e.text.match(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+/g) ?? [],
     ),
-  ].slice(-12);
+    12,
+  );
   return {
     protocolVersion: 1,
     id: `${opt.provider}:${opt.agentName ? opt.agentName + ':' : ''}${nativeId}`,
