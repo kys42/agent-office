@@ -332,3 +332,57 @@ test('Helper stays after finishing and retires on main next task, with its resul
     page.locator('.background-records').getByRole('button', { name: /결과 남긴 보조/ }),
   ).toBeVisible();
 });
+test('Helper still mid a long tool keeps its desk when main starts its next task', async ({
+  page,
+}) => {
+  const s = demoSnapshot(),
+    at = Date.now(),
+    quietAt = at - 10 * 60_000;
+  const main = {
+    ...s.sessions[0],
+    id: 'main',
+    nativeId: 'main',
+    taskStartedAt: at - 20 * 60_000,
+    events: [],
+  };
+  // Silent for minutes waiting on a test run: no longer live work, but no final answer yet.
+  const child = {
+    ...main,
+    id: 'helper',
+    nativeId: 'helper',
+    alias: '긴 도구 보조',
+    status: 'ready' as const,
+    observedStatus: 'work' as const,
+    updatedAt: quietAt,
+    taskStartedAt: at - 15 * 60_000,
+    startedAt: at - 15 * 60_000,
+    runtime: { phase: 'working' as const, at: quietAt, evidence: 'observed' as const, reason: '' },
+    relation: { kind: 'subagent' as const, parentNativeId: 'main', source: 'fixture' },
+  };
+  s.sessions = [main, child];
+  s.notices = [];
+  await fixture(page, s);
+  await page.goto('/');
+  await expect(page.locator('.helper-desk')).toHaveCount(1);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.sessions[0].taskStartedAt = Date.now();
+    w.fixture.sessions[0].updatedAt = Date.now();
+    w.fixture.sessions[0].alias = '다음 요청 주인';
+    w.fixture.sessions[0].revision = 'next-task';
+    w.publish(structuredClone(w.fixture));
+  });
+  // The renamed main desk shows the next-task snapshot has landed before the helper is checked.
+  await expect(page.locator('.desk-name strong', { hasText: '다음 요청 주인' })).toBeVisible();
+  await expect(page.locator('.helper-desk')).toHaveCount(1);
+  // Once it answers, it retires on main's task boundary as usual.
+  await page.evaluate(() => {
+    const w = window as any;
+    const child = w.fixture.sessions[1];
+    child.observedStatus = 'done';
+    child.runtime.phase = 'responded';
+    child.revision = 'finished';
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(page.locator('.helper-desk')).toHaveCount(0);
+});
