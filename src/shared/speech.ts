@@ -2,6 +2,7 @@ import type { OfficeEvent, OfficeNotice, Session } from './types';
 import {
   bubbleNotice,
   isFinalNotice,
+  isInboxNotice,
   NOTICE_LABELS,
   noticeLabel,
   unreadNoticeCount,
@@ -253,6 +254,22 @@ export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =
   s.status === 'error' ||
   speech.bubble?.kind === 'attention' ||
   speech.bubble?.kind === 'error';
+
+/**
+ * The tiny row's contentless bubble: a call or error keeps it while the desk waits for the
+ * person (read or not); anything else new shows until read. `id` changes with each new notice
+ * so the dot pops again.
+ */
+export function speechDot(
+  s: Session,
+  speech: Pick<StationSpeech, 'bubble' | 'tone'>,
+): { tone: 'attention' | 'error' | 'reply'; id: string } | undefined {
+  const b = speech.bubble;
+  const id = b?.id ?? s.id;
+  if (speech.tone === 'attention' && (b || s.status === 'call')) return { tone: 'attention', id };
+  if (speech.tone === 'error' && (b || s.status === 'error')) return { tone: 'error', id };
+  if (b && !b.seenAt && isInboxNotice(b)) return { tone: 'reply', id };
+}
 
 /**
  * What a desk says right now: a just-arrived request speaks first — the person's own words —

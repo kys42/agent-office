@@ -92,7 +92,7 @@ const api: OfficeAPI = {
   },
   dock: (action) => ipcRenderer.invoke('office:dock', action),
   onDock: (cb) => {
-    const f = (_: unknown, mode: DockMode) => cb(mode);
+    const f = (_: unknown, mode: DockMode, tiny?: boolean) => cb(mode, tiny);
     ipcRenderer.on('office:dock', f);
     return () => ipcRenderer.removeListener('office:dock', f);
   },

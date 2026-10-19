@@ -43,10 +43,10 @@ import { m, setLocale } from '../src/shared/i18n/index.js';
 import { OPENABLE_FILE, fileLink, webLink } from '../src/shared/links.js';
 import {
   clampInto,
-  FLOOR_HEIGHT,
-  ROW_HEIGHT,
+  dockHeight,
   petBounds,
   petFeet,
+  readDockPrefs,
   readPetSpot,
   rowBounds,
   type Point,
@@ -83,6 +83,8 @@ let mobile: MobileServer | undefined;
 let dockMode: DockMode = 'pet',
   petEnabled = false,
   petSpot: Point | null = null,
+  // Tiny row/floor (쪼꼬미): remembered so the window opens at the right height.
+  dockTiny = false,
   drag: ReturnType<typeof setInterval> | null = null;
 const root = path.join(__dirname, '..');
 const index = path.join(root, 'dist', 'index.html');
@@ -129,6 +131,7 @@ else {
     });
     bridge.on('failure', (message) => console.error('Collector worker:', message));
     petSpot = loadPetSpot();
+    dockTiny = loadDockTiny();
     createMain();
     setupIPC();
     const icon = nativeImage.createFromDataURL(
@@ -315,6 +318,23 @@ async function savePetSpot() {
     console.error('Desk pet position:', e);
   }
 }
+const dockFile = () =>
+  path.join(process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'), 'dock.json');
+function loadDockTiny(): boolean {
+  try {
+    return readDockPrefs(JSON.parse(readFileSync(dockFile(), 'utf8'))).tiny;
+  } catch {
+    return false;
+  }
+}
+async function saveDockTiny() {
+  try {
+    await mkdir(path.dirname(dockFile()), { recursive: true, mode: 0o700 });
+    await writeFile(dockFile(), JSON.stringify({ v: 1, tiny: dockTiny }), { mode: 0o600 });
+  } catch (e) {
+    console.error('Dock size:', e);
+  }
+}
 const workAreaFor = (b: Rect) => screen.getDisplayMatching(b).workArea;
 function dockBounds(mode: DockMode): Rect {
   // The display under the pet's feet (the nearest one if that display is gone).
@@ -323,7 +343,7 @@ function dockBounds(mode: DockMode): Rect {
     : screen.getPrimaryDisplay().workArea;
   const pet = petBounds(petSpot, area);
   // The row (or the floor desks) opens along the bottom of whichever display the pet is on.
-  return mode === 'pet' ? pet : rowBounds(area, mode === 'floor' ? FLOOR_HEIGHT : ROW_HEIGHT);
+  return mode === 'pet' ? pet : rowBounds(area, dockHeight(mode === 'floor', dockTiny));
 }
 function setDockMode(mode: DockMode) {
   stopDrag(false);
@@ -332,7 +352,15 @@ function setDockMode(mode: DockMode) {
   dock.setBounds(dockBounds(mode));
   // Start see-through; the renderer claims the mouse again over drawn things.
   dock.setIgnoreMouseEvents(true, { forward: true });
-  dock.webContents.send('office:dock', mode);
+  dock.webContents.send('office:dock', mode, dockTiny);
+}
+function setDockTiny(tiny: boolean) {
+  if (dockTiny === tiny) return;
+  dockTiny = tiny;
+  void saveDockTiny();
+  // The pet keeps its size; the row or floor resizes and re-renders at once.
+  if (dockMode === 'pet') return;
+  setDockMode(dockMode);
 }
 function showDock(mode: DockMode = 'pet') {
   petEnabled = true;
@@ -369,8 +397,12 @@ function showDock(mode: DockMode = 'pet') {
       dock = null;
     });
     // The renderer follows the main process; tell it the mode it may have missed while loading.
-    dock.webContents.on('did-finish-load', () => dock?.webContents.send('office:dock', dockMode));
-    void dock.loadFile(index, { hash: mode === 'pet' ? 'mini' : `mini=${mode}` });
+    dock.webContents.on('did-finish-load', () =>
+      dock?.webContents.send('office:dock', dockMode, dockTiny),
+    );
+    void dock.loadFile(index, {
+      hash: mode === 'pet' ? 'mini' : `mini=${mode}${dockTiny ? '&tiny' : ''}`,
+    });
   } else setDockMode(mode);
   dock.showInactive();
   main?.hide();
@@ -488,6 +520,7 @@ function setupIPC() {
     trusted(e);
     if (!dock || e.sender !== dock.webContents) throw new Error(m().desktop.untrustedWindow);
     if (action === 'pet' || action === 'row' || action === 'floor') setDockMode(action);
+    else if (action === 'tiny-on' || action === 'tiny-off') setDockTiny(action === 'tiny-on');
     else if (action === 'drag-start') startDrag();
     else if (action === 'drag-end') stopDrag(true);
     else if (action === 'solid') dock.setIgnoreMouseEvents(false);

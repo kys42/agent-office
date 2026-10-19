@@ -672,7 +672,9 @@ export interface CardWindowState {
   /** Initial state handshake also recovers a target sent before the renderer subscribed. */
   target?: CardTarget | null;
 }
-export type DockAction = DockMode | 'drag-start' | 'drag-end' | 'solid' | 'through';
+/** `tiny-on`/`tiny-off`: the row and floor at helper-desk size (remembered by the main process). */
+export type DockAction =
+  DockMode | 'tiny-on' | 'tiny-off' | 'drag-start' | 'drag-end' | 'solid' | 'through';
 export interface OfficeAPI {
   mobile?: (
     command: import('./mobile').MobileCommand,
@@ -803,7 +805,8 @@ export interface OfficeAPI {
   onSelect?: (callback: (id: string) => void) => () => void;
   /** Desktop only. Browser previews switch the dock layout locally. */
   dock?: (action: DockAction) => Promise<void>;
-  onDock?: (callback: (mode: DockMode) => void) => () => void;
+  /** `tiny` comes along from the desktop main process (undefined: unchanged). */
+  onDock?: (callback: (mode: DockMode, tiny?: boolean) => void) => () => void;
 }
 // Labels are getters: they read the active language at use time, never at import time.
 const provider = (key: Provider, name: string, short: string, color: string) => ({

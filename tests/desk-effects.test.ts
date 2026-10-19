@@ -8,6 +8,7 @@ import {
   deskSpeech,
   freshRequest,
   hopping,
+  speechDot,
   stationSpeech,
 } from '../src/shared/speech.js';
 import { deskPapers, FOCUS_LABELS, focusLevel, MAX_PAPERS } from '../src/shared/presentation.js';
@@ -210,4 +211,20 @@ test('the pet steps through visible colleagues in row order and keeps a pick whi
   assert.equal(petShown(choices, pet, 'c').chosen, false);
   assert.equal(petShown(choices, pet, 'c').view?.session.id, pet.lead?.session.id);
   assert.equal(petShown(choices, pet, null).chosen, false);
+});
+
+test('the tiny row dot: a call or error stays while waiting, a final reply until read', () => {
+  const idle = make('a', { status: 'idle' });
+  const dot = (s: Session, notices: OfficeNotice[]) => speechDot(s, deskSpeech(s, notices, 3, now));
+  const reply = request('a', { kind: 'reply', phase: 'final' });
+  assert.deepEqual(dot(idle, [reply]), { tone: 'reply', id: reply.id });
+  assert.equal(dot(idle, [{ ...reply, seenAt: now }]), undefined);
+  // Progress notes and quiet desks say nothing in tiny.
+  assert.equal(dot(idle, [request('a', { kind: 'progress' })]), undefined);
+  assert.equal(dot(idle, []), undefined);
+  const ask = request('a', { kind: 'attention', seenAt: now });
+  assert.equal(dot(make('a', { status: 'call' }), [ask])?.tone, 'attention');
+  assert.equal(dot(make('a', { status: 'call' }), [])?.tone, 'attention');
+  assert.equal(dot(idle, [request('a', { kind: 'error' })])?.tone, 'error');
+  assert.equal(dot(make('a', { status: 'error' }), [])?.tone, 'error');
 });
