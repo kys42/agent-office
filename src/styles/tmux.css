@@ -1,0 +1,358 @@
+/* Terminal sheets follow the same quiet surfaces and controls as Settings. */
+.modal-backdrop:has(.tmux-resume) {
+  padding: 12px;
+  pointer-events: auto;
+}
+.modal:has(> .tmux-resume) {
+  width: min(480px, 100%);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: var(--grouped);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.modal:has(> .tmux-resume) > header {
+  flex: none;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.tmux-resume {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.tmux-resume > * {
+  flex-shrink: 0;
+}
+.tmux-resume p,
+.tmux-resume dl,
+.tmux-resume h3 {
+  margin: 0;
+}
+.tmux-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-2);
+}
+.tmux-intro-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  color: var(--text-2);
+}
+.summon-form {
+  display: grid;
+  gap: 16px;
+}
+.summon-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.summon-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.summon-field > small {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.summon-field :is(input, select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 34px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid var(--control-line);
+  border-radius: var(--r-md);
+  background-color: var(--field);
+  color: var(--text);
+  box-shadow: var(--control-shadow);
+  font: inherit;
+  line-height: 1.5;
+}
+.summon-field select {
+  padding-right: 28px;
+}
+.summon-field textarea {
+  resize: vertical;
+  min-height: 82px;
+  max-height: 160px;
+}
+.summon-field textarea::placeholder {
+  color: var(--text-3);
+}
+.summon-field :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--line-3);
+  outline-offset: 2px;
+}
+.summon-field :is(input, select, textarea):disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.summon-provider {
+  display: flex;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--bg-4);
+  gap: 3px;
+}
+.summon-provider button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  height: 29px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.summon-provider button[aria-pressed='true'] {
+  background: var(--control);
+  box-shadow: var(--control-shadow);
+  color: var(--text);
+}
+.summon-provider button:disabled {
+  opacity: 0.55;
+}
+.summon-connections h3 {
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.summon-connection-list {
+  max-height: 148px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+}
+.summon-connection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+}
+.summon-connection + .summon-connection {
+  border-top: 1px solid var(--line);
+}
+.summon-connection > span {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.summon-connection .button {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+.tmux-session {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.tmux-session-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.tmux-session-status strong {
+  font-weight: 600;
+}
+.tmux-session-status.is-running {
+  color: var(--st-work);
+}
+.tmux-session-details {
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+.tmux-session-details > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+}
+.tmux-session-details dt {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.tmux-session-details dd {
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  user-select: text;
+}
+.tmux-session code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tmux-command-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.tmux-command {
+  flex: 1;
+  min-width: 0;
+}
+.tmux-command summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.tmux-command code {
+  display: block;
+  padding: 10px;
+  margin-top: 6px;
+  border-radius: var(--r-md);
+  background: var(--bg-3);
+  color: var(--text-2);
+}
+.tmux-copy.button {
+  flex: none;
+  width: 28px;
+  padding: 0;
+}
+.tmux-help summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.tmux-help summary span {
+  flex: 1;
+}
+.tmux-help summary::-webkit-details-marker,
+.tmux-command summary::-webkit-details-marker {
+  display: none;
+}
+.tmux-help[open] summary > svg:last-child,
+.tmux-command[open] summary > svg {
+  transform: rotate(180deg);
+}
+.tmux-help > p {
+  padding-top: 10px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.tmux-resume .tmux-discovery,
+.tmux-caution,
+.tmux-error,
+.tmux-loading {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tmux-resume svg {
+  flex: none;
+}
+.tmux-resume .tmux-discovery {
+  margin: 0 14px 12px;
+  color: var(--text-3);
+}
+.tmux-discovery > svg,
+.tmux-caution > svg,
+.tmux-error > svg {
+  margin-top: 3px;
+}
+.tmux-caution,
+.tmux-loading {
+  color: var(--text-3);
+}
+.tmux-error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--st-call) 20%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--st-call) 7%, var(--bg-1));
+  color: var(--st-call);
+}
+.tmux-resume-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-2);
+  background: var(--bg-1);
+}
+.tmux-resume-actions .button {
+  flex: none;
+  min-height: 30px;
+}
+.tmux-resume-actions .button.primary {
+  margin-left: auto;
+}
+.tmux-resume-actions .button.subtle {
+  padding: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+@media (max-width: 400px) {
+  .tmux-resume {
+    padding: 16px;
+  }
+  .modal:has(> .tmux-resume) > header {
+    padding: 12px 16px;
+  }
+  .tmux-resume-actions {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  .tmux-resume-actions .button {
+    padding-right: 9px;
+    padding-left: 9px;
+    font-size: 12px;
+  }
+}

@@ -1,6 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Terminal } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  Copy,
+  Folder,
+  Info,
+  LoaderCircle,
+  Plus,
+  RotateCw,
+  Terminal,
+  AlertCircle,
+} from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '../lib/api';
 import { copyText, jumpOrCopy } from '../lib/resume';
@@ -21,11 +33,11 @@ export function TmuxResume({
   notify: (message: string) => void;
 }) {
   const { t } = useI18n();
+  const fieldId = useId();
   const text = summon
     ? {
         ...t.tmux,
         title: t.tmux.summonTitle,
-        intro: t.tmux.summonIntro,
         ready: t.tmux.summonReady,
         running: t.tmux.summonRunning,
         start: t.tmux.summonStart,
@@ -107,12 +119,42 @@ export function TmuxResume({
         createPortal(
           <Modal title={text.title} onClose={() => setOpen(false)}>
             <div className="tmux-resume" ref={body} data-solid>
-              <p>{text.intro}</p>
+              <div className="tmux-intro">
+                <span className="tmux-intro-icon" aria-hidden="true">
+                  <Terminal size={20} />
+                </span>
+                <p>{summon ? text.summonDescription : text.resumeDescription}</p>
+              </div>
               {summon && (
-                <>
+                <section className="summon-form" aria-label={text.agentSettings}>
+                  <div className="summon-field">
+                    <span id={`${fieldId}-provider`}>{text.agentType}</span>
+                    <div
+                      role="group"
+                      aria-labelledby={`${fieldId}-provider`}
+                      className="summon-provider"
+                    >
+                      {(['claude', 'codex'] as const).map((value) => (
+                        <button
+                          type="button"
+                          key={value}
+                          disabled={busy}
+                          aria-pressed={provider === value}
+                          onClick={() => {
+                            setProvider(value);
+                            setInfo(null);
+                            void act('status', value);
+                          }}
+                        >
+                          {value === 'claude' ? 'Claude' : 'Codex'}
+                          {provider === value && <Check size={13} aria-hidden="true" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   {projects && (
                     <label className="summon-field">
-                      {text.folder}
+                      <span>{text.folder}</span>
                       <select
                         disabled={busy}
                         value={projectId}
@@ -130,117 +172,178 @@ export function TmuxResume({
                     </label>
                   )}
                   <label className="summon-field">
-                    {text.agentName}
+                    <span>{text.agentName}</span>
                     <input
                       disabled={busy}
+                      aria-label={text.agentName}
                       maxLength={40}
                       value={agentName}
+                      aria-describedby={`${fieldId}-name-help`}
                       onChange={(e) => {
                         setAgentName(e.target.value);
                         setInfo(null);
                       }}
                     />
+                    <small id={`${fieldId}-name-help`}>{text.nameHint}</small>
                   </label>
-                  <p>{text.nameHint}</p>
                   <label className="summon-field">
-                    {text.initialMessage}
+                    <span>{text.initialMessage}</span>
                     <textarea
+                      aria-label={text.initialMessage}
                       rows={3}
                       maxLength={4000}
                       placeholder={text.messagePlaceholder}
                       disabled={busy || !!info?.running}
                       value={initialMessage}
+                      aria-describedby={`${fieldId}-message-help`}
                       onChange={(e) => setInitialMessage(e.target.value)}
                     />
+                    <small id={`${fieldId}-message-help`}>{text.messageHint}</small>
                   </label>
-                  <p>{text.messageHint}</p>
-                </>
-              )}
-              {summon && (
-                <div role="group" aria-label="Claude / Codex" className="tmux-resume-actions">
-                  {(['claude', 'codex'] as const).map((value) => (
-                    <button
-                      key={value}
-                      disabled={busy}
-                      aria-pressed={provider === value}
-                      onClick={() => {
-                        setProvider(value);
-                        setInfo(null);
-                        void act('status', value);
-                      }}
-                    >
-                      {value === 'claude' ? 'Claude' : 'Codex'}
-                    </button>
-                  ))}
-                </div>
+                </section>
               )}
               {!!info?.connections?.length && (
-                <section className="summon-connections">
-                  <strong>{text.existingTitle}</strong>
-                  {info.connections.map((c) => (
-                    <div key={c.id ?? c.command}>
-                      <span>
-                        {c.name} · {c.label}
-                      </span>
-                      <button
-                        disabled={busy}
-                        onClick={() =>
-                          void (
-                            c.id ? jumpOrCopy(c.id, notify) : copyText(c.command!, notify)
-                          ).catch((e) => setError(e.message))
-                        }
-                      >
-                        {c.id ? text.existingOpen : text.copy}
-                      </button>
-                    </div>
-                  ))}
+                <section className="summon-connections" aria-label={text.existingTitle}>
+                  <h3>{text.existingTitle}</h3>
+                  <div className="summon-connection-list">
+                    {info.connections.map((c) => (
+                      <div className="summon-connection" key={c.id ?? c.command}>
+                        <span>
+                          {c.name} · {c.label}
+                        </span>
+                        <button
+                          className="button"
+                          disabled={busy}
+                          onClick={() =>
+                            void (
+                              c.id ? jumpOrCopy(c.id, notify) : copyText(c.command!, notify)
+                            ).catch((e) => setError(e.message))
+                          }
+                        >
+                          <ArrowUpRight size={13} aria-hidden="true" />
+                          {c.id ? text.existingOpen : text.copy}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </section>
               )}
               {info && (
-                <>
-                  <strong role="status">{info.running ? text.running : text.ready}</strong>
-                  <dl>
-                    <dt>{text.name}</dt>
-                    <dd>
-                      <code>{info.name}</code>
-                    </dd>
-                    <dt>{text.folder}</dt>
-                    <dd>{info.cwd}</dd>
-                    <dt>{text.command}</dt>
-                    <dd>
-                      <code>{info.command}</code>
-                    </dd>
+                <section className="tmux-session" aria-label={text.sessionDetails}>
+                  <div
+                    className={`tmux-session-status ${info.running ? 'is-running' : ''}`}
+                    role="status"
+                  >
+                    {info.running ? (
+                      <Check size={15} aria-hidden="true" />
+                    ) : (
+                      <Terminal size={15} aria-hidden="true" />
+                    )}
+                    <strong>{info.running ? text.running : text.ready}</strong>
+                  </div>
+                  <dl className="tmux-session-details">
+                    <div>
+                      <dt>{text.name}</dt>
+                      <dd>
+                        <code>{info.name}</code>
+                      </dd>
+                    </div>
+                    {!summon && (
+                      <div>
+                        <dt>{text.folder}</dt>
+                        <dd>
+                          <Folder size={13} aria-hidden="true" />
+                          <span>{info.cwd}</span>
+                        </dd>
+                      </div>
+                    )}
                   </dl>
-                  <p>{text.hint}</p>
-                  {!summon && !info.running && <p>{text.caution}</p>}
-                </>
+                  <div className="tmux-command-row">
+                    <details className="tmux-command">
+                      <summary>
+                        <ChevronDown size={13} aria-hidden="true" />
+                        {text.command}
+                      </summary>
+                      <code>{info.command}</code>
+                    </details>
+                    {info.running && (
+                      <button
+                        className="button tmux-copy"
+                        aria-label={text.copy}
+                        title={text.copy}
+                        disabled={busy}
+                        onClick={() =>
+                          void copyText(info.command, notify).catch((e) => setError(e.message))
+                        }
+                      >
+                        <Copy size={14} aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                  {summon && info.running && (
+                    <p className="tmux-discovery">
+                      <Info size={13} aria-hidden="true" />
+                      {text.summonDiscovery}
+                    </p>
+                  )}
+                </section>
               )}
-              {error && <p role="alert">{error}</p>}
+              {busy && !info && (
+                <p className="tmux-loading" role="status">
+                  <LoaderCircle size={14} className="now-spin" aria-hidden="true" />
+                  {text.loading}
+                </p>
+              )}
+              {!summon && info && !info.running && (
+                <p className="tmux-caution">
+                  <Info size={14} aria-hidden="true" />
+                  {text.caution}
+                </p>
+              )}
+              <details className="tmux-help">
+                <summary>
+                  <Info size={14} aria-hidden="true" />
+                  <span>{text.guide}</span>
+                  <ChevronDown size={13} aria-hidden="true" />
+                </summary>
+                <p>{text.hint}</p>
+              </details>
+              {error && (
+                <p className="tmux-error" role="alert">
+                  <AlertCircle size={15} aria-hidden="true" />
+                  <span>{error}</span>
+                </p>
+              )}
             </div>
             <div className="tmux-resume-actions" data-solid>
+              <button className="button subtle" disabled={busy} onClick={() => void act('status')}>
+                {busy ? (
+                  <LoaderCircle size={14} className="now-spin" aria-hidden="true" />
+                ) : (
+                  <RotateCw size={14} aria-hidden="true" />
+                )}
+                {busy ? text.loading : summon ? text.summonCheck : text.refresh}
+              </button>
               {info && !info.running && (
-                <button disabled={busy} onClick={() => void act('start')}>
+                <button
+                  className="button primary"
+                  disabled={busy}
+                  onClick={() => void act('start')}
+                >
+                  {summon ? (
+                    <Plus size={14} aria-hidden="true" />
+                  ) : (
+                    <Terminal size={14} aria-hidden="true" />
+                  )}
                   {text.start}
                 </button>
               )}
               {info?.running && info.canOpen && (
-                <button disabled={busy} onClick={() => void act('open')}>
+                <button className="button primary" disabled={busy} onClick={() => void act('open')}>
+                  <ArrowUpRight size={14} aria-hidden="true" />
                   {text.open}
                 </button>
               )}
-              {info?.running && (
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    void copyText(info.command, notify).catch((e) => setError(e.message))
-                  }
-                >
-                  {text.copy}
-                </button>
-              )}
-              <button disabled={busy} onClick={() => void act('status')}>
-                {busy ? text.loading : summon ? text.summonCheck : text.refresh}
-              </button>
             </div>
           </Modal>,
           document.body,
