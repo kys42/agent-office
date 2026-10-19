@@ -6,7 +6,8 @@ export const STATION_WIDTH = 164;
 export const STATION_HEIGHT = 238;
 /** A helper desk's width beside the desk it belongs to (big office and row alike). */
 export const HELPER_WIDTH = 73;
-/** Helper desks stand with their table at the station's desk height (station space). */
+/** Helper desks stand with their table at the station's desk height (station space; the big
+ * office and the row's office mode — the floor stands them on the floor instead). */
 export const HELPER_TOP = 102;
 /** From this many helpers on one colleague, they share one stacked desk ("×N"). */
 export const HELPER_STACK_AT = 4;
@@ -32,7 +33,15 @@ export interface ProjectArea {
   width: number;
   height: number;
   stations: StationPlacement[];
-  benches: { key: string; members: string[]; x: number; y: number; width: number }[];
+  /** `shared`: the long desk of one branch, even where a colleague's helpers break it. */
+  benches: {
+    key: string;
+    members: string[];
+    x: number;
+    y: number;
+    width: number;
+    shared: boolean;
+  }[];
 }
 export interface OfficeLayout {
   width: number;
@@ -123,6 +132,7 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
       rowHeight = 0;
     for (const { key, name, custom, benches } of groups) {
       const ordered = benches.flatMap((b) => b.members);
+      const together = new Map(benches.map((b) => [b.key, b.members.length > 1]));
       const cols = Math.min(columns, ordered.length);
       const area: ProjectArea = {
         key,
@@ -155,6 +165,7 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
               x: cursor + 5,
               y: stationY + 134,
               width: STATION_WIDTH - 10,
+              shared: together.get(key) ?? false,
             };
             area.benches.push(bench);
           }
@@ -215,7 +226,7 @@ export interface RowZone {
   width: number;
   stations: { id: string; x: number }[];
   helpers: { id: string; parent: string; x: number; stack?: string[] }[];
-  benches: { key: string; members: string[]; x: number; width: number }[];
+  benches: { key: string; members: string[]; x: number; width: number; shared: boolean }[];
 }
 export interface RowLayout {
   width: number;
@@ -255,7 +266,13 @@ export function layoutRow(
           piece.width += STATION_WIDTH;
           piece.members.push(s.id);
         } else {
-          piece = { key: bench.key, members: [s.id], x: cursor + 5, width: STATION_WIDTH - 10 };
+          piece = {
+            key: bench.key,
+            members: [s.id],
+            x: cursor + 5,
+            width: STATION_WIDTH - 10,
+            shared: bench.members.length > 1,
+          };
           zone.benches.push(piece);
         }
         zone.stations.push({ id: s.id, x: cursor });

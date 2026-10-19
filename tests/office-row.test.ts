@@ -107,10 +107,10 @@ test("helper desks sit right beside their colleague's desk; the long desk goes o
   // The same bench, in two pieces around the helpers.
   assert.equal(mateAt.x, hostAt.x + STATION_WIDTH + 2 * 73);
   assert.deepEqual(
-    zone.benches.map((b) => [b.key, b.members]),
+    zone.benches.map((b) => [b.key, b.members, b.shared]),
     [
-      [zone.benches[0].key, [host.id]],
-      [zone.benches[0].key, [mate.id]],
+      [zone.benches[0].key, [host.id], true],
+      [zone.benches[0].key, [mate.id], true],
     ],
   );
 });

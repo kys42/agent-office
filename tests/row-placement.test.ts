@@ -13,7 +13,9 @@ function row(widths: number[], gap = 18): RowLayout {
       width,
       stations: [{ id: `pet-${i}`, x: 12 }],
       helpers: [{ id: `helper-${i}`, parent: `pet-${i}`, x: 176 }],
-      benches: [{ key: `bench-${i}`, members: [`pet-${i}`], x: 17, width: width - 24 }],
+      benches: [
+        { key: `bench-${i}`, members: [`pet-${i}`], x: 17, width: width - 24, shared: false },
+      ],
     };
     x += width + gap;
     return zone;

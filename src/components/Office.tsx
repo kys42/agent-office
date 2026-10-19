@@ -458,7 +458,7 @@ export function Office({
                     <Furniture
                       kind="desk"
                       key={`${bench.key}:${i}`}
-                      shared={bench.members.length > 1}
+                      shared={bench.shared}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: bench.y, width: bench.width }}
                     />

@@ -39,6 +39,7 @@ import {
   DESK_FOOT,
   FLOOR_TOP,
   FLOOR_ZONE_GAP,
+  HELPER_TOP,
   layoutRow,
   layoutSignature,
   projectColor,
@@ -125,8 +126,8 @@ export function DeskRow({
   const top = floor ? FLOOR_TOP : ROW_TOP;
   const sceneHeight = floor ? FLOOR_SCENE_HEIGHT : ROW_SCENE_HEIGHT;
   const benchY = top + 134;
-  // Office: helpers beside the bench on the rug. Floor: their table stands on the floor.
-  const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + 128;
+  // Office: helpers beside their colleague's desk, table at desk height. Floor: on the floor.
+  const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + HELPER_TOP;
   const track = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<string | null>(null);
   // A desk whose bubble was just closed doesn't peek it back until the cursor leaves.
@@ -432,7 +433,7 @@ export function DeskRow({
                     <Furniture
                       kind="desk"
                       key={`${bench.key}:${i}`}
-                      shared={bench.members.length > 1}
+                      shared={bench.shared}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: benchY, width: bench.width }}
                     />
