@@ -1,4 +1,5 @@
-import ReactMarkdown, { type Options } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Options } from 'react-markdown';
+import { keepFileLinks } from '../shared/links';
 import remarkGfm from 'remark-gfm';
 import { WebLink } from './WebLink';
 
@@ -70,6 +71,8 @@ const components: Options['components'] = {
   },
 };
 
+const urlTransform = keepFileLinks(defaultUrlTransform);
+
 /** Compact, safe message markdown that keeps paragraph, list and table structure. */
 export function BubbleMarkdown({ text }: { text: string }) {
   return (
@@ -78,6 +81,7 @@ export function BubbleMarkdown({ text }: { text: string }) {
       allowedElements={elements}
       unwrapDisallowed
       components={components}
+      urlTransform={urlTransform}
     >
       {text}
     </ReactMarkdown>

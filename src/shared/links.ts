@@ -35,10 +35,32 @@ export function fileLink(raw: unknown): string | null {
       return null;
     }
   }
-  if (value.startsWith('//')) return null;
+  // Checked again after decoding: no NUL, and never a network share (two leading slashes or
+  // backslashes of any mix): resolving one would reach out to that host.
+  if (value.includes('\0') || /^[\\/]{2}/.test(value)) return null;
   if (value.startsWith('/') || value.startsWith('~/') || /^[A-Za-z]:[\\/]/.test(value))
     return value;
   return null;
+}
+
+/**
+ * `fileLink` for a markdown link destination: markdown percent-encodes it ("검수 보고서.md"
+ * arrives as "%EA%B2%80…%20…"), so the path is decoded once here, in the page. The desktop
+ * side takes the path as given.
+ */
+export function markdownFileLink(raw: unknown): string | null {
+  const file = fileLink(raw);
+  if (!file || /^file:/i.test(String(raw).trim())) return file;
+  try {
+    return fileLink(decodeURI(file));
+  } catch {
+    return file;
+  }
+}
+
+/** react-markdown's link filter, letting file links through to WebLink (which checks them). */
+export function keepFileLinks(fallback: (url: string) => string) {
+  return (url: string) => (fileLink(url) ? url : fallback(url));
 }
 
 /** Kinds of file a click opens in its default app; anything else is shown in its folder. */

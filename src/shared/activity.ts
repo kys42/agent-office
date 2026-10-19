@@ -19,12 +19,17 @@ export function messageExcerpt(text: string, limit = 220): string {
  */
 export function clipMarkdown(text: string, limit: number, lines = 12): string {
   let end = Math.min(text.length, limit);
-  for (const m of text.matchAll(/!?\[[^\]\n]*\]\([^)\s]*\)/g)) {
+  // [label](dest): dest bare (one level of parentheses allowed, "b(1).md") or in <…> (paths
+  // with spaces), with an optional "title".
+  const LINK =
+    /!?\[[^\]\n]*\]\((?:<[^>\n]*>|[^()\s]*(?:\([^()\s]*\)[^()\s]*)*)(?:\s+"[^"\n]*")?\)/g;
+  for (const m of text.matchAll(LINK)) {
     const start = m.index!;
     if (start >= end) break;
     if (start + m[0].length > end) {
-      // The link is short enough to keep whole; a very long one goes to the next fold.
-      end = m[0].length <= 600 ? start + m[0].length : start;
+      // The link is short enough to keep whole; a very long one goes to the next fold (unless
+      // it is all there is to show).
+      end = m[0].length <= 600 || start === 0 ? start + m[0].length : start;
       break;
     }
   }

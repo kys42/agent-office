@@ -425,9 +425,7 @@ function setupIPC() {
     await shell.openExternal(link);
   });
   // A file named in session text, on the person's click: documents open in their app; anything
-  // else (an app, a script) is only shown in its folder, never run.
-  // A file named in session text, on the person's click: documents open in their app; anything
-  // else (an app, a script, a bundle folder like X.app) is only shown in its folder, never run.
+  // else (an app, a script, any folder — X.app is one) is only shown in its folder, never run.
   // Judged by the real path, so a link named like a document can't open what it points to.
   ipcMain.handle('office:open-file', async (e, raw) => {
     trusted(e);
@@ -439,9 +437,8 @@ function setupIPC() {
     const file = await realpath(given).catch(() => null);
     const found = file ? await stat(file).catch(() => null) : null;
     if (!file || !found) return 'missing';
-    const plainFolder = found.isDirectory() && !path.extname(file);
-    const document = found.isFile() && OPENABLE_FILE.test(file);
-    if ((plainFolder || document) && !(await shell.openPath(file))) return 'opened';
+    if (found.isFile() && OPENABLE_FILE.test(file) && !(await shell.openPath(file)))
+      return 'opened';
     shell.showItemInFolder(file);
     return 'revealed';
   });

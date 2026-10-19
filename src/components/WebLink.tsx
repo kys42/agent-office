@@ -1,8 +1,8 @@
-import { useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { FileText } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
-import { fileLink, webLink } from '../shared/links';
+import { markdownFileLink, webLink } from '../shared/links';
 
 /**
  * A link from session text. Web pages open in the default browser on click (the real address
@@ -10,9 +10,15 @@ import { fileLink, webLink } from '../shared/links';
  * The click never reaches the bubble or row around it.
  */
 export function WebLink({ href, children }: { href?: string; children: ReactNode }) {
+  const here = useContext(FilesHere);
   const link = webLink(href);
-  const file = link ? null : fileLink(href);
-  if (file) return <FileLink path={file}>{children}</FileLink>;
+  const file = link ? null : markdownFileLink(href);
+  if (file)
+    return (
+      <FileLink path={file} here={here}>
+        {children}
+      </FileLink>
+    );
   if (!link) return <span>{children}</span>;
   return (
     <a
@@ -34,14 +40,20 @@ export function WebLink({ href, children }: { href?: string; children: ReactNode
 }
 
 /**
+ * Whether file paths in this text name files on this computer: false for a connected office's
+ * colleagues, whose paths belong to their own computer (shown, never opened here).
+ */
+export const FilesHere = createContext(true);
+
+/**
  * A file on this computer, named by a link in session text. The desktop app opens it on click
  * (documents in their app, anything else shown in its folder); a browser can't, so the path is
  * shown beside the label. The full path is on hover either way.
  */
-function FileLink({ path, children }: { path: string; children: ReactNode }) {
+function FileLink({ path, here, children }: { path: string; here: boolean; children: ReactNode }) {
   const { t } = useI18n();
   const [missing, setMissing] = useState(false);
-  if (!api.openFile)
+  if (!api.openFile || !here)
     return (
       <span className="file-link is-text" title={path}>
         {children} <code>{path}</code>

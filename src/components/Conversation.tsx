@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { MessageMarkdown } from './MessageMarkdown';
+import { FilesHere } from './WebLink';
 import {
   ChevronDown,
   Copy,
@@ -64,8 +65,10 @@ function Message({
   const { t } = useI18n();
   const work = event.kind === 'tool' || event.kind === 'result';
   const limit = work ? 200 : 300;
-  const long = event.text.length > limit || event.text.split('\n').length > 12;
-  const text = expanded || !long ? event.text : clipMarkdown(event.text, limit);
+  // Folded at about `limit` characters (never through a link); "more" only if anything is left.
+  const folded = clipMarkdown(event.text, limit);
+  const long = folded !== event.text;
+  const text = expanded || !long ? event.text : folded;
   const label =
     event.kind === 'user'
       ? t.conversation.you
@@ -122,7 +125,9 @@ function Message({
           </small>
         )}
         <div className="message-text">
-          <MessageMarkdown text={text} notify={notify} />
+          <FilesHere.Provider value={!isRemoteId(event.id)}>
+            <MessageMarkdown text={text} notify={notify} />
+          </FilesHere.Provider>
         </div>
         {long && (
           <button className="message-expand" aria-expanded={expanded} onClick={onExpand}>
