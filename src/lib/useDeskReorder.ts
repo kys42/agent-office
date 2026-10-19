@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import type { RowLayout } from '../shared/office-layout';
-import { moveDesk } from '../shared/desk-order';
+import { planDeskDrop } from '../shared/desk-order';
+import { isRemoteId } from '../shared/federation';
 
 type Point = { x: number; y: number };
 type Side = 'before' | 'after';
@@ -12,7 +13,10 @@ type Gesture = {
   start: Point;
   point: Point;
   moved: boolean;
-  target: { id: string; side: Side } | null;
+  /** The edge marked, and the zone's local desks in the order a drop there sends. */
+  target: { id: string; side: Side; ids: string[] } | null;
+  /** Removes the listeners that live as long as the gesture. */
+  detach: () => void;
 };
 /** A press that travels less than this stays a click (opens the card). */
 const THRESHOLD = 6;
@@ -44,67 +48,91 @@ export function useDeskReorder({
   const zoneOf = (g: Gesture) => latest.current.layout.zones.find((z) => z.key === g.zone);
   const benchOf = (zone: RowLayout['zones'][number]) =>
     new Map(zone.benches.flatMap((b) => b.members.map((id) => [id, b.key] as const)));
-  /** The desk of the same zone under the pointer, and which half of it. */
+  /**
+   * The desk of the same zone under the pointer, which half of it, and what a drop there does.
+   * A remote desk is no target, and neither is a place that leaves the order as it is.
+   */
   const locate = (g: Gesture): Gesture['target'] => {
     const zone = zoneOf(g);
     const root = track.current;
     if (!zone || !root) return null;
-    const bench = benchOf(zone);
     for (const st of zone.stations) {
       const el = root.querySelector(`[data-station-id="${CSS.escape(st.id)}"]`);
       const box = el?.getBoundingClientRect();
       if (!box || g.point.x < box.left || g.point.x >= box.right) continue;
-      // Its own bench is where it already is: nothing to show there.
-      if (bench.get(st.id) === bench.get(g.id)) return null;
-      return { id: st.id, side: g.point.x < box.left + box.width / 2 ? 'before' : 'after' };
+      const bench = benchOf(zone);
+      const plan = planDeskDrop(
+        zone.stations.map(({ id }) => ({
+          id,
+          bench: bench.get(id) ?? id,
+          remote: isRemoteId(id),
+        })),
+        g.id,
+        st.id,
+        g.point.x < box.left + box.width / 2 ? 'before' : 'after',
+      );
+      return plan && { ...plan.marker, ids: plan.ids };
     }
     return null;
+  };
+  const retarget = (g: Gesture, force = false) => {
+    const target = locate(g);
+    if (force || target?.id !== g.target?.id || target?.side !== g.target?.side) {
+      g.target = target;
+      setDrag({ id: g.id, target });
+    }
   };
   const finish = (keep: boolean) => {
     const g = gesture.current;
     if (!g) return;
     gesture.current = null;
+    g.detach();
     setDrag(null);
-    if (g.element.hasPointerCapture(g.pointer)) g.element.releasePointerCapture(g.pointer);
+    // Gone from the page (re-keyed, hidden, left the zone): nothing under the pointer to judge.
+    const present = g.element.isConnected;
+    if (present && g.element.hasPointerCapture(g.pointer))
+      g.element.releasePointerCapture(g.pointer);
     if (!g.moved) return;
-    // A cancelled drag's release must not open the card either.
+    // A cancelled drag's release must not open the card either (`consumeClick`).
     swallow.current = true;
-    latest.current.onArrange?.(false, g.point);
-    const zone = zoneOf(g);
-    if (!keep || !g.target || !zone) return;
-    const bench = benchOf(zone);
-    const ids = zone.stations.map((st) => st.id);
-    const next = moveDesk(
-      ids.map((id) => ({ id, bench: bench.get(id) ?? id })),
-      g.id,
-      g.target.id,
-      g.target.side,
-    );
-    if (next.some((id, i) => id !== ids[i])) latest.current.onReorder(next);
+    latest.current.onArrange?.(false, present ? g.point : undefined);
+    if (keep && g.target) latest.current.onReorder(g.target.ids);
   };
-  // A new floor plan or switching it off ends the drag without saving stale geometry.
+  /** Listeners for the gesture's lifetime: they go when it ends, however it ends. */
+  const attach = (g: Gesture) => {
+    const root = track.current;
+    // The row scrolling under a still pointer (wheel, trackpad) moves the desks beneath it.
+    const scrolled = () => {
+      if (gesture.current === g && g.moved) retarget(g);
+    };
+    // The desk's own element hears its release, but not once it has left the page; the window
+    // still does then (React's handlers run first and end the gesture before this one).
+    const released = (e: globalThis.PointerEvent) => {
+      if (gesture.current !== g || e.pointerId !== g.pointer) return;
+      if (e.type === 'pointerup' && g.element.isConnected) {
+        g.point = { x: e.clientX, y: e.clientY };
+        if (g.moved) g.target = locate(g);
+        finish(true);
+      } else finish(false);
+    };
+    root?.addEventListener('scroll', scrolled, { passive: true });
+    window.addEventListener('pointerup', released);
+    window.addEventListener('pointercancel', released);
+    return () => {
+      root?.removeEventListener('scroll', scrolled);
+      window.removeEventListener('pointerup', released);
+      window.removeEventListener('pointercancel', released);
+    };
+  };
+  // A new floor plan without the dragged desk (it left the zone or the office, a persona's run
+  // took over its desk) ends the drag: its element and its release may never come back.
   useEffect(() => {
-    if (gesture.current?.moved && !zoneOf(gesture.current)) finish(false);
+    const g = gesture.current;
+    if (g && !zoneOf(g)?.stations.some((st) => st.id === g.id)) finish(false);
   }, [layout]);
   useEffect(() => {
     if (!enabled) finish(false);
   }, [enabled]);
-  // The row scrolling under a still pointer (wheel, trackpad) moves the desks beneath it.
-  useEffect(() => {
-    const root = track.current;
-    if (!root) return;
-    const scrolled = () => {
-      const g = gesture.current;
-      if (!g?.moved) return;
-      const target = locate(g);
-      if (target?.id !== g.target?.id || target?.side !== g.target?.side) {
-        g.target = target;
-        setDrag({ id: g.id, target });
-      }
-    };
-    root.addEventListener('scroll', scrolled, { passive: true });
-    return () => root.removeEventListener('scroll', scrolled);
-  }, [track.current]);
   useEffect(() => {
     const blur = () => finish(false);
     const key = (e: KeyboardEvent) => {
@@ -130,7 +158,7 @@ export function useDeskReorder({
             if (e.button !== 0 || !e.isPrimary || gesture.current) return;
             const point = { x: e.clientX, y: e.clientY };
             swallow.current = false;
-            gesture.current = {
+            const g: Gesture = {
               pointer: e.pointerId,
               id,
               zone,
@@ -139,7 +167,10 @@ export function useDeskReorder({
               point,
               moved: false,
               target: null,
+              detach: () => {},
             };
+            g.detach = attach(g);
+            gesture.current = g;
             e.currentTarget.setPointerCapture(e.pointerId);
           },
           onPointerMove: (e: PointerEvent<HTMLElement>) => {
@@ -152,11 +183,7 @@ export function useDeskReorder({
               g.moved = true;
               latest.current.onArrange?.(true);
             }
-            const target = locate(g);
-            if (first || target?.id !== g.target?.id || target?.side !== g.target?.side) {
-              g.target = target;
-              setDrag({ id: g.id, target });
-            }
+            retarget(g, first);
           },
           onPointerUp: (e: PointerEvent<HTMLElement>) => {
             const g = gesture.current;
@@ -167,6 +194,8 @@ export function useDeskReorder({
             if (g.moved) g.target = locate(g);
             finish(true);
           },
+          // Grab cursor and no touch scrolling of the row: the character is the drag handle.
+          'data-desk-handle': '',
           onPointerCancel: (e: PointerEvent<HTMLElement>) => {
             if (gesture.current?.pointer === e.pointerId) finish(false);
           },
@@ -184,9 +213,12 @@ export function useDeskReorder({
         : drag?.target?.id === id
           ? `drop-${drag.target.side}`
           : '',
-    /** True (once) when the click is the end of a drag. */
-    consumeClick: () => {
-      const was = swallow.current;
+    /**
+     * True (once) when the click is the end of a drag. A keyboard click (`detail` 0) never is,
+     * even if a cancelled drag's release landed elsewhere and left the flag up.
+     */
+    consumeClick: (e?: { detail: number }) => {
+      const was = swallow.current && e?.detail !== 0;
       swallow.current = false;
       return was;
     },

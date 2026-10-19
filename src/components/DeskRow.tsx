@@ -511,8 +511,8 @@ export function DeskRow({
                               : label.detail
                           }
                           {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
-                          onClick={() => {
-                            if (!reorder.consumeClick()) open(s.id);
+                          onClick={(e) => {
+                            if (!reorder.consumeClick(e)) open(s.id);
                           }}
                         >
                           <FocusEffects level={focus} />

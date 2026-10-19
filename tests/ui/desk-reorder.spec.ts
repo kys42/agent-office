@@ -84,13 +84,14 @@ test('Dragging a desk onto another in its zone reorders the big office and keeps
       targetPosition: { x: 140, y: 120 },
     });
   await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['a', 'b', 'c']);
-  // Dropping on itself changes nothing and sends nothing.
+  // Dropping on itself changes nothing and sends nothing (given time to arrive, it does not).
   await page
     .locator('.office-pet[data-session-id="a"]')
     .dragTo(page.locator('[data-station-id="a"]'), {
       force: true,
       targetPosition: { x: 140, y: 120 },
     });
+  await page.waitForTimeout(300);
   expect(calls).toHaveLength(2);
   // Kept by the service: a reload shows the same order.
   await page.reload();
@@ -106,7 +107,102 @@ test('Dragging a desk onto another in its zone reorders the big office and keeps
   expect(calls).toHaveLength(2);
 });
 
-async function dock(page: Page, mode: 'row' | 'floor') {
+/** A peer's desk (federated, read-only) sitting between a and b in team-a. */
+function mixed(): Snapshot {
+  const snapshot = fixture();
+  const [a, b, c, d] = snapshot.sessions;
+  const x = {
+    ...a,
+    id: 'remote-office:peer:x',
+    nativeId: 'x',
+    alias: '원격 동료',
+    title: '원격 업무',
+    branch: 'feature-x',
+    officeSeat: 1,
+    remote: {
+      officeId: 'peer',
+      sessionId: 'x',
+      label: 'MacBook Pro',
+      tags: [],
+      receivedAt: Date.now(),
+      stale: false,
+      conversation: true,
+      send: false,
+    },
+  } as Snapshot['sessions'][number];
+  b.officeSeat = 2;
+  c.officeSeat = 3;
+  d.officeSeat = 4;
+  snapshot.sessions = [a, x, b, c, d];
+  return snapshot;
+}
+/** Holds a desk's character in the big office (a real HTML drag) until `drop`. */
+async function carry(page: Page, id: string) {
+  const b = (await page.locator(`.office-pet[data-session-id="${id}"]`).boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2 + 12, b.y + b.height / 2 + 4, { steps: 3 });
+}
+async function overDesk(page: Page, id: string, fraction: number) {
+  const b = (await page.locator(`.office-map [data-station-id="${id}"]`).boundingBox())!;
+  const x = b.x + b.width * fraction,
+    y = b.y + b.height * 0.6;
+  await page.mouse.move(x, y, { steps: 8 });
+  // The browser paces drag events: settle, then a nudge so the last one lands here.
+  await page.waitForTimeout(100);
+  await page.mouse.move(x + 1, y);
+}
+
+test('A peer’s desk in the zone is no target, and only local desks are sent', async ({ page }) => {
+  const snapshot = mixed();
+  const calls: string[][] = [];
+  await page.route('**/api/rpc', async (route) => {
+    const { method, args } = route.request().postDataJSON();
+    if (method === 'reorderSeats') {
+      calls.push(args[0]);
+      reorder(snapshot, args[0]);
+    }
+    await route.fulfill({ json: { result: snapshot } });
+  });
+  await page.goto('/');
+  const remote = 'remote-office:peer:x';
+  await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['a', remote, 'b', 'c']);
+  await carry(page, 'c');
+  await overDesk(page, remote, 0.25);
+  await expect(page.locator('.office-map .drop-before, .office-map .drop-after')).toHaveCount(0);
+  await overDesk(page, 'a', 0.25);
+  await expect(page.locator('.office-map [data-station-id="a"]')).toHaveClass(/drop-before/);
+  await expect(page.locator('.drag-hint')).toHaveText('여기에 놓으면 책상 순서가 바뀌어요');
+  await page.mouse.up();
+  await expect.poll(() => calls).toEqual([['c', 'a', 'b']]);
+  await expect(page.getByText('원격 사무실 · 읽기 전용')).toHaveCount(0);
+  await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['c', remote, 'a', 'b']);
+});
+
+test('No marker where a drop would leave the order as it is; off to the floor clears it', async ({
+  page,
+}) => {
+  const snapshot = fixture();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/');
+  await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['a', 'b', 'c']);
+  await carry(page, 'a');
+  // a already sits right before b.
+  await overDesk(page, 'b', 0.25);
+  await expect(page.locator('.office-map .drop-before, .office-map .drop-after')).toHaveCount(0);
+  await expect(page.locator('.drag-hint')).not.toHaveText('여기에 놓으면 책상 순서가 바뀌어요');
+  await overDesk(page, 'b', 0.75);
+  await expect(page.locator('.office-map [data-station-id="b"]')).toHaveClass(/drop-after/);
+  // Out onto the empty floor: the zone move takes over, the edge marker goes.
+  const map = (await page.locator('.office-map').boundingBox())!;
+  await page.mouse.move(map.x + map.width - 30, map.y + map.height - 30, { steps: 8 });
+  await expect(page.locator('.office-map')).toHaveClass(/drop-new/);
+  await expect(page.locator('.office-map .drop-before, .office-map .drop-after')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+});
+
+async function dock(page: Page, mode: 'row' | 'floor', snapshot: Snapshot = fixture()) {
   await page.addInitScript((s) => {
     const w = window as any;
     w.fixture = s;
@@ -119,7 +215,10 @@ async function dock(page: Page, mode: 'row' | 'floor') {
       visit: async () => structuredClone(w.fixture),
       artifacts: async () => [],
       terminals: async () => ({}),
-      subscribe: () => () => {},
+      subscribe: (fn: (s: unknown) => void) => {
+        w.publish = () => fn(structuredClone(w.fixture));
+        return () => {};
+      },
       dock: async (action: string) => {
         w.calls.push(action);
       },
@@ -136,7 +235,7 @@ async function dock(page: Page, mode: 'row' | 'floor') {
         return structuredClone(w.fixture);
       },
     };
-  }, fixture());
+  }, snapshot);
   await page.goto(`/#mini=${mode}`);
   await expect(page.locator('.row-zone')).toHaveCount(2);
 }
@@ -204,3 +303,57 @@ test('The row scrolling under a still pointer moves the drop target with it', as
   await page.mouse.up();
   await expect.poll(() => reorders(page)).toEqual([['reorderSeats', 'b', 'c', 'a']]);
 });
+
+test('In the row a peer’s desk is no target, and a drop that changes nothing shows nothing', async ({
+  page,
+}) => {
+  await dock(page, 'row', mixed());
+  const remote = 'remote-office:peer:x';
+  await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['a', remote, 'b', 'c']);
+  const y = await press(page, 'c');
+  await over(page, remote, 0.25, y);
+  await expect(page.locator('.drop-before, .drop-after')).toHaveCount(0);
+  // b already sits right before c.
+  await over(page, 'b', 0.75, y);
+  await expect(page.locator('.drop-before, .drop-after')).toHaveCount(0);
+  await over(page, 'a', 0.25, y);
+  await expect(page.locator('[data-station-id="a"]')).toHaveClass(/drop-before/);
+  await page.mouse.up();
+  await expect.poll(() => reorders(page)).toEqual([['reorderSeats', 'c', 'a', 'b']]);
+  await expect(page.getByText('원격 사무실 · 읽기 전용')).toHaveCount(0);
+});
+
+for (const mode of ['row', 'floor'] as const) {
+  test(`A desk re-keyed mid-drag in the ${mode} ends the drag and lets the window go`, async ({
+    page,
+  }) => {
+    await dock(page, mode);
+    await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['a', 'b', 'c']);
+    const y = await press(page, 'c');
+    await over(page, 'a', 0.25, y);
+    await expect(page.locator('[data-station-id="a"]')).toHaveClass(/drop-before/);
+    await expect.poll(() => page.evaluate(() => (window as any).calls)).toContain('solid');
+    // Another run speaks for the desk: its station id (the element's key) changes.
+    await page.evaluate(() => {
+      const w = window as any;
+      const c = w.fixture.sessions.find((s: any) => s.id === 'c');
+      c.id = 'c2';
+      c.nativeId = 'c2';
+      w.fixture.version++;
+      w.publish();
+    });
+    await expect(page.locator('[data-station-id="c2"]')).toHaveCount(1);
+    await expect(page.locator('.drop-before, .drop-after, .is-desk-dragging')).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          (window as any).calls.filter((c: unknown) => typeof c === 'string').at(-1),
+        ),
+      )
+      .toBe('through');
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    expect(await reorders(page)).toEqual([]);
+    expect(await page.evaluate(() => (window as any).opens)).toEqual([]);
+  });
+}

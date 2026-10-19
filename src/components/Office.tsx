@@ -1,5 +1,13 @@
 import { ProjectSummon } from './ProjectSummon';
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type ReactNode,
+} from 'react';
 import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import {
   MOODS,
@@ -9,7 +17,8 @@ import {
   type TerminalTarget,
 } from '../shared/types';
 import { sessionName, projectKey, benchKey } from '../shared/office';
-import { moveDesk } from '../shared/desk-order';
+import { planDeskDrop } from '../shared/desk-order';
+import { isRemoteId } from '../shared/federation';
 import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
@@ -121,6 +130,11 @@ export function Office({
     setDropKey(undefined);
     setInsert(null);
   };
+  // The dragged desk left the office mid-drag (hidden, gone, a persona's run changed): its
+  // dragend never comes, so end the drag here rather than leave the hint up.
+  useEffect(() => {
+    if (dragging && !dragFrom) endDrag();
+  }, [dragging, dragFrom]);
   const drop = (zoneKey: string | null) => {
     const from = dragFrom;
     endDrag();
@@ -336,6 +350,7 @@ export function Office({
               e.preventDefault();
               e.dataTransfer.dropEffect = 'move';
               setDropKey(null);
+              setInsert(null);
             }}
             onDrop={(e) => {
               if (!dragging) return;
@@ -497,6 +512,26 @@ export function Office({
                     const branch = branchInfo(s);
                     const quota = quotaOf?.(s);
                     const dark = !!quota && dimsDesk(s, pose.working);
+                    // Which edge a drop on this desk's half would mark, and the order it sends.
+                    const plan = (e: DragEvent<HTMLElement>) => {
+                      const box = e.currentTarget.getBoundingClientRect();
+                      const side = e.clientX < box.left + box.width / 2 ? 'before' : 'after';
+                      return planDeskDrop(
+                        area.stations.map(({ id }) => {
+                          const x = byId.get(id)!;
+                          return { id, bench: benchKey(x), remote: !!x.remote || isRemoteId(id) };
+                        }),
+                        dragFrom!.id,
+                        s.id,
+                        side,
+                      );
+                    };
+                    // A remote desk is no target: the drop falls to its zone (nothing changes).
+                    const target =
+                      !!dragFrom &&
+                      projectKey(dragFrom) === area.key &&
+                      !s.remote &&
+                      !isRemoteId(s.id);
                     return (
                       <div
                         className={`desk-station status-${s.status} ${insert?.id === s.id ? `drop-${insert.side}` : ''} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
@@ -507,36 +542,24 @@ export function Office({
                         // Within its own zone a desk goes in before or after the desk it is
                         // dropped on; other zones' desks leave the drop to their zone.
                         onDragOver={(e) => {
-                          if (!dragFrom || projectKey(dragFrom) !== area.key) return;
+                          if (!target) return;
                           e.preventDefault();
                           e.stopPropagation();
                           e.dataTransfer.dropEffect = 'move';
                           setDropKey(area.key);
-                          const box = e.currentTarget.getBoundingClientRect();
-                          const side = e.clientX < box.left + box.width / 2 ? 'before' : 'after';
-                          // Its own bench is where it already is: no marker there.
-                          setInsert(
-                            benchKey(s) === benchKey(dragFrom)
-                              ? null
-                              : (i) => (i?.id === s.id && i.side === side ? i : { id: s.id, side }),
-                          );
+                          // No marker where the order would stay as it is (its own bench, the
+                          // edge it already sits at).
+                          const at = plan(e)?.marker ?? null;
+                          setInsert((i) => (i?.id === at?.id && i?.side === at?.side ? i : at));
                         }}
                         onDrop={(e) => {
-                          if (!dragFrom || projectKey(dragFrom) !== area.key) return;
+                          if (!target) return;
                           e.preventDefault();
                           e.stopPropagation();
-                          const at = insert;
-                          const from = dragFrom;
+                          // Where it is let go decides.
+                          const next = plan(e);
                           endDrag();
-                          if (!at || !onReorder) return;
-                          const ids = area.stations.map((x) => x.id);
-                          const next = moveDesk(
-                            ids.map((id) => ({ id, bench: benchKey(byId.get(id)!) })),
-                            from.id,
-                            at.id,
-                            at.side,
-                          );
-                          if (next.some((id, i) => id !== ids[i])) onReorder(next);
+                          if (next && onReorder) onReorder(next.ids);
                         }}
                         // The whole desk (bubble included) is what the person points at.
                         onMouseEnter={() => setHover(s.id)}
