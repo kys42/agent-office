@@ -37,22 +37,29 @@ export function parentSession(s: Session, sessions: Session[]): Session | undefi
       (s.provider !== 'openclaw' || p.agentName === s.agentName),
   );
 }
-export function attachSessions(sessions: Session[]): Session[] {
+/**
+ * Seats each helper beside the top session of its chain. `hosts` (helper id → host id) gives the
+ * host already resolved over the full session list, for chains that pass through a helper no
+ * longer among `sessions`.
+ */
+export function attachSessions(sessions: Session[], hosts?: Map<string, string>): Session[] {
+  const byId = new Map(sessions.map((s) => [s.id, s]));
   return sessions.map((s) => {
     if (s.resident || s.actor) return { ...s, attachedTo: undefined };
     let current = s;
     const visited = new Set([s.id]);
-    let parent: Session | undefined;
-    while (['subagent', 'child'].includes(current.relation?.kind ?? '')) {
-      const next = parentSession(current, sessions);
-      if (!next || visited.has(next.id)) {
-        parent = undefined;
-        break;
+    let parent = byId.get(hosts?.get(s.id) ?? '');
+    if (!parent)
+      while (['subagent', 'child'].includes(current.relation?.kind ?? '')) {
+        const next = parentSession(current, sessions);
+        if (!next || visited.has(next.id)) {
+          parent = undefined;
+          break;
+        }
+        visited.add(next.id);
+        parent = next;
+        current = next;
       }
-      visited.add(next.id);
-      parent = next;
-      current = next;
-    }
     const attached = parent && parent.zone === 'office' && s.zone === 'office';
     return {
       ...s,
@@ -80,7 +87,10 @@ export function allocateSeats(
   sessions: Session[],
   previous: Record<string, number>,
 ): Record<string, number> {
-  const primary = attachSessions(sessions).filter((s) => !s.attachedTo);
+  // An attachment officeResidents already resolved holds (its chain may cross a retired helper).
+  const primary = attachSessions(sessions).filter(
+    (s, i) => !s.attachedTo && !sessions[i].attachedTo,
+  );
   const result: Record<string, number> = {};
   const used = new Set<number>();
   for (const s of primary) {

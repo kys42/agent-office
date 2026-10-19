@@ -132,6 +132,8 @@ export function contentText(c: unknown): string {
     .map((b) => b.text ?? '')
     .join('\n');
 }
+/** Claude Code's note that the person stopped the turn (Esc), recorded in the user role. */
+const INTERRUPTED = /^\s*\[Request interrupted by user[^\]\n]*\]\s*$/i;
 export function cleanPrompt(t: string): string {
   return (
     t
@@ -142,7 +144,7 @@ export function cleanPrompt(t: string): string {
       .replace(/<in-app-browser-context\b[^>]*>[\s\S]*?<\/in-app-browser-context>/gi, '')
       // Harness notes recorded in the user role are not the person's words.
       .replace(/<task-notification\b[^>]*>[\s\S]*?<\/task-notification>/gi, '')
-      .replace(/^\s*\[Request interrupted by user[^\]\n]*\]\s*$/i, '')
+      .replace(INTERRUPTED, '')
       .replace(
         /<external_codex_apps_open_page\b[^>]*>[\s\S]*?<\/external_codex_apps_open_page>/gi,
         '',
@@ -501,6 +503,14 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         add(r, at, 'user', text);
         set('think', t.reason.afterUser);
       }
+      // Stopped by the person: the turn ended without a final answer, as Codex's turn_aborted.
+      const aborted = () => {
+        set('idle', t.reason.turnAborted);
+        add(r, at, 'lifecycle', t.event.turnAborted, undefined, ':aborted', {
+          lifecycle: 'aborted',
+        });
+      };
+      if (role === 'user' && INTERRUPTED.test(contentText(m.content))) aborted();
       if (role === 'assistant') {
         model = m.model ?? model;
         if (!['analysis', 'reasoning'].includes(m.phase ?? m.channel))
@@ -590,7 +600,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               ':result',
               call(b.tool_use_id),
             );
-            set('work', t.reason.toolResultRecovering);
+            // A subagent stopped mid-tool records the interruption as the tool's error result.
+            if (b.is_error && INTERRUPTED.test(contentText(b.content) || String(b.content ?? '')))
+              aborted();
+            else set('work', t.reason.toolResultRecovering);
           }
         }
       if (role === 'toolResult') {
