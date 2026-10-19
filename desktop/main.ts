@@ -552,16 +552,23 @@ function setupIPC() {
       throw new Error(m().desktop.badRequest);
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const session: Session = await bridge.call('detail', [id]);
-    if (action === 'status') return tmuxResume.status(session);
+    if (action === 'status')
+      return {
+        ...(await tmuxResume.status(session)),
+        connections: (await projectConnections(session.cwd)).filter((c) => c.id === session.id),
+      };
     if (action === 'open') return tmuxResume.open(session);
     return tmuxResume.start(session, async (info) => {
+      const connections = (await projectConnections(session.cwd)).filter(
+        (c) => c.id === session.id,
+      );
       const owner = BrowserWindow.fromWebContents(e.sender);
       const t = m().tmux;
       const options = {
         type: 'question' as const,
         title: t.title,
         message: t.confirm,
-        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}`,
+        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
         buttons: [t.cancel, t.start],
         defaultId: 0,
         cancelId: 0,
@@ -577,24 +584,30 @@ function setupIPC() {
       }
     });
   });
-  ipcMain.handle('office:tmux-summon', async (e, id, action, provider) => {
+  ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
       throw new Error(m().desktop.badRequest);
     if (!['claude', 'codex'].includes(provider)) throw new Error(m().desktop.badRequest);
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const original: Session = await bridge.call('detail', [id]);
-    const session = summonSession(original.cwd ?? '', provider);
-    if (action === 'status') return tmuxResume.status(session);
+    if (typeof name !== 'string') throw new Error(m().desktop.badRequest);
+    const session = summonSession(original.cwd ?? '', provider, name);
+    if (action === 'status')
+      return {
+        ...(await tmuxResume.status(session)),
+        connections: await projectConnections(original.cwd),
+      };
     if (action === 'open') return tmuxResume.open(session);
     return tmuxResume.start(session, async (info) => {
+      const connections = await projectConnections(original.cwd);
       const owner = BrowserWindow.fromWebContents(e.sender);
       const t = m().tmux;
       const options = {
         type: 'question' as const,
         title: t.summonTitle,
         message: t.summonConfirm,
-        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}`,
+        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
         buttons: [t.cancel, t.summonStart],
         defaultId: 0,
         cancelId: 0,
@@ -671,6 +684,74 @@ function setupIPC() {
     const remoteTargets = remote.length ? await bridge.call('remote-targets', [remote]) : {};
     return { ...Object.fromEntries(entries), ...remoteTargets };
   };
+  const projectConnections = async (cwd: string | null) => {
+    const snapshot: Snapshot = await bridge.call('snapshot');
+    const candidates = snapshot.sessions.filter(
+      (s) =>
+        !s.remote &&
+        s.cwd &&
+        cwd &&
+        path.resolve(s.cwd) === path.resolve(cwd) &&
+        ['claude', 'codex'].includes(s.provider),
+    );
+    const connections: NonNullable<import('../src/shared/types.js').TmuxResumeInfo['connections']> =
+      [];
+    const seenTmux = new Set<string>();
+    for (const s of candidates) {
+      const terminal =
+        s.provider === 'claude'
+          ? await locateTerminal(s.nativeId, { fresh: true })
+          : await findCodexTerminal(s.nativeId, { fresh: true });
+      if (terminal) {
+        connections.push({ id: s.id, name: s.alias || s.title, label: hostName(terminal.host) });
+        if (terminal.host.kind === 'tmux') seenTmux.add(terminal.host.label.split(':')[0]);
+      }
+    }
+    if (cwd)
+      connections.push(
+        ...(await tmuxResume.connections(cwd)).filter((c) => !seenTmux.has(c.label)),
+      );
+    return connections;
+  };
+  // Adopt a launch name only once, after an exact native-session -> owned tmux pane match.
+  // It is stored as the normal personal alias; later manual edits (including clearing) win.
+  let naming = false;
+  const named = new Set<string>();
+  const nameTimer = setInterval(async () => {
+    if (naming) return;
+    naming = true;
+    try {
+      const folders = await tmuxResume.namedFolders();
+      if (!folders.size) return;
+      const snapshot: Snapshot = await bridge.call('snapshot');
+      for (const s of snapshot.sessions.filter(
+        (s) =>
+          !s.remote &&
+          !named.has(s.id) &&
+          s.cwd &&
+          folders.has(path.resolve(s.cwd)) &&
+          ['claude', 'codex'].includes(s.provider),
+      )) {
+        const terminal =
+          s.provider === 'claude'
+            ? await locateTerminal(s.nativeId)
+            : await findCodexTerminal(s.nativeId);
+        if (!terminal || terminal.host.kind !== 'tmux') continue;
+        const alias = await tmuxResume.aliasFor(terminal.host, s.id).catch(() => null);
+        if (!alias) continue;
+        const current: Session = await bridge.call('detail', [s.id]);
+        if (!current.alias) await bridge.call('patch', [s.id, { alias }]);
+        await tmuxResume.claimAlias(terminal.host, s.id);
+        named.add(s.id);
+      }
+    } catch {
+      /* A collector restart or disappearing terminal retries next time. */
+    } finally {
+      naming = false;
+    }
+  }, 10000);
+  nameTimer.unref();
+  app.once('before-quit', () => clearInterval(nameTimer));
   ipcMain.handle('office:terminals', (e, ids) => {
     trusted(e);
     return sendTargets(ids);

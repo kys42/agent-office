@@ -2,7 +2,16 @@ import type { Messages } from '../en';
 export const tmux: Messages['tmux'] = {
   summonTitle: '새 에이전트 소환',
   summonIntro:
-    '이 프로젝트에서 Claude 또는 Codex의 새 대화를 시작해요. 같은 종류로 소환한 에이전트가 실행 중이면 다시 연결해요.',
+    '이 프로젝트에 새 에이전트를 소환해요. tmux로 터미널 세션을 유지하므로 필요할 때 직접 들어가 작업하고 언제든 다시 연결할 수 있어요.',
+  agentName: '에이전트 이름',
+  invalidName: '이름은 글자·숫자·공백·하이픈·밑줄로 1~40자 입력해주세요.',
+  nameHint:
+    'tmux 이름과 앱의 에이전트 이름에 사용해요. 앱 이름은 첫 대화가 감지되면 반영돼요. tmux에는 구분용 짧은 번호가 붙어요.',
+  existingTitle: '이 프로젝트에 이미 연결된 에이전트',
+  existingConfirm: '이 프로젝트에 연결된 에이전트가 있어요. 별도의 tmux 세션을 새로 띄울까요?',
+  existingOpen: '기존 세션으로 이동',
+  summonCheck: '연결과 이름 확인',
+  summonDefault: '새 동료',
   summonConfirm: '이 프로젝트에 새 에이전트를 소환할까요?',
   summonStart: 'tmux에 소환하기',
   summonReady: '새 대화를 시작할 준비가 됐어요',

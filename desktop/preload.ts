@@ -54,7 +54,8 @@ const api: OfficeAPI = {
           id: string,
           actionName: 'status' | 'start' | 'open',
           provider: 'claude' | 'codex',
-        ) => action('office:tmux-summon', id, actionName, provider),
+          name: string,
+        ) => action('office:tmux-summon', id, actionName, provider, name),
         tmuxResume: (id: string, actionName: 'status' | 'start' | 'open') =>
           action('office:tmux-resume', id, actionName),
       }

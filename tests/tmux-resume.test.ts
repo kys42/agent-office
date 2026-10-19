@@ -188,3 +188,34 @@ test('summoning starts a fresh CLI once and rediscovers it by project/provider',
     assert.equal(f.calls.filter((x) => x.args.includes('new-session')).length, 2);
   }
 });
+
+test('named summons accept Korean names, separate names and reject unsafe or empty names', async () => {
+  const f = fixture();
+  const one = summonSession(session.cwd, 'claude', '리뷰 봇');
+  const a = await f.manager.status(one);
+  assert.match(a.name, /^리뷰-봇-claude-[a-f0-9]{8}$/);
+  assert.notEqual(
+    a.name,
+    (await f.manager.status(summonSession(session.cwd, 'claude', '개발 봇'))).name,
+  );
+  for (const bad of ['', ' ', 'x:y', 'x.y', '-$(touch x)', 'x\nmalicious', 'a'.repeat(41)])
+    assert.throws(() => summonSession(session.cwd, 'codex', bad));
+  await f.manager.start(one, async () => true);
+  assert.equal((await new TmuxResume(f.deps).status(one)).running, true);
+});
+test('alias adoption requires the exact tmux server and valid owned metadata; claimed names stay cleared', async () => {
+  const f = fixture();
+  const alias = Buffer.from('리뷰 봇').toString('base64');
+  let claimed = '';
+  f.deps.run = async (_file, args) => {
+    if (args.includes('display-message'))
+      return ['/tmp/owned', 'a'.repeat(64), alias, claimed].join('\t');
+    if (args.includes('set-option')) claimed = args.at(-1)!;
+    return '';
+  };
+  const host = { kind: 'tmux' as const, socket: '/tmp/owned', pane: '%1', label: 'test' };
+  assert.equal(await f.manager.aliasFor({ ...host, socket: '/tmp/other' }, 'codex:123'), null);
+  assert.equal(await f.manager.aliasFor(host, 'codex:123'), '리뷰 봇');
+  await f.manager.claimAlias(host, 'codex:123');
+  assert.equal(await f.manager.aliasFor(host, 'codex:123'), null);
+});

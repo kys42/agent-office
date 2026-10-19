@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
-async function setup(page: import('@playwright/test').Page, remote = false) {
+async function setup(page: import('@playwright/test').Page, remote = false, route = '/#card') {
   const s = demoSnapshot();
   if (remote)
     s.sessions[0].remote = {
@@ -46,10 +46,12 @@ async function setup(page: import('@playwright/test').Page, remote = false) {
         positionRemembered: false,
         target: { id: s.sessions[0].id, news: false },
       }),
-      tmuxSummon: async (id: string, action: string, provider: string) => {
+      tmuxSummon: async (id: string, action: string, provider: string, name: string) => {
+        w.lastName = name;
         w.actions.push(provider + ':' + action);
         if (action === 'start') w['running_' + provider] = true;
         return {
+          connections: [{ id: s.sessions[0].id, name: '기존 개발자', label: 'Orca' }],
           name: 'office-' + provider + '-fresh',
           cwd: '/projects/example',
           command: 'tmux attach ' + provider,
@@ -69,17 +71,22 @@ async function setup(page: import('@playwright/test').Page, remote = false) {
           canOpen: true,
         };
       },
+      jump: async () => {
+        w.jumped = true;
+        return { action: 'focused', text: 'Orca' };
+      },
       copyText: async (text: string) => {
         w.copied = text;
       },
     };
   }, s);
-  await page.goto('/#card');
+  await page.goto(route);
 }
 test('tmux resume explains first, preserves cancelled state, reconnects on reopen and fits a small popup', async ({
   page,
 }) => {
   await setup(page);
+  await expect(page.getByRole('button', { name: '새 에이전트 소환', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
   const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
   await expect(modal.getByText('프로젝트 폴더', { exact: true })).toBeVisible();
@@ -143,20 +150,41 @@ test('remote colleagues never offer local process creation', async ({ page }) =>
   await expect(page.getByRole('button', { name: 'tmux로 재개', exact: true })).toHaveCount(0);
 });
 
-test('summon chooses provider, starts a new conversation and reconnects after reopening', async ({
-  page,
-}) => {
-  await setup(page);
-  await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).click();
-  await expect(page.getByText('office-claude-fresh', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Codex', exact: true }).click();
-  await expect(page.getByText('office-codex-fresh', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'tmux에 소환하기', exact: true }).click();
-  await expect(page.getByRole('button', { name: '터미널에서 열기', exact: true })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).click();
-  await expect(page.getByRole('button', { name: '터미널에서 열기', exact: true })).toBeVisible();
-  expect(
-    await page.evaluate(() => (window as any).actions.filter((x: string) => x.endsWith(':start'))),
-  ).toEqual(['codex:start']);
-});
+for (const route of ['/', '/#mini=floor'])
+  test(
+    'summon ' +
+      route +
+      ' chooses provider, starts a new conversation and reconnects after reopening',
+    async ({ page }) => {
+      await setup(page, false, route);
+      await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
+      await expect(page.getByText('office-claude-fresh', { exact: true })).toBeVisible();
+      const modal = page.getByRole('dialog', { name: '새 에이전트 소환' });
+      await modal.getByLabel('에이전트 이름', { exact: true }).fill('리뷰 봇');
+      await modal.getByRole('button', { name: 'Codex', exact: true }).click();
+      await expect(modal.getByText('기존 개발자 · Orca')).toBeVisible();
+      await modal.getByRole('button', { name: '기존 세션으로 이동' }).click();
+      expect(await page.evaluate(() => (window as any).jumped)).toBe(true);
+      expect(await page.evaluate(() => (window as any).lastName)).toBe('리뷰 봇');
+      await expect(page.getByText('office-codex-fresh', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'tmux에 소환하기', exact: true }).click();
+      await expect(
+        page.getByRole('button', { name: '터미널에서 열기', exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: '.local/project-summon-' + (route === '/' ? 'office' : 'floor') + '.png',
+        animations: 'disabled',
+      });
+      await page.keyboard.press('Escape');
+      await expect(modal).toHaveCount(0);
+      await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
+      await expect(
+        page.getByRole('button', { name: '터미널에서 열기', exact: true }),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(() =>
+          (window as any).actions.filter((x: string) => x.endsWith(':start')),
+        ),
+      ).toEqual(['codex:start']);
+    },
+  );

@@ -1477,3 +1477,47 @@ body.card-mode:not(.is-mac) .dock-card {
   outline-offset: 2px;
   font-weight: 700;
 }
+
+.project-summon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface, #fff);
+  color: var(--text, #222);
+  border: 1px solid currentColor;
+  cursor: pointer;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+.zone-flag .project-summon-button {
+  margin: 4px auto;
+}
+.summon-field {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.summon-field input,
+.summon-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  font: inherit;
+}
+.summon-connections {
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+.summon-connections > div {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.modal-backdrop:has(.tmux-resume) {
+  pointer-events: auto;
+}

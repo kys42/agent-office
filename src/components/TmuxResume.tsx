@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Terminal } from 'lucide-react';
+import { Plus, Terminal } from 'lucide-react';
 import { Modal } from './Modal';
 import { api } from '../lib/api';
-import { copyText } from '../lib/resume';
+import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
-import type { TmuxResumeInfo } from '../shared/types';
+import type { Session, TmuxResumeInfo } from '../shared/types';
 
 export function TmuxResume({
   id,
   privacy,
   notify,
   summon = false,
+  projects,
 }: {
   summon?: boolean;
+  projects?: Session[];
   id: string;
   privacy: boolean;
   notify: (message: string) => void;
@@ -29,6 +31,8 @@ export function TmuxResume({
         hint: t.tmux.summonHint,
       }
     : t.tmux;
+  const [projectId, setProjectId] = useState(id);
+  const [agentName, setAgentName] = useState(t.tmux.summonDefault);
   const [provider, setProvider] = useState<'claude' | 'codex'>('claude');
   const body = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -48,7 +52,9 @@ export function TmuxResume({
     setError('');
     try {
       setInfo(
-        summon ? await api.tmuxSummon!(id, action, selected) : await api.tmuxResume!(id, action),
+        summon
+          ? await api.tmuxSummon!(projectId, action, selected, agentName)
+          : await api.tmuxResume!(id, action),
       );
     } catch (e) {
       if (action !== 'open') setInfo(null);
@@ -60,22 +66,67 @@ export function TmuxResume({
   return (
     <>
       <button
-        className="card-action"
+        className={summon ? 'project-summon-button' : 'card-action'}
+        data-solid
+        aria-label={text.title}
+        title={text.title}
         disabled={privacy}
         onClick={() => {
           setOpen(true);
           void act('status');
         }}
       >
-        <Terminal size={13} />
-        {text.title}
+        {summon ? (
+          <Plus size={15} />
+        ) : (
+          <>
+            <Terminal size={13} />
+            {text.title}
+          </>
+        )}
       </button>
       {open &&
         !privacy &&
         createPortal(
           <Modal title={text.title} onClose={() => setOpen(false)}>
-            <div className="tmux-resume" ref={body}>
+            <div className="tmux-resume" ref={body} data-solid>
               <p>{text.intro}</p>
+              {summon && (
+                <>
+                  {projects && (
+                    <label className="summon-field">
+                      {text.folder}
+                      <select
+                        disabled={busy}
+                        value={projectId}
+                        onChange={(e) => {
+                          setProjectId(e.target.value);
+                          setInfo(null);
+                        }}
+                      >
+                        {projects.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.cwd}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                  <label className="summon-field">
+                    {text.agentName}
+                    <input
+                      disabled={busy}
+                      maxLength={40}
+                      value={agentName}
+                      onChange={(e) => {
+                        setAgentName(e.target.value);
+                        setInfo(null);
+                      }}
+                    />
+                  </label>
+                  <p>{text.nameHint}</p>
+                </>
+              )}
               {summon && (
                 <div role="group" aria-label="Claude / Codex" className="tmux-resume-actions">
                   {(['claude', 'codex'] as const).map((value) => (
@@ -93,6 +144,28 @@ export function TmuxResume({
                     </button>
                   ))}
                 </div>
+              )}
+              {!!info?.connections?.length && (
+                <section className="summon-connections">
+                  <strong>{text.existingTitle}</strong>
+                  {info.connections.map((c) => (
+                    <div key={c.id ?? c.command}>
+                      <span>
+                        {c.name} · {c.label}
+                      </span>
+                      <button
+                        disabled={busy}
+                        onClick={() =>
+                          void (
+                            c.id ? jumpOrCopy(c.id, notify) : copyText(c.command!, notify)
+                          ).catch((e) => setError(e.message))
+                        }
+                      >
+                        {c.id ? text.existingOpen : text.copy}
+                      </button>
+                    </div>
+                  ))}
+                </section>
               )}
               {info && (
                 <>
@@ -115,7 +188,7 @@ export function TmuxResume({
               )}
               {error && <p role="alert">{error}</p>}
             </div>
-            <div className="tmux-resume-actions">
+            <div className="tmux-resume-actions" data-solid>
               {info && !info.running && (
                 <button disabled={busy} onClick={() => void act('start')}>
                   {text.start}
@@ -137,7 +210,7 @@ export function TmuxResume({
                 </button>
               )}
               <button disabled={busy} onClick={() => void act('status')}>
-                {busy ? text.loading : text.refresh}
+                {busy ? text.loading : summon ? text.summonCheck : text.refresh}
               </button>
             </div>
           </Modal>,
