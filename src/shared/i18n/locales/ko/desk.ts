@@ -69,7 +69,6 @@ export const desk: Messages['desk'] = {
     refreshTitle: '새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)',
     openCard: (name) => `${name} 업무 카드 열기`,
     cardTitle: '팝업으로 보기',
-    cardHint: '이 자리에서 업무 카드를 열어요. 큰 사무실로는 카드의 전체 모드로 가요.',
     empty: '동료들의 기록을 기다리고 있어요.',
     left: (n) => `왼쪽 동료 ${n}명 보기`,
     leftTitle: '이전 책상 · ←',

@@ -129,6 +129,17 @@ test('Office, editable alias, notes, handoff and keyboard dismissal', async ({ p
   await expect(page.getByRole('dialog', { name: '다음 동료에게 건네는 기록' })).toBeHidden();
   expect(errors).toEqual([]);
 });
+test('The desk has no popup tool button: clicking the desk character opens the card', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  const pet = page.locator('.office-pet').first();
+  await pet.hover();
+  await expect(page.getByRole('button', { name: /업무 카드 열기/ })).toHaveCount(0);
+  await expect(page.locator('.card-button')).toHaveCount(0);
+  await pet.click();
+  await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toBeVisible();
+});
 test('Memory search, provider filters and privacy mask contents', async ({ page }) => {
   await page.goto('/?demo');
   await page.getByRole('button', { name: '기억 서랍', exact: true }).click();
