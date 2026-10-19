@@ -1,9 +1,9 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * The edge between two columns, dragged to set one column's width (the left menu or the right
- * column). Arrow keys move it too; a double click goes back to the default width. The caller
- * keeps the width and decides where the edge sits.
+ * column). Arrow keys move it too; a double click (or Enter) goes back to the default width.
+ * The caller keeps the width, fitted to the window, and decides where the edge sits.
  */
 export function PanelResizer({
   edge,
@@ -11,6 +11,8 @@ export function PanelResizer({
   min,
   max,
   label,
+  hint,
+  controls,
   onWidth,
   onReset,
 }: {
@@ -18,24 +20,34 @@ export function PanelResizer({
   edge: 'left' | 'right';
   width: number;
   min: number;
-  max: () => number;
+  max: number;
   label: string;
+  /** How to use it, shown on hover (not read with the name every time). */
+  hint: string;
+  controls?: string;
   onWidth: (width: number) => void;
   onReset: () => void;
 }) {
   const start = useRef<{ x: number; width: number } | null>(null);
-  const clamp = (w: number) => Math.round(Math.min(Math.max(w, min), Math.max(min, max())));
+  const clamp = (w: number) => Math.round(Math.min(Math.max(w, min), Math.max(min, max)));
+  const stop = () => {
+    start.current = null;
+    document.body.classList.remove('is-resizing');
+  };
+  // Gone mid-drag (the column closed): the page must not stay in the dragging cursor.
+  useEffect(() => stop, []);
   return (
     <div
       className={`panel-resizer is-${edge}`}
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
+      aria-controls={controls}
       aria-valuenow={width}
       aria-valuemin={min}
-      aria-valuemax={Math.max(min, max())}
+      aria-valuemax={Math.max(min, max)}
       tabIndex={0}
-      title={label}
+      title={`${label} · ${hint}`}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         e.preventDefault();
@@ -48,10 +60,7 @@ export function PanelResizer({
         const moved = e.clientX - start.current.x;
         onWidth(clamp(start.current.width + (edge === 'left' ? moved : -moved)));
       }}
-      onLostPointerCapture={() => {
-        start.current = null;
-        document.body.classList.remove('is-resizing');
-      }}
+      onLostPointerCapture={stop}
       onDoubleClick={onReset}
       onKeyDown={(e) => {
         const step = e.shiftKey ? 48 : 16;
@@ -60,7 +69,7 @@ export function PanelResizer({
         if (e.key === grow) onWidth(clamp(width + step));
         else if (e.key === shrink) onWidth(clamp(width - step));
         else if (e.key === 'Home') onWidth(clamp(min));
-        else if (e.key === 'End') onWidth(clamp(max()));
+        else if (e.key === 'End') onWidth(clamp(max));
         else if (e.key === 'Enter') onReset();
         else return;
         e.preventDefault();
