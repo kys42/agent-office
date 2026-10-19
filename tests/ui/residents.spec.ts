@@ -368,10 +368,12 @@ test('Helper still mid a long tool keeps its desk when main starts its next task
     const w = window as any;
     w.fixture.sessions[0].taskStartedAt = Date.now();
     w.fixture.sessions[0].updatedAt = Date.now();
+    w.fixture.sessions[0].alias = '다음 요청 주인';
     w.fixture.sessions[0].revision = 'next-task';
     w.publish(structuredClone(w.fixture));
   });
-  await page.waitForTimeout(300);
+  // The renamed main desk shows the next-task snapshot has landed before the helper is checked.
+  await expect(page.locator('.desk-name strong', { hasText: '다음 요청 주인' })).toBeVisible();
   await expect(page.locator('.helper-desk')).toHaveCount(1);
   // Once it answers, it retires on main's task boundary as usual.
   await page.evaluate(() => {
