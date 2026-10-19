@@ -1,5 +1,13 @@
 import type { Messages } from '../en';
 export const tmux: Messages['tmux'] = {
+  summonTitle: '새 에이전트 소환',
+  summonIntro:
+    '이 프로젝트에서 Claude 또는 Codex의 새 대화를 시작해요. 같은 종류로 소환한 에이전트가 실행 중이면 다시 연결해요.',
+  summonConfirm: '이 프로젝트에 새 에이전트를 소환할까요?',
+  summonStart: 'tmux에 소환하기',
+  summonReady: '새 대화를 시작할 준비가 됐어요',
+  summonHint:
+    '터미널에서 첫 메시지를 보내세요. 창을 닫거나 Ctrl+B 다음 D를 누르면 화면에서만 나와요. 실행 중에는 여기서 다시 접속할 수 있어요. 종료 후 소환하면 새 대화가 시작돼요. 이전 대화는 해당 카드에서 재개하세요.',
   title: 'tmux로 재개',
   intro: '저장된 이 대화를 별도 터미널에서 이어갑니다. 새 대화를 만드는 동작은 아니에요.',
   name: 'tmux 이름',

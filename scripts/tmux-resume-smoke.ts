@@ -2,7 +2,7 @@ import { mkdtemp, writeFile, chmod, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { TmuxResume } from '../desktop/tmux-resume';
+import { TmuxResume, summonSession } from '../desktop/tmux-resume';
 import { runCommand } from '../server/adapters/claude-live';
 const dir = await mkdtemp(path.join(os.tmpdir(), 'office-tmux-test-'));
 const server = `office-test-${process.pid}`;
@@ -55,6 +55,11 @@ try {
     '=' + result.name,
   ]);
   assert.equal((await manager.status(s)).running, false);
+  const fresh = summonSession(dir, 'claude');
+  assert.equal((await manager.start(fresh, async () => true)).running, true);
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(await readFile(path.join(dir, 'args'), 'utf8'), '\n');
+  assert.equal((await new TmuxResume(deps).status(fresh)).running, true);
   console.log(
     'Actual isolated tmux: create, literal resume arguments, rediscover, reuse, dead-pane resume, termination PASS',
   );

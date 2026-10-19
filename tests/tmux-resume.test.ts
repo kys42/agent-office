@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TmuxResume, type ResumeDeps } from '../desktop/tmux-resume.js';
+import { TmuxResume, summonSession, type ResumeDeps } from '../desktop/tmux-resume.js';
 const session = {
   provider: 'claude' as const,
   nativeId: '12345678-abcd',
@@ -155,4 +155,36 @@ test('an owned dead pane is offered for resumption without killing a live proces
   assert.equal(result.running, true);
   assert.equal(f.calls.filter((x) => x.args.includes('new-session')).length, 1);
   assert.equal(f.calls.filter((x) => x.args.includes('respawn-pane')).length, 1);
+});
+
+test('summoning starts a fresh CLI once and rediscovers it by project/provider', async () => {
+  for (const provider of ['claude', 'codex'] as const) {
+    const f = fixture();
+    const fresh = summonSession(session.cwd, provider);
+    const before = await f.manager.status(fresh);
+    assert.notEqual(before.name, (await f.manager.status({ ...session, provider })).name);
+    assert.notEqual(before.name, (await f.manager.status(summonSession('/other', provider))).name);
+    let confirms = 0;
+    await Promise.all(
+      [1, 2].map(() =>
+        f.manager.start(fresh, async () => {
+          confirms++;
+          return true;
+        }),
+      ),
+    );
+    assert.equal(confirms, 1);
+    const launches = f.calls.filter((x) => x.args.includes('new-session'));
+    assert.equal(launches.length, 1);
+    const args = launches[0].args;
+    assert.equal(args[args.indexOf('/bin/' + provider) + 1], ';');
+    assert.ok(!args.includes('resume') && !args.includes('--resume'));
+    assert.equal(
+      (await new TmuxResume(f.deps).status(summonSession(session.cwd, provider))).running,
+      true,
+    );
+    f.setRow('');
+    await f.manager.start(fresh, async () => true);
+    assert.equal(f.calls.filter((x) => x.args.includes('new-session')).length, 2);
+  }
 });

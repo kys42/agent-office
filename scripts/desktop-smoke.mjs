@@ -120,7 +120,19 @@ try {
     await page.evaluate(() => typeof window.office.tmuxResume),
     supportsTmux ? 'function' : 'undefined',
   );
+  assert.equal(
+    await page.evaluate(() => typeof window.office.tmuxSummon),
+    supportsTmux ? 'function' : 'undefined',
+  );
   if (supportsTmux) {
+    await assert.rejects(
+      page.evaluate(() =>
+        window.office.tmuxSummon('remote-office:test:claude:demo', 'start', 'claude'),
+      ),
+    );
+    await assert.rejects(
+      page.evaluate((id) => window.office.tmuxSummon(id, 'start', 'invalid'), s.sessions[0].id),
+    );
     await assert.rejects(
       page.evaluate(() => window.office.tmuxResume('remote-office:test:claude:demo', 'start')),
     );

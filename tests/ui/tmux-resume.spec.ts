@@ -46,6 +46,17 @@ async function setup(page: import('@playwright/test').Page, remote = false) {
         positionRemembered: false,
         target: { id: s.sessions[0].id, news: false },
       }),
+      tmuxSummon: async (id: string, action: string, provider: string) => {
+        w.actions.push(provider + ':' + action);
+        if (action === 'start') w['running_' + provider] = true;
+        return {
+          name: 'office-' + provider + '-fresh',
+          cwd: '/projects/example',
+          command: 'tmux attach ' + provider,
+          running: !!w['running_' + provider],
+          canOpen: true,
+        };
+      },
       tmuxResume: async (id: string, action: string) => {
         w.actions.push(action);
         if (w.error) throw new Error(w.error);
@@ -130,4 +141,22 @@ test('remote colleagues never offer local process creation', async ({ page }) =>
   await setup(page, true);
   await expect(page.locator('.card-actions')).toBeVisible();
   await expect(page.getByRole('button', { name: 'tmux로 재개', exact: true })).toHaveCount(0);
+});
+
+test('summon chooses provider, starts a new conversation and reconnects after reopening', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).click();
+  await expect(page.getByText('office-claude-fresh', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Codex', exact: true }).click();
+  await expect(page.getByText('office-codex-fresh', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'tmux에 소환하기', exact: true }).click();
+  await expect(page.getByRole('button', { name: '터미널에서 열기', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).click();
+  await expect(page.getByRole('button', { name: '터미널에서 열기', exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(() => (window as any).actions.filter((x: string) => x.endsWith(':start'))),
+  ).toEqual(['codex:start']);
 });
