@@ -1,6 +1,7 @@
 import type { Session } from './types';
 import { attachSessions, parentSession } from './office';
 import { isWorking } from './presentation';
+import { runtimeObservation } from './runtime';
 import { taskStart } from './lifecycle';
 import { m } from './i18n';
 
@@ -10,9 +11,28 @@ export const isBackground = (s: Session) =>
 export const needsAttention = (s: Session) =>
   !s.remote?.stale && !s.archived && ['call', 'error'].includes(s.status);
 
+/** How long a helper may stay silent mid-task before it counts as gone (crashed, killed). */
+export const HELPER_UNFINISHED_MS = 2 * 3600_000;
+/**
+ * Still inside its own task: the last observed record is a tool call, a tool result or a reply
+ * on the way (phase working/thinking), with no final answer, completion or abort after it. A
+ * long tool (a test run) writes nothing for minutes, so this outlasts isWorking's quiet window.
+ */
+export function helperUnfinished(s: Session, now = Date.now()) {
+  if (s.remote?.stale || s.archived) return false;
+  // Either record saying it finished is enough: a final raw status outranks a lingering phase.
+  if (s.observedStatus && !['work', 'think'].includes(s.observedStatus)) return false;
+  const { phase } =
+    s.runtime ?? runtimeObservation(s.observedStatus ?? s.status, s.updatedAt, s.statusReason);
+  return ['working', 'thinking'].includes(phase) && now - s.updatedAt <= HELPER_UNFINISHED_MS;
+}
+
 /** Retain a helper's result for its parent's current task, independent of silence duration. */
 export function helperPresence(s: Session, sessions: Session[], now = Date.now()) {
   if (s.pinned || isWorking(s, now) || needsAttention(s)) return { visible: true };
+  // An unfinished helper keeps its desk through the parent's next request; only a finished one
+  // retires on that boundary below.
+  const unfinished = helperUnfinished(s, now);
   if (s.archived) return { visible: false };
   const anchor = taskStart(s) ?? s.startedAt;
   const visited = new Set([s.id]);
@@ -23,8 +43,8 @@ export function helperPresence(s: Session, sessions: Session[], now = Date.now()
     if (!parent || visited.has(parent.id)) break;
     visited.add(parent.id);
     // A resumed helper gets a newer own task anchor. Late results alone cannot revive it.
-    if ((taskStart(parent) ?? 0) > anchor || parent.archived || parent.zone === 'archive')
-      return { visible: false };
+    if (parent.archived || parent.zone === 'archive') return { visible: false };
+    if ((taskStart(parent) ?? 0) > anchor && !unfinished) return { visible: false };
     host = parent;
     current = parent;
   }

@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { demoSnapshot } from '../src/lib/demo.js';
-import { officeResidents } from '../src/shared/residents.js';
+import { HELPER_UNFINISHED_MS, officeResidents } from '../src/shared/residents.js';
+import { runtimeObservation } from '../src/shared/runtime.js';
 import { allocateSeats, parentSession, seatKey } from '../src/shared/office.js';
 import {
   applyNoticeReceipt,
@@ -342,6 +343,52 @@ test('Completed helpers remain through silence until a parent request, not a too
     'p',
   );
   assert.equal(officeResidents([{ ...parent, zone: 'waiting' }, child], now).hidden[0].id, 'c');
+});
+test('Unfinished helpers keep their desk through the parent next request; finished or long-silent ones retire', () => {
+  const parent = make('p', { taskStartedAt: now - 600_000 });
+  const next = { ...parent, taskStartedAt: now };
+  // Mid long tool: the last record (a tool call) is minutes old, so no longer "working" live.
+  const quietAt = now - 10 * 60_000;
+  const child = make('c', {
+    taskStartedAt: now - 500_000,
+    status: 'ready',
+    observedStatus: 'work',
+    updatedAt: quietAt,
+    runtime: runtimeObservation('work', quietAt, 'tool call'),
+    relation: { kind: 'subagent', parentNativeId: 'p', source: 'fixture' },
+  });
+  const kept = officeResidents([next, child], now);
+  assert.equal(kept.hidden.length, 0);
+  assert.equal(kept.sessions.find((s) => s.id === 'c')?.attachedTo, 'p');
+  // Without a runtime record, the raw observed status tells the same.
+  assert.equal(officeResidents([next, { ...child, runtime: undefined }], now).hidden.length, 0);
+  // Fresh work stays as before.
+  const fresh = { ...child, status: 'work' as const, updatedAt: now };
+  assert.equal(
+    officeResidents([next, { ...fresh, runtime: runtimeObservation('work', now, 'tool') }], now)
+      .hidden.length,
+    0,
+  );
+  // A final answer, a completion or an abort ends the helper: it retires on the boundary.
+  const done = {
+    ...child,
+    observedStatus: 'done' as const,
+    runtime: runtimeObservation('done', quietAt, 'end_turn'),
+  };
+  assert.equal(officeResidents([parent, done], now).hidden.length, 0);
+  assert.equal(officeResidents([next, done], now).hidden[0].id, 'c');
+  const aborted = {
+    ...child,
+    observedStatus: 'idle' as const,
+    runtime: runtimeObservation('idle', quietAt, 'turn_aborted'),
+  };
+  assert.equal(officeResidents([next, aborted], now).hidden[0].id, 'c');
+  // Silent mid-task beyond the ceiling (crashed, killed): it no longer holds the desk.
+  const lostAt = now - HELPER_UNFINISHED_MS - 1;
+  const lost = { ...child, updatedAt: lostAt, runtime: runtimeObservation('work', lostAt, 'tool') };
+  assert.equal(officeResidents([next, lost], now).hidden[0].id, 'c');
+  // Archiving the parent still takes an unfinished helper with it.
+  assert.equal(officeResidents([{ ...next, archived: true }, child], now).hidden[0].id, 'c');
 });
 test('Nested helpers retire on their main task boundary; uncollected parents retain recent results conservatively', () => {
   const main = make('main', { taskStartedAt: now - 9000 });
