@@ -584,7 +584,7 @@ function setupIPC() {
       }
     });
   });
-  ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name) => {
+  ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name, initialMessage) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
       throw new Error(m().desktop.badRequest);
@@ -592,7 +592,7 @@ function setupIPC() {
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const original: Session = await bridge.call('detail', [id]);
     if (typeof name !== 'string') throw new Error(m().desktop.badRequest);
-    const session = summonSession(original.cwd ?? '', provider, name);
+    const session = summonSession(original.cwd ?? '', provider, name, initialMessage);
     if (action === 'status')
       return {
         ...(await tmuxResume.status(session)),
@@ -607,7 +607,7 @@ function setupIPC() {
         type: 'question' as const,
         title: t.summonTitle,
         message: t.summonConfirm,
-        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
+        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
         buttons: [t.cancel, t.summonStart],
         defaultId: 0,
         cancelId: 0,

@@ -82,6 +82,22 @@ try {
   assert.equal(await manager.aliasFor(host, 'claude:fake'), '리뷰 봇');
   await manager.claimAlias(host, 'claude:fake');
   assert.equal(await manager.aliasFor(host, 'claude:fake'), null);
+  // Real tmux parsing must not interpret prompt punctuation as commands or shell syntax.
+  for (const provider of ['claude', 'codex'] as const) {
+    for (const [i, prompt] of [
+      ';',
+      'ends\\;',
+      '--help\n$(touch NEVER) `echo no` "quotes" #{session_name} ;',
+    ].entries()) {
+      const next = summonSession(dir, provider, `prompt-${provider}-${i}`, prompt);
+      await manager.start(next, async () => true);
+      await new Promise((r) => setTimeout(r, 100));
+      assert.equal(await readFile(path.join(dir, 'args'), 'utf8'), '--\n' + prompt + '\n');
+      await manager.start(next, async () => {
+        throw new Error('must reuse without sending');
+      });
+    }
+  }
   console.log(
     'Actual isolated tmux: create, literal resume arguments, rediscover, reuse, dead-pane resume, termination PASS',
   );

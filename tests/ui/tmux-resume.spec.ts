@@ -46,11 +46,20 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
         positionRemembered: false,
         target: { id: s.sessions[0].id, news: false },
       }),
-      tmuxSummon: async (id: string, action: string, provider: string, name: string) => {
+      tmuxSummon: async (
+        id: string,
+        action: string,
+        provider: string,
+        name: string,
+        initialMessage?: string,
+      ) => {
         w.lastName = name;
         w.lastId = id;
         w.actions.push(provider + ':' + action);
-        if (action === 'start') w['running_' + provider] = true;
+        if (action === 'start') {
+          w['running_' + provider] = true;
+          w.sentInitialMessage = initialMessage;
+        }
         return {
           connections: [{ id: s.sessions[0].id, name: '기존 개발자', label: 'Orca' }],
           name: 'office-' + provider + '-fresh',
@@ -164,6 +173,9 @@ for (const route of ['/', '/#mini=floor'])
       await expect(page.getByText('office-claude-fresh', { exact: true })).toBeVisible();
       const modal = page.getByRole('dialog', { name: '새 에이전트 소환' });
       await modal.getByLabel('에이전트 이름', { exact: true }).fill('리뷰 봇');
+      await modal
+        .getByRole('textbox', { name: '첫 메시지 (선택)', exact: true })
+        .fill('프로젝트를 살펴봐줘\n개선점도 알려줘');
       await modal.getByRole('button', { name: 'Codex', exact: true }).click();
       await expect(modal.getByText('기존 개발자 · Orca')).toBeVisible();
       await modal.getByRole('button', { name: '기존 세션으로 이동' }).click();
@@ -171,6 +183,13 @@ for (const route of ['/', '/#mini=floor'])
       expect(await page.evaluate(() => (window as any).lastName)).toBe('리뷰 봇');
       await expect(page.getByText('office-codex-fresh', { exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'tmux에 소환하기', exact: true }).click();
+      expect(await page.evaluate(() => (window as any).sentInitialMessage)).toBe(
+        '프로젝트를 살펴봐줘\n개선점도 알려줘',
+      );
+      await expect(
+        modal.getByRole('textbox', { name: '첫 메시지 (선택)', exact: true }),
+      ).toBeDisabled();
+      await expect(modal.getByText(/오피스에는 첫 대화 기록/)).toBeVisible();
       await expect(
         page.getByRole('button', { name: '터미널에서 열기', exact: true }),
       ).toBeVisible();

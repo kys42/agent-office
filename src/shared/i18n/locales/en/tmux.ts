@@ -6,6 +6,12 @@ export const tmux = {
   invalidName: 'Use 1–40 letters, numbers, spaces, hyphens or underscores.',
   nameHint:
     'Used in the tmux name and the agent’s office name after its first conversation is detected. A short suffix keeps names unique.',
+  initialMessage: 'First message (optional)',
+  messagePlaceholder: 'For example: Explore this project and suggest the next tasks',
+  messageHint:
+    'Up to 4,000 characters. Sent when a new session starts. Leave blank to type in the terminal. Reconnecting never sends it again.',
+  invalidMessage: 'Use at most 4,000 characters without control characters for the first message.',
+  summonRunning: 'tmux is running',
   existingTitle: 'Already connected in this project',
   existingConfirm: 'There are connected agents in this project. Start another tmux session anyway?',
   existingOpen: 'Open existing session',
@@ -15,7 +21,7 @@ export const tmux = {
   summonStart: 'Summon in tmux',
   summonReady: 'Ready for a new conversation',
   summonHint:
-    'Open the terminal to send your first message. Close it or press Ctrl+B, then D to detach. Reconnect here while the agent is running. After it exits, summoning starts a new conversation; use the conversation card to resume its history.',
+    'The agent appears in the office after its first conversation is detected. If it is missing, open the terminal, complete any login or project trust prompts, and send the first message. Close it or press Ctrl+B, then D to detach. Reconnect here while the agent is running. After it exits, summoning starts a new conversation; use the conversation card to resume its history.',
   title: 'Resume in tmux',
   intro:
     'Continue this saved conversation in a separate terminal session. This does not create a new conversation.',
