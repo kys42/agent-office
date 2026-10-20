@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import type { Snapshot } from '../../src/shared/types';
 
 async function fixture(page: Page, mode = '#mini=row', call = false, motion = false) {
   const s = demoSnapshot();
@@ -206,5 +207,93 @@ for (const mode of ['#mini', '']) {
     await page.keyboard.press('Escape');
     await expect(form).toHaveCount(0);
     expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
+  });
+}
+
+/** demo:0 answered a long request with a long final answer: both bubbles at their tallest. */
+function tallest(): Snapshot {
+  const snapshot = demoSnapshot();
+  const now = Date.now();
+  snapshot.sessions.find((x) => x.id === 'demo:0')!.events = [];
+  const base = snapshot.notices![0];
+  snapshot.notices = [
+    {
+      ...base,
+      id: 'asked',
+      sessionId: 'demo:0',
+      eventId: 'asked',
+      kind: 'request',
+      phase: undefined,
+      text: '로그인 화면 여백을 다듬어 줘. 버튼 색은 브랜드 컬러로 바꾸고, 바뀐 화면은 스크린샷으로 남겨 줘. '.repeat(
+        6,
+      ),
+      at: now - 5 * 60_000,
+      receivedAt: now - 5 * 60_000,
+      version: 'v1',
+      seenAt: null,
+      viewedAt: null,
+      dismissedAt: null,
+      resolvedAt: null,
+      bootstrap: false,
+    },
+    {
+      ...base,
+      id: 'answer',
+      sessionId: 'demo:0',
+      eventId: 'answer',
+      kind: 'reply',
+      phase: 'final',
+      text: '여백을 8px로 맞췄어요. 버튼 색도 브랜드 컬러로 바꾸고, 바뀐 화면은 스크린샷으로 남겼어요. '.repeat(
+        8,
+      ),
+      at: now - 60_000,
+      receivedAt: now - 60_000,
+      version: 'v1',
+      seenAt: null,
+      viewedAt: null,
+      dismissedAt: null,
+      resolvedAt: null,
+      bootstrap: false,
+    },
+  ];
+  return snapshot;
+}
+
+async function measureRequest(page: Page, mode: string) {
+  const snapshot = tallest();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto(`/${mode}`);
+  await page.reload();
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  await expect(desk.locator('.speech-bubble')).toBeVisible();
+  await desk.locator('.office-pet').hover();
+  const request = desk.locator('.speech-request-bubble');
+  await expect(request).toBeVisible();
+  return request.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    // The dock window is exactly the row (the browser preview pins it to the bottom).
+    const win = el.closest('.desk-row')!.getBoundingClientRect();
+    const track = el.closest('.desk-row-track')!.getBoundingClientRect();
+    const header = el.querySelector('small')!.getBoundingClientRect();
+    // The header's middle shows the request (not cut away by the track's clip).
+    const hit = document.elementFromPoint(header.x + 4, header.y + header.height / 2);
+    return {
+      top: Math.round(r.top - win.top),
+      trackTop: Math.round(track.top - win.top),
+      headerHit: !!hit && el.contains(hit),
+    };
+  });
+}
+
+for (const mode of ['#mini=row', '#mini=floor']) {
+  test(`the stacked request bubble keeps its header inside the dock window ${mode}`, async ({
+    page,
+  }) => {
+    const m = await measureRequest(page, mode);
+    await page.locator('.desk-row').screenshot({ path: `.local/headroom-${mode.slice(6)}.png` });
+    // Inside the window and not cut by the desks' track (it hides vertical overflow).
+    expect(m.top).toBeGreaterThanOrEqual(0);
+    expect(m.top).toBeGreaterThanOrEqual(m.trackTop);
+    expect(m.headerHit).toBe(true);
   });
 }

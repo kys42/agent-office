@@ -1,25 +1,35 @@
 import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Building2,
-  Coffee,
   Expand,
   EyeOff,
   Flag,
+  GripVertical,
   GitBranch,
   Maximize2,
   Minimize2,
   Pin,
   RotateCw,
+  Settings,
   Undo2,
   Terminal,
   X,
 } from 'lucide-react';
 import { useRowPlacement } from '../lib/useRowPlacement';
+import { useDockPill } from '../lib/useDockPill';
 import { useDeskReorder } from '../lib/useDeskReorder';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
@@ -31,6 +41,7 @@ import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
 import {
   MOODS,
+  PROVIDERS,
   type NoticeReceipt,
   type ReplySender,
   type Session,
@@ -53,6 +64,8 @@ import {
   FLOOR_SCENE_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
+  TINY_NAME_ROOM,
+  TINY_NAME_TOP,
   TINY_SCENE_HEIGHT,
   TINY_SCALE,
   TINY_TOP,
@@ -81,8 +94,7 @@ const HELPER_TABLE_FOOT = 46;
  * The office as one line along the screen edge: the same project zones, shared benches,
  * helper desks and speech bubbles as the big office, drawn with its own furniture.
  * Two looks share everything but the ground: `office` lays each zone on a rug with name
- * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a
- * name plate on each desk front and a flag between zones.
+ * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a name plate on each desk front and a flag between zones.
  * Tiny (쪼꼬미) draws either look at helper-desk size with only the desks and their status:
  * no bubbles, flags, rugs or plates — a contentless dot says a desk has something new.
  * Only drawn things are `[data-solid]`; the transparent rest lets clicks through.
@@ -199,6 +211,15 @@ export function DeskRow({
     disabled: tiny,
   });
   const { layout } = placement;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const pillHintId = useId();
+  const pill = useDockPill({
+    root: rootRef,
+    pill: pillRef,
+    onArrange,
+    onSaveFailed: () => notify(t.dock.arrange.saveFailed),
+  });
   const reorder = useDeskReorder({
     layout,
     track,
@@ -317,7 +338,6 @@ export function DeskRow({
       notify((e as Error).message);
     }
   };
-  const lounge = model.zones.waiting.filter((s) => !s.attachedTo).length;
   // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
   const open = (id: string, anchor?: Element | null, news = false) =>
     openColleague(id, { anchor, news });
@@ -331,6 +351,7 @@ export function DeskRow({
     list.some((st) => model.view(st.id)?.group === 'attention');
   return (
     <div
+      ref={rootRef}
       className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''}`}
       style={{ height: dockHeight(floor, tiny) }}
     >
@@ -347,12 +368,16 @@ export function DeskRow({
         >
           <div
             className={`desk-row-scene dynamic-office ${reducedMotion ? 'motion-paused' : ''}`}
-            style={{
-              left: LANE_PAD,
-              width: layout.width,
-              height: sceneHeight,
-              transform: `scale(${scale})`,
-            }}
+            style={
+              {
+                left: LANE_PAD,
+                width: layout.width,
+                height: sceneHeight,
+                transform: `scale(${scale})`,
+                // Tiny name tags size their words in real pixels against this.
+                ...(tiny ? { '--tiny-scale': TINY_SCALE } : {}),
+              } as CSSProperties
+            }
           >
             {layout.zones.map((zone, index) => {
               const zoneName = privacy ? t.desk.project : zone.name;
@@ -578,6 +603,23 @@ export function DeskRow({
                             className={`tiny-dot tone-${dot.tone}`}
                             aria-hidden="true"
                           />
+                        )}
+                        {tiny && (
+                          // A small name over the desk's front, drawn in real pixels (not ×0.41).
+                          // Not a second tab stop: the desk button already says the name;
+                          // a click here opens the card like the desk does.
+                          <span
+                            className="tiny-name"
+                            data-solid
+                            aria-hidden="true"
+                            title={privacy ? undefined : label.name}
+                            style={{ top: TINY_NAME_TOP, height: TINY_NAME_ROOM }}
+                            onClick={() => open(s.id)}
+                          >
+                            <span>
+                              {privacy ? (PROVIDERS[s.provider]?.short ?? label.name) : label.name}
+                            </span>
+                          </span>
                         )}
                         {!tiny && !v.needsPerson && (
                           <VeilButton
@@ -826,47 +868,35 @@ export function DeskRow({
           <b>{hiddenRight.length}</b>
         </button>
       )}
-      {tiny && (
-        // Tiny keeps only what it needs: back to normal, how many (and who waits), hide.
-        <div className="desk-row-tools tiny-tools" data-solid>
-          <span
-            className="desk-row-summary"
-            title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
-          >
-            <span className="live-dot" />
-            {model.seats.length}
-            {model.counts.attention > 0 && (
-              // A bare number on screen; assistive tech hears who it counts.
-              <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
-                <span aria-hidden="true">{model.counts.attention}</span>
-                <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
-              </em>
-            )}
-          </span>
-          {onTiny && (
-            <button
-              ref={normalButton}
-              className="icon-btn"
-              aria-label={t.desk.row.normal}
-              title={t.desk.row.normalTitle}
-              onClick={() => toggleTiny(false)}
-            >
-              <Maximize2 size={12} />
-            </button>
-          )}
-          <button
-            className="icon-btn"
-            aria-label={t.desk.row.hide}
-            title={t.desk.row.hideTitle}
-            onClick={() => api.window('hide')}
-          >
-            <X size={12} />
-          </button>
-        </div>
-      )}
-      {/* The full toolbar steps aside in tiny (hidden, so its markup stays as it was). */}
-      <div className="desk-row-tools" data-solid hidden={tiny}>
-        {placement.customized && (
+      {/* The dock's controls: a pill floating over the bottom of the desks (the desks still
+          stand on the screen's edge), subdued until hovered and slid anywhere along it so it
+          can be parked in an empty spot. Tiny keeps only what it needs: back to normal, how
+          many, hide. */}
+      <div
+        ref={pillRef}
+        className={`dock-pill ${pill.dragging ? 'is-dragging' : ''}`}
+        data-solid
+        role="group"
+        aria-label={t.desk.row.pill}
+        style={{ left: pill.left }}
+        {...pill.handlers}
+      >
+        <button
+          type="button"
+          className="dock-pill-grip"
+          data-pill-grip
+          aria-label={t.desk.row.pillMove}
+          aria-describedby={pillHintId}
+          aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
+          title={t.desk.row.pillHint}
+          onKeyDown={pill.onGripKeyDown}
+        >
+          <GripVertical size={tiny ? 10 : 12} />
+        </button>
+        <span id={pillHintId} className="sr-only">
+          {t.desk.row.pillHint}
+        </span>
+        {!tiny && placement.customized && (
           <button
             className="icon-btn"
             aria-label={t.dock.arrange.reset}
@@ -881,76 +911,106 @@ export function DeskRow({
           title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
         >
           <span className="live-dot" />
-          {t.desk.row.seats(model.seats.length)}
-          {model.counts.attention > 0 && <em>{t.desk.row.waiting(model.counts.attention)}</em>}
+          {tiny ? model.seats.length : t.desk.row.seats(model.seats.length)}
+          {model.counts.attention > 0 &&
+            (tiny ? (
+              // A bare number on screen; assistive tech hears who it counts.
+              <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
+                <span aria-hidden="true">{model.counts.attention}</span>
+                <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
+              </em>
+            ) : (
+              <em>{t.desk.row.waiting(model.counts.attention)}</em>
+            ))}
         </span>
-        {veiledCount > 0 && (
-          <button
-            className="desk-row-veiled"
-            title={t.desk.row.veiledTitle(veiledCount)}
-            onClick={() => onVeil(model.hiddenSessionIds, false)}
-          >
-            <EyeOff size={11} />
-            {t.desk.row.veiled(veiledCount)}
-          </button>
+        {!tiny && (
+          <>
+            {veiledCount > 0 && (
+              <button
+                className="desk-row-veiled"
+                title={t.desk.row.veiledTitle(veiledCount)}
+                onClick={() => onVeil(model.hiddenSessionIds, false)}
+              >
+                <EyeOff size={11} />
+                {t.desk.row.veiled(veiledCount)}
+              </button>
+            )}
+            <i className="dock-pill-sep" aria-hidden="true" />
+            <button
+              className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
+              aria-label={t.desk.row.refresh}
+              title={t.desk.row.refreshTitle}
+              disabled={refreshing}
+              onClick={onRefresh}
+            >
+              <RotateCw size={14} />
+            </button>
+            <button
+              className="icon-btn"
+              aria-label={floor ? t.desk.row.toRow : t.desk.row.toFloor}
+              title={floor ? t.desk.row.toRowTitle : t.desk.row.toFloorTitle}
+              onClick={onSwitch}
+            >
+              {floor ? <Building2 size={14} /> : <Flag size={14} />}
+            </button>
+            {onTiny && (
+              <button
+                ref={tinyButton}
+                className="icon-btn"
+                aria-label={t.desk.row.tiny}
+                title={t.desk.row.tinyTitle}
+                onClick={() => toggleTiny(true)}
+              >
+                <Minimize2 size={14} />
+              </button>
+            )}
+            <button
+              className="icon-btn"
+              aria-label={t.desk.row.expand}
+              title={t.desk.row.expandTitle}
+              onClick={() => api.window('main')}
+            >
+              <Expand size={14} />
+            </button>
+            <button
+              className="icon-btn"
+              aria-label={t.desk.row.collapse}
+              title={t.desk.row.collapseTitle}
+              onClick={onCollapse}
+            >
+              <ChevronDown size={16} />
+            </button>
+            {/* Only the desktop has a settings window; a browser preview has nowhere to open it. */}
+            {api.settings && (
+              <button
+                className="icon-btn"
+                aria-label={t.desk.row.settings}
+                title={t.desk.row.settingsTitle}
+                onClick={() => void api.settings?.open()}
+              >
+                <Settings size={14} />
+              </button>
+            )}
+          </>
         )}
-        {lounge > 0 && (
-          <span className="desk-row-lounge" title={t.desk.row.lounge}>
-            <Coffee size={11} />
-            {lounge}
-          </span>
-        )}
-        <button
-          className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
-          aria-label={t.desk.row.refresh}
-          title={t.desk.row.refreshTitle}
-          disabled={refreshing}
-          onClick={onRefresh}
-        >
-          <RotateCw size={14} />
-        </button>
-        <button
-          className="icon-btn"
-          aria-label={floor ? t.desk.row.toRow : t.desk.row.toFloor}
-          title={floor ? t.desk.row.toRowTitle : t.desk.row.toFloorTitle}
-          onClick={onSwitch}
-        >
-          {floor ? <Building2 size={14} /> : <Flag size={14} />}
-        </button>
-        {onTiny && (
+        {tiny && onTiny && (
           <button
-            ref={tinyButton}
+            ref={normalButton}
             className="icon-btn"
-            aria-label={t.desk.row.tiny}
-            title={t.desk.row.tinyTitle}
-            onClick={() => toggleTiny(true)}
+            aria-label={t.desk.row.normal}
+            title={t.desk.row.normalTitle}
+            onClick={() => toggleTiny(false)}
           >
-            <Minimize2 size={14} />
+            <Maximize2 size={12} />
           </button>
         )}
-        <button
-          className="icon-btn"
-          aria-label={t.desk.row.expand}
-          title={t.desk.row.expandTitle}
-          onClick={() => api.window('main')}
-        >
-          <Expand size={14} />
-        </button>
-        <button
-          className="icon-btn"
-          aria-label={t.desk.row.collapse}
-          title={t.desk.row.collapseTitle}
-          onClick={onCollapse}
-        >
-          <ChevronDown size={16} />
-        </button>
         <button
           className="icon-btn"
           aria-label={t.desk.row.hide}
           title={t.desk.row.hideTitle}
           onClick={() => api.window('hide')}
         >
-          <X size={14} />
+          <X size={tiny ? 12 : 14} />
         </button>
       </div>
     </div>

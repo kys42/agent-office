@@ -82,7 +82,12 @@ export const desk: Messages['desk'] = {
     veiledTitle: (n) =>
       `가린 동료 ${n}명 · 누르면 모두 다시 보여요\n다음 대화가 오면 저절로 돌아와요`,
     veiled: (n) => `가림 ${n}`,
-    lounge: '대기 라운지 · 퇴근한 동료',
+    pill: '책상 줄 도구',
+    pillMove: '도구 막대 옮기기',
+    pillHint:
+      '끌어서 좌우로 옮기기 · ← → (Shift: 크게) · Home/End: 양 끝 · 두 번 클릭: 오른쪽 끝으로',
+    settings: '설정',
+    settingsTitle: '설정 창 열기',
     toRow: '사무실 줄로 보기',
     toFloor: '바닥 책상으로 보기',
     toRowTitle: '사무실 줄로 · 구역 바닥과 이름표',

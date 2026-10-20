@@ -1,7 +1,7 @@
 /* ───────────────────────── Desk pet & desk row (floating dock window) ─────────────────────────
    The window is transparent: only the pet, the desks, the floor and the caps are drawn, so the
-   row reads as desks standing on the bottom edge of the desktop. Geometry mirrors
-   src/shared/dock-geometry.ts (PET_SIZE, ROW_HEIGHT). */
+   row reads as desks standing on the bottom edge of the desktop; the dock's tool pill floats
+   over their feet. Geometry mirrors src/shared/dock-geometry.ts (PET_SIZE, ROW_HEIGHT). */
 body.dock-mode {
   background: transparent;
   overflow: hidden;
@@ -472,36 +472,99 @@ body.dock-mode {
   color: var(--text-2);
   background: rgba(17, 18, 22, 0.92);
 }
-.desk-row-tools {
+.dock-pill {
+  /* left: from useDockPill (the saved spot, kept inside the window) */
+  /* Nearly solid: a transparent window cannot blur the desktop behind it (backdrop-filter
+     only sees the page), so the words must hold their contrast over a bright wallpaper. */
+  /* Dark in every appearance, like the rest of the dock (body.dock-mode is a dark HUD in
+     native.css), so its light icons and words always read. */
+  --pill-bg: rgba(28, 30, 36, 0.88);
+  --pill-bg-strong: rgba(28, 30, 36, 0.95);
+  --pill-edge: rgba(255, 255, 255, 0.14);
+  --pill-shine: rgba(255, 255, 255, 0.08);
+  /* Floats over the desks' feet (they stand on the screen's edge, not on the pill). Subdued
+     at rest so the name plates under it still read; solid on hover, focus or a drag. Only
+     its own box takes the mouse: a desk beside it stays clickable. The scaled scene paints as
+     one layer, so the pill is above all of it; bubbles, the quick reply and the helper list
+     open above the desks, clear of the pill's strip along the bottom edge. */
   position: absolute;
-  top: 8px;
-  right: 12px;
+  bottom: 8px;
   z-index: 9;
+  opacity: 0.45;
   display: flex;
   align-items: center;
   gap: 2px;
   height: 34px;
-  padding: 0 4px 0 10px;
-  border-radius: 10px;
-  background: rgba(17, 18, 22, 0.94);
-  border: 1px solid var(--line-2);
-  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.65);
-  opacity: 0.6;
-  transition: opacity 0.15s;
+  padding: 0 6px 0 2px;
+  border-radius: 99px;
+  /* Like the macOS Dock: a frosted pill floating over the desktop. */
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-edge);
+  box-shadow:
+    inset 0 1px 0 var(--pill-shine),
+    0 4px 10px -6px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  cursor: grab;
+  touch-action: none;
+  transition:
+    opacity 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
-.desk-row:hover .desk-row-tools,
-.desk-row-tools:focus-within {
-  opacity: 1;
+@media (prefers-reduced-motion: reduce) {
+  .dock-pill {
+    transition: none;
+  }
 }
-.desk-row-tools .icon-btn {
+.dock-pill:hover,
+.dock-pill:focus-within,
+.dock-pill.is-dragging {
+  opacity: 0.95;
+  background: var(--pill-bg-strong);
+  box-shadow:
+    inset 0 1px 0 var(--pill-shine),
+    0 8px 22px -10px rgba(0, 0, 0, 0.55);
+}
+.dock-pill.is-dragging {
+  cursor: grabbing;
+  background: var(--pill-bg-strong);
+  box-shadow:
+    inset 0 1px 0 var(--pill-shine),
+    0 12px 28px -10px rgba(0, 0, 0, 0.7);
+}
+.dock-pill .icon-btn {
   width: 28px;
   height: 28px;
+  border-radius: 99px;
+}
+.dock-pill-grip {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  color: var(--text-3);
+  background: none;
+  cursor: inherit;
+}
+.dock-pill-grip:hover,
+.dock-pill-grip:focus-visible {
+  color: var(--text);
+}
+.dock-pill-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--pill-edge);
 }
 .desk-row-summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: 6px;
+  margin: 0 4px;
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -510,19 +573,6 @@ body.dock-mode {
 .desk-row-summary em {
   font-style: normal;
   color: var(--st-call);
-}
-.desk-row-lounge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  margin-right: 4px;
-  padding: 0 8px;
-  border-radius: 99px;
-  font-size: 10.5px;
-  white-space: nowrap;
-  color: var(--text-2);
-  background: var(--bg-3);
 }
 
 /* ───────── Floor desks (variant of the row) ─────────
@@ -710,19 +760,18 @@ body.dock-mode {
    Either look at helper-desk size (TINY_SCALE), status only: the render drops bubbles, flags,
    rugs and plates; these rules size what is left for a strip about 90px tall. Sizes inside
    the scene are in station space (×0.41 on screen). */
-.desk-row-tools[hidden] {
-  display: none;
-}
-.desk-row.is-tiny .desk-row-tools {
-  top: 2px;
-  right: 8px;
+.desk-row.is-tiny .dock-pill {
+  bottom: 4px;
   height: 24px;
-  padding: 0 2px 0 8px;
-  border-radius: 8px;
+  padding: 0 4px 0 1px;
 }
-.desk-row.is-tiny .desk-row-tools .icon-btn {
+.desk-row.is-tiny .dock-pill .icon-btn {
   width: 22px;
   height: 22px;
+}
+.desk-row.is-tiny .dock-pill-grip {
+  width: 14px;
+  height: 20px;
 }
 .desk-row.is-tiny .desk-row-summary {
   gap: 4px;
@@ -762,6 +811,42 @@ body.dock-mode {
 }
 .desk-row.is-tiny .group-working .pet-shadow {
   background: color-mix(in srgb, var(--st-work) 45%, transparent);
+}
+/* The name over each tiny desk's front: a see-through dark chip, solid on hover/focus. The
+   scene is scaled by --tiny-scale, so sizes are divided by it to land at real pixels (9px). */
+.tiny-name {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.tiny-name > span {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: calc(1px / var(--tiny-scale)) calc(5px / var(--tiny-scale));
+  border-radius: calc(4px / var(--tiny-scale));
+  background: rgba(28, 30, 36, 0.55);
+  box-shadow: inset 0 0 0 calc(1px / var(--tiny-scale)) rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  transition:
+    background 0.15s,
+    color 0.15s;
+  font-size: calc(9px / var(--tiny-scale));
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.desk-station:hover .tiny-name > span,
+.desk-station:focus-within .tiny-name > span {
+  background: rgba(28, 30, 36, 0.92);
+  box-shadow: inset 0 0 0 calc(1px / var(--tiny-scale)) rgba(255, 255, 255, 0.16);
+  color: #fff;
 }
 /* The contentless bubble: a dot above the head in the bubble's colour. */
 .tiny-dot {
@@ -906,7 +991,7 @@ body.card-mode {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   pointer-events: none;
 }
-.desk-row-tools .icon-btn.is-busy svg {
+.dock-pill .icon-btn.is-busy svg {
   animation: spin 1s linear infinite;
 }
 
