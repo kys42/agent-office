@@ -337,18 +337,21 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   const unbookmark = async (id: string) => {
     if (!demo) accept(await api.unbookmark(id));
   };
+  /** Resolves whether the receipts were recorded (a failure is also shown as a toast). */
   const receipt = async (receipts: NoticeReceipt[], action: ReceiptAction) => {
     if (demo) {
       setSnapshot((s) =>
         s ? { ...s, notices: applyNoticeReceipt(s.notices ?? [], receipts, action) } : s,
       );
-      return;
+      return true;
     }
     try {
       for (let i = 0; i < receipts.length; i += 1000)
         accept(await api.notices(receipts.slice(i, i + 1000), action));
+      return true;
     } catch (e) {
       notify((e as Error).message);
+      return false;
     }
   };
   /**

@@ -142,6 +142,19 @@ export default function App() {
         ? localStorage.getItem('office:last-session')
         : null,
   );
+  // A card restored on startup (last session or `#session=`) reads nothing until the person
+  // touches the office: any press or key, or choosing a colleague.
+  const [engaged, setEngaged] = useState(() => !selected);
+  useEffect(() => {
+    if (engaged) return;
+    const engage = () => setEngaged(true);
+    window.addEventListener('pointerdown', engage, true);
+    window.addEventListener('keydown', engage, true);
+    return () => {
+      window.removeEventListener('pointerdown', engage, true);
+      window.removeEventListener('keydown', engage, true);
+    };
+  }, [engaged]);
   useEffect(() => {
     if (!demo) {
       if (selected) localStorage.setItem('office:last-session', selected);
@@ -198,6 +211,7 @@ export default function App() {
     () =>
       api.onSelect?.((id) => {
         setView('office');
+        setEngaged(true);
         setSelected(id);
       }),
     [],
@@ -347,6 +361,7 @@ export default function App() {
     if (await onPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
   };
   const choose = (id: string) => {
+    setEngaged(true);
     setBookmarkFocus(null);
     setShowUsage(false);
     setInbox(false);
@@ -1086,6 +1101,7 @@ export default function App() {
             onReceipt={onReceipt}
             onSelect={choose}
             showNews={showNews}
+            readOnOpen={engaged}
             onClose={() => setSelected(null)}
             // In the office the card takes the list's place; elsewhere it just closes.
             onBack={view === 'office' ? () => setSelected(null) : undefined}

@@ -91,7 +91,10 @@ export const app = {
     find: { label: 'Find', hint: 'Teammates, records, and commands in one place' },
     next: { label: 'Next up', hint: 'Waiting teammates → new results → working' },
     previous: { label: 'Previous', hint: '' },
-    markRead: { label: 'Mark as read', hint: "The selected teammate's unread updates" },
+    markRead: {
+      label: 'Mark as read',
+      hint: "The selected teammate's new results, right away · a card left open reads them too",
+    },
     inbox: { label: 'Inbox', hint: 'Open / close' },
     zones: { label: 'Office · Lounge · Archive', hint: '' },
     zoom: { label: 'Fit · Zoom in · Zoom out', hint: 'In the office' },

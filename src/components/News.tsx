@@ -33,7 +33,7 @@ import { useI18n } from '../lib/i18n';
 export type ReceiptHandler = (
   receipts: NoticeReceipt[],
   action: 'read' | 'dismiss' | 'unread' | 'view',
-) => void | Promise<void>;
+) => unknown;
 
 export function NewsList({
   notices,
@@ -203,6 +203,7 @@ export function NewsFeed({
   initialFilter = 'final',
   includeBackground = false,
   sessionIds,
+  keep,
 }: {
   notices: OfficeNotice[];
   sessions: Session[];
@@ -213,6 +214,8 @@ export function NewsFeed({
   includeBackground?: boolean;
   /** The sessions `notices` belong to (a colleague's own news); absent for the whole office. */
   sessionIds?: string[];
+  /** `id\nversion` of notices listed even once read (what opening the card just read). */
+  keep?: ReadonlySet<string>;
 }) {
   const { t } = useI18n();
   const f = t.news.feed;
@@ -307,9 +310,10 @@ export function NewsFeed({
   const matches = (n: OfficeNotice, kind = filter) => matchesKind(n, kind, includeBackground);
   const local = (kind: NoticeFilter) => notices.filter((n) => !n.seenAt && matches(n, kind)).length;
   const counts = (kind: NoticeFilter) => (loaded ? loaded.unread[kind] : local(kind));
-  const selected = loaded
-    ? merged(loaded, notices, query)
-    : notices.filter((n) => matchesQuery(n, query));
+  const listed = (n: OfficeNotice) =>
+    matchesQuery(n, query) ||
+    (!!keep?.has(`${n.id}\n${n.version}`) && matchesQuery(n, { ...query, includeRead: true }));
+  const selected = loaded ? merged(loaded, notices, listed) : notices.filter(listed);
   const unread = selected.filter((n) => !n.seenAt);
   const unreadCount = loaded ? loaded.unread[filter] : unread.length;
   return (
@@ -379,12 +383,12 @@ export function NewsFeed({
  * A read page with the carried notices laid over it: their copies replace the page's, and
  * those that arrived since it was read join it (older ones wait for their page).
  */
-function merged(page: LoadedPage, carried: OfficeNotice[], query: NoticeQuery) {
+function merged(page: LoadedPage, carried: OfficeNotice[], listed: (n: OfficeNotice) => boolean) {
   const last = page.notices.at(-1);
   const byId = new Map(page.notices.map((n) => [n.id, n]));
   for (const n of carried)
     if (byId.has(n.id) || !page.more || !last || noticeOrder(n, last) < 0) byId.set(n.id, n);
-  return [...byId.values()].filter((n) => matchesQuery(n, query)).sort(noticeOrder);
+  return [...byId.values()].filter(listed).sort(noticeOrder);
 }
 export function NewsInbox({
   notices,
