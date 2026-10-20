@@ -63,6 +63,7 @@ import { RequestCard } from './RequestCard';
 import { openRequest } from '../shared/requests';
 import { useSendTargets } from '../lib/useSendTargets';
 import { useI18n } from '../lib/i18n';
+import { useReadOnOpen } from '../lib/useReadOnOpen';
 export function Inspector({
   session,
   sessions,
@@ -367,6 +368,8 @@ export function Inspector({
   }, [view.session.events, view.session.id, notices, view.notices, sentAll]);
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
+  // Opening the card reads the colleague's final replies (not while privacy hides them).
+  useReadOnOpen(session.id, notices, memberIds ?? [session.id], onReceipt, !privacy);
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;
   const resumeLabel = codexApp

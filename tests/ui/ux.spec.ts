@@ -45,13 +45,19 @@ test('The card routes calls to the original tool and lets results be read in pla
   await expect(card.locator('.card-status')).not.toHaveClass(/is-calling/);
   await expect(resume).not.toHaveClass(/primary/);
   await expect(card.locator('.card-calling-note')).toHaveCount(0);
-  // The new result is read in place, from the card's news tab.
+  // Opening the card reads the new result (Issue #221); the news tab can make it unread again.
   const news = card.getByRole('tab', { name: /^소식/ });
-  await expect(news).toHaveText(/소식 1/);
-  await news.click();
-  await card.getByRole('button', { name: '읽음으로 표시' }).click();
   await expect(page.locator('.inbox-button b')).toHaveText('0');
   await expect(news).not.toHaveText(/1/);
+  await expect(page.getByRole('button', { name: '확인할 결과 0', exact: true })).toBeDisabled();
+  await news.click();
+  await card.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
+  await card.getByRole('button', { name: '다시 미확인' }).click();
+  await expect(page.locator('.inbox-button b')).toHaveText('1');
+  // Marked unread on purpose, it stays unread while the card is open.
+  await page.waitForTimeout(300);
+  await expect(page.locator('.inbox-button b')).toHaveText('1');
+  await expect(card.getByRole('button', { name: '읽음으로 표시' })).toBeVisible();
   // Reading is a receipt only — the colleague's desk and bubble stay.
   await expect(page.locator('.office-pet[data-session-id="demo:5"]')).toBeVisible();
 });
