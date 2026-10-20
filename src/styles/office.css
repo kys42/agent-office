@@ -955,6 +955,8 @@
   top: 70px;
   left: 112px;
   z-index: 4;
+  /* A status sign, not a control: hovering or clicking reaches the desk beneath. */
+  pointer-events: none;
   display: flex;
   align-items: center;
   gap: 2px;
