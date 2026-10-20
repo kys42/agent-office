@@ -45,7 +45,7 @@
   z-index: 7;
 }
 /* The desk row's headroom ends at the window top: bubble bottom 206px below it
-   (44 ROW_HEADROOM + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
+   (44 ROW_TOP_ROOM + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
 .desk-row .speech-bubble.is-expanded .speech-text {
   max-height: 112px;
 }

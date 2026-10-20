@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
-import { ROW_BAND } from '../../src/shared/dock-geometry';
 
 test('Public progress leads office, roster and inspector while tool names stay secondary', async ({
   page,
@@ -241,9 +240,9 @@ test('A crowded desk row keeps the desk size and pages with side arrows', async 
   await expect(prev).toBeVisible();
   await page.keyboard.press('ArrowLeft');
   await expect(prev).toHaveCount(0);
-  // The tool pill sits in the band under the desks, below every bubble.
+  // The tool pill floats at the bottom edge, below every bubble.
   const tools = (await page.locator('.dock-pill').boundingBox())!;
-  expect(tools.y).toBeGreaterThanOrEqual(600 - ROW_BAND);
+  expect(tools.y + tools.height).toBeGreaterThanOrEqual(600 - 12);
   const bubbleBottom = Math.max(
     ...(await page
       .locator('.desk-row .speech-bubble')
@@ -271,15 +270,15 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await expect(strip.locator('.zone-flag')).toHaveCount(zones);
   await expect(strip.locator('.zone-flag').first()).toContainText('agent-office');
   await expect(strip.locator('.floor-plate').first()).toContainText('코코');
-  // Desk legs stand on the band along the window's bottom edge, the pill below them.
+  // Desk legs reach the window's bottom edge; the pill floats over their feet.
   await expect
     .poll(async () => {
       const bench = (await strip.locator('.team-bench').first().boundingBox())!;
-      return Math.abs(Math.round(970 - ROW_BAND - (bench.y + bench.height)));
+      return Math.round(970 - (bench.y + bench.height));
     })
     .toBeLessThanOrEqual(8);
   const tools = (await strip.locator('.dock-pill').boundingBox())!;
-  expect(tools.y).toBeGreaterThanOrEqual(970 - ROW_BAND);
+  expect(tools.y + tools.height).toBeGreaterThanOrEqual(970 - 12);
   const bottoms = await strip
     .locator('.speech-bubble')
     .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom));

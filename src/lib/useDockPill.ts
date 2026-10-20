@@ -8,7 +8,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from 'react';
-import { PILL_CENTER, pillLeft, readPillSpot } from '../shared/dock-geometry';
+import { PILL_HOME, pillLeft, readPillSpot } from '../shared/dock-geometry';
 
 type Point = { x: number; y: number };
 type Gesture = {
@@ -26,8 +26,9 @@ export const PILL_STORAGE_KEY = 'office:dock-pill:v1';
 const DRAG_SLOP = 4;
 
 /**
- * The dock pill slides left and right along the band under the desks and remembers where it
- * was left (its centre as a fraction of the width, so a different screen keeps the idea).
+ * The dock pill floats over the bottom of the desks, slides left and right, and remembers where
+ * it was left (its centre as a fraction of the width, so a different screen keeps the idea) —
+ * so the person can park it in an empty spot. Until then it sits at home (the right end).
  * Like the zone handles, a drag holds the pointer and, once it really moves, tells the dock
  * (`onArrange`) so the window keeps taking the mouse even when the pointer leaves the pill.
  */
@@ -46,7 +47,7 @@ export function useDockPill({
     try {
       return readPillSpot(JSON.parse(localStorage.getItem(PILL_STORAGE_KEY) ?? 'null'));
     } catch {
-      return PILL_CENTER;
+      return PILL_HOME;
     }
   });
   const [size, setSize] = useState({ width: 0, pill: 0 });
@@ -76,7 +77,7 @@ export function useDockPill({
     return width > 0 ? (pillLeft(s, width, w) + w / 2) / width : s;
   };
   const save = (next: number | null) => {
-    setSpot(next ?? PILL_CENTER);
+    setSpot(next ?? PILL_HOME);
     try {
       if (next === null) localStorage.removeItem(PILL_STORAGE_KEY);
       else localStorage.setItem(PILL_STORAGE_KEY, JSON.stringify({ v: 1, x: next }));
@@ -161,7 +162,7 @@ export function useDockPill({
     onLostPointerCapture: (e: PointerEvent<HTMLElement>) => {
       if (gesture.current?.id === e.pointerId) finish(false);
     },
-    // Double-click the body or grip: back to the middle.
+    // Double-click the body or grip: back home (the right end).
     onDoubleClick: (e: MouseEvent<HTMLElement>) => {
       if (!grabbable(e)) return;
       finish(false);

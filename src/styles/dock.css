@@ -1,8 +1,7 @@
 /* ───────────────────────── Desk pet & desk row (floating dock window) ─────────────────────────
    The window is transparent: only the pet, the desks, the floor and the caps are drawn, so the
-   row reads as desks standing on the bottom edge of the desktop, over a see-through band that
-   holds the dock's tool pill. Geometry mirrors src/shared/dock-geometry.ts (PET_SIZE,
-   ROW_HEIGHT, ROW_BAND). */
+   row reads as desks standing on the bottom edge of the desktop; the dock's tool pill floats
+   over their feet. Geometry mirrors src/shared/dock-geometry.ts (PET_SIZE, ROW_HEIGHT). */
 body.dock-mode {
   background: transparent;
   overflow: hidden;
@@ -355,8 +354,7 @@ body.dock-mode {
 }
 .desk-row-track {
   position: absolute;
-  /* The desks stand on the band; the pill lives in it (--dock-band: ROW_BAND / TINY_BAND). */
-  inset: 0 0 var(--dock-band, 0px) 0;
+  inset: 0;
   display: flex;
   align-items: flex-end;
   overflow-x: auto;
@@ -418,7 +416,7 @@ body.dock-mode {
 }
 .desk-row-arrow {
   position: absolute;
-  bottom: calc(var(--dock-band, 0px) + 118px);
+  bottom: 118px;
   z-index: 8;
   width: 46px;
   height: 58px;
@@ -478,13 +476,21 @@ body.dock-mode {
   /* left: from useDockPill (the saved spot, kept inside the window) */
   /* Nearly solid: a transparent window cannot blur the desktop behind it (backdrop-filter
      only sees the page), so the words must hold their contrast over a bright wallpaper. */
-  --pill-bg: rgba(246, 246, 248, 0.88);
-  --pill-bg-strong: rgba(246, 246, 248, 0.95);
-  --pill-edge: rgba(0, 0, 0, 0.12);
-  --pill-shine: rgba(255, 255, 255, 0.6);
+  /* Dark in every appearance, like the rest of the dock (body.dock-mode is a dark HUD in
+     native.css), so its light icons and words always read. */
+  --pill-bg: rgba(28, 30, 36, 0.88);
+  --pill-bg-strong: rgba(28, 30, 36, 0.95);
+  --pill-edge: rgba(255, 255, 255, 0.14);
+  --pill-shine: rgba(255, 255, 255, 0.08);
+  /* Floats over the desks' feet (they stand on the screen's edge, not on the pill). Subdued
+     at rest so the name plates under it still read; solid on hover, focus or a drag. Only
+     its own box takes the mouse: a desk beside it stays clickable. The scaled scene paints as
+     one layer, so the pill is above all of it; bubbles, the quick reply and the helper list
+     open above the desks, clear of the pill's strip along the bottom edge. */
   position: absolute;
-  bottom: 5px;
+  bottom: 8px;
   z-index: 9;
+  opacity: 0.45;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -496,26 +502,29 @@ body.dock-mode {
   border: 1px solid var(--pill-edge);
   box-shadow:
     inset 0 1px 0 var(--pill-shine),
-    0 8px 22px -10px rgba(0, 0, 0, 0.55);
+    0 4px 10px -6px rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(18px) saturate(1.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
   cursor: grab;
   touch-action: none;
   transition:
+    opacity 0.15s,
     background 0.15s,
     box-shadow 0.15s;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-reduced-motion: reduce) {
   .dock-pill {
-    --pill-bg: rgba(28, 30, 36, 0.88);
-    --pill-bg-strong: rgba(28, 30, 36, 0.95);
-    --pill-edge: rgba(255, 255, 255, 0.14);
-    --pill-shine: rgba(255, 255, 255, 0.08);
+    transition: none;
   }
 }
 .dock-pill:hover,
-.dock-pill:focus-within {
+.dock-pill:focus-within,
+.dock-pill.is-dragging {
+  opacity: 0.95;
   background: var(--pill-bg-strong);
+  box-shadow:
+    inset 0 1px 0 var(--pill-shine),
+    0 8px 22px -10px rgba(0, 0, 0, 0.55);
 }
 .dock-pill.is-dragging {
   cursor: grabbing;
@@ -567,11 +576,11 @@ body.dock-mode {
 }
 
 /* ───────── Floor desks (variant of the row) ─────────
-   No rugs or name cards: the desk legs stand on the pill band along the window's bottom
-   (just above the work area's floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
+   No rugs or name cards: the desk legs stand on the window's bottom edge (the work area's
+   floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
    on a pole marks where each zone begins. */
 .desk-floor .desk-row-arrow {
-  bottom: calc(var(--dock-band, 0px) + 96px);
+  bottom: 96px;
 }
 .desk-floor .helper-desk > b {
   display: none;
@@ -752,7 +761,7 @@ body.dock-mode {
    rugs and plates; these rules size what is left for a strip about 90px tall. Sizes inside
    the scene are in station space (×0.41 on screen). */
 .desk-row.is-tiny .dock-pill {
-  bottom: 2px;
+  bottom: 4px;
   height: 24px;
   padding: 0 4px 0 1px;
 }
@@ -773,7 +782,7 @@ body.dock-mode {
   content: '· ';
 }
 .desk-row.is-tiny .desk-row-arrow {
-  bottom: calc(var(--dock-band, 0px) + 10px);
+  bottom: 10px;
   width: 30px;
   height: 44px;
   border-radius: 10px;

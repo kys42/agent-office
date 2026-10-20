@@ -92,7 +92,7 @@ export const desk = {
     pill: 'Desk row tools',
     pillMove: 'Move the tool bar',
     pillHint:
-      'Drag left or right · ← → (Shift: bigger) · Home/End: either end · Double-click: back to center',
+      'Drag left or right · ← → (Shift: bigger) · Home/End: either end · Double-click: back to the right end',
     settings: 'Settings',
     settingsTitle: 'Open the settings window',
     toRow: 'Show as office row',

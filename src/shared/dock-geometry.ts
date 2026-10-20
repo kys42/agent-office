@@ -17,23 +17,19 @@ export const ROW_SCALE = 1;
 /** Station-space height of the row scene (tall-bubble headroom + station + zone label). */
 export const ROW_SCENE_HEIGHT = 376;
 /**
- * A see-through band along the window's bottom edge: the dock's controls float in it as a pill
- * (like the macOS Dock) and the desks stand on top of it, so the pill never covers a bubble.
+ * See-through room above the scene (where the tools sat before the pill), so a stacked answer
+ * + request bubble fits: a bubble's bottom sits ROW_TOP + 58 = 162px below the scene's top,
+ * which leaves it 206px to the window's top. The desks stand on the window's bottom edge; the
+ * dock pill floats over the bottom of the scene instead of lifting it.
  */
-export const ROW_BAND = 44;
-/**
- * Extra see-through room above the scene for a stacked answer + request bubble (the old top
- * tools band gave them this). A bubble's bottom sits ROW_TOP + 58 = 162px below the scene's
- * top; with this it has 206px to the window's top, enough for both at their tallest.
- */
-export const ROW_HEADROOM = 44;
-export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_HEADROOM + ROW_BAND;
+export const ROW_TOP_ROOM = 44;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM;
 /**
  * Floor version: no zone rugs or name cards under the desks, so the scene ends where the desk
- * legs meet the pill band (FLOOR_TOP + 188) plus their contact shadow.
+ * legs meet the work area's bottom edge (FLOOR_TOP + 188) plus their contact shadow.
  */
 export const FLOOR_SCENE_HEIGHT = 296;
-export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_HEADROOM + ROW_BAND;
+export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM;
 
 /**
  * Tiny (쪼꼬미) row and floor: the whole scene at about helper-desk size (68 of 164), with no
@@ -52,25 +48,28 @@ const TINY_FEET = 188 + 4;
  * tiny looks share one scene height (and one window height).
  */
 export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
-/** A compact band under the tiny desks for the compact pill (show big, summary, hide). */
-export const TINY_BAND = 28;
-export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_BAND;
+/** Compact see-through room above the tiny desks (the tiny pill floats over their feet). */
+export const TINY_TOP_ROOM = 28;
+export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM;
 /** The dock window's height for the office row or the floor, normal or tiny. */
 export const dockHeight = (floor: boolean, tiny: boolean) =>
   tiny ? TINY_HEIGHT : floor ? FLOOR_HEIGHT : ROW_HEIGHT;
-/** The band under the desks for either size. */
-export const dockBand = (tiny: boolean) => (tiny ? TINY_BAND : ROW_BAND);
 
 /**
  * The dock pill's spot: its centre as a fraction of the window's width, so it keeps its place
- * on a wider or narrower screen. Anything unreadable is the centre.
+ * on a wider or narrower screen. Anything unreadable is home.
+ *
+ * Home is the right end, where the tools sat before the pill. The pill floats over the desks'
+ * feet, and the desks (with their zone signs along the bottom) are centred in the window, so a
+ * centred pill would sit on a sign every time; the right end is usually empty. The person can
+ * still park it anywhere, and every look (row, floor, tiny) shares that one saved spot.
  */
-export const PILL_CENTER = 0.5;
+export const PILL_HOME = 1;
 export function readPillSpot(raw: unknown): number {
   const p = raw as { v?: unknown; x?: unknown } | null;
   return p && typeof p === 'object' && p.v === 1 && typeof p.x === 'number' && Number.isFinite(p.x)
     ? Math.min(1, Math.max(0, p.x))
-    : PILL_CENTER;
+    : PILL_HOME;
 }
 /** Breathing room between the pill and the window's sides. */
 export const PILL_MARGIN = 8;

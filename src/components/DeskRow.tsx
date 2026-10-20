@@ -59,7 +59,6 @@ import {
   STATION_WIDTH,
 } from '../shared/office-layout';
 import {
-  dockBand,
   dockHeight,
   FLOOR_SCENE_HEIGHT,
   ROW_SCALE,
@@ -92,8 +91,7 @@ const HELPER_TABLE_FOOT = 46;
  * The office as one line along the screen edge: the same project zones, shared benches,
  * helper desks and speech bubbles as the big office, drawn with its own furniture.
  * Two looks share everything but the ground: `office` lays each zone on a rug with name
- * cards under the desks; `floor` stands the desks right on the pill band at the window's
- * bottom, with a name plate on each desk front and a flag between zones.
+ * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a name plate on each desk front and a flag between zones.
  * Tiny (쪼꼬미) draws either look at helper-desk size with only the desks and their status:
  * no bubbles, flags, rugs or plates — a contentless dot says a desk has something new.
  * Only drawn things are `[data-solid]`; the transparent rest lets clicks through.
@@ -352,10 +350,7 @@ export function DeskRow({
     <div
       ref={rootRef}
       className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''}`}
-      // The desks stand on the band; the pill and the side arrows measure from it.
-      style={
-        { height: dockHeight(floor, tiny), '--dock-band': `${dockBand(tiny)}px` } as CSSProperties
-      }
+      style={{ height: dockHeight(floor, tiny) }}
     >
       <div
         className={`desk-row-track ${hiddenLeft.length ? 'fade-left' : ''} ${hiddenRight.length ? 'fade-right' : ''}`}
@@ -849,8 +844,10 @@ export function DeskRow({
           <b>{hiddenRight.length}</b>
         </button>
       )}
-      {/* The dock's controls: a see-through pill in the band under the desks, slid anywhere
-          along it. Tiny keeps only what it needs: back to normal, how many, hide. */}
+      {/* The dock's controls: a pill floating over the bottom of the desks (the desks still
+          stand on the screen's edge), subdued until hovered and slid anywhere along it so it
+          can be parked in an empty spot. Tiny keeps only what it needs: back to normal, how
+          many, hide. */}
       <div
         ref={pillRef}
         className={`dock-pill ${pill.dragging ? 'is-dragging' : ''}`}

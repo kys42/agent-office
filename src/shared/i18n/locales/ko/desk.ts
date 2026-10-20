@@ -84,7 +84,8 @@ export const desk: Messages['desk'] = {
     veiled: (n) => `가림 ${n}`,
     pill: '책상 줄 도구',
     pillMove: '도구 막대 옮기기',
-    pillHint: '끌어서 좌우로 옮기기 · ← → (Shift: 크게) · Home/End: 양 끝 · 두 번 클릭: 가운데로',
+    pillHint:
+      '끌어서 좌우로 옮기기 · ← → (Shift: 크게) · Home/End: 양 끝 · 두 번 클릭: 오른쪽 끝으로',
     settings: '설정',
     settingsTitle: '설정 창 열기',
     toRow: '사무실 줄로 보기',
