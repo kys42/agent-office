@@ -73,6 +73,7 @@ export function Inspector({
   onReceipt,
   onSelect,
   showNews,
+  readOnOpen = true,
   onClose,
   onPatch,
   onPin,
@@ -114,6 +115,8 @@ export function Inspector({
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
   showNews?: string | null;
+  /** False while a card restored on startup waits for the person to touch the office. */
+  readOnOpen?: boolean;
   onClose: () => void;
   onReturn: (id: string) => void;
   onPatch: (id: string, p: SessionPatch) => Promise<void>;
@@ -369,7 +372,14 @@ export function Inspector({
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   // Opening the card reads the colleague's final replies (not while privacy hides them).
-  useReadOnOpen(session.id, notices, memberIds ?? [session.id], onReceipt, !privacy);
+  // A restored card waits for the person to touch the office first (`readOnOpen`).
+  const readNow = useReadOnOpen(
+    session.id,
+    notices,
+    memberIds ?? [session.id],
+    onReceipt,
+    !privacy && readOnOpen,
+  );
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;
   const resumeLabel = codexApp
@@ -651,6 +661,7 @@ export function Inspector({
             initialFilter={showNews ? 'all' : 'final'}
             notices={news}
             sessionIds={[s.id]}
+            keep={readNow}
             sessions={sessions}
             privacy={privacy}
             onReceipt={onReceipt}

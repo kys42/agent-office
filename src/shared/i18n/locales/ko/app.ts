@@ -92,7 +92,10 @@ export const app: Messages['app'] = {
     find: { label: '찾기', hint: '동료·기록·명령을 한곳에서' },
     next: { label: '다음 할 일', hint: '기다리는 동료 → 새 결과 → 작업 중 순서' },
     previous: { label: '이전 할 일', hint: '' },
-    markRead: { label: '읽음으로 표시', hint: '선택한 동료의 미확인 소식' },
+    markRead: {
+      label: '읽음으로 표시',
+      hint: '선택한 동료의 새 결과를 바로 읽음 · 카드를 잠시 열어 두어도 읽혀요',
+    },
     inbox: { label: '소식함', hint: '열기 / 닫기' },
     zones: { label: '사무실 · 라운지 · 보관', hint: '' },
     zoom: { label: '전체 보기 · 확대 · 축소', hint: '사무실에서' },
