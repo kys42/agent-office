@@ -65,6 +65,8 @@ export const settings: Messages['settings'] = {
     sound: '소리 내기',
     soundHint:
       '시스템 알림 소리를 써요. 지금 보고 있는 동료의 카드는 알리지 않고, 화면 내용 숨기기 중에는 이름과 내용 없이 알려요.',
+    historyNote:
+      '화면 내용 숨기기를 켜기 전에 온 알림의 내용은 OS 알림 기록에 남아 있을 수 있어요.',
   },
   rhythm: {
     title: '내 작업 리듬에 맞게',

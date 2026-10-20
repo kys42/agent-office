@@ -3,8 +3,11 @@ import type { Snapshot } from '../src/shared/types.js';
 import {
   colleagueResolver,
   flushNotifications,
+  notifyReady,
   planNotifications,
+  revalidateNotifications,
   throttleNotifications,
+  type NotifyContext,
   type NotifyFocus,
   type NotifyItem,
   type NotifyThrottle,
@@ -22,6 +25,10 @@ export interface RecordedNotification extends NotifyItem {
  */
 export class Notifier {
   private seen: Set<string> | null = null;
+  private readonly startedAt = Date.now();
+  private firstAt: number | null = null;
+  private ready = false;
+  private latest: Snapshot | null = null;
   private throttle: NotifyThrottle = { shown: [], held: [] };
   private timer: ReturnType<typeof setTimeout> | undefined;
   // Electron drops a notification's click handler once nothing references it.
@@ -37,15 +44,26 @@ export class Notifier {
     },
   ) {}
 
-  observe(snapshot: Snapshot) {
-    const now = Date.now();
-    const { seen, items } = planNotifications({
-      seen: this.seen,
+  private context(snapshot: Snapshot, now: number): NotifyContext {
+    return {
       notices: snapshot.notices ?? [],
       prefs: snapshot.preferences,
       colleague: colleagueResolver(snapshot, now),
       focus: this.options.focus(),
       now,
+    };
+  }
+
+  observe(snapshot: Snapshot) {
+    const now = Date.now();
+    this.latest = snapshot;
+    this.firstAt ??= now;
+    // The first snapshot always only primes; after that, startup keeps priming until
+    // `notifyReady` (the backlog never bursts out when the app opens).
+    this.ready ||= this.seen !== null && notifyReady(snapshot, this.startedAt, this.firstAt, now);
+    const { seen, items } = planNotifications({
+      ...this.context(snapshot, now),
+      seen: this.ready ? this.seen : null,
     });
     this.seen = seen;
     if (!items.length) return;
@@ -58,7 +76,12 @@ export class Notifier {
 
   private flush() {
     this.timer = undefined;
-    const next = flushNotifications(this.throttle, Date.now());
+    const now = Date.now();
+    const latest = this.latest;
+    // What waited is checked again against the office and settings now.
+    const next = flushNotifications(this.throttle, now, (items) =>
+      latest ? revalidateNotifications(items, this.context(latest, now)) : [],
+    );
     this.throttle = next.state;
     next.show.forEach((item) => this.show(item));
   }

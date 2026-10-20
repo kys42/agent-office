@@ -64,6 +64,8 @@ export const settings = {
     sound: 'Play a sound',
     soundHint:
       "Uses the system notification sound. Nothing shows for a teammate whose card you're looking at, and hidden screen content keeps notifications free of names and messages.",
+    historyNote:
+      'Excerpts from notifications shown before you turned on hidden screen content may remain in the system notification history.',
   },
   rhythm: {
     title: 'Fit your work rhythm',

@@ -352,6 +352,8 @@ test('notifications are a desktop setting in General: calls on, finals and sound
   await expect(finals).toHaveAttribute('aria-checked', 'false');
   await expect(calls).toHaveAttribute('aria-checked', 'true');
   await expect(sound).toHaveAttribute('aria-checked', 'false');
+  // Hidden screen content cannot reach back into what the OS already keeps.
+  await expect(section).toContainText('OS 알림 기록에 남아 있을 수 있어요');
   // Each switch saves the whole choice through the shared preferences.
   await finals.click();
   await expect(finals).toHaveAttribute('aria-checked', 'true');

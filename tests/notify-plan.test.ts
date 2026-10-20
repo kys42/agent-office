@@ -5,10 +5,14 @@ import {
   NOTIFY_FRESH_MS,
   colleagueResolver,
   flushNotifications,
+  NOTIFY_GRACE_MS,
   notifyPreferences,
+  notifyReady,
   planNotifications,
+  revalidateNotifications,
   throttleNotifications,
   type Colleague,
+  type NotifyContext,
   type NotifyFocus,
   type NotifyItem,
   type NotifyPlanInput,
@@ -97,15 +101,52 @@ test('A new final shows its colleague and a short plain excerpt; sound follows t
   );
 });
 
-test('The first snapshot only primes; each notice version notifies once', () => {
-  const first = plan([notice('f')], { seen: null });
+test('The first snapshot only primes; each call version notifies once', () => {
+  const first = plan([call('c')], { seen: null });
   assert.equal(first.items.length, 0);
-  assert.ok(first.seen.has('f@v1'));
-  assert.equal(plan([notice('f')], { seen: first.seen }).items.length, 0);
-  // A changed version is new content.
-  assert.equal(plan([notice('f', { version: 'v2' })], { seen: first.seen }).items.length, 1);
+  assert.ok(first.seen.has('c@v1'));
+  assert.equal(plan([call('c')], { seen: first.seen }).items.length, 0);
+  // A call raised again with new content is someone waiting again.
+  assert.equal(plan([call('c', { version: 'v2' })], { seen: first.seen }).items.length, 1);
   // Only the keys still carried are kept.
-  assert.deepEqual([...plan([notice('g')], { seen: first.seen }).seen], ['g@v1']);
+  assert.deepEqual([...plan([call('g')], { seen: first.seen }).seen], ['g@v1']);
+});
+
+test('A final reply notifies once, even when its text completes after a partial collection', () => {
+  const partial = plan([notice('f', { text: '결과를 정리', version: 'v1' })]);
+  assert.equal(partial.items.length, 1);
+  // The collector read the rest: new content, new version, fresh receivedAt; same news.
+  const done = plan([notice('f', { version: 'v2', receivedAt: now })], { seen: partial.seen });
+  assert.deepEqual(done.items, []);
+  // A reply that only becomes a final later (it was progress before) is news then.
+  const progress = plan([notice('p', { phase: 'commentary' })]);
+  assert.equal(progress.items.length, 0);
+  assert.equal(plan([notice('p', { version: 'v2' })], { seen: progress.seen }).items.length, 1);
+});
+
+test('Startup: snapshots only prime until a collection pass finishes after the app started', () => {
+  const started = now - 10_000;
+  // The office read from disk before the first pass: not ready.
+  assert.equal(notifyReady({ syncing: true, lastSync: null }, started, now - 9000, now), false);
+  // A pass from before the app started (a collector already running) does not count.
+  assert.equal(
+    notifyReady({ syncing: false, lastSync: started - 1 }, started, now - 9000, now),
+    false,
+  );
+  // Still syncing: the pass is not over.
+  assert.equal(
+    notifyReady({ syncing: true, lastSync: started + 1 }, started, now - 9000, now),
+    false,
+  );
+  assert.equal(
+    notifyReady({ syncing: false, lastSync: started + 1 }, started, now - 9000, now),
+    true,
+  );
+  // A collector that never finishes a pass: notifications start after the grace period.
+  assert.equal(
+    notifyReady({ syncing: true, lastSync: null }, started, now - NOTIFY_GRACE_MS, now),
+    true,
+  );
 });
 
 test('Old, read, put away, background, remote and unknown news never notifies', () => {
@@ -231,6 +272,81 @@ test('Over three within five seconds: the rest wait and arrive as one', () => {
     later.show.map((i) => i.key),
     ['6'],
   );
+});
+
+test('Held notifications are checked again right before they show', () => {
+  const notices = [notice('f'), call('c', { sessionId: 'b' }), notice('g', { sessionId: 'b' })];
+  const held = plan(notices).items;
+  assert.equal(held.length, 3);
+  const again = (patch: Partial<NotifyContext> = {}) =>
+    revalidateNotifications(held, {
+      notices,
+      prefs: prefs(),
+      colleague: (id) => people[id],
+      focus: away,
+      now,
+      ...patch,
+    });
+  assert.equal(again().length, 3);
+  // Notifications turned off meanwhile: dropped (finals only, or all).
+  assert.deepEqual(
+    again({ prefs: prefs({ notifications: { finals: false, calls: true, sound: false } }) }).map(
+      (i) => i.key,
+    ),
+    ['c@v1'],
+  );
+  assert.deepEqual(
+    again({ prefs: prefs({ notifications: { finals: false, calls: false, sound: false } }) }),
+    [],
+  );
+  // Hidden screen content turned on meanwhile: redacted.
+  assert.deepEqual(
+    again({ prefs: prefs({ privacy: true }) }).map((i) => [i.title, i.body]),
+    [
+      ['Claude', '최종 응답을 보냈어요'],
+      ['Codex', '확인이 필요해요'],
+      ['Codex', '최종 응답을 보냈어요'],
+    ],
+  );
+  // The colleague is in front of the person now.
+  assert.deepEqual(
+    again({ focus: { mainFocused: false, selected: null, cards: ['b'] } }).map((i) => i.key),
+    ['final:f'],
+  );
+  // Read, viewed, put away, handled, or no longer carried meanwhile.
+  assert.deepEqual(
+    again({
+      notices: [
+        notice('f', { seenAt: now }),
+        call('c', { sessionId: 'b', resolvedAt: now }),
+        notice('g', { sessionId: 'b', viewedAt: now }),
+      ],
+    }),
+    [],
+  );
+  assert.deepEqual(again({ notices: [notice('f', { dismissedAt: now })] }), []);
+  // A held summary is checked member by member, then summarized again.
+  const burst = throttleNotifications(
+    { shown: [now, now, now], held: [] },
+    [...held, ...plan([notice('x')]).items],
+    now,
+  );
+  assert.equal(burst.state.held[0].kind, 'summary');
+  const flushed = flushNotifications(burst.state, now + 5000, (items) =>
+    revalidateNotifications(items, {
+      notices: [notices[0], notices[1]],
+      prefs: prefs(),
+      colleague: (id) => people[id],
+      focus: away,
+      now: now + 5000,
+    }),
+  );
+  assert.equal(flushed.show.length, 1);
+  assert.equal(flushed.show[0].body, '새 소식 2개 · 최종 응답 1개');
+  // Nothing left: nothing shows, and the window is not used up.
+  const none = flushNotifications(burst.state, now + 5000, () => []);
+  assert.deepEqual(none.show, []);
+  assert.deepEqual(none.state.held, []);
 });
 
 test('Colleagues resolve from the office model: name, tool and every id its card shows', () => {

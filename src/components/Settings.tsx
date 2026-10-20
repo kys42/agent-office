@@ -271,6 +271,7 @@ export function Settings({
               </div>
             );
           })}
+          <p className="notify-history-note">{s.notifications.historyNote}</p>
         </section>
       )}
       {((terminalSend !== undefined && onTerminalSend) || (answers && onAnswers)) && (

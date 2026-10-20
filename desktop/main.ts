@@ -75,6 +75,8 @@ import { isSettingsSection, type SettingsSection } from '../src/shared/settings.
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
 import { Notifier } from './notify.js';
+/** Test runs read notifications instead of showing them, even when not quiet (CI). */
+const recordNotifications = process.env.AGENT_OFFICE_RECORD_NOTIFICATIONS === '1';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
   settingsWindow: BrowserWindow | null = null,
@@ -120,23 +122,25 @@ else {
     });
     app.on('before-quit', () => cards.dispose());
     notifier = new Notifier({
-      record: quiet,
+      // Quiet runs, and test runs that take the real focus (CI), record instead of showing.
+      record: quiet || recordNotifications,
       focus: () => ({
         mainFocused: !!main && onScreen(main) && main.isFocused(),
         selected: mainSelected,
         cards: cards.shown(),
       }),
       open: (sessionId) => {
-        // Someone working with the desk pet or row gets the colleague's card there; otherwise
-        // the big office opens at that colleague.
-        if (sessionId && dock && !dock.isDestroyed() && dock.isVisible())
-          cards.open({ id: sessionId, news: false }, dock.getBounds());
-        else showMain(sessionId);
+        // Someone working with the desk pet or row gets the colleague's card there (shown, never
+        // toggled closed if already open); otherwise the big office opens at that colleague.
+        // A summary (no one colleague) opens the big office beside the dock, which stays.
+        const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
+        if (sessionId && docked) cards.reveal({ id: sessionId, news: false }, dock!.getBounds());
+        else showMain(sessionId, { keepDock: docked });
       },
     });
     app.on('before-quit', () => notifier.dispose());
     // Test runs read what would have been shown.
-    if (quiet)
+    if (quiet || recordNotifications)
       (globalThis as { __agentOfficeNotifications?: unknown }).__agentOfficeNotifications =
         notifier.recorded;
     const windows = () =>
@@ -324,10 +328,10 @@ function createMain() {
     }
   });
 }
-function showMain(id?: string) {
+function showMain(id?: string, { keepDock = false } = {}) {
   if (!main || main.isDestroyed()) createMain();
   stopDrag(false);
-  if (dock && !dock.isDestroyed()) dock.hide();
+  if (!keepDock && dock && !dock.isDestroyed()) dock.hide();
   const window = main!;
   if (window.isMinimized()) window.restore();
   present(window);

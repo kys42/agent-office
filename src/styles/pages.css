@@ -885,7 +885,8 @@ body.is-windows .settings-window-bar {
   background: var(--accent-soft);
   border: 1px solid var(--accent-line);
 }
-.helper-lifecycle-note {
+.helper-lifecycle-note,
+.notify-history-note {
   margin-top: 10px !important;
   font-size: 11.5px !important;
   line-height: 1.7 !important;
