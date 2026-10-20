@@ -139,7 +139,12 @@ export class FederatedService extends EventEmitter {
         if (method === 'remote-send') {
           if (typeof args[1] !== 'string' || args[1].length > 20000 || typeof args[2] !== 'string')
             throw new Error('Invalid send');
-          return this.peers.send(id, args[1], args[2], authorized);
+          return this.peers.send(id, args[1], args[2], async () => {
+            const latest = (await this.local.call('snapshot')) as Snapshot;
+            if (!this.compose(latest).sessions.some((s) => s.id === id))
+              throw Error('Remote session unavailable');
+            await authorized?.();
+          });
         }
         return this.peers.detail(id);
       }

@@ -1452,3 +1452,24 @@ body.card-mode:not(.is-mac) .dock-card {
 .zone-flag .project-summon-button {
   margin: 4px auto;
 }
+
+/* Remote replies retain the destination even in the compact card composer. */
+.terminal-send-chat.terminal-send-remote .terminal-send-bar small {
+  display: flex;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 4px 0;
+}
+.terminal-send-unavailable,
+.terminal-send-refresh {
+  grid-column: 1 / -1;
+  font-size: 11px;
+}
+.terminal-send-unavailable {
+  color: var(--text-3);
+}
+.terminal-send-refresh {
+  justify-self: start;
+  color: var(--accent);
+  padding: 4px 0;
+}

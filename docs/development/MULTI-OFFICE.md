@@ -96,3 +96,15 @@ npm run test:federation:desktop -- /private/path/connection.json
 command smoke는 가짜 native sender를 주입한 합성 HTTPS 서버와 실제 Electron IPC만 사용한다. 실제 개인 에이전트에는 메시지를 보내지 않는다. 마지막 LAN 명령은 전달받은 파일에서 sendToken을 제거한 조회 전용 사본과 임시 로컬 fixture·개발 프로필을 만들고 실제 peer 조회→화면→상세→쓰기 거절→베타 끄기를 검증한다. stdout은 집계만 출력하고 실제 원문은 보존하지 않는다. 공개 CI는 실제 개인 LAN에 의존하지 않는다. 결과와 제한은 [QA](QA.md)에 기록한다.
 
 `tests/federation-commands.test.ts`는 권한·범위·기존 설정, 중복/충돌/재시작/동시 요청/권한 회수와 원본 DB 불변을 검증한다. `tests/rooms.test.ts`, `tests/ui/federation.spec.ts`는 방과 프로젝트 분리, 원격 입력창 목적지·조회 전용을 검증한다. Playwright 개발 서버는 `.local/ui-tests/`의 별도 DB·빈 공급자 경로로만 실행한다.
+
+## 이 컴퓨터의 Codex 원격 연결로 보내기 (2026-10-21)
+
+원격 컴퓨터의 exporter가 대화를 읽을 수 있어도, 그 대화를 맡은 Codex 앱이 이 컴퓨터에 있으면 exporter의 로컬 owner 조회는 실패한다. 연결 설정에서 각 사무실의 **이 컴퓨터의 Codex 원격 연결**을 명시적으로 선택하면 이 경로를 사용할 수 있다. 기본값은 꺼짐이며 connection.json 가져오기로 이 로컬 권한을 설정할 수 없다. 재가져오기는 매핑을 초기화한다. 목록에 표시할 이름이 없는 연결은 정확한 host ID를 표시한다.
+
+- 기존 exporter의 전송 가능한 대상이 있으면 그 경로를 우선한다. 없을 때만 Codex 원격 연결을 조회한다. 전송 실패 후 다른 경로로 재시도하지 않는다.
+- 로컬 `$CODEX_HOME/.codex-global-state.json`의 thread/host membership 및 host가 일치하는 `remote-thread-summaries-v3` 캐시에서만 native ID를 찾는다. wire ID `sha256(codex:<native ID>)`까지 같아야 한다. 제목·경로로 추정하지 않고, 같은 ID의 host가 서로 다르면 거부한다. 이 파일은 수정하지 않는다.
+- 공유된 interactive root/fork Codex 대화만 대상이다. 현재 앱의 owner가 resumed/default/user 대화임을 확인해야 한다. 사용자가 Codex에서 해당 원격 대화를 열어 둔 뒤 **전송 대상 다시 확인**을 누른다. 자동 재개나 새 app-server 생성은 하지 않는다.
+- 기존 `/office/v1/commands/targets`는 target이 null이어도 해당 ID의 전송 토큰·공유 범위·exporter profile 설정을 검증한다. 이 성공 응답이 있어야 relay를 조회하고, dispatch 직전 같은 인증을 반복한다. 로컬 전송 설정·모바일 권한·현재 표시 범위와 peer generation도 다시 확인한다. 네트워크 실패나 권한 거부는 우회하지 않는다.
+- 수신 앱의 `federation-beta/outgoing.sqlite`에 요청 ID, 세션/본문의 해시, pending/sent 상태만 기록한다. pending은 앱 재시작 후에도 다시 보내지 않으며 본문은 보관하지 않는다. 같은 요청의 다른 payload는 거절하고, 한 대화에 동시 전송을 막는다. 저널은 10만 건에서 새 요청을 거부하며 자동 삭제하지 않는다.
+
+원격 UI에는 사무실과 이 컴퓨터의 Codex 원격 경로를 함께 표시한다. native ID/socket/client ID는 renderer나 peer wire에 추가하지 않는다. 구버전 exporter와 기존 로컬 CLI/Desktop/tmux 전송은 그대로 사용할 수 있다. Codex의 내부 IPC 형식이 바뀌거나 로컬 host 캐시에서 대화를 찾지 못하면 이 경로는 전송 불가가 된다. Windows 및 실제 원격 대화의 종단 전송은 별도 검증이 필요하다.

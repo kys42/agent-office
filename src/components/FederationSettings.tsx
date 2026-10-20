@@ -83,7 +83,13 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
           {!state.peers.length && <p>{f.empty}</p>}
           {state.peers.map((peer) => (
             <form
-              key={JSON.stringify([peer.officeId, peer.label, peer.tags, peer.projects])}
+              key={JSON.stringify([
+                peer.officeId,
+                peer.label,
+                peer.tags,
+                peer.projects,
+                peer.codexHostId,
+              ])}
               className="connector-card"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -106,6 +112,7 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
                       .map((s) => s.trim())
                       .filter(Boolean),
                     projects: Object.fromEntries(entries),
+                    codexHostId: String(data.get('codexHostId') || '') || undefined,
                   });
                 } catch {
                   setError(f.invalid);
@@ -138,6 +145,24 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
                     .join('\n')}
                 />
               </label>
+              <label>
+                {f.codexConnection}
+                <select name="codexHostId" defaultValue={peer.codexHostId ?? ''} disabled={busy}>
+                  <option value="">{f.codexConnectionOff}</option>
+                  {peer.codexHostId &&
+                    !state.codexHosts?.some((h) => h.id === peer.codexHostId) && (
+                      <option value={peer.codexHostId}>
+                        {peer.codexHostId} · {f.offline}
+                      </option>
+                    )}
+                  {state.codexHosts?.map((host) => (
+                    <option key={host.id} value={host.id}>
+                      {host.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p>{f.codexConnectionHint}</p>
               <div className="setting-row">
                 <button disabled={busy} type="submit">
                   {f.save}

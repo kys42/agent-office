@@ -998,7 +998,10 @@ function setupIPC() {
     await authorized?.();
     if (isRemoteId(id)) {
       if (replaceDraft !== undefined) throw new Error(m().federation.remoteDraft);
-      return bridge.call('remote-send', [id, text, randomUUID()], authorized);
+      return bridge.call('remote-send', [id, text, randomUUID()], async () => {
+        await authorized?.();
+        if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+      });
     }
     const known = await identity(id);
     // Each agent's adapter says how a follow-up reaches it: its queue (Codex, no composer
