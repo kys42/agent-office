@@ -1,5 +1,5 @@
 import { _electron as electron } from 'playwright';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -229,6 +229,29 @@ try {
   assert.equal(await dock.locator('.row-station').count(), 3, 'all desks move together');
   assert.ok(await dock.evaluate(() => localStorage.getItem('office:row-zones:v1:live')));
   await dock.screenshot({ path: '.local/native-row-arranged.png' });
+  // Tiny (쪼꼬미): the main process shrinks the strip, keeps it on the edge and remembers it.
+  const dockFile = path.join(temp, 'data', 'dock.json');
+  // The main process saves after resizing; give the write a moment.
+  const savedTiny = async (tiny) => {
+    for (let i = 0; i < 40; i++) {
+      const raw = await readFile(dockFile, 'utf8').catch(() => '');
+      if (raw && JSON.parse(raw).tiny === tiny) return JSON.parse(raw);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return JSON.parse(await readFile(dockFile, 'utf8'));
+  };
+  await dock.getByRole('button', { name: '작게 보기', exact: true }).click();
+  await dock.waitForSelector('.desk-row.is-tiny');
+  const tiny = await dockBounds();
+  assert.ok(tiny.height < 120 && tiny.height < row.height / 3, 'tiny row is a short strip');
+  assert.equal(tiny.y + tiny.height, tiny.area.y + tiny.area.height, 'tiny rests on the edge');
+  assert.equal(await dock.locator('.speech-bubble').count(), 0, 'tiny has no bubbles');
+  assert.deepEqual(await savedTiny(true), { v: 1, tiny: true });
+  await dock.screenshot({ path: '.local/native-row-tiny.png' });
+  await dock.getByRole('button', { name: '크게 보기', exact: true }).click();
+  await dock.waitForFunction(() => !document.querySelector('.desk-row.is-tiny'));
+  assert.equal((await dockBounds()).height, row.height, 'full size comes back');
+  assert.deepEqual(await savedTiny(false), { v: 1, tiny: false });
   // Keep this test's card open if someone uses another app during local QA. Production still
   // closes it on blur; we test its panel focus/keyboard without racing the user's desktop.
   await app.evaluate(({ app }) =>

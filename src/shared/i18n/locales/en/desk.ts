@@ -47,6 +47,8 @@ export const desk = {
     stackLabel: (count: number, calling: boolean) =>
       `${count} helpers${calling ? ', one is calling' : ''} · show list`,
     stackCount: (count: number) => `${count} helpers`,
+    stackOpen: (count: number, calling: boolean, name: string) =>
+      `${count} helpers${calling ? ', one is calling' : ''} · open ${name}'s work`,
     stackList: 'Helper roster',
     responded: 'Left a reply',
     label: (name: string, responded: boolean) =>
@@ -96,6 +98,15 @@ export const desk = {
     expandTitle: 'Open the big office',
     collapse: 'Collapse the desk row',
     collapseTitle: 'Collapse to pet · Esc',
+    tiny: 'Show small',
+    tinyTitle: 'Show small · status only, no bubbles or flags',
+    normal: 'Show full size',
+    normalTitle: 'Show full size · bubbles and name cards come back',
+    tinyDesk: (work: string, dot?: 'attention' | 'error' | 'reply') =>
+      dot
+        ? `${work}, ${dot === 'attention' ? 'calling' : dot === 'error' ? 'error' : 'new reply'}`
+        : work,
+    tinyWaiting: (n: number) => `${n} waiting for you`,
     hide: 'Hide the desk pet',
     hideTitle: 'Hide · reopen it from the tray',
   },

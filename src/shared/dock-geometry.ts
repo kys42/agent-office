@@ -26,6 +26,35 @@ export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BA
 export const FLOOR_SCENE_HEIGHT = 296;
 export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
 
+/**
+ * Tiny (쪼꼬미) row and floor: the whole scene at about helper-desk size (68 of 164), with no
+ * bubbles, flags, rugs or name cards — just the desks, their status and a contentless dot.
+ */
+export const TINY_SCALE = 68 / 164;
+/**
+ * Tiny drops the bubble headroom: stations sit this far above the scene's top (a negative
+ * station row), so it starts just above the heads (pet at 62) with room for the dot.
+ */
+export const TINY_TOP = -36;
+/** Desk legs meet the floor at 188 (DESK_FOOT), plus their contact shadow. */
+const TINY_FEET = 188 + 4;
+/**
+ * Without rugs and name cards the office row ends at the desk legs like the floor, so both
+ * tiny looks share one scene height (and one window height).
+ */
+export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
+/** A compact see-through band for the tiny tools (show big, summary, hide). */
+export const TINY_TOOLS_BAND = 28;
+export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND;
+/** The dock window's height for the office row or the floor, normal or tiny. */
+export const dockHeight = (floor: boolean, tiny: boolean) =>
+  tiny ? TINY_HEIGHT : floor ? FLOOR_HEIGHT : ROW_HEIGHT;
+/** Read `dock.json` (`{ v: 1, tiny }`); anything else is the normal size. */
+export function readDockPrefs(raw: unknown): { tiny: boolean } {
+  const p = raw as { v?: unknown; tiny?: unknown } | null;
+  return { tiny: !!p && typeof p === 'object' && p.v === 1 && p.tiny === true };
+}
+
 /** Keep a window fully inside a display's work area (shrinking it only if it cannot fit). */
 export function clampInto(b: Rect, area: Rect): Rect {
   const width = Math.min(b.width, area.width);
