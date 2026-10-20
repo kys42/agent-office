@@ -9,8 +9,6 @@ on:
         default: arm64
         type: choice
         options: [arm64, x64, both]
-  push:
-    tags: ['v[0-9]*']
 
 permissions:
   contents: read

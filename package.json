@@ -36,7 +36,8 @@
     "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "package:dmg": "npm run package && node scripts/dmg.mjs",
     "test:package": "node scripts/dmg-smoke.mjs",
-    "test:mobile": "node scripts/mobile-smoke.mjs"
+    "test:mobile": "node scripts/mobile-smoke.mjs",
+    "release:mac": "node scripts/macos-release.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -52,6 +53,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@electron/osx-sign": "^2.7.1",
     "@electron/packager": "^20.3.0",
     "@playwright/test": "^1.58.2",
     "@types/node": "^24.10.0",
