@@ -16,17 +16,33 @@ test.describe('English system', () => {
 
     await page.getByRole('button', { name: 'Connections & Settings' }).click();
     expect((await visibleText(page)).replace('한국어', '')).not.toMatch(hangul);
+    // Category names follow the language too (#87).
+    const tabs = page.getByRole('tablist', { name: 'Settings categories' });
+    await expect(tabs.getByRole('tab')).toHaveText([
+      'General',
+      'Appearance',
+      'Office',
+      'Spaces',
+      'Connections',
+      'Records',
+    ]);
+    await tabs.getByRole('tab', { name: 'Appearance' }).click();
     await page.getByRole('button', { name: 'Customize Claude character' }).click();
     const editor = page.getByRole('dialog', { name: 'Claude default character' });
     await expect(editor).toBeVisible();
     expect(await editor.innerText()).not.toMatch(hangul);
     await editor.getByRole('button', { name: 'Character Mallow', exact: true }).click();
     await editor.getByRole('button', { name: 'Save this look' }).click();
+    await tabs.getByRole('tab', { name: 'General' }).click();
     const language = page.getByRole('combobox', { name: 'Language' });
     await expect(language).toHaveValue('auto');
     await language.selectOption('ko');
     await expect(page.locator('html')).toHaveAttribute('lang', 'ko');
     await expect(page.getByRole('combobox', { name: '언어' })).toHaveValue('ko');
+    await page
+      .getByRole('tablist', { name: '설정 분류' })
+      .getByRole('tab', { name: '모습' })
+      .click();
     await expect(page.getByRole('button', { name: 'Claude 캐릭터 꾸미기' })).toContainText('말랑');
 
     // Demo teammates follow the language without losing the saved preference.
@@ -34,6 +50,10 @@ test.describe('English system', () => {
     await expect(page.getByRole('button', { name: /^코코, / })).toBeVisible();
     await expect(page.getByRole('button', { name: '소식함 열기' })).toBeVisible();
     await page.getByRole('button', { name: '연결과 설정' }).click();
+    // The page comes back to the category last open (모습); language is under 일반.
+    const tabs2 = page.getByRole('tablist', { name: '설정 분류' });
+    await expect(tabs2.getByRole('tab', { name: '모습' })).toHaveAttribute('aria-selected', 'true');
+    await tabs2.getByRole('tab', { name: '일반' }).click();
     await page.getByRole('combobox', { name: '언어' }).selectOption('en');
     await expect(page.getByRole('combobox', { name: 'Language' })).toHaveValue('en');
   });

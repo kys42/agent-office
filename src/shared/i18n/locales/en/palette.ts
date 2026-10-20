@@ -33,6 +33,8 @@ export const palette = {
     activityKeywords: 'timeline history log',
     settings: 'Connections & Settings',
     settingsKeywords: 'off duty archive collection connections preferences',
+    settingsWindow: 'Open settings window',
+    settingsWindowHint: 'A window that stays open beside your work',
     showContent: 'Show screen content',
     hideContent: 'Hide screen content',
     privacyHint: 'For screen sharing',

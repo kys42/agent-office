@@ -72,6 +72,11 @@ const api: OfficeAPI = {
   prompt: (id) => action('office:prompt', id),
   answer: (id, choice) => action('office:answer', id, choice),
   answerSettings: (patch) => action('office:answer-settings', patch),
+  onDesktopSettings: (cb) => {
+    const f = () => cb();
+    ipcRenderer.on('office:desktop-settings', f);
+    return () => ipcRenderer.removeListener('office:desktop-settings', f);
+  },
   card: (what, target, anchor) => ipcRenderer.invoke('office:card', what, target, anchor),
   onCard: (cb) => {
     const f = (_: unknown, target: CardTarget | null) => cb(target);
@@ -89,6 +94,15 @@ const api: OfficeAPI = {
     const f = (_: unknown, id: string) => cb(id);
     ipcRenderer.on('office:select', f);
     return () => ipcRenderer.removeListener('office:select', f);
+  },
+  settings: {
+    open: (section) => ipcRenderer.invoke('office:settings', section ?? null),
+    onOpen: (cb) => {
+      const f = (_: unknown, section: import('../src/shared/settings.js').SettingsSection | null) =>
+        cb(section);
+      ipcRenderer.on('office:settings', f);
+      return () => ipcRenderer.removeListener('office:settings', f);
+    },
   },
   dock: (action) => ipcRenderer.invoke('office:dock', action),
   onDock: (cb) => {

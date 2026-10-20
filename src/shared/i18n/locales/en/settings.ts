@@ -4,6 +4,16 @@ export const settings = {
   title: 'Connections & Settings',
   subtitle: 'Choose which teammates you meet and which records you keep.',
   projectHidden: 'Project',
+  categoriesAria: 'Settings categories',
+  categories: {
+    general: { label: 'General', hint: 'Language, privacy and what the app may do for you.' },
+    appearance: { label: 'Appearance', hint: 'How your teammates look and move.' },
+    office: { label: 'Office', hint: 'When teammates stand by, go off duty and get archived.' },
+    spaces: { label: 'Spaces', hint: 'Zones you split the office into.' },
+    connections: { label: 'Connections', hint: 'Tools, other offices and your phone.' },
+    records: { label: 'Records', hint: 'Which records come in, which stay out, and MCP.' },
+  },
+  window: { title: 'Settings', opening: 'Opening settings…' },
   language: {
     title: 'Language',
     hint: "System language falls back to English when it isn't supported.",
@@ -43,6 +53,7 @@ export const settings = {
     helperNote:
       "Helpers leave their results and step away when the main teammate starts its next request. They stay if they're still working or waiting on you. When the main teammate goes off duty, they're folded into its earlier work.",
   },
+  terminalTitle: 'Terminal and answers',
   rhythm: {
     title: 'Fit your work rhythm',
     pause: 'Pause collecting',

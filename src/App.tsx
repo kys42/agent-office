@@ -11,6 +11,7 @@ import {
   BookOpen,
   Clock3,
   Settings2,
+  AppWindow,
   Search,
   PictureInPicture2,
   Eye,
@@ -206,6 +207,11 @@ export default function App() {
   const [memoryQuery, setMemoryQuery] = useState('');
   const [settingsFocus, setSettingsFocus] = useState<{ section: SettingsSection; at: number }>();
   const clearSettingsFocus = useCallback(() => setSettingsFocus(undefined), []);
+  // The settings page at one category/section (guide links, the office's gear, rooms).
+  const openSettings = (section: SettingsSection) => {
+    setSettingsFocus({ section, at: Date.now() });
+    setView('settings');
+  };
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
   const [areaDrop, setAreaDrop] = useState<{ id: string; zone: string | null } | null>(null);
   const openSearch = () => setPalette(true);
@@ -332,11 +338,6 @@ export default function App() {
   } = useTerminalSend(demo, notify);
   // Desktop-only answering of questions, plans and permission prompts (both off by default).
   const answers = useAnswerSettings(demo, notify);
-  // A first answer from a card may have turned one on: show it as saved.
-  const reloadAnswers = answers.reload;
-  useEffect(() => {
-    if (view === 'settings') reloadAnswers();
-  }, [view, reloadAnswers]);
   // The desk pin and the card pin are one switch on the colleague.
   const onPin = (s: Session) =>
     void pin(s)
@@ -455,10 +456,9 @@ export default function App() {
           : action === 'space'
             ? 'office'
             : action === 'privacy' || action === 'terminal'
-              ? 'rhythm'
+              ? action
               : 'connections';
-      setSettingsFocus({ section, at: Date.now() });
-      setView('settings');
+      openSettings(section);
     }
   };
   const actions: PaletteAction[] = [
@@ -529,6 +529,19 @@ export default function App() {
       keywords: t.palette.actions.settingsKeywords,
       run: () => setView('settings'),
     },
+    // Desktop: a separate settings window that stays open beside work (#87).
+    ...(api.settings && !demo
+      ? [
+          {
+            id: 'settings-window',
+            label: t.palette.actions.settingsWindow,
+            hint: t.palette.actions.settingsWindowHint,
+            icon: <AppWindow size={15} />,
+            keywords: t.palette.actions.settingsKeywords,
+            run: () => void api.settings?.open(),
+          },
+        ]
+      : []),
     {
       id: 'privacy',
       label: prefs?.privacy ? t.palette.actions.showContent : t.palette.actions.hideContent,
@@ -625,7 +638,7 @@ export default function App() {
               setShowUsage(false);
               setView('office');
             }}
-            onSettings={() => setView('settings')}
+            onSettings={() => openSettings('federation')}
           />
         )}
         <nav className="source-list">
@@ -989,7 +1002,7 @@ export default function App() {
                 notify(on ? t.app.toast.hidden : t.app.toast.shown);
               }}
               onPin={onPin}
-              onSettings={() => setView('settings')}
+              onSettings={() => openSettings('office')}
               selected={selected}
               onSelect={choose}
               onReturn={returnToOffice}
@@ -1054,6 +1067,7 @@ export default function App() {
               onTerminalSend={toggleTerminalSend}
               answers={answers.available ? answers.settings : undefined}
               onAnswers={(key) => void answers.toggle(key)}
+              layout="page"
               focusSection={settingsFocus}
               onSectionFocused={clearSettingsFocus}
             />

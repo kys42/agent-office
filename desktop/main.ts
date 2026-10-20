@@ -71,9 +71,11 @@ import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
 import { CardWindows } from './card-windows.js';
+import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
+  settingsWindow: BrowserWindow | null = null,
   tray: Tray | null = null,
   bridge: ServiceBridge,
   quitting = false;
@@ -112,7 +114,7 @@ else {
     });
     app.on('before-quit', () => cards.dispose());
     const windows = () =>
-      [main, dock, ...cards.windows()]
+      [main, dock, settingsWindow, ...cards.windows()]
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
         .map(viewer);
     // Follow the language the collector actually resolved, so tray and windows always agree.
@@ -148,11 +150,14 @@ else {
     buildTray();
     tray.on('click', () => showMain());
     nativeTheme.on('updated', () => {
-      if (!main || main.isDestroyed() || process.platform === 'darwin') return;
+      if (process.platform === 'darwin') return;
       const style = windowStyle(process.platform, nativeTheme.shouldUseDarkColors);
-      main.setBackgroundColor(style.backgroundColor!);
-      if (process.platform === 'win32')
-        main.setTitleBarOverlay(style.titleBarOverlay as Electron.TitleBarOverlay);
+      for (const w of [main, settingsWindow]) {
+        if (!w || w.isDestroyed()) continue;
+        w.setBackgroundColor(style.backgroundColor!);
+        if (process.platform === 'win32')
+          w.setTitleBarOverlay(style.titleBarOverlay as Electron.TitleBarOverlay);
+      }
     });
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
@@ -174,6 +179,8 @@ function buildTray() {
       { label: t.pet, click: () => showDock('pet') },
       { label: t.row, click: () => showDock('row') },
       { label: t.floor, click: () => showDock('floor') },
+      { type: 'separator' },
+      { label: t.settings, click: () => showSettings() },
       { type: 'separator' },
       {
         label: t.quit,
@@ -300,6 +307,57 @@ function showMain(id?: string) {
     if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', select);
     else select();
   }
+}
+/**
+ * The settings window (#87): the same Settings as the big office's page, as top tabs. Unlike
+ * the card window it stays open when it loses focus, so it can sit beside the work it tunes.
+ */
+const settingsReady = new WeakSet<BrowserWindow>();
+function showSettings(section: SettingsSection | null = null) {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    const window = settingsWindow;
+    // Still loading: ready-to-show shows it, never a blank window before that.
+    if (settingsReady.has(window)) {
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
+    }
+    const tell = () => !window.isDestroyed() && window.webContents.send('office:settings', section);
+    if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', tell);
+    else tell();
+    return;
+  }
+  const window = new BrowserWindow({
+    width: 680,
+    height: 760,
+    minWidth: 520,
+    minHeight: 480,
+    title: m().settings.window.title,
+    icon: path.join(root, 'dist', 'icon.png'),
+    show: false,
+    autoHideMenuBar: process.platform !== 'darwin',
+    fullscreenable: false,
+    ...windowStyle(process.platform, nativeTheme.shouldUseDarkColors),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  settingsWindow = window;
+  if (process.platform !== 'darwin') window.removeMenu();
+  secure(window);
+  watch(window);
+  window.once('ready-to-show', () => {
+    settingsReady.add(window);
+    window.show();
+    window.focus();
+  });
+  window.on('closed', () => {
+    if (settingsWindow === window) settingsWindow = null;
+  });
+  void window.loadFile(index, { hash: section ? `settings=${section}` : 'settings' });
 }
 const petFile = () =>
   path.join(process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'), 'desk-pet.json');
@@ -450,7 +508,8 @@ const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
 function trusted(e: Electron.IpcMainInvokeEvent) {
   if (
-    (![main?.webContents, dock?.webContents].includes(e.sender) && !cards.owns(e.sender)) ||
+    (![main?.webContents, dock?.webContents, settingsWindow?.webContents].includes(e.sender) &&
+      !cards.owns(e.sender)) ||
     e.senderFrame !== e.sender.mainFrame
   )
     throw new Error(m().desktop.untrustedWindow);
@@ -527,6 +586,11 @@ function setupIPC() {
       quitting = true;
       app.quit();
     }
+  });
+  ipcMain.handle('office:settings', (e, section: unknown) => {
+    trusted(e);
+    if (section !== null && !isSettingsSection(section)) throw new Error(m().desktop.badRequest);
+    showSettings(section);
   });
   ipcMain.handle('office:dock', (e, action: DockAction) => {
     trusted(e);
@@ -845,6 +909,8 @@ function setupIPC() {
   ipcMain.handle('office:terminal-send', async (e, enable) => {
     trusted(e);
     if (typeof enable !== 'boolean') return terminalSendEnabled();
+    // Already on (another window turned it on meanwhile): no second confirmation.
+    if (enable && (await terminalSendEnabled())) return true;
     if (enable) {
       const owner = BrowserWindow.fromWebContents(e.sender);
       const t = m().desktop.terminal.confirm;
@@ -862,6 +928,7 @@ function setupIPC() {
       if (response !== 0) return terminalSendEnabled();
     }
     await writeFile(terminalSendFile(), JSON.stringify({ enabled: enable }), { mode: 0o600 });
+    desktopSettingsChanged();
     return enable;
   });
   ipcMain.handle('office:inspect-draft', async (e, id) => {
@@ -999,6 +1066,7 @@ function setupIPC() {
         return answerSettings();
       const next = { ...(await answerSettings()), [which]: on ? 'on' : 'off' };
       await writeFile(answerSettingsFile(), JSON.stringify(next), { mode: 0o600 });
+      desktopSettingsChanged();
       return next;
     });
   ipcMain.handle('office:answer-settings', async (e, patch): Promise<AnswerSettings> => {
@@ -1082,6 +1150,14 @@ function setupIPC() {
     await writeFile(result.filePath, content, { mode: 0o600 });
     return true;
   });
+}
+/**
+ * The desktop-only settings (terminal send, answering) live outside the shared snapshot; after
+ * one changes, every app window re-reads them so a switch flipped in one window shows in all.
+ */
+function desktopSettingsChanged() {
+  for (const w of [main, dock, settingsWindow, ...(cards?.windows() ?? [])])
+    if (w && !w.isDestroyed()) w.webContents.send('office:desktop-settings');
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');

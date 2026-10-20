@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReplySender, SendResult } from '../shared/types';
 import { m } from '../shared/i18n';
 import { api } from './api';
+import { followDesktopSettings } from './desktop-settings';
 
 /**
  * Sends a follow-up through the desktop app and reports a finished send (and, when the agent's
@@ -54,6 +55,8 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
       .catch(() => setEnabled(false));
   }, []);
   useEffect(reload, [reload]);
+  // A change from another window (or a first answer from a card) shows here too.
+  useEffect(() => followDesktopSettings(api, window, reload), [reload]);
   const toggle = async () => {
     try {
       setEnabled(await api.terminalSend!(!enabled));

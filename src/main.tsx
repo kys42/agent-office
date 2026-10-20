@@ -7,6 +7,7 @@ import './styles/fonts.css';
 import App from './App';
 import { DeskDock } from './components/DeskDock';
 import { DockCard } from './components/DockCard';
+import { SettingsWindow } from './components/SettingsWindow';
 import { bootLocale, useI18n } from './lib/i18n';
 import { isWindows } from './lib/platform';
 import { startFrameClock } from './lib/frame-clock';
@@ -51,10 +52,13 @@ bootLocale();
 document.body.classList.toggle('is-windows', !!window.office && isWindows);
 // The office's own frame rate for every looping animation (see frame-clock.ts).
 startFrameClock();
-// Same office core, three presentations: the big office window, the floating desk pet, and
-// the colleague card the pet opens at a desk.
+// Same office core, four presentations: the big office window, the floating desk pet, the
+// colleague card the pet opens at a desk, and the settings window.
 const dock = location.hash.startsWith('#mini');
 const card = location.hash === '#card';
+const settings = /^#settings(=|$)/.test(location.hash);
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <Boundary>{card ? <DockCard /> : dock ? <DeskDock /> : <App />}</Boundary>,
+  <Boundary>
+    {card ? <DockCard /> : settings ? <SettingsWindow /> : dock ? <DeskDock /> : <App />}
+  </Boundary>,
 );

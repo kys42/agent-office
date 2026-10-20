@@ -483,6 +483,8 @@ test('A colleague can be sent to a custom office area and returned to its projec
   await expect(mark).toContainText('2명');
 
   await page.getByRole('button', { name: '사무실 설정 열기' }).click();
+  // Zones live under 공간 since the categories (#87).
+  await page.getByRole('tab', { name: '공간' }).click();
   const zones = page.locator('.zone-settings');
   await expect(zones.getByLabel('리서치 구역 이름')).toHaveValue('리서치');
   await expect(zones.getByRole('button', { name: /이 세션만/ })).toHaveCount(2);

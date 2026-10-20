@@ -35,6 +35,8 @@ export const palette: Messages['palette'] = {
     activityKeywords: '타임라인',
     settings: '연결과 설정',
     settingsKeywords: '퇴근 보관 수집 연결',
+    settingsWindow: '설정 창 열기',
+    settingsWindowHint: '작업 옆에 띄워 두는 설정 창',
     showContent: '화면 내용 다시 보기',
     hideContent: '화면 내용 숨기기',
     privacyHint: '화면 공유할 때',

@@ -78,7 +78,7 @@ export const guide: Messages['guide'] = {
     appearance: {
       title: '우리 동료 꾸미기',
       body: '캐릭터 8종·색상 6종·작은 장식을 골라요. 도구별 기본 캐릭터는 설정에서, 한 동료만 바꾸려면 업무 카드에서 꾸며요.',
-      where: '설정 → 작은 동료들',
+      where: '설정 → 모습 → 작은 동료들',
       action: '캐릭터 고르기',
     },
     memory: {
@@ -96,7 +96,7 @@ export const guide: Messages['guide'] = {
     terminal: {
       title: '사무실에서 바로 이어서 말하기',
       body: '로컬 Claude·Codex의 오래된 대화는 업무 카드의 ‘tmux로 재개’에서 확인 후 따로 띄울 수 있어요. tmux 이름과 재접속 명령을 안내하며 터미널에서 다시 열 수 있어요. 연결된 Claude의 Orca·tmux 터미널로 이동해요. 터미널로 보내기는 받을 수 있는 쉬는 Claude 세션에 입력하거나 실행 중인 Codex CLI에 답장을 대기열로 보내요. 권한 승인은 원래 도구에서 해요.',
-      where: '업무 카드·말풍선 → 답장 · 설정',
+      where: '업무 카드·말풍선 → 답장 · 설정 → 일반',
       action: '답장 설정 보기',
     },
     activity: {
@@ -114,7 +114,7 @@ export const guide: Messages['guide'] = {
     privacy: {
       title: '화면 공유도 편하게',
       body: '상단 눈 아이콘으로 화면 내용을 숨겨요. 설정에서 프로젝트 제외·수집 일시 정지·움직임 줄이기·언어 변경도 할 수 있어요.',
-      where: '상단 → 눈 아이콘 · 설정',
+      where: '상단 → 눈 아이콘 · 설정 → 일반',
       action: '설정 열기',
     },
     keys: {

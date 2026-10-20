@@ -132,7 +132,7 @@ test('setup actions reach the matching settings section and work cards and pets 
   for (const [action, section] of [
     ['캐릭터 고르기', 'appearance'],
     ['사무실 설정하기', 'office'],
-    ['설정 열기', 'rhythm'],
+    ['설정 열기', 'privacy'],
   ]) {
     await menu.click();
     await page.getByRole('dialog').getByRole('button', { name: action, exact: true }).click();
@@ -141,7 +141,7 @@ test('setup actions reach the matching settings section and work cards and pets 
   }
   await page.getByRole('button', { name: '우리 사무실', exact: true }).click();
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
-  await expect(page.locator('[data-guide-section="rhythm"]')).not.toBeFocused();
+  await expect(page.locator('[data-guide-section="privacy"]')).not.toBeFocused();
   await expect(page.locator('.settings-page .page-head')).toBeInViewport();
   await menu.click();
   await page

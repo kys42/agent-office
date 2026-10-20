@@ -775,6 +775,11 @@ export interface OfficeAPI {
     patch?: Partial<Record<keyof AnswerSettings, boolean>>,
   ) => Promise<AnswerSettings>;
   /**
+   * Desktop only: called after the desktop-only settings (terminal send, answering) change in
+   * any window, so every window re-reads them.
+   */
+  onDesktopSettings?: (callback: () => void) => () => void;
+  /**
    * Desktop dock only: open the colleague card at a clicked desk or bubble, or (from the card)
    * close it or go to the full office.
    */
@@ -807,6 +812,16 @@ export interface OfficeAPI {
   dock?: (action: DockAction) => Promise<void>;
   /** `tiny` comes along from the desktop main process (undefined: unchanged). */
   onDock?: (callback: (mode: DockMode, tiny?: boolean) => void) => () => void;
+  /**
+   * Desktop only: the settings window (`#settings`), which stays open when it loses focus.
+   * `open` shows it at a section; the window hears later opens through `onOpen`.
+   */
+  settings?: {
+    open: (section?: import('./settings').SettingsSection) => Promise<void>;
+    onOpen: (
+      callback: (section: import('./settings').SettingsSection | null) => void,
+    ) => () => void;
+  };
 }
 // Labels are getters: they read the active language at use time, never at import time.
 const provider = (key: Provider, name: string, short: string, color: string) => ({

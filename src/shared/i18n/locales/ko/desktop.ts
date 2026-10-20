@@ -7,6 +7,7 @@ export const desktop: Messages['desktop'] = {
     pet: '데스크 펫',
     row: '책상 줄 펼치기',
     floor: '바닥 책상 펼치기',
+    settings: '설정…',
     quit: '종료',
   },
   menu: {
