@@ -1,3 +1,15 @@
+## 2026-10-20 — 앱에서 답하기 Submit 멈춤 수정, 로컬 Electron 검사 조용한 모드
+
+- [PR #226](https://github.com/kys42/agent-office/pull/226): 선택지에 앱에서 답하면 Claude Code 확인 화면의 Submit answers에서 멈추던 문제를 고쳤습니다. tmux와 Orca 모두 해당합니다.
+  - 원인: 줄바꿈이 있거나 80칸이 넘는 질문(한글 약 40자)은 확인 화면에서도 왼쪽 세로줄 안에 그려집니다. 확인 화면 파서가 이 세로줄을 걷어 내지 못해 답을 찾지 못했고, 그래서 Enter를 누르지 않았습니다.
+  - 복수 선택에서 `, `나 `"`가 든 선택지에 붙는 JSON 따옴표도 Claude Code와 같게 비교합니다.
+- [PR #225](https://github.com/kys42/agent-office/pull/225) / [#224](https://github.com/kys42/agent-office/issues/224): `AGENT_OFFICE_QUIET=1`을 추가했습니다.
+  - 창을 `showInactive`로만 띄우고, focus·steal을 하지 않으며, 카드를 항상 위에 두지 않습니다. macOS에서는 accessory 정책을 씁니다.
+  - 로컬 smoke는 기본으로 이 모드로 돕니다. 실제 포커스를 보는 단계와 `test:cards`는 CI나 `AGENT_OFFICE_FOCUS_TESTS=1`에서만 실행합니다.
+  - 검증: 조용한 `test:desktop` 실행 내내 맨 앞 앱이 바뀌지 않았습니다.
+- 위 두 수정을 포함해 앱을 다시 빌드하고 `/Applications`에 설치했습니다(ad-hoc 서명).
+- 후속: [#227](https://github.com/kys42/agent-office/issues/227)에서 로컬 서명 인증서를 써서, 재설치할 때마다 "문서 폴더 접근 허용"을 다시 묻지 않게 합니다. 인증서 생성은 사용자가 직접 합니다.
+
 ## 2026-10-19 — Orca Codex 연결 표시 안정화
 
 - 응답 대기 시 제목 앞에 붙는 `[ . ]`·`[ ! ] Action Required`를 인식해 같은 Codex 세션의 Orca 이동 연결을 유지합니다. 세션 ID와 열린 writer lock 검증은 그대로 적용합니다.
