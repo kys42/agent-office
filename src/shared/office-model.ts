@@ -170,9 +170,16 @@ export function buildOfficeModel(
     zones,
     bySeat,
     seats,
-    scene: bySeat.filter((s) => !byId.get(s.id)?.veiled && (display.helperDesks || !s.attachedTo)),
+    // With helper desks off, a helper waiting for the person still keeps its desk: nobody waiting hides.
+    scene: bySeat.filter((s) => {
+      const v = byId.get(s.id);
+      return !v?.veiled && (display.helperDesks || !s.attachedTo || !!v?.needsPerson);
+    }),
     veiled: seats.filter((v) => v.veiled),
-    veiledHelpers: shown.flatMap((v) => v.helpers.filter((h) => h.veiled)),
+    // Helper desks off: their desks are not drawn, so hidden helpers are not listed or counted either.
+    veiledHelpers: display.helperDesks
+      ? shown.flatMap((v) => v.helpers.filter((h) => h.veiled))
+      : [],
     hiddenSessionIds: sessions.filter((s) => s.hiddenAt).map((s) => s.id),
     counts,
     // Counted over every notice by the collector; the carried ones are a bounded part.

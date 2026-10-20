@@ -149,7 +149,9 @@ async function bridge(
         settings: { open: async () => {}, onOpen: () => () => {} },
       };
       const state = { mode: 'row', tiny: false };
+      w.dockCalls = [];
       w.office.dock = async (action: string) => {
+        w.dockCalls.push(action);
         if (['row', 'floor', 'pet'].includes(action)) state.mode = action;
         else if (action === 'tiny-on' || action === 'tiny-off') state.tiny = action === 'tiny-on';
         else return;
@@ -210,6 +212,9 @@ test('the settings page shows the new sections and saves each choice', async ({ 
     'aria-checked',
     'false',
   );
+  await expect(
+    panel.locator('[data-guide-section="panels"]').getByRole('heading', { name: '패널 폭' }),
+  ).toBeVisible();
   await panel.locator('[data-guide-section="panels"]').screenshot({
     path: '.local/settings-more-panels.png',
   });
@@ -227,10 +232,15 @@ test('the settings page shows the new sections and saves each choice', async ({ 
   await expect(dwell).toHaveValue('1.5');
   await expect(dwell.locator('option')).toHaveText(['바로', '1.5초', '3초', '5초']);
   await reading.screenshot({ path: '.local/settings-more-reading.png' });
+  const nowHint = reading.getByText('J/K로 동료를 넘겨 볼 때도 카드가 열리는 즉시 읽음 처리돼요.');
+  await expect(nowHint).toHaveCount(0);
   await dwell.selectOption('0');
+  // Right away: browsing with J/K reads each card it passes.
+  await expect(nowHint).toBeVisible();
   await reading.getByRole('switch', { name: '카드를 열면 최종 응답 읽음 처리' }).click();
   // Off: the wait has nothing to wait for.
   await expect(dwell).toBeDisabled();
+  await expect(nowHint).toHaveCount(0);
 
   // 사무실 → 보조 책상.
   await page.getByRole('tab', { name: '사무실', exact: true }).click();
@@ -388,6 +398,29 @@ test('pill visibility hover: hidden and click-through until the pointer comes ne
   await expect.poll(() => opacity(page)).toBeGreaterThan(0.9);
 });
 
+test('pill visibility hover: a click right as the pill comes up lands on it', async ({ page }) => {
+  await bridge(page, office({ prefs: { dockPill: 'hover' } }));
+  await page.goto('/?lang=ko#mini=row');
+  await expect(page.locator('.row-zone')).toHaveCount(2);
+  await page.mouse.move(200, 200);
+  await expect.poll(() => opacity(page)).toBe(0);
+  await expect.poll(() => page.evaluate(() => (window as any).dockCalls.at(-1))).toBe('through');
+  const floor = page.getByRole('button', { name: '바닥 책상으로 보기' });
+  const b = (await floor.boundingBox())!;
+  // Straight onto the hidden button: that one move was judged see-through (the pill still let
+  // clicks through), so once the pill is up the dock must take the mouse with no further move.
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await expect(pill(page)).toHaveClass(/is-revealed/);
+  await expect.poll(() => page.evaluate(() => (window as any).dockCalls.at(-1))).toBe('solid');
+  // Clicked without moving again: in the app the window now holds the click for the pill.
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => (window as any).dockCalls)).toContain('floor');
+  const calls: string[] = await page.evaluate(() => (window as any).dockCalls);
+  const last = calls.lastIndexOf('floor');
+  expect(calls.slice(0, last).at(-1)).toBe('solid');
+});
+
 test('pill reset from settings sends the pill home in the dock', async ({ page }) => {
   // The person parked the pill on the left earlier.
   await bridge(page, office(), { pill: { v: 1, x: 0.1, at: Date.now() - 60_000 } });
@@ -481,6 +514,20 @@ test('helper desks off hides them in the office and the row; the card still list
   await expect(page.locator('.desk-row .helper-desk')).toHaveCount(0);
   await setPref(page, { helperDesks: true });
   await expect(page.locator('.desk-row .helper-desk')).toHaveCount(2);
+});
+
+test('helper desks off still seats a helper that calls the person', async ({ page }) => {
+  await bridge(page, office({ helpers: 2, prefs: { helperDesks: false } }));
+  await page.goto('/?lang=ko#mini=row');
+  await expect(page.locator('.row-zone')).toHaveCount(2);
+  await expect(page.locator('.desk-row .helper-desk')).toHaveCount(0);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.sessions.find((s: any) => s.id === 'run-0:helper-0').status = 'call';
+    w.publish();
+  });
+  // Nobody waiting for the person is hidden: the calling helper keeps its desk, the other not.
+  await expect(page.locator('.desk-row .helper-desk')).toHaveCount(1);
 });
 
 test('stack threshold 2 stacks two helpers in the row and the office', async ({ page }) => {

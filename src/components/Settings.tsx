@@ -292,6 +292,7 @@ export function Settings({
           <Timer size={18} />
           <div>
             <b>{s.reading.dwell}</b>
+            {read.enabled && dwell === 0 && <p>{s.reading.nowHint}</p>}
           </div>
           <select
             aria-label={s.reading.dwellAria}
@@ -505,10 +506,11 @@ export function Settings({
         </section>
       )}
       <section className="settings-section" data-guide-section="panels" tabIndex={-1}>
+        <h2>{s.panels.title}</h2>
         <div className="setting-row">
           <Columns3 size={18} />
           <div>
-            <b>{s.panels.title}</b>
+            <b>{s.panels.reset}</b>
             <p>{s.panels.resetHint}</p>
           </div>
           <button

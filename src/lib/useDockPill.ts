@@ -30,6 +30,11 @@ const DRAG_SLOP = 4;
 export const PILL_REACH = 24;
 /** `hover` visibility: the window's bottom strip (px) that brings the pill up from anywhere. */
 export const PILL_EDGE_STRIP = 10;
+/**
+ * Sent when the hidden pill comes up. The move that brought it up was judged while the pill still
+ * let clicks through, so the dock judges the pointer again (an immediate click must hit the pill).
+ */
+export const DOCK_RECLAIM = 'office:dock-reclaim';
 
 /**
  * The dock pill floats over the bottom of the desks, slides left and right, and remembers where
@@ -182,6 +187,10 @@ export function useDockPill({
       document.documentElement.removeEventListener('mouseleave', leave);
     };
   }, [visibility]);
+  // After the commit: the revealed pill now takes the mouse, so ask the dock to look again.
+  useEffect(() => {
+    if (near) window.dispatchEvent(new Event(DOCK_RECLAIM));
+  }, [near]);
 
   /** Buttons keep their clicks; the pill's body and its grip carry it. */
   const grabbable = (e: { target: EventTarget }) =>

@@ -81,6 +81,7 @@ export const settings: Messages['settings'] = {
     dwell: '읽음 처리까지 머무는 시간',
     dwellAria: '카드를 열고 읽음 처리까지 기다릴 시간',
     now: '바로',
+    nowHint: 'J/K로 동료를 넘겨 볼 때도 카드가 열리는 즉시 읽음 처리돼요.',
     seconds: (n) => `${n}초`,
   },
   helpers: {

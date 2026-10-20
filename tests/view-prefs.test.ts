@@ -206,6 +206,34 @@ test('helper desks off: the scenes draw no helpers, the model still knows them',
   assert.equal(layoutRow(off.scene).zones[0].helpers.length, 0);
 });
 
+test('helper desks off: a helper waiting for the person keeps its desk', () => {
+  const sessions = [
+    make('p', { officeSeat: 0 }),
+    helper(0, 'p', { status: 'call' }),
+    helper(1),
+    helper(2, 'p', { hiddenAt: now - 60_000 }),
+  ];
+  const snap = (helperDesks?: boolean): Snapshot => ({
+    ...demoSnapshot(),
+    sessions,
+    notices: [],
+    preferences: { ...demoSnapshot().preferences, helperDesks },
+  });
+  const off = buildOfficeModel(snap(false), now);
+  assert.deepEqual(
+    off.scene.map((s) => s.id),
+    ['p', 'p:h0'],
+  );
+  assert.equal(layoutRow(off.scene).zones[0].helpers.length, 1);
+  // Hidden helpers are not counted while their desks are off anyway.
+  assert.deepEqual(off.veiledHelpers, []);
+  const on = buildOfficeModel(snap(), now);
+  assert.deepEqual(
+    on.veiledHelpers.map((v) => v.session.id),
+    ['p:h2'],
+  );
+});
+
 test('tiny dot: final replies can be left out, calls and errors stay', () => {
   const dot = (s: Session, notices: OfficeNotice[], finals?: boolean) =>
     speechDot(s, deskSpeech(s, notices, 3, now), { finals });

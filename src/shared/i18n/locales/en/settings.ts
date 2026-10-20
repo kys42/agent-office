@@ -81,6 +81,7 @@ export const settings = {
     dwell: 'Wait before marking read',
     dwellAria: 'Time a card stays open before marking read',
     now: 'Right away',
+    nowHint: 'Browsing teammates with J/K marks each one read as soon as its card opens.',
     seconds: (n: number) => `${n} ${n === 1 ? 'second' : 'seconds'}`,
   },
   /** Helper desks (#228). */
@@ -89,9 +90,9 @@ export const settings = {
     show: 'Show helper desks',
     showHint:
       "Helpers sit at small desks beside their teammate. Off, they're still in the teammate's card under Work details › Linked helpers and forks.",
-    stackAt: 'Stack helpers from',
+    stackAt: 'Stack helpers at',
     stackAtAria: 'Number of helpers that share one stacked desk',
-    people: (n: number) => `${n} helpers`,
+    people: (n: number) => `${n} or more`,
     retain: 'Keep an unfinished helper',
     retainAria: 'How long a quiet, unfinished helper keeps its desk',
     minutes: (min: number) => `${min} minutes`,
