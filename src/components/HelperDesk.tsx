@@ -89,6 +89,7 @@ export function HelperStack({
   onOpen,
   canVeil = () => true,
   onVeil,
+  direct = false,
 }: {
   members: Session[];
   parentId: string;
@@ -103,11 +104,20 @@ export function HelperStack({
   /** Hide one helper from the list (never one that needs the person). */
   canVeil?: (s: Session) => boolean;
   onVeil?: (s: Session) => void;
+  /**
+   * No list: a click opens the front helper's card right away. The tiny dock draws the stack
+   * at ~0.41 scale in a 93px window, where the list would be unreadable and clipped.
+   */
+  direct?: boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // A list left open must not come back when the dock returns from tiny.
+  useEffect(() => {
+    if (direct) setOpen(false);
+  }, [direct]);
   useEffect(() => {
     if (!open) return;
     const away = (e: PointerEvent) => {
@@ -160,10 +170,16 @@ export function HelperStack({
         data-members={members.map((s) => s.id).join(' ')}
         data-furniture="helper-desk"
         data-solid
-        aria-expanded={open}
-        aria-label={t.desk.helper.stackLabel(count, anyCalling)}
+        aria-expanded={direct ? undefined : open}
+        aria-label={
+          direct
+            ? t.desk.helper.stackOpen(count, anyCalling, name(lead))
+            : t.desk.helper.stackLabel(count, anyCalling)
+        }
         title={privacy ? undefined : members.map(label).join('\n')}
-        onClick={() => setOpen((v) => !v)}
+        // Direct: the lead is the one drawn in front — calling or erroring first, then working,
+        // then the most recently active — so the click opens whoever most needs a look now.
+        onClick={() => (direct ? onOpen(lead.id) : setOpen((v) => !v))}
       >
         <span className="helper-stack-back" aria-hidden="true">
           <i />
@@ -176,7 +192,7 @@ export function HelperStack({
         <b>{t.desk.helper.stackCount(count)}</b>
         {anyNews && <i className="helper-news" />}
       </button>
-      {open && (
+      {open && !direct && (
         <ul className="helper-stack-list" data-solid aria-label={t.desk.helper.stackList}>
           {members.map((s) => {
             return (

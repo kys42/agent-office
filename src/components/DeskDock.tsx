@@ -8,8 +8,23 @@ import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
 import { useI18n } from '../lib/i18n';
 
-const initialMode = (): DockMode =>
-  location.hash === '#mini=row' ? 'row' : location.hash === '#mini=floor' ? 'floor' : 'pet';
+// `#mini=row`, `#mini=floor&tiny`: the look the main process opened the window with.
+const hash = () => new URLSearchParams(location.hash.slice(1));
+const initialMode = (): DockMode => {
+  const mini = hash().get('mini');
+  return mini === 'row' || mini === 'floor' ? mini : 'pet';
+};
+const TINY_KEY = 'office:dock-tiny';
+/** Tiny row/floor: the window's hash when it says so, else the browser preview's last choice. */
+function initialTiny(): boolean {
+  if (hash().has('tiny')) return true;
+  if (api.dock) return false;
+  try {
+    return localStorage.getItem(TINY_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 type Expanded = Exclude<DockMode, 'pet'>;
 const EXPAND_KEY = 'office:dock-expand';
 /** The person's last unfolded look (office row or floor desks); the pet reopens it. */
@@ -48,6 +63,17 @@ export function DeskDock() {
   }, [reload]);
   const [mode, setMode] = useState<DockMode>(initialMode);
   const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
+  const [tiny, setTiny] = useState(initialTiny);
+  const keepTiny = (on: boolean) => {
+    setTiny(on);
+    // The desktop main process remembers tiny (dock.json); only a browser preview keeps it here.
+    if (api.dock) return;
+    try {
+      localStorage.setItem(TINY_KEY, on ? '1' : '0');
+    } catch {
+      /* per-viewer convenience only */
+    }
+  };
   // Remember only looks the person (or the main process) actually switched to — not the
   // initial hash of a reloaded window, which may be stale.
   const remember = (next: DockMode) => {
@@ -70,6 +96,11 @@ export function DeskDock() {
       setMode(next);
     }
   };
+  // Tiny is the main process's too (it resizes the window); a preview just redraws.
+  const shrink = (on: boolean) => {
+    if (api.dock) void api.dock(on ? 'tiny-on' : 'tiny-off');
+    else keepTiny(on);
+  };
   const solid = useRef<boolean | null>(null);
   const arranging = useRef(false);
   const arrange = useCallback((active: boolean, point?: { x: number; y: number }) => {
@@ -83,11 +114,12 @@ export function DeskDock() {
   }, []);
   useEffect(
     () =>
-      api.onDock?.((next) => {
+      api.onDock?.((next, small) => {
         // Every (re)show resets native mouse handling to see-through; forget our last claim.
         solid.current = null;
         remember(next);
         setMode(next);
+        if (small !== undefined) keepTiny(small);
         reload();
       }),
     [reload],
@@ -146,6 +178,8 @@ export function DeskDock() {
           onArrange={arrange}
           onReorder={(ids) => void reorderSeats(ids)}
           variant={mode === 'floor' ? 'floor' : 'office'}
+          tiny={tiny}
+          onTiny={shrink}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}

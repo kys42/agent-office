@@ -706,6 +706,98 @@ body.dock-mode {
   }
 }
 
+/* ───────── Tiny (쪼꼬미) row and floor ─────────
+   Either look at helper-desk size (TINY_SCALE), status only: the render drops bubbles, flags,
+   rugs and plates; these rules size what is left for a strip about 90px tall. Sizes inside
+   the scene are in station space (×0.41 on screen). */
+.desk-row-tools[hidden] {
+  display: none;
+}
+.desk-row.is-tiny .desk-row-tools {
+  top: 2px;
+  right: 8px;
+  height: 24px;
+  padding: 0 2px 0 8px;
+  border-radius: 8px;
+}
+.desk-row.is-tiny .desk-row-tools .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+.desk-row.is-tiny .desk-row-summary {
+  gap: 4px;
+  margin-right: 2px;
+  font-size: 10px;
+}
+.desk-row.is-tiny .desk-row-summary em::before {
+  content: '· ';
+}
+.desk-row.is-tiny .desk-row-arrow {
+  bottom: 10px;
+  width: 30px;
+  height: 44px;
+  border-radius: 10px;
+}
+.desk-row.is-tiny .desk-row-arrow svg {
+  width: 16px;
+  height: 16px;
+}
+.desk-row.is-tiny .row-empty {
+  margin-bottom: 12px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+/* Helpers: no name tags at this size; their own news dot grows to stay visible. */
+.desk-row.is-tiny .helper-desk > b {
+  display: none;
+}
+.desk-row.is-tiny .helper-news {
+  width: 16px;
+  height: 16px;
+  border-width: 3px;
+}
+/* Status colour under each colleague (who needs the person, who works). */
+.desk-row.is-tiny .group-attention .pet-shadow {
+  background: color-mix(in srgb, var(--st-call) 60%, transparent);
+}
+.desk-row.is-tiny .group-working .pet-shadow {
+  background: color-mix(in srgb, var(--st-work) 45%, transparent);
+}
+/* The contentless bubble: a dot above the head in the bubble's colour. */
+.tiny-dot {
+  position: absolute;
+  /* Over the left of the head: a calling colleague raises its right hand. */
+  left: 38px;
+  top: 40px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  border-radius: 50% 50% 4px 50%;
+  border: 4px solid #2a1a10;
+  background: var(--accent);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  transform-origin: 100% 100%;
+  animation: tiny-dot-pop 0.42s var(--ease-out) both;
+}
+.tiny-dot.tone-attention {
+  background: var(--st-call);
+}
+.tiny-dot.tone-error {
+  background: var(--st-error);
+}
+@keyframes tiny-dot-pop {
+  0% {
+    transform: scale(0);
+  }
+  70% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 .reduce-motion .desk-pet-stage,
 .reduce-motion .desk-row,
 .reduce-motion .zone-flag-cloth,
@@ -713,7 +805,8 @@ body.dock-mode {
 .reduce-motion .dock-pet-body,
 .reduce-motion .desk-pet.is-speaking .dock-pet-body,
 .reduce-motion .dock-pet-shadow,
-.reduce-motion .dock-pet-bang {
+.reduce-motion .dock-pet-bang,
+.reduce-motion .tiny-dot {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -723,7 +816,8 @@ body.dock-mode {
   .dock-pet-body,
   .desk-pet.is-speaking .dock-pet-body,
   .dock-pet-shadow,
-  .dock-pet-bang {
+  .dock-pet-bang,
+  .tiny-dot {
     animation: none;
   }
 }

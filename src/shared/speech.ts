@@ -2,6 +2,7 @@ import type { OfficeEvent, OfficeNotice, Session } from './types';
 import {
   bubbleNotice,
   isFinalNotice,
+  isInboxNotice,
   NOTICE_LABELS,
   noticeLabel,
   unreadNoticeCount,
@@ -253,6 +254,29 @@ export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =
   s.status === 'error' ||
   speech.bubble?.kind === 'attention' ||
   speech.bubble?.kind === 'error';
+
+/**
+ * The tiny row's contentless bubble: a call or error keeps it while the desk waits for the
+ * person (read or not); otherwise the desk's latest unread final reply shows it until read —
+ * even after that reply left the bubble (expired past `bubbleHours`, or replaced by a later
+ * progress note), like a helper's news mark. `id` changes with each new notice so the dot pops
+ * again.
+ */
+export function speechDot(
+  s: Session,
+  speech: Pick<StationSpeech, 'bubble' | 'tone' | 'news'>,
+): { tone: 'attention' | 'error' | 'reply'; id: string } | undefined {
+  const b = speech.bubble;
+  const id = b?.id ?? s.id;
+  if (speech.tone === 'attention' && (b || s.status === 'call')) return { tone: 'attention', id };
+  if (speech.tone === 'error' && (b || s.status === 'error')) return { tone: 'error', id };
+  let reply: OfficeNotice | undefined;
+  for (const n of speech.news)
+    if (!n.seenAt && isInboxNotice(n) && isFinalNotice(n))
+      if (!reply || n.at > reply.at || (n.at === reply.at && n.receivedAt > reply.receivedAt))
+        reply = n;
+  if (reply) return { tone: 'reply', id: reply.id };
+}
 
 /**
  * What a desk says right now: a just-arrived request speaks first — the person's own words —

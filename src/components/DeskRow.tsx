@@ -11,6 +11,8 @@ import {
   EyeOff,
   Flag,
   GitBranch,
+  Maximize2,
+  Minimize2,
   Pin,
   RotateCw,
   Undo2,
@@ -47,14 +49,16 @@ import {
   STATION_WIDTH,
 } from '../shared/office-layout';
 import {
-  FLOOR_HEIGHT,
+  dockHeight,
   FLOOR_SCENE_HEIGHT,
-  ROW_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
+  TINY_SCENE_HEIGHT,
+  TINY_SCALE,
+  TINY_TOP,
 } from '../shared/dock-geometry';
 import { residentLabel, zoneVeilIds, type OfficeModel } from '../shared/office-model';
-import { deskSpeech, hopping, shownSpeech } from '../shared/speech';
+import { deskSpeech, hopping, shownSpeech, speechDot } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
@@ -79,10 +83,14 @@ const HELPER_TABLE_FOOT = 46;
  * Two looks share everything but the ground: `office` lays each zone on a rug with name
  * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a
  * name plate on each desk front and a flag between zones.
+ * Tiny (쪼꼬미) draws either look at helper-desk size with only the desks and their status:
+ * no bubbles, flags, rugs or plates — a contentless dot says a desk has something new.
  * Only drawn things are `[data-solid]`; the transparent rest lets clicks through.
  */
 export function DeskRow({
   variant = 'office',
+  tiny = false,
+  onTiny,
   model,
   status,
   privacy,
@@ -101,6 +109,10 @@ export function DeskRow({
   onReorder,
 }: {
   variant?: 'office' | 'floor';
+  /** Helper-desk size, status only. */
+  tiny?: boolean;
+  /** Switch between tiny and the normal size. */
+  onTiny?: (on: boolean) => void;
   model: OfficeModel;
   status: string | null;
   privacy: boolean;
@@ -126,8 +138,10 @@ export function DeskRow({
   const { t, locale } = useI18n();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
-  const top = floor ? FLOOR_TOP : ROW_TOP;
-  const sceneHeight = floor ? FLOOR_SCENE_HEIGHT : ROW_SCENE_HEIGHT;
+  // Tiny has no bubbles to make room for: the scene starts just above the heads.
+  const top = tiny ? TINY_TOP : floor ? FLOOR_TOP : ROW_TOP;
+  const sceneHeight = tiny ? TINY_SCENE_HEIGHT : floor ? FLOOR_SCENE_HEIGHT : ROW_SCENE_HEIGHT;
+  const scale = tiny ? TINY_SCALE : ROW_SCALE;
   const benchY = top + 134;
   // Office: helpers beside their colleague's desk, table at desk height. Floor: on the floor.
   const helperY = floor ? top + DESK_FOOT - HELPER_TABLE_FOOT : top + HELPER_TOP;
@@ -176,17 +190,20 @@ export function DeskRow({
   );
   const placement = useRowPlacement({
     base: baseLayout,
-    available: view.width / ROW_SCALE - (LANE_PAD * 2) / ROW_SCALE,
+    available: view.width / scale - (LANE_PAD * 2) / scale,
     track,
     storageKey: `office:row-zones:v1:${demo ? 'demo' : 'live'}`,
     onArrange,
     onSaveFailed: () => notify(t.dock.arrange.saveFailed),
+    scale,
+    disabled: tiny,
   });
   const { layout } = placement;
   const reorder = useDeskReorder({
     layout,
     track,
-    enabled: !!onReorder && !privacy,
+    // Tiny desks are click targets only: no reordering at that size.
+    enabled: !!onReorder && !privacy && !tiny,
     onArrange,
     onReorder: (ids) => onReorder?.(ids),
   });
@@ -213,19 +230,41 @@ export function DeskRow({
       el.removeEventListener('scroll', measure);
       ro.disconnect();
     };
-  }, [layout.width]);
+  }, [layout.width, scale]);
   /** One screenful at a time, keeping one desk of context. Desks never shrink. */
   const page = (direction: -1 | 1) => {
     const el = track.current;
     if (!el) return;
-    const step = Math.max(STATION_WIDTH * ROW_SCALE, el.clientWidth - STATION_WIDTH * ROW_SCALE);
+    const step = Math.max(STATION_WIDTH * scale, el.clientWidth - STATION_WIDTH * scale);
     el.scrollBy({ left: direction * step, behavior: reducedMotion ? 'auto' : 'smooth' });
+  };
+  // Tiny draws no bubbles or replies: drop what was open, so a hidden reply or unfolded bubble
+  // never eats the first Esc there (it folds the dock to the pet, as in the full size) and
+  // never reappears unexpectedly on the way back.
+  useEffect(() => {
+    if (!tiny) return;
+    setReplying(null);
+    setExpanded(null);
+  }, [tiny]);
+  // The size toggle hides the button that was pressed: focus moves to its counterpart once the
+  // new size is drawn (the desktop answers through the main process, a frame or more later).
+  const toggled = useRef(false);
+  const tinyButton = useRef<HTMLButtonElement>(null);
+  const normalButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!toggled.current) return;
+    toggled.current = false;
+    (tiny ? normalButton : tinyButton).current?.focus();
+  }, [tiny]);
+  const toggleTiny = (on: boolean) => {
+    toggled.current = true;
+    onTiny?.(on);
   };
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented) return;
     const field =
       e.target instanceof Element && e.target.closest('input, textarea, select') !== null;
-    if (e.key === 'Escape' && !e.isComposing && (replying || expanded)) {
+    if (e.key === 'Escape' && !e.isComposing && !tiny && (replying || expanded)) {
       // Fold what is open before the dock itself folds (DeskDock skips handled keys).
       e.preventDefault();
       // First Esc leaves the input; a second closes it. Keep the person's draft intact.
@@ -282,9 +321,9 @@ export function DeskRow({
   // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
   const open = (id: string, anchor?: Element | null, news = false) =>
     openColleague(id, { anchor, news });
-  const desk = STATION_WIDTH * ROW_SCALE;
+  const desk = STATION_WIDTH * scale;
   const stations = layout.zones.flatMap((z) =>
-    z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * ROW_SCALE })),
+    z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * scale })),
   );
   const hiddenLeft = stations.filter((st) => st.x + desk / 2 < view.left);
   const hiddenRight = stations.filter((st) => st.x + desk / 2 > view.left + view.width);
@@ -292,8 +331,8 @@ export function DeskRow({
     list.some((st) => model.view(st.id)?.group === 'attention');
   return (
     <div
-      className={`desk-row ${floor ? 'desk-floor' : ''}`}
-      style={{ height: floor ? FLOOR_HEIGHT : ROW_HEIGHT }}
+      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''}`}
+      style={{ height: dockHeight(floor, tiny) }}
     >
       <div
         className={`desk-row-track ${hiddenLeft.length ? 'fade-left' : ''} ${hiddenRight.length ? 'fade-right' : ''}`}
@@ -302,8 +341,8 @@ export function DeskRow({
         <div
           className="desk-row-lane"
           style={{
-            width: layout.width * ROW_SCALE + LANE_PAD * 2,
-            height: sceneHeight * ROW_SCALE,
+            width: layout.width * scale + LANE_PAD * 2,
+            height: sceneHeight * scale,
           }}
         >
           <div
@@ -312,7 +351,7 @@ export function DeskRow({
               left: LANE_PAD,
               width: layout.width,
               height: sceneHeight,
-              transform: `scale(${ROW_SCALE})`,
+              transform: `scale(${scale})`,
             }}
           >
             {layout.zones.map((zone, index) => {
@@ -338,7 +377,7 @@ export function DeskRow({
                     } as CSSProperties
                   }
                 >
-                  {floor ? (
+                  {tiny ? null : floor ? (
                     // A flag between zones: the pole stands on the floor, the cloth names the zone.
                     // Only the pole, cloth and base take the mouse; the box around them lets clicks
                     // through like the rest of the strip. The flag stands on the desks' floor line.
@@ -462,15 +501,18 @@ export function DeskRow({
                     const pointing =
                       (pointed === s.id || expanded === s.id || replying?.station === s.id) &&
                       closed !== s.id;
-                    const shown = shownSpeech(
-                      s,
-                      model.notices,
-                      model.bubbleHours,
-                      model.now,
-                      speech,
-                      hover === s.id || expanded === s.id || replying?.station === s.id,
-                      pointing,
-                    );
+                    // Tiny shows no bubble, so it never works out which one would show.
+                    const shown = tiny
+                      ? undefined
+                      : shownSpeech(
+                          s,
+                          model.notices,
+                          model.bubbleHours,
+                          model.now,
+                          speech,
+                          hover === s.id || expanded === s.id || replying?.station === s.id,
+                          pointing,
+                        );
                     const bubble = shown?.speech.bubble;
                     const focus = focusLevel(s, model.now);
                     const replyId = bubble?.sessionId ?? s.id;
@@ -478,6 +520,8 @@ export function DeskRow({
                     const canReply = !!onReply && !privacy && !!replyTarget?.canSend;
                     const deskTarget = targets[s.id];
                     const dark = !!v.quota && dimsDesk(s, pose.working);
+                    // Tiny: no words, just a dot in the bubble's colour (it pops once per notice).
+                    const dot = tiny ? speechDot(s, speech) : undefined;
                     return (
                       <div
                         className={`desk-station row-station status-${s.status} group-${v.group} ${reorder.marker(s.id)} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
@@ -503,29 +547,48 @@ export function DeskRow({
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
-                          aria-label={t.desk.openWork(label.name)}
+                          // Tiny's dot is drawn only: its meaning goes into the name (call, reply, error).
+                          aria-label={
+                            tiny
+                              ? t.desk.row.tinyDesk(t.desk.openWork(label.name), dot?.tone)
+                              : t.desk.openWork(label.name)
+                          }
+                          // Tiny has no name plates: the name on hover instead (never in privacy).
                           title={
-                            onReorder && !privacy && !s.remote
-                              ? `${label.detail}\n${t.desk.row.reorderHint}`
-                              : label.detail
+                            tiny
+                              ? privacy
+                                ? undefined
+                                : label.name
+                              : onReorder && !privacy && !s.remote
+                                ? `${label.detail}\n${t.desk.row.reorderHint}`
+                                : label.detail
                           }
                           {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
                           onClick={(e) => {
                             if (!reorder.consumeClick(e)) open(s.id);
                           }}
                         >
-                          <FocusEffects level={focus} />
+                          {!tiny && <FocusEffects level={focus} />}
                           <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
-                        {!v.needsPerson && (
+                        {dot && (
+                          <i
+                            key={`${dot.tone}:${dot.id}`}
+                            className={`tiny-dot tone-${dot.tone}`}
+                            aria-hidden="true"
+                          />
+                        )}
+                        {!tiny && !v.needsPerson && (
                           <VeilButton
                             name={label.name}
                             onVeil={() => onVeil(s.resident?.sessionIds ?? [s.id], true)}
                           />
                         )}
-                        <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
-                        {deskTarget?.canFocus && api.jump && (
+                        {!tiny && (
+                          <PinButton name={label.name} pinned={s.pinned} onPin={() => onPin(s)} />
+                        )}
+                        {!tiny && deskTarget?.canFocus && api.jump && (
                           <DeskActionButton
                             className="jump-button"
                             label={t.terminal.jumpToTerminal(label.name)}
@@ -536,13 +599,17 @@ export function DeskRow({
                           />
                         )}
                         <Furniture kind="equipment" />
-                        {v.quota && <QuotaBadge quota={v.quota} />}
-                        <PaperPile count={deskPapers(s, model.now)} level={focus} />
-                        {arrival && (
-                          <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
+                        {!tiny && (
+                          <>
+                            {v.quota && <QuotaBadge quota={v.quota} />}
+                            <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                            {arrival && (
+                              <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
+                            )}
+                            {pose.working && <WorkingBeacon level={focus} />}
+                          </>
                         )}
-                        {pose.working && <WorkingBeacon level={focus} />}
-                        {floor ? (
+                        {tiny ? null : floor ? (
                           // A name plate on the desk front instead of a card on the rug.
                           <button
                             className="floor-plate"
@@ -598,7 +665,7 @@ export function DeskRow({
                             </button>
                           </>
                         )}
-                        {shown && (
+                        {!tiny && shown && (
                           <div className="row-speech" data-solid>
                             <SpeechBubble
                               session={s}
@@ -644,7 +711,7 @@ export function DeskRow({
                             />
                           </div>
                         )}
-                        {onReply && !privacy && replying?.station === s.id && (
+                        {!tiny && onReply && !privacy && replying?.station === s.id && (
                           <QuickReply
                             key={replying.id}
                             target={
@@ -696,7 +763,8 @@ export function DeskRow({
                           news={hasNews}
                           privacy={privacy}
                           onOpen={open}
-                          canVeil={(h) => !model.view(h.id)?.needsPerson}
+                          canVeil={(h) => !tiny && !model.view(h.id)?.needsPerson}
+                          direct={tiny}
                           onVeil={(h) => onVeil([h.id], true)}
                         />
                       );
@@ -716,7 +784,9 @@ export function DeskRow({
                         privacy={privacy}
                         onClick={() => open(s.id)}
                         onVeil={
-                          model.view(s.id)?.needsPerson ? undefined : () => onVeil([s.id], true)
+                          tiny || model.view(s.id)?.needsPerson
+                            ? undefined
+                            : () => onVeil([s.id], true)
                         }
                       />
                     );
@@ -756,7 +826,46 @@ export function DeskRow({
           <b>{hiddenRight.length}</b>
         </button>
       )}
-      <div className="desk-row-tools" data-solid>
+      {tiny && (
+        // Tiny keeps only what it needs: back to normal, how many (and who waits), hide.
+        <div className="desk-row-tools tiny-tools" data-solid>
+          <span
+            className="desk-row-summary"
+            title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
+          >
+            <span className="live-dot" />
+            {model.seats.length}
+            {model.counts.attention > 0 && (
+              // A bare number on screen; assistive tech hears who it counts.
+              <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
+                <span aria-hidden="true">{model.counts.attention}</span>
+                <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
+              </em>
+            )}
+          </span>
+          {onTiny && (
+            <button
+              ref={normalButton}
+              className="icon-btn"
+              aria-label={t.desk.row.normal}
+              title={t.desk.row.normalTitle}
+              onClick={() => toggleTiny(false)}
+            >
+              <Maximize2 size={12} />
+            </button>
+          )}
+          <button
+            className="icon-btn"
+            aria-label={t.desk.row.hide}
+            title={t.desk.row.hideTitle}
+            onClick={() => api.window('hide')}
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      {/* The full toolbar steps aside in tiny (hidden, so its markup stays as it was). */}
+      <div className="desk-row-tools" data-solid hidden={tiny}>
         {placement.customized && (
           <button
             className="icon-btn"
@@ -808,6 +917,17 @@ export function DeskRow({
         >
           {floor ? <Building2 size={14} /> : <Flag size={14} />}
         </button>
+        {onTiny && (
+          <button
+            ref={tinyButton}
+            className="icon-btn"
+            aria-label={t.desk.row.tiny}
+            title={t.desk.row.tinyTitle}
+            onClick={() => toggleTiny(true)}
+          >
+            <Minimize2 size={14} />
+          </button>
+        )}
         <button
           className="icon-btn"
           aria-label={t.desk.row.expand}

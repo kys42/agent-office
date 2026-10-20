@@ -28,6 +28,8 @@ export function useRowPlacement({
   storageKey,
   onArrange,
   onSaveFailed,
+  scale = ROW_SCALE,
+  disabled = false,
 }: {
   base: RowLayout;
   available: number;
@@ -35,6 +37,10 @@ export function useRowPlacement({
   storageKey: string;
   onArrange?: (active: boolean, point?: Point) => void;
   onSaveFailed: () => void;
+  /** The scene's current scale (screen px per station px). */
+  scale?: number;
+  /** Tiny row: zones keep their places but cannot be moved (no handles, no keys). */
+  disabled?: boolean;
 }) {
   const [positions, setPositions] = useState(() => {
     try {
@@ -62,8 +68,7 @@ export function useRowPlacement({
     }
   };
   const wanted = (g: Gesture) =>
-    g.startX +
-    (g.point.x - g.origin + (track.current?.scrollLeft ?? g.scroll) - g.scroll) / ROW_SCALE;
+    g.startX + (g.point.x - g.origin + (track.current?.scrollLeft ?? g.scroll) - g.scroll) / scale;
   const finish = (keep: boolean, point?: Point) => {
     const g = gesture.current;
     if (!g) return;
@@ -122,14 +127,15 @@ export function useRowPlacement({
       // The wheel, trackpad or a track scroll can move the lane too. Preview the same
       // coordinates finish() will save, rather than jumping when the pointer is released.
       const x = wanted(g);
-      if (Math.abs(x - g.startX) * ROW_SCALE >= 5) g.moved = true;
+      if (Math.abs(x - g.startX) * scale >= 5) g.moved = true;
       if (g.moved) setMoving((m) => (m && m.x !== x ? { ...m, x } : m));
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [moving?.key]);
-  const handle = (key: string) => ({
+  const handle = (key: string) => (disabled ? {} : dragHandle(key));
+  const dragHandle = (key: string) => ({
     'data-row-drag': true,
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
       if (e.button !== 0 || !e.isPrimary || gesture.current) return;
@@ -157,7 +163,7 @@ export function useRowPlacement({
       const g = gesture.current;
       if (!g || g.id !== e.pointerId) return;
       g.point = { x: e.clientX, y: e.clientY };
-      if (Math.abs(wanted(g) - g.startX) * ROW_SCALE >= 5) g.moved = true;
+      if (Math.abs(wanted(g) - g.startX) * scale >= 5) g.moved = true;
       if (g.moved) setMoving((m) => m && { ...m, x: wanted(g) });
     },
     onPointerUp: (e: PointerEvent<HTMLElement>) => {
