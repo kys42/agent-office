@@ -189,6 +189,7 @@ test('remote Codex route names this computer and offers a read-only target refre
   await page.locator('.roster .session-row').first().click();
   const composer = page.locator('.terminal-send-chat');
   await expect(composer).toContainText('이 컴퓨터의 Codex 원격 연결');
+  await expect(composer.locator('.terminal-send-bar small')).toBeVisible();
   await expect(composer).toContainText('Codex에서 해당 원격 대화를 열고 다시 확인하세요');
   await composer.locator('textarea').fill('keep my draft');
   const before = await page.evaluate(() => (window as any).targetChecks);
