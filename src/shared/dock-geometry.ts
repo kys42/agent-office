@@ -55,8 +55,14 @@ export const TINY_NAME_ROOM = 34;
  * tiny looks share one scene height (and one window height).
  */
 export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
-/** Compact see-through room above the tiny desks (the tiny pill floats over their feet). */
-export const TINY_TOP_ROOM = 28;
+/**
+ * See-through room above the tiny desks (the tiny pill floats over their feet). The desks keep
+ * the full size's effects, shrunk with the scene, so this leaves room for the highest of them:
+ * the arriving papers set off about 58 station units above a station (112 − 170, ≈ −94 in
+ * scene space, 39px on screen) and the full-heat flames reach above the head. The extra room is
+ * transparent and lets clicks through; the desks still stand on the window's bottom edge.
+ */
+export const TINY_TOP_ROOM = 44;
 export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM;
 /** The dock window's height for the office row or the floor, normal or tiny. */
 export const dockHeight = (floor: boolean, tiny: boolean) =>

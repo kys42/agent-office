@@ -11,7 +11,15 @@ import { TINY_HEIGHT, TINY_SCALE } from '../../src/shared/dock-geometry';
 async function setup(
   page: Page,
   hash: string,
-  opts: { bridge?: boolean; privacy?: boolean; helpers?: number; reply?: boolean } = {
+  opts: {
+    bridge?: boolean;
+    privacy?: boolean;
+    helpers?: number;
+    reply?: boolean;
+    /** run-0 has been on one task for 35 minutes (full heat) and a request just reached it. */
+    heat?: boolean;
+    reducedMotion?: boolean;
+  } = {
     bridge: true,
   },
 ) {
@@ -84,7 +92,17 @@ async function setup(
     bootstrap: false,
     version: 'v1',
   }));
+  if (opts.heat) {
+    Object.assign(snapshot.sessions[0], {
+      status: 'work',
+      observedStatus: 'work',
+      runtime: { phase: 'working', at: now, evidence: 'observed', reason: 'fixture' },
+      taskStartedAt: now - 35 * 60_000,
+    });
+    snapshot.notices.push(request('request-0', now));
+  }
   snapshot.preferences.privacy = !!opts.privacy;
+  snapshot.preferences.reducedMotion = !!opts.reducedMotion;
   await page.setViewportSize({ width: 1440, height: 720 });
   await page.addInitScript(
     ({ s, bridge, reply }) => {
@@ -92,6 +110,7 @@ async function setup(
       w.fixture = s;
       w.calls = [];
       w.opens = [];
+      w.settingsOpened = [];
       w.office = {
         snapshot: async () => structuredClone(w.fixture),
         detail: async (id: string) =>
@@ -124,6 +143,9 @@ async function setup(
         card: async (action: string, target: any) => {
           if (action === 'open') w.opens.push(target.id);
         },
+        window: async (action: string) => {
+          w.calls.push(`window:${action}`);
+        },
       };
       if (bridge) {
         // Like the main process: it keeps the mode and tiny, and tells the dock both.
@@ -139,12 +161,34 @@ async function setup(
           w.mode = cb;
           return () => {};
         };
+        w.office.settings = {
+          open: async (section?: string) => w.settingsOpened.push(section ?? null),
+          onOpen: () => () => {},
+        };
       }
     },
     { s: snapshot, bridge: !!opts.bridge, reply: !!opts.reply },
   );
   await page.goto(`/?lang=ko${hash}`);
   await expect(page.locator('.row-zone')).toHaveCount(2);
+}
+/** A request the person just sent to run-0 (it lands on the desk for 15 seconds). */
+function request(id: string, at: number) {
+  return {
+    id,
+    sessionId: 'run-0',
+    eventId: `req-${id}`,
+    kind: 'request' as const,
+    text: '서류 더미 위로 날아온 요청이에요.',
+    at,
+    receivedAt: at,
+    version: 'v1',
+    seenAt: null,
+    viewedAt: null,
+    dismissedAt: null,
+    resolvedAt: null,
+    bootstrap: false,
+  };
 }
 const calls = (page: Page) => page.evaluate(() => (window as any).calls as string[]);
 const pet = (page: Page, i: number) => page.locator(`.office-pet[data-session-id="run-${i}"]`);
@@ -335,7 +379,7 @@ test('Tiny desks carry a small readable name that opens the card', async ({ page
   const chip = name(0).locator('span');
   const px = await chip.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
   expect(px * TINY_SCALE).toBeGreaterThanOrEqual(8.9);
-  // Once the dock has slid in, the chip sits whole inside the 93px window.
+  // Once the dock has slid in, the chip sits whole inside the tiny window.
   await expect
     .poll(async () => {
       const r = (await page.locator('.desk-row').boundingBox())!;
@@ -411,4 +455,158 @@ test('Tiny names in privacy are the provider, with no hover name', async ({ page
   await expect(name).toHaveText('Claude');
   await expect(name).not.toHaveAttribute('title', /.+/);
   await expect(page.locator('.tiny-name', { hasText: '동료' })).toHaveCount(0);
+});
+
+/** Waits for the tiny strip to finish sliding in and returns its box. */
+async function settled(page: Page) {
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  await expect
+    .poll(async () => {
+      const r = (await page.locator('.desk-row').boundingBox())!;
+      return Math.round(r.y + r.height);
+    })
+    .toBe(720);
+  return (await page.locator('.desk-row').boundingBox())!;
+}
+
+test('Tiny keeps the desk effects, shrunk with the scene and whole inside the window', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row&tiny', { bridge: true, heat: true });
+  const row = await settled(page);
+  const desk = page.locator('[data-station-id="run-0"]');
+  // The very same components as the full size: flames, sweat, embers, papers and the tag.
+  await expect(desk).toHaveClass(/focus-level-3/);
+  await expect(desk.locator('.fx-flames i')).toHaveCount(7);
+  await expect(desk.locator('.fx-embers i')).toHaveCount(6);
+  await expect(desk.locator('.fx-flames i').first()).toBeVisible();
+  await expect(desk.locator('.paper-pile')).toBeVisible();
+  await expect(desk.locator('.working-beacon')).toBeVisible();
+  await expect(desk.locator('.working-beacon')).toContainText('불타는 중');
+  // Drawn at the scene's scale (the 18px tag is about 7px here), not a tiny copy.
+  const beacon = (await desk.locator('.working-beacon').boundingBox())!;
+  expect(beacon.height).toBeLessThan(10);
+  // A new request lands on the tiny desk too; keyed by the notice, so it plays again.
+  await page.evaluate(() => {
+    const w = window as any;
+    const now = Date.now();
+    const old = w.fixture.notices.find((n: any) => n.kind === 'request');
+    w.fixture.notices.push({ ...old, id: 'request-1', eventId: 'req-1', at: now, receivedAt: now });
+    w.publish();
+  });
+  await expect(desk.locator('.arrival-burst')).toBeVisible();
+  await expect(desk.locator('.arrival-sheets i')).toHaveCount(4);
+  // Nothing is clipped by the window's top while the papers fly in and the flames flicker.
+  const top = row.y;
+  for (let i = 0; i < 8; i++) {
+    const tops = await desk.evaluate((el) =>
+      [...el.querySelectorAll('.arrival-sheets i, .arrival-tag, .fx-flames i, .fx-steam i')]
+        .filter((e) => parseFloat(getComputedStyle(e).opacity) > 0.05)
+        .map((e) => e.getBoundingClientRect().top),
+    );
+    expect(Math.min(...tops)).toBeGreaterThanOrEqual(top - 0.5);
+    await page.waitForTimeout(120);
+  }
+  await expect(desk.locator('.arrival-tag')).toBeVisible();
+  const tag = (await desk.locator('.arrival-tag').boundingBox())!;
+  expect(tag.y).toBeGreaterThanOrEqual(top);
+  // The dot and the name stay on top of every effect (painted over them).
+  await page.addStyleTag({
+    content: '.desk-row .desk-station * { pointer-events: auto !important; }',
+  });
+  const topmost = async (selector: string) => {
+    const b = (await desk.locator(selector).boundingBox())!;
+    return page.evaluate(
+      ([x, y, sel]) =>
+        !!document.elementFromPoint(x as number, y as number)?.closest(sel as string),
+      [b.x + b.width / 2, b.y + b.height / 2, selector],
+    );
+  };
+  expect(await topmost('.tiny-dot')).toBe(true);
+  expect(await topmost('.tiny-name > span')).toBe(true);
+  // The desks still stand on the window's bottom edge (the extra room is above them).
+  const bench = (await page.locator('.desk-row .team-bench').first().boundingBox())!;
+  expect(
+    Math.abs(row.y + row.height - 4 * TINY_SCALE - (bench.y + bench.height)),
+  ).toBeLessThanOrEqual(1);
+  await page.screenshot({
+    path: '.local/tiny-effects.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+});
+
+test('Reduced motion holds the tiny effects still, like the full size', async ({ page }) => {
+  await setup(page, '#mini=row&tiny', { bridge: true, heat: true, reducedMotion: true });
+  await settled(page);
+  const desk = page.locator('[data-station-id="run-0"]');
+  await expect(desk.locator('.fx-flames i').first()).toBeVisible();
+  await expect(desk.locator('.arrival-tag')).toBeVisible();
+  await expect(desk.locator('.working-beacon')).toBeVisible();
+  const running = await desk.evaluate((el) =>
+    [
+      ...el.querySelectorAll(
+        '.focus-fx *, .paper-pile *, .arrival-burst *, .office-pet, .working-beacon',
+      ),
+    ]
+      .map((e) => getComputedStyle(e).animationName)
+      .filter((name) => name !== 'none'),
+  );
+  expect(running).toEqual([]);
+  const glows = await desk.evaluate((el) =>
+    [
+      getComputedStyle(el.querySelector('.working-beacon')!, '::after').animationName,
+      getComputedStyle(el.querySelector('.fx-flames')!, '::before').animationName,
+    ].filter((name) => name !== 'none'),
+  );
+  expect(glows).toEqual([]);
+});
+
+test('The tiny pill carries settings, the office and folding to the pet', async ({ page }) => {
+  await setup(page, '#mini=row');
+  const pill = page.locator('.dock-pill');
+  await pill.getByRole('button', { name: '작게 보기' }).click();
+  const row = await settled(page);
+  // The same buttons as the full pill, as small icons.
+  for (const name of ['크게 보기', '사무실 펼치기', '책상 줄 접기', '설정', '데스크 펫 숨기기']) {
+    const b = (await pill.getByRole('button', { name, exact: true }).boundingBox())!;
+    expect(b.width).toBeLessThanOrEqual(22.5);
+    expect(b.height).toBeLessThanOrEqual(22.5);
+  }
+  await expect(pill.getByRole('button', { name: '설정', exact: true })).toHaveAttribute(
+    'title',
+    '설정 창 열기',
+  );
+  const p = (await pill.boundingBox())!;
+  expect(p.height).toBeLessThan(30);
+  expect(p.width).toBeLessThan(200);
+  // At home (the right end) it covers none of the desks or their names.
+  for (const i of [0, 1, 2])
+    for (const sel of [
+      `.office-pet[data-session-id="run-${i}"]`,
+      `[data-station-id="run-${i}"] .tiny-name > span`,
+    ]) {
+      const b = (await page.locator(sel).boundingBox())!;
+      expect(b.x + b.width < p.x || b.x > p.x + p.width).toBe(true);
+    }
+  await page.mouse.move(p.x + p.width / 2, p.y + p.height / 2);
+  await page.screenshot({
+    path: '.local/tiny-pill-buttons.png',
+    clip: { x: 1440 - 420, y: row.y, width: 420, height: row.height },
+  });
+
+  // Each calls what the full pill's button does.
+  await pill.getByRole('button', { name: '설정', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).settingsOpened)).toEqual([null]);
+  await pill.getByRole('button', { name: '사무실 펼치기', exact: true }).click();
+  await expect.poll(() => calls(page)).toContain('window:main');
+  await pill.getByRole('button', { name: '책상 줄 접기', exact: true }).click();
+  await expect.poll(() => calls(page)).toContain('pet');
+});
+
+test('A browser preview has no settings in the tiny pill either', async ({ page }) => {
+  await setup(page, '#mini=row&tiny', { bridge: false });
+  await settled(page);
+  const pill = page.locator('.dock-pill');
+  await expect(pill.getByRole('button', { name: '사무실 펼치기', exact: true })).toBeVisible();
+  await expect(pill.getByRole('button', { name: '설정', exact: true })).toHaveCount(0);
 });

@@ -347,6 +347,8 @@ export function DeskRow({
   );
   const hiddenLeft = stations.filter((st) => st.x + desk / 2 < view.left);
   const hiddenRight = stations.filter((st) => st.x + desk / 2 > view.left + view.width);
+  // The tiny pill draws the same buttons with smaller icons.
+  const icon = tiny ? 12 : 14;
   const calling = (list: typeof stations) =>
     list.some((st) => model.view(st.id)?.group === 'attention');
   return (
@@ -593,7 +595,8 @@ export function DeskRow({
                             if (!reorder.consumeClick(e)) open(s.id);
                           }}
                         >
-                          {!tiny && <FocusEffects level={focus} />}
+                          {/* The same effects as the full size, shrunk with the scene. */}
+                          <FocusEffects level={focus} />
                           <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
@@ -641,16 +644,14 @@ export function DeskRow({
                           />
                         )}
                         <Furniture kind="equipment" />
-                        {!tiny && (
-                          <>
-                            {v.quota && <QuotaBadge quota={v.quota} />}
-                            <PaperPile count={deskPapers(s, model.now)} level={focus} />
-                            {arrival && (
-                              <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
-                            )}
-                            {pose.working && <WorkingBeacon level={focus} />}
-                          </>
+                        {/* Tiny keeps every desk effect (scaled with the scene, z-ordered under
+                            its dot and name); only the quota's words are too small to read. */}
+                        {!tiny && v.quota && <QuotaBadge quota={v.quota} />}
+                        <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                        {arrival && (
+                          <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
                         )}
+                        {pose.working && <WorkingBeacon level={focus} />}
                         {tiny ? null : floor ? (
                           // A name plate on the desk front instead of a card on the rug.
                           <button
@@ -870,8 +871,8 @@ export function DeskRow({
       )}
       {/* The dock's controls: a pill floating over the bottom of the desks (the desks still
           stand on the screen's edge), subdued until hovered and slid anywhere along it so it
-          can be parked in an empty spot. Tiny keeps only what it needs: back to normal, how
-          many, hide. */}
+          can be parked in an empty spot. Tiny keeps the main ones as small icons: how many,
+          back to normal, the office, fold to the pet, settings and hide. */}
       <div
         ref={pillRef}
         className={`dock-pill ${pill.dragging ? 'is-dragging' : ''}`}
@@ -964,33 +965,6 @@ export function DeskRow({
                 <Minimize2 size={14} />
               </button>
             )}
-            <button
-              className="icon-btn"
-              aria-label={t.desk.row.expand}
-              title={t.desk.row.expandTitle}
-              onClick={() => api.window('main')}
-            >
-              <Expand size={14} />
-            </button>
-            <button
-              className="icon-btn"
-              aria-label={t.desk.row.collapse}
-              title={t.desk.row.collapseTitle}
-              onClick={onCollapse}
-            >
-              <ChevronDown size={16} />
-            </button>
-            {/* Only the desktop has a settings window; a browser preview has nowhere to open it. */}
-            {api.settings && (
-              <button
-                className="icon-btn"
-                aria-label={t.desk.row.settings}
-                title={t.desk.row.settingsTitle}
-                onClick={() => void api.settings?.open()}
-              >
-                <Settings size={14} />
-              </button>
-            )}
           </>
         )}
         {tiny && onTiny && (
@@ -1006,11 +980,38 @@ export function DeskRow({
         )}
         <button
           className="icon-btn"
+          aria-label={t.desk.row.expand}
+          title={t.desk.row.expandTitle}
+          onClick={() => api.window('main')}
+        >
+          <Expand size={icon} />
+        </button>
+        <button
+          className="icon-btn"
+          aria-label={t.desk.row.collapse}
+          title={t.desk.row.collapseTitle}
+          onClick={onCollapse}
+        >
+          <ChevronDown size={tiny ? 14 : 16} />
+        </button>
+        {/* Only the desktop has a settings window; a browser preview has nowhere to open it. */}
+        {api.settings && (
+          <button
+            className="icon-btn"
+            aria-label={t.desk.row.settings}
+            title={t.desk.row.settingsTitle}
+            onClick={() => void api.settings?.open()}
+          >
+            <Settings size={icon} />
+          </button>
+        )}
+        <button
+          className="icon-btn"
           aria-label={t.desk.row.hide}
           title={t.desk.row.hideTitle}
           onClick={() => api.window('hide')}
         >
-          <X size={tiny ? 12 : 14} />
+          <X size={icon} />
         </button>
       </div>
     </div>

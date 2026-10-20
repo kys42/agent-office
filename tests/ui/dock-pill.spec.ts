@@ -315,12 +315,13 @@ test('Tiny keeps a compact pill at the same spot', async ({ page }) => {
   expect(b.y + b.height).toBeLessThanOrEqual(HEIGHT);
   expect(HEIGHT - (b.y + b.height)).toBeLessThanOrEqual(8);
   expect(Math.abs(b.x + b.width / 2 - spot * WIDTH)).toBeLessThanOrEqual(2);
-  // Show big, the summary and hide (plus its grip); the rest waits for the full size.
-  await expect(pill(page).getByRole('button', { name: '크게 보기' })).toBeVisible();
-  await expect(pill(page).getByRole('button', { name: '데스크 펫 숨기기' })).toBeVisible();
+  // The summary and the main buttons (plus its grip); refresh and the look switch wait for
+  // the full size.
+  for (const name of ['크게 보기', '사무실 펼치기', '책상 줄 접기', '설정', '데스크 펫 숨기기'])
+    await expect(pill(page).getByRole('button', { name, exact: true })).toBeVisible();
   await expect(pill(page).locator('.desk-row-summary')).toContainText('3');
   await expect(pill(page).locator('.desk-row-summary em')).toContainText('기다리는 동료 1명');
-  for (const name of ['설정', '새로고침', '사무실 펼치기', '책상 줄 접기'])
+  for (const name of ['새로고침', '바닥 책상으로 보기', '작게 보기'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toHaveCount(0);
   expect(await sceneGap(page)).toBe(0);
   await page.locator('.desk-row').screenshot({ path: '.local/dock-pill-tiny.png' });
