@@ -1,3 +1,11 @@
+# 2026-10-20 · Developer ID 패키징 검증
+
+- main `9dd9dc0` 기반 macOS arm64의 서명 개발 산출물에서 `codesign --verify --deep --strict`, Apple 신뢰 체인·Developer ID Application OID·Team ID·bundle ID 요구 조건을 검증했다. `codesign -dvv`에 runtime 플래그와 secure timestamp를 확인했다. 원본 Electron UUID와 패키징 후 UUID가 다르다.
+- 타입, 빌드, 포맷, MCP, 단위574개 및 actionlint 통과. 신규 검사는 잘못된 서명 구성, Mach-O 손상/중복/결정성, 공증 timeout 뒤 같은 ID 재개·바이트 변조·Invalid·불확실한 제출 재전송 차단을 포함한다. 공증 호출은 이 회귀 테스트에서 모의 실행이며 Apple 실제 공증 성공 근거가 아니다.
+- 실제 Apple preflight는 기존 Team API 키를 사용했으나 계약 미동의/만료403으로 중단됐다. 앱/DMG 공증·stapling·Gatekeeper 승인 및 다운로드 경로 검수는 미완료다.
+- native 전체 검사 실패: quiet settings 창 `kept open on blur`, focus 실행 카드 `the card holds the keyboard after asking for it`, 다중 카드 `blur closes only the ordinary preview` 이전 visibility poll. settings visibility 실패는 패키징 전 개발 Electron에서도 재현했다. 서명 앱은 그 외 실제 실행/합성 세 공급자 수집·IPC·설정 렌더링까지 진행했지만 전체 native 통과로 취급하지 않는다.
+- 실행 중인 Applications 앱/사용자 DB를 이번 작업에서 교체하지 않았다. 서명 앱 설치 후 OS 권한 창, 실제 Windows peer snapshot/detail 및 문서 폴더 권한 연속성은 별도 검수한다. 작업 상태와 최종 source SHA는 PR/결과 카드에 기록한다.
+
 # tmux 기존 대화 재개 · 2026-10-19 (Issue #178)
 
 - 단위505개 통과(동시 실행2). 기본 병렬 전체 실행은 기존 hot-path stop 타이밍 테스트가 한 번 실패했고 동시 실행을 줄인 전체 재실행에서 통과했다. 신규8개는 취소·중복/충돌·재검사·미설치·종료·dead pane을 검증한다.
