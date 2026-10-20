@@ -89,7 +89,12 @@ export const desk = {
     veiledTitle: (n: number) =>
       `${n} hidden ${n === 1 ? 'teammate' : 'teammates'} · Click to show them all\nThey come back on their own with their next conversation`,
     veiled: (n: number) => `${n} hidden`,
-    lounge: 'Lounge · Off-duty teammates',
+    pill: 'Desk row tools',
+    pillMove: 'Move the tool bar',
+    pillHint:
+      'Drag left or right · ← → (Shift: bigger) · Home/End: either end · Double-click: back to the right end',
+    settings: 'Settings',
+    settingsTitle: 'Open the settings window',
     toRow: 'Show as office row',
     toFloor: 'Show as floor desks',
     toRowTitle: 'Office row · zone rugs and name cards',

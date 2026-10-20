@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
-import { TINY_HEIGHT } from '../../src/shared/dock-geometry';
+import { TINY_HEIGHT, TINY_SCALE } from '../../src/shared/dock-geometry';
 
 /**
  * Three colleagues: run-0 has an unread final reply, run-1 is calling the person, run-2 is
@@ -281,7 +281,7 @@ test('Focus follows the size toggle, and tiny desks say their dot', async ({ pag
   await expect(pet(page, 0)).toHaveAttribute('aria-label', /동료 0.*, 새 답장$/);
   await expect(pet(page, 1)).toHaveAttribute('aria-label', /동료 1.*, 호출$/);
   await expect(pet(page, 2)).toHaveAttribute('aria-label', /동료 2[^,]*$/);
-  await expect(page.locator('.tiny-tools .desk-row-summary em')).toContainText('기다리는 동료 1명');
+  await expect(page.locator('.dock-pill .desk-row-summary em')).toContainText('기다리는 동료 1명');
   await page.getByRole('button', { name: '크게 보기' }).click();
   await expect(page.getByRole('button', { name: '작게 보기' })).toBeFocused();
 });
@@ -316,4 +316,99 @@ test('Back from tiny, a bubble unfolded before does not reopen', async ({ page }
   // Esc folds the dock straight away (nothing open to fold first).
   await page.keyboard.press('Escape');
   await expect.poll(() => calls(page)).toContain('pet');
+});
+
+test('Tiny desks carry a small readable name that opens the card', async ({ page }) => {
+  await setup(page, '#mini=row&tiny');
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  // run-2 gets a name far wider than its tiny desk.
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.sessions[2].alias = '아주아주 긴 이름을 가진 동료의 끝나지 않는 이름표';
+    w.publish();
+  });
+  const name = (i: number) => page.locator(`[data-station-id="run-${i}"] .tiny-name`);
+  await expect(name(0)).toHaveText('동료 0');
+  await expect(name(1)).toHaveText('동료 1');
+  await expect(name(0)).toHaveAttribute('title', '동료 0');
+  // Drawn at real size inside the ×0.41 scene: at least 9px on screen, within the window.
+  const chip = name(0).locator('span');
+  const px = await chip.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(px * TINY_SCALE).toBeGreaterThanOrEqual(8.9);
+  // Once the dock has slid in, the chip sits whole inside the 93px window.
+  await expect
+    .poll(async () => {
+      const r = (await page.locator('.desk-row').boundingBox())!;
+      return r.y + r.height;
+    })
+    .toBe(720);
+  const row = (await page.locator('.desk-row').boundingBox())!;
+  const box = (await chip.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(11);
+  // The desks still stand on the window's bottom edge (the name does not lift them).
+  const benches = page.locator('.desk-row .team-bench');
+  expect(await benches.count()).toBeGreaterThan(0);
+  const bench = (await benches.first().boundingBox())!;
+  const legs = bench.y + bench.height;
+  // Only the legs' 4-unit contact shadow lies under them, as before the names.
+  expect(Math.abs(row.y + row.height - 4 * TINY_SCALE - legs)).toBeLessThanOrEqual(1);
+  // The name rides on the desk's lower front: inside the desk's box, over its lower half.
+  expect(box.y).toBeGreaterThanOrEqual(bench.y);
+  expect(box.y + box.height).toBeLessThanOrEqual(legs + 0.5);
+  expect(box.y + box.height / 2).toBeGreaterThan(bench.y + bench.height / 2);
+  expect(box.y + box.height).toBeLessThanOrEqual(row.y + row.height);
+  // Clear of the head's dot.
+  const dot = (await page.locator('[data-station-id="run-0"] .tiny-dot').boundingBox())!;
+  expect(box.y).toBeGreaterThan(dot.y + dot.height);
+  // See-through at rest, solid while the desk is pointed at.
+  const alpha = () =>
+    chip.evaluate((el) => {
+      const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/)!;
+      const parts = m[1].split(',').map(Number);
+      return parts.length > 3 ? parts[3] : 1;
+    });
+  const rest = await alpha();
+  expect(rest).toBeLessThan(0.7);
+  await page.screenshot({
+    path: '.local/tiny-names-overlay.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+  await page.locator('[data-station-id="run-0"] .office-pet').hover();
+  await expect.poll(alpha).toBeGreaterThan(0.85);
+  await page.screenshot({
+    path: '.local/tiny-names-overlay-hover.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+  await page.mouse.move(1, 1);
+  await expect.poll(alpha).toBeLessThan(0.7);
+  // The default pill (right end) leaves a small row's names uncovered.
+  const pill = (await page.locator('.dock-pill').boundingBox())!;
+  for (const i of [0, 1, 2]) {
+    const b = (await name(i).locator('span').boundingBox())!;
+    expect(b.x + b.width < pill.x || b.x > pill.x + pill.width).toBe(true);
+  }
+
+  // A long name stays on one line, as wide as its desk, and ends in an ellipsis.
+  const long = name(2).locator('span');
+  await expect(long).toHaveText(/아주아주 긴 이름/);
+  await expect(long).toHaveCSS('text-overflow', 'ellipsis');
+  await expect(long).toHaveCSS('white-space', 'nowrap');
+  expect(await long.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  const desk = (await page.locator('[data-station-id="run-2"] .office-pet').boundingBox())!;
+  const lb = (await long.boundingBox())!;
+  expect(lb.width).toBeLessThanOrEqual(164 * TINY_SCALE + 1);
+  expect(Math.abs(lb.x + lb.width / 2 - (desk.x + desk.width / 2))).toBeLessThan(3);
+
+  // Clicking the name opens the card, like the desk.
+  await name(1).click();
+  await expect.poll(() => page.evaluate(() => (window as any).opens)).toEqual(['run-1']);
+});
+
+test('Tiny names in privacy are the provider, with no hover name', async ({ page }) => {
+  await setup(page, '#mini=floor&tiny', { bridge: true, privacy: true });
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  const name = page.locator('[data-station-id="run-0"] .tiny-name');
+  await expect(name).toHaveText('Claude');
+  await expect(name).not.toHaveAttribute('title', /.+/);
+  await expect(page.locator('.tiny-name', { hasText: '동료' })).toHaveCount(0);
 });

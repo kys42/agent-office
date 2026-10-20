@@ -16,15 +16,20 @@ export const PET_SIZE = { width: 300, height: 350 };
 export const ROW_SCALE = 1;
 /** Station-space height of the row scene (tall-bubble headroom + station + zone label). */
 export const ROW_SCENE_HEIGHT = 376;
-/** A see-through band above the scene for the row's tools, so they never cover a bubble. */
-export const ROW_TOOLS_BAND = 44;
-export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+/**
+ * See-through room above the scene (where the tools sat before the pill), so a stacked answer
+ * + request bubble fits: a bubble's bottom sits ROW_TOP + 58 = 162px below the scene's top,
+ * which leaves it 206px to the window's top. The desks stand on the window's bottom edge; the
+ * dock pill floats over the bottom of the scene instead of lifting it.
+ */
+export const ROW_TOP_ROOM = 44;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM;
 /**
  * Floor version: no zone rugs or name cards under the desks, so the scene ends where the desk
  * legs meet the work area's bottom edge (FLOOR_TOP + 188) plus their contact shadow.
  */
 export const FLOOR_SCENE_HEIGHT = 296;
-export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM;
 
 /**
  * Tiny (쪼꼬미) row and floor: the whole scene at about helper-desk size (68 of 164), with no
@@ -37,18 +42,50 @@ export const TINY_SCALE = 68 / 164;
  */
 export const TINY_TOP = -36;
 /** Desk legs meet the floor at 188 (DESK_FOOT), plus their contact shadow. */
-const TINY_FEET = 188 + 4;
+export const TINY_FEET = 188 + 4;
+/**
+ * The tiny name tag sits over the desk's front (bench at 134, legs to 188): station-space top
+ * and height of its band (about 14px on screen: a 9px name in a small see-through chip). The
+ * desks keep standing on the window's bottom edge.
+ */
+export const TINY_NAME_TOP = 150;
+export const TINY_NAME_ROOM = 34;
 /**
  * Without rugs and name cards the office row ends at the desk legs like the floor, so both
  * tiny looks share one scene height (and one window height).
  */
 export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
-/** A compact see-through band for the tiny tools (show big, summary, hide). */
-export const TINY_TOOLS_BAND = 28;
-export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND;
+/** Compact see-through room above the tiny desks (the tiny pill floats over their feet). */
+export const TINY_TOP_ROOM = 28;
+export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM;
 /** The dock window's height for the office row or the floor, normal or tiny. */
 export const dockHeight = (floor: boolean, tiny: boolean) =>
   tiny ? TINY_HEIGHT : floor ? FLOOR_HEIGHT : ROW_HEIGHT;
+
+/**
+ * The dock pill's spot: its centre as a fraction of the window's width, so it keeps its place
+ * on a wider or narrower screen. Anything unreadable is home.
+ *
+ * Home is the right end, where the tools sat before the pill. The pill floats over the desks'
+ * feet, and the desks (with their zone signs along the bottom) are centred in the window, so a
+ * centred pill would sit on a sign every time; the right end is usually empty. The person can
+ * still park it anywhere, and every look (row, floor, tiny) shares that one saved spot.
+ */
+export const PILL_HOME = 1;
+export function readPillSpot(raw: unknown): number {
+  const p = raw as { v?: unknown; x?: unknown } | null;
+  return p && typeof p === 'object' && p.v === 1 && typeof p.x === 'number' && Number.isFinite(p.x)
+    ? Math.min(1, Math.max(0, p.x))
+    : PILL_HOME;
+}
+/** Breathing room between the pill and the window's sides. */
+export const PILL_MARGIN = 8;
+/** The pill's left edge (px) for a centre fraction, kept whole inside the window. */
+export function pillLeft(spot: number, width: number, pill: number, margin = PILL_MARGIN): number {
+  const max = Math.max(margin, width - pill - margin);
+  return Math.round(Math.min(max, Math.max(margin, spot * width - pill / 2)));
+}
+
 /** Read `dock.json` (`{ v: 1, tiny }`); anything else is the normal size. */
 export function readDockPrefs(raw: unknown): { tiny: boolean } {
   const p = raw as { v?: unknown; tiny?: unknown } | null;

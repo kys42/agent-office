@@ -240,18 +240,21 @@ test('A crowded desk row keeps the desk size and pages with side arrows', async 
   await expect(prev).toBeVisible();
   await page.keyboard.press('ArrowLeft');
   await expect(prev).toHaveCount(0);
-  // The tools band sits above the bubbles.
-  const tools = (await page.locator('.desk-row-tools').boundingBox())!;
-  const bubbleTop = Math.min(
+  // The tool pill floats at the bottom edge, below every bubble.
+  const tools = (await page.locator('.dock-pill').boundingBox())!;
+  expect(tools.y + tools.height).toBeGreaterThanOrEqual(600 - 12);
+  const bubbleBottom = Math.max(
     ...(await page
       .locator('.desk-row .speech-bubble')
-      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
+      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom))),
   );
-  expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
-  // …also when a long bubble is unfolded.
+  expect(bubbleBottom).toBeLessThanOrEqual(tools.y);
+  // …also when a long bubble is unfolded (and it is not clipped at the top).
   const long = page.locator('.desk-row .speech-bubble').first();
   await long.getByRole('button', { name: '말풍선 전체 보기' }).click();
-  expect((await long.boundingBox())!.y).toBeGreaterThanOrEqual(tools.y + tools.height);
+  const unfolded = (await long.boundingBox())!;
+  expect(unfolded.y + unfolded.height).toBeLessThanOrEqual(tools.y);
+  expect(unfolded.y).toBeGreaterThanOrEqual((await page.locator('.desk-row').boundingBox())!.y);
 });
 test('Floor desks stand on the bottom edge with flags for zones, switchable from the row', async ({
   page,
@@ -267,19 +270,20 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await expect(strip.locator('.zone-flag')).toHaveCount(zones);
   await expect(strip.locator('.zone-flag').first()).toContainText('agent-office');
   await expect(strip.locator('.floor-plate').first()).toContainText('코코');
-  // Desk legs reach the window's bottom edge.
+  // Desk legs reach the window's bottom edge; the pill floats over their feet.
   await expect
     .poll(async () => {
       const bench = (await strip.locator('.team-bench').first().boundingBox())!;
       return Math.round(970 - (bench.y + bench.height));
     })
     .toBeLessThanOrEqual(8);
-  const tools = (await strip.locator('.desk-row-tools').boundingBox())!;
-  const tops = await strip
+  const tools = (await strip.locator('.dock-pill').boundingBox())!;
+  expect(tools.y + tools.height).toBeGreaterThanOrEqual(970 - 12);
+  const bottoms = await strip
     .locator('.speech-bubble')
-    .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
-  expect(tops.length).toBeGreaterThan(0);
-  expect(tools.y + tools.height).toBeLessThanOrEqual(Math.min(...tops));
+    .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom));
+  expect(bottoms.length).toBeGreaterThan(0);
+  expect(Math.max(...bottoms)).toBeLessThanOrEqual(tools.y);
   // Only the flag itself takes the mouse: below its cloth, clicks reach the desktop.
   const below = await strip
     .locator('.zone-flag')
