@@ -70,7 +70,7 @@ npm run test:package
 
 ### 기존 앱의 Apple 프로필 재사용
 
-TaskDeck `native/macos-signing.json`과 반려주식 릴리스처럼 **Apple Team 신원은 재사용하고 앱 식별자·업데이트 키는 앱별로 유지**한다. 이 저장소는 비밀이 아닌 기존 프로필의 다섯 필드 `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_PATH`, `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`를 읽을 수 있다. `${HOME}` 접두 경로만 확장하고, API 키는 저장소 밖의 0600 일반 파일인지 확인한다. 사용자별 프로필과 키는 이 저장소에 복제하지 않는다.
+TaskDeck `native/macos-signing.json`과 반려주식 릴리스처럼 **Apple Team 신원은 재사용하고 앱 식별자·업데이트 키는 앱별로 유지**한다. 이 저장소는 비밀이 아닌 기존 프로필의 다섯 필드 `APPLE_API_ISSUER`, `APPLE_API_KEY`, `APPLE_API_KEY_PATH`, `APPLE_SIGNING_IDENTITY`, `APPLE_TEAM_ID`를 읽을 수 있다. `${HOME}` 접두 경로만 확장하고, API 키는 저장소 밖의 0600 일반 파일인지 확인한다. 사용자별 프로필과 키는 이 저장소에 복제하지 않는다. 기본 로컬 프로필은 `~/Library/Application Support/Agent Office/apple-signing.json`이며, 한 번 비밀이 아닌 좌표를 설정하면 이후 `npm run release:mac -- dmg`만으로 같은 신원을 사용한다. `AGENT_OFFICE_APPLE_PROFILE`은 이 기본 위치를 덮어쓰는 선택 사항이다. 다른 서버도 동일 형식의 프로필과 해당 키체인/키 파일을 별도 준비한다.
 
 ```bash
 export AGENT_OFFICE_APPLE_PROFILE=/absolute/path/to/existing/macos-signing.json

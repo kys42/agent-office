@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { signingConfig } from './macos-signing.mjs';
@@ -11,8 +11,14 @@ const mode = process.argv[2] ?? 'preflight';
 if (!['preflight', 'app', 'dmg', 'resume'].includes(mode)) throw new Error('Invalid release mode.');
 if (process.platform !== 'darwin') throw new Error('macOS required.');
 const env = { ...process.env, AGENT_OFFICE_SIGNING: 'developer-id' };
-if (env.AGENT_OFFICE_APPLE_PROFILE) {
-  const profile = JSON.parse(readFileSync(env.AGENT_OFFICE_APPLE_PROFILE, 'utf8'));
+const defaultProfile = path.join(
+  homedir(),
+  'Library/Application Support/Agent Office/apple-signing.json',
+);
+const profilePath =
+  env.AGENT_OFFICE_APPLE_PROFILE ?? (existsSync(defaultProfile) ? defaultProfile : undefined);
+if (profilePath) {
+  const profile = JSON.parse(readFileSync(profilePath, 'utf8'));
   const allowed = [
     'APPLE_API_ISSUER',
     'APPLE_API_KEY',
