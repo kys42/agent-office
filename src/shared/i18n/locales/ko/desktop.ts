@@ -18,6 +18,18 @@ export const desktop: Messages['desktop'] = {
     paste: '붙여넣기',
     selectAll: '모두 선택',
   },
+  notify: {
+    final: '최종 응답을 보냈어요',
+    call: '확인이 필요해요',
+    error: '오류가 났어요',
+    summaryTitle: 'Agent Office',
+    summary: (n, finals) =>
+      finals === n
+        ? `새 최종 응답 ${n}개`
+        : finals
+          ? `새 소식 ${n}개 · 최종 응답 ${finals}개`
+          : `확인이 필요한 소식 ${n}개`,
+  },
   untrustedWindow: '허용되지 않은 창입니다.',
   unsupportedLink: '지원하지 않는 결과 링크입니다.',
   webLinksOnly: '웹 링크(http·https)만 열 수 있어요.',

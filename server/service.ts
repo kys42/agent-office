@@ -107,6 +107,10 @@ const prefsSchema = z
     locale: z
       .enum(['auto', ...Object.keys(LOCALES)] as [LocalePreference, ...LocalePreference[]])
       .optional(),
+    notifications: z
+      .object({ finals: z.boolean(), calls: z.boolean(), sound: z.boolean() })
+      .strict()
+      .optional(),
     petAppearance: z
       .object({
         version: z.literal(1),

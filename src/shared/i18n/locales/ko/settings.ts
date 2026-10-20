@@ -56,6 +56,16 @@ export const settings: Messages['settings'] = {
       '보조 동료는 결과를 남겨두고 메인의 다음 요청이 시작되면 자리에서 빠져요. 아직 일하거나 확인을 기다리면 남아 있어요. 메인이 퇴근하면 이전 작업 기록으로 접어둬요.',
   },
   terminalTitle: '터미널과 답하기',
+  notifications: {
+    title: '알림',
+    finals: '최종 응답',
+    finalsHint: '동료가 일을 마치고 최종 응답을 보내면 알려요.',
+    calls: '호출과 오류',
+    callsHint: '동료가 질문·권한 확인을 기다리거나 오류가 나면 알려요.',
+    sound: '소리 내기',
+    soundHint:
+      '시스템 알림 소리를 써요. 지금 보고 있는 동료의 카드는 알리지 않고, 화면 내용 숨기기 중에는 이름과 내용 없이 알려요.',
+  },
   rhythm: {
     title: '내 작업 리듬에 맞게',
     pause: '수집 잠시 쉬기',

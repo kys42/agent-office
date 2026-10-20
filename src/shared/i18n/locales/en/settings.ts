@@ -54,6 +54,17 @@ export const settings = {
       "Helpers leave their results and step away when the main teammate starts its next request. They stay if they're still working or waiting on you. When the main teammate goes off duty, they're folded into its earlier work.",
   },
   terminalTitle: 'Terminal and answers',
+  /** Desktop only (#229). */
+  notifications: {
+    title: 'Notifications',
+    finals: 'Final replies',
+    finalsHint: 'Notify when a teammate finishes and sends its final reply.',
+    calls: 'Calls and errors',
+    callsHint: 'Notify when a teammate waits on a question or permission, or runs into an error.',
+    sound: 'Play a sound',
+    soundHint:
+      "Uses the system notification sound. Nothing shows for a teammate whose card you're looking at, and hidden screen content keeps notifications free of names and messages.",
+  },
   rhythm: {
     title: 'Fit your work rhythm',
     pause: 'Pause collecting',

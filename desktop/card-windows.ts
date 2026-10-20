@@ -69,6 +69,12 @@ export class CardWindows {
     return next;
   }
 
+  /** The colleagues whose card is on screen now. */
+  shown() {
+    return [...this.entries]
+      .filter((e) => e.target && !e.window.isDestroyed() && e.window.isVisible())
+      .map((e) => e.target!.id);
+  }
   windows() {
     return [...this.entries].map((e) => e.window).filter((w) => !w.isDestroyed());
   }

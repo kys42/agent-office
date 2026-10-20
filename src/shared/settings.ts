@@ -17,6 +17,7 @@ const SECTION_CATEGORY = {
   general: 'general',
   language: 'general',
   privacy: 'general',
+  notifications: 'general',
   terminal: 'general',
   appearance: 'appearance',
   motion: 'appearance',

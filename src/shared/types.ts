@@ -445,6 +445,15 @@ export interface Preferences {
   /** UI and collector language. Missing means `auto` (system language, else English). */
   locale?: LocalePreference;
   petAppearance?: PetCustomization;
+  /** Desktop OS notifications (#229). Missing: calls and errors only, silently. */
+  notifications?: NotifyPreferences;
+}
+/** Which news raises an OS notification, and whether it plays a sound. */
+export interface NotifyPreferences {
+  finals: boolean;
+  /** Calls (a question or permission waiting) and errors. */
+  calls: boolean;
+  sound: boolean;
 }
 export interface Snapshot {
   federation?: import('./federation').FederationState;
@@ -808,6 +817,8 @@ export interface OfficeAPI {
   onVisibility?: (callback: (shown: boolean) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
   onSelect?: (callback: (id: string) => void) => () => void;
+  /** Desktop big office only: the colleague card open now, so a notification about it is skipped. */
+  selected?: (id: string | null) => void;
   /** Desktop only. Browser previews switch the dock layout locally. */
   dock?: (action: DockAction) => Promise<void>;
   /** `tiny` comes along from the desktop main process (undefined: unchanged). */

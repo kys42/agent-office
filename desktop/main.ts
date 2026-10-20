@@ -74,6 +74,7 @@ import { CardWindows } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
+import { Notifier } from './notify.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
   settingsWindow: BrowserWindow | null = null,
@@ -81,6 +82,9 @@ let main: BrowserWindow | null = null,
   bridge: ServiceBridge,
   quitting = false;
 let cards: CardWindows;
+let notifier: Notifier;
+// The colleague card open in the big office, as its page reports it (notifications skip it).
+let mainSelected: string | null = null;
 let mobile: MobileServer | undefined;
 // Desk pet: presentation-only window state. Office data comes from the same snapshot.
 let dockMode: DockMode = 'pet',
@@ -115,6 +119,26 @@ else {
       watch,
     });
     app.on('before-quit', () => cards.dispose());
+    notifier = new Notifier({
+      record: quiet,
+      focus: () => ({
+        mainFocused: !!main && onScreen(main) && main.isFocused(),
+        selected: mainSelected,
+        cards: cards.shown(),
+      }),
+      open: (sessionId) => {
+        // Someone working with the desk pet or row gets the colleague's card there; otherwise
+        // the big office opens at that colleague.
+        if (sessionId && dock && !dock.isDestroyed() && dock.isVisible())
+          cards.open({ id: sessionId, news: false }, dock.getBounds());
+        else showMain(sessionId);
+      },
+    });
+    app.on('before-quit', () => notifier.dispose());
+    // Test runs read what would have been shown.
+    if (quiet)
+      (globalThis as { __agentOfficeNotifications?: unknown }).__agentOfficeNotifications =
+        notifier.recorded;
     const windows = () =>
       [main, dock, settingsWindow, ...cards.windows()]
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
@@ -126,10 +150,14 @@ else {
     const publish = (s: Snapshot) => {
       followLanguage(s);
       delivery.publish(s, windows());
+      notifier.observe(s);
     };
     bridge.on('snapshot', publish);
     bridge.on('patch', (patch: SnapshotPatch) => {
-      if (delivery.update(patch, windows())) followLanguage(delivery.latest!);
+      if (delivery.update(patch, windows())) {
+        followLanguage(delivery.latest!);
+        notifier.observe(delivery.latest!);
+      }
       // A change that does not start from what is held here (e.g. the collector restarted).
       else void bridge.call('snapshot').then(publish, () => {});
     });
@@ -516,6 +544,10 @@ function trusted(e: Electron.IpcMainInvokeEvent) {
     throw new Error(m().desktop.untrustedWindow);
 }
 function setupIPC() {
+  ipcMain.on('office:selected', (e, id: unknown) => {
+    if (!main || e.sender !== main.webContents || e.senderFrame !== e.sender.mainFrame) return;
+    mainSelected = typeof id === 'string' && id.length <= 400 ? id : null;
+  });
   ipcMain.handle('office:open-artifact', async (e, url) => {
     trusted(e);
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;

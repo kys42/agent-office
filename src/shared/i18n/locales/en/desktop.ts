@@ -17,6 +17,19 @@ export const desktop = {
     paste: 'Paste',
     selectAll: 'Select All',
   },
+  /** OS notifications (#229). With hidden screen content, the title is the tool's name only. */
+  notify: {
+    final: 'Sent a final reply',
+    call: 'Needs your attention',
+    error: 'Ran into an error',
+    summaryTitle: 'Agent Office',
+    summary: (n: number, finals: number) =>
+      finals === n
+        ? `${n} new final replies`
+        : finals
+          ? `${n} new updates · ${finals} final ${finals === 1 ? 'reply' : 'replies'}`
+          : `${n} updates need your attention`,
+  },
   untrustedWindow: 'This window is not allowed.',
   unsupportedLink: 'Unsupported result link.',
   webLinksOnly: 'Only web links (http or https) can be opened.',

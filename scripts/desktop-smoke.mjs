@@ -1,5 +1,5 @@
 import { _electron as electron } from 'playwright';
-import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -254,6 +254,58 @@ try {
   const korean = await page.evaluate(() => window.office.preferences({ locale: 'ko' }));
   assert.ok(korean.connectors.every((c) => /[가-힣]/.test(c.message)));
   await page.waitForFunction(() => document.documentElement.lang === 'ko');
+  // OS notifications (#229): a final reply arriving after the setting is on raises one, recorded
+  // (quiet runs never show it), and clicking it opens that colleague in the big office.
+  const notified = () => app.evaluate(() => globalThis.__agentOfficeNotifications.length);
+  assert.equal(await notified(), 0, 'news already there when the app starts never notifies');
+  await page.evaluate(() => {
+    window.office.selected(null);
+    return window.office.preferences({
+      notifications: { finals: true, calls: true, sound: false },
+    });
+  });
+  const later = new Date().toISOString();
+  await appendFile(
+    path.join(sources.claude, 'projects', 'demo', 'claude.jsonl'),
+    [
+      {
+        type: 'user',
+        sessionId: 'claude-test',
+        timestamp: later,
+        cwd: '/tmp/native-test',
+        message: { role: 'user', content: '알림 확인' },
+      },
+      {
+        type: 'assistant',
+        sessionId: 'claude-test',
+        timestamp: later,
+        message: {
+          id: 'm-notify',
+          role: 'assistant',
+          content: [{ type: 'text', text: '**알림** 검증을 마쳤습니다.' }],
+          stop_reason: 'end_turn',
+        },
+      },
+    ]
+      .map((x) => JSON.stringify(x))
+      .join('\n') + '\n',
+  );
+  for (let i = 0; i < 100 && !(await notified()); i++) await page.waitForTimeout(200);
+  const [shown] = await app.evaluate(() =>
+    globalThis.__agentOfficeNotifications.map(({ click, ...n }) => n),
+  );
+  assert.ok(shown, 'a new final reply raises a notification');
+  assert.equal(shown.kind, 'final');
+  assert.equal(shown.sessionId, 'claude:claude-test');
+  assert.equal(shown.body, '알림 검증을 마쳤습니다.');
+  assert.equal(shown.silent, true);
+  await app.evaluate(() => globalThis.__agentOfficeNotifications[0].click());
+  await page.waitForFunction(
+    () => localStorage.getItem('office:last-session') === 'claude:claude-test',
+  );
+  await page.evaluate(() =>
+    window.office.preferences({ notifications: { finals: false, calls: true, sound: false } }),
+  );
   const [dock] = await Promise.all([
     app.waitForEvent('window'),
     page.getByRole('button', { name: '데스크 펫', exact: true }).click(),
@@ -582,6 +634,7 @@ try {
       rendererIsolation: true,
       firstRunGuide: true,
       settingsWindow: true,
+      notifications: true,
       macDockIcon: process.platform === 'darwin',
     }),
   );

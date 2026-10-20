@@ -23,6 +23,9 @@ import {
   Building2,
   Plug,
   Database,
+  Bell,
+  BellRing,
+  Volume2,
   type LucideIcon,
 } from 'lucide-react';
 import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
@@ -34,6 +37,8 @@ import { projectKey } from '../shared/office';
 import { LOCALES, type LocalePreference } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
 import { isWindows } from '../lib/platform';
+import { isDesktop } from '../lib/api';
+import { notifyPreferences } from '../shared/notify-plan';
 import {
   SETTINGS_CATEGORIES,
   settingsAnchor,
@@ -240,6 +245,34 @@ export function Settings({
           />
         </div>
       </section>
+      {isDesktop && !demo && (
+        <section className="settings-section" data-guide-section="notifications" tabIndex={-1}>
+          <h2>{s.notifications.title}</h2>
+          {(
+            [
+              ['finals', BellRing],
+              ['calls', Bell],
+              ['sound', Volume2],
+            ] as const
+          ).map(([key, Icon]) => {
+            const want = notifyPreferences(p);
+            return (
+              <div className="setting-row" key={key}>
+                <Icon size={18} />
+                <div>
+                  <b>{s.notifications[key]}</b>
+                  <p>{s.notifications[`${key}Hint`]}</p>
+                </div>
+                <Toggle
+                  checked={want[key]}
+                  label={s.notifications[key]}
+                  onChange={() => onPrefs({ notifications: { ...want, [key]: !want[key] } })}
+                />
+              </div>
+            );
+          })}
+        </section>
+      )}
       {((terminalSend !== undefined && onTerminalSend) || (answers && onAnswers)) && (
         <section className="settings-section" data-guide-section="terminal" tabIndex={-1}>
           <h2>{s.terminalTitle}</h2>
