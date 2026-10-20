@@ -18,6 +18,10 @@ export const needsAttention = (s: Session) =>
  * leftover does not hold a desk for long.
  */
 export const HELPER_UNFINISHED_MS = 30 * 60_000;
+/** The person's choice (the `helperRetainMinutes` preference, see view-prefs), in ms. */
+export interface ResidentOptions {
+  unfinishedMs?: number;
+}
 /**
  * Still inside its own task, judged by the last observed record alone (observedStatus, the raw
  * status before the time ladder turns quiet work into ready/idle): a tool call or tool result
@@ -28,11 +32,14 @@ export const HELPER_UNFINISHED_MS = 30 * 60_000;
  * Not used: "the parent is resting, so a quiet helper must be done". A background helper keeps
  * running while its parent answers and rests, so that would retire the very helper this keeps.
  */
-export function helperUnfinished(s: Session, now = Date.now()) {
+export function helperUnfinished(
+  s: Session,
+  now = Date.now(),
+  unfinishedMs: number = HELPER_UNFINISHED_MS,
+) {
   if (s.remote?.stale || s.archived) return false;
   return (
-    ['work', 'think'].includes(s.observedStatus ?? s.status) &&
-    now - s.updatedAt <= HELPER_UNFINISHED_MS
+    ['work', 'think'].includes(s.observedStatus ?? s.status) && now - s.updatedAt <= unfinishedMs
   );
 }
 
@@ -41,7 +48,12 @@ export function helperUnfinished(s: Session, now = Date.now()) {
  * `host` is the top visible session of its chain; officeResidents attaches the helper there even
  * when a finished helper between them has retired.
  */
-export function helperPresence(s: Session, sessions: Session[], now = Date.now()) {
+export function helperPresence(
+  s: Session,
+  sessions: Session[],
+  now = Date.now(),
+  { unfinishedMs }: ResidentOptions = {},
+) {
   if (s.pinned || isWorking(s, now) || needsAttention(s)) return { visible: true };
   if (s.archived) return { visible: false };
   const anchor = taskStart(s) ?? s.startedAt;
@@ -55,7 +67,8 @@ export function helperPresence(s: Session, sessions: Session[], now = Date.now()
     if (parent.archived || parent.zone === 'archive') return { visible: false };
     // A resumed helper gets a newer own task anchor. Late results alone cannot revive it; only
     // an unfinished helper keeps its desk through an ancestor's newer request.
-    if ((taskStart(parent) ?? 0) > anchor && !helperUnfinished(s, now)) return { visible: false };
+    if ((taskStart(parent) ?? 0) > anchor && !helperUnfinished(s, now, unfinishedMs))
+      return { visible: false };
     host = parent;
     current = parent;
   }
@@ -76,7 +89,11 @@ export const sessionScopeLabel = (s: Session) => {
 };
 
 /** Canonical sessions remain intact in the store/MCP. Only office occupancy is projected. */
-export function officeResidents(sessions: Session[], now = Date.now()) {
+export function officeResidents(
+  sessions: Session[],
+  now = Date.now(),
+  options: ResidentOptions = {},
+) {
   const actors = new Map<string, Session[]>();
   const residents: Session[] = [],
     hidden: Session[] = [];
@@ -87,7 +104,7 @@ export function officeResidents(sessions: Session[], now = Date.now()) {
       actors.set(s.actor.id, [...(actors.get(s.actor.id) ?? []), s]);
     } else {
       const presence = isHelper(s)
-        ? helperPresence(s, sessions, now)
+        ? helperPresence(s, sessions, now, options)
         : { visible: true, host: undefined };
       if (!s.pinned && (isBackground(s) ? !needsAttention(s) : !presence.visible)) hidden.push(s);
       else {

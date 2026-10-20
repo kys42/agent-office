@@ -3,6 +3,7 @@ import { localizeNotice, noticeCandidates } from '../shared/notices';
 import { runtimeObservation } from '../shared/presentation';
 import { deriveState } from '../shared/runtime';
 import { officeResidents } from '../shared/residents';
+import { helperUnfinishedMs } from '../shared/view-prefs';
 import { allocateSeats, officeZone, attachSessions, seatKey } from '../shared/office';
 import { applyZone } from '../shared/zones';
 import { m } from '../shared/i18n';
@@ -11,7 +12,9 @@ export function reconcileDemo(snapshot: Snapshot): Snapshot {
     ...applyZone(s, snapshot.preferences.zoneRules),
     zone: officeZone(s, snapshot.preferences),
   }));
-  const active = officeResidents(sessions).sessions.filter((s) => s.zone === 'office');
+  const active = officeResidents(sessions, Date.now(), {
+    unfinishedMs: helperUnfinishedMs(snapshot.preferences),
+  }).sessions.filter((s) => s.zone === 'office');
   const previous = Object.fromEntries(
     active.filter((s) => s.officeSeat !== undefined).map((s) => [seatKey(s), s.officeSeat!]),
   );

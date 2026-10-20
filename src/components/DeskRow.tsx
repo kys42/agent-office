@@ -196,9 +196,14 @@ export function DeskRow({
   // Hidden colleagues and helpers hidden on their own: all come back from one chip.
   const veiledCount = model.veiled.length + model.veiledHelpers.length;
   const signature = layoutSignature(sessions);
+  const { display } = model;
   const baseLayout = useMemo(
-    () => layoutRow(sessions, floor ? { zoneGap: FLOOR_ZONE_GAP } : {}),
-    [signature, floor, locale],
+    () =>
+      layoutRow(sessions, {
+        stackAt: display.helperStackAt,
+        ...(floor ? { zoneGap: FLOOR_ZONE_GAP } : {}),
+      }),
+    [signature, floor, locale, display.helperStackAt],
   );
   const placement = useRowPlacement({
     base: baseLayout,
@@ -219,6 +224,8 @@ export function DeskRow({
     pill: pillRef,
     onArrange,
     onSaveFailed: () => notify(t.dock.arrange.saveFailed),
+    visibility: display.dockPill,
+    resetAt: display.dockPillResetAt,
   });
   const reorder = useDeskReorder({
     layout,
@@ -548,7 +555,9 @@ export function DeskRow({
                     const deskTarget = targets[s.id];
                     const dark = !!v.quota && dimsDesk(s, pose.working);
                     // Tiny: no words, just a dot in the bubble's colour (it pops once per notice).
-                    const dot = tiny ? speechDot(s, speech) : undefined;
+                    const dot = tiny
+                      ? speechDot(s, speech, { finals: display.tinyFinalDot })
+                      : undefined;
                     return (
                       <div
                         className={`desk-station row-station status-${s.status} group-${v.group} ${reorder.marker(s.id)} ${pose.working ? 'station-working' : 'station-resting'} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
@@ -607,7 +616,7 @@ export function DeskRow({
                             aria-hidden="true"
                           />
                         )}
-                        {tiny && (
+                        {tiny && display.tinyNames && (
                           // A small name over the desk's front, drawn in real pixels (not ×0.41).
                           // Not a second tab stop: the desk button already says the name;
                           // a click here opens the card like the desk does.
@@ -870,13 +879,15 @@ export function DeskRow({
         </button>
       )}
       {/* The dock's controls: a pill floating over the bottom of the desks (the desks still
-          stand on the screen's edge), subdued until hovered and slid anywhere along it so it
-          can be parked in an empty spot. Tiny keeps the main ones as small icons: how many,
+          stand on the screen's edge), subdued until hovered (or solid, or hidden until the
+          pointer nears it — the person's choice) and slid anywhere along it so it can be
+          parked in an empty spot. Tiny keeps the main ones as small icons: how many,
           back to normal, the office, fold to the pet, settings and hide. */}
       <div
         ref={pillRef}
-        className={`dock-pill ${pill.dragging ? 'is-dragging' : ''}`}
-        data-solid
+        className={`dock-pill pill-${display.dockPill} ${pill.dragging ? 'is-dragging' : ''} ${pill.autoHide && pill.revealed ? 'is-revealed' : ''}`}
+        // Hidden (`hover` visibility) it lets clicks through: only a revealed pill is solid.
+        data-solid={pill.revealed ? '' : undefined}
         role="group"
         aria-label={t.desk.row.pill}
         style={{ left: pill.left }}

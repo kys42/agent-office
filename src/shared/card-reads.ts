@@ -1,8 +1,22 @@
-import type { OfficeNotice } from './types';
+import type { OfficeNotice, Preferences } from './types';
 import { cardReadNotices } from './notices';
 
 /** How long a card stays on one colleague, in sight, before it reads that colleague's replies. */
 export const CARD_READ_DWELL_MS = 1500;
+/**
+ * The person's reading preferences (#228): whether a card reads at all, and after how long.
+ * Missing values keep the behaviour from before (on, CARD_READ_DWELL_MS).
+ */
+export function cardReadSettings(p?: Pick<Preferences, 'readOnOpen' | 'readDwellSeconds'> | null) {
+  const seconds = p?.readDwellSeconds;
+  return {
+    enabled: p?.readOnOpen !== false,
+    dwellMs:
+      typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0
+        ? Math.round(seconds * 1000)
+        : CARD_READ_DWELL_MS,
+  };
+}
 /** A receipt that keeps failing is asked again on later snapshots, this many times in all. */
 export const CARD_READ_ATTEMPTS = 3;
 

@@ -9,7 +9,10 @@ export const HELPER_WIDTH = 73;
 /** Helper desks stand with their table at the station's desk height (station space; the big
  * office and the row's office mode — the floor stands them on the floor instead). */
 export const HELPER_TOP = 102;
-/** From this many helpers on one colleague, they share one stacked desk ("×N"). */
+/**
+ * From this many helpers on one colleague, they share one stacked desk ("×N"). The default of
+ * the `helperStackAt` preference; the layouts take the person's choice as `stackAt`.
+ */
 export const HELPER_STACK_AT = 4;
 const PADDING = 14;
 const LABEL = 38;
@@ -99,11 +102,14 @@ export function officeTopology(sessions: Session[]): OfficeTopology {
 }
 
 /**
- * A colleague's helper desks: one each, or — from HELPER_STACK_AT helpers — one stacked desk
- * that keeps every helper reachable through its list.
+ * A colleague's helper desks: one each, or — from `stackAt` helpers (HELPER_STACK_AT unless the
+ * person chose otherwise) — one stacked desk that keeps every helper reachable through its list.
  */
-export function helperSlots(helpers: Session[]): { id: string; stack?: string[] }[] {
-  if (helpers.length < HELPER_STACK_AT) return helpers.map((c) => ({ id: c.id }));
+export function helperSlots(
+  helpers: Session[],
+  stackAt: number = HELPER_STACK_AT,
+): { id: string; stack?: string[] }[] {
+  if (helpers.length < Math.max(2, stackAt)) return helpers.map((c) => ({ id: c.id }));
   return [{ id: helpers[0].id, stack: helpers.map((c) => c.id) }];
 }
 
@@ -119,7 +125,11 @@ export function layoutSignature(sessions: Session[]) {
     .join('\n');
 }
 
-export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
+export function layoutOffice(
+  sessions: Session[],
+  aspect = 1.7,
+  stackAt: number = HELPER_STACK_AT,
+): OfficeLayout {
   const { primary, projects: groups, children } = officeTopology(sessions);
   if (!primary.length) return { width: 800, height: 440, projects: [], count: 0 };
 
@@ -172,7 +182,7 @@ export function layoutOffice(sessions: Session[], aspect = 1.7): OfficeLayout {
           const station: StationPlacement = { id: m.id, x: cursor, y: stationY, children: [] };
           area.stations.push(station);
           cursor += STATION_WIDTH;
-          const slots = helperSlots(children.get(m.id) ?? []);
+          const slots = helperSlots(children.get(m.id) ?? [], stackAt);
           for (const slot of slots) {
             station.children.push({ ...slot, x: cursor, y: stationY + HELPER_TOP });
             cursor += HELPER_WIDTH;
@@ -240,7 +250,10 @@ export interface RowLayout {
  */
 export function layoutRow(
   sessions: Session[],
-  { zoneGap = ROW_ZONE_GAP }: { zoneGap?: number } = {},
+  {
+    zoneGap = ROW_ZONE_GAP,
+    stackAt = HELPER_STACK_AT,
+  }: { zoneGap?: number; stackAt?: number } = {},
 ): RowLayout {
   const { projects, children } = officeTopology(sessions);
   const zones: RowZone[] = [];
@@ -277,7 +290,7 @@ export function layoutRow(
         }
         zone.stations.push({ id: s.id, x: cursor });
         cursor += STATION_WIDTH;
-        const slots = helperSlots(children.get(s.id) ?? []);
+        const slots = helperSlots(children.get(s.id) ?? [], stackAt);
         for (const c of slots) {
           zone.helpers.push({ ...c, parent: s.id, x: cursor });
           cursor += HELPER_WIDTH;

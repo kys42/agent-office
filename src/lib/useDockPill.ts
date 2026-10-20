@@ -9,6 +9,8 @@ import {
   type RefObject,
 } from 'react';
 import { PILL_HOME, pillLeft, readPillSpot } from '../shared/dock-geometry';
+import type { DockPillVisibility } from '../shared/types';
+import { resetDue } from '../shared/view-prefs';
 
 type Point = { x: number; y: number };
 type Gesture = {
@@ -24,6 +26,10 @@ type Gesture = {
 export const PILL_STORAGE_KEY = 'office:dock-pill:v1';
 /** A click that wobbles a little is still a click, not a move. */
 const DRAG_SLOP = 4;
+/** `hover` visibility: how close (px) the pointer must come to the hidden pill to bring it up. */
+export const PILL_REACH = 24;
+/** `hover` visibility: the window's bottom strip (px) that brings the pill up from anywhere. */
+export const PILL_EDGE_STRIP = 10;
 
 /**
  * The dock pill floats over the bottom of the desks, slides left and right, and remembers where
@@ -31,21 +37,41 @@ const DRAG_SLOP = 4;
  * so the person can park it in an empty spot. Until then it sits at home (the right end).
  * Like the zone handles, a drag holds the pointer and, once it really moves, tells the dock
  * (`onArrange`) so the window keeps taking the mouse even when the pointer leaves the pill.
+ *
+ * `visibility` is the person's choice (#228): `always` solid, `subdued` faint until hovered (CSS
+ * :hover), or `hover` — hidden until the pointer comes near. Hidden must also mean click-through,
+ * so then the pill drops `[data-solid]` and `pointer-events`; but the desktop dock window only
+ * takes the mouse over `[data-solid]` things (setIgnoreMouseEvents with `forward`), so CSS :hover
+ * on the hidden pill would never fire there. Mouse *moves* are still forwarded to the page,
+ * though, so `revealed` comes from the forwarded pointer's distance to the pill's box (or the
+ * window's bottom strip, like an auto-hiding Dock) instead. Keyboard focus (:focus-visible, CSS)
+ * and a drag keep it up too.
+ *
+ * `resetAt` (the `dockPillResetAt` preference) sends a spot saved before it back home: the reset
+ * button lives in the settings window, another renderer than this dock.
  */
 export function useDockPill({
   root,
   pill,
   onArrange,
   onSaveFailed,
+  visibility = 'subdued',
+  resetAt = null,
 }: {
   root: RefObject<HTMLElement | null>;
   pill: RefObject<HTMLElement | null>;
   onArrange?: (active: boolean, point?: Point) => void;
   onSaveFailed: () => void;
+  visibility?: DockPillVisibility;
+  resetAt?: number | null;
 }) {
+  // When the saved spot was chosen (0: before #228 or never), so a later reset wins.
+  const savedAt = useRef(0);
   const [spot, setSpot] = useState(() => {
     try {
-      return readPillSpot(JSON.parse(localStorage.getItem(PILL_STORAGE_KEY) ?? 'null'));
+      const raw = JSON.parse(localStorage.getItem(PILL_STORAGE_KEY) ?? 'null');
+      savedAt.current = typeof raw?.at === 'number' ? raw.at : 0;
+      return readPillSpot(raw);
     } catch {
       return PILL_HOME;
     }
@@ -80,7 +106,13 @@ export function useDockPill({
     setSpot(next ?? PILL_HOME);
     try {
       if (next === null) localStorage.removeItem(PILL_STORAGE_KEY);
-      else localStorage.setItem(PILL_STORAGE_KEY, JSON.stringify({ v: 1, x: next }));
+      else {
+        savedAt.current = Date.now();
+        localStorage.setItem(
+          PILL_STORAGE_KEY,
+          JSON.stringify({ v: 1, x: next, at: savedAt.current }),
+        );
+      }
     } catch {
       latest.current.onSaveFailed();
     }
@@ -117,6 +149,39 @@ export function useDockPill({
       finish(false);
     };
   }, []);
+
+  // 'pill 위치 초기화' in settings: a stamp newer than the saved spot sends the pill home.
+  useEffect(() => {
+    if (!resetDue(resetAt, savedAt.current)) return;
+    savedAt.current = resetAt!;
+    finish(false);
+    save(null);
+  }, [resetAt]);
+
+  // `hover`: up while the (forwarded) pointer is near the pill or on the bottom strip.
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    setNear(false);
+    if (visibility !== 'hover') return;
+    const move = (e: globalThis.MouseEvent) => {
+      const box = pill.current?.getBoundingClientRect();
+      const over =
+        !!box &&
+        box.width > 0 &&
+        e.clientX >= box.left - PILL_REACH &&
+        e.clientX <= box.right + PILL_REACH &&
+        e.clientY >= box.top - PILL_REACH &&
+        e.clientY <= box.bottom + PILL_REACH;
+      setNear(over || window.innerHeight - e.clientY <= PILL_EDGE_STRIP);
+    };
+    const leave = () => setNear(false);
+    window.addEventListener('mousemove', move, { passive: true });
+    document.documentElement.addEventListener('mouseleave', leave);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      document.documentElement.removeEventListener('mouseleave', leave);
+    };
+  }, [visibility]);
 
   /** Buttons keep their clicks; the pill's body and its grip carry it. */
   const grabbable = (e: { target: EventTarget }) =>
@@ -191,5 +256,14 @@ export function useDockPill({
           : Math.min(1, Math.max(0, from + (e.key === 'ArrowLeft' ? -step : step)));
     save(effective(next));
   };
-  return { left, dragging: moving !== null, handlers, onGripKeyDown };
+  const dragging = moving !== null;
+  return {
+    left,
+    dragging,
+    handlers,
+    onGripKeyDown,
+    /** `hover` visibility: the pill hides (and lets clicks through) unless `revealed`. */
+    autoHide: visibility === 'hover',
+    revealed: visibility !== 'hover' || near || dragging,
+  };
 }

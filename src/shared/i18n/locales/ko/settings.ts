@@ -55,6 +55,52 @@ export const settings: Messages['settings'] = {
     helperNote:
       '보조 동료는 결과를 남겨두고 메인의 다음 요청이 시작되면 자리에서 빠져요. 아직 일하거나 확인을 기다리면 남아 있어요. 메인이 퇴근하면 이전 작업 기록으로 접어둬요.',
   },
+  dock: {
+    title: '독',
+    tinyNames: '쪼꼬미 이름표 보이기',
+    tinyNamesHint: '쪼꼬미 책상마다 작은 이름표를 붙여요. 끄면 마우스를 올릴 때만 이름이 보여요.',
+    tinyFinalDot: '쪼꼬미 점에 최종 응답도 표시',
+    tinyFinalDotHint: '끄면 호출과 오류에만 점을 찍어요.',
+    pill: '독 버튼 모음(pill)',
+    pillHint: '독 버튼이 모인 알약 모양 막대가 평소에 어떻게 보일지 정해요.',
+    pillChoices: {
+      always: '항상 또렷하게',
+      subdued: '평소 흐리게',
+      hover: '마우스 올릴 때만',
+    },
+    pillReset: 'pill 위치 초기화',
+    pillResetHint: '옮겨 둔 pill을 독 오른쪽 끝으로 되돌려요.',
+    pillResetDone: '독 pill을 오른쪽 끝으로 되돌렸어요.',
+    resetButton: '초기화',
+  },
+  reading: {
+    title: '읽음 처리',
+    readOnOpen: '카드를 열면 최종 응답 읽음 처리',
+    readOnOpenHint:
+      '동료의 업무 카드를 열어 두면 그 동료의 최종 응답을 읽음으로 바꿔요. 끄면 직접 읽음 처리할 때까지 안 읽음으로 남아요.',
+    dwell: '읽음 처리까지 머무는 시간',
+    dwellAria: '카드를 열고 읽음 처리까지 기다릴 시간',
+    now: '바로',
+    seconds: (n) => `${n}초`,
+  },
+  helpers: {
+    title: '보조 책상',
+    show: '보조 책상 보이기',
+    showHint:
+      '보조 동료가 메인 동료 옆 작은 책상에 앉아요. 꺼도 메인 동료 카드의 작업 정보 › 연결된 보조·분기 작업에서 볼 수 있어요.',
+    stackAt: '묶음(×N) 기준 인원',
+    stackAtAria: '보조 책상을 하나로 묶는 인원',
+    people: (n) => `${n}명부터`,
+    retain: '끝나지 않은 보조 유지',
+    retainAria: '조용하지만 끝나지 않은 보조가 자리를 지키는 시간',
+    minutes: (min) => `${min}분`,
+  },
+  panels: {
+    title: '패널 폭',
+    reset: '패널 폭 초기화',
+    resetHint: '큰 사무실의 왼쪽 메뉴와 오른쪽 칸을 기본 폭으로 되돌려요.',
+    resetDone: '패널 폭을 기본으로 되돌렸어요.',
+  },
   terminalTitle: '터미널과 답하기',
   notifications: {
     title: '알림',

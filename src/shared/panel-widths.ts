@@ -19,6 +19,19 @@ export interface PanelWidths {
   dock?: number;
 }
 
+/** Where the big office keeps the dragged widths (with `at`, when they were last dragged). */
+export const PANEL_WIDTHS_KEY = 'office:panel-widths';
+
+/** When the saved widths were dragged (0: unknown, saved before #228). */
+export function readWidthsAt(raw: string | null): number {
+  try {
+    const at = (JSON.parse(raw ?? '{}') as { at?: unknown } | null)?.at;
+    return typeof at === 'number' && Number.isFinite(at) ? at : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** Saved widths, with anything that is not a sensible number left out. */
 export function readWidths(raw: string | null): PanelWidths {
   let value: unknown;

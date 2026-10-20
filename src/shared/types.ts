@@ -447,7 +447,30 @@ export interface Preferences {
   petAppearance?: PetCustomization;
   /** Desktop OS notifications (#229). Missing: calls and errors only, silently. */
   notifications?: NotifyPreferences;
+  // #228 — every one optional; a missing value keeps the behaviour from before it existed.
+  /** Tiny (쪼꼬미) desks carry a small name. Missing: on. */
+  tinyNames?: boolean;
+  /** Tiny desks' dot also says "a final reply waits". Off: only calls and errors. Missing: on. */
+  tinyFinalDot?: boolean;
+  /** How the dock's pill shows at rest. Missing: `subdued`. */
+  dockPill?: DockPillVisibility;
+  /** When the person asked the dock pill back home (ms). The dock forgets older spots. */
+  dockPillResetAt?: number;
+  /** When the person asked the big office's dragged column widths back (ms). */
+  panelWidthsResetAt?: number;
+  /** A work card reads its colleague's final replies. Missing: on. */
+  readOnOpen?: boolean;
+  /** Seconds a card stays on one colleague before it reads. Missing: 1.5. */
+  readDwellSeconds?: number;
+  /** Helper desks beside their colleague in the office, row and floor. Missing: on. */
+  helperDesks?: boolean;
+  /** From this many helpers on one colleague they share one stacked desk. Missing: 4. */
+  helperStackAt?: number;
+  /** Minutes a quiet helper still mid-task keeps its desk. Missing: 30. */
+  helperRetainMinutes?: number;
 }
+/** `always`: solid. `subdued`: faint until hovered. `hover`: hidden until the pointer nears it. */
+export type DockPillVisibility = 'always' | 'subdued' | 'hover';
 /** Which news raises an OS notification, and whether it plays a sound. */
 export interface NotifyPreferences {
   finals: boolean;

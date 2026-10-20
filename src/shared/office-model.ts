@@ -12,6 +12,7 @@ import { m } from './i18n';
 import { liveLabels } from './labels';
 import { quotaExhaustion, type QuotaExhaustion } from './quota';
 import { layoutRow } from './office-layout';
+import { viewPrefs, type ViewPrefs } from './view-prefs';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -43,6 +44,8 @@ export interface OfficeModel {
   notices: OfficeNotice[];
   /** How long a notice bubble stays on a desk (preference, default 3h). */
   bubbleHours: number;
+  /** The view preferences of #228 with their defaults (tiny names, pill, helper desks…). */
+  display: ViewPrefs;
   residents: Session[];
   hidden: Session[];
   /** Residents per zone, in projection order. */
@@ -51,7 +54,11 @@ export interface OfficeModel {
   bySeat: Session[];
   /** Primary office colleagues in seat order (all of them, for lists and counts). */
   seats: ResidentView[];
-  /** What the scenes draw: office residents in seat order minus hidden ones. */
+  /**
+   * What the scenes draw: office residents in seat order minus hidden ones — and minus every
+   * helper when the person turned helper desks off (they stay in `view`, the roster and the
+   * colleague's card, just without a desk).
+   */
   scene: Session[];
   /** Primary colleagues the person hid, in seat order (to bring them back). */
   veiled: ResidentView[];
@@ -81,7 +88,10 @@ export function buildOfficeModel(
   const sessions = snapshot?.sessions ?? [];
   const prefs = snapshot?.preferences ?? {};
   const notices = snapshot?.notices ?? [];
-  const { sessions: residents, hidden } = officeResidents(sessions, now);
+  const display = viewPrefs(snapshot?.preferences);
+  const { sessions: residents, hidden } = officeResidents(sessions, now, {
+    unfinishedMs: display.helperUnfinishedMs,
+  });
   const zoneOf = (s: Session) => s.zone || officeZone(s, prefs, now);
   const zones = Object.fromEntries(
     ZONES.map((z) => [z, residents.filter((s) => zoneOf(s) === z)]),
@@ -154,12 +164,13 @@ export function buildOfficeModel(
     now,
     notices,
     bubbleHours: snapshot?.preferences.bubbleHours ?? 3,
+    display,
     residents,
     hidden,
     zones,
     bySeat,
     seats,
-    scene: bySeat.filter((s) => !byId.get(s.id)?.veiled),
+    scene: bySeat.filter((s) => !byId.get(s.id)?.veiled && (display.helperDesks || !s.attachedTo)),
     veiled: seats.filter((v) => v.veiled),
     veiledHelpers: shown.flatMap((v) => v.helpers.filter((h) => h.veiled)),
     hiddenSessionIds: sessions.filter((s) => s.hiddenAt).map((s) => s.id),
