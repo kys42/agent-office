@@ -22,4 +22,4 @@
 
 - `tests/card-windows.test.ts`: 잘못된 위치, 책상 기준 배치, 저장 위치, 모니터 제거·작은 작업 영역, 고정 창 헤더를 남기는 배치.
 - `tests/ui/card.spec.ts`: 새 헤더/메뉴, 두 토글의 독립성, 오류 시 상태 유지, 초기 target 복원, 드래그·키보드·입력·개인정보.
-- `npm run test:cards`: 개인 데이터와 분리한 실제 Electron에서 여러 고정 창·재사용·blur·닫기·고정 해제·독립 초안·IPC sender·재실행 위치 복원·위치 기억 해제를 검사한다. `test:package`도 DMG에서 복사한 앱으로 같은 검사를 실행한다.
+- `npm run test:cards`: 개인 데이터와 분리한 실제 Electron에서 여러 고정 창·재사용·blur·닫기·고정 해제·독립 초안·IPC sender·재실행 위치 복원·위치 기억 해제를 검사한다. 실제 OS 포커스를 다루므로 CI나 `AGENT_OFFICE_FOCUS_TESTS=1`에서만 돌고, 그 밖의 로컬 실행에서는 건너뛴다. `test:package`도 DMG에서 복사한 앱으로 같은 검사를 실행한다.

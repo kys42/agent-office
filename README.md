@@ -265,6 +265,8 @@ node scripts/readme-hero.mjs en  # big-office tour GIF (needs npm run dev + ffmp
 node scripts/readme-desktop.mjs en  # desktop scene PNG + GIF (needs npm run dev + ffmpeg)
 ```
 
+Local Electron smokes open their windows behind your work and never take focus (`AGENT_OFFICE_QUIET`). Steps that check real OS focus, and `test:cards`, run only in CI or with `AGENT_OFFICE_FOCUS_TESTS=1`.
+
 Tests use synthetic data and never modify your sources; only the live-connection UI smoke test reads local history.
 
 ## 🗺️ Roadmap

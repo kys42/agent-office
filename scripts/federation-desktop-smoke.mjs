@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { quietEnv } from './quiet-smoke.mjs';
 async function poll(page, predicate) {
   const deadline = Date.now() + 20000;
   while (!(await page.evaluate(predicate))) {
@@ -36,6 +37,7 @@ try {
     args: ['.', `--user-data-dir=${path.join(temp, 'profile')}`],
     env: {
       ...process.env,
+      ...quietEnv,
       AGENT_OFFICE_LOCALE: 'ko',
       AGENT_OFFICE_DATA_DIR: path.join(temp, 'data'),
       AGENT_OFFICE_FEDERATION_DIR: path.join(temp, 'federation'),
