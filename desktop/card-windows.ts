@@ -69,6 +69,12 @@ export class CardWindows {
     return next;
   }
 
+  /** The colleagues whose card is on screen now. */
+  shown() {
+    return [...this.entries]
+      .filter((e) => e.target && !e.window.isDestroyed() && e.window.isVisible())
+      .map((e) => e.target!.id);
+  }
   windows() {
     return [...this.entries].map((e) => e.window).filter((w) => !w.isDestroyed());
   }
@@ -109,7 +115,7 @@ export class CardWindows {
     e.window.focus();
     e.window.webContents.focus();
   }
-  private reveal(e: Entry) {
+  private revealEntry(e: Entry) {
     if (!e.target || e.window.isDestroyed()) return;
     this.cancelHide(e);
     e.window.webContents.send('office:card', e.target);
@@ -140,13 +146,28 @@ export class CardWindows {
     if (e && !e.pinned) this.hide(e);
   }
 
+  /**
+   * Like `open`, but never puts away a card already on screen for that colleague: it is only
+   * brought forward (a notification click wants that colleague shown, not toggled).
+   */
+  reveal(target: CardTarget, anchor: Rect) {
+    const e = this.preview;
+    if (e?.window.isVisible() && e.target?.id === target.id && e.target.news === target.news) {
+      this.cancelHide(e);
+      e.askedAt = Date.now();
+      this.revealEntry(e);
+      return;
+    }
+    this.open(target, anchor);
+  }
+
   open(target: CardTarget, anchor: Rect) {
     const pinned = [...this.entries].find((e) => e.pinned && e.target?.id === target.id);
     if (pinned) {
       this.cancelHide(pinned);
       if (target.bookmark || pinned.target?.news !== target.news) {
         pinned.target = target;
-        this.reveal(pinned);
+        this.revealEntry(pinned);
       } else {
         if (quiet) pinned.window.showInactive();
         else pinned.window.show();
@@ -180,7 +201,7 @@ export class CardWindows {
     e.openingBounds = bounds;
     e.target = target;
     e.askedAt = Date.now();
-    if (!e.window.webContents.isLoadingMainFrame()) this.reveal(e);
+    if (!e.window.webContents.isLoadingMainFrame()) this.revealEntry(e);
   }
 
   private create(bounds: Rect) {
@@ -260,7 +281,7 @@ export class CardWindows {
       );
       e.placed = { width, height };
     });
-    window.webContents.on('did-finish-load', () => this.reveal(e));
+    window.webContents.on('did-finish-load', () => this.revealEntry(e));
     void window.loadFile(this.options.index, { hash: 'card' });
     return e;
   }
@@ -352,7 +373,7 @@ export class CardWindows {
         if (!e.pinned) this.hide(e);
         if (target.bookmark) {
           other.target = target;
-          this.reveal(other);
+          this.revealEntry(other);
         } else this.focus(other);
         return;
       }

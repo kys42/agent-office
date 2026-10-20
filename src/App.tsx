@@ -275,6 +275,11 @@ export default function App() {
   // J/K walks what the office shows: hidden colleagues stay out until they talk again.
   const ordered = model.scene;
   const current = sessions.find((s) => s.id === selected);
+  // The desktop skips notifications about the colleague whose card is open here (#229).
+  const currentId = current?.id ?? null;
+  useEffect(() => {
+    if (!demo) api.selected?.(currentId);
+  }, [demo, currentId]);
   const prefs = snapshot?.preferences;
   const notices = snapshot?.notices ?? [];
   const unread = model.unread;

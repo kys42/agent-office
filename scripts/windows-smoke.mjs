@@ -51,6 +51,8 @@ try {
       CODEX_HOME: path.join(temp, 'codex'),
       OPENCLAW_STATE_DIR: path.join(temp, 'openclaw'),
       AGENT_OFFICE_SYSTEM_LANGUAGES: 'ko',
+      // Never a real toast on the runner.
+      AGENT_OFFICE_RECORD_NOTIFICATIONS: '1',
     },
   });
   const page = await app.firstWindow();

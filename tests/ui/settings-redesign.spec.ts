@@ -26,6 +26,7 @@ async function desktop(page: Page) {
       visit: async () => structuredClone(s),
       detail: async (id: string) => structuredClone(s.sessions.find((x: any) => x.id === id)),
       preferences: async (p: any) => {
+        (w.saved ??= []).push(p);
         s.preferences = { ...s.preferences, ...p };
         return structuredClone(s);
       },
@@ -331,4 +332,44 @@ test('a deep link to a section the browser preview does not draw lands on its ca
     'true',
   );
   await expect(page.getByRole('tabpanel')).toBeFocused();
+});
+
+test('notifications are a desktop setting in General: calls on, finals and sound off at first', async ({
+  page,
+}) => {
+  await desktop(page);
+  await page.goto('/?lang=ko#settings=notifications');
+  const section = page.locator('[data-guide-section="notifications"]');
+  await expect(section).toBeFocused();
+  await expect(page.getByRole('tab', { name: '일반', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(section.getByRole('heading', { name: '알림' })).toBeVisible();
+  const finals = section.getByRole('switch', { name: '최종 응답' });
+  const calls = section.getByRole('switch', { name: '호출과 오류' });
+  const sound = section.getByRole('switch', { name: '소리 내기' });
+  await expect(finals).toHaveAttribute('aria-checked', 'false');
+  await expect(calls).toHaveAttribute('aria-checked', 'true');
+  await expect(sound).toHaveAttribute('aria-checked', 'false');
+  // Hidden screen content cannot reach back into what the OS already keeps.
+  await expect(section).toContainText('OS 알림 기록에 남아 있을 수 있어요');
+  // Each switch saves the whole choice through the shared preferences.
+  await finals.click();
+  await expect(finals).toHaveAttribute('aria-checked', 'true');
+  await sound.click();
+  await expect(sound).toHaveAttribute('aria-checked', 'true');
+  expect(await page.evaluate(() => (window as any).saved)).toEqual([
+    { notifications: { finals: true, calls: true, sound: false } },
+    { notifications: { finals: true, calls: true, sound: true } },
+  ]);
+  await section.screenshot({ path: '.local/settings-notifications.png' });
+});
+
+test('the browser preview has no notification settings', async ({ page }) => {
+  await page.goto('/?demo&lang=ko');
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await page.getByRole('tab', { name: '일반', exact: true }).click();
+  await expect(page.getByLabel('언어')).toBeVisible();
+  await expect(page.locator('[data-guide-section="notifications"]')).toHaveCount(0);
 });

@@ -21,6 +21,7 @@ test('Deep links keep their pre-category ids and land in the right category', ()
   assert.equal(settingsCategory('connections'), 'connections');
   assert.equal(settingsCategory('zones'), 'spaces');
   assert.equal(settingsCategory('terminal'), 'general');
+  assert.equal(settingsCategory('notifications'), 'general');
   // The old long page's "rhythm" section moved into General's privacy section.
   assert.equal(settingsCategory('rhythm'), 'general');
   assert.equal(settingsAnchor('rhythm'), 'privacy');

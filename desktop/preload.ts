@@ -95,6 +95,7 @@ const api: OfficeAPI = {
     ipcRenderer.on('office:select', f);
     return () => ipcRenderer.removeListener('office:select', f);
   },
+  selected: (id) => ipcRenderer.send('office:selected', id),
   settings: {
     open: (section) => ipcRenderer.invoke('office:settings', section ?? null),
     onOpen: (cb) => {

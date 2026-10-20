@@ -74,6 +74,9 @@ import { CardWindows } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
+import { Notifier } from './notify.js';
+/** Test runs read notifications instead of showing them, even when not quiet (CI). */
+const recordNotifications = process.env.AGENT_OFFICE_RECORD_NOTIFICATIONS === '1';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
   settingsWindow: BrowserWindow | null = null,
@@ -81,6 +84,9 @@ let main: BrowserWindow | null = null,
   bridge: ServiceBridge,
   quitting = false;
 let cards: CardWindows;
+let notifier: Notifier;
+// The colleague card open in the big office, as its page reports it (notifications skip it).
+let mainSelected: string | null = null;
 let mobile: MobileServer | undefined;
 // Desk pet: presentation-only window state. Office data comes from the same snapshot.
 let dockMode: DockMode = 'pet',
@@ -115,6 +121,28 @@ else {
       watch,
     });
     app.on('before-quit', () => cards.dispose());
+    notifier = new Notifier({
+      // Quiet runs, and test runs that take the real focus (CI), record instead of showing.
+      record: quiet || recordNotifications,
+      focus: () => ({
+        mainFocused: !!main && onScreen(main) && main.isFocused(),
+        selected: mainSelected,
+        cards: cards.shown(),
+      }),
+      open: (sessionId) => {
+        // Someone working with the desk pet or row gets the colleague's card there (shown, never
+        // toggled closed if already open); otherwise the big office opens at that colleague.
+        // A summary (no one colleague) opens the big office beside the dock, which stays.
+        const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
+        if (sessionId && docked) cards.reveal({ id: sessionId, news: false }, dock!.getBounds());
+        else showMain(sessionId, { keepDock: docked });
+      },
+    });
+    app.on('before-quit', () => notifier.dispose());
+    // Test runs read what would have been shown.
+    if (quiet || recordNotifications)
+      (globalThis as { __agentOfficeNotifications?: unknown }).__agentOfficeNotifications =
+        notifier.recorded;
     const windows = () =>
       [main, dock, settingsWindow, ...cards.windows()]
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
@@ -126,10 +154,14 @@ else {
     const publish = (s: Snapshot) => {
       followLanguage(s);
       delivery.publish(s, windows());
+      notifier.observe(s);
     };
     bridge.on('snapshot', publish);
     bridge.on('patch', (patch: SnapshotPatch) => {
-      if (delivery.update(patch, windows())) followLanguage(delivery.latest!);
+      if (delivery.update(patch, windows())) {
+        followLanguage(delivery.latest!);
+        notifier.observe(delivery.latest!);
+      }
       // A change that does not start from what is held here (e.g. the collector restarted).
       else void bridge.call('snapshot').then(publish, () => {});
     });
@@ -296,10 +328,10 @@ function createMain() {
     }
   });
 }
-function showMain(id?: string) {
+function showMain(id?: string, { keepDock = false } = {}) {
   if (!main || main.isDestroyed()) createMain();
   stopDrag(false);
-  if (dock && !dock.isDestroyed()) dock.hide();
+  if (!keepDock && dock && !dock.isDestroyed()) dock.hide();
   const window = main!;
   if (window.isMinimized()) window.restore();
   present(window);
@@ -516,6 +548,10 @@ function trusted(e: Electron.IpcMainInvokeEvent) {
     throw new Error(m().desktop.untrustedWindow);
 }
 function setupIPC() {
+  ipcMain.on('office:selected', (e, id: unknown) => {
+    if (!main || e.sender !== main.webContents || e.senderFrame !== e.sender.mainFrame) return;
+    mainSelected = typeof id === 'string' && id.length <= 400 ? id : null;
+  });
   ipcMain.handle('office:open-artifact', async (e, url) => {
     trusted(e);
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;
