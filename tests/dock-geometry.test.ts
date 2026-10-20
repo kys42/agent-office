@@ -172,9 +172,14 @@ test('tiny drops the bubble headroom and draws the scene at helper-desk size', (
   assert.ok(TINY_NAME_TOP + TINY_NAME_ROOM <= DESK_FOOT, 'above the floor line');
   assert.ok(TINY_NAME_ROOM * TINY_SCALE >= 13, 'room for a 9px name chip');
   assert.equal(TINY_HEIGHT, Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM);
-  assert.equal(TINY_HEIGHT, 93, 'as before the pill');
-  assert.ok(TINY_HEIGHT < 100 && TINY_HEIGHT < ROW_HEIGHT / 4);
+  // A little taller than before the effects (93): room for the shared effects above the desks.
+  assert.equal(TINY_HEIGHT, 109);
+  assert.ok(TINY_HEIGHT <= 110 && TINY_HEIGHT < ROW_HEIGHT / 3);
   assert.ok(TINY_HEIGHT < FLOOR_HEIGHT / 3);
+  // The highest effect, an arriving sheet setting off at station y 112 − 170 (plus its own
+  // 15px height turned on its side), starts inside the window.
+  const arrivalTop = TINY_TOP + 112 - 170 - 12;
+  assert.ok(-arrivalTop * TINY_SCALE <= TINY_TOP_ROOM, 'arriving papers are not clipped');
   assert.equal(dockHeight(false, false), ROW_HEIGHT);
   assert.equal(dockHeight(true, false), FLOOR_HEIGHT);
   assert.equal(dockHeight(false, true), TINY_HEIGHT);

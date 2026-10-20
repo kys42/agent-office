@@ -758,7 +758,7 @@ body.dock-mode {
 
 /* ───────── Tiny (쪼꼬미) row and floor ─────────
    Either look at helper-desk size (TINY_SCALE), status only: the render drops bubbles, flags,
-   rugs and plates; these rules size what is left for a strip about 90px tall. Sizes inside
+   rugs and plates; these rules size what is left for a strip about 110px tall (desk effects keep their own sizes, scaled). Sizes inside
    the scene are in station space (×0.41 on screen). */
 .desk-row.is-tiny .dock-pill {
   bottom: 4px;

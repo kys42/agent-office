@@ -106,7 +106,7 @@ export function HelperStack({
   onVeil?: (s: Session) => void;
   /**
    * No list: a click opens the front helper's card right away. The tiny dock draws the stack
-   * at ~0.41 scale in a 93px window, where the list would be unreadable and clipped.
+   * at ~0.41 scale in a ~100px window, where the list would be unreadable and clipped.
    */
   direct?: boolean;
 }) {
