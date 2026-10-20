@@ -41,6 +41,7 @@ import { targetLine } from './TerminalSend';
 import type { ReceiptAction } from '../lib/useOffice';
 import {
   MOODS,
+  PROVIDERS,
   type NoticeReceipt,
   type ReplySender,
   type Session,
@@ -63,6 +64,8 @@ import {
   FLOOR_SCENE_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
+  TINY_FEET,
+  TINY_NAME_ROOM,
   TINY_SCENE_HEIGHT,
   TINY_SCALE,
   TINY_TOP,
@@ -365,12 +368,16 @@ export function DeskRow({
         >
           <div
             className={`desk-row-scene dynamic-office ${reducedMotion ? 'motion-paused' : ''}`}
-            style={{
-              left: LANE_PAD,
-              width: layout.width,
-              height: sceneHeight,
-              transform: `scale(${scale})`,
-            }}
+            style={
+              {
+                left: LANE_PAD,
+                width: layout.width,
+                height: sceneHeight,
+                transform: `scale(${scale})`,
+                // Tiny name tags size their words in real pixels against this.
+                ...(tiny ? { '--tiny-scale': TINY_SCALE } : {}),
+              } as CSSProperties
+            }
           >
             {layout.zones.map((zone, index) => {
               const zoneName = privacy ? t.desk.project : zone.name;
@@ -596,6 +603,23 @@ export function DeskRow({
                             className={`tiny-dot tone-${dot.tone}`}
                             aria-hidden="true"
                           />
+                        )}
+                        {tiny && (
+                          // A small name under the desk, drawn in real pixels (not ×0.41).
+                          // Not a second tab stop: the desk button already says the name;
+                          // a click here opens the card like the desk does.
+                          <span
+                            className="tiny-name"
+                            data-solid
+                            aria-hidden="true"
+                            title={privacy ? undefined : label.name}
+                            style={{ top: TINY_FEET, height: TINY_NAME_ROOM }}
+                            onClick={() => open(s.id)}
+                          >
+                            <span>
+                              {privacy ? (PROVIDERS[s.provider]?.short ?? label.name) : label.name}
+                            </span>
+                          </span>
                         )}
                         {!tiny && !v.needsPerson && (
                           <VeilButton

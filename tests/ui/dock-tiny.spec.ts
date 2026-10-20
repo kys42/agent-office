@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
-import { TINY_HEIGHT } from '../../src/shared/dock-geometry';
+import { TINY_HEIGHT, TINY_SCALE } from '../../src/shared/dock-geometry';
 
 /**
  * Three colleagues: run-0 has an unread final reply, run-1 is calling the person, run-2 is
@@ -316,4 +316,72 @@ test('Back from tiny, a bubble unfolded before does not reopen', async ({ page }
   // Esc folds the dock straight away (nothing open to fold first).
   await page.keyboard.press('Escape');
   await expect.poll(() => calls(page)).toContain('pet');
+});
+
+test('Tiny desks carry a small readable name that opens the card', async ({ page }) => {
+  await setup(page, '#mini=row&tiny');
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  // run-2 gets a name far wider than its tiny desk.
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.sessions[2].alias = '아주아주 긴 이름을 가진 동료의 끝나지 않는 이름표';
+    w.publish();
+  });
+  const name = (i: number) => page.locator(`[data-station-id="run-${i}"] .tiny-name`);
+  await expect(name(0)).toHaveText('동료 0');
+  await expect(name(1)).toHaveText('동료 1');
+  await expect(name(0)).toHaveAttribute('title', '동료 0');
+  // Drawn at real size inside the ×0.41 scene: at least 9px on screen, within the window.
+  const chip = name(0).locator('span');
+  const px = await chip.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(px * TINY_SCALE).toBeGreaterThanOrEqual(8.9);
+  // Once the dock has slid in, the chip sits whole inside the 93px window.
+  await expect
+    .poll(async () => {
+      const r = (await page.locator('.desk-row').boundingBox())!;
+      return r.y + r.height;
+    })
+    .toBe(720);
+  const row = (await page.locator('.desk-row').boundingBox())!;
+  const box = (await chip.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(11);
+  expect(box.y + box.height).toBeLessThanOrEqual(row.y + row.height);
+  expect(box.y).toBeGreaterThan(row.y);
+  // Under the desk, clear of the head's dot.
+  const dot = (await page.locator('[data-station-id="run-0"] .tiny-dot').boundingBox())!;
+  expect(box.y).toBeGreaterThan(dot.y + dot.height);
+  // The default pill (right end) leaves a small row's names uncovered.
+  const pill = (await page.locator('.dock-pill').boundingBox())!;
+  for (const i of [0, 1, 2]) {
+    const b = (await name(i).locator('span').boundingBox())!;
+    expect(b.x + b.width < pill.x || b.x > pill.x + pill.width).toBe(true);
+  }
+
+  // A long name stays on one line, as wide as its desk, and ends in an ellipsis.
+  const long = name(2).locator('span');
+  await expect(long).toHaveText(/아주아주 긴 이름/);
+  await expect(long).toHaveCSS('text-overflow', 'ellipsis');
+  await expect(long).toHaveCSS('white-space', 'nowrap');
+  expect(await long.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  const desk = (await page.locator('[data-station-id="run-2"] .office-pet').boundingBox())!;
+  const lb = (await long.boundingBox())!;
+  expect(lb.width).toBeLessThanOrEqual(164 * TINY_SCALE + 1);
+  expect(Math.abs(lb.x + lb.width / 2 - (desk.x + desk.width / 2))).toBeLessThan(3);
+  await page.screenshot({
+    path: '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad/shots/tiny-names.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+
+  // Clicking the name opens the card, like the desk.
+  await name(1).click();
+  await expect.poll(() => page.evaluate(() => (window as any).opens)).toEqual(['run-1']);
+});
+
+test('Tiny names in privacy are the provider, with no hover name', async ({ page }) => {
+  await setup(page, '#mini=floor&tiny', { bridge: true, privacy: true });
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  const name = page.locator('[data-station-id="run-0"] .tiny-name');
+  await expect(name).toHaveText('Claude');
+  await expect(name).not.toHaveAttribute('title', /.+/);
+  await expect(page.locator('.tiny-name', { hasText: '동료' })).toHaveCount(0);
 });

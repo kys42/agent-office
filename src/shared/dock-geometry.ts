@@ -42,14 +42,22 @@ export const TINY_SCALE = 68 / 164;
  */
 export const TINY_TOP = -36;
 /** Desk legs meet the floor at 188 (DESK_FOOT), plus their contact shadow. */
-const TINY_FEET = 188 + 4;
+export const TINY_FEET = 188 + 4;
 /**
- * Without rugs and name cards the office row ends at the desk legs like the floor, so both
- * tiny looks share one scene height (and one window height).
+ * Station-space room under the desk legs for the tiny name tag (about 14px on screen: a 9px
+ * name in a small dark chip).
  */
-export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
-/** Compact see-through room above the tiny desks (the tiny pill floats over their feet). */
-export const TINY_TOP_ROOM = 28;
+export const TINY_NAME_ROOM = 34;
+/**
+ * Without rugs and name cards the office row ends at the desk legs like the floor, then the
+ * name tags, so both tiny looks share one scene height (and one window height).
+ */
+export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET + TINY_NAME_ROOM;
+/**
+ * Compact see-through room above the tiny desks (the tiny pill floats over their feet). It
+ * gave the name tags its room, so the window keeps its height.
+ */
+export const TINY_TOP_ROOM = 14;
 export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM;
 /** The dock window's height for the office row or the floor, normal or tiny. */
 export const dockHeight = (floor: boolean, tiny: boolean) =>
