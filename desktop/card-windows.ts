@@ -13,6 +13,7 @@ import {
 } from '../src/shared/dock-geometry.js';
 import { popupBounds, readCardPosition } from '../src/shared/card-windows.js';
 import { m } from '../src/shared/i18n/index.js';
+import { quiet } from './quiet.js';
 
 interface Entry {
   window: BrowserWindow;
@@ -103,6 +104,7 @@ export class CardWindows {
   }
   private focus(e: Entry, steal = true) {
     if (e.window.isDestroyed()) return;
+    if (quiet) return;
     if (steal && process.platform === 'darwin') app.focus({ steal: true });
     e.window.focus();
     e.window.webContents.focus();
@@ -113,7 +115,8 @@ export class CardWindows {
     e.window.webContents.send('office:card', e.target);
     e.window.webContents.send('office:card-state', this.state(e.window.webContents));
     e.shownAt = Date.now();
-    e.window.show();
+    if (quiet) e.window.showInactive();
+    else e.window.show();
     this.focus(e, Date.now() - e.askedAt < 2000);
     // macOS can reposition a hidden panel while activating it.
     // Place an ordinary popup after activation; pinned cards keep their own position.
@@ -145,7 +148,8 @@ export class CardWindows {
         pinned.target = target;
         this.reveal(pinned);
       } else {
-        pinned.window.show();
+        if (quiet) pinned.window.showInactive();
+        else pinned.window.show();
         this.focus(pinned);
       }
       return;
@@ -219,11 +223,14 @@ export class CardWindows {
     this.preview = e;
     this.options.secure(window);
     this.options.watch(window);
-    window.setAlwaysOnTop(true, 'pop-up-menu');
-    window.setVisibleOnAllWorkspaces(true, {
-      visibleOnFullScreen: true,
-      skipTransformProcessType: true,
-    });
+    // A quiet run's card stays behind the person's work, on its own Space.
+    if (!quiet) {
+      window.setAlwaysOnTop(true, 'pop-up-menu');
+      window.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      });
+    }
     window.on('blur', () => {
       if (e.dialogs || e.pinned) return;
       this.cancelHide(e);

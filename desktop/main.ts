@@ -73,6 +73,7 @@ import { SnapshotDelivery, type Viewer } from './delivery.js';
 import { CardWindows } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
+import { present, quiet, quietStart } from './quiet.js';
 let main: BrowserWindow | null = null,
   dock: BrowserWindow | null = null,
   settingsWindow: BrowserWindow | null = null,
@@ -94,6 +95,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => showMain());
   app.whenReady().then(() => {
+    quietStart();
     if (process.platform === 'win32') app.setAppUserModelId('dev.kys.agentoffice');
     // Keep edit accelerators while removing Electron's default File/Edit/View/Window bar.
     if (process.platform !== 'darwin')
@@ -267,6 +269,7 @@ function createMain() {
     minHeight: 740,
     title: 'Agent Office',
     icon: path.join(root, 'dist', 'icon.png'),
+    show: !quiet,
     autoHideMenuBar: process.platform !== 'darwin',
     ...windowStyle(process.platform, nativeTheme.shouldUseDarkColors),
     webPreferences: {
@@ -282,6 +285,7 @@ function createMain() {
   }
   secure(main);
   watch(main);
+  if (quiet) main.showInactive();
   void main.loadFile(index);
   main.on('close', (e) => {
     if (!quitting) {
@@ -298,8 +302,7 @@ function showMain(id?: string) {
   if (dock && !dock.isDestroyed()) dock.hide();
   const window = main!;
   if (window.isMinimized()) window.restore();
-  window.show();
-  window.focus();
+  present(window);
   if (id) {
     const select = () => {
       if (!window.isDestroyed()) window.webContents.send('office:select', id);
@@ -319,8 +322,7 @@ function showSettings(section: SettingsSection | null = null) {
     // Still loading: ready-to-show shows it, never a blank window before that.
     if (settingsReady.has(window)) {
       if (window.isMinimized()) window.restore();
-      window.show();
-      window.focus();
+      present(window);
     }
     const tell = () => !window.isDestroyed() && window.webContents.send('office:settings', section);
     if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', tell);
@@ -351,8 +353,7 @@ function showSettings(section: SettingsSection | null = null) {
   watch(window);
   window.once('ready-to-show', () => {
     settingsReady.add(window);
-    window.show();
-    window.focus();
+    present(window);
   });
   window.on('closed', () => {
     if (settingsWindow === window) settingsWindow = null;

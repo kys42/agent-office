@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { focusTests, quietEnv, takeFocus } from './quiet-smoke.mjs';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-native-'));
 const now = new Date().toISOString();
 const sources = {
@@ -83,6 +84,7 @@ try {
     ],
     env: {
       ...process.env,
+      ...quietEnv,
       AGENT_OFFICE_DATA_DIR: path.join(temp, 'data'),
       CLAUDE_CONFIG_DIR: sources.claude,
       CODEX_HOME: sources.codex,
@@ -96,8 +98,9 @@ try {
     await page.evaluate(() => localStorage.getItem('office:onboarding:v1:live')),
     'seen',
   );
+  // Quiet runs keep the app out of the Dock on purpose.
   const checkMacDock = async (stage) => {
-    if (process.platform === 'darwin')
+    if (process.platform === 'darwin' && focusTests)
       assert.equal(
         await app.evaluate(({ app }) => app.dock.isVisible()),
         true,
@@ -135,7 +138,7 @@ try {
   assert.equal(await tab('office').getAttribute('aria-selected'), 'true');
   await assert.rejects(page.evaluate(() => window.office.settings.open('nope')));
   await settingsWindow((w) => w.blur());
-  await page.bringToFront();
+  if (focusTests) await page.bringToFront();
   await settings.waitForTimeout(400);
   assert.equal(await settingsWindow((w) => !!w && w.isVisible()), true, 'kept open on blur');
   // Opening again reuses the window at the asked section.
@@ -340,8 +343,7 @@ try {
     ),
   ]);
   await card.waitForSelector('.inspector');
-  await card.bringToFront();
-  await card.waitForFunction(() => document.hasFocus());
+  await takeFocus(card);
   await checkMacDock('popup work card');
   await card.getByRole('tab', { name: '기억 메모', exact: true }).click();
   const notes = card.locator('#notes');
@@ -404,8 +406,7 @@ try {
     window.office.bookmarks({ sessionIds: ['codex:codex-test'] }),
   );
   assert.equal(persisted.bookmarks.find((b) => b.id === saved.id)?.note, 'Remember this decision');
-  await card.bringToFront();
-  await card.waitForFunction(() => document.hasFocus());
+  await takeFocus(card);
   await card.screenshot({ path: '.local/native-card-memory.png' });
   // The card can be resized, and opens at the size it was given from then on.
   await app.evaluate(({ BrowserWindow }) => {
@@ -470,8 +471,7 @@ try {
   await card.evaluate(() =>
     window.office.card('select', { id: 'claude:claude-test', news: false }),
   );
-  await card.bringToFront();
-  await card.waitForFunction(() => document.hasFocus());
+  await takeFocus(card);
   await card.waitForFunction(() => document.querySelectorAll('.conversation-message').length >= 24);
   const scroll = card.locator('.inspector-scroll');
   await scroll.hover();
@@ -504,19 +504,21 @@ try {
         .emit('blur'),
     );
   // A press on its text box gives the card the keyboard again, after another window had it.
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()
-      .find((x) => x.webContents.getURL().includes('#mini'))
-      ?.focus(),
-  );
-  await card.evaluate(() => window.office.card('focus'));
-  assert.equal(
+  if (focusTests) {
     await app.evaluate(({ BrowserWindow }) =>
-      BrowserWindow.getFocusedWindow()?.webContents.getURL().endsWith('#card'),
-    ),
-    true,
-    'the card holds the keyboard after asking for it',
-  );
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().includes('#mini'))
+        ?.focus(),
+    );
+    await card.evaluate(() => window.office.card('focus'));
+    assert.equal(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getFocusedWindow()?.webContents.getURL().endsWith('#card'),
+      ),
+      true,
+      'the card holds the keyboard after asking for it',
+    );
+  }
   await card.evaluate(() => window.office.card('pin-on'));
   await card.waitForTimeout(700);
   await blurCard();

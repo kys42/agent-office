@@ -1,9 +1,11 @@
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
+import { quietEnv } from './quiet-smoke.mjs';
 const started = Date.now();
 const app = await electron.launch({
   executablePath: 'release/Agent Office-darwin-arm64/Agent Office.app/Contents/MacOS/Agent Office',
   timeout: 30000,
+  env: { ...process.env, ...quietEnv },
 });
 try {
   const page = await app.firstWindow();

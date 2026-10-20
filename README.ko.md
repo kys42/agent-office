@@ -261,6 +261,8 @@ node scripts/readme-hero.mjs ko  # 큰 사무실 투어 GIF (npm run dev + ffmpe
 node scripts/readme-desktop.mjs ko  # 바탕화면 장면 PNG·GIF (npm run dev + ffmpeg 필요)
 ```
 
+로컬의 Electron 검사는 창을 뒤에 띄우고 포커스를 가져가지 않는다(`AGENT_OFFICE_QUIET`). 실제 OS 포커스를 보는 단계와 `test:cards`는 CI나 `AGENT_OFFICE_FOCUS_TESTS=1`에서만 실행한다.
+
 테스트는 합성 데이터만 쓰고 원본을 수정하지 않아요. 실제 연결 UI smoke만 로컬 기록을 읽어요.
 
 ## 🗺️ 로드맵

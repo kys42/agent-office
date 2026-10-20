@@ -3,6 +3,16 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import assert from 'node:assert/strict';
+import { focusTests, quietEnv } from './quiet-smoke.mjs';
+
+// Every step here is about which card window holds the OS focus: it only means something when
+// the app may take the screen.
+if (!focusTests) {
+  console.log(
+    'Card windows smoke skipped: run with AGENT_OFFICE_FOCUS_TESTS=1 when the screen is free.',
+  );
+  process.exit(0);
+}
 
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-cards-'));
 const now = new Date().toISOString();
@@ -67,6 +77,7 @@ const launch = () =>
     ],
     env: {
       ...process.env,
+      ...quietEnv,
       AGENT_OFFICE_DATA_DIR: path.join(temp, 'data'),
       CLAUDE_CONFIG_DIR: sources.claude,
       CODEX_HOME: sources.codex,
