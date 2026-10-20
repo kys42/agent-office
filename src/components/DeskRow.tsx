@@ -64,8 +64,8 @@ import {
   FLOOR_SCENE_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
-  TINY_FEET,
   TINY_NAME_ROOM,
+  TINY_NAME_TOP,
   TINY_SCENE_HEIGHT,
   TINY_SCALE,
   TINY_TOP,
@@ -605,7 +605,7 @@ export function DeskRow({
                           />
                         )}
                         {tiny && (
-                          // A small name under the desk, drawn in real pixels (not ×0.41).
+                          // A small name over the desk's front, drawn in real pixels (not ×0.41).
                           // Not a second tab stop: the desk button already says the name;
                           // a click here opens the card like the desk does.
                           <span
@@ -613,7 +613,7 @@ export function DeskRow({
                             data-solid
                             aria-hidden="true"
                             title={privacy ? undefined : label.name}
-                            style={{ top: TINY_FEET, height: TINY_NAME_ROOM }}
+                            style={{ top: TINY_NAME_TOP, height: TINY_NAME_ROOM }}
                             onClick={() => open(s.id)}
                           >
                             <span>

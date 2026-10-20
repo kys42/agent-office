@@ -345,11 +345,42 @@ test('Tiny desks carry a small readable name that opens the card', async ({ page
   const row = (await page.locator('.desk-row').boundingBox())!;
   const box = (await chip.boundingBox())!;
   expect(box.height).toBeGreaterThanOrEqual(11);
+  // The desks still stand on the window's bottom edge (the name does not lift them).
+  const benches = page.locator('.desk-row .team-bench');
+  expect(await benches.count()).toBeGreaterThan(0);
+  const bench = (await benches.first().boundingBox())!;
+  const legs = bench.y + bench.height;
+  // Only the legs' 4-unit contact shadow lies under them, as before the names.
+  expect(Math.abs(row.y + row.height - 4 * TINY_SCALE - legs)).toBeLessThanOrEqual(1);
+  // The name rides on the desk's lower front: inside the desk's box, over its lower half.
+  expect(box.y).toBeGreaterThanOrEqual(bench.y);
+  expect(box.y + box.height).toBeLessThanOrEqual(legs + 0.5);
+  expect(box.y + box.height / 2).toBeGreaterThan(bench.y + bench.height / 2);
   expect(box.y + box.height).toBeLessThanOrEqual(row.y + row.height);
-  expect(box.y).toBeGreaterThan(row.y);
-  // Under the desk, clear of the head's dot.
+  // Clear of the head's dot.
   const dot = (await page.locator('[data-station-id="run-0"] .tiny-dot').boundingBox())!;
   expect(box.y).toBeGreaterThan(dot.y + dot.height);
+  // See-through at rest, solid while the desk is pointed at.
+  const alpha = () =>
+    chip.evaluate((el) => {
+      const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/)!;
+      const parts = m[1].split(',').map(Number);
+      return parts.length > 3 ? parts[3] : 1;
+    });
+  const rest = await alpha();
+  expect(rest).toBeLessThan(0.7);
+  await page.screenshot({
+    path: '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad/shots/tiny-names-overlay.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+  await page.locator('[data-station-id="run-0"] .office-pet').hover();
+  await expect.poll(alpha).toBeGreaterThan(0.85);
+  await page.screenshot({
+    path: '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad/shots/tiny-names-overlay-hover.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+  await page.mouse.move(1, 1);
+  await expect.poll(alpha).toBeLessThan(0.7);
   // The default pill (right end) leaves a small row's names uncovered.
   const pill = (await page.locator('.dock-pill').boundingBox())!;
   for (const i of [0, 1, 2]) {
@@ -367,10 +398,6 @@ test('Tiny desks carry a small readable name that opens the card', async ({ page
   const lb = (await long.boundingBox())!;
   expect(lb.width).toBeLessThanOrEqual(164 * TINY_SCALE + 1);
   expect(Math.abs(lb.x + lb.width / 2 - (desk.x + desk.width / 2))).toBeLessThan(3);
-  await page.screenshot({
-    path: '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad/shots/tiny-names.png',
-    clip: { x: 0, y: row.y, width: 1440, height: row.height },
-  });
 
   // Clicking the name opens the card, like the desk.
   await name(1).click();

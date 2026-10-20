@@ -20,6 +20,7 @@ import {
   TINY_SCALE,
   TINY_TOP_ROOM,
   TINY_NAME_ROOM,
+  TINY_NAME_TOP,
   TINY_FEET,
   PILL_HOME,
   PILL_MARGIN,
@@ -164,11 +165,14 @@ test('the card opens at the size the person gave it, and a bad remembered size i
 test('tiny drops the bubble headroom and draws the scene at helper-desk size', () => {
   assert.ok(Math.abs(TINY_SCALE - 68 / 164) < 1e-9);
   // The scene ends at the desk legs (plus shadow) and starts just above the heads.
-  assert.equal(TINY_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4 + TINY_NAME_ROOM);
+  assert.equal(TINY_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4);
   assert.equal(TINY_FEET, DESK_FOOT + 4);
+  // The name tag rides on the desk's front (bench at 134, legs to 188), not under it.
+  assert.ok(TINY_NAME_TOP >= 134, 'below the bench top');
+  assert.ok(TINY_NAME_TOP + TINY_NAME_ROOM <= DESK_FOOT, 'above the floor line');
   assert.ok(TINY_NAME_ROOM * TINY_SCALE >= 13, 'room for a 9px name chip');
   assert.equal(TINY_HEIGHT, Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM);
-  assert.equal(TINY_HEIGHT, 93, 'the name tags took the top room: as before the pill');
+  assert.equal(TINY_HEIGHT, 93, 'as before the pill');
   assert.ok(TINY_HEIGHT < 100 && TINY_HEIGHT < ROW_HEIGHT / 4);
   assert.ok(TINY_HEIGHT < FLOOR_HEIGHT / 3);
   assert.equal(dockHeight(false, false), ROW_HEIGHT);
