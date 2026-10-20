@@ -199,7 +199,12 @@ export function parseDialog(screen: Screen | null): DialogState {
   if (!rows.length) return { kind: 'unknown' };
   if (/Ready to submit your answers?\?/i.test(headText)) {
     // `● question` then `→ answer`; a long question or answer wraps onto indented lines below
-    // it (measured: a question wider than the pane went on under itself).
+    // it (measured: a question wider than the pane went on under itself). A question with a line
+    // break or wider than 80 columns (Korean text: about 40 characters) is drawn behind a left
+    // gutter, as on the question screen (2.1.304: `needsGutter`):
+    //    │ ● question…
+    //    │   …rest of it
+    //      → answer
     const answers: { question: string; answer: string }[] = [];
     let item: { question: string[]; answer: string[] | null } | null = null;
     const done = () => {
@@ -209,7 +214,10 @@ export function parseDialog(screen: Screen | null): DialogState {
     };
     // Only below its own title: a review taller than the pane must not read what is above it.
     const title = head.findIndex((line) => /^\s*Review your answers?\s*$/.test(line));
-    for (const line of title < 0 ? [] : head.slice(title + 1)) {
+    for (const drawnLine of title < 0 ? [] : head.slice(title + 1)) {
+      const line = unborder(drawnLine);
+      // An empty line of a gutter is a blank line inside the question.
+      if (!line.trim() && /^\s*│/.test(drawnLine)) continue;
       const q = /^\s*●\s+(.*)$/.exec(line);
       const a = /^\s*→\s+(.*)$/.exec(line);
       if (q) {
@@ -723,9 +731,20 @@ async function answerQuestions(
     await s.press(['Right']);
   }
   // The review lists every answer as the dialog will send it: it must be exactly the choice.
+  // Several picks are joined with `, ` (toggled here top to bottom, so in option order), and a
+  // label holding `, ` or `"` is drawn in JSON quotes (2.1.304).
+  const listed = (labels: string[]) =>
+    labels
+      .map((label) => {
+        const text = label.replace(/\s+/g, ' ').trim();
+        return text.includes(', ') || text.includes('"') ? JSON.stringify(text) : text;
+      })
+      .join(', ');
   const expected = qs.map((q, qi) => {
     const a = answers[qi];
-    return 'other' in a ? oneLine(a.other) : a.options.map((i) => q.options[i].label).join(', ');
+    if ('other' in a) return oneLine(a.other);
+    const picked = [...new Set(a.options)].sort((x, y) => x - y).map((i) => q.options[i].label);
+    return q.multiSelect ? listed(picked) : picked[0];
   });
   const fits = (d2: Dialog) =>
     d2.kind === 'review' &&

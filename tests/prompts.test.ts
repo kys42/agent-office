@@ -452,6 +452,16 @@ type Shown =
   | { kind: 'bash'; command: string };
 type Answer = Record<string, string> | 'rejected' | 'chat' | { choice: string };
 
+/** Terminal columns: Hangul, CJK and full-width forms take two. */
+const cols = (text: string) =>
+  [...text].reduce(
+    (n, c) =>
+      n + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\uff00-\uff60]/.test(c) ? 2 : 1),
+    0,
+  );
+/** Claude Code 2.1.304 draws a question with a line break or wider than 80 columns in a gutter. */
+const needsGutter = (question: string) => question.includes('\n') || cols(question) > 80;
+
 /** One dialog as Claude Code 2.1.296 draws it and reacts to keys (TERMINAL.md, measured). */
 class Claude {
   answer: Answer | null = null;
@@ -501,6 +511,15 @@ class Claude {
       } else current = current ? current + ' ' + word : word;
     }
     return [...out, current];
+  }
+  /** The review's `● question`: in a gutter (` │ `) when long or on several lines. */
+  private reviewQuestion(question: string): string[] {
+    if (!needsGutter(question)) return this.wrap(` ● ${question}`);
+    // In the gutter the bullet sits at column 3, the text and its wrapped rest at column 5.
+    return question
+      .split('\n')
+      .flatMap((line, i) => this.wrap(`${i ? '   ' : ' ● '}${line}`))
+      .map((line) => ` │ ${line.slice(1)}`.trimEnd());
   }
   render(): string {
     if (this.closed) return ['⏺ Done.', RULE, '❯ ', RULE, '  ⏸ manual mode on'].join('\n');
@@ -562,7 +581,7 @@ class Claude {
         '',
         ...qs.flatMap((q, i) =>
           this.done(i)
-            ? [...this.wrap(` ● ${q.question}`), ...this.wrap(`   → ${this.answerOf(i)}`)]
+            ? [...this.reviewQuestion(q.question), ...this.wrap(`   → ${this.answerOf(i)}`)]
             : [],
         ),
         '',
@@ -582,7 +601,9 @@ class Claude {
       RULE,
       bar,
       '',
-      q.question,
+      ...(needsGutter(q.question)
+        ? q.question.split('\n').map((line) => `│ ${line}`)
+        : [q.question]),
       '',
       ...q.options.flatMap((o, i) => [
         `${mark(i)} ${i + 1}. ${box(i)}${o.label}`,
@@ -604,7 +625,9 @@ class Claude {
     return q.multiSelect
       ? q.options
           .filter((_, j) => this.checked[i][j])
-          .map((o) => o.label)
+          .map((o) =>
+            o.label.includes(', ') || o.label.includes('"') ? JSON.stringify(o.label) : o.label,
+          )
           .join(', ')
       : (this.picked[i] ?? '');
   }
@@ -1470,4 +1493,102 @@ test('A review is read only below its own title (a taller review never reads wha
   assert.ok(seen.kind === 'review' && seen.answers.length === 1);
   const cut = screen(false);
   assert.ok(cut.kind === 'review' && cut.answers.length === 0, 'nothing to check: refused');
+});
+
+// Claude Code 2.1.304 draws a question wider than 80 columns (about 40 Korean characters) or on
+// several lines behind a left gutter, on the question screen and in the review alike.
+const LONG_INPUT = {
+  questions: [
+    {
+      question:
+        '작업 브랜치 base 는 어디로 할까요? 캐시 유지 변경이 들어 있어야 해서 dev 브랜치는 그보다 뒤에 있습니다',
+      header: '브랜치',
+      multiSelect: false,
+      options: [{ label: 'main' }, { label: 'dev' }],
+    },
+    {
+      question: '어떤 검사를 함께 돌릴까요?\n\n고른 것만 CI 에서 실행합니다.',
+      header: '검사',
+      multiSelect: true,
+      options: [{ label: 'lint, format' }, { label: 'unit "fast"' }, { label: 'e2e' }],
+    },
+    {
+      question:
+        '배포 전에 꼭 확인해야 할 내용이 있으면 적어 주세요. 없으면 첫 번째 선택지를 고르면 됩니다',
+      header: '메모',
+      multiSelect: false,
+      options: [{ label: '없음' }, { label: '나중에' }],
+    },
+  ],
+};
+
+test('Long or multi-line questions in a gutter: the review is read and submitted on both hosts', async () => {
+  assert.ok(LONG_INPUT.questions.every((q) => needsGutter(q.question)));
+  for (const host of ['tmux', 'orca'] as const) {
+    for (const width of [undefined, 60]) {
+      const { result: r, sim } = await answer(
+        QUESTION(LONG_INPUT),
+        shownQuestions(LONG_INPUT),
+        [ask(LONG_INPUT)],
+        { answers: [{ options: [1] }, { options: [0, 1] }, { other: '스테이징 DB 백업 확인' }] },
+        (sim) => (sim.reviewWidth = width),
+        { host },
+      );
+      assert.equal((r as { status: string }).status, 'answered', `${host} ${width}: ${failed(r)}`);
+      assert.deepEqual(sim.answer, {
+        [LONG_INPUT.questions[0].question]: 'dev',
+        [LONG_INPUT.questions[1].question]: '"lint, format", "unit \\"fast\\""',
+        [LONG_INPUT.questions[2].question]: '스테이징 DB 백업 확인',
+      });
+      assert.equal(sim.keys.at(-1), 'Enter', 'the final Enter on Submit answers');
+    }
+  }
+});
+
+test('A review drawn with gutters, as tmux and Orca (blank lines dropped) read it', () => {
+  const lines = [
+    RULE,
+    '←  ☒ 브랜치  ☒ 검사  ☒ 메모  ✔ Submit  →',
+    '',
+    'Review your answers',
+    '',
+    ' │ ● 작업 브랜치 base 는 어디로 할까요? 캐시 유지 변경이 들어 있어야 해서 dev',
+    ' │   브랜치는 그보다 뒤에 있습니다',
+    '   → dev',
+    ' │ ● 어떤 검사를 함께 돌릴까요?',
+    ' │',
+    ' │   고른 것만 CI 에서 실행합니다.',
+    '   → "lint, format", "unit \\"fast\\""',
+    ' ● Pick a size',
+    '   → Small',
+    '',
+    'Ready to submit your answers?',
+    '',
+    '❯ 1. Submit answers',
+    '  2. Cancel',
+  ];
+  for (const text of [lines.join('\n'), lines.filter((l) => l.trim()).join('\n')]) {
+    const review = parseDialog({ text });
+    assert.ok(review.kind === 'review');
+    if (review.kind !== 'review') continue;
+    assert.deepEqual(review.answers, [
+      {
+        question:
+          '작업 브랜치 base 는 어디로 할까요? 캐시 유지 변경이 들어 있어야 해서 dev 브랜치는 그보다 뒤에 있습니다',
+        answer: 'dev',
+      },
+      {
+        question: '어떤 검사를 함께 돌릴까요? 고른 것만 CI 에서 실행합니다.',
+        answer: '"lint, format", "unit \\"fast\\""',
+      },
+      { question: 'Pick a size', answer: 'Small' },
+    ]);
+    assert.deepEqual(
+      review.rows.map((r) => [r.number, r.label, r.cursor]),
+      [
+        [1, 'Submit answers', true],
+        [2, 'Cancel', false],
+      ],
+    );
+  }
 });
