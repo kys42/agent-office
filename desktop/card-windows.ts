@@ -223,11 +223,14 @@ export class CardWindows {
     this.preview = e;
     this.options.secure(window);
     this.options.watch(window);
-    window.setAlwaysOnTop(true, 'pop-up-menu');
-    window.setVisibleOnAllWorkspaces(true, {
-      visibleOnFullScreen: true,
-      skipTransformProcessType: true,
-    });
+    // A quiet run's card stays behind the person's work, on its own Space.
+    if (!quiet) {
+      window.setAlwaysOnTop(true, 'pop-up-menu');
+      window.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        skipTransformProcessType: true,
+      });
+    }
     window.on('blur', () => {
       if (e.dialogs || e.pinned) return;
       this.cancelHide(e);
