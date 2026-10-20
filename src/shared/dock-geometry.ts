@@ -16,15 +16,18 @@ export const PET_SIZE = { width: 300, height: 350 };
 export const ROW_SCALE = 1;
 /** Station-space height of the row scene (tall-bubble headroom + station + zone label). */
 export const ROW_SCENE_HEIGHT = 376;
-/** A see-through band above the scene for the row's tools, so they never cover a bubble. */
-export const ROW_TOOLS_BAND = 44;
-export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+/**
+ * A see-through band along the window's bottom edge: the dock's controls float in it as a pill
+ * (like the macOS Dock) and the desks stand on top of it, so the pill never covers a bubble.
+ */
+export const ROW_BAND = 44;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_BAND;
 /**
  * Floor version: no zone rugs or name cards under the desks, so the scene ends where the desk
  * legs meet the work area's bottom edge (FLOOR_TOP + 188) plus their contact shadow.
  */
 export const FLOOR_SCENE_HEIGHT = 296;
-export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOOLS_BAND;
+export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_BAND;
 
 /**
  * Tiny (쪼꼬미) row and floor: the whole scene at about helper-desk size (68 of 164), with no
@@ -43,12 +46,34 @@ const TINY_FEET = 188 + 4;
  * tiny looks share one scene height (and one window height).
  */
 export const TINY_SCENE_HEIGHT = TINY_TOP + TINY_FEET;
-/** A compact see-through band for the tiny tools (show big, summary, hide). */
-export const TINY_TOOLS_BAND = 28;
-export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND;
+/** A compact band under the tiny desks for the compact pill (show big, summary, hide). */
+export const TINY_BAND = 28;
+export const TINY_HEIGHT = Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_BAND;
 /** The dock window's height for the office row or the floor, normal or tiny. */
 export const dockHeight = (floor: boolean, tiny: boolean) =>
   tiny ? TINY_HEIGHT : floor ? FLOOR_HEIGHT : ROW_HEIGHT;
+/** The band under the desks for either size. */
+export const dockBand = (tiny: boolean) => (tiny ? TINY_BAND : ROW_BAND);
+
+/**
+ * The dock pill's spot: its centre as a fraction of the window's width, so it keeps its place
+ * on a wider or narrower screen. Anything unreadable is the centre.
+ */
+export const PILL_CENTER = 0.5;
+export function readPillSpot(raw: unknown): number {
+  const p = raw as { v?: unknown; x?: unknown } | null;
+  return p && typeof p === 'object' && p.v === 1 && typeof p.x === 'number' && Number.isFinite(p.x)
+    ? Math.min(1, Math.max(0, p.x))
+    : PILL_CENTER;
+}
+/** Breathing room between the pill and the window's sides. */
+export const PILL_MARGIN = 8;
+/** The pill's left edge (px) for a centre fraction, kept whole inside the window. */
+export function pillLeft(spot: number, width: number, pill: number, margin = PILL_MARGIN): number {
+  const max = Math.max(margin, width - pill - margin);
+  return Math.round(Math.min(max, Math.max(margin, spot * width - pill / 2)));
+}
+
 /** Read `dock.json` (`{ v: 1, tiny }`); anything else is the normal size. */
 export function readDockPrefs(raw: unknown): { tiny: boolean } {
   const p = raw as { v?: unknown; tiny?: unknown } | null;

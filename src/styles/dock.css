@@ -1,7 +1,8 @@
 /* ───────────────────────── Desk pet & desk row (floating dock window) ─────────────────────────
    The window is transparent: only the pet, the desks, the floor and the caps are drawn, so the
-   row reads as desks standing on the bottom edge of the desktop. Geometry mirrors
-   src/shared/dock-geometry.ts (PET_SIZE, ROW_HEIGHT). */
+   row reads as desks standing on the bottom edge of the desktop, over a see-through band that
+   holds the dock's tool pill. Geometry mirrors src/shared/dock-geometry.ts (PET_SIZE,
+   ROW_HEIGHT, ROW_BAND). */
 body.dock-mode {
   background: transparent;
   overflow: hidden;
@@ -354,7 +355,8 @@ body.dock-mode {
 }
 .desk-row-track {
   position: absolute;
-  inset: 0;
+  /* The desks stand on the band; the pill lives in it (--dock-band: ROW_BAND / TINY_BAND). */
+  inset: 0 0 var(--dock-band, 0px) 0;
   display: flex;
   align-items: flex-end;
   overflow-x: auto;
@@ -416,7 +418,7 @@ body.dock-mode {
 }
 .desk-row-arrow {
   position: absolute;
-  bottom: 118px;
+  bottom: calc(var(--dock-band, 0px) + 118px);
   z-index: 8;
   width: 46px;
   height: 58px;
@@ -472,36 +474,74 @@ body.dock-mode {
   color: var(--text-2);
   background: rgba(17, 18, 22, 0.92);
 }
-.desk-row-tools {
+.dock-pill {
+  /* left: from useDockPill (the saved spot, kept inside the window) */
   position: absolute;
-  top: 8px;
-  right: 12px;
+  bottom: 5px;
   z-index: 9;
   display: flex;
   align-items: center;
   gap: 2px;
   height: 34px;
-  padding: 0 4px 0 10px;
-  border-radius: 10px;
-  background: rgba(17, 18, 22, 0.94);
-  border: 1px solid var(--line-2);
-  box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.65);
-  opacity: 0.6;
-  transition: opacity 0.15s;
+  padding: 0 6px 0 2px;
+  border-radius: 99px;
+  /* Like the macOS Dock: frosted and see-through, so the desktop shows under the controls. */
+  background: rgba(28, 30, 36, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 8px 22px -10px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  cursor: grab;
+  touch-action: none;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
 }
-.desk-row:hover .desk-row-tools,
-.desk-row-tools:focus-within {
-  opacity: 1;
+.dock-pill:hover,
+.dock-pill:focus-within {
+  background: rgba(28, 30, 36, 0.78);
 }
-.desk-row-tools .icon-btn {
+.dock-pill.is-dragging {
+  cursor: grabbing;
+  background: rgba(28, 30, 36, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 12px 28px -10px rgba(0, 0, 0, 0.8);
+}
+.dock-pill .icon-btn {
   width: 28px;
   height: 28px;
+  border-radius: 99px;
+}
+.dock-pill-grip {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  color: var(--text-3);
+  background: none;
+  cursor: inherit;
+}
+.dock-pill-grip:hover,
+.dock-pill-grip:focus-visible {
+  color: var(--text);
+}
+.dock-pill-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: rgba(255, 255, 255, 0.14);
 }
 .desk-row-summary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: 6px;
+  margin: 0 4px;
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -511,26 +551,13 @@ body.dock-mode {
   font-style: normal;
   color: var(--st-call);
 }
-.desk-row-lounge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  margin-right: 4px;
-  padding: 0 8px;
-  border-radius: 99px;
-  font-size: 10.5px;
-  white-space: nowrap;
-  color: var(--text-2);
-  background: var(--bg-3);
-}
 
 /* ───────── Floor desks (variant of the row) ─────────
    No rugs or name cards: the desk legs stand on the window's bottom edge (the work area's
    floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
    on a pole marks where each zone begins. */
 .desk-floor .desk-row-arrow {
-  bottom: 96px;
+  bottom: calc(var(--dock-band, 0px) + 96px);
 }
 .desk-floor .helper-desk > b {
   display: none;
@@ -710,19 +737,18 @@ body.dock-mode {
    Either look at helper-desk size (TINY_SCALE), status only: the render drops bubbles, flags,
    rugs and plates; these rules size what is left for a strip about 90px tall. Sizes inside
    the scene are in station space (×0.41 on screen). */
-.desk-row-tools[hidden] {
-  display: none;
-}
-.desk-row.is-tiny .desk-row-tools {
-  top: 2px;
-  right: 8px;
+.desk-row.is-tiny .dock-pill {
+  bottom: 2px;
   height: 24px;
-  padding: 0 2px 0 8px;
-  border-radius: 8px;
+  padding: 0 4px 0 1px;
 }
-.desk-row.is-tiny .desk-row-tools .icon-btn {
+.desk-row.is-tiny .dock-pill .icon-btn {
   width: 22px;
   height: 22px;
+}
+.desk-row.is-tiny .dock-pill-grip {
+  width: 14px;
+  height: 20px;
 }
 .desk-row.is-tiny .desk-row-summary {
   gap: 4px;
@@ -733,7 +759,7 @@ body.dock-mode {
   content: '· ';
 }
 .desk-row.is-tiny .desk-row-arrow {
-  bottom: 10px;
+  bottom: calc(var(--dock-band, 0px) + 10px);
   width: 30px;
   height: 44px;
   border-radius: 10px;
@@ -906,7 +932,7 @@ body.card-mode {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   pointer-events: none;
 }
-.desk-row-tools .icon-btn.is-busy svg {
+.dock-pill .icon-btn.is-busy svg {
   animation: spin 1s linear infinite;
 }
 

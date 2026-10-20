@@ -281,7 +281,7 @@ test('Focus follows the size toggle, and tiny desks say their dot', async ({ pag
   await expect(pet(page, 0)).toHaveAttribute('aria-label', /동료 0.*, 새 답장$/);
   await expect(pet(page, 1)).toHaveAttribute('aria-label', /동료 1.*, 호출$/);
   await expect(pet(page, 2)).toHaveAttribute('aria-label', /동료 2[^,]*$/);
-  await expect(page.locator('.tiny-tools .desk-row-summary em')).toContainText('기다리는 동료 1명');
+  await expect(page.locator('.dock-pill .desk-row-summary em')).toContainText('기다리는 동료 1명');
   await page.getByRole('button', { name: '크게 보기' }).click();
   await expect(page.getByRole('button', { name: '작게 보기' })).toBeFocused();
 });

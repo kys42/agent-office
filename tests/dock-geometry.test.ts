@@ -12,13 +12,18 @@ import {
   ROW_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
-  ROW_TOOLS_BAND,
+  ROW_BAND,
+  dockBand,
   dockHeight,
   readDockPrefs,
   TINY_HEIGHT,
   TINY_SCENE_HEIGHT,
   TINY_SCALE,
-  TINY_TOOLS_BAND,
+  TINY_BAND,
+  PILL_CENTER,
+  PILL_MARGIN,
+  pillLeft,
+  readPillSpot,
   TINY_TOP,
   clampInto,
   petBounds,
@@ -81,13 +86,13 @@ test('desk-pet.json: the standing spot, and the first format converted in place'
 
 test('the row keeps desks at a fixed readable scale and its window holds the scene', () => {
   assert.equal(ROW_SCALE, 1, 'same size as the big office at 100%');
-  assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= ROW_HEIGHT, 'tools sit above bubbles');
+  assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE + ROW_BAND <= ROW_HEIGHT, 'desks stand on the pill band');
 });
 
-test('floor desks: the scene ends at the desk feet, and the window holds it under the tools', () => {
+test('floor desks: the scene ends at the desk feet, and the window holds it over the band', () => {
   assert.ok(FLOOR_SCENE_HEIGHT >= FLOOR_TOP + DESK_FOOT, 'desk legs fit in the scene');
   assert.ok(FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT) <= 12, 'and stand right on its bottom');
-  assert.ok(FLOOR_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= FLOOR_HEIGHT);
+  assert.ok(FLOOR_SCENE_HEIGHT * ROW_SCALE + ROW_BAND <= FLOOR_HEIGHT);
   assert.ok(FLOOR_HEIGHT < ROW_HEIGHT, 'no rugs or name cards: a shorter strip');
   const floor = rowBounds(area, FLOOR_HEIGHT);
   assert.equal(floor.y + floor.height, area.y + area.height);
@@ -153,7 +158,7 @@ test('tiny drops the bubble headroom and draws the scene at helper-desk size', (
   assert.ok(Math.abs(TINY_SCALE - 68 / 164) < 1e-9);
   // The scene ends at the desk legs (plus shadow) and starts just above the heads.
   assert.equal(TINY_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4);
-  assert.equal(TINY_HEIGHT, Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOOLS_BAND);
+  assert.equal(TINY_HEIGHT, Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_BAND);
   assert.ok(TINY_HEIGHT < 100 && TINY_HEIGHT < ROW_HEIGHT / 4);
   assert.ok(TINY_HEIGHT < FLOOR_HEIGHT / 3);
   assert.equal(dockHeight(false, false), ROW_HEIGHT);
@@ -171,4 +176,26 @@ test('dock.json remembers tiny; anything unexpected is the normal size', () => {
   const bad = [null, undefined, 'x', 1, [], {}, { tiny: true }, { v: 2, tiny: true }];
   for (const raw of [...bad, { v: 1, tiny: 'yes' }])
     assert.deepEqual(readDockPrefs(raw), { tiny: false });
+});
+
+test('the dock pill band holds a 34px pill (24px tiny) under the desks', () => {
+  assert.equal(dockBand(false), ROW_BAND);
+  assert.equal(dockBand(true), TINY_BAND);
+  assert.ok(ROW_BAND >= 34 + 5 && TINY_BAND >= 24 + 2);
+});
+
+test('the pill spot is a centre fraction, the middle when unreadable', () => {
+  assert.equal(readPillSpot({ v: 1, x: 0.25 }), 0.25);
+  assert.equal(readPillSpot({ v: 1, x: 1.4 }), 1, 'clamped to the window');
+  assert.equal(readPillSpot({ v: 1, x: -3 }), 0);
+  for (const raw of [null, undefined, 'x', 0.3, {}, { x: 0.3 }, { v: 2, x: 0.3 }, { v: 1, x: NaN }])
+    assert.equal(readPillSpot(raw), PILL_CENTER);
+});
+
+test('the pill stays whole inside the window, wherever its spot is', () => {
+  assert.equal(pillLeft(0.5, 1000, 400), 300, 'centred');
+  assert.equal(pillLeft(0.25, 2000, 400), 300, 'same fraction on a wider screen');
+  assert.equal(pillLeft(0, 1000, 400), PILL_MARGIN, 'left edge');
+  assert.equal(pillLeft(1, 1000, 400), 1000 - 400 - PILL_MARGIN, 'right edge');
+  assert.equal(pillLeft(0.5, 300, 400), PILL_MARGIN, 'wider than the window: from the left');
 });
