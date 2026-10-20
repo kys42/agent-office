@@ -11,7 +11,14 @@ import {
 import { PILL_CENTER, pillLeft, readPillSpot } from '../shared/dock-geometry';
 
 type Point = { x: number; y: number };
-type Gesture = { id: number; element: HTMLElement; origin: number; start: number; point: Point };
+type Gesture = {
+  id: number;
+  element: HTMLElement;
+  origin: number;
+  start: number;
+  point: Point;
+  moved: boolean;
+};
 
 /** One spot for the row, the floor and tiny: the pill is the same dock in every look. */
 export const PILL_STORAGE_KEY = 'office:dock-pill:v1';
@@ -21,8 +28,8 @@ const DRAG_SLOP = 4;
 /**
  * The dock pill slides left and right along the band under the desks and remembers where it
  * was left (its centre as a fraction of the width, so a different screen keeps the idea).
- * Like the zone handles, a drag holds the pointer and tells the dock (`onArrange`) so the
- * window keeps taking the mouse even when the pointer leaves the pill.
+ * Like the zone handles, a drag holds the pointer and, once it really moves, tells the dock
+ * (`onArrange`) so the window keeps taking the mouse even when the pointer leaves the pill.
  */
 export function useDockPill({
   root,
@@ -86,11 +93,11 @@ export function useDockPill({
     if (!g) return;
     if (point) g.point = point;
     gesture.current = null;
-    const moved = Math.abs(g.point.x - g.origin) >= DRAG_SLOP;
-    if (keep && moved) save(effective(wanted(g)));
+    if (keep && g.moved) save(effective(wanted(g)));
     setMoving(null);
     if (g.element.hasPointerCapture(g.id)) g.element.releasePointerCapture(g.id);
-    latest.current.onArrange?.(false, g.point);
+    // Only a real drag claimed the window; a plain press leaves it as the hover set it.
+    if (g.moved) latest.current.onArrange?.(false, g.point);
   };
   // Leaving the window or Esc puts the pill back where the drag began.
   useEffect(() => {
@@ -119,6 +126,10 @@ export function useDockPill({
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
       if (e.button !== 0 || !e.isPrimary || gesture.current || !grabbable(e)) return;
       e.preventDefault();
+      // preventDefault keeps the press from focusing anything: focus the grip like a zone
+      // handle, so ← → afterwards move the pill instead of paging the desks.
+      if (e.target instanceof Element)
+        e.target.closest<HTMLElement>('[data-pill-grip]')?.focus({ preventScroll: true });
       const start = effective(latest.current.spot);
       gesture.current = {
         id: e.pointerId,
@@ -126,15 +137,20 @@ export function useDockPill({
         origin: e.clientX,
         start,
         point: { x: e.clientX, y: e.clientY },
+        moved: false,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
-      latest.current.onArrange?.(true);
     },
     onPointerMove: (e: PointerEvent<HTMLElement>) => {
       const g = gesture.current;
       if (!g || g.id !== e.pointerId) return;
       g.point = { x: e.clientX, y: e.clientY };
-      if (Math.abs(g.point.x - g.origin) >= DRAG_SLOP) setMoving(wanted(g));
+      if (!g.moved) {
+        if (Math.abs(g.point.x - g.origin) < DRAG_SLOP) return;
+        g.moved = true;
+        latest.current.onArrange?.(true);
+      }
+      setMoving(wanted(g));
     },
     onPointerUp: (e: PointerEvent<HTMLElement>) => {
       if (gesture.current?.id === e.pointerId) finish(true, { x: e.clientX, y: e.clientY });

@@ -476,6 +476,12 @@ body.dock-mode {
 }
 .dock-pill {
   /* left: from useDockPill (the saved spot, kept inside the window) */
+  /* Nearly solid: a transparent window cannot blur the desktop behind it (backdrop-filter
+     only sees the page), so the words must hold their contrast over a bright wallpaper. */
+  --pill-bg: rgba(246, 246, 248, 0.88);
+  --pill-bg-strong: rgba(246, 246, 248, 0.95);
+  --pill-edge: rgba(0, 0, 0, 0.12);
+  --pill-shine: rgba(255, 255, 255, 0.6);
   position: absolute;
   bottom: 5px;
   z-index: 9;
@@ -485,12 +491,12 @@ body.dock-mode {
   height: 34px;
   padding: 0 6px 0 2px;
   border-radius: 99px;
-  /* Like the macOS Dock: frosted and see-through, so the desktop shows under the controls. */
-  background: rgba(28, 30, 36, 0.58);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  /* Like the macOS Dock: a frosted pill floating over the desktop. */
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-edge);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 8px 22px -10px rgba(0, 0, 0, 0.7);
+    inset 0 1px 0 var(--pill-shine),
+    0 8px 22px -10px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(18px) saturate(1.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
   cursor: grab;
@@ -499,16 +505,24 @@ body.dock-mode {
     background 0.15s,
     box-shadow 0.15s;
 }
+@media (prefers-color-scheme: dark) {
+  .dock-pill {
+    --pill-bg: rgba(28, 30, 36, 0.88);
+    --pill-bg-strong: rgba(28, 30, 36, 0.95);
+    --pill-edge: rgba(255, 255, 255, 0.14);
+    --pill-shine: rgba(255, 255, 255, 0.08);
+  }
+}
 .dock-pill:hover,
 .dock-pill:focus-within {
-  background: rgba(28, 30, 36, 0.78);
+  background: var(--pill-bg-strong);
 }
 .dock-pill.is-dragging {
   cursor: grabbing;
-  background: rgba(28, 30, 36, 0.86);
+  background: var(--pill-bg-strong);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 12px 28px -10px rgba(0, 0, 0, 0.8);
+    inset 0 1px 0 var(--pill-shine),
+    0 12px 28px -10px rgba(0, 0, 0, 0.7);
 }
 .dock-pill .icon-btn {
   width: 28px;
@@ -535,7 +549,7 @@ body.dock-mode {
   width: 1px;
   height: 16px;
   margin: 0 3px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--pill-edge);
 }
 .desk-row-summary {
   display: inline-flex;
@@ -553,8 +567,8 @@ body.dock-mode {
 }
 
 /* ───────── Floor desks (variant of the row) ─────────
-   No rugs or name cards: the desk legs stand on the window's bottom edge (the work area's
-   floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
+   No rugs or name cards: the desk legs stand on the pill band along the window's bottom
+   (just above the work area's floor), a contact shadow grounds them, each desk front carries a name plate, and a flag
    on a pole marks where each zone begins. */
 .desk-floor .desk-row-arrow {
   bottom: calc(var(--dock-band, 0px) + 96px);

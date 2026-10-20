@@ -1,6 +1,14 @@
 import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -84,8 +92,8 @@ const HELPER_TABLE_FOOT = 46;
  * The office as one line along the screen edge: the same project zones, shared benches,
  * helper desks and speech bubbles as the big office, drawn with its own furniture.
  * Two looks share everything but the ground: `office` lays each zone on a rug with name
- * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a
- * name plate on each desk front and a flag between zones.
+ * cards under the desks; `floor` stands the desks right on the pill band at the window's
+ * bottom, with a name plate on each desk front and a flag between zones.
  * Tiny (쪼꼬미) draws either look at helper-desk size with only the desks and their status:
  * no bubbles, flags, rugs or plates — a contentless dot says a desk has something new.
  * Only drawn things are `[data-solid]`; the transparent rest lets clicks through.
@@ -204,6 +212,7 @@ export function DeskRow({
   const { layout } = placement;
   const rootRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLDivElement>(null);
+  const pillHintId = useId();
   const pill = useDockPill({
     root: rootRef,
     pill: pillRef,
@@ -846,7 +855,7 @@ export function DeskRow({
         ref={pillRef}
         className={`dock-pill ${pill.dragging ? 'is-dragging' : ''}`}
         data-solid
-        role="toolbar"
+        role="group"
         aria-label={t.desk.row.pill}
         style={{ left: pill.left }}
         {...pill.handlers}
@@ -856,11 +865,16 @@ export function DeskRow({
           className="dock-pill-grip"
           data-pill-grip
           aria-label={t.desk.row.pillMove}
+          aria-describedby={pillHintId}
+          aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
           title={t.desk.row.pillHint}
           onKeyDown={pill.onGripKeyDown}
         >
           <GripVertical size={tiny ? 10 : 12} />
         </button>
+        <span id={pillHintId} className="sr-only">
+          {t.desk.row.pillHint}
+        </span>
         {!tiny && placement.customized && (
           <button
             className="icon-btn"

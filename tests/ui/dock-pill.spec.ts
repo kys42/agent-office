@@ -93,6 +93,10 @@ test('The tool pill sits in the band under the desks, with no top toolbar or lou
   await expect(pill(page)).toHaveCount(1);
   await expect(page.locator('.desk-row-tools, .tiny-tools, .desk-row-lounge')).toHaveCount(0);
   await expect(pill(page)).toHaveAttribute('data-solid');
+  // A labelled group of buttons; the grip says how to move it.
+  await expect(page.getByRole('group', { name: '책상 줄 도구' })).toHaveCount(1);
+  await expect(grip(page)).toHaveAccessibleDescription(/Home\/End/);
+  await expect(grip(page)).toHaveAttribute('aria-keyshortcuts', /ArrowLeft/);
   const b = await box(page);
   // In the band along the bottom edge, centred the first time.
   expect(b.y).toBeGreaterThanOrEqual(HEIGHT - ROW_BAND);
@@ -187,10 +191,60 @@ test('Dragging moves the pill, keeps the window solid, and stays after reload', 
 test('A click on a pill button is a click, not a drag', async ({ page }) => {
   await setup(page, '#mini=row');
   const before = await centre(page);
+  expect(before).toBeGreaterThan(0);
+  await pill(page).getByRole('button', { name: '새로고침' }).click();
+  expect(Math.abs((await centre(page)) - before)).toBeLessThanOrEqual(1);
   await pill(page).getByRole('button', { name: '책상 줄 접기' }).click();
   await expect.poll(() => page.evaluate(() => (window as any).calls)).toContain('pet');
   expect(await saved(page)).toBeNull();
-  expect(before).toBeGreaterThan(0);
+});
+
+test('A double-click on a pill button does not bring the pill back to the middle', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row');
+  await grip(page).click();
+  await page.keyboard.press('Shift+ArrowLeft');
+  await page.keyboard.press('Shift+ArrowLeft');
+  const spot = (await saved(page)).x;
+  const at = await centre(page);
+  await pill(page).getByRole('button', { name: '새로고침' }).dblclick();
+  expect((await saved(page)).x).toBe(spot);
+  expect(Math.abs((await centre(page)) - at)).toBeLessThanOrEqual(1);
+});
+
+for (const how of ['Escape', 'blur']) {
+  test(`${how} during a drag puts the pill back where it began`, async ({ page }) => {
+    await setup(page, '#mini=row');
+    const g = (await grip(page).boundingBox())!;
+    const start = await centre(page);
+    await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(g.x + g.width / 2 - 300, g.y + g.height / 2, { steps: 6 });
+    await expect(pill(page)).toHaveClass(/is-dragging/);
+    expect(Math.abs((await centre(page)) - (start - 300))).toBeLessThanOrEqual(2);
+    if (how === 'Escape') await page.keyboard.press('Escape');
+    else await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await expect(pill(page)).not.toHaveClass(/is-dragging/);
+    expect(Math.abs((await centre(page)) - start)).toBeLessThanOrEqual(1);
+    await page.mouse.up();
+    expect(Math.abs((await centre(page)) - start)).toBeLessThanOrEqual(1);
+    expect(await saved(page)).toBeNull();
+  });
+}
+
+test('Let go over the see-through band, the window lets clicks through again', async ({ page }) => {
+  await setup(page, '#mini=row');
+  const g = (await grip(page).boundingBox())!;
+  const y = g.y + g.height / 2;
+  await page.mouse.move(g.x + g.width / 2, y);
+  await page.mouse.down();
+  // Down to the empty bottom-left corner of the band (the pill stops at its margin).
+  await page.mouse.move(g.x + g.width / 2 - 200, y, { steps: 4 });
+  await page.mouse.move(4, HEIGHT - 2, { steps: 4 });
+  expect(await page.evaluate(() => (window as any).calls)).toContain('solid');
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => (window as any).calls.at(-1))).toBe('through');
 });
 
 test('The grip moves the pill from the keyboard; double-click brings it back to the middle', async ({
@@ -199,7 +253,10 @@ test('The grip moves the pill from the keyboard; double-click brings it back to 
   await setup(page, '#mini=row');
   const start = await centre(page);
   const desks = await page.locator('.desk-row-track').evaluate((el) => el.scrollLeft);
-  await grip(page).focus();
+  // A mouse press on the grip focuses it, so the arrows move the pill, not the desks.
+  await grip(page).click();
+  await expect(grip(page)).toBeFocused();
+  expect(Math.abs((await centre(page)) - start)).toBeLessThanOrEqual(1);
   await page.keyboard.press('ArrowRight');
   await expect.poll(async () => (await centre(page)) - start).toBeGreaterThan(20);
   const one = await centre(page);
@@ -226,7 +283,7 @@ test('The grip moves the pill from the keyboard; double-click brings it back to 
 
 test('Tiny keeps a compact pill at the same spot', async ({ page }) => {
   await setup(page, '#mini=row');
-  await grip(page).focus();
+  await grip(page).click();
   await page.keyboard.press('Shift+ArrowLeft');
   await page.keyboard.press('Shift+ArrowLeft');
   const spot = (await saved(page)).x;

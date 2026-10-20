@@ -21,13 +21,19 @@ export const ROW_SCENE_HEIGHT = 376;
  * (like the macOS Dock) and the desks stand on top of it, so the pill never covers a bubble.
  */
 export const ROW_BAND = 44;
-export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_BAND;
+/**
+ * Extra see-through room above the scene for a stacked answer + request bubble (the old top
+ * tools band gave them this). A bubble's bottom sits ROW_TOP + 58 = 162px below the scene's
+ * top; with this it has 206px to the window's top, enough for both at their tallest.
+ */
+export const ROW_HEADROOM = 44;
+export const ROW_HEIGHT = Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_HEADROOM + ROW_BAND;
 /**
  * Floor version: no zone rugs or name cards under the desks, so the scene ends where the desk
- * legs meet the work area's bottom edge (FLOOR_TOP + 188) plus their contact shadow.
+ * legs meet the pill band (FLOOR_TOP + 188) plus their contact shadow.
  */
 export const FLOOR_SCENE_HEIGHT = 296;
-export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_BAND;
+export const FLOOR_HEIGHT = Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_HEADROOM + ROW_BAND;
 
 /**
  * Tiny (쪼꼬미) row and floor: the whole scene at about helper-desk size (68 of 164), with no
