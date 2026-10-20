@@ -370,13 +370,13 @@ test('Tiny desks carry a small readable name that opens the card', async ({ page
   const rest = await alpha();
   expect(rest).toBeLessThan(0.7);
   await page.screenshot({
-    path: '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad/shots/tiny-names-overlay.png',
+    path: '.local/tiny-names-overlay.png',
     clip: { x: 0, y: row.y, width: 1440, height: row.height },
   });
   await page.locator('[data-station-id="run-0"] .office-pet').hover();
   await expect.poll(alpha).toBeGreaterThan(0.85);
   await page.screenshot({
-    path: '/private/tmp/claude-501/-Users-pepper-salt-orca-workspaces-agent-office-polyp/277772b0-7e3f-496f-8adf-6706f0d3a32f/scratchpad/shots/tiny-names-overlay-hover.png',
+    path: '.local/tiny-names-overlay-hover.png',
     clip: { x: 0, y: row.y, width: 1440, height: row.height },
   });
   await page.mouse.move(1, 1);
