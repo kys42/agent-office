@@ -133,6 +133,8 @@ try {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].unmaximize());
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1050, 740));
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  // The Windows note lives in the settings' Connections category (#87).
+  await page.getByRole('tab', { name: '연결', exact: true }).click();
   await page.locator('.windows-support-note').waitFor();
   assert.equal(
     await page
