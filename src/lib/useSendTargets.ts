@@ -107,5 +107,6 @@ export function useSendTargets(
       return { ...all, [id]: { ...target, status: 'busy' } };
     });
   }, []);
-  return { targets: shown, markSent };
+  const refreshTargets = useCallback(() => refresh.current(), []);
+  return { targets: shown, markSent, refreshTargets };
 }

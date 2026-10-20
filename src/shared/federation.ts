@@ -15,6 +15,8 @@ export interface PeerInput {
   fingerprint: string;
   token: string;
   sendToken?: string;
+  /** Local-only explicit Codex remote connection; never imported from a peer. */
+  codexHostId?: string;
   label: string;
   tags: string[];
   /** Explicit remote project name -> local project name. View only. */
@@ -22,6 +24,7 @@ export interface PeerInput {
 }
 export interface FederationState {
   enabled: boolean;
+  codexHosts?: { id: string; label: string }[];
   error?: string | null;
   peers: (Omit<PeerInput, 'token' | 'sendToken'> & {
     canSend: boolean;
@@ -37,6 +40,7 @@ export type FederationCommand =
   | { action: 'add'; peer: PeerInput }
   | {
       action: 'update';
+      codexHostId?: string;
       officeId: string;
       label: string;
       tags: string[];

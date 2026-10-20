@@ -16,6 +16,8 @@ const versions = {
 const MAX_FRAME = 8 << 20;
 type Method = keyof typeof versions;
 type Frame = Record<string, any>;
+export const remoteCodexHost = (host: string) =>
+  /^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/.test(host);
 
 class DesktopIPC {
   private buffer: Buffer = Buffer.alloc(0);
@@ -106,7 +108,13 @@ class DesktopIPC {
       entry.reject(Error('desktop-request-failed'));
     else entry.resolve(frame);
   }
-  request(method: Method, params: Frame, timeout: number, targetClientId?: string): Promise<Frame> {
+  request(
+    method: Method,
+    params: Frame,
+    timeout: number,
+    targetClientId?: string,
+    hostId?: string,
+  ): Promise<Frame> {
     if (this.socket.destroyed) return Promise.reject(Error('disconnected'));
     return new Promise((resolve, reject) => {
       const requestId = randomUUID();
@@ -121,7 +129,8 @@ class DesktopIPC {
           requestId,
           sourceClientId: this.clientId,
           method,
-          version: versions[method],
+          version: versions[method] + (hostId && method.startsWith('thread-follower-') ? 1 : 0),
+          ...(hostId ? { hostId } : {}),
           params,
           targetClientId,
           timeoutMs: timeout,
@@ -143,10 +152,11 @@ class DesktopIPC {
   }
 }
 
-async function owner(ipc: DesktopIPC, threadId: string, timeout: number) {
+async function owner(ipc: DesktopIPC, threadId: string, timeout: number, hostId?: string) {
+  if (hostId !== undefined && !remoteCodexHost(hostId)) throw Error('unsupported-host');
   const discovery = await ipc.request(
     'thread-owner-discovery',
-    { hostId: 'local', conversationId: threadId },
+    { hostId: hostId ?? 'local', conversationId: threadId },
     timeout,
   );
   const id = discovery.handledByClientId;
@@ -155,6 +165,7 @@ async function owner(ipc: DesktopIPC, threadId: string, timeout: number) {
     { conversationId: threadId },
     timeout,
     id,
+    hostId,
   );
   const settings = reply.result?.settings;
   // Only already resumed, ordinary user conversations. No headless/subagent/cloud admission.
@@ -169,11 +180,16 @@ async function owner(ipc: DesktopIPC, threadId: string, timeout: number) {
 }
 
 /** Read-only availability; callers must separately validate rollout origin and identity. */
-export async function desktopOwnsThread(home: string, threadId: string, timeout = 1500) {
+export async function desktopOwnsThread(
+  home: string,
+  threadId: string,
+  timeout = 1500,
+  hostId?: string,
+) {
   let ipc: DesktopIPC | undefined;
   try {
     ipc = await DesktopIPC.connect(home, timeout);
-    await owner(ipc, threadId, timeout);
+    await owner(ipc, threadId, timeout, hostId);
     return true;
   } catch {
     return false;
@@ -189,13 +205,14 @@ export async function sendToCodexDesktop(
   input: unknown,
   timeout = 15000,
   beforeSend: () => void | Promise<void> = () => {},
+  hostId?: string,
 ) {
   const text = cleanInput(input);
   let ipc: DesktopIPC | undefined;
   let dispatched = false;
   try {
     ipc = await DesktopIPC.connect(home, 1500);
-    const targetClientId = await owner(ipc, threadId, 3000);
+    const targetClientId = await owner(ipc, threadId, hostId ? 5000 : 3000, hostId);
     await beforeSend();
     dispatched = true;
     const reply = await ipc.request(
@@ -213,6 +230,7 @@ export async function sendToCodexDesktop(
       },
       timeout,
       targetClientId,
+      hostId,
     );
     if (
       reply.handledByClientId !== targetClientId ||

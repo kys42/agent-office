@@ -1,4 +1,12 @@
 export const federation = {
+  codexConnection: 'Codex remote connection on this computer',
+  codexConnectionOff: 'Disabled',
+  codexConnectionHint:
+    'Choose the Codex connection for this office’s computer. Open its remote conversation in Codex to send from Office.',
+  codexRemoteRoute: 'Codex remote connection on this computer',
+  codexRemoteUnavailable:
+    'Open this remote conversation in Codex, then check again. Also check the connection mapping and send permission.',
+  checkTarget: 'Check send target again',
   sendReady: 'Chat available',
   sendUnavailable: 'Remote target or send permission is unavailable.',
   sent: 'Sent to the remote office.',

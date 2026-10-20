@@ -262,7 +262,7 @@ export function Inspector({
     !demo &&
     (!session.remote || (session.remote.send && !session.remote.stale)) &&
     (session.provider === 'claude' || session.provider === 'codex');
-  const { targets, markSent } = useSendTargets(locatable ? [session.id] : [], {
+  const { targets, markSent, refreshTargets } = useSendTargets(locatable ? [session.id] : [], {
     enabled: locatable,
     stamp: session.updatedAt,
   });
@@ -1099,6 +1099,7 @@ export function Inspector({
               draftKey={`${demo ? 'demo' : 'live'}:${s.id}`}
               chat
               target={live}
+              onRefresh={refreshTargets}
               remoteOffice={
                 s.remote ? (privacy ? t.federation.remoteOffice : s.remote.label) : undefined
               }

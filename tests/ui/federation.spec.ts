@@ -155,3 +155,66 @@ test('read-only remote office retains projects without exposing a composer', asy
   await expect(page.locator('.remote-source')).toContainText('읽기 전용');
   await expect(page.locator('.terminal-send-chat')).toHaveCount(0);
 });
+
+test('remote Codex route names this computer and offers a read-only target refresh', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.targetChecks = 0;
+    w.office.terminals = async (ids: string[]) => {
+      w.targetChecks++;
+      return Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'codex',
+            desktop: true,
+            codexRemote: true,
+            label: '',
+            status: 'desktop',
+            canSend: false,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+    };
+  });
+  await page
+    .getByRole('tablist', { name: '사무실', exact: true })
+    .getByRole('tab', { name: /MacBook Pro/ })
+    .click();
+  await page.locator('.roster .session-row').first().click();
+  const composer = page.locator('.terminal-send-chat');
+  await expect(composer).toContainText('이 컴퓨터의 Codex 원격 연결');
+  await expect(composer.locator('.terminal-send-bar small')).toBeVisible();
+  await expect(composer).toContainText('Codex에서 해당 원격 대화를 열고 다시 확인하세요');
+  await composer.locator('textarea').fill('keep my draft');
+  const before = await page.evaluate(() => (window as any).targetChecks);
+  await composer.getByRole('button', { name: '전송 대상 다시 확인' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).targetChecks))
+    .toBeGreaterThan(before);
+  await expect(composer.locator('textarea')).toHaveValue('keep my draft');
+  expect(await page.evaluate(() => (window as any).sends.length)).toBe(0);
+  await page.evaluate(() => {
+    (window as any).office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'tmux',
+            label: '',
+            status: 'unavailable',
+            canSend: false,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+  });
+  await composer.getByRole('button', { name: '전송 대상 다시 확인' }).click();
+  await expect(composer).not.toContainText('Codex에서 해당 원격 대화');
+});
