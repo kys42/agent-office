@@ -9,8 +9,8 @@ type Receipts = (receipts: { id: string; version: string }[], action: ReceiptAct
 
 /**
  * A colleague's work card that the person is looking at reads that colleague's final replies,
- * once it has stayed on that colleague in sight for `CARD_READ_DWELL_MS` (J/K stepping past does
- * not read), and then each new one as it arrives. Every window then drops the same blue marks
+ * once it has stayed on that colleague in sight for `dwellMs` (CARD_READ_DWELL_MS unless the
+ * person chose otherwise; 0 reads at once) — J/K stepping past does not read —, and then each new one as it arrives. Every window then drops the same blue marks
  * from the snapshot it receives. Calls and errors are not read here. `enabled` is false while
  * the card shows no conversation (privacy) or before the person touched a restored card.
  *
@@ -22,6 +22,7 @@ export function useReadOnOpen(
   memberIds: string[],
   onReceipt: Receipts,
   enabled = true,
+  dwellMs = CARD_READ_DWELL_MS,
 ): ReadonlySet<string> {
   const [shown, setShown] = useState(isPageShown);
   useEffect(() => {
@@ -37,9 +38,13 @@ export function useReadOnOpen(
   useEffect(() => {
     setDwelled(null);
     if (!looking) return;
-    const timer = setTimeout(() => setDwelled(colleague), CARD_READ_DWELL_MS);
+    if (dwellMs <= 0) {
+      setDwelled(colleague);
+      return;
+    }
+    const timer = setTimeout(() => setDwelled(colleague), dwellMs);
     return () => clearTimeout(timer);
-  }, [looking, colleague]);
+  }, [looking, colleague, dwellMs]);
   const [, setSettled] = useState(0);
   const members = memberIds.join('\n');
   useEffect(() => {

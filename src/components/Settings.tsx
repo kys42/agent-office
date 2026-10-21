@@ -26,6 +26,16 @@ import {
   Bell,
   BellRing,
   Volume2,
+  BookOpenCheck,
+  Timer,
+  Tag,
+  CircleDot,
+  PanelBottom,
+  MoveHorizontal,
+  Columns3,
+  Users,
+  Layers,
+  Clock,
   type LucideIcon,
 } from 'lucide-react';
 import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
@@ -39,6 +49,14 @@ import { useI18n } from '../lib/i18n';
 import { isWindows } from '../lib/platform';
 import { isDesktop } from '../lib/api';
 import { notifyPreferences } from '../shared/notify-plan';
+import { cardReadSettings } from '../shared/card-reads';
+import {
+  DOCK_PILL_CHOICES,
+  HELPER_RETAIN_CHOICES,
+  HELPER_STACK_CHOICES,
+  READ_DWELL_CHOICES,
+  viewPrefs,
+} from '../shared/view-prefs';
 import {
   SETTINGS_CATEGORIES,
   settingsAnchor,
@@ -123,6 +141,17 @@ export function Settings({
   const { t } = useI18n();
   const s = t.settings;
   const p = snapshot.preferences;
+  const view = viewPrefs(p);
+  const read = cardReadSettings(p);
+  const dwell = read.dwellMs / 1000;
+  const retainMinutes = Math.round(view.helperUnfinishedMs / 60_000);
+  /** A reset stamp every window hears (the dock and the big office are other renderers). */
+  const stampReset = async (
+    key: 'dockPillResetAt' | 'panelWidthsResetAt',
+    done: string,
+  ): Promise<void> => {
+    if (await onPrefs({ [key]: Date.now() })) notify(done);
+  };
   const [customizing, setCustomizing] = useState<Provider | null>(null);
   const [category, setCategory] = useState<SettingsCategory>(() =>
     focusSection
@@ -243,6 +272,42 @@ export function Settings({
             label={s.rhythm.privacyAria}
             onChange={() => onPrefs({ privacy: !p.privacy })}
           />
+        </div>
+      </section>
+      <section className="settings-section" data-guide-section="reading" tabIndex={-1}>
+        <h2>{s.reading.title}</h2>
+        <div className="setting-row">
+          <BookOpenCheck size={18} />
+          <div>
+            <b>{s.reading.readOnOpen}</b>
+            <p>{s.reading.readOnOpenHint}</p>
+          </div>
+          <Toggle
+            checked={read.enabled}
+            label={s.reading.readOnOpen}
+            onChange={() => onPrefs({ readOnOpen: !read.enabled })}
+          />
+        </div>
+        <div className="setting-row">
+          <Timer size={18} />
+          <div>
+            <b>{s.reading.dwell}</b>
+            {read.enabled && dwell === 0 && <p>{s.reading.nowHint}</p>}
+          </div>
+          <select
+            aria-label={s.reading.dwellAria}
+            disabled={!read.enabled}
+            value={dwell}
+            onChange={(e) => onPrefs({ readDwellSeconds: Number(e.target.value) })}
+          >
+            {[...new Set([...READ_DWELL_CHOICES, dwell])]
+              .sort((a, b) => a - b)
+              .map((n) => (
+                <option key={n} value={n}>
+                  {n === 0 ? s.reading.now : s.reading.seconds(n)}
+                </option>
+              ))}
+          </select>
         </div>
       </section>
       {isDesktop && !demo && (
@@ -377,107 +442,245 @@ export function Settings({
           />
         </div>
       </section>
+      {/* The floating dock is the desktop app's; a browser has no dock window to set up. */}
+      {isDesktop && (
+        <section className="settings-section" data-guide-section="dock" tabIndex={-1}>
+          <h2>{s.dock.title}</h2>
+          <div className="setting-row">
+            <Tag size={18} />
+            <div>
+              <b>{s.dock.tinyNames}</b>
+              <p>{s.dock.tinyNamesHint}</p>
+            </div>
+            <Toggle
+              checked={view.tinyNames}
+              label={s.dock.tinyNames}
+              onChange={() => onPrefs({ tinyNames: !view.tinyNames })}
+            />
+          </div>
+          <div className="setting-row">
+            <CircleDot size={18} />
+            <div>
+              <b>{s.dock.tinyFinalDot}</b>
+              <p>{s.dock.tinyFinalDotHint}</p>
+            </div>
+            <Toggle
+              checked={view.tinyFinalDot}
+              label={s.dock.tinyFinalDot}
+              onChange={() => onPrefs({ tinyFinalDot: !view.tinyFinalDot })}
+            />
+          </div>
+          <div className="setting-row">
+            <PanelBottom size={18} />
+            <div>
+              <b>{s.dock.pill}</b>
+              <p>{s.dock.pillHint}</p>
+            </div>
+            <select
+              aria-label={s.dock.pill}
+              value={view.dockPill}
+              onChange={(e) => onPrefs({ dockPill: e.target.value as typeof view.dockPill })}
+            >
+              {DOCK_PILL_CHOICES.map((choice) => (
+                <option key={choice} value={choice}>
+                  {s.dock.pillChoices[choice]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="setting-row">
+            <MoveHorizontal size={18} />
+            <div>
+              <b>{s.dock.pillReset}</b>
+              <p>{s.dock.pillResetHint}</p>
+            </div>
+            <button
+              type="button"
+              className="setting-action"
+              aria-label={s.dock.pillReset}
+              onClick={() => void stampReset('dockPillResetAt', s.dock.pillResetDone)}
+            >
+              {s.dock.resetButton}
+            </button>
+          </div>
+        </section>
+      )}
+      <section className="settings-section" data-guide-section="panels" tabIndex={-1}>
+        <h2>{s.panels.title}</h2>
+        <div className="setting-row">
+          <Columns3 size={18} />
+          <div>
+            <b>{s.panels.reset}</b>
+            <p>{s.panels.resetHint}</p>
+          </div>
+          <button
+            type="button"
+            className="setting-action"
+            aria-label={s.panels.reset}
+            onClick={() => void stampReset('panelWidthsResetAt', s.panels.resetDone)}
+          >
+            {s.dock.resetButton}
+          </button>
+        </div>
+      </section>
     </>
   );
   const office = (
-    <section className="settings-section" data-guide-section="office" tabIndex={-1}>
-      <h2>{s.office.title}</h2>
-      <p>{s.office.body}</p>
-      <div className="setting-row">
-        <div>
-          <b>{s.office.autoArchive}</b>
-          <p>{s.office.autoArchiveHint}</p>
+    <>
+      <section className="settings-section" data-guide-section="office" tabIndex={-1}>
+        <h2>{s.office.title}</h2>
+        <p>{s.office.body}</p>
+        <div className="setting-row">
+          <div>
+            <b>{s.office.autoArchive}</b>
+            <p>{s.office.autoArchiveHint}</p>
+          </div>
+          <Toggle
+            checked={p.autoArchive !== false}
+            label={s.office.autoArchive}
+            onChange={() =>
+              onPrefs({
+                autoArchive: p.autoArchive === false,
+                archiveDays: Math.max(
+                  p.archiveDays ?? 7,
+                  Math.floor((p.standbyHours ?? 4) / 24) + 1,
+                ),
+              })
+            }
+          />
         </div>
-        <Toggle
-          checked={p.autoArchive !== false}
-          label={s.office.autoArchive}
-          onChange={() =>
-            onPrefs({
-              autoArchive: p.autoArchive === false,
-              archiveDays: Math.max(p.archiveDays ?? 7, Math.floor((p.standbyHours ?? 4) / 24) + 1),
-            })
-          }
-        />
-      </div>
-      <div className="lifecycle-settings">
-        <label>
-          {s.office.bubble}
+        <div className="lifecycle-settings">
+          <label>
+            {s.office.bubble}
+            <select
+              aria-label={s.office.bubbleAria}
+              value={p.bubbleHours ?? 3}
+              onChange={(e) => onPrefs({ bubbleHours: Number(e.target.value) })}
+            >
+              {[1, 3, 6, 12, 24].map((h) => (
+                <option key={h} value={h}>
+                  {s.office.hours(h)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {s.office.ready}
+            <select
+              aria-label={s.office.readyAria}
+              value={p.readyMinutes ?? 30}
+              onChange={(e) => onPrefs({ readyMinutes: Number(e.target.value) })}
+            >
+              {[...new Set([10, 20, 30, 60, p.readyMinutes ?? 30])]
+                .sort((a, b) => a - b)
+                .map((m) => (
+                  <option key={m} value={m} disabled={m >= (p.standbyHours ?? 4) * 60}>
+                    {s.office.forMinutes(m)}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            {s.office.standby}
+            <select
+              aria-label={s.office.standbyAria}
+              value={p.standbyHours ?? 4}
+              onChange={(e) => {
+                const standbyHours = Number(e.target.value);
+                const ready = p.readyMinutes ?? 30;
+                onPrefs({
+                  standbyHours,
+                  archiveDays: Math.max(p.archiveDays ?? 7, Math.floor(standbyHours / 24) + 1),
+                  // Standing by must end before going home.
+                  ...(ready >= standbyHours * 60 ? { readyMinutes: 30 } : {}),
+                });
+              }}
+            >
+              {[...new Set([1, 2, 4, 8, 24, 48, 72, 168, 336, 720, 2160, p.standbyHours ?? 4])]
+                .sort((a, b) => a - b)
+                .map((h) => (
+                  <option key={h} value={h}>
+                    {s.office.after(durationLabel(h))}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label>
+            {s.office.archive}
+            <select
+              aria-label={s.office.archiveAria}
+              disabled={p.autoArchive === false}
+              value={p.archiveDays ?? 7}
+              onChange={(e) => onPrefs({ archiveDays: Number(e.target.value) })}
+            >
+              {[...new Set([1, 3, 7, 14, 30, 60, 90, 180, 365, p.archiveDays ?? 7])]
+                .sort((a, b) => a - b)
+                .map((d) => (
+                  <option key={d} value={d} disabled={d * 24 <= (p.standbyHours ?? 4)}>
+                    {s.office.afterDays(d)}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        <p className="office-schedule-preview" aria-live="polite">
+          {s.office.schedule(officeSchedule(p))}
+        </p>
+        <p className="helper-lifecycle-note">{s.office.helperNote}</p>
+      </section>
+      <section className="settings-section" data-guide-section="helpers" tabIndex={-1}>
+        <h2>{s.helpers.title}</h2>
+        <div className="setting-row">
+          <Users size={18} />
+          <div>
+            <b>{s.helpers.show}</b>
+            <p>{s.helpers.showHint}</p>
+          </div>
+          <Toggle
+            checked={view.helperDesks}
+            label={s.helpers.show}
+            onChange={() => onPrefs({ helperDesks: !view.helperDesks })}
+          />
+        </div>
+        <div className="setting-row">
+          <Layers size={18} />
+          <div>
+            <b>{s.helpers.stackAt}</b>
+          </div>
           <select
-            aria-label={s.office.bubbleAria}
-            value={p.bubbleHours ?? 3}
-            onChange={(e) => onPrefs({ bubbleHours: Number(e.target.value) })}
+            aria-label={s.helpers.stackAtAria}
+            disabled={!view.helperDesks}
+            value={view.helperStackAt}
+            onChange={(e) => onPrefs({ helperStackAt: Number(e.target.value) })}
           >
-            {[1, 3, 6, 12, 24].map((h) => (
-              <option key={h} value={h}>
-                {s.office.hours(h)}
+            {HELPER_STACK_CHOICES.map((n) => (
+              <option key={n} value={n}>
+                {s.helpers.people(n)}
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          {s.office.ready}
+        </div>
+        <div className="setting-row">
+          <Clock size={18} />
+          <div>
+            <b>{s.helpers.retain}</b>
+          </div>
           <select
-            aria-label={s.office.readyAria}
-            value={p.readyMinutes ?? 30}
-            onChange={(e) => onPrefs({ readyMinutes: Number(e.target.value) })}
+            aria-label={s.helpers.retainAria}
+            value={retainMinutes}
+            onChange={(e) => onPrefs({ helperRetainMinutes: Number(e.target.value) })}
           >
-            {[...new Set([10, 20, 30, 60, p.readyMinutes ?? 30])]
+            {[...new Set([...HELPER_RETAIN_CHOICES, retainMinutes])]
               .sort((a, b) => a - b)
               .map((m) => (
-                <option key={m} value={m} disabled={m >= (p.standbyHours ?? 4) * 60}>
-                  {s.office.forMinutes(m)}
+                <option key={m} value={m}>
+                  {s.helpers.minutes(m)}
                 </option>
               ))}
           </select>
-        </label>
-        <label>
-          {s.office.standby}
-          <select
-            aria-label={s.office.standbyAria}
-            value={p.standbyHours ?? 4}
-            onChange={(e) => {
-              const standbyHours = Number(e.target.value);
-              const ready = p.readyMinutes ?? 30;
-              onPrefs({
-                standbyHours,
-                archiveDays: Math.max(p.archiveDays ?? 7, Math.floor(standbyHours / 24) + 1),
-                // Standing by must end before going home.
-                ...(ready >= standbyHours * 60 ? { readyMinutes: 30 } : {}),
-              });
-            }}
-          >
-            {[...new Set([1, 2, 4, 8, 24, 48, 72, 168, 336, 720, 2160, p.standbyHours ?? 4])]
-              .sort((a, b) => a - b)
-              .map((h) => (
-                <option key={h} value={h}>
-                  {s.office.after(durationLabel(h))}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          {s.office.archive}
-          <select
-            aria-label={s.office.archiveAria}
-            disabled={p.autoArchive === false}
-            value={p.archiveDays ?? 7}
-            onChange={(e) => onPrefs({ archiveDays: Number(e.target.value) })}
-          >
-            {[...new Set([1, 3, 7, 14, 30, 60, 90, 180, 365, p.archiveDays ?? 7])]
-              .sort((a, b) => a - b)
-              .map((d) => (
-                <option key={d} value={d} disabled={d * 24 <= (p.standbyHours ?? 4)}>
-                  {s.office.afterDays(d)}
-                </option>
-              ))}
-          </select>
-        </label>
-      </div>
-      <p className="office-schedule-preview" aria-live="polite">
-        {s.office.schedule(officeSchedule(p))}
-      </p>
-      <p className="helper-lifecycle-note">{s.office.helperNote}</p>
-    </section>
+        </div>
+      </section>
+    </>
   );
   const spaces = (
     <section className="settings-section zone-settings" data-guide-section="zones" tabIndex={-1}>

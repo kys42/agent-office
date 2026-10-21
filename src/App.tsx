@@ -4,7 +4,14 @@ import { PetAppearanceContext } from './components/PetAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { PanelResizer } from './components/PanelResizer';
-import { PANEL, fitPanels, readWidths, type PanelWidths } from './shared/panel-widths';
+import {
+  PANEL,
+  PANEL_WIDTHS_KEY,
+  fitPanels,
+  readWidths,
+  readWidthsAt,
+  type PanelWidths,
+} from './shared/panel-widths';
 import {
   Gauge,
   Home,
@@ -60,6 +67,8 @@ import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
 import { useI18n } from './lib/i18n';
 import { NoticePagingContext } from './lib/notice-paging';
+import { cardReadSettings } from './shared/card-reads';
+import { resetDue } from './shared/view-prefs';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
   { id: 'office', icon: Home },
@@ -102,19 +111,29 @@ export default function App() {
   };
   // Widths the person dragged the left menu and the right column to (remembered here), fitted to
   // the window as it is now.
+  // `widthsAt`: when the person last dragged them, so a later reset (from any window) wins.
+  const widthsAt = useRef(0);
   const [widths, setWidthsState] = useState<PanelWidths>(() => {
     try {
-      return readWidths(localStorage.getItem('office:panel-widths'));
+      const raw = localStorage.getItem(PANEL_WIDTHS_KEY);
+      widthsAt.current = readWidthsAt(raw);
+      return readWidths(raw);
     } catch {
       return {};
     }
   });
-  const setWidths = (patch: PanelWidths) => setWidthsState((was) => ({ ...was, ...patch }));
+  const setWidths = (patch: PanelWidths) => {
+    widthsAt.current = Date.now();
+    setWidthsState((was) => ({ ...was, ...patch }));
+  };
   useEffect(() => {
     // Saved once the edge rests, not on every step of a drag (and on leaving, if sooner).
     const save = () => {
       try {
-        localStorage.setItem('office:panel-widths', JSON.stringify(widths));
+        localStorage.setItem(
+          PANEL_WIDTHS_KEY,
+          JSON.stringify({ ...widths, at: widthsAt.current || undefined }),
+        );
       } catch {
         // Remembering is a convenience.
       }
@@ -281,6 +300,14 @@ export default function App() {
     if (!demo) api.selected?.(currentId);
   }, [demo, currentId]);
   const prefs = snapshot?.preferences;
+  // '패널 폭 초기화' in settings (maybe the settings window, another renderer): a stamp newer
+  // than the last drag puts both columns back to their defaults.
+  const widthsResetAt = prefs?.panelWidthsResetAt;
+  useEffect(() => {
+    if (!resetDue(widthsResetAt, widthsAt.current)) return;
+    widthsAt.current = widthsResetAt!;
+    setWidthsState({});
+  }, [widthsResetAt]);
   const notices = snapshot?.notices ?? [];
   const unread = model.unread;
   useEffect(() => {
@@ -1107,6 +1134,7 @@ export default function App() {
             onSelect={choose}
             showNews={showNews}
             readOnOpen={engaged}
+            reading={cardReadSettings(prefs)}
             onClose={() => setSelected(null)}
             // In the office the card takes the list's place; elsewhere it just closes.
             onBack={view === 'office' ? () => setSelected(null) : undefined}

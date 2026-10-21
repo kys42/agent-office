@@ -526,6 +526,22 @@ body.dock-mode {
     inset 0 1px 0 var(--pill-shine),
     0 8px 22px -10px rgba(0, 0, 0, 0.55);
 }
+/* The person's pill visibility (#228): `always` solid at rest too. */
+.dock-pill.pill-always {
+  opacity: 0.95;
+  background: var(--pill-bg-strong);
+}
+/* `hover`: hidden and click-through until useDockPill sees the (forwarded) pointer near it —
+   CSS :hover cannot fire on it in the click-through dock window. Keyboard focus shows it. */
+.dock-pill.pill-hover:not(.is-revealed):not(.is-dragging):not(:has(:focus-visible)) {
+  opacity: 0;
+  pointer-events: none;
+}
+.dock-pill.pill-hover.is-revealed,
+.dock-pill.pill-hover:has(:focus-visible) {
+  opacity: 0.95;
+  background: var(--pill-bg-strong);
+}
 .dock-pill.is-dragging {
   cursor: grabbing;
   background: var(--pill-bg-strong);

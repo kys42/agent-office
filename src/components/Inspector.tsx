@@ -74,6 +74,7 @@ export function Inspector({
   onSelect,
   showNews,
   readOnOpen = true,
+  reading,
   onClose,
   onPatch,
   onPin,
@@ -117,6 +118,8 @@ export function Inspector({
   showNews?: string | null;
   /** False while a card restored on startup waits for the person to touch the office. */
   readOnOpen?: boolean;
+  /** The person's reading preferences (cardReadSettings): off, or after how long. */
+  reading?: { enabled: boolean; dwellMs: number };
   onClose: () => void;
   onReturn: (id: string) => void;
   onPatch: (id: string, p: SessionPatch) => Promise<void>;
@@ -378,7 +381,8 @@ export function Inspector({
     notices,
     memberIds ?? [session.id],
     onReceipt,
-    !privacy && readOnOpen,
+    !privacy && readOnOpen && (reading?.enabled ?? true),
+    reading?.dwellMs,
   );
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;

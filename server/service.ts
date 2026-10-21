@@ -111,6 +111,16 @@ const prefsSchema = z
       .object({ finals: z.boolean(), calls: z.boolean(), sound: z.boolean() })
       .strict()
       .optional(),
+    tinyNames: z.boolean().optional(),
+    tinyFinalDot: z.boolean().optional(),
+    dockPill: z.enum(['always', 'subdued', 'hover']).optional(),
+    dockPillResetAt: z.number().int().min(0).optional(),
+    panelWidthsResetAt: z.number().int().min(0).optional(),
+    readOnOpen: z.boolean().optional(),
+    readDwellSeconds: z.number().min(0).max(10).optional(),
+    helperDesks: z.boolean().optional(),
+    helperStackAt: z.number().int().min(2).max(8).optional(),
+    helperRetainMinutes: z.number().int().min(5).max(240).optional(),
     petAppearance: z
       .object({
         version: z.literal(1),

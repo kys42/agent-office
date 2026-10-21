@@ -19,7 +19,12 @@ import {
 import { sessionName, projectKey, benchKey } from '../shared/office';
 import { planDeskDrop } from '../shared/desk-order';
 import { isRemoteId } from '../shared/federation';
-import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
+import {
+  HELPER_STACK_AT,
+  layoutOffice,
+  layoutSignature,
+  projectColor,
+} from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
@@ -71,6 +76,7 @@ export function Office({
   onReply,
   notify,
   quotaOf,
+  helperStackAt = HELPER_STACK_AT,
   demo = false,
 }: {
   demo?: boolean;
@@ -106,6 +112,8 @@ export function Office({
   notify?: (message: string) => void;
   /** The usage limit this colleague's tool has used up, if any (desk lights go out). */
   quotaOf?: (s: Session) => QuotaExhaustion | undefined;
+  /** From this many helpers on one colleague they share one stacked desk (preference). */
+  helperStackAt?: number;
 }) {
   const { t, locale } = useI18n();
   const holder = useRef<HTMLDivElement>(null);
@@ -178,7 +186,10 @@ export function Office({
   }, []);
   useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
-  const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect, locale]);
+  const layout = useMemo(
+    () => layoutOffice(sessions, aspect, helperStackAt),
+    [signature, aspect, locale, helperStackAt],
+  );
   const focused = focusKey ? layout.projects.find((p) => p.key === focusKey) : undefined;
   const fitScale = Math.max(
     0.01,

@@ -8,6 +8,7 @@ import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
 import { NoticePagingContext } from '../lib/notice-paging';
+import { cardReadSettings } from '../shared/card-reads';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
@@ -162,6 +163,7 @@ export function DockCard() {
           notify={notify}
           demo={false}
           privacy={prefs?.privacy ?? false}
+          reading={cardReadSettings(prefs)}
           zoneRules={prefs?.zoneRules ?? []}
           onZoneRules={async (zoneRules: ZoneRule[]) => {
             if (await setPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);

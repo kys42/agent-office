@@ -53,6 +53,57 @@ export const settings = {
     helperNote:
       "Helpers leave their results and step away when the main teammate starts its next request. They stay if they're still working or waiting on you. When the main teammate goes off duty, they're folded into its earlier work.",
   },
+  /** The desk dock (#228): tiny names and dots, the pill. Desktop only. */
+  dock: {
+    title: 'Dock',
+    tinyNames: 'Names on tiny desks',
+    tinyNamesHint: 'Show a small name over each tiny desk. Off, the name shows on hover.',
+    tinyFinalDot: 'Final replies on tiny dots',
+    tinyFinalDotHint: 'Off, tiny desks only get a dot for calls and errors.',
+    pill: 'Dock controls',
+    pillHint: 'How the floating pill with the dock buttons shows at rest.',
+    pillChoices: {
+      always: 'Always clear',
+      subdued: 'Faint until hovered',
+      hover: 'Only when the mouse is near',
+    },
+    pillReset: 'Reset pill position',
+    pillResetHint: 'Puts the pill back at the right end of the dock.',
+    pillResetDone: 'The dock pill went back to the right end.',
+    resetButton: 'Reset',
+  },
+  /** Reading final replies by opening a card (#228). */
+  reading: {
+    title: 'Read on open',
+    readOnOpen: 'Opening a card marks replies read',
+    readOnOpenHint:
+      "A teammate's work card you keep open marks its final replies read. Off, they stay unread until you mark them.",
+    dwell: 'Wait before marking read',
+    dwellAria: 'Time a card stays open before marking read',
+    now: 'Right away',
+    nowHint: 'Browsing teammates with J/K marks each one read as soon as its card opens.',
+    seconds: (n: number) => `${n} ${n === 1 ? 'second' : 'seconds'}`,
+  },
+  /** Helper desks (#228). */
+  helpers: {
+    title: 'Helper desks',
+    show: 'Show helper desks',
+    showHint:
+      "Helpers sit at small desks beside their teammate. Off, they're still in the teammate's card under Work details › Linked helpers and forks.",
+    stackAt: 'Stack helpers at',
+    stackAtAria: 'Number of helpers that share one stacked desk',
+    people: (n: number) => `${n} or more`,
+    retain: 'Keep an unfinished helper',
+    retainAria: 'How long a quiet, unfinished helper keeps its desk',
+    minutes: (min: number) => `${min} minutes`,
+  },
+  /** The big office's dragged column widths (#228). */
+  panels: {
+    title: 'Panel widths',
+    reset: 'Reset panel widths',
+    resetHint: "Puts the big office's left menu and right column back to their default widths.",
+    resetDone: 'Panel widths are back to their defaults.',
+  },
   terminalTitle: 'Terminal and answers',
   /** Desktop only (#229). */
   notifications: {

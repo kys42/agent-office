@@ -2,6 +2,7 @@ import { PetAppearanceContext } from './PetAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
+import { DOCK_RECLAIM } from '../lib/useDockPill';
 import { useTerminalSend } from '../lib/useTerminalSend';
 import type { DockMode } from '../shared/types';
 import { DeskPet } from './DeskPet';
@@ -147,14 +148,26 @@ export function DeskDock() {
       solid.current = over;
       void api.dock?.(over ? 'solid' : 'through');
     };
-    const move = (e: MouseEvent) =>
+    let last: { x: number; y: number } | null = null;
+    const move = (e: MouseEvent) => {
+      last = { x: e.clientX, y: e.clientY };
       claim(e.target instanceof Element && !!e.target.closest('[data-solid]'));
+    };
     // A fast exit can skip the transparent margin; never leave the window holding clicks.
-    const leave = () => claim(false);
+    const leave = () => {
+      last = null;
+      claim(false);
+    };
+    // Something solid appeared under a still pointer (the hidden pill came up): judge it again.
+    const reclaim = () => {
+      if (last) claim(!!document.elementFromPoint(last.x, last.y)?.closest('[data-solid]'));
+    };
     window.addEventListener('mousemove', move);
+    window.addEventListener(DOCK_RECLAIM, reclaim);
     document.documentElement.addEventListener('mouseleave', leave);
     return () => {
       window.removeEventListener('mousemove', move);
+      window.removeEventListener(DOCK_RECLAIM, reclaim);
       document.documentElement.removeEventListener('mouseleave', leave);
     };
   }, []);

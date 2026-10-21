@@ -8,6 +8,7 @@ import { applyNoticeReceipt } from '../shared/notices';
 import { matchesQuery } from '../shared/notice-pages';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
+import { helperUnfinishedMs } from '../shared/view-prefs';
 import { allocateSeats, officeZone, reorderSeatMap, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
 import type {
@@ -480,9 +481,9 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
           ? { ...x, archived: false, returnedAt: Date.now(), zone: 'office' as const }
           : x,
       );
-      const active = officeResidents(sessions).sessions.filter(
-        (x) => officeZone(x, s.preferences) === 'office',
-      );
+      const active = officeResidents(sessions, Date.now(), {
+        unfinishedMs: helperUnfinishedMs(s.preferences),
+      }).sessions.filter((x) => officeZone(x, s.preferences) === 'office');
       const seats = allocateSeats(
         active,
         Object.fromEntries(

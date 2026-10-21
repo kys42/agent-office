@@ -265,11 +265,14 @@ export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =
 export function speechDot(
   s: Session,
   speech: Pick<StationSpeech, 'bubble' | 'tone' | 'news'>,
+  /** `finals: false` (the `tinyFinalDot` preference off): only calls and errors get a dot. */
+  { finals = true }: { finals?: boolean } = {},
 ): { tone: 'attention' | 'error' | 'reply'; id: string } | undefined {
   const b = speech.bubble;
   const id = b?.id ?? s.id;
   if (speech.tone === 'attention' && (b || s.status === 'call')) return { tone: 'attention', id };
   if (speech.tone === 'error' && (b || s.status === 'error')) return { tone: 'error', id };
+  if (!finals) return;
   let reply: OfficeNotice | undefined;
   for (const n of speech.news)
     if (!n.seenAt && isInboxNotice(n) && isFinalNotice(n))

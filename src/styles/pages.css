@@ -855,6 +855,29 @@ body.is-windows .settings-window-bar {
   font-size: 11.5px;
   color: var(--text-3);
 }
+.setting-row select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* A one-off action in a setting row (a reset), sized like the row's toggles and selects. */
+.setting-action {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--control-line);
+  background: var(--control);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.setting-action:hover {
+  border-color: var(--accent-line);
+  color: var(--accent);
+}
+.setting-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .lifecycle-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

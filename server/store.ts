@@ -41,6 +41,7 @@ import {
   seatKey,
 } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
+import { helperUnfinishedMs } from '../src/shared/view-prefs.js';
 import {
   localizeNotice,
   noticeCandidates,
@@ -828,7 +829,9 @@ export class OfficeStore {
   }
   /** Keeps desks for the colleagues in the office; written only when they change. */
   assignSeats(listed: Session[] = this.list(false, CANONICAL)): Record<string, number> {
-    const sessions = officeResidents(listed).sessions.filter((s) => s.zone === 'office');
+    const sessions = officeResidents(listed, Date.now(), {
+      unfinishedMs: helperUnfinishedMs(this.preferences()),
+    }).sessions.filter((s) => s.zone === 'office');
     const row = this.db.prepare("SELECT value FROM settings WHERE key='office_seats'").get() as
       { value: string } | undefined;
     const previous = row ? JSON.parse(row.value) : {};

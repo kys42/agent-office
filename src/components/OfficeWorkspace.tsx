@@ -245,6 +245,7 @@ export function OfficeWorkspace({
             demo={demo}
             onVeilZone={(ids) => onVeil(ids, true)}
             quotaOf={(s) => model.view(s.id)?.quota}
+            helperStackAt={model.display.helperStackAt}
             onPin={onPin}
             onZoneDrop={onZoneDrop}
             onReorder={onReorder}

@@ -144,3 +144,43 @@ test('Pinning a persona is one validated call and one snapshot; identities are r
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+test('The view preferences of #228 save, round-trip, and refuse out-of-range values', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-view-prefs-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  try {
+    // Absent before anyone chose: the defaults stay implicit (viewPrefs fills them in).
+    const before = service.store.preferences();
+    assert.equal(before.tinyNames, undefined);
+    assert.equal(before.helperStackAt, undefined);
+    const patch = {
+      tinyNames: false,
+      tinyFinalDot: false,
+      dockPill: 'hover',
+      dockPillResetAt: 1_700_000_000_000,
+      panelWidthsResetAt: 1_700_000_000_001,
+      readOnOpen: false,
+      readDwellSeconds: 1.5,
+      helperDesks: false,
+      helperStackAt: 2,
+      helperRetainMinutes: 120,
+    };
+    const saved = (await service.call('preferences', [patch])) as Snapshot;
+    for (const [key, value] of Object.entries(patch))
+      assert.equal(saved.preferences[key as keyof typeof patch], value, key);
+    for (const bad of [
+      { dockPill: 'sometimes' },
+      { helperStackAt: 1 },
+      { helperStackAt: 9 },
+      { helperRetainMinutes: 1 },
+      { readDwellSeconds: -1 },
+      { readDwellSeconds: 11 },
+      { tinyNames: 'no' },
+      { dockPillResetAt: -5 },
+    ])
+      await assert.rejects(service.call('preferences', [bad]), JSON.stringify(bad));
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
