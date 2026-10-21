@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type DOMAttributes, type MouseEvent } from 'react';
 import { EyeOff } from 'lucide-react';
 import { MOODS, type Mood, type Session } from '../shared/types';
 import { helperName, sessionName } from '../shared/office';
@@ -18,6 +18,7 @@ export function HelperDesk({
   news,
   privacy,
   className = '',
+  grip,
   onClick,
   onVeil,
 }: {
@@ -29,7 +30,9 @@ export function HelperDesk({
   news: boolean;
   privacy: boolean;
   className?: string;
-  onClick: () => void;
+  /** Pointer handlers that let this desk carry its zone (tiny). */
+  grip?: DOMAttributes<HTMLElement>;
+  onClick: (e: MouseEvent) => void;
   /** Hide just this helper (absent while it needs the person). */
   onVeil?: () => void;
 }) {
@@ -48,6 +51,7 @@ export function HelperDesk({
         title={
           privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`
         }
+        {...grip}
         onClick={onClick}
       >
         <Sprite session={s} provider={s.provider} mood={mood} size={44} />
@@ -90,6 +94,8 @@ export function HelperStack({
   canVeil = () => true,
   onVeil,
   direct = false,
+  grip,
+  swallowClick,
 }: {
   members: Session[];
   parentId: string;
@@ -109,6 +115,10 @@ export function HelperStack({
    * at ~0.41 scale in a ~100px window, where the list would be unreadable and clipped.
    */
   direct?: boolean;
+  /** Pointer handlers that let this desk carry its zone (tiny). */
+  grip?: DOMAttributes<HTMLElement>;
+  /** True when the click only ends a drag (of the zone), so it opens nothing. */
+  swallowClick?: (e: MouseEvent) => boolean;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -179,7 +189,12 @@ export function HelperStack({
         title={privacy ? undefined : members.map(label).join('\n')}
         // Direct: the lead is the one drawn in front — calling or erroring first, then working,
         // then the most recently active — so the click opens whoever most needs a look now.
-        onClick={() => (direct ? onOpen(lead.id) : setOpen((v) => !v))}
+        {...grip}
+        onClick={(e) => {
+          if (swallowClick?.(e)) return;
+          if (direct) onOpen(lead.id);
+          else setOpen((v) => !v);
+        }}
       >
         <span className="helper-stack-back" aria-hidden="true">
           <i />
