@@ -216,6 +216,8 @@ function fakePrompt(
     suggestionOnScreen?: boolean;
     /** An older Orca: typed text is drawn on screen too, with no `draft`. */
     draftOnScreen?: boolean;
+    /** tmux: how the suggestion is drawn after `❯ ` (default: all faint, as measured). */
+    drawSuggestion?: (text: string) => string;
     height?: number;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
@@ -241,8 +243,10 @@ function fakePrompt(
         const draft = shown.join('\n') || options.suggestion;
         return { text: strip(box('❯')), ...(draft && { composer: draft }) };
       }
-      if (!shown.length && options.suggestion)
-        return tmux(box(`\x1b[39m❯\xa0\x1b[2m${options.suggestion}\x1b[0m`), options.height);
+      if (!shown.length && options.suggestion) {
+        const paint = options.drawSuggestion ?? ((text) => `\x1b[2m${text}\x1b[0m`);
+        return tmux(box(`\x1b[39m❯\xa0${paint(options.suggestion)}`), options.height);
+      }
       return tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
     },
     wait: async () => {},
@@ -438,6 +442,34 @@ test('Text that shows up and cannot be known whole, or goes away, is never sent 
   );
   assert.equal(cleared.status, 'cleared');
   assert.deepEqual(copies, []);
+});
+
+test('tmux: a suggestion not drawn all faint reads as a draft, and the probe clears it', async () => {
+  // Reported: a Korean suggestion read as a draft ("Claude 입력창에 이 글이 있어요"), then
+  // "Claude 입력창을 비우지 못해" — the keys never touch a suggestion, and tmux was never probed.
+  const text = 'ㄱㄱ  머지하고  앱  띄워줘';
+  for (const paint of [
+    // Grey by colour, not SGR 2.
+    (shown: string) => `\x1b[38;5;246m${shown}\x1b[39m`,
+    // A cursor cell drawn inverse over the first character, the rest faint.
+    (shown: string) => `\x1b[7m${shown[0]}\x1b[27m\x1b[2m${shown.slice(1)}\x1b[0m`,
+  ]) {
+    const prompt = fakePrompt({ suggestion: text, drawSuggestion: paint });
+    const from = await claudeCodeComposer.inspect(prompt.host);
+    assert.deepEqual(from, { kind: 'draft', text, whole: true });
+    const { result, backups } = await clearPrompt(prompt);
+    assert.deepEqual(result, {
+      status: 'cleared',
+      state: { kind: 'suggestion', text, inferred: true },
+    });
+    assert.equal(prompt.text(), '');
+    assert.deepEqual(prompt.pressed, [['C-k', 'C-u'], ['C-k', 'C-u'], ['l'], ['BSpace']]);
+    assert.deepEqual(backups, [text]);
+  }
+  // A Korean draft the keys do reach is cleared without the probe.
+  const typed = fakePrompt({ draft: 'ㄱㄱ 머지하고 앱 띄워줘', suggestion: '추천 글' });
+  assert.equal((await clearPrompt(typed)).result.status, 'cleared');
+  assert.ok(typed.pressed.every((keys) => keys.join() === 'C-k,C-u'));
 });
 
 test('Text the keys never change is never taken as cleared', async () => {

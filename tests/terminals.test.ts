@@ -179,7 +179,8 @@ function fakeDeps(
       if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
       // Enter submits; Ctrl+K/Ctrl+U pairs (the composer adapter's clearing) empty the prompt.
       if (file === '/bin/tmux' && args.includes('send-keys'))
-        typed = args.includes('Enter') || clears(args) ? '' : typed;
+        typed =
+          args.includes('Enter') || clears(args) ? '' : typed + (args.at(-1) === 'l' ? 'l' : '');
       if (file === '/bin/tmux' && args.includes('capture-pane')) return screen();
       if (file === '/bin/orca' && args[1] === 'read') {
         const draft = options.orcaDraft?.(typed, reads);
@@ -873,6 +874,33 @@ test('A faint suggestion in the tmux prompt is typed over without asking', async
     maybeSuggestion: true,
   });
   assert.ok(!typedAny(calls));
+});
+
+test('tmux: a suggestion read as a draft is cleared with one letter and sent', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Reported on tmux: a Korean suggestion with characters not drawn faint (here grey by
+    // colour) read as a draft, and "지우고 내 글 보내기" ended in "비우지 못해".
+    const text = 'ㄱㄱ  머지하고  앱  띄워줘';
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (typed) =>
+        typed
+          ? claudeScreen(typed)
+          : claudeScreen('').replace(/❯$/m, `\x1b[39m❯ \x1b[38;5;246m${text}\x1b[39m`),
+    });
+    const backups: string[] = [];
+    const backup = async (saved: string) => void backups.push(saved);
+    assert.deepEqual(await sendToTerminal(tmuxLive(), 'hi', deps, { backup }), {
+      status: 'needs-confirm',
+      draft: text,
+      agent: 'Claude',
+    });
+    const result = await sendToTerminal(tmuxLive(), 'hi', deps, { backup, replaceDraft: text });
+    assert.equal(result.status, 'sent');
+    const keys = calls.filter((c) => c.args.includes('send-keys')).map((c) => c.args.slice(5));
+    assert.deepEqual(keys.slice(0, 4), [['C-k', 'C-u'], ['C-k', 'C-u'], ['l'], ['BSpace']]);
+    assert.ok(sent(calls));
+    assert.deepEqual(backups, [text]);
+  });
 });
 
 /** Every step of a send, in order: what reached the clipboard and the terminal. */
