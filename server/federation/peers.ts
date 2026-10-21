@@ -17,14 +17,23 @@ import { targetResponseSchema, sendResponseSchema } from './command-protocol.js'
 import { m } from '../../src/shared/i18n/index.js';
 import { peerRequest, PeerError } from './transport.js';
 
-const configSchema = z.object({ enabled: z.boolean(), peers: z.array(peerSchema).max(5) }).strict();
+import type { CodexRelay } from '../../desktop/codex-remote.js';
+import { RelayJournal } from './relay-journal.js';
+const hostSchema = z
+  .string()
+  .regex(/^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/)
+  .optional();
+const localPeerSchema = peerSchema.extend({ codexHostId: hostSchema });
+const configSchema = z
+  .object({ enabled: z.boolean(), peers: z.array(localPeerSchema).max(5) })
+  .strict();
 const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('state') }).strict(),
   z.object({ action: z.literal('enable'), enabled: z.boolean() }).strict(),
   z.object({ action: z.literal('add'), peer: peerSchema }).strict(),
   peerSchema
     .pick({ officeId: true, label: true, tags: true, projects: true })
-    .extend({ action: z.literal('update') })
+    .extend({ action: z.literal('update'), codexHostId: hostSchema })
     .strict(),
   z.object({ action: z.literal('remove'), officeId: z.uuid() }).strict(),
 ]);
@@ -128,9 +137,11 @@ export class PeerManager extends EventEmitter {
   private details = new Set<AbortController>();
   private closed = false;
   configError: string | null = null;
+  private activeSends = new Set<string>();
   constructor(
     private dir: string,
     private request = peerRequest,
+    private relay?: CodexRelay,
   ) {
     super();
     try {
@@ -156,6 +167,7 @@ export class PeerManager extends EventEmitter {
     return {
       enabled: this.enabled,
       error: this.configError,
+      codexHosts: this.relay?.hosts() ?? [],
       peers: this.config.peers.map(({ token: _token, sendToken, ...peer }) => {
         const h = this.held.get(peer.officeId);
         return {
@@ -172,6 +184,14 @@ export class PeerManager extends EventEmitter {
   command(raw: unknown): FederationState {
     const command = commandSchema.parse(raw);
     if (command.action === 'state') return this.state();
+    if (
+      command.action === 'update' &&
+      command.codexHostId &&
+      command.codexHostId !==
+        this.config.peers.find((p) => p.officeId === command.officeId)?.codexHostId &&
+      !this.relay?.hosts().some((h) => h.id === command.codexHostId)
+    )
+      throw Error('Unknown local Codex connection');
     const next = structuredClone(this.config);
     if (command.action === 'enable') next.enabled = command.enabled;
     if (command.action === 'remove')
@@ -179,7 +199,13 @@ export class PeerManager extends EventEmitter {
     if (command.action === 'update')
       next.peers = next.peers.map((p) =>
         p.officeId === command.officeId
-          ? { ...p, label: command.label, tags: command.tags, projects: command.projects }
+          ? {
+              ...p,
+              label: command.label,
+              tags: command.tags,
+              projects: command.projects,
+              codexHostId: command.codexHostId,
+            }
           : p,
       );
     if (command.action === 'add') {
@@ -323,17 +349,52 @@ export class PeerManager extends EventEmitter {
           );
           if (generation !== this.generation || response.officeId !== peer.officeId) continue;
           held.commandEpoch = response.epoch;
-          for (const { id, ref } of batch) {
-            const target = response.targets[ref.id];
-            if (target)
-              result[id] = {
-                ...target,
-                desktop: target.kind === 'codex' && target.status === 'desktop',
-                label: '',
-                canFocus: false,
-                remoteOffice: peer.label,
-              };
-          }
+          await Promise.all(
+            batch.map(async ({ id, ref }) => {
+              const target = response.targets[ref.id];
+              if (target)
+                result[id] = {
+                  ...target,
+                  desktop: target.kind === 'codex' && target.status === 'desktop',
+                  label: '',
+                  canFocus: false,
+                  remoteOffice: peer.label,
+                };
+              if (
+                !target?.canSend &&
+                peer.codexHostId &&
+                this.relay &&
+                Object.hasOwn(response.targets, ref.id)
+              ) {
+                const session = held.snapshot?.sessions.find((s) => s.id === ref.id);
+                if (
+                  session?.provider !== 'codex' ||
+                  !['root', 'fork'].includes(session.relation) ||
+                  session.origin !== 'interactive'
+                )
+                  return;
+                const thread = this.relay.resolve(peer.codexHostId, ref.id);
+                const available =
+                  !!thread && (await this.relay.available(peer.codexHostId, thread));
+                if (
+                  generation !== this.generation ||
+                  held.state !== 'connected' ||
+                  held.snapshot?.paused
+                )
+                  return;
+                result[id] = {
+                  kind: 'codex',
+                  desktop: true,
+                  status: 'desktop',
+                  label: '',
+                  canFocus: false,
+                  canSend: available,
+                  remoteOffice: peer.label,
+                  codexRemote: true,
+                };
+              }
+            }),
+          );
         } catch {
           held.commandEpoch = undefined;
         } finally {
@@ -344,6 +405,28 @@ export class PeerManager extends EventEmitter {
     return result;
   }
   async send(
+    id: string,
+    text: string,
+    requestId: string,
+    authorized?: () => Promise<void>,
+  ): Promise<SendResult> {
+    z.uuid().parse(requestId);
+    if (!text.trim() || text.length > 20000) throw Error('Invalid send');
+    if (this.activeSends.has(id)) throw Error(m().federation.sendUncertain);
+    const journal = new RelayJournal(this.dir);
+    const previous = journal.claim(requestId, id, text);
+    if (previous === 'sent') return { status: 'sent', message: m().federation.sent };
+    if (previous === 'uncertain') throw Error(m().federation.sendUncertain);
+    this.activeSends.add(id);
+    try {
+      const result = await this.dispatch(id, text, requestId, authorized);
+      journal.sent(requestId);
+      return result;
+    } finally {
+      this.activeSends.delete(id);
+    }
+  }
+  private async dispatch(
     id: string,
     text: string,
     requestId: string,
@@ -365,6 +448,27 @@ export class PeerManager extends EventEmitter {
     await authorized?.();
     if (generation !== this.generation || !target?.canSend || !held.commandEpoch)
       throw new Error(m().federation.sendUnavailable);
+    if (target.codexRemote) {
+      const host = peer.codexHostId;
+      const thread = host && this.relay?.resolve(host, ref.id);
+      if (!host || !thread || !this.relay) throw Error(m().federation.sendUnavailable);
+      await this.relay.send(host, thread, text, async () => {
+        // The peer targets endpoint authorizes the session even when its local target is null.
+        const fresh = (await this.targets([id]))[id];
+        await authorized?.();
+        if (
+          this.closed ||
+          generation !== this.generation ||
+          !fresh?.codexRemote ||
+          !fresh.canSend ||
+          held.state !== 'connected' ||
+          held.snapshot?.paused ||
+          this.relay?.resolve(host, ref.id) !== thread
+        )
+          throw Error(m().federation.sendUnavailable);
+      });
+      return { status: 'sent', message: m().federation.sent };
+    }
     const controller = new AbortController();
     this.details.add(controller);
     try {

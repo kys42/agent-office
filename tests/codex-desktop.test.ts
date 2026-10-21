@@ -302,3 +302,48 @@ test('CLI routing still uses the native queue and never connects to Desktop', as
     await f.close();
   }
 });
+
+test('Remote Desktop follows the explicit host with versioned envelopes; local is unchanged', async () => {
+  const f = await fixture();
+  const host = 'remote-control:env_test';
+  try {
+    assert.equal(await desktopOwnsThread(f.home, THREAD, 1000, host), true);
+    await sendToCodexDesktop(f.home, THREAD, 'remote literal', 1000, () => {}, host);
+    const discovery = f.calls.find((c) => c.method === 'thread-owner-discovery');
+    assert.ok(discovery);
+    assert.equal(discovery.version, 1);
+    assert.equal(discovery.params.hostId, host);
+    assert.equal(discovery.hostId, undefined);
+    const read = f.calls.find((c) => c.method === 'thread-follower-read-model-settings');
+    assert.ok(read);
+    assert.equal(read.version, 2);
+    assert.equal(read.hostId, host);
+    const send = f.calls.find((c) => c.method === 'thread-follower-start-turn');
+    assert.ok(send);
+    assert.equal(send.version, 3);
+    assert.equal(send.hostId, host);
+    assert.equal(send.targetClientId, OWNER);
+    assert.equal(f.calls.filter((c) => c.method === 'thread-follower-start-turn').length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test('Remote unsupported hosts, lost owners and unknown acknowledgements never fall back', async () => {
+  for (const option of [{ absent: true }, { wrongOwner: true }, { lost: true }]) {
+    const f = await fixture(option);
+    try {
+      await assert.rejects(
+        sendToCodexDesktop(f.home, THREAD, 'hello', 100, () => {}, 'remote-control:env_test'),
+      );
+      assert.ok(f.calls.filter((c) => c.method === 'thread-follower-start-turn').length <= 1);
+      assert.ok(
+        f.calls
+          .filter((c) => c.method === 'thread-owner-discovery')
+          .every((c) => c.params.hostId === 'remote-control:env_test'),
+      );
+    } finally {
+      await f.close();
+    }
+  }
+});

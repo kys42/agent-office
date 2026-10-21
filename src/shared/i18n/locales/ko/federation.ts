@@ -1,4 +1,12 @@
 export const federation = {
+  codexConnection: '이 컴퓨터의 Codex 원격 연결',
+  codexConnectionOff: '사용 안 함',
+  codexConnectionHint:
+    '이 사무실과 같은 컴퓨터의 Codex 연결을 선택하세요. 해당 원격 대화를 Codex에서 열어 두면 Office에서 보낼 수 있습니다.',
+  codexRemoteRoute: '이 컴퓨터의 Codex 원격 연결',
+  codexRemoteUnavailable:
+    'Codex에서 해당 원격 대화를 열고 다시 확인하세요. 연결 설정과 전송 권한도 확인해 주세요.',
+  checkTarget: '전송 대상 다시 확인',
   sendReady: '채팅 전송 가능',
   sendUnavailable: '원격 전송 대상 또는 권한을 확인할 수 없습니다.',
   sent: '원격 사무실에 보냈습니다.',

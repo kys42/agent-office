@@ -530,6 +530,7 @@ export type SessionPatch = Partial<
 export interface TerminalTarget {
   /** Display-only destination; remote responses never carry handles. */
   remoteOffice?: string;
+  codexRemote?: boolean;
   kind: 'orca' | 'tmux' | 'codex';
   label: string;
   /** Agent CLI process state, e.g. idle, busy, shell. */

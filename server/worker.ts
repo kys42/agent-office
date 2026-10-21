@@ -1,6 +1,8 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { OfficeService } from './service.js';
 import path from 'node:path';
+import os from 'node:os';
+import { DesktopCodexRelay } from '../desktop/codex-remote.js';
 import { defaultDataDir } from './store.js';
 import { PeerManager } from './federation/peers.js';
 import { FederatedService } from './federation/service.js';
@@ -10,6 +12,8 @@ const service = new FederatedService(
   new PeerManager(
     process.env.AGENT_OFFICE_FEDERATION_DIR ??
       path.join(workerData?.dataDir ?? defaultDataDir(), 'federation-beta'),
+    undefined,
+    new DesktopCodexRelay(process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex')),
   ),
 );
 // Only what changed crosses to the app, unless there is nothing to change from yet.

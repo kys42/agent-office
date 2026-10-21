@@ -299,3 +299,9 @@ Terminal 열기(macOS) 또는 재접속 명령 복사로 직접 작업한다. Ct
 부분 미리보기는 `partial: true`로 표시한다. 화면에는 숨겨진 내용/첨부가 소실되고 읽은 부분만 백업될 수 있다는 경고, ‘가려진 내용도 지우고 보내기’, 터미널 이동을 함께 둔다. 사용자가 교체 버튼을 눌렀을 때만 `replaceDraft`와 `allowPartialDraft: true`를 전달한다. 일반 보내기·Enter에는 이 플래그를 넣지 않는다.
 
 입력창이 확인 때와 같을 때 Ctrl+K/Ctrl+U로 단계적으로 비우며, 매번 읽은 내용을 누적해 백업한다. 전체 글이 다시 보이는 시점부터 기존 변경 감지 경로를 따른다. 권한창/읽기 실패/전경 프로세스 변경/백업 실패/횟수 한도에서는 중단한다. 빈 입력 또는 추천 상태를 확인한 뒤 새 글이 정확히 들어갔을 때만 Enter를 전송한다. 부분 교체 성공/실패 안내는 전체 백업을 보장하지 않는다. 원격/모바일 경로에서 이 확인을 자동 승인하지 않는다.
+
+### Codex 원격 owner
+
+명시적으로 연결한 원격 사무실의 Codex 대화는 로컬 Codex 앱의 원격 owner로 보낼 수 있다. 동일성/권한/중복 방지는 [MULTI-OFFICE](MULTI-OFFICE.md)의 계약을 따른다. `thread-owner-discovery` v1의 params.hostId는 선택한 `remote-control:*` 또는 `ssh:*`다. follower read-model-settings는 v2, start-turn은 v3와 최상위 hostId를 사용하며 발견한 client ID에만 보낸다. 로컬 요청은 기존 v1/v2 및 host envelope 없음으로 유지한다. 설정 상속과 단일 dispatch를 유지하고 owner 부재·지원하지 않는 대화·불명확한 응답은 재전송하지 않는다.
+
+검증: `node --import tsx scripts/codex-remote-smoke.ts`는 독립 프로필, 실제 HTTPS exporter, 합성 Codex IPC owner로 설정 UI → 원격 카드 → 전송과 권한 회수를 검사한다. 사용자 대화나 설치된 앱의 데이터를 사용하지 않는다.

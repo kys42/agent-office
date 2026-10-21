@@ -1,3 +1,12 @@
+# Codex 원격 owner 전송 · 2026-10-21
+
+- main `9dd9dc0` 기준 별도 `codex/office-remote-send` worktree에서 구현했다. 원래 checkout의 미커밋 문서는 수정하지 않았다.
+- 전체 단위 576개 통과 후 오프라인 매핑 유지 회귀 1개를 추가해 관련 3개 재통과. 타입·웹/desktop 빌드·전체 포맷 검사 통과. 원격 UI 3개 통과(경로, 재조회, draft 유지, Claude에 Codex 안내 미표시).
+- `node --import tsx scripts/codex-remote-smoke.ts`: 격리 Electron UI에서 host 선택 → 실제 HTTPS로 peer 권한 확인 → 합성 Codex 원격 owner v3 단일 dispatch → peer 권한 회수 시 추가 dispatch 없음 통과. `.local/codex-remote-smoke/`의 설정/대화 캡처로 시각 검수했다. compact composer에서 경로가 숨겨지는 CSS도 수정했다.
+- 회귀는 정확한 host·opaque ID·provider, 충돌 host, owner/설정 부재, 권한 회수, 베타 해제, 기존 오프라인 매핑 편집, pending/sent 저널 재시작 및 다른 경로로 재전송하지 않음을 확인한다. 독립 리뷰의 UI/설정 2건을 수정하고 재리뷰에서 추가 finding 없음.
+- 실제 Mac mini 연결은 read-only discovery에서 현재 owner를 찾지 못했다. 실사용 대화에 테스트 메시지는 보내지 않았으며 실제 Mac mini 종단 전송, Windows native 동작은 확인하지 않았다. Codex에서 해당 원격 대화를 열고 host 매핑을 선택한 뒤 재조회가 필요하다. 설치된 앱과 원격 exporter는 이번 PR 작성으로 바뀌지 않는다.
+- CI 결과와 최종 SHA는 PR을 따른다. 열려 있는 PR의 worktree를 유지하며 자동 병합하지 않는다.
+
 # tmux 기존 대화 재개 · 2026-10-19 (Issue #178)
 
 - 단위505개 통과(동시 실행2). 기본 병렬 전체 실행은 기존 hot-path stop 타이밍 테스트가 한 번 실패했고 동시 실행을 줄인 전체 재실행에서 통과했다. 신규8개는 취소·중복/충돌·재검사·미설치·종료·dead pane을 검증한다.

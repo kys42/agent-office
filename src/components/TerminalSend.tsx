@@ -10,7 +10,11 @@ export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {
-  const host = target.desktop ? 'Codex Desktop' : HOSTS[target.kind];
+  const host = target.codexRemote
+    ? m().federation.codexRemoteRoute
+    : target.desktop
+      ? 'Codex Desktop'
+      : HOSTS[target.kind];
   if (target.remoteOffice)
     return `${privacy ? m().federation.remoteOffice : target.remoteOffice} · ${host}`;
   if (target.desktop) return host;
@@ -42,6 +46,7 @@ export function TerminalSend({
   chat = false,
   draftKey,
   remoteOffice,
+  onRefresh,
 }: {
   /** Where it goes, as last seen; null while none was found (the send looks again). */
   target: TerminalTarget | null;
@@ -55,6 +60,7 @@ export function TerminalSend({
   /** Stable colleague identity, independent of the terminal's availability or label. */
   draftKey: string;
   remoteOffice?: string;
+  onRefresh?: () => void;
 }) {
   const { t } = useI18n();
   const reply = useComposerSend(onSend, (sent) => reply.clearText(sent), draftKey);
@@ -86,7 +92,7 @@ export function TerminalSend({
   };
   return (
     <form
-      className={`terminal-send ${chat ? 'terminal-send-chat' : ''}`}
+      className={`terminal-send ${chat ? 'terminal-send-chat' : ''} ${remoteOffice ? 'terminal-send-remote' : ''}`}
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -118,7 +124,7 @@ export function TerminalSend({
         <small>
           <Terminal size={11} />
           {remoteOffice
-            ? `${remoteOffice} · ${target?.canSend ? t.federation.sendReady : t.federation.sendUnavailable}`
+            ? `${remoteOffice} · ${target?.codexRemote ? t.federation.codexRemoteRoute : target?.canSend ? t.federation.sendReady : t.federation.sendUnavailable}`
             : target
               ? targetLine(target, privacy)
               : t.terminal.lookingAgain}
@@ -133,6 +139,21 @@ export function TerminalSend({
           {t.terminal.send}
         </button>
       </div>
+      {remoteOffice && !target?.canSend && (
+        <small className="terminal-send-unavailable" role="status">
+          {target?.codexRemote ? t.federation.codexRemoteUnavailable : t.federation.sendUnavailable}
+        </small>
+      )}
+      {remoteOffice && onRefresh && (
+        <button
+          className="terminal-send-refresh"
+          type="button"
+          disabled={sending}
+          onClick={onRefresh}
+        >
+          {t.federation.checkTarget}
+        </button>
+      )}
       {draft && (
         <DraftConfirm
           draft={draft}
