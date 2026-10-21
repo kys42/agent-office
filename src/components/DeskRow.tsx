@@ -17,6 +17,7 @@ import {
   Expand,
   EyeOff,
   Flag,
+  GripHorizontal,
   GripVertical,
   GitBranch,
   Maximize2,
@@ -96,7 +97,8 @@ const HELPER_TABLE_FOOT = 46;
  * Two looks share everything but the ground: `office` lays each zone on a rug with name
  * cards under the desks; `floor` stands the desks right on the screen's bottom edge, with a name plate on each desk front and a flag between zones.
  * Tiny (쪼꼬미) draws either look at helper-desk size with only the desks and their status:
- * no bubbles, flags, rugs or plates — a contentless dot says a desk has something new.
+ * no bubbles, flags, rugs or plates — a contentless dot says a desk has something new, and a
+ * small grip tab over each zone moves it (the same saved spots as the full size).
  * Only drawn things are `[data-solid]`; the transparent rest lets clicks through.
  */
 export function DeskRow({
@@ -213,7 +215,6 @@ export function DeskRow({
     onArrange,
     onSaveFailed: () => notify(t.dock.arrange.saveFailed),
     scale,
-    disabled: tiny,
   });
   const { layout } = placement;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -411,7 +412,27 @@ export function DeskRow({
                     } as CSSProperties
                   }
                 >
-                  {tiny ? null : floor ? (
+                  {tiny ? (
+                    // Tiny has no flags or signs: a small grip tab rides just above the zone's
+                    // heads (clear of the dots, names and the pill along the bottom), drawn in
+                    // real pixels like the tiny names. The same drag and keys as the signs.
+                    <>
+                      <i className="tiny-zone-line" aria-hidden="true" />
+                      <button
+                        type="button"
+                        className="tiny-zone-handle"
+                        data-solid
+                        {...dragHandle}
+                        aria-label={t.dock.arrange.move(zoneName)}
+                        aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
+                        title={
+                          privacy ? t.dock.arrange.hint : `${zone.name}\n${t.dock.arrange.hint}`
+                        }
+                      >
+                        <GripHorizontal aria-hidden="true" />
+                      </button>
+                    </>
+                  ) : floor ? (
                     // A flag between zones: the pole stands on the floor, the cloth names the zone.
                     // Only the pole, cloth and base take the mouse; the box around them lets clicks
                     // through like the rest of the strip. The flag stands on the desks' floor line.

@@ -610,3 +610,154 @@ test('A browser preview has no settings in the tiny pill either', async ({ page 
   await expect(pill.getByRole('button', { name: '사무실 펼치기', exact: true })).toBeVisible();
   await expect(pill.getByRole('button', { name: '설정', exact: true })).toHaveCount(0);
 });
+
+const zoneTab = (page: Page, i: number) => page.locator('.tiny-zone-handle').nth(i);
+const zoneLeft = (page: Page, i: number) =>
+  page
+    .locator('.row-zone')
+    .nth(i)
+    .evaluate((el) => parseFloat((el as HTMLElement).style.left));
+async function dragTab(page: Page, i: number, delta: number, keep = true) {
+  const b = (await zoneTab(page, i).boundingBox())!;
+  const x = b.x + b.width / 2,
+    y = b.y + b.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + delta, y, { steps: 8 });
+  if (keep) await page.mouse.up();
+}
+/** A zone's saved spot: its left edge as a fraction of the room it can move through. */
+const zoneSpot = (page: Page, i: number) =>
+  page
+    .locator('.row-zone')
+    .nth(i)
+    .evaluate((el) => {
+      const zone = el as HTMLElement;
+      const scene = zone.parentElement!;
+      const room = parseFloat(scene.style.width) - parseFloat(zone.style.width);
+      return parseFloat(zone.style.left) / room;
+    });
+type Box = { x: number; y: number; width: number; height: number };
+const overlaps = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+test('Tiny zone tabs move a zone, remember it and share it with the full size', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row&tiny');
+  const row = await settled(page);
+  await expect(page.locator('.tiny-zone-handle')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '구역 옮기기 · team-a' })).toBeVisible();
+  const before = await zoneLeft(page, 0);
+  await dragTab(page, 0, 160, false);
+  // Mid-drag the zone follows the pointer (in station units: 160px / 0.41).
+  await expect.poll(() => zoneLeft(page, 0)).toBeGreaterThan(before + 300);
+  await expect(page.locator('.row-zone').first()).toHaveClass(/is-arranging/);
+  await page.screenshot({
+    path: '.local/tiny-zone-drag.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+  await page.mouse.up();
+  await expect(page.locator('.row-zone').first()).not.toHaveClass(/is-arranging/);
+  const moved = await zoneLeft(page, 0);
+  expect(moved).toBeGreaterThan(before + 300);
+  expect(await page.evaluate(() => (window as any).opens)).toEqual([]);
+  const saved = await page.evaluate(() => localStorage.getItem('office:row-zones:v1:live'));
+  expect(saved).not.toBeNull();
+  await page.screenshot({
+    path: '.local/tiny-zone-handles.png',
+    clip: { x: 0, y: row.y, width: 1440, height: row.height },
+  });
+
+  await page.reload();
+  await settled(page);
+  await expect.poll(() => zoneLeft(page, 0)).toBeCloseTo(moved, 0);
+  // The full size reads the same saved spots (shares of its narrower room, so a crowded
+  // neighbour may nudge it), and leaves them as they were.
+  await page.getByRole('button', { name: '크게 보기' }).click();
+  await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
+  await expect(page.locator('.row-zone-handle')).toHaveCount(2);
+  const shared = await zoneSpot(page, 0);
+  expect(await page.evaluate(() => localStorage.getItem('office:row-zones:v1:live'))).toBe(saved);
+  // It passed its neighbour in tiny, and stays past it here.
+  expect(await zoneLeft(page, 0)).toBeGreaterThan(await zoneLeft(page, 1));
+  // An untouched full-size row puts it well to the left of that.
+  await page.evaluate(() => localStorage.removeItem('office:row-zones:v1:live'));
+  await page.goto('/?lang=ko#mini=row');
+  await page.reload();
+  await expect(page.locator('.row-zone-handle')).toHaveCount(2);
+  expect(await zoneSpot(page, 0)).toBeLessThan(shared - 0.1);
+});
+
+test('Tiny zone tabs move with the keys, and Esc cancels a drag', async ({ page }) => {
+  await setup(page, '#mini=row&tiny');
+  await settled(page);
+  const tab = zoneTab(page, 0);
+  const start = await zoneLeft(page, 0);
+  await tab.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => zoneLeft(page, 0)).toBeCloseTo(start + 16, 0);
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect.poll(() => zoneLeft(page, 0)).toBeCloseTo(start + 80, 0);
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => zoneLeft(page, 0)).toBeCloseTo(start + 64, 0);
+  await page.keyboard.press('Home');
+  await expect.poll(() => zoneLeft(page, 0)).toBe(0);
+  // The keys move the zone, not the row's pages; the tab keeps focus.
+  await expect(tab).toBeFocused();
+  const saved = await page.evaluate(() => localStorage.getItem('office:row-zones:v1:live'));
+  expect(saved).not.toBeNull();
+
+  const second = await zoneLeft(page, 1);
+  await dragTab(page, 1, -120, false);
+  await expect(page.locator('.row-zone').nth(1)).toHaveClass(/is-arranging/);
+  await expect.poll(() => zoneLeft(page, 1)).not.toBe(second);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(page.locator('.row-zone').nth(1)).not.toHaveClass(/is-arranging/);
+  expect(await zoneLeft(page, 1)).toBe(second);
+  expect(await page.evaluate(() => localStorage.getItem('office:row-zones:v1:live'))).toBe(saved);
+  // Esc ended the drag only: the dock stays tiny and unfolded.
+  expect(await calls(page)).not.toContain('pet');
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+});
+
+test('Tiny zone tabs are readable, clear of names, dots and the pill, and desks still open', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row&tiny');
+  const row = await settled(page);
+  const pill = (await page.locator('.dock-pill').boundingBox())!;
+  const others = [
+    ...(await page.locator('.tiny-name > span').all()),
+    ...(await page.locator('.tiny-dot').all()),
+  ];
+  expect(others.length).toBeGreaterThan(3);
+  for (const i of [0, 1]) {
+    const tab = (await zoneTab(page, i).boundingBox())!;
+    // Drawn at real size inside the ×0.41 scene, whole inside the window.
+    expect(tab.height).toBeGreaterThanOrEqual(13);
+    expect(tab.width).toBeGreaterThanOrEqual(36);
+    expect(tab.y).toBeGreaterThanOrEqual(row.y);
+    expect(overlaps(tab, pill)).toBe(false);
+    for (const o of others) expect(overlaps(tab, (await o.boundingBox())!)).toBe(false);
+  }
+  // A desk is still what a click on it reaches.
+  const desk = (await pet(page, 0).boundingBox())!;
+  expect(
+    await page.evaluate(
+      ([x, y]) => !!document.elementFromPoint(x, y)?.closest('.office-pet'),
+      [desk.x + desk.width / 2, desk.y + desk.height / 2],
+    ),
+  ).toBe(true);
+  await pet(page, 0).click();
+  await expect.poll(() => page.evaluate(() => (window as any).opens)).toEqual(['run-0']);
+});
+
+test('Tiny zone tabs in privacy name only the project', async ({ page }) => {
+  await setup(page, '#mini=floor&tiny', { bridge: true, privacy: true });
+  await settled(page);
+  await expect(page.getByRole('button', { name: '구역 옮기기 · 프로젝트' })).toHaveCount(2);
+  await expect(page.getByRole('button', { name: /team-a/ })).toHaveCount(0);
+  await expect(zoneTab(page, 0)).not.toHaveAttribute('title', /team-a/);
+});
