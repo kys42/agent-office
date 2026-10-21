@@ -218,7 +218,7 @@ export function oneStretchGone(original: string, now: string): boolean {
 }
 
 /**
- * Text the deletion keys never touched, on a host that cannot show styles. One letter (`PROBE`)
+ * Text the deletion keys never touched (a suggestion not told by its style). One letter (`PROBE`)
  * is typed: the box holding just it means the text was the suggestion (typing replaced it), so
  * the letter is deleted and the box is ready. The text with the letter put in means typing
  * arrives but deletion does not (another key mode): it is taken back and nothing more is tried.
@@ -286,7 +286,9 @@ const REDRAW_MS = 120;
  *
  * A suggestion comes back as soon as the box is empty, and keys never touch it. tmux shows it
  * faint. Orca (1.4.216, measured again) draws it plain on the prompt line, typed text kept apart
- * in `draft`; it was also seen in `draft` like typed text. Either way, text the keys never move is
+ * in `draft`; it was also seen in `draft` like typed text. A tmux suggestion with any character
+ * not drawn faint reads as a draft as well (the likely cause of a reported tmux failure with a
+ * Korean suggestion, "Claude 입력창을 비우지 못해", that Orca cleared). On either host, text the keys never move is
  * told by a one-letter probe, and text that is no part of the confirmed draft, shows up once that
  * is gone and survives two more pairs, is taken for it (`inferred`) — saved first, and the send
  * afterwards accepts only the exact typed text.
@@ -336,10 +338,9 @@ export const claudeCodeComposer: ComposerAdapter = {
             status: 'cleared',
             state: { kind: 'suggestion', text: stranger, inferred: true },
           };
-        // Never moved at all: the suggestion (Orca draws it like typing), or keys that never
-        // arrive. One character typed tells them apart.
-        if (unchanged >= 2 && !moved && !canTell && stranger === null)
-          return probe(host, from, state, proceed);
+        // Never moved at all: the suggestion (Orca draws it like typing; tmux too, when not all of
+        // it is faint), or keys that never arrive. One character typed tells them apart.
+        if (unchanged >= 2 && !moved && stranger === null) return probe(host, from, state, proceed);
         if (unchanged >= (moved ? 6 : 2)) return { status: 'failed', state };
         continue;
       }
