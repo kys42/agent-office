@@ -864,71 +864,61 @@ body.dock-mode {
   box-shadow: inset 0 0 0 calc(1px / var(--tiny-scale)) rgba(255, 255, 255, 0.16);
   color: #fff;
 }
-/* Moving a zone in tiny: a grip tab just above the zone (the see-through room over the heads),
-   clear of the dots, the names on the desk fronts and the pill along the bottom. A faint line
-   in the project's colour shows how far the zone reaches. Real pixels, like the names. */
-.tiny-zone-line {
+/* Moving a zone in tiny: a thin bar along the zone's bottom edge, over the desk legs and
+   below the names on the desk fronts (they end about 3px above the edge) and the pill (8px up).
+   Faint in the project's colour at rest, a little thicker and brighter on hover, focus or a
+   drag. Real pixels, like the names. Its taller see-through grip (::before) sits under the
+   desks' own layer (z-index 3, after it in the page), so a name or a desk still wins where they
+   meet; the tiny stations themselves let the pointer through to it (only their drawn parts
+   take it). */
+.tiny-zone-bar {
   position: absolute;
   left: calc(4px / var(--tiny-scale));
   right: calc(4px / var(--tiny-scale));
-  bottom: calc(100% + 9px / var(--tiny-scale));
-  height: calc(2px / var(--tiny-scale));
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--project-color) 70%, transparent);
-  opacity: 0.35;
-  pointer-events: none;
-  transition: opacity 0.15s;
-}
-.tiny-zone-handle {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 3px / var(--tiny-scale));
-  z-index: 7;
-  width: calc(40px / var(--tiny-scale));
-  height: calc(14px / var(--tiny-scale));
-  transform: translateX(-50%);
-  display: grid;
-  place-items: center;
+  bottom: 0;
+  z-index: 3;
+  height: calc(3px / var(--tiny-scale));
   padding: 0;
+  border: 0;
   border-radius: 99px;
-  border: calc(1px / var(--tiny-scale)) solid
-    color-mix(in srgb, var(--project-color) 55%, rgba(255, 255, 255, 0.2));
-  background: rgba(28, 30, 36, 0.6);
-  color: rgba(255, 255, 255, 0.75);
-  opacity: 0.7;
+  background: color-mix(in srgb, var(--project-color) 55%, rgba(28, 30, 36, 0.5));
+  opacity: 0.45;
   cursor: grab;
   touch-action: none;
   transition:
     opacity 0.15s,
-    background 0.15s;
+    height 0.15s;
 }
-.tiny-zone-handle svg {
-  width: calc(14px / var(--tiny-scale));
-  height: calc(14px / var(--tiny-scale));
-  stroke-width: 2.4;
+.tiny-zone-bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(10px / var(--tiny-scale));
 }
-.row-zone:hover > .tiny-zone-line,
-.row-zone.is-arranging > .tiny-zone-line,
-.row-zone:has(> .tiny-zone-handle:focus-visible) > .tiny-zone-line {
-  opacity: 0.9;
+.desk-row.is-tiny .desk-station {
+  pointer-events: none;
 }
-.tiny-zone-handle:hover,
-.tiny-zone-handle:focus-visible,
-.row-zone.is-arranging > .tiny-zone-handle {
+.desk-row.is-tiny .desk-station > [data-solid] {
+  pointer-events: auto;
+}
+.tiny-zone-bar:hover,
+.tiny-zone-bar:focus-visible,
+.row-zone.is-arranging > .tiny-zone-bar {
+  height: calc(4px / var(--tiny-scale));
   opacity: 1;
-  background: rgba(28, 30, 36, 0.95);
-  color: #fff;
+  background: color-mix(in srgb, var(--project-color) 85%, #fff);
 }
-.tiny-zone-handle:focus-visible {
+.tiny-zone-bar:focus-visible {
   outline: calc(2px / var(--tiny-scale)) solid var(--accent);
   outline-offset: calc(1px / var(--tiny-scale));
 }
-.row-zone.is-arranging > .tiny-zone-handle {
+.row-zone.is-arranging > .tiny-zone-bar {
   cursor: grabbing;
 }
 @media (prefers-reduced-motion: reduce) {
-  .tiny-zone-line,
-  .tiny-zone-handle {
+  .tiny-zone-bar {
     transition: none;
   }
 }
