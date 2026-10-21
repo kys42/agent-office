@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
 } from 'react';
 import {
   ChevronDown,
@@ -361,7 +362,7 @@ export function DeskRow({
   return (
     <div
       ref={rootRef}
-      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''}`}
+      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''} ${tiny && placement.dragging ? 'is-zone-grabbing' : ''}`}
       style={{ height: dockHeight(floor, tiny) }}
     >
       <div
@@ -391,6 +392,12 @@ export function DeskRow({
             {layout.zones.map((zone, index) => {
               const zoneName = privacy ? t.desk.project : zone.name;
               const dragHandle = placement.handle(zone.key);
+              // Tiny: grabbing any desk (or its name) and sliding it moves the whole zone; a
+              // still click opens the card as before.
+              const zoneGrab = tiny ? placement.grab(zone.key) : {};
+              const opener = (id: string) => (e: MouseEvent) => {
+                if (!placement.consumeClick(e)) open(id);
+              };
               const veilIds = zoneVeilIds(
                 model,
                 zone.stations.map((s) => s.id),
@@ -412,14 +419,13 @@ export function DeskRow({
                   }
                 >
                   {tiny ? (
-                    // Tiny has no flags or signs: a thin bar along the zone's bottom edge (over
-                    // the desk legs, under the names and the pill) moves it, drawn in real pixels
-                    // like the tiny names. The same drag and keys as the signs.
+                    // Tiny has no flags or signs: the desks themselves carry the zone (a drag on
+                    // any of them moves it all). For the keys, an unseen stop per zone that rings
+                    // the whole zone when focused, with the signs' arrows, Home and End.
                     <button
                       type="button"
-                      className="tiny-zone-bar"
-                      data-solid
-                      {...dragHandle}
+                      className="tiny-zone-key"
+                      onKeyDown={dragHandle.onKeyDown}
                       aria-label={t.dock.arrange.move(zoneName)}
                       aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
                       title={privacy ? t.dock.arrange.hint : `${zone.name}\n${t.dock.arrange.hint}`}
@@ -613,8 +619,9 @@ export function DeskRow({
                                 : label.detail
                           }
                           {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
+                          {...zoneGrab}
                           onClick={(e) => {
-                            if (!reorder.consumeClick(e)) open(s.id);
+                            if (!reorder.consumeClick(e) && !placement.consumeClick(e)) open(s.id);
                           }}
                         >
                           {/* The same effects as the full size, shrunk with the scene. */}
@@ -639,7 +646,8 @@ export function DeskRow({
                             aria-hidden="true"
                             title={privacy ? undefined : label.name}
                             style={{ top: TINY_NAME_TOP, height: TINY_NAME_ROOM }}
-                            onClick={() => open(s.id)}
+                            {...zoneGrab}
+                            onClick={opener(s.id)}
                           >
                             <span>
                               {privacy ? (PROVIDERS[s.provider]?.short ?? label.name) : label.name}
@@ -830,6 +838,8 @@ export function DeskRow({
                           onOpen={open}
                           canVeil={(h) => !tiny && !model.view(h.id)?.needsPerson}
                           direct={tiny}
+                          grip={zoneGrab}
+                          swallowClick={placement.consumeClick}
                           onVeil={(h) => onVeil([h.id], true)}
                         />
                       );
@@ -847,7 +857,8 @@ export function DeskRow({
                           (n) => n.sessionId === s.id && !n.seenAt && isInboxNotice(n),
                         )}
                         privacy={privacy}
-                        onClick={() => open(s.id)}
+                        grip={zoneGrab}
+                        onClick={opener(s.id)}
                         onVeil={
                           tiny || model.view(s.id)?.needsPerson
                             ? undefined

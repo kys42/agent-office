@@ -871,31 +871,24 @@ body.dock-mode {
    desks' own layer (z-index 3, after it in the page), so a name or a desk still wins where they
    meet; the tiny stations themselves let the pointer through to it (only their drawn parts
    take it). */
-.tiny-zone-bar {
+/* Tiny's zone key stop: unseen until the keyboard reaches it, then a ring around the whole
+   zone. The pointer goes through it to the desks, which carry the zone themselves. */
+.tiny-zone-key {
   position: absolute;
-  left: calc(4px / var(--tiny-scale));
-  right: calc(4px / var(--tiny-scale));
-  bottom: 0;
-  z-index: 3;
-  height: calc(3px / var(--tiny-scale));
+  inset: 0;
+  z-index: 2;
   padding: 0;
   border: 0;
-  border-radius: 99px;
-  background: color-mix(in srgb, var(--project-color) 55%, rgba(28, 30, 36, 0.5));
-  opacity: 0.45;
-  cursor: grab;
-  touch-action: none;
-  transition:
-    opacity 0.15s,
-    height 0.15s;
+  border-radius: calc(6px / var(--tiny-scale));
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
 }
-.tiny-zone-bar::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: calc(10px / var(--tiny-scale));
+.tiny-zone-key:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--project-color) 12%, transparent);
+  outline: calc(2px / var(--tiny-scale)) solid var(--accent);
+  outline-offset: calc(-2px / var(--tiny-scale));
 }
 .desk-row.is-tiny .desk-station {
   pointer-events: none;
@@ -903,24 +896,14 @@ body.dock-mode {
 .desk-row.is-tiny .desk-station > [data-solid] {
   pointer-events: auto;
 }
-.tiny-zone-bar:hover,
-.tiny-zone-bar:focus-visible,
-.row-zone.is-arranging > .tiny-zone-bar {
-  height: calc(4px / var(--tiny-scale));
-  opacity: 1;
-  background: color-mix(in srgb, var(--project-color) 85%, #fff);
+/* A desk dragged past a few pixels carries its zone: no row scrolling under touch, and the
+   grabbing hand wherever the pointer goes until it is let go. */
+.desk-row.is-tiny [data-zone-grab] {
+  touch-action: none;
 }
-.tiny-zone-bar:focus-visible {
-  outline: calc(2px / var(--tiny-scale)) solid var(--accent);
-  outline-offset: calc(1px / var(--tiny-scale));
-}
-.row-zone.is-arranging > .tiny-zone-bar {
-  cursor: grabbing;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tiny-zone-bar {
-    transition: none;
-  }
+.desk-row.is-zone-grabbing,
+.desk-row.is-zone-grabbing * {
+  cursor: grabbing !important;
 }
 /* The contentless bubble: a dot above the head in the bubble's colour. */
 .tiny-dot {
