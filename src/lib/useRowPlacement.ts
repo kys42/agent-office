@@ -24,6 +24,8 @@ type Gesture = {
    * plain click still opens the card. Until then nothing moves and the dock is not held.
    */
   armed: boolean;
+  /** Started by `grab()` on a clickable desk, whose click must then be swallowed. */
+  grabbed: boolean;
 };
 
 /** Screen px a desk grab travels before it moves the zone; a shorter press stays a click. */
@@ -83,7 +85,8 @@ export function useRowPlacement({
     gesture.current = null;
     if (g.element.hasPointerCapture(g.id)) g.element.releasePointerCapture(g.id);
     if (!g.armed) return;
-    if (g.moved) swallow.current = true;
+    // Only a desk grab's own click follows; a sign or flag drag leaves the next click alone.
+    if (g.grabbed && g.moved) swallow.current = true;
     if (keep && g.moved) {
       const { base, available, positions } = latest.current;
       save(
@@ -109,11 +112,17 @@ export function useRowPlacement({
       e.preventDefault();
       finish(false);
     };
+    // Any new press starts fresh: a swallowed click belongs to the release just before it.
+    const press = () => {
+      swallow.current = false;
+    };
     window.addEventListener('blur', blur);
     window.addEventListener('keydown', key, true);
+    window.addEventListener('pointerdown', press, true);
     return () => {
       window.removeEventListener('blur', blur);
       window.removeEventListener('keydown', key, true);
+      window.removeEventListener('pointerdown', press, true);
       finish(false);
     };
   }, []);
@@ -164,6 +173,7 @@ export function useRowPlacement({
         positions: snapshot,
         moved: false,
         armed: true,
+        grabbed: false,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
       setMoving({ key, x: zone.x, positions: snapshot });
@@ -232,6 +242,7 @@ export function useRowPlacement({
         positions: rememberRowPositions(latest.current.positions, latest.current.layout),
         moved: false,
         armed: false,
+        grabbed: true,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
     },
