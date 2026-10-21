@@ -29,7 +29,6 @@ export function useRowPlacement({
   onArrange,
   onSaveFailed,
   scale = ROW_SCALE,
-  disabled = false,
 }: {
   base: RowLayout;
   available: number;
@@ -39,8 +38,6 @@ export function useRowPlacement({
   onSaveFailed: () => void;
   /** The scene's current scale (screen px per station px). */
   scale?: number;
-  /** Tiny row: zones keep their places but cannot be moved (no handles, no keys). */
-  disabled?: boolean;
 }) {
   const [positions, setPositions] = useState(() => {
     try {
@@ -134,8 +131,7 @@ export function useRowPlacement({
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [moving?.key]);
-  const handle = (key: string) => (disabled ? {} : dragHandle(key));
-  const dragHandle = (key: string) => ({
+  const handle = (key: string) => ({
     'data-row-drag': true,
     onPointerDown: (e: PointerEvent<HTMLElement>) => {
       if (e.button !== 0 || !e.isPrimary || gesture.current) return;
