@@ -26,6 +26,13 @@ type Gesture = {
   armed: boolean;
   /** Started by `grab()` on a clickable desk, whose click must then be swallowed. */
   grabbed: boolean;
+  /** Where the press began (screen y), to tell a still press from one that wandered off. */
+  originY: number;
+  /**
+   * An unarmed desk grab that travelled past the threshold another way (up or down): the
+   * captured release would still click the desk, so that click is swallowed instead.
+   */
+  strayed: boolean;
 };
 
 /** Screen px a desk grab travels before it moves the zone; a shorter press stays a click. */
@@ -84,7 +91,10 @@ export function useRowPlacement({
     if (point) g.point = point;
     gesture.current = null;
     if (g.element.hasPointerCapture(g.id)) g.element.releasePointerCapture(g.id);
-    if (!g.armed) return;
+    if (!g.armed) {
+      if (g.strayed) swallow.current = true;
+      return;
+    }
     // Only a desk grab's own click follows; a sign or flag drag leaves the next click alone.
     if (g.grabbed && g.moved) swallow.current = true;
     if (keep && g.moved) {
@@ -174,6 +184,8 @@ export function useRowPlacement({
         moved: false,
         armed: true,
         grabbed: false,
+        originY: e.clientY,
+        strayed: false,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
       setMoving({ key, x: zone.x, positions: snapshot });
@@ -243,6 +255,8 @@ export function useRowPlacement({
         moved: false,
         armed: false,
         grabbed: true,
+        originY: e.clientY,
+        strayed: false,
       };
       e.currentTarget.setPointerCapture(e.pointerId);
     },
@@ -251,7 +265,12 @@ export function useRowPlacement({
       if (!g || g.id !== e.pointerId) return;
       g.point = { x: e.clientX, y: e.clientY };
       if (!g.armed) {
-        if (Math.abs(e.clientX - g.origin) < GRAB_THRESHOLD) return;
+        // The zone only moves sideways; any other travel just stops this press being a click.
+        if (Math.abs(e.clientX - g.origin) < GRAB_THRESHOLD) {
+          if (Math.hypot(e.clientX - g.origin, e.clientY - g.originY) >= GRAB_THRESHOLD)
+            g.strayed = true;
+          return;
+        }
         g.armed = true;
         g.moved = true;
         setMoving({ key: g.key, x: wanted(g), positions: g.positions });

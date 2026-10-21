@@ -732,6 +732,33 @@ test('A still click on a tiny desk or name opens the card, and so does a small w
   await expect(pet(page, 0)).toHaveCSS('cursor', 'pointer');
 });
 
+test('A tiny desk press that wanders up off the desk opens nothing and moves nothing', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row&tiny');
+  await settled(page);
+  const start = await zoneLeft(page, 0);
+  for (const target of [pet(page, 0), page.locator('.tiny-name').first()]) {
+    const b = (await target.boundingBox())!;
+    const x = b.x + b.width / 2,
+      y = b.y + b.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    // Straight up, past the desk, with under 5px sideways: never a zone drag.
+    await page.mouse.move(x + 3, y - 15, { steps: 4 });
+    await page.mouse.move(x + 3, b.y - 30, { steps: 4 });
+    await expect(page.locator('.row-zone').first()).not.toHaveClass(/is-arranging/);
+    await page.mouse.up();
+  }
+  await page.waitForTimeout(200);
+  expect(await opens(page)).toEqual([]);
+  expect(await zoneLeft(page, 0)).toBe(start);
+  expect(await savedZones(page)).toBeNull();
+  // The next plain click opens the card again.
+  await pet(page, 0).click();
+  await expect.poll(() => opens(page)).toEqual(['run-0']);
+});
+
 test('A tiny name label drags its zone too, and opens nothing', async ({ page }) => {
   await setup(page, '#mini=floor&tiny');
   await settled(page);
