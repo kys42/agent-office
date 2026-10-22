@@ -21,7 +21,7 @@ export const SKIP_PERMISSIONS = {
   claude: '--dangerously-skip-permissions',
   codex: '--dangerously-bypass-approvals-and-sandbox',
 } as const;
-/** The agent's arguments for a resume or a fresh summon; the flag goes before Codex's `resume`. */
+/** The agent's arguments for a resume or a fresh summon; Codex takes it as an option of `resume`. */
 export function launchArgs(s: SavedSession): string[] {
   const flags =
     s.skipPermissions && (s.provider === 'claude' || s.provider === 'codex')
@@ -33,7 +33,7 @@ export function launchArgs(s: SavedSession): string[] {
     return [...flags, ...(s.initialMessage ? ['--', s.initialMessage.replace(/;$/, '\\;')] : [])];
   return s.provider === 'claude'
     ? [...flags, '--resume', s.nativeId]
-    : [...flags, 'resume', s.nativeId];
+    : ['resume', ...flags, s.nativeId];
 }
 /** One reconnectable fresh conversation slot per project and provider. */
 export function summonSession(

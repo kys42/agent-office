@@ -255,7 +255,7 @@ test('first-message validation allows multiline Unicode, optional blank, rejects
     '안녕\n다음 줄',
   );
 });
-test('without permission prompts only when the person chose it: each agent its own flag, before Codex resume', async () => {
+test('without permission prompts only when the person chose it: each agent its own flag, an option of Codex resume', async () => {
   for (const provider of ['claude', 'codex'] as const) {
     const off = fixture();
     await off.manager.start({ ...session, provider }, async () => true);
@@ -272,7 +272,7 @@ test('without permission prompts only when the person chose it: each agent its o
       args.slice(at + 1, at + 4),
       provider === 'claude'
         ? ['--dangerously-skip-permissions', '--resume', session.nativeId]
-        : ['--dangerously-bypass-approvals-and-sandbox', 'resume', session.nativeId],
+        : ['resume', '--dangerously-bypass-approvals-and-sandbox', session.nativeId],
     );
     const fresh = fixture();
     await fresh.manager.start(
