@@ -17,6 +17,7 @@ import {
   X,
   Pencil,
   MessageCircleQuestion,
+  ShieldOff,
   ShieldQuestion,
   SlidersHorizontal,
   Palette,
@@ -350,6 +351,22 @@ export function Settings({
                 <p>{s.rhythm.terminalHint}</p>
               </div>
               <Toggle checked={terminalSend} label={s.rhythm.terminal} onChange={onTerminalSend} />
+            </div>
+          )}
+          {terminalSend !== undefined && (
+            <div className="setting-row">
+              <ShieldOff size={18} />
+              <div>
+                <b>{s.tmuxSkip}</b>
+                <p>{s.tmuxSkipHint}</p>
+              </div>
+              <Toggle
+                checked={snapshot.preferences?.tmuxSkipPermissions === true}
+                label={s.tmuxSkip}
+                onChange={() =>
+                  onPrefs({ tmuxSkipPermissions: !snapshot.preferences?.tmuxSkipPermissions })
+                }
+              />
             </div>
           )}
           {answers &&

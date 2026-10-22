@@ -36,6 +36,8 @@ export const tmux: Messages['tmux'] = {
   ready: '재개할 준비가 됐어요',
   running: '다시 들어갈 tmux가 있어요',
   hint: '터미널을 닫거나 Ctrl+B를 누른 뒤 D를 누르면 화면에서만 나옵니다. 컴퓨터가 깨어 있는 동안 에이전트는 계속 실행돼요. 재부팅하거나 에이전트가 종료되면 여기서 다시 재개하세요.',
+  skipPermissions:
+    '권한 확인 없이 실행해요(Claude: --dangerously-skip-permissions, Codex: --dangerously-bypass-approvals-and-sandbox). 설정 → 터미널과 답하기에서 끌 수 있어요.',
   caution:
     '이 대화가 다른 곳에서 작업 중이라면 먼저 그 작업을 마쳐주세요. 같은 대화를 두 곳에서 동시에 진행할 수 있어요.',
   start: 'tmux로 따로 띄우기',

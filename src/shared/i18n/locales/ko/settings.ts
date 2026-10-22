@@ -103,6 +103,9 @@ export const settings: Messages['settings'] = {
     resetDone: '패널 폭을 기본으로 되돌렸어요.',
   },
   terminalTitle: '터미널과 답하기',
+  tmuxSkip: '권한 확인 없이 tmux로 띄우기',
+  tmuxSkipHint:
+    'tmux로 재개·소환할 때 Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 tmux에는 다음 실행부터 적용돼요.',
   notifications: {
     title: '알림',
     finals: '최종 응답',

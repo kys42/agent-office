@@ -105,6 +105,9 @@ export const settings = {
     resetDone: 'Panel widths are back to their defaults.',
   },
   terminalTitle: 'Terminal and answers',
+  tmuxSkip: 'Start tmux sessions without permission prompts',
+  tmuxSkipHint:
+    'Resuming or summoning in tmux runs Claude Code with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox (--yolo). Commands and file edits run without asking, so turn this on only for projects you trust. A tmux session already running picks it up on its next start.',
   /** Desktop only (#229). */
   notifications: {
     title: 'Notifications',

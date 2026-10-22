@@ -711,6 +711,9 @@ function setupIPC() {
     return (await resume(await bridge.call('detail', [id]))).text;
   });
   const tmuxResume = new TmuxResume();
+  /** The person's choice in Settings, read when a launch starts. */
+  const skipPermissions = () => delivery.latest?.preferences?.tmuxSkipPermissions === true;
+  const skipNote = (on: boolean) => (on ? '\n\n' + m().tmux.skipPermissions : '');
   ipcMain.handle('office:tmux-resume', async (e, id, action) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
@@ -723,7 +726,8 @@ function setupIPC() {
         connections: (await projectConnections(session.cwd)).filter((c) => c.id === session.id),
       };
     if (action === 'open') return tmuxResume.open(session);
-    return tmuxResume.start(session, async (info) => {
+    const skip = skipPermissions();
+    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
       const connections = (await projectConnections(session.cwd)).filter(
         (c) => c.id === session.id,
       );
@@ -733,7 +737,7 @@ function setupIPC() {
         type: 'question' as const,
         title: t.title,
         message: t.confirm,
-        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
+        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${skipNote(skip)}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
         buttons: [t.cancel, t.start],
         defaultId: 0,
         cancelId: 0,
@@ -764,7 +768,8 @@ function setupIPC() {
         connections: await projectConnections(original.cwd),
       };
     if (action === 'open') return tmuxResume.open(session);
-    return tmuxResume.start(session, async (info) => {
+    const skip = skipPermissions();
+    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
       const connections = await projectConnections(original.cwd);
       const owner = BrowserWindow.fromWebContents(e.sender);
       const t = m().tmux;
@@ -772,7 +777,7 @@ function setupIPC() {
         type: 'question' as const,
         title: t.summonTitle,
         message: t.summonConfirm,
-        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
+        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${skipNote(skip)}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
         buttons: [t.cancel, t.summonStart],
         defaultId: 0,
         cancelId: 0,
