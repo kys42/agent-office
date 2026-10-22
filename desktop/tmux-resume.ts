@@ -11,9 +11,30 @@ import type { Session, TmuxResumeInfo } from '../src/shared/types.js';
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
 type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
   fresh?: boolean;
+  /** Launch without the agent's permission prompts (the person's `tmuxSkipPermissions`). */
+  skipPermissions?: boolean;
   agentName?: string;
   initialMessage?: string;
 };
+/** Each agent's own flag for running without permission prompts. */
+export const SKIP_PERMISSIONS = {
+  claude: '--dangerously-skip-permissions',
+  codex: '--dangerously-bypass-approvals-and-sandbox',
+} as const;
+/** The agent's arguments for a resume or a fresh summon; Codex takes it as an option of `resume`. */
+export function launchArgs(s: SavedSession): string[] {
+  const flags =
+    s.skipPermissions && (s.provider === 'claude' || s.provider === 'codex')
+      ? [SKIP_PERMISSIONS[s.provider]]
+      : [];
+  // tmux treats a trailing semicolon as a command separator even in a separate argv.
+  // Escape it for tmux only; execvp still receives the original literal prompt.
+  if (s.fresh)
+    return [...flags, ...(s.initialMessage ? ['--', s.initialMessage.replace(/;$/, '\\;')] : [])];
+  return s.provider === 'claude'
+    ? [...flags, '--resume', s.nativeId]
+    : ['resume', ...flags, s.nativeId];
+}
 /** One reconnectable fresh conversation slot per project and provider. */
 export function summonSession(
   cwd: string,
@@ -172,15 +193,7 @@ export class TmuxResume {
       current = await this.inspect(s);
       if (current.info.running) return current.info;
       if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
-      // tmux treats a trailing semicolon as a command separator even in a separate argv.
-      // Escape it for tmux only; execvp still receives the original literal prompt.
-      const args = s.fresh
-        ? s.initialMessage
-          ? ['--', s.initialMessage.replace(/;$/, '\\;')]
-          : []
-        : s.provider === 'claude'
-          ? ['--resume', s.nativeId]
-          : ['resume', s.nativeId];
+      const args = launchArgs(s);
       // Multiple command arguments use tmux execvp, not its shell-command parser.
       // Set the ownership marker in the same tmux command queue as session creation.
       const env: NodeJS.ProcessEnv = {

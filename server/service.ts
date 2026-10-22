@@ -121,6 +121,7 @@ const prefsSchema = z
     helperDesks: z.boolean().optional(),
     helperStackAt: z.number().int().min(2).max(8).optional(),
     helperRetainMinutes: z.number().int().min(5).max(240).optional(),
+    tmuxSkipPermissions: z.boolean().optional(),
     petAppearance: z
       .object({
         version: z.literal(1),

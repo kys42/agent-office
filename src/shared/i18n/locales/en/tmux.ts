@@ -38,6 +38,8 @@ export const tmux = {
   ready: 'Ready to resume',
   running: 'A tmux session is available',
   hint: 'Close the terminal or press Ctrl+B, then D to detach. The agent keeps running while this computer is awake. After a restart or the agent exits, resume it here again.',
+  skipPermissions:
+    'Runs without permission prompts (Claude: --dangerously-skip-permissions, Codex: --dangerously-bypass-approvals-and-sandbox). Turn it off in Settings → Terminal and answers.',
   caution:
     'If this conversation is already running elsewhere, finish that run first to avoid working on it in two places.',
   start: 'Start in tmux',

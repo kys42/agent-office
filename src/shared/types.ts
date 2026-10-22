@@ -468,6 +468,11 @@ export interface Preferences {
   helperStackAt?: number;
   /** Minutes a quiet helper still mid-task keeps its desk. Missing: 30. */
   helperRetainMinutes?: number;
+  /**
+   * Desktop: tmux resume/summon launches Claude Code with `--dangerously-skip-permissions` and
+   * Codex with `--dangerously-bypass-approvals-and-sandbox`. Missing: off.
+   */
+  tmuxSkipPermissions?: boolean;
 }
 /** `always`: solid. `subdued`: faint until hovered. `hover`: hidden until the pointer nears it. */
 export type DockPillVisibility = 'always' | 'subdued' | 'hover';

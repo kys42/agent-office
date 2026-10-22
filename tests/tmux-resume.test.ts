@@ -255,3 +255,38 @@ test('first-message validation allows multiline Unicode, optional blank, rejects
     '안녕\n다음 줄',
   );
 });
+test('without permission prompts only when the person chose it: each agent its own flag, an option of Codex resume', async () => {
+  for (const provider of ['claude', 'codex'] as const) {
+    const off = fixture();
+    await off.manager.start({ ...session, provider }, async () => true);
+    const plain = off.calls.find((x) => x.args.includes('new-session'))!.args;
+    assert.ok(
+      !plain.some((a) => a.startsWith('--dangerously')),
+      `${provider} stays prompted by default`,
+    );
+    const on = fixture();
+    await on.manager.start({ ...session, provider, skipPermissions: true }, async () => true);
+    const args = on.calls.find((x) => x.args.includes('new-session'))!.args;
+    const at = args.indexOf('/bin/' + provider);
+    assert.deepEqual(
+      args.slice(at + 1, at + 4),
+      provider === 'claude'
+        ? ['--dangerously-skip-permissions', '--resume', session.nativeId]
+        : ['resume', '--dangerously-bypass-approvals-and-sandbox', session.nativeId],
+    );
+    const fresh = fixture();
+    await fresh.manager.start(
+      { ...summonSession(session.cwd, provider, undefined, 'hello;'), skipPermissions: true },
+      async () => true,
+    );
+    const summoned = fresh.calls.find((x) => x.args.includes('new-session'))!.args;
+    const from = summoned.indexOf('/bin/' + provider);
+    assert.deepEqual(summoned.slice(from + 1, from + 4), [
+      provider === 'claude'
+        ? '--dangerously-skip-permissions'
+        : '--dangerously-bypass-approvals-and-sandbox',
+      '--',
+      'hello\\;',
+    ]);
+  }
+});
