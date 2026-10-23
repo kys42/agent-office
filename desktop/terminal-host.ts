@@ -19,6 +19,8 @@ export function localOrcaEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.Proce
 export interface TerminalHostDeps {
   run: (file: string, args: string[], options?: RunOptions) => Promise<string>;
   bin: (name: 'orca' | 'tmux' | 'codex') => string;
+  /** `process.platform` when left out; tests pin it. */
+  platform?: string;
 }
 
 export type TerminalHost =
@@ -210,11 +212,110 @@ export async function focusHost(host: TerminalHost, deps: TerminalHostDeps): Pro
     await deps.run('/usr/bin/open', ['-a', 'Orca']).catch(() => '');
     return m().desktop.terminal.orcaFocused;
   }
+  return focusTmux(host, deps);
+}
+
+/** POSIX single quotes: safe to hand to a shell as one word. */
+export const shellQuote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
+
+/**
+ * Opens a new Terminal.app window running `command`. The command travels as an AppleScript
+ * argument, never spliced into the script source. macOS only.
+ */
+export async function openInTerminalApp(
+  run: TerminalHostDeps['run'],
+  command: string,
+): Promise<void> {
+  await run('/usr/bin/osascript', [
+    '-e',
+    'on run argv\ntell application "Terminal"\nactivate\ndo script (item 1 of argv)\nend tell\nend run',
+    command,
+  ]);
+}
+
+/** Attached tmux clients, most recently active first. */
+export function parseTmuxClients(out: string): { tty: string; pid: number; activity: number }[] {
+  const clients = [];
+  for (const line of out.split('\n')) {
+    const [tty, pid, activity] = line.trim().split('\t');
+    if (tty?.startsWith('/dev/') && /^\d+$/.test(pid ?? ''))
+      clients.push({ tty, pid: Number(pid), activity: Number(activity) || 0 });
+  }
+  return clients.sort((a, b) => b.activity - a.activity);
+}
+
+/**
+ * The macOS app that hosts a process: the outermost `.app` bundle of its first ancestor that
+ * runs from one (Terminal, iTerm2, Ghostty, WezTerm, Alacritty, kitty, Orca's helper, ...).
+ * `null` when no such ancestor exists (ssh, a daemonized terminal server, a dead process).
+ */
+export function appBundleOf(table: string, pid: number): string | null {
+  const rows = new Map<number, { ppid: number; command: string }>();
+  for (const line of table.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
+    if (m) rows.set(Number(m[1]), { ppid: Number(m[2]), command: m[3].trim() });
+  }
+  let current = rows.get(pid);
+  for (let depth = 0; current && depth < 32; depth++) {
+    // A helper bundle nested inside the app (Orca Helper.app) still belongs to the outer app.
+    const bundle = /\.app\/Contents\/MacOS\//.test(current.command)
+      ? /^(\/.*?\.app)\//.exec(current.command)?.[1]
+      : undefined;
+    if (bundle) return bundle;
+    if (current.ppid <= 1) return null;
+    current = rows.get(current.ppid);
+  }
+  return null;
+}
+
+const appName = (bundle: string) => bundle.replace(/^.*\//, '').replace(/\.app$/, '');
+
+/**
+ * Selects the pane, then makes it visible: an attached client is switched to it and the app
+ * that owns that client is brought forward; with no client, macOS opens Terminal attached to
+ * the session. Never types into the pane; the message says only what actually happened.
+ */
+async function focusTmux(
+  host: Extract<TerminalHost, { kind: 'tmux' }>,
+  deps: TerminalHostDeps,
+): Promise<string> {
+  const t = m().desktop.terminal;
   const tmux = deps.bin('tmux');
-  await deps.run(tmux, ['-S', host.socket, 'select-window', '-t', host.pane]);
-  await deps.run(tmux, ['-S', host.socket, 'select-pane', '-t', host.pane]);
-  // A client looking at another tmux session needs switching; with no attached client this
-  // fails harmlessly and the pane is simply the active one.
-  await deps.run(tmux, ['-S', host.socket, 'switch-client', '-t', host.pane]).catch(() => '');
-  return m().desktop.terminal.tmuxFocused(host.label);
+  const at = (...args: string[]) => deps.run(tmux, ['-S', host.socket, ...args]);
+  await at('select-window', '-t', host.pane);
+  await at('select-pane', '-t', host.pane);
+  const darwin = (deps.platform ?? process.platform) === 'darwin';
+  const [client] = parseTmuxClients(
+    await at(
+      'list-clients',
+      '-t',
+      host.pane,
+      '-F',
+      '#{client_tty}\t#{client_pid}\t#{client_activity}',
+    ),
+  );
+  if (!client) {
+    const session = (await at('display-message', '-p', '-t', host.pane, '#{session_name}')).trim();
+    if (!session) throw new Error('tmux pane has no session');
+    const command = `${shellQuote(tmux)} -S ${shellQuote(host.socket)} attach-session -t ${shellQuote('=' + session)}`;
+    if (!darwin) throw new TerminalFocusError(t.tmuxAttachHint(host.label, command));
+    try {
+      await openInTerminalApp(deps.run, command);
+    } catch {
+      throw new TerminalFocusError(t.tmuxOpenFailed(host.label));
+    }
+    return t.tmuxAttached(host.label);
+  }
+  // A client looking at another session of this server needs switching to the pane's session.
+  await at('switch-client', '-c', client.tty, '-t', host.pane);
+  if (!darwin) return t.tmuxNotRaised(host.label);
+  const table = await deps.run('/bin/ps', ['-axo', 'pid=,ppid=,comm=']).catch(() => '');
+  const bundle = appBundleOf(table, client.pid);
+  if (!bundle) return t.tmuxNotRaised(host.label);
+  try {
+    await deps.run('/usr/bin/open', ['-a', bundle]);
+  } catch {
+    return t.tmuxNotRaised(host.label);
+  }
+  return t.tmuxFocused(host.label, appName(bundle));
 }

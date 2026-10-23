@@ -28,6 +28,7 @@ import {
   type ComposerAdapter,
   type ComposerHost,
   type ComposerKey,
+  type ComposerState,
   type Screen,
 } from './composer/index.js';
 import {
@@ -298,6 +299,8 @@ export async function inspectTerminalDraft(
   if (can.delivery !== 'terminal' || !can.canInspect) return null;
   const state = await composer.inspect(io);
   if (!holdsText(state)) return null;
+  // Only the reply a failed send typed: nothing to decide, the next send takes it back.
+  if (ownText(state, typedMemory(deps).held(live.process.sessionId))) return null;
   return {
     status: 'needs-confirm',
     agent: composer.agent,
@@ -307,6 +310,10 @@ export async function inspectTerminalDraft(
     ...(!state.whole && { partial: true }),
   };
 }
+
+/** The composer holds exactly, and all of, what this app typed there and left unsubmitted. */
+const ownText = (state: ComposerState, typed: string | undefined) =>
+  typed !== undefined && holdsText(state) && state.whole && drawn(state.text) === drawn(typed);
 
 /** Plain typed text only: escape sequences and other control characters never reach the pty. */
 export function cleanInput(text: unknown): string {
@@ -339,15 +346,20 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode} #{pane_height}',
+        '#{pane_in_mode} #{pane_height} #{alternate_on}',
       ]);
-      const [mode, height] = state.trim().split(' ');
+      const [mode, height, alternate] = state.trim().split(' ');
       if (mode !== '0') return { text: '' };
       const screen = parseStyledScreen(
         await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
       );
-      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows).
-      return /^\d+$/.test(height ?? '') ? { ...screen, height: Number(height) } : screen;
+      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows); only
+      // Claude Code's fullscreen renderer (the alternate screen) scrolls it.
+      return {
+        ...screen,
+        ...(/^\d+$/.test(height ?? '') && { height: Number(height) }),
+        ...((alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
+      };
     }
     const out = await deps.run(
       deps.bin('orca'),
@@ -531,10 +543,20 @@ const sending = new Map<string, Promise<SendResult>>();
  * it. Short-lived, in memory only, kept with the deps (one shared instance in the app).
  */
 const BACKUP_TTL = 10 * 60_000;
-const backupsOf = new WeakMap<TerminalDeps, Map<string, { text: string; at: number }>>();
-function backupMemory(deps: TerminalDeps) {
-  let memory = backupsOf.get(deps);
-  if (!memory) backupsOf.set(deps, (memory = new Map()));
+type Memory = WeakMap<TerminalDeps, Map<string, { text: string; at: number }>>;
+const backupsOf: Memory = new WeakMap();
+/**
+ * What this app typed into the composer and did not submit (its check failed, the state
+ * changed), per session. That text is the person's own reply, not a draft of theirs: found again
+ * exactly as typed, it is taken back without asking or touching the clipboard, so a failed send
+ * never comes back as "the composer holds this" with the reply itself.
+ */
+const typedOf: Memory = new WeakMap();
+const backupMemory = (deps: TerminalDeps) => shortMemory(backupsOf, deps);
+const typedMemory = (deps: TerminalDeps) => shortMemory(typedOf, deps);
+function shortMemory(store: Memory, deps: TerminalDeps) {
+  let memory = store.get(deps);
+  if (!memory) store.set(deps, (memory = new Map()));
   return {
     held(key: string): string | undefined {
       const held = memory.get(key);
@@ -575,6 +597,7 @@ async function deliver(
   const { host } = live;
   const key = live.process.sessionId;
   const memory = backupMemory(deps);
+  const typed = typedMemory(deps);
   const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
   const composer = options.composer ?? claudeCodeComposer;
   const io = composerHost(host, deps);
@@ -588,8 +611,10 @@ async function deliver(
     if (!readyToType(state)) throw new TerminalInputError(t.notReady);
     return submit(false);
   }
+  // The reply an earlier send typed and could not submit: taken back, never asked about or saved.
+  const own = can.canClear && ownText(state, typed.held(key));
   // Never mixed into a draft, or into text a failed send left behind.
-  if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
+  if (!can.canClear || (!options.backup && !own)) throw new TerminalInputError(t.draft);
   // What an earlier, interrupted clearing of this session put on the clipboard — only while the
   // clipboard still holds it (the person may have copied something else since).
   let base = memory.held(key);
@@ -612,15 +637,19 @@ async function deliver(
     ...(!whole && { partial: true }),
   });
   const confirmed = options.replaceDraft;
-  if (confirmed === undefined) return ask(state.text, state.whole);
-  if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
-  if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
+  if (!own) {
+    if (confirmed === undefined) return ask(state.text, state.whole);
+    if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+    if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
+  }
   const backup = options.backup;
   try {
     const result = await composer.clear(
       io,
       state,
       async (text) => {
+        // The app's own reply is not the person's draft: the clipboard keeps what it holds.
+        if (own || !backup) return;
         // Never less than the earlier clearing saved; never more than that and this draft.
         const merged = mergeBackup(base, text);
         try {
@@ -636,7 +665,10 @@ async function deliver(
       async () => !!(await current()),
       { allowPartial: options.allowPartialDraft === true },
     );
-    if (result.status === 'changed') return ask(result.text, result.whole, true);
+    if (own && result.status !== 'failed') typed.drop(key);
+    // Text that was out of sight was never shown, so it is asked about as a partial draft.
+    if (result.status === 'changed')
+      return result.hidden ? ask(result.text, false) : ask(result.text, result.whole, true);
     if (result.status === 'failed')
       throw new TerminalInputError(
         result.partial
@@ -672,6 +704,8 @@ async function deliver(
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await options.beforeSend?.();
+    // Remembered first: whatever happens next, the text may be in the composer.
+    typed.keep(key, text);
     await typeText(host, text, deps);
     const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
     // The prompt may take a moment to draw the text.
@@ -696,6 +730,7 @@ async function deliver(
       throw error;
     }
     memory.drop(key);
+    typed.drop(key);
     const sent = (message: string): SendResult => ({
       status: 'sent',
       message,

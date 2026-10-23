@@ -66,12 +66,13 @@ export type ComposerBackup = (text: string) => Promise<void>;
  * not all of the text was known, so nothing was deleted; `lost` when Claude stopped being the
  * one at the terminal). `changed`: the composer stopped
  * matching the confirmed text minus what the keys deleted (someone typing meanwhile); it was
- * left alone and must be shown again.
+ * left alone and must be shown again. `hidden`: the box looked empty, yet one more (lossless)
+ * deletion step brought text into view that was out of sight: not all of it was ever shown.
  */
 export type ClearResult =
   | { status: 'cleared'; state: ComposerState }
   | { status: 'failed'; state: ComposerState; partial?: boolean; lost?: boolean }
-  | { status: 'changed'; text: string; whole: boolean };
+  | { status: 'changed'; text: string; whole: boolean; hidden?: boolean };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */

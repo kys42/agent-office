@@ -19,6 +19,12 @@ export interface Screen {
   composer?: string;
   /** The pane's height in rows, when the host reports it (tmux). */
   height?: number;
+  /**
+   * The pane shows its alternate screen (tmux `#{alternate_on}`), when the host reports it.
+   * Claude Code's fullscreen renderer draws there and caps its box (see maxBoxRows); its
+   * default (inline) renderer draws on the main screen and shows every row of the box.
+   */
+  alternate?: boolean;
 }
 
 /**
