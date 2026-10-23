@@ -10,6 +10,7 @@ import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
 export type { TerminalHost, ProcessEnv, ProcessView, TerminalLookup } from './terminal-host.js';
 import { existsSync, readdirSync } from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,9 +32,11 @@ import {
 import {
   findClaudeProcess,
   forget,
+  parseClaudeProcess,
   processAlive,
   remember,
   runCommand,
+  spaces,
   type ClaudeLiveDeps,
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
@@ -145,8 +148,51 @@ export async function lookupTerminal(
   const deps = options.deps ?? defaultTerminalDeps();
   const terminal = await locateTerminal(sessionId, { ...options, deps });
   if (terminal) return { kind: 'found', terminal };
-  const proc = await findClaudeProcess(sessionId, deps).catch(() => undefined);
-  return proc === null ? { kind: 'none' } : { kind: 'unknown' };
+  return (await claudeAbsent(sessionId, deps).catch(() => false))
+    ? { kind: 'none' }
+    : { kind: 'unknown' };
+}
+
+/**
+ * True only after a successful absence check: Claude's records were all read, and every record
+ * of the session names a process that is gone (or a reused PID). A records folder that cannot be
+ * read (other than missing), a record that cannot be read or parsed while it mentions the
+ * session, too many records, or a `ps` failure while the PID is alive: not known to be absent.
+ */
+export async function claudeAbsent(sessionId: string, deps: TerminalDeps): Promise<boolean> {
+  let files: string[];
+  try {
+    files = (await readdir(deps.sessionsDir)).filter((name) => /^\d+\.json$/.test(name));
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT';
+  }
+  if (files.length > 1000) return false;
+  for (const name of files) {
+    const text = await readFile(path.join(deps.sessionsDir, name), 'utf8').catch(() => null);
+    // A record removed meanwhile belonged to a process that ended.
+    if (text === null) {
+      if (existsSync(path.join(deps.sessionsDir, name))) return false;
+      continue;
+    }
+    const record = parseClaudeProcess(name, text);
+    if (!record) {
+      if (text.includes(sessionId)) return false;
+      continue;
+    }
+    if (record.sessionId !== sessionId || !deps.alive(record.pid)) continue;
+    let started: string;
+    try {
+      started = await deps.run('/bin/ps', ['-o', 'lstart=', '-p', String(record.pid)], {
+        env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+      });
+    } catch {
+      // `ps` fails for a PID that just ended; while it is alive, nothing is known.
+      if (deps.alive(record.pid)) return false;
+      continue;
+    }
+    if (!started.trim() || spaces(started) === spaces(record.procStart)) return false;
+  }
+  return true;
 }
 
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */

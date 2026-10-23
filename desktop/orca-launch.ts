@@ -23,6 +23,8 @@ export interface OrcaLaunchDeps {
   orca: () => string;
   directory: (cwd: string) => Promise<boolean>;
   platform: string;
+  /** Agent Office's own environment: the agent home it reads conversations from. */
+  env?: NodeJS.ProcessEnv;
 }
 
 const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
@@ -35,7 +37,32 @@ export function shellWord(word: string): string {
   return `'${word}'`;
 }
 
-function describe(s: OrcaLaunchSession, platform: string) {
+/**
+ * A single-quoted shell word for a value that may hold spaces or quotes (a folder path). An
+ * embedded `'` closes, escapes and reopens the quote; control characters are refused.
+ */
+export function shellQuote(value: string): string {
+  if (!value || CONTROL.test(value)) throw new Error(m().tmux.unsupported);
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** Where each agent keeps its conversations, when not in its default home. */
+const HOME_VARIABLE = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME' } as const;
+
+/**
+ * The agent's home as Agent Office sees it, so the new tab resumes from the same place: set to
+ * Agent Office's value, or unset (the default home) when Agent Office has none, whatever the
+ * login shell exports. The same rule as a tmux launch.
+ */
+function homeWords(provider: 'claude' | 'codex', env: NodeJS.ProcessEnv): string[] {
+  const name = HOME_VARIABLE[provider];
+  const value = env[name];
+  if (!value) return ['/usr/bin/env', '-u', name].map(shellWord);
+  if (!path.isAbsolute(value)) throw new Error(m().tmux.unsupported);
+  return [shellWord('/usr/bin/env'), shellQuote(`${name}=${value}`)];
+}
+
+function describe(s: OrcaLaunchSession, platform: string, env: NodeJS.ProcessEnv = process.env) {
   if (
     platform !== 'darwin' ||
     s.remote ||
@@ -46,7 +73,10 @@ function describe(s: OrcaLaunchSession, platform: string) {
   if (!s.cwd || !path.isAbsolute(s.cwd) || CONTROL.test(s.cwd))
     throw new Error(m().tmux.folderMissing);
   // The agent is looked up on the person's own login-shell PATH, as if they typed it there.
-  const command = [s.provider, ...launchArgs({ ...s, fresh: false })].map(shellWord).join(' ');
+  const command = [
+    ...homeWords(s.provider, env),
+    ...[s.provider, ...launchArgs({ ...s, fresh: false })].map(shellWord),
+  ].join(' ');
   const shown = (s.alias || s.title || '')
     .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -56,8 +86,12 @@ function describe(s: OrcaLaunchSession, platform: string) {
 }
 
 /** The `orca` arguments for the launch; `--flag=value` so no value can pose as an option. */
-export function orcaCreateArgs(s: OrcaLaunchSession, platform = 'darwin'): string[] {
-  const { cwd, command, name } = describe(s, platform);
+export function orcaCreateArgs(
+  s: OrcaLaunchSession,
+  platform = 'darwin',
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const { cwd, command, name } = describe(s, platform, env);
   return [
     'terminal',
     'create',
@@ -114,7 +148,7 @@ export class OrcaLaunch {
   /** Read-only: whether the action can be offered, and the command it would type. */
   async status(s: OrcaLaunchSession): Promise<OrcaLaunchInfo> {
     try {
-      const { cwd, command } = describe(s, this.deps.platform);
+      const { cwd, command } = describe(s, this.deps.platform, this.deps.env);
       if (!(await this.deps.directory(cwd)) || !(await this.reachable()))
         return { available: false };
       return { available: true, command };
@@ -128,7 +162,7 @@ export class OrcaLaunch {
   ): Promise<OrcaLaunchInfo> {
     const task = this.queue.then(async () => {
       const t = m().tmux;
-      const info = describe(s, this.deps.platform);
+      const info = describe(s, this.deps.platform, this.deps.env);
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
       if (!(await this.reachable(true))) throw new Error(t.orcaUnavailable);
       if (!(await confirm(info)))
@@ -136,9 +170,13 @@ export class OrcaLaunch {
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
       let out: string;
       try {
-        out = await this.deps.run(this.deps.orca(), orcaCreateArgs(s, this.deps.platform), {
-          timeout: 20000,
-        });
+        out = await this.deps.run(
+          this.deps.orca(),
+          orcaCreateArgs(s, this.deps.platform, this.deps.env),
+          {
+            timeout: 20000,
+          },
+        );
       } catch (error) {
         throw new Error(t.orcaRefused(orcaRefusal((error as { stdout?: string }).stdout)));
       }

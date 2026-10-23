@@ -50,13 +50,18 @@ export interface CodexTerminal {
 
 /** Only interactive native Codex processes; daemons, exec workers and wrappers have no tty. */
 export function codexScreenPids(table: string): number[] {
+  return codexScreens(table).pids;
+}
+
+/** The screens to read, and whether there were too many to read them all. */
+export function codexScreens(table: string): { pids: number[]; oversized: boolean } {
   const found = new Set<number>();
   for (const line of table.split('\n')) {
     const m = /^\s*(\d+)\s+(ttys?\d+)\s+(?:\S*\/)?codex\s*$/.exec(line);
     if (m && Number(m[1]) > 1) found.add(Number(m[1]));
   }
   // An unexpectedly large inventory is unknown, never silently pick the first few screens.
-  return found.size <= 64 ? [...found] : [];
+  return found.size <= 64 ? { pids: [...found], oversized: false } : { pids: [], oversized: true };
 }
 
 async function screenTitle(host: TerminalHost, deps: TerminalDeps): Promise<string | null> {
@@ -151,8 +156,10 @@ async function screenInventory(deps: TerminalDeps, fresh: boolean) {
     let hidden = false;
     let loaded: Promise<Set<string>> | undefined;
     const load = () => (loaded ??= codexLoadedThreads(deps, { strict: true }));
+    const inventory = codexScreens(table);
+    if (inventory.oversized) uncertain = true;
     const screens = await Promise.all(
-      codexScreenPids(table).map(async (pid) => {
+      inventory.pids.map(async (pid) => {
         try {
           // One host inventory per scan; each screen title below is read afresh.
           return await readScreen(pid, deps, false, load, () => (hidden = true));

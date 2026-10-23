@@ -4,10 +4,16 @@ import {
   OrcaLaunch,
   orcaCreateArgs,
   orcaRefusal,
+  shellQuote,
   shellWord,
   type OrcaLaunchDeps,
 } from '../desktop/orca-launch.js';
 
+// The tests' own environment never decides the command: each test passes the one it means.
+delete process.env.CLAUDE_CONFIG_DIR;
+delete process.env.CODEX_HOME;
+const CL = "'/usr/bin/env' '-u' 'CLAUDE_CONFIG_DIR' ";
+const CX = "'/usr/bin/env' '-u' 'CODEX_HOME' ";
 const claude = {
   provider: 'claude' as const,
   nativeId: '4f1c2a3b-0000-4000-8000-000000000001',
@@ -25,21 +31,21 @@ test('the Orca command resumes the conversation with single-quoted words', () =>
     'create',
     "--worktree=path:/projects/a 'quoted' folder",
     '--title=기능 담당',
-    `--command='claude' '--resume' '${claude.nativeId}'`,
+    `--command=${CL}'claude' '--resume' '${claude.nativeId}'`,
     '--focus',
     '--json',
   ]);
-  assert.equal(command(orcaCreateArgs(codex)), `'codex' 'resume' '${codex.nativeId}'`);
+  assert.equal(command(orcaCreateArgs(codex)), `${CX}'codex' 'resume' '${codex.nativeId}'`);
 });
 
 test('the skip-permissions setting adds each agent’s own flag (same as tmux)', () => {
   assert.equal(
     command(orcaCreateArgs({ ...claude, skipPermissions: true })),
-    `'claude' '--dangerously-skip-permissions' '--resume' '${claude.nativeId}'`,
+    `${CL}'claude' '--dangerously-skip-permissions' '--resume' '${claude.nativeId}'`,
   );
   assert.equal(
     command(orcaCreateArgs({ ...codex, skipPermissions: true })),
-    `'codex' 'resume' '--dangerously-bypass-approvals-and-sandbox' '${codex.nativeId}'`,
+    `${CX}'codex' 'resume' '--dangerously-bypass-approvals-and-sandbox' '${codex.nativeId}'`,
   );
 });
 
@@ -92,7 +98,7 @@ test('offered only when Orca answers and the folder exists; status never creates
   const f = fixture();
   assert.deepEqual(await f.launcher.status(claude), {
     available: true,
-    command: `'claude' '--resume' '${claude.nativeId}'`,
+    command: `${CL}'claude' '--resume' '${claude.nativeId}'`,
   });
   assert.equal(
     f.calls.some((c) => c.args.includes('create')),
@@ -139,7 +145,7 @@ test('cancelling the confirmation creates nothing; confirming creates one tab', 
   assert.equal(done.launched, true);
   assert.deepEqual(asked, {
     cwd: claude.cwd,
-    command: `'claude' '--resume' '${claude.nativeId}'`,
+    command: `${CL}'claude' '--resume' '${claude.nativeId}'`,
     name: '기능 담당',
   });
   const creates = f.calls.filter((c) => c.args.includes('create'));
@@ -182,4 +188,45 @@ test('Orca not reachable at start: refused before asking', async () => {
     /Orca/,
   );
   assert.equal(asked, false);
+});
+
+test('Agent Office’s agent home goes with the command, quoted; without one it is unset', () => {
+  const home = "/Users/me/agent homes/it's claude";
+  assert.equal(
+    command(orcaCreateArgs(claude, 'darwin', { CLAUDE_CONFIG_DIR: home, CODEX_HOME: '/x' })),
+    `'/usr/bin/env' 'CLAUDE_CONFIG_DIR=/Users/me/agent homes/it'\\''s claude' 'claude' '--resume' '${claude.nativeId}'`,
+  );
+  assert.equal(
+    command(orcaCreateArgs(codex, 'darwin', { CODEX_HOME: '/opt/codex' })),
+    `'/usr/bin/env' 'CODEX_HOME=/opt/codex' 'codex' 'resume' '${codex.nativeId}'`,
+  );
+  // Each agent's own home only; the other one's variable is left alone.
+  assert.equal(
+    command(orcaCreateArgs(claude, 'darwin', { CODEX_HOME: '/opt/codex' })).startsWith(CL),
+    true,
+  );
+  assert.throws(() => orcaCreateArgs(claude, 'darwin', { CLAUDE_CONFIG_DIR: 'relative' }));
+  assert.throws(() => orcaCreateArgs(claude, 'darwin', { CLAUDE_CONFIG_DIR: '/a\nb' }));
+  assert.equal(shellQuote("a'b"), `'a'\\''b'`);
+  assert.throws(() => shellQuote(''));
+});
+
+test('the launcher uses its own environment for the agent home', async () => {
+  let created: string[] = [];
+  const launcher = new OrcaLaunch({
+    platform: 'darwin',
+    orca: () => '/bin/orca',
+    directory: async () => true,
+    env: { CLAUDE_CONFIG_DIR: '/home/claude' },
+    run: async (_file, args) => {
+      if (args[0] === 'status')
+        return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
+      created = args;
+      return JSON.stringify({ ok: true, result: {} });
+    },
+  });
+  const info = await launcher.status(claude);
+  assert.ok(info.command?.startsWith("'/usr/bin/env' 'CLAUDE_CONFIG_DIR=/home/claude' "));
+  await launcher.start(claude, async () => true);
+  assert.equal(command(created), info.command);
 });

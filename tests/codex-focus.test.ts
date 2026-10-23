@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   codexScreenPids,
+  codexScreens,
   codexTitleThread,
   findCodexTerminal,
   lookupCodexTerminal,
@@ -404,4 +405,17 @@ test('lookupCodexTerminal tells no screen from an ambiguous or unreadable one', 
     { failed: true },
   ])
     assert.equal(await kind(options), 'unknown', JSON.stringify(options));
+});
+
+test('Too many Codex screens to read is unknown, never "no screen"', async () => {
+  const table = Array.from({ length: 65 }, (_, i) => `${5000 + i} ttys${100 + i} /bin/codex`).join(
+    '\n',
+  );
+  assert.deepEqual(codexScreens(table), { pids: [], oversized: true });
+  assert.deepEqual(codexScreenPids(table), []);
+  const f = fixture();
+  const run = f.deps.run;
+  f.deps.run = async (file, args, options) =>
+    file === '/bin/ps' && args.includes('pid=,tty=,comm=') ? table : run(file, args, options);
+  assert.equal((await lookupCodexTerminal(THREAD, { deps: f.deps, fresh: true })).kind, 'unknown');
 });

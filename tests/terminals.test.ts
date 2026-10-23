@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   cleanInput,
+  claudeAbsent,
   findClaudeProcess,
   findHost,
   focusTerminal,
@@ -1626,5 +1627,44 @@ test('lookupTerminal: none only without a live Claude; an unverified terminal is
     );
     const gone = fakeDeps(dir, { alive: [] });
     assert.equal((await lookupTerminal(SESSION, { deps: gone.deps, fresh: true })).kind, 'none');
+  });
+});
+
+test('claudeAbsent: "none" only after a successful absence check', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // A reused PID (another start time) or a gone process is absent.
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir, { alive: [] }).deps), true);
+    assert.equal(
+      await claudeAbsent(
+        SESSION,
+        fakeDeps(dir, { lstart: { 4242: 'Wed Oct  7 10:00:00 2026' } }).deps,
+      ),
+      true,
+    );
+    assert.equal(await claudeAbsent('another-session', fakeDeps(dir).deps), true);
+    // Alive with its start time: present.
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir).deps), false);
+    // `ps` failing while the PID is alive proves nothing.
+    const psFails = fakeDeps(dir, {
+      fail: (file, args) =>
+        file === '/bin/ps' && args.includes('lstart=') ? new Error('ps') : undefined,
+    });
+    assert.equal(await claudeAbsent(SESSION, psFails.deps), false);
+    assert.equal(
+      (await lookupTerminal(SESSION, { deps: psFails.deps, fresh: true })).kind,
+      'unknown',
+    );
+  });
+  // An unparsable record that mentions the session is not evidence of absence.
+  await withSessions({ '4242.json': `{"sessionId":"${SESSION}",` }, async (dir) => {
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir).deps), false);
+  });
+  await withSessions({ '4242.json': '{broken' }, async (dir) => {
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir).deps), true);
+  });
+  // No records folder at all: nothing runs. A folder that cannot be read: unknown.
+  assert.equal(await claudeAbsent(SESSION, fakeDeps('/nonexistent/claude-sessions').deps), true);
+  await withSessions({ 'not-a-dir': '' }, async (dir) => {
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(path.join(dir, 'not-a-dir')).deps), false);
   });
 });
