@@ -565,6 +565,8 @@ export function DeskRow({
                           speech,
                           hover === s.id || expanded === s.id || replying?.station === s.id,
                           pointing,
+                          // Like tiny's dot, a read reply leaves; the peek can keep it up again.
+                          { hideRead: true },
                         );
                     const bubble = shown?.speech.bubble;
                     const focus = focusLevel(s, model.now);
@@ -771,6 +773,15 @@ export function DeskRow({
                                             : { station: s.id, id: replyId, target: replyTarget! },
                                         ),
                                     }
+                                  : undefined
+                              }
+                              onKeep={
+                                shown.keep && bubble
+                                  ? () =>
+                                      onReceipt(
+                                        [{ id: bubble.id, version: bubble.version }],
+                                        'unread',
+                                      )
                                   : undefined
                               }
                               onDismiss={() => {

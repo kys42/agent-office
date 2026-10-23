@@ -1292,6 +1292,15 @@
 .bubble-dismiss:hover {
   background: #b02a44;
 }
+/* A read reply's peek: keep it up again. Shown whenever the peek is (it only appears on hover). */
+.speech-bubble .bubble-keep {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+.speech-bubble .bubble-keep:hover {
+  background: #2f6fb0;
+}
 /* Quick reply: only on bubbles whose session can take a follow-up right now */
 /* Dock views: the unfolded bubble's way to the colleague's pop-up card — a small round button
    right under the close button. */

@@ -69,6 +69,7 @@ async function fixture(page: Page, mode = '#mini=row', call = false, motion = fa
           if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
             if (action === 'view') n.viewedAt ??= Date.now();
             if (action === 'read') n.seenAt = Date.now();
+            if (action === 'unread') n.seenAt = null;
             if (action === 'dismiss') n.dismissedAt = Date.now();
           }
         return structuredClone(s);
@@ -174,6 +175,33 @@ for (const mode of ['#mini=row', '#mini=floor', '']) {
     });
     await expect(bubble).toHaveClass(/bubble-new/);
     expect((await dot(page)).animation).toBe('soft-pulse');
+  });
+}
+
+for (const mode of ['#mini=floor', '#mini=row']) {
+  test(`a read reply leaves the dock; pointing peeks it and the pin keeps it up ${mode}`, async ({
+    page,
+  }) => {
+    await fixture(page, mode);
+    // Read elsewhere (its card stayed open): the bubble goes, as tiny's dot does.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.fixture.notices[0].seenAt = Date.now();
+      w.publish();
+    });
+    await expect(page.locator('.speech-bubble')).toHaveCount(0);
+    await page.locator('.row-station .office-pet').first().hover();
+    const peek = page.locator('.speech-bubble.is-peek');
+    await expect(peek).toBeVisible();
+    await expect(peek.locator('.bubble-dismiss:not(.bubble-keep)')).toHaveCount(0);
+    await peek.getByRole('button', { name: /말풍선 다시 띄워 두기/ }).click();
+    const receipts = await page.evaluate(() => (window as any).receipts);
+    expect(receipts.at(-1).action).toBe('unread');
+    await page.mouse.move(0, 0);
+    const kept = page.locator('.speech-bubble').first();
+    await expect(kept).toBeVisible();
+    await expect(kept).not.toHaveClass(/is-peek/);
+    await expect(kept).toHaveClass(/unread/);
   });
 }
 

@@ -17,6 +17,7 @@ import {
   MessageSquare,
   PanelRightOpen,
   PenLine,
+  Pin,
   Reply,
   TriangleAlert,
   User,
@@ -77,6 +78,7 @@ export function SpeechBubble({
   onExpandedChange,
   onViewed,
   quote = false,
+  onKeep,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -99,6 +101,8 @@ export function SpeechBubble({
   onViewed?: () => void;
   /** While pointed at: the person's request as its own bubble right above, to recall what was asked. */
   quote?: boolean;
+  /** A peek of a read reply: keep it up again (marks it unread, for "later"). */
+  onKeep?: () => void;
 }) {
   const { t } = useI18n();
   const { bubble, activity, text, label, markdown, tone } = speech;
@@ -322,6 +326,19 @@ export function SpeechBubble({
           }}
         >
           <Reply size={11} strokeWidth={2.6} />
+        </button>
+      )}
+      {onKeep && (
+        <button
+          className="bubble-dismiss bubble-keep"
+          aria-label={t.desk.bubble.keep(privacy ? undefined : sessionName(s))}
+          title={t.desk.bubble.keepTitle}
+          onClick={(e) => {
+            e.stopPropagation();
+            onKeep();
+          }}
+        >
+          <Pin size={10} strokeWidth={2.6} />
         </button>
       )}
       {bubble && !peek && (

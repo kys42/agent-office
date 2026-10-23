@@ -64,6 +64,8 @@ export const desk: Messages['desk'] = {
     copied: '복사했어요',
     dismiss: (name) => `${name ?? '동료'} 말풍선 접기`,
     dismissTitle: '말풍선만 접기 · 미확인 소식은 남아요',
+    keep: (name) => `${name ?? '동료'} 말풍선 다시 띄워 두기`,
+    keepTitle: '다시 띄워 두기 · 나중에 볼게요 (다시 미확인)',
   },
   row: {
     reorderHint: '같은 구역 안에서는 끌어서 순서를 바꿀 수 있어요',
