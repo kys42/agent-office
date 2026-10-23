@@ -1224,7 +1224,7 @@
   display: block;
   max-height: calc(var(--speech-lines, 2) * 1lh);
   overflow: hidden;
-  font-size: calc(11px * var(--read-scale));
+  font-size: calc(11px * var(--bubble-scale));
   font-weight: 600;
   line-height: 1.36;
   letter-spacing: -0.01em;

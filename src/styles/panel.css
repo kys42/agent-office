@@ -737,7 +737,7 @@
   height: 26px;
   padding: 0 9px;
   border-radius: 7px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-3);
   border: 1px solid transparent;
   white-space: nowrap;
@@ -745,7 +745,7 @@
 .conversation-filters button span,
 .news-filter-bar button span {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
 }
 .conversation-filters button:hover,
@@ -768,7 +768,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
   cursor: pointer;
 }
@@ -783,7 +783,7 @@
 }
 .conversation-tools-toggle span {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
 }
 .conversation-range {
@@ -833,7 +833,7 @@
   color: var(--text-2);
 }
 .message-meta time {
-  font-family: var(--font-mono);
+  font-family: var(--font-read-num);
   font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
 }
@@ -1160,7 +1160,7 @@
   height: 26px;
   padding: 0 9px;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   font-weight: 560;
   color: var(--text-2);
   border: 1px solid var(--line-2);
@@ -1279,7 +1279,7 @@
   margin-left: auto;
 }
 .news-meta time {
-  font-family: var(--font-mono);
+  font-family: var(--font-read-num);
   font-size: calc(10px * var(--read-scale));
 }
 .news-session {
@@ -1343,7 +1343,7 @@
   height: 24px;
   padding: 0 8px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
 }
 .news-actions button:hover {
@@ -1351,7 +1351,7 @@
   background: var(--bg-4);
 }
 .news-actions small {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-4);
   margin-left: 4px;
 }

@@ -122,7 +122,7 @@
   font-weight: 600;
 }
 .section-title > span {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
   font-variant-numeric: tabular-nums;
 }
 .section-title select {
@@ -161,7 +161,7 @@
   color: var(--text-2);
 }
 .group-head em {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
 }
 .group-action {
   height: 20px;
@@ -221,7 +221,7 @@
   font-weight: 600;
 }
 .session-copy strong em {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
   color: #ffffff;
   background: var(--badge);
   border-radius: 9px;
@@ -296,7 +296,7 @@
   padding: 0 8px;
   border: 0;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text-2);
 }
 .conversation-filters button:hover,
@@ -311,7 +311,7 @@
 }
 .conversation-filters button span,
 .news-filter-bar button span {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
   color: inherit;
   opacity: 0.7;
 }
@@ -378,13 +378,13 @@
 
 /* ── Inbox ── */
 .inbox-heading h2 {
-  font-family: var(--font-display);
+  font-family: var(--font-read-display);
   font-size: calc(17px * var(--read-scale));
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 .inbox-heading h2 b {
-  font-family: var(--font-display);
+  font-family: var(--font-read-display);
   font-weight: 700;
 }
 .news-item.unread {
@@ -423,11 +423,11 @@
   height: 50px;
 }
 .palette-input input {
-  font-size: 19px;
+  font-size: calc(19px * var(--read-scale));
   font-weight: 300;
 }
 .palette-section h3 {
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text-3);
@@ -817,7 +817,7 @@ body.card-mode:not(.is-mac) .dock-card {
   align-items: center;
   gap: 6px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   white-space: nowrap;
   color: var(--text-2);
 }
@@ -852,7 +852,7 @@ body.card-mode:not(.is-mac) .dock-card {
 .card-menu-list button {
   padding: 6px 10px;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   text-align: left;
   color: var(--text);
 }
@@ -982,7 +982,7 @@ body.card-mode:not(.is-mac) .dock-card {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-2);
 }
 .card-progress-switch input {
@@ -1171,7 +1171,7 @@ body.card-mode:not(.is-mac) .dock-card {
   gap: 5px;
   padding: 0 10px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text);
   background: color-mix(in srgb, var(--bg-1) 70%, transparent);
   box-shadow: inset 0 0 0 0.5px var(--line-2);

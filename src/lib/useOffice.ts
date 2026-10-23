@@ -203,7 +203,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   // Every window (big office, desk pet / row, dock card) follows the saved language.
   useLocalePreference(snapshot?.preferences.locale, !!snapshot, snapshot?.locale);
   // …and the saved reading-text size and font (#246).
-  useReadingText(snapshot?.preferences, !!snapshot);
+  useReadingText(snapshot?.preferences, !!snapshot, demo);
   // On a language switch, rewrite the demo in the new language but keep its preferences:
   // the language choice itself lives there, so resetting them would bounce the switch back.
   useEffect(() => {

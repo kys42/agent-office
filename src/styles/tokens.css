@@ -64,6 +64,12 @@
      scene and window sizes never read them. */
   --read-scale: 1;
   --font-read: var(--font-ui);
+  /* Headings and timestamps in reading text keep their display / tabular faces by default and
+     take the chosen font once the person picks one. */
+  --font-read-display: var(--font-display);
+  --font-read-num: var(--font-mono);
+  /* Speech bubbles scale with reading text; the dock windows cap them (dock.css). */
+  --bubble-scale: var(--read-scale);
   --r-sm: 5px;
   --r-md: 7px;
   --r-lg: 10px;
@@ -162,8 +168,13 @@ body {
 /* Reading text follows the chosen font (#246); code and pixel lettering keep their own. */
 .roster,
 .news-inbox,
+.news-feed,
 .news-list,
-.card-title,
+.card-head,
+.card-menu-list,
+.card-progress-switch,
+.card-actions,
+.conversation-filters,
 .card-info,
 .card-composer,
 .conversation,
@@ -173,6 +184,11 @@ body {
 .speech-detail,
 .speech-request-text,
 .quick-reply,
+.draft-confirm,
+.memory-page,
+.bookmark-card,
+.bookmark-reader,
+.palette,
 .settings-page {
   font-family: var(--font-read);
 }

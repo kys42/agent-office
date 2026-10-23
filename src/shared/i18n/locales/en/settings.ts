@@ -105,7 +105,7 @@ export const settings = {
     title: 'Text',
     size: 'Text size',
     sizeHint:
-      'Conversation and news in work cards, speech bubbles, lists and settings. Desks, tiny desks, name plates and the dock keep their size.',
+      'Work cards (conversation, news, info), speech bubbles, the roster and inbox, the memory drawer and bookmarks, the command palette and settings. Tab names, desks, tiny desks, name plates and the dock window keep their size; dock bubbles grow up to Large to fit the window.',
     sizes: { small: 'Small', normal: 'Normal', large: 'Large', larger: 'Larger' },
     font: 'Font',
     fontHint:
