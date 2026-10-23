@@ -60,6 +60,11 @@ export interface TerminalDeps extends ClaudeLiveDeps {
   codexHome: string;
   bin: (name: 'orca' | 'tmux' | 'codex') => string;
   wait: (ms: number) => Promise<void>;
+  /** Claude's process-record folder, read by the absence check (tests count the reads). */
+  records?: {
+    list: (dir: string) => Promise<string[]>;
+    read: (file: string) => Promise<string>;
+  };
 }
 
 export interface LiveTerminal {
@@ -148,37 +153,64 @@ export async function lookupTerminal(
   const deps = options.deps ?? defaultTerminalDeps();
   const terminal = await locateTerminal(sessionId, { ...options, deps });
   if (terminal) return { kind: 'found', terminal };
-  return (await claudeAbsent(sessionId, deps).catch(() => false))
+  return (await claudeAbsent(sessionId, deps, !!options.fresh).catch(() => false))
     ? { kind: 'none' }
     : { kind: 'unknown' };
 }
 
 /**
- * True only after a successful absence check: Claude's records were all read, and every record
- * of the session names a process that is gone (or a reused PID). A records folder that cannot be
- * read (other than missing), a record that cannot be read or parsed while it mentions the
- * session, too many records, or a `ps` failure while the PID is alive: not known to be absent.
+ * Claude's process records as one shared read per burst (1 s, like the other process caches):
+ * sessions checked together read the folder once. `complete` only when every record file was
+ * read (a missing folder is an empty, complete one); unparsable files are kept as text so a
+ * session they mention is never called absent.
  */
-export async function claudeAbsent(sessionId: string, deps: TerminalDeps): Promise<boolean> {
-  let files: string[];
-  try {
-    files = (await readdir(deps.sessionsDir)).filter((name) => /^\d+\.json$/.test(name));
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT';
-  }
-  if (files.length > 1000) return false;
-  for (const name of files) {
-    const text = await readFile(path.join(deps.sessionsDir, name), 'utf8').catch(() => null);
-    // A record removed meanwhile belonged to a process that ended.
-    if (text === null) {
-      if (existsSync(path.join(deps.sessionsDir, name))) return false;
-      continue;
+export function claudeRecordInventory(deps: TerminalDeps, fresh = false) {
+  return remember(deps, `record-inventory:${deps.sessionsDir}`, 1000, fresh, async () => {
+    const io = deps.records ?? { list: (dir) => readdir(dir), read: (f) => readFile(f, 'utf8') };
+    const records: ClaudeProcess[] = [];
+    const unparsed: string[] = [];
+    let files: string[];
+    try {
+      files = (await io.list(deps.sessionsDir)).filter((name) => /^\d+\.json$/.test(name));
+    } catch (error) {
+      const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      return { complete: missing, records, unparsed };
     }
-    const record = parseClaudeProcess(name, text);
-    if (!record) {
-      if (text.includes(sessionId)) return false;
-      continue;
-    }
+    if (files.length > 1000) return { complete: false, records, unparsed };
+    let complete = true;
+    await Promise.all(
+      files.map(async (name) => {
+        const file = path.join(deps.sessionsDir, name);
+        const text = await io.read(file).catch(() => null);
+        // A record removed meanwhile belonged to a process that ended.
+        if (text === null) {
+          if (existsSync(file)) complete = false;
+          return;
+        }
+        const record = parseClaudeProcess(name, text);
+        if (record) records.push(record);
+        else unparsed.push(text);
+      }),
+    );
+    return { complete, records, unparsed };
+  });
+}
+
+/**
+ * True only after a successful absence check: Claude's records were all read, and every record
+ * of the session names a process that is gone (or a reused PID). An unreadable folder or record,
+ * an unparsable record that mentions the session, too many records, or a `ps` failure while the
+ * PID is alive: not known to be absent.
+ */
+export async function claudeAbsent(
+  sessionId: string,
+  deps: TerminalDeps,
+  fresh = false,
+): Promise<boolean> {
+  const inventory = await claudeRecordInventory(deps, fresh);
+  if (!inventory.complete || inventory.unparsed.some((text) => text.includes(sessionId)))
+    return false;
+  for (const record of inventory.records) {
     if (record.sessionId !== sessionId || !deps.alive(record.pid)) continue;
     let started: string;
     try {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -1666,5 +1666,40 @@ test('claudeAbsent: "none" only after a successful absence check', async () => {
   assert.equal(await claudeAbsent(SESSION, fakeDeps('/nonexistent/claude-sessions').deps), true);
   await withSessions({ 'not-a-dir': '' }, async (dir) => {
     assert.equal(await claudeAbsent(SESSION, fakeDeps(path.join(dir, 'not-a-dir')).deps), false);
+  });
+});
+
+test('claudeAbsent shares one record read per burst; a fresh check reads again', async () => {
+  const records = Object.fromEntries(
+    Array.from({ length: 100 }, (_, i) => [
+      `${5000 + i}.json`,
+      record(5000 + i, { sessionId: `ended-session-${String(i).padStart(3, '0')}` }),
+    ]),
+  );
+  await withSessions(records, async (dir) => {
+    const { deps } = fakeDeps(dir, { alive: [] });
+    let lists = 0;
+    let reads = 0;
+    deps.records = {
+      list: async (folder) => {
+        lists++;
+        return readdir(folder);
+      },
+      read: async (file) => {
+        reads++;
+        return readFile(file, 'utf8');
+      },
+    };
+    const results = await Promise.all(
+      Array.from({ length: 100 }, (_, i) =>
+        claudeAbsent(`ended-session-${String(i).padStart(3, '0')}`, deps),
+      ),
+    );
+    assert.ok(results.every(Boolean));
+    assert.equal(lists, 1);
+    assert.equal(reads, 100);
+    assert.equal(await claudeAbsent('ended-session-000', deps, true), true);
+    assert.equal(lists, 2);
+    assert.equal(reads, 200);
   });
 });

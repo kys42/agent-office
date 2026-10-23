@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { Provider, Session, TerminalTarget } from '../src/shared/types.js';
 import { codexTitleThread } from './codex-focus.js';
-import { focusTarget, orcaTerminals, type TerminalHostDeps } from './terminal-host.js';
+import { focusTarget, orcaTerminalList, type TerminalHostDeps } from './terminal-host.js';
 
 /**
  * The Orca tab a saved conversation was last seen in, when no live agent process vouches for
@@ -123,8 +123,9 @@ export async function findOrcaTab(
   others: Iterable<OrcaTabSession> = [],
 ): Promise<OrcaTab | null> {
   if (!orcaTabsFor(session.provider)) return null;
-  const terminals = await orcaTerminals(deps, fresh);
-  return matchOrcaTab(terminals.values(), session, others);
+  // A partial list could hide a second matching tab: no fallback then.
+  const { byHandle, complete } = await orcaTerminalList(deps, fresh);
+  return complete ? matchOrcaTab(byHandle.values(), session, others) : null;
 }
 
 /** A jump-only destination: nothing is ever typed into it. */

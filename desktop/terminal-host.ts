@@ -90,21 +90,29 @@ export async function inspectProcess(pid: number, deps: TerminalHostDeps): Promi
 
 /**
  * All Orca terminals by handle: one CLI call (~0.5s) instead of one per session. Shared by the
- * live-process lookup below and the tab-only fallback (desktop/orca-tabs.ts).
+ * live-process lookup below and the tab-only fallback (desktop/orca-tabs.ts). `complete` only
+ * when Orca answered with the whole list: not `truncated` (Orca's default row limit), not failed.
+ * Matching one known handle works on a partial list; proving a tab is the only match does not.
  */
-export function orcaTerminals(deps: TerminalHostDeps, fresh: boolean) {
+export function orcaTerminalList(deps: TerminalHostDeps, fresh: boolean) {
   return remember(deps, 'orca-terminals', 5000, fresh, async () => {
     const byHandle = new Map<string, Record<string, unknown>>();
+    let complete = false;
     try {
       const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json']);
-      for (const t of JSON.parse(out)?.result?.terminals ?? [])
+      const result = JSON.parse(out)?.result;
+      for (const t of result?.terminals ?? [])
         if (typeof t?.handle === 'string') byHandle.set(t.handle, t);
+      complete = Array.isArray(result?.terminals) && result.truncated !== true;
     } catch {
       /* Orca is not running. */
     }
-    return byHandle;
+    return { byHandle, complete };
   });
 }
+
+export const orcaTerminals = async (deps: TerminalHostDeps, fresh: boolean) =>
+  (await orcaTerminalList(deps, fresh)).byHandle;
 
 /** Finds the terminal pane that hosts the process. tmux is the direct host when present. */
 export async function findHost(

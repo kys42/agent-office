@@ -8,7 +8,7 @@ import {
   orcaTabTarget,
   orcaTabsFor,
 } from '../desktop/orca-tabs.js';
-import type { TerminalHostDeps } from '../desktop/terminal-host.js';
+import { orcaTerminals, type TerminalHostDeps } from '../desktop/terminal-host.js';
 
 const CWD = '/projects/office';
 const CODEX_ID = '01a15d10-2a38-75b3-af5d-e7e6b1234567';
@@ -173,4 +173,23 @@ test('findOrcaTab applies the same uniqueness check', async () => {
   const twin = { ...claude, nativeId: '4f1c2a3b-0000-4000-8000-000000000002' };
   assert.equal(await findOrcaTab(claude, deps, false, [twin]), null);
   assert.ok(await findOrcaTab(claude, deps, false, [claude]));
+});
+
+test('a truncated Orca list may hide a second match: no fallback, while handle lookups still work', async () => {
+  const deps = (truncated: unknown): TerminalHostDeps => ({
+    bin: (name) => `/bin/${name}`,
+    run: async () =>
+      JSON.stringify({ ok: true, result: { terminals: [row()], truncated, totalCount: 250 } }),
+  });
+  assert.equal(await findOrcaTab(claude, deps(true)), null);
+  assert.ok(await findOrcaTab(claude, deps(false)));
+  assert.ok(await findOrcaTab(claude, deps(undefined)));
+  // The live-host lookup reads handles from the same list, truncated or not.
+  assert.ok((await orcaTerminals(deps(true), false)).has(row().handle));
+  // No terminals array (an unexpected answer) is not a complete list either.
+  const odd: TerminalHostDeps = {
+    bin: (name) => `/bin/${name}`,
+    run: async () => JSON.stringify({ ok: true, result: {} }),
+  };
+  assert.equal(await findOrcaTab(claude, odd), null);
 });
