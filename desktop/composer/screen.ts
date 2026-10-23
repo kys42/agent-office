@@ -22,7 +22,9 @@ export interface Screen {
   /**
    * The pane shows its alternate screen (tmux `#{alternate_on}`), when the host reports it.
    * Claude Code's fullscreen renderer draws there and caps its box (see maxBoxRows); its
-   * default (inline) renderer draws on the main screen and shows every row of the box.
+   * default (inline) renderer draws on the main screen and shows every row of the box. Reported
+   * only while the pane's `alternate-screen` option is on: with it off, the fullscreen renderer
+   * draws on the main screen too.
    */
   alternate?: boolean;
 }
@@ -98,3 +100,30 @@ export function parseStyledScreen(raw: string): Screen {
 /** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
 export const drawn = (value: string) =>
   value.normalize('NFC').replace(/[\s\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
+
+const invisible = (value: string) =>
+  value.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
+
+/**
+ * `shown` (rows read from the box, each trimmed) is exactly `text` as the box wraps it: every row
+ * is a stretch of the text, spaces inside it included, and between rows the text has only
+ * whitespace (a line break, the space the wrap took, indentation) or nothing (a word split by the
+ * wrap). Unlike `drawn`, a space taken out or added inside a row is a different text.
+ */
+export function sameWrapped(shown: string, text: string): boolean {
+  const rows = invisible(shown)
+    .split('\n')
+    .map((row) => row.trim())
+    .filter(Boolean);
+  const source = invisible(text);
+  const skip = (at: number) => {
+    while (at < source.length && /\s/.test(source[at])) at++;
+    return at;
+  };
+  let at = skip(0);
+  for (const row of rows) {
+    if (!source.startsWith(row, at)) return false;
+    at = skip(at + row.length);
+  }
+  return at === source.length;
+}

@@ -665,7 +665,7 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
       '-p',
       '-t',
       '%3',
-      '#{pane_in_mode} #{pane_height} #{alternate_on}',
+      '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen}',
     ];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-e', '-t', '%3'];
     assert.equal(tmux.length, 9);
@@ -1882,15 +1882,85 @@ test('A reply a failed send left in the box is its own: taken back, never shown 
     prompt = `${reply} 그리고 하나 더`;
     const asked = await sendToTerminal(tmuxLive(), reply, deps, { backup });
     assert.equal(asked.status === 'needs-confirm' && asked.draft, prompt);
+    // As small an edit as one space taken out counts: asked about, nothing deleted or saved.
+    prompt = '';
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    prompt = reply.replace(' ', '');
+    assert.equal((await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps))?.draft, prompt);
+    const spaced = await sendToTerminal(tmuxLive(), reply, deps, { backup });
+    assert.equal(spaced.status === 'needs-confirm' && spaced.draft, prompt);
+    assert.equal(prompt, reply.replace(' ', ''));
+    assert.deepEqual(clipboard, []);
+  });
+});
+
+test("Orca: text seen beside the app's own leftover reply while clearing is backed up", async () => {
+  const reply = 'run the tests again';
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let check = true;
+    let clearedOnce = false;
+    const { deps } = fakeDeps(dir, {
+      // The first send's check reads something else; once cleared, someone has typed.
+      orcaDraft: (typed) =>
+        check && typed
+          ? `${typed} …`
+          : clearedOnce && !typed
+            ? 'someone typing'
+            : typed || undefined,
+    });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (file === '/bin/orca' && args[1] === 'send' && clears(args)) clearedOnce = true;
+      return run(file, args, options);
+    };
+    const saved: string[] = [];
+    const backup = async (text: string) => void saved.push(text);
+    await assert.rejects(sendToTerminal(orcaLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    check = false;
+    await sendToTerminal(orcaLive(), reply, deps, { backup }).catch(() => undefined);
+    // The reply itself is never saved; the text typed meanwhile is, on its own.
+    assert.deepEqual(saved, ['someone typing']);
+  });
+});
+
+test('Orca: without a backup, text seen beside the own reply stops the clearing', async () => {
+  const reply = 'run the tests again';
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let check = true;
+    let clearedOnce = false;
+    const { deps, calls } = fakeDeps(dir, {
+      orcaDraft: (typed) =>
+        check && typed
+          ? `${typed} …`
+          : clearedOnce && !typed
+            ? 'someone typing'
+            : typed || undefined,
+    });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (file === '/bin/orca' && args[1] === 'send' && clears(args)) clearedOnce = true;
+      return run(file, args, options);
+    };
+    await assert.rejects(sendToTerminal(orcaLive(), reply, deps), /제출하지 않았어요/);
+    check = false;
+    const before = calls.length;
+    await assert.rejects(sendToTerminal(orcaLive(), reply, deps), TerminalInputError);
+    assert.ok(!sent(calls.slice(before)), 'no Enter');
   });
 });
 
 test("Claude Code's default renderer never scrolls its box: a tall box on the main screen is whole", async () => {
   const rows = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`);
   let draft = rows.join('\n');
+  // `#{alternate_on} #{alternate-screen}`: with the option off (or unreported) tmux keeps the
+  // fullscreen renderer on the main screen, so alternate_on=0 proves nothing.
   for (const [alternate, partial] of [
-    ['0', false],
-    ['1', true],
+    ['0 1', false],
+    ['1 1', true],
+    ['0 0', true],
+    ['0', true],
   ] as const) {
     const { deps } = fakeDeps('/x', { screen: () => claudeScreen(draft), paneHeight: 24 });
     const run = deps.run;

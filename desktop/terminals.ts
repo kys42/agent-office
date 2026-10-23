@@ -25,6 +25,7 @@ import {
   promptHolds,
   readyToType,
   mergeBackup,
+  sameWrapped,
   type ComposerAdapter,
   type ComposerHost,
   type ComposerKey,
@@ -311,9 +312,13 @@ export async function inspectTerminalDraft(
   };
 }
 
-/** The composer holds exactly, and all of, what this app typed there and left unsubmitted. */
+/**
+ * The composer holds exactly, and all of, what this app typed there and left unsubmitted. Spaces
+ * count (only the box's own wrapping is ignored): an edit as small as one space removed makes it
+ * the person's draft again.
+ */
 const ownText = (state: ComposerState, typed: string | undefined) =>
-  typed !== undefined && holdsText(state) && state.whole && drawn(state.text) === drawn(typed);
+  typed !== undefined && holdsText(state) && state.whole && sameWrapped(state.text, typed);
 
 /** Plain typed text only: escape sequences and other control characters never reach the pty. */
 export function cleanInput(text: unknown): string {
@@ -346,19 +351,22 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode} #{pane_height} #{alternate_on}',
+        '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen}',
       ]);
-      const [mode, height, alternate] = state.trim().split(' ');
+      const [mode, height, alternate, allowed] = state.trim().split(' ');
       if (mode !== '0') return { text: '' };
       const screen = parseStyledScreen(
         await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
       );
       // The pane height tells whether the prompt box may be scrolled (see maxBoxRows); only
-      // Claude Code's fullscreen renderer (the alternate screen) scrolls it.
+      // Claude Code's fullscreen renderer (the alternate screen) scrolls it. With the pane's
+      // `alternate-screen` option off, tmux draws that renderer on the main screen and
+      // `#{alternate_on}` stays 0: the flag tells the renderer only while the option is on.
       return {
         ...screen,
         ...(/^\d+$/.test(height ?? '') && { height: Number(height) }),
-        ...((alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
+        ...(allowed === '1' &&
+          (alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
       };
     }
     const out = await deps.run(
@@ -612,7 +620,8 @@ async function deliver(
     return submit(false);
   }
   // The reply an earlier send typed and could not submit: taken back, never asked about or saved.
-  const own = can.canClear && ownText(state, typed.held(key));
+  const reply = typed.held(key);
+  const own = can.canClear && ownText(state, reply);
   // Never mixed into a draft, or into text a failed send left behind.
   if (!can.canClear || (!options.backup && !own)) throw new TerminalInputError(t.draft);
   // What an earlier, interrupted clearing of this session put on the clipboard — only while the
@@ -648,10 +657,19 @@ async function deliver(
       io,
       state,
       async (text) => {
-        // The app's own reply is not the person's draft: the clipboard keeps what it holds.
-        if (own || !backup) return;
+        // The app's own reply is not the person's draft: the clipboard keeps what it holds. Only
+        // the reply itself: text seen beside it while clearing (someone typing, on Orca maybe
+        // the suggestion) is saved like any draft, without the reply ahead of it — and with no
+        // backup to save it to, the clearing stops there.
+        let kept = text;
+        if (own && reply !== undefined) {
+          if (sameWrapped(text, reply)) return;
+          if (!backup) throw new TerminalInputError(t.draft);
+          if (text.startsWith(`${state.text}\n`)) kept = text.slice(state.text.length + 1);
+        }
+        if (!backup) return;
         // Never less than the earlier clearing saved; never more than that and this draft.
-        const merged = mergeBackup(base, text);
+        const merged = mergeBackup(base, kept);
         try {
           await backup(merged);
         } catch {

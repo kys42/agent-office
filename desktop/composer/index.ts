@@ -9,7 +9,7 @@ export {
   promptHolds,
   readPrompt,
 } from './claude-code.js';
-export { parseStyledScreen, type Screen } from './screen.js';
+export { parseStyledScreen, sameWrapped, type Screen } from './screen.js';
 export { containsLines, mergeBackup } from './backup.js';
 export * from './types.js';
 

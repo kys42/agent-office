@@ -139,7 +139,8 @@ function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   if (screen.faint) {
     // Claude Code's default (inline) renderer, on the main screen, never caps the box: with
     // both of its rules on screen every row is in view (2.1.309 passes `maxVisibleLines` to
-    // the prompt only in fullscreen, which draws on the alternate screen).
+    // the prompt only in fullscreen, which draws on the alternate screen). `alternate` is set
+    // only when tmux would show the alternate screen at all (see Screen.alternate).
     if (screen.alternate === false) return true;
     return screen.height !== undefined && screen.height >= 12 && rows < maxBoxRows(screen.height);
   }

@@ -9,6 +9,7 @@ import {
   codexQueueComposer,
   composerFor,
   parseStyledScreen,
+  sameWrapped,
   type ComposerHost,
   type Screen,
 } from '../desktop/composer/index.js';
@@ -694,4 +695,18 @@ test('Partial replacement stops on a closed prompt, failed backup, lost owner or
     'failed',
   );
   assert.ok(stuck.pressed.length <= 60);
+});
+
+test("sameWrapped: the box's wrapping is ignored, spaces inside a row are not", () => {
+  assert.ok(sameWrapped('print("a b")', 'print("a b")'));
+  assert.ok(!sameWrapped('print("ab")', 'print("a b")'));
+  assert.ok(!sameWrapped('print("a  b")', 'print("a b")'));
+  // Wrapped at a space (taken by the wrap) or inside a word; typed line breaks and indentation.
+  assert.ok(sameWrapped('print("a\nb")', 'print("a b")'));
+  assert.ok(sameWrapped('long wo\nrd', 'long word'));
+  assert.ok(sameWrapped('def f():\nreturn 1', 'def f():\n    return 1'));
+  assert.ok(sameWrapped('one\n\ntwo', 'one\n\ntwo'));
+  assert.ok(!sameWrapped('one two', 'one two three'));
+  assert.ok(!sameWrapped('one two three', 'one two'));
+  assert.ok(!sameWrapped('', 'one'));
 });
