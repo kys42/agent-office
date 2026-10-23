@@ -1786,23 +1786,63 @@ test('A scrolled box that shrinks to one blank row is proven empty before the re
     sim.attach(deps);
     const backups: string[] = [];
     const backup = async (text: string) => void backups.push(text);
-    const first = await sendToTerminal(tmuxLive(), '1번으로 답글 최종본 정리해줘', deps, {
+    let result = await sendToTerminal(tmuxLive(), '1번으로 답글 최종본 정리해줘', deps, {
       backup,
     });
-    assert.equal(first.status === 'needs-confirm' && first.partial, true);
-    const result = await sendToTerminal(tmuxLive(), '1번으로 답글 최종본 정리해줘', deps, {
-      replaceDraft: first.status === 'needs-confirm' ? first.draft : '',
-      allowPartialDraft: true,
-      backup,
-    });
+    assert.equal(result.status === 'needs-confirm' && result.partial, true);
+    // A row that shows up after an empty frame may be typing: saved, left alone and asked about
+    // (never typed over); each confirmation takes it and asks about the next.
+    for (let asks = 0; result.status === 'needs-confirm'; asks++) {
+      assert.ok(asks <= draft.length, 'ends');
+      assert.equal(result.partial, true);
+      assert.ok(!sent(calls));
+      result = await sendToTerminal(tmuxLive(), '1번으로 답글 최종본 정리해줘', deps, {
+        replaceDraft: result.draft,
+        allowPartialDraft: true,
+        backup,
+      });
+    }
     assert.equal(result.status, 'sent');
-    assert.equal(result.status === 'sent' && result.partialBackup, true);
     // Only the reply was submitted: every row of the draft went first.
     assert.deepEqual(sim.box.rows, ['1번으로 답글 최종본 정리해줘']);
     assert.equal(sim.box.enters, 1);
     // Rows that came into view one by one were saved too, before they were deleted.
     for (const row of draft) assert.ok(backups.at(-1)!.includes(row), row);
     assert.ok(typedAny(calls));
+  });
+});
+
+test('Typing that shows up during the settling pair is never taken for the hidden draft', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // 7 rows at the cap: maybe scrolled, so partial; the person accepts losing hidden rows.
+    const draft = Array.from({ length: 7 }, (_, i) => `draft row ${i + 1} of the long idea`);
+    const sim = scrolledBox(draft, 7);
+    const { deps, calls } = fakeDeps(dir, { screen: () => sim.screen(), paneHeight: 24 });
+    sim.attach(deps);
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      const empty = sim.box.rows.length === 1 && !sim.box.rows[0];
+      const out = await run(file, args, options);
+      // The old draft is gone; while the settling pair redraws, the person starts typing.
+      if (empty && args.includes('send-keys') && args.includes('C-k'))
+        sim.box.rows = ['a new idea'];
+      return out;
+    };
+    const backups: string[] = [];
+    const backup = async (text: string) => void backups.push(text);
+    const first = await sendToTerminal(tmuxLive(), 'reply', deps, { backup });
+    assert.equal(first.status === 'needs-confirm' && first.partial, true);
+    const again = await sendToTerminal(tmuxLive(), 'reply', deps, {
+      replaceDraft: first.status === 'needs-confirm' ? first.draft : '',
+      allowPartialDraft: true,
+      backup,
+    });
+    assert.equal(again.status === 'needs-confirm' && again.draft, 'a new idea');
+    assert.equal(again.status === 'needs-confirm' && again.clipboard, true);
+    // Left alone, saved, nothing typed over it or sent.
+    assert.deepEqual(sim.box.rows, ['a new idea']);
+    assert.ok(backups.at(-1)!.includes('a new idea'));
+    assert.ok(!typedAny(calls) && !sent(calls));
   });
 });
 
@@ -1893,6 +1933,32 @@ test('A reply a failed send left in the box is its own: taken back, never shown 
     assert.equal(spaced.status === 'needs-confirm' && spaced.draft, prompt);
     assert.equal(prompt, reply.replace(' ', ''));
     assert.deepEqual(clipboard, []);
+  });
+});
+
+test("Text a failed load-buffer never typed is not the app's: the same words typed later are asked about", async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const reply = 'run the tests again';
+    let prompt = '';
+    let failLoad = true;
+    const { deps, calls } = fakeDeps(dir, {
+      screen: () => claudeScreen(prompt),
+      fail: (_file, args) =>
+        failLoad && args.includes('load-buffer') ? new Error('load-buffer failed') : undefined,
+    });
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup: async () => {} }));
+    assert.ok(!calls.some((c) => c.args.includes('paste-buffer')));
+    failLoad = false;
+    // The person types the same request in the terminal.
+    prompt = reply;
+    assert.equal((await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps))?.draft, reply);
+    const clipboard: string[] = [];
+    const asked = await sendToTerminal(tmuxLive(), reply, deps, {
+      backup: async (text) => void clipboard.push(text),
+    });
+    assert.equal(asked.status === 'needs-confirm' && asked.draft, reply);
+    assert.deepEqual(clipboard, []);
+    assert.equal(prompt, reply);
   });
 });
 

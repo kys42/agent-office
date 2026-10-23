@@ -1,4 +1,4 @@
-import { mergeBackup } from './backup.js';
+import { containsLines, mergeBackup } from './backup.js';
 import { drawn, type Screen } from './screen.js';
 import {
   holdsText,
@@ -417,15 +417,23 @@ async function clearPartial(
     collected = mergeBackup(collected, text);
     await backup(collected);
   };
-  /** Text a settling pair brought into view is still the accepted draft: cleared like the rest. */
-  const more = (result: ClearResult) =>
-    result.status === 'changed' && result.hidden
-      ? ({ kind: 'draft', text: result.text, whole: false } as const)
-      : null;
+  /**
+   * Text a settling pair brought into view, after a frame that looked empty. It is the accepted
+   * draft (cleared like the rest) only when every line of it was seen and saved before; else it
+   * may be someone typing during the redraw, which the permission to lose the hidden draft never
+   * covered: saved, left alone and asked about (`changed`, hidden).
+   */
+  const more = async (result: ClearResult) => {
+    if (result.status !== 'changed' || !result.hidden) return null;
+    if (collected !== undefined && containsLines(collected, result.text))
+      return { kind: 'draft', text: result.text, whole: false } as const;
+    await keep(result.text);
+    return null;
+  };
   for (let round = 0; round < PARTIAL_ROUNDS; round++) {
     if (state.whole) {
       const result = await claudeCodeComposer.clear(host, state, keep, proceed);
-      const rest = more(result);
+      const rest = await more(result);
       if (!rest) return result;
       state = rest;
       unchanged = 0;
@@ -439,7 +447,7 @@ async function clearPartial(
     if (readyToType(next)) {
       // One blank row may be all a scrolled box shows: never taken for empty unproven.
       const result = await settle(host, next, proceed);
-      const rest = more(result);
+      const rest = await more(result);
       if (!rest) return result;
       state = rest;
       unchanged = 0;

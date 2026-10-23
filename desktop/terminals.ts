@@ -461,14 +461,24 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
 }
 
 /** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
-async function typeText(host: TerminalHost, text: string, deps: TerminalDeps) {
+/** `delivering` runs right before the text may reach the pane (nothing before it can). */
+async function typeText(
+  host: TerminalHost,
+  text: string,
+  deps: TerminalDeps,
+  delivering: () => void = () => {},
+) {
   // Orca writes the bytes as they are: bracketed paste keeps tabs and line breaks as text.
   // cleanInput removed every ESC, so the text itself can never close the paste early.
-  if (host.kind === 'orca') return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
+  if (host.kind === 'orca') {
+    delivering();
+    return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
+  }
   const tmux = deps.bin('tmux');
   const buffer = `agent-office-${randomUUID()}`;
   // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
   await deps.run(tmux, ['-S', host.socket, 'load-buffer', '-b', buffer, '-'], { input: text });
+  delivering();
   try {
     // Bracketed paste keeps line breaks inside the prompt instead of submitting early.
     await deps.run(tmux, [
@@ -722,9 +732,10 @@ async function deliver(
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await options.beforeSend?.();
-    // Remembered first: whatever happens next, the text may be in the composer.
-    typed.keep(key, text);
-    await typeText(host, text, deps);
+    // Remembered once it may reach the pane: whatever happens next, the text may be in the
+    // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
+    // app's: the same words typed by the person later are their draft.
+    await typeText(host, text, deps, () => typed.keep(key, text));
     const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
     // The prompt may take a moment to draw the text.
     let shown = false;
