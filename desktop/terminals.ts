@@ -456,9 +456,14 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
   const send = JSON.parse(out)?.result?.send;
   if (send?.accepted !== true) {
     const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
-    throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
+    const message = m().desktop.terminal.orcaRefused(reason);
+    // Only an explicit refusal says the bytes never reached the terminal.
+    throw send?.accepted === false ? new OrcaRefusal(message) : new TerminalInputError(message);
   }
 }
+
+/** Orca answered `accepted: false`: nothing it was given reached the terminal. */
+class OrcaRefusal extends TerminalInputError {}
 
 /** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
 /** `delivering` runs right before the text may reach the pane (nothing before it can). */
@@ -735,7 +740,14 @@ async function deliver(
     // Remembered once it may reach the pane: whatever happens next, the text may be in the
     // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
     // app's: the same words typed by the person later are their draft.
-    await typeText(host, text, deps, () => typed.keep(key, text));
+    try {
+      await typeText(host, text, deps, () => typed.keep(key, text));
+    } catch (error) {
+      // Orca refused the paste outright: none of it is in the composer. Any other failure
+      // (a timeout, no answer) may have delivered it, so it stays the app's.
+      if (error instanceof OrcaRefusal) typed.drop(key);
+      throw error;
+    }
     const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
     // The prompt may take a moment to draw the text.
     let shown = false;

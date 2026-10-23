@@ -282,6 +282,13 @@ export function oneAdded(original: string, now: string, letter: string): boolean
 
 /** Rounds of deletion before giving up, and how long the prompt gets to redraw. */
 const CLEAR_ROUNDS = 60;
+/**
+ * A whole draft of n rows takes up to 2n−1 pairs (cursor at the end): the budget grows with it
+ * (a whole box on the main screen may be as tall as the pane), up to a bound.
+ */
+const MAX_CLEAR_ROUNDS = 400;
+const clearRounds = (text: string) =>
+  Math.min(MAX_CLEAR_ROUNDS, Math.max(CLEAR_ROUNDS, 2 * text.split('\n').length + 20));
 /** A box that hides rows is cleared row by row (Ctrl+U takes one wrapped row): more rounds. */
 const PARTIAL_ROUNDS = 150;
 const REDRAW_MS = 120;
@@ -346,7 +353,8 @@ export const claudeCodeComposer: ComposerAdapter = {
     let moved = false;
     /** Orca: text no part of the draft, maybe the suggestion back in the emptied box. */
     let stranger: string | null = null;
-    for (let round = 0; round < CLEAR_ROUNDS; round++) {
+    const rounds = clearRounds(from.text);
+    for (let round = 0; round < rounds; round++) {
       // Before every key: still the same Claude, in front of its terminal.
       if (proceed && !(await proceed())) return { status: 'failed', state: from, lost: true };
       await host.press(['C-k', 'C-u']);

@@ -65,6 +65,8 @@ export const desktop: Messages['desktop'] = {
     tmuxAttached: (label) => `터미널을 열어 tmux ${label}에 연결했어요`,
     tmuxNotRaised: (label) =>
       `tmux를 ${label} 패널로 바꿨지만 그 터미널 창을 앞으로 가져오지 못했어요.`,
+    tmuxAppOnly: (label, app) =>
+      `tmux를 ${label} 패널로 바꾸고 ${app} 앱을 앞으로 가져왔지만, 그 패널이 보이는 창·탭을 고르지는 못했어요.`,
     tmuxAttachHint: (label, command) =>
       `tmux ${label}에 연결된 터미널이 없어요. 터미널에서 연결해 주세요: ${command}`,
     tmuxOpenFailed: (label) => `tmux ${label} 패널은 선택했지만 연결할 터미널을 열지 못했어요.`,

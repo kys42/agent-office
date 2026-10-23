@@ -312,10 +312,102 @@ async function focusTmux(
   const table = await deps.run('/bin/ps', ['-axo', 'pid=,ppid=,comm=']).catch(() => '');
   const bundle = appBundleOf(table, client.pid);
   if (!bundle) return t.tmuxNotRaised(host.label);
+  const app = appName(bundle);
+  // The window or tab that shows the client, where the app can be asked for it.
+  const shown =
+    app === 'Orca'
+      ? await showOrcaTerminal(client.pid, deps)
+      : app in TTY_SCRIPTS
+        ? await showTtyTab(TTY_SCRIPTS[app], client.tty, deps)
+        : false;
+  if (shown) return t.tmuxFocused(host.label, app);
+  // Only the app: whichever of its windows comes forward may show something else.
   try {
     await deps.run('/usr/bin/open', ['-a', bundle]);
   } catch {
     return t.tmuxNotRaised(host.label);
   }
-  return t.tmuxFocused(host.label, appName(bundle));
+  return t.tmuxAppOnly(host.label, app);
+}
+
+/**
+ * A tmux client running in an Orca terminal: that terminal (named in the client's environment,
+ * confirmed in Orca's own list) is switched to and Orca brought forward.
+ */
+async function showOrcaTerminal(pid: number, deps: TerminalHostDeps): Promise<boolean> {
+  try {
+    const ps = (args: string[]) => deps.run('/bin/ps', [...args, '-p', String(pid)]);
+    const [full, args] = await Promise.all([
+      ps(['-wwE', '-o', 'command=']),
+      ps(['-ww', '-o', 'command=']),
+    ]);
+    const env = parseProcessEnv(full.trim(), args.trim());
+    if (!env.orcaHandle) return false;
+    const terminal = (await orcaTerminals(deps, true)).get(env.orcaHandle);
+    if (
+      terminal?.connected !== true ||
+      terminal.orphaned === true ||
+      (env.orcaTab && terminal.tabId !== env.orcaTab)
+    )
+      return false;
+    const out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'switch', `--terminal=${env.orcaHandle}`, '--json'],
+      { env: localOrcaEnv() },
+    );
+    if (JSON.parse(out)?.result?.focus?.navigated === false) return false;
+    await deps.run('/usr/bin/open', ['-a', 'Orca']).catch(() => '');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * AppleScript that selects the tab (iTerm2: session) whose `tty` is `item 1 of argv` and brings
+ * its window forward, answering `ok`; the tty travels as an argument, never in the source.
+ */
+const TTY_SCRIPTS: Record<string, string> = {
+  Terminal: [
+    'on run argv',
+    'tell application "Terminal"',
+    'repeat with w in windows',
+    'repeat with t in tabs of w',
+    'if tty of t is (item 1 of argv) then',
+    'set selected of t to true',
+    'set index of w to 1',
+    'activate',
+    'return "ok"',
+    'end if',
+    'end repeat',
+    'end repeat',
+    'end tell',
+    'return "none"',
+    'end run',
+  ].join('\n'),
+  iTerm: [
+    'on run argv',
+    'tell application "iTerm"',
+    'repeat with w in windows',
+    'repeat with t in tabs of w',
+    'repeat with s in sessions of t',
+    'if tty of s is (item 1 of argv) then',
+    'tell w to select',
+    'tell t to select',
+    'tell s to select',
+    'activate',
+    'return "ok"',
+    'end if',
+    'end repeat',
+    'end repeat',
+    'end repeat',
+    'end tell',
+    'return "none"',
+    'end run',
+  ].join('\n'),
+};
+
+async function showTtyTab(script: string, tty: string, deps: TerminalHostDeps): Promise<boolean> {
+  const out = await deps.run('/usr/bin/osascript', ['-e', script, tty]).catch(() => '');
+  return out.trim() === 'ok';
 }

@@ -1936,6 +1936,40 @@ test('A reply a failed send left in the box is its own: taken back, never shown 
   });
 });
 
+test("Orca: a paste it refused is not the app's; one with no clear answer still is", async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const reply = 'run the tests again';
+    for (const [answer, own] of [
+      ['refused', false],
+      ['timeout', true],
+    ] as const) {
+      let draft: string | undefined;
+      const { deps } = fakeDeps(dir, { orcaDraft: () => draft });
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        if (
+          file === '/bin/orca' &&
+          args[1] === 'send' &&
+          args.some((a) => a.includes('\x1b[200~'))
+        ) {
+          if (answer === 'refused')
+            return JSON.stringify({ ok: true, result: { send: { accepted: false } } });
+          // No answer in time: the bytes may have gone in.
+          draft = reply;
+          throw new Error('timed out');
+        }
+        return run(file, args, options);
+      };
+      await assert.rejects(sendToTerminal(orcaLive(), reply, deps));
+      // The person types the same words (or they are what the timed-out paste left).
+      draft = reply;
+      const shown = await inspectTerminalDraft(orcaLive(), claudeCodeComposer, deps);
+      assert.equal(shown === null, own, answer);
+      if (!own) assert.equal(shown?.draft, reply);
+    }
+  });
+});
+
 test("Text a failed load-buffer never typed is not the app's: the same words typed later are asked about", async () => {
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     const reply = 'run the tests again';

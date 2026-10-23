@@ -68,6 +68,9 @@ export const desktop = {
     /** The client was switched, but the app showing it could not be found or raised. */
     tmuxNotRaised: (label: string) =>
       `Switched tmux to pane ${label}, but couldn't bring its terminal window to the front.`,
+    /** The app was raised, but the window or tab showing the client could not be selected. */
+    tmuxAppOnly: (label: string, app: string) =>
+      `Switched tmux to pane ${label} and brought ${app} forward, but couldn't select the window or tab showing it.`,
     tmuxAttachHint: (label: string, command: string) =>
       `No terminal is attached to tmux ${label}. Attach with: ${command}`,
     tmuxOpenFailed: (label: string) =>

@@ -220,6 +220,8 @@ function fakePrompt(
     /** tmux: how the suggestion is drawn after `❯ ` (default: all faint, as measured). */
     drawSuggestion?: (text: string) => string;
     height?: number;
+    /** tmux: Claude Code's inline renderer on the main screen, every row of the box in view. */
+    inline?: boolean;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
     typing?: (round: number) => string;
@@ -230,7 +232,7 @@ function fakePrompt(
   let rounds = 0;
   const pressed: string[][] = [];
   const orca = options.host === 'orca';
-  const most = maxBoxRows(options.height ?? 40);
+  const most = options.inline ? Infinity : maxBoxRows(options.height ?? 40);
   const text = () => lines.map((line) => line.join('')).join('\n');
   const host: ComposerHost = {
     styled: !orca,
@@ -248,7 +250,8 @@ function fakePrompt(
         const paint = options.drawSuggestion ?? ((text) => `\x1b[2m${text}\x1b[0m`);
         return tmux(box(`\x1b[39m❯\xa0${paint(options.suggestion)}`), options.height);
       }
-      return tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
+      const screen = tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
+      return options.inline ? { ...screen, alternate: false } : screen;
     },
     wait: async () => {},
     async press(keys) {
@@ -709,4 +712,24 @@ test("sameWrapped: the box's wrapping is ignored, spaces inside a row are not", 
   assert.ok(!sameWrapped('one two', 'one two three'));
   assert.ok(!sameWrapped('one two three', 'one two'));
   assert.ok(!sameWrapped('', 'one'));
+});
+
+test('A tall whole draft (inline renderer) gets pairs enough for every row', async () => {
+  // 35 rows, cursor at the end: 69 pairs, more than the base budget of 60.
+  const draft = Array.from({ length: 35 }, (_, i) => `row ${i + 1}`).join('\n');
+  const prompt = fakePrompt({ draft, host: 'tmux', height: 50, inline: true });
+  const from = await claudeCodeComposer.inspect(prompt.host);
+  assert.ok(from.kind === 'draft' && from.whole);
+  const result = await claudeCodeComposer.clear(prompt.host, from, async () => {});
+  assert.equal(result.status, 'cleared');
+  assert.equal(prompt.text(), '');
+  // Keys that never arrive still give up early.
+  const stuck = fakePrompt({ draft, host: 'tmux', height: 50, inline: true, stuck: true });
+  const stuckFrom = await claudeCodeComposer.inspect(stuck.host);
+  assert.ok(stuckFrom.kind === 'draft');
+  assert.notEqual(
+    (await claudeCodeComposer.clear(stuck.host, stuckFrom, async () => {})).status,
+    'cleared',
+  );
+  assert.ok(stuck.pressed.length < 10);
 });
