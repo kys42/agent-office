@@ -17,7 +17,7 @@ import { Modal } from './Modal';
 import { api } from '../lib/api';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
-import type { Session, TmuxResumeInfo } from '../shared/types';
+import type { OrcaLaunchInfo, Session, TmuxResumeInfo } from '../shared/types';
 
 export function TmuxResume({
   id,
@@ -54,6 +54,33 @@ export function TmuxResume({
   const [info, setInfo] = useState<TmuxResumeInfo | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  /** Resuming in a new Orca tab instead (saved conversations only, when Orca answers). */
+  const [orca, setOrca] = useState<OrcaLaunchInfo | null>(null);
+  const orcaRequest = useRef(0);
+  const checkOrca = async () => {
+    if (summon || !api.orcaLaunch) return;
+    const ticket = ++orcaRequest.current;
+    const result = await api.orcaLaunch(id, 'status').catch(() => null);
+    if (ticket === orcaRequest.current) setOrca(result);
+  };
+  const launchOrca = async () => {
+    if (busy || summon || !api.orcaLaunch) return;
+    const ticket = ++request.current;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.orcaLaunch(id, 'start');
+      if (ticket !== request.current) return;
+      if (result.launched) {
+        notify(result.message ?? t.tmux.orcaLaunched);
+        setOpen(false);
+      }
+    } catch (e) {
+      if (ticket === request.current) setError((e as Error).message);
+    } finally {
+      if (ticket === request.current) setBusy(false);
+    }
+  };
   const projectIds = projects?.map((p) => p.id).join('\n');
   useEffect(() => {
     const ids = projectIds?.split('\n');
@@ -76,6 +103,7 @@ export function TmuxResume({
   const act = async (action: 'status' | 'start' | 'open', selected = provider) => {
     if (busy || (summon ? !api.tmuxSummon : !api.tmuxResume)) return;
     if (projects && !projects.some((p) => p.id === projectId)) return;
+    if (action === 'status') void checkOrca();
     const ticket = ++request.current;
     setBusy(true);
     setError('');
@@ -294,6 +322,12 @@ export function TmuxResume({
                   {text.loading}
                 </p>
               )}
+              {!summon && orca?.available && (
+                <p className="tmux-discovery">
+                  <Info size={13} aria-hidden="true" />
+                  {text.orcaHint}
+                </p>
+              )}
               {!summon && info && !info.running && (
                 <p className="tmux-caution">
                   <Info size={14} aria-hidden="true" />
@@ -336,6 +370,12 @@ export function TmuxResume({
                     <Terminal size={14} aria-hidden="true" />
                   )}
                   {text.start}
+                </button>
+              )}
+              {!summon && orca?.available && (
+                <button className="button" disabled={busy} onClick={() => void launchOrca()}>
+                  <ArrowUpRight size={14} aria-hidden="true" />
+                  {text.orcaStart}
                 </button>
               )}
               {info?.running && info.canOpen && (

@@ -63,6 +63,13 @@ const api: OfficeAPI = {
           action('office:tmux-resume', id, actionName),
       }
     : {}),
+  // Orca is a macOS app: its launch is offered there only.
+  ...(process.platform === 'darwin'
+    ? {
+        orcaLaunch: (id: string, actionName: 'status' | 'start') =>
+          action('office:orca-launch', id, actionName),
+      }
+    : {}),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),

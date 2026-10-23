@@ -88,9 +88,11 @@ export async function inspectProcess(pid: number, deps: TerminalHostDeps): Promi
   return { env: parseProcessEnv(full.trim(), args.trim()), owner: ptyOwner(table, pid) };
 }
 
-/** Finds the terminal pane that hosts the process. tmux is the direct host when present. */
-/** All live Orca terminals by handle: one CLI call (~0.5s) instead of one per session. */
-function orcaTerminals(deps: TerminalHostDeps, fresh: boolean) {
+/**
+ * All Orca terminals by handle: one CLI call (~0.5s) instead of one per session. Shared by the
+ * live-process lookup below and the tab-only fallback (desktop/orca-tabs.ts).
+ */
+export function orcaTerminals(deps: TerminalHostDeps, fresh: boolean) {
   return remember(deps, 'orca-terminals', 5000, fresh, async () => {
     const byHandle = new Map<string, Record<string, unknown>>();
     try {
@@ -104,6 +106,7 @@ function orcaTerminals(deps: TerminalHostDeps, fresh: boolean) {
   });
 }
 
+/** Finds the terminal pane that hosts the process. tmux is the direct host when present. */
 export async function findHost(
   pid: number,
   deps: TerminalHostDeps,

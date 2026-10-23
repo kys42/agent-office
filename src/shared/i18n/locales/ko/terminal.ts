@@ -11,6 +11,7 @@ export const terminal: Messages['terminal'] = {
     queues: 'Codex 세션에 바로 전달돼요 · 작업 중이면 끝난 뒤 처리돼요',
     busy: '작업 중이에요 · 보내면 대기열에 들어가 이어서 반영돼요',
     notWaiting: '지금은 입력을 기다리지 않아요',
+    tabOnly: 'Orca에 이 대화의 탭이 남아 있지만 에이전트가 실행 중이 아니라 보낼 수 없어요',
     direct: (host) => `${host} 터미널에 바로 입력돼요`,
     unknown: '보낼 때 터미널을 다시 찾아요',
   },

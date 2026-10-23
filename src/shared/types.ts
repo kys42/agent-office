@@ -549,6 +549,11 @@ export interface TerminalTarget {
   queues?: boolean;
   /** Delivered to the existing local Codex Desktop owner, without terminal typing. */
   desktop?: boolean;
+  /**
+   * Only the conversation's Orca tab was found, not a live agent process: a place to jump to,
+   * never to type into (it may hold a bare shell).
+   */
+  tabOnly?: boolean;
 }
 /**
  * What a follow-up send did. `needs-confirm`: the agent's composer already holds text (a draft,
@@ -783,6 +788,8 @@ export interface OfficeAPI {
     initialMessage?: string,
   ) => Promise<TmuxResumeInfo>;
   tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
+  /** Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab. */
+  orcaLaunch?: (id: string, action: 'status' | 'start') => Promise<OrcaLaunchInfo>;
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
@@ -899,6 +906,15 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
   leave: mood('leave', '#6d6975', 8),
 };
 
+/** Whether a saved conversation can open in a new Orca tab, and what a start did. */
+export interface OrcaLaunchInfo {
+  available: boolean;
+  /** The command typed into the new tab's shell (shown before confirming). */
+  command?: string;
+  /** Set after `start`: false when the person cancelled. */
+  launched?: boolean;
+  message?: string;
+}
 export interface TmuxResumeInfo {
   connections?: { id?: string; name: string; label: string; command?: string }[];
   name: string;

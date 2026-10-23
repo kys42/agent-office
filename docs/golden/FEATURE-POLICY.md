@@ -275,4 +275,12 @@
 
 ### tmux 세션 재개 (#178)
 
-로컬 데스크톱의 Claude·Codex 기존 대화를 원래 폴더에서 재개할 수 있다. 실행 전 tmux 이름·폴더와 동시 작업 주의를 안내하고 main에서 사용자의 네이티브 확인을 받는다. 전용 tmux 서버의 소유 세션만 재사용/재개하며, 자동 프롬프트·다른 pane 입력은 하지 않는다. 승인 우회는 기본으로 꺼져 있다. 설정 '권한 확인 없이 tmux로 띄우기'(데스크톱, `tmuxSkipPermissions`)를 켠 사람에게만 재개·소환 때 Claude Code `--dangerously-skip-permissions`, Codex `--dangerously-bypass-approvals-and-sandbox`를 붙이고, 실행 확인 창에 그 사실을 적는다. 재접속 명령·Mac Terminal 열기·분리/종료 후 안내를 함께 제공한다. 원격 오피스와 웹/모바일은 해당 실행 기능을 노출하지 않는다.
+로컬 데스크톱의 Claude·Codex 기존 대화를 원래 폴더에서 재개할 수 있다. 실행 전 tmux 이름·폴더와 동시 작업 주의를 안내하고 main에서 사용자의 네이티브 확인을 받는다. 전용 tmux 서버의 소유 세션만 재사용/재개하며, 자동 프롬프트·다른 pane 입력은 하지 않는다. 승인 우회는 기본으로 꺼져 있다. 설정 '권한 확인 없이 터미널에 띄우기'(데스크톱, 키는 호환을 위해 `tmuxSkipPermissions` 유지)를 켠 사람에게만 tmux 재개·소환과 Orca 새 탭 재개 때 Claude Code `--dangerously-skip-permissions`, Codex `--dangerously-bypass-approvals-and-sandbox`를 붙이고, 실행 확인 창에 그 사실을 적는다. 재접속 명령·Mac Terminal 열기·분리/종료 후 안내를 함께 제공한다. 원격 오피스와 웹/모바일은 해당 실행 기능을 노출하지 않는다.
+
+### Orca 새 탭으로 재개
+
+같은 재개 창에서, macOS 데스크톱이고 Orca가 설치돼 런타임이 응답하며(`orca status`) 로컬 Claude·Codex 세션이고 원래 폴더가 있을 때만 'Orca에서 새로 띄우기'를 함께 보여준다. 누르면 main에서 폴더·실행 명령·동시 작업 주의(권한 우회가 켜져 있으면 그 사실까지)를 네이티브 확인 창으로 묻고, 확인한 뒤에만 `orca terminal create --worktree=path:<cwd> --title=<이름> --command=<명령> --focus --json`으로 새 탭을 연다. 명령은 Orca가 로그인 셸에 입력하므로 에이전트 이름과 인자(tmux와 같은 `launchArgs`: Claude `--resume <id>`, Codex `resume <id>`, 설정에 따라 승인 우회 플래그)만 쓰고, 각 단어는 평범한 문자 집합만 허용해 작은따옴표로 감싼다. 그 밖의 글자가 있으면 띄우지 않는다. 폴더와 제목은 셸을 거치지 않는 별도 인자다. Orca가 거절하면(예: Orca 작업 공간이 아닌 폴더) Orca의 설명을 보여주고 tmux로 띄우기를 권한다. 이미 떠 있는 탭에 입력하지 않으며, 원격 오피스와 웹/모바일에는 노출하지 않는다.
+
+### Orca 탭 자동 찾기 (이동 전용)
+
+동료의 터미널은 살아 있는 에이전트 프로세스(환경 변수의 Orca 핸들·tmux pane과 pty 소유자 검증)로 찾는다. 그런 프로세스가 없을 때만(에이전트 종료, 복원·잠든 탭) `orca terminal list --json`(5초 캐시 공유)에서 이 대화의 탭을 보수적으로 찾는다: 세션 cwd와 같은 `worktreePath`, 이 컴퓨터의 터미널(`executionHostId`가 없거나 `local`), 탭에 붙어 있음(`orphaned`가 아니고 `tabId` 있음), 다른 에이전트로 표시되지 않음(`agentIdentity`), 그리고 에이전트별 어댑터의 제목 일치 — Claude는 `✳ <Claude가 붙인 대화 제목>`(스피너 표시 허용, 첫 메시지로 만든 제목·"Claude Code"는 제외), Codex는 맨 앞의 스레드 id(전체 또는 Codex의 32자 줄임). `connected: false`(잠든·복원된 탭)도 이동 대상으로 인정한다. 정확히 하나일 때만 **이동 대상**(`tabOnly`, `canSend: false`)으로 내주고, 0개나 여러 개면 없음으로 둔다. 이 탭에는 절대 입력하지 않는다: 보내기·초안 확인·답하기는 계속 살아 있는 프로세스 검증(또는 Codex 대기열)을 요구한다. 이동은 기존 `orca terminal switch` 경로를 쓴다.

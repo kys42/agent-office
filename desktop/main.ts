@@ -1,4 +1,6 @@
 import { TmuxResume, summonSession } from './tmux-resume.js';
+import { OrcaLaunch } from './orca-launch.js';
+import { findOrcaTab, orcaTabTarget } from './orca-tabs.js';
 import {
   app,
   BrowserWindow,
@@ -53,6 +55,7 @@ import {
   type Rect,
 } from '../src/shared/dock-geometry.js';
 import {
+  defaultTerminalDeps,
   focusTerminal,
   forgetTerminal,
   hostName,
@@ -753,6 +756,39 @@ function setupIPC() {
       }
     });
   });
+  const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
+  ipcMain.handle('office:orca-launch', async (e, id, action) => {
+    trusted(e);
+    if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
+      throw new Error(m().desktop.badRequest);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
+    const session: Session = await bridge.call('detail', [id]);
+    const skip = skipPermissions();
+    const saved = { ...session, skipPermissions: skip };
+    if (action === 'status') return orcaLaunch.status(saved);
+    return orcaLaunch.start(saved, async (info) => {
+      const owner = BrowserWindow.fromWebContents(e.sender);
+      const t = m().tmux;
+      const options = {
+        type: 'question' as const,
+        title: t.orcaTitle,
+        message: t.orcaConfirm,
+        detail: `${t.orcaIntro}\n\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}\n\n${t.caution}${skipNote(skip)}`,
+        buttons: [t.cancel, t.orcaStart],
+        defaultId: 0,
+        cancelId: 0,
+      };
+      const endCardDialog = cards.dialog(e.sender);
+      try {
+        const result = owner
+          ? await dialog.showMessageBox(owner, options)
+          : await dialog.showMessageBox(options);
+        return result.response === 1;
+      } finally {
+        endCardDialog();
+      }
+    });
+  });
   ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name, initialMessage) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
@@ -826,11 +862,26 @@ function setupIPC() {
     known.provider === 'codex'
       ? findCodexDestination(known.nativeId, known.sourcePath, { fresh })
       : null;
+  /**
+   * The conversation's Orca tab when no live agent process vouches for a terminal: a jump
+   * destination only. Sending never uses it; it keeps requiring `live` or the Codex queue.
+   */
+  const orcaTab = (s: Session | undefined, fresh = false) =>
+    s && !s.remote ? findOrcaTab(s, defaultTerminalDeps(), fresh).catch(() => null) : null;
+  const orcaTabHost = async (s: Session | undefined) => {
+    const tab = await orcaTab(s, true);
+    return tab ? { host: tab } : null;
+  };
+  const latestSession = (id: string) => delivery.latest?.sessions.find((s) => s.id === id);
   const sendTargets = async (ids: unknown) => {
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error(m().desktop.badRequest);
     const unique = [...new Set(ids as string[])];
     const found = await identify(unique).catch(() => new Map<string, SessionIdentity>());
+    const wanted = new Set(unique);
+    const sessions = new Map(
+      (delivery.latest?.sessions ?? []).filter((s) => wanted.has(s.id)).map((s) => [s.id, s]),
+    );
     const entries = await Promise.all(
       unique.map(async (id) => {
         try {
@@ -838,13 +889,18 @@ function setupIPC() {
           if (!known) return [id, null] as const;
           const terminal = await live(known);
           if (terminal) return [id, terminalTarget(terminal)] as const;
-          if (known.provider !== 'codex') return [id, null] as const;
+          if (known.provider !== 'codex') {
+            const tab = await orcaTab(sessions.get(id));
+            return [id, tab ? orcaTabTarget(tab) : null] as const;
+          }
           // A screen can be present even while the queue's loaded-thread lookup is unavailable.
           const [thread, screen] = await Promise.all([
             Promise.resolve(codex(known)).catch(() => null),
             findCodexTerminal(known.nativeId).catch(() => null),
           ]);
-          return [id, codexDestinationTarget(thread, screen?.host)] as const;
+          // Without a live screen, its Orca tab can still be jumped to (the queue stays the send).
+          const host = screen?.host ?? (await orcaTab(sessions.get(id))) ?? undefined;
+          return [id, codexDestinationTarget(thread, host)] as const;
         } catch {
           return [id, null] as const;
         }
@@ -931,9 +987,9 @@ function setupIPC() {
     const known = await identity(id);
     // The message queue and the visible screen are separate destinations.
     const terminal =
-      known.provider === 'codex'
+      (known.provider === 'codex'
         ? await findCodexTerminal(known.nativeId, { fresh: true })
-        : await live(known, true);
+        : await live(known, true)) ?? (await orcaTabHost(latestSession(known.id)));
     if (!terminal) return resume(known);
     try {
       const text = await focusTerminal(terminal);

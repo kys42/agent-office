@@ -11,6 +11,8 @@ export const terminal = {
     queues: "Goes straight to the Codex session · if it's busy, it runs after the current turn",
     busy: 'Working · what you send is queued and picked up as it goes',
     notWaiting: 'Not waiting for input right now',
+    /** Only its Orca tab was found: jump there, nothing is typed. */
+    tabOnly: 'Its Orca tab is still open, but the agent is not running there · nothing can be sent',
     direct: (host: string) => `Typed straight into the ${host} terminal`,
     /** No terminal found as last seen. */
     unknown: 'Its terminal is looked up again on send',

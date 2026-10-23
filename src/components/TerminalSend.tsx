@@ -26,6 +26,7 @@ export function targetPlaceholder(target: TerminalTarget) {
   const text = m().terminal.placeholder;
   if (target.desktop) return text.desktop;
   if (target.queues) return text.queues;
+  if (target.tabOnly) return text.tabOnly;
   if (!target.canSend) return text.notWaiting;
   // Mid-turn Claude queues what is typed, so a follow-up can steer the work in progress.
   return target.status === 'busy' ? text.busy : text.direct(HOSTS[target.kind]);
@@ -74,15 +75,17 @@ export function TerminalSend({
     return (
       <p className="terminal-send-hint">
         <Terminal size={12} />
-        {t.terminal.offHint(
-          target?.desktop
-            ? t.terminal.runningDesktop
-            : target?.queues
-              ? t.terminal.runningCodex
-              : target
-                ? t.terminal.runningIn(host)
-                : t.terminal.runningSomewhere,
-        )}
+        {target?.tabOnly
+          ? t.terminal.placeholder.tabOnly
+          : t.terminal.offHint(
+              target?.desktop
+                ? t.terminal.runningDesktop
+                : target?.queues
+                  ? t.terminal.runningCodex
+                  : target
+                    ? t.terminal.runningIn(host)
+                    : t.terminal.runningSomewhere,
+            )}
       </p>
     );
   // Not taking input as last seen (or not found): still written and sent; the desktop app
