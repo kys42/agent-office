@@ -9,7 +9,7 @@ export const settings: Messages['settings'] = {
   categoriesAria: '설정 분류',
   categories: {
     general: { label: '일반', hint: '언어, 내용 숨기기, 앱이 대신 해도 되는 일을 정해요.' },
-    appearance: { label: '모습', hint: '동료들의 생김새와 움직임을 골라요.' },
+    appearance: { label: '모습', hint: '동료들의 생김새와 움직임, 글자 모양을 골라요.' },
     office: { label: '사무실', hint: '동료가 대기 중 → 퇴근 → 보관으로 옮겨 가는 시점을 정해요.' },
     spaces: { label: '공간', hint: '직접 나눈 사무실 구역을 살펴보고 고쳐요.' },
     connections: { label: '연결', hint: '도구, 다른 사무실, 휴대폰 연결을 관리해요.' },
@@ -95,6 +95,19 @@ export const settings: Messages['settings'] = {
     retain: '끝나지 않은 보조 유지',
     retainAria: '조용하지만 끝나지 않은 보조가 자리를 지키는 시간',
     minutes: (min) => `${min}분`,
+  },
+  text: {
+    title: '글자',
+    size: '글자 크기',
+    sizeHint:
+      '업무 카드(대화·소식·작업 정보), 말풍선, 명단·소식함, 기억 서랍·책갈피, 명령 팔레트, 설정 화면의 글자예요. 탭 이름, 책상·쪼꼬미 장면과 이름표, 독 창 크기는 그대로이고, 독의 말풍선은 창 높이에 맞춰 크게까지만 커져요.',
+    sizes: { small: '작게', normal: '보통', large: '크게', larger: '더 크게' },
+    font: '글꼴',
+    fontHint:
+      '같은 읽는 글의 글꼴이에요. 이름표·배지의 픽셀 글꼴과 코드의 고정폭 글꼴은 그대로예요.',
+    fonts: { system: '시스템 기본', pretendard: 'Pretendard', mono: '고정폭' },
+    preview: '미리 보기',
+    previewText: '끝났어요. 로그인 흐름의 테스트 3개를 고쳤고 npm test가 통과해요.',
   },
   panels: {
     title: '패널 폭',

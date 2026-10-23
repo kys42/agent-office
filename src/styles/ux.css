@@ -112,7 +112,7 @@
   background: var(--st-work);
 }
 .group-head b {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   font-weight: 650;
   color: var(--text-2);
 }
@@ -121,13 +121,13 @@
 }
 .group-head em {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-style: normal;
   color: var(--text-4);
 }
 .group-head small {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-4);
   white-space: nowrap;
   overflow: hidden;
@@ -343,7 +343,7 @@
   border: 0;
   outline: 0;
   background: transparent;
-  font-size: 15px;
+  font-size: calc(15px * var(--read-scale));
   color: var(--text);
 }
 .palette-list {
@@ -354,7 +354,7 @@
 }
 .palette-section h3 {
   padding: 10px 10px 5px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-4);
@@ -379,14 +379,14 @@
   flex-direction: column;
 }
 .palette-item b {
-  font-size: 13px;
+  font-size: calc(13px * var(--read-scale));
   font-weight: 560;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .palette-item small {
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
   overflow: hidden;
   white-space: nowrap;
@@ -394,7 +394,7 @@
 }
 .palette-item > em {
   flex-shrink: 0;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-style: normal;
   font-weight: 600;
 }
@@ -430,7 +430,7 @@
   gap: 16px;
   padding: 9px 16px;
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-4);
 }
 .palette-foot span {
@@ -511,7 +511,7 @@
   min-height: 52px;
   max-height: 160px;
   resize: vertical;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   line-height: 1.5;
 }
 .terminal-send-bar {
@@ -559,12 +559,12 @@
   border-radius: 8px;
   background: var(--accent-soft);
   border: 1px solid var(--accent-line);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   line-height: 1.45;
   color: var(--text);
 }
 .draft-confirm small {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-3);
 }
 .draft-confirm-text {
@@ -576,7 +576,7 @@
   background: var(--bg-1);
   border: 1px solid var(--line-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
@@ -594,7 +594,7 @@
   height: 24px;
   padding: 0 9px;
   border-radius: 7px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-2);
   background: var(--bg-3);
 }
@@ -650,7 +650,7 @@
   border-radius: 9px;
   background: var(--bg-1);
   border: 1px solid var(--line-2);
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   line-height: 1.5;
   color: var(--text);
 }
@@ -666,13 +666,13 @@
   color: var(--text-3);
 }
 .request-head b {
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   font-weight: 650;
   color: var(--text);
 }
 .request-head small {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-4);
 }
 .request-head .now-more {
@@ -728,7 +728,7 @@
   overflow-wrap: anywhere;
 }
 .request-option small {
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
   overflow-wrap: anywhere;
 }
@@ -792,21 +792,21 @@ button.request-option:hover:not(:disabled) {
   background: var(--bg-2);
   border: 1px solid var(--line-2);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
 }
 .request-plan-body {
-  max-height: 72px;
+  max-height: calc(72px * var(--read-scale));
   overflow: hidden;
   margin-top: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
   mask-image: linear-gradient(180deg, #000 55%, transparent);
 }
 .request-plan-body.open {
-  max-height: 360px;
+  max-height: calc(360px * var(--read-scale));
   overflow: auto;
   -webkit-mask-image: none;
   mask-image: none;
@@ -817,7 +817,7 @@ button.request-option:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-3);
   overflow-wrap: anywhere;
 }

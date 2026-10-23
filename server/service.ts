@@ -122,6 +122,8 @@ const prefsSchema = z
     helperStackAt: z.number().int().min(2).max(8).optional(),
     helperRetainMinutes: z.number().int().min(5).max(240).optional(),
     tmuxSkipPermissions: z.boolean().optional(),
+    textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
+    readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
     petAppearance: z
       .object({
         version: z.literal(1),

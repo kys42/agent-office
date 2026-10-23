@@ -5,6 +5,9 @@
 body.dock-mode {
   background: transparent;
   overflow: hidden;
+  /* #246: the dock's headroom is fixed (ROW_TOP_ROOM, PET_SIZE), so its bubbles grow at most to
+     크게 (1.12): at 더 크게 the stacked answer + request would rise past the window top. */
+  --bubble-scale: min(var(--read-scale), 1.12);
 }
 .dock-mode #root {
   background: transparent;
@@ -1062,13 +1065,13 @@ body.card-mode {
   display: block;
 }
 .dock-pet-speech .speech-request-text {
-  max-height: 31px;
+  max-height: calc(2 * 1lh);
 }
 .dock-pet-anchor:hover
   .dock-pet-speech
   .speech-bubble:not(.is-expanded):has(> .speech-request-bubble)
   .speech-text {
-  max-height: 40px;
+  max-height: calc(2 * 1lh);
 }
 
 /* Drag only the drawn project sign/flag; gaps keep passing clicks to the desktop. */

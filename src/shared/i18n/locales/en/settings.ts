@@ -7,7 +7,10 @@ export const settings = {
   categoriesAria: 'Settings categories',
   categories: {
     general: { label: 'General', hint: 'Language, privacy and what the app may do for you.' },
-    appearance: { label: 'Appearance', hint: 'How your teammates look and move.' },
+    appearance: {
+      label: 'Appearance',
+      hint: 'How your teammates look and move, and how text reads.',
+    },
     office: { label: 'Office', hint: 'When teammates stand by, go off duty and get archived.' },
     spaces: { label: 'Spaces', hint: 'Zones you split the office into.' },
     connections: { label: 'Connections', hint: 'Tools, other offices and your phone.' },
@@ -98,6 +101,19 @@ export const settings = {
     minutes: (min: number) => `${min} minutes`,
   },
   /** The big office's dragged column widths (#228). */
+  text: {
+    title: 'Text',
+    size: 'Text size',
+    sizeHint:
+      'Work cards (conversation, news, info), speech bubbles, the roster and inbox, the memory drawer and bookmarks, the command palette and settings. Tab names, desks, tiny desks, name plates and the dock window keep their size; dock bubbles grow up to Large to fit the window.',
+    sizes: { small: 'Small', normal: 'Normal', large: 'Large', larger: 'Larger' },
+    font: 'Font',
+    fontHint:
+      'The font of the same reading text. Name plates and badges keep their pixel lettering; code stays monospaced.',
+    fonts: { system: 'System default', pretendard: 'Pretendard', mono: 'Monospace' },
+    preview: 'Preview',
+    previewText: 'Done. I fixed 3 tests in the login flow — npm test passes.',
+  },
   panels: {
     title: 'Panel widths',
     reset: 'Reset panel widths',

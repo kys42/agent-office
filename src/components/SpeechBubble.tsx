@@ -28,6 +28,7 @@ import { sessionName } from '../shared/office';
 import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
 import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/speech';
+import { useReadingTextRevision } from '../lib/useReadingText';
 import { ago } from '../lib/format';
 import { BubbleMarkdown } from './BubbleMarkdown';
 import { useI18n } from '../lib/i18n';
@@ -140,6 +141,8 @@ export function SpeechBubble({
     };
   }, [open]);
   const [long, setLong] = useState(false);
+  // A new reading size or font reflows the text inside a box that may keep its height.
+  const reflow = useReadingTextRevision();
   // The request bubble scrolls: a fade says there's more until its end is reached.
   const asked = useRef<HTMLParagraphElement>(null);
   const [more, setMore] = useState(false);
@@ -147,7 +150,7 @@ export function SpeechBubble({
     const el = asked.current;
     setMore(!!el && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
   };
-  useLayoutEffect(measure, [request?.id, speech.requestText, privacy]);
+  useLayoutEffect(measure, [request?.id, speech.requestText, privacy, reflow]);
   // Shown later (the pet reveals it on hover) or resized: measure again.
   useEffect(() => {
     const el = asked.current;
@@ -171,7 +174,7 @@ export function SpeechBubble({
     const watch = new ResizeObserver(measureBody);
     watch.observe(el);
     return () => watch.disconnect();
-  }, [text, markdown, open, privacy, request?.id]);
+  }, [text, markdown, open, privacy, request?.id, reflow]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div

@@ -73,12 +73,12 @@
   padding-top: 2px;
 }
 .roster-head span {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-3);
 }
 .roster-head h2 {
   margin-top: 1px;
-  font-size: 15px;
+  font-size: calc(15px * var(--read-scale));
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -118,11 +118,11 @@
   background: var(--bg-3);
 }
 .section-title h2 {
-  font-size: 13px;
+  font-size: calc(13px * var(--read-scale));
   font-weight: 600;
 }
 .section-title > span {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
   font-variant-numeric: tabular-nums;
 }
 .section-title select {
@@ -156,12 +156,12 @@
   background: var(--grouped);
 }
 .group-head b {
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   font-weight: 600;
   color: var(--text-2);
 }
 .group-head em {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
 }
 .group-action {
   height: 20px;
@@ -217,20 +217,20 @@
   border-color: var(--bg-2);
 }
 .session-copy strong {
-  font-size: 13px;
+  font-size: calc(13px * var(--read-scale));
   font-weight: 600;
 }
 .session-copy strong em {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
   color: #ffffff;
   background: var(--badge);
   border-radius: 9px;
 }
 .session-meta {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
 }
 .session-progress {
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text-2);
 }
 
@@ -296,7 +296,7 @@
   padding: 0 8px;
   border: 0;
   border-radius: 5px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text-2);
 }
 .conversation-filters button:hover,
@@ -311,7 +311,7 @@
 }
 .conversation-filters button span,
 .news-filter-bar button span {
-  font-family: var(--font-ui);
+  font-family: var(--font-read);
   color: inherit;
   opacity: 0.7;
 }
@@ -378,13 +378,13 @@
 
 /* ── Inbox ── */
 .inbox-heading h2 {
-  font-family: var(--font-display);
-  font-size: 17px;
+  font-family: var(--font-read-display);
+  font-size: calc(17px * var(--read-scale));
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 .inbox-heading h2 b {
-  font-family: var(--font-display);
+  font-family: var(--font-read-display);
   font-weight: 700;
 }
 .news-item.unread {
@@ -423,11 +423,11 @@
   height: 50px;
 }
 .palette-input input {
-  font-size: 19px;
+  font-size: calc(19px * var(--read-scale));
   font-weight: 300;
 }
 .palette-section h3 {
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   font-weight: 600;
   letter-spacing: 0;
   color: var(--text-3);
@@ -798,14 +798,14 @@ body.card-mode:not(.is-mac) .dock-card {
 .card-title h2 {
   margin: 0;
   overflow: hidden;
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--read-scale));
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--text);
 }
 .card-title h2 small {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   font-weight: 500;
   color: var(--text-3);
 }
@@ -817,7 +817,7 @@ body.card-mode:not(.is-mac) .dock-card {
   align-items: center;
   gap: 6px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   white-space: nowrap;
   color: var(--text-2);
 }
@@ -852,7 +852,7 @@ body.card-mode:not(.is-mac) .dock-card {
 .card-menu-list button {
   padding: 6px 10px;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   text-align: left;
   color: var(--text);
 }
@@ -892,7 +892,7 @@ body.card-mode:not(.is-mac) .dock-card {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   color: var(--text);
   text-decoration: none;
 }
@@ -915,7 +915,7 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 .artifact-row small {
   flex: none;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
 }
 .artifact-row:hover span {
@@ -982,7 +982,7 @@ body.card-mode:not(.is-mac) .dock-card {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-2);
 }
 .card-progress-switch input {
@@ -1038,7 +1038,7 @@ body.card-mode:not(.is-mac) .dock-card {
   box-shadow: inset 0 0 0 0.5px var(--line);
 }
 .inspector-card .conversation-message.category-progress :is(.message-bubble, .message-text, p) {
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text-2);
 }
 .inspector-card .message-user .message-bubble {
@@ -1087,13 +1087,13 @@ body.card-mode:not(.is-mac) .dock-card {
 .conversation-pause {
   align-self: center;
   margin: 4px 0 -2px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-weight: 500;
   color: var(--text-3);
 }
 .conversation-hidden-note {
   margin: 8px 0 0;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   text-align: center;
   color: var(--text-3);
 }
@@ -1161,7 +1161,7 @@ body.card-mode:not(.is-mac) .dock-card {
   display: none;
 }
 .card-calling-note {
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--st-call);
 }
 .card-action {
@@ -1171,7 +1171,7 @@ body.card-mode:not(.is-mac) .dock-card {
   gap: 5px;
   padding: 0 10px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text);
   background: color-mix(in srgb, var(--bg-1) 70%, transparent);
   box-shadow: inset 0 0 0 0.5px var(--line-2);
@@ -1198,7 +1198,7 @@ body.card-mode:not(.is-mac) .dock-card {
   margin: 0;
   padding: 10px 12px;
   border-radius: 12px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   color: var(--text-3);
   background: color-mix(in srgb, var(--bg-1) 50%, transparent);
 }
@@ -1244,7 +1244,7 @@ body.card-mode:not(.is-mac) .dock-card {
   grid-row: 2;
   grid-column: 1 / -1;
   padding: 0 12px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-4);
 }
 .terminal-send-chat .terminal-send-bar .button {
@@ -1310,7 +1310,7 @@ body.card-mode:not(.is-mac) .dock-card {
 .info-group h3 {
   margin: 0;
   padding: 9px 12px 5px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   font-weight: 650;
   letter-spacing: 0.02em;
   color: var(--text-3);
@@ -1324,7 +1324,7 @@ body.card-mode:not(.is-mac) .dock-card {
   border: 0;
   border-top: 0.5px solid var(--line);
   border-radius: 0;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   text-align: left;
   color: var(--text);
   background: none;
@@ -1353,7 +1353,7 @@ body.card-mode:not(.is-mac) .dock-card {
   text-overflow: ellipsis;
 }
 .info-row > code {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-2);
   background: none;
 }
@@ -1383,11 +1383,11 @@ body.card-mode:not(.is-mac) .dock-card {
   border-left: 0.5px solid var(--line);
 }
 .info-tokens span {
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-3);
 }
 .info-tokens b {
-  font-size: 14px;
+  font-size: calc(14px * var(--read-scale));
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -1397,7 +1397,7 @@ body.card-mode:not(.is-mac) .dock-card {
   gap: 6px;
   padding: 8px 12px 10px;
   border-top: 0.5px solid var(--line);
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
 }
 .info-context > div {
   display: flex;
@@ -1411,7 +1411,7 @@ body.card-mode:not(.is-mac) .dock-card {
 .info-note {
   margin: 0;
   padding: 8px 12px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   line-height: 1.45;
   color: var(--text-3);
 }

@@ -56,7 +56,7 @@
   margin-top: 5px;
   padding-top: 5px;
   border-top: 1px dashed rgba(42, 33, 40, 0.25);
-  font-size: 10px;
+  font-size: calc(10px * var(--bubble-scale));
   line-height: 1.35;
   color: #5b4d55;
 }
@@ -565,18 +565,18 @@
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
-  /* Whole lines only (11px × 1.4): office 3, row 4, pet 2. */
-  max-height: 46px;
+  /* Whole lines only, at any reading size: office 3, row 4, pet 2. */
+  max-height: calc(3 * 1lh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  font-size: 11px;
+  font-size: calc(11px * var(--bubble-scale));
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 /* The row has more headroom: its bubbles share it (answer 3 lines, request up to ~4.5). */
 .desk-row .speech-request-text {
-  max-height: 62px;
+  max-height: calc(4 * 1lh);
 }
 .speech-request-bubble.has-more .speech-request-text {
   mask-image: linear-gradient(#000 65%, transparent);
