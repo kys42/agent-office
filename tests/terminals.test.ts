@@ -1703,3 +1703,24 @@ test('claudeAbsent shares one record read per burst; a fresh check reads again',
     assert.equal(reads, 200);
   });
 });
+
+test('claudeAbsent: a record that cannot be read for any reason but removal is not absence', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const denied = fakeDeps(dir, { alive: [] });
+    denied.deps.records = {
+      list: (folder) => readdir(folder),
+      read: async () => {
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      },
+    };
+    assert.equal(await claudeAbsent(SESSION, denied.deps, true), false);
+    const removed = fakeDeps(dir, { alive: [] });
+    removed.deps.records = {
+      list: (folder) => readdir(folder),
+      read: async () => {
+        throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      },
+    };
+    assert.equal(await claudeAbsent(SESSION, removed.deps, true), true);
+  });
+});

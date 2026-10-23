@@ -3,6 +3,18 @@ import type { RunOptions } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { TerminalTarget } from '../src/shared/types.js';
 
+/**
+ * The environment for Orca CLI calls about this computer: without Orca's remote-runtime
+ * selection (an environment, a pairing code, or its older pairing variable), so an inherited
+ * pairing never routes a local lookup, switch or launch to another machine.
+ */
+export function localOrcaEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const local = { ...env };
+  delete local.ORCA_ENVIRONMENT;
+  delete local.ORCA_PAIRING_CODE;
+  delete local.ORCA_REMOTE_PAIRING;
+  return local;
+}
 /** Host discovery and navigation are shared by agents; this module never types input. */
 export interface TerminalHostDeps {
   run: (file: string, args: string[], options?: RunOptions) => Promise<string>;
@@ -99,7 +111,9 @@ export function orcaTerminalList(deps: TerminalHostDeps, fresh: boolean) {
     const byHandle = new Map<string, Record<string, unknown>>();
     let complete = false;
     try {
-      const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json']);
+      const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json'], {
+        env: localOrcaEnv(),
+      });
       const result = JSON.parse(out)?.result;
       for (const t of result?.terminals ?? [])
         if (typeof t?.handle === 'string') byHandle.set(t.handle, t);
@@ -181,12 +195,11 @@ export class TerminalFocusError extends Error {}
 
 export async function focusHost(host: TerminalHost, deps: TerminalHostDeps): Promise<string> {
   if (host.kind === 'orca') {
-    const out = await deps.run(deps.bin('orca'), [
-      'terminal',
-      'switch',
-      `--terminal=${host.handle}`,
-      '--json',
-    ]);
+    const out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'switch', `--terminal=${host.handle}`, '--json'],
+      { env: localOrcaEnv() },
+    );
     let navigated: unknown;
     try {
       navigated = JSON.parse(out)?.result?.focus?.navigated;

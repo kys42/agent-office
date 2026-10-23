@@ -4,6 +4,8 @@ import { remember, runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { OrcaLaunchInfo, Session } from '../src/shared/types.js';
 import { launchArgs } from './tmux-resume.js';
+import { localOrcaEnv } from './terminal-host.js';
+export { localOrcaEnv };
 
 /**
  * Resumes a saved conversation in a new Orca terminal tab (`orca terminal create`). Orca types
@@ -124,16 +126,6 @@ const defaults = (orca: () => string): OrcaLaunchDeps => ({
   platform: process.platform,
 });
 
-/**
- * The environment for Orca CLI calls about this computer: without Orca's remote-runtime
- * selection, so an inherited pairing never routes a local launch to another machine.
- */
-export function localOrcaEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const local = { ...env };
-  delete local.ORCA_ENVIRONMENT;
-  delete local.ORCA_PAIRING_CODE;
-  return local;
-}
 export class OrcaLaunch {
   private queue: Promise<unknown> = Promise.resolve();
   private deps: OrcaLaunchDeps;

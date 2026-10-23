@@ -4,6 +4,7 @@ import {
   OrcaLaunch,
   orcaCreateArgs,
   orcaRefusal,
+  localOrcaEnv,
   shellQuote,
   shellWord,
   type OrcaLaunchDeps,
@@ -251,4 +252,9 @@ test('Orca calls stay on this computer even when a remote Orca runtime is select
     assert.equal(env?.ORCA_PAIRING_CODE, undefined);
     assert.equal(env?.PATH, '/usr/bin');
   }
+});
+
+test('the older pairing variable never routes Orca elsewhere either', () => {
+  const env = localOrcaEnv({ PATH: '/bin', ORCA_REMOTE_PAIRING: 'x', ORCA_ENVIRONMENT: 'y' });
+  assert.deepEqual(env, { PATH: '/bin' });
 });

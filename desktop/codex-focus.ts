@@ -3,6 +3,7 @@ import { defaultTerminalDeps, ownsTerminal } from './terminals.js';
 import {
   findHost,
   inspectProcess,
+  localOrcaEnv,
   type TerminalHost,
   type TerminalLookup,
 } from './terminal-host.js';
@@ -78,7 +79,9 @@ async function screenTitle(host: TerminalHost, deps: TerminalDeps): Promise<stri
       ])
     ).trim();
   const result = JSON.parse(
-    await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json']),
+    await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json'], {
+      env: localOrcaEnv(),
+    }),
   );
   const t = result?.result?.terminal;
   if (result.ok !== true || t?.handle !== host.handle || typeof t.title !== 'string')

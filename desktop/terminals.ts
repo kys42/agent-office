@@ -5,6 +5,7 @@ import {
   focusTarget,
   hostName,
   TerminalFocusError,
+  localOrcaEnv,
 } from './terminal-host.js';
 import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
@@ -181,10 +182,13 @@ export function claudeRecordInventory(deps: TerminalDeps, fresh = false) {
     await Promise.all(
       files.map(async (name) => {
         const file = path.join(deps.sessionsDir, name);
-        const text = await io.read(file).catch(() => null);
-        // A record removed meanwhile belonged to a process that ended.
-        if (text === null) {
-          if (existsSync(file)) complete = false;
+        let text: string;
+        try {
+          text = await io.read(file);
+        } catch (error) {
+          // A record removed meanwhile belonged to a process that ended; any other failure
+          // (permissions, I/O) leaves this process unknown.
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
           return;
         }
         const record = parseClaudeProcess(name, text);
@@ -345,14 +349,11 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
       // The pane height tells whether the prompt box may be scrolled (see maxBoxRows).
       return /^\d+$/.test(height ?? '') ? { ...screen, height: Number(height) } : screen;
     }
-    const out = await deps.run(deps.bin('orca'), [
-      'terminal',
-      'read',
-      `--terminal=${host.handle}`,
-      '--screen',
-      '--limit=200',
-      '--json',
-    ]);
+    const out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'read', `--terminal=${host.handle}`, '--screen', '--limit=200', '--json'],
+      { env: localOrcaEnv() },
+    );
     const terminal = JSON.parse(out)?.result?.terminal;
     // Without a rendered screen Orca falls back to past output, which is not what is shown now.
     if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
@@ -426,7 +427,7 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
     out = await deps.run(
       deps.bin('orca'),
       ['terminal', 'send', `--terminal=${host.handle}`, ...input, '--json'],
-      { timeout: 20000 },
+      { timeout: 20000, env: localOrcaEnv() },
     );
   } catch (error) {
     out = (error as { stdout?: string }).stdout ?? '';
