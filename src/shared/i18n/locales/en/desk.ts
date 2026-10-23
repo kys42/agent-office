@@ -69,6 +69,8 @@ export const desk = {
     dismiss: (name?: string) =>
       name ? `Dismiss ${name}'s speech bubble` : 'Dismiss speech bubble',
     dismissTitle: 'Dismiss just the bubble · unread updates stay in the Inbox',
+    keep: (name?: string) => `Keep ${name ?? 'colleague'}'s bubble up`,
+    keepTitle: 'Keep it up · for later (marks it unread again)',
   },
   // The office row and floor desks along the screen edge.
   row: {

@@ -223,10 +223,15 @@ export function stationSpeech(
 }
 export type StationSpeech = ReturnType<typeof stationSpeech>;
 
+/** A final reply the person has read (its card was open long enough): done, like a closed one. */
+export const readReply = (speech: Pick<StationSpeech, 'bubble' | 'tone'>) =>
+  speech.tone === 'reply' && !!speech.bubble?.seenAt && isFinalNotice(speech.bubble);
+
 /**
  * The bubble a desk shows: its current one (live progress too when `revealed`), or — while the
  * cursor is on the desk (`pointing`) — the last thing it said, even if that bubble was closed
- * or has expired.
+ * or has expired. With `hideRead` (the dock row, like tiny's dot), a read final reply leaves
+ * too and comes back only as that peek, which offers to keep it up again (`keep`).
  */
 export function shownSpeech(
   s: Session,
@@ -236,7 +241,10 @@ export function shownSpeech(
   speech: StationSpeech,
   revealed: boolean,
   pointing = revealed,
-): { speech: StationSpeech; peek: boolean } | undefined {
+  { hideRead = false }: { hideRead?: boolean } = {},
+): { speech: StationSpeech; peek: boolean; keep?: boolean } | undefined {
+  if (hideRead && readReply(speech))
+    return pointing ? { speech, peek: true, keep: true } : undefined;
   if (speech.shows(revealed)) return { speech, peek: false };
   if (!pointing || !speech.peek) return;
   const last = stationSpeech(s, notices, bubbleHours, now, speech.peek);
