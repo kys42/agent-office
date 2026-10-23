@@ -299,9 +299,9 @@ export async function inspectTerminalDraft(
   const can = composer.capabilities(io);
   if (can.delivery !== 'terminal' || !can.canInspect) return null;
   const state = await composer.inspect(io);
-  if (!holdsText(state)) return null;
   // Only the reply a failed send typed: nothing to decide, the next send takes it back.
-  if (ownText(state, typedMemory(deps).held(live.process.sessionId))) return null;
+  if (claimOwn(typedMemory(deps), live.process.sessionId, state) !== undefined) return null;
+  if (!holdsText(state)) return null;
   return {
     status: 'needs-confirm',
     agent: composer.agent,
@@ -319,6 +319,22 @@ export async function inspectTerminalDraft(
  */
 const ownText = (state: ComposerState, typed: string | undefined) =>
   typed !== undefined && holdsText(state) && state.whole && sameWrapped(state.text, typed);
+
+/**
+ * The remembered reply, while this fresh look at the composer shows exactly it. Anything else
+ * (empty, other or edited text, a partial or unreadable view) ends the claim for good: the
+ * person submitted, cleared or changed it, and the same words typed later are theirs.
+ */
+function claimOwn(
+  typed: ReturnType<typeof typedMemory>,
+  key: string,
+  state: ComposerState,
+): string | undefined {
+  const reply = typed.held(key);
+  if (ownText(state, reply)) return reply;
+  typed.drop(key);
+  return undefined;
+}
 
 /** Plain typed text only: escape sequences and other control characters never reach the pty. */
 export function cleanInput(text: unknown): string {
@@ -571,8 +587,9 @@ const backupsOf: Memory = new WeakMap();
 /**
  * What this app typed into the composer and did not submit (its check failed, the state
  * changed), per session. That text is the person's own reply, not a draft of theirs: found again
- * exactly as typed, it is taken back without asking or touching the clipboard, so a failed send
- * never comes back as "the composer holds this" with the reply itself.
+ * exactly as typed by the very next look, it is not shown as a draft, and a retry of the same
+ * text takes it back without asking or touching the clipboard. Any look that does not find it
+ * exactly ends the claim (`claimOwn`).
  */
 const typedOf: Memory = new WeakMap();
 const backupMemory = (deps: TerminalDeps) => shortMemory(backupsOf, deps);
@@ -629,14 +646,16 @@ async function deliver(
   if (can.delivery !== 'terminal' || !can.canInspect)
     throw new TerminalInputError(t.unsupportedAgent(composer.agent));
   const state = await composer.inspect(io);
+  // The reply an earlier send typed and could not submit, still shown exactly as typed.
+  const reply = claimOwn(typed, key, state);
   if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(hostName(host)));
   if (!holdsText(state)) {
     if (!readyToType(state)) throw new TerminalInputError(t.notReady);
     return submit(false);
   }
-  // The reply an earlier send typed and could not submit: taken back, never asked about or saved.
-  const reply = typed.held(key);
-  const own = can.canClear && ownText(state, reply);
+  // Taken back without asking or saving only for a retry of the very same text: what goes in
+  // is exactly what is deleted, so nothing is lost even if the person typed those words.
+  const own = can.canClear && reply !== undefined && reply === text;
   // Never mixed into a draft, or into text a failed send left behind.
   if (!can.canClear || (!options.backup && !own)) throw new TerminalInputError(t.draft);
   // What an earlier, interrupted clearing of this session put on the clipboard — only while the

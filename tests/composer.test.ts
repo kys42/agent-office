@@ -709,6 +709,11 @@ test("sameWrapped: the box's wrapping is ignored, spaces inside a row are not", 
   assert.ok(sameWrapped('long wo\nrd', 'long word'));
   assert.ok(sameWrapped('def f():\nreturn 1', 'def f():\n    return 1'));
   assert.ok(sameWrapped('one\n\ntwo', 'one\n\ntwo'));
+  // A blank row is a blank line, never a soft wrap; a typed line break is not a space.
+  assert.ok(!sameWrapped('run\n\nthe tests', 'run the tests'));
+  assert.ok(!sameWrapped('one\ntwo', 'one\n\ntwo'));
+  assert.ok(!sameWrapped('one\n\n\ntwo', 'one\n\ntwo'));
+  assert.ok(sameWrapped('one\nthe rest', 'one\nthe rest'));
   assert.ok(!sameWrapped('one two', 'one two three'));
   assert.ok(!sameWrapped('one two three', 'one two'));
   assert.ok(!sameWrapped('', 'one'));

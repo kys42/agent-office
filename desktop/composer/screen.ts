@@ -105,25 +105,30 @@ const invisible = (value: string) =>
   value.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
 
 /**
- * `shown` (rows read from the box, each trimmed) is exactly `text` as the box wraps it: every row
- * is a stretch of the text, spaces inside it included, and between rows the text has only
- * whitespace (a line break, the space the wrap took, indentation) or nothing (a word split by the
- * wrap). Unlike `drawn`, a space taken out or added inside a row is a different text.
+ * `shown` (rows read from the box, each trimmed) is exactly `text` as the box wraps it. Each line
+ * of the text takes one or more rows: a blank line exactly one blank row, any other line rows
+ * that are stretches of it, spaces inside them included, separated only by the spaces a wrap took
+ * (or nothing: a word split by the wrap); its indentation is not drawn. Unlike `drawn`, a space
+ * or a blank row taken out or added is a different text.
  */
 export function sameWrapped(shown: string, text: string): boolean {
   const rows = invisible(shown)
     .split('\n')
-    .map((row) => row.trim())
-    .filter(Boolean);
-  const source = invisible(text);
-  const skip = (at: number) => {
-    while (at < source.length && /\s/.test(source[at])) at++;
-    return at;
-  };
-  let at = skip(0);
-  for (const row of rows) {
-    if (!source.startsWith(row, at)) return false;
-    at = skip(at + row.length);
+    .map((row) => row.trim());
+  let next = 0;
+  for (const line of invisible(text).split('\n')) {
+    const source = line.trim();
+    if (!source) {
+      if (rows[next++] !== '') return false;
+      continue;
+    }
+    let at = 0;
+    while (at < source.length) {
+      const row = rows[next++];
+      if (!row || !source.startsWith(row, at)) return false;
+      at += row.length;
+      while (at < source.length && /[ \t]/.test(source[at])) at++;
+    }
   }
-  return at === source.length;
+  return next === rows.length;
 }

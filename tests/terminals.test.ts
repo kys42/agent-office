@@ -1933,6 +1933,27 @@ test('A reply a failed send left in the box is its own: taken back, never shown 
     assert.equal(spaced.status === 'needs-confirm' && spaced.draft, prompt);
     assert.equal(prompt, reply.replace(' ', ''));
     assert.deepEqual(clipboard, []);
+    // Seen gone once (the person sent or cleared it), the claim ends: the same words typed
+    // again later are theirs.
+    prompt = '';
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    prompt = '';
+    assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps), null);
+    prompt = reply;
+    assert.equal((await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps))?.draft, reply);
+    const retyped = await sendToTerminal(tmuxLive(), reply, deps, { backup });
+    assert.equal(retyped.status === 'needs-confirm' && retyped.draft, reply);
+    // A different send never takes the leftover back unasked: deleting it would lose it.
+    prompt = '';
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    const other = await sendToTerminal(tmuxLive(), '다른 답글', deps, { backup });
+    assert.equal(other.status === 'needs-confirm' && other.draft, reply);
+    assert.equal(prompt, reply);
+    assert.deepEqual(clipboard, []);
   });
 });
 
