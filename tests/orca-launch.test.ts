@@ -230,3 +230,25 @@ test('the launcher uses its own environment for the agent home', async () => {
   await launcher.start(claude, async () => true);
   assert.equal(command(created), info.command);
 });
+test('Orca calls stay on this computer even when a remote Orca runtime is selected', async () => {
+  const seen: (NodeJS.ProcessEnv | undefined)[] = [];
+  const launcher = new OrcaLaunch({
+    platform: 'darwin',
+    orca: () => '/bin/orca',
+    directory: async () => true,
+    env: { PATH: '/usr/bin', ORCA_ENVIRONMENT: 'remote-box', ORCA_PAIRING_CODE: 'secret' },
+    run: async (_file, args, options) => {
+      seen.push(options?.env);
+      return args[0] === 'status'
+        ? JSON.stringify({ ok: true, result: { runtime: { reachable: true } } })
+        : JSON.stringify({ ok: true, result: {} });
+    },
+  });
+  assert.equal((await launcher.start(claude, async () => true)).launched, true);
+  assert.ok(seen.length >= 2);
+  for (const env of seen) {
+    assert.equal(env?.ORCA_ENVIRONMENT, undefined);
+    assert.equal(env?.ORCA_PAIRING_CODE, undefined);
+    assert.equal(env?.PATH, '/usr/bin');
+  }
+});

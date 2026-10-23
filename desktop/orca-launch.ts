@@ -124,6 +124,16 @@ const defaults = (orca: () => string): OrcaLaunchDeps => ({
   platform: process.platform,
 });
 
+/**
+ * The environment for Orca CLI calls about this computer: without Orca's remote-runtime
+ * selection, so an inherited pairing never routes a local launch to another machine.
+ */
+export function localOrcaEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const local = { ...env };
+  delete local.ORCA_ENVIRONMENT;
+  delete local.ORCA_PAIRING_CODE;
+  return local;
+}
 export class OrcaLaunch {
   private queue: Promise<unknown> = Promise.resolve();
   private deps: OrcaLaunchDeps;
@@ -137,7 +147,10 @@ export class OrcaLaunch {
       if (!path.isAbsolute(orca)) return false;
       try {
         const status = JSON.parse(
-          await this.deps.run(orca, ['status', '--json'], { timeout: 5000 }),
+          await this.deps.run(orca, ['status', '--json'], {
+            timeout: 5000,
+            env: localOrcaEnv(this.deps.env ?? process.env),
+          }),
         );
         return status?.ok === true && status.result?.runtime?.reachable === true;
       } catch {
@@ -173,9 +186,7 @@ export class OrcaLaunch {
         out = await this.deps.run(
           this.deps.orca(),
           orcaCreateArgs(s, this.deps.platform, this.deps.env),
-          {
-            timeout: 20000,
-          },
+          { timeout: 20000, env: localOrcaEnv(this.deps.env ?? process.env) },
         );
       } catch (error) {
         throw new Error(t.orcaRefused(orcaRefusal((error as { stdout?: string }).stdout)));
