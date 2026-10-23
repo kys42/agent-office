@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export interface PeerAgentOptions {
   runtime: string;
@@ -54,7 +55,15 @@ export function peerAgentPlist(options: PeerAgentOptions) {
 <key>StandardErrorPath</key><string>${xml(log)}</string>
 </dict></plist>\n`;
 }
-export function installPeerAgent(options: PeerAgentOptions) {
+/** bootout can return while launchd still holds the old registration. */
+export async function waitForPeerUnload(isLoaded: () => boolean, wait = () => delay(100)) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (!isLoaded()) return;
+    await wait();
+  }
+  throw new Error('Previous peer service is still unloading; try again after it stops');
+}
+export async function installPeerAgent(options: PeerAgentOptions) {
   if (process.platform !== 'darwin') throw new Error('LaunchAgent installation requires macOS');
   const plist = peerAgentPlist(options);
   for (const file of [
@@ -89,8 +98,17 @@ export function installPeerAgent(options: PeerAgentOptions) {
   } catch {
     /* New job. */
   }
-  if (loaded)
+  if (loaded) {
     execFileSync('launchctl', ['bootout', `${domain}/${options.label}`], { stdio: 'ignore' });
+    await waitForPeerUnload(() => {
+      try {
+        execFileSync('launchctl', ['print', `${domain}/${options.label}`], { stdio: 'ignore' });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
   renameSync(temporary, file);
   try {
     execFileSync('launchctl', ['bootstrap', domain, file], { stdio: 'ignore' });

@@ -21,7 +21,7 @@ async function main() {
       throw new Error('Install from the built office-peer.cjs bundle');
     console.log(
       JSON.stringify(
-        installPeerAgent({
+        await installPeerAgent({
           runtime: process.execPath,
           bundle: path.resolve(process.argv[1]),
           configDir: path.resolve(dir),
