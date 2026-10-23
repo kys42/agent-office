@@ -66,15 +66,20 @@ export const orcaTabsFor = (provider: Provider): OrcaTabAdapter | null =>
  * still attached (`orphaned` terminals have none to switch to), on this machine, and not
  * claimed by another agent. A disconnected (`connected: false`) tab still counts: it is the
  * restored or sleeping tab the person can return to. None or several: no fallback.
+ *
+ * The title must also name this conversation alone: when another known conversation of the
+ * same agent in the same folder fits the same tab (an equal Claude title, a Codex id
+ * abbreviation they share), the tab may be the other one's, so there is no fallback either.
  */
 export function matchOrcaTab(
   terminals: Iterable<Record<string, unknown>>,
   session: OrcaTabSession,
+  others: Iterable<OrcaTabSession> = [],
   adapter: OrcaTabAdapter | null = orcaTabsFor(session.provider),
 ): OrcaTab | null {
   if (!adapter || !session.cwd || !path.isAbsolute(session.cwd)) return null;
   const cwd = path.resolve(session.cwd);
-  const found: OrcaTab[] = [];
+  const found: { tab: OrcaTab; title: string }[] = [];
   for (const t of terminals) {
     if (typeof t.handle !== 'string' || !/^term_[\w-]{1,80}$/.test(t.handle)) continue;
     if (t.orphaned === true || typeof t.tabId !== 'string' || !t.tabId) continue;
@@ -87,20 +92,39 @@ export function matchOrcaTab(
     )
       continue;
     if (typeof t.title !== 'string' || !adapter.names(t.title, session)) continue;
-    found.push({ kind: 'orca', handle: t.handle, title: t.title.slice(0, 120) });
+    found.push({
+      tab: { kind: 'orca', handle: t.handle, title: t.title.slice(0, 120) },
+      title: t.title,
+    });
   }
-  return found.length === 1 ? found[0] : null;
+  if (found.length !== 1) return null;
+  const { tab, title } = found[0];
+  for (const other of others)
+    if (
+      other.nativeId !== session.nativeId &&
+      other.provider === session.provider &&
+      other.cwd &&
+      path.isAbsolute(other.cwd) &&
+      path.resolve(other.cwd) === cwd &&
+      adapter.names(title, other)
+    )
+      return null;
+  return tab;
 }
 
-/** Looks the tab up in Orca's terminal list (shared 5 s cache with the live lookup). */
+/**
+ * Looks the tab up in Orca's terminal list (shared 5 s cache with the live lookup). `others`:
+ * every other conversation the office knows, for the uniqueness check above.
+ */
 export async function findOrcaTab(
   session: OrcaTabSession,
   deps: TerminalHostDeps,
   fresh = false,
+  others: Iterable<OrcaTabSession> = [],
 ): Promise<OrcaTab | null> {
   if (!orcaTabsFor(session.provider)) return null;
   const terminals = await orcaTerminals(deps, fresh);
-  return matchOrcaTab(terminals.values(), session);
+  return matchOrcaTab(terminals.values(), session, others);
 }
 
 /** A jump-only destination: nothing is ever typed into it. */

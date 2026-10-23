@@ -9,6 +9,7 @@ import {
   findHost,
   focusTerminal,
   locateTerminal,
+  lookupTerminal,
   parseClaudeProcess,
   parseProcessEnv,
   promptHolds,
@@ -1608,5 +1609,22 @@ test('Even opted-in partial clearing rechecks changed content and never submits 
       /비우지 못해/,
     );
     assert.ok(!typedAny(calls) && !sent(calls));
+  });
+});
+
+test('lookupTerminal: none only without a live Claude; an unverified terminal is unknown', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const found = fakeDeps(dir, { env: ORCA_ENV, orcaShow: orcaShow() });
+    assert.equal((await lookupTerminal(SESSION, { deps: found.deps, fresh: true })).kind, 'found');
+    // Running in another terminal app: the conversation is somewhere, never "no terminal".
+    const elsewhere = fakeDeps(dir, {
+      table: processTable('/Applications/iTerm.app/Contents/MacOS/iTerm2'),
+    });
+    assert.equal(
+      (await lookupTerminal(SESSION, { deps: elsewhere.deps, fresh: true })).kind,
+      'unknown',
+    );
+    const gone = fakeDeps(dir, { alive: [] });
+    assert.equal((await lookupTerminal(SESSION, { deps: gone.deps, fresh: true })).kind, 'none');
   });
 });

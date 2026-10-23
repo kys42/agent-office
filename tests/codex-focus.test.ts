@@ -4,6 +4,7 @@ import {
   codexScreenPids,
   codexTitleThread,
   findCodexTerminal,
+  lookupCodexTerminal,
   resolveCodexTitleThread,
 } from '../desktop/codex-focus.js';
 import { codexTarget } from '../desktop/codex-queue.js';
@@ -382,4 +383,25 @@ test('A focusable Codex target still sends through its queue; screen labels do n
   const unavailable = codexTarget(null, false);
   assert.equal(unavailable.canSend, false);
   assert.equal(unavailable.canFocus, false);
+});
+
+test('lookupCodexTerminal tells no screen from an ambiguous or unreadable one', async () => {
+  const kind = async (options: Parameters<typeof fixture>[0], fresh = true) =>
+    (await lookupCodexTerminal(THREAD, { deps: fixture(options).deps, fresh })).kind;
+  assert.equal(await kind({}), 'found');
+  assert.equal(await kind({}, false), 'found');
+  // Every Codex screen was read and shows another thread: nothing there.
+  assert.equal(await kind({ title: `${OTHER} | task`, loaded: [OTHER] }), 'none');
+  // Could be this thread somewhere: never "none".
+  for (const options of [
+    { duplicate: true },
+    { duplicate: true, secondFailed: true },
+    { closed: true },
+    { reused: true },
+    { owner: '/bin/screen' },
+    { stat: 'T 4242 4242' },
+    { title: 'zsh' },
+    { failed: true },
+  ])
+    assert.equal(await kind(options), 'unknown', JSON.stringify(options));
 });

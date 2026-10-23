@@ -144,3 +144,33 @@ test('Orca not running: no fallback, no error', async () => {
   };
   assert.equal(await findOrcaTab(claude, deps), null);
 });
+
+test('a tab that also fits another known conversation in the folder is not this one’s', () => {
+  const twin = { ...claude, nativeId: '4f1c2a3b-0000-4000-8000-000000000002' };
+  assert.equal(matchOrcaTab([row()], claude, [claude, twin]), null);
+  // Others elsewhere, of another agent, or with another title do not matter; neither does itself.
+  assert.ok(
+    matchOrcaTab([row()], claude, [
+      claude,
+      { ...twin, cwd: '/projects/other' },
+      { ...twin, provider: 'codex' },
+      { ...twin, title: '다른 일' },
+      { ...twin, nativeTitle: false },
+    ]),
+  );
+  // Codex: an abbreviation two known threads share names neither.
+  const shared = `${CODEX_ID.slice(0, 29)}... | agent`;
+  const sibling = { ...codex, nativeId: `${CODEX_ID.slice(0, 29)}9999999` };
+  assert.equal(matchOrcaTab([row({ title: shared })], codex, [sibling]), null);
+  assert.ok(matchOrcaTab([row({ title: `${CODEX_ID} | agent` })], codex, [sibling]));
+});
+
+test('findOrcaTab applies the same uniqueness check', async () => {
+  const deps: TerminalHostDeps = {
+    bin: (name) => `/bin/${name}`,
+    run: async () => JSON.stringify({ ok: true, result: { terminals: [row()] } }),
+  };
+  const twin = { ...claude, nativeId: '4f1c2a3b-0000-4000-8000-000000000002' };
+  assert.equal(await findOrcaTab(claude, deps, false, [twin]), null);
+  assert.ok(await findOrcaTab(claude, deps, false, [claude]));
+});

@@ -6,9 +6,9 @@ import {
   hostName,
   TerminalFocusError,
 } from './terminal-host.js';
-import type { TerminalHost } from './terminal-host.js';
+import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
-export type { TerminalHost, ProcessEnv, ProcessView } from './terminal-host.js';
+export type { TerminalHost, ProcessEnv, ProcessView, TerminalLookup } from './terminal-host.js';
 import { existsSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -131,6 +131,22 @@ export function locateTerminal(
     );
     return host ? { process: proc, host } : null;
   });
+}
+
+/**
+ * `locateTerminal` with its null split: `none` only when no live Claude process holds the
+ * session. A live one whose terminal could not be verified (another terminal app, an unverified
+ * tmux pane) is `unknown`, so no other tab is ever offered in its place.
+ */
+export async function lookupTerminal(
+  sessionId: string,
+  options: { fresh?: boolean; deps?: TerminalDeps } = {},
+): Promise<TerminalLookup<LiveTerminal>> {
+  const deps = options.deps ?? defaultTerminalDeps();
+  const terminal = await locateTerminal(sessionId, { ...options, deps });
+  if (terminal) return { kind: 'found', terminal };
+  const proc = await findClaudeProcess(sessionId, deps).catch(() => undefined);
+  return proc === null ? { kind: 'none' } : { kind: 'unknown' };
 }
 
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */

@@ -154,6 +154,13 @@ export async function findHost(
   return null;
 }
 
+/**
+ * A terminal lookup that tells "nothing there" from "could not tell": only `none` lets a weaker
+ * fallback (the Orca tab by title, desktop/orca-tabs.ts) stand in.
+ */
+export type TerminalLookup<T> =
+  { kind: 'found'; terminal: T } | { kind: 'none' } | { kind: 'unknown' };
+
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 
 /** Public screen location; private routing addresses stay in the main process. */
