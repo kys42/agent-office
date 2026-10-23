@@ -379,7 +379,7 @@ test('peer reconnects after network failure, replaces restarted epochs and clear
     assert.equal(calls, 1, 'start is idempotent');
     failure = new PeerError(0, 'Peer connection unavailable');
     await changed(manager, () => t.mock.timers.tick(5000));
-    assert.equal(manager.state().peers[0].state, 'offline');
+    assert.equal(manager.state().peers[0].state, 'reconnecting');
     assert.equal(manager.sessions().length, 1);
     assert.equal(manager.sessions()[0].remote?.stale, true);
     failure = undefined;
@@ -495,4 +495,38 @@ test('unchanged peer heartbeats do not shorten a loaded full conversation messag
   const heartbeat = { ...summary, remote: { ...summary.remote!, receivedAt: Date.now() + 5000 } };
   assert.equal(heartbeat.revision, full.revision);
   assert.equal(mergeLive(loaded, heartbeat).session.events[0].text.length, 5000);
+});
+
+test('reconnecting is bounded and never permits sends with stale observations', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1800000000000 });
+  const dir = temp(),
+    p = peer();
+  p.sendToken = 's'.repeat(64);
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  let fail = false;
+  const manager = new PeerManager(dir, async () => {
+    if (fail) throw new PeerError(408, 'Peer request timed out');
+    return packet(p);
+  });
+  try {
+    await changed(manager, () => manager.start());
+    const id = manager.sessions()[0].id;
+    fail = true;
+    await changed(manager, () => t.mock.timers.tick(5000));
+    assert.equal(manager.state().peers[0].state, 'reconnecting');
+    assert.equal(manager.sessions()[0].remote?.stale, true);
+    const targets = await manager.targets([id]);
+    assert.ok(!targets[id]);
+    await changed(manager, () => t.mock.timers.tick(5000));
+    assert.equal(manager.state().peers[0].state, 'reconnecting');
+    await changed(manager, () => t.mock.timers.tick(10000));
+    assert.equal(manager.state().peers[0].state, 'offline');
+    fail = false;
+    await changed(manager, () => t.mock.timers.tick(20000));
+    assert.equal(manager.state().peers[0].state, 'connected');
+    assert.equal(manager.sessions()[0].remote?.stale, false);
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

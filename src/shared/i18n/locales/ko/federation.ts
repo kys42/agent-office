@@ -38,6 +38,7 @@ export const federation = {
   empty: '연결된 사무실이 없습니다.',
   connected: '연결됨',
   connecting: '연결 중',
+  reconnecting: '다시 연결 중',
   offline: '연결 끊김',
   rejected: '접근 거부',
   disabled: '베타가 꺼져 있습니다. 원격 연결을 실행하지 않습니다.',

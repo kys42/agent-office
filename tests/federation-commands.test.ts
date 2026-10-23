@@ -15,7 +15,11 @@ import { PeerManager } from '../server/federation/peers.js';
 import type { PeerInput } from '../src/shared/federation.js';
 import type { PeerSender } from '../server/federation/sender.js';
 
-async function setup(remoteCodex = false) {
+async function setup(
+  remoteCodex = false,
+  origin: 'unknown' | 'interactive' | 'scheduled' | 'internal' = 'unknown',
+  count = 1,
+) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'office-commands-'));
   const data = path.join(root, 'data'),
     configDir = path.join(root, 'config');
@@ -27,9 +31,13 @@ async function setup(remoteCodex = false) {
     s.id = `codex:${s.nativeId}`;
     s.provider = 'codex';
     s.relation = { kind: 'root', parentNativeId: null, source: 'fixture' };
-    s.origin = { kind: 'interactive', source: 'fixture' };
+    // Existing exporters classify ordinary Codex Desktop records as unknown.
+    s.origin = { kind: origin, source: 'fixture' };
   }
-  writer.upsert([s], s.provider);
+  const sessions = Array.from({ length: count }, (_, i) =>
+    i === 0 ? s : { ...s, id: `${s.id}-${i}`, nativeId: `${s.nativeId}-${i}` },
+  );
+  writer.upsert(sessions, s.provider);
   writer.close();
   const original = readFileSync(path.join(data, 'office.sqlite'));
   execFileSync(
@@ -108,6 +116,7 @@ async function setup(remoteCodex = false) {
     );
   return {
     root,
+    ids: sessions.map((session) => wireId(session.id)),
     session: s,
     sender,
     config,
@@ -438,6 +447,81 @@ test('Relay never falls back to native send after an uncertain local dispatch, i
     assert.deepEqual(f.sent, []);
   } finally {
     manager.close();
+    await f.close();
+  }
+});
+
+for (const origin of ['scheduled', 'internal'] as const) {
+  test(`Local relay excludes ${origin} records before owner lookup`, async () => {
+    const f = await setup(true, origin);
+    let lookedUp = 0;
+    const host = 'ssh:fixture';
+    const manager = new PeerManager(path.join(f.root, 'receiver'), undefined, {
+      hosts: () => [{ id: host, label: host }],
+      resolve: () => f.session.nativeId,
+      available: async () => {
+        lookedUp++;
+        return true;
+      },
+      send: async () => {
+        throw Error('must not send');
+      },
+    });
+    try {
+      manager.command({ action: 'enable', enabled: true });
+      manager.command({
+        action: 'add',
+        peer: { ...f.peer, token: f.config.token, sendToken: f.config.sendToken },
+      });
+      manager.command({
+        action: 'update',
+        officeId: f.peer.officeId,
+        label: 'Mini',
+        tags: [],
+        projects: {},
+        codexHostId: host,
+      });
+      if (!manager.sessions().length)
+        await new Promise<void>((r) => manager.once('change', () => r()));
+      const id = manager.sessions()[0].id;
+      assert.equal((await manager.targets([id]))[id], null);
+      await assert.rejects(manager.send(id, 'must not send', randomUUID()));
+      assert.equal(lookedUp, 0);
+    } finally {
+      manager.close();
+      await f.close();
+    }
+  });
+}
+
+test('twenty target lookups read the shared view twice and recheck revocation after lookup', async (t) => {
+  const f = await setup(false, 'unknown', 20);
+  const original = OfficeStore.prototype.list;
+  let reads = 0;
+  t.mock.method(
+    OfficeStore.prototype,
+    'list',
+    function (this: OfficeStore, ...args: Parameters<typeof original>) {
+      reads++;
+      return original.apply(this, args);
+    },
+  );
+  const lookup = () =>
+    peerRequest(f.peer, '/office/v1/commands/targets', undefined, { body: { ids: f.ids } });
+  try {
+    const result = targetResponseSchema.parse(await lookup());
+    assert.equal(Object.keys(result.targets).length, 20);
+    assert.equal(reads, 2, 'not two full database scans per target');
+    const target = f.sender.target;
+    f.sender.target = async (session) => {
+      const result = await target(session);
+      f.config.projects = [];
+      f.save();
+      return result;
+    };
+    await assert.rejects(lookup(), (e) => e instanceof PeerError && e.code === 404);
+    assert.deepEqual(f.sent, []);
+  } finally {
     await f.close();
   }
 });

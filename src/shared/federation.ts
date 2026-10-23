@@ -28,7 +28,7 @@ export interface FederationState {
   error?: string | null;
   peers: (Omit<PeerInput, 'token' | 'sendToken'> & {
     canSend: boolean;
-    state: 'connecting' | 'connected' | 'offline' | 'rejected';
+    state: 'connecting' | 'connected' | 'reconnecting' | 'offline' | 'rejected';
     count: number;
     receivedAt: number | null;
     error: string | null;

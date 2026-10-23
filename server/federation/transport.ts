@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto';
 import type { PeerInput } from '../../src/shared/federation.js';
 import { MAX_BYTES } from './protocol.js';
 
+export const PEER_READ_TIMEOUT_MS = 15000;
+
 export class PeerError extends Error {
   constructor(
     readonly code: number,
@@ -20,6 +22,7 @@ export function peerRequest(
   options: { body?: unknown; timeoutMs?: number } = {},
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const timeoutMs = options.timeoutMs ?? PEER_READ_TIMEOUT_MS;
     const agent = new https.Agent({ keepAlive: false, maxSockets: 1 });
     agent.createConnection = (options, callback) => {
       const socket = tls.connect({
@@ -29,7 +32,9 @@ export function peerRequest(
         rejectUnauthorized: false,
         minVersion: 'TLSv1.2',
       });
-      socket.setTimeout(5000, () => socket.destroy(new PeerError(408, 'TLS handshake timed out')));
+      socket.setTimeout(timeoutMs, () =>
+        socket.destroy(new PeerError(408, 'TLS handshake timed out')),
+      );
       let handedOff = false;
       socket.once('error', (e) => {
         if (!handedOff) {
@@ -94,7 +99,7 @@ export function peerRequest(
     );
     const timer = setTimeout(
       () => request.destroy(new PeerError(408, 'Peer request timed out')),
-      options.timeoutMs ?? 5000,
+      timeoutMs,
     );
     request.once('error', (e) =>
       reject(e instanceof PeerError ? e : new PeerError(0, 'Peer connection unavailable')),
