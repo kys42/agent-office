@@ -609,13 +609,13 @@
   display: none;
 }
 .settings-panel-head h2 {
-  font-size: 18px;
+  font-size: calc(18px * var(--read-scale));
   font-weight: 680;
   letter-spacing: -0.02em;
 }
 .settings-panel-head p {
   margin-top: 3px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   color: var(--text-3);
 }
 /* Top tabs: the settings window always, the page when it is narrow (phones). */
@@ -722,7 +722,7 @@ body.is-windows .settings-window-bar {
 }
 .settings-section > h2,
 .settings-section .section-title h2 {
-  font-size: 14px;
+  font-size: calc(14px * var(--read-scale));
   font-weight: 650;
   letter-spacing: -0.015em;
 }
@@ -734,7 +734,7 @@ body.is-windows .settings-window-bar {
 }
 .settings-section > p {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   line-height: 1.6;
   color: var(--text-3);
 }
@@ -760,12 +760,12 @@ body.is-windows .settings-window-bar {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--read-scale));
   font-weight: 650;
 }
 .connector-title h3 em {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   font-style: normal;
   font-weight: 400;
   color: var(--text-4);
@@ -774,7 +774,7 @@ body.is-windows .settings-window-bar {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
 }
 .connection-state::before {
@@ -808,7 +808,7 @@ body.is-windows .settings-window-bar {
   padding: 7px 10px;
   border-radius: 8px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
   background: var(--bg-0);
   overflow: hidden;
@@ -817,13 +817,13 @@ body.is-windows .settings-window-bar {
 }
 .connector-card p {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-2);
 }
 .connector-card small {
   display: block;
   margin-top: 3px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-4);
 }
 .setting-row {
@@ -848,12 +848,38 @@ body.is-windows .settings-window-bar {
 }
 .setting-row b {
   display: block;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--read-scale));
   font-weight: 600;
 }
 .setting-row p {
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-3);
+}
+/* #246: text size and font pick from a segmented control; a narrow window wraps it under. */
+.text-choice-row {
+  flex-wrap: wrap;
+}
+.setting-row > .segmented {
+  flex: 0 0 auto;
+  min-width: auto;
+}
+.text-choice-row > div:not(.segmented) {
+  flex-basis: 220px;
+}
+.text-preview {
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-3);
+}
+.text-preview figcaption {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.text-preview p {
+  margin: 2px 0 0;
+  font-size: calc(12.5px * var(--read-scale));
+  line-height: 1.5;
 }
 .setting-row select:disabled {
   opacity: 0.4;
@@ -867,7 +893,7 @@ body.is-windows .settings-window-bar {
   border: 1px solid var(--control-line);
   background: var(--control);
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   cursor: pointer;
 }
 .setting-action:hover {
@@ -888,7 +914,7 @@ body.is-windows .settings-window-bar {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-3);
 }
 .lifecycle-settings select {
@@ -903,7 +929,7 @@ body.is-windows .settings-window-bar {
   padding: 10px 12px;
   border-radius: 10px;
   font-family: var(--font-mono);
-  font-size: 11.5px !important;
+  font-size: calc(11.5px * var(--read-scale)) !important;
   color: var(--accent) !important;
   background: var(--accent-soft);
   border: 1px solid var(--accent-line);
@@ -911,7 +937,7 @@ body.is-windows .settings-window-bar {
 .helper-lifecycle-note,
 .notify-history-note {
   margin-top: 10px !important;
-  font-size: 11.5px !important;
+  font-size: calc(11.5px * var(--read-scale)) !important;
   line-height: 1.7 !important;
 }
 .record-limit {
@@ -931,7 +957,7 @@ body.is-windows .settings-window-bar {
   height: 26px;
   padding: 0 10px;
   border-radius: 99px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--read-scale));
   color: var(--text-2);
   background: var(--bg-2);
   border: 1px solid var(--line-2);
@@ -956,13 +982,13 @@ body.is-windows .settings-window-bar {
   border: 1px solid rgba(95, 214, 155, 0.18);
 }
 .local-promise h3 {
-  font-size: 14px;
+  font-size: calc(14px * var(--read-scale));
   font-weight: 650;
   color: var(--text);
 }
 .local-promise p {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   line-height: 1.65;
   color: var(--text-2);
 }
@@ -975,7 +1001,7 @@ body.is-windows .settings-window-bar {
 }
 .mcp-card code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   padding: 1px 5px;
   border-radius: 4px;
   background: var(--bg-4);
@@ -983,7 +1009,7 @@ body.is-windows .settings-window-bar {
 .mcp-card small {
   display: block;
   margin-top: 10px;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   color: var(--text-4);
 }
 
@@ -1068,7 +1094,7 @@ body.is-windows .settings-window-bar {
 .zone-list-head b em {
   font-style: normal;
   font-weight: 500;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   color: var(--text-3);
 }
 
@@ -1087,7 +1113,7 @@ body.is-windows .settings-window-bar {
 }
 .remote-source {
   padding: 10px 16px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   line-height: 1.6;
   border-bottom: 1px solid var(--border);
 }

@@ -37,6 +37,8 @@ import {
   Users,
   Layers,
   Clock,
+  Type,
+  CaseSensitive,
   type LucideIcon,
 } from 'lucide-react';
 import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
@@ -58,6 +60,7 @@ import {
   READ_DWELL_CHOICES,
   viewPrefs,
 } from '../shared/view-prefs';
+import { READING_FONT_CHOICES, TEXT_SIZE_CHOICES, textPrefs } from '../shared/text-prefs';
 import {
   SETTINGS_CATEGORIES,
   settingsAnchor,
@@ -143,6 +146,7 @@ export function Settings({
   const s = t.settings;
   const p = snapshot.preferences;
   const view = viewPrefs(p);
+  const text = textPrefs(p);
   const read = cardReadSettings(p);
   const dwell = read.dwellMs / 1000;
   const retainMinutes = Math.round(view.helperUnfinishedMs / 60_000);
@@ -458,6 +462,52 @@ export function Settings({
             onChange={() => onPrefs({ reducedMotion: !p.reducedMotion })}
           />
         </div>
+      </section>
+      {/* #246: reading text only; the preview line follows the choice live, like every window. */}
+      <section className="settings-section" data-guide-section="text" tabIndex={-1}>
+        <h2>{s.text.title}</h2>
+        <div className="setting-row text-choice-row">
+          <Type size={18} />
+          <div>
+            <b>{s.text.size}</b>
+            <p>{s.text.sizeHint}</p>
+          </div>
+          <div className="segmented" role="group" aria-label={s.text.size}>
+            {TEXT_SIZE_CHOICES.map((choice) => (
+              <button
+                type="button"
+                key={choice}
+                aria-pressed={text.size === choice}
+                onClick={() => onPrefs({ textSize: choice })}
+              >
+                {s.text.sizes[choice]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="setting-row text-choice-row">
+          <CaseSensitive size={18} />
+          <div>
+            <b>{s.text.font}</b>
+            <p>{s.text.fontHint}</p>
+          </div>
+          <div className="segmented" role="group" aria-label={s.text.font}>
+            {READING_FONT_CHOICES.map((choice) => (
+              <button
+                type="button"
+                key={choice}
+                aria-pressed={text.font === choice}
+                onClick={() => onPrefs({ readingFont: choice })}
+              >
+                {s.text.fonts[choice]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <figure className="text-preview">
+          <figcaption>{s.text.preview}</figcaption>
+          <p>{s.text.previewText}</p>
+        </figure>
       </section>
       {/* The floating dock is the desktop app's; a browser has no dock window to set up. */}
       {isDesktop && (

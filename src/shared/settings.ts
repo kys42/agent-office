@@ -22,6 +22,7 @@ const SECTION_CATEGORY = {
   reading: 'general',
   appearance: 'appearance',
   motion: 'appearance',
+  text: 'appearance',
   dock: 'appearance',
   panels: 'appearance',
   office: 'office',

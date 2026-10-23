@@ -59,6 +59,11 @@
     'Pretendard Variable', Pretendard, system-ui, sans-serif;
   --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', SFMono-Regular, Menlo, monospace;
   --font-pixel: 'Galmuri11', 'Galmuri9', var(--font-ui);
+  /* #246: the person's text size and font for reading text (conversation, news, bubbles,
+     lists, settings). useReadingText sets both on each window's root; pixel lettering, the
+     scene and window sizes never read them. */
+  --read-scale: 1;
+  --font-read: var(--font-ui);
   --r-sm: 5px;
   --r-md: 7px;
   --r-lg: 10px;
@@ -153,6 +158,23 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow: hidden;
+}
+/* Reading text follows the chosen font (#246); code and pixel lettering keep their own. */
+.roster,
+.news-inbox,
+.news-list,
+.card-title,
+.card-info,
+.card-composer,
+.conversation,
+.request-card,
+.inspector-bookmarks,
+.speech-text,
+.speech-detail,
+.speech-request-text,
+.quick-reply,
+.settings-page {
+  font-family: var(--font-read);
 }
 button,
 input,

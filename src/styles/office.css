@@ -1224,7 +1224,7 @@
   display: block;
   max-height: calc(var(--speech-lines, 2) * 1lh);
   overflow: hidden;
-  font-size: 11px;
+  font-size: calc(11px * var(--read-scale));
   font-weight: 600;
   line-height: 1.36;
   letter-spacing: -0.01em;
@@ -1370,7 +1370,7 @@
   max-height: 120px;
   resize: none;
   padding: 6px 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--read-scale));
   line-height: 1.45;
   color: var(--text);
   background: var(--bg-2);
@@ -1393,7 +1393,7 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
 }
 .quick-reply-close,
@@ -1420,7 +1420,7 @@
 .quick-reply-error {
   display: block;
   margin-top: 5px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--read-scale));
   line-height: 1.4;
   color: var(--st-call);
 }

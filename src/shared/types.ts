@@ -473,7 +473,14 @@ export interface Preferences {
    * Codex with `--dangerously-bypass-approvals-and-sandbox`. Missing: off.
    */
   tmuxSkipPermissions?: boolean;
+  /** Size of reading text (#246) in every window. Missing: `normal`. */
+  textSize?: TextSize;
+  /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
+  readingFont?: ReadingFont;
 }
+export type TextSize = 'small' | 'normal' | 'large' | 'larger';
+/** `system`: the app's stack from before (system font, then Pretendard). */
+export type ReadingFont = 'system' | 'pretendard' | 'mono';
 /** `always`: solid. `subdued`: faint until hovered. `hover`: hidden until the pointer nears it. */
 export type DockPillVisibility = 'always' | 'subdued' | 'hover';
 /** Which news raises an OS notification, and whether it plays a sound. */
