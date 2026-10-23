@@ -20,6 +20,8 @@ async function fixture(
   options: {
     absent?: boolean;
     mode?: string;
+    threadSource?: string;
+    resumeState?: string;
     lost?: boolean;
     malformedAck?: boolean;
     wrongOwner?: boolean;
@@ -80,9 +82,9 @@ async function fixture(
         } else if (req.method === 'thread-follower-read-model-settings') {
           result = {
             settings: {
-              resumeState: 'resumed',
+              resumeState: options.resumeState ?? 'resumed',
               mode: options.mode ?? 'default',
-              threadSource: 'user',
+              threadSource: options.threadSource ?? 'user',
             },
           };
         } else if (req.method === 'thread-follower-start-turn') {
@@ -183,6 +185,8 @@ test('Desktop discovery is read-only; sending targets the fresh owner and inheri
 for (const option of [
   { absent: true },
   { mode: 'durable' },
+  { threadSource: 'subagent' },
+  { resumeState: 'unresumed' },
   { wrongOwner: true },
   { oversized: true },
 ]) {

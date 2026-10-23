@@ -285,7 +285,17 @@ export class PeerManager extends EventEmitter {
         if (!current()) return;
         h.failures++;
         const denied = e instanceof PeerError && [401, 403, 404].includes(e.code);
-        h.state = denied ? 'rejected' : 'offline';
+        const transient =
+          e instanceof PeerError && [0, 408, 429, 500, 502, 503, 504].includes(e.code);
+        h.state = denied
+          ? 'rejected'
+          : transient &&
+              h.snapshot &&
+              h.receivedAt &&
+              h.failures <= 2 &&
+              Date.now() - h.receivedAt < 45000
+            ? 'reconnecting'
+            : 'offline';
         h.error = e instanceof PeerError ? e.message : 'Connection or protocol validation failed';
         // Fail closed on invalid responses too; never keep displaying a revoked scope.
         if (
@@ -370,7 +380,7 @@ export class PeerManager extends EventEmitter {
                 if (
                   session?.provider !== 'codex' ||
                   !['root', 'fork'].includes(session.relation) ||
-                  session.origin !== 'interactive'
+                  !['interactive', 'unknown'].includes(session.origin)
                 )
                   return;
                 const thread = this.relay.resolve(peer.codexHostId, ref.id);

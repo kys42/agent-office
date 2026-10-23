@@ -38,6 +38,7 @@ export const federation = {
   empty: 'No connected offices.',
   connected: 'Connected',
   connecting: 'Connecting',
+  reconnecting: 'Reconnecting',
   offline: 'Offline',
   rejected: 'Access rejected',
   disabled: 'Beta is off. No remote connections are running.',

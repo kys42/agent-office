@@ -72,15 +72,23 @@ export class PeerCommands {
     }
     return c;
   }
-  private session(req: IncomingMessage, id: string) {
+  /** Read the shared view once per batch, before and after asynchronous owner lookup. */
+  private sessions(req: IncomingMessage, ids: string[]) {
     const c = this.authorize(req);
-    const s = this.store
-      .list()
-      .find(
-        (s) => wireId(s.id) === id && (c.projects.includes('*') || c.projects.includes(s.project)),
-      );
-    if (!s) throw new CommandError(404);
-    return s;
+    const shared = new Map(
+      this.store
+        .list()
+        .filter((s) => c.projects.includes('*') || c.projects.includes(s.project))
+        .map((s) => [wireId(s.id), s]),
+    );
+    return ids.map((id) => {
+      const s = shared.get(id);
+      if (!s) throw new CommandError(404);
+      return s;
+    });
+  }
+  private session(req: IncomingMessage, id: string) {
+    return this.sessions(req, [id])[0];
   }
   private journal() {
     if (!this.db) {
@@ -110,12 +118,12 @@ export class PeerCommands {
           .object({ ids: z.array(idSchema).max(20) })
           .strict()
           .parse(value);
+        const sessions = this.sessions(req, ids);
         const targets = Object.fromEntries(
           await Promise.all(
-            ids.map(async (id) => {
-              const s = this.session(req, id);
+            sessions.map(async (s, index) => {
+              const id = ids[index];
               const t = await this.sender.target(s);
-              this.session(req, id);
               return [
                 id,
                 t
@@ -130,6 +138,7 @@ export class PeerCommands {
             }),
           ),
         );
+        this.sessions(req, ids); // Recheck revocation and visibility after every target resolves.
         reply(200, { officeId: config.officeId, epoch: this.epoch, targets });
         return;
       }

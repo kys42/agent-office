@@ -1,3 +1,4 @@
+import { installPeerAgent } from './launch-agent.js';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes, randomUUID, X509Certificate, createHash } from 'node:crypto';
@@ -13,6 +14,24 @@ const dir = args.includes('--config-dir')
   : path.join(defaultDataDir(), 'federation-beta');
 const dataDir = args.includes('--data-dir') ? option('--data-dir') : defaultDataDir();
 async function main() {
+  if (args.includes('--install-launch-agent')) {
+    if (!args.includes('--config-dir') || !args.includes('--data-dir'))
+      throw new Error('Specify the existing --config-dir and --data-dir explicitly');
+    if (!process.argv[1]?.endsWith('.cjs'))
+      throw new Error('Install from the built office-peer.cjs bundle');
+    console.log(
+      JSON.stringify(
+        installPeerAgent({
+          runtime: process.execPath,
+          bundle: path.resolve(process.argv[1]),
+          configDir: path.resolve(dir),
+          dataDir: path.resolve(dataDir),
+          label: args.includes('--label') ? option('--label') : 'dev.kys.agentoffice.peer',
+        }),
+      ),
+    );
+    return;
+  }
   if (args.includes('--init')) {
     if (!args.includes('--host')) throw new Error('--host is required (choose a LAN interface)');
     if (existsSync(path.join(dir, 'export.json')))

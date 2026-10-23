@@ -32,9 +32,9 @@ flowchart LR
 
 TLS 자체 서명 인증서의 SHA-256 지문과 256-bit bearer token을 `connection.json`으로 전달한다. 이 파일은 비밀이며 SSH/SCP 등 이미 신뢰한 경로로 전달한다. 인증서 지문과 유효기간을 확인한 **후** HTTP 토큰을 보낸다. 자동 발견·TOFU·브라우저 CORS·리디렉션은 없다. 인증서 변경 시 파일을 새로 전달하고 연결을 다시 등록한다.
 
-설정 디렉터리는 0700, token/키 파일은 0600이다. 송신기는 매 요청마다 설정과 공유 범위를 다시 읽는다. `export.json`의 `enabled: false`, token 교체, 프로젝트 축소가 다음 요청부터 적용된다. 클라이언트의 권한/인증서/프로토콜 오류는 해당 캐시를 제거한다. 일반 네트워크 장애는 마지막 정상 관측에 연결 끊김을 표시하고 최대 24시간 유지하며, 일하는 중/주의 필요 집계에서 제외한다.
+설정 디렉터리는 0700, token/키 파일은 0600이다. 송신기는 매 요청마다 설정과 공유 범위를 다시 읽는다. `export.json`의 `enabled: false`, token 교체, 프로젝트 축소가 다음 요청부터 적용된다. 클라이언트의 권한/인증서/프로토콜 오류는 해당 캐시를 제거한다. 일반 네트워크 장애는 마지막 정상 관측 후 45초 이내의 첫 두 번 실패를 **다시 연결 중**으로 표시한다. 그 뒤에는 연결 끊김으로 바꾸며 마지막 관측은 최대 24시간 유지한다. 재연결 중에도 관측은 stale이며 전송과 일하는 중/주의 필요 집계에서 제외한다. 권한·인증서·프로토콜 오류에는 유예를 적용하지 않는다.
 
-조회는 연결당 5초 간격이고 실패 시 최대 60초까지 늘린다. 요청 제한 5초, 응답 16 MiB, Office당 900 세션, 최대 5개 연결이다. `epoch/version`이 같으면 변경 없음 응답, 변경되면 전체 bounded snapshot을 받는다. 원격 delta 전송은 아직 없다. 기존 데스크톱 snapshot/patch 구독은 그대로 쓴다.
+조회는 연결당 5초 간격이고 실패 시 최대 60초까지 늘린다. 조회 요청/TLS 연결 제한 15초, 응답 16 MiB, Office당 900 세션, 최대 5개 연결이다. `epoch/version`이 같으면 변경 없음 응답, 변경되면 전체 bounded snapshot을 받는다. 원격 delta 전송은 아직 없다. 기존 데스크톱 snapshot/patch 구독은 그대로 쓴다.
 
 수신 시각은 네트워크 조회 성공 시각이다. 원격 수집기가 살아 있다는 heartbeat가 아니며 기존 관측 시각·상태 파생 규칙을 함께 해석한다. `paused`는 stale로 표시한다. 상세는 최근 최대 180개, 이벤트당 64,000자이고 잘린 경우 partial이다. 이전 대화 페이지는 지원하지 않는다.
 
@@ -66,15 +66,30 @@ npm run start:beta
 
 중지는 송신기 foreground의 Ctrl+C 또는 확인한 송신 프로세스의 SIGTERM이다. 수신 설정의 베타 끄기는 원격 캐시와 네트워크만 중지한다. 연결 제거는 저장한 token도 제거한다. 즉시 접근 권한을 회수하려면 송신 설정을 비활성화하거나 token을 회전한다. 인증서/호스트/포트 변경은 송신기 재시작이 필요하다. 로그·PR·스크린샷에 connection.json을 노출하지 않는다.
 
+## macOS 로그인 자동 시작
+
+이미 설정된 송신기를 사용자 LaunchAgent로 등록할 수 있다. 로그인한 해당 사용자의 GUI 세션에서, **이동하지 않을 운영 위치의 번들**과 Node 24+로 실행한다. `--config-dir`, `--data-dir`는 기존 경로를 반드시 명시한다. 앱 내부 Electron 바이너리를 Node 런타임으로 쓸 때는 `ELECTRON_RUN_AS_NODE=1`로 실행한다.
+
+```sh
+node /persistent/office-peer.cjs --install-launch-agent \
+  --config-dir /private/path/office-peer \
+  --data-dir "/path/to/existing/Agent Office" \
+  --label dev.kys.agentoffice.peer
+```
+
+`~/Library/LaunchAgents/<label>.plist`에 RunAtLoad/KeepAlive와 요청을 처리하는 Interactive 프로세스 유형을 설정한다. token/인증서는 인수에 복사하지 않고 기존 설정을 계속 읽는다. 기존 같은 label 서비스는 재등록하며 이전 plist는 `.previous`에 보관한다. 설치/재등록은 해당 송신기를 재시작하므로 전송 처리 중에는 수행하지 않는다. 다른 label의 송신기가 같은 포트에 이미 실행 중이면 실제 프로세스를 확인하고 먼저 종료한다. 로그는 config 디렉터리의 `peer-service.log`다.
+
+지속 중지는 `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`로 하고, 이후 로그인에도 켜지지 않게 하려면 plist를 LaunchAgents 밖으로 옮긴다. 재시작은 `launchctl kickstart -k gui/$(id -u)/<label>`이다. 이는 송신기 자동 시작이며 원본 Office 수집기는 별도로 실행돼 있어야 한다. 로그아웃·컴퓨터 절전·LAN 주소 변경 시 가용성을 보장하지 않는다. 기존 개인 DB/인증 초기화나 시스템 전체 LaunchDaemon 등록은 하지 않는다.
+
 ## 원격 채팅 계약
 
 - 조회와 전송 자격증명은 다르다. 기존 읽기 연결은 계속 조회만 가능하며 UI/IPC 응답에 어느 token도 반환하지 않는다. 송신기의 `allowSend`, `sendToken`, 기존 앱의 `terminal-send.json`, 공유 프로젝트 범위가 모두 허용해야 한다. 수신 앱의 기존 터미널 보내기 설정도 적용한다.
-- `targets`는 공유된 해시 ID 최대 20개의 현재 전송 가능 여부만 반환한다. 로컬 경로·터미널 핸들·프로세스 ID는 전송하지 않는다. `send`는 대상 ID, 메시지, 서버 epoch, requestId만 받는다. 실행 명령/대상 경로/임의 RPC는 받지 않는다.
+- `targets`는 공유된 해시 ID 최대 20개의 현재 전송 가능 여부만 반환한다. 대상별 전체 DB 반복 읽기를 피하도록 일괄 조회 전후에 각각 한 번씩 현재 공유 목록을 읽는다. 비동기 owner 조회가 끝난 뒤 권한과 모든 대상의 현재 공유 범위를 다시 확인한다. 로컬 경로·터미널 핸들·프로세스 ID는 전송하지 않는다. `send`는 대상 ID, 메시지, 서버 epoch, requestId만 받는다. 실행 명령/대상 경로/임의 RPC는 받지 않는다.
 - 송신기에서 현재 대상을 다시 찾고 권한을 재확인한 뒤 공통 `sendToCodex` 또는 `sendToTerminal`을 호출한다. Codex CLI queue, 이미 열린 Codex Desktop 사용자 대화, Claude의 검증된 Orca/tmux 대상이 가능하다. Desktop은 전송 직전 owner 조회 후 다시 권한을 확인한다. exec, OpenClaw, owner 없는 세션은 새로 열거나 우회 전송하지 않는다. Desktop의 비공개 IPC 호환 한계는 [전송 문서](TERMINAL.md#codex-desktop-대화-전송)를 따른다. 기존 v1 wire의 kind=codex/status=desktop으로 구분하여 새 wire 필드는 추가하지 않는다. 기존 입력 덮어쓰기와 승인/질문 응답은 미지원이다.
 - 채팅 입력창에 목적지 컴퓨터를 표시한다. 연결 끊김/일시정지/권한 없음/전송 불가 상태에서 보내기를 막고, 서버에서도 매번 검증한다. 네이티브 호출이 이미 시작된 뒤의 연결 해제는 취소나 미전송을 보장하지 않는다.
 - `config/commands.sqlite`에 requestId·본문 해시·시도 상태만 별도로 기록한다. 사용자 메시지나 원본 DB를 저장/수정하지 않는다. dispatch 전에 pending을 durable 저장하며 재시작 후에도 같은 ID는 다시 실행하지 않는다. pending/네이티브 실패/응답 유실은 미확인으로 안내하고 자동 재전송하지 않는다. 새 요청은 새 서버 epoch가 필요하다. 최대 100,000개 기록 후 신규 전송을 거절하며 자동 삭제하지 않는다.
 - 같은 서버의 동일 세션 전송은 겹치지 않게 막는다. 별도로 실행 중인 원래 앱의 동시 입력과 OS 네이티브 호출은 하나의 원자적 트랜잭션이 아니다. 기존 어댑터의 fresh 대상/입력창 검사 경계를 유지한다.
-- 기본 네트워크 제한은 조회 5초, 대상 확인 15초, 전송 45초다. HTTP 재시도는 없다. 미확인 전송 후에는 원격 대화를 확인한 뒤 사용자가 재전송 여부를 결정한다.
+- 기본 네트워크 제한은 조회 15초, 대상 확인 15초, 전송 45초다. HTTP 재시도는 없다. 미확인 전송 후에는 원격 대화를 확인한 뒤 사용자가 재전송 여부를 결정한다.
 
 ## 단계별 확장
 
@@ -103,7 +118,7 @@ command smoke는 가짜 native sender를 주입한 합성 HTTPS 서버와 실제
 
 - 기존 exporter의 전송 가능한 대상이 있으면 그 경로를 우선한다. 없을 때만 Codex 원격 연결을 조회한다. 전송 실패 후 다른 경로로 재시도하지 않는다.
 - 로컬 `$CODEX_HOME/.codex-global-state.json`의 thread/host membership 및 host가 일치하는 `remote-thread-summaries-v3` 캐시에서만 native ID를 찾는다. wire ID `sha256(codex:<native ID>)`까지 같아야 한다. 제목·경로로 추정하지 않고, 같은 ID의 host가 서로 다르면 거부한다. 이 파일은 수정하지 않는다.
-- 공유된 interactive root/fork Codex 대화만 대상이다. 현재 앱의 owner가 resumed/default/user 대화임을 확인해야 한다. 사용자가 Codex에서 해당 원격 대화를 열어 둔 뒤 **전송 대상 다시 확인**을 누른다. 자동 재개나 새 app-server 생성은 하지 않는다.
+- 공유된 root/fork Codex 대화 중 interactive 또는 기존 exporter의 unknown 출처를 대상으로 조회한다. scheduled/internal 출처는 제외한다. unknown도 아래의 실제 Codex owner 사용자 대화 검증을 통과해야 한다. 현재 앱의 owner가 resumed/default/user 대화임을 확인해야 한다. 사용자가 Codex에서 해당 원격 대화를 열어 둔 뒤 **전송 대상 다시 확인**을 누른다. 자동 재개나 새 app-server 생성은 하지 않는다.
 - 기존 `/office/v1/commands/targets`는 target이 null이어도 해당 ID의 전송 토큰·공유 범위·exporter profile 설정을 검증한다. 이 성공 응답이 있어야 relay를 조회하고, dispatch 직전 같은 인증을 반복한다. 로컬 전송 설정·모바일 권한·현재 표시 범위와 peer generation도 다시 확인한다. 네트워크 실패나 권한 거부는 우회하지 않는다.
 - 수신 앱의 `federation-beta/outgoing.sqlite`에 요청 ID, 세션/본문의 해시, pending/sent 상태만 기록한다. pending은 앱 재시작 후에도 다시 보내지 않으며 본문은 보관하지 않는다. 같은 요청의 다른 payload는 거절하고, 한 대화에 동시 전송을 막는다. 저널은 10만 건에서 새 요청을 거부하며 자동 삭제하지 않는다.
 
