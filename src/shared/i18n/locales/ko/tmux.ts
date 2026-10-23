@@ -54,4 +54,16 @@ export const tmux: Messages['tmux'] = {
   conflict: '같은 tmux 이름을 다른 세션이 사용 중이에요. 기존 세션은 변경하지 않았어요.',
   ended: '이 tmux는 종료됐어요. 다시 재개한 뒤 접속해주세요.',
   openFailed: '터미널을 열지 못했어요. 재접속 명령을 복사해 터미널에서 실행해주세요.',
+  orcaTitle: 'Orca로 재개',
+  orcaStart: 'Orca에서 새로 띄우기',
+  orcaConfirm: '이 대화를 Orca 새 터미널 탭에서 이어갈까요?',
+  orcaIntro:
+    '이 프로젝트 폴더로 Orca에 새 터미널 탭을 열고 아래 명령을 실행해요. 새 대화를 만드는 동작은 아니에요.',
+  orcaCommand: '실행 명령',
+  orcaHint: 'Orca가 실행 중이라 이 대화를 Orca 새 탭에서 이어갈 수도 있어요.',
+  orcaLaunched: 'Orca 새 탭에서 이 대화를 열었어요',
+  orcaUnsupported: 'macOS의 로컬 Claude·Codex 세션에서 Orca 재개를 지원해요.',
+  orcaUnavailable: 'Orca가 실행 중이 아니거나 응답하지 않아요. Orca를 연 뒤 다시 시도해주세요.',
+  orcaRefused: (reason) =>
+    `Orca가 탭을 열지 않았어요${reason ? `: ${reason}` : '.'} Orca 작업 공간이 아닌 폴더일 수 있어요. tmux로 따로 띄워보세요.`,
 };

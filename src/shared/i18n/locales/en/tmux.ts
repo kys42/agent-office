@@ -56,4 +56,17 @@ export const tmux = {
   conflict: 'This tmux name belongs to another session. It was not changed.',
   ended: 'This tmux session has ended. Resume it again to reconnect.',
   openFailed: 'Could not open Terminal. Copy the reconnect command and run it in your terminal.',
+  /** Resuming in a new Orca terminal tab instead of tmux. */
+  orcaTitle: 'Resume in Orca',
+  orcaStart: 'Open in a new Orca tab',
+  orcaConfirm: 'Resume this conversation in a new Orca terminal tab?',
+  orcaIntro:
+    'Opens a new terminal tab in Orca for this project folder and runs the command below in it. It does not start a new conversation.',
+  orcaCommand: 'Command',
+  orcaHint: 'Orca is running: this conversation can also open in a new Orca tab.',
+  orcaLaunched: 'Opened a new Orca tab for this conversation',
+  orcaUnsupported: 'Orca resume supports local Claude and Codex sessions on macOS.',
+  orcaUnavailable: 'Orca is not running or not reachable. Open Orca and try again.',
+  orcaRefused: (reason: string) =>
+    `Orca did not open the tab${reason ? `: ${reason}` : '.'} The folder may not be an Orca workspace; you can start it in tmux instead.`,
 };

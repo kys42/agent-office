@@ -3,6 +3,18 @@ import type { RunOptions } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { TerminalTarget } from '../src/shared/types.js';
 
+/**
+ * The environment for Orca CLI calls about this computer: without Orca's remote-runtime
+ * selection (an environment, a pairing code, or its older pairing variable), so an inherited
+ * pairing never routes a local lookup, switch or launch to another machine.
+ */
+export function localOrcaEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const local = { ...env };
+  delete local.ORCA_ENVIRONMENT;
+  delete local.ORCA_PAIRING_CODE;
+  delete local.ORCA_REMOTE_PAIRING;
+  return local;
+}
 /** Host discovery and navigation are shared by agents; this module never types input. */
 export interface TerminalHostDeps {
   run: (file: string, args: string[], options?: RunOptions) => Promise<string>;
@@ -88,22 +100,35 @@ export async function inspectProcess(pid: number, deps: TerminalHostDeps): Promi
   return { env: parseProcessEnv(full.trim(), args.trim()), owner: ptyOwner(table, pid) };
 }
 
-/** Finds the terminal pane that hosts the process. tmux is the direct host when present. */
-/** All live Orca terminals by handle: one CLI call (~0.5s) instead of one per session. */
-function orcaTerminals(deps: TerminalHostDeps, fresh: boolean) {
+/**
+ * All Orca terminals by handle: one CLI call (~0.5s) instead of one per session. Shared by the
+ * live-process lookup below and the tab-only fallback (desktop/orca-tabs.ts). `complete` only
+ * when Orca answered with the whole list: not `truncated` (Orca's default row limit), not failed.
+ * Matching one known handle works on a partial list; proving a tab is the only match does not.
+ */
+export function orcaTerminalList(deps: TerminalHostDeps, fresh: boolean) {
   return remember(deps, 'orca-terminals', 5000, fresh, async () => {
     const byHandle = new Map<string, Record<string, unknown>>();
+    let complete = false;
     try {
-      const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json']);
-      for (const t of JSON.parse(out)?.result?.terminals ?? [])
+      const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json'], {
+        env: localOrcaEnv(),
+      });
+      const result = JSON.parse(out)?.result;
+      for (const t of result?.terminals ?? [])
         if (typeof t?.handle === 'string') byHandle.set(t.handle, t);
+      complete = Array.isArray(result?.terminals) && result.truncated !== true;
     } catch {
       /* Orca is not running. */
     }
-    return byHandle;
+    return { byHandle, complete };
   });
 }
 
+export const orcaTerminals = async (deps: TerminalHostDeps, fresh: boolean) =>
+  (await orcaTerminalList(deps, fresh)).byHandle;
+
+/** Finds the terminal pane that hosts the process. tmux is the direct host when present. */
 export async function findHost(
   pid: number,
   deps: TerminalHostDeps,
@@ -151,6 +176,13 @@ export async function findHost(
   return null;
 }
 
+/**
+ * A terminal lookup that tells "nothing there" from "could not tell": only `none` lets a weaker
+ * fallback (the Orca tab by title, desktop/orca-tabs.ts) stand in.
+ */
+export type TerminalLookup<T> =
+  { kind: 'found'; terminal: T } | { kind: 'none' } | { kind: 'unknown' };
+
 export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
 
 /** Public screen location; private routing addresses stay in the main process. */
@@ -163,12 +195,11 @@ export class TerminalFocusError extends Error {}
 
 export async function focusHost(host: TerminalHost, deps: TerminalHostDeps): Promise<string> {
   if (host.kind === 'orca') {
-    const out = await deps.run(deps.bin('orca'), [
-      'terminal',
-      'switch',
-      `--terminal=${host.handle}`,
-      '--json',
-    ]);
+    const out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'switch', `--terminal=${host.handle}`, '--json'],
+      { env: localOrcaEnv() },
+    );
     let navigated: unknown;
     try {
       navigated = JSON.parse(out)?.result?.focus?.navigated;

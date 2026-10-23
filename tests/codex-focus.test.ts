@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   codexScreenPids,
+  codexScreens,
   codexTitleThread,
   findCodexTerminal,
+  lookupCodexTerminal,
   resolveCodexTitleThread,
 } from '../desktop/codex-focus.js';
 import { codexTarget } from '../desktop/codex-queue.js';
@@ -382,4 +384,38 @@ test('A focusable Codex target still sends through its queue; screen labels do n
   const unavailable = codexTarget(null, false);
   assert.equal(unavailable.canSend, false);
   assert.equal(unavailable.canFocus, false);
+});
+
+test('lookupCodexTerminal tells no screen from an ambiguous or unreadable one', async () => {
+  const kind = async (options: Parameters<typeof fixture>[0], fresh = true) =>
+    (await lookupCodexTerminal(THREAD, { deps: fixture(options).deps, fresh })).kind;
+  assert.equal(await kind({}), 'found');
+  assert.equal(await kind({}, false), 'found');
+  // Every Codex screen was read and shows another thread: nothing there.
+  assert.equal(await kind({ title: `${OTHER} | task`, loaded: [OTHER] }), 'none');
+  // Could be this thread somewhere: never "none".
+  for (const options of [
+    { duplicate: true },
+    { duplicate: true, secondFailed: true },
+    { closed: true },
+    { reused: true },
+    { owner: '/bin/screen' },
+    { stat: 'T 4242 4242' },
+    { title: 'zsh' },
+    { failed: true },
+  ])
+    assert.equal(await kind(options), 'unknown', JSON.stringify(options));
+});
+
+test('Too many Codex screens to read is unknown, never "no screen"', async () => {
+  const table = Array.from({ length: 65 }, (_, i) => `${5000 + i} ttys${100 + i} /bin/codex`).join(
+    '\n',
+  );
+  assert.deepEqual(codexScreens(table), { pids: [], oversized: true });
+  assert.deepEqual(codexScreenPids(table), []);
+  const f = fixture();
+  const run = f.deps.run;
+  f.deps.run = async (file, args, options) =>
+    file === '/bin/ps' && args.includes('pid=,tty=,comm=') ? table : run(file, args, options);
+  assert.equal((await lookupCodexTerminal(THREAD, { deps: f.deps, fresh: true })).kind, 'unknown');
 });

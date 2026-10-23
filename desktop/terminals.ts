@@ -5,11 +5,13 @@ import {
   focusTarget,
   hostName,
   TerminalFocusError,
+  localOrcaEnv,
 } from './terminal-host.js';
-import type { TerminalHost } from './terminal-host.js';
+import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
-export type { TerminalHost, ProcessEnv, ProcessView } from './terminal-host.js';
+export type { TerminalHost, ProcessEnv, ProcessView, TerminalLookup } from './terminal-host.js';
 import { existsSync, readdirSync } from 'node:fs';
+import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,9 +33,11 @@ import {
 import {
   findClaudeProcess,
   forget,
+  parseClaudeProcess,
   processAlive,
   remember,
   runCommand,
+  spaces,
   type ClaudeLiveDeps,
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
@@ -57,6 +61,11 @@ export interface TerminalDeps extends ClaudeLiveDeps {
   codexHome: string;
   bin: (name: 'orca' | 'tmux' | 'codex') => string;
   wait: (ms: number) => Promise<void>;
+  /** Claude's process-record folder, read by the absence check (tests count the reads). */
+  records?: {
+    list: (dir: string) => Promise<string[]>;
+    read: (file: string) => Promise<string>;
+  };
 }
 
 export interface LiveTerminal {
@@ -131,6 +140,95 @@ export function locateTerminal(
     );
     return host ? { process: proc, host } : null;
   });
+}
+
+/**
+ * `locateTerminal` with its null split: `none` only when no live Claude process holds the
+ * session. A live one whose terminal could not be verified (another terminal app, an unverified
+ * tmux pane) is `unknown`, so no other tab is ever offered in its place.
+ */
+export async function lookupTerminal(
+  sessionId: string,
+  options: { fresh?: boolean; deps?: TerminalDeps } = {},
+): Promise<TerminalLookup<LiveTerminal>> {
+  const deps = options.deps ?? defaultTerminalDeps();
+  const terminal = await locateTerminal(sessionId, { ...options, deps });
+  if (terminal) return { kind: 'found', terminal };
+  return (await claudeAbsent(sessionId, deps, !!options.fresh).catch(() => false))
+    ? { kind: 'none' }
+    : { kind: 'unknown' };
+}
+
+/**
+ * Claude's process records as one shared read per burst (1 s, like the other process caches):
+ * sessions checked together read the folder once. `complete` only when every record file was
+ * read (a missing folder is an empty, complete one); unparsable files are kept as text so a
+ * session they mention is never called absent.
+ */
+export function claudeRecordInventory(deps: TerminalDeps, fresh = false) {
+  return remember(deps, `record-inventory:${deps.sessionsDir}`, 1000, fresh, async () => {
+    const io = deps.records ?? { list: (dir) => readdir(dir), read: (f) => readFile(f, 'utf8') };
+    const records: ClaudeProcess[] = [];
+    const unparsed: string[] = [];
+    let files: string[];
+    try {
+      files = (await io.list(deps.sessionsDir)).filter((name) => /^\d+\.json$/.test(name));
+    } catch (error) {
+      const missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+      return { complete: missing, records, unparsed };
+    }
+    if (files.length > 1000) return { complete: false, records, unparsed };
+    let complete = true;
+    await Promise.all(
+      files.map(async (name) => {
+        const file = path.join(deps.sessionsDir, name);
+        let text: string;
+        try {
+          text = await io.read(file);
+        } catch (error) {
+          // A record removed meanwhile belonged to a process that ended; any other failure
+          // (permissions, I/O) leaves this process unknown.
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') complete = false;
+          return;
+        }
+        const record = parseClaudeProcess(name, text);
+        if (record) records.push(record);
+        else unparsed.push(text);
+      }),
+    );
+    return { complete, records, unparsed };
+  });
+}
+
+/**
+ * True only after a successful absence check: Claude's records were all read, and every record
+ * of the session names a process that is gone (or a reused PID). An unreadable folder or record,
+ * an unparsable record that mentions the session, too many records, or a `ps` failure while the
+ * PID is alive: not known to be absent.
+ */
+export async function claudeAbsent(
+  sessionId: string,
+  deps: TerminalDeps,
+  fresh = false,
+): Promise<boolean> {
+  const inventory = await claudeRecordInventory(deps, fresh);
+  if (!inventory.complete || inventory.unparsed.some((text) => text.includes(sessionId)))
+    return false;
+  for (const record of inventory.records) {
+    if (record.sessionId !== sessionId || !deps.alive(record.pid)) continue;
+    let started: string;
+    try {
+      started = await deps.run('/bin/ps', ['-o', 'lstart=', '-p', String(record.pid)], {
+        env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+      });
+    } catch {
+      // `ps` fails for a PID that just ended; while it is alive, nothing is known.
+      if (deps.alive(record.pid)) return false;
+      continue;
+    }
+    if (!started.trim() || spaces(started) === spaces(record.procStart)) return false;
+  }
+  return true;
 }
 
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */
@@ -251,14 +349,11 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
       // The pane height tells whether the prompt box may be scrolled (see maxBoxRows).
       return /^\d+$/.test(height ?? '') ? { ...screen, height: Number(height) } : screen;
     }
-    const out = await deps.run(deps.bin('orca'), [
-      'terminal',
-      'read',
-      `--terminal=${host.handle}`,
-      '--screen',
-      '--limit=200',
-      '--json',
-    ]);
+    const out = await deps.run(
+      deps.bin('orca'),
+      ['terminal', 'read', `--terminal=${host.handle}`, '--screen', '--limit=200', '--json'],
+      { env: localOrcaEnv() },
+    );
     const terminal = JSON.parse(out)?.result?.terminal;
     // Without a rendered screen Orca falls back to past output, which is not what is shown now.
     if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
@@ -332,7 +427,7 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
     out = await deps.run(
       deps.bin('orca'),
       ['terminal', 'send', `--terminal=${host.handle}`, ...input, '--json'],
-      { timeout: 20000 },
+      { timeout: 20000, env: localOrcaEnv() },
     );
   } catch (error) {
     out = (error as { stdout?: string }).stdout ?? '';

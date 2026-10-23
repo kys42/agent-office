@@ -1,14 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
   cleanInput,
+  claudeAbsent,
   findClaudeProcess,
   findHost,
   focusTerminal,
   locateTerminal,
+  lookupTerminal,
   parseClaudeProcess,
   parseProcessEnv,
   promptHolds,
@@ -1608,5 +1610,117 @@ test('Even opted-in partial clearing rechecks changed content and never submits 
       /비우지 못해/,
     );
     assert.ok(!typedAny(calls) && !sent(calls));
+  });
+});
+
+test('lookupTerminal: none only without a live Claude; an unverified terminal is unknown', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const found = fakeDeps(dir, { env: ORCA_ENV, orcaShow: orcaShow() });
+    assert.equal((await lookupTerminal(SESSION, { deps: found.deps, fresh: true })).kind, 'found');
+    // Running in another terminal app: the conversation is somewhere, never "no terminal".
+    const elsewhere = fakeDeps(dir, {
+      table: processTable('/Applications/iTerm.app/Contents/MacOS/iTerm2'),
+    });
+    assert.equal(
+      (await lookupTerminal(SESSION, { deps: elsewhere.deps, fresh: true })).kind,
+      'unknown',
+    );
+    const gone = fakeDeps(dir, { alive: [] });
+    assert.equal((await lookupTerminal(SESSION, { deps: gone.deps, fresh: true })).kind, 'none');
+  });
+});
+
+test('claudeAbsent: "none" only after a successful absence check', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // A reused PID (another start time) or a gone process is absent.
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir, { alive: [] }).deps), true);
+    assert.equal(
+      await claudeAbsent(
+        SESSION,
+        fakeDeps(dir, { lstart: { 4242: 'Wed Oct  7 10:00:00 2026' } }).deps,
+      ),
+      true,
+    );
+    assert.equal(await claudeAbsent('another-session', fakeDeps(dir).deps), true);
+    // Alive with its start time: present.
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir).deps), false);
+    // `ps` failing while the PID is alive proves nothing.
+    const psFails = fakeDeps(dir, {
+      fail: (file, args) =>
+        file === '/bin/ps' && args.includes('lstart=') ? new Error('ps') : undefined,
+    });
+    assert.equal(await claudeAbsent(SESSION, psFails.deps), false);
+    assert.equal(
+      (await lookupTerminal(SESSION, { deps: psFails.deps, fresh: true })).kind,
+      'unknown',
+    );
+  });
+  // An unparsable record that mentions the session is not evidence of absence.
+  await withSessions({ '4242.json': `{"sessionId":"${SESSION}",` }, async (dir) => {
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir).deps), false);
+  });
+  await withSessions({ '4242.json': '{broken' }, async (dir) => {
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(dir).deps), true);
+  });
+  // No records folder at all: nothing runs. A folder that cannot be read: unknown.
+  assert.equal(await claudeAbsent(SESSION, fakeDeps('/nonexistent/claude-sessions').deps), true);
+  await withSessions({ 'not-a-dir': '' }, async (dir) => {
+    assert.equal(await claudeAbsent(SESSION, fakeDeps(path.join(dir, 'not-a-dir')).deps), false);
+  });
+});
+
+test('claudeAbsent shares one record read per burst; a fresh check reads again', async () => {
+  const records = Object.fromEntries(
+    Array.from({ length: 100 }, (_, i) => [
+      `${5000 + i}.json`,
+      record(5000 + i, { sessionId: `ended-session-${String(i).padStart(3, '0')}` }),
+    ]),
+  );
+  await withSessions(records, async (dir) => {
+    const { deps } = fakeDeps(dir, { alive: [] });
+    let lists = 0;
+    let reads = 0;
+    deps.records = {
+      list: async (folder) => {
+        lists++;
+        return readdir(folder);
+      },
+      read: async (file) => {
+        reads++;
+        return readFile(file, 'utf8');
+      },
+    };
+    const results = await Promise.all(
+      Array.from({ length: 100 }, (_, i) =>
+        claudeAbsent(`ended-session-${String(i).padStart(3, '0')}`, deps),
+      ),
+    );
+    assert.ok(results.every(Boolean));
+    assert.equal(lists, 1);
+    assert.equal(reads, 100);
+    assert.equal(await claudeAbsent('ended-session-000', deps, true), true);
+    assert.equal(lists, 2);
+    assert.equal(reads, 200);
+  });
+});
+
+test('claudeAbsent: a record that cannot be read for any reason but removal is not absence', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const denied = fakeDeps(dir, { alive: [] });
+    denied.deps.records = {
+      list: (folder) => readdir(folder),
+      read: async () => {
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      },
+    };
+    assert.equal(await claudeAbsent(SESSION, denied.deps, true), false);
+    const removed = fakeDeps(dir, { alive: [] });
+    removed.deps.records = {
+      list: (folder) => readdir(folder),
+      read: async () => {
+        throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+      },
+    };
+    assert.equal(await claudeAbsent(SESSION, removed.deps, true), true);
   });
 });
