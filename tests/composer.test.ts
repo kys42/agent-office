@@ -705,8 +705,13 @@ test("sameWrapped: the box's wrapping is ignored, spaces inside a row are not", 
   assert.ok(!sameWrapped('print("ab")', 'print("a b")'));
   assert.ok(!sameWrapped('print("a  b")', 'print("a b")'));
   // Wrapped at a space (taken by the wrap) or inside a word; typed line breaks and indentation.
-  assert.ok(sameWrapped('print("a\nb")', 'print("a b")'));
-  assert.ok(sameWrapped('long wo\nrd', 'long word'));
+  const full = 'x'.repeat(30) + ' ' + 'y'.repeat(9); // 40 cells: a row the box filled
+  assert.ok(sameWrapped(`${full}\nzzzz tail`, `${full} zzzz tail`));
+  assert.ok(sameWrapped(`${full} wo\nrd`, `${full} word`));
+  // A break the person typed into a short row is an edit, not the box's wrapping.
+  assert.ok(!sameWrapped('print("a\nb")', 'print("a b")'));
+  assert.ok(!sameWrapped('a\nb', 'a b'));
+  assert.ok(!sameWrapped(`${full}\nshort\nrest of it`, `${full} short rest of it`));
   assert.ok(sameWrapped('def f():\nreturn 1', 'def f():\n    return 1'));
   assert.ok(sameWrapped('one\n\ntwo', 'one\n\ntwo'));
   // A blank row is a blank line, never a soft wrap; a typed line break is not a space.
