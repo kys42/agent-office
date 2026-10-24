@@ -6,12 +6,29 @@ test('main region switches to a recent list, opens the same card and remembers p
 }) => {
   await page.goto('/?demo&lang=ko');
   await expect(page.locator('.office-pet')).toHaveCount(6);
+  const originalPortrait = await page
+    .getByRole('button', { name: '코코, 일하는 중', exact: true })
+    .locator('.sprite-window')
+    .getAttribute('data-asset-id');
+  const originalProjectColor = await page
+    .locator('.sidebar button[title="agent-office"] .source-dot')
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
   await page.getByRole('button', { name: '리스트', exact: true }).click();
   await expect(page.getByRole('region', { name: '사무실 리스트', exact: true })).toBeVisible();
   await expect(page.locator('.office-pet')).toHaveCount(0);
   await expect(page.locator('.roster')).toHaveCount(0);
   const rows = page.locator('.office-list-row');
   await expect(rows).toHaveCount(6);
+  await expect(rows.first().locator('.sprite-window')).toHaveAttribute(
+    'data-asset-id',
+    originalPortrait!,
+  );
+  expect(
+    await rows
+      .first()
+      .locator('.office-list-project-name > svg')
+      .evaluate((el) => getComputedStyle(el).color),
+  ).toBe(originalProjectColor);
   expect(await rows.evaluateAll((xs) => xs.map((x) => x.getAttribute('data-session-id')))).toEqual([
     'demo:0',
     'demo:1',
@@ -26,6 +43,12 @@ test('main region switches to a recent list, opens the same card and remembers p
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   await page.getByLabel('사무실 리스트 정렬').selectOption('project');
   await expect(page.locator('.office-list-group h3')).toHaveCount(5);
+  expect(
+    await page
+      .locator('.office-list-group h3 > svg')
+      .first()
+      .evaluate((el) => getComputedStyle(el).color),
+  ).toBe(originalProjectColor);
   await expect(page.locator('.office-list-group').first().locator('.office-list-row')).toHaveCount(
     2,
   );
