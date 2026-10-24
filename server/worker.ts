@@ -57,7 +57,9 @@ parentPort?.on('message', async ({ id, method, args, stop, guarded, authorizatio
       result: await service.call(
         method,
         args,
-        guarded && method === 'remote-send' ? () => authorize(id) : undefined,
+        guarded && ['remote-send', 'remote-launch'].includes(method)
+          ? () => authorize(id)
+          : undefined,
       ),
     });
   } catch (e) {

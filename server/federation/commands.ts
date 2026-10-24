@@ -7,6 +7,8 @@ import { z } from 'zod';
 import type { OfficeStore } from '../store.js';
 import { idSchema, wireId, type ExportConfig } from './protocol.js';
 import { nativePeerSender, type PeerSender } from './sender.js';
+import { launchSpecSchema } from '../../src/shared/remote-launch.js';
+import { launchDirectory, nativePeerLauncher, type PeerLauncher } from './launcher.js';
 import { TargetProbes } from './target-probes.js';
 
 const inputSchema = z
@@ -52,6 +54,7 @@ export class PeerCommands {
     private store: OfficeStore,
     private config: () => ExportConfig,
     private sender = nativePeerSender,
+    private launcher: PeerLauncher = nativePeerLauncher(),
   ) {
     this.probes = new TargetProbes(sender);
   }
@@ -117,6 +120,99 @@ export class PeerCommands {
       const config = this.authorize(req);
       const value = await body(req);
       this.authorize(req);
+      if (route === '/office/v1/commands/launch-status' || route === '/office/v1/commands/launch') {
+        const starting = route.endsWith('/launch');
+        const base = z.object({ id: idSchema, spec: launchSpecSchema }).strict();
+        const command = (
+          starting ? base.extend({ epoch: z.uuid(), plan: idSchema, requestId: z.uuid() }) : base
+        ).parse(value);
+        const resolve = () => {
+          const c = this.authorize(req);
+          if (!c.allowLaunch || this.store.preferences().paused) throw new CommandError(403);
+          const s = this.session(req, command.id);
+          let cwd: string;
+          try {
+            cwd = launchDirectory(s);
+          } catch {
+            throw new CommandError(404);
+          }
+          return {
+            c,
+            s,
+            cwd,
+            plan: wireId(JSON.stringify([this.epoch, c, s.id, cwd, command.spec])),
+          };
+        };
+        const first = resolve();
+        const verify = () => {
+          if (this.closing || resolve().plan !== first.plan) throw new CommandError(409);
+        };
+        const hosts = await this.launcher.status(first.cwd, command.spec);
+        verify();
+        const info = {
+          officeId: first.c.officeId,
+          epoch: this.epoch,
+          plan: first.plan,
+          project: first.s.project,
+          cwd: first.cwd,
+          hosts,
+          status: 'ready',
+        };
+        if (!starting) {
+          reply(200, info);
+          return;
+        }
+        const start = command as z.infer<typeof base> & {
+          epoch: string;
+          plan: string;
+          requestId: string;
+        };
+        const db = this.journal();
+        db.exec(
+          'CREATE TABLE IF NOT EXISTS launches (id TEXT PRIMARY KEY, digest TEXT NOT NULL, result TEXT)',
+        );
+        const digest = wireId(JSON.stringify([command.id, command.spec]));
+        const old = db
+          .prepare('SELECT digest, result FROM launches WHERE id = ?')
+          .get(start.requestId);
+        if (old) {
+          if (old.digest !== digest) throw new CommandError(409);
+          reply(200, { ...info, requestId: start.requestId, status: old.result ?? 'uncertain' });
+          return;
+        }
+        const key =
+          'launch:' + wireId(JSON.stringify([first.cwd, command.spec.provider, command.spec.name]));
+        if (
+          start.epoch !== this.epoch ||
+          start.plan !== first.plan ||
+          !hosts[command.spec.host] ||
+          this.active.has(key)
+        )
+          throw new CommandError(409);
+        if (Number(db.prepare('SELECT count(*) AS n FROM launches').get()!.n) >= 100000)
+          throw new CommandError(507);
+        db.prepare('INSERT INTO launches VALUES (?, ?, NULL)').run(start.requestId, digest);
+        this.active.add(key);
+        let status = 'uncertain';
+        const operation = (async () => {
+          try {
+            status = await this.launcher.start(first.cwd, command.spec, verify);
+          } catch {
+            /* An unacknowledged launch must never be replayed. */
+          } finally {
+            db.prepare('UPDATE launches SET result = ? WHERE id = ?').run(status, start.requestId);
+            this.active.delete(key);
+          }
+        })();
+        this.operations.add(operation);
+        try {
+          await operation;
+        } finally {
+          this.operations.delete(operation);
+        }
+        reply(200, { ...info, requestId: start.requestId, status });
+        return;
+      }
       if (route === '/office/v1/commands/targets') {
         const { ids } = z
           .object({ ids: z.array(idSchema).max(20) })

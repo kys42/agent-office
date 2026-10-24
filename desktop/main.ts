@@ -1,3 +1,4 @@
+import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, orcaTabTarget } from './orca-tabs.js';
@@ -603,7 +604,7 @@ function setupIPC() {
     trusted(e);
     if (
       typeof method !== 'string' ||
-      ['federation', 'remote-send', 'remote-targets'].includes(method) ||
+      ['federation', 'remote-send', 'remote-targets', 'remote-launch'].includes(method) ||
       !Array.isArray(args) ||
       args.length > 3
     )
@@ -791,6 +792,51 @@ function setupIPC() {
         endCardDialog();
       }
     });
+  });
+  ipcMain.handle('office:remote-launch', async (e, id, action, value) => {
+    trusted(e);
+    if (
+      typeof id !== 'string' ||
+      id.length > 400 ||
+      !isRemoteId(id) ||
+      !['status', 'start'].includes(action)
+    )
+      throw Error(m().desktop.badRequest);
+    const spec = launchSpecSchema.parse(value);
+    const authorize = async () => {
+      trusted(e);
+      if (!(await terminalSendEnabled())) throw Error(m().desktop.terminal.enableFirst);
+    };
+    await authorize();
+    const info = (await bridge.call('remote-launch', [id, spec], authorize)) as RemoteLaunchInfo;
+    if (action === 'status') return info;
+    if (!info.hosts[spec.host]) throw Error(m().tmux.remoteUnavailable);
+    const t = m().tmux;
+    const owner = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      type: 'question' as const,
+      title: t.summonTitle,
+      message: t.remoteConfirm,
+      detail: `${info.office} · ${spec.host} · ${spec.provider}\n${t.folder}: ${info.cwd}\n${t.agentName}: ${spec.name}\n\n${t.remoteHint}\n\n${spec.initialMessage}`,
+      buttons: [t.cancel, t.remoteStart],
+      defaultId: 0,
+      cancelId: 0,
+    };
+    const end = cards.dialog(e.sender);
+    let response: number;
+    try {
+      response = (
+        owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)
+      ).response;
+    } finally {
+      end();
+    }
+    if (response !== 1) return { ...info, status: 'cancelled' };
+    return bridge.call(
+      'remote-launch',
+      [id, spec, { epoch: info.epoch, plan: info.plan, requestId: randomUUID() }],
+      authorize,
+    );
   });
   ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name, initialMessage) => {
     trusted(e);

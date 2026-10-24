@@ -13,12 +13,17 @@ import { targetResponseSchema, sendResponseSchema } from '../server/federation/c
 import { wireId } from '../server/federation/protocol.js';
 import { PeerManager } from '../server/federation/peers.js';
 import type { PeerInput } from '../src/shared/federation.js';
+import type { Session } from '../src/shared/types.js';
+import type { PeerLauncher } from '../server/federation/launcher.js';
+import { launchInfoSchema } from '../src/shared/remote-launch.js';
 import type { PeerSender } from '../server/federation/sender.js';
 
 async function setup(
   remoteCodex = false,
   origin: 'unknown' | 'interactive' | 'scheduled' | 'internal' = 'unknown',
   count = 1,
+  launcher?: PeerLauncher,
+  patch?: Partial<Session>,
 ) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'office-commands-'));
   const data = path.join(root, 'data'),
@@ -26,6 +31,11 @@ async function setup(
   mkdirSync(configDir);
   const writer = new OfficeStore(data);
   const s = demoSnapshot().sessions[0];
+  if (launcher) {
+    s.cwd = path.join(root, 'project');
+    s.workspace = undefined;
+  }
+  Object.assign(s, patch);
   if (remoteCodex) {
     s.nativeId = randomUUID();
     s.id = `codex:${s.nativeId}`;
@@ -69,6 +79,7 @@ async function setup(
     conversation: true,
     projects: ['*'],
     allowSend: true,
+    allowLaunch: false,
     profileDir: data,
     sendToken: 's'.repeat(64),
   };
@@ -95,7 +106,7 @@ async function setup(
     },
   };
   if (remoteCodex) sender.target = async () => null;
-  let server = await startExportServer(data, configDir, sender);
+  let server = await startExportServer(data, configDir, sender, launcher);
   const peer: PeerInput = {
     officeId: config.officeId,
     endpoint: `https://127.0.0.1:${(server.server.address() as { port: number }).port}/`,
@@ -131,7 +142,7 @@ async function setup(
     fail: () => (fail = true),
     restart: async () => {
       await server.close();
-      server = await startExportServer(data, configDir, sender);
+      server = await startExportServer(data, configDir, sender, launcher);
       peer.endpoint = `https://127.0.0.1:${(server.server.address() as { port: number }).port}/`;
     },
     close: async () => {
@@ -817,3 +828,146 @@ for (const scenario of [
     }
   });
 }
+
+for (const host of ['tmux', 'orca'] as const) {
+  test(`remote ${host} launch is scoped, opt-in, idempotent across restarts and does not write source data`, async () => {
+    let starts = 0;
+    const f = await setup(false, 'unknown', 1, {
+      status: async () => ({ tmux: true, orca: true }),
+      start: async (cwd, spec, verify) => {
+        verify();
+        assert.equal(cwd, f.session.cwd);
+        assert.equal(spec.host, host);
+        starts++;
+        return 'started';
+      },
+    });
+    const spec = {
+      provider: 'claude',
+      host,
+      name: '원격 검증',
+      initialMessage: "literal $(echo unsafe);\n'quote'",
+    };
+    const call = (route: string, body: unknown, peer = f.peer) =>
+      peerRequest(peer, '/office/v1/commands/' + route, undefined, { body });
+    try {
+      await assert.rejects(
+        call('launch-status', { id: f.id, spec }),
+        (e: unknown) => e instanceof PeerError && e.code === 403,
+      );
+      f.config.allowLaunch = true;
+      f.save();
+      await assert.rejects(
+        call('launch-status', { id: f.id, spec }, { ...f.peer, token: f.config.token }),
+      );
+      await assert.rejects(call('launch-status', { id: f.id, spec, cwd: '/unshared' }));
+      const plan = launchInfoSchema.parse(await call('launch-status', { id: f.id, spec }));
+      assert.equal(starts, 0);
+      const command = {
+        id: f.id,
+        spec,
+        epoch: plan.epoch,
+        plan: plan.plan,
+        requestId: randomUUID(),
+      };
+      const result = launchInfoSchema.parse(await call('launch', command));
+      assert.equal(result.status, 'started');
+      assert.equal(launchInfoSchema.parse(await call('launch', command)).status, 'started');
+      await f.restart();
+      assert.equal(launchInfoSchema.parse(await call('launch', command)).status, 'started');
+      assert.equal(starts, 1);
+      await assert.rejects(call('launch', { ...command, spec: { ...spec, name: 'different' } }));
+      await assert.rejects(call('launch', { ...command, requestId: randomUUID() }));
+      f.config.projects = [];
+      f.save();
+      await assert.rejects(call('launch-status', { id: f.id, spec }));
+      assert.equal(starts, 1);
+    } finally {
+      await f.close();
+    }
+  });
+}
+
+for (const revoke of [false, true])
+  test(`remote launch rechecks permission and never replays an uncertain attempt: revoke=${revoke}`, async () => {
+    let starts = 0;
+    const f = await setup(false, 'unknown', 1, {
+      status: async () => ({ tmux: true, orca: true }),
+      start: async (_cwd, _spec, verify) => {
+        if (revoke) {
+          f.config.allowLaunch = false;
+          f.save();
+        }
+        verify();
+        starts++;
+        throw Error('response lost after creation');
+      },
+    });
+    const spec = { provider: 'codex', host: 'orca', name: 'fixture', initialMessage: '' };
+    const call = (route: string, body: unknown) =>
+      peerRequest(f.peer, '/office/v1/commands/' + route, undefined, { body });
+    try {
+      f.config.allowLaunch = true;
+      f.save();
+      const plan = launchInfoSchema.parse(await call('launch-status', { id: f.id, spec }));
+      const cmd = { id: f.id, spec, epoch: plan.epoch, plan: plan.plan, requestId: randomUUID() };
+      assert.equal(launchInfoSchema.parse(await call('launch', cmd)).status, 'uncertain');
+      f.config.allowLaunch = true;
+      f.save();
+      assert.equal(launchInfoSchema.parse(await call('launch', cmd)).status, 'uncertain');
+      assert.equal(starts, revoke ? 0 : 1);
+    } finally {
+      await f.close();
+    }
+  });
+
+for (const cwd of ['/original/repo/api', '/original/repo/web', '/old/project'])
+  test(`remote project launch follows the displayed worktree, not member cwd: ${cwd}`, async () => {
+    let launched = '';
+    const f = await setup(
+      false,
+      'unknown',
+      1,
+      {
+        status: async (dir) => {
+          assert.equal(dir, '/shown/repo');
+          return { tmux: true, orca: false };
+        },
+        start: async (dir, _spec, verify) => {
+          verify();
+          launched = dir;
+          return 'started';
+        },
+      },
+      {
+        cwd,
+        workspace: {
+          key: 'git:/shown/repo/.git',
+          name: 'shown',
+          root: '/shown/repo',
+          worktree: '/shown/repo',
+          evidence: 'git-common-dir',
+        },
+        project: 'shown',
+      },
+    );
+    try {
+      f.config.allowLaunch = true;
+      f.save();
+      const spec = { provider: 'claude', host: 'tmux', name: 'test', initialMessage: '' };
+      const call = (route: string, body: unknown) =>
+        peerRequest(f.peer, '/office/v1/commands/' + route, undefined, { body });
+      const info = launchInfoSchema.parse(await call('launch-status', { id: f.id, spec }));
+      assert.equal(info.cwd, '/shown/repo');
+      await call('launch', {
+        id: f.id,
+        spec,
+        epoch: info.epoch,
+        plan: info.plan,
+        requestId: randomUUID(),
+      });
+      assert.equal(launched, '/shown/repo');
+    } finally {
+      await f.close();
+    }
+  });

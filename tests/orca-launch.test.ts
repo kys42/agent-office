@@ -258,3 +258,61 @@ test('the older pairing variable never routes Orca elsewhere either', () => {
   const env = localOrcaEnv({ PATH: '/bin', ORCA_REMOTE_PAIRING: 'x', ORCA_ENVIRONMENT: 'y' });
   assert.deepEqual(env, { PATH: '/bin' });
 });
+
+test('fresh remote Orca uses a background tab and preserves a literal multiline prompt', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const prompt = "hello 'quoted' $(printf injected);\nsecond `echo nope` ;";
+  const args = orcaCreateArgs({
+    ...claude,
+    nativeId: 'new',
+    fresh: true,
+    background: true,
+    initialMessage: prompt,
+  });
+  assert.ok(!args.includes('--focus'));
+  const cmd = command(args);
+  assert.ok(!cmd.includes('--resume'));
+  // Replace only the trusted executable token with printf, then let a real shell parse its argv.
+  const output = execFileSync('/bin/sh', [
+    '-c',
+    cmd.replace("'claude'", "'/usr/bin/printf' '%s\\0'"),
+  ]);
+  assert.deepEqual(output.toString().split('\0'), ['--', prompt, '']);
+});
+
+test('fresh Orca refuses missing, mismatched and remote workspaces before creating', async () => {
+  const s = { ...claude, nativeId: 'new', fresh: true, background: true };
+  let worktree: unknown = { path: claude.cwd, hostId: 'local' };
+  let creates = 0;
+  const launcher = new OrcaLaunch({
+    ...fixtureDeps(),
+    run: async (_file, args) => {
+      if (args[0] === 'status')
+        return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
+      if (args[0] === 'worktree') return JSON.stringify({ ok: true, result: { worktree } });
+      creates++;
+      return JSON.stringify({ ok: true });
+    },
+  });
+  assert.equal((await launcher.status(s)).available, true);
+  for (worktree of [
+    undefined,
+    { path: '/wrong', hostId: 'local' },
+    { path: claude.cwd, hostId: 'remote' },
+    { path: claude.cwd, hostId: 'local', identity: { executionHostId: 'remote' } },
+  ]) {
+    assert.equal((await launcher.status(s)).available, false);
+    await assert.rejects(launcher.start(s, async () => true));
+  }
+  worktree = { path: claude.cwd, hostId: 'local' };
+  await assert.rejects(
+    launcher.start(s, async () => {
+      worktree = undefined;
+      return true;
+    }),
+  );
+  assert.equal(creates, 0);
+  worktree = { path: claude.cwd, hostId: 'local' };
+  assert.equal((await launcher.start(s, async () => true)).launched, true);
+  assert.equal(creates, 1);
+});

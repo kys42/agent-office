@@ -17,6 +17,11 @@ export type OrcaLaunchSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> &
   Partial<Pick<Session, 'title' | 'alias' | 'remote'>> & {
     /** The person's `tmuxSkipPermissions`: the same agent flags as a tmux launch. */
     skipPermissions?: boolean;
+    fresh?: boolean;
+    initialMessage?: string;
+    background?: boolean;
+    /** Locally resolved CLI; never supplied by a remote request. */
+    executable?: string;
   };
 
 export interface OrcaLaunchDeps {
@@ -75,10 +80,25 @@ function describe(s: OrcaLaunchSession, platform: string, env: NodeJS.ProcessEnv
   if (!s.cwd || !path.isAbsolute(s.cwd) || CONTROL.test(s.cwd))
     throw new Error(m().tmux.folderMissing);
   // The agent is looked up on the person's own login-shell PATH, as if they typed it there.
-  const command = [
-    ...homeWords(s.provider, env),
-    ...[s.provider, ...launchArgs({ ...s, fresh: false })].map(shellWord),
-  ].join(' ');
+  if (s.executable && !path.isAbsolute(s.executable)) throw Error(m().tmux.unsupported);
+  const words = s.fresh
+    ? [
+        s.executable ? shellQuote(s.executable) : shellWord(s.provider),
+        ...(s.skipPermissions
+          ? [shellWord(launchArgs({ ...s, fresh: true, initialMessage: undefined })[0])]
+          : []),
+        ...(s.initialMessage
+          ? [shellWord('--'), `'${s.initialMessage.replace(/'/g, `'\\''`)}'`]
+          : []),
+      ]
+    : [s.provider, ...launchArgs({ ...s, fresh: false })].map(shellWord);
+  if (
+    s.fresh &&
+    s.initialMessage &&
+    (s.initialMessage.length > 4000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(s.initialMessage))
+  )
+    throw new Error(m().tmux.invalidMessage);
+  const command = [...homeWords(s.provider, env), ...words].join(' ');
   const shown = (s.alias || s.title || '')
     .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -100,7 +120,7 @@ export function orcaCreateArgs(
     `--worktree=path:${cwd}`,
     `--title=${name}`,
     `--command=${command}`,
-    '--focus',
+    ...(s.background ? [] : ['--focus']),
     '--json',
   ];
 }
@@ -132,6 +152,28 @@ export class OrcaLaunch {
   constructor(deps: OrcaLaunchDeps | (() => string)) {
     this.deps = typeof deps === 'function' ? defaults(deps) : deps;
   }
+  /** A fresh launch may only target a registered workspace on this Orca host. */
+  private async workspace(s: OrcaLaunchSession): Promise<boolean> {
+    if (!s.fresh) return true;
+    try {
+      const result = JSON.parse(
+        await this.deps.run(
+          this.deps.orca(),
+          ['worktree', 'show', `--worktree=path:${s.cwd}`, '--json'],
+          { timeout: 5000, env: localOrcaEnv(this.deps.env ?? process.env) },
+        ),
+      );
+      const w = result?.result?.worktree;
+      return (
+        result?.ok === true &&
+        w?.path === path.resolve(s.cwd!) &&
+        (w?.identity?.executionHostId ?? w?.hostId) === 'local' &&
+        (!w?.hostId || w.hostId === 'local')
+      );
+    } catch {
+      return false;
+    }
+  }
   /** Orca installed and its runtime answering (`orca status`), checked at most every 5 s. */
   reachable(fresh = false): Promise<boolean> {
     return remember(this, 'orca-status', 5000, fresh, async () => {
@@ -154,7 +196,11 @@ export class OrcaLaunch {
   async status(s: OrcaLaunchSession): Promise<OrcaLaunchInfo> {
     try {
       const { cwd, command } = describe(s, this.deps.platform, this.deps.env);
-      if (!(await this.deps.directory(cwd)) || !(await this.reachable()))
+      if (
+        !(await this.deps.directory(cwd)) ||
+        !(await this.reachable()) ||
+        !(await this.workspace(s))
+      )
         return { available: false };
       return { available: true, command };
     } catch {
@@ -164,17 +210,21 @@ export class OrcaLaunch {
   start(
     s: OrcaLaunchSession,
     confirm: (info: { name: string; cwd: string; command: string }) => Promise<boolean>,
+    authorized?: () => void,
   ): Promise<OrcaLaunchInfo> {
     const task = this.queue.then(async () => {
       const t = m().tmux;
       const info = describe(s, this.deps.platform, this.deps.env);
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
-      if (!(await this.reachable(true))) throw new Error(t.orcaUnavailable);
+      if (!(await this.reachable(true)) || !(await this.workspace(s)))
+        throw new Error(t.orcaUnavailable);
       if (!(await confirm(info)))
         return { available: true, command: info.command, launched: false };
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
+      if (!(await this.workspace(s))) throw new Error(t.orcaUnavailable);
       let out: string;
       try {
+        authorized?.();
         out = await this.deps.run(
           this.deps.orca(),
           orcaCreateArgs(s, this.deps.platform, this.deps.env),

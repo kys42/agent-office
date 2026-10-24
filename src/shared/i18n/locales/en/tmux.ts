@@ -1,4 +1,17 @@
 export const tmux = {
+  remoteTitle: 'Summon in this remote office',
+  remoteConfirm: 'Start a new agent on this remote computer?',
+  remoteStart: 'Start remotely',
+  remoteHost: 'Terminal on the remote computer',
+  remoteHint:
+    'Runs at the selected remote project’s worktree root. Orca requires that folder to be a registered workspace. It appears after its first conversation is collected. Complete CLI login or trust prompts on that computer.',
+  remoteUnavailable:
+    'Cannot launch here. Check the remote exporter version, launch permission, shared project and installed CLI/terminal.',
+  remoteUncertain:
+    'The launch result is uncertain. Check the remote terminal before starting another session.',
+  remoteStarted: 'The remote session has started. Waiting for its first conversation.',
+  remoteExisting: 'This named tmux session is already running.',
+  remoteMissing: 'Unavailable on this computer',
   summonTitle: 'Summon a new agent',
   summonIntro:
     'Name a new agent for this project. tmux keeps its terminal session running so you can reconnect and work directly whenever needed.',
