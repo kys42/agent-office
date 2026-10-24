@@ -257,7 +257,24 @@ terminal_title = ["session-id", "thread-name", "project"]
 - UI는 `TerminalTarget.desktop`으로 Desktop 전송을 표시한다. CLI처럼 작업 종료 후
   대기열 처리를 보장하지 않는다. 실행 중 거절/응답 불명확 시 원래 대화 확인을 안내한다.
 
-이 IPC는 2026-10-18 설치된 Desktop의 로컬 코드와 양쪽 Mac의 읽기 전용 조회에서
+### Windows Codex Desktop
+
+Windows MSIX Codex 앱은 `\\.\pipe\codex-ipc`를 사용한다. 설치된 앱 코드와 실제
+읽기 전용 initialize/owner/settings 요청으로 같은 프레임·메서드 버전을 확인했다.
+PowerShell 5.1의 .NET pipe handle에서 서버 PID와 현재 사용자 SID, 설치된
+`OpenAI.Codex_2p2nqsd0c76g0` 패키지의 실행 경로 및 유효한 OpenAI 서명을 확인한다.
+검증한 **동일 연결**을 바이너리 stdio로 중계하며 검증 전에는 프로토콜을 쓰지 않는다.
+POSIX endpoint의 UID·권한·symlink 검사는 유지한다. 임시/다른 CODEX_HOME은 실제
+Windows 앱의 고정 pipe에 붙이지 않는다. 미설치·다른 사용자·서명/프로토콜 불일치는
+전송 불가로 처리한다. 설치 방식이 다른 Windows 앱·CLI·WSL 제어를 확대하지 않는다.
+
+Windows에서는 동시 대상 조회가 검증된 연결 하나를 공유하고 마지막 사용 후 3초에
+닫는다. owner를 대상으로 고정하고 전송 직전 재발견하는 규칙, 설정 상속, 단일 dispatch와
+불확실 응답 시 재전송 금지는 동일하다. 앱·인증·승인 설정은 바꾸지 않는다.
+`tests/codex-windows-pipe.test.ts`의 임시 pipe로 바이너리 프레임·거절 시 무입력·프로필
+분리를 검수한다. 실제 Windows 대화는 owner/settings만 조회하며 테스트 글을 보내지 않는다.
+
+이 IPC는 Mac의 2026-10-18 및 Windows의 2026-10-24 설치된 Desktop 코드와 읽기 전용 조회에서
 확인한 **비공개 호환 계약**이다. [공개 App Server API](https://learn.chatgpt.com/docs/app-server)의
 공식 Desktop 연결 API로 간주하지 않는다. 앱 업데이트로 버전/메서드가 바뀌면
 전송 불가로 처리하며, 다시 프로토콜을 검증해야 한다. 외부 소스 코드를 복사하지 않았다.
