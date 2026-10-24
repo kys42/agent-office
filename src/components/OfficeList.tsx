@@ -1,0 +1,314 @@
+import { useMemo, type CSSProperties } from 'react';
+import {
+  BatteryWarning,
+  CornerDownRight,
+  EyeOff,
+  Folder,
+  GitBranch,
+  GitFork,
+  Layers,
+  List,
+  Pin,
+  Search,
+  Users,
+  WifiOff,
+  X,
+} from 'lucide-react';
+import type { Provider, Session } from '../shared/types';
+import { MOODS, PROVIDERS } from '../shared/types';
+import type { OfficeModel } from '../shared/office-model';
+import { officeListGroups, type OfficeListOrder } from '../shared/office-list';
+import { helperName, parentSession, projectKey, sessionName } from '../shared/office';
+import { isHelper } from '../shared/residents';
+import { durationShort, workingFor } from '../shared/triage';
+import { projectColor } from '../shared/office-layout';
+import { zoneLabel } from '../shared/zones';
+import { branchInfo } from '../shared/branch';
+import { messageExcerpt, sessionActivity } from '../shared/activity';
+import { ago, date, time } from '../lib/format';
+import { useI18n } from '../lib/i18n';
+import { Sprite } from './Sprite';
+
+const projectStyle = (key: string) => ({ '--project-color': projectColor(key) }) as CSSProperties;
+
+export function OfficeList({
+  sessions,
+  model,
+  privacy,
+  selected,
+  onSelect,
+  query,
+  onQuery,
+  filter,
+  onFilter,
+  order,
+  onOrder,
+  scope,
+}: {
+  sessions: Session[];
+  model: OfficeModel;
+  privacy: boolean;
+  selected: string | null;
+  onSelect: (id: string) => void;
+  query: string;
+  onQuery: (value: string) => void;
+  filter: Provider | 'all';
+  onFilter: (value: Provider | 'all') => void;
+  order: OfficeListOrder;
+  onOrder: (value: OfficeListOrder) => void;
+  scope?: { label: string; onClear: () => void };
+}) {
+  const { t } = useI18n();
+  const copy = t.office.list;
+  const groups = useMemo(() => officeListGroups(sessions, order), [sessions, order]);
+  return (
+    <section className="office-list" aria-label={copy.label}>
+      <div className="office-list-tools">
+        <label className="office-list-search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            aria-label={t.roster.searchLabel}
+            placeholder={t.roster.searchPlaceholder}
+            value={query}
+            onChange={(e) => onQuery(e.target.value)}
+          />
+          {query && (
+            <button aria-label={t.roster.clearSearch} onClick={() => onQuery('')}>
+              <X size={13} />
+            </button>
+          )}
+        </label>
+        <select
+          aria-label={t.roster.filterLabel}
+          value={filter}
+          onChange={(e) => onFilter(e.target.value as Provider | 'all')}
+        >
+          <option value="all">{t.roster.all}</option>
+          {(['claude', 'codex', 'openclaw'] as const).map((p) => (
+            <option key={p} value={p}>
+              {PROVIDERS[p].name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label={copy.orderLabel}
+          value={order}
+          onChange={(e) => onOrder(e.target.value as OfficeListOrder)}
+        >
+          <option value="recent">{t.roster.sort.recent}</option>
+          <option value="project">{copy.byProject}</option>
+        </select>
+      </div>
+      {scope && (
+        <div className="roster-scope office-list-scope">
+          <span>{scope.label}</span>
+          <button aria-label={t.roster.clearScope} onClick={scope.onClear}>
+            <X size={12} />
+          </button>
+        </div>
+      )}
+      <div className="office-list-scroll">
+        <div className="office-list-columns" aria-hidden="true">
+          <span>{copy.teammate}</span>
+          <span>{copy.project}</span>
+          <span>{copy.status}</span>
+          <span>{copy.activity}</span>
+        </div>
+        {groups.map((group) => (
+          <section key={group.key} className="office-list-group" style={projectStyle(group.key)}>
+            {order === 'project' && (
+              <h3>
+                <Folder size={14} aria-hidden="true" />
+                <span>{privacy ? t.app.sidebar.hiddenProject : group.label}</span>
+                <small>{group.sessions.length}</small>
+              </h3>
+            )}
+            <ul>
+              {group.sessions.map((s) => {
+                const view = model.view(s.id);
+                const mood = view?.pose.mood ?? s.status;
+                const active = s.id === selected || s.resident?.sessionIds.includes(selected ?? '');
+                const branch = branchInfo(s);
+                const unread = view?.unread.length ?? 0;
+                const helperNews = view?.helperUnread.length ?? 0;
+                const helper = isHelper(s) && !s.resident;
+                const fork = s.relation?.kind === 'fork';
+                const parent = s.attachedTo
+                  ? model.ownerOf(s.attachedTo)
+                  : parentSession(s, model.residents);
+                const helpers = view?.helpers.length ?? 0;
+                const callingHelpers = view?.helpers.filter((v) => v.needsPerson).length ?? 0;
+                const result = view?.group === 'results' ? view.unread[0] : undefined;
+                const elapsed = workingFor(s, model.now);
+                return (
+                  <li key={s.id}>
+                    <button
+                      className={`office-list-row ${helper ? 'is-helper' : ''} ${active ? 'selected' : ''}`}
+                      data-session-id={s.id}
+                      style={projectStyle(projectKey(s))}
+                      aria-pressed={!!active}
+                      onClick={() => onSelect(s.id)}
+                    >
+                      <span className="office-list-identity">
+                        <span
+                          className={`office-list-avatar face face-${s.provider} ${helper ? 'helper-avatar' : ''}`}
+                          aria-label={PROVIDERS[s.provider].name}
+                          title={PROVIDERS[s.provider].name}
+                        >
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={mood}
+                            size={helper ? 28 : 36}
+                          />
+                          {helper && (
+                            <CornerDownRight
+                              size={11}
+                              className="office-list-helper-mark"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </span>
+                        <span className="office-list-copy">
+                          <strong>
+                            <span>
+                              {privacy
+                                ? PROVIDERS[s.provider].name
+                                : helper
+                                  ? helperName(s)
+                                  : sessionName(s)}
+                            </span>
+                            {s.pinned && <Pin size={11} aria-label={copy.pinned} />}
+                            {view?.veiled && (
+                              <EyeOff size={12} aria-label={t.office.veiled.summary} />
+                            )}
+                            {unread > 0 && <em title={t.roster.unreadTitle(unread)}>{unread}</em>}
+                          </strong>
+                          {(helper || fork || helpers > 0 || s.resident || view?.quota) && (
+                            <span className="office-list-relations">
+                              {helper && (
+                                <span className="office-list-kind helper-kind">
+                                  <CornerDownRight size={11} />
+                                  {t.roster.helper}
+                                </span>
+                              )}
+                              {fork && (
+                                <span className="office-list-kind">
+                                  <GitFork size={11} />
+                                  {t.roster.fork}
+                                </span>
+                              )}
+                              {(helper || fork) && parent && (
+                                <span
+                                  className="office-list-lineage"
+                                  title={privacy ? undefined : sessionName(parent)}
+                                >
+                                  {privacy
+                                    ? helper
+                                      ? copy.hiddenParent
+                                      : copy.hiddenFork
+                                    : helper
+                                      ? copy.helperOf(sessionName(parent))
+                                      : copy.forkOf(sessionName(parent))}
+                                </span>
+                              )}
+                              {helpers > 0 && (
+                                <span
+                                  className={`office-list-kind ${callingHelpers ? 'helpers-calling' : ''}`}
+                                >
+                                  <Users size={11} />
+                                  {copy.main} · {copy.helpers(helpers)}
+                                  {callingHelpers > 0 &&
+                                    ` · ${copy.helpersCalling(callingHelpers)}`}
+                                </span>
+                              )}
+                              {s.resident && (
+                                <span
+                                  className="office-list-kind"
+                                  title={copy.activeRuns(
+                                    s.resident.activeCount,
+                                    s.resident.sessionIds.length,
+                                  )}
+                                >
+                                  <Layers size={11} />
+                                  {t.roster.runs(s.resident.sessionIds.length)}
+                                </span>
+                              )}
+                              {view?.quota && (
+                                <span
+                                  className="office-list-kind quota-kind"
+                                  title={t.desk.quota.title(PROVIDERS[s.provider].short)}
+                                >
+                                  <BatteryWarning size={11} />
+                                  {t.desk.quota.label(PROVIDERS[s.provider].short)}
+                                </span>
+                              )}
+                            </span>
+                          )}
+                          <small>
+                            {privacy
+                              ? t.roster.hidden
+                              : messageExcerpt(result?.text ?? sessionActivity(s).text, 180)}
+                          </small>
+                        </span>
+                      </span>
+                      <span className="office-list-project">
+                        <span className="office-list-project-name">
+                          <Folder size={12} aria-hidden="true" />
+                          <span>{privacy ? t.app.sidebar.hiddenProject : zoneLabel(s)}</span>
+                        </span>
+                        <small>
+                          {!privacy && (
+                            <>
+                              <GitBranch size={11} />
+                              <span title={branch.detail}>{branch.label}</span>
+                            </>
+                          )}
+                          {s.remote && (
+                            <span>{privacy ? t.office.zones.office : s.remote.label}</span>
+                          )}
+                        </small>
+                      </span>
+                      <span className={`office-list-status status-${mood}`}>
+                        <i />
+                        {elapsed !== null
+                          ? t.roster.workingFor(durationShort(elapsed))
+                          : result
+                            ? t.roster.newResults(unread, ago(result.at))
+                            : MOODS[mood].label}
+                        {helperNews > 0 && (
+                          <small className="office-list-helper-news">
+                            <CornerDownRight size={11} />
+                            {copy.helperNews(helperNews)}
+                          </small>
+                        )}
+                        {s.remote?.stale && (
+                          <small className="office-list-offline">
+                            <WifiOff size={11} />
+                            {t.federation.offline}
+                          </small>
+                        )}
+                      </span>
+                      <time
+                        dateTime={new Date(s.updatedAt).toISOString()}
+                        title={`${date(s.updatedAt)} ${time(s.updatedAt)}`}
+                      >
+                        {ago(s.updatedAt)}
+                      </time>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))}
+        {!sessions.length && (
+          <div className="empty-state office-list-empty">
+            <List size={28} />
+            <h3>{t.roster.empty}</h3>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
