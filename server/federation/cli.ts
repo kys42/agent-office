@@ -47,6 +47,7 @@ async function main() {
         : args.flatMap((a, i) => (a === '--project' ? [args[i + 1]] : [])),
       conversation: args.includes('--conversation'),
       allowSend: args.includes('--allow-send'),
+      allowLaunch: args.includes('--allow-launch'),
       ...(args.includes('--allow-send') ? { sendToken: randomBytes(32).toString('hex') } : {}),
       ...(args.includes('--profile-dir') ? { profileDir: option('--profile-dir') } : {}),
     });

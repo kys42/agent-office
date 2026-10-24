@@ -92,12 +92,13 @@ export function QuickReply({
         <button
           type="submit"
           className="quick-reply-send"
-          aria-label={t.terminal.send}
+          aria-label={target.canPrepare ? t.federation.connectAndSend : t.terminal.send}
           disabled={sending || !text.trim()}
         >
           {sending ? <Loader size={12} className="now-spin" /> : <CornerDownLeft size={12} />}
         </button>
       </div>
+      {target.canPrepare && <small role="status">{t.federation.codexConnectHint}</small>}
       {draft && (
         <DraftConfirm
           draft={draft}

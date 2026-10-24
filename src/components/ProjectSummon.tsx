@@ -1,3 +1,4 @@
+import { RemoteSummon } from './RemoteSummon';
 import { api } from '../lib/api';
 import type { Session } from '../shared/types';
 import { TmuxResume } from './TmuxResume';
@@ -13,6 +14,22 @@ export function ProjectSummon({
   notify: (message: string) => void;
   demo?: boolean;
 }) {
+  const remote = [
+    ...new Map(
+      sessions
+        .filter((s) => s.remote)
+        .map((s) => [
+          s.remote!.officeId +
+            ':' +
+            (s.workspace?.key ?? s.project) +
+            ':' +
+            (s.workspace?.worktree ?? ''),
+          s,
+        ]),
+    ).values(),
+  ];
+  if (!demo && !privacy && api.remoteLaunch && remote.length && !sessions.some((s) => !s.remote))
+    return <RemoteSummon projects={remote} privacy={privacy} notify={notify} />;
   const projects = [
     ...new Map(sessions.filter((s) => !s.remote && s.cwd).map((s) => [s.cwd, s])).values(),
   ];

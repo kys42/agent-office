@@ -28,6 +28,8 @@ flowchart LR
 - 공통 Codex Desktop 전송은 베타 설정과 독립적인 추가 기능이다. 기존 Codex CLI 큐·Claude 전송을 유지하며 Desktop IPC 미지원은 해당 Desktop 대상만 전송 불가로 처리한다. 모든 Codex 버전·OS의 Desktop 전송 호환성을 보장하지 않는다.
 - 수신 베타를 끄면 기존 로컬 화면으로 복귀하지만, 별도로 실행한 exporter 서버까지 종료하지는 않는다. 원격 공개를 중지하려면 exporter를 별도로 종료하거나 공유 설정을 비활성화한다.
 
+Codex가 원격 목록 캐시를 비운 경우에도, 송신기의 전송 권한으로 확인한 정확한 대화 UUID와 opaque ID 해시를 대조해 연결을 찾는다. `X-Agent-Office-Codex-Identities: 1`을 보낸 targets 요청에만 선택적 `codexThreads`를 반환하므로 기존 송수신기와 호환된다. 로컬 Codex에 알려진 호스트 중 실제 일반 사용자 대화를 맡은 연결이 하나일 때만 전송 경로로 사용한다. 명시적 local/다른 호스트 할당·충돌·잘못된 metadata는 차단하며, 목록만 없는 대화는 자동으로 열지 않는다. 전송 직전에도 공유 범위·권한·현재 할당·실제 담당 연결을 재검증한다. UUID는 내부 전송 조회에만 사용하고 화면 snapshot/target에는 노출하지 않는다.
+
 ## 연결과 권한
 
 TLS 자체 서명 인증서의 SHA-256 지문과 256-bit bearer token을 `connection.json`으로 전달한다. 이 파일은 비밀이며 SSH/SCP 등 이미 신뢰한 경로로 전달한다. 인증서 지문과 유효기간을 확인한 **후** HTTP 토큰을 보낸다. 자동 발견·TOFU·브라우저 CORS·리디렉션은 없다. 인증서 변경 시 파일을 새로 전달하고 연결을 다시 등록한다.
@@ -81,11 +83,20 @@ node /persistent/office-peer.cjs --install-launch-agent \
 
 지속 중지는 `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`로 하고, 이후 로그인에도 켜지지 않게 하려면 plist를 LaunchAgents 밖으로 옮긴다. 재시작은 `launchctl kickstart -k gui/$(id -u)/<label>`이다. 이는 송신기 자동 시작이며 원본 Office 수집기는 별도로 실행돼 있어야 한다. 로그아웃·컴퓨터 절전·LAN 주소 변경 시 가용성을 보장하지 않는다. 기존 개인 DB/인증 초기화나 시스템 전체 LaunchDaemon 등록은 하지 않는다.
 
+## 원격 소환 계약
+
+- 새 세션 생성은 기본 꺼짐이다. 새 송신 설정 초기화에는 `--allow-send --allow-launch --profile-dir <기존 앱 프로필>`을 함께 지정한다. 이미 전송 가능한 연결은 최신 송신기로 업데이트하고 `export.json`의 `allowLaunch`만 `true`로 추가한다. 기존 sendToken을 사용하므로 연결을 다시 가져오지 않는다. 구버전으로 롤백할 때는 이전 설정도 함께 복원한다.
+- 전송 자격증명, 양쪽 기존 전송 설정, 활성 연결, 공유 프로젝트, 원격 수집 일시정지 여부를 검증한다. 읽기 토큰은 실행할 수 없다. HTTPS/TLS pin과 본문 제한을 유지하며 일반 renderer RPC에서는 차단하고 전용 trusted IPC에서 네이티브 확인을 거친다.
+- `launch-status`는 읽기 전용으로 실제 폴더·CLI·tmux/Orca 가용성을 조회한다. Orca는 등록된 로컬 작업공간도 확인한다. `launch`는 명시적 요청에서만 시작하며, 확인한 서버 epoch/계획과 공유 프로젝트의 현재 작업 폴더를 실행 직전까지 재검증한다. 임의 cwd·셸 명령·실행 파일 입력은 받지 않는다.
+- 별도 `commands.sqlite`의 `launches` 저널에 실행 전에 request ID를 기록한다. 동일 요청은 재시작 후에도 재실행하지 않고, 미확인 결과는 `uncertain`으로 유지한다. 자동 재시도는 없다. 원본 Office DB는 읽기 전용이다.
+- 실제 CLI가 첫 대화를 기록하고 기존 수집기가 수집해야 동료가 나타난다. 새 터미널을 만들었다는 응답은 모델의 첫 응답 완료를 뜻하지 않는다. 로그인·신뢰 확인은 해당 컴퓨터에서 완료한다. Orca 탭은 포커스를 가져오지 않는다.
+- 검증: `tests/federation-commands.test.ts`, `tests/orca-launch.test.ts`, `tests/ui/remote-summon.spec.ts`, `env -u CI AGENT_OFFICE_FOCUS_TESTS=0 node --import tsx scripts/remote-launch-smoke.mjs`. 마지막 스크립트는 별도 프로필의 실제 Electron → HTTPS 송신기 → 합성 실행기로 확인창·단일 실행·동료 수집·권한 회수를 검증한다. 실제 사용자 대화를 사용하지 않는다.
+
 ## 원격 채팅 계약
 
 - 조회와 전송 자격증명은 다르다. 기존 읽기 연결은 계속 조회만 가능하며 UI/IPC 응답에 어느 token도 반환하지 않는다. 송신기의 `allowSend`, `sendToken`, 기존 앱의 `terminal-send.json`, 공유 프로젝트 범위가 모두 허용해야 한다. 수신 앱의 기존 터미널 보내기 설정도 적용한다.
-- `targets`는 공유된 해시 ID 최대 20개의 현재 전송 가능 여부만 반환한다. 대상별 전체 DB 반복 읽기를 피하도록 일괄 조회 전후에 각각 한 번씩 현재 공유 목록을 읽는다. 비동기 owner 조회가 끝난 뒤 권한과 모든 대상의 현재 공유 범위를 다시 확인한다. 로컬 경로·터미널 핸들·프로세스 ID는 전송하지 않는다. `send`는 대상 ID, 메시지, 서버 epoch, requestId만 받는다. 실행 명령/대상 경로/임의 RPC는 받지 않는다.
-- 송신기에서 현재 대상을 다시 찾고 권한을 재확인한 뒤 공통 `sendToCodex` 또는 `sendToTerminal`을 호출한다. Codex CLI queue, 이미 열린 Codex Desktop 사용자 대화, Claude의 검증된 Orca/tmux 대상이 가능하다. Desktop은 전송 직전 owner 조회 후 다시 권한을 확인한다. exec, OpenClaw, owner 없는 세션은 새로 열거나 우회 전송하지 않는다. Desktop의 비공개 IPC 호환 한계는 [전송 문서](TERMINAL.md#codex-desktop-대화-전송)를 따른다. 기존 v1 wire의 kind=codex/status=desktop으로 구분하여 새 wire 필드는 추가하지 않는다. 기존 입력 덮어쓰기와 승인/질문 응답은 미지원이다.
+- `targets`는 공유된 해시 ID 최대 20개의 현재 전송 가능 여부만 반환한다. 대상별 전체 DB 반복 읽기를 피하도록 일괄 조회 전후에 각각 한 번씩 현재 공유 목록을 읽는다. 비동기 owner 조회가 끝난 뒤 권한과 모든 대상의 현재 공유 범위를 다시 확인한다. 개별 native 조회는 6초를 넘기거나 실패하면 그 대상만 null로 반환한다. 멈춘 OS 파일/프로세스 작업은 실제 종료될 때까지 같은 결과를 공유해 재조회가 작업을 누적하지 않도록 하며, 미완료 작업은 최대 500개로 제한한다. 다른 대상의 정상 조회는 보존한다. 이 제한은 전송을 재시도하거나 권한 검사를 생략하지 않는다. 로컬 경로·터미널 핸들·프로세스 ID는 전송하지 않는다. `send`는 대상 ID, 메시지, 서버 epoch, requestId만 받는다. 실행 명령/대상 경로/임의 RPC는 받지 않는다.
+- 송신기에서 현재 대상을 다시 찾고 권한을 재확인한 뒤 공통 `sendToCodex` 또는 `sendToTerminal`을 호출한다. Codex CLI queue, 이미 열린 Codex Desktop 사용자 대화, Claude의 검증된 Orca/tmux 대상이 가능하다. Desktop은 전송 직전 owner 조회 후 다시 권한을 확인한다. exec, OpenClaw, owner 없는 세션에 exporter가 임의 세션을 만들거나 우회 전송하지 않는다. 아래 수신 앱의 Codex 원격 경로는 명시적 보내기에서 기존 앱 대화 연결을 준비할 수 있다. Desktop의 비공개 IPC 호환 한계는 [전송 문서](TERMINAL.md#codex-desktop-대화-전송)를 따른다. 기존 v1 wire의 kind=codex/status=desktop으로 구분하여 새 wire 필드는 추가하지 않는다. 기존 입력 덮어쓰기와 승인/질문 응답은 미지원이다.
 - 채팅 입력창에 목적지 컴퓨터를 표시한다. 연결 끊김/일시정지/권한 없음/전송 불가 상태에서 보내기를 막고, 서버에서도 매번 검증한다. 네이티브 호출이 이미 시작된 뒤의 연결 해제는 취소나 미전송을 보장하지 않는다.
 - `config/commands.sqlite`에 requestId·본문 해시·시도 상태만 별도로 기록한다. 사용자 메시지나 원본 DB를 저장/수정하지 않는다. dispatch 전에 pending을 durable 저장하며 재시작 후에도 같은 ID는 다시 실행하지 않는다. pending/네이티브 실패/응답 유실은 미확인으로 안내하고 자동 재전송하지 않는다. 새 요청은 새 서버 epoch가 필요하다. 최대 100,000개 기록 후 신규 전송을 거절하며 자동 삭제하지 않는다.
 - 같은 서버의 동일 세션 전송은 겹치지 않게 막는다. 별도로 실행 중인 원래 앱의 동시 입력과 OS 네이티브 호출은 하나의 원자적 트랜잭션이 아니다. 기존 어댑터의 fresh 대상/입력창 검사 경계를 유지한다.
@@ -114,12 +125,16 @@ command smoke는 가짜 native sender를 주입한 합성 HTTPS 서버와 실제
 
 ## 이 컴퓨터의 Codex 원격 연결로 보내기 (2026-10-21)
 
-원격 컴퓨터의 exporter가 대화를 읽을 수 있어도, 그 대화를 맡은 Codex 앱이 이 컴퓨터에 있으면 exporter의 로컬 owner 조회는 실패한다. 연결 설정에서 각 사무실의 **이 컴퓨터의 Codex 원격 연결**을 명시적으로 선택하면 이 경로를 사용할 수 있다. 기본값은 꺼짐이며 connection.json 가져오기로 이 로컬 권한을 설정할 수 없다. 재가져오기는 매핑을 초기화한다. 목록에 표시할 이름이 없는 연결은 정확한 host ID를 표시한다.
+원격 컴퓨터의 exporter가 대화를 읽을 수 있어도, 그 대화를 맡은 Codex 앱이 이 컴퓨터에 있으면 exporter의 로컬 owner 조회는 실패한다. 별도 매핑 없이 **자동으로 찾기**가 기본이다. 인증된 사무실의 공유 대화 해시와 이 컴퓨터 Codex의 정확한 thread/host membership이 하나로 일치하면 그 연결을 사용한다. 사무실 이름·프로젝트 이름·IP 유사성으로 연결하지 않는다. connection.json은 로컬 호스트 지정 값을 받을 수 없고, 기존 수동 지정은 우선하는 고정값으로 유지한다. 수동 지정이 틀렸을 때 다른 호스트로 우회하지 않는다. 목록에 표시할 이름이 없는 연결은 정확한 host ID를 표시한다.
 
 - 기존 exporter의 전송 가능한 대상이 있으면 그 경로를 우선한다. 없을 때만 Codex 원격 연결을 조회한다. 전송 실패 후 다른 경로로 재시도하지 않는다.
 - 로컬 `$CODEX_HOME/.codex-global-state.json`의 thread/host membership 및 host가 일치하는 `remote-thread-summaries-v3` 캐시에서만 native ID를 찾는다. wire ID `sha256(codex:<native ID>)`까지 같아야 한다. 제목·경로로 추정하지 않고, 같은 ID의 host가 서로 다르면 거부한다. 이 파일은 수정하지 않는다.
-- 공유된 root/fork Codex 대화 중 interactive 또는 기존 exporter의 unknown 출처를 대상으로 조회한다. scheduled/internal 출처는 제외한다. unknown도 아래의 실제 Codex owner 사용자 대화 검증을 통과해야 한다. 현재 앱의 owner가 resumed/default/user 대화임을 확인해야 한다. 사용자가 Codex에서 해당 원격 대화를 열어 둔 뒤 **전송 대상 다시 확인**을 누른다. 자동 재개나 새 app-server 생성은 하지 않는다.
-- 기존 `/office/v1/commands/targets`는 target이 null이어도 해당 ID의 전송 토큰·공유 범위·exporter profile 설정을 검증한다. 이 성공 응답이 있어야 relay를 조회하고, dispatch 직전 같은 인증을 반복한다. 로컬 전송 설정·모바일 권한·현재 표시 범위와 peer generation도 다시 확인한다. 네트워크 실패나 권한 거부는 우회하지 않는다.
+- 공유된 root/fork Codex 대화 중 interactive 또는 기존 exporter의 unknown 출처를 대상으로 조회한다. scheduled/internal 출처는 제외한다. unknown도 아래의 실제 Codex owner 사용자 대화 검증을 통과해야 한다. 현재 앱의 owner가 resumed/default/user 대화임을 확인해야 한다. **상태 조회는 읽기 전용**이며 owner를 찾지 못해도 대화를 열지 않는다. macOS에서는 정확한 연결을 찾고 IPC가 `no-client-found`로 owner 부재를 명시하면 `canSend=false, canPrepare=true`로 **연결하고 보내기**를 제공한다. 사용자가 보내기를 실행할 때만 기존 Codex 앱의 `codex://threads/<id>?hostId=<host>` 링크로 해당 대화를 열고 최대 30초 동안 owner를 확인한다. 이때 Codex 창이 열릴 수 있으며 UI에 안내한다. 링크에 메시지 본문은 포함하지 않는다. 별도 app-server나 exec 세션을 만들지 않는다. 지원하지 않는 owner, 권한/프로토콜 오류, 안전하지 않은 소켓, 응답 시간 초과는 연결 준비 대상으로 올리지 않는다. Windows와 모바일 UI에서는 현재 이 연결 준비 기능을 제공하지 않는다.
+- 기존 `/office/v1/commands/targets`는 target이 null이어도 해당 ID의 전송 토큰·공유 범위·exporter profile 설정을 검증한다. 이 성공 응답이 있어야 relay를 조회하고, 대화를 열기 전·연결 대기 중·dispatch 직전에 같은 인증과 정확한 호스트/대화 일치를 반복한다. 대기 중 권한이 회수되거나 경로가 바뀌면 전송하지 않는다. 연결 실패는 미전송으로 알리고 초안을 보존한다. 원격 대상 조회와 연결 준비가 포함된 worker 호출 제한은 120초이며 일반 호출은 45초다. 로컬 전송 설정·모바일 권한·현재 표시 범위와 peer generation도 다시 확인한다. 네트워크 실패나 권한 거부는 우회하지 않는다.
 - 수신 앱의 `federation-beta/outgoing.sqlite`에 요청 ID, 세션/본문의 해시, pending/sent 상태만 기록한다. pending은 앱 재시작 후에도 다시 보내지 않으며 본문은 보관하지 않는다. 같은 요청의 다른 payload는 거절하고, 한 대화에 동시 전송을 막는다. 저널은 10만 건에서 새 요청을 거부하며 자동 삭제하지 않는다.
 
 원격 UI에는 사무실과 이 컴퓨터의 Codex 원격 경로를 함께 표시한다. native ID/socket/client ID는 renderer나 peer wire에 추가하지 않는다. 구버전 exporter와 기존 로컬 CLI/Desktop/tmux 전송은 그대로 사용할 수 있다. Codex의 내부 IPC 형식이 바뀌거나 로컬 host 캐시에서 대화를 찾지 못하면 이 경로는 전송 불가가 된다. Windows 및 실제 원격 대화의 종단 전송은 별도 검증이 필요하다.
+
+검수는 사용자 Mac에서 quiet 기본값을 유지한다. 실패 원인 조사 중에도 `AGENT_OFFICE_FOCUS_TESTS=1` 또는 `CI=1`로 전경 테스트를 켜지 않는다. 실제 OS 포커스 검사는 전용 CI나 별도 합의한 환경에서만 한다.
+
+Codex의 owner 없음 응답은 요청의 짧은 제한과 별개로 약 10초 뒤 도착할 수 있다. 수신 relay는 정확한 hostId와 conversationId를 담은 version 2 follower settings 조회로 원격 owner를 찾는다. 일부 Codex 클라이언트는 owner-discovery를 local에만 등록하므로 이 요청을 원격 전송의 선행 조건으로 삼지 않는다. 첫 설정 조회는 11초를 기다리고, 반환된 handledByClientId를 지정해 같은 연결에서 설정을 다시 검증한다. 두 응답 모두 resumed/default/user여야 하며 initialize와 지정된 owner의 설정 재검증은 2초로 제한한다. 명시적인 `no-client-found`만 연결 준비로 분류하고 timeout은 준비 불가로 처리한다. 여러 사무실의 대상 조회는 20개씩 최대 5개 배치를 병렬 실행해 느린 owner discovery가 뒤의 사무실을 직렬로 막지 않는다. 설정 변경·종료 시 대기 중 배치를 시작하지 않고 이전 결과도 폐기한다.

@@ -104,3 +104,74 @@ test('A temporarily unavailable existing mapping survives edits; unknown new map
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('Preparing opens only the exact existing conversation after authorization, with no prompt in URL', async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'ao-connect-'));
+  const id = randomUUID(),
+    host = 'remote-control:env_fixture';
+  const file = path.join(home, '.codex-global-state.json');
+  writeFileSync(file, JSON.stringify({ 'thread-project-membership-host-ids': { [id]: host } }));
+  const opened: string[] = [],
+    steps: string[] = [];
+  const relay = new DesktopCodexRelay(home, async (url) => {
+    opened.push(url);
+    steps.push('open');
+  });
+  relay.available = async () => {
+    steps.push('owner');
+    return true;
+  };
+  try {
+    await relay.prepare!(host, id, async () => {
+      steps.push('authorize');
+    });
+    const url = new URL(opened[0]);
+    assert.equal(url.protocol, 'codex:');
+    assert.equal(url.hostname, 'threads');
+    assert.equal(url.pathname, `/${id}`);
+    assert.equal(url.searchParams.get('hostId'), host);
+    assert.deepEqual([...url.searchParams.keys()], ['hostId']);
+    assert.deepEqual(steps, ['authorize', 'open', 'authorize', 'owner']);
+    await assert.rejects(
+      relay.prepare!(host, id, async () => {
+        throw Error('revoked');
+      }),
+    );
+    assert.equal(opened.length, 1);
+    await assert.rejects(
+      relay.prepare!(host, id, async () => {
+        writeFileSync(file, '{}');
+      }),
+    );
+    assert.equal(opened.length, 1, 'membership removed during authorization does not open');
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Empty remote lists retain host candidates but identities still require exact proof and no conflicting assignment', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'ao-empty-'));
+  const id = randomUUID(),
+    host = 'remote-control:env_mini';
+  const file = path.join(home, '.codex-global-state.json');
+  const state = { 'electron-persisted-atom-state': { [`remote-thread-summaries-v3:${host}`]: [] } };
+  const relay = new DesktopCodexRelay(home);
+  try {
+    writeFileSync(file, JSON.stringify(state));
+    assert.equal(relay.hosts()[0].id, host);
+    assert.equal(relay.resolve(host, wireId(`codex:${id}`)), null);
+    assert.equal(relay.acceptsIdentity(host, wireId(`codex:${id}`), id), true);
+    assert.equal(relay.acceptsIdentity(host, wireId(`codex:${randomUUID()}`), id), false);
+    for (const assigned of ['local', 'ssh:other']) {
+      writeFileSync(
+        file,
+        JSON.stringify({ ...state, 'thread-project-membership-host-ids': { [id]: assigned } }),
+      );
+      assert.equal(relay.acceptsIdentity(host, wireId(`codex:${id}`), id), false);
+    }
+    writeFileSync(file, '{broken');
+    assert.equal(relay.acceptsIdentity(host, wireId(`codex:${id}`), id), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
