@@ -22,7 +22,7 @@ import type { CodexRelay } from '../../desktop/codex-remote.js';
 import { RelayJournal } from './relay-journal.js';
 import { noticeCandidates } from '../../src/shared/notices.js';
 import { isVeiled } from '../../src/shared/veil.js';
-import { needsAttention } from '../../src/shared/residents.js';
+import { needsAttention, officeResidents } from '../../src/shared/residents.js';
 const hostSchema = z
   .string()
   .regex(/^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/)
@@ -384,12 +384,21 @@ export class PeerManager extends EventEmitter {
   private revealConversations() {
     const next = { ...this.hidden };
     let changed = false;
-    for (const s of this.sessions()) {
-      if (!next[s.id]) continue;
+    const sessions = this.sessions();
+    const byId = new Map(sessions.map((s) => [s.id, s]));
+    for (const resident of officeResidents(sessions).sessions) {
+      const members = (resident.resident?.sessionIds ?? [resident.id]).map((id) => byId.get(id)!);
+      if (!members.some((s) => next[s.id])) continue;
       // Remote snapshots carry public events, not the source office's notice receipts.
       // Retire the marker once a conversation is observed: bounded events may later disappear.
-      if (needsAttention(s) || !isVeiled([s], noticeCandidates(s))) {
-        delete next[s.id];
+      if (
+        members.some(needsAttention) ||
+        !isVeiled(
+          members,
+          members.flatMap((s) => noticeCandidates(s)),
+        )
+      ) {
+        for (const s of members) delete next[s.id];
         changed = true;
       }
     }
