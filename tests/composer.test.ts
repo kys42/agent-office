@@ -801,3 +801,8 @@ test('sameWrapped: no wrap is proven across an emoji sequence', () => {
   const f = '👨‍👩‍👧'.repeat(3);
   assert.ok(!sameWrapped(f + '\nnext', f + ' next', 20));
 });
+
+test('sameWrapped: nor before an emoji word', () => {
+  const e = '👨‍👩‍👧'.repeat(6);
+  assert.ok(!sameWrapped(`hello\n${e}`, `hello ${e}`, 38));
+});

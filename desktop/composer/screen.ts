@@ -154,8 +154,12 @@ export function sameWrapped(shown: string, text: string, width?: number): boolea
         if (/[ \t]/.test(source[at])) {
           // At a space: the next word would not have fit after the row.
           const word = /^\S*/.exec(source.slice(at).replace(/^[ \t]+/, ''))![0];
-          if (cells(row) + 1 + cells(word) <= width) return false;
-        } else if (cells(row) + cells(source[at]) <= width) {
+          if (/\p{Extended_Pictographic}/u.test(word) || cells(row) + 1 + cells(word) <= width)
+            return false;
+        } else if (
+          /\p{Extended_Pictographic}/u.test(source[at]) ||
+          cells(row) + cells(source[at]) <= width
+        ) {
           // Inside a word: only a row filled to the last cell that could hold it.
           return false;
         }
