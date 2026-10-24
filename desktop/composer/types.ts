@@ -30,6 +30,8 @@ export interface ComposerHost {
  * - `unknown`: text that cannot be told apart from a suggestion on this host (plain screens).
  *   For both, `whole`: all of the text is known (on screen, or reported apart in full). A box
  *   too short for its text shows only part of it; such a composer needs explicit permission to clear hidden content.
+ *   `width`: the most cells a row of text in the box can take, when the box was read from the
+ *   screen (an overestimate); absent when the host reports the text apart (Orca's `draft`).
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
@@ -37,8 +39,8 @@ export interface ComposerHost {
 export type ComposerState =
   | { kind: 'empty' }
   | { kind: 'suggestion'; text: string; inferred?: boolean }
-  | { kind: 'draft'; text: string; whole: boolean }
-  | { kind: 'unknown'; text: string; whole: boolean }
+  | { kind: 'draft'; text: string; whole: boolean; width?: number }
+  | { kind: 'unknown'; text: string; whole: boolean; width?: number }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
@@ -66,12 +68,13 @@ export type ComposerBackup = (text: string) => Promise<void>;
  * not all of the text was known, so nothing was deleted; `lost` when Claude stopped being the
  * one at the terminal). `changed`: the composer stopped
  * matching the confirmed text minus what the keys deleted (someone typing meanwhile); it was
- * left alone and must be shown again.
+ * left alone and must be shown again. `hidden`: the box looked empty, yet one more (lossless)
+ * deletion step brought text into view that was out of sight: not all of it was ever shown.
  */
 export type ClearResult =
   | { status: 'cleared'; state: ComposerState }
   | { status: 'failed'; state: ComposerState; partial?: boolean; lost?: boolean }
-  | { status: 'changed'; text: string; whole: boolean };
+  | { status: 'changed'; text: string; whole: boolean; hidden?: boolean };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */

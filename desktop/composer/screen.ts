@@ -19,6 +19,14 @@ export interface Screen {
   composer?: string;
   /** The pane's height in rows, when the host reports it (tmux). */
   height?: number;
+  /**
+   * The pane shows its alternate screen (tmux `#{alternate_on}`), when the host reports it.
+   * Claude Code's fullscreen renderer draws there and caps its box (see maxBoxRows); its
+   * default (inline) renderer draws on the main screen and shows every row of the box. Reported
+   * only while the pane's `alternate-screen` option is on: with it off, the fullscreen renderer
+   * draws on the main screen too.
+   */
+  alternate?: boolean;
 }
 
 /**
@@ -92,3 +100,72 @@ export function parseStyledScreen(raw: string): Screen {
 /** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
 export const drawn = (value: string) =>
   value.normalize('NFC').replace(/[\s\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
+
+const invisible = (value: string) =>
+  value.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
+
+/**
+ * East Asian wide and fullwidth characters, and emoji: two cells in a terminal. Everything else
+ * (accented Latin, Greek, Cyrillic, …) takes one. Used to prove a row was full, so it must not
+ * overcount.
+ */
+const WIDE =
+  /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]|[\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{3fffd}]/u;
+/** Cells a stretch of text takes in the terminal. */
+const ZERO = /^[\p{M}\u200b-\u200f\u2060\ufe00-\ufe0f]$/u;
+/** Cells a stretch of text takes in the terminal: combining marks and joiners take none. */
+const cells = (text: string) =>
+  [...text].reduce((sum, char) => sum + (ZERO.test(char) ? 0 : WIDE.test(char) ? 2 : 1), 0);
+
+/** No box this narrow: a text whose rows are all shorter than this was never wrapped. */
+const MIN_WRAP = 20;
+
+/**
+ * `shown` (rows read from the box, each trimmed) is exactly `text` as the box wraps it. Each line
+ * of the text takes one or more rows: a blank line exactly one blank row, any other line rows
+ * that are stretches of it, spaces inside them included, separated only by the spaces a wrap took
+ * (or nothing: a word split by the wrap); its indentation is not drawn. A row ends inside a line
+ * only where the box must have wrapped it: the row plus the next word would not have fit in
+ * `width` (the box's, in cells, overestimated by the caller). A break typed into a short row is an
+ * edit; with the width unknown every break inside a line is. Unlike `drawn`, a space, a line
+ * break or a blank row taken out or added is a different text.
+ */
+export function sameWrapped(shown: string, text: string, width?: number): boolean {
+  const rows = invisible(shown)
+    .split('\n')
+    .map((row) => row.trim());
+  let next = 0;
+  for (const line of invisible(text).split('\n')) {
+    const source = line.trim();
+    if (!source) {
+      if (rows[next++] !== '') return false;
+      continue;
+    }
+    let at = 0;
+    while (at < source.length) {
+      const row = rows[next++];
+      if (!row || !source.startsWith(row, at)) return false;
+      at += row.length;
+      if (at < source.length) {
+        // A wrap inside this line: only where the next word could not have fit on the row.
+        // Emoji sequences draw as one cluster whose width a count cannot prove: no wrap there.
+        if (width === undefined || width < MIN_WRAP || /\p{Extended_Pictographic}/u.test(row))
+          return false;
+        if (/[ \t]/.test(source[at])) {
+          // At a space: the next word would not have fit after the row.
+          const word = /^\S*/.exec(source.slice(at).replace(/^[ \t]+/, ''))![0];
+          if (/\p{Extended_Pictographic}/u.test(word) || cells(row) + 1 + cells(word) <= width)
+            return false;
+        } else if (
+          /\p{Extended_Pictographic}/u.test(source[at]) ||
+          cells(row) + cells(source[at]) <= width
+        ) {
+          // Inside a word: only a row filled to the last cell that could hold it.
+          return false;
+        }
+      }
+      while (at < source.length && /[ \t]/.test(source[at])) at++;
+    }
+  }
+  return next === rows.length;
+}

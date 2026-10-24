@@ -61,7 +61,15 @@ export const desktop: Messages['desktop'] = {
       `${host}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
     orcaNoSwitch: 'Orca가 그 터미널로 이동하지 못했어요.',
     orcaFocused: 'Orca의 해당 터미널로 이동했어요',
-    tmuxFocused: (label) => `tmux ${label} 패널을 선택했어요`,
+    tmuxFocused: (label, app) => `${app}에서 tmux ${label} 패널로 이동했어요`,
+    tmuxAttached: (label) => `터미널을 열어 tmux ${label}에 연결했어요`,
+    tmuxNotRaised: (label) =>
+      `tmux를 ${label} 패널로 바꿨지만 그 터미널 창을 앞으로 가져오지 못했어요.`,
+    tmuxAppOnly: (label, app) =>
+      `tmux를 ${label} 패널로 바꾸고 ${app} 앱을 앞으로 가져왔지만, 그 패널이 보이는 창·탭을 고르지는 못했어요.`,
+    tmuxAttachHint: (label, command) =>
+      `tmux ${label}에 연결된 터미널이 없어요. 터미널에서 연결해 주세요: ${command}`,
+    tmuxOpenFailed: (label) => `tmux ${label} 패널은 선택했지만 연결할 터미널을 열지 못했어요.`,
     empty: '보낼 내용을 입력해 주세요.',
     tooLong: (max) => `${max}자 이하로 보내 주세요.`,
     notOwner: 'Claude가 지금 터미널 앞에 있지 않아요(일시정지 등). 터미널을 확인해 주세요.',

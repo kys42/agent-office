@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
-import type { TerminalHost } from './terminal-host.js';
+import { tmuxArg, type TerminalHost } from './terminal-host.js';
 import type { Session, TmuxResumeInfo } from '../src/shared/types.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
@@ -175,7 +175,7 @@ export class TmuxResume {
       name: data.name,
       cwd: data.cwd,
       running: !!row && !deadPane,
-      command: `${quote(tmux)} -L ${quote(this.deps.server)} attach-session -t ${quote('=' + data.name)}`,
+      command: `${quote(tmux)} -L ${quote(this.deps.server)} attach-session -t ${quote(tmuxArg('=' + data.name))}`,
       canOpen: this.deps.platform === 'darwin',
     };
     return { ...data, tmux, info, deadPane };
@@ -223,7 +223,20 @@ export class TmuxResume {
             '/dev/null',
             ...(current.deadPane
               ? ['respawn-pane', '-t', current.deadPane, '-c', current.cwd]
-              : ['new-session', '-d', '-s', current.name, '-c', current.cwd]),
+              : // Detached, a new window would be 80×24: Claude Code's box then shows 7 rows
+                // and a longer draft hides its start. A client that attaches still resizes it.
+                [
+                  'new-session',
+                  '-d',
+                  '-x',
+                  '200',
+                  '-y',
+                  '50',
+                  '-s',
+                  current.name,
+                  '-c',
+                  current.cwd,
+                ]),
             '/usr/bin/env',
             '-u',
             'CLAUDECODE',

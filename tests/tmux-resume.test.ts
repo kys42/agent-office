@@ -71,6 +71,16 @@ test('Codex resumes an explicit existing conversation without a prompt or bypass
   const args = f.calls.find((x) => x.args.includes('new-session'))!.args;
   const at = args.indexOf('/bin/codex');
   assert.deepEqual(args.slice(at + 1, at + 3), ['resume', session.nativeId]);
+  // Detached but roomy: an 80×24 default would scroll Claude's prompt box at 7 rows.
+  const created = args.indexOf('new-session');
+  assert.deepEqual(args.slice(created, created + 6), [
+    'new-session',
+    '-d',
+    '-x',
+    '200',
+    '-y',
+    '50',
+  ]);
 });
 test('unowned name collision and unreadable inventory refuse creation', async () => {
   const f = fixture();

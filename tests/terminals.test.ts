@@ -665,7 +665,7 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
       '-p',
       '-t',
       '%3',
-      '#{pane_in_mode} #{pane_height}',
+      '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen}',
     ];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-e', '-t', '%3'];
     assert.equal(tmux.length, 9);
@@ -943,9 +943,20 @@ test('Clear & send: clipboard, clear, verify empty, type, verify, then Enter', a
       });
       assert.equal(result.status, 'sent', live.host.kind);
       assert.equal(result.status === 'sent' && result.cleared, true);
+      // tmux proves the emptied box with one more pair (a scrolled box may hide rows).
+      const settle = live.host.kind === 'tmux' ? ['clear', 'read'] : [];
       assert.deepEqual(
         log.filter((step, i) => step !== log[i - 1]),
-        ['read', 'clipboard:half-written idea', 'clear', 'read', 'type', 'read', 'enter'],
+        [
+          'read',
+          'clipboard:half-written idea',
+          'clear',
+          'read',
+          ...settle,
+          'type',
+          'read',
+          'enter',
+        ],
         live.host.kind,
       );
       // One Ctrl+K·Ctrl+U pair at a time.
@@ -1466,18 +1477,24 @@ test('Focus switches the exact Orca terminal or tmux pane', async () => {
     focusTerminal(orcaLive(), broken.deps),
     (error) => error === transportError && !(error instanceof TerminalInputError),
   );
-  const tmux = fakeDeps('/x', {
-    fail: (_file, args) => (args.includes('switch-client') ? new Error('no client') : undefined),
-  });
+  // Client lookup, Terminal attach and app raising are covered in tests/terminal-focus.test.ts.
+  const tmux = fakeDeps('/x');
+  const run = tmux.deps.run;
+  tmux.deps.run = (file, args, o) =>
+    args.includes('list-clients')
+      ? run(file, args, o).then(() => '/dev/ttys020\t7000\t1\n')
+      : run(file, args, o);
   await focusTerminal(tmuxLive(), tmux.deps);
   assert.deepEqual(
-    tmux.calls.map((c) => c.args.slice(2)),
+    tmux.calls.filter((c) => c.file === '/bin/tmux').map((c) => c.args.slice(2)),
     [
       ['select-window', '-t', '%3'],
       ['select-pane', '-t', '%3'],
-      ['switch-client', '-t', '%3'],
+      ['list-clients', '-t', '%3', '-F', '#{client_tty}\t#{client_pid}\t#{client_activity}'],
+      ['switch-client', '-c', '/dev/ttys020', '-t', '%3'],
     ],
   );
+  assert.ok(!tmux.calls.some((c) => c.args.includes('send-keys')));
 });
 
 test('The shared service (also the web preview RPC) can neither reach terminals nor enable sending', async () => {
@@ -1723,4 +1740,359 @@ test('claudeAbsent: a record that cannot be read for any reason but removal is n
     };
     assert.equal(await claudeAbsent(SESSION, removed.deps, true), true);
   });
+});
+
+/**
+ * A Claude Code box that scrolls (fullscreen renderer): `rows` wrapped rows, the cursor on the
+ * last, at most `cap` rows in view from `offset`. The window follows the cursor only when it
+ * leaves (`lazy`), so deleting from the end shrinks the box down to one blank row while rows
+ * above stay out of sight — the shape a scrolled box was suspected to take in the 2026-10-23
+ * report. A paste re-anchors the window on the end. Each Ctrl+K·Ctrl+U pair empties the cursor's
+ * row, or (already blank) joins it to the row above.
+ */
+function scrolledBox(rows: string[], cap: number) {
+  const box = { rows: [...rows], offset: Math.max(0, rows.length - cap), loaded: '', enters: 0 };
+  const cursor = () => box.rows.length - 1;
+  const pair = () => {
+    const row = cursor();
+    if (box.rows[row]) box.rows[row] = '';
+    else if (row > 0) box.rows.pop();
+    if (cursor() < box.offset) box.offset = cursor();
+  };
+  const screen = () =>
+    claudeScreen(box.rows.slice(box.offset, box.offset + cap).join('\n')).replace(/\n {2}$/, '');
+  const attach = (deps: TerminalDeps) => {
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (args.includes('load-buffer')) box.loaded = options?.input ?? '';
+      if (args.includes('paste-buffer')) {
+        box.rows[cursor()] += box.loaded;
+        box.offset = Math.max(0, box.rows.length - cap);
+      }
+      if (args.includes('send-keys') && args.includes('C-k')) pair();
+      if (args.includes('send-keys') && args.includes('Enter')) box.enters++;
+      return run(file, args, options);
+    };
+  };
+  return { box, screen, attach };
+}
+
+test('A scrolled box that shrinks to one blank row is proven empty before the reply goes in', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // 80×24: the box shows 7 rows; the draft has 20, the first 13 out of sight.
+    const draft = Array.from({ length: 20 }, (_, i) => `draft row ${i + 1} of the long idea`);
+    const sim = scrolledBox(draft, 7);
+    const { deps, calls } = fakeDeps(dir, { screen: () => sim.screen(), paneHeight: 24 });
+    sim.attach(deps);
+    const backups: string[] = [];
+    const backup = async (text: string) => void backups.push(text);
+    let result = await sendToTerminal(tmuxLive(), '1번으로 답글 최종본 정리해줘', deps, {
+      backup,
+    });
+    assert.equal(result.status === 'needs-confirm' && result.partial, true);
+    // A row that shows up after an empty frame may be typing: saved, left alone and asked about
+    // (never typed over); each confirmation takes it and asks about the next.
+    for (let asks = 0; result.status === 'needs-confirm'; asks++) {
+      assert.ok(asks <= draft.length, 'ends');
+      assert.equal(result.partial, true);
+      assert.ok(!sent(calls));
+      result = await sendToTerminal(tmuxLive(), '1번으로 답글 최종본 정리해줘', deps, {
+        replaceDraft: result.draft,
+        allowPartialDraft: true,
+        backup,
+      });
+    }
+    assert.equal(result.status, 'sent');
+    // Only the reply was submitted: every row of the draft went first.
+    assert.deepEqual(sim.box.rows, ['1번으로 답글 최종본 정리해줘']);
+    assert.equal(sim.box.enters, 1);
+    // Rows that came into view one by one were saved too, before they were deleted.
+    for (const row of draft) assert.ok(backups.at(-1)!.includes(row), row);
+    assert.ok(typedAny(calls));
+  });
+});
+
+test('Typing that shows up during the settling pair is never taken for the hidden draft', async () => {
+  // New words, or a saved row with one space taken out: neither is a row already saved.
+  for (const typed of ['a new idea', 'print("ab")'])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      // 7 rows at the cap: maybe scrolled, so partial; the person accepts losing hidden rows.
+      const draft = Array.from({ length: 6 }, (_, i) => `draft row ${i + 1} of the long idea`);
+      draft.push('print("a b")');
+      const sim = scrolledBox(draft, 7);
+      const { deps, calls } = fakeDeps(dir, { screen: () => sim.screen(), paneHeight: 24 });
+      sim.attach(deps);
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        const empty = sim.box.rows.length === 1 && !sim.box.rows[0];
+        const out = await run(file, args, options);
+        // The old draft is gone; while the settling pair redraws, the person starts typing.
+        if (empty && args.includes('send-keys') && args.includes('C-k')) sim.box.rows = [typed];
+        return out;
+      };
+      const backups: string[] = [];
+      const backup = async (text: string) => void backups.push(text);
+      const first = await sendToTerminal(tmuxLive(), 'reply', deps, { backup });
+      assert.equal(first.status === 'needs-confirm' && first.partial, true);
+      const again = await sendToTerminal(tmuxLive(), 'reply', deps, {
+        replaceDraft: first.status === 'needs-confirm' ? first.draft : '',
+        allowPartialDraft: true,
+        backup,
+      });
+      assert.equal(again.status === 'needs-confirm' && again.draft, typed);
+      assert.equal(again.status === 'needs-confirm' && again.clipboard, true);
+      // Left alone, saved, nothing typed over it or sent.
+      assert.deepEqual(sim.box.rows, [typed]);
+      assert.ok(backups.at(-1)!.split('\n').includes(typed), typed);
+      assert.ok(!typedAny(calls) && !sent(calls));
+    });
+});
+
+test('Rows that show up once a whole-looking box is emptied are asked about, never typed over', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // The box shows 2 of its rows (fewer than 7: taken as whole), the rest out of sight above.
+    const sim = scrolledBox(['hidden one', 'hidden two', 'seen one', 'seen two'], 7);
+    sim.box.offset = 2;
+    const { deps, calls } = fakeDeps(dir, { screen: () => sim.screen(), paneHeight: 24 });
+    sim.attach(deps);
+    const first = await sendToTerminal(tmuxLive(), 'hi', deps, { backup: async () => {} });
+    assert.equal(first.status === 'needs-confirm' && !first.partial, true);
+    const again = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      replaceDraft: first.status === 'needs-confirm' ? first.draft : '',
+      backup: async () => {},
+    });
+    // The row that came into view was never shown: asked about as a partial draft.
+    assert.equal(again.status, 'needs-confirm');
+    assert.equal(again.status === 'needs-confirm' && again.partial, true);
+    assert.equal(again.status === 'needs-confirm' && again.draft, 'hidden two');
+    assert.ok(!typedAny(calls) && !sent(calls));
+  });
+});
+
+test('A reply a failed send left in the box is its own: taken back, never shown as a draft', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const reply = '1번으로 답글 최종본 정리해줘';
+    let prompt = '';
+    // `fail` sends: every check after their paste reads a frame that is not (yet) the reply.
+    let fail = 0;
+    let glitch = false;
+    const { deps, calls } = fakeDeps(dir, {
+      screen: () => claudeScreen(glitch ? `${prompt} …` : prompt),
+    });
+    const run = deps.run;
+    let loaded = '';
+    deps.run = async (file, args, options) => {
+      if (args.includes('load-buffer')) loaded = options?.input ?? '';
+      if (args.includes('paste-buffer')) {
+        prompt += loaded;
+        glitch = fail-- > 0;
+      }
+      if (clears(args) || (args.includes('send-keys') && args.includes('Enter'))) {
+        prompt = '';
+        glitch = false;
+      }
+      return run(file, args, options);
+    };
+    const settle = () => (glitch = false);
+    const clipboard: string[] = [];
+    const backup = async (text: string) => void clipboard.push(text);
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    assert.equal(prompt, reply);
+    // Recovery after the error: the reply itself is nothing to decide about.
+    assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps), null);
+    // The next send takes it back without asking or touching the clipboard, then sends.
+    const result = await sendToTerminal(tmuxLive(), reply, deps, { backup });
+    assert.equal(result.status, 'sent');
+    assert.equal(result.status === 'sent' && result.cleared, undefined);
+    assert.deepEqual(clipboard, []);
+    assert.equal(calls.filter((c) => c.args.includes('paste-buffer')).length, 2);
+    // Even when that send fails its check as well, the one after is never asked about either.
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /확인하지 못해/);
+    settle();
+    assert.equal((await sendToTerminal(tmuxLive(), reply, deps, { backup })).status, 'sent');
+    assert.deepEqual(clipboard, []);
+    // Edited in the terminal since, it is the person's draft again.
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    prompt = `${reply} 그리고 하나 더`;
+    const asked = await sendToTerminal(tmuxLive(), reply, deps, { backup });
+    assert.equal(asked.status === 'needs-confirm' && asked.draft, prompt);
+    // As small an edit as one space taken out counts: asked about, nothing deleted or saved.
+    prompt = '';
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    prompt = reply.replace(' ', '');
+    assert.equal((await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps))?.draft, prompt);
+    const spaced = await sendToTerminal(tmuxLive(), reply, deps, { backup });
+    assert.equal(spaced.status === 'needs-confirm' && spaced.draft, prompt);
+    assert.equal(prompt, reply.replace(' ', ''));
+    assert.deepEqual(clipboard, []);
+    // Seen gone once (the person sent or cleared it), the claim ends: the same words typed
+    // again later are theirs.
+    prompt = '';
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    prompt = '';
+    assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps), null);
+    prompt = reply;
+    assert.equal((await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps))?.draft, reply);
+    const retyped = await sendToTerminal(tmuxLive(), reply, deps, { backup });
+    assert.equal(retyped.status === 'needs-confirm' && retyped.draft, reply);
+    // A different send never takes the leftover back unasked: deleting it would lose it.
+    prompt = '';
+    fail = 1;
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    settle();
+    const other = await sendToTerminal(tmuxLive(), '다른 답글', deps, { backup });
+    assert.equal(other.status === 'needs-confirm' && other.draft, reply);
+    assert.equal(prompt, reply);
+    assert.deepEqual(clipboard, []);
+  });
+});
+
+test("Orca: a paste it refused is not the app's; one with no clear answer still is", async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const reply = 'run the tests again';
+    for (const [answer, own] of [
+      ['refused', false],
+      ['timeout', true],
+    ] as const) {
+      let draft: string | undefined;
+      const { deps } = fakeDeps(dir, { orcaDraft: () => draft });
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        if (
+          file === '/bin/orca' &&
+          args[1] === 'send' &&
+          args.some((a) => a.includes('\x1b[200~'))
+        ) {
+          if (answer === 'refused')
+            return JSON.stringify({ ok: true, result: { send: { accepted: false } } });
+          // No answer in time: the bytes may have gone in.
+          draft = reply;
+          throw new Error('timed out');
+        }
+        return run(file, args, options);
+      };
+      await assert.rejects(sendToTerminal(orcaLive(), reply, deps));
+      // The person types the same words (or they are what the timed-out paste left).
+      draft = reply;
+      const shown = await inspectTerminalDraft(orcaLive(), claudeCodeComposer, deps);
+      assert.equal(shown === null, own, answer);
+      if (!own) assert.equal(shown?.draft, reply);
+    }
+  });
+});
+
+test("Text a failed load-buffer never typed is not the app's: the same words typed later are asked about", async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const reply = 'run the tests again';
+    let prompt = '';
+    let failLoad = true;
+    const { deps, calls } = fakeDeps(dir, {
+      screen: () => claudeScreen(prompt),
+      fail: (_file, args) =>
+        failLoad && args.includes('load-buffer') ? new Error('load-buffer failed') : undefined,
+    });
+    await assert.rejects(sendToTerminal(tmuxLive(), reply, deps, { backup: async () => {} }));
+    assert.ok(!calls.some((c) => c.args.includes('paste-buffer')));
+    failLoad = false;
+    // The person types the same request in the terminal.
+    prompt = reply;
+    assert.equal((await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps))?.draft, reply);
+    const clipboard: string[] = [];
+    const asked = await sendToTerminal(tmuxLive(), reply, deps, {
+      backup: async (text) => void clipboard.push(text),
+    });
+    assert.equal(asked.status === 'needs-confirm' && asked.draft, reply);
+    assert.deepEqual(clipboard, []);
+    assert.equal(prompt, reply);
+  });
+});
+
+test("Orca: text seen beside the app's own leftover reply while clearing is backed up", async () => {
+  const reply = 'run the tests again';
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let check = true;
+    let clearedOnce = false;
+    const { deps } = fakeDeps(dir, {
+      // The first send's check reads something else; once cleared, someone has typed.
+      orcaDraft: (typed) =>
+        check && typed
+          ? `${typed} …`
+          : clearedOnce && !typed
+            ? 'someone typing'
+            : typed || undefined,
+    });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (file === '/bin/orca' && args[1] === 'send' && clears(args)) clearedOnce = true;
+      return run(file, args, options);
+    };
+    const saved: string[] = [];
+    const backup = async (text: string) => void saved.push(text);
+    await assert.rejects(sendToTerminal(orcaLive(), reply, deps, { backup }), /제출하지 않았어요/);
+    check = false;
+    await sendToTerminal(orcaLive(), reply, deps, { backup }).catch(() => undefined);
+    // The reply itself is never saved; the text typed meanwhile is, on its own.
+    assert.deepEqual(saved, ['someone typing']);
+  });
+});
+
+test('Orca: without a backup, text seen beside the own reply stops the clearing', async () => {
+  const reply = 'run the tests again';
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    let check = true;
+    let clearedOnce = false;
+    const { deps, calls } = fakeDeps(dir, {
+      orcaDraft: (typed) =>
+        check && typed
+          ? `${typed} …`
+          : clearedOnce && !typed
+            ? 'someone typing'
+            : typed || undefined,
+    });
+    const run = deps.run;
+    deps.run = async (file, args, options) => {
+      if (file === '/bin/orca' && args[1] === 'send' && clears(args)) clearedOnce = true;
+      return run(file, args, options);
+    };
+    await assert.rejects(sendToTerminal(orcaLive(), reply, deps), /제출하지 않았어요/);
+    check = false;
+    const before = calls.length;
+    await assert.rejects(sendToTerminal(orcaLive(), reply, deps), TerminalInputError);
+    assert.ok(!sent(calls.slice(before)), 'no Enter');
+  });
+});
+
+test("Claude Code's default renderer never scrolls its box: a tall box on the main screen is whole", async () => {
+  const rows = Array.from({ length: 12 }, (_, i) => `line ${i + 1}`);
+  let draft = rows.join('\n');
+  // `#{alternate_on} #{alternate-screen}`: with the option off (or unreported) tmux keeps the
+  // fullscreen renderer on the main screen, so alternate_on=0 proves nothing.
+  for (const [alternate, partial] of [
+    ['0 1', false],
+    ['1 1', true],
+    ['0 0', true],
+    ['0', true],
+  ] as const) {
+    const { deps } = fakeDeps('/x', { screen: () => claudeScreen(draft), paneHeight: 24 });
+    const run = deps.run;
+    deps.run = async (file, args, options) =>
+      args.some((a) => a.startsWith('#{pane_in_mode}'))
+        ? `0 24 ${alternate}\n`
+        : run(file, args, options);
+    const asked = await sendToTerminal(tmuxLive(), 'hi', deps, { backup: async () => {} });
+    assert.equal(asked.status === 'needs-confirm' && !!asked.partial, partial, alternate);
+  }
+  draft = '';
 });

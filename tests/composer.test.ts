@@ -9,6 +9,7 @@ import {
   codexQueueComposer,
   composerFor,
   parseStyledScreen,
+  sameWrapped,
   type ComposerHost,
   type Screen,
 } from '../desktop/composer/index.js';
@@ -75,9 +76,16 @@ test('A styled capture reads as the plain capture, with faint characters marked'
 
 /** tmux reads the pane height with the screen: 40 rows (the box shows up to 15). */
 const tmux = (raw: string, height = 40): Screen => ({ ...parseStyledScreen(raw), height });
+/** A state without the box width (checked on its own below). */
+const noWidth = <T>(state: T): T => {
+  if (!state || typeof state !== 'object' || !('width' in state)) return state;
+  const { width: _width, ...rest } = state as T & { width: unknown };
+  return rest as T;
+};
+const classify = (screen: Screen) => noWidth(classifyPrompt(screen));
 
 test('On tmux, a faint suggestion is told apart from typed and pasted drafts', () => {
-  const kind = (raw: string) => classifyPrompt(tmux(raw));
+  const kind = (raw: string) => classify(tmux(raw));
   assert.deepEqual(kind(FIXTURES.empty), { kind: 'empty' });
   assert.deepEqual(kind(FIXTURES.suggestion), {
     kind: 'suggestion',
@@ -123,7 +131,7 @@ test('A box at the most rows Claude shows may hide its start: never known whole'
     [3, 3, 5, 5, 7, 10, 11, 15, 20, 30],
   );
   const five = box('\x1b[39m❯\xa0one', '  two', '  three', '  four', '  five');
-  assert.deepEqual(classifyPrompt(tmux(five, 30)), {
+  assert.deepEqual(classify(tmux(five, 30)), {
     kind: 'draft',
     text: 'one\ntwo\nthree\nfour\nfive',
     whole: true,
@@ -138,13 +146,13 @@ test('On Orca, any text in the prompt is unknown; only a short reported draft is
   const plain = (raw: string): Screen => ({ text: strip(raw) });
   // Orca draws the suggestion on screen as plain text (an older one typed text too): unknown,
   // and a short one is known whole, so it can be cleared (keys for typing, a probe otherwise).
-  assert.deepEqual(classifyPrompt(plain(FIXTURES.empty)), { kind: 'empty' });
-  assert.deepEqual(classifyPrompt(plain(FIXTURES.suggestion)), {
+  assert.deepEqual(classify(plain(FIXTURES.empty)), { kind: 'empty' });
+  assert.deepEqual(classify(plain(FIXTURES.suggestion)), {
     kind: 'unknown',
     text: 'One more alternative, one short sentence, no tools.',
     whole: true,
   });
-  assert.deepEqual(classifyPrompt(plain(FIXTURES.typed)), {
+  assert.deepEqual(classify(plain(FIXTURES.typed)), {
     kind: 'unknown',
     text: 'hello draft',
     whole: true,
@@ -153,22 +161,22 @@ test('On Orca, any text in the prompt is unknown; only a short reported draft is
   const rows3 = classifyPrompt(plain(box('❯\xa0one', '  two', '  three')));
   assert.equal((rows3 as { whole: boolean }).whole, false);
   assert.equal((classifyPrompt(plain(FIXTURES.pasted)) as { whole: boolean }).whole, false);
-  assert.deepEqual(classifyPrompt(plain(FIXTURES.permission)), { kind: 'closed' });
+  assert.deepEqual(classify(plain(FIXTURES.permission)), { kind: 'closed' });
   assert.equal(classifyPrompt(plain(box('❯', '', ''))).kind, 'unknown');
   // Orca 1.4.216 reports the composer apart (`draft`); the prompt line keeps the marker only.
   const orca = (draft?: string): Screen => ({
     text: strip(box('❯')),
     ...(draft !== undefined && { composer: draft }),
   });
-  assert.deepEqual(classifyPrompt(orca()), { kind: 'empty' });
-  assert.deepEqual(classifyPrompt(orca('')), { kind: 'empty' });
+  assert.deepEqual(classify(orca()), { kind: 'empty' });
+  assert.deepEqual(classify(orca('')), { kind: 'empty' });
   // The examples stay on screen; text in `draft` that reads like one was typed there.
-  assert.deepEqual(classifyPrompt(orca('Try "this"')), {
+  assert.deepEqual(classify(orca('Try "this"')), {
     kind: 'unknown',
     text: 'Try "this"',
     whole: true,
   });
-  assert.deepEqual(classifyPrompt(orca('first line\nsecond line')), {
+  assert.deepEqual(classify(orca('first line\nsecond line')), {
     kind: 'unknown',
     text: 'first line\nsecond line',
     whole: true,
@@ -219,6 +227,8 @@ function fakePrompt(
     /** tmux: how the suggestion is drawn after `❯ ` (default: all faint, as measured). */
     drawSuggestion?: (text: string) => string;
     height?: number;
+    /** tmux: Claude Code's inline renderer on the main screen, every row of the box in view. */
+    inline?: boolean;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
     typing?: (round: number) => string;
@@ -229,7 +239,7 @@ function fakePrompt(
   let rounds = 0;
   const pressed: string[][] = [];
   const orca = options.host === 'orca';
-  const most = maxBoxRows(options.height ?? 40);
+  const most = options.inline ? Infinity : maxBoxRows(options.height ?? 40);
   const text = () => lines.map((line) => line.join('')).join('\n');
   const host: ComposerHost = {
     styled: !orca,
@@ -247,7 +257,8 @@ function fakePrompt(
         const paint = options.drawSuggestion ?? ((text) => `\x1b[2m${text}\x1b[0m`);
         return tmux(box(`\x1b[39m❯\xa0${paint(options.suggestion)}`), options.height);
       }
-      return tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
+      const screen = tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
+      return options.inline ? { ...screen, alternate: false } : screen;
     },
     wait: async () => {},
     async press(keys) {
@@ -456,7 +467,7 @@ test('tmux: a suggestion not drawn all faint reads as a draft, and the probe cle
   ]) {
     const prompt = fakePrompt({ suggestion: text, drawSuggestion: paint });
     const from = await claudeCodeComposer.inspect(prompt.host);
-    assert.deepEqual(from, { kind: 'draft', text, whole: true });
+    assert.deepEqual(noWidth(from), { kind: 'draft', text, whole: true });
     const { result, backups } = await clearPrompt(prompt);
     assert.deepEqual(result, {
       status: 'cleared',
@@ -475,9 +486,12 @@ test('tmux: a suggestion not drawn all faint reads as a draft, and the probe cle
 test('Text the keys never change is never taken as cleared', async () => {
   // tmux: the plain draft is still there.
   const stuck = fakePrompt({ draft: 'hello draft', stuck: true });
-  assert.deepEqual((await clearPrompt(stuck)).result, {
-    status: 'failed',
-    state: { kind: 'draft', text: 'hello draft', whole: true },
+  const stuckResult = (await clearPrompt(stuck)).result;
+  assert.equal(stuckResult.status, 'failed');
+  assert.deepEqual(stuckResult.status === 'failed' && noWidth(stuckResult.state), {
+    kind: 'draft',
+    text: 'hello draft',
+    whole: true,
   });
   // Orca: text that never moved is probed with one letter. Keys that never arrive: not cleared.
   const orcaStuck = fakePrompt({ draft: 'hello draft', stuck: true, host: 'orca' });
@@ -694,4 +708,101 @@ test('Partial replacement stops on a closed prompt, failed backup, lost owner or
     'failed',
   );
   assert.ok(stuck.pressed.length <= 60);
+});
+
+test("The box width read from its rules travels with a screen-read draft, never with Orca's draft", () => {
+  // 120 columns: the rule less the `❯ ` before the text.
+  assert.equal((classifyPrompt(tmux(FIXTURES.typed)) as { width?: number }).width, 118);
+  const orca = classifyPrompt({ text: strip(box('❯')), composer: 'hello draft' });
+  assert.equal((orca as { width?: number }).width, undefined);
+});
+
+test("sameWrapped: the box's wrapping is ignored, spaces inside a row are not", () => {
+  assert.ok(sameWrapped('print("a b")', 'print("a b")'));
+  assert.ok(!sameWrapped('print("ab")', 'print("a b")'));
+  assert.ok(!sameWrapped('print("a  b")', 'print("a b")'));
+  // Wrapped at a space (taken by the wrap) or inside a word; typed line breaks and indentation.
+  const full = 'x'.repeat(30) + ' ' + 'y'.repeat(9); // 40 cells: a row the box filled
+  assert.ok(sameWrapped(`${full}\nzzzz tail`, `${full} zzzz tail`, 42));
+  assert.ok(sameWrapped(`${full} wo\nrd`, `${full} word`, 42));
+  // A break the person typed into a short row is an edit, not the box's wrapping.
+  assert.ok(!sameWrapped('print("a\nb")', 'print("a b")', 42));
+  assert.ok(!sameWrapped('a\nb', 'a b', 42));
+  assert.ok(!sameWrapped(`${full}\nshort\nrest of it`, `${full} short rest of it`, 42));
+  // The box's width decides, not the widest row shown: in an 80-column pane nothing wrapped.
+  assert.ok(
+    !sameWrapped(
+      'please run the tests again\nbefore merging',
+      'please run the tests again before merging',
+      78,
+    ),
+  );
+  // Width unknown (Orca's `draft`): every break inside a line is an edit.
+  assert.ok(!sameWrapped(`${full}\nzzzz tail`, `${full} zzzz tail`));
+  assert.ok(sameWrapped('one\n\ntwo', 'one\n\ntwo'));
+  assert.ok(sameWrapped('def f():\nreturn 1', 'def f():\n    return 1'));
+  assert.ok(sameWrapped('one\n\ntwo', 'one\n\ntwo'));
+  // A blank row is a blank line, never a soft wrap; a typed line break is not a space.
+  assert.ok(!sameWrapped('run\n\nthe tests', 'run the tests'));
+  assert.ok(!sameWrapped('one\ntwo', 'one\n\ntwo'));
+  assert.ok(!sameWrapped('one\n\n\ntwo', 'one\n\ntwo'));
+  assert.ok(sameWrapped('one\nthe rest', 'one\nthe rest'));
+  assert.ok(!sameWrapped('one two', 'one two three'));
+  assert.ok(!sameWrapped('one two three', 'one two'));
+  assert.ok(!sameWrapped('', 'one'));
+});
+
+test('A tall whole draft (inline renderer) gets pairs enough for every row', async () => {
+  // 35 rows, cursor at the end: 69 pairs, more than the base budget of 60.
+  const draft = Array.from({ length: 35 }, (_, i) => `row ${i + 1}`).join('\n');
+  const prompt = fakePrompt({ draft, host: 'tmux', height: 50, inline: true });
+  const from = await claudeCodeComposer.inspect(prompt.host);
+  assert.ok(from.kind === 'draft' && from.whole);
+  const result = await claudeCodeComposer.clear(prompt.host, from, async () => {});
+  assert.equal(result.status, 'cleared');
+  assert.equal(prompt.text(), '');
+  // Keys that never arrive still give up early.
+  const stuck = fakePrompt({ draft, host: 'tmux', height: 50, inline: true, stuck: true });
+  const stuckFrom = await claudeCodeComposer.inspect(stuck.host);
+  assert.ok(stuckFrom.kind === 'draft');
+  assert.notEqual(
+    (await claudeCodeComposer.clear(stuck.host, stuckFrom, async () => {})).status,
+    'cleared',
+  );
+  assert.ok(stuck.pressed.length < 10);
+});
+
+test('Backups compare rows with their spaces: a row with one taken out is new text', () => {
+  assert.ok(!containsLines('x\nprint("a b")', 'print("ab")'));
+  assert.ok(containsLines('x\n  print("a b")  ', 'print("a b")'));
+  assert.equal(mergeBackup('x\nprint("a b")', 'print("ab")'), 'x\nprint("a b")\nprint("ab")');
+});
+
+test('sameWrapped proves a wrap only from a full row, counting real cell widths', () => {
+  const token = 'a' + 'b'.repeat(38) + 'c'.repeat(38) + 'dd';
+  // A break typed one character into a long token is not the box's wrapping.
+  assert.ok(!sameWrapped(['a', 'b'.repeat(38), 'c'.repeat(38), 'dd'].join('\n'), token, 38));
+  // The box splitting the token at each full row is.
+  assert.ok(
+    sameWrapped([token.slice(0, 38), token.slice(38, 76), token.slice(76)].join('\n'), token, 38),
+  );
+  // Accented Latin takes one cell: 20 of them leave room for "xx" in 38 cells.
+  assert.ok(!sameWrapped('é'.repeat(20) + '\nxx', 'é'.repeat(20) + ' xx', 38));
+  // Korean takes two: 18 of them (36 cells) leave no room for "xx".
+  assert.ok(sameWrapped('가'.repeat(18) + '\nxx', '가'.repeat(18) + ' xx', 38));
+});
+
+test('sameWrapped: combining marks take no cell', () => {
+  const p = 'á̧'.repeat(20); // 20 cells
+  assert.ok(!sameWrapped(p + '\nxx', p + ' xx', 38));
+});
+
+test('sameWrapped: no wrap is proven across an emoji sequence', () => {
+  const f = '👨‍👩‍👧'.repeat(3);
+  assert.ok(!sameWrapped(f + '\nnext', f + ' next', 20));
+});
+
+test('sameWrapped: nor before an emoji word', () => {
+  const e = '👨‍👩‍👧'.repeat(6);
+  assert.ok(!sameWrapped(`hello\n${e}`, `hello ${e}`, 38));
 });
