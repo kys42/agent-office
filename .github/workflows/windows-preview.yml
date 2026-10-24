@@ -22,7 +22,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npx tsx --test tests/windows-platform.test.ts tests/card-windows.test.ts tests/ingestion-conformance.test.ts
+      - run: npx tsx --test tests/windows-platform.test.ts tests/card-windows.test.ts tests/ingestion-conformance.test.ts tests/codex-windows-pipe.test.ts tests/codex-open.test.ts
       - run: npm run package:win
       - name: Test the packaged executable with isolated synthetic data
         shell: pwsh
