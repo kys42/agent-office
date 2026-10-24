@@ -104,9 +104,15 @@ export const drawn = (value: string) =>
 const invisible = (value: string) =>
   value.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
 
-/** Cells a stretch of text takes (wide characters count two, as `widest` in claude-code.ts). */
-const cells = (text: string) =>
-  [...text].reduce((sum, char) => sum + (char.charCodeAt(0) < 0x7f ? 1 : 2), 0);
+/**
+ * East Asian wide and fullwidth characters, and emoji: two cells in a terminal. Everything else
+ * (accented Latin, Greek, Cyrillic, …) takes one. Used to prove a row was full, so it must not
+ * overcount.
+ */
+const WIDE =
+  /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]|[\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{3fffd}]/u;
+/** Cells a stretch of text takes in the terminal. */
+const cells = (text: string) => [...text].reduce((sum, char) => sum + (WIDE.test(char) ? 2 : 1), 0);
 
 /** No box this narrow: a text whose rows are all shorter than this was never wrapped. */
 const MIN_WRAP = 20;
@@ -139,10 +145,15 @@ export function sameWrapped(shown: string, text: string, width?: number): boolea
       at += row.length;
       if (at < source.length) {
         // A wrap inside this line: only where the next word could not have fit on the row.
-        const rest = source.slice(at).replace(/^[ \t]+/, '');
-        const word = /^\S*/.exec(rest)![0] || rest.slice(0, 1);
-        if (width === undefined || width < MIN_WRAP || cells(row) + 1 + cells(word) <= width)
+        if (width === undefined || width < MIN_WRAP) return false;
+        if (/[ \t]/.test(source[at])) {
+          // At a space: the next word would not have fit after the row.
+          const word = /^\S*/.exec(source.slice(at).replace(/^[ \t]+/, ''))![0];
+          if (cells(row) + 1 + cells(word) <= width) return false;
+        } else if (cells(row) + cells(source[at]) <= width) {
+          // Inside a word: only a row filled to the last cell that could hold it.
           return false;
+        }
       }
       while (at < source.length && /[ \t]/.test(source[at])) at++;
     }

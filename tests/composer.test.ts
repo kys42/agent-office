@@ -777,3 +777,17 @@ test('Backups compare rows with their spaces: a row with one taken out is new te
   assert.ok(containsLines('x\n  print("a b")  ', 'print("a b")'));
   assert.equal(mergeBackup('x\nprint("a b")', 'print("ab")'), 'x\nprint("a b")\nprint("ab")');
 });
+
+test('sameWrapped proves a wrap only from a full row, counting real cell widths', () => {
+  const token = 'a' + 'b'.repeat(38) + 'c'.repeat(38) + 'dd';
+  // A break typed one character into a long token is not the box's wrapping.
+  assert.ok(!sameWrapped(['a', 'b'.repeat(38), 'c'.repeat(38), 'dd'].join('\n'), token, 38));
+  // The box splitting the token at each full row is.
+  assert.ok(
+    sameWrapped([token.slice(0, 38), token.slice(38, 76), token.slice(76)].join('\n'), token, 38),
+  );
+  // Accented Latin takes one cell: 20 of them leave room for "xx" in 38 cells.
+  assert.ok(!sameWrapped('é'.repeat(20) + '\nxx', 'é'.repeat(20) + ' xx', 38));
+  // Korean takes two: 18 of them (36 cells) leave no room for "xx".
+  assert.ok(sameWrapped('가'.repeat(18) + '\nxx', '가'.repeat(18) + ' xx', 38));
+});
