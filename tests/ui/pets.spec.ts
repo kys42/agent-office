@@ -69,6 +69,13 @@ test('Provider customization saves across reload and matches office, roster, lou
   await expect(
     page.locator('.office-pet [data-pet-color="mint"][data-pet-accessory="crown"]'),
   ).toHaveCount(3);
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await expect(
+    page.locator(
+      '.office-list-avatar [data-asset-id="pet.slime.v1"][data-pet-color="mint"][data-pet-accessory="crown"]',
+    ),
+  ).toHaveCount(3);
+  await page.getByRole('button', { name: '그래픽', exact: true }).click();
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
   await page.getByRole('tab', { name: '모습' }).click();
   await page.getByRole('button', { name: 'Codex 캐릭터 꾸미기' }).click();

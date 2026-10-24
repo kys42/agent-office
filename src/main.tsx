@@ -28,6 +28,7 @@ import './styles/guide.css';
 import './styles/tmux.css';
 import './styles/native.css';
 import './styles/windows.css';
+import './styles/office-list.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {
