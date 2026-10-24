@@ -20,6 +20,9 @@ import { peerRequest, PeerError } from './transport.js';
 
 import type { CodexRelay } from '../../desktop/codex-remote.js';
 import { RelayJournal } from './relay-journal.js';
+import { noticeCandidates } from '../../src/shared/notices.js';
+import { isVeiled } from '../../src/shared/veil.js';
+import { needsAttention } from '../../src/shared/residents.js';
 const hostSchema = z
   .string()
   .regex(/^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/)
@@ -147,6 +150,7 @@ export class PeerManager extends EventEmitter {
   private activeSends = new Set<string>();
   private hidden: Record<string, number> = {};
   private hiddenError = false;
+  private visibilityError: string | null = null;
   constructor(
     private dir: string,
     private request = peerRequest,
@@ -182,7 +186,9 @@ export class PeerManager extends EventEmitter {
   state(): FederationState {
     return {
       enabled: this.enabled,
-      error: this.configError,
+      error:
+        this.configError ??
+        (this.hiddenError ? 'Invalid local remote visibility state' : this.visibilityError),
       codexHosts: this.relay?.hosts() ?? [],
       peers: this.config.peers.map(({ token: _token, sendToken, ...peer }) => {
         const h = this.held.get(peer.officeId);
@@ -323,6 +329,7 @@ export class PeerManager extends EventEmitter {
         if (h.receivedAt && Date.now() - h.receivedAt > 86400_000) h.snapshot = undefined;
       }
       if (!current()) return;
+      this.revealConversations();
       this.emit('change');
       const delay = h.failures ? Math.min(60000, 5000 * 2 ** Math.min(h.failures - 1, 4)) : 5000;
       h.timer = setTimeout(() => void poll(), delay);
@@ -343,8 +350,8 @@ export class PeerManager extends EventEmitter {
       });
     });
   }
-  /** This viewer's hide/restore only: no peer request, remote content or local session write. */
-  veil(ids: string[], on: boolean) {
+  /** Preflight before a mixed request writes any local colleagues. Rechecked on commit. */
+  checkVeil(ids: string[], on: boolean) {
     const visible = new Set(this.sessions().map((s) => s.id));
     if (!this.enabled || ids.some((id) => !visible.has(id)))
       throw Error('Remote session unavailable');
@@ -359,12 +366,42 @@ export class PeerManager extends EventEmitter {
       else delete next[id];
     }
     hiddenSchema.parse(next);
+    return next;
+  }
+  private saveHidden(next: Record<string, number>) {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const file = path.join(this.dir, 'hidden.json');
     writeFileSync(`${file}.tmp`, JSON.stringify(next), { mode: 0o600 });
     renameSync(`${file}.tmp`, file);
     this.hidden = next;
+    this.visibilityError = null;
+  }
+  /** This viewer's hide/restore only: no peer request, remote content or local session write. */
+  veil(ids: string[], on: boolean) {
+    this.saveHidden(this.checkVeil(ids, on));
     this.emit('change');
+  }
+  private revealConversations() {
+    const next = { ...this.hidden };
+    let changed = false;
+    for (const s of this.sessions()) {
+      if (!next[s.id]) continue;
+      // Remote snapshots carry public events, not the source office's notice receipts.
+      // Retire the marker once a conversation is observed: bounded events may later disappear.
+      if (needsAttention(s) || !isVeiled([s], noticeCandidates(s))) {
+        delete next[s.id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    try {
+      this.saveHidden(next);
+    } catch {
+      // A viewer disk error must not turn a healthy peer into a rejected connection or re-hide
+      // an observed conversation in this run. Report that restart persistence could not save.
+      this.hidden = next;
+      this.visibilityError = 'Could not save local remote visibility state';
+    }
   }
   linkedProjects() {
     return new Set(this.enabled ? this.config.peers.flatMap((p) => Object.values(p.projects)) : []);

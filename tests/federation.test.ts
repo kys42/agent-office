@@ -24,6 +24,7 @@ import { freshConversation, mergeNewest, mergeLive } from '../src/shared/convers
 import { isWorking } from '../src/shared/presentation.js';
 import { isVeiled } from '../src/shared/veil.js';
 import type { Snapshot } from '../src/shared/types.js';
+import { buildOfficeModel } from '../src/shared/office-model.js';
 import type { OfficeService } from '../server/service.js';
 
 const temp = () => mkdtempSync(path.join(os.tmpdir(), 'office-peer-test-'));
@@ -346,6 +347,103 @@ test('remote hiding is local, persists, publishes to every window and follows co
   } finally {
     manager.close();
     reopened?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a new remote request followed by progress retires the marker beyond bounded events and restart', async () => {
+  const dir = temp(),
+    p = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  const source = packet(p);
+  let manager = new PeerManager(dir, async () => source);
+  try {
+    await changed(manager, () => manager.start());
+    const id = manager.sessions()[0].id;
+    manager.veil([id], true);
+    const hiddenAt = manager.sessions()[0].hiddenAt!;
+    manager.close();
+    const request = {
+      id: wireId('new-request'),
+      at: hiddenAt + 1,
+      kind: 'user' as const,
+      text: 'New request',
+      excerpt: false,
+    };
+    const progress = {
+      id: wireId('new-progress'),
+      at: hiddenAt + 2,
+      kind: 'assistant' as const,
+      phase: 'commentary' as const,
+      text: 'Working',
+      excerpt: false,
+    };
+    source.sessions[0].events = [request, progress];
+    source.sessions[0].activity = {
+      kind: 'progress',
+      text: progress.text,
+      at: progress.at,
+      eventId: progress.id,
+    };
+    manager = new PeerManager(dir, async () => source);
+    await changed(manager, () => manager.start());
+    assert.equal(manager.sessions()[0].hiddenAt, null);
+    assert.deepEqual(JSON.parse(readFileSync(path.join(dir, 'hidden.json'), 'utf8')), {});
+    const model = () =>
+      buildOfficeModel(
+        { ...demoSnapshot(), sessions: manager.sessions(), notices: [] },
+        Date.now(),
+      );
+    assert.equal(
+      model().view(id)?.veiled,
+      false,
+      'request plus progress in one poll restores the desk',
+    );
+    manager.close();
+    source.sessions[0].events = [progress];
+    manager = new PeerManager(dir, async () => source);
+    await changed(manager, () => manager.start());
+    assert.equal(
+      model().view(id)?.veiled,
+      false,
+      'later progress and bounded event eviction cannot re-hide it',
+    );
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('known remote save failures are checked before a mixed request writes or publishes local changes', async () => {
+  const dir = temp(),
+    p = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  writeFileSync(path.join(dir, 'hidden.json'), 'corrupt state');
+  const manager = new PeerManager(dir, async () => packet(p));
+  const snapshot = demoSnapshot();
+  const local = new EventEmitter() as unknown as OfficeService;
+  let writes = 0;
+  local.call = async (method) => {
+    if (method === 'veil') {
+      writes++;
+      snapshot.sessions[0].hiddenAt = Date.now();
+    }
+    return snapshot;
+  };
+  const service = new FederatedService(local, manager);
+  let updates = 0;
+  service.on('snapshot', () => updates++);
+  try {
+    await changed(manager, () => manager.start());
+    await assert.rejects(
+      service.call('veil', [[snapshot.sessions[0].id, manager.sessions()[0].id], true]),
+      /visibility state/,
+    );
+    assert.equal(writes, 0);
+    assert.equal(snapshot.sessions[0].hiddenAt ?? null, null);
+    assert.equal(updates, 0);
+  } finally {
+    manager.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

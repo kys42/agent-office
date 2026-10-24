@@ -133,6 +133,7 @@ export class FederatedService extends EventEmitter {
       const local = (await this.local.call('snapshot')) as Snapshot;
       const visible = new Set(this.compose(local).sessions.map((s) => s.id));
       if (ids.some((id) => !visible.has(id))) throw Error('Session unavailable');
+      this.peers.checkVeil(remote, on);
       const localIds = ids.filter((id) => !isRemoteId(id));
       this.localSnapshot = localIds.length
         ? ((await this.local.call('veil', [localIds, on])) as Snapshot)
