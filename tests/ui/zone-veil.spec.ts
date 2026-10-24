@@ -1,10 +1,44 @@
 import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import { exportSession } from '../../server/federation/protocol';
+import { importSession } from '../../server/federation/peers';
 
 /** The web bridge, hiding like the service: one hiding time per session. Returns the calls. */
-async function serve(page: Page) {
+async function serve(page: Page, remote = false) {
   let snapshot = demoSnapshot();
+  if (remote)
+    snapshot.sessions.push(
+      importSession(
+        exportSession(
+          {
+            ...snapshot.sessions[0],
+            id: 'remote-test',
+            nativeId: 'remote-test',
+            alias: '',
+            title: '원격 동료',
+            project: '원격 프로젝트',
+            workspace: undefined,
+            status: 'ready',
+            observedStatus: 'ready',
+            events: [],
+            activity: { text: '합성 원격 요청', kind: 'request', at: Date.now() - 60000 },
+          },
+          [],
+        ),
+        {
+          officeId: '04e785ca-5d9a-4d61-8703-07234e00479e',
+          label: '합성 Mac',
+          endpoint: 'https://localhost:4320/',
+          fingerprint: 'a'.repeat(64),
+          token: 'b'.repeat(64),
+          tags: [],
+          projects: {},
+        },
+        Date.now(),
+        false,
+      ),
+    );
   const veils: [string[], boolean][] = [];
   await page.route('**/api/rpc', (route) => {
     const { method, args } = route.request().postDataJSON();
@@ -51,6 +85,66 @@ test('A zone sign in the big office hides its whole project at once (#100)', asy
   await expect(
     page.locator('.project-area', { hasText: 'my-notes' }).locator('.zone-veil'),
   ).toHaveCount(0);
+});
+
+test('Remote colleagues disappear from row and floor flags and can be restored', async ({
+  page,
+}) => {
+  for (const mode of ['row', 'floor']) {
+    await page.unroute('**/api/rpc');
+    const calls = await serve(page, true);
+    await page.goto(`/#mini=${mode}`);
+    await page.reload();
+    const zone = page.locator('.row-zone').filter({ hasText: '원격 프로젝트' });
+    await expect(zone.locator('[data-station-id]')).toHaveCount(1);
+    const localCount = await page.locator('.row-zone').count();
+    const sign = zone.locator(mode === 'floor' ? '.zone-flag-cloth' : '.row-zone-mark');
+    await sign.hover();
+    await zone.getByRole('button', { name: '원격 프로젝트 모두 가리기' }).click();
+    await expect(zone).toHaveCount(0);
+    expect(calls[0][0][0]).toMatch(/^remote-office:/);
+    expect(calls[0][1]).toBe(true);
+    await expect(page.locator('.dock-toast')).toContainText('다음 대화');
+    await expect(page.locator('.row-zone')).toHaveCount(localCount - 1);
+    await page.locator('.desk-row-veiled').click();
+    await expect(zone.locator('[data-station-id]')).toHaveCount(1);
+    await expect(page.locator('.dock-toast')).toContainText('다시');
+    expect(calls.at(-1)).toEqual([calls[0][0], false]);
+  }
+});
+
+test('A pending or failed hide never claims success in the office or floor flag', async ({
+  page,
+}) => {
+  for (const url of ['/', '/#mini=floor']) {
+    await page.unroute('**/api/rpc');
+    await serve(page);
+    let reject!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      reject = resolve;
+    });
+    let requested = false;
+    await page.route('**/api/rpc', async (route) => {
+      if (route.request().postDataJSON().method !== 'veil') return route.fallback();
+      requested = true;
+      await pending;
+      await route.fulfill({ json: { error: '합성 가림 저장 실패' } });
+    });
+    await page.goto(url);
+    await page.reload();
+    const floor = url.includes('floor');
+    const zone = page
+      .locator(floor ? '.row-zone' : '.project-area')
+      .filter({ hasText: 'daily-brief' });
+    await zone.locator(floor ? '.zone-flag-cloth' : '.zone-mark-focus').hover();
+    await zone.getByRole('button', { name: 'daily-brief 모두 가리기' }).click();
+    await expect.poll(() => requested).toBe(true);
+    await expect(page.locator('.toast, .dock-toast')).toHaveCount(0);
+    await expect(zone).toHaveCount(1);
+    reject();
+    await expect(page.locator('.toast, .dock-toast')).toContainText('합성 가림 저장 실패');
+    await expect(zone).toHaveCount(1);
+  }
 });
 
 test('A zone sign zooms the big office onto that zone; again or Esc sees all', async ({ page }) => {

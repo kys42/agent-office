@@ -1045,8 +1045,9 @@ export default function App() {
               snapshot={snapshot}
               model={model}
               onVeil={(ids, on) => {
-                void veil(ids, on);
-                notify(on ? t.app.toast.hidden : t.app.toast.shown);
+                void veil(ids, on).then((saved) => {
+                  if (saved) notify(on ? t.app.toast.hidden : t.app.toast.shown);
+                });
               }}
               onPin={onPin}
               onSettings={() => openSettings('office')}
