@@ -163,6 +163,61 @@
   height: 40px;
   border-radius: 10px;
 }
+.office-list-avatar.helper-avatar {
+  width: 32px;
+  height: 32px;
+  margin-inline: 8px 0;
+  border-radius: 8px;
+}
+.office-list-helper-mark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1px;
+  background: var(--control);
+  color: var(--text-2);
+  border-radius: 3px;
+}
+.office-list-relations {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.office-list-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  font-size: calc(10px * var(--read-scale));
+}
+.office-list-kind svg {
+  flex: none;
+}
+.office-list-kind.helper-kind {
+  color: var(--st-think);
+  background: color-mix(in srgb, var(--st-think) 9%, transparent);
+}
+.office-list-kind.helpers-calling {
+  color: var(--st-call);
+  background: color-mix(in srgb, var(--st-call) 9%, transparent);
+}
+.office-list-kind.quota-kind {
+  color: var(--st-error);
+}
+.office-list-lineage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-3);
+  font-size: calc(10px * var(--read-scale));
+}
 .office-list-copy,
 .office-list-project {
   display: flex;
@@ -254,6 +309,12 @@
   align-items: center;
   gap: 4px;
   color: var(--st-error);
+}
+.office-list-status > .office-list-helper-news {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
 }
 .office-list-row time {
   text-align: right;

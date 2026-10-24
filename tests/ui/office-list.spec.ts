@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { demoSnapshot } from '../../src/lib/demo';
+import { runtimeObservation } from '../../src/shared/runtime';
 
 test('main region switches to a recent list, opens the same card and remembers project grouping', async ({
   page,
@@ -178,4 +179,127 @@ test('list remains usable in light, dark, narrow windows and English', async ({ 
     'true',
   );
   await expect(page.getByLabel('Office list order')).toHaveValue('project');
+});
+
+test('helpers keep their role, parent, own news and calls; forks and persona runs stay distinct', async ({
+  page,
+}) => {
+  const fixture = demoSnapshot();
+  fixture.preferences.locale = 'ko';
+  const main = fixture.sessions[0];
+  main.alias = '메인 작업';
+  const helper = structuredClone(main);
+  Object.assign(helper, {
+    id: 'helper:one',
+    nativeId: 'helper-one',
+    alias: '품질 검토',
+    status: 'call',
+    observedStatus: 'call',
+    relation: {
+      kind: 'subagent',
+      parentNativeId: main.nativeId,
+      role: 'reviewer',
+      source: 'fixture',
+    },
+    runtime: runtimeObservation('call', Date.now(), 'fixture needs input'),
+  });
+  const orphan = structuredClone(main);
+  Object.assign(orphan, {
+    id: 'helper:unknown',
+    nativeId: 'helper-unknown',
+    alias: '경로 조사',
+    relation: {
+      kind: 'child',
+      parentNativeId: 'not-collected',
+      role: 'explorer',
+      source: 'fixture',
+    },
+  });
+  const fork = structuredClone(main);
+  Object.assign(fork, {
+    id: 'fork:one',
+    nativeId: 'fork-one',
+    alias: '분기 대화',
+    relation: { kind: 'fork', parentNativeId: main.nativeId, source: 'fixture' },
+  });
+  fixture.sessions[5].alias = 'guardian 검토'; // A title is never evidence of being a helper.
+  const persona = fixture.sessions[2];
+  persona.actor = { id: 'openclaw:persona', name: '집사', source: 'fixture' };
+  const run = structuredClone(persona);
+  Object.assign(run, { id: 'persona:two', nativeId: 'persona-two' });
+  fixture.sessions.push(helper, orphan, fork, run);
+  fixture.notices = [
+    {
+      id: 'helper-call',
+      sessionId: helper.id,
+      eventId: 'call',
+      kind: 'attention',
+      text: '검토 결과 확인이 필요해요',
+      at: Date.now(),
+      receivedAt: Date.now(),
+      version: '1',
+      seenAt: null,
+      dismissedAt: null,
+      resolvedAt: null,
+      bootstrap: false,
+    },
+  ];
+  await page.addInitScript((s) => {
+    (window as any).office = {
+      snapshot: async () => structuredClone(s),
+      subscribe: () => () => {},
+      preferences: async (patch: object) => {
+        Object.assign(s.preferences, patch);
+        return structuredClone(s);
+      },
+      detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
+      visit: async () => structuredClone(s),
+      artifacts: async () => [],
+    };
+  }, fixture);
+  await page.goto('/?lang=ko');
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  const child = page.locator('.office-list-row[data-session-id="helper:one"]');
+  const parent = page.locator(`.office-list-row[data-session-id="${main.id}"]`);
+  await expect(child).toHaveClass(/is-helper/);
+  await expect(child).toContainText('reviewer · 품질 검토');
+  await expect(child.locator('.office-list-lineage')).toHaveText('메인 작업의 보조');
+  await expect(child.locator('.office-list-copy em')).toHaveText('1');
+  await expect(parent.locator('.helpers-calling')).toHaveText('메인 · 보조 1명 · 불러요 1명');
+  await expect(parent.locator('.office-list-helper-news')).toHaveText('보조 소식 1건');
+  await expect(parent.locator('.office-list-copy em')).toHaveCount(0);
+  await expect(page.locator('.office-list-row[data-session-id="helper:unknown"]')).toHaveClass(
+    /is-helper/,
+  );
+  await expect(
+    page.locator('.office-list-row[data-session-id="helper:unknown"] .office-list-lineage'),
+  ).toHaveCount(0);
+  await expect(page.locator('.office-list-row[data-session-id="fork:one"]')).not.toHaveClass(
+    /is-helper/,
+  );
+  await expect(
+    page.locator('.office-list-row[data-session-id="fork:one"] .office-list-lineage'),
+  ).toHaveText('메인 작업에서 분기');
+  await expect(
+    page.locator('.office-list-row').filter({ hasText: 'guardian 검토' }),
+  ).not.toHaveClass(/is-helper/);
+  await expect(page.locator('.office-list-row').filter({ hasText: '집사' })).toContainText(
+    '실행 2개',
+  );
+  await page.getByLabel('사무실 리스트 정렬').selectOption('project');
+  await page.screenshot({ path: '.local/office-list-relations.png', fullPage: true });
+  await page.setViewportSize({ width: 1050, height: 800 });
+  await child.click();
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '품질 검토');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1050);
+  await page.getByRole('button', { name: '업무 카드 닫기' }).click();
+  await page.getByRole('button', { name: '화면 내용 숨기기' }).click();
+  await expect(page.locator('.office-list')).not.toContainText('reviewer');
+  await expect(page.locator('.office-list')).not.toContainText('explorer');
+  await expect(page.locator('.office-list')).not.toContainText('메인 작업');
+  await expect(child.locator('.office-list-lineage')).toHaveText('부모 동료의 보조');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await child.scrollIntoViewIfNeeded();
+  await expect(child.locator('.helper-kind')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
