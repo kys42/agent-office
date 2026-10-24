@@ -199,8 +199,9 @@ export function DeskDock() {
           reducedMotion={reducedMotion}
           onReceipt={receipt}
           onVeil={(ids, on) => {
-            void veil(ids, on);
-            notify(on ? t.app.toast.hidden : t.app.toast.shown);
+            void veil(ids, on).then((saved) => {
+              if (saved) notify(on ? t.app.toast.hidden : t.app.toast.shown);
+            });
           }}
           onPin={(s) =>
             void pin(s)
