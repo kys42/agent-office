@@ -97,7 +97,7 @@ test(
       const returned = new Promise<Buffer>((resolve, reject) => {
         let buffer = Buffer.alloc(0);
         const timer = setTimeout(() => reject(Error('relay timeout')), 4000);
-      bridge!.on('data', (chunk: Buffer) => {
+        bridge!.on('data', (chunk: Buffer) => {
           buffer = Buffer.concat([buffer, chunk]);
           if (buffer.length >= frame.length) {
             clearTimeout(timer);
