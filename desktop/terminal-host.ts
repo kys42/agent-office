@@ -380,6 +380,7 @@ const TTY_SCRIPTS: Record<string, string> = {
     'repeat with w in windows',
     'repeat with t in tabs of w',
     'if tty of t is (item 1 of argv) then',
+    'set miniaturized of w to false',
     'set selected of t to true',
     'set index of w to 1',
     'activate',

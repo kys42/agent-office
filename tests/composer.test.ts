@@ -791,3 +791,8 @@ test('sameWrapped proves a wrap only from a full row, counting real cell widths'
   // Korean takes two: 18 of them (36 cells) leave no room for "xx".
   assert.ok(sameWrapped('가'.repeat(18) + '\nxx', '가'.repeat(18) + ' xx', 38));
 });
+
+test('sameWrapped: combining marks take no cell', () => {
+  const p = 'á̧'.repeat(20); // 20 cells
+  assert.ok(!sameWrapped(p + '\nxx', p + ' xx', 38));
+});

@@ -112,7 +112,10 @@ const invisible = (value: string) =>
 const WIDE =
   /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]|[\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{3fffd}]/u;
 /** Cells a stretch of text takes in the terminal. */
-const cells = (text: string) => [...text].reduce((sum, char) => sum + (WIDE.test(char) ? 2 : 1), 0);
+const ZERO = /^[\p{M}\u200b-\u200f\u2060\ufe00-\ufe0f]$/u;
+/** Cells a stretch of text takes in the terminal: combining marks and joiners take none. */
+const cells = (text: string) =>
+  [...text].reduce((sum, char) => sum + (ZERO.test(char) ? 0 : WIDE.test(char) ? 2 : 1), 0);
 
 /** No box this narrow: a text whose rows are all shorter than this was never wrapped. */
 const MIN_WRAP = 20;
