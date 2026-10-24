@@ -116,15 +116,15 @@ const MIN_WRAP = 20;
  * of the text takes one or more rows: a blank line exactly one blank row, any other line rows
  * that are stretches of it, spaces inside them included, separated only by the spaces a wrap took
  * (or nothing: a word split by the wrap); its indentation is not drawn. A row ends inside a line
- * only where the box must have wrapped it: the widest row shown stands for the box's width, and
- * the row plus the next word would not have fit there. A break typed into a short row is an edit.
- * Unlike `drawn`, a space, a line break or a blank row taken out or added is a different text.
+ * only where the box must have wrapped it: the row plus the next word would not have fit in
+ * `width` (the box's, in cells, overestimated by the caller). A break typed into a short row is an
+ * edit; with the width unknown every break inside a line is. Unlike `drawn`, a space, a line
+ * break or a blank row taken out or added is a different text.
  */
-export function sameWrapped(shown: string, text: string): boolean {
+export function sameWrapped(shown: string, text: string, width?: number): boolean {
   const rows = invisible(shown)
     .split('\n')
     .map((row) => row.trim());
-  const width = Math.max(0, ...rows.map(cells));
   let next = 0;
   for (const line of invisible(text).split('\n')) {
     const source = line.trim();
@@ -141,7 +141,8 @@ export function sameWrapped(shown: string, text: string): boolean {
         // A wrap inside this line: only where the next word could not have fit on the row.
         const rest = source.slice(at).replace(/^[ \t]+/, '');
         const word = /^\S*/.exec(rest)![0] || rest.slice(0, 1);
-        if (width < MIN_WRAP || cells(row) + 1 + cells(word) <= width) return false;
+        if (width === undefined || width < MIN_WRAP || cells(row) + 1 + cells(word) <= width)
+          return false;
       }
       while (at < source.length && /[ \t]/.test(source[at])) at++;
     }

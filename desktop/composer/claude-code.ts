@@ -177,12 +177,16 @@ export function classifyPrompt(screen: Screen): ComposerState {
       ? { kind: 'empty' }
       : { kind: 'unknown', text: shown, whole: whole(shown) };
   }
+  // The rules span the box; a row of text takes at most that less the `❯ ` (or indent) before
+  // it. Box-drawing dashes take one cell each. Rounded up: a doubtful row break counts as typed.
+  const ruled = Math.max([...box.lines[box.top]].length, [...box.lines[box.bottom]].length) - 2;
+  const width = ruled > 0 ? { width: ruled } : {};
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
     // Orca draws the suggestion on screen with no styles (1.4.216 keeps typed text apart, in
     // `draft`; an older one draws it here too): unknown, and a short one is known whole, so it
     // can be cleared — the deletion keys take typing, the one-letter probe tells a suggestion.
-    return { kind: 'unknown', text, whole: whole(text) };
+    return { kind: 'unknown', text, whole: whole(text), ...width };
   }
   let faint = 0;
   let plain = 0;
@@ -198,8 +202,8 @@ export function classifyPrompt(screen: Screen): ComposerState {
       }
   }
   if (!plain && !faint)
-    return rows === 1 ? { kind: 'empty' } : { kind: 'draft', text, whole: whole(text) };
-  if (plain) return { kind: 'draft', text, whole: whole(text) };
+    return rows === 1 ? { kind: 'empty' } : { kind: 'draft', text, whole: whole(text), ...width };
+  if (plain) return { kind: 'draft', text, whole: whole(text), ...width };
   return HINT.test(text) ? { kind: 'empty' } : { kind: 'suggestion', text };
 }
 

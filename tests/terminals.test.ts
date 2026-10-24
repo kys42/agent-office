@@ -1813,37 +1813,39 @@ test('A scrolled box that shrinks to one blank row is proven empty before the re
 });
 
 test('Typing that shows up during the settling pair is never taken for the hidden draft', async () => {
-  await withSessions({ '4242.json': record(4242) }, async (dir) => {
-    // 7 rows at the cap: maybe scrolled, so partial; the person accepts losing hidden rows.
-    const draft = Array.from({ length: 7 }, (_, i) => `draft row ${i + 1} of the long idea`);
-    const sim = scrolledBox(draft, 7);
-    const { deps, calls } = fakeDeps(dir, { screen: () => sim.screen(), paneHeight: 24 });
-    sim.attach(deps);
-    const run = deps.run;
-    deps.run = async (file, args, options) => {
-      const empty = sim.box.rows.length === 1 && !sim.box.rows[0];
-      const out = await run(file, args, options);
-      // The old draft is gone; while the settling pair redraws, the person starts typing.
-      if (empty && args.includes('send-keys') && args.includes('C-k'))
-        sim.box.rows = ['a new idea'];
-      return out;
-    };
-    const backups: string[] = [];
-    const backup = async (text: string) => void backups.push(text);
-    const first = await sendToTerminal(tmuxLive(), 'reply', deps, { backup });
-    assert.equal(first.status === 'needs-confirm' && first.partial, true);
-    const again = await sendToTerminal(tmuxLive(), 'reply', deps, {
-      replaceDraft: first.status === 'needs-confirm' ? first.draft : '',
-      allowPartialDraft: true,
-      backup,
+  // New words, or a saved row with one space taken out: neither is a row already saved.
+  for (const typed of ['a new idea', 'print("ab")'])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      // 7 rows at the cap: maybe scrolled, so partial; the person accepts losing hidden rows.
+      const draft = Array.from({ length: 6 }, (_, i) => `draft row ${i + 1} of the long idea`);
+      draft.push('print("a b")');
+      const sim = scrolledBox(draft, 7);
+      const { deps, calls } = fakeDeps(dir, { screen: () => sim.screen(), paneHeight: 24 });
+      sim.attach(deps);
+      const run = deps.run;
+      deps.run = async (file, args, options) => {
+        const empty = sim.box.rows.length === 1 && !sim.box.rows[0];
+        const out = await run(file, args, options);
+        // The old draft is gone; while the settling pair redraws, the person starts typing.
+        if (empty && args.includes('send-keys') && args.includes('C-k')) sim.box.rows = [typed];
+        return out;
+      };
+      const backups: string[] = [];
+      const backup = async (text: string) => void backups.push(text);
+      const first = await sendToTerminal(tmuxLive(), 'reply', deps, { backup });
+      assert.equal(first.status === 'needs-confirm' && first.partial, true);
+      const again = await sendToTerminal(tmuxLive(), 'reply', deps, {
+        replaceDraft: first.status === 'needs-confirm' ? first.draft : '',
+        allowPartialDraft: true,
+        backup,
+      });
+      assert.equal(again.status === 'needs-confirm' && again.draft, typed);
+      assert.equal(again.status === 'needs-confirm' && again.clipboard, true);
+      // Left alone, saved, nothing typed over it or sent.
+      assert.deepEqual(sim.box.rows, [typed]);
+      assert.ok(backups.at(-1)!.split('\n').includes(typed), typed);
+      assert.ok(!typedAny(calls) && !sent(calls));
     });
-    assert.equal(again.status === 'needs-confirm' && again.draft, 'a new idea');
-    assert.equal(again.status === 'needs-confirm' && again.clipboard, true);
-    // Left alone, saved, nothing typed over it or sent.
-    assert.deepEqual(sim.box.rows, ['a new idea']);
-    assert.ok(backups.at(-1)!.includes('a new idea'));
-    assert.ok(!typedAny(calls) && !sent(calls));
-  });
 });
 
 test('Rows that show up once a whole-looking box is emptied are asked about, never typed over', async () => {

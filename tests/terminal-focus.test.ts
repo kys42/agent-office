@@ -101,6 +101,16 @@ test('A session name with quotes stays one shell word', async () => {
   assert.equal(osa?.args[2], `'/bin/tmux' -S '${SOCKET}' attach-session -t '=it'\\''s'`);
 });
 
+test('A session name ending in `;` is escaped for tmux, which would take it as a separator', async () => {
+  const { deps, calls } = fake();
+  const run = deps.run;
+  deps.run = async (file, args, o) =>
+    args.includes('display-message') ? 'work;\n' : run(file, args, o);
+  await focusHost(host, deps);
+  const osa = calls.find((c) => c.file === '/usr/bin/osascript');
+  assert.equal(osa?.args[2], `'/bin/tmux' -S '${SOCKET}' attach-session -t '=work\\;'`);
+});
+
 test('Terminal failing to open is reported, not claimed as success', async () => {
   const { deps } = fake({ fail: (file) => file === '/usr/bin/osascript' });
   await assert.rejects(

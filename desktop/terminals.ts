@@ -318,7 +318,10 @@ export async function inspectTerminalDraft(
  * the person's draft again.
  */
 const ownText = (state: ComposerState, typed: string | undefined) =>
-  typed !== undefined && holdsText(state) && state.whole && sameWrapped(state.text, typed);
+  typed !== undefined &&
+  holdsText(state) &&
+  state.whole &&
+  sameWrapped(state.text, typed, state.width);
 
 /**
  * The remembered reply, while this fresh look at the composer shows exactly it. Anything else
@@ -697,7 +700,7 @@ async function deliver(
         // backup to save it to, the clearing stops there.
         let kept = text;
         if (own && reply !== undefined) {
-          if (sameWrapped(text, reply)) return;
+          if (sameWrapped(text, reply, state.width)) return;
           if (!backup) throw new TerminalInputError(t.draft);
           if (text.startsWith(`${state.text}\n`)) kept = text.slice(state.text.length + 1);
         }

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
-import type { TerminalHost } from './terminal-host.js';
+import { tmuxArg, type TerminalHost } from './terminal-host.js';
 import type { Session, TmuxResumeInfo } from '../src/shared/types.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
@@ -175,7 +175,7 @@ export class TmuxResume {
       name: data.name,
       cwd: data.cwd,
       running: !!row && !deadPane,
-      command: `${quote(tmux)} -L ${quote(this.deps.server)} attach-session -t ${quote('=' + data.name)}`,
+      command: `${quote(tmux)} -L ${quote(this.deps.server)} attach-session -t ${quote(tmuxArg('=' + data.name))}`,
       canOpen: this.deps.platform === 'darwin',
     };
     return { ...data, tmux, info, deadPane };
