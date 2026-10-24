@@ -28,6 +28,7 @@ class DesktopIPC {
     string,
     {
       method: Method;
+      discoversOwner: boolean;
       resolve: (m: Frame) => void;
       reject: (e: Error) => void;
       timer: NodeJS.Timeout;
@@ -103,7 +104,7 @@ class DesktopIPC {
     this.pending.delete(frame.requestId);
     clearTimeout(entry.timer);
     if (
-      entry.method === 'thread-owner-discovery' &&
+      entry.discoversOwner &&
       frame.resultType === 'error' &&
       frame.error === 'no-client-found' &&
       (frame.method === undefined || frame.method === entry.method)
@@ -133,7 +134,15 @@ class DesktopIPC {
         this.pending.delete(requestId);
         reject(Error('timeout'));
       }, timeout);
-      this.pending.set(requestId, { method, resolve, reject, timer });
+      this.pending.set(requestId, {
+        method,
+        discoversOwner:
+          method === 'thread-owner-discovery' ||
+          (method === 'thread-follower-read-model-settings' && !!hostId && !targetClientId),
+        resolve,
+        reject,
+        timer,
+      });
       try {
         this.write({
           type: 'request',
@@ -171,12 +180,24 @@ async function owner(
   discoveryTimeout = timeout,
 ) {
   if (hostId !== undefined && !remoteCodexHost(hostId)) throw Error('unsupported-host');
-  const discovery = await ipc.request(
-    'thread-owner-discovery',
-    { hostId: hostId ?? 'local', conversationId: threadId },
-    discoveryTimeout,
-  );
+  // Some Desktop clients register discovery for the local host only, while their follower
+  // handler can serve remote hosts. Let the router discover that handler with the exact
+  // host/thread read, then pin and revalidate the returned client on this connection.
+  const discovery = hostId
+    ? await ipc.request(
+        'thread-follower-read-model-settings',
+        { conversationId: threadId },
+        discoveryTimeout,
+        undefined,
+        hostId,
+      )
+    : await ipc.request(
+        'thread-owner-discovery',
+        { hostId: 'local', conversationId: threadId },
+        discoveryTimeout,
+      );
   const id = discovery.handledByClientId;
+  if (hostId) validateSettings(discovery, id);
   const reply = await ipc.request(
     'thread-follower-read-model-settings',
     { conversationId: threadId },
@@ -184,6 +205,11 @@ async function owner(
     id,
     hostId,
   );
+  validateSettings(reply, id);
+  return id as string;
+}
+
+function validateSettings(reply: Frame, id: string) {
   const settings = reply.result?.settings;
   // Only already resumed, ordinary user conversations. No headless/subagent/cloud admission.
   if (
@@ -193,7 +219,6 @@ async function owner(
     settings.threadSource !== 'user'
   )
     throw Error('unsupported-thread');
-  return id as string;
 }
 
 export type DesktopThreadState = 'ready' | 'missing' | 'unavailable';

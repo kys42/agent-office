@@ -148,3 +148,30 @@ test('Preparing opens only the exact existing conversation after authorization, 
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('Empty remote lists retain host candidates but identities still require exact proof and no conflicting assignment', () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'ao-empty-'));
+  const id = randomUUID(),
+    host = 'remote-control:env_mini';
+  const file = path.join(home, '.codex-global-state.json');
+  const state = { 'electron-persisted-atom-state': { [`remote-thread-summaries-v3:${host}`]: [] } };
+  const relay = new DesktopCodexRelay(home);
+  try {
+    writeFileSync(file, JSON.stringify(state));
+    assert.equal(relay.hosts()[0].id, host);
+    assert.equal(relay.resolve(host, wireId(`codex:${id}`)), null);
+    assert.equal(relay.acceptsIdentity(host, wireId(`codex:${id}`), id), true);
+    assert.equal(relay.acceptsIdentity(host, wireId(`codex:${randomUUID()}`), id), false);
+    for (const assigned of ['local', 'ssh:other']) {
+      writeFileSync(
+        file,
+        JSON.stringify({ ...state, 'thread-project-membership-host-ids': { [id]: assigned } }),
+      );
+      assert.equal(relay.acceptsIdentity(host, wireId(`codex:${id}`), id), false);
+    }
+    writeFileSync(file, '{broken');
+    assert.equal(relay.acceptsIdentity(host, wireId(`codex:${id}`), id), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

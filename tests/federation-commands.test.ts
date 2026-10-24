@@ -693,3 +693,127 @@ test('one failed native lookup does not reject other authorized targets in the b
     await f.close();
   }
 });
+
+test('Native Codex identities are opt-in, send-authorized, and scoped to ordinary shared threads', async () => {
+  for (const origin of ['unknown', 'scheduled'] as const) {
+    const f = await setup(true, origin);
+    try {
+      assert.equal((await f.targets()).codexThreads, undefined);
+      const options = { body: { ids: [f.id] }, codexIdentities: true };
+      const reply = targetResponseSchema.parse(
+        await peerRequest(f.peer, '/office/v1/commands/targets', undefined, options),
+      );
+      assert.deepEqual(
+        reply.codexThreads,
+        origin === 'unknown' ? { [f.id]: f.session.nativeId } : {},
+      );
+      await assert.rejects(
+        peerRequest(
+          { ...f.peer, token: f.config.token },
+          '/office/v1/commands/targets',
+          undefined,
+          options,
+        ),
+      );
+      f.config.projects = ['not-shared'];
+      f.save();
+      await assert.rejects(peerRequest(f.peer, '/office/v1/commands/targets', undefined, options));
+    } finally {
+      await f.close();
+    }
+  }
+});
+
+for (const scenario of [
+  'evicted',
+  'ambiguous',
+  'missing',
+  'mismatched',
+  'revoked',
+  'revoked-during-auth',
+] as const) {
+  test(`Authenticated identity handles evicted Codex lists without guessing: ${scenario}`, async () => {
+    const f = await setup(true);
+    const { DesktopCodexRelay } = await import('../desktop/codex-remote.js');
+    const hosts = ['remote-control:env_mini', 'remote-control:env_pro'];
+    const home = path.join(f.root, 'codex');
+    mkdirSync(home);
+    const file = path.join(home, '.codex-global-state.json');
+    const state = {
+      'electron-persisted-atom-state': Object.fromEntries(
+        hosts.map((h) => [`remote-thread-summaries-v3:${h}`, []]),
+      ),
+    };
+    writeFileSync(file, JSON.stringify(state));
+    let opened = 0,
+      sent = 0,
+      finalAuthorization = false;
+    const relay = new DesktopCodexRelay(home, async () => {
+      opened++;
+    });
+    relay.inspect = async (h, thread) => {
+      assert.equal(thread, f.session.nativeId);
+      return scenario === 'missing'
+        ? 'missing'
+        : scenario === 'ambiguous' || h === hosts[0]
+          ? 'ready'
+          : 'missing';
+    };
+    relay.send = async (h, thread, _text, authorize) => {
+      assert.equal(h, hosts[0]);
+      assert.equal(thread, f.session.nativeId);
+      if (scenario === 'revoked')
+        writeFileSync(
+          file,
+          JSON.stringify({ ...state, 'thread-project-membership-host-ids': { [thread]: 'local' } }),
+        );
+      finalAuthorization = true;
+      await authorize();
+      sent++;
+    };
+    const request: typeof peerRequest = async (...args) => {
+      const response: any = await peerRequest(...args);
+      if (scenario === 'mismatched' && response.codexThreads)
+        response.codexThreads[f.id] = randomUUID();
+      return response;
+    };
+    const manager = new PeerManager(path.join(f.root, 'receiver'), request, relay);
+    try {
+      manager.command({ action: 'enable', enabled: true });
+      manager.command({
+        action: 'add',
+        peer: { ...f.peer, token: f.config.token, sendToken: f.config.sendToken },
+      });
+      manager.start();
+      if (!manager.sessions().length) await new Promise<void>((r) => manager.once('change', r));
+      const id = manager.sessions()[0].id;
+      const target = (await manager.targets([id]))[id];
+      assert.equal(
+        !!target?.canSend,
+        ['evicted', 'revoked', 'revoked-during-auth'].includes(scenario),
+      );
+      assert.equal(!!target?.canPrepare, false);
+      assert.ok(!JSON.stringify(target).includes(f.session.nativeId));
+      if (scenario === 'evicted')
+        assert.equal((await manager.send(id, 'synthetic', randomUUID())).status, 'sent');
+      else
+        await assert.rejects(
+          manager.send(id, 'synthetic', randomUUID(), async () => {
+            if (scenario === 'revoked-during-auth' && finalAuthorization)
+              writeFileSync(
+                file,
+                JSON.stringify({
+                  ...state,
+                  'thread-project-membership-host-ids': { [f.session.nativeId]: 'local' },
+                }),
+              );
+          }),
+        );
+      assert.equal(sent, scenario === 'evicted' ? 1 : 0);
+      assert.equal(opened, 0);
+    } finally {
+      manager.close();
+      await f.close();
+    }
+  });
+}

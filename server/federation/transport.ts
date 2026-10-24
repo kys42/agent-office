@@ -19,7 +19,7 @@ export function peerRequest(
   peer: PeerInput,
   route: string,
   signal?: AbortSignal,
-  options: { body?: unknown; timeoutMs?: number } = {},
+  options: { body?: unknown; timeoutMs?: number; codexIdentities?: boolean } = {},
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const timeoutMs = options.timeoutMs ?? PEER_READ_TIMEOUT_MS;
@@ -68,6 +68,7 @@ export function peerRequest(
         headers: {
           Authorization: `Bearer ${peer.token}`,
           Accept: 'application/json',
+          ...(options.codexIdentities ? { 'X-Agent-Office-Codex-Identities': '1' } : {}),
           ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         signal,

@@ -28,6 +28,8 @@ flowchart LR
 - 공통 Codex Desktop 전송은 베타 설정과 독립적인 추가 기능이다. 기존 Codex CLI 큐·Claude 전송을 유지하며 Desktop IPC 미지원은 해당 Desktop 대상만 전송 불가로 처리한다. 모든 Codex 버전·OS의 Desktop 전송 호환성을 보장하지 않는다.
 - 수신 베타를 끄면 기존 로컬 화면으로 복귀하지만, 별도로 실행한 exporter 서버까지 종료하지는 않는다. 원격 공개를 중지하려면 exporter를 별도로 종료하거나 공유 설정을 비활성화한다.
 
+Codex가 원격 목록 캐시를 비운 경우에도, 송신기의 전송 권한으로 확인한 정확한 대화 UUID와 opaque ID 해시를 대조해 연결을 찾는다. `X-Agent-Office-Codex-Identities: 1`을 보낸 targets 요청에만 선택적 `codexThreads`를 반환하므로 기존 송수신기와 호환된다. 로컬 Codex에 알려진 호스트 중 실제 일반 사용자 대화를 맡은 연결이 하나일 때만 전송 경로로 사용한다. 명시적 local/다른 호스트 할당·충돌·잘못된 metadata는 차단하며, 목록만 없는 대화는 자동으로 열지 않는다. 전송 직전에도 공유 범위·권한·현재 할당·실제 담당 연결을 재검증한다. UUID는 내부 전송 조회에만 사용하고 화면 snapshot/target에는 노출하지 않는다.
+
 ## 연결과 권한
 
 TLS 자체 서명 인증서의 SHA-256 지문과 256-bit bearer token을 `connection.json`으로 전달한다. 이 파일은 비밀이며 SSH/SCP 등 이미 신뢰한 경로로 전달한다. 인증서 지문과 유효기간을 확인한 **후** HTTP 토큰을 보낸다. 자동 발견·TOFU·브라우저 CORS·리디렉션은 없다. 인증서 변경 시 파일을 새로 전달하고 연결을 다시 등록한다.
@@ -126,4 +128,4 @@ command smoke는 가짜 native sender를 주입한 합성 HTTPS 서버와 실제
 
 검수는 사용자 Mac에서 quiet 기본값을 유지한다. 실패 원인 조사 중에도 `AGENT_OFFICE_FOCUS_TESTS=1` 또는 `CI=1`로 전경 테스트를 켜지 않는다. 실제 OS 포커스 검사는 전용 CI나 별도 합의한 환경에서만 한다.
 
-Codex의 owner 없음 응답은 요청의 짧은 제한과 별개로 약 10초 뒤 도착할 수 있다. 수신 relay의 owner discovery만 11초를 기다리며 initialize/model settings의 제한은 2초로 유지한다. 명시적인 `no-client-found`만 연결 준비로 분류하고 timeout은 준비 불가로 처리한다. 여러 사무실의 대상 조회는 20개씩 최대 5개 배치를 병렬 실행해 느린 owner discovery가 뒤의 사무실을 직렬로 막지 않는다. 설정 변경·종료 시 대기 중 배치를 시작하지 않고 이전 결과도 폐기한다.
+Codex의 owner 없음 응답은 요청의 짧은 제한과 별개로 약 10초 뒤 도착할 수 있다. 수신 relay는 정확한 hostId와 conversationId를 담은 version 2 follower settings 조회로 원격 owner를 찾는다. 일부 Codex 클라이언트는 owner-discovery를 local에만 등록하므로 이 요청을 원격 전송의 선행 조건으로 삼지 않는다. 첫 설정 조회는 11초를 기다리고, 반환된 handledByClientId를 지정해 같은 연결에서 설정을 다시 검증한다. 두 응답 모두 resumed/default/user여야 하며 initialize와 지정된 owner의 설정 재검증은 2초로 제한한다. 명시적인 `no-client-found`만 연결 준비로 분류하고 timeout은 준비 불가로 처리한다. 여러 사무실의 대상 조회는 20개씩 최대 5개 배치를 병렬 실행해 느린 owner discovery가 뒤의 사무실을 직렬로 막지 않는다. 설정 변경·종료 시 대기 중 배치를 시작하지 않고 이전 결과도 폐기한다.
