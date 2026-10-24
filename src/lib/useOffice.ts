@@ -408,10 +408,6 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   };
   /** Hide colleagues until their next conversation (`on`), or bring them back now. */
   const veil = async (ids: string[], on: boolean) => {
-    if (ids.some(isRemoteId)) {
-      notify(m().federation.readOnly);
-      return;
-    }
     const hiddenAt = on ? Date.now() : null;
     if (demo) {
       setSnapshot((s) =>
@@ -422,14 +418,16 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
             })
           : s,
       );
-      return;
+      return true;
     }
     try {
       // The service takes up to 500 ids per request; "bring everyone back" can be more.
       for (let i = 0; i < ids.length; i += BATCH)
         accept(await api.veil(ids.slice(i, i + BATCH), on));
+      return true;
     } catch (e) {
       notify((e as Error).message);
+      return false;
     }
   };
   /** Desks of one zone in this order (`moveDesk`); the service keeps it for every window. */

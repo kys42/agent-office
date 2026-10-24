@@ -22,6 +22,8 @@ import { parentSession } from '../src/shared/office.js';
 import { remoteId, type PeerInput } from '../src/shared/federation.js';
 import { freshConversation, mergeNewest, mergeLive } from '../src/shared/conversation-pages.js';
 import { isWorking } from '../src/shared/presentation.js';
+import { isVeiled } from '../src/shared/veil.js';
+import type { Snapshot } from '../src/shared/types.js';
 import type { OfficeService } from '../server/service.js';
 
 const temp = () => mkdtempSync(path.join(os.tmpdir(), 'office-peer-test-'));
@@ -233,7 +235,6 @@ test('local text and snapshots remain compatible with beta off or enabled withou
       for (const [method, args] of [
         ['patch', [remote, { notes: 'blocked' }]],
         ['pin', [['codex:local', remote], true]],
-        ['veil', [[remote], true]],
         ['reorderSeats', [['codex:local', remote]]],
         ['identities', [[remote]]],
         ['bookmark', ['codex:local', remote, 'note']],
@@ -250,7 +251,122 @@ test('local text and snapshots remain compatible with beta off or enabled withou
         total: 0,
       });
       assert.equal(forwarded.length, before);
+      await assert.rejects(service.call('veil', [[remote], true]), /unavailable|read-only/);
+      assert.equal(forwarded.length, before);
     }
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('remote hiding is local, persists, publishes to every window and follows conversation rules', async () => {
+  const dir = temp(),
+    p = peer();
+  const config = JSON.stringify({ enabled: true, peers: [p] });
+  writeFileSync(path.join(dir, 'peers.json'), config);
+  const source = packet(p);
+  let requests = 0;
+  const request = async () => {
+    requests++;
+    return source;
+  };
+  const manager = new PeerManager(dir, request);
+  const snapshot = demoSnapshot();
+  const before = JSON.stringify(snapshot);
+  const local = new EventEmitter() as unknown as OfficeService;
+  const writes: unknown[][] = [];
+  local.call = async (method, args = []) => {
+    if (method === 'veil') {
+      writes.push(args);
+      for (const s of snapshot.sessions)
+        if ((args[0] as string[]).includes(s.id)) s.hiddenAt = args[1] ? Date.now() : null;
+    }
+    return snapshot;
+  };
+  const service = new FederatedService(local, manager);
+  let updates = 0;
+  service.on('snapshot', () => updates++);
+  let reopened: PeerManager | undefined;
+  try {
+    await changed(manager, () => manager.start());
+    const remote = manager.sessions()[0].id;
+    const hidden = (await service.call('veil', [[remote], true])) as Snapshot;
+    const session = hidden.sessions.find((s) => s.id === remote)!;
+    assert.equal(isVeiled([session], []), true);
+    assert.equal(updates, 1, 'all windows receive the committed viewer change');
+    assert.equal(requests, 1, 'hiding sends no peer request');
+    assert.deepEqual(writes, [], 'remote IDs never reach the local session store');
+    assert.equal(JSON.stringify(snapshot), before);
+    assert.equal(readFileSync(path.join(dir, 'peers.json'), 'utf8'), config);
+    const saved = JSON.parse(readFileSync(path.join(dir, 'hidden.json'), 'utf8'));
+    const hiddenAt = session.hiddenAt;
+    assert.ok(typeof hiddenAt === 'number');
+    assert.deepEqual(Object.keys(saved), [remote]);
+    assert.equal(saved[remote], session.hiddenAt);
+    assert.equal(
+      isVeiled(
+        [{ ...session, activity: { text: 'progress', kind: 'progress', at: hiddenAt + 1 } }],
+        [],
+      ),
+      true,
+    );
+    assert.equal(
+      isVeiled(
+        [{ ...session, activity: { text: 'new reply', kind: 'reply', at: hiddenAt + 1 } }],
+        [],
+      ),
+      false,
+    );
+    reopened = new PeerManager(dir, request);
+    await changed(reopened, () => reopened!.start());
+    assert.equal(reopened.sessions()[0].hiddenAt, saved[remote], 'restart keeps the viewer choice');
+    snapshot.sessions[0].hiddenAt = Date.now();
+    const restored = (await service.call('veil', [
+      [snapshot.sessions[0].id, remote],
+      false,
+    ])) as Snapshot;
+    assert.deepEqual(writes, [[[snapshot.sessions[0].id], false]]);
+    assert.equal(restored.sessions.find((s) => s.id === remote)?.hiddenAt, null);
+    assert.equal(snapshot.sessions[0].hiddenAt, null, 'mixed restore also restores local desks');
+    const count = writes.length;
+    await assert.rejects(
+      service.call('veil', [
+        [snapshot.sessions[0].id, remoteId(p.officeId, wireId('missing'))],
+        true,
+      ]),
+      /unavailable/,
+    );
+    assert.equal(writes.length, count, 'invalid remote does not partially write local sessions');
+    await assert.rejects(service.call('veil', [[remote], 'yes']), /boolean/);
+    await assert.rejects(service.call('veil', [Array(501).fill(remote), true]));
+    snapshot.preferences.enabledProviders = [];
+    await assert.rejects(service.call('veil', [[remote], true]), /unavailable/);
+    assert.equal(manager.sessions()[0].hiddenAt, null);
+  } finally {
+    manager.close();
+    reopened?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failed remote hiding save is not published or applied', async () => {
+  const dir = temp(),
+    p = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  // A non-file destination makes the atomic rename fail on every OS.
+  const manager = new PeerManager(dir, async () => packet(p));
+  mkdirSync(path.join(dir, 'hidden.json'));
+  const local = new EventEmitter() as unknown as OfficeService;
+  local.call = async () => demoSnapshot();
+  const service = new FederatedService(local, manager);
+  let updates = 0;
+  service.on('snapshot', () => updates++);
+  try {
+    await changed(manager, () => manager.start());
+    await assert.rejects(service.call('veil', [[manager.sessions()[0].id], true]));
+    assert.equal(manager.sessions()[0].hiddenAt, null);
+    assert.equal(updates, 0);
   } finally {
     manager.close();
     rmSync(dir, { recursive: true, force: true });

@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import type { OfficeService } from '../service.js';
 import type { Snapshot } from '../../src/shared/types.js';
 import { isRemoteId } from '../../src/shared/federation.js';
@@ -122,6 +123,23 @@ export class FederatedService extends EventEmitter {
     authorized?: () => Promise<void>,
   ): Promise<unknown> {
     if (method === 'federation') return this.peers.command(args[0]);
+    if (method === 'veil' && remoteReferences(method, args)) {
+      const ids = z.array(z.string().max(400)).max(500).parse(args[0]);
+      const on = z.boolean().parse(args[1]);
+      if (!this.peers.enabled) throw Error('Remote Office is read-only in this beta');
+      const remote = ids.filter(isRemoteId);
+      const available = new Set(this.peers.sessions().map((s) => s.id));
+      if (remote.some((id) => !available.has(id))) throw Error('Remote session unavailable');
+      const local = (await this.local.call('snapshot')) as Snapshot;
+      const visible = new Set(this.compose(local).sessions.map((s) => s.id));
+      if (ids.some((id) => !visible.has(id))) throw Error('Session unavailable');
+      const localIds = ids.filter((id) => !isRemoteId(id));
+      this.localSnapshot = localIds.length
+        ? ((await this.local.call('veil', [localIds, on])) as Snapshot)
+        : local;
+      this.peers.veil(remote, on);
+      return this.publish();
+    }
     if (method === 'remote-launch') {
       const [id, spec, start] = args;
       if (!isRemoteId(id)) throw Error('Remote session unavailable');
