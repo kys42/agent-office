@@ -306,7 +306,7 @@ test('sending requires an explicit desktop profile and honors its setting indepe
   }
 });
 
-test('Local Codex relay requires explicit host mapping and live remote permission; durable requests never replay', async () => {
+test('Local Codex relay automatically resolves exact identity with live permission; durable requests never replay', async () => {
   const f = await setup(true);
   const host = 'remote-control:env_fixture';
   const { DesktopCodexRelay } = await import('../desktop/codex-remote.js');
@@ -351,7 +351,7 @@ test('Local Codex relay requires explicit host mapping and live remote permissio
       peer: { ...f.peer, token: f.config.token, sendToken: f.config.sendToken },
     });
     let id = await connected();
-    assert.equal((await manager.targets([id]))[id], null);
+    assert.equal((await manager.targets([id]))[id]?.canSend, true);
     manager.command({
       action: 'update',
       officeId: f.peer.officeId,
@@ -525,3 +525,89 @@ test('twenty target lookups read the shared view twice and recheck revocation af
     await f.close();
   }
 });
+
+for (const scenario of [
+  'ready',
+  'permission-revoked',
+  'host-changed',
+  'ambiguous',
+  'wrong-override',
+  'connect-failed',
+] as const) {
+  test(`Automatic relay prepares only on send and rechecks identity/permission: ${scenario}`, async () => {
+    const f = await setup(true);
+    let hosts = ['ssh:fixture'];
+    let ready = false,
+      opened = 0,
+      sent = 0;
+    const relay = {
+      hosts: () => hosts.map((id) => ({ id, label: id })),
+      resolve: (host: string, id: string) =>
+        hosts.includes(host) && id === wireId(f.session.id) ? f.session.nativeId : null,
+      available: async () => ready,
+      prepare: async (_h: string, _t: string, auth: () => Promise<void>) => {
+        await auth();
+        opened++;
+        if (scenario === 'permission-revoked') {
+          f.config.allowSend = false;
+          f.save();
+        }
+        if (scenario === 'host-changed') hosts = ['ssh:changed'];
+        if (scenario === 'connect-failed') throw Error('offline');
+        ready = true;
+        await auth();
+      },
+      send: async (_h: string, _t: string, _text: string, auth: () => Promise<void>) => {
+        await auth();
+        sent++;
+      },
+    };
+    const manager = new PeerManager(path.join(f.root, 'receiver'), undefined, relay);
+    try {
+      manager.command({ action: 'enable', enabled: true });
+      manager.command({
+        action: 'add',
+        peer: { ...f.peer, token: f.config.token, sendToken: f.config.sendToken },
+      });
+      if (!manager.sessions().length)
+        await new Promise<void>((r) => manager.once('change', () => r()));
+      const id = manager.sessions()[0].id;
+      if (scenario === 'ambiguous') hosts.push('ssh:duplicate');
+      if (scenario === 'wrong-override') {
+        hosts.push('ssh:wrong');
+        manager.command({
+          action: 'update',
+          officeId: f.peer.officeId,
+          label: 'Test',
+          tags: [],
+          projects: {},
+          codexHostId: 'ssh:wrong',
+        });
+        hosts = ['ssh:fixture'];
+        if (!manager.sessions().length)
+          await new Promise<void>((r) => manager.once('change', () => r()));
+      }
+      const target = (await manager.targets([id]))[id];
+      assert.equal(opened, 0, 'status queries never open Codex');
+      if (scenario === 'ambiguous' || scenario === 'wrong-override') assert.equal(target, null);
+      else {
+        assert.equal(target?.canSend, false);
+        assert.equal(target?.canPrepare, true);
+      }
+      if (scenario === 'ready') {
+        const request = randomUUID();
+        assert.equal((await manager.send(id, 'synthetic', request)).status, 'sent');
+        await manager.send(id, 'synthetic', request);
+        assert.equal(opened, 1);
+        assert.equal(sent, 1);
+      } else {
+        await assert.rejects(manager.send(id, 'synthetic', randomUUID()));
+        assert.equal(sent, 0);
+      }
+      assert.deepEqual(f.sent, [], 'never fall back to another sender');
+    } finally {
+      manager.close();
+      await f.close();
+    }
+  });
+}

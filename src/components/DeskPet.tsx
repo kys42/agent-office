@@ -149,7 +149,7 @@ export function DeskPet({
   });
   const target = replyId ? targets[replyId] : undefined;
   const deskTarget = id ? targets[id] : undefined;
-  const canReply = !!onReply && !privacy && !!target?.canSend;
+  const canReply = !!onReply && !privacy && !!(target?.canSend || target?.canPrepare);
   const jump = (sessionId: string) => {
     const say = notify ?? (() => {});
     jumpOrCopy(sessionId, say).catch((e) => say((e as Error).message));

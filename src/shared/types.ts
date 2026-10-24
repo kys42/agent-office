@@ -543,6 +543,8 @@ export interface TerminalTarget {
   /** Display-only destination; remote responses never carry handles. */
   remoteOffice?: string;
   codexRemote?: boolean;
+  /** An explicit send may open the verified existing Codex conversation first. */
+  canPrepare?: boolean;
   kind: 'orca' | 'tmux' | 'codex';
   label: string;
   /** Agent CLI process state, e.g. idle, busy, shell. */

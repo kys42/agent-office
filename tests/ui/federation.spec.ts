@@ -218,3 +218,54 @@ test('remote Codex route names this computer and offers a read-only target refre
   await composer.getByRole('button', { name: '전송 대상 다시 확인' }).click();
   await expect(composer).not.toContainText('Codex에서 해당 원격 대화');
 });
+
+test('unloaded remote Codex offers connect and send, preserving drafts on connection failure', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'codex',
+            desktop: true,
+            codexRemote: true,
+            label: '',
+            status: 'desktop',
+            canSend: false,
+            canPrepare: true,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+    w.office.send = async () => {
+      throw Error('연결하지 못해 메시지를 보내지 않았습니다.');
+    };
+  });
+  await page
+    .getByRole('tablist', { name: '사무실', exact: true })
+    .getByRole('tab', { name: /MacBook Pro/ })
+    .click();
+  await page.locator('.roster .session-row').first().click();
+  const composer = page.locator('.terminal-send-chat');
+  await expect(composer).toContainText('Codex에서 이 대화를 열고');
+  await composer.locator('textarea').fill('연결 후 한 번만');
+  await composer.getByRole('button', { name: '연결하고 보내기', exact: true }).click();
+  await expect(composer.getByRole('alert')).toContainText('보내지 않았습니다');
+  await expect(composer.locator('textarea')).toHaveValue('연결 후 한 번만');
+  expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.send = async (id: string, text: string) => {
+      w.sends.push({ id, text });
+      return { status: 'sent', message: '완료' };
+    };
+  });
+  await composer.getByRole('button', { name: '연결하고 보내기', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).sends.length)).toBe(1);
+  await expect(composer.locator('textarea')).toHaveValue('');
+});

@@ -15,7 +15,7 @@ export interface PeerInput {
   fingerprint: string;
   token: string;
   sendToken?: string;
-  /** Local-only explicit Codex remote connection; never imported from a peer. */
+  /** Optional local host override; absent means exact-identity automatic routing. Never imported. */
   codexHostId?: string;
   label: string;
   tags: string[];

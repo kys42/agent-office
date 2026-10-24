@@ -329,6 +329,16 @@ export class PeerManager extends EventEmitter {
   linkedProjects() {
     return new Set(this.enabled ? this.config.peers.flatMap((p) => Object.values(p.projects)) : []);
   }
+  /** An explicit override pins a host; otherwise exactly one digest/host match is required. */
+  private relayRoute(peer: PeerInput, opaqueId: string) {
+    if (!this.relay) return null;
+    const hosts = peer.codexHostId ? [peer.codexHostId] : this.relay.hosts().map((h) => h.id);
+    const routes = [...new Set(hosts)].flatMap((host) => {
+      const thread = this.relay!.resolve(host, opaqueId);
+      return thread ? [{ host, thread }] : [];
+    });
+    return routes.length === 1 ? routes[0] : null;
+  }
   async targets(ids: string[]): Promise<Record<string, TerminalTarget | null>> {
     const result: Record<string, TerminalTarget | null> = Object.fromEntries(
       ids.map((id) => [id, null]),
@@ -370,12 +380,7 @@ export class PeerManager extends EventEmitter {
                   canFocus: false,
                   remoteOffice: peer.label,
                 };
-              if (
-                !target?.canSend &&
-                peer.codexHostId &&
-                this.relay &&
-                Object.hasOwn(response.targets, ref.id)
-              ) {
+              if (!target?.canSend && this.relay && Object.hasOwn(response.targets, ref.id)) {
                 const session = held.snapshot?.sessions.find((s) => s.id === ref.id);
                 if (
                   session?.provider !== 'codex' ||
@@ -383,13 +388,16 @@ export class PeerManager extends EventEmitter {
                   !['interactive', 'unknown'].includes(session.origin)
                 )
                   return;
-                const thread = this.relay.resolve(peer.codexHostId, ref.id);
-                const available =
-                  !!thread && (await this.relay.available(peer.codexHostId, thread));
+                const route = this.relayRoute(peer, ref.id);
+                if (!route) return;
+                const available = await this.relay.available(route.host, route.thread);
+                const latestRoute = this.relayRoute(peer, ref.id);
                 if (
                   generation !== this.generation ||
                   held.state !== 'connected' ||
-                  held.snapshot?.paused
+                  held.snapshot?.paused ||
+                  latestRoute?.host !== route.host ||
+                  latestRoute.thread !== route.thread
                 )
                   return;
                 result[id] = {
@@ -399,6 +407,7 @@ export class PeerManager extends EventEmitter {
                   label: '',
                   canFocus: false,
                   canSend: available,
+                  canPrepare: !available && !!this.relay.prepare,
                   remoteOffice: peer.label,
                   codexRemote: true,
                 };
@@ -456,27 +465,43 @@ export class PeerManager extends EventEmitter {
     const generation = this.generation;
     const target = (await this.targets([id]))[id];
     await authorized?.();
-    if (generation !== this.generation || !target?.canSend || !held.commandEpoch)
+    if (
+      generation !== this.generation ||
+      !(target?.canSend || target?.canPrepare) ||
+      !held.commandEpoch
+    )
       throw new Error(m().federation.sendUnavailable);
     if (target.codexRemote) {
-      const host = peer.codexHostId;
-      const thread = host && this.relay?.resolve(host, ref.id);
-      if (!host || !thread || !this.relay) throw Error(m().federation.sendUnavailable);
-      await this.relay.send(host, thread, text, async () => {
-        // The peer targets endpoint authorizes the session even when its local target is null.
+      const route = this.relayRoute(peer, ref.id);
+      if (!route || !this.relay) throw Error(m().federation.sendUnavailable);
+      const { host, thread } = route;
+      const recheck = async (ready: boolean) => {
+        // Re-authorize against the exporter and keep exactly the route selected for this send.
         const fresh = (await this.targets([id]))[id];
         await authorized?.();
+        const current = this.relayRoute(peer, ref.id);
         if (
           this.closed ||
           generation !== this.generation ||
           !fresh?.codexRemote ||
-          !fresh.canSend ||
+          !(ready ? fresh.canSend : fresh.canSend || fresh.canPrepare) ||
           held.state !== 'connected' ||
           held.snapshot?.paused ||
-          this.relay?.resolve(host, ref.id) !== thread
+          current?.host !== host ||
+          current.thread !== thread
         )
           throw Error(m().federation.sendUnavailable);
-      });
+      };
+      if (!target.canSend) {
+        if (!this.relay.prepare) throw Error(m().federation.sendUnavailable);
+        try {
+          await this.relay.prepare(host, thread, () => recheck(false));
+        } catch {
+          throw Error(m().federation.codexConnectFailed);
+        }
+      }
+      await recheck(true);
+      await this.relay.send(host, thread, text, () => recheck(true));
       return { status: 'sent', message: m().federation.sent };
     }
     const controller = new AbortController();
