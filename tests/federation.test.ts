@@ -414,6 +414,69 @@ test('a new remote request followed by progress retires the marker beyond bounde
   }
 });
 
+test('a new interactive persona run restores every hidden member, while scheduled and helper runs do not', async () => {
+  const dir = temp(),
+    p = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+  const actor = { id: 'synthetic-persona', name: 'Persona', source: 'fixture' };
+  const original = { ...fixture(), actor };
+  const source = packet(p);
+  source.sessions = [exportSession(original, [original])];
+  let manager = new PeerManager(dir, async () => source);
+  const model = () =>
+    buildOfficeModel({ ...demoSnapshot(), sessions: manager.sessions(), notices: [] }, Date.now());
+  try {
+    await changed(manager, () => manager.start());
+    const id = manager.sessions()[0].id;
+    manager.veil([id], true);
+    const at = manager.sessions()[0].hiddenAt! + 1;
+    manager.close();
+    const run = {
+      ...original,
+      id: 'new-persona-run',
+      nativeId: 'new-persona-run',
+      updatedAt: at + 1,
+      origin: { kind: 'scheduled' as const, source: 'fixture' },
+      activity: { kind: 'progress' as const, at: at + 1, text: 'Working', eventId: 'progress' },
+      events: [
+        { id: 'request', kind: 'user' as const, text: 'New request', at, sourceRef: '' },
+        {
+          id: 'progress',
+          kind: 'assistant' as const,
+          phase: 'commentary' as const,
+          text: 'Working',
+          at: at + 1,
+          sourceRef: '',
+        },
+      ],
+    };
+    source.sessions.push(exportSession(run, [original, run]));
+    manager = new PeerManager(dir, async () => source);
+    await changed(manager, () => manager.start());
+    assert.equal(model().view(id)?.veiled, true, 'scheduled run cannot restore the persona');
+    manager.close();
+    source.sessions[1].origin = 'interactive';
+    source.sessions[1].relation = 'subagent';
+    manager = new PeerManager(dir, async () => source);
+    await changed(manager, () => manager.start());
+    assert.equal(model().view(id)?.veiled, true, 'a helper run cannot restore the persona');
+    manager.close();
+    source.sessions[1].relation = 'root';
+    manager = new PeerManager(dir, async () => source);
+    await changed(manager, () => manager.start());
+    assert.equal(
+      model().view(id)?.veiled,
+      false,
+      'interactive request and progress in a new run restores the persona',
+    );
+    assert.ok(manager.sessions().every((s) => s.hiddenAt === null));
+    assert.deepEqual(JSON.parse(readFileSync(path.join(dir, 'hidden.json'), 'utf8')), {});
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('known remote save failures are checked before a mixed request writes or publishes local changes', async () => {
   const dir = temp(),
     p = peer();
