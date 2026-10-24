@@ -545,6 +545,7 @@ for (const scenario of [
       resolve: (host: string, id: string) =>
         hosts.includes(host) && id === wireId(f.session.id) ? f.session.nativeId : null,
       available: async () => ready,
+      inspect: async () => (ready ? ('ready' as const) : ('missing' as const)),
       prepare: async (_h: string, _t: string, auth: () => Promise<void>) => {
         await auth();
         opened++;

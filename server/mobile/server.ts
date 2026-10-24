@@ -455,7 +455,6 @@ export class MobileServer {
             targets[id]
               ? {
                   canSend: enabled && targets[id]!.canSend,
-                  canPrepare: enabled && targets[id]!.canPrepare,
                   desktop: !!targets[id]!.desktop,
                   queues: !!targets[id]!.queues,
                 }

@@ -3,7 +3,13 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { Snapshot } from '../../src/shared/types';
 
-async function fixture(page: Page, mode = '#mini=row', call = false, motion = false) {
+async function fixture(
+  page: Page,
+  mode = '#mini=row',
+  call = false,
+  motion = false,
+  connect = false,
+) {
   const s = demoSnapshot();
   const colleague = s.sessions[0];
   const now = Date.now();
@@ -41,45 +47,66 @@ async function fixture(page: Page, mode = '#mini=row', call = false, motion = fa
       version: 'v1',
     },
   ];
-  await page.addInitScript((s) => {
-    const w = window as any;
-    w.fixture = s;
-    w.receipts = [];
-    w.sends = [];
-    w.office = {
-      snapshot: async () => structuredClone(s),
-      subscribe: (fn: (s: unknown) => void) => {
-        w.publish = () => fn(structuredClone(s));
-        return () => {};
-      },
-      detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
-      artifacts: async () => [],
-      visit: async () => structuredClone(s),
-      terminalSend: async () => true,
-      terminals: async (ids: string[]) =>
-        Object.fromEntries(
-          ids.map((id) => [
-            id,
-            { kind: 'tmux', label: 'work:1.0', status: 'idle', canSend: true, canFocus: true },
-          ]),
-        ),
-      notices: async (receipts: { id: string; version: string }[], action: string) => {
-        w.receipts.push({ receipts, action });
-        for (const n of s.notices ?? [])
-          if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
-            if (action === 'view') n.viewedAt ??= Date.now();
-            if (action === 'read') n.seenAt = Date.now();
-            if (action === 'unread') n.seenAt = null;
-            if (action === 'dismiss') n.dismissedAt = Date.now();
-          }
-        return structuredClone(s);
-      },
-      send: async (id: string, text: string) => {
-        w.sends.push({ id, text });
-        return { status: 'sent', message: '보냈어요' };
-      },
-    };
-  }, s);
+  await page.addInitScript(
+    ({ s, connect }) => {
+      const w = window as any;
+      w.fixture = s;
+      w.receipts = [];
+      w.sends = [];
+      w.office = {
+        snapshot: async () => structuredClone(s),
+        subscribe: (fn: (s: unknown) => void) => {
+          w.publish = () => fn(structuredClone(s));
+          return () => {};
+        },
+        detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
+        artifacts: async () => [],
+        visit: async () => structuredClone(s),
+        terminalSend: async () => true,
+        terminals: async (ids: string[]) =>
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              connect
+                ? {
+                    kind: 'codex',
+                    desktop: true,
+                    codexRemote: true,
+                    remoteOffice: 'MacBook Pro',
+                    label: '',
+                    status: 'desktop',
+                    canSend: false,
+                    canPrepare: true,
+                    canFocus: false,
+                  }
+                : {
+                    kind: 'tmux',
+                    label: 'work:1.0',
+                    status: 'idle',
+                    canSend: true,
+                    canFocus: true,
+                  },
+            ]),
+          ),
+        notices: async (receipts: { id: string; version: string }[], action: string) => {
+          w.receipts.push({ receipts, action });
+          for (const n of s.notices ?? [])
+            if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
+              if (action === 'view') n.viewedAt ??= Date.now();
+              if (action === 'read') n.seenAt = Date.now();
+              if (action === 'unread') n.seenAt = null;
+              if (action === 'dismiss') n.dismissedAt = Date.now();
+            }
+          return structuredClone(s);
+        },
+        send: async (id: string, text: string) => {
+          w.sends.push({ id, text });
+          return { status: 'sent', message: '보냈어요' };
+        },
+      };
+    },
+    { s, connect },
+  );
   await page.goto(`/?lang=ko${mode}`);
   await expect(page.locator('.speech-bubble').first()).toBeVisible();
   return page.locator('.speech-bubble').first();
@@ -323,5 +350,22 @@ for (const mode of ['#mini=row', '#mini=floor']) {
     expect(m.top).toBeGreaterThanOrEqual(0);
     expect(m.top).toBeGreaterThanOrEqual(m.trackTop);
     expect(m.headerHit).toBe(true);
+  });
+}
+
+for (const mode of ['', '#mini=row', '#mini=pet']) {
+  test(`connection preparation is disclosed in quick reply ${mode || 'office'}`, async ({
+    page,
+  }) => {
+    const bubble = await fixture(page, mode, false, false, true);
+    await bubble.hover();
+    await bubble.locator('.bubble-reply').click();
+    const form = page.locator('.quick-reply');
+    await expect(form).toContainText('Codex에서 이 대화를 열고');
+    const button = form.getByRole('button', { name: '연결하고 보내기', exact: true });
+    await expect(button).toBeDisabled();
+    await form.locator('textarea').fill('합성 연결 답장');
+    await button.click();
+    await expect.poll(() => page.evaluate(() => (window as any).sends.length)).toBe(1);
   });
 }

@@ -19,6 +19,8 @@ type Frame = Record<string, any>;
 export const remoteCodexHost = (host: string) =>
   /^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/.test(host);
 
+class MissingOwnerError extends Error {}
+
 class DesktopIPC {
   private buffer: Buffer = Buffer.alloc(0);
   private clientId = 'initializing-client';
@@ -101,6 +103,15 @@ class DesktopIPC {
     this.pending.delete(frame.requestId);
     clearTimeout(entry.timer);
     if (
+      entry.method === 'thread-owner-discovery' &&
+      frame.resultType === 'error' &&
+      frame.error === 'no-client-found' &&
+      (frame.method === undefined || frame.method === entry.method)
+    ) {
+      entry.reject(new MissingOwnerError('no-client-found'));
+      return;
+    }
+    if (
       frame.resultType !== 'success' ||
       frame.method !== entry.method ||
       typeof frame.handledByClientId !== 'string'
@@ -152,12 +163,18 @@ class DesktopIPC {
   }
 }
 
-async function owner(ipc: DesktopIPC, threadId: string, timeout: number, hostId?: string) {
+async function owner(
+  ipc: DesktopIPC,
+  threadId: string,
+  timeout: number,
+  hostId?: string,
+  discoveryTimeout = timeout,
+) {
   if (hostId !== undefined && !remoteCodexHost(hostId)) throw Error('unsupported-host');
   const discovery = await ipc.request(
     'thread-owner-discovery',
     { hostId: hostId ?? 'local', conversationId: threadId },
-    timeout,
+    discoveryTimeout,
   );
   const id = discovery.handledByClientId;
   const reply = await ipc.request(
@@ -179,6 +196,26 @@ async function owner(ipc: DesktopIPC, threadId: string, timeout: number, hostId?
   return id as string;
 }
 
+export type DesktopThreadState = 'ready' | 'missing' | 'unavailable';
+/** Only an explicit no-owner response is loadable; unsupported owners and IPC failures are not. */
+export async function desktopThreadState(
+  home: string,
+  threadId: string,
+  timeout = 1500,
+  hostId?: string,
+  discoveryTimeout = timeout,
+): Promise<DesktopThreadState> {
+  let ipc: DesktopIPC | undefined;
+  try {
+    ipc = await DesktopIPC.connect(home, timeout);
+    await owner(ipc, threadId, timeout, hostId, discoveryTimeout);
+    return 'ready';
+  } catch (error) {
+    return error instanceof MissingOwnerError ? 'missing' : 'unavailable';
+  } finally {
+    ipc?.close();
+  }
+}
 /** Read-only availability; callers must separately validate rollout origin and identity. */
 export async function desktopOwnsThread(
   home: string,
@@ -186,16 +223,7 @@ export async function desktopOwnsThread(
   timeout = 1500,
   hostId?: string,
 ) {
-  let ipc: DesktopIPC | undefined;
-  try {
-    ipc = await DesktopIPC.connect(home, timeout);
-    await owner(ipc, threadId, timeout, hostId);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    ipc?.close();
-  }
+  return (await desktopThreadState(home, threadId, timeout, hostId)) === 'ready';
 }
 
 /** Re-discover on the same connection used to send. Never retry an uncertain delivery. */

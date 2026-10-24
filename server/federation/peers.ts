@@ -390,7 +390,12 @@ export class PeerManager extends EventEmitter {
                   return;
                 const route = this.relayRoute(peer, ref.id);
                 if (!route) return;
-                const available = await this.relay.available(route.host, route.thread);
+                const state = this.relay.inspect
+                  ? await this.relay.inspect(route.host, route.thread)
+                  : (await this.relay.available(route.host, route.thread))
+                    ? 'ready'
+                    : 'unavailable';
+                const available = state === 'ready';
                 const latestRoute = this.relayRoute(peer, ref.id);
                 if (
                   generation !== this.generation ||
@@ -407,7 +412,7 @@ export class PeerManager extends EventEmitter {
                   label: '',
                   canFocus: false,
                   canSend: available,
-                  canPrepare: !available && !!this.relay.prepare,
+                  canPrepare: state === 'missing' && !!this.relay.prepare,
                   remoteOffice: peer.label,
                   codexRemote: true,
                 };

@@ -3,12 +3,18 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { wireId } from '../server/federation/protocol.js';
-import { desktopOwnsThread, remoteCodexHost, sendToCodexDesktop } from './codex-desktop.js';
+import {
+  desktopThreadState,
+  remoteCodexHost,
+  sendToCodexDesktop,
+  type DesktopThreadState,
+} from './codex-desktop.js';
 
 export interface CodexRelay {
   hosts(): { id: string; label: string }[];
   resolve(host: string, opaqueId: string): string | null;
   available(host: string, thread: string): Promise<boolean>;
+  inspect?: (host: string, thread: string) => Promise<DesktopThreadState>;
   prepare?: (host: string, thread: string, authorize: () => Promise<void>) => Promise<void>;
   send(host: string, thread: string, text: string, authorize: () => Promise<void>): Promise<void>;
 }
@@ -113,8 +119,12 @@ export class DesktopCodexRelay implements CodexRelay {
       )?.[0] ?? null
     );
   }
-  available(host: string, thread: string) {
-    return desktopOwnsThread(this.home, thread, 2000, host);
+  inspect(host: string, thread: string) {
+    // Codex returns no-client-found after its 10s discovery window even for a shorter request.
+    return desktopThreadState(this.home, thread, 2000, host, 11000);
+  }
+  async available(host: string, thread: string) {
+    return (await this.inspect(host, thread)) === 'ready';
   }
   async send(host: string, thread: string, text: string, authorize: () => Promise<void>) {
     await sendToCodexDesktop(this.home, thread, text, 15000, authorize, host);
