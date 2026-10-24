@@ -1,4 +1,4 @@
-import { mergeBackup } from './backup.js';
+import { containsLines, mergeBackup } from './backup.js';
 import { drawn, type Screen } from './screen.js';
 import {
   holdsText,
@@ -102,7 +102,9 @@ export function promptHolds(screen: string | Screen, text: string, strict = fals
  * The most rows Claude Code's box shows before it scrolls, keeping only the end in view:
  * max(3, ⌊(pane height − 10) / 2⌋) — measured on 2.1.296 at heights 12–70 (3 rows up to height
  * 16, 5 at 20, 10 at 30, 15 at 40, 20 at 50, 30 at 70). Nothing marks a scrolled box, so a box at
- * this height may be hiding the start of its text.
+ * this height may be hiding the start of its text. Only the fullscreen renderer caps the box
+ * (2.1.309: `max(3, ⌊rows / 2⌋ − 5)`, a window centred on the cursor row, clamped to the text),
+ * so with the cursor away from the end the rows below it are hidden too.
  */
 export const maxBoxRows = (height: number) => Math.max(3, Math.floor((height - 10) / 2));
 // Below height 12 the box's lower edge is cut off (measured at 8–11): no prompt is read there
@@ -134,8 +136,14 @@ function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   if (TASKS.test(box.lines.slice(box.bottom + 1).join(' ')) || hasTaskList(box)) return false;
   const rows = box.bottom - box.top - 1;
   // tmux: the box's rows against the pane. Orca (styles never read) draws a short box whole.
-  if (screen.faint)
+  if (screen.faint) {
+    // Claude Code's default (inline) renderer, on the main screen, never caps the box: with
+    // both of its rules on screen every row is in view (2.1.309 passes `maxVisibleLines` to
+    // the prompt only in fullscreen, which draws on the alternate screen). `alternate` is set
+    // only when tmux would show the alternate screen at all (see Screen.alternate).
+    if (screen.alternate === false) return true;
     return screen.height !== undefined && screen.height >= 12 && rows < maxBoxRows(screen.height);
+  }
   const width = Math.max(...box.lines.slice(box.top, box.bottom + 1).map((line) => line.length));
   const room = width - 20;
   if (room < 10) return false;
@@ -274,7 +282,36 @@ export function oneAdded(original: string, now: string, letter: string): boolean
 
 /** Rounds of deletion before giving up, and how long the prompt gets to redraw. */
 const CLEAR_ROUNDS = 60;
+/**
+ * A whole draft of n rows takes up to 2n−1 pairs (cursor at the end): the budget grows with it
+ * (a whole box on the main screen may be as tall as the pane), up to a bound.
+ */
+const MAX_CLEAR_ROUNDS = 400;
+const clearRounds = (text: string) =>
+  Math.min(MAX_CLEAR_ROUNDS, Math.max(CLEAR_ROUNDS, 2 * text.split('\n').length + 20));
+/** A box that hides rows is cleared row by row (Ctrl+U takes one wrapped row): more rounds. */
+const PARTIAL_ROUNDS = 150;
 const REDRAW_MS = 120;
+
+/**
+ * The box looks empty (`state`): one more Ctrl+K·Ctrl+U pair proves it. On a blank row the pair
+ * deletes no character: Ctrl+K joins the next line, Ctrl+U the line break before — so text still
+ * out of sight (rows above a box that showed one blank row, rows below the cursor) comes into
+ * view instead of being lost. Text that shows up is `hidden`: it was never shown, nor saved.
+ */
+async function settle(
+  host: ComposerHost,
+  state: ComposerState,
+  proceed?: () => Promise<boolean>,
+): Promise<ClearResult> {
+  if (proceed && !(await proceed())) return { status: 'failed', state, lost: true };
+  await host.press(['C-k', 'C-u']);
+  await host.wait(REDRAW_MS);
+  const after = await inspect(host);
+  if (readyToType(after)) return { status: 'cleared', state: after };
+  if (holdsText(after)) return { status: 'changed', text: after.text, whole: false, hidden: true };
+  return { status: 'failed', state: after };
+}
 
 /**
  * Claude Code in a terminal (tmux or Orca). Full drafts are backed up before the first key.
@@ -316,17 +353,20 @@ export const claudeCodeComposer: ComposerAdapter = {
     let moved = false;
     /** Orca: text no part of the draft, maybe the suggestion back in the emptied box. */
     let stranger: string | null = null;
-    for (let round = 0; round < CLEAR_ROUNDS; round++) {
+    const rounds = clearRounds(from.text);
+    for (let round = 0; round < rounds; round++) {
       // Before every key: still the same Claude, in front of its terminal.
       if (proceed && !(await proceed())) return { status: 'failed', state: from, lost: true };
       await host.press(['C-k', 'C-u']);
       await host.wait(REDRAW_MS);
       const state = await inspect(host);
-      if (readyToType(state))
+      if (readyToType(state)) {
         // The stranger was deleted after all: it was typing (saved), not the suggestion.
-        return stranger !== null
-          ? { status: 'changed', text: stranger, whole: true }
-          : { status: 'cleared', state };
+        if (stranger !== null) return { status: 'changed', text: stranger, whole: true };
+        // tmux: proven empty with one more pair. (Orca draws its suggestion like typing, which
+        // that pair could not tell from hidden text; a partial clearing settles there itself.)
+        return host.styled ? settle(host, state, proceed) : { status: 'cleared', state };
+      }
       if (!holdsText(state)) return { status: 'failed', state };
       // Text not known whole (someone typing a lot, a paste) is never probed: stop and ask.
       if (!state.whole) return { status: 'changed', text: state.text, whole: false };
@@ -367,6 +407,10 @@ export const claudeCodeComposer: ComposerAdapter = {
 /** Explicitly accepted loss of hidden content: collect readable fragments before each pair.
  * Nothing is sent until the composer is empty or its suggestion is verified. Once its whole
  * text fits again, the normal clearing path checks every remaining edit for concurrent typing.
+ * A box that looks empty is proven so by one more pair (`settle`): a scrolled box may show only
+ * one blank row while rows above or below it still hold the draft (the suspected cause of the
+ * 2026-10-23 report: the reply went in next to the hidden rest, failed its check, and every
+ * retry asked again).
  */
 async function clearPartial(
   host: ComposerHost,
@@ -374,21 +418,49 @@ async function clearPartial(
   backup: (text: string) => Promise<void>,
   proceed?: () => Promise<boolean>,
 ): Promise<ClearResult> {
-  let state = from;
+  let state: Extract<ComposerState, { kind: 'draft' | 'unknown' }> = from;
   let collected: string | undefined;
   let unchanged = 0;
   const keep = async (text: string) => {
     collected = mergeBackup(collected, text);
     await backup(collected);
   };
-  for (let round = 0; round < CLEAR_ROUNDS; round++) {
-    if (state.whole) return claudeCodeComposer.clear(host, state, keep, proceed);
+  /**
+   * Text a settling pair brought into view, after a frame that looked empty. It is the accepted
+   * draft (cleared like the rest) only when every line of it was seen and saved before; else it
+   * may be someone typing during the redraw, which the permission to lose the hidden draft never
+   * covered: saved, left alone and asked about (`changed`, hidden).
+   */
+  const more = async (result: ClearResult) => {
+    if (result.status !== 'changed' || !result.hidden) return null;
+    if (collected !== undefined && containsLines(collected, result.text))
+      return { kind: 'draft', text: result.text, whole: false } as const;
+    await keep(result.text);
+    return null;
+  };
+  for (let round = 0; round < PARTIAL_ROUNDS; round++) {
+    if (state.whole) {
+      const result = await claudeCodeComposer.clear(host, state, keep, proceed);
+      const rest = await more(result);
+      if (!rest) return result;
+      state = rest;
+      unchanged = 0;
+      continue;
+    }
     if (state.text.trim()) await keep(state.text);
     if (proceed && !(await proceed())) return { status: 'failed', state, lost: true };
     await host.press(['C-k', 'C-u']);
     await host.wait(REDRAW_MS);
     const next = await inspect(host);
-    if (readyToType(next)) return { status: 'cleared', state: next };
+    if (readyToType(next)) {
+      // One blank row may be all a scrolled box shows: never taken for empty unproven.
+      const result = await settle(host, next, proceed);
+      const rest = await more(result);
+      if (!rest) return result;
+      state = rest;
+      unchanged = 0;
+      continue;
+    }
     if (!holdsText(next)) return { status: 'failed', state: next };
     unchanged = next.text === state.text ? unchanged + 1 : 0;
     if (unchanged >= 6) {

@@ -9,6 +9,7 @@ import {
   codexQueueComposer,
   composerFor,
   parseStyledScreen,
+  sameWrapped,
   type ComposerHost,
   type Screen,
 } from '../desktop/composer/index.js';
@@ -219,6 +220,8 @@ function fakePrompt(
     /** tmux: how the suggestion is drawn after `❯ ` (default: all faint, as measured). */
     drawSuggestion?: (text: string) => string;
     height?: number;
+    /** tmux: Claude Code's inline renderer on the main screen, every row of the box in view. */
+    inline?: boolean;
     cursor?: [number, number];
     /** Called after each key press, e.g. to type meanwhile. */
     typing?: (round: number) => string;
@@ -229,7 +232,7 @@ function fakePrompt(
   let rounds = 0;
   const pressed: string[][] = [];
   const orca = options.host === 'orca';
-  const most = maxBoxRows(options.height ?? 40);
+  const most = options.inline ? Infinity : maxBoxRows(options.height ?? 40);
   const text = () => lines.map((line) => line.join('')).join('\n');
   const host: ComposerHost = {
     styled: !orca,
@@ -247,7 +250,8 @@ function fakePrompt(
         const paint = options.drawSuggestion ?? ((text) => `\x1b[2m${text}\x1b[0m`);
         return tmux(box(`\x1b[39m❯\xa0${paint(options.suggestion)}`), options.height);
       }
-      return tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
+      const screen = tmux(box(`\x1b[39m❯\xa0${shown.join('\n  ')}`), options.height);
+      return options.inline ? { ...screen, alternate: false } : screen;
     },
     wait: async () => {},
     async press(keys) {
@@ -694,4 +698,48 @@ test('Partial replacement stops on a closed prompt, failed backup, lost owner or
     'failed',
   );
   assert.ok(stuck.pressed.length <= 60);
+});
+
+test("sameWrapped: the box's wrapping is ignored, spaces inside a row are not", () => {
+  assert.ok(sameWrapped('print("a b")', 'print("a b")'));
+  assert.ok(!sameWrapped('print("ab")', 'print("a b")'));
+  assert.ok(!sameWrapped('print("a  b")', 'print("a b")'));
+  // Wrapped at a space (taken by the wrap) or inside a word; typed line breaks and indentation.
+  const full = 'x'.repeat(30) + ' ' + 'y'.repeat(9); // 40 cells: a row the box filled
+  assert.ok(sameWrapped(`${full}\nzzzz tail`, `${full} zzzz tail`));
+  assert.ok(sameWrapped(`${full} wo\nrd`, `${full} word`));
+  // A break the person typed into a short row is an edit, not the box's wrapping.
+  assert.ok(!sameWrapped('print("a\nb")', 'print("a b")'));
+  assert.ok(!sameWrapped('a\nb', 'a b'));
+  assert.ok(!sameWrapped(`${full}\nshort\nrest of it`, `${full} short rest of it`));
+  assert.ok(sameWrapped('def f():\nreturn 1', 'def f():\n    return 1'));
+  assert.ok(sameWrapped('one\n\ntwo', 'one\n\ntwo'));
+  // A blank row is a blank line, never a soft wrap; a typed line break is not a space.
+  assert.ok(!sameWrapped('run\n\nthe tests', 'run the tests'));
+  assert.ok(!sameWrapped('one\ntwo', 'one\n\ntwo'));
+  assert.ok(!sameWrapped('one\n\n\ntwo', 'one\n\ntwo'));
+  assert.ok(sameWrapped('one\nthe rest', 'one\nthe rest'));
+  assert.ok(!sameWrapped('one two', 'one two three'));
+  assert.ok(!sameWrapped('one two three', 'one two'));
+  assert.ok(!sameWrapped('', 'one'));
+});
+
+test('A tall whole draft (inline renderer) gets pairs enough for every row', async () => {
+  // 35 rows, cursor at the end: 69 pairs, more than the base budget of 60.
+  const draft = Array.from({ length: 35 }, (_, i) => `row ${i + 1}`).join('\n');
+  const prompt = fakePrompt({ draft, host: 'tmux', height: 50, inline: true });
+  const from = await claudeCodeComposer.inspect(prompt.host);
+  assert.ok(from.kind === 'draft' && from.whole);
+  const result = await claudeCodeComposer.clear(prompt.host, from, async () => {});
+  assert.equal(result.status, 'cleared');
+  assert.equal(prompt.text(), '');
+  // Keys that never arrive still give up early.
+  const stuck = fakePrompt({ draft, host: 'tmux', height: 50, inline: true, stuck: true });
+  const stuckFrom = await claudeCodeComposer.inspect(stuck.host);
+  assert.ok(stuckFrom.kind === 'draft');
+  assert.notEqual(
+    (await claudeCodeComposer.clear(stuck.host, stuckFrom, async () => {})).status,
+    'cleared',
+  );
+  assert.ok(stuck.pressed.length < 10);
 });

@@ -74,6 +74,8 @@ function fixture(
           return `4242 ttys012 /bin/codex\n5000 ?? /bin/codex\n${options.duplicate ? '4243 ttys013 /bin/codex' : ''}`;
         if (args.includes('pid=,ppid=,tty=,comm='))
           return `4242 4000 ttys012 /bin/codex\n4000 3146 ttys012 /bin/zsh\n4243 4001 ttys013 /bin/codex\n4001 3146 ttys013 /bin/zsh\n3146 1 ?? ${options.owner ?? (options.host === 'tmux' ? '/bin/tmux' : '/Applications/Orca.app/Contents/MacOS/Orca')}`;
+        if (args.includes('pid=,ppid=,comm='))
+          return '7000 6999 /bin/tmux\n6999 1 /Applications/Ghostty.app/Contents/MacOS/ghostty';
         if (args.includes('lstart='))
           return options.reused && ++starts > 1 ? 'Wed Oct 7 10:00:00 2026' : START;
         if (args.includes('stat=,pgid=,tpgid=')) return options.stat ?? `S+ ${pid} ${pid}`;
@@ -127,6 +129,7 @@ function fixture(
         if (args.includes('switch'))
           return JSON.stringify({ ok: true, result: { focus: { navigated: true } } });
       }
+      if (file === '/bin/tmux' && args.includes('list-clients')) return '/dev/ttys020\t7000\t1\n';
       if (file === '/bin/tmux' && args.includes('display-message'))
         return args.at(-1) === '#{pane_title}' ? title : '/dev/ttys012\twork:0.3';
       if (

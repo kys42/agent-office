@@ -223,7 +223,20 @@ export class TmuxResume {
             '/dev/null',
             ...(current.deadPane
               ? ['respawn-pane', '-t', current.deadPane, '-c', current.cwd]
-              : ['new-session', '-d', '-s', current.name, '-c', current.cwd]),
+              : // Detached, a new window would be 80×24: Claude Code's box then shows 7 rows
+                // and a longer draft hides its start. A client that attaches still resizes it.
+                [
+                  'new-session',
+                  '-d',
+                  '-x',
+                  '200',
+                  '-y',
+                  '50',
+                  '-s',
+                  current.name,
+                  '-c',
+                  current.cwd,
+                ]),
             '/usr/bin/env',
             '-u',
             'CLAUDECODE',

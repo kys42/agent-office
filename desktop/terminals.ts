@@ -25,9 +25,11 @@ import {
   promptHolds,
   readyToType,
   mergeBackup,
+  sameWrapped,
   type ComposerAdapter,
   type ComposerHost,
   type ComposerKey,
+  type ComposerState,
   type Screen,
 } from './composer/index.js';
 import {
@@ -297,6 +299,8 @@ export async function inspectTerminalDraft(
   const can = composer.capabilities(io);
   if (can.delivery !== 'terminal' || !can.canInspect) return null;
   const state = await composer.inspect(io);
+  // Only the reply a failed send typed: nothing to decide, the next send takes it back.
+  if (claimOwn(typedMemory(deps), live.process.sessionId, state) !== undefined) return null;
   if (!holdsText(state)) return null;
   return {
     status: 'needs-confirm',
@@ -306,6 +310,30 @@ export async function inspectTerminalDraft(
     ...(!can.canClear && { clearable: false }),
     ...(!state.whole && { partial: true }),
   };
+}
+
+/**
+ * The composer holds exactly, and all of, what this app typed there and left unsubmitted. Spaces
+ * count (only the box's own wrapping is ignored): an edit as small as one space removed makes it
+ * the person's draft again.
+ */
+const ownText = (state: ComposerState, typed: string | undefined) =>
+  typed !== undefined && holdsText(state) && state.whole && sameWrapped(state.text, typed);
+
+/**
+ * The remembered reply, while this fresh look at the composer shows exactly it. Anything else
+ * (empty, other or edited text, a partial or unreadable view) ends the claim for good: the
+ * person submitted, cleared or changed it, and the same words typed later are theirs.
+ */
+function claimOwn(
+  typed: ReturnType<typeof typedMemory>,
+  key: string,
+  state: ComposerState,
+): string | undefined {
+  const reply = typed.held(key);
+  if (ownText(state, reply)) return reply;
+  typed.drop(key);
+  return undefined;
 }
 
 /** Plain typed text only: escape sequences and other control characters never reach the pty. */
@@ -339,15 +367,23 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode} #{pane_height}',
+        '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen}',
       ]);
-      const [mode, height] = state.trim().split(' ');
+      const [mode, height, alternate, allowed] = state.trim().split(' ');
       if (mode !== '0') return { text: '' };
       const screen = parseStyledScreen(
         await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
       );
-      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows).
-      return /^\d+$/.test(height ?? '') ? { ...screen, height: Number(height) } : screen;
+      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows); only
+      // Claude Code's fullscreen renderer (the alternate screen) scrolls it. With the pane's
+      // `alternate-screen` option off, tmux draws that renderer on the main screen and
+      // `#{alternate_on}` stays 0: the flag tells the renderer only while the option is on.
+      return {
+        ...screen,
+        ...(/^\d+$/.test(height ?? '') && { height: Number(height) }),
+        ...(allowed === '1' &&
+          (alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
+      };
     }
     const out = await deps.run(
       deps.bin('orca'),
@@ -436,19 +472,34 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
   const send = JSON.parse(out)?.result?.send;
   if (send?.accepted !== true) {
     const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
-    throw new TerminalInputError(m().desktop.terminal.orcaRefused(reason));
+    const message = m().desktop.terminal.orcaRefused(reason);
+    // Only an explicit refusal says the bytes never reached the terminal.
+    throw send?.accepted === false ? new OrcaRefusal(message) : new TerminalInputError(message);
   }
 }
 
+/** Orca answered `accepted: false`: nothing it was given reached the terminal. */
+class OrcaRefusal extends TerminalInputError {}
+
 /** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
-async function typeText(host: TerminalHost, text: string, deps: TerminalDeps) {
+/** `delivering` runs right before the text may reach the pane (nothing before it can). */
+async function typeText(
+  host: TerminalHost,
+  text: string,
+  deps: TerminalDeps,
+  delivering: () => void = () => {},
+) {
   // Orca writes the bytes as they are: bracketed paste keeps tabs and line breaks as text.
   // cleanInput removed every ESC, so the text itself can never close the paste early.
-  if (host.kind === 'orca') return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
+  if (host.kind === 'orca') {
+    delivering();
+    return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
+  }
   const tmux = deps.bin('tmux');
   const buffer = `agent-office-${randomUUID()}`;
   // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
   await deps.run(tmux, ['-S', host.socket, 'load-buffer', '-b', buffer, '-'], { input: text });
+  delivering();
   try {
     // Bracketed paste keeps line breaks inside the prompt instead of submitting early.
     await deps.run(tmux, [
@@ -531,10 +582,21 @@ const sending = new Map<string, Promise<SendResult>>();
  * it. Short-lived, in memory only, kept with the deps (one shared instance in the app).
  */
 const BACKUP_TTL = 10 * 60_000;
-const backupsOf = new WeakMap<TerminalDeps, Map<string, { text: string; at: number }>>();
-function backupMemory(deps: TerminalDeps) {
-  let memory = backupsOf.get(deps);
-  if (!memory) backupsOf.set(deps, (memory = new Map()));
+type Memory = WeakMap<TerminalDeps, Map<string, { text: string; at: number }>>;
+const backupsOf: Memory = new WeakMap();
+/**
+ * What this app typed into the composer and did not submit (its check failed, the state
+ * changed), per session. That text is the person's own reply, not a draft of theirs: found again
+ * exactly as typed by the very next look, it is not shown as a draft, and a retry of the same
+ * text takes it back without asking or touching the clipboard. Any look that does not find it
+ * exactly ends the claim (`claimOwn`).
+ */
+const typedOf: Memory = new WeakMap();
+const backupMemory = (deps: TerminalDeps) => shortMemory(backupsOf, deps);
+const typedMemory = (deps: TerminalDeps) => shortMemory(typedOf, deps);
+function shortMemory(store: Memory, deps: TerminalDeps) {
+  let memory = store.get(deps);
+  if (!memory) store.set(deps, (memory = new Map()));
   return {
     held(key: string): string | undefined {
       const held = memory.get(key);
@@ -575,6 +637,7 @@ async function deliver(
   const { host } = live;
   const key = live.process.sessionId;
   const memory = backupMemory(deps);
+  const typed = typedMemory(deps);
   const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
   const composer = options.composer ?? claudeCodeComposer;
   const io = composerHost(host, deps);
@@ -583,13 +646,18 @@ async function deliver(
   if (can.delivery !== 'terminal' || !can.canInspect)
     throw new TerminalInputError(t.unsupportedAgent(composer.agent));
   const state = await composer.inspect(io);
+  // The reply an earlier send typed and could not submit, still shown exactly as typed.
+  const reply = claimOwn(typed, key, state);
   if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(hostName(host)));
   if (!holdsText(state)) {
     if (!readyToType(state)) throw new TerminalInputError(t.notReady);
     return submit(false);
   }
+  // Taken back without asking or saving only for a retry of the very same text: what goes in
+  // is exactly what is deleted, so nothing is lost even if the person typed those words.
+  const own = can.canClear && reply !== undefined && reply === text;
   // Never mixed into a draft, or into text a failed send left behind.
-  if (!can.canClear || !options.backup) throw new TerminalInputError(t.draft);
+  if (!can.canClear || (!options.backup && !own)) throw new TerminalInputError(t.draft);
   // What an earlier, interrupted clearing of this session put on the clipboard — only while the
   // clipboard still holds it (the person may have copied something else since).
   let base = memory.held(key);
@@ -612,17 +680,30 @@ async function deliver(
     ...(!whole && { partial: true }),
   });
   const confirmed = options.replaceDraft;
-  if (confirmed === undefined) return ask(state.text, state.whole);
-  if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
-  if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
+  if (!own) {
+    if (confirmed === undefined) return ask(state.text, state.whole);
+    if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+    if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
+  }
   const backup = options.backup;
   try {
     const result = await composer.clear(
       io,
       state,
       async (text) => {
+        // The app's own reply is not the person's draft: the clipboard keeps what it holds. Only
+        // the reply itself: text seen beside it while clearing (someone typing, on Orca maybe
+        // the suggestion) is saved like any draft, without the reply ahead of it — and with no
+        // backup to save it to, the clearing stops there.
+        let kept = text;
+        if (own && reply !== undefined) {
+          if (sameWrapped(text, reply)) return;
+          if (!backup) throw new TerminalInputError(t.draft);
+          if (text.startsWith(`${state.text}\n`)) kept = text.slice(state.text.length + 1);
+        }
+        if (!backup) return;
         // Never less than the earlier clearing saved; never more than that and this draft.
-        const merged = mergeBackup(base, text);
+        const merged = mergeBackup(base, kept);
         try {
           await backup(merged);
         } catch {
@@ -636,7 +717,10 @@ async function deliver(
       async () => !!(await current()),
       { allowPartial: options.allowPartialDraft === true },
     );
-    if (result.status === 'changed') return ask(result.text, result.whole, true);
+    if (own && result.status !== 'failed') typed.drop(key);
+    // Text that was out of sight was never shown, so it is asked about as a partial draft.
+    if (result.status === 'changed')
+      return result.hidden ? ask(result.text, false) : ask(result.text, result.whole, true);
     if (result.status === 'failed')
       throw new TerminalInputError(
         result.partial
@@ -672,7 +756,17 @@ async function deliver(
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await options.beforeSend?.();
-    await typeText(host, text, deps);
+    // Remembered once it may reach the pane: whatever happens next, the text may be in the
+    // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
+    // app's: the same words typed by the person later are their draft.
+    try {
+      await typeText(host, text, deps, () => typed.keep(key, text));
+    } catch (error) {
+      // Orca refused the paste outright: none of it is in the composer. Any other failure
+      // (a timeout, no answer) may have delivered it, so it stays the app's.
+      if (error instanceof OrcaRefusal) typed.drop(key);
+      throw error;
+    }
     const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
     // The prompt may take a moment to draw the text.
     let shown = false;
@@ -696,6 +790,7 @@ async function deliver(
       throw error;
     }
     memory.drop(key);
+    typed.drop(key);
     const sent = (message: string): SendResult => ({
       status: 'sent',
       message,

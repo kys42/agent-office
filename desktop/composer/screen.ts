@@ -19,6 +19,14 @@ export interface Screen {
   composer?: string;
   /** The pane's height in rows, when the host reports it (tmux). */
   height?: number;
+  /**
+   * The pane shows its alternate screen (tmux `#{alternate_on}`), when the host reports it.
+   * Claude Code's fullscreen renderer draws there and caps its box (see maxBoxRows); its
+   * default (inline) renderer draws on the main screen and shows every row of the box. Reported
+   * only while the pane's `alternate-screen` option is on: with it off, the fullscreen renderer
+   * draws on the main screen too.
+   */
+  alternate?: boolean;
 }
 
 /**
@@ -92,3 +100,51 @@ export function parseStyledScreen(raw: string): Screen {
 /** Equal as drawn: no spacing or wrapping, no invisible joiners and variation selectors. */
 export const drawn = (value: string) =>
   value.normalize('NFC').replace(/[\s\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
+
+const invisible = (value: string) =>
+  value.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
+
+/** Cells a stretch of text takes (wide characters count two, as `widest` in claude-code.ts). */
+const cells = (text: string) =>
+  [...text].reduce((sum, char) => sum + (char.charCodeAt(0) < 0x7f ? 1 : 2), 0);
+
+/** No box this narrow: a text whose rows are all shorter than this was never wrapped. */
+const MIN_WRAP = 20;
+
+/**
+ * `shown` (rows read from the box, each trimmed) is exactly `text` as the box wraps it. Each line
+ * of the text takes one or more rows: a blank line exactly one blank row, any other line rows
+ * that are stretches of it, spaces inside them included, separated only by the spaces a wrap took
+ * (or nothing: a word split by the wrap); its indentation is not drawn. A row ends inside a line
+ * only where the box must have wrapped it: the widest row shown stands for the box's width, and
+ * the row plus the next word would not have fit there. A break typed into a short row is an edit.
+ * Unlike `drawn`, a space, a line break or a blank row taken out or added is a different text.
+ */
+export function sameWrapped(shown: string, text: string): boolean {
+  const rows = invisible(shown)
+    .split('\n')
+    .map((row) => row.trim());
+  const width = Math.max(0, ...rows.map(cells));
+  let next = 0;
+  for (const line of invisible(text).split('\n')) {
+    const source = line.trim();
+    if (!source) {
+      if (rows[next++] !== '') return false;
+      continue;
+    }
+    let at = 0;
+    while (at < source.length) {
+      const row = rows[next++];
+      if (!row || !source.startsWith(row, at)) return false;
+      at += row.length;
+      if (at < source.length) {
+        // A wrap inside this line: only where the next word could not have fit on the row.
+        const rest = source.slice(at).replace(/^[ \t]+/, '');
+        const word = /^\S*/.exec(rest)![0] || rest.slice(0, 1);
+        if (width < MIN_WRAP || cells(row) + 1 + cells(word) <= width) return false;
+      }
+      while (at < source.length && /[ \t]/.test(source[at])) at++;
+    }
+  }
+  return next === rows.length;
+}

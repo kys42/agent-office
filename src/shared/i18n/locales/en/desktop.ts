@@ -62,7 +62,19 @@ export const desktop = {
       `Couldn't confirm it was sent to ${host}. Check the terminal before sending again.`,
     orcaNoSwitch: "Orca couldn't switch to that terminal.",
     orcaFocused: 'Switched to the terminal in Orca',
-    tmuxFocused: (label: string) => `Selected tmux pane ${label}`,
+    tmuxFocused: (label: string, app: string) => `Switched to tmux pane ${label} in ${app}`,
+    /** No client was attached, so a new Terminal window was opened attached to the session. */
+    tmuxAttached: (label: string) => `Opened Terminal attached to tmux ${label}`,
+    /** The client was switched, but the app showing it could not be found or raised. */
+    tmuxNotRaised: (label: string) =>
+      `Switched tmux to pane ${label}, but couldn't bring its terminal window to the front.`,
+    /** The app was raised, but the window or tab showing the client could not be selected. */
+    tmuxAppOnly: (label: string, app: string) =>
+      `Switched tmux to pane ${label} and brought ${app} forward, but couldn't select the window or tab showing it.`,
+    tmuxAttachHint: (label: string, command: string) =>
+      `No terminal is attached to tmux ${label}. Attach with: ${command}`,
+    tmuxOpenFailed: (label: string) =>
+      `Selected tmux pane ${label}, but couldn't open Terminal to attach to it.`,
     empty: 'Type something to send.',
     tooLong: (max: string) => `Keep it to ${max} characters or fewer.`,
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
