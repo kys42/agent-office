@@ -13,6 +13,7 @@ import {
 export interface CodexRelay {
   hosts(): { id: string; label: string }[];
   resolve(host: string, opaqueId: string): string | null;
+  acceptsIdentity?: (host: string, opaqueId: string, thread: string) => boolean;
   available(host: string, thread: string): Promise<boolean>;
   inspect?: (host: string, thread: string) => Promise<DesktopThreadState>;
   prepare?: (host: string, thread: string, authorize: () => Promise<void>) => Promise<void>;
@@ -51,10 +52,20 @@ export class DesktopCodexRelay implements CodexRelay {
   }
   private cached?: {
     signature: string;
-    value: { memberships: Record<string, string>; labels: Record<string, string> };
+    value: {
+      memberships: Record<string, string>;
+      labels: Record<string, string>;
+      blocked: Set<string>;
+      valid: boolean;
+    };
   };
-  private metadata(): { memberships: Record<string, string>; labels: Record<string, string> } {
-    const empty = { memberships: {}, labels: {} };
+  private metadata(): {
+    memberships: Record<string, string>;
+    labels: Record<string, string>;
+    blocked: Set<string>;
+    valid: boolean;
+  } {
+    const empty = { memberships: {}, labels: {}, blocked: new Set<string>(), valid: false };
     try {
       const file = path.join(this.home, '.codex-global-state.json');
       const stat = statSync(file);
@@ -62,6 +73,8 @@ export class DesktopCodexRelay implements CodexRelay {
       const signature = `${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
       if (this.cached?.signature === signature) return this.cached.value;
       const state = JSON.parse(readFileSync(file, 'utf8'));
+      if (!state || typeof state !== 'object' || Array.isArray(state)) return empty;
+      const labels: Record<string, string> = {};
       const assignments = new Map<string, Set<string>>();
       const add = (id: unknown, host: unknown) => {
         if (
@@ -84,9 +97,9 @@ export class DesktopCodexRelay implements CodexRelay {
           const prefix = 'remote-thread-summaries-v3:';
           if (!key.startsWith(prefix) || !Array.isArray(value)) continue;
           const host = key.slice(prefix.length);
+          if (remoteCodexHost(host)) labels[host] = '';
           for (const item of value) if (item?.hostId === host) add(item.conversationId, host);
         }
-      const labels: Record<string, string> = {};
       if (Array.isArray(state['codex-managed-remote-connections']))
         for (const item of state['codex-managed-remote-connections'])
           if (remoteCodexHost(item?.hostId ?? '') && typeof item.displayName === 'string')
@@ -98,6 +111,12 @@ export class DesktopCodexRelay implements CodexRelay {
             .map(([id, hosts]) => [id, [...hosts][0]]),
         ),
         labels,
+        valid: true,
+        blocked: new Set(
+          [...assignments]
+            .filter(([, hosts]) => hosts.size !== 1 || hosts.has('local'))
+            .map(([id]) => id),
+        ),
       };
       this.cached = { signature, value };
       return value;
@@ -107,7 +126,7 @@ export class DesktopCodexRelay implements CodexRelay {
   }
   hosts() {
     const { memberships, labels } = this.metadata();
-    return [...new Set(Object.values(memberships))]
+    return [...new Set([...Object.values(memberships), ...Object.keys(labels)])]
       .sort()
       .map((id) => ({ id, label: labels[id] ? `${labels[id]} · ${id}` : id }));
   }
@@ -117,6 +136,17 @@ export class DesktopCodexRelay implements CodexRelay {
       Object.entries(this.metadata().memberships).find(
         ([id, owner]) => owner === host && wireId(`codex:${id}`) === opaqueId,
       )?.[0] ?? null
+    );
+  }
+  acceptsIdentity(host: string, opaqueId: string, thread: string) {
+    const { memberships, blocked, valid } = this.metadata();
+    return (
+      valid &&
+      remoteCodexHost(host) &&
+      /^[0-9a-f]{8}-[0-9a-f-]{27}$/.test(thread) &&
+      wireId(`codex:${thread}`) === opaqueId &&
+      !blocked.has(thread) &&
+      (!memberships[thread] || memberships[thread] === host)
     );
   }
   inspect(host: string, thread: string) {

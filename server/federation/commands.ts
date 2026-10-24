@@ -142,8 +142,28 @@ export class PeerCommands {
             }),
           ),
         );
-        this.sessions(req, ids); // Recheck revocation and visibility after every target resolves.
-        reply(200, { officeId: config.officeId, epoch: this.epoch, targets });
+        const latest = this.sessions(req, ids); // Recheck revocation and visibility after every target resolves.
+        // Opt-in, send-authorized identity proof. Old receivers keep the exact v1 response.
+        const codexThreads =
+          req.headers['x-agent-office-codex-identities'] === '1'
+            ? Object.fromEntries(
+                latest.flatMap((s, i) =>
+                  s.provider === 'codex' &&
+                  ['root', 'fork'].includes(s.relation?.kind ?? 'root') &&
+                  ['interactive', 'unknown'].includes(s.origin?.kind ?? 'unknown') &&
+                  z.uuid().safeParse(s.nativeId).success &&
+                  wireId(`codex:${s.nativeId}`) === ids[i]
+                    ? [[ids[i], s.nativeId]]
+                    : [],
+                ),
+              )
+            : undefined;
+        reply(200, {
+          officeId: config.officeId,
+          epoch: this.epoch,
+          targets,
+          ...(codexThreads ? { codexThreads } : {}),
+        });
         return;
       }
       if (route !== '/office/v1/commands/send') throw new CommandError(404);

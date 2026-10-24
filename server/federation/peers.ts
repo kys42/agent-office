@@ -329,15 +329,25 @@ export class PeerManager extends EventEmitter {
   linkedProjects() {
     return new Set(this.enabled ? this.config.peers.flatMap((p) => Object.values(p.projects)) : []);
   }
-  /** An explicit override pins a host; otherwise exactly one digest/host match is required. */
-  private relayRoute(peer: PeerInput, opaqueId: string) {
-    if (!this.relay) return null;
-    const hosts = peer.codexHostId ? [peer.codexHostId] : this.relay.hosts().map((h) => h.id);
-    const routes = [...new Set(hosts)].flatMap((host) => {
+  private routedTargets = new WeakMap<
+    TerminalTarget,
+    { host: string; thread: string; identity?: string }
+  >();
+  /** Metadata routes remain authoritative; authenticated identities can probe configured hosts. */
+  private relayCandidates(peer: PeerInput, opaqueId: string, identity?: string) {
+    if (!this.relay) return [];
+    const hosts = [
+      ...new Set(peer.codexHostId ? [peer.codexHostId] : this.relay.hosts().map((h) => h.id)),
+    ];
+    const known = hosts.flatMap((host) => {
       const thread = this.relay!.resolve(host, opaqueId);
-      return thread ? [{ host, thread }] : [];
+      return thread ? [{ host, thread, preparable: true }] : [];
     });
-    return routes.length === 1 ? routes[0] : null;
+    if (known.length) return known.length === 1 ? known : [];
+    if (!identity || wireId(`codex:${identity}`) !== opaqueId) return [];
+    return hosts
+      .filter((host) => this.relay!.acceptsIdentity?.(host, opaqueId, identity))
+      .map((host) => ({ host, thread: identity, preparable: false }));
   }
   async targets(ids: string[]): Promise<Record<string, TerminalTarget | null>> {
     const result: Record<string, TerminalTarget | null> = Object.fromEntries(
@@ -368,7 +378,11 @@ export class PeerManager extends EventEmitter {
                 { ...peer, token: sendToken },
                 '/office/v1/commands/targets',
                 controller.signal,
-                { body: { ids: batch.map((x) => x.ref.id) }, timeoutMs: 15000 },
+                {
+                  body: { ids: batch.map((x) => x.ref.id) },
+                  timeoutMs: 15000,
+                  codexIdentities: true,
+                },
               ),
             );
             if (generation !== this.generation || response.officeId !== peer.officeId) return;
@@ -392,21 +406,35 @@ export class PeerManager extends EventEmitter {
                     !['interactive', 'unknown'].includes(session.origin)
                   )
                     return;
-                  const route = this.relayRoute(peer, ref.id);
+                  const identity = response.codexThreads?.[ref.id];
+                  const candidates = this.relayCandidates(peer, ref.id, identity);
+                  const checked = await Promise.all(
+                    candidates.map(async (route) => ({
+                      ...route,
+                      state: this.relay!.inspect
+                        ? await this.relay!.inspect(route.host, route.thread)
+                        : (await this.relay!.available(route.host, route.thread))
+                          ? 'ready'
+                          : 'unavailable',
+                    })),
+                  );
+                  const ready = checked.filter((r) => r.state === 'ready');
+                  // Never infer a host for an unloaded thread, or choose between two live owners.
+                  const route =
+                    ready.length === 1
+                      ? ready[0]
+                      : ready.length === 0 && checked.length === 1 && checked[0].preparable
+                        ? checked[0]
+                        : null;
                   if (!route) return;
-                  const state = this.relay.inspect
-                    ? await this.relay.inspect(route.host, route.thread)
-                    : (await this.relay.available(route.host, route.thread))
-                      ? 'ready'
-                      : 'unavailable';
+                  const { state } = route;
                   const available = state === 'ready';
-                  const latestRoute = this.relayRoute(peer, ref.id);
+                  const latest = this.relayCandidates(peer, ref.id, identity);
                   if (
                     generation !== this.generation ||
                     held.state !== 'connected' ||
                     held.snapshot?.paused ||
-                    latestRoute?.host !== route.host ||
-                    latestRoute.thread !== route.thread
+                    !latest.some((r) => r.host === route.host && r.thread === route.thread)
                   )
                     return;
                   result[id] = {
@@ -416,10 +444,11 @@ export class PeerManager extends EventEmitter {
                     label: '',
                     canFocus: false,
                     canSend: available,
-                    canPrepare: state === 'missing' && !!this.relay.prepare,
+                    canPrepare: route.preparable && state === 'missing' && !!this.relay.prepare,
                     remoteOffice: peer.label,
                     codexRemote: true,
                   };
+                  this.routedTargets.set(result[id]!, { ...route, identity });
                 }
               }),
             );
@@ -491,14 +520,21 @@ export class PeerManager extends EventEmitter {
     )
       throw new Error(m().federation.sendUnavailable);
     if (target.codexRemote) {
-      const route = this.relayRoute(peer, ref.id);
-      if (!route || !this.relay) throw Error(m().federation.sendUnavailable);
+      const route = this.routedTargets.get(target);
+      if (
+        !route ||
+        !this.relay ||
+        !this.relayCandidates(peer, ref.id, route.identity).some(
+          (r) => r.host === route.host && r.thread === route.thread,
+        )
+      )
+        throw Error(m().federation.sendUnavailable);
       const { host, thread } = route;
       const recheck = async (ready: boolean) => {
         // Re-authorize against the exporter and keep exactly the route selected for this send.
         const fresh = (await this.targets([id]))[id];
         await authorized?.();
-        const current = this.relayRoute(peer, ref.id);
+        const current = fresh ? this.routedTargets.get(fresh) : undefined;
         if (
           this.closed ||
           generation !== this.generation ||
@@ -507,7 +543,10 @@ export class PeerManager extends EventEmitter {
           held.state !== 'connected' ||
           held.snapshot?.paused ||
           current?.host !== host ||
-          current.thread !== thread
+          current.thread !== thread ||
+          !this.relayCandidates(peer, ref.id, current.identity).some(
+            (r) => r.host === host && r.thread === thread,
+          )
         )
           throw Error(m().federation.sendUnavailable);
       };
