@@ -4,7 +4,11 @@ import net from 'node:net';
 import { mkdtemp, mkdir, chmod, rm, writeFile, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { desktopOwnsThread, sendToCodexDesktop } from '../desktop/codex-desktop.js';
+import {
+  desktopOwnsThread,
+  desktopThreadState,
+  sendToCodexDesktop,
+} from '../desktop/codex-desktop.js';
 import {
   findCodexDestination,
   codexDestinationTarget,
@@ -19,6 +23,7 @@ type Frame = Record<string, any>;
 async function fixture(
   options: {
     absent?: boolean;
+    absentDelay?: number;
     mode?: string;
     threadSource?: string;
     resumeState?: string;
@@ -65,12 +70,15 @@ async function fixture(
         if (req.method === 'initialize') result = { clientId: 'office-client' };
         else if (req.method === 'thread-owner-discovery') {
           if (options.absent) {
-            send({
-              type: 'response',
-              requestId: req.requestId,
-              resultType: 'error',
-              error: 'no-client-found',
-            });
+            const missing = () =>
+              send({
+                type: 'response',
+                requestId: req.requestId,
+                resultType: 'error',
+                error: 'no-client-found',
+              });
+            if (options.absentDelay) setTimeout(missing, options.absentDelay);
+            else missing();
             continue;
           }
           send({
@@ -349,5 +357,32 @@ test('Remote unsupported hosts, lost owners and unknown acknowledgements never f
     } finally {
       await f.close();
     }
+  }
+});
+
+test('Only an absent owner is preparable; unsupported or unsafe owners stay unavailable', async () => {
+  for (const [options, expected] of [
+    [{ absent: true }, 'missing'],
+    [{ mode: 'plan' }, 'unavailable'],
+    [{ threadSource: 'subagent' }, 'unavailable'],
+    [{ resumeState: 'needs_resume' }, 'unavailable'],
+    [{ wrongOwner: true }, 'unavailable'],
+    [{}, 'ready'],
+  ] as const) {
+    const f = await fixture(options);
+    try {
+      assert.equal(await desktopThreadState(f.home, THREAD, 500), expected);
+    } finally {
+      await f.close();
+    }
+  }
+});
+
+test('Owner discovery can wait for the explicit missing response without relaxing other RPC deadlines', async () => {
+  const f = await fixture({ absent: true, absentDelay: 100 });
+  try {
+    assert.equal(await desktopThreadState(f.home, THREAD, 50, undefined, 500), 'missing');
+  } finally {
+    await f.close();
   }
 });

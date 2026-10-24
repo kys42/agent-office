@@ -572,7 +572,8 @@ export function DeskRow({
                     const focus = focusLevel(s, model.now);
                     const replyId = bubble?.sessionId ?? s.id;
                     const replyTarget = targets[replyId];
-                    const canReply = !!onReply && !privacy && !!replyTarget?.canSend;
+                    const canReply =
+                      !!onReply && !privacy && !!(replyTarget?.canSend || replyTarget?.canPrepare);
                     const deskTarget = targets[s.id];
                     const dark = !!v.quota && dimsDesk(s, pose.working);
                     // Tiny: no words, just a dot in the bubble's colour (it pops once per notice).

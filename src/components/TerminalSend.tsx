@@ -91,7 +91,7 @@ export function TerminalSend({
   // Not taking input as last seen (or not found): still written and sent; the desktop app
   // checks again and says why when it cannot.
   const submit = () => {
-    if (!remoteOffice || target?.canSend) void reply.submit();
+    if (!remoteOffice || target?.canSend || target?.canPrepare) void reply.submit();
   };
   return (
     <form
@@ -136,15 +136,21 @@ export function TerminalSend({
         <button
           className="button primary"
           type="submit"
-          disabled={sending || !text.trim() || (!!remoteOffice && !target?.canSend)}
+          disabled={
+            sending || !text.trim() || (!!remoteOffice && !(target?.canSend || target?.canPrepare))
+          }
         >
           {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}
-          {t.terminal.send}
+          {target?.canPrepare ? t.federation.connectAndSend : t.terminal.send}
         </button>
       </div>
       {remoteOffice && !target?.canSend && (
         <small className="terminal-send-unavailable" role="status">
-          {target?.codexRemote ? t.federation.codexRemoteUnavailable : t.federation.sendUnavailable}
+          {target?.canPrepare
+            ? t.federation.codexConnectHint
+            : target?.codexRemote
+              ? t.federation.codexRemoteUnavailable
+              : t.federation.sendUnavailable}
         </small>
       )}
       {remoteOffice && onRefresh && (

@@ -158,11 +158,7 @@ try {
   }, peer);
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
   await page.getByRole('tab', { name: '연결', exact: true }).click();
-  await page.locator('select[name=codexHostId]').selectOption(host);
-  await page
-    .locator('.federation-settings')
-    .getByRole('button', { name: '저장', exact: true })
-    .click();
+  assert.equal(await page.locator('select[name=codexHostId]').inputValue(), '');
   await page.waitForFunction(async () =>
     (await window.office.snapshot()).sessions.some((s) => s.remote),
   );
@@ -212,7 +208,7 @@ try {
   );
   assert.equal(calls.filter((c) => c.method === 'thread-follower-start-turn').length, 1);
   console.log(
-    'PASS Electron UI -> worker -> authenticated HTTPS permission -> synthetic remote Codex owner: explicit host, one dispatch, permission revocation',
+    'PASS Electron UI -> worker -> authenticated HTTPS permission -> synthetic remote Codex owner: automatic exact-identity host, one dispatch, permission revocation',
   );
 } finally {
   await app?.close();

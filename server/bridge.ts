@@ -71,10 +71,13 @@ export class ServiceBridge extends EventEmitter {
     if (this.dead && !this.closing) this.start();
     return new Promise((resolve, reject) => {
       const id = ++this.nextId;
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(m().server.rpc.timeout));
-      }, 45000);
+      const timer = setTimeout(
+        () => {
+          this.pending.delete(id);
+          reject(new Error(m().server.rpc.timeout));
+        },
+        method === 'remote-send' || method === 'remote-targets' ? 120000 : 45000,
+      );
       this.pending.set(id, { resolve, reject, timer, authorize });
       this.worker.postMessage({ id, method, args, guarded: !!authorize });
     });

@@ -518,7 +518,7 @@ export function Office({
                     const bubble = shown?.speech.bubble;
                     const replyId = bubble?.sessionId ?? s.id;
                     const replyTarget = quick ? replyTargets[replyId] : null;
-                    const canReply = !!replyTarget?.canSend;
+                    const canReply = !!(replyTarget?.canSend || replyTarget?.canPrepare);
                     const focus = focusLevel(s, clock);
                     const branch = branchInfo(s);
                     const quota = quotaOf?.(s);

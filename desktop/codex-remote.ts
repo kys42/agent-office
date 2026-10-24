@@ -1,17 +1,54 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { wireId } from '../server/federation/protocol.js';
-import { desktopOwnsThread, remoteCodexHost, sendToCodexDesktop } from './codex-desktop.js';
+import {
+  desktopThreadState,
+  remoteCodexHost,
+  sendToCodexDesktop,
+  type DesktopThreadState,
+} from './codex-desktop.js';
 
 export interface CodexRelay {
   hosts(): { id: string; label: string }[];
   resolve(host: string, opaqueId: string): string | null;
   available(host: string, thread: string): Promise<boolean>;
+  inspect?: (host: string, thread: string) => Promise<DesktopThreadState>;
+  prepare?: (host: string, thread: string, authorize: () => Promise<void>) => Promise<void>;
   send(host: string, thread: string, text: string, authorize: () => Promise<void>): Promise<void>;
 }
 /** Read only the local app's explicit thread/host assignments. Never infer identity from titles. */
 export class DesktopCodexRelay implements CodexRelay {
-  constructor(private home: string) {}
+  readonly prepare?: CodexRelay['prepare'];
+  constructor(
+    private home: string,
+    openConversation = process.platform === 'darwin'
+      ? async (url: string) => {
+          await promisify(execFile)('/usr/bin/open', [url], { timeout: 5000 });
+        }
+      : undefined,
+  ) {
+    if (openConversation)
+      this.prepare = async (host, thread, authorize) => {
+        const current = () => this.resolve(host, wireId(`codex:${thread}`)) === thread;
+        if (!current()) throw Error('Remote conversation changed');
+        await authorize();
+        if (!current()) throw Error('Remote conversation changed');
+        // Only an explicit send opens the existing app conversation. Never put message text in URLs.
+        const url = new URL(`codex://threads/${thread}`);
+        url.searchParams.set('hostId', host);
+        await openConversation(url.toString());
+        const deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+          if (!current()) throw Error('Remote conversation changed');
+          await authorize();
+          if (await this.available(host, thread)) return;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        throw Error('Codex conversation connection timed out');
+      };
+  }
   private cached?: {
     signature: string;
     value: { memberships: Record<string, string>; labels: Record<string, string> };
@@ -82,8 +119,12 @@ export class DesktopCodexRelay implements CodexRelay {
       )?.[0] ?? null
     );
   }
-  available(host: string, thread: string) {
-    return desktopOwnsThread(this.home, thread, 2000, host);
+  inspect(host: string, thread: string) {
+    // Codex returns no-client-found after its 10s discovery window even for a shorter request.
+    return desktopThreadState(this.home, thread, 2000, host, 11000);
+  }
+  async available(host: string, thread: string) {
+    return (await this.inspect(host, thread)) === 'ready';
   }
   async send(host: string, thread: string, text: string, authorize: () => Promise<void>) {
     await sendToCodexDesktop(this.home, thread, text, 15000, authorize, host);

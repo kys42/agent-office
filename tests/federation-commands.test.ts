@@ -306,7 +306,7 @@ test('sending requires an explicit desktop profile and honors its setting indepe
   }
 });
 
-test('Local Codex relay requires explicit host mapping and live remote permission; durable requests never replay', async () => {
+test('Local Codex relay automatically resolves exact identity with live permission; durable requests never replay', async () => {
   const f = await setup(true);
   const host = 'remote-control:env_fixture';
   const { DesktopCodexRelay } = await import('../desktop/codex-remote.js');
@@ -351,7 +351,7 @@ test('Local Codex relay requires explicit host mapping and live remote permissio
       peer: { ...f.peer, token: f.config.token, sendToken: f.config.sendToken },
     });
     let id = await connected();
-    assert.equal((await manager.targets([id]))[id], null);
+    assert.equal((await manager.targets([id]))[id]?.canSend, true);
     manager.command({
       action: 'update',
       officeId: f.peer.officeId,
@@ -523,5 +523,154 @@ test('twenty target lookups read the shared view twice and recheck revocation af
     assert.deepEqual(f.sent, []);
   } finally {
     await f.close();
+  }
+});
+
+for (const scenario of [
+  'ready',
+  'permission-revoked',
+  'host-changed',
+  'ambiguous',
+  'wrong-override',
+  'connect-failed',
+] as const) {
+  test(`Automatic relay prepares only on send and rechecks identity/permission: ${scenario}`, async () => {
+    const f = await setup(true);
+    let hosts = ['ssh:fixture'];
+    let ready = false,
+      opened = 0,
+      sent = 0;
+    const relay = {
+      hosts: () => hosts.map((id) => ({ id, label: id })),
+      resolve: (host: string, id: string) =>
+        hosts.includes(host) && id === wireId(f.session.id) ? f.session.nativeId : null,
+      available: async () => ready,
+      inspect: async () => (ready ? ('ready' as const) : ('missing' as const)),
+      prepare: async (_h: string, _t: string, auth: () => Promise<void>) => {
+        await auth();
+        opened++;
+        if (scenario === 'permission-revoked') {
+          f.config.allowSend = false;
+          f.save();
+        }
+        if (scenario === 'host-changed') hosts = ['ssh:changed'];
+        if (scenario === 'connect-failed') throw Error('offline');
+        ready = true;
+        await auth();
+      },
+      send: async (_h: string, _t: string, _text: string, auth: () => Promise<void>) => {
+        await auth();
+        sent++;
+      },
+    };
+    const manager = new PeerManager(path.join(f.root, 'receiver'), undefined, relay);
+    try {
+      manager.command({ action: 'enable', enabled: true });
+      manager.command({
+        action: 'add',
+        peer: { ...f.peer, token: f.config.token, sendToken: f.config.sendToken },
+      });
+      if (!manager.sessions().length)
+        await new Promise<void>((r) => manager.once('change', () => r()));
+      const id = manager.sessions()[0].id;
+      if (scenario === 'ambiguous') hosts.push('ssh:duplicate');
+      if (scenario === 'wrong-override') {
+        hosts.push('ssh:wrong');
+        manager.command({
+          action: 'update',
+          officeId: f.peer.officeId,
+          label: 'Test',
+          tags: [],
+          projects: {},
+          codexHostId: 'ssh:wrong',
+        });
+        hosts = ['ssh:fixture'];
+        if (!manager.sessions().length)
+          await new Promise<void>((r) => manager.once('change', () => r()));
+      }
+      const target = (await manager.targets([id]))[id];
+      assert.equal(opened, 0, 'status queries never open Codex');
+      if (scenario === 'ambiguous' || scenario === 'wrong-override') assert.equal(target, null);
+      else {
+        assert.equal(target?.canSend, false);
+        assert.equal(target?.canPrepare, true);
+      }
+      if (scenario === 'ready') {
+        const request = randomUUID();
+        assert.equal((await manager.send(id, 'synthetic', request)).status, 'sent');
+        await manager.send(id, 'synthetic', request);
+        assert.equal(opened, 1);
+        assert.equal(sent, 1);
+      } else {
+        await assert.rejects(manager.send(id, 'synthetic', randomUUID()));
+        assert.equal(sent, 0);
+      }
+      assert.deepEqual(f.sent, [], 'never fall back to another sender');
+    } finally {
+      manager.close();
+      await f.close();
+    }
+  });
+}
+
+test('slow owner discovery runs batches and offices concurrently without opening conversations', async () => {
+  const fixtures = [await setup(true, 'unknown', 21), await setup(true, 'unknown', 21)];
+  let entered = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let allStarted!: () => void;
+  const started = new Promise<void>((resolve) => (allStarted = resolve));
+  const relay = {
+    hosts: () => [{ id: 'ssh:fixture', label: 'fixture' }],
+    resolve: (_host: string, id: string) => (fixtures.some((f) => f.ids.includes(id)) ? id : null),
+    available: async () => false,
+    inspect: async () => {
+      if (++entered === 42) allStarted();
+      await gate;
+      return 'missing' as const;
+    },
+    prepare: async () => {
+      assert.fail('lookup must not open Codex');
+    },
+    send: async () => {
+      assert.fail('lookup must not send');
+    },
+  };
+  const manager = new PeerManager(path.join(fixtures[0].root, 'receiver'), undefined, relay);
+  let pending: ReturnType<PeerManager['targets']> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    manager.command({ action: 'enable', enabled: true });
+    for (const f of fixtures)
+      manager.command({
+        action: 'add',
+        peer: {
+          ...f.peer,
+          token: f.config.token,
+          sendToken: f.config.sendToken,
+        },
+      });
+    while (manager.sessions().length < 42)
+      await new Promise<void>((resolve) => manager.once('change', () => resolve()));
+    pending = manager.targets(manager.sessions().map((s) => s.id));
+    await Promise.race([
+      started,
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(Error('target batches blocked behind discovery')), 3000);
+      }),
+    ]);
+    release();
+    const targets = await pending;
+    assert.equal(Object.values(targets).filter((target) => target?.canPrepare).length, 42);
+    assert.equal(
+      Object.values(targets).some((target) => target?.canSend),
+      false,
+    );
+  } finally {
+    clearTimeout(deadline);
+    release();
+    await pending;
+    manager.close();
+    await Promise.all(fixtures.map((f) => f.close()));
   }
 });
