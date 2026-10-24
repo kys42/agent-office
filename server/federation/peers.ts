@@ -1,3 +1,4 @@
+import { launchInfoSchema, launchSpecSchema } from '../../src/shared/remote-launch.js';
 import { EventEmitter } from 'node:events';
 import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
@@ -470,6 +471,57 @@ export class PeerManager extends EventEmitter {
     if (this.closed || generation !== this.generation)
       return Object.fromEntries(ids.map((id) => [id, null]));
     return result;
+  }
+  async launchSession(
+    id: string,
+    specValue: unknown,
+    start?: { epoch: string; plan: string; requestId: string },
+    authorized?: () => Promise<void>,
+  ) {
+    const ref = parseRemoteId(id);
+    const spec = launchSpecSchema.parse(specValue);
+    const peer = this.config.peers.find((p) => p.officeId === ref.officeId);
+    const generation = this.generation;
+    const validate = () => {
+      const held = this.held.get(ref.officeId);
+      if (
+        this.closed ||
+        !this.enabled ||
+        generation !== this.generation ||
+        !peer?.sendToken ||
+        held?.state !== 'connected' ||
+        held.snapshot?.paused ||
+        !held.snapshot?.sessions.some((s) => s.id === ref.id)
+      )
+        throw Error(m().federation.sendUnavailable);
+    };
+    validate();
+    if (start)
+      z.object({ epoch: z.uuid(), plan: z.string().regex(/^[a-f0-9]{64}$/), requestId: z.uuid() })
+        .strict()
+        .parse(start);
+    await authorized?.();
+    validate();
+    const controller = new AbortController();
+    this.details.add(controller);
+    try {
+      const response = launchInfoSchema.parse(
+        await this.request(
+          { ...peer!, token: peer!.sendToken! },
+          '/office/v1/commands/' + (start ? 'launch' : 'launch-status'),
+          controller.signal,
+          { body: { id: ref.id, spec, ...start }, timeoutMs: 45000 },
+        ),
+      );
+      if (response.officeId !== ref.officeId || (start && response.requestId !== start.requestId))
+        throw Error('Office identity mismatch');
+      validate();
+      return { ...response, office: peer!.label };
+    } catch {
+      throw Error(start ? m().tmux.remoteUncertain : m().tmux.remoteUnavailable);
+    } finally {
+      this.details.delete(controller);
+    }
   }
   async send(
     id: string,

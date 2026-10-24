@@ -10,6 +10,7 @@ const action = (channel: string, ...args: unknown[]) =>
   });
 const api: OfficeAPI = {
   mobile: (command) => action('office:mobile', command),
+  remoteLaunch: (id, phase, spec) => action('office:remote-launch', id, phase, spec),
   federation: (command) => action('office:federation', command),
   quotas: () => call('quotas'),
   snapshot: () => call('snapshot'),

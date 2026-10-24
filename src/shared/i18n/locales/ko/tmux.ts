@@ -1,5 +1,17 @@
 import type { Messages } from '../en';
 export const tmux: Messages['tmux'] = {
+  remoteTitle: '원격 사무실에 새 에이전트 소환',
+  remoteConfirm: '이 원격 컴퓨터에서 새 에이전트를 시작할까요?',
+  remoteStart: '원격에서 소환하기',
+  remoteHost: '원격 컴퓨터의 터미널',
+  remoteHint:
+    '선택한 원격 프로젝트의 작업 폴더 루트에서 실행돼요. Orca는 해당 폴더가 작업공간에 등록돼 있어야 해요. 첫 대화가 수집되면 동료가 나타나요. CLI 로그인·신뢰 확인은 해당 컴퓨터에서 완료해주세요.',
+  remoteUnavailable:
+    '원격 실행을 확인할 수 없어요. 원격 연결 서비스 버전·새 세션 생성 권한·공유 프로젝트·CLI와 터미널 설치를 확인해주세요.',
+  remoteUncertain: '실행 결과를 확인하지 못했어요. 다시 소환하기 전에 원격 터미널을 확인해주세요.',
+  remoteStarted: '원격 세션이 시작됐어요. 첫 대화가 감지되면 동료가 나타나요.',
+  remoteExisting: '같은 이름의 tmux 세션이 이미 실행 중이에요.',
+  remoteMissing: '이 컴퓨터에서 사용할 수 없음',
   summonTitle: '새 에이전트 소환',
   summonIntro:
     '이 프로젝트에 새 에이전트를 소환해요. tmux로 터미널 세션을 유지하므로 필요할 때 직접 들어가 작업하고 언제든 다시 연결할 수 있어요.',

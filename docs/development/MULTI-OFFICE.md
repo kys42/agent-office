@@ -83,6 +83,15 @@ node /persistent/office-peer.cjs --install-launch-agent \
 
 지속 중지는 `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/<label>.plist`로 하고, 이후 로그인에도 켜지지 않게 하려면 plist를 LaunchAgents 밖으로 옮긴다. 재시작은 `launchctl kickstart -k gui/$(id -u)/<label>`이다. 이는 송신기 자동 시작이며 원본 Office 수집기는 별도로 실행돼 있어야 한다. 로그아웃·컴퓨터 절전·LAN 주소 변경 시 가용성을 보장하지 않는다. 기존 개인 DB/인증 초기화나 시스템 전체 LaunchDaemon 등록은 하지 않는다.
 
+## 원격 소환 계약
+
+- 새 세션 생성은 기본 꺼짐이다. 새 송신 설정 초기화에는 `--allow-send --allow-launch --profile-dir <기존 앱 프로필>`을 함께 지정한다. 이미 전송 가능한 연결은 최신 송신기로 업데이트하고 `export.json`의 `allowLaunch`만 `true`로 추가한다. 기존 sendToken을 사용하므로 연결을 다시 가져오지 않는다. 구버전으로 롤백할 때는 이전 설정도 함께 복원한다.
+- 전송 자격증명, 양쪽 기존 전송 설정, 활성 연결, 공유 프로젝트, 원격 수집 일시정지 여부를 검증한다. 읽기 토큰은 실행할 수 없다. HTTPS/TLS pin과 본문 제한을 유지하며 일반 renderer RPC에서는 차단하고 전용 trusted IPC에서 네이티브 확인을 거친다.
+- `launch-status`는 읽기 전용으로 실제 폴더·CLI·tmux/Orca 가용성을 조회한다. Orca는 등록된 로컬 작업공간도 확인한다. `launch`는 명시적 요청에서만 시작하며, 확인한 서버 epoch/계획과 공유 프로젝트의 현재 작업 폴더를 실행 직전까지 재검증한다. 임의 cwd·셸 명령·실행 파일 입력은 받지 않는다.
+- 별도 `commands.sqlite`의 `launches` 저널에 실행 전에 request ID를 기록한다. 동일 요청은 재시작 후에도 재실행하지 않고, 미확인 결과는 `uncertain`으로 유지한다. 자동 재시도는 없다. 원본 Office DB는 읽기 전용이다.
+- 실제 CLI가 첫 대화를 기록하고 기존 수집기가 수집해야 동료가 나타난다. 새 터미널을 만들었다는 응답은 모델의 첫 응답 완료를 뜻하지 않는다. 로그인·신뢰 확인은 해당 컴퓨터에서 완료한다. Orca 탭은 포커스를 가져오지 않는다.
+- 검증: `tests/federation-commands.test.ts`, `tests/orca-launch.test.ts`, `tests/ui/remote-summon.spec.ts`, `env -u CI AGENT_OFFICE_FOCUS_TESTS=0 node --import tsx scripts/remote-launch-smoke.mjs`. 마지막 스크립트는 별도 프로필의 실제 Electron → HTTPS 송신기 → 합성 실행기로 확인창·단일 실행·동료 수집·권한 회수를 검증한다. 실제 사용자 대화를 사용하지 않는다.
+
 ## 원격 채팅 계약
 
 - 조회와 전송 자격증명은 다르다. 기존 읽기 연결은 계속 조회만 가능하며 UI/IPC 응답에 어느 token도 반환하지 않는다. 송신기의 `allowSend`, `sendToken`, 기존 앱의 `terminal-send.json`, 공유 프로젝트 범위가 모두 허용해야 한다. 수신 앱의 기존 터미널 보내기 설정도 적용한다.

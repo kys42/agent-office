@@ -67,7 +67,7 @@ export interface ResumeDeps {
   platform: string;
   server: string;
 }
-const defaults: ResumeDeps = {
+export const defaultResumeDeps: ResumeDeps = {
   run: runCommand,
   async binary(name) {
     const dirs = [
@@ -94,7 +94,7 @@ const defaults: ResumeDeps = {
 /** Dedicated server and exact targets: never reuses an arbitrary user pane or injects input. */
 export class TmuxResume {
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(private deps: ResumeDeps = defaults) {}
+  constructor(private deps: ResumeDeps = defaultResumeDeps) {}
   private describe(s: SavedSession) {
     if (
       !['darwin', 'linux'].includes(this.deps.platform) ||
@@ -183,7 +183,11 @@ export class TmuxResume {
   async status(s: SavedSession) {
     return (await this.inspect(s)).info;
   }
-  start(s: SavedSession, confirm: (info: TmuxResumeInfo) => Promise<boolean>) {
+  start(
+    s: SavedSession,
+    confirm: (info: TmuxResumeInfo) => Promise<boolean>,
+    authorized?: () => void,
+  ) {
     const task = this.queue.then(async () => {
       let current = await this.inspect(s);
       if (current.info.running) return current.info;
@@ -209,6 +213,7 @@ export class TmuxResume {
       delete env.TMUX_PANE;
       delete env.CLAUDECODE;
       try {
+        authorized?.();
         await this.deps.run(
           current.tmux,
           [
