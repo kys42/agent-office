@@ -1,10 +1,26 @@
 import { useMemo, type CSSProperties } from 'react';
-import { EyeOff, Folder, GitBranch, List, Pin, Search, WifiOff, X } from 'lucide-react';
+import {
+  BatteryWarning,
+  CornerDownRight,
+  EyeOff,
+  Folder,
+  GitBranch,
+  GitFork,
+  Layers,
+  List,
+  Pin,
+  Search,
+  Users,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import type { Provider, Session } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { officeListGroups, type OfficeListOrder } from '../shared/office-list';
-import { projectKey, sessionName } from '../shared/office';
+import { helperName, parentSession, projectKey, sessionName } from '../shared/office';
+import { isHelper } from '../shared/residents';
+import { durationShort, workingFor } from '../shared/triage';
 import { projectColor } from '../shared/office-layout';
 import { zoneLabel } from '../shared/zones';
 import { branchInfo } from '../shared/branch';
@@ -113,11 +129,21 @@ export function OfficeList({
                 const mood = view?.pose.mood ?? s.status;
                 const active = s.id === selected || s.resident?.sessionIds.includes(selected ?? '');
                 const branch = branchInfo(s);
-                const unread = (view?.unread.length ?? 0) + (view?.helperUnread.length ?? 0);
+                const unread = view?.unread.length ?? 0;
+                const helperNews = view?.helperUnread.length ?? 0;
+                const helper = isHelper(s) && !s.resident;
+                const fork = s.relation?.kind === 'fork';
+                const parent = s.attachedTo
+                  ? model.ownerOf(s.attachedTo)
+                  : parentSession(s, model.residents);
+                const helpers = view?.helpers.length ?? 0;
+                const callingHelpers = view?.helpers.filter((v) => v.needsPerson).length ?? 0;
+                const result = view?.group === 'results' ? view.unread[0] : undefined;
+                const elapsed = workingFor(s, model.now);
                 return (
                   <li key={s.id}>
                     <button
-                      className={`office-list-row ${active ? 'selected' : ''}`}
+                      className={`office-list-row ${helper ? 'is-helper' : ''} ${active ? 'selected' : ''}`}
                       data-session-id={s.id}
                       style={projectStyle(projectKey(s))}
                       aria-pressed={!!active}
@@ -125,25 +151,104 @@ export function OfficeList({
                     >
                       <span className="office-list-identity">
                         <span
-                          className={`office-list-avatar face face-${s.provider}`}
+                          className={`office-list-avatar face face-${s.provider} ${helper ? 'helper-avatar' : ''}`}
                           aria-label={PROVIDERS[s.provider].name}
                           title={PROVIDERS[s.provider].name}
                         >
-                          <Sprite session={s} provider={s.provider} mood={mood} size={36} />
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={mood}
+                            size={helper ? 28 : 36}
+                          />
+                          {helper && (
+                            <CornerDownRight
+                              size={11}
+                              className="office-list-helper-mark"
+                              aria-hidden="true"
+                            />
+                          )}
                         </span>
                         <span className="office-list-copy">
                           <strong>
-                            <span>{privacy ? PROVIDERS[s.provider].name : sessionName(s)}</span>
+                            <span>
+                              {privacy
+                                ? PROVIDERS[s.provider].name
+                                : helper
+                                  ? helperName(s)
+                                  : sessionName(s)}
+                            </span>
                             {s.pinned && <Pin size={11} aria-label={copy.pinned} />}
                             {view?.veiled && (
                               <EyeOff size={12} aria-label={t.office.veiled.summary} />
                             )}
                             {unread > 0 && <em title={t.roster.unreadTitle(unread)}>{unread}</em>}
                           </strong>
+                          {(helper || fork || helpers > 0 || s.resident || view?.quota) && (
+                            <span className="office-list-relations">
+                              {helper && (
+                                <span className="office-list-kind helper-kind">
+                                  <CornerDownRight size={11} />
+                                  {t.roster.helper}
+                                </span>
+                              )}
+                              {fork && (
+                                <span className="office-list-kind">
+                                  <GitFork size={11} />
+                                  {t.roster.fork}
+                                </span>
+                              )}
+                              {(helper || fork) && parent && (
+                                <span
+                                  className="office-list-lineage"
+                                  title={privacy ? undefined : sessionName(parent)}
+                                >
+                                  {privacy
+                                    ? helper
+                                      ? copy.hiddenParent
+                                      : copy.hiddenFork
+                                    : helper
+                                      ? copy.helperOf(sessionName(parent))
+                                      : copy.forkOf(sessionName(parent))}
+                                </span>
+                              )}
+                              {helpers > 0 && (
+                                <span
+                                  className={`office-list-kind ${callingHelpers ? 'helpers-calling' : ''}`}
+                                >
+                                  <Users size={11} />
+                                  {copy.main} · {copy.helpers(helpers)}
+                                  {callingHelpers > 0 &&
+                                    ` · ${copy.helpersCalling(callingHelpers)}`}
+                                </span>
+                              )}
+                              {s.resident && (
+                                <span
+                                  className="office-list-kind"
+                                  title={copy.activeRuns(
+                                    s.resident.activeCount,
+                                    s.resident.sessionIds.length,
+                                  )}
+                                >
+                                  <Layers size={11} />
+                                  {t.roster.runs(s.resident.sessionIds.length)}
+                                </span>
+                              )}
+                              {view?.quota && (
+                                <span
+                                  className="office-list-kind quota-kind"
+                                  title={t.desk.quota.title(PROVIDERS[s.provider].short)}
+                                >
+                                  <BatteryWarning size={11} />
+                                  {t.desk.quota.label(PROVIDERS[s.provider].short)}
+                                </span>
+                              )}
+                            </span>
+                          )}
                           <small>
                             {privacy
                               ? t.roster.hidden
-                              : messageExcerpt(sessionActivity(s).text, 180)}
+                              : messageExcerpt(result?.text ?? sessionActivity(s).text, 180)}
                           </small>
                         </span>
                       </span>
@@ -166,14 +271,23 @@ export function OfficeList({
                       </span>
                       <span className={`office-list-status status-${mood}`}>
                         <i />
-                        {MOODS[mood].label}
+                        {elapsed !== null
+                          ? t.roster.workingFor(durationShort(elapsed))
+                          : result
+                            ? t.roster.newResults(unread, ago(result.at))
+                            : MOODS[mood].label}
+                        {helperNews > 0 && (
+                          <small className="office-list-helper-news">
+                            <CornerDownRight size={11} />
+                            {copy.helperNews(helperNews)}
+                          </small>
+                        )}
                         {s.remote?.stale && (
                           <small className="office-list-offline">
                             <WifiOff size={11} />
                             {t.federation.offline}
                           </small>
                         )}
-                        {s.attachedTo && <small>{t.roster.helper}</small>}
                       </span>
                       <time
                         dateTime={new Date(s.updatedAt).toISOString()}
