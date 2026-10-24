@@ -674,3 +674,22 @@ test('slow owner discovery runs batches and offices concurrently without opening
     await Promise.all(fixtures.map((f) => f.close()));
   }
 });
+
+test('one failed native lookup does not reject other authorized targets in the batch', async () => {
+  const f = await setup(false, 'unknown', 2);
+  const target = f.sender.target;
+  f.sender.target = async (s) => {
+    if (s.id === f.session.id) throw Error('private native failure');
+    return target(s);
+  };
+  try {
+    const res = targetResponseSchema.parse(
+      await peerRequest(f.peer, '/office/v1/commands/targets', undefined, { body: { ids: f.ids } }),
+    );
+    assert.equal(res.targets[f.ids[0]], null);
+    assert.equal(res.targets[f.ids[1]]?.canSend, true);
+    assert.deepEqual(f.sent, []);
+  } finally {
+    await f.close();
+  }
+});
