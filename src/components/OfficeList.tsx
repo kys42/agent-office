@@ -1,15 +1,19 @@
-import { useMemo } from 'react';
-import { EyeOff, GitBranch, List, Pin, Search, WifiOff, X } from 'lucide-react';
+import { useMemo, type CSSProperties } from 'react';
+import { EyeOff, Folder, GitBranch, List, Pin, Search, WifiOff, X } from 'lucide-react';
 import type { Provider, Session } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
 import { officeListGroups, type OfficeListOrder } from '../shared/office-list';
-import { sessionName } from '../shared/office';
+import { projectKey, sessionName } from '../shared/office';
+import { projectColor } from '../shared/office-layout';
 import { zoneLabel } from '../shared/zones';
 import { branchInfo } from '../shared/branch';
 import { messageExcerpt, sessionActivity } from '../shared/activity';
 import { ago, date, time } from '../lib/format';
 import { useI18n } from '../lib/i18n';
+import { Sprite } from './Sprite';
+
+const projectStyle = (key: string) => ({ '--project-color': projectColor(key) }) as CSSProperties;
 
 export function OfficeList({
   sessions,
@@ -95,9 +99,10 @@ export function OfficeList({
           <span>{copy.activity}</span>
         </div>
         {groups.map((group) => (
-          <section key={group.key} className="office-list-group">
+          <section key={group.key} className="office-list-group" style={projectStyle(group.key)}>
             {order === 'project' && (
               <h3>
+                <Folder size={14} aria-hidden="true" />
                 <span>{privacy ? t.app.sidebar.hiddenProject : group.label}</span>
                 <small>{group.sessions.length}</small>
               </h3>
@@ -114,15 +119,17 @@ export function OfficeList({
                     <button
                       className={`office-list-row ${active ? 'selected' : ''}`}
                       data-session-id={s.id}
+                      style={projectStyle(projectKey(s))}
                       aria-pressed={!!active}
                       onClick={() => onSelect(s.id)}
                     >
                       <span className="office-list-identity">
                         <span
-                          className={`office-list-provider provider-${s.provider}`}
+                          className={`office-list-avatar face face-${s.provider}`}
                           aria-label={PROVIDERS[s.provider].name}
+                          title={PROVIDERS[s.provider].name}
                         >
-                          {PROVIDERS[s.provider].short.slice(0, 1)}
+                          <Sprite session={s} provider={s.provider} mood={mood} size={36} />
                         </span>
                         <span className="office-list-copy">
                           <strong>
@@ -141,7 +148,10 @@ export function OfficeList({
                         </span>
                       </span>
                       <span className="office-list-project">
-                        <span>{privacy ? t.app.sidebar.hiddenProject : zoneLabel(s)}</span>
+                        <span className="office-list-project-name">
+                          <Folder size={12} aria-hidden="true" />
+                          <span>{privacy ? t.app.sidebar.hiddenProject : zoneLabel(s)}</span>
+                        </span>
                         <small>
                           {!privacy && (
                             <>
