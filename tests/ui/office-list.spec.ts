@@ -124,8 +124,14 @@ test('list follows the selected remote office and retains offline information', 
   await expect(page.locator('.office-list-row')).toHaveCount(1);
   await expect(page.locator('.office-list-row')).toContainText('원격 동료');
   await expect(page.locator('.office-list-row')).toContainText('Test Mac');
+  await expect(page.locator('.office-list-offline')).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.office-list-offline')).toBeVisible();
+  await expect(page.locator('.office-list-offline')).toHaveText('연결 끊김');
+  await page.setViewportSize({ width: 1050, height: 800 });
   await page.locator('.office-list-row').click();
   await expect(page.locator('.card-head h2')).toHaveAttribute('title', '원격 동료');
+  await expect(page.locator('.office-list-offline')).toBeVisible();
 });
 
 test('list remains usable in light, dark, narrow windows and English', async ({ page }) => {

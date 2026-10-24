@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { EyeOff, GitBranch, List, Pin, Search, X } from 'lucide-react';
+import { EyeOff, GitBranch, List, Pin, Search, WifiOff, X } from 'lucide-react';
 import type { Provider, Session } from '../shared/types';
 import { MOODS, PROVIDERS } from '../shared/types';
 import type { OfficeModel } from '../shared/office-model';
@@ -150,16 +150,19 @@ export function OfficeList({
                             </>
                           )}
                           {s.remote && (
-                            <span>
-                              {privacy ? t.office.zones.office : s.remote.label}
-                              {s.remote.stale ? ` · ${t.federation.offline}` : ''}
-                            </span>
+                            <span>{privacy ? t.office.zones.office : s.remote.label}</span>
                           )}
                         </small>
                       </span>
                       <span className={`office-list-status status-${mood}`}>
                         <i />
                         {MOODS[mood].label}
+                        {s.remote?.stale && (
+                          <small className="office-list-offline">
+                            <WifiOff size={11} />
+                            {t.federation.offline}
+                          </small>
+                        )}
                         {s.attachedTo && <small>{t.roster.helper}</small>}
                       </span>
                       <time

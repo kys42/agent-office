@@ -252,6 +252,12 @@
   margin-top: 5px;
   color: var(--text-3);
 }
+.office-list-status > .office-list-offline {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--st-error);
+}
 .office-list-row time {
   text-align: right;
   font-variant-numeric: tabular-nums;
