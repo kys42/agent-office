@@ -1,4 +1,4 @@
-import { open, readdir, stat } from 'node:fs/promises';
+import { open, readdir, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { consumeCompleteJsonlLines } from '../../vendor/orca/runtime/session-scanner-jsonl-reader.js';
 import { MAX_SESSION_TRANSCRIPT_RECORD_BYTES } from '../../vendor/orca/runtime/session-transcript-record-budget.js';
@@ -7,38 +7,59 @@ export interface SourceFile {
   mtime: number;
   size: number;
 }
+/** Follow relocated session folders without revisiting aliases or directory cycles. */
 export async function discover(root: string, depth = 5): Promise<SourceFile[]> {
   const result: SourceFile[] = [];
-  async function walk(dir: string, d: number) {
+  const seenDirectories = new Set<string>();
+  const seenFiles = new Set<string>();
+  const excluded = new Set([
+    'node_modules',
+    '.git',
+    'archive',
+    'session-sqlite-import-archive',
+    'agent',
+  ]);
+  // Breadth first: an alias reached with less remaining depth must not hide a shallower path.
+  const pending = [{ dir: root, depth }];
+  for (let i = 0; i < pending.length; i++) {
+    const { dir, depth: remaining } = pending[i];
     let entries;
     try {
+      const physical = await realpath(dir);
+      if (seenDirectories.has(physical)) continue;
+      if (dir !== root && excluded.has(path.basename(physical))) continue;
       entries = await readdir(dir, { withFileTypes: true });
+      seenDirectories.add(physical);
     } catch (e) {
       if (dir === root) throw e;
-      return;
+      continue;
     }
+    // Stable alias selection; prefer ordinary entries at the same level.
+    entries.sort(
+      (a, b) =>
+        Number(a.isSymbolicLink()) - Number(b.isSymbolicLink()) || a.name.localeCompare(b.name),
+    );
     for (const ent of entries) {
       const file = path.join(dir, ent.name);
-      if (ent.isSymbolicLink()) continue;
-      if (
-        ent.isDirectory() &&
-        d > 0 &&
-        !['node_modules', '.git', 'archive', 'session-sqlite-import-archive', 'agent'].includes(
-          ent.name,
-        )
-      )
-        await walk(file, d - 1);
-      else if (ent.isFile() && ent.name.endsWith('.jsonl')) {
-        try {
+      try {
+        const target = ent.isSymbolicLink() ? await stat(file) : ent;
+        if (target.isDirectory()) {
+          if (remaining > 0 && !excluded.has(ent.name))
+            pending.push({ dir: file, depth: remaining - 1 });
+        } else if (target.isFile() && ent.name.endsWith('.jsonl')) {
+          const physical = await realpath(file);
+          if (seenFiles.has(physical)) continue;
           const s = await stat(file);
+          if (!s.isFile()) continue;
+          seenFiles.add(physical);
+          // Keep the provider-facing path: Claude subagent namespaces depend on it.
           result.push({ path: file, mtime: s.mtimeMs, size: s.size });
-        } catch {
-          /* rotating file */
         }
+      } catch {
+        /* broken link, disconnected volume, or rotating file; other sources remain readable */
       }
     }
   }
-  await walk(root, depth);
   return result.sort((a, b) => b.mtime - a.mtime);
 }
 export const READ_BUDGET_BYTES = 3 * 1024 * 1024;
