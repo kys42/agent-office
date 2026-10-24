@@ -48,6 +48,7 @@ async function main() {
       conversation: args.includes('--conversation'),
       allowSend: args.includes('--allow-send'),
       allowLaunch: args.includes('--allow-launch'),
+      allowRename: args.includes('--allow-rename'),
       ...(args.includes('--allow-send') ? { sendToken: randomBytes(32).toString('hex') } : {}),
       ...(args.includes('--profile-dir') ? { profileDir: option('--profile-dir') } : {}),
     });

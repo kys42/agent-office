@@ -115,7 +115,7 @@ test('Office, editable alias, notes, handoff and keyboard dismissal', async ({ p
   const panel = page.getByRole('complementary', { name: '동료의 업무 카드' });
   await expect(panel).toBeVisible();
   await panel.getByRole('button', { name: '카드 메뉴' }).click();
-  await panel.getByRole('menuitem', { name: '이름 바꾸기' }).click();
+  await panel.getByRole('menuitem', { name: '사무실 별명' }).click();
   await page.getByLabel('새 별명').fill('우리 코코');
   await page.getByRole('button', { name: '별명 저장' }).click();
   await expect(panel.getByRole('heading', { name: '우리 코코' })).toBeVisible();

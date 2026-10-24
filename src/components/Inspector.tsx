@@ -1,3 +1,4 @@
+import { SessionTitleEditor } from './SessionTitleEditor';
 import { TmuxResume } from './TmuxResume';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
@@ -187,6 +188,7 @@ export function Inspector({
   }, [tab, session.id]);
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
   const [petOpen, setPetOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
@@ -245,6 +247,7 @@ export function Inspector({
     setNotes(session.notes);
     setNotesDirty(false);
     setEditing(false);
+    setTitleEditing(false);
     setZoneOpen(false);
     setPetOpen(false);
     setTab('history');
@@ -951,34 +954,45 @@ export function Inspector({
                 <Maximize2 size={15} />
               </button>
             )}
-            {!s.remote && (
+            {(!s.remote || api.sessionTitle) && (
               <CardMenu label={t.inspector.card.more}>
                 {(close) => (
                   <>
-                    {movable &&
+                    {api.sessionTitle &&
                       item(
-                        colleague.pinned ? t.inspector.unpin : t.inspector.pin,
-                        () => onPin(colleague),
+                        t.inspector.sessionTitle.action,
+                        () => setTitleEditing(true),
                         close,
+                        demo || privacy,
                       )}
-                    {s.zone &&
-                      s.zone !== 'office' &&
-                      item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
-                    {item(t.inspector.rename, () => setEditing(true), close)}
-                    {item(t.pets.individualTitle, () => setPetOpen(true), close)}
-                    {!privacy &&
-                      onZoneRules &&
-                      item(t.inspector.zone, () => setZoneOpen(true), close)}
-                    {item(
-                      t.inspector.revealSource,
-                      () => void api.reveal(s.id).catch((e) => notify(e.message)),
-                      close,
-                      demo || !isDesktop || privacy,
-                    )}
-                    {item(
-                      s.archived ? t.inspector.unarchive : t.inspector.archive,
-                      () => void patch({ archived: !s.archived }),
-                      close,
+                    {!s.remote && (
+                      <>
+                        {movable &&
+                          item(
+                            colleague.pinned ? t.inspector.unpin : t.inspector.pin,
+                            () => onPin(colleague),
+                            close,
+                          )}
+                        {s.zone &&
+                          s.zone !== 'office' &&
+                          item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
+                        {item(t.inspector.rename, () => setEditing(true), close)}
+                        {item(t.pets.individualTitle, () => setPetOpen(true), close)}
+                        {!privacy &&
+                          onZoneRules &&
+                          item(t.inspector.zone, () => setZoneOpen(true), close)}
+                        {item(
+                          t.inspector.revealSource,
+                          () => void api.reveal(s.id).catch((e) => notify(e.message)),
+                          close,
+                          demo || !isDesktop || privacy,
+                        )}
+                        {item(
+                          s.archived ? t.inspector.unarchive : t.inspector.archive,
+                          () => void patch({ archived: !s.archived }),
+                          close,
+                        )}
+                      </>
                     )}
                   </>
                 )}
@@ -994,6 +1008,14 @@ export function Inspector({
             </button>
           </div>
         </div>
+        {titleEditing && !privacy && api.sessionTitle && (
+          <SessionTitleEditor
+            key={s.id}
+            session={s}
+            onClose={() => setTitleEditing(false)}
+            notify={notify}
+          />
+        )}
         {s.remote && (
           <p className="remote-source" role="status">
             {s.remote.send ? t.federation.remoteOffice : t.federation.readOnly} ·{' '}

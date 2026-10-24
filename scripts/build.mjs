@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { sdkImportMeta } from './node-bundle.mjs';
 await build({
   entryPoints: {
     main: 'desktop/main.ts',
@@ -14,5 +15,6 @@ await build({
   target: 'node24',
   format: 'cjs',
   external: ['electron'],
+  plugins: [sdkImportMeta],
   sourcemap: true,
 });

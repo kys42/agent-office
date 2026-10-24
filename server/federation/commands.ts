@@ -1,3 +1,5 @@
+import { SessionTitles, type SessionRenamer } from '../session-title.js';
+import { titleRequestSchema } from '../../src/shared/session-title.js';
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -49,14 +51,17 @@ export class PeerCommands {
   private operations = new Set<Promise<void>>();
   private closing = false;
   private probes: TargetProbes;
+  private titles: SessionTitles;
   constructor(
     private dir: string,
     private store: OfficeStore,
     private config: () => ExportConfig,
     private sender = nativePeerSender,
     private launcher: PeerLauncher = nativePeerLauncher(),
+    renamer?: SessionRenamer,
   ) {
     this.probes = new TargetProbes(sender);
+    this.titles = new SessionTitles(dir, renamer);
   }
   private authorize(req: IncomingMessage) {
     const c = this.config();
@@ -120,6 +125,43 @@ export class PeerCommands {
       const config = this.authorize(req);
       const value = await body(req);
       this.authorize(req);
+      if (route === '/office/v1/commands/title-status' || route === '/office/v1/commands/title') {
+        const writing = route.endsWith('/title');
+        const command = (
+          writing
+            ? z.object({ id: idSchema, epoch: z.uuid(), request: titleRequestSchema }).strict()
+            : z.object({ id: idSchema }).strict()
+        ).parse(value);
+        const verify = () => {
+          const c = this.authorize(req);
+          if (this.closing || !c.allowRename || this.store.preferences().paused)
+            throw new CommandError(403);
+          this.session(req, command.id);
+        };
+        verify();
+        const request =
+          'request' in command ? titleRequestSchema.parse(command.request) : undefined;
+        if ('epoch' in command && command.epoch !== this.epoch) throw new CommandError(409);
+        let info;
+        const operation = this.titles
+          .call(() => this.session(req, command.id), request, verify)
+          .then((result) => {
+            info = result;
+          });
+        this.operations.add(operation);
+        try {
+          await operation;
+        } finally {
+          this.operations.delete(operation);
+        }
+        reply(200, {
+          officeId: config.officeId,
+          epoch: this.epoch,
+          ...(request ? { requestId: request.requestId } : {}),
+          info,
+        });
+        return;
+      }
       if (route === '/office/v1/commands/launch-status' || route === '/office/v1/commands/launch') {
         const starting = route.endsWith('/launch');
         const base = z.object({ id: idSchema, spec: launchSpecSchema }).strict();

@@ -1,3 +1,4 @@
+import type { SessionRenamer } from '../session-title.js';
 import type { PeerLauncher } from './launcher.js';
 import { PeerCommands } from './commands.js';
 import type { PeerSender } from './sender.js';
@@ -21,12 +22,13 @@ export async function startExportServer(
   configDir: string,
   sender?: PeerSender,
   launcher?: PeerLauncher,
+  renamer?: SessionRenamer,
 ) {
   const readConfig = () =>
     exportConfigSchema.parse(JSON.parse(readFileSync(path.join(configDir, 'export.json'), 'utf8')));
   const initial = readConfig();
   const store = new OfficeStore(dataDir, true);
-  const commands = new PeerCommands(configDir, store, readConfig, sender, launcher);
+  const commands = new PeerCommands(configDir, store, readConfig, sender, launcher, renamer);
   let epoch = randomUUID(),
     version = 0,
     signature = '',

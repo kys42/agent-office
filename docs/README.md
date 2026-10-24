@@ -39,6 +39,7 @@ docs/
 | 데스크 펫·책상 줄·말풍선·가리기·고정 변경 | [기능 정책서](golden/FEATURE-POLICY.md) |
 | 플랫폼 추가·공통 필드 변경 | [관측 규격](golden/OFFICE-OBSERVATION-PROTOCOL.md) |
 | 세션 중복·상태·이름·수집 오류 분석 | [세션 기록 분석](development/SESSION-INGESTION.md) |
+| 로컬·원격 원본 제목 변경 | [세션 제목 변경](development/SESSION-TITLES.md) |
 | 사용 한도·누적 비용·현재 작업 폴더 | [사용량과 실행 위치](development/USAGE-AND-WORKSPACE.md) |
 | 원래 터미널 이동·바로 보내기 | [터미널 연결](development/TERMINAL.md) |
 | 팝업 위치 기억·독립 고정 카드 | [팝업 카드](development/POPUP-CARDS.md) |

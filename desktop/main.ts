@@ -1,3 +1,4 @@
+import { titleRequestSchema } from '../src/shared/session-title.js';
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
 import { OrcaLaunch } from './orca-launch.js';
@@ -604,12 +605,24 @@ function setupIPC() {
     trusted(e);
     if (
       typeof method !== 'string' ||
-      ['federation', 'remote-send', 'remote-targets', 'remote-launch'].includes(method) ||
+      ['federation', 'remote-send', 'remote-targets', 'remote-launch', 'session-title'].includes(
+        method,
+      ) ||
       !Array.isArray(args) ||
       args.length > 3
     )
       throw new Error(m().desktop.badRequest);
     return bridge.call(method, args);
+  });
+  ipcMain.handle('office:session-title', async (e, id, request) => {
+    trusted(e);
+    if (typeof id !== 'string' || id.length > 400) throw Error(m().desktop.badRequest);
+    const value = request === undefined ? undefined : titleRequestSchema.parse(request);
+    return bridge.call('session-title', [id, value], async () => {
+      trusted(e);
+      if (isRemoteId(id) && !(await terminalSendEnabled()))
+        throw Error(m().desktop.terminal.enableFirst);
+    });
   });
   ipcMain.handle('office:federation', async (e, command) => {
     trusted(e);
