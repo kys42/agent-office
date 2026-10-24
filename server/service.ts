@@ -16,7 +16,8 @@ import type {
   Snapshot,
   WorkspaceIdentity,
 } from '../src/shared/types.js';
-import { OfficeStore } from './store.js';
+import { OfficeStore, defaultDataDir } from './store.js';
+import { SessionTitles, nativeSessionRenamer } from './session-title.js';
 import { discover, type SourceFile } from './adapters/files.js';
 import { RecordWindowCache } from './adapters/record-window.js';
 import { parseRecords, hash } from './adapters/normalize.js';
@@ -350,6 +351,7 @@ export class OfficeService extends EventEmitter {
   private unwatchable = new Set<string>();
   /** Parsed live-process records by file name, re-read only when a file moves. */
   private liveFiles = new Map<string, { stamp: string; record: ClaudeProcess | null }>();
+  private titles: SessionTitles;
   constructor(dir?: string, home = os.homedir()) {
     super();
     this.store = new OfficeStore(dir);
@@ -361,6 +363,13 @@ export class OfficeService extends EventEmitter {
       codex: path.join(process.env.CODEX_HOME ?? path.join(home, '.codex'), 'sessions'),
       openclaw: path.join(process.env.OPENCLAW_STATE_DIR ?? path.join(home, '.openclaw'), 'agents'),
     };
+    this.titles = new SessionTitles(
+      dir ?? defaultDataDir(),
+      nativeSessionRenamer({
+        claudeRoot: this.roots.claude,
+        codexHome: path.dirname(this.roots.codex),
+      }),
+    );
     this.connectors = (['claude', 'codex', 'openclaw'] as Provider[]).map((provider) => ({
       provider,
       state: 'paused',
@@ -1134,6 +1143,25 @@ export class OfficeService extends EventEmitter {
     if (place(merged) !== k.place) return null;
     const s = placed(merged, k.workspace);
     return (live && applyLiveWait(s, live, Date.now())) || s;
+  }
+  /** Called only by the trusted desktop composition, never general web/MCP RPC. */
+  async sessionTitle(id: string, request: unknown, authorize: () => Promise<void>) {
+    const result = await this.titles.call(
+      () => this.store.get(id),
+      request,
+      async () => {
+        await authorize();
+        if (
+          this.stopping ||
+          this.stopped ||
+          this.store.preferences().paused ||
+          !this.snapshot().sessions.some((s) => s.id === id)
+        )
+          throw Error('title-unavailable');
+      },
+    );
+    if (result.status === 'renamed') void this.refresh().catch(() => {});
+    return result;
   }
   async call(method: string, args: unknown[] = []): Promise<unknown> {
     switch (method) {

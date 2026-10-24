@@ -25,3 +25,8 @@ Copyright (c) 2026 Alexander Malakhov. MIT License. Claude nested subagent path/
 Acorn parses literal JavaScript call syntax without executing transcript content. MIT License, Copyright (C) 2012-2022 by various contributors. The complete license ships in `public/licenses/acorn-LICENSE.txt`; `package-lock.json` pins the version.
 
 The quota service is an independent TypeScript implementation informed by Orca's `claude-oauth-usage-request.ts` / `codex-rpc-rate-limit-probe.ts` (same pinned commit above), and Agent Sessions' OAuth credential resolver / Codex CLI probe (same pinned commit above). No additional upstream runtime module is copied. Provenance and limits: `docs/development/USAGE-AND-WORKSPACE.md`.
+## Claude Agent SDK — explicit session title changes
+
+`@anthropic-ai/claude-agent-sdk` **0.3.310** is an npm runtime dependency used for its official `renameSession` API. Agent Office provides a narrowly scoped SessionStore; the SDK creates the title record. No vendored SDK fork is maintained. The bundler adapts `import.meta.url` for CommonJS through `scripts/node-bundle.mjs`. Only the `/core` API is imported on an explicit rename operation; model queries are not used.
+
+Copyright © Anthropic PBC. All rights reserved. Use is subject to the [upstream legal agreements](https://code.claude.com/docs/en/legal-and-compliance). The upstream notice is included at `public/licenses/claude-agent-sdk-LICENSE.txt`. Version and integrity are pinned in `package-lock.json`.

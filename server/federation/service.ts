@@ -121,6 +121,21 @@ export class FederatedService extends EventEmitter {
     args: unknown[] = [],
     authorized?: () => Promise<void>,
   ): Promise<unknown> {
+    if (method === 'session-title') {
+      if (!authorized || typeof args[0] !== 'string' || args[0].length > 400)
+        throw Error('title-unavailable');
+      const id = args[0];
+      const verify = async () => {
+        await authorized();
+        const local = (await this.local.call('snapshot')) as Snapshot;
+        if (local.preferences.paused || !this.compose(local).sessions.some((s) => s.id === id))
+          throw Error('title-unavailable');
+      };
+      await verify();
+      return isRemoteId(id)
+        ? this.peers.sessionTitle(id, args[1], verify)
+        : this.local.sessionTitle(id, args[1], verify);
+    }
     if (method === 'federation') return this.peers.command(args[0]);
     if (method === 'remote-launch') {
       const [id, spec, start] = args;

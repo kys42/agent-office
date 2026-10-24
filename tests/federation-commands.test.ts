@@ -1,3 +1,4 @@
+import type { SessionRenamer } from '../server/session-title.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -18,12 +19,120 @@ import type { PeerLauncher } from '../server/federation/launcher.js';
 import { launchInfoSchema } from '../src/shared/remote-launch.js';
 import type { PeerSender } from '../server/federation/sender.js';
 
+test('remote title changes require explicit permission, exact scope and durable request identity', async () => {
+  const changed: string[] = [];
+  let before: (() => void) | undefined;
+  const renamer: SessionRenamer = {
+    info: async (s) => ({ available: true, title: s.title, status: 'ready' }),
+    rename: async (_s, title, verify) => {
+      before?.();
+      await verify();
+      changed.push(title);
+    },
+  };
+  const f = await setup(false, 'unknown', 1, undefined, undefined, renamer);
+  const status = () =>
+    peerRequest(f.peer, '/office/v1/commands/title-status', undefined, {
+      body: { id: f.id },
+    }) as Promise<any>;
+  const rename = (body: unknown) =>
+    peerRequest(f.peer, '/office/v1/commands/title', undefined, { body }) as Promise<any>;
+  try {
+    await assert.rejects(status(), (e) => e instanceof PeerError && e.code === 403);
+    f.config.allowRename = true;
+    f.save();
+    await assert.rejects(
+      peerRequest(
+        { ...f.peer, token: f.config.token },
+        '/office/v1/commands/title-status',
+        undefined,
+        { body: { id: f.id } },
+      ),
+    );
+    const info = await status();
+    const request = { title: 'Remote title', expected: info.info.title, requestId: randomUUID() };
+    const command = { id: f.id, epoch: info.epoch, request };
+    assert.equal((await rename(command)).info.status, 'renamed');
+    assert.deepEqual(changed, ['Remote title']);
+    assert.equal((await rename(command)).info.status, 'renamed');
+    assert.equal(changed.length, 1);
+    await assert.rejects(
+      rename({ ...command, request: { ...request, title: 'conflicting replay' } }),
+    );
+    await f.restart();
+    const epoch = (await status()).epoch;
+    await assert.rejects(rename(command));
+    assert.equal((await rename({ ...command, epoch })).info.status, 'renamed');
+    assert.equal(changed.length, 1);
+    before = () => {
+      f.config.allowRename = false;
+      f.save();
+    };
+    const second = { ...command, epoch, request: { ...request, requestId: randomUUID() } };
+    assert.equal((await rename(second)).info.status, 'uncertain');
+    assert.equal(changed.length, 1);
+    f.config.allowRename = true;
+    f.config.projects = ['another-project'];
+    f.save();
+    await assert.rejects(status(), (e) => e instanceof PeerError && e.code === 404);
+  } finally {
+    await f.close();
+  }
+});
+
+test('receiver title flow distinguishes denied permission and does not mutate after disconnect', async () => {
+  const changed: string[] = [];
+  const f = await setup(false, 'unknown', 1, undefined, undefined, {
+    info: async (s) => ({ available: true, title: s.title, status: 'ready' }),
+    rename: async (_s, title, verify) => {
+      await verify();
+      changed.push(title);
+    },
+  });
+  const dir = path.join(f.root, 'receiver');
+  mkdirSync(dir);
+  writeFileSync(
+    path.join(dir, 'peers.json'),
+    JSON.stringify({
+      enabled: true,
+      peers: [{ ...f.peer, token: f.config.token, sendToken: f.config.sendToken }],
+    }),
+  );
+  const manager = new PeerManager(dir);
+  try {
+    await new Promise<void>((resolve) => {
+      manager.once('change', resolve);
+      manager.start();
+    });
+    const id = manager.sessions()[0].id;
+    assert.equal((await manager.sessionTitle(id, undefined, async () => {})).reason, 'permission');
+    f.config.allowRename = true;
+    f.save();
+    const info = await manager.sessionTitle(id, undefined, async () => {});
+    assert.equal(info.available, true);
+    const request = { title: 'Receiver title', expected: info.title, requestId: randomUUID() };
+    assert.equal((await manager.sessionTitle(id, request, async () => {})).status, 'renamed');
+    assert.deepEqual(changed, ['Receiver title']);
+    manager.command({ action: 'enable', enabled: false });
+    assert.equal(
+      (await manager.sessionTitle(id, { ...request, requestId: randomUUID() }, async () => {}))
+        .available,
+      false,
+    );
+    assert.equal(changed.length, 1);
+  } finally {
+    manager.close();
+    await f.close();
+  }
+});
+
 async function setup(
   remoteCodex = false,
   origin: 'unknown' | 'interactive' | 'scheduled' | 'internal' = 'unknown',
   count = 1,
   launcher?: PeerLauncher,
   patch?: Partial<Session>,
+  renamer?: SessionRenamer,
 ) {
   const root = mkdtempSync(path.join(os.tmpdir(), 'office-commands-'));
   const data = path.join(root, 'data'),
@@ -80,6 +189,7 @@ async function setup(
     projects: ['*'],
     allowSend: true,
     allowLaunch: false,
+    allowRename: false,
     profileDir: data,
     sendToken: 's'.repeat(64),
   };
@@ -106,7 +216,7 @@ async function setup(
     },
   };
   if (remoteCodex) sender.target = async () => null;
-  let server = await startExportServer(data, configDir, sender, launcher);
+  let server = await startExportServer(data, configDir, sender, launcher, renamer);
   const peer: PeerInput = {
     officeId: config.officeId,
     endpoint: `https://127.0.0.1:${(server.server.address() as { port: number }).port}/`,
@@ -142,7 +252,7 @@ async function setup(
     fail: () => (fail = true),
     restart: async () => {
       await server.close();
-      server = await startExportServer(data, configDir, sender, launcher);
+      server = await startExportServer(data, configDir, sender, launcher, renamer);
       peer.endpoint = `https://127.0.0.1:${(server.server.address() as { port: number }).port}/`;
     },
     close: async () => {

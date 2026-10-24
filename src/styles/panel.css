@@ -1548,3 +1548,26 @@
 .modal .zone-editor-head {
   display: none;
 }
+.session-title-editor {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.session-title-editor label {
+  font-weight: 600;
+}
+.session-title-editor p {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 6px 0;
+}
+.session-title-editor input {
+  width: 100%;
+  min-width: 0;
+}
+.session-title-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}

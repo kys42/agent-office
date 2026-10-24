@@ -788,6 +788,10 @@ export interface OfficeAPI {
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
   resume: (id: string) => Promise<string>;
+  sessionTitle?: (
+    id: string,
+    request?: import('./session-title').SessionTitleRequest,
+  ) => Promise<import('./session-title').SessionTitleInfo>;
   remoteLaunch?: (
     id: string,
     action: 'status' | 'start',

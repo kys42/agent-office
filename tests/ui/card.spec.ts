@@ -3,6 +3,49 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { OfficeEvent } from '../../src/shared/types';
 
+for (const remoteTitle of [false, true])
+  test(`source title editor preserves the card and explicitly saves: remote=${remoteTitle}`, async ({
+    page,
+  }) => {
+    const aside = await card(page, { titleSupport: 'yes', remoteTitle });
+    await aside.getByRole('button', { name: '카드 메뉴' }).click();
+    await aside.getByRole('menuitem', { name: '세션 제목 변경', exact: true }).click();
+    const form = aside.getByRole('form', { name: '세션 제목 변경' });
+    await expect(form.getByRole('textbox')).toBeEnabled();
+    expect(await page.evaluate(() => (window as any).titleChanges)).toHaveLength(0);
+    if (remoteTitle) await expect(form).toContainText('Test Mac');
+    await form.getByRole('textbox').fill('새로운 세션 이름');
+    await page.screenshot({ path: `.local/session-title-${remoteTitle ? 'remote' : 'local'}.png` });
+    await form.getByRole('button', { name: '제목 저장' }).click();
+    await expect(form).toHaveCount(0);
+    await expect(aside).toBeVisible();
+    const changes = await page.evaluate(() => (window as any).titleChanges);
+    expect(changes).toHaveLength(1);
+    expect(changes[0].title).toBe('새로운 세션 이름');
+    expect(changes[0].requestId).toMatch(/^[a-f0-9-]{36}$/);
+  });
+
+test('denied rename explains permission', async ({ page }) => {
+  const aside = await card(page, { titleSupport: 'denied', remoteTitle: true });
+  await aside.getByRole('button', { name: '카드 메뉴' }).click();
+  await aside.getByRole('menuitem', { name: '세션 제목 변경', exact: true }).click();
+  await expect(aside.getByRole('form')).toContainText('허용하지 않았어요');
+  await expect(aside.getByRole('button', { name: '제목 저장' })).toBeDisabled();
+});
+
+test('uncertain rename keeps input and blocks replay', async ({ page }) => {
+  const aside = await card(page, { titleSupport: 'uncertain' });
+  await aside.getByRole('button', { name: '카드 메뉴' }).click();
+  await aside.getByRole('menuitem', { name: '세션 제목 변경', exact: true }).click();
+  const form = aside.getByRole('form');
+  await form.getByRole('textbox').fill('Keep my input');
+  await form.getByRole('button', { name: '제목 저장' }).click();
+  await expect(form).toContainText('변경 결과를 확인하지 못했어요');
+  await expect(form.getByRole('textbox')).toHaveValue('Keep my input');
+  await expect(form.getByRole('button', { name: '제목 저장' })).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).titleChanges)).toHaveLength(1);
+});
+
 /** The dock's card window in the browser: the desktop bridge opens it on demo:0. */
 async function card(
   page: Page,
@@ -15,9 +58,22 @@ async function card(
     handshakeOnly?: boolean;
     artifactCount?: number;
     codex?: boolean;
+    titleSupport?: 'yes' | 'denied' | 'uncertain';
+    remoteTitle?: boolean;
   } = {},
 ) {
   const snapshot = demoSnapshot();
+  if (opts.remoteTitle)
+    snapshot.sessions[0].remote = {
+      officeId: 'test-office',
+      sessionId: 'test-session',
+      label: 'Test Mac',
+      tags: [],
+      receivedAt: Date.now(),
+      stale: false,
+      conversation: true,
+      send: true,
+    };
   if (opts.codex) snapshot.sessions[0].provider = 'codex';
   if (opts.events) snapshot.sessions[0].events = opts.events;
   snapshot.preferences.privacy = !!opts.privacy;
@@ -56,7 +112,7 @@ async function card(
   ];
   await page.setViewportSize({ width: 480, height: 760 });
   await page.addInitScript(
-    ({ s, canSend, terminal, handshakeOnly, artifactCount }) => {
+    ({ s, canSend, terminal, handshakeOnly, artifactCount, titleSupport }) => {
       const w = window as any;
       w.fixture = s;
       w.sent = [];
@@ -65,7 +121,25 @@ async function card(
       w.jumps = [];
       w.windowState = { pinned: false, positionRemembered: false };
       w.resumes = [];
+      w.titleChanges = [];
       w.office = {
+        ...(titleSupport
+          ? {
+              sessionTitle: async (id: string, request?: any) => {
+                if (request) w.titleChanges.push({ id, ...request });
+                return {
+                  available: titleSupport !== 'denied',
+                  title: s.sessions[0].title,
+                  reason: titleSupport === 'denied' ? 'permission' : undefined,
+                  status: request
+                    ? titleSupport === 'uncertain'
+                      ? 'uncertain'
+                      : 'renamed'
+                    : 'ready',
+                };
+              },
+            }
+          : {}),
         snapshot: async () => structuredClone(w.fixture),
         detail: async (id: string) =>
           structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
@@ -189,6 +263,7 @@ async function card(
       terminal: opts.terminal ?? true,
       handshakeOnly: opts.handshakeOnly ?? false,
       artifactCount: opts.artifactCount,
+      titleSupport: opts.titleSupport,
     },
   );
   await page.addInitScript((id) => ((window as any).cardId = id), id);
@@ -367,7 +442,7 @@ test('The card menu holds the rest, and works from the keyboard', async ({ page 
   const more = aside.getByRole('button', { name: '카드 메뉴' });
   await more.click();
   const menu = aside.getByRole('menu');
-  for (const name of ['사무실에 고정', '이름 바꾸기', '이 동료 꾸미기', '원본 위치 열기'])
+  for (const name of ['사무실에 고정', '사무실 별명', '이 동료 꾸미기', '원본 위치 열기'])
     await expect(menu.getByRole('menuitem', { name })).toBeVisible();
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('ArrowDown');

@@ -1,3 +1,8 @@
+import {
+  titleInfoSchema,
+  titleRequestSchema,
+  type SessionTitleInfo,
+} from '../../src/shared/session-title.js';
 import { launchInfoSchema, launchSpecSchema } from '../../src/shared/remote-launch.js';
 import { EventEmitter } from 'node:events';
 import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -471,6 +476,73 @@ export class PeerManager extends EventEmitter {
     if (this.closed || generation !== this.generation)
       return Object.fromEntries(ids.map((id) => [id, null]));
     return result;
+  }
+  async sessionTitle(
+    id: string,
+    value: unknown,
+    authorized: () => Promise<void>,
+  ): Promise<SessionTitleInfo> {
+    const ref = parseRemoteId(id);
+    const peer = this.config.peers.find((p) => p.officeId === ref.officeId);
+    const generation = this.generation;
+    const request = value === undefined ? undefined : titleRequestSchema.parse(value);
+    const validate = async () => {
+      await authorized();
+      const held = this.held.get(ref.officeId);
+      if (
+        this.closed ||
+        !this.enabled ||
+        generation !== this.generation ||
+        !peer?.sendToken ||
+        held?.state !== 'connected' ||
+        held.snapshot?.paused ||
+        !held.snapshot?.sessions.some((s) => s.id === ref.id)
+      )
+        throw Error('title-unavailable');
+    };
+    const responseSchema = z
+      .object({
+        officeId: z.uuid(),
+        epoch: z.uuid(),
+        requestId: z.uuid().optional(),
+        info: titleInfoSchema,
+      })
+      .strict();
+    const controller = new AbortController();
+    let dispatched = false;
+    this.details.add(controller);
+    try {
+      await validate();
+      const send = async (route: string, body: unknown) => {
+        const response = responseSchema.parse(
+          await this.request(
+            { ...peer!, token: peer!.sendToken! },
+            '/office/v1/commands/' + route,
+            controller.signal,
+            { body, timeoutMs: 25000 },
+          ),
+        );
+        if (response.officeId !== ref.officeId) throw Error('title-identity');
+        return response;
+      };
+      const status = await send('title-status', { id: ref.id });
+      await validate();
+      if (!request || !status.info.available) return status.info;
+      dispatched = true;
+      const result = await send('title', { id: ref.id, epoch: status.epoch, request });
+      if (result.requestId !== request.requestId) throw Error('title-identity');
+      await validate();
+      return result.info;
+    } catch (error) {
+      return {
+        available: false,
+        title: '',
+        reason: error instanceof PeerError && error.code === 403 ? 'permission' : 'connection',
+        status: dispatched ? 'uncertain' : 'ready',
+      };
+    } finally {
+      this.details.delete(controller);
+    }
   }
   async launchSession(
     id: string,

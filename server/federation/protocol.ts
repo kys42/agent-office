@@ -106,6 +106,7 @@ export const exportConfigSchema = z
     conversation: z.boolean(),
     allowSend: z.boolean().default(false),
     allowLaunch: z.boolean().default(false),
+    allowRename: z.boolean().default(false),
     sendToken: z.string().min(32).max(256).optional(),
     profileDir: z.string().min(1).optional(),
   })
@@ -119,7 +120,7 @@ export const exportConfigSchema = z
     'Sending requires the owning desktop profile directory',
   )
   .refine(
-    (c) => !c.allowLaunch || (c.allowSend && !!c.sendToken),
+    (c) => !(c.allowLaunch || c.allowRename) || (c.allowSend && !!c.sendToken),
     'Launching requires send authorization',
   );
 export type ExportConfig = z.infer<typeof exportConfigSchema>;
