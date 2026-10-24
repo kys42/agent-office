@@ -1,7 +1,6 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { codexConversationOpener } from './codex-open.js';
 import { wireId } from '../server/federation/protocol.js';
 import {
   desktopThreadState,
@@ -24,11 +23,7 @@ export class DesktopCodexRelay implements CodexRelay {
   readonly prepare?: CodexRelay['prepare'];
   constructor(
     private home: string,
-    openConversation = process.platform === 'darwin'
-      ? async (url: string) => {
-          await promisify(execFile)('/usr/bin/open', [url], { timeout: 5000 });
-        }
-      : undefined,
+    openConversation = codexConversationOpener(process.platform, undefined, home),
   ) {
     if (openConversation)
       this.prepare = async (host, thread, authorize) => {
