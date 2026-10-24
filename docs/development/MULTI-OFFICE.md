@@ -126,4 +126,4 @@ command smoke는 가짜 native sender를 주입한 합성 HTTPS 서버와 실제
 
 검수는 사용자 Mac에서 quiet 기본값을 유지한다. 실패 원인 조사 중에도 `AGENT_OFFICE_FOCUS_TESTS=1` 또는 `CI=1`로 전경 테스트를 켜지 않는다. 실제 OS 포커스 검사는 전용 CI나 별도 합의한 환경에서만 한다.
 
-Codex의 owner 없음 응답은 요청의 짧은 제한과 별개로 약 10초 뒤 도착할 수 있다. 수신 relay의 owner discovery만 11초를 기다리며 initialize/model settings의 제한은 2초로 유지한다. 명시적인 `no-client-found`만 연결 준비로 분류하고 timeout은 준비 불가로 처리한다. 여러 사무실의 대상 조회는 20개씩 최대 5개 배치를 병렬 실행해 느린 owner discovery가 뒤의 사무실을 직렬로 막지 않는다. 설정 변경·종료 시 대기 중 배치를 시작하지 않고 이전 결과도 폐기한다.
+Codex의 owner 없음 응답은 요청의 짧은 제한과 별개로 약 10초 뒤 도착할 수 있다. 수신 relay는 정확한 hostId와 conversationId를 담은 version 2 follower settings 조회로 원격 owner를 찾는다. 일부 Codex 클라이언트는 owner-discovery를 local에만 등록하므로 이 요청을 원격 전송의 선행 조건으로 삼지 않는다. 첫 설정 조회는 11초를 기다리고, 반환된 handledByClientId를 지정해 같은 연결에서 설정을 다시 검증한다. 두 응답 모두 resumed/default/user여야 하며 initialize와 지정된 owner의 설정 재검증은 2초로 제한한다. 명시적인 `no-client-found`만 연결 준비로 분류하고 timeout은 준비 불가로 처리한다. 여러 사무실의 대상 조회는 20개씩 최대 5개 배치를 병렬 실행해 느린 owner discovery가 뒤의 사무실을 직렬로 막지 않는다. 설정 변경·종료 시 대기 중 배치를 시작하지 않고 이전 결과도 폐기한다.

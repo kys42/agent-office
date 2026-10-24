@@ -23,6 +23,7 @@ type Frame = Record<string, any>;
 async function fixture(
   options: {
     absent?: boolean;
+    discoveryAbsent?: boolean;
     absentDelay?: number;
     mode?: string;
     threadSource?: string;
@@ -66,10 +67,19 @@ async function fixture(
           socket.write(h);
           continue;
         }
+        if (options.absent && req.method === 'thread-follower-read-model-settings') {
+          send({
+            type: 'response',
+            requestId: req.requestId,
+            resultType: 'error',
+            error: 'no-client-found',
+          });
+          continue;
+        }
         let result: Frame = {};
         if (req.method === 'initialize') result = { clientId: 'office-client' };
         else if (req.method === 'thread-owner-discovery') {
-          if (options.absent) {
+          if (options.absent || options.discoveryAbsent) {
             const missing = () =>
               send({
                 type: 'response',
@@ -107,10 +117,7 @@ async function fixture(
           requestId: req.requestId,
           method: req.method,
           resultType: 'success',
-          handledByClientId:
-            options.wrongOwner && req.method !== 'thread-owner-discovery'
-              ? 'different-owner'
-              : OWNER,
+          handledByClientId: options.wrongOwner && !!req.targetClientId ? 'different-owner' : OWNER,
           result,
         });
       }
@@ -315,17 +322,18 @@ test('CLI routing still uses the native queue and never connects to Desktop', as
   }
 });
 
-test('Remote Desktop follows the explicit host with versioned envelopes; local is unchanged', async () => {
-  const f = await fixture();
+test('Remote settings discover a serving client even when owner discovery is local-only', async () => {
+  const f = await fixture({ discoveryAbsent: true });
   const host = 'remote-control:env_test';
   try {
     assert.equal(await desktopOwnsThread(f.home, THREAD, 1000, host), true);
     await sendToCodexDesktop(f.home, THREAD, 'remote literal', 1000, () => {}, host);
     const discovery = f.calls.find((c) => c.method === 'thread-owner-discovery');
-    assert.ok(discovery);
-    assert.equal(discovery.version, 1);
-    assert.equal(discovery.params.hostId, host);
-    assert.equal(discovery.hostId, undefined);
+    assert.equal(discovery, undefined);
+    const reads = f.calls.filter((c) => c.method === 'thread-follower-read-model-settings');
+    assert.equal(reads[0].targetClientId, undefined);
+    assert.equal(reads[1].targetClientId, OWNER);
+    assert.ok(reads.every((r) => r.params.conversationId === THREAD && r.hostId === host));
     const read = f.calls.find((c) => c.method === 'thread-follower-read-model-settings');
     assert.ok(read);
     assert.equal(read.version, 2);
@@ -384,5 +392,27 @@ test('Owner discovery can wait for the explicit missing response without relaxin
     assert.equal(await desktopThreadState(f.home, THREAD, 50, undefined, 500), 'missing');
   } finally {
     await f.close();
+  }
+});
+
+test('Remote settings preserve missing versus unsupported and pinned-owner failures', async () => {
+  for (const [options, expected] of [
+    [{ absent: true }, 'missing'],
+    [{ mode: 'plan' }, 'unavailable'],
+    [{ threadSource: 'subagent' }, 'unavailable'],
+    [{ resumeState: 'needs_resume' }, 'unavailable'],
+    [{ wrongOwner: true }, 'unavailable'],
+    [{ discoveryAbsent: true }, 'ready'],
+  ] as const) {
+    const f = await fixture(options);
+    try {
+      assert.equal(
+        await desktopThreadState(f.home, THREAD, 500, 'remote-control:env_test'),
+        expected,
+      );
+      assert.equal(f.calls.filter((c) => c.method === 'thread-follower-start-turn').length, 0);
+    } finally {
+      await f.close();
+    }
   }
 });
