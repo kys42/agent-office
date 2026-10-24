@@ -12,6 +12,7 @@ import {
   ChevronUp,
   SlidersHorizontal,
   EyeOff,
+  List,
 } from 'lucide-react';
 import type { OfficeZone, Provider, ReplySender, Session, Snapshot } from '../shared/types';
 import { zoneVeilIds, type OfficeModel } from '../shared/office-model';
@@ -19,6 +20,8 @@ import { PROVIDERS } from '../shared/types';
 import { helperName, projectKey, sessionName } from '../shared/office';
 import { ago } from '../lib/format';
 import { Office } from './Office';
+import { OfficeList } from './OfficeList';
+import { officeListPrefs, type OfficeView, type OfficeListOrder } from '../shared/office-list';
 import { Roster } from './Roster';
 import { officeSchedule } from '../shared/lifecycle';
 import { sessionScopeLabel } from '../shared/residents';
@@ -106,6 +109,12 @@ export function OfficeWorkspace({
   const [sort, setSort] = useState<'recent' | 'frequent'>(
     () => saved(key, { sort: 'recent' }).sort as 'recent' | 'frequent',
   );
+  const [officeView, setOfficeView] = useState<OfficeView>(
+    () => officeListPrefs(saved(key, {})).view,
+  );
+  const [listOrder, setListOrder] = useState<OfficeListOrder>(
+    () => officeListPrefs(saved(key, {})).order,
+  );
   const { preferences: prefs } = snapshot;
   const { residents: sessions, hidden, zones } = model;
   const [historyLimit, setHistoryLimit] = useState(20);
@@ -162,8 +171,20 @@ export function OfficeWorkspace({
         b.updatedAt - a.updatedAt,
     );
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify({ zone, sort }));
-  }, [key, zone, sort]);
+    try {
+      localStorage.setItem(key, JSON.stringify({ zone, sort, view: officeView, order: listOrder }));
+    } catch {
+      // Viewing the office works even when this viewer cannot remember preferences.
+    }
+  }, [key, zone, sort, officeView, listOrder]);
+  const listView = zone === 'office' && officeView === 'list';
+  const scope =
+    project && zone === 'office'
+      ? {
+          label: prefs.privacy ? t.app.sidebar.hiddenProject : project.name,
+          onClear: () => setProject(null),
+        }
+      : undefined;
   const bring = (id: string) => {
     onReturn(id);
     setZone('office');
@@ -219,11 +240,127 @@ export function OfficeWorkspace({
       </div>
     </div>
   );
+  const workspaceFooter = (
+    <>
+      {model.veiled.length + model.veiledHelpers.length > 0 && (
+        <details className="background-records veiled-records">
+          <summary>
+            <EyeOff size={13} />
+            {t.office.veiled.summary} <b>{model.veiled.length + model.veiledHelpers.length}</b>
+            <ChevronUp size={13} className="chev" />
+          </summary>
+          <div className="background-pop">
+            <p>{t.office.veiled.body}</p>
+            <div>
+              {model.veiled.map(({ session: s }) => (
+                <button key={s.id} onClick={() => onVeil(s.resident?.sessionIds ?? [s.id], false)}>
+                  <span className={`face face-${s.provider}`}>
+                    <Sprite session={s} provider={s.provider} mood="idle" size={22} />
+                  </span>
+                  <span>{prefs.privacy ? t.office.records.hidden : sessionName(s)}</span>
+                  <small className="veil-row-hint">{t.office.veiled.again}</small>
+                </button>
+              ))}
+              {model.veiledHelpers.map(({ session: s }) => (
+                <button key={s.id} onClick={() => onVeil([s.id], false)}>
+                  <span className={`face face-${s.provider}`}>
+                    <Sprite session={s} provider={s.provider} mood="idle" size={22} />
+                  </span>
+                  <span>{prefs.privacy ? t.office.records.hidden : helperName(s)}</span>
+                  <small className="veil-row-hint">
+                    {t.office.veiled.helperAgain(
+                      prefs.privacy ? null : sessionName(model.ownerOf(s.attachedTo ?? '') ?? s),
+                    )}
+                  </small>
+                </button>
+              ))}
+            </div>
+            <button className="button subtle" onClick={() => onVeil(model.hiddenSessionIds, false)}>
+              {t.office.veiled.all}
+            </button>
+          </div>
+        </details>
+      )}
+      {hidden.length > 0 && (
+        <details className="background-records">
+          <summary>
+            <Layers size={13} />
+            {t.office.records.summary} <b>{hidden.length}</b>
+            <ChevronUp size={13} className="chev" />
+          </summary>
+          <div className="background-pop">
+            <p>{t.office.records.body}</p>
+            <div>
+              {[...hidden]
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .slice(0, historyLimit)
+                .map((s) => (
+                  <button key={s.id} onClick={() => onSelect(s.id)}>
+                    <span className={`face face-${s.provider}`}>
+                      <Sprite session={s} provider={s.provider} mood="idle" size={22} />
+                    </span>
+                    <span>{prefs.privacy ? t.office.records.hidden : sessionName(s)}</span>
+                    <small>
+                      {sessionScopeLabel(s)} · {ago(s.updatedAt)}
+                    </small>
+                  </button>
+                ))}
+            </div>
+            {hidden.length > historyLimit && (
+              <button className="button subtle" onClick={() => setHistoryLimit((n) => n + 20)}>
+                {t.office.records.more}
+              </button>
+            )}
+          </div>
+        </details>
+      )}
+    </>
+  );
   return (
-    <div className="office-layout">
+    <div className={`office-layout ${listView ? 'is-list' : ''}`}>
       <div className="office-column">
         {toolbarSlot ? createPortal(stageToolbar, toolbarSlot) : stageToolbar}
-        {zone === 'office' ? (
+        {zone === 'office' && (
+          <div className="office-view-bar">
+            <span>{t.office.list.count(listView ? rows.length : office.length)}</span>
+            <div
+              className="zone-tabs office-view-switch"
+              role="group"
+              aria-label={t.office.list.viewLabel}
+            >
+              {(['graphic', 'list'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  aria-pressed={officeView === mode}
+                  className={officeView === mode ? 'active' : ''}
+                  onClick={() => setOfficeView(mode)}
+                >
+                  {mode === 'graphic' ? <Building2 size={14} /> : <List size={14} />}
+                  {t.office.list.views[mode]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {listView ? (
+          <>
+            <OfficeList
+              sessions={rows}
+              model={model}
+              privacy={prefs.privacy}
+              selected={selected}
+              onSelect={onSelect}
+              query={query}
+              onQuery={setQuery}
+              filter={filter}
+              onFilter={setFilter}
+              order={listOrder}
+              onOrder={setListOrder}
+              scope={scope}
+            />
+            <div className="office-list-footer">{workspaceFooter}</div>
+          </>
+        ) : zone === 'office' ? (
           <Office
             sessions={model.scene}
             notices={snapshot.notices ?? []}
@@ -251,96 +388,7 @@ export function OfficeWorkspace({
             onReorder={onReorder}
             onReply={onReply}
             notify={notify}
-            footer={
-              <>
-                {model.veiled.length + model.veiledHelpers.length > 0 && (
-                  <details className="background-records veiled-records">
-                    <summary>
-                      <EyeOff size={13} />
-                      {t.office.veiled.summary}{' '}
-                      <b>{model.veiled.length + model.veiledHelpers.length}</b>
-                      <ChevronUp size={13} className="chev" />
-                    </summary>
-                    <div className="background-pop">
-                      <p>{t.office.veiled.body}</p>
-                      <div>
-                        {model.veiled.map(({ session: s }) => (
-                          <button
-                            key={s.id}
-                            onClick={() => onVeil(s.resident?.sessionIds ?? [s.id], false)}
-                          >
-                            <span className={`face face-${s.provider}`}>
-                              <Sprite session={s} provider={s.provider} mood="idle" size={22} />
-                            </span>
-                            <span>{prefs.privacy ? t.office.records.hidden : sessionName(s)}</span>
-                            <small className="veil-row-hint">{t.office.veiled.again}</small>
-                          </button>
-                        ))}
-                        {model.veiledHelpers.map(({ session: s }) => (
-                          <button key={s.id} onClick={() => onVeil([s.id], false)}>
-                            <span className={`face face-${s.provider}`}>
-                              <Sprite session={s} provider={s.provider} mood="idle" size={22} />
-                            </span>
-                            <span>{prefs.privacy ? t.office.records.hidden : helperName(s)}</span>
-                            <small className="veil-row-hint">
-                              {t.office.veiled.helperAgain(
-                                prefs.privacy
-                                  ? null
-                                  : sessionName(model.ownerOf(s.attachedTo ?? '') ?? s),
-                              )}
-                            </small>
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        className="button subtle"
-                        onClick={() => onVeil(model.hiddenSessionIds, false)}
-                      >
-                        {t.office.veiled.all}
-                      </button>
-                    </div>
-                  </details>
-                )}
-                {hidden.length > 0 && (
-                  <details className="background-records">
-                    <summary>
-                      <Layers size={13} />
-                      {t.office.records.summary} <b>{hidden.length}</b>
-                      <ChevronUp size={13} className="chev" />
-                    </summary>
-                    <div className="background-pop">
-                      <p>{t.office.records.body}</p>
-                      <div>
-                        {[...hidden]
-                          .sort((a, b) => b.updatedAt - a.updatedAt)
-                          .slice(0, historyLimit)
-                          .map((s) => (
-                            <button key={s.id} onClick={() => onSelect(s.id)}>
-                              <span className={`face face-${s.provider}`}>
-                                <Sprite session={s} provider={s.provider} mood="idle" size={22} />
-                              </span>
-                              <span>
-                                {prefs.privacy ? t.office.records.hidden : sessionName(s)}
-                              </span>
-                              <small>
-                                {sessionScopeLabel(s)} · {ago(s.updatedAt)}
-                              </small>
-                            </button>
-                          ))}
-                      </div>
-                      {hidden.length > historyLimit && (
-                        <button
-                          className="button subtle"
-                          onClick={() => setHistoryLimit((n) => n + 20)}
-                        >
-                          {t.office.records.more}
-                        </button>
-                      )}
-                    </div>
-                  </details>
-                )}
-              </>
-            }
+            footer={workspaceFooter}
           />
         ) : (
           <section className={`session-room room-${zone}`}>
@@ -399,35 +447,30 @@ export function OfficeWorkspace({
           </section>
         )}
       </div>
-      <Roster
-        zone={zone}
-        sessions={rows}
-        totalSessions={office}
-        zoneCount={zones[zone].length}
-        notices={snapshot.notices ?? []}
-        unread={unread}
-        onInbox={onInbox}
-        onReceipt={onReceipt}
-        hovered={deskHover ?? listHover}
-        onHover={setListHover}
-        selected={selected}
-        onSelect={onSelect}
-        privacy={prefs.privacy}
-        filter={filter}
-        onFilter={setFilter}
-        query={query}
-        onQuery={setQuery}
-        scope={
-          project && zone === 'office'
-            ? {
-                label: prefs.privacy ? t.app.sidebar.hiddenProject : project.name,
-                onClear: () => setProject(null),
-              }
-            : undefined
-        }
-        sort={sort}
-        onSort={setSort}
-      />
+      {!listView && (
+        <Roster
+          zone={zone}
+          sessions={rows}
+          totalSessions={office}
+          zoneCount={zones[zone].length}
+          notices={snapshot.notices ?? []}
+          unread={unread}
+          onInbox={onInbox}
+          onReceipt={onReceipt}
+          hovered={deskHover ?? listHover}
+          onHover={setListHover}
+          selected={selected}
+          onSelect={onSelect}
+          privacy={prefs.privacy}
+          filter={filter}
+          onFilter={setFilter}
+          query={query}
+          onQuery={setQuery}
+          scope={scope}
+          sort={sort}
+          onSort={setSort}
+        />
+      )}
     </div>
   );
 }

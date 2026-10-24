@@ -2,6 +2,19 @@ import type { Messages } from '../en';
 
 export const office: Messages['office'] = {
   region: '픽셀 사무실',
+  list: {
+    label: '사무실 리스트',
+    viewLabel: '사무실 보기 방식',
+    views: { graphic: '그래픽', list: '리스트' },
+    orderLabel: '사무실 리스트 정렬',
+    byProject: '프로젝트별 묶기',
+    teammate: '동료',
+    project: '프로젝트 / 브랜치',
+    status: '상태',
+    activity: '최근 활동',
+    pinned: '고정한 동료',
+    count: (n) => `동료 ${n}명`,
+  },
   phase: { dawn: '이른 아침', day: '낮', dusk: '해질녘', night: '밤' },
   station: (name, status) => `${name}, ${status}`,
   dragToZone: (posture) => `${posture} · 끌어서 순서를 바꾸거나 다른 구역으로`,
