@@ -321,7 +321,8 @@ const ownText = (state: ComposerState, typed: string | undefined) =>
   typed !== undefined &&
   holdsText(state) &&
   state.whole &&
-  sameWrapped(state.text, typed, state.width);
+  // Composer text reported apart (Orca's `draft`, no width) is the text itself: compared as is.
+  (state.width === undefined ? state.text === typed : sameWrapped(state.text, typed, state.width));
 
 /**
  * The remembered reply, while this fresh look at the composer shows exactly it. Anything else

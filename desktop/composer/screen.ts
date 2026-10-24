@@ -148,7 +148,9 @@ export function sameWrapped(shown: string, text: string, width?: number): boolea
       at += row.length;
       if (at < source.length) {
         // A wrap inside this line: only where the next word could not have fit on the row.
-        if (width === undefined || width < MIN_WRAP) return false;
+        // Emoji sequences draw as one cluster whose width a count cannot prove: no wrap there.
+        if (width === undefined || width < MIN_WRAP || /\p{Extended_Pictographic}/u.test(row))
+          return false;
         if (/[ \t]/.test(source[at])) {
           // At a space: the next word would not have fit after the row.
           const word = /^\S*/.exec(source.slice(at).replace(/^[ \t]+/, ''))![0];

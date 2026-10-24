@@ -796,3 +796,8 @@ test('sameWrapped: combining marks take no cell', () => {
   const p = 'á̧'.repeat(20); // 20 cells
   assert.ok(!sameWrapped(p + '\nxx', p + ' xx', 38));
 });
+
+test('sameWrapped: no wrap is proven across an emoji sequence', () => {
+  const f = '👨‍👩‍👧'.repeat(3);
+  assert.ok(!sameWrapped(f + '\nnext', f + ' next', 20));
+});

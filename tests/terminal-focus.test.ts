@@ -52,7 +52,7 @@ function fake(options: Options = {}) {
       calls.push({ file, args, options: runOptions });
       if (options.fail?.(file, args)) throw new Error('failed');
       if (file === '/bin/tmux' && args.includes('list-clients')) return options.clients ?? '';
-      if (file === '/bin/tmux' && args.includes('display-message')) return 'office-claude-abc\n';
+      if (file === '/bin/tmux' && args.includes('display-message')) return '$3\n';
       if (file === '/bin/ps' && args.includes('-wwE'))
         return `/opt/homebrew/bin/tmux ${options.clientEnv ?? ''}\n`;
       if (file === '/bin/ps' && args.includes('-ww')) return '/opt/homebrew/bin/tmux\n';
@@ -79,36 +79,30 @@ test('No attached client: macOS opens Terminal attached to the session, command 
     ['select-window', '-t', '%7'],
     ['select-pane', '-t', '%7'],
     ['list-clients', '-t', '%7', '-F', '#{client_tty}\t#{client_pid}\t#{client_activity}'],
-    ['display-message', '-p', '-t', '%7', '#{session_name}'],
+    ['display-message', '-p', '-t', '%7', '#{session_id}'],
   ]);
   const osa = calls.filter((c) => c.file === '/usr/bin/osascript');
   assert.equal(osa.length, 1);
   assert.deepEqual(osa[0].args, [
     '-e',
     'on run argv\ntell application "Terminal"\nactivate\ndo script (item 1 of argv)\nend tell\nend run',
-    `'/bin/tmux' -S '${SOCKET}' attach-session -t '=office-claude-abc'`,
+    `'/bin/tmux' -S '${SOCKET}' attach-session -t '$3'`,
   ]);
   assert.ok(!calls.some((c) => c.args.includes('switch-client') || c.args.includes('send-keys')));
 });
 
-test('A session name with quotes stays one shell word', async () => {
+test('The session is attached by id: a name with spaces, quotes or a trailing `;` never reaches tmux', async () => {
   const { deps, calls } = fake();
-  const run = deps.run;
-  deps.run = async (file, args, o) =>
-    args.includes('display-message') ? "it's\n" : run(file, args, o);
   await focusHost(host, deps);
   const osa = calls.find((c) => c.file === '/usr/bin/osascript');
-  assert.equal(osa?.args[2], `'/bin/tmux' -S '${SOCKET}' attach-session -t '=it'\\''s'`);
-});
-
-test('A session name ending in `;` is escaped for tmux, which would take it as a separator', async () => {
-  const { deps, calls } = fake();
-  const run = deps.run;
-  deps.run = async (file, args, o) =>
-    args.includes('display-message') ? 'work;\n' : run(file, args, o);
-  await focusHost(host, deps);
-  const osa = calls.find((c) => c.file === '/usr/bin/osascript');
-  assert.equal(osa?.args[2], `'/bin/tmux' -S '${SOCKET}' attach-session -t '=work\\;'`);
+  assert.equal(osa?.args[2], `'/bin/tmux' -S '${SOCKET}' attach-session -t '$3'`);
+  // Anything but an id (an older tmux, a failed read) opens nothing.
+  const odd = fake();
+  const run = odd.deps.run;
+  odd.deps.run = async (file, args, o) =>
+    args.includes('display-message') ? 'work \n' : run(file, args, o);
+  await assert.rejects(focusHost(host, odd.deps));
+  assert.ok(!odd.calls.some((c) => c.file === '/usr/bin/osascript'));
 });
 
 test('Terminal failing to open is reported, not claimed as success', async () => {
@@ -126,7 +120,7 @@ test('No attached client off macOS: an honest refusal with the attach command, n
     (e) =>
       e instanceof TerminalFocusError &&
       e.message.includes('연결된 터미널이 없어요') &&
-      e.message.includes(`attach-session -t '=office-claude-abc'`),
+      e.message.includes(`attach-session -t '$3'`),
   );
   assert.ok(!calls.some((c) => c.file === '/usr/bin/osascript' || c.file === '/usr/bin/open'));
 });

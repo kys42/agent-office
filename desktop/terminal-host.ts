@@ -301,9 +301,10 @@ async function focusTmux(
     ),
   );
   if (!client) {
-    const session = (await at('display-message', '-p', '-t', host.pane, '#{session_name}')).trim();
-    if (!session) throw new Error('tmux pane has no session');
-    const command = `${shellQuote(tmux)} -S ${shellQuote(host.socket)} attach-session -t ${shellQuote(tmuxArg('=' + session))}`;
+    // By id (`$3`): a name may hold spaces or a trailing `;` that a target would lose.
+    const session = (await at('display-message', '-p', '-t', host.pane, '#{session_id}')).trim();
+    if (!/^\$\d+$/.test(session)) throw new Error('tmux pane has no session');
+    const command = `${shellQuote(tmux)} -S ${shellQuote(host.socket)} attach-session -t ${shellQuote(session)}`;
     if (!darwin) throw new TerminalFocusError(t.tmuxAttachHint(host.label, command));
     try {
       await openInTerminalApp(deps.run, command);
