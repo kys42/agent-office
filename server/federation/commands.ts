@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { OfficeStore } from '../store.js';
 import { idSchema, wireId, type ExportConfig } from './protocol.js';
 import { nativePeerSender, type PeerSender } from './sender.js';
+import { TargetProbes } from './target-probes.js';
 
 const inputSchema = z
   .object({
@@ -45,12 +46,15 @@ export class PeerCommands {
   private active = new Set<string>();
   private operations = new Set<Promise<void>>();
   private closing = false;
+  private probes: TargetProbes;
   constructor(
     private dir: string,
     private store: OfficeStore,
     private config: () => ExportConfig,
     private sender = nativePeerSender,
-  ) {}
+  ) {
+    this.probes = new TargetProbes(sender);
+  }
   private authorize(req: IncomingMessage) {
     const c = this.config();
     if (
@@ -123,7 +127,7 @@ export class PeerCommands {
           await Promise.all(
             sessions.map(async (s, index) => {
               const id = ids[index];
-              const t = await this.sender.target(s);
+              const t = await this.probes.target(s);
               return [
                 id,
                 t
@@ -198,6 +202,7 @@ export class PeerCommands {
   }
   async close() {
     this.closing = true;
+    this.probes.close();
     await Promise.allSettled(this.operations);
     this.db?.close();
   }
