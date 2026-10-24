@@ -276,6 +276,9 @@ Windows 앱의 고정 pipe에 붙이지 않는다. 미설치·다른 사용자·
 Windows에서는 동시 대상 조회가 검증된 연결 하나를 공유하고 마지막 사용 후 3초에
 닫는다. owner를 대상으로 고정하고 전송 직전 재발견하는 규칙, 설정 상속, 단일 dispatch와
 불확실 응답 시 재전송 금지는 동일하다. 앱·인증·승인 설정은 바꾸지 않는다.
+원격 host/thread 대응이 이미 확인된 대화가 아직 열려 있지 않으면, 명시적 보내기 때
+등록된 `codex:` 핸들러로 정확한 기존 대화를 열고 owner를 기다린다. Windows helper는
+숨김 실행하고 URI에는 hostId와 thread ID만 넣는다. 대상 조회만으로는 대화를 열지 않는다.
 `tests/codex-windows-pipe.test.ts`의 임시 pipe로 바이너리 프레임·거절 시 무입력·프로필
 분리를 검수한다. 실제 Windows 대화는 owner/settings만 조회하며 테스트 글을 보내지 않는다.
 
