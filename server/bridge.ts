@@ -76,7 +76,7 @@ export class ServiceBridge extends EventEmitter {
           this.pending.delete(id);
           reject(new Error(m().server.rpc.timeout));
         },
-        method === 'remote-send' ? 120000 : 45000,
+        method === 'remote-send' || method === 'remote-targets' ? 120000 : 45000,
       );
       this.pending.set(id, { resolve, reject, timer, authorize });
       this.worker.postMessage({ id, method, args, guarded: !!authorize });

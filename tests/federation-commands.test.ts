@@ -612,3 +612,65 @@ for (const scenario of [
     }
   });
 }
+
+test('slow owner discovery runs batches and offices concurrently without opening conversations', async () => {
+  const fixtures = [await setup(true, 'unknown', 21), await setup(true, 'unknown', 21)];
+  let entered = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let allStarted!: () => void;
+  const started = new Promise<void>((resolve) => (allStarted = resolve));
+  const relay = {
+    hosts: () => [{ id: 'ssh:fixture', label: 'fixture' }],
+    resolve: (_host: string, id: string) => (fixtures.some((f) => f.ids.includes(id)) ? id : null),
+    available: async () => false,
+    inspect: async () => {
+      if (++entered === 42) allStarted();
+      await gate;
+      return 'missing' as const;
+    },
+    prepare: async () => {
+      assert.fail('lookup must not open Codex');
+    },
+    send: async () => {
+      assert.fail('lookup must not send');
+    },
+  };
+  const manager = new PeerManager(path.join(fixtures[0].root, 'receiver'), undefined, relay);
+  let pending: ReturnType<PeerManager['targets']> | undefined;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  try {
+    manager.command({ action: 'enable', enabled: true });
+    for (const f of fixtures)
+      manager.command({
+        action: 'add',
+        peer: {
+          ...f.peer,
+          token: f.config.token,
+          sendToken: f.config.sendToken,
+        },
+      });
+    while (manager.sessions().length < 42)
+      await new Promise<void>((resolve) => manager.once('change', () => resolve()));
+    pending = manager.targets(manager.sessions().map((s) => s.id));
+    await Promise.race([
+      started,
+      new Promise<never>((_, reject) => {
+        deadline = setTimeout(() => reject(Error('target batches blocked behind discovery')), 3000);
+      }),
+    ]);
+    release();
+    const targets = await pending;
+    assert.equal(Object.values(targets).filter((target) => target?.canPrepare).length, 42);
+    assert.equal(
+      Object.values(targets).some((target) => target?.canSend),
+      false,
+    );
+  } finally {
+    clearTimeout(deadline);
+    release();
+    await pending;
+    manager.close();
+    await Promise.all(fixtures.map((f) => f.close()));
+  }
+});
