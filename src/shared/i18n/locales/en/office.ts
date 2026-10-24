@@ -1,5 +1,18 @@
 export const office = {
   region: 'Pixel office',
+  list: {
+    label: 'Office list',
+    viewLabel: 'Office view',
+    views: { graphic: 'Graphic', list: 'List' },
+    orderLabel: 'Office list order',
+    byProject: 'Group by project',
+    teammate: 'Teammate',
+    project: 'Project / branch',
+    status: 'Status',
+    activity: 'Last active',
+    pinned: 'Pinned',
+    count: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
+  },
   phase: { dawn: 'Early morning', day: 'Daytime', dusk: 'Dusk', night: 'Night' },
   station: (name: string, status: string) => `${name}, ${status}`,
   dragToZone: (posture: string) => `${posture} · Drag to reorder or to another zone`,

@@ -219,6 +219,12 @@ export async function focusHost(host: TerminalHost, deps: TerminalHostDeps): Pro
 export const shellQuote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
 
 /**
+ * An argument as tmux must get it: a trailing `;` ends a tmux command even in its own argv word
+ * (and inside shell quotes), so it is escaped; tmux reads `\;` back as the literal `;`.
+ */
+export const tmuxArg = (s: string) => s.replace(/;$/, '\\;');
+
+/**
  * Opens a new Terminal.app window running `command`. The command travels as an AppleScript
  * argument, never spliced into the script source. macOS only.
  */
@@ -295,9 +301,10 @@ async function focusTmux(
     ),
   );
   if (!client) {
-    const session = (await at('display-message', '-p', '-t', host.pane, '#{session_name}')).trim();
-    if (!session) throw new Error('tmux pane has no session');
-    const command = `${shellQuote(tmux)} -S ${shellQuote(host.socket)} attach-session -t ${shellQuote('=' + session)}`;
+    // By id (`$3`): a name may hold spaces or a trailing `;` that a target would lose.
+    const session = (await at('display-message', '-p', '-t', host.pane, '#{session_id}')).trim();
+    if (!/^\$\d+$/.test(session)) throw new Error('tmux pane has no session');
+    const command = `${shellQuote(tmux)} -S ${shellQuote(host.socket)} attach-session -t ${shellQuote(session)}`;
     if (!darwin) throw new TerminalFocusError(t.tmuxAttachHint(host.label, command));
     try {
       await openInTerminalApp(deps.run, command);
@@ -374,6 +381,7 @@ const TTY_SCRIPTS: Record<string, string> = {
     'repeat with w in windows',
     'repeat with t in tabs of w',
     'if tty of t is (item 1 of argv) then',
+    'set miniaturized of w to false',
     'set selected of t to true',
     'set index of w to 1',
     'activate',

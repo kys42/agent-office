@@ -1,0 +1,328 @@
+/* The large office's alternate presentation: quiet native controls, no scene coordinates. */
+.office-layout.is-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+.office-view-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+}
+.office-view-bar > span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.office-view-switch {
+  margin-left: auto;
+}
+.office-list {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  container-type: inline-size;
+  font-family: var(--font-read);
+  font-size: calc(12px * var(--read-scale));
+}
+.office-list-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+.office-list-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 180px;
+  min-width: 0;
+  color: var(--text-3);
+  padding: 0 9px;
+  min-height: 30px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--r-sm);
+  background: var(--field);
+}
+.office-list-search input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  border: 0;
+  outline: none;
+}
+.office-list-search:focus-within {
+  outline: 2px solid var(--accent-line);
+}
+.office-list-tools select {
+  max-width: 100%;
+  min-height: 30px;
+  padding: 0 24px 0 9px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--r-sm);
+  background-color: var(--control);
+  color: var(--text);
+  font: inherit;
+}
+.office-list-scope {
+  flex: none;
+  margin: 8px 12px 0;
+}
+.office-list-scroll {
+  overflow: auto;
+  min-height: 0;
+  flex: 1;
+  scrollbar-gutter: stable;
+}
+.office-list-columns,
+.office-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr) minmax(85px, 0.65fr) 78px;
+  gap: 16px;
+  align-items: center;
+  padding: 0 18px;
+}
+.office-list-columns {
+  height: 34px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  color: var(--text-3);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+.office-list-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.office-list-group h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 18px;
+  background: var(--grouped);
+  color: var(--text-2);
+  font-size: 12px;
+}
+.office-list-group h3 > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.office-list-group h3 small {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.office-list-row {
+  width: 100%;
+  text-align: left;
+  min-height: 76px;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  color: var(--text);
+}
+.office-list-row:hover {
+  background: var(--bg-3);
+}
+.office-list-row.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.office-list-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.office-list-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.office-list-provider {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  font-weight: 600;
+}
+.office-list-provider.provider-claude {
+  color: var(--p-claude);
+  background: var(--face-claude-hi);
+}
+.office-list-provider.provider-codex {
+  color: var(--p-codex);
+  background: var(--face-codex-hi);
+}
+.office-list-provider.provider-openclaw {
+  color: var(--p-openclaw);
+  background: var(--face-openclaw-hi);
+}
+.office-list-copy,
+.office-list-project {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+.office-list-copy strong,
+.office-list-project small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.office-list-copy strong > span,
+.office-list-copy > small,
+.office-list-project > span,
+.office-list-project small > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.office-list-copy strong {
+  font-weight: 600;
+}
+.office-list-copy svg,
+.office-list-project svg {
+  flex: none;
+  color: var(--text-3);
+}
+.office-list-copy small,
+.office-list-project small,
+.office-list-row time {
+  color: var(--text-3);
+  font-size: calc(11px * var(--read-scale));
+}
+.office-list-copy em {
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-style: normal;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.office-list-status {
+  color: var(--text-2);
+  font-size: calc(11px * var(--read-scale));
+}
+.office-list-status > i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--st-idle);
+}
+.office-list-status.status-work > i {
+  background: var(--st-work);
+}
+.office-list-status.status-think > i {
+  background: var(--st-think);
+}
+.office-list-status.status-call > i {
+  background: var(--st-call);
+}
+.office-list-status.status-error > i {
+  background: var(--st-error);
+}
+.office-list-status.status-done > i,
+.office-list-status.status-ready > i {
+  background: var(--st-done);
+}
+.office-list-status > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-3);
+}
+.office-list-row time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.office-list-empty {
+  min-height: 240px;
+}
+.office-list-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+}
+.office-list-footer .background-records {
+  position: static;
+}
+.office-list-footer summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+}
+.office-list-footer .background-pop {
+  max-width: 100%;
+  z-index: 2;
+}
+@container (max-width: 700px) {
+  .office-list-columns,
+  .office-list-row {
+    grid-template-columns: minmax(0, 1fr) minmax(95px, 0.6fr) 80px;
+    gap: 10px;
+    padding-inline: 12px;
+  }
+  .office-list-columns > :last-child,
+  .office-list-row > time {
+    display: none;
+  }
+}
+@container (max-width: 460px) {
+  .office-list-columns {
+    display: none;
+  }
+  .office-list-row {
+    grid-template-columns: minmax(0, 1fr) 80px;
+  }
+  .office-list-identity {
+    grid-column: 1;
+  }
+  .office-list-project {
+    grid-column: 1;
+    padding-left: 40px;
+    margin-top: -4px;
+  }
+  .office-list-project small {
+    display: none;
+  }
+  .office-list-status {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+}
+@media (max-width: 960px) {
+  .office-layout.is-list {
+    flex: 1;
+    min-height: 0;
+  }
+  .office-layout.is-list .office-column {
+    flex: 1;
+    min-height: 450px;
+  }
+  .office-layout.is-list .office-list {
+    min-height: 380px;
+  }
+}

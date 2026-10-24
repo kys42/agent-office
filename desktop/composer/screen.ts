@@ -104,9 +104,18 @@ export const drawn = (value: string) =>
 const invisible = (value: string) =>
   value.normalize('NFC').replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '');
 
-/** Cells a stretch of text takes (wide characters count two, as `widest` in claude-code.ts). */
+/**
+ * East Asian wide and fullwidth characters, and emoji: two cells in a terminal. Everything else
+ * (accented Latin, Greek, Cyrillic, …) takes one. Used to prove a row was full, so it must not
+ * overcount.
+ */
+const WIDE =
+  /[\u1100-\u115f\u2e80-\u303e\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]|[\u{1f300}-\u{1f64f}\u{1f900}-\u{1f9ff}\u{20000}-\u{3fffd}]/u;
+/** Cells a stretch of text takes in the terminal. */
+const ZERO = /^[\p{M}\u200b-\u200f\u2060\ufe00-\ufe0f]$/u;
+/** Cells a stretch of text takes in the terminal: combining marks and joiners take none. */
 const cells = (text: string) =>
-  [...text].reduce((sum, char) => sum + (char.charCodeAt(0) < 0x7f ? 1 : 2), 0);
+  [...text].reduce((sum, char) => sum + (ZERO.test(char) ? 0 : WIDE.test(char) ? 2 : 1), 0);
 
 /** No box this narrow: a text whose rows are all shorter than this was never wrapped. */
 const MIN_WRAP = 20;
@@ -116,15 +125,15 @@ const MIN_WRAP = 20;
  * of the text takes one or more rows: a blank line exactly one blank row, any other line rows
  * that are stretches of it, spaces inside them included, separated only by the spaces a wrap took
  * (or nothing: a word split by the wrap); its indentation is not drawn. A row ends inside a line
- * only where the box must have wrapped it: the widest row shown stands for the box's width, and
- * the row plus the next word would not have fit there. A break typed into a short row is an edit.
- * Unlike `drawn`, a space, a line break or a blank row taken out or added is a different text.
+ * only where the box must have wrapped it: the row plus the next word would not have fit in
+ * `width` (the box's, in cells, overestimated by the caller). A break typed into a short row is an
+ * edit; with the width unknown every break inside a line is. Unlike `drawn`, a space, a line
+ * break or a blank row taken out or added is a different text.
  */
-export function sameWrapped(shown: string, text: string): boolean {
+export function sameWrapped(shown: string, text: string, width?: number): boolean {
   const rows = invisible(shown)
     .split('\n')
     .map((row) => row.trim());
-  const width = Math.max(0, ...rows.map(cells));
   let next = 0;
   for (const line of invisible(text).split('\n')) {
     const source = line.trim();
@@ -139,9 +148,21 @@ export function sameWrapped(shown: string, text: string): boolean {
       at += row.length;
       if (at < source.length) {
         // A wrap inside this line: only where the next word could not have fit on the row.
-        const rest = source.slice(at).replace(/^[ \t]+/, '');
-        const word = /^\S*/.exec(rest)![0] || rest.slice(0, 1);
-        if (width < MIN_WRAP || cells(row) + 1 + cells(word) <= width) return false;
+        // Emoji sequences draw as one cluster whose width a count cannot prove: no wrap there.
+        if (width === undefined || width < MIN_WRAP || /\p{Extended_Pictographic}/u.test(row))
+          return false;
+        if (/[ \t]/.test(source[at])) {
+          // At a space: the next word would not have fit after the row.
+          const word = /^\S*/.exec(source.slice(at).replace(/^[ \t]+/, ''))![0];
+          if (/\p{Extended_Pictographic}/u.test(word) || cells(row) + 1 + cells(word) <= width)
+            return false;
+        } else if (
+          /\p{Extended_Pictographic}/u.test(source[at]) ||
+          cells(row) + cells(source[at]) <= width
+        ) {
+          // Inside a word: only a row filled to the last cell that could hold it.
+          return false;
+        }
       }
       while (at < source.length && /[ \t]/.test(source[at])) at++;
     }
