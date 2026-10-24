@@ -154,8 +154,11 @@ export async function verifiedWindowsPipe(
 export function windowsCodexPipe(home: string) {
   // The Windows app uses one fixed pipe, independent of CODEX_HOME. Never attach a temporary
   // test/preview home to the user's real Desktop router.
-  const current = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
-  if (path.resolve(home).toLowerCase() !== path.resolve(current).toLowerCase())
+  const current = path.resolve(os.homedir(), '.codex').toLowerCase();
+  if (
+    path.resolve(home).toLowerCase() !== current ||
+    (process.env.CODEX_HOME && path.resolve(process.env.CODEX_HOME).toLowerCase() !== current)
+  )
     throw Error('unsupported-desktop-home');
   return verifiedWindowsPipe('codex-ipc', trustedCodexPipeOwner);
 }

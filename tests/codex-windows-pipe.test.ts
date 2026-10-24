@@ -50,6 +50,22 @@ test('An isolated Codex home cannot reach the real Windows app pipe', () => {
   );
 });
 
+test('An inherited isolated CODEX_HOME cannot opt into the real app pipe', () => {
+  const previous = process.env.CODEX_HOME;
+  const isolated = path.join(os.tmpdir(), randomUUID());
+  process.env.CODEX_HOME = isolated;
+  try {
+    assert.throws(() => windowsCodexPipe(isolated), /unsupported-desktop-home/);
+    assert.throws(
+      () => windowsCodexPipe(path.join(os.homedir(), '.codex')),
+      /unsupported-desktop-home/,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previous;
+  }
+});
+
 async function pipeFixture() {
   const name = `agent-office-test-${randomUUID()}`;
   const sockets = new Set<net.Socket>();
