@@ -12,6 +12,7 @@ export interface BringBack {
   /** The existing "bring back to the office" (unarchive + return time). */
   onReturn: (id: string) => unknown;
 }
+import { ZoneShellButton } from './MiniShell';
 /** A custom zone may hold several actual project folders: never guess which one to launch in. */
 export function ProjectSummon({
   sessions,
@@ -45,29 +46,36 @@ export function ProjectSummon({
   const projects = [
     ...new Map(sessions.filter((s) => !s.remote && s.cwd).map((s) => [s.cwd, s])).values(),
   ];
-  if (!api.tmuxSummon || demo || privacy || !projects.length) return null;
-  const away = bringBack && api.tmuxResume ? awayColleagues(bringBack.zones, sessions) : null;
+  const away =
+    bringBack && api.tmuxResume && api.tmuxSummon && !demo && !privacy
+      ? awayColleagues(bringBack.zones, sessions)
+      : null;
   return (
-    <TmuxResume
-      id={projects[0].id}
-      projects={projects}
-      privacy={privacy}
-      notify={notify}
-      summon
-      existing={
-        away
-          ? (close) => (
-              <SummonExisting
-                colleagues={away.list}
-                total={away.total}
-                privacy={privacy}
-                notify={notify}
-                onReturn={bringBack!.onReturn}
-                close={close}
-              />
-            )
-          : undefined
-      }
-    />
+    <>
+      {api.tmuxSummon && !demo && !privacy && projects.length > 0 && (
+        <TmuxResume
+          id={projects[0].id}
+          projects={projects}
+          privacy={privacy}
+          notify={notify}
+          summon
+          existing={
+            away
+              ? (close) => (
+                  <SummonExisting
+                    colleagues={away.list}
+                    total={away.total}
+                    privacy={privacy}
+                    notify={notify}
+                    onReturn={bringBack!.onReturn}
+                    close={close}
+                  />
+                )
+              : undefined
+          }
+        />
+      )}
+      <ZoneShellButton sessions={sessions} privacy={privacy} demo={demo} />
+    </>
   );
 }

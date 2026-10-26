@@ -1,3 +1,4 @@
+import { MiniShellDock } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
@@ -1272,6 +1273,7 @@ export default function App() {
           <p className="shortcut-note">{t.app.help.note}</p>
         </Modal>
       )}
+      <MiniShellDock privacy={prefs?.privacy ?? false} demo={demo} />
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />

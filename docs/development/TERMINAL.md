@@ -321,3 +321,47 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 명시적으로 연결한 원격 사무실의 Codex 대화는 로컬 Codex 앱의 원격 owner로 보낼 수 있다. 동일성/권한/중복 방지는 [MULTI-OFFICE](MULTI-OFFICE.md)의 계약을 따른다. `thread-owner-discovery` v1의 params.hostId는 선택한 `remote-control:*` 또는 `ssh:*`다. follower read-model-settings는 v2, start-turn은 v3와 최상위 hostId를 사용하며 발견한 client ID에만 보낸다. 로컬 요청은 기존 v1/v2 및 host envelope 없음으로 유지한다. 설정 상속과 단일 dispatch를 유지하고 owner 부재·지원하지 않는 대화·불명확한 응답은 재전송하지 않는다.
 
 검증: `node --import tsx scripts/codex-remote-smoke.ts`는 독립 프로필, 실제 HTTPS exporter, 합성 Codex IPC owner로 설정 UI → 원격 카드 → 전송과 권한 회수를 검사한다. 사용자 대화나 설치된 앱의 데이터를 사용하지 않는다.
+
+## 미니 터미널 (tmux로 유지, 2026-10-26)
+
+업무 카드·프로젝트 구역에서 그 폴더의 작은 셸을 창 아래 서랍으로 연다. 정책은 [기능 정책서](../golden/FEATURE-POLICY.md#미니-터미널-tmux로-유지). 데스크톱 macOS/Linux 전용(preload가 `office.shell`을 그때만 노출), 웹·모바일·데모·원격 동료·Windows에는 없다.
+
+### 구조
+
+| 층 | 파일 | 하는 일 |
+| --- | --- | --- |
+| 공통 규칙(순수) | `src/shared/mini-shell.ts` | IPC 명령 파싱(`parseShellCommand`), 입력 검증, 크기 범위, 구역의 로컬 폴더 고르기 |
+| main | `desktop/mini-shell.ts` (`MiniShells`) | 전용 tmux 서버의 셸 만들기·목록·종료, `node-pty`로 `tmux attach` 클라이언트 붙이기, 창별 소유 |
+| main IPC | `desktop/main.ts` `setupMiniShell` | `office:shell`(invoke) · `office:shell-input`(send) · `office:shell-data`/`office:shell-exit`(→창) |
+| 화면 | `src/components/MiniShell.tsx` · `MiniShellPanel.tsx` · `src/lib/miniShell.ts` | 버튼, 창마다 한 개의 서랍, xterm.js 그리기(지연 로드 청크) |
+
+- **tmux**: `tmux -L agent-office-shell -f /dev/null new-session -d -x <cols> -y <rows> -s shell-<sha256("shell:"+폴더) 앞 16자> -c <폴더> <로그인 셸> -l` 뒤에 같은 명령 큐로 `@agent_office_shell_cwd`(base64 폴더)·`@agent_office_shell`(전체 토큰)·`status off`·`mouse on`을 건다. 셸은 tmux가 exec하며(셸 문자열 아님) 로그인 셸은 `/etc/shells`에 있는 것만 쓴다. 목록은 이름·토큰·폴더가 서로 맞는 세션만 인정한다. tmux 재개의 `agent-office` 서버와 사용자의 기본 서버는 건드리지 않는다. 테스트는 `AGENT_OFFICE_SHELL_SERVER`로 버릴 서버를 쓴다(`agent-office`는 거부).
+- **PTY**: `node-pty`로 `tmux -u -L agent-office-shell attach-session -t =<이름>`을 띄운다. 창(webContents id)마다 `ptyId`(UUID)를 주고, 쓰기·크기 변경·분리는 그 창의 `ptyId`일 때만 따른다. 출력은 8ms씩 모아 한 메시지로 보낸다. 창이 닫히거나 다시 로드되면(`destroyed`/`did-start-loading`) 그 창의 클라이언트만 끝낸다. 앱 종료도 클라이언트만 끝낸다 — 셸은 tmux에 남는다.
+- **환경**: 자식은 `TMUX`·`TMUX_PANE`·`CLAUDECODE`를 지우고 `TERM=xterm-256color`, 로캘이 없으면(Finder 실행) `LANG=en_US.UTF-8`.
+- **입력 제한**: 한 번에 64KB 이하 문자열. 더 큰 붙여넣기는 창이 32KB씩 나눠 보낸다. 크기는 10–400열, 3–150행으로 자른다. 그 외 모양의 명령은 `badRequest`.
+- **출력 흐름 제어**: 창은 xterm에 넘겼지만 아직 그리지 않은 양을 센다(`OutputFlow`). 256KB를 넘으면 `flow` 명령으로 main이 그 창의 PTY 읽기를 멈추고(`pause`), 32KB 아래로 내려오면 다시 읽는다. 다른 창의 PTY는 건드리지 못한다.
+- **종료 확인은 그 셸에만**: 확인 창을 띄우기 전 tmux `#{session_id}`·`#{session_created}`를 적어 두고, 동의 뒤 다시 읽어 같을 때만 `kill-session -t <$id>`로 끝낸다. 그 사이 다른 창이 끝내고 같은 폴더로 다시 띄운 셸은 끝내지 않는다.
+- **Ctrl 키**: Windows/Linux의 업무 카드 창도 큰 창처럼 앱 메뉴(Edit)를 떼어(`dropAppMenu`) Ctrl+C·Ctrl+A가 메뉴 대신 셸로 간다. macOS는 그대로.
+- **화면 숨기기**: 켜지면 서랍을 닫아(분리) 내용이 남지 않게 하고 버튼을 막는다.
+- 서랍 안의 keydown은 위로 올리지 않는다: Esc·글자 단축키가 카드·사무실이 아니라 셸로 간다. 스크롤은 tmux `mouse on`(휠 → copy-mode), 선택은 Option+드래그.
+
+### node-pty와 패키징
+
+- `node-pty@1.1.0`(정확히 고정, `optionalDependencies`): N-API 프리빌드(`prebuilds/darwin-{arm64,x64}`)라 Electron 버전마다 다시 빌드하지 않는다. 빌드 도구가 없는 곳(리눅스 CI 등)에서 컴파일이 실패해도 설치는 계속되고, main은 처음 쓸 때 `import('node-pty')`하므로 앱은 뜨고 미니 터미널만 '터미널을 붙이지 못했어요'가 된다.
+- 1.1.0은 macOS `spawn-helper`를 실행 권한 없이 배포해 모든 spawn이 `posix_spawnp failed`로 실패한다. `postinstall`(`scripts/node-pty-helper.mjs`)과 패키징에서 0755로 고친다.
+- esbuild 번들에서 `node-pty`는 external. `scripts/package.mjs`가 `lib/`(테스트·맵 제외)·해당 아키텍처 프리빌드·LICENSE만 `node_modules/node-pty`로 넣고, `asar.unpack: **/node_modules/node-pty/prebuilds/**`로 `pty.node`와 `spawn-helper`를 `app.asar.unpacked`에 둔다(node-pty가 경로의 `app.asar`를 `app.asar.unpacked`로 바꿔 찾는다). codesign이 둘 다 서명한다. Windows 패키지(`package-win.mjs`)에는 넣지 않는다.
+
+### 검증
+
+- `tests/mini-shell.test.ts`: 이름·토큰, 서버 이름 가드, 로그인 셸, 환경, 생성 인자, 소유 표시 필터, 창별 입력 격리, 분리 vs 종료, IPC 명령 파서.
+- `npm run test:shell`: 실제 tmux + node-pty(버릴 서버)로 열기 → 입력 → 분리 → 새 관리자로 다시 붙어 화면 확인 → 종료.
+- `npm run build && npm run test:shell:desktop`: 임시 프로필·데이터·버릴 tmux 서버로 앱을 조용히 띄워 카드 → 미니 터미널 → 입력 → 닫기 → 다시 열기 → 앱 종료·재실행 → 같은 셸, 위조 `ptyId` 입력 무시. `AGENT_OFFICE_EXECUTABLE=<패키지 앱>`이면 패키지의 네이티브 모듈을 확인한다.
+- `tests/ui/mini-shell.spec.ts`: desktop API를 흉내 내 카드 버튼·서랍·키 입력·분리·다른 셸로 바꾸기·종료 취소·끝난 셸·화면 숨기기·웹에서 숨김.
+
+### 일부러 뺀 것 (후속)
+
+- 서랍 높이 드래그 조절과 기억, 여러 셸 탭 동시 표시, 창 간 서랍 상태 공유.
+- 업무 카드 밖(명령 검색·사이드바)에서 '열려 있는 터미널' 관리 화면, 주인 없는 셸(폴더의 세션이 사라진 것) 정리 안내.
+- 앱 테마를 따르는 터미널 색, 글꼴 크기 설정, 링크 클릭(web-links addon), 검색.
+- 셸 출력의 알림/사무실 연출 연결, 원격 오피스의 미니 터미널, Windows(ConPTY) 지원.
+

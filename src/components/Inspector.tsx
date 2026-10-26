@@ -1,3 +1,4 @@
+import { CardShellButton } from './MiniShell';
 import { TmuxResume } from './TmuxResume';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
@@ -1091,6 +1092,7 @@ export function Inspector({
             {api.tmuxResume && !demo && !s.remote && ['claude', 'codex'].includes(s.provider) && (
               <TmuxResume key={s.id} id={s.id} privacy={privacy} notify={notify} />
             )}
+            <CardShellButton session={s} privacy={privacy} demo={demo} />
             {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}
             {calling && !openRequest(s) && (
               <span className="card-calling-note">{t.inspector.card.callingNote}</span>

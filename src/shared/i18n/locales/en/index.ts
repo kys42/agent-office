@@ -1,4 +1,5 @@
 import { tmux } from './tmux';
+import { shell } from './shell';
 import { mobile } from './mobile';
 import { guide } from './guide';
 import { federation } from './federation';
@@ -30,6 +31,7 @@ import { summonExisting } from './summonExisting';
 /** English is the source catalog: every other language must match its shape. */
 export const en = {
   tmux,
+  shell,
   mobile,
   federation,
   common,

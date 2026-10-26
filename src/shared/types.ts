@@ -807,6 +807,24 @@ export interface OfficeAPI {
    * switches to its existing Orca tab, re-verified afresh in main.
    */
   orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
+  /** Desktop (macOS/Linux) only: the mini terminal, kept alive by tmux (see mini-shell.ts). */
+  shell?: {
+    command: <C extends import('./mini-shell').ShellCommand>(
+      command: C,
+    ) => Promise<
+      C['type'] extends 'open' | 'attach'
+        ? import('./mini-shell').ShellAttachment
+        : C['type'] extends 'list'
+          ? import('./mini-shell').ShellInfo[]
+          : C['type'] extends 'kill'
+            ? boolean
+            : void
+    >;
+    /** Keystrokes for this window's own attachment. */
+    input: (ptyId: string, data: string) => void;
+    onData: (cb: (ptyId: string, data: string) => void) => () => void;
+    onExit: (cb: (ptyId: string) => void) => () => void;
+  };
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
