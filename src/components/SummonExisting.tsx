@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Check,
   ChevronDown,
+  Copy,
   Info,
   LoaderCircle,
   Terminal,
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { ago } from '../lib/format';
-import { jumpOrCopy } from '../lib/resume';
+import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
 import { residentLabel } from '../shared/office-model';
 import type { AwayColleague } from '../shared/summon-existing';
@@ -79,13 +80,15 @@ export function SummonExisting({
     setBusy(false);
     const id = c.session.id;
     void run(async (ticket) => {
-      const [tmux, launch] = await Promise.all([
+      // Independent checks: a missing tmux must not hide a working Orca, nor the other way round.
+      const [tmux, launch] = await Promise.allSettled([
         api.tmuxResume!(id, 'status'),
-        api.orcaLaunch ? api.orcaLaunch(id, 'status').catch(() => null) : null,
+        api.orcaLaunch ? api.orcaLaunch(id, 'status') : Promise.resolve(null),
       ]);
       if (ticket !== request.current) return;
-      setInfo(tmux);
-      setOrca(launch);
+      setInfo(tmux.status === 'fulfilled' ? tmux.value : null);
+      setOrca(launch.status === 'fulfilled' ? launch.value : null);
+      if (tmux.status === 'rejected') throw tmux.reason;
     });
   };
   const tmux = (action: 'start' | 'open') =>
@@ -111,8 +114,8 @@ export function SummonExisting({
   const jump = (id: string) =>
     chosen &&
     run(async () => {
-      await jumpOrCopy(id, notify);
-      await bringBack(chosen.session.id);
+      // A vanished terminal only copies the resume command: nothing opened, nobody comes back.
+      if ((await jumpOrCopy(id, notify)) !== 'copy') await bringBack(chosen.session.id);
     });
   const label = (c: AwayColleague) => residentLabel(c.session, privacy).name;
   const live = info?.connections?.filter((c) => c.id) ?? [];
@@ -184,7 +187,7 @@ export function SummonExisting({
               <span>{error}</span>
             </p>
           )}
-          {info && (
+          {(info || orca?.available) && (
             <div className="summon-existing-actions">
               {live.map((c) => (
                 <button
@@ -197,18 +200,31 @@ export function SummonExisting({
                   {t.tmux.existingOpen} · {c.label}
                 </button>
               ))}
-              {info.running ? (
-                info.canOpen && (
-                  <button
-                    className="button primary"
-                    disabled={busy}
-                    onClick={() => void tmux('open')}
-                  >
-                    <ArrowUpRight size={13} aria-hidden="true" />
-                    {t.tmux.open}
-                  </button>
-                )
-              ) : (
+              {info?.running && info.canOpen && (
+                <button
+                  className="button primary"
+                  disabled={busy}
+                  onClick={() => void tmux('open')}
+                >
+                  <ArrowUpRight size={13} aria-hidden="true" />
+                  {t.tmux.open}
+                </button>
+              )}
+              {/* Where Terminal cannot be opened for it (Linux), the attach command is the way in. */}
+              {info?.running && (
+                <button
+                  className="button"
+                  disabled={busy}
+                  title={info.command}
+                  onClick={() =>
+                    void copyText(info.command, notify).catch((e) => setError(e.message))
+                  }
+                >
+                  <Copy size={13} aria-hidden="true" />
+                  {t.tmux.copy}
+                </button>
+              )}
+              {info && !info.running && (
                 <button
                   className="button primary"
                   disabled={busy}
@@ -218,7 +234,7 @@ export function SummonExisting({
                   {text.tmuxStart}
                 </button>
               )}
-              {orca?.available && !info.running && (
+              {orca?.available && !info?.running && (
                 <button className="button" disabled={busy} onClick={() => void launchOrca()}>
                   <ArrowUpRight size={13} aria-hidden="true" />
                   {text.orcaStart}
