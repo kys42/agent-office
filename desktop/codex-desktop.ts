@@ -251,6 +251,17 @@ export async function desktopOwnsThread(
   return (await desktopThreadState(home, threadId, timeout, hostId)) === 'ready';
 }
 
+/**
+ * The turn's input: images as the app-server's own local image items (`{ type: 'localImage',
+ * path }`, read by Codex itself), then the text. A message of images alone has no text item.
+ */
+export function codexTurnInput(text: string, images: readonly string[] = []) {
+  return [
+    ...images.map((path) => ({ type: 'localImage', path })),
+    ...(text ? [{ type: 'text', text, text_elements: [] }] : []),
+  ];
+}
+
 /** Re-discover on the same connection used to send. Never retry an uncertain delivery. */
 export async function sendToCodexDesktop(
   home: string,
@@ -259,8 +270,9 @@ export async function sendToCodexDesktop(
   timeout = 15000,
   beforeSend: () => void | Promise<void> = () => {},
   hostId?: string,
+  images: readonly string[] = [],
 ) {
-  const text = cleanInput(input);
+  const text = cleanInput(input, { allowEmpty: images.length > 0 });
   let ipc: DesktopIPC | undefined;
   let dispatched = false;
   try {
@@ -275,7 +287,7 @@ export async function sendToCodexDesktop(
         turnStart: {
           request: {
             threadId,
-            input: [{ type: 'text', text, text_elements: [] }],
+            input: codexTurnInput(text, images),
             clientUserMessageId: randomUUID(),
           },
           context: { inheritThreadSettings: true },

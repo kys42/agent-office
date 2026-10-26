@@ -1112,7 +1112,7 @@ export function Inspector({
               enabled={terminalSend}
               privacy={privacy}
               onJump={!s.remote && api.jump ? () => void resume() : undefined}
-              onSend={async (text, replaceDraft, allowPartialDraft) => {
+              onSend={async (text, replaceDraft, allowPartialDraft, images) => {
                 const id = s.id;
                 const startedAt = Date.now();
                 const result = await sendFollowUp(
@@ -1121,10 +1121,12 @@ export function Inspector({
                   replaceDraft,
                   notify,
                   allowPartialDraft,
+                  images,
                 );
                 if (result.status === 'sent') {
                   markSent(id);
-                  remember(id, text, startedAt);
+                  // Only what the record will show as a request waits for it there.
+                  if (!result.unrecorded) remember(id, text, startedAt, images?.length ?? 0);
                 }
                 return result;
               }}

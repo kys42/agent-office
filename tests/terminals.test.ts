@@ -415,6 +415,7 @@ test('Locating combines process and host; the renderer view never carries a hand
       canSend: true,
       canFocus: true,
       focus: { kind: 'orca', label: '✳ ao-send-test' },
+      images: 'attach',
     });
     assert.ok(!JSON.stringify(view).includes(HANDLE));
   });

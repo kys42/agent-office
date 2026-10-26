@@ -550,6 +550,102 @@
   margin: -4px 0 12px;
   line-height: 1.5;
 }
+/* Images attached in a composer (card and bubble): thumbnails with a remove button each. */
+.composer-images {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.composer-image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.composer-image {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 0.5px var(--line-3);
+  color: var(--text-3);
+}
+.composer-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer-image-hidden {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.composer-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+}
+.composer-image-remove:hover,
+.composer-image-remove:focus-visible {
+  background: rgba(0, 0, 0, 0.85);
+}
+.composer-images-note,
+.composer-images-error {
+  font-size: calc(10.5px * var(--read-scale));
+  line-height: 1.4;
+  color: var(--text-4);
+}
+.composer-images-error {
+  color: var(--st-call);
+}
+.composer-attach {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+.composer-attach:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-3);
+}
+.composer-attach:disabled {
+  opacity: 0.45;
+}
+.terminal-send-bar .composer-attach {
+  margin-left: auto;
+}
+.terminal-send-bar .composer-attach + .button {
+  margin-left: 0;
+}
+/* A sent message's images, while it waits for the record. */
+.message-pending-images {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+/* Dragging files over a composer. */
+.composer-drop {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 2px;
+}
 /* The agent's composer already holds text: shown before anything is typed (card and bubble). */
 .draft-confirm {
   display: grid;

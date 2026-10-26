@@ -98,6 +98,86 @@ export function promptHolds(screen: string | Screen, text: string, strict = fals
   return !strict && (PASTED.test(typed) || (shown.length >= 40 && drawn(text).endsWith(shown)));
 }
 
+/** `[Image #N]` as drawn (spaces taken out). */
+const IMAGE_DRAWN = /^\[Image#([1-9]\d{0,9})\]/;
+/** A collapsed paste as drawn: `[Pasted text #N +k lines]`. */
+const PASTED_DRAWN = /^\[Pastedtext#\d+[^\]]*\]$/;
+
+/**
+ * What the prompt shows after `paths` were pasted, one image per path, in order: each one as
+ * Claude Code's own `[Image #N]` (it reads a pasted path to an image file and attaches it), or
+ * the path itself when it did not (a read it refused, an older version): then the agent gets the
+ * path as text. Ids are Claude's own counter: any, but never the same twice. Returns the rest of
+ * the prompt as drawn, or null when it does not start with exactly that. Measured in the
+ * bundle of 2.1.310: a paste is split at spaces before `/` and at line breaks; when every part
+ * is a path ending in .png/.jpg/.jpeg/.gif/.webp, each readable image becomes `[Image #N]`
+ * (consecutive ones joined by a space), and nothing else is inserted.
+ */
+export function afterImages(typed: string, paths: readonly string[]): string | null {
+  return readImages(typed, paths)?.rest ?? null;
+}
+
+/** `afterImages`, and the path the last image stayed as when Claude did not attach it. */
+export function readImages(
+  typed: string,
+  paths: readonly string[],
+): { rest: string; lastPath: string | null } | null {
+  let rest = drawn(typed);
+  let lastPath: string | null = null;
+  const seen = new Set<string>();
+  for (const file of paths) {
+    const image = IMAGE_DRAWN.exec(rest);
+    if (image) {
+      if (seen.has(image[1])) return null;
+      seen.add(image[1]);
+      rest = rest.slice(image[0].length);
+      lastPath = null;
+      continue;
+    }
+    const shown = drawn(file);
+    if (!shown || !rest.startsWith(shown)) return null;
+    rest = rest.slice(shown.length);
+    lastPath = file;
+  }
+  return { rest, lastPath };
+}
+
+/**
+ * A path left as text runs straight into whatever is pasted after it: the text then goes in
+ * after a space (see terminals.ts), and the prompt must show that break — the file's name
+ * followed by a space or a row break, as drawn. A name split over rows is not proven: no match.
+ */
+export function separatedAfter(typed: string, file: string): boolean {
+  const name = file.slice(file.lastIndexOf('/') + 1);
+  const at = typed.lastIndexOf(name);
+  return at >= 0 && /\s/.test(typed[at + name.length] ?? '');
+}
+
+/**
+ * The prompt holds the pasted images (see `afterImages`) and then exactly `text` — or, unless
+ * `strict`, the placeholder of a long paste in its place. An image-only send holds nothing more.
+ * Any other text, an image too many or too few, is no match. The end of a long text with the
+ * images scrolled out of view counts as for `promptHolds`, since the images alone were verified
+ * first.
+ */
+export function promptHoldsImages(
+  screen: string | Screen,
+  text: string,
+  paths: readonly string[],
+  strict = false,
+): boolean {
+  const typed = readPrompt(screen);
+  if (typed === null) return false;
+  const read = readImages(typed, paths);
+  const want = drawn(text);
+  if (read !== null && (!want || !read.lastPath || separatedAfter(typed, read.lastPath))) {
+    if (read.rest === want) return true;
+    if (!strict && want && PASTED_DRAWN.test(read.rest)) return true;
+  }
+  const shown = drawn(typed);
+  return !strict && !!want && shown.length >= 40 && want.endsWith(shown);
+}
+
 /**
  * The most rows Claude Code's box shows before it scrolls, keeping only the end in view:
  * max(3, ⌊(pane height − 10) / 2⌋) — measured on 2.1.296 at heights 12–70 (3 rows up to height
@@ -341,6 +421,8 @@ export const claudeCodeComposer: ComposerAdapter = {
     canInspect: !!host,
     canDetectSuggestion: !!host?.styled,
     canClear: !!host,
+    // A pasted image path becomes Claude Code's own `[Image #N]` (see afterImages).
+    images: 'attach',
   }),
   inspect,
   async clear(host, from, backup, proceed, options): Promise<ClearResult> {

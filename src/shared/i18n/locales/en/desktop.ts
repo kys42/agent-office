@@ -126,5 +126,17 @@ export const desktop = {
       `Sent to ${target} · it's working, so it's queued for the current turn`,
     codexNoReply: "Couldn't confirm Codex's response. Check the Codex screen before sending again.",
     codexQueued: 'Passed to the Codex session',
+    /** Images were pasted as paths, but the prompt did not show them as attached images. */
+    imagesNotShown:
+      "Pasted the images into the prompt, but couldn't confirm they were attached, so nothing was submitted. Check the terminal.",
+    /** This destination takes no images (a remote office, OpenClaw). */
+    imagesUnsupported: "Images can't be sent to this conversation from here.",
+  },
+  /** Images attached in the composer, saved in the app's own folder. */
+  attachments: {
+    notImage: 'Only PNG, JPEG, GIF or WebP images can be attached.',
+    tooLarge: (bytes: number) => `Images must be ${Math.round(bytes / 1024 / 1024)} MB or smaller.`,
+    tooMany: (max: number) => `Attach up to ${max} images at a time.`,
+    missing: 'An attached image is no longer available. Remove it and attach it again.',
   },
 };

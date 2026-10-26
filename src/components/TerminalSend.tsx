@@ -3,8 +3,11 @@ import type { SendResult, TerminalTarget } from '../shared/types';
 import { m } from '../shared/i18n';
 import { useI18n } from '../lib/i18n';
 import { platformKeys } from '../lib/platform';
-import { useComposerSend } from '../lib/useComposerSend';
+import { useComposerSend, type ComposerSender } from '../lib/useComposerSend';
+import { api } from '../lib/api';
+import { imageBlock } from '../shared/attachments';
 import { DraftConfirm } from './DraftConfirm';
+import { ImageAttachButton, ImageStrip, useImageInput } from './ComposerImages';
 
 export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
 
@@ -53,7 +56,7 @@ export function TerminalSend({
   target: TerminalTarget | null;
   enabled: boolean;
   privacy: boolean;
-  onSend: (text: string, replaceDraft?: string, allowPartialDraft?: boolean) => Promise<SendResult>;
+  onSend: ComposerSender;
   /** Brings the session's terminal to the front (offered when its text can't be cleared). */
   onJump?: () => void;
   /** The card's chat box: Enter sends, Shift+Enter breaks the line, and it grows as you type. */
@@ -65,7 +68,11 @@ export function TerminalSend({
 }) {
   const { t } = useI18n();
   const reply = useComposerSend(onSend, (sent) => reply.clearText(sent), draftKey);
-  const { text, sending, error, draft } = reply;
+  const { text, sending, error, draft, attached } = reply;
+  // Images only where the destination takes them (desktop, this office, a target that says so).
+  const block = imageBlock(target, { desktop: !!api.attachImage, remote: !!remoteOffice });
+  const asPaths = target?.images === 'path';
+  const dropping = useImageInput(attached, block);
   const host = target?.desktop
     ? 'Codex Desktop'
     : target
@@ -95,7 +102,11 @@ export function TerminalSend({
   };
   return (
     <form
-      className={`terminal-send ${chat ? 'terminal-send-chat' : ''} ${remoteOffice ? 'terminal-send-remote' : ''}`}
+      className={`terminal-send ${chat ? 'terminal-send-chat' : ''} ${remoteOffice ? 'terminal-send-remote' : ''} ${dropping.over ? 'composer-drop' : ''}`}
+      onPaste={dropping.onPaste}
+      onDragOver={dropping.onDragOver}
+      onDragLeave={dropping.onDragLeave}
+      onDrop={dropping.onDrop}
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -123,6 +134,7 @@ export function TerminalSend({
           }
         }}
       />
+      <ImageStrip attached={attached} privacy={privacy} block={block} asPaths={asPaths} />
       <div className="terminal-send-bar">
         <small>
           <Terminal size={11} />
@@ -133,11 +145,15 @@ export function TerminalSend({
               : t.terminal.lookingAgain}
           {target && !target.queues && target.status === 'busy' ? ` · ${t.terminal.busy}` : ''}
         </small>
+        <ImageAttachButton attached={attached} block={block} asPaths={asPaths} disabled={sending} />
         <button
           className="button primary"
           type="submit"
           disabled={
-            sending || !text.trim() || (!!remoteOffice && !(target?.canSend || target?.canPrepare))
+            sending ||
+            !reply.ready ||
+            attached.uploading ||
+            (!!remoteOffice && !(target?.canSend || target?.canPrepare))
           }
         >
           {sending ? <Loader size={13} className="now-spin" /> : <CornerDownLeft size={13} />}

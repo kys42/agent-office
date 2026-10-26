@@ -63,4 +63,25 @@ export const terminal = {
   sendDraftTitle: 'Sends the text in the prompt instead. What you wrote stays in the box.',
   cancelClear: 'Cancel',
   clearedToClipboard: 'The cleared text is on your clipboard',
+  /** Images in the composer: paste (⌘V), drop, or the attach button. */
+  images: {
+    attach: 'Attach images',
+    attachHint: 'Attach images · you can also paste (⌘V) or drop them here',
+    remove: (n: number) => `Remove image ${n}`,
+    /** Privacy mode: the thumbnail itself is hidden. */
+    hidden: (n: number) => `Image ${n} (hidden)`,
+    uploading: 'Attaching…',
+    /** The Codex CLI queue takes text only: the images go as file paths. */
+    asPaths: 'Codex CLI gets the images as file paths',
+    dropHere: 'Drop images to attach',
+    /** Why images can't be attached here. */
+    blocked: {
+      desktop: 'Images can be sent from the desktop app only.',
+      remote: "Images can't be sent to a teammate in another office.",
+      target: "This conversation can't take images from here.",
+    },
+    notImage: 'Only PNG, JPEG, GIF or WebP images can be attached.',
+    tooLarge: (mb: number) => `Images must be ${mb} MB or smaller.`,
+    tooMany: (max: number) => `Attach up to ${max} images at a time.`,
+  },
 };

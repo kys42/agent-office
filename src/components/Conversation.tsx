@@ -188,7 +188,7 @@ export function Conversation({
    * What the person just sent that the record does not show yet (a busy Claude reads queued
    * input only when it gets to it): drawn as their own bubbles, marked as waiting.
    */
-  sent?: { id: string; text: string; at: number }[];
+  sent?: { id: string; text: string; at: number; images?: number }[];
   /** Hides a temporary local receipt only; never cancels a submitted message. */
   onDismissSent?: (id: string) => void;
 }) {
@@ -703,7 +703,10 @@ export function Conversation({
             </div>
             <div className="message-bubble">
               <div className="message-text">
-                <p>{p.text}</p>
+                {p.text && <p>{p.text}</p>}
+                {!!p.images && (
+                  <p className="message-pending-images">{t.conversation.pendingImages(p.images)}</p>
+                )}
               </div>
             </div>
           </article>
