@@ -802,8 +802,11 @@ export interface OfficeAPI {
     initialMessage?: string,
   ) => Promise<TmuxResumeInfo>;
   tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
-  /** Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab. */
-  orcaLaunch?: (id: string, action: 'status' | 'start') => Promise<OrcaLaunchInfo>;
+  /**
+   * Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab; `focus`
+   * switches to its existing Orca tab, re-verified afresh in main.
+   */
+  orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
@@ -921,8 +924,23 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
 };
 
 /** Whether a saved conversation can open in a new Orca tab, and what a start did. */
+/** Where a conversation already runs, or is open, as checked right before a launch. */
+export type LaunchPlace = 'orca' | 'tmux' | 'other';
+/**
+ * The duplicate-launch check shared by the tmux and Orca launchers. `running`: the agent
+ * process for this conversation is alive (never launched again). `open`: a tab or tmux session
+ * of the conversation exists but the agent is not verified running (launch only after a
+ * warning). `unknown`: it could not be verified that it is open nowhere else.
+ */
+export type DuplicateCheck =
+  | { state: 'none' }
+  | { state: 'unknown' }
+  | { state: 'open'; where: LaunchPlace }
+  | { state: 'running'; where: LaunchPlace };
 export interface OrcaLaunchInfo {
   available: boolean;
+  /** Set by `status`: whether this conversation already runs or is open somewhere. */
+  duplicate?: DuplicateCheck;
   /** The command typed into the new tab's shell (shown before confirming). */
   command?: string;
   /** Set after `start`: false when the person cancelled. */
@@ -930,6 +948,8 @@ export interface OrcaLaunchInfo {
   message?: string;
 }
 export interface TmuxResumeInfo {
+  /** Set by a resume `status`: whether this conversation already runs or is open somewhere. */
+  duplicate?: DuplicateCheck;
   connections?: { id?: string; name: string; label: string; command?: string }[];
   name: string;
   cwd: string;

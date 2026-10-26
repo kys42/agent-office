@@ -2,7 +2,8 @@ import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import { remember, runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
-import type { OrcaLaunchInfo, Session } from '../src/shared/types.js';
+import type { DuplicateCheck, OrcaLaunchInfo, Session } from '../src/shared/types.js';
+import { confirmLaunch } from './launch-guard.js';
 import { launchArgs } from './tmux-resume.js';
 import { localOrcaEnv } from './terminal-host.js';
 export { localOrcaEnv };
@@ -207,10 +208,18 @@ export class OrcaLaunch {
       return { available: false };
     }
   }
+  /**
+   * `duplicate`: the fresh duplicate-launch check (desktop/launch-guard.ts), run before the
+   * confirmation and again after it; a conversation already running is never launched.
+   */
   start(
     s: OrcaLaunchSession,
-    confirm: (info: { name: string; cwd: string; command: string }) => Promise<boolean>,
+    confirm: (
+      info: { name: string; cwd: string; command: string },
+      duplicate: DuplicateCheck,
+    ) => Promise<boolean>,
     authorized?: () => void,
+    duplicate?: (fresh: boolean) => Promise<DuplicateCheck>,
   ): Promise<OrcaLaunchInfo> {
     const task = this.queue.then(async () => {
       const t = m().tmux;
@@ -218,7 +227,7 @@ export class OrcaLaunch {
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
       if (!(await this.reachable(true)) || !(await this.workspace(s)))
         throw new Error(t.orcaUnavailable);
-      if (!(await confirm(info)))
+      if (!(await confirmLaunch(duplicate, (check) => confirm(info, check))))
         return { available: true, command: info.command, launched: false };
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
       if (!(await this.workspace(s))) throw new Error(t.orcaUnavailable);

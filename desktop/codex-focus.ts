@@ -218,3 +218,30 @@ export async function lookupCodexTerminal(
     ? { kind: 'found', terminal: current }
     : { kind: 'unknown' };
 }
+
+/**
+ * Whether the thread is on screen at all, for the duplicate-launch check: `found` when any
+ * screen, verified afresh, shows it, even when another screen also does or could not be read
+ * (that only stops `lookupCodexTerminal` from picking one to navigate to). `none` only when
+ * every interactive Codex screen was read and none shows it.
+ */
+export async function codexThreadOnScreen(
+  threadId: string,
+  options: { fresh?: boolean; deps?: TerminalDeps } = {},
+): Promise<TerminalLookup<CodexTerminal>> {
+  if (!THREAD.test(threadId)) return { kind: 'unknown' };
+  const deps = options.deps ?? defaultTerminalDeps();
+  const inventory = await screenInventory(deps, !!options.fresh);
+  const matches = inventory.screens.filter((s) => s.threadId === threadId.toLowerCase());
+  if (!matches.length)
+    return inventory.uncertain || inventory.hidden ? { kind: 'unknown' } : { kind: 'none' };
+  if (!options.fresh) return { kind: 'found', terminal: matches[0] };
+  // Re-check after the whole inventory settled: a screen may have switched threads meanwhile.
+  forget(deps, 'process-table');
+  for (const selected of matches) {
+    const current = await readScreen(selected.pid, deps, true).catch(() => null);
+    if (current?.threadId === selected.threadId && current.procStart === selected.procStart)
+      return { kind: 'found', terminal: current };
+  }
+  return { kind: 'unknown' };
+}

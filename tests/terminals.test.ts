@@ -1,3 +1,4 @@
+import { claudeLiveness } from '../desktop/launch-guard.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
@@ -1644,6 +1645,33 @@ test('lookupTerminal: none only without a live Claude; an unverified terminal is
     );
     const gone = fakeDeps(dir, { alive: [] });
     assert.equal((await lookupTerminal(SESSION, { deps: gone.deps, fresh: true })).kind, 'none');
+  });
+});
+
+test('Claude liveness adapter: any live process runs; none only after the absence check', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const found = fakeDeps(dir, { env: ORCA_ENV, orcaShow: orcaShow() });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, found.deps), {
+      kind: 'found',
+      terminal: { where: 'orca' },
+    });
+    // Running in another terminal app: still running, so a launch must not start it again.
+    const elsewhere = fakeDeps(dir, {
+      table: processTable('/Applications/iTerm.app/Contents/MacOS/iTerm2'),
+    });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, elsewhere.deps), {
+      kind: 'found',
+      terminal: { where: 'other' },
+    });
+    const gone = fakeDeps(dir, { alive: [] });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, gone.deps), { kind: 'none' });
+    const psFails = fakeDeps(dir, {
+      fail: (file, args) =>
+        file === '/bin/ps' && args.includes('lstart=') ? new Error('ps') : undefined,
+    });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, psFails.deps), {
+      kind: 'unknown',
+    });
   });
 });
 
