@@ -413,7 +413,13 @@ test('lookupCodexTerminal tells no screen from an ambiguous or unreadable one', 
 
 test('Codex liveness for a launch: any verified screen of the thread means running', async () => {
   const kind = async (options: Parameters<typeof fixture>[0], fresh = true) =>
-    (await codexLiveness.lookup(THREAD, fresh, fixture(options).deps)).kind;
+    // The screens read are macOS terminals: pinned so a Linux CI runner proves absence the same way.
+    (
+      await codexLiveness.lookup(THREAD, fresh, {
+        ...fixture(options).deps,
+        platform: 'darwin',
+      } as never)
+    ).kind;
   assert.equal(await kind({}), 'found');
   // Two screens of the thread, or one plus an unreadable one: no single place to go to, but
   // it certainly runs, so a launch must not start it again.
