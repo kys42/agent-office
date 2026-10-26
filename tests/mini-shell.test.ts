@@ -20,6 +20,7 @@ import {
   parseShellCommand,
   shellFolders,
   shellLabel,
+  fitSize,
   splitInput,
   validShellInput,
 } from '../src/shared/mini-shell';
@@ -68,9 +69,9 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
       }
       if (cmd === 'new-session') {
         const name = args[args.indexOf('-s') + 1];
-        const cwd = args[args.indexOf('-c') + 1];
+        const encoded = args[args.indexOf('@agent_office_shell_cwd') + 1];
         const token = args[args.indexOf('@agent_office_shell') + 1];
-        rows = [...rows, `${name}\t${token}\t${b64(cwd)}\t0`];
+        rows = [...rows, `${name}\t${token}\t${encoded}\t0`];
         noServer = false;
       }
       if (cmd === 'kill-session') {
@@ -380,4 +381,45 @@ test('the install fix runs from a path with spaces and non-ASCII letters', async
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('a folder ending in `;` reaches tmux escaped, not as a command separator', async () => {
+  const f = fixture();
+  f.deps.directory = async () => true;
+  const a = await f.shells.open(1, '/work/odd;', 80, 12, f.sink());
+  const create = f.calls.find((c) => c.includes('new-session'))!;
+  const at = create.indexOf('-c');
+  assert.deepEqual(create.slice(at, at + 4), ['-c', '/work/odd\\;', '/bin/zsh', '-l']);
+  // The real separators are the bare `;` entries only, and the mark keeps the real folder.
+  assert.equal(create.filter((x) => x === ';').length, 4);
+  assert.equal(a.cwd, '/work/odd;');
+});
+
+test('a request from a window that reloaded before it was served opens nothing', async () => {
+  const f = fixture();
+  const since = f.shells.epoch(1);
+  f.shells.detachOwner(1); // reload while main was still reading the session
+  await assert.rejects(f.shells.open(1, '/work/app', 80, 12, f.sink(), since), /no longer running/);
+  assert.equal(f.calls.filter((c) => c.includes('new-session')).length, 0);
+  assert.equal(f.spawned.length, 0);
+  // A fresh request from the reloaded page works.
+  assert.equal((await f.shells.open(1, '/work/app', 80, 12, f.sink())).created, true);
+});
+
+test('fitted terminal sizes use the same limits the PTY is clamped to', () => {
+  assert.deepEqual(fitSize({ cols: 612, rows: 9 }), { cols: SHELL_LIMITS.maxCols, rows: 9 });
+  assert.deepEqual(fitSize({ cols: 4, rows: 1 }), {
+    cols: SHELL_LIMITS.minCols,
+    rows: SHELL_LIMITS.minRows,
+  });
+  assert.deepEqual(fitSize({ cols: 120, rows: 400 }), { cols: 120, rows: SHELL_LIMITS.maxRows });
+  assert.equal(fitSize(undefined), null);
+  assert.equal(fitSize({ cols: NaN, rows: 10 }), null);
+  const { cols, rows } = fitSize({ cols: 612, rows: 9 })!;
+  assert.deepEqual(parseShellCommand({ type: 'open', id: 's', cols, rows }), {
+    type: 'open',
+    id: 's',
+    cols,
+    rows,
+  });
 });

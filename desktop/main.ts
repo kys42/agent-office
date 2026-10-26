@@ -599,10 +599,20 @@ function setupMiniShell() {
         return shells.list();
       case 'open': {
         if (isRemoteId(command.id)) throw new Error(m().federation.readOnly);
+        // Track the window and note its lifetime before the first await: a reload while the
+        // session is read makes this request stale, and it then opens nothing.
+        watch(e.sender);
+        const since = shells.epoch(owner);
         const session: Session = await bridge.call('detail', [command.id]);
         if (!session?.cwd || session.remote) throw new Error(m().shell.folderMissing);
-        watch(e.sender);
-        return shells.open(owner, session.cwd, command.cols, command.rows, sinkFor(e.sender));
+        return shells.open(
+          owner,
+          session.cwd,
+          command.cols,
+          command.rows,
+          sinkFor(e.sender),
+          since,
+        );
       }
       case 'attach':
         watch(e.sender);

@@ -34,13 +34,14 @@ export const useMiniShellHosted = () =>
     () => false,
   );
 /** Marks this window as able to show the panel while the caller is mounted. */
-export function useMiniShellHost() {
+export function useMiniShellHost(enabled = true) {
   useEffect(() => {
+    if (!enabled) return;
     hosts++;
     emit();
     return () => {
       hosts--;
       emit();
     };
-  }, []);
+  }, [enabled]);
 }

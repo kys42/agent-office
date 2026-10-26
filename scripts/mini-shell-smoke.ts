@@ -1,13 +1,16 @@
 // Real tmux + node-pty, on a throwaway tmux server (never the app's own): open a shell, type,
 // detach, reattach and find it still there, then end it. `npx tsx scripts/mini-shell-smoke.ts`
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { MiniShells, defaultShellDeps } from '../desktop/mini-shell';
 import { runCommand } from '../server/adapters/claude-live';
 
-const dir = await mkdtemp(path.join(os.tmpdir(), 'office-shell-smoke-'));
+const root = await mkdtemp(path.join(os.tmpdir(), 'office-shell-smoke-'));
+// A folder name ending in `;` (tmux's command separator) must still be the shell's folder.
+const dir = path.join(root, 'project;');
+await mkdir(dir);
 const server = `office-shell-smoke-${process.pid}`;
 const deps = { ...defaultShellDeps(), server };
 const shells = new MiniShells(deps);
@@ -50,6 +53,6 @@ try {
 } finally {
   shells.dispose();
   await runCommand(tmux, ['-L', server, 'kill-server']).catch(() => {});
-  await rm(dir, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true });
 }
 process.exit(0);

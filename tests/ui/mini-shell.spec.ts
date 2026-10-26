@@ -36,7 +36,10 @@ async function setup(
           return () => {};
         },
         card: async () => ({ id: s.sessions[0].id, news: false }),
-        onCard: () => () => {},
+        onCard: (cb: any) => {
+          w.cardTarget = cb;
+          return () => {};
+        },
         cardState: async () => ({
           pinned: false,
           positionRemembered: false,
@@ -208,4 +211,63 @@ test('a project zone opens its folder; the desk dock has no panel, so no button'
   await setup(dock, { route: '/#mini=floor' });
   await expect(dock.locator('.zone-flag').first()).toBeAttached();
   await expect(dock.getByRole('button', { name: /미니 터미널/ })).toHaveCount(0);
+});
+
+test('a card window that hides or turns to another colleague lets go of the shell', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.getByRole('button', { name: '미니 터미널', exact: true }).click();
+  const panel = page.getByRole('region', { name: '미니 터미널' });
+  await expect(panel).toHaveAttribute('data-status', 'live');
+  // Closing an unpinned card only hides its window: the target goes, and so does the shell.
+  await page.evaluate(() => (window as any).cardTarget(null));
+  await expect(panel).toHaveCount(0);
+  expect((await commands(page)).at(-1)).toEqual({ type: 'detach', ptyId: PTY });
+  // Reopened at another colleague: no leftover terminal of the previous one.
+  await page.evaluate(() => {
+    const w = window as any;
+    w.cardTarget({ id: w.fixture.sessions[1].id, news: false });
+  });
+  await expect(page.locator('.inspector-card')).toBeVisible();
+  await expect(panel).toHaveCount(0);
+});
+
+test('the sample office lets go of the real shell and offers none', async ({ page }) => {
+  await setup(page, { route: '/' });
+  await page.setViewportSize({ width: 1440, height: 970 });
+  const project = await page.evaluate(() => (window as any).fixture.sessions[1].project);
+  await page
+    .getByRole('button', { name: `${project}에서 미니 터미널 열기` })
+    .first()
+    .click();
+  const panel = page.getByRole('region', { name: '미니 터미널' });
+  await expect(panel).toHaveAttribute('data-status', 'live');
+  // The sidebar's sample-office switch sits under the drawer: press it directly.
+  await page.getByRole('button', { name: '데모 둘러보기' }).dispatchEvent('click');
+  await expect(panel).toHaveCount(0);
+  expect((await commands(page)).at(-1)).toEqual({ type: 'detach', ptyId: PTY });
+  await expect(page.getByRole('button', { name: /미니 터미널/ })).toHaveCount(0);
+});
+
+test('a very wide window never asks for more columns than the terminal may have', async ({
+  page,
+}) => {
+  await setup(page, { route: '/' });
+  await page.setViewportSize({ width: 3800, height: 900 });
+  const project = await page.evaluate(() => (window as any).fixture.sessions[1].project);
+  await page
+    .getByRole('button', { name: `${project}에서 미니 터미널 열기` })
+    .first()
+    .click();
+  const panel = page.getByRole('region', { name: '미니 터미널' });
+  await expect(panel).toHaveAttribute('data-status', 'live');
+  const [open] = await commands(page);
+  expect(open.cols).toBe(400);
+  // xterm itself is that size too, so the screen and tmux agree.
+  const width = await panel
+    .locator('.xterm-rows > div')
+    .first()
+    .evaluate((row) => row.textContent!.length);
+  expect(width).toBeLessThanOrEqual(400);
 });

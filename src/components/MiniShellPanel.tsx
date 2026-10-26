@@ -7,7 +7,9 @@ import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { closeMiniShell, openMiniShell } from '../lib/miniShell';
 import {
-  SHELL_LIMITS,
+  clampCols,
+  clampRows,
+  fitSize,
   shellLabel,
   splitInput,
   type ShellAttachment,
@@ -69,11 +71,25 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
-    try {
-      fit.fit();
-    } catch {
-      /* not laid out yet */
-    }
+    /**
+     * Fits the view, but never past the PTY's limits: xterm is resized to exactly the size that
+     * is sent, so the screen and tmux always agree.
+     */
+    const size = () => {
+      let proposed;
+      try {
+        proposed = fit.proposeDimensions();
+      } catch {
+        /* not laid out yet */
+      }
+      const next = fitSize(proposed) ?? {
+        cols: clampCols(term.cols),
+        rows: clampRows(term.rows),
+      };
+      if (next.cols !== term.cols || next.rows !== term.rows) term.resize(next.cols, next.rows);
+      return next;
+    };
+    size();
     const offData = shell.onData((id, data) => {
       if (id === ptyId) term.write(data);
       else if (!ptyId) early.set(id, (early.get(id) ?? '') + data);
@@ -89,23 +105,17 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
     });
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     fitRef.current = () => {
-      try {
-        fit.fit();
-      } catch {
-        return;
-      }
+      size();
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => {
-        if (ptyId)
-          void shell
-            .command({ type: 'resize', ptyId, cols: term.cols, rows: term.rows })
-            .catch(() => {});
+        if (!ptyId) return;
+        const { cols, rows } = size();
+        void shell.command({ type: 'resize', ptyId, cols, rows }).catch(() => {});
       }, 60);
     };
     const observer = new ResizeObserver(() => fitRef.current());
     observer.observe(el);
-    const cols = Math.max(SHELL_LIMITS.minCols, term.cols);
-    const rows = Math.max(SHELL_LIMITS.minRows, term.rows);
+    const { cols, rows } = size();
     const request = target.name
       ? shell.command({ type: 'attach', name: target.name, cols, rows })
       : shell.command({ type: 'open', id: target.id!, cols, rows });

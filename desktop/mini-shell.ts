@@ -6,6 +6,7 @@ import path from 'node:path';
 import { m } from '../src/shared/i18n/index.js';
 import { SHELL_NAME, type ShellAttachment, type ShellInfo } from '../src/shared/mini-shell.js';
 import { defaultResumeDeps } from './tmux-resume.js';
+import { tmuxArg } from './terminal-host.js';
 
 /** The part of node-pty this module uses (a fake in tests). */
 export interface PtyLike {
@@ -133,7 +134,8 @@ export class MiniShells {
   private attachments = new Map<string, Attachment>();
   /** Bumped when a window closes or reloads: a spawn still in flight for it is then dropped. */
   private epochs = new Map<number, number>();
-  private epoch(owner: number) {
+  /** The window's current lifetime; capture it before any await of a request it made. */
+  epoch(owner: number) {
     return this.epochs.get(owner) ?? 0;
   }
   private queue: Promise<unknown> = Promise.resolve();
@@ -203,8 +205,9 @@ export class MiniShells {
           '-s',
           data.name,
           '-c',
-          data.cwd,
-          shell,
+          // tmux reads a trailing `;` as a command separator, even as its own argv entry.
+          tmuxArg(data.cwd),
+          tmuxArg(shell),
           '-l',
           ';',
           'set-option',
@@ -305,8 +308,10 @@ export class MiniShells {
     cols: number,
     rows: number,
     sink: Parameters<MiniShells['attach']>[4],
+    since = this.epoch(owner),
   ) {
-    const since = this.epoch(owner);
+    // A request from a window that has since closed or reloaded starts nothing.
+    if (this.epoch(owner) !== since) throw new Error(m().shell.gone);
     const created = await this.ensure(cwd, cols, rows);
     return this.attach(owner, describeShell(cwd).name, cols, rows, sink, created, since);
   }

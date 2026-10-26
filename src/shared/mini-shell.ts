@@ -58,6 +58,16 @@ export const clampCols = (v: unknown) => size(v, SHELL_LIMITS.minCols, SHELL_LIM
 export const clampRows = (v: unknown) => size(v, SHELL_LIMITS.minRows, SHELL_LIMITS.maxRows);
 
 /**
+ * The terminal size to use for a fitted proposal (FitAddon), within the same limits main clamps
+ * the PTY to: xterm and tmux then agree on the size. Null when nothing could be measured.
+ */
+export function fitSize(
+  proposed: { cols: number; rows: number } | undefined,
+): { cols: number; rows: number } | null {
+  if (!proposed || !Number.isFinite(proposed.cols) || !Number.isFinite(proposed.rows)) return null;
+  return { cols: clampCols(proposed.cols), rows: clampRows(proposed.rows) };
+}
+/**
  * Checks a command from a window. Anything not exactly one of these shapes is refused: the
  * renderer never names a folder, a binary or a tmux command, only a session it was shown, an
  * existing shell, or its own attachment.

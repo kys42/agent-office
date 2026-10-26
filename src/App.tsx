@@ -1273,7 +1273,7 @@ export default function App() {
           <p className="shortcut-note">{t.app.help.note}</p>
         </Modal>
       )}
-      <MiniShellDock privacy={prefs?.privacy ?? false} />
+      <MiniShellDock privacy={prefs?.privacy ?? false} demo={demo} />
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />

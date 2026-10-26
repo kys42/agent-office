@@ -17,13 +17,25 @@ import type { Session } from '../shared/types';
 const MiniShellPanel = lazy(() => import('./MiniShellPanel'));
 
 /** The window's one mini terminal panel. Hidden content (privacy) closes it: tmux keeps it. */
-export function MiniShellDock({ privacy }: { privacy: boolean }) {
+export function MiniShellDock({
+  privacy,
+  demo = false,
+  scope,
+}: {
+  privacy: boolean;
+  /** The sample office: no real shell is shown, kept attached, or offered. */
+  demo?: boolean;
+  /** Whose window this is (a card's colleague): another one, or none, closes the panel. */
+  scope?: string | null;
+}) {
   const target = useMiniShellTarget();
-  useMiniShellHost();
+  const off = privacy || demo;
+  useMiniShellHost(!demo);
   useEffect(() => {
-    if (privacy) closeMiniShell();
-  }, [privacy]);
-  if (!api.shell || !target || privacy) return null;
+    if (off) closeMiniShell();
+  }, [off]);
+  useEffect(() => () => closeMiniShell(), [scope]);
+  if (!api.shell || !target || off) return null;
   return (
     <Suspense fallback={null}>
       <MiniShellPanel key={target.name ?? target.id} target={target} />

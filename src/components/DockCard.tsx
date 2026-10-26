@@ -200,7 +200,7 @@ export function DockCard() {
           </button>
         </div>
       )}
-      <MiniShellDock privacy={prefs?.privacy ?? false} />
+      <MiniShellDock privacy={prefs?.privacy ?? false} scope={target?.id ?? null} />
       {toast && (
         <div className="dock-card-toast" role="status">
           {toast}
