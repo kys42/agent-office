@@ -13,6 +13,8 @@ export interface ShellInfo {
    * again under the same name is a different one. */
   sessionId?: string;
   createdAt?: number;
+  /** A random value set when this shell started: tells two starts apart within one second. */
+  incarnation?: string;
 }
 /** A live attachment of this window to a shell. Keystrokes go to `ptyId` only. */
 export interface ShellAttachment {

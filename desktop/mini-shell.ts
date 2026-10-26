@@ -158,7 +158,7 @@ export class MiniShells {
       rows = await this.tmux([
         'list-sessions',
         '-F',
-        '#{session_name}\t#{@agent_office_shell}\t#{@agent_office_shell_cwd}\t#{session_attached}\t#{session_id}\t#{session_created}',
+        '#{session_name}\t#{@agent_office_shell}\t#{@agent_office_shell_cwd}\t#{session_attached}\t#{session_id}\t#{session_created}\t#{@agent_office_shell_once}',
       ]);
     } catch (error) {
       const e = error as Error & { stderr?: string };
@@ -167,7 +167,7 @@ export class MiniShells {
     }
     const result: ShellInfo[] = [];
     for (const line of rows.split('\n')) {
-      const [name, token, encoded, attached, sessionId, created] = line.split('\t');
+      const [name, token, encoded, attached, sessionId, created, once] = line.split('\t');
       if (!name || !SHELL_NAME.test(name)) continue;
       const cwd = Buffer.from(encoded ?? '', 'base64').toString('utf8');
       try {
@@ -182,6 +182,7 @@ export class MiniShells {
         attached: Number(attached) || 0,
         ...(sessionId && /^\$\d+$/.test(sessionId) ? { sessionId } : {}),
         ...(Number(created) > 0 ? { createdAt: Number(created) } : {}),
+        ...(once && /^[0-9a-f-]{36}$/.test(once) ? { incarnation: once } : {}),
       });
     }
     return result.sort((a, b) => a.cwd.localeCompare(b.cwd));
@@ -196,8 +197,9 @@ export class MiniShells {
     const task = this.queue.then(async () => {
       if (!this.supported) throw new Error(m().shell.unsupported);
       const data = describeShell(cwd);
-      if (!(await this.deps.directory(data.cwd))) throw new Error(m().shell.folderMissing);
+      // A shell already running reattaches even if its folder went away; only a new one needs it.
       if ((await this.list()).some((s) => s.name === data.name)) return false;
+      if (!(await this.deps.directory(data.cwd))) throw new Error(m().shell.folderMissing);
       const shell = await this.deps.loginShell();
       try {
         // Multiple command arguments are exec'd by tmux, not parsed by a shell. The ownership
@@ -230,6 +232,13 @@ export class MiniShells {
           data.name,
           '@agent_office_shell',
           data.token,
+          ';',
+          // This start of the shell, unique even if tmux restarts and reuses `$0` in the same second.
+          'set-option',
+          '-t',
+          data.name,
+          '@agent_office_shell_once',
+          randomUUID(),
           ';',
           // A small panel has no room for a status line; the wheel scrolls tmux's history.
           'set-option',
@@ -371,7 +380,13 @@ export class MiniShells {
     // The person agreed to end *that* shell. If it ended and another started under the same
     // name while they read the dialog, the new one is not what they agreed to end.
     const now = await this.find(name);
-    if (!shell.sessionId || now.sessionId !== shell.sessionId || now.createdAt !== shell.createdAt)
+    if (
+      !shell.sessionId ||
+      !shell.incarnation ||
+      now.sessionId !== shell.sessionId ||
+      now.createdAt !== shell.createdAt ||
+      now.incarnation !== shell.incarnation
+    )
       throw new Error(m().shell.gone);
     try {
       await this.tmux(['kill-session', '-t', shell.sessionId]);

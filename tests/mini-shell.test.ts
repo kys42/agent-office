@@ -93,7 +93,11 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
         const name = args[args.indexOf('-s') + 1];
         const encoded = args[args.indexOf('@agent_office_shell_cwd') + 1];
         const token = args[args.indexOf('@agent_office_shell') + 1];
-        rows = [...rows, `${name}\t${token}\t${encoded}\t0\t$${nextId++}\t${1700000000 + nextId}`];
+        const once = args[args.indexOf('@agent_office_shell_once') + 1];
+        rows = [
+          ...rows,
+          `${name}\t${token}\t${encoded}\t0\t$${nextId++}\t${1700000000 + nextId}\t${once}`,
+        ];
         noServer = false;
       }
       if (cmd === 'kill-session') {
@@ -127,7 +131,10 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
       exit: (id: string) => exits.push(id),
     };
   };
-  return { deps, calls, spawned, sink, server, shells: new MiniShells(deps) };
+  const setRows = (change: (rows: string[]) => string[]) => {
+    rows = change(rows);
+  };
+  return { deps, calls, spawned, sink, server, setRows, shells: new MiniShells(deps) };
 }
 
 test('one stable shell name per folder, never a relative or control-character path', () => {
@@ -418,7 +425,7 @@ test('a folder ending in `;` reaches tmux escaped, not as a command separator', 
   const at = create.indexOf('-c');
   assert.deepEqual(create.slice(at, at + 4), ['-c', '/work/odd\\;', '/bin/zsh', '-l']);
   // The real separators are the bare `;` entries only, and the mark keeps the real folder.
-  assert.equal(create.filter((x) => x === ';').length, 4);
+  assert.equal(create.filter((x) => x === ';').length, 5);
   assert.equal(a.cwd, '/work/odd;');
 });
 
@@ -513,4 +520,30 @@ test('card and main windows drop the app menu on Windows/Linux so Ctrl keys reac
   assert.equal(dropAppMenu(window, 'linux'), true);
   assert.equal(dropAppMenu(window, 'win32'), true);
   assert.deepEqual(calls, ['remove', 'bar:false', 'remove', 'bar:false']);
+});
+
+test('ending asks about one start of the shell: a restart in the same second with a reused id is not ended', async () => {
+  const f = fixture();
+  f.deps.directory = async () => true;
+  await f.shells.open(1, '/work/app', 80, 12, f.sink());
+  const name = describeShell('/work/app').name;
+  await assert.rejects(
+    f.shells.kill(name, async () => {
+      // tmux restarted: same name, same `$id`, same second, a new start.
+      f.setRows((rows: string[]) =>
+        rows.map((r) => r.replace(/\t[0-9a-f-]{36}$/, '\t00000000-0000-4000-8000-000000000000')),
+      );
+      return true;
+    }),
+    /no longer running/,
+  );
+  assert.equal(f.calls.filter((c) => c.includes('kill-session')).length, 0);
+});
+
+test('a running shell reattaches even after its folder went away', async () => {
+  const f = fixture();
+  f.deps.directory = async () => true;
+  await f.shells.open(1, '/work/app', 80, 12, f.sink());
+  f.deps.directory = async () => false;
+  assert.equal(await f.shells.ensure('/work/app', 80, 12), false);
 });
