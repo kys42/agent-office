@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ArrowUpRight,
@@ -25,8 +25,11 @@ export function TmuxResume({
   notify,
   summon = false,
   projects,
+  existing,
 }: {
   summon?: boolean;
+  /** Summon only: a second choice drawn under the intro (bringing back an away colleague). */
+  existing?: (close: () => void) => ReactNode;
   projects?: Session[];
   id: string;
   privacy: boolean;
@@ -212,6 +215,7 @@ export function TmuxResume({
                 </span>
                 <p>{summon ? text.summonDescription : text.resumeDescription}</p>
               </div>
+              {summon && existing?.(() => setOpen(false))}
               {summon && (
                 <section className="summon-form" aria-label={text.agentSettings}>
                   <div className="summon-field">

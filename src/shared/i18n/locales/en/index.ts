@@ -25,6 +25,7 @@ import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
+import { summonExisting } from './summonExisting';
 
 /** English is the source catalog: every other language must match its shape. */
 export const en = {
@@ -55,6 +56,7 @@ export const en = {
   prompts,
   pets,
   guide,
+  summonExisting,
 };
 
 export type Messages = typeof en;

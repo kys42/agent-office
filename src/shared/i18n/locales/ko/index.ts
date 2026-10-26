@@ -26,6 +26,7 @@ import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
+import { summonExisting } from './summonExisting';
 
 export const ko: Messages = {
   tmux,
@@ -55,4 +56,5 @@ export const ko: Messages = {
   prompts,
   pets,
   guide,
+  summonExisting,
 };
