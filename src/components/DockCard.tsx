@@ -1,3 +1,4 @@
+import { MiniShellDock } from './MiniShell';
 import { PetAppearanceContext } from './PetAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
@@ -199,6 +200,7 @@ export function DockCard() {
           </button>
         </div>
       )}
+      <MiniShellDock privacy={prefs?.privacy ?? false} />
       {toast && (
         <div className="dock-card-toast" role="status">
           {toast}

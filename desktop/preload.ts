@@ -62,6 +62,21 @@ const api: OfficeAPI = {
         ) => action('office:tmux-summon', id, actionName, provider, name, initialMessage),
         tmuxResume: (id: string, actionName: 'status' | 'start' | 'open') =>
           action('office:tmux-resume', id, actionName),
+        shell: {
+          command: (command: unknown) => action('office:shell', command),
+          input: (ptyId: string, data: string) =>
+            ipcRenderer.send('office:shell-input', ptyId, data),
+          onData: (cb: (ptyId: string, data: string) => void) => {
+            const f = (_: unknown, ptyId: string, data: string) => cb(ptyId, data);
+            ipcRenderer.on('office:shell-data', f);
+            return () => ipcRenderer.removeListener('office:shell-data', f);
+          },
+          onExit: (cb: (ptyId: string) => void) => {
+            const f = (_: unknown, ptyId: string) => cb(ptyId);
+            ipcRenderer.on('office:shell-exit', f);
+            return () => ipcRenderer.removeListener('office:shell-exit', f);
+          },
+        } as OfficeAPI['shell'],
       }
     : {}),
   // Orca is a macOS app: its launch is offered there only.

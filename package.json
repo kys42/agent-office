@@ -32,15 +32,20 @@
     "test:desktop": "node scripts/desktop-smoke.mjs",
     "test:cards": "node scripts/card-windows-smoke.mjs",
     "test:mcp": "tsx scripts/mcp-smoke.ts",
+    "test:shell": "tsx scripts/mini-shell-smoke.ts",
+    "test:shell:desktop": "node scripts/mini-shell-desktop-smoke.mjs",
     "format": "prettier --write \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "package:dmg": "npm run package && node scripts/dmg.mjs",
     "test:package": "node scripts/dmg-smoke.mjs",
-    "test:mobile": "node scripts/mobile-smoke.mjs"
+    "test:mobile": "node scripts/mobile-smoke.mjs",
+    "postinstall": "node scripts/node-pty-helper.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "acorn": "^8.18.0",
     "galmuri": "^2.40.3",
     "lucide-react": "^0.577.0",
@@ -50,6 +55,9 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "zod": "^4.3.6"
+  },
+  "optionalDependencies": {
+    "node-pty": "1.1.0"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

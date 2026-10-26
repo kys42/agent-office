@@ -1,5 +1,7 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
+import { MiniShells } from './mini-shell.js';
+import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
 import { TerminalFocusError } from './terminal-host.js';
@@ -549,13 +551,99 @@ function stopDrag(save: boolean) {
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
-function trusted(e: Electron.IpcMainInvokeEvent) {
+function trusted(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
   if (
     (![main?.webContents, dock?.webContents, settingsWindow?.webContents].includes(e.sender) &&
       !cards.owns(e.sender)) ||
     e.senderFrame !== e.sender.mainFrame
   )
     throw new Error(m().desktop.untrustedWindow);
+}
+/**
+ * The mini terminal (docs/development/TERMINAL.md · Mini terminal). A window names a local
+ * session (its folder is read here, never taken from the window), an existing shell, or its own
+ * attachment; keystrokes reach only the PTY that window attached.
+ */
+function setupMiniShell() {
+  const shells = new MiniShells();
+  app.on('before-quit', () => shells.dispose());
+  if (!shells.supported) return;
+  const watched = new WeakSet<Electron.WebContents>();
+  const watch = (sender: Electron.WebContents) => {
+    if (watched.has(sender)) return;
+    watched.add(sender);
+    const id = sender.id;
+    // A closed or reloaded window leaves its clients behind: end them, keep the shells.
+    sender.once('destroyed', () => shells.detachOwner(id));
+    sender.on('did-start-loading', () => shells.detachOwner(id));
+  };
+  const sinkFor = (sender: Electron.WebContents) => ({
+    data: (ptyId: string, data: string) => {
+      if (!sender.isDestroyed()) sender.send('office:shell-data', ptyId, data);
+    },
+    exit: (ptyId: string) => {
+      if (!sender.isDestroyed()) sender.send('office:shell-exit', ptyId);
+    },
+  });
+  ipcMain.handle('office:shell', async (e, raw) => {
+    trusted(e);
+    let command;
+    try {
+      command = parseShellCommand(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    const owner = e.sender.id;
+    switch (command.type) {
+      case 'list':
+        return shells.list();
+      case 'open': {
+        if (isRemoteId(command.id)) throw new Error(m().federation.readOnly);
+        const session: Session = await bridge.call('detail', [command.id]);
+        if (!session?.cwd || session.remote) throw new Error(m().shell.folderMissing);
+        watch(e.sender);
+        return shells.open(owner, session.cwd, command.cols, command.rows, sinkFor(e.sender));
+      }
+      case 'attach':
+        watch(e.sender);
+        return shells.attach(owner, command.name, command.cols, command.rows, sinkFor(e.sender));
+      case 'resize':
+        return shells.resize(owner, command.ptyId, command.cols, command.rows);
+      case 'detach':
+        return shells.detach(owner, command.ptyId);
+      case 'kill':
+        return shells.kill(command.name, async (shell) => {
+          const t = m().shell;
+          const window = BrowserWindow.fromWebContents(e.sender);
+          const options = {
+            type: 'warning' as const,
+            title: t.killTitle,
+            message: t.killConfirm,
+            detail: `${t.folder}: ${shell.cwd}\n${t.name}: ${shell.name}\n\n${t.killDetail}`,
+            buttons: [t.cancel, t.killButton],
+            defaultId: 0,
+            cancelId: 0,
+          };
+          const end = cards.dialog(e.sender);
+          try {
+            const result = window
+              ? await dialog.showMessageBox(window, options)
+              : await dialog.showMessageBox(options);
+            return result.response === 1;
+          } finally {
+            end();
+          }
+        });
+    }
+  });
+  ipcMain.on('office:shell-input', (e, ptyId: unknown, data: unknown) => {
+    try {
+      trusted(e);
+    } catch {
+      return;
+    }
+    if (validShellInput(ptyId, data)) shells.write(e.sender.id, ptyId as string, data);
+  });
 }
 function setupIPC() {
   ipcMain.on('office:selected', (e, id: unknown) => {
@@ -810,6 +898,7 @@ function setupIPC() {
       duplicateCheck(session),
     );
   });
+  setupMiniShell();
   ipcMain.handle('office:orca-launch', async (e, id, action) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'focus'].includes(action))

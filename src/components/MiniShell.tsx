@@ -1,0 +1,140 @@
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { SquareTerminal } from 'lucide-react';
+import { api } from '../lib/api';
+import { useI18n } from '../lib/i18n';
+import {
+  closeMiniShell,
+  openMiniShell,
+  useMiniShellHost,
+  useMiniShellHosted,
+  useMiniShellTarget,
+} from '../lib/miniShell';
+import { canOpenShell, shellFolders, shellLabel } from '../shared/mini-shell';
+import type { Session } from '../shared/types';
+
+// xterm.js is loaded only once someone opens a terminal.
+const MiniShellPanel = lazy(() => import('./MiniShellPanel'));
+
+/** The window's one mini terminal panel. Hidden content (privacy) closes it: tmux keeps it. */
+export function MiniShellDock({ privacy }: { privacy: boolean }) {
+  const target = useMiniShellTarget();
+  useMiniShellHost();
+  useEffect(() => {
+    if (privacy) closeMiniShell();
+  }, [privacy]);
+  if (!api.shell || !target || privacy) return null;
+  return (
+    <Suspense fallback={null}>
+      <MiniShellPanel key={target.name ?? target.id} target={target} />
+    </Suspense>
+  );
+}
+
+/** A colleague's card: a shell in their folder. Desktop and local sessions only. */
+export function CardShellButton({
+  session,
+  privacy,
+  demo,
+}: {
+  session: Session;
+  privacy: boolean;
+  demo: boolean;
+}) {
+  const { t } = useI18n();
+  const hosted = useMiniShellHosted();
+  if (!api.shell || !hosted || demo || !canOpenShell(session)) return null;
+  return (
+    <button
+      className="card-action"
+      disabled={privacy}
+      title={privacy ? t.shell.openHidden : t.shell.openIn(session.cwd!)}
+      onClick={() => openMiniShell({ id: session.id, cwd: session.cwd! })}
+    >
+      <SquareTerminal size={13} />
+      {t.shell.open}
+    </button>
+  );
+}
+
+/** A project zone: a shell in its folder; a zone of several folders asks which one. */
+export function ZoneShellButton({
+  sessions,
+  privacy,
+  demo,
+}: {
+  sessions: Session[];
+  privacy: boolean;
+  demo: boolean;
+}) {
+  const { t } = useI18n();
+  const button = useRef<HTMLButtonElement>(null);
+  const [menu, setMenu] = useState<DOMRect | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (!(e.target instanceof Element && e.target.closest('.mini-shell-pick'))) setMenu(null);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setMenu(null);
+    };
+    window.addEventListener('pointerdown', close, true);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('pointerdown', close, true);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [menu]);
+  const hosted = useMiniShellHosted();
+  const folders = shellFolders(sessions);
+  if (!api.shell || !hosted || demo || privacy || !folders.length) return null;
+  const only = folders.length === 1 ? folders[0] : null;
+  return (
+    <>
+      <button
+        ref={button}
+        className="project-summon-button"
+        data-solid
+        aria-label={only ? t.shell.openIn(shellLabel(only.cwd)) : t.shell.open}
+        title={only ? t.shell.openIn(only.cwd) : t.shell.open}
+        aria-haspopup={only ? undefined : 'menu'}
+        aria-expanded={only ? undefined : !!menu}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (only) openMiniShell(only);
+          else setMenu(menu ? null : button.current!.getBoundingClientRect());
+        }}
+      >
+        <SquareTerminal size={13} />
+      </button>
+      {menu &&
+        createPortal(
+          <div
+            className="mini-shell-menu mini-shell-pick"
+            role="menu"
+            aria-label={t.shell.pickFolder}
+            style={{ left: menu.left, top: menu.bottom + 4 }}
+          >
+            {folders.map((f) => (
+              <button
+                key={f.cwd}
+                type="button"
+                role="menuitem"
+                title={f.cwd}
+                onClick={() => {
+                  setMenu(null);
+                  openMiniShell(f);
+                }}
+              >
+                <span>{shellLabel(f.cwd)}</span>
+                <small>{f.cwd}</small>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}

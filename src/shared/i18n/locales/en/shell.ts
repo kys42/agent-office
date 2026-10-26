@@ -1,0 +1,33 @@
+/** The mini terminal: a small shell in a colleague's or a project's folder, kept by tmux. */
+export const shell = {
+  open: 'Mini terminal',
+  openIn: (folder: string) => `Open a mini terminal in ${folder}`,
+  openHidden: 'Open a mini terminal in this folder',
+  title: 'Mini terminal',
+  pickFolder: 'Folder',
+  others: 'Open shells',
+  attachedElsewhere: (n: number) => `Also open in ${n} other ${n === 1 ? 'place' : 'places'}`,
+  connecting: 'Connecting…',
+  started: 'Started a new shell. Closing the panel keeps it running.',
+  ended: 'This shell has ended.',
+  reopen: 'Start again',
+  expand: 'Make it taller',
+  collapse: 'Make it smaller',
+  close: 'Close (keeps running)',
+  kill: 'End',
+  killTitle: 'End this shell?',
+  killConfirm: 'End the mini terminal in this folder?',
+  killDetail:
+    'Anything still running in it stops, and its history is gone. Closing the panel instead keeps it running.',
+  killButton: 'End shell',
+  cancel: 'Cancel',
+  folder: 'Folder',
+  name: 'tmux session',
+  hint: 'Kept by tmux: close the panel or the app and come back to the same shell.',
+  // Errors from the desktop app.
+  unsupported: 'The mini terminal needs tmux on macOS or Linux.',
+  folderMissing: 'That folder no longer exists.',
+  failed: 'Could not start the shell with tmux. Check that tmux works.',
+  gone: 'That shell is no longer running.',
+  noPty: 'Could not attach a terminal to the shell.',
+};
