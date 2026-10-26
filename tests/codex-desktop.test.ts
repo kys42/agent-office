@@ -172,6 +172,7 @@ test('Desktop discovery is read-only; sending targets the fresh owner and inheri
       canFocus: false,
       desktop: true,
       queues: false,
+      images: 'attach',
     });
     assert.match(
       await sendToCodex(destination!, '한글\n--literal $(test)', f.deps),

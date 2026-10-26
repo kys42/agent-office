@@ -563,6 +563,11 @@ export interface TerminalTarget {
    * never to type into (it may hold a bare shell).
    */
   tabOnly?: boolean;
+  /**
+   * How images reach it, when they can: attached as images (Claude Code's own paste, Codex
+   * Desktop) or as file paths in the text (Codex CLI queue). Absent: no images (see attachments).
+   */
+  images?: import('./attachments').ImageDelivery;
 }
 /**
  * What a follow-up send did. `needs-confirm`: the agent's composer already holds text (a draft,
@@ -603,6 +608,8 @@ export interface SendOptions {
   replaceDraft?: string;
   /** The person accepted losing content that the screen could not fully show or back up. */
   allowPartialDraft?: boolean;
+  /** Ids from `attachImage`, in order. Desktop main resolves them to its own files. */
+  images?: string[];
 }
 /** Sends a follow-up to a session; `replaceDraft` is the composer text the person agreed to clear. */
 export type ReplySender = (
@@ -610,6 +617,7 @@ export type ReplySender = (
   text: string,
   replaceDraft?: string,
   allowPartialDraft?: boolean,
+  images?: string[],
 ) => Promise<SendResult>;
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
@@ -845,6 +853,11 @@ export interface OfficeAPI {
    * Text already in the composer is never added to: it comes back as `needs-confirm`.
    */
   send?: (id: string, text: string, options?: SendOptions) => Promise<SendResult>;
+  /**
+   * Desktop only: saves an image's bytes (PNG, JPEG, GIF, WebP; checked in main) into the app's
+   * attachments folder and returns an opaque id for `send`. No path ever crosses back.
+   */
+  attachImage?: (bytes: Uint8Array) => Promise<{ id: string }>;
   /** Desktop only: reads the owned terminal's current draft without typing or submitting. */
   inspectDraft?: (id: string) => Promise<Extract<SendResult, { status: 'needs-confirm' }> | null>;
   /**

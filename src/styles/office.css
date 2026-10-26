@@ -1405,6 +1405,11 @@
   font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
 }
+.quick-reply-bar .quick-reply-attach {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
 .quick-reply-close,
 .quick-reply-send {
   flex-shrink: 0;

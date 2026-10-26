@@ -1,3 +1,4 @@
+import type { ImageDelivery } from '../../src/shared/attachments.js';
 import type { Screen } from './screen.js';
 
 /**
@@ -57,6 +58,11 @@ export interface ComposerCapabilities {
   canDetectSuggestion: boolean;
   /** The adapter can empty the composer and verify it. */
   canClear: boolean;
+  /**
+   * How images reach the agent: attached as images, or only as file paths in the text. Absent:
+   * not at all, and a send with images is refused before anything is typed.
+   */
+  images?: ImageDelivery;
 }
 
 /** Saves the composer's text (the clipboard) before anything of it is deleted. */

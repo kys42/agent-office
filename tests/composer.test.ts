@@ -609,12 +609,14 @@ test('Each agent states what its composer supports', () => {
     canInspect: true,
     canDetectSuggestion: true,
     canClear: true,
+    images: 'attach',
   });
   assert.deepEqual(claudeCodeComposer.capabilities({ styled: false }), {
     delivery: 'terminal',
     canInspect: true,
     canDetectSuggestion: false,
     canClear: true,
+    images: 'attach',
   });
   // Codex takes follow-ups through its queue: there is no composer to check or clear.
   assert.equal(composerFor('codex'), codexQueueComposer);
@@ -623,6 +625,7 @@ test('Each agent states what its composer supports', () => {
     canInspect: false,
     canDetectSuggestion: false,
     canClear: false,
+    images: 'path',
   });
   assert.equal(composerFor('claude'), claudeCodeComposer);
   const openclaw = composerFor('openclaw');

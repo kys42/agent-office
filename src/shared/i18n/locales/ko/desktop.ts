@@ -106,5 +106,14 @@ export const desktop: Messages['desktop'] = {
     queued: (target) => `${target}에 보냈어요 · 작업 중이라 대기열에 들어가 이어서 반영돼요`,
     codexNoReply: 'Codex 응답을 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
     codexQueued: 'Codex 세션에 전달했어요',
+    imagesNotShown:
+      '입력창에 이미지를 붙였지만 첨부된 걸 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
+    imagesUnsupported: '이 대화에는 여기서 이미지를 보낼 수 없어요.',
+  },
+  attachments: {
+    notImage: 'PNG, JPEG, GIF, WebP 이미지만 첨부할 수 있어요.',
+    tooLarge: (bytes) => `이미지는 ${Math.round(bytes / 1024 / 1024)}MB 이하만 첨부할 수 있어요.`,
+    tooMany: (max) => `이미지는 한 번에 ${max}장까지 첨부할 수 있어요.`,
+    missing: '첨부한 이미지를 더 이상 찾을 수 없어요. 지우고 다시 첨부해 주세요.',
   },
 };

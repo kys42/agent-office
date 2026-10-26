@@ -79,6 +79,7 @@ import {
 import { codexDestinationTarget, findCodexDestination, sendToCodex } from './codex-send.js';
 import { findCodexTerminal, lookupCodexTerminal } from './codex-focus.js';
 import { composerFor } from './composer/index.js';
+import { AttachmentError, AttachmentStore } from './attachments.js';
 import { promptsFor } from './prompts/index.js';
 import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
 import type { PromptTarget } from './prompts/types.js';
@@ -128,6 +129,10 @@ else {
     // Use the same art as the bundle even when macOS remembers an older Dock icon.
     if (process.platform === 'darwin') app.dock?.setIcon(path.join(root, 'dist', 'icon.png'));
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
+    // Attached images are kept a week (the Codex queue passes paths the agent may open later).
+    void attachments()
+      .cleanup()
+      .catch(() => undefined);
     cards = new CardWindows({
       index,
       preload: path.join(__dirname, 'preload.cjs'),
@@ -1352,13 +1357,26 @@ function setupIPC() {
     const terminal = await live(known, true);
     return terminal ? inspectTerminalDraft(terminal, composer) : null;
   });
+  // The renderer hands over an image's bytes; main checks them and keeps the file. Only an
+  // opaque id goes back: a send names ids, never paths.
+  ipcMain.handle('office:attach-image', async (e, bytes) => {
+    trusted(e);
+    try {
+      return await attachments().save(bytes);
+    } catch (error) {
+      if (error instanceof AttachmentError) throw error;
+      throw new Error(m().desktop.badFile);
+    }
+  });
   const sendMessage = async (
     id: unknown,
     text: unknown,
-    options?: { replaceDraft?: string; allowPartialDraft?: boolean },
+    options?: { replaceDraft?: string; allowPartialDraft?: boolean; images?: unknown },
     authorized?: () => Promise<void>,
   ): Promise<SendResult> => {
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+    // Ids only, resolved to this app's own files; anything else refuses the send.
+    const images = await attachments().resolveAll(options?.images);
     const replaceDraft: unknown = options?.replaceDraft;
     const allowPartialDraft: unknown = options?.allowPartialDraft;
     if (
@@ -1372,6 +1390,7 @@ function setupIPC() {
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
     await authorized?.();
     if (isRemoteId(id)) {
+      if (images.length) throw new Error(m().desktop.terminal.imagesUnsupported);
       if (replaceDraft !== undefined) throw new Error(m().federation.remoteDraft);
       return bridge.call('remote-send', [id, text, randomUUID()], async () => {
         await authorized?.();
@@ -1384,17 +1403,26 @@ function setupIPC() {
     const composer = composerFor(known.provider);
     const delivery = composer.capabilities(null).delivery;
     if (delivery === 'none') throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+    // Each adapter says whether images reach its agent at all (the Codex transports both do).
+    if (images.length && !composer.capabilities(null).images)
+      throw new Error(m().desktop.terminal.imagesUnsupported);
     const thread = delivery === 'queue' ? await codex(known, true) : null;
     if (delivery === 'queue' && !thread) throw new Error(m().desktop.terminal.noTarget);
     if (thread)
       try {
         return {
           status: 'sent',
-          message: await sendToCodex(thread, text, undefined, async () => {
-            await authorized?.();
-            if (!(await terminalSendEnabled()))
-              throw new TerminalInputError(m().desktop.terminal.enableFirst);
-          }),
+          message: await sendToCodex(
+            thread,
+            text,
+            undefined,
+            async () => {
+              await authorized?.();
+              if (!(await terminalSendEnabled()))
+                throw new TerminalInputError(m().desktop.terminal.enableFirst);
+            },
+            images,
+          ),
         };
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
@@ -1413,6 +1441,7 @@ function setupIPC() {
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),
         clipboardText: () => clipboard.readText(),
+        images,
       });
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
@@ -1576,6 +1605,10 @@ function desktopSettingsChanged() {
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+let attachmentStore: AttachmentStore | undefined;
+/** Images attached in the composer: `<userData>/attachments`, files this app wrote only. */
+const attachments = () =>
+  (attachmentStore ??= new AttachmentStore(path.join(app.getPath('userData'), 'attachments')));
 /**
  * On unless the person turned it off: no file means the default (on), and the file records
  * their choice. A file that can't be read counts as off. Turning it back on asks for

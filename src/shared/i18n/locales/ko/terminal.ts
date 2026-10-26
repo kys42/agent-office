@@ -50,4 +50,22 @@ export const terminal: Messages['terminal'] = {
   sendDraftTitle: '입력창의 이 글을 대신 보내요. 내가 쓴 글은 입력칸에 남아요.',
   cancelClear: '취소',
   clearedToClipboard: '지운 글은 클립보드에 있어요',
+  images: {
+    attach: '이미지 첨부',
+    attachHint: '이미지 첨부 · 붙여넣기(⌘V)나 끌어다 놓기도 돼요',
+    remove: (n) => `${n}번째 이미지 빼기`,
+    hidden: (n) => `이미지 ${n} (가림)`,
+    uploading: '첨부하는 중…',
+    asPaths: 'Codex CLI에는 이미지 파일 경로로 전달돼요',
+    dropHere: '여기에 놓으면 이미지가 첨부돼요',
+    notSaved: '첨부한 이미지는 앱을 다시 켜면 남지 않아요.',
+    blocked: {
+      desktop: '이미지는 데스크톱 앱에서만 보낼 수 있어요.',
+      remote: '다른 사무실 동료에게는 이미지를 보낼 수 없어요.',
+      target: '이 대화에는 여기서 이미지를 보낼 수 없어요.',
+    },
+    notImage: 'PNG, JPEG, GIF, WebP 이미지만 첨부할 수 있어요.',
+    tooLarge: (mb) => `이미지는 ${mb}MB 이하만 첨부할 수 있어요.`,
+    tooMany: (max) => `이미지는 한 번에 ${max}장까지 첨부할 수 있어요.`,
+  },
 };

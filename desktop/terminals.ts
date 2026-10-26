@@ -18,11 +18,14 @@ import path from 'node:path';
 import type { SendResult, TerminalTarget } from '../src/shared/types.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
 import {
+  afterImages,
   claudeCodeComposer,
   drawn,
   holdsText,
   parseStyledScreen,
   promptHolds,
+  promptHoldsImages,
+  readPrompt,
   readyToType,
   mergeBackup,
   sameWrapped,
@@ -44,7 +47,7 @@ import {
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
 import type { PromptHost, PromptKey } from './prompts/types.js';
-export { promptHolds, readPrompt } from './composer/index.js';
+export { promptHolds, promptHoldsImages, readPrompt } from './composer/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
 // never reachable through OfficeService.call (shared with the web preview). Reading the
@@ -248,6 +251,7 @@ export const acceptsInput = (status: string) => OPEN.has(status);
 
 /** What the renderer may know: never the handle or socket, which main re-resolves per action. */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
+  const { images } = claudeCodeComposer.capabilities({ styled: live.host.kind === 'tmux' });
   return {
     kind: live.host.kind,
     label: live.host.kind === 'orca' ? live.host.title : live.host.label,
@@ -255,6 +259,7 @@ export function terminalTarget(live: LiveTerminal): TerminalTarget {
     canSend: acceptsInput(live.process.status),
     canFocus: true,
     focus: focusTarget(live.host),
+    ...(images && { images }),
   };
 }
 
@@ -340,14 +345,17 @@ function claimOwn(
   return undefined;
 }
 
-/** Plain typed text only: escape sequences and other control characters never reach the pty. */
-export function cleanInput(text: unknown): string {
+/**
+ * Plain typed text only: escape sequences and other control characters never reach the pty.
+ * `allowEmpty`: a message of images alone has no text.
+ */
+export function cleanInput(text: unknown, options: { allowEmpty?: boolean } = {}): string {
   if (typeof text !== 'string') throw new TerminalInputError(m().desktop.terminal.empty);
   const value = text
     .replace(/\r\n?/g, '\n')
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
     .trim();
-  if (!value) throw new TerminalInputError(m().desktop.terminal.empty);
+  if (!value && !options.allowEmpty) throw new TerminalInputError(m().desktop.terminal.empty);
   if (value.length > MAX_SEND_LENGTH)
     throw new TerminalInputError(
       m().desktop.terminal.tooLong(MAX_SEND_LENGTH.toLocaleString(intlLocale())),
@@ -544,7 +552,18 @@ export interface TerminalSendOptions {
   clipboardText?: () => string | Promise<string>;
   /** The agent whose composer this is. */
   composer?: ComposerAdapter;
+  /**
+   * Absolute paths of images to attach (files main saved itself, never paths from a renderer).
+   * Pasted first, as one paste, and checked as attached before the text goes in.
+   */
+  images?: readonly string[];
 }
+
+/** An image path is pasted as is: absolute, one line, no control characters. */
+const pastablePath = (file: string) =>
+  path.isAbsolute(file) && !/[\u0000-\u001f\u007f-\u009f]/.test(file) && !/ \//.test(file);
+/** Claude Code reads and resizes a pasted image before showing it: up to ~3 s here. */
+const IMAGE_TRIES = 20;
 
 /**
  * Types the text, then submits it only while Claude's own prompt holds exactly that. Enter is
@@ -620,7 +639,8 @@ async function deliver(
   waited: boolean,
   options: TerminalSendOptions,
 ): Promise<SendResult> {
-  const text = cleanInput(input);
+  const images = options.images ?? [];
+  const text = cleanInput(input, { allowEmpty: images.length > 0 });
   const t = m().desktop.terminal;
   /** The same process, still on this session, open to input and in front of its terminal. */
   const current = async () => {
@@ -649,6 +669,9 @@ async function deliver(
   // Typing into a terminal is only for agents whose composer can be read first.
   if (can.delivery !== 'terminal' || !can.canInspect)
     throw new TerminalInputError(t.unsupportedAgent(composer.agent));
+  // Images only where the agent attaches a pasted path itself, and only paths it splits right.
+  if (images.length && (can.images !== 'attach' || !images.every(pastablePath)))
+    throw new TerminalInputError(t.imagesUnsupported);
   const state = await composer.inspect(io);
   // The reply an earlier send typed and could not submit, still shown exactly as typed.
   const reply = claimOwn(typed, key, state);
@@ -760,18 +783,25 @@ async function deliver(
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await options.beforeSend?.();
-    // Remembered once it may reach the pane: whatever happens next, the text may be in the
-    // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
-    // app's: the same words typed by the person later are their draft.
-    try {
-      await typeText(host, text, deps, () => typed.keep(key, text));
-    } catch (error) {
-      // Orca refused the paste outright: none of it is in the composer. Any other failure
-      // (a timeout, no answer) may have delivered it, so it stays the app's.
-      if (error instanceof OrcaRefusal) typed.drop(key);
-      throw error;
-    }
-    const holds = async () => promptHolds((await readScreen(host, deps)) ?? '', text, strict);
+    if (images.length) await attachImages();
+    else
+      // Remembered once it may reach the pane: whatever happens next, the text may be in the
+      // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
+      // app's: the same words typed by the person later are their draft.
+      try {
+        await typeText(host, text, deps, () => typed.keep(key, text));
+      } catch (error) {
+        // Orca refused the paste outright: none of it is in the composer. Any other failure
+        // (a timeout, no answer) may have delivered it, so it stays the app's.
+        if (error instanceof OrcaRefusal) typed.drop(key);
+        throw error;
+      }
+    const holds = async () => {
+      const screen = (await readScreen(host, deps)) ?? '';
+      return images.length
+        ? promptHoldsImages(screen, text, images, strict)
+        : promptHolds(screen, text, strict);
+    };
     // The prompt may take a moment to draw the text.
     let shown = false;
     for (let tries = 0; !shown && tries < 3; tries++) {
@@ -809,5 +839,26 @@ async function deliver(
     if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));
     if (again.status === 'busy') return sent(t.queued(where));
     return sent(host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label));
+  }
+
+  /**
+   * The images first: their paths as one paste, which Claude Code turns into `[Image #N]` (it
+   * splits a paste at spaces before `/`). Only once the prompt holds exactly those, and nothing
+   * else, does the text go in, as its own paste. What a send with images leaves behind is never
+   * claimed as the app's own reply: the prompt shows placeholders, not the typed text, so a
+   * retry asks about it like any draft.
+   */
+  async function attachImages() {
+    typed.drop(key);
+    await typeText(host, images.join(' '), deps);
+    let attached = false;
+    for (let tries = 0; !attached && tries < IMAGE_TRIES; tries++) {
+      await deps.wait(150);
+      const screen = await readScreen(host, deps);
+      const shown = screen ? readPrompt(screen) : null;
+      attached = shown !== null && afterImages(shown, images) === '';
+    }
+    if (!attached) throw new TerminalInputError(t.imagesNotShown);
+    if (text) await typeText(host, text, deps);
   }
 }
