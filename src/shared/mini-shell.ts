@@ -101,6 +101,21 @@ export function validShellInput(ptyId: unknown, data: unknown): data is string {
     data.length <= SHELL_LIMITS.maxInput
   );
 }
+/**
+ * Splits a large paste into writes of at most `size` UTF-16 units, never between the two
+ * halves of a surrogate pair (an emoji cut in two would reach the shell as two broken chars).
+ */
+export function splitInput(data: string, size = SHELL_LIMITS.maxInput / 2): string[] {
+  const pieces: string[] = [];
+  for (let i = 0; i < data.length;) {
+    let end = Math.min(data.length, i + size);
+    const last = data.charCodeAt(end - 1);
+    if (end < data.length && end - i > 1 && last >= 0xd800 && last <= 0xdbff) end--;
+    pieces.push(data.slice(i, end));
+    i = end;
+  }
+  return pieces;
+}
 /** Local folders a zone can open a shell in: one per folder, never a remote office's. */
 export function shellFolders(sessions: readonly Session[]): { id: string; cwd: string }[] {
   const seen = new Map<string, string>();

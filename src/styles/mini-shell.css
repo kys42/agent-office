@@ -5,7 +5,8 @@
   left: 12px;
   right: 12px;
   bottom: 12px;
-  z-index: 8500;
+  /* Below dialogs and the command palette (.modal-backdrop 8000, .palette-backdrop 8500). */
+  z-index: 7500;
   display: flex;
   flex-direction: column;
   height: 248px;
@@ -82,7 +83,7 @@
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 8600;
+  z-index: 7600;
   display: flex;
   flex-direction: column;
   min-width: 200px;
@@ -170,5 +171,7 @@
   left: 4px;
   right: 4px;
   bottom: 4px;
+}
+.dock-card .mini-shell:not(.is-expanded) {
   height: min(248px, 55vh);
 }

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { m } from '../src/shared/i18n/index.js';
@@ -56,6 +57,35 @@ function safeUserShell() {
     return undefined;
   }
 }
+/** The slice of node-pty's API used here, declared locally: `node-pty` is an optional
+ * dependency, so type-checking and building must not need it installed. */
+interface NodePty {
+  spawn(
+    file: string,
+    args: string[],
+    options: {
+      name: string;
+      cwd: string;
+      cols: number;
+      rows: number;
+      env: NodeJS.ProcessEnv;
+    },
+  ): PtyLike;
+}
+/**
+ * Loads node-pty on first use (a build without the native module still starts, without the
+ * feature). A runtime require by name keeps it out of the bundle and of `tsc`'s module
+ * resolution. The bundled app has `require`; scripts run through tsx from the repo resolve it
+ * from the working directory.
+ */
+export function loadNodePty(
+  load: (id: string) => unknown = typeof require === 'function'
+    ? require
+    : createRequire(path.join(process.cwd(), 'index.js')),
+): NodePty {
+  const name = ['node', 'pty'].join('-');
+  return load(name) as NodePty;
+}
 export const defaultShellDeps = (): ShellDeps => ({
   run: (file, args, options) =>
     defaultResumeDeps.run(file, args, options) as unknown as Promise<string>,
@@ -63,9 +93,7 @@ export const defaultShellDeps = (): ShellDeps => ({
   directory: defaultResumeDeps.directory,
   loginShell: () => loginShell(),
   async spawn(file, args, options) {
-    // Loaded on first use: a build without the native module still starts, without the feature.
-    const pty = await import('node-pty');
-    return pty.spawn(file, args, { name: 'xterm-256color', ...options });
+    return loadNodePty().spawn(file, args, { name: 'xterm-256color', ...options });
   },
   platform: process.platform,
   server: shellServer(),
@@ -103,6 +131,11 @@ interface Attachment {
  */
 export class MiniShells {
   private attachments = new Map<string, Attachment>();
+  /** Bumped when a window closes or reloads: a spawn still in flight for it is then dropped. */
+  private epochs = new Map<number, number>();
+  private epoch(owner: number) {
+    return this.epochs.get(owner) ?? 0;
+  }
   private queue: Promise<unknown> = Promise.resolve();
   constructor(private deps: ShellDeps = defaultShellDeps()) {}
   get supported() {
@@ -215,6 +248,7 @@ export class MiniShells {
     rows: number,
     sink: { data: (ptyId: string, data: string) => void; exit: (ptyId: string) => void },
     created = false,
+    since = this.epoch(owner),
   ): Promise<ShellAttachment> {
     if (!this.supported) throw new Error(m().shell.unsupported);
     const shell = await this.find(name);
@@ -233,6 +267,12 @@ export class MiniShells {
       );
     } catch {
       throw new Error(m().shell.noPty);
+    }
+    // The window left while this was starting: end the new client now, or it would stay
+    // attached with no one to show it to (and no window that could ever detach it).
+    if (this.epoch(owner) !== since) {
+      pty.kill();
+      throw new Error(m().shell.gone);
     }
     const ptyId = randomUUID();
     this.attachments.set(ptyId, { pty, owner, name });
@@ -266,8 +306,9 @@ export class MiniShells {
     rows: number,
     sink: Parameters<MiniShells['attach']>[4],
   ) {
+    const since = this.epoch(owner);
     const created = await this.ensure(cwd, cols, rows);
-    return this.attach(owner, describeShell(cwd).name, cols, rows, sink, created);
+    return this.attach(owner, describeShell(cwd).name, cols, rows, sink, created, since);
   }
   private own(owner: number, ptyId: string) {
     const a = this.attachments.get(ptyId);
@@ -295,6 +336,7 @@ export class MiniShells {
   }
   /** A window closed or reloaded: its clients go, the shells stay. */
   detachOwner(owner: number) {
+    this.epochs.set(owner, this.epoch(owner) + 1);
     for (const [id, a] of this.attachments) if (a.owner === owner) this.detach(owner, id);
   }
   /** Ends the shell itself (after the person confirmed) — every client of it closes too. */

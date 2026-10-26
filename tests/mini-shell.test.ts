@@ -1,8 +1,13 @@
 import { test } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { chmod, copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
   MiniShells,
   describeShell,
+  loadNodePty,
   loginShell,
   shellEnv,
   shellServer,
@@ -15,6 +20,7 @@ import {
   parseShellCommand,
   shellFolders,
   shellLabel,
+  splitInput,
   validShellInput,
 } from '../src/shared/mini-shell';
 import type { Session } from '../src/shared/types';
@@ -305,4 +311,73 @@ test('zones offer local folders only, one per folder', () => {
   assert.equal(canOpenShell(s('d', '/work/app', true)), false);
   assert.equal(shellLabel('/work/app/'), 'app');
   assert.equal(shellLabel('/'), '/');
+});
+
+test('a window that closes while its terminal is starting leaves no client behind', async () => {
+  const f = fixture();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const spawn = f.deps.spawn;
+  f.deps.spawn = async (...args) => {
+    await gate;
+    return spawn(...args);
+  };
+  const opening = f.shells.open(1, '/work/app', 80, 12, f.sink());
+  await new Promise((r) => setTimeout(r, 10));
+  f.shells.detachOwner(1); // the window reloaded mid-open
+  release();
+  await assert.rejects(opening, /no longer running/);
+  assert.equal(f.spawned.length, 1);
+  assert.equal(f.spawned[0].pty.killed, true);
+  assert.equal(f.shells.attachedCount, 0);
+  // The shell itself stays, and the same window can open it again afterwards.
+  assert.equal((await f.shells.list()).length, 1);
+  const again = await f.shells.open(1, '/work/app', 80, 12, f.sink());
+  assert.equal(again.created, false);
+  assert.equal(f.shells.attachedCount, 1);
+});
+
+test('node-pty is loaded by name at run time, not resolved at build time', () => {
+  const asked: string[] = [];
+  const fake = { spawn: () => new FakePty() };
+  assert.equal(
+    loadNodePty((id) => {
+      asked.push(id);
+      return fake;
+    }),
+    fake,
+  );
+  assert.deepEqual(asked, ['node-pty']);
+});
+
+test('large pastes split at code-point boundaries, never inside a surrogate pair', () => {
+  const emoji = '😀';
+  // A cut right after the high surrogate would land at 4: it steps back to 3.
+  assert.deepEqual(splitInput('abc' + emoji + 'd', 4), ['abc', emoji + 'd']);
+  const text = ('가' + emoji + 'x').repeat(30000);
+  const pieces = splitInput(text);
+  assert.equal(pieces.join(''), text);
+  for (const p of pieces) {
+    assert.ok(p.length <= SHELL_LIMITS.maxInput / 2);
+    assert.ok(validShellInput('0b0e2a7c-3a5e-4c58-9d38-5d4e9a1f2b3c', p));
+    assert.doesNotMatch(p, /^[\udc00-\udfff]|[\ud800-\udbff]$/);
+  }
+  assert.deepEqual(splitInput(''), []);
+});
+
+test('the install fix runs from a path with spaces and non-ASCII letters', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office pty 한글-'));
+  try {
+    const helper = path.join(dir, 'scripts', 'node-pty-helper.mjs');
+    await mkdir(path.dirname(helper), { recursive: true });
+    await copyFile('scripts/node-pty-helper.mjs', helper);
+    const file = path.join(dir, 'node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper');
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, '');
+    await chmod(file, 0o644);
+    execFileSync(process.execPath, [helper], { cwd: dir });
+    assert.equal((await stat(file)).mode & 0o777, 0o755);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

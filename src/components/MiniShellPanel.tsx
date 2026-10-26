@@ -9,14 +9,13 @@ import { closeMiniShell, openMiniShell } from '../lib/miniShell';
 import {
   SHELL_LIMITS,
   shellLabel,
+  splitInput,
   type ShellAttachment,
   type ShellInfo,
   type ShellTarget,
 } from '../shared/mini-shell';
 
 type Status = 'connecting' | 'live' | 'ended' | 'error';
-/** Pastes go in pieces the main process accepts (it refuses, never cuts, a larger write). */
-const PIECE = SHELL_LIMITS.maxInput / 2;
 
 /**
  * Draws one attachment to a tmux-kept shell. All terminal state lives in tmux: this view only
@@ -86,7 +85,7 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
     });
     const input = term.onData((data) => {
       if (!ptyId) return;
-      for (let i = 0; i < data.length; i += PIECE) shell.input(ptyId, data.slice(i, i + PIECE));
+      for (const piece of splitInput(data)) shell.input(ptyId, piece);
     });
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     fitRef.current = () => {

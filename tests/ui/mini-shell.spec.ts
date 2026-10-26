@@ -110,8 +110,29 @@ test('a card opens a mini terminal in the colleague folder; closing only detache
   await page.keyboard.press('Escape');
   await expect(panel).toBeVisible();
   await page.screenshot({ path: '.local/mini-shell-card.png', animations: 'disabled' });
+  // Dialogs and the command palette stay above the drawer.
+  const layers = await page.evaluate(() => {
+    const probe = (cls: string) => {
+      const el = document.createElement('div');
+      el.className = cls;
+      document.body.append(el);
+      const z = Number(getComputedStyle(el).zIndex);
+      el.remove();
+      return z;
+    };
+    return {
+      drawer: Number(getComputedStyle(document.querySelector('.mini-shell')!).zIndex),
+      modal: probe('modal-backdrop'),
+      palette: probe('palette-backdrop'),
+    };
+  });
+  expect(layers.drawer).toBeLessThan(layers.modal);
+  expect(layers.drawer).toBeLessThan(layers.palette);
+  const compact = (await panel.boundingBox())!.height;
   await panel.getByRole('button', { name: '크게 보기' }).click();
   await expect(panel).toHaveClass(/is-expanded/);
+  // In the small card window too, 크게 보기 really makes it taller.
+  await expect.poll(async () => (await panel.boundingBox())!.height).toBeGreaterThan(compact + 50);
   await panel.getByRole('button', { name: '닫기 (계속 실행)' }).click();
   await expect(panel).toHaveCount(0);
   expect((await commands(page)).at(-1)).toEqual({ type: 'detach', ptyId: PTY });
