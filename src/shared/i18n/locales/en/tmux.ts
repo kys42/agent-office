@@ -104,4 +104,6 @@ export const tmux = {
   unknownConfirm:
     'Could not confirm that this conversation is not open somewhere else. If it is, the same conversation will run twice.',
   tabGone: 'That Orca tab could not be found again. Check the status again.',
+  ownSessionNote:
+    'This is the tmux session Agent Office started for this conversation. After /new or /clear in it, it may now show another conversation.',
 };

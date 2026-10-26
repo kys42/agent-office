@@ -83,6 +83,7 @@ export function TmuxResume({
     const ticket = ++request.current;
     setBusy(true);
     setError('');
+    let refused = false;
     try {
       const result = await api.orcaLaunch(id, 'start');
       if (ticket !== request.current) return;
@@ -93,11 +94,13 @@ export function TmuxResume({
     } catch (e) {
       if (ticket !== request.current) return;
       setError((e as Error).message);
-      // A refusal (e.g. it already runs) may change which buttons make sense.
-      void checkOrca();
+      refused = true;
     } finally {
       if (ticket === request.current) setBusy(false);
     }
+    // A refusal (e.g. it already runs) may change the buttons and the connections: read the
+    // whole status again, keeping the refusal on screen.
+    if (refused) void act('status', provider, true);
   };
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
@@ -117,7 +120,11 @@ export function TmuxResume({
       void checkOrca();
     }
   };
-  /** An own tmux session already shows its reconnect controls; no second notice for it. */
+  /**
+   * The running notice and its jump follow the duplicate evidence alone: the own tmux pane can
+   * be alive while showing another conversation (/new, /clear). An own tmux session already
+   * shows its (separately labelled) reconnect controls, so no second "open" notice for it.
+   */
   const openTab = openElsewhere && duplicate.where === 'orca';
   const openOther = openElsewhere && !(duplicate.where === 'tmux' && info?.running);
   const projectIds = projects?.map((p) => p.id).join('\n');
@@ -139,14 +146,20 @@ export function TmuxResume({
   useEffect(() => {
     if (privacy) setOpen(false);
   }, [privacy]);
-  const act = async (action: 'status' | 'start' | 'open', selected = provider) => {
+  const act = async (
+    action: 'status' | 'start' | 'open',
+    selected = provider,
+    /** A re-read after a refusal keeps the refusal's message. */
+    keepError = false,
+  ) => {
     if (busy || (summon ? !api.tmuxSummon : !api.tmuxResume)) return;
     if (projects && !projects.some((p) => p.id === projectId)) return;
     if (action === 'status') void checkOrca();
     const ticket = ++request.current;
     const asked = summon ? 0 : ++duplicateRequest.current;
     setBusy(true);
-    setError('');
+    if (!keepError) setError('');
+    let refused = false;
     try {
       const result = summon
         ? await api.tmuxSummon!(projectId, action, selected, agentName, initialMessage)
@@ -159,11 +172,12 @@ export function TmuxResume({
       if (ticket !== request.current) return;
       if (action !== 'open') setInfo(null);
       setError((e as Error).message);
-      // A refusal (e.g. it already runs) may change which buttons make sense.
-      if (action === 'start') void checkOrca();
+      refused = action === 'start';
     } finally {
       if (ticket === request.current) setBusy(false);
     }
+    // A refusal (e.g. it already runs) may change the buttons and the connections.
+    if (refused && !summon) void act('status', selected, true);
   };
   return (
     <>
@@ -359,6 +373,12 @@ export function TmuxResume({
                       {text.summonDiscovery}
                     </p>
                   )}
+                  {!summon && info.running && (
+                    <p className="tmux-discovery">
+                      <Info size={13} aria-hidden="true" />
+                      {text.ownSessionNote}
+                    </p>
+                  )}
                 </section>
               )}
               {busy && !info && (
@@ -367,7 +387,7 @@ export function TmuxResume({
                   {text.loading}
                 </p>
               )}
-              {runningElsewhere && !info?.running && (
+              {runningElsewhere && (
                 <p className="tmux-caution" role="status">
                   <AlertCircle size={14} aria-hidden="true" />
                   {text.runningNotice(place)}
@@ -421,7 +441,7 @@ export function TmuxResume({
                 )}
                 {busy ? text.loading : summon ? text.summonCheck : text.refresh}
               </button>
-              {runningElsewhere && !info?.running && (
+              {runningElsewhere && (
                 <button className="button primary" disabled={busy} onClick={jump}>
                   <ArrowUpRight size={14} aria-hidden="true" />
                   {text.jumpToTerminal}
@@ -454,7 +474,11 @@ export function TmuxResume({
                 </button>
               )}
               {info?.running && info.canOpen && (
-                <button className="button primary" disabled={busy} onClick={() => void act('open')}>
+                <button
+                  className={runningElsewhere ? 'button' : 'button primary'}
+                  disabled={busy}
+                  onClick={() => void act('open')}
+                >
                   <ArrowUpRight size={14} aria-hidden="true" />
                   {text.open}
                 </button>

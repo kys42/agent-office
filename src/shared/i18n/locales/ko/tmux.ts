@@ -99,4 +99,6 @@ export const tmux: Messages['tmux'] = {
   unknownConfirm:
     '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 이미 열려 있다면 같은 대화가 두 번 돌아가요.',
   tabGone: '그 Orca 탭을 다시 찾지 못했어요. 상태를 다시 확인해주세요.',
+  ownSessionNote:
+    '이 대화로 앱이 띄웠던 tmux 세션이에요. 그 안에서 /new·/clear를 했다면 지금은 다른 대화일 수 있어요.',
 };

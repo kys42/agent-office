@@ -80,6 +80,7 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
           running: w.running,
           canOpen: true,
           ...(w.duplicate ? { duplicate: w.duplicate } : {}),
+          ...(w.connections ? { connections: w.connections } : {}),
         };
       },
       orcaLaunch: async (_id: string, action: string) => {
@@ -87,7 +88,8 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
         if (action === 'focus') return { available: true, message: 'Orca 탭으로 이동했어요' };
         if (action === 'start') {
           // main's fresh re-check found it running meanwhile: refused, status now says so.
-          w.orcaDuplicate = { state: 'running', where: 'tmux' };
+          w.orcaDuplicate = w.duplicate = { state: 'running', where: 'tmux' };
+          w.connections = [{ id: s.sessions[0].id, name: '방금 연결된 동료', label: 'tmux' }];
           throw new Error('이미 실행 중이라 새로 띄우지 않았어요');
         }
         return {
@@ -292,6 +294,35 @@ test('an Orca launch refusal hides the launch buttons even though the tmux statu
   await expect(modal.getByRole('button', { name: 'tmux로 따로 띄우기' })).toHaveCount(0);
   await expect(modal.getByRole('button', { name: 'Orca에서 새로 띄우기' })).toHaveCount(0);
   await expect(modal.getByRole('button', { name: '터미널로 이동', exact: true })).toBeVisible();
+  // The tmux status (and its connections) is read again too, keeping the refusal shown.
+  await expect(modal.getByText('방금 연결된 동료 · tmux')).toBeVisible();
+  await expect(modal.getByRole('alert')).toContainText('새로 띄우지 않았어요');
+  expect(await page.evaluate(() => (window as any).actions)).toEqual(['status', 'status']);
+});
+
+test('a saved conversation running elsewhere is shown even while the own tmux pane lives on', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.running = true; // the own pane is alive, after /new it shows another conversation
+    w.duplicate = { state: 'running', where: 'orca' };
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await expect(
+    modal.getByText('이 대화는 이미 Orca에서 실행 중이에요', { exact: false }),
+  ).toBeVisible();
+  await expect(modal.getByText('지금은 다른 대화일 수 있어요', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('button', { name: '터미널로 이동', exact: true })).toHaveClass(
+    /primary/,
+  );
+  await expect(modal.getByRole('button', { name: '터미널에서 열기', exact: true })).not.toHaveClass(
+    /primary/,
+  );
+  await modal.getByRole('button', { name: '터미널로 이동', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).jumped)).toBe(true);
 });
 
 test('project membership changes cannot launch a stale session folder', async ({ page }) => {

@@ -1,7 +1,7 @@
 import { findClaudeProcess } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck, LaunchPlace, Provider } from '../src/shared/types.js';
-import { lookupCodexTerminal } from './codex-focus.js';
+import { codexThreadOnScreen } from './codex-focus.js';
 import type { TerminalLookup } from './terminal-host.js';
 import { defaultTerminalDeps, lookupTerminal, type TerminalDeps } from './terminals.js';
 
@@ -35,10 +35,14 @@ export const claudeLiveness: LivenessAdapter = {
   },
 };
 
-/** Codex: an interactive Codex screen showing this thread (`lookupCodexTerminal`). */
+/**
+ * Codex: any freshly verified interactive Codex screen showing this thread
+ * (`codexThreadOnScreen`). Existence, not navigation: two screens of the thread, or one plus an
+ * unreadable one, still mean it runs (`lookupCodexTerminal` calls that unknown).
+ */
 export const codexLiveness: LivenessAdapter = {
   async lookup(nativeId, fresh, deps) {
-    const screen = await lookupCodexTerminal(nativeId, { fresh, deps });
+    const screen = await codexThreadOnScreen(nativeId, { fresh, deps });
     return screen.kind === 'found'
       ? { kind: 'found', terminal: { where: screen.terminal.host.kind } }
       : screen;
