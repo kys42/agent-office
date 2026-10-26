@@ -19,7 +19,7 @@ import {
   clipboard,
   nativeTheme,
 } from 'electron';
-import { windowStyle } from './window-style.js';
+import { dropAppMenu, windowStyle } from './window-style.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -323,10 +323,7 @@ function createMain() {
       sandbox: true,
     },
   });
-  if (process.platform !== 'darwin') {
-    main.removeMenu();
-    main.setMenuBarVisibility(false);
-  }
+  dropAppMenu(main);
   secure(main);
   watch(main);
   if (quiet) main.showInactive();
@@ -619,6 +616,8 @@ function setupMiniShell() {
         return shells.attach(owner, command.name, command.cols, command.rows, sinkFor(e.sender));
       case 'resize':
         return shells.resize(owner, command.ptyId, command.cols, command.rows);
+      case 'flow':
+        return shells.flow(owner, command.ptyId, command.paused);
       case 'detach':
         return shells.detach(owner, command.ptyId);
       case 'kill':

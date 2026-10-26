@@ -14,6 +14,9 @@ export interface PtyLike {
   onExit(cb: (e: { exitCode: number }) => void): unknown;
   write(data: string): void;
   resize(cols: number, rows: number): void;
+  /** Stop / restart reading output (node-pty): the view's flow control. */
+  pause(): void;
+  resume(): void;
   kill(): void;
 }
 export interface ShellDeps {
@@ -155,7 +158,7 @@ export class MiniShells {
       rows = await this.tmux([
         'list-sessions',
         '-F',
-        '#{session_name}\t#{@agent_office_shell}\t#{@agent_office_shell_cwd}\t#{session_attached}',
+        '#{session_name}\t#{@agent_office_shell}\t#{@agent_office_shell_cwd}\t#{session_attached}\t#{session_id}\t#{session_created}',
       ]);
     } catch (error) {
       const e = error as Error & { stderr?: string };
@@ -164,7 +167,7 @@ export class MiniShells {
     }
     const result: ShellInfo[] = [];
     for (const line of rows.split('\n')) {
-      const [name, token, encoded, attached] = line.split('\t');
+      const [name, token, encoded, attached, sessionId, created] = line.split('\t');
       if (!name || !SHELL_NAME.test(name)) continue;
       const cwd = Buffer.from(encoded ?? '', 'base64').toString('utf8');
       try {
@@ -173,7 +176,13 @@ export class MiniShells {
       } catch {
         continue;
       }
-      result.push({ name, cwd, attached: Number(attached) || 0 });
+      result.push({
+        name,
+        cwd,
+        attached: Number(attached) || 0,
+        ...(sessionId && /^\$\d+$/.test(sessionId) ? { sessionId } : {}),
+        ...(Number(created) > 0 ? { createdAt: Number(created) } : {}),
+      });
     }
     return result.sort((a, b) => a.cwd.localeCompare(b.cwd));
   }
@@ -323,6 +332,17 @@ export class MiniShells {
   write(owner: number, ptyId: string, data: string) {
     this.own(owner, ptyId)?.pty.write(data);
   }
+  /** Pauses or resumes reading this window's client output (its view is behind / caught up). */
+  flow(owner: number, ptyId: string, paused: boolean) {
+    const a = this.own(owner, ptyId);
+    if (!a) return;
+    try {
+      if (paused) a.pty.pause();
+      else a.pty.resume();
+    } catch {
+      /* the client already left */
+    }
+  }
   resize(owner: number, ptyId: string, cols: number, rows: number) {
     const a = this.own(owner, ptyId);
     if (!a) return;
@@ -348,8 +368,13 @@ export class MiniShells {
   async kill(name: string, confirm: (shell: ShellInfo) => Promise<boolean>) {
     const shell = await this.find(name);
     if (!(await confirm(shell))) return false;
+    // The person agreed to end *that* shell. If it ended and another started under the same
+    // name while they read the dialog, the new one is not what they agreed to end.
+    const now = await this.find(name);
+    if (!shell.sessionId || now.sessionId !== shell.sessionId || now.createdAt !== shell.createdAt)
+      throw new Error(m().shell.gone);
     try {
-      await this.tmux(['kill-session', '-t', '=' + shell.name]);
+      await this.tmux(['kill-session', '-t', shell.sessionId]);
     } catch {
       throw new Error(m().shell.failed);
     }

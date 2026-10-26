@@ -4,6 +4,7 @@ import { chmod, copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/pr
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { dropAppMenu } from '../desktop/window-style';
 import {
   MiniShells,
   describeShell,
@@ -21,6 +22,7 @@ import {
   shellFolders,
   shellLabel,
   fitSize,
+  OutputFlow,
   splitInput,
   validShellInput,
 } from '../src/shared/mini-shell';
@@ -31,6 +33,7 @@ class FakePty implements PtyLike {
   written: string[] = [];
   sizes: [number, number][] = [];
   killed = false;
+  paused = false;
   private data?: (d: string) => void;
   private exit?: (e: { exitCode: number }) => void;
   onData(cb: (d: string) => void) {
@@ -44,6 +47,12 @@ class FakePty implements PtyLike {
   }
   resize(c: number, r: number) {
     this.sizes.push([c, r]);
+  }
+  pause() {
+    this.paused = true;
+  }
+  resume() {
+    this.paused = false;
   }
   kill() {
     this.killed = true;
@@ -59,6 +68,19 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
   const spawned: { file: string; args: string[]; pty: FakePty }[] = [];
   let rows = options.rows ?? [];
   let noServer = options.noServer ?? true;
+  let nextId = 1;
+  const server = {
+    /** Ends a session and starts another under the same name (another window did both). */
+    restart(name: string) {
+      rows = rows.map((r) => {
+        const cells = r.split('\t');
+        if (cells[0] !== name) return r;
+        cells[4] = `$${nextId++}`;
+        cells[5] = String(1700000000 + nextId);
+        return cells.join('\t');
+      });
+    },
+  };
   const deps: ShellDeps = {
     async run(file, args) {
       calls.push([file, ...args]);
@@ -71,12 +93,16 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
         const name = args[args.indexOf('-s') + 1];
         const encoded = args[args.indexOf('@agent_office_shell_cwd') + 1];
         const token = args[args.indexOf('@agent_office_shell') + 1];
-        rows = [...rows, `${name}\t${token}\t${encoded}\t0`];
+        rows = [...rows, `${name}\t${token}\t${encoded}\t0\t$${nextId++}\t${1700000000 + nextId}`];
         noServer = false;
       }
       if (cmd === 'kill-session') {
-        const name = args[args.indexOf('-t') + 1].slice(1);
-        rows = rows.filter((r) => !r.startsWith(name + '\t'));
+        const target = args[args.indexOf('-t') + 1];
+        rows = rows.filter((r) =>
+          target.startsWith('$')
+            ? r.split('\t')[4] !== target
+            : !r.startsWith(target.slice(1) + '\t'),
+        );
       }
       return '';
     },
@@ -101,7 +127,7 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
       exit: (id: string) => exits.push(id),
     };
   };
-  return { deps, calls, spawned, sink, shells: new MiniShells(deps) };
+  return { deps, calls, spawned, sink, server, shells: new MiniShells(deps) };
 }
 
 test('one stable shell name per folder, never a relative or control-character path', () => {
@@ -248,10 +274,11 @@ test('ending a shell asks first and targets the exact session', async () => {
     true,
   );
   assert.equal(asked, '/work/app');
+  // By tmux's own session id, the one the person was asked about.
   assert.deepEqual(f.calls.find((c) => c.includes('kill-session'))!.slice(-3), [
     'kill-session',
     '-t',
-    '=' + a.name,
+    '$1',
   ]);
   await assert.rejects(
     f.shells.kill(a.name, async () => true),
@@ -422,4 +449,68 @@ test('fitted terminal sizes use the same limits the PTY is clamped to', () => {
     cols,
     rows,
   });
+});
+
+test('ending asks about one shell: a replacement started meanwhile is not ended', async () => {
+  const f = fixture();
+  const a = await f.shells.open(1, '/work/app', 80, 12, f.sink());
+  await assert.rejects(
+    f.shells.kill(a.name, async () => {
+      // While the dialog is open another window ends this shell and opens the folder again.
+      f.server.restart(a.name);
+      return true;
+    }),
+    /no longer running/,
+  );
+  assert.equal(f.calls.filter((c) => c.includes('kill-session')).length, 0);
+  assert.equal((await f.shells.list()).length, 1, 'the replacement keeps running');
+});
+
+test('flow control pauses and resumes only the window’s own client', async () => {
+  const f = fixture();
+  const a = await f.shells.open(1, '/work/app', 80, 12, f.sink());
+  const pty = f.spawned[0].pty;
+  f.shells.flow(2, a.ptyId, true);
+  assert.equal(pty.paused, false);
+  f.shells.flow(1, a.ptyId, true);
+  assert.equal(pty.paused, true);
+  f.shells.flow(1, a.ptyId, false);
+  assert.equal(pty.paused, false);
+  assert.deepEqual(parseShellCommand({ type: 'flow', ptyId: a.ptyId, paused: true }), {
+    type: 'flow',
+    ptyId: a.ptyId,
+    paused: true,
+  });
+  assert.throws(() => parseShellCommand({ type: 'flow', ptyId: a.ptyId, paused: 'yes' }));
+});
+
+test('the view pauses output above the high-water mark and resumes below the low', () => {
+  const signals: boolean[] = [];
+  const flow = new OutputFlow((p) => signals.push(p), 100, 20);
+  flow.wrote(60);
+  flow.wrote(60); // 120 queued: pause once
+  flow.wrote(50);
+  assert.deepEqual(signals, [true]);
+  flow.drew(60);
+  flow.drew(60); // 50 left: still above the low mark
+  assert.deepEqual(signals, [true]);
+  flow.drew(40); // 10 left: resume once
+  flow.drew(10);
+  assert.deepEqual(signals, [true, false]);
+  assert.equal(flow.pending, 0);
+  assert.equal(flow.isPaused, false);
+  assert.ok(SHELL_LIMITS.flowLow < SHELL_LIMITS.flowHigh);
+});
+
+test('card and main windows drop the app menu on Windows/Linux so Ctrl keys reach the terminal', () => {
+  const calls: string[] = [];
+  const window = {
+    removeMenu: () => calls.push('remove'),
+    setMenuBarVisibility: (v: boolean) => calls.push(`bar:${v}`),
+  };
+  assert.equal(dropAppMenu(window, 'darwin'), false);
+  assert.deepEqual(calls, []);
+  assert.equal(dropAppMenu(window, 'linux'), true);
+  assert.equal(dropAppMenu(window, 'win32'), true);
+  assert.deepEqual(calls, ['remove', 'bar:false', 'remove', 'bar:false']);
 });

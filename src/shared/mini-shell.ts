@@ -9,6 +9,10 @@ export interface ShellInfo {
   cwd: string;
   /** Number of clients attached now (another panel, or a terminal elsewhere). */
   attached: number;
+  /** tmux's own identity for this session (`$id` and creation time): a shell ended and started
+   * again under the same name is a different one. */
+  sessionId?: string;
+  createdAt?: number;
 }
 /** A live attachment of this window to a shell. Keystrokes go to `ptyId` only. */
 export interface ShellAttachment {
@@ -32,7 +36,9 @@ export type ShellCommand =
   | { type: 'list' }
   | { type: 'kill'; name: string }
   | { type: 'detach'; ptyId: string }
-  | { type: 'resize'; ptyId: string; cols: number; rows: number };
+  | { type: 'resize'; ptyId: string; cols: number; rows: number }
+  /** Flow control: the view has too much output queued (pause) or caught up (resume). */
+  | { type: 'flow'; ptyId: string; paused: boolean };
 
 export const SHELL_LIMITS = {
   minCols: 10,
@@ -43,6 +49,10 @@ export const SHELL_LIMITS = {
   maxInput: 64 * 1024,
   /** The compact panel's height in rows; expanded it takes most of the window. */
   compactRows: 12,
+  /** Output written to the view but not yet drawn: above `high` the PTY pauses, and it
+   * resumes below `low`. Keeps a flood (`yes`, a huge `cat`) bounded in memory. */
+  flowHigh: 256 * 1024,
+  flowLow: 32 * 1024,
 } as const;
 /** The folder's shell name: `shell-` + 16 hex of the folder token. */
 export const SHELL_NAME = /^shell-[0-9a-f]{16}$/;
@@ -97,6 +107,9 @@ export function parseShellCommand(raw: unknown): ShellCommand {
       return { type: 'detach', ptyId: ptyId() };
     case 'resize':
       return { type: 'resize', ptyId: ptyId(), cols: clampCols(c.cols), rows: clampRows(c.rows) };
+    case 'flow':
+      if (typeof c.paused !== 'boolean') throw new Error('bad flow');
+      return { type: 'flow', ptyId: ptyId(), paused: c.paused };
     default:
       throw new Error('bad command');
   }
@@ -125,6 +138,41 @@ export function splitInput(data: string, size = SHELL_LIMITS.maxInput / 2): stri
     i = end;
   }
   return pieces;
+}
+/**
+ * Output flow control for one attachment: count what was handed to the terminal and what it
+ * has drawn; say `pause` once above the high-water mark and `resume` once back below the low.
+ */
+export class OutputFlow {
+  private queued = 0;
+  private paused = false;
+  constructor(
+    private signal: (paused: boolean) => void,
+    private high: number = SHELL_LIMITS.flowHigh,
+    private low: number = SHELL_LIMITS.flowLow,
+  ) {}
+  /** `n` units handed to the terminal. */
+  wrote(n: number) {
+    this.queued += n;
+    if (!this.paused && this.queued > this.high) {
+      this.paused = true;
+      this.signal(true);
+    }
+  }
+  /** The terminal finished drawing `n` units. */
+  drew(n: number) {
+    this.queued = Math.max(0, this.queued - n);
+    if (this.paused && this.queued < this.low) {
+      this.paused = false;
+      this.signal(false);
+    }
+  }
+  get pending() {
+    return this.queued;
+  }
+  get isPaused() {
+    return this.paused;
+  }
 }
 /** Local folders a zone can open a shell in: one per folder, never a remote office's. */
 export function shellFolders(sessions: readonly Session[]): { id: string; cwd: string }[] {

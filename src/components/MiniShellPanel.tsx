@@ -10,6 +10,7 @@ import {
   clampCols,
   clampRows,
   fitSize,
+  OutputFlow,
   shellLabel,
   splitInput,
   type ShellAttachment,
@@ -90,8 +91,17 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
       return next;
     };
     size();
+    // Output that xterm has not drawn yet stays bounded: above the high-water mark main pauses
+    // reading this client (tmux then holds back too), and resumes once the view catches up.
+    const flow = new OutputFlow((paused) => {
+      if (ptyId) void shell.command({ type: 'flow', ptyId, paused }).catch(() => {});
+    });
+    const draw = (data: string) => {
+      flow.wrote(data.length);
+      term.write(data, () => flow.drew(data.length));
+    };
     const offData = shell.onData((id, data) => {
-      if (id === ptyId) term.write(data);
+      if (id === ptyId) draw(data);
       else if (!ptyId) early.set(id, (early.get(id) ?? '') + data);
     });
     const offExit = shell.onExit((id) => {
@@ -128,7 +138,7 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
         ptyId = a.ptyId;
         const first = early.get(a.ptyId);
         early.clear();
-        if (first) term.write(first);
+        if (first) draw(first);
         setAttachment(a);
         setStatus('live');
         if (a.created) setNote(t.shell.started);

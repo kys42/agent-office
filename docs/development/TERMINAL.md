@@ -339,6 +339,9 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 - **PTY**: `node-pty`로 `tmux -u -L agent-office-shell attach-session -t =<이름>`을 띄운다. 창(webContents id)마다 `ptyId`(UUID)를 주고, 쓰기·크기 변경·분리는 그 창의 `ptyId`일 때만 따른다. 출력은 8ms씩 모아 한 메시지로 보낸다. 창이 닫히거나 다시 로드되면(`destroyed`/`did-start-loading`) 그 창의 클라이언트만 끝낸다. 앱 종료도 클라이언트만 끝낸다 — 셸은 tmux에 남는다.
 - **환경**: 자식은 `TMUX`·`TMUX_PANE`·`CLAUDECODE`를 지우고 `TERM=xterm-256color`, 로캘이 없으면(Finder 실행) `LANG=en_US.UTF-8`.
 - **입력 제한**: 한 번에 64KB 이하 문자열. 더 큰 붙여넣기는 창이 32KB씩 나눠 보낸다. 크기는 10–400열, 3–150행으로 자른다. 그 외 모양의 명령은 `badRequest`.
+- **출력 흐름 제어**: 창은 xterm에 넘겼지만 아직 그리지 않은 양을 센다(`OutputFlow`). 256KB를 넘으면 `flow` 명령으로 main이 그 창의 PTY 읽기를 멈추고(`pause`), 32KB 아래로 내려오면 다시 읽는다. 다른 창의 PTY는 건드리지 못한다.
+- **종료 확인은 그 셸에만**: 확인 창을 띄우기 전 tmux `#{session_id}`·`#{session_created}`를 적어 두고, 동의 뒤 다시 읽어 같을 때만 `kill-session -t <$id>`로 끝낸다. 그 사이 다른 창이 끝내고 같은 폴더로 다시 띄운 셸은 끝내지 않는다.
+- **Ctrl 키**: Windows/Linux의 업무 카드 창도 큰 창처럼 앱 메뉴(Edit)를 떼어(`dropAppMenu`) Ctrl+C·Ctrl+A가 메뉴 대신 셸로 간다. macOS는 그대로.
 - **화면 숨기기**: 켜지면 서랍을 닫아(분리) 내용이 남지 않게 하고 버튼을 막는다.
 - 서랍 안의 keydown은 위로 올리지 않는다: Esc·글자 단축키가 카드·사무실이 아니라 셸로 간다. 스크롤은 tmux `mouse on`(휠 → copy-mode), 선택은 Option+드래그.
 

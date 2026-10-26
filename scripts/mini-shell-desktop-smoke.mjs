@@ -97,6 +97,10 @@ try {
   await page.keyboard.press('Enter');
   await rows.getByText('done-2').first().waitFor({ timeout: 10000 });
   assert.equal((await readFile(path.join(project, 'marker.txt'), 'utf8')).trim(), 'office-42');
+  // A flood (several MB) goes through flow control (pause/resume) and the shell stays usable.
+  await page.keyboard.type("head -c 4000000 /dev/zero | tr '\\0' y; echo; echo flood-$((2+3))");
+  await page.keyboard.press('Enter');
+  await rows.getByText('flood-5').first().waitFor({ timeout: 60000 });
   // Closing the panel only detaches.
   await page.getByRole('button', { name: close }).click();
   await page.locator('.mini-shell').waitFor({ state: 'detached' });
@@ -105,13 +109,13 @@ try {
   assert.equal(listed[0].cwd, project);
   assert.equal(listed[0].attached, 0);
   rows = await openFromCard(page);
-  await rows.getByText('done-2').first().waitFor({ timeout: 10000 });
+  await rows.getByText('flood-5').first().waitFor({ timeout: 10000 });
   // Quit the app and come back: the same shell, with what was on its screen.
   await app.close();
   app = await launch();
   page = await app.firstWindow();
   rows = await openFromCard(page);
-  await rows.getByText('done-2').first().waitFor({ timeout: 10000 });
+  await rows.getByText('flood-5').first().waitFor({ timeout: 10000 });
   const after = await page.evaluate(() => window.office.shell.command({ type: 'list' }));
   assert.deepEqual(
     after.map((s) => s.name),

@@ -14,6 +14,7 @@ import {
 import { popupBounds, readCardPosition } from '../src/shared/card-windows.js';
 import { m } from '../src/shared/i18n/index.js';
 import { quiet } from './quiet.js';
+import { dropAppMenu } from './window-style.js';
 
 interface Entry {
   window: BrowserWindow;
@@ -231,6 +232,8 @@ export class CardWindows {
         sandbox: true,
       },
     });
+    // The card holds the mini terminal: Ctrl+C must reach it, not the app's Edit menu.
+    dropAppMenu(window);
     const e: Entry = {
       window,
       target: null,

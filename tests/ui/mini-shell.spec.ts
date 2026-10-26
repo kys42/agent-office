@@ -271,3 +271,20 @@ test('a very wide window never asks for more columns than the terminal may have'
     .evaluate((row) => row.textContent!.length);
   expect(width).toBeLessThanOrEqual(400);
 });
+
+test('a flood of output pauses the shell until the view catches up', async ({ page }) => {
+  await setup(page);
+  await page.getByRole('button', { name: '미니 터미널', exact: true }).click();
+  const panel = page.getByRole('region', { name: '미니 터미널' });
+  await expect(panel).toHaveAttribute('data-status', 'live');
+  await page.evaluate(() => {
+    const w = window as any;
+    const line = 'y'.repeat(79) + '\r\n';
+    for (let i = 0; i < 64; i++) w.emit(line.repeat(128)); // ~650 KB at once
+  });
+  const flows = () =>
+    page.evaluate(() =>
+      (window as any).commands.filter((c: any) => c.type === 'flow').map((c: any) => c.paused),
+    );
+  await expect.poll(flows).toEqual([true, false]);
+});
