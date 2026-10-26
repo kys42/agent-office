@@ -82,4 +82,25 @@ export const tmux = {
   orcaUnavailable: 'Orca is not running or not reachable. Open Orca and try again.',
   orcaRefused: (reason: string) =>
     `Orca did not open the tab${reason ? `: ${reason}` : '.'} The folder may not be an Orca workspace; you can start it in tmux instead.`,
+  /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
+  place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
+  runningNotice: (place: string) =>
+    `This conversation is already running in ${place}. Go to it instead of starting it again.`,
+  openNotice: (place: string) => `This conversation is already open in ${place}.`,
+  openHint:
+    'Its agent could not be confirmed running there. Starting it again may run the same conversation twice.',
+  unknownNotice:
+    'Could not confirm that this conversation is not open somewhere else. Check before starting it again.',
+  jumpToTerminal: 'Go to terminal',
+  jumpToTab: 'Go to that tab',
+  forceStart: 'Start in tmux anyway',
+  forceOrca: 'Open in a new Orca tab anyway',
+  runningRefused: (place: string) =>
+    `This conversation is already running in ${place}, so it was not started again. Use Go to terminal.`,
+  changedRefused:
+    'This conversation opened somewhere else while you were confirming, so it was not started. Check its status again.',
+  openConfirm: (place: string) =>
+    `Warning: this conversation is already open in ${place}. Starting it again can run the same conversation twice, and the two can overwrite each other’s work.`,
+  unknownConfirm:
+    'Could not confirm that this conversation is not open somewhere else. If it is, the same conversation will run twice.',
 };

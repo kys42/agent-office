@@ -6,7 +6,8 @@ import path from 'node:path';
 import { runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import { tmuxArg, type TerminalHost } from './terminal-host.js';
-import type { Session, TmuxResumeInfo } from '../src/shared/types.js';
+import type { DuplicateCheck, Session, TmuxResumeInfo } from '../src/shared/types.js';
+import { confirmLaunch } from './launch-guard.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
 type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
@@ -183,17 +184,24 @@ export class TmuxResume {
   async status(s: SavedSession) {
     return (await this.inspect(s)).info;
   }
+  /**
+   * `duplicate`: for a resume, the fresh duplicate-launch check (desktop/launch-guard.ts), run
+   * before the confirmation and again after it; a conversation already running elsewhere is
+   * never launched. A summon (a new conversation) has none.
+   */
   start(
     s: SavedSession,
-    confirm: (info: TmuxResumeInfo) => Promise<boolean>,
+    confirm: (info: TmuxResumeInfo, duplicate: DuplicateCheck) => Promise<boolean>,
     authorized?: () => void,
+    duplicate?: (fresh: boolean) => Promise<DuplicateCheck>,
   ) {
     const task = this.queue.then(async () => {
       let current = await this.inspect(s);
       if (current.info.running) return current.info;
       if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
       const binary = await this.deps.binary(s.provider);
-      if (!(await confirm(current.info))) return current.info;
+      const info = current.info;
+      if (!(await confirmLaunch(duplicate, (check) => confirm(info, check)))) return info;
       current = await this.inspect(s);
       if (current.info.running) return current.info;
       if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);

@@ -1,7 +1,8 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
 import { OrcaLaunch } from './orca-launch.js';
-import { findOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { findOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -40,6 +41,7 @@ import type {
   Session,
   SessionIdentity,
   Snapshot,
+  DuplicateCheck,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
@@ -721,46 +723,92 @@ function setupIPC() {
   /** The person's choice in Settings, read when a launch starts. */
   const skipPermissions = () => delivery.latest?.preferences?.tmuxSkipPermissions === true;
   const skipNote = (on: boolean) => (on ? '\n\n' + m().tmux.skipPermissions : '');
+  const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
+  /**
+   * The duplicate-launch check for a saved conversation (desktop/launch-guard.ts): its agent
+   * process (per-agent liveness adapter), its Orca tab, and the app's own tmux session for it.
+   */
+  const duplicateCheck =
+    (session: Session) =>
+    (fresh: boolean): Promise<DuplicateCheck> =>
+      checkDuplicate(
+        {
+          agent: (f) => livenessFor(session.provider).lookup(session.nativeId, f),
+          orcaTab: async (f) => {
+            const tab = await lookupOrcaTab(
+              session,
+              defaultTerminalDeps(),
+              f,
+              (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+            );
+            // Orca not installed or not running: none of its tabs runs anything right now.
+            if (tab.kind === 'unknown' && !(await orcaLaunch.reachable(f))) return { kind: 'none' };
+            return tab;
+          },
+          ownTmux: async () => {
+            try {
+              return (await tmuxResume.status(session)).running
+                ? { kind: 'found', terminal: null }
+                : { kind: 'none' };
+            } catch (error) {
+              // No tmux installed: there is no own session.
+              if ((error as Error).message === m().tmux.missing) return { kind: 'none' };
+              throw error;
+            }
+          },
+        },
+        fresh,
+      );
+  /** Native confirmations warn about an open tab or an unverifiable check. */
+  const dialogType = (check: DuplicateCheck) =>
+    check.state === 'none' ? ('question' as const) : ('warning' as const);
   ipcMain.handle('office:tmux-resume', async (e, id, action) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
       throw new Error(m().desktop.badRequest);
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const session: Session = await bridge.call('detail', [id]);
-    if (action === 'status')
-      return {
-        ...(await tmuxResume.status(session)),
-        connections: (await projectConnections(session.cwd)).filter((c) => c.id === session.id),
-      };
+    if (action === 'status') {
+      const [info, connections, duplicate] = await Promise.all([
+        tmuxResume.status(session),
+        projectConnections(session.cwd),
+        duplicateCheck(session)(false),
+      ]);
+      return { ...info, duplicate, connections: connections.filter((c) => c.id === session.id) };
+    }
     if (action === 'open') return tmuxResume.open(session);
     const skip = skipPermissions();
-    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
-      const connections = (await projectConnections(session.cwd)).filter(
-        (c) => c.id === session.id,
-      );
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.title,
-        message: t.confirm,
-        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${skipNote(skip)}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
-        buttons: [t.cancel, t.start],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const result = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
+    return tmuxResume.start(
+      { ...session, skipPermissions: skip },
+      async (info, check) => {
+        const connections = (await projectConnections(session.cwd)).filter(
+          (c) => c.id === session.id,
+        );
+        const owner = BrowserWindow.fromWebContents(e.sender);
+        const t = m().tmux;
+        const options = {
+          type: dialogType(check),
+          title: t.title,
+          message: t.confirm,
+          detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${skipNote(skip)}${duplicateNote(check)}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
+          buttons: [t.cancel, t.start],
+          defaultId: 0,
+          cancelId: 0,
+        };
+        const endCardDialog = cards.dialog(e.sender);
+        try {
+          const result = owner
+            ? await dialog.showMessageBox(owner, options)
+            : await dialog.showMessageBox(options);
+          return result.response === 1;
+        } finally {
+          endCardDialog();
+        }
+      },
+      undefined,
+      duplicateCheck(session),
+    );
   });
-  const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
   ipcMain.handle('office:orca-launch', async (e, id, action) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
@@ -769,29 +817,40 @@ function setupIPC() {
     const session: Session = await bridge.call('detail', [id]);
     const skip = skipPermissions();
     const saved = { ...session, skipPermissions: skip };
-    if (action === 'status') return orcaLaunch.status(saved);
-    return orcaLaunch.start(saved, async (info) => {
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.orcaTitle,
-        message: t.orcaConfirm,
-        detail: `${t.orcaIntro}\n\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}\n\n${t.caution}${skipNote(skip)}`,
-        buttons: [t.cancel, t.orcaStart],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const result = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
+    if (action === 'status') {
+      const [info, duplicate] = await Promise.all([
+        orcaLaunch.status(saved),
+        duplicateCheck(session)(false),
+      ]);
+      return { ...info, duplicate };
+    }
+    return orcaLaunch.start(
+      saved,
+      async (info, check) => {
+        const owner = BrowserWindow.fromWebContents(e.sender);
+        const t = m().tmux;
+        const options = {
+          type: dialogType(check),
+          title: t.orcaTitle,
+          message: t.orcaConfirm,
+          detail: `${t.orcaIntro}\n\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}\n\n${t.caution}${skipNote(skip)}${duplicateNote(check)}`,
+          buttons: [t.cancel, t.orcaStart],
+          defaultId: 0,
+          cancelId: 0,
+        };
+        const endCardDialog = cards.dialog(e.sender);
+        try {
+          const result = owner
+            ? await dialog.showMessageBox(owner, options)
+            : await dialog.showMessageBox(options);
+          return result.response === 1;
+        } finally {
+          endCardDialog();
+        }
+      },
+      undefined,
+      duplicateCheck(session),
+    );
   });
   ipcMain.handle('office:remote-launch', async (e, id, action, value) => {
     trusted(e);

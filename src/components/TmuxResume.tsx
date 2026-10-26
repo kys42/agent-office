@@ -76,11 +76,26 @@ export function TmuxResume({
         setOpen(false);
       }
     } catch (e) {
-      if (ticket === request.current) setError((e as Error).message);
+      if (ticket !== request.current) return;
+      setError((e as Error).message);
+      // A refusal (e.g. it already runs) may change which buttons make sense.
+      void checkOrca();
     } finally {
       if (ticket === request.current) setBusy(false);
     }
   };
+  /**
+   * Whether this conversation already runs or is open elsewhere (main's duplicate-launch check;
+   * main checks again before launching, this only shapes the buttons).
+   */
+  const duplicate = summon ? undefined : (info?.duplicate ?? orca?.duplicate);
+  const runningElsewhere = duplicate?.state === 'running';
+  const openElsewhere = duplicate?.state === 'open';
+  const place =
+    duplicate?.state === 'running' || duplicate?.state === 'open'
+      ? t.tmux.place[duplicate.where]
+      : '';
+  const jump = () => void jumpOrCopy(id, notify).catch((e) => setError(e.message));
   const projectIds = projects?.map((p) => p.id).join('\n');
   useEffect(() => {
     const ids = projectIds?.split('\n');
@@ -322,7 +337,25 @@ export function TmuxResume({
                   {text.loading}
                 </p>
               )}
-              {!summon && orca?.available && (
+              {runningElsewhere && !info?.running && (
+                <p className="tmux-caution" role="status">
+                  <AlertCircle size={14} aria-hidden="true" />
+                  {text.runningNotice(place)}
+                </p>
+              )}
+              {openElsewhere && (
+                <p className="tmux-caution" role="status">
+                  <AlertCircle size={14} aria-hidden="true" />
+                  {text.openNotice(place)} {text.openHint}
+                </p>
+              )}
+              {duplicate?.state === 'unknown' && (
+                <p className="tmux-caution" role="status">
+                  <Info size={14} aria-hidden="true" />
+                  {text.unknownNotice}
+                </p>
+              )}
+              {!summon && orca?.available && !runningElsewhere && (
                 <p className="tmux-discovery">
                   <Info size={13} aria-hidden="true" />
                   {text.orcaHint}
@@ -358,9 +391,15 @@ export function TmuxResume({
                 )}
                 {busy ? text.loading : summon ? text.summonCheck : text.refresh}
               </button>
-              {info && !info.running && (
+              {((runningElsewhere && !info?.running) || openElsewhere) && (
+                <button className="button primary" disabled={busy} onClick={jump}>
+                  <ArrowUpRight size={14} aria-hidden="true" />
+                  {openElsewhere ? text.jumpToTab : text.jumpToTerminal}
+                </button>
+              )}
+              {info && !info.running && !runningElsewhere && (
                 <button
-                  className="button primary"
+                  className={openElsewhere ? 'button' : 'button primary'}
                   disabled={busy}
                   onClick={() => void act('start')}
                 >
@@ -369,13 +408,13 @@ export function TmuxResume({
                   ) : (
                     <Terminal size={14} aria-hidden="true" />
                   )}
-                  {text.start}
+                  {openElsewhere ? text.forceStart : text.start}
                 </button>
               )}
-              {!summon && orca?.available && (
+              {!summon && orca?.available && !runningElsewhere && (
                 <button className="button" disabled={busy} onClick={() => void launchOrca()}>
                   <ArrowUpRight size={14} aria-hidden="true" />
-                  {text.orcaStart}
+                  {openElsewhere ? text.forceOrca : text.orcaStart}
                 </button>
               )}
               {info?.running && info.canOpen && (

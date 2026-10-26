@@ -79,6 +79,7 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
           command: "tmux -L agent-office attach-session -t '=office-claude-0123456789abcdef'",
           running: w.running,
           canOpen: true,
+          ...(w.duplicate ? { duplicate: w.duplicate } : {}),
         };
       },
       jump: async () => {
@@ -212,6 +213,47 @@ for (const route of ['/', '/#mini=floor'])
       ).toEqual(['codex:start']);
     },
   );
+
+test('a conversation already running or open elsewhere offers going there before launching', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    (window as any).duplicate = { state: 'running', where: 'orca' };
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await expect(
+    modal.getByText('이 대화는 이미 Orca에서 실행 중이에요', { exact: false }),
+  ).toBeVisible();
+  await expect(modal.getByRole('button', { name: 'tmux로 따로 띄우기' })).toHaveCount(0);
+  await modal.getByRole('button', { name: '터미널로 이동', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).jumped)).toBe(true);
+
+  await page.evaluate(() => {
+    const w = window as any;
+    w.jumped = false;
+    w.duplicate = { state: 'open', where: 'orca' };
+  });
+  await modal.getByRole('button', { name: '다시 확인', exact: true }).click();
+  await expect(
+    modal.getByText('Orca에 이 대화가 이미 열려 있어요', { exact: false }),
+  ).toBeVisible();
+  await expect(modal.getByRole('button', { name: '그 탭으로 이동', exact: true })).toHaveClass(
+    /primary/,
+  );
+  const force = modal.getByRole('button', { name: '그래도 tmux로 새로 띄우기', exact: true });
+  await expect(force).not.toHaveClass(/primary/);
+  await modal.getByRole('button', { name: '그 탭으로 이동', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).jumped)).toBe(true);
+
+  await page.evaluate(() => {
+    (window as any).duplicate = { state: 'unknown' };
+  });
+  await modal.getByRole('button', { name: '다시 확인', exact: true }).click();
+  await expect(modal.getByText('확인하지 못했어요', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('button', { name: 'tmux로 따로 띄우기' })).toBeVisible();
+});
 
 test('project membership changes cannot launch a stale session folder', async ({ page }) => {
   await setup(page, false, '/#mini=floor');

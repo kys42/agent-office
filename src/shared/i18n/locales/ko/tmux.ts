@@ -78,4 +78,24 @@ export const tmux: Messages['tmux'] = {
   orcaUnavailable: 'Orca가 실행 중이 아니거나 응답하지 않아요. Orca를 연 뒤 다시 시도해주세요.',
   orcaRefused: (reason) =>
     `Orca가 탭을 열지 않았어요${reason ? `: ${reason}` : '.'} Orca 작업 공간이 아닌 폴더일 수 있어요. tmux로 따로 띄워보세요.`,
+  place: { orca: 'Orca', tmux: 'tmux', other: '다른 터미널' },
+  runningNotice: (place) =>
+    `이 대화는 이미 ${place}에서 실행 중이에요. 새로 띄우지 말고 그쪽으로 이동하세요.`,
+  openNotice: (place) => `${place}에 이 대화가 이미 열려 있어요.`,
+  openHint:
+    '그 안에서 에이전트가 실행 중인지는 확인하지 못했어요. 새로 띄우면 같은 대화가 두 개 돌 수 있어요.',
+  unknownNotice:
+    '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 띄우기 전에 확인해주세요.',
+  jumpToTerminal: '터미널로 이동',
+  jumpToTab: '그 탭으로 이동',
+  forceStart: '그래도 tmux로 새로 띄우기',
+  forceOrca: '그래도 Orca에서 새로 띄우기',
+  runningRefused: (place) =>
+    `이 대화가 이미 ${place}에서 실행 중이라 새로 띄우지 않았어요. 터미널로 이동해주세요.`,
+  changedRefused:
+    '확인하는 사이 이 대화가 다른 곳에 열려서 띄우지 않았어요. 상태를 다시 확인해주세요.',
+  openConfirm: (place) =>
+    `주의: ${place}에 이 대화가 이미 열려 있어요. 새로 띄우면 같은 대화가 두 곳에서 동시에 돌아가 서로의 작업을 덮어쓸 수 있어요.`,
+  unknownConfirm:
+    '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 이미 열려 있다면 같은 대화가 두 번 돌아가요.',
 };
