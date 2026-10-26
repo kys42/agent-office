@@ -53,9 +53,11 @@ export function SummonExisting({
   const request = useRef(0);
   const returned = useRef(new Set<string>());
   /** Remembered only once the store confirmed it: a failed restore is tried again next time. */
-  const bringBack = async (id: string) => {
-    if (returned.current.has(id)) return;
-    if ((await onReturn(id)) === true) returned.current.add(id);
+  const bringBack = async (id: string): Promise<boolean> => {
+    if (returned.current.has(id)) return true;
+    if ((await onReturn(id)) !== true) return false;
+    returned.current.add(id);
+    return true;
   };
   /**
    * Main's duplicate-launch check, from whichever status answered (tmux or Orca): the answer to
@@ -143,7 +145,9 @@ export function SummonExisting({
         return refused(id, ticket, e);
       }
       if (ticket !== request.current || !result.launched) return;
-      await bringBack(id);
+      // The tab is open; a failed restore keeps the sheet (its error toast stays) and re-checks,
+      // so the now-running conversation offers 터미널로 이동, which tries the restore again.
+      if (!(await bringBack(id))) return check(id, ++request.current);
       notify(result.message ?? t.tmux.orcaLaunched);
       close();
     });

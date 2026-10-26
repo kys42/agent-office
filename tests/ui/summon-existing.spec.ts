@@ -260,3 +260,22 @@ test('a failed bring-back is tried again on the next open terminal', async ({ pa
     .poll(() => page.evaluate(() => (window as any).returned))
     .toEqual(['demo:6', 'demo:6']);
 });
+
+test('an Orca launch whose bring-back fails keeps the sheet and re-checks', async ({ page }) => {
+  await setup(page, '/#mini=floor');
+  await page.evaluate(() => ((window as any).returnFails = 1));
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await modal.getByRole('button', { name: 'Orca 새 탭으로 불러오기' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+  // Not closed, no success toast over the error: the status is read again for a retry.
+  await expect(modal).toBeVisible();
+  await expect(page.getByText('Orca 새 탭에서 열었어요')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).actions.filter((a: string) => a.startsWith('orca:status')).length,
+      ),
+    )
+    .toBeGreaterThan(1);
+});
