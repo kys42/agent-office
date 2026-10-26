@@ -97,4 +97,8 @@ test('A send with images settles against the record each agent writes around its
   assert.ok(!settles(`이 화면 봐줘\n\n${a}`, '이 화면 봐줘', 2));
   assert.ok(!settles('이 화면 봐줘\n\n/tmp/x.png', '이 화면 봐줘', 1));
   assert.ok(!settles('[Image #1] 봐줘', '봐줘', 0));
+  // One saved path is one image: two paths on a line never pass for one.
+  assert.ok(!settles(`이 화면 봐줘\n\n${a}\n${b}`, '이 화면 봐줘', 1));
+  assert.ok(!settles(`${a} ${b} 봐줘`, '봐줘', 1));
+  assert.ok(!settles(`${a}\n${b}`, '', 1));
 });

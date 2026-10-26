@@ -29,7 +29,7 @@ import {
 } from '../desktop/terminals.js';
 import { codexTurnInput } from '../desktop/codex-desktop.js';
 import { queueToCodex } from '../desktop/codex-queue.js';
-import { codexDestinationTarget, codexImages } from '../desktop/codex-send.js';
+import { codexDestinationTarget, codexImages, codexRecordsRequest } from '../desktop/codex-send.js';
 import { setLocale } from '../src/shared/i18n/index.js';
 
 process.env.AGENT_OFFICE_LOCALE = 'ko';
@@ -226,6 +226,14 @@ test('The prompt must show exactly one [Image #N] (or the path itself) per paste
     promptHoldsImages(claudeScreen(typed), text, [P1, P2], strict);
   assert.ok(holds('[Image #1] [Image #2]look at this', 'look at this'));
   assert.ok(holds('[Image #1] [Image #2]', ''));
+  // A path left as text must be followed by a break before the text, never glued to it.
+  assert.ok(holds(`${P1} ${P2} look`, 'look'));
+  assert.ok(holds(`[Image #1] ${P2} look`, 'look'));
+  assert.ok(!holds(`${P1} ${P2}look`, 'look'));
+  assert.ok(!holds(`[Image #1] ${P2}look`, 'look'));
+  assert.ok(holds(`${P1} ${P2}`, ''));
+  // After a placeholder no break is needed: Claude draws `[Image #N]` apart from the text.
+  assert.ok(holds(`${P1} [Image #2]look`, 'look'));
   assert.ok(!holds('[Image #1] [Image #2]look at this!', 'look at this'));
   assert.ok(!holds('[Image #1] [Image #2] [Image #3]look', 'look'));
   assert.ok(!holds('[Image #1]look', 'look'));
@@ -367,7 +375,8 @@ test('An image-only send pastes no text; a path Claude would not read is sent as
     const claude = fakeClaude(dir, { attach: 'refuse' });
     const result = await sendToTerminal(tmuxLive(), 'hi', claude.deps, { images: [P1] });
     assert.equal(result.status, 'sent');
-    assert.deepEqual(claude.pastes, [P1, 'hi']);
+    // The path stays as text: the message goes in after a space, never glued to the path.
+    assert.deepEqual(claude.pastes, [P1, ' hi']);
   });
 });
 
@@ -421,6 +430,13 @@ test('Adapters say how images reach each agent; targets carry it to the view', (
   );
   assert.equal(codexDestinationTarget({ threadId: SESSION, transport: 'queue' }).images, 'path');
   assert.equal(codexDestinationTarget(null).images, undefined);
+  // Codex records text only: images alone to Codex Desktop leave no request in its record.
+  const desktop = { threadId: SESSION, transport: 'desktop' as const };
+  const queue = { threadId: SESSION, transport: 'queue' as const };
+  assert.equal(codexRecordsRequest(desktop, '  ', [P1]), false);
+  assert.equal(codexRecordsRequest(desktop, 'see', [P1]), true);
+  assert.equal(codexRecordsRequest(queue, '', [P1]), true);
+  assert.equal(codexRecordsRequest(queue, 'see', []), true);
 });
 
 test('Codex Desktop gets local image items before the text; the queue gets paths in the text', async () => {

@@ -9,6 +9,7 @@ export {
   promptHolds,
   promptHoldsImages,
   afterImages,
+  readImages,
   readPrompt,
 } from './claude-code.js';
 export { parseStyledScreen, sameWrapped, type Screen } from './screen.js';

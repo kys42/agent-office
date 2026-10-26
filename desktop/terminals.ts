@@ -18,13 +18,13 @@ import path from 'node:path';
 import type { SendResult, TerminalTarget } from '../src/shared/types.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
 import {
-  afterImages,
   claudeCodeComposer,
   drawn,
   holdsText,
   parseStyledScreen,
   promptHolds,
   promptHoldsImages,
+  readImages,
   readPrompt,
   readyToType,
   mergeBackup,
@@ -851,14 +851,15 @@ async function deliver(
   async function attachImages() {
     typed.drop(key);
     await typeText(host, images.join(' '), deps);
-    let attached = false;
-    for (let tries = 0; !attached && tries < IMAGE_TRIES; tries++) {
+    let attached: ReturnType<typeof readImages> = null;
+    for (let tries = 0; attached?.rest !== '' && tries < IMAGE_TRIES; tries++) {
       await deps.wait(150);
       const screen = await readScreen(host, deps);
       const shown = screen ? readPrompt(screen) : null;
-      attached = shown !== null && afterImages(shown, images) === '';
+      attached = shown === null ? null : readImages(shown, images);
     }
-    if (!attached) throw new TerminalInputError(t.imagesNotShown);
-    if (text) await typeText(host, text, deps);
+    if (attached?.rest !== '') throw new TerminalInputError(t.imagesNotShown);
+    // A path Claude left as text would run into the text: a space between (checked on Enter).
+    if (text) await typeText(host, attached.lastPath ? ` ${text}` : text, deps);
   }
 }

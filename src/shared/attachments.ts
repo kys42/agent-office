@@ -25,12 +25,15 @@ export const ATTACHMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const isAttachmentId = (value: unknown): value is string =>
   typeof value === 'string' && ID.test(value);
+const SAVED_FILE =
+  '/attachments/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(?:png|jpg|gif|webp)';
 /**
  * A saved image's absolute path as it appears in an agent's record (the Codex queue gets paths in
- * its text): any folder ending in `attachments/`, then `<id>.<ext>`. A regex source.
+ * its text): any folder ending in `attachments/`, then `<id>.<ext>`. A regex source. Exactly one
+ * file: the folder part never runs over another saved file's name (a record's line breaks may be
+ * collapsed into spaces, so several paths can sit on one line).
  */
-export const SAVED_IMAGE_PATH =
-  '/[^\\n]*?/attachments/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(?:png|jpg|gif|webp)';
+export const SAVED_IMAGE_PATH = `/(?:(?!${SAVED_FILE})[^\\n])*?${SAVED_FILE}`;
 /** A file in the attachments folder: `<id>.<ext>`. */
 export const ATTACHMENT_FILE = /^([0-9a-f-]{36})\.(png|jpg|gif|webp)$/;
 

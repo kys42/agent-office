@@ -114,7 +114,16 @@ const PASTED_DRAWN = /^\[Pastedtext#\d+[^\]]*\]$/;
  * (consecutive ones joined by a space), and nothing else is inserted.
  */
 export function afterImages(typed: string, paths: readonly string[]): string | null {
+  return readImages(typed, paths)?.rest ?? null;
+}
+
+/** `afterImages`, and the path the last image stayed as when Claude did not attach it. */
+export function readImages(
+  typed: string,
+  paths: readonly string[],
+): { rest: string; lastPath: string | null } | null {
   let rest = drawn(typed);
+  let lastPath: string | null = null;
   const seen = new Set<string>();
   for (const file of paths) {
     const image = IMAGE_DRAWN.exec(rest);
@@ -122,13 +131,26 @@ export function afterImages(typed: string, paths: readonly string[]): string | n
       if (seen.has(image[1])) return null;
       seen.add(image[1]);
       rest = rest.slice(image[0].length);
+      lastPath = null;
       continue;
     }
     const shown = drawn(file);
     if (!shown || !rest.startsWith(shown)) return null;
     rest = rest.slice(shown.length);
+    lastPath = file;
   }
-  return rest;
+  return { rest, lastPath };
+}
+
+/**
+ * A path left as text runs straight into whatever is pasted after it: the text then goes in
+ * after a space (see terminals.ts), and the prompt must show that break — the file's name
+ * followed by a space or a row break, as drawn. A name split over rows is not proven: no match.
+ */
+export function separatedAfter(typed: string, file: string): boolean {
+  const name = file.slice(file.lastIndexOf('/') + 1);
+  const at = typed.lastIndexOf(name);
+  return at >= 0 && /\s/.test(typed[at + name.length] ?? '');
 }
 
 /**
@@ -146,11 +168,11 @@ export function promptHoldsImages(
 ): boolean {
   const typed = readPrompt(screen);
   if (typed === null) return false;
-  const rest = afterImages(typed, paths);
+  const read = readImages(typed, paths);
   const want = drawn(text);
-  if (rest !== null) {
-    if (rest === want) return true;
-    if (!strict && want && PASTED_DRAWN.test(rest)) return true;
+  if (read !== null && (!want || !read.lastPath || separatedAfter(typed, read.lastPath))) {
+    if (read.rest === want) return true;
+    if (!strict && want && PASTED_DRAWN.test(read.rest)) return true;
   }
   const shown = drawn(typed);
   return !strict && !!want && shown.length >= 40 && want.endsWith(shown);

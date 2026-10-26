@@ -71,6 +71,16 @@ export function codexDestinationTarget(
  */
 export const codexImages = (transport: CodexDestination['transport']) =>
   transport === 'desktop' ? ('attach' as const) : ('path' as const);
+/**
+ * Whether the session's record will show the send as a request. Codex records a message's text
+ * only (image items are not text), so images alone to Codex Desktop leave no request there; the
+ * queue gets their paths as text.
+ */
+export const codexRecordsRequest = (
+  destination: CodexDestination,
+  text: string,
+  images: readonly string[],
+) => !!text.trim() || (images.length > 0 && destination.transport !== 'desktop');
 export async function sendToCodex(
   destination: CodexDestination,
   text: unknown,

@@ -71,10 +71,21 @@ function writeList(key: string, saved: boolean, list: StoredImage[]) {
   notify();
 }
 
+/**
+ * Previews are shared by every composer in this window, and a fetch may finish after the
+ * composer that started it changed or went: each change bumps the version, and every mounted
+ * composer re-renders from it.
+ */
+let previewVersion = 0;
+function setPreview(id: string, url: string) {
+  previews.set(id, url);
+  previewVersion++;
+  notify();
+}
 function forgetPreview(id: string) {
   const url = previews.get(id);
   if (url) URL.revokeObjectURL(url);
-  previews.delete(id);
+  if (previews.delete(id)) previewVersion++;
 }
 
 const pendingUploads = (key: string) => uploads.get(key) ?? 0;
@@ -119,15 +130,17 @@ export function useComposerImages(draftKey?: string) {
     () => pendingUploads(key),
     () => 0,
   );
-  // Re-render when a preview arrives (previews are shared by every composer in this window).
-  const [shown, setShown] = useState(0);
+  const shown = useSyncExternalStore(
+    subscribe,
+    () => previewVersion,
+    () => 0,
+  );
   const [error, setError] = useState('');
   const get = () => readList(key, saved);
   const set = (next: StoredImage[]) => writeList(key, saved, next);
 
   // Thumbnails for ids this window has no bytes for (a reopened card, another window's add).
   useEffect(() => {
-    let live = true;
     for (const { id } of list) {
       if (previews.has(id) || fetching.has(id) || !api.attachmentPreview) continue;
       fetching.add(id);
@@ -143,18 +156,16 @@ export function useComposerImages(draftKey?: string) {
             );
             return;
           }
-          previews.set(
+          // Not for an image removed or sent meanwhile.
+          if (!readList(key, saved).some((image) => image.id === id)) return;
+          setPreview(
             id,
             URL.createObjectURL(new Blob([new Uint8Array(preview.bytes)], { type: preview.type })),
           );
-          if (live) setShown((n) => n + 1);
         })
         .catch(() => undefined)
         .finally(() => fetching.delete(id));
     }
-    return () => {
-      live = false;
-    };
   }, [list, key, saved]);
 
   // A composer of its own lets its images go with it.
@@ -196,7 +207,7 @@ export function useComposerImages(draftKey?: string) {
         // Re-read: another add may have finished meanwhile, in this or another window.
         if (get().length >= MAX_IMAGES) setError(t.tooMany(MAX_IMAGES));
         else {
-          previews.set(id, URL.createObjectURL(file));
+          setPreview(id, URL.createObjectURL(file));
           set([...get(), { id, name: file.name }]);
         }
       } catch (e) {

@@ -583,6 +583,11 @@ export type SendResult =
       cleared?: boolean;
       /** Only the readable parts of a partially hidden composer could be backed up. */
       partialBackup?: boolean;
+      /**
+       * The agent's record will not show this as a request of its own (images alone to Codex
+       * Desktop: its record keeps text only), so no "sent" receipt waits for it there.
+       */
+      unrecorded?: boolean;
     }
   | {
       status: 'needs-confirm';

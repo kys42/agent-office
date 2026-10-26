@@ -76,7 +76,12 @@ import {
   type TerminalHost,
   type TerminalLookup,
 } from './terminals.js';
-import { codexDestinationTarget, findCodexDestination, sendToCodex } from './codex-send.js';
+import {
+  codexDestinationTarget,
+  codexRecordsRequest,
+  findCodexDestination,
+  sendToCodex,
+} from './codex-send.js';
 import { findCodexTerminal, lookupCodexTerminal } from './codex-focus.js';
 import { composerFor } from './composer/index.js';
 import { AttachmentError, AttachmentStore } from './attachments.js';
@@ -1429,6 +1434,7 @@ function setupIPC() {
             },
             images,
           ),
+          ...(!codexRecordsRequest(thread, text, images) && { unrecorded: true }),
         };
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;

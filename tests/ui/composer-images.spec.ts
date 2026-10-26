@@ -52,6 +52,8 @@ async function desktop(
         // Main's copy of a saved image, by id; a removed one is gone.
         attachmentPreview: async (id: string) => {
           w.previewed = [...(w.previewed ?? []), id];
+          if (localStorage.getItem('test:deferPreview'))
+            await new Promise<void>((resolve) => (w.finishPreview = resolve));
           if ((localStorage.getItem('test:gone') ?? '').includes(id)) return null;
           return {
             type: 'image/png',
@@ -60,7 +62,9 @@ async function desktop(
         },
         send: async (id: string, text: string, options?: { images?: string[] }) => {
           w.sends.push({ id, text, images: options?.images ?? null });
-          return { status: 'sent', message: 'Sent' };
+          // Like Codex Desktop: images alone leave no request in its record.
+          const unrecorded = w.imagesUnrecorded && !text.trim() && !!options?.images?.length;
+          return { status: 'sent', message: 'Sent', ...(unrecorded && { unrecorded: true }) };
         },
       };
       // A picked, pasted or dropped file in the page.
@@ -243,4 +247,42 @@ test('With screen content hidden, attached images show as plain tiles', async ({
   await expect(page.locator('.terminal-send-chat .composer-image')).toHaveCount(1);
   await expect(thumbs(page)).toHaveCount(0);
   await expect(page.getByLabel('이미지 1 (가림)')).toBeVisible();
+});
+
+test('A thumbnail fetched again shows up even when the list changes while it is on its way', async ({
+  page,
+}) => {
+  await desktop(page);
+  await paste(page, 'first.png');
+  await expect(thumbs(page)).toHaveCount(1);
+  // The card's window is recreated; main is slow to hand the first thumbnail back.
+  await page.evaluate(() => localStorage.setItem('test:deferPreview', '1'));
+  await page.reload();
+  await expect(page.locator('.terminal-send-chat .composer-image')).toHaveCount(1);
+  await expect(thumbs(page)).toHaveCount(0);
+  await page.evaluate(() => localStorage.removeItem('test:deferPreview'));
+  await paste(page, 'second.png');
+  await expect(thumbs(page)).toHaveCount(1);
+  await page.evaluate(() => (window as any).finishPreview());
+  await expect(thumbs(page)).toHaveCount(2);
+  await expect(thumbs(page).first()).toHaveAttribute('alt', 'first.png');
+});
+
+test('The sent receipt counts its images, and none waits for a record that will not show it', async ({
+  page,
+}) => {
+  await desktop(page);
+  await page.evaluate(() => ((window as any).imagesUnrecorded = true));
+  const pending = page.locator('.message-pending');
+  await paste(page, 'only.png');
+  await expect(thumbs(page)).toHaveCount(1);
+  await page.locator('.terminal-send-chat button[type=submit]').click();
+  await expect(thumbs(page)).toHaveCount(0);
+  await expect(pending).toHaveCount(0);
+  await paste(page, 'with-text.png');
+  await field(page).fill('이 화면 봐줘');
+  await field(page).press('Enter');
+  await expect(pending).toHaveCount(1);
+  await expect(pending).toContainText('이 화면 봐줘');
+  await expect(pending).toContainText('이미지 1장 첨부');
 });
