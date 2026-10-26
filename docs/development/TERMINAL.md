@@ -324,7 +324,7 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 
 ## 미니 터미널 (tmux로 유지, 2026-10-26)
 
-업무 카드·프로젝트 구역에서 그 폴더의 작은 셸을 창 아래 서랍으로 연다. 정책은 [기능 정책서](../golden/FEATURE-POLICY.md#미니-터미널-tmux로-유지). 데스크톱 macOS/Linux 전용(preload가 `office.shell`을 그때만 노출), 웹·모바일·데모·원격 동료·Windows에는 없다.
+업무 카드·프로젝트 구역에서 그 폴더의 작은 셸을 옆에 뜨는 별도 터미널 창(폴더 셸마다 하나)으로 연다. 정책은 [기능 정책서](../golden/FEATURE-POLICY.md#미니-터미널-tmux로-유지). 데스크톱 macOS/Linux 전용(preload가 `office.shell`을 그때만 노출), 웹·모바일·데모·원격 동료·Windows에는 없다.
 
 ### 구조
 
@@ -332,8 +332,9 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 | --- | --- | --- |
 | 공통 규칙(순수) | `src/shared/mini-shell.ts` | IPC 명령 파싱(`parseShellCommand`), 입력 검증, 크기 범위, 구역의 로컬 폴더 고르기 |
 | main | `desktop/mini-shell.ts` (`MiniShells`) | 전용 tmux 서버의 셸 만들기·목록·종료, `node-pty`로 `tmux attach` 클라이언트 붙이기, 창별 소유 |
-| main IPC | `desktop/main.ts` `setupMiniShell` | `office:shell`(invoke) · `office:shell-input`(send) · `office:shell-data`/`office:shell-exit`(→창) |
-| 화면 | `src/components/MiniShell.tsx` · `MiniShellPanel.tsx` · `src/lib/miniShell.ts` | 버튼, 창마다 한 개의 서랍, xterm.js 그리기(지연 로드 청크) |
+| main IPC | `desktop/main.ts` `setupMiniShell` | `office:shell`(invoke) · `office:shell-input`(send) · `office:shell-data`/`office:shell-exit`(→창) · `office:shell-window`(창 열기·닫기·포커스·대상) |
+| 터미널 창 | `desktop/shell-windows.ts` (`ShellWindows`) · `src/shared/shell-window.ts` | 폴더 셸마다 BrowserWindow 하나(`#shell`), 연 창 옆 자리 계산(`shellWindowBounds`), 크기 기억, 최대 6개 |
+| 화면 | `src/components/MiniShell.tsx` · `ShellWindow.tsx` · `MiniShellPanel.tsx` · `src/lib/miniShell.ts` | 버튼(창 열기 요청), 터미널 창 화면, xterm.js 그리기(지연 로드 청크) |
 
 - **tmux**: `tmux -L agent-office-shell -f /dev/null new-session -d -x <cols> -y <rows> -s shell-<sha256("shell:"+폴더) 앞 16자> -c <폴더> <로그인 셸> -l` 뒤에 같은 명령 큐로 `@agent_office_shell_cwd`(base64 폴더)·`@agent_office_shell`(전체 토큰)·`status off`·`mouse on`을 건다. 셸은 tmux가 exec하며(셸 문자열 아님) 로그인 셸은 `/etc/shells`에 있는 것만 쓴다. 목록은 이름·토큰·폴더가 서로 맞는 세션만 인정한다. tmux 재개의 `agent-office` 서버와 사용자의 기본 서버는 건드리지 않는다. 테스트는 `AGENT_OFFICE_SHELL_SERVER`로 버릴 서버를 쓴다(`agent-office`는 거부).
 - **PTY**: `node-pty`로 `tmux -u -L agent-office-shell attach-session -t =<이름>`을 띄운다. 창(webContents id)마다 `ptyId`(UUID)를 주고, 쓰기·크기 변경·분리는 그 창의 `ptyId`일 때만 따른다. 출력은 8ms씩 모아 한 메시지로 보낸다. 창이 닫히거나 다시 로드되면(`destroyed`/`did-start-loading`) 그 창의 클라이언트만 끝낸다. 앱 종료도 클라이언트만 끝낸다 — 셸은 tmux에 남는다.
@@ -341,9 +342,10 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 - **입력 제한**: 한 번에 64KB 이하 문자열. 더 큰 붙여넣기는 창이 32KB씩 나눠 보낸다. 크기는 10–400열, 3–150행으로 자른다. 그 외 모양의 명령은 `badRequest`.
 - **출력 흐름 제어**: 창은 xterm에 넘겼지만 아직 그리지 않은 양을 센다(`OutputFlow`). 256KB를 넘으면 `flow` 명령으로 main이 그 창의 PTY 읽기를 멈추고(`pause`), 32KB 아래로 내려오면 다시 읽는다. 다른 창의 PTY는 건드리지 못한다.
 - **종료 확인은 그 셸에만**: 확인 창을 띄우기 전 tmux `#{session_id}`·`#{session_created}`를 적어 두고, 동의 뒤 다시 읽어 같을 때만 `kill-session -t <$id>`로 끝낸다. 그 사이 다른 창이 끝내고 같은 폴더로 다시 띄운 셸은 끝내지 않는다.
-- **Ctrl 키**: Windows/Linux의 업무 카드 창도 큰 창처럼 앱 메뉴(Edit)를 떼어(`dropAppMenu`) Ctrl+C·Ctrl+A가 메뉴 대신 셸로 간다. macOS는 그대로.
-- **화면 숨기기**: 켜지면 서랍을 닫아(분리) 내용이 남지 않게 하고 버튼을 막는다.
-- 서랍 안의 keydown은 위로 올리지 않는다: Esc·글자 단축키가 카드·사무실이 아니라 셸로 간다. 스크롤은 tmux `mouse on`(휠 → copy-mode), 선택은 Option+드래그.
+- **터미널 창**: 버튼은 `office:shell-window`의 `open`으로 `{id}`(세션) 또는 `{name}`(기존 셸)만 보낸다. main은 세션의 폴더를 수집기에서 읽어(`describeShell`) 창 키(셸 이름)를 정하고, 그 키의 창이 있으면 앞으로 가져오고 없으면 보낸 창(`BrowserWindow.fromWebContents`) 옆에 만든다. 창은 로드 뒤 `target`으로 자기가 보여 줄 대상을 묻고, 그다음은 예전과 같은 `office:shell` `open`/`attach`다. 창을 닫으면 webContents가 사라져 그 창의 클라이언트만 끝난다(`detachOwner`). 터미널 창은 `trustedShell`(미니 터미널 IPC)에서만 신뢰하고 snapshot은 받지 않는다. 테두리 없음, `-webkit-app-region: drag` 머리줄로 옮기고, 카드·책상 줄에서 열면 카드와 같은 `pop-up-menu` 층·모든 Space에 뜬다. 조용한 실행에서는 `showInactive`만 한다. 미리보기 카드는 포커스가 터미널 창으로 가면 닫히지 않고(`companion`), 터미널 창이 포커스를 잃으면 다시 확인한다(`recheck`).
+- **Ctrl 키**: Windows/Linux의 업무 카드 창·터미널 창도 큰 창처럼 앱 메뉴(Edit)를 떼어(`dropAppMenu`) Ctrl+C·Ctrl+A가 메뉴 대신 셸로 간다. macOS는 그대로.
+- **화면 숨기기**: 켜진 snapshot이 오면 main이 터미널 창을 모두 닫아(분리) 내용이 남지 않게 하고, 켜져 있는 동안 `open`을 거부한다. 버튼도 막는다. 큰 사무실이 데모로 바뀌면 `close-all`(큰 창만 허용)로 모두 닫는다.
+- 터미널 창 안의 keydown은 위로 올리지 않는다: Esc·글자 단축키가 카드·사무실이 아니라 셸로 간다. 스크롤은 tmux `mouse on`(휠 → copy-mode), 선택은 Option+드래그.
 
 ### node-pty와 패키징
 
@@ -355,13 +357,13 @@ tmux는 원격의 전용 `agent-office` 서버에 만들고, 같은 폴더·종�
 
 - `tests/mini-shell.test.ts`: 이름·토큰, 서버 이름 가드, 로그인 셸, 환경, 생성 인자, 소유 표시 필터, 창별 입력 격리, 분리 vs 종료, IPC 명령 파서.
 - `npm run test:shell`: 실제 tmux + node-pty(버릴 서버)로 열기 → 입력 → 분리 → 새 관리자로 다시 붙어 화면 확인 → 종료.
-- `npm run build && npm run test:shell:desktop`: 임시 프로필·데이터·버릴 tmux 서버로 앱을 조용히 띄워 카드 → 미니 터미널 → 입력 → 닫기 → 다시 열기 → 앱 종료·재실행 → 같은 셸, 위조 `ptyId` 입력 무시. `AGENT_OFFICE_EXECUTABLE=<패키지 앱>`이면 패키지의 네이티브 모듈을 확인한다.
-- `tests/ui/mini-shell.spec.ts`: desktop API를 흉내 내 카드 버튼·서랍·키 입력·분리·다른 셸로 바꾸기·종료 취소·끝난 셸·화면 숨기기·웹에서 숨김.
+- `tests/shell-window.test.ts`: 터미널 창 자리(오른쪽 → 왼쪽 → 위·아래 → 큰 창 안쪽, 작업 영역 안, 두 번째 화면, 겹치면 비키기), 저장된 크기 검증, 창 열기 대상 파서.
+- `npm run build && npm run test:shell:desktop`: 임시 프로필·데이터·버릴 tmux 서버로 앱을 조용히 띄워 카드 → 미니 터미널 → **별도 창이 큰 창 옆에 뜸** → 입력·대량 출력 → 다시 눌러도 창 하나 → 큰 창은 터미널 창 동작 불가 → 창 닫기(분리) → 다시 열기(같은 셸·같은 자리) → 화면 숨기기로 창 닫힘·열기 거부 → 앱 종료·재실행 → 같은 셸, 위조 `ptyId` 입력 무시. `AGENT_OFFICE_SMOKE_SHOTS=<폴더>`면 스크린샷을 남긴다. `AGENT_OFFICE_EXECUTABLE=<패키지 앱>`이면 패키지의 네이티브 모듈을 확인한다.
+- `tests/ui/mini-shell.spec.ts`: desktop API를 흉내 내 카드·구역 버튼의 창 열기 요청, 터미널 창(`#shell`)의 꽉 찬 배치·끌기 영역·키 입력·닫기·다른 셸 창 열기·종료 취소/확정·기존 셸 붙기·끝난 셸, 화면 숨기기·데모·웹에서 숨김.
 
 ### 일부러 뺀 것 (후속)
 
-- 서랍 높이 드래그 조절과 기억, 여러 셸 탭 동시 표시, 창 간 서랍 상태 공유.
+- 터미널 창 위치를 폴더별로 기억하기(지금은 언제나 연 창 옆), 한 창에 여러 셸 탭.
 - 업무 카드 밖(명령 검색·사이드바)에서 '열려 있는 터미널' 관리 화면, 주인 없는 셸(폴더의 세션이 사라진 것) 정리 안내.
 - 앱 테마를 따르는 터미널 색, 글꼴 크기 설정, 링크 클릭(web-links addon), 검색.
 - 셸 출력의 알림/사무실 연출 연결, 원격 오피스의 미니 터미널, Windows(ConPTY) 지원.
-

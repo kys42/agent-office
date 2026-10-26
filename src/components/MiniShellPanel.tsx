@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
-import { ChevronDown, ChevronUp, LoaderCircle, Power, SquareTerminal, X } from 'lucide-react';
+import { ChevronDown, LoaderCircle, Power, SquareTerminal, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { closeMiniShell, openMiniShell } from '../lib/miniShell';
@@ -21,8 +21,9 @@ import {
 type Status = 'connecting' | 'live' | 'ended' | 'error';
 
 /**
- * Draws one attachment to a tmux-kept shell. All terminal state lives in tmux: this view only
- * mirrors the screen and forwards keys, so closing it (or the app) loses nothing.
+ * Draws one attachment to a tmux-kept shell, filling its own terminal window (ShellWindow). All
+ * terminal state lives in tmux: this view only mirrors the screen and forwards keys, so closing
+ * the window (or the app) loses nothing.
  */
 export default function MiniShellPanel({ target }: { target: ShellTarget }) {
   const { t } = useI18n();
@@ -33,7 +34,6 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [attachment, setAttachment] = useState<ShellAttachment | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const [others, setOthers] = useState<ShellInfo[]>([]);
   const [othersOpen, setOthersOpen] = useState(false);
   const [round, setRound] = useState(0);
@@ -167,7 +167,6 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
     // `round` restarts a shell that ended; the target picks the folder or shell.
   }, [target.id, target.name, target.cwd, round]);
 
-  useEffect(() => fitRef.current(), [expanded]);
   useEffect(() => {
     if (!note) return;
     const timer = setTimeout(() => setNote(''), 6000);
@@ -198,12 +197,7 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
     ? Math.max(0, (others.find((o) => o.name === attachment.name)?.attached ?? 1) - 1)
     : 0;
   return (
-    <section
-      ref={root}
-      className={`mini-shell ${expanded ? 'is-expanded' : ''}`}
-      aria-label={t.shell.title}
-      data-status={status}
-    >
+    <section ref={root} className="mini-shell" aria-label={t.shell.title} data-status={status}>
       <header className="mini-shell-bar">
         <span className="mini-shell-icon" title={t.shell.hint}>
           <SquareTerminal size={13} aria-hidden />
@@ -235,7 +229,11 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
                   title={o.cwd}
                   onClick={() => {
                     setOthersOpen(false);
-                    if (o.name !== attachment?.name) openMiniShell({ name: o.name, cwd: o.cwd });
+                    // Another shell has its own window: opened beside this one, or brought forward.
+                    if (o.name !== attachment?.name)
+                      void openMiniShell({ name: o.name, cwd: o.cwd }).catch((e: Error) =>
+                        setNote(e.message),
+                      );
                   }}
                 >
                   <span>{shellLabel(o.cwd)}</span>
@@ -245,15 +243,6 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
             </div>
           )}
         </div>
-        <button
-          type="button"
-          className="mini-shell-btn icon"
-          aria-label={expanded ? t.shell.collapse : t.shell.expand}
-          title={expanded ? t.shell.collapse : t.shell.expand}
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </button>
         <button
           type="button"
           className="mini-shell-btn danger"

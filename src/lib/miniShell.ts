@@ -1,47 +1,19 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { api } from './api';
 import type { ShellTarget } from '../shared/mini-shell';
 
-// One mini terminal panel per window: a card's or a zone's button points it at a folder, the
-// panel (MiniShellDock) draws it. Closing only detaches; tmux keeps the shell.
-let target: ShellTarget | null = null;
-/** Mounted panels: buttons show only in windows that can draw one (not the pet/row dock). */
-let hosts = 0;
-const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
-export function openMiniShell(next: ShellTarget) {
-  target = next;
-  emit();
+// The mini terminal opens in its own window, one per folder shell, beside the window that asked
+// (desktop/shell-windows.ts). Closing that window only detaches; tmux keeps the shell.
+
+/** Whether this window can open terminal windows (the desktop app on macOS/Linux). */
+export const canOpenMiniShell = () => !!api.shell?.window;
+
+/** Opens the folder's terminal window, or brings it forward when it is already open. */
+export function openMiniShell(target: ShellTarget): Promise<void> {
+  if (!api.shell?.window) return Promise.resolve();
+  return api.shell.window('open', target);
 }
+
+/** In a terminal window: closes it (the shell keeps running). */
 export function closeMiniShell() {
-  if (!target) return;
-  target = null;
-  emit();
-}
-const subscribe = (l: () => void) => {
-  listeners.add(l);
-  return () => void listeners.delete(l);
-};
-export const useMiniShellTarget = () =>
-  useSyncExternalStore(
-    subscribe,
-    () => target,
-    () => null,
-  );
-export const useMiniShellHosted = () =>
-  useSyncExternalStore(
-    subscribe,
-    () => hosts > 0,
-    () => false,
-  );
-/** Marks this window as able to show the panel while the caller is mounted. */
-export function useMiniShellHost(enabled = true) {
-  useEffect(() => {
-    if (!enabled) return;
-    hosts++;
-    emit();
-    return () => {
-      hosts--;
-      emit();
-    };
-  }, [enabled]);
+  void api.shell?.window('close').catch(() => window.close());
 }

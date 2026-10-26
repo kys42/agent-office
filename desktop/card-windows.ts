@@ -44,6 +44,8 @@ export class CardWindows {
       dir: string;
       secure: (window: BrowserWindow) => void;
       watch: (window: BrowserWindow) => void;
+      /** A window that counts as "still here" for a preview card (its mini terminal window). */
+      companion?: () => boolean;
     },
   ) {
     this.position = readCardPosition(this.read('card-position.json'));
@@ -232,7 +234,8 @@ export class CardWindows {
         sandbox: true,
       },
     });
-    // The card holds the mini terminal: Ctrl+C must reach it, not the app's Edit menu.
+    // Like the big window: no app Edit menu of its own on Windows/Linux, so Ctrl keys reach the
+    // page.
     dropAppMenu(window);
     const e: Entry = {
       window,
@@ -255,17 +258,7 @@ export class CardWindows {
         skipTransformProcessType: true,
       });
     }
-    window.on('blur', () => {
-      if (e.dialogs || e.pinned) return;
-      this.cancelHide(e);
-      e.hide = setTimeout(
-        () => {
-          e.hide = undefined;
-          if (!e.pinned && !e.dialogs && !window.isDestroyed() && !window.isFocused()) this.hide(e);
-        },
-        Math.max(150, e.shownAt + 500 - Date.now()),
-      );
-    });
+    window.on('blur', () => this.blurred(e));
     window.on('closed', () => {
       this.cancelHide(e);
       this.stopDrag(e);
@@ -287,6 +280,32 @@ export class CardWindows {
     window.webContents.on('did-finish-load', () => this.revealEntry(e));
     void window.loadFile(this.options.index, { hash: 'card' });
     return e;
+  }
+
+  /** A preview card goes away once the person works elsewhere (not in its terminal window). */
+  private blurred(e: Entry) {
+    if (e.dialogs || e.pinned) return;
+    this.cancelHide(e);
+    e.hide = setTimeout(
+      () => {
+        e.hide = undefined;
+        if (
+          !e.pinned &&
+          !e.dialogs &&
+          !e.window.isDestroyed() &&
+          !e.window.isFocused() &&
+          !this.options.companion?.()
+        )
+          this.hide(e);
+      },
+      Math.max(150, e.shownAt + 500 - Date.now()),
+    );
+  }
+  /** Focus left a companion window: a preview card that is not focused either goes away. */
+  recheck() {
+    const e = this.preview;
+    if (e && !e.window.isDestroyed() && e.window.isVisible() && !e.window.isFocused())
+      this.blurred(e);
   }
 
   private stopDrag(e: Entry) {

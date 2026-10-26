@@ -76,6 +76,7 @@ const api: OfficeAPI = {
             ipcRenderer.on('office:shell-exit', f);
             return () => ipcRenderer.removeListener('office:shell-exit', f);
           },
+          window: (what: string, target?: unknown) => action('office:shell-window', what, target),
         } as OfficeAPI['shell'],
       }
     : {}),

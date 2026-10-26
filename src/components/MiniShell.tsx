@@ -1,46 +1,28 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SquareTerminal } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
-import {
-  closeMiniShell,
-  openMiniShell,
-  useMiniShellHost,
-  useMiniShellHosted,
-  useMiniShellTarget,
-} from '../lib/miniShell';
-import { canOpenShell, shellFolders, shellLabel } from '../shared/mini-shell';
+import { canOpenMiniShell, openMiniShell } from '../lib/miniShell';
+import { canOpenShell, shellFolders, shellLabel, type ShellTarget } from '../shared/mini-shell';
 import type { Session } from '../shared/types';
 
-// xterm.js is loaded only once someone opens a terminal.
-const MiniShellPanel = lazy(() => import('./MiniShellPanel'));
-
-/** The window's one mini terminal panel. Hidden content (privacy) closes it: tmux keeps it. */
-export function MiniShellDock({
-  privacy,
-  demo = false,
-  scope,
-}: {
-  privacy: boolean;
-  /** The sample office: no real shell is shown, kept attached, or offered. */
-  demo?: boolean;
-  /** Whose window this is (a card's colleague): another one, or none, closes the panel. */
-  scope?: string | null;
-}) {
-  const target = useMiniShellTarget();
-  const off = privacy || demo;
-  useMiniShellHost(!demo);
-  useEffect(() => {
-    if (off) closeMiniShell();
-  }, [off]);
-  useEffect(() => () => closeMiniShell(), [scope]);
-  if (!api.shell || !target || off) return null;
-  return (
-    <Suspense fallback={null}>
-      <MiniShellPanel key={target.name ?? target.id} target={target} />
-    </Suspense>
+/** Opens (or brings forward) the folder's terminal window; a refusal is shown, not lost. */
+function open(target: ShellTarget, notify?: (message: string) => void) {
+  void openMiniShell(target).catch((e: Error) =>
+    notify ? notify(e.message) : console.error('Mini terminal:', e),
   );
+}
+
+/**
+ * The big office turning into the sample office lets go of every real shell: its terminal
+ * windows close (tmux keeps the shells).
+ */
+export function MiniShellDemoRelease({ demo }: { demo: boolean }) {
+  useEffect(() => {
+    if (demo && api.shell?.window) void api.shell.window('close-all').catch(() => {});
+  }, [demo]);
+  return null;
 }
 
 /** A colleague's card: a shell in their folder. Desktop and local sessions only. */
@@ -48,20 +30,21 @@ export function CardShellButton({
   session,
   privacy,
   demo,
+  notify,
 }: {
   session: Session;
   privacy: boolean;
   demo: boolean;
+  notify?: (message: string) => void;
 }) {
   const { t } = useI18n();
-  const hosted = useMiniShellHosted();
-  if (!api.shell || !hosted || demo || !canOpenShell(session)) return null;
+  if (!canOpenMiniShell() || demo || !canOpenShell(session)) return null;
   return (
     <button
       className="card-action"
       disabled={privacy}
       title={privacy ? t.shell.openHidden : t.shell.openIn(session.cwd!)}
-      onClick={() => openMiniShell({ id: session.id, cwd: session.cwd! })}
+      onClick={() => open({ id: session.id, cwd: session.cwd! }, notify)}
     >
       <SquareTerminal size={13} />
       {t.shell.open}
@@ -74,10 +57,12 @@ export function ZoneShellButton({
   sessions,
   privacy,
   demo,
+  notify,
 }: {
   sessions: Session[];
   privacy: boolean;
   demo: boolean;
+  notify?: (message: string) => void;
 }) {
   const { t } = useI18n();
   const button = useRef<HTMLButtonElement>(null);
@@ -115,9 +100,8 @@ export function ZoneShellButton({
       window.removeEventListener('keydown', key, true);
     };
   }, [menu]);
-  const hosted = useMiniShellHosted();
   const folders = shellFolders(sessions);
-  if (!api.shell || !hosted || demo || privacy || !folders.length) return null;
+  if (!canOpenMiniShell() || demo || privacy || !folders.length) return null;
   const only = folders.length === 1 ? folders[0] : null;
   return (
     <>
@@ -131,7 +115,7 @@ export function ZoneShellButton({
         aria-expanded={only ? undefined : !!menu}
         onClick={(e) => {
           e.stopPropagation();
-          if (only) openMiniShell(only);
+          if (only) open(only, notify);
           else setMenu(menu ? null : button.current!.getBoundingClientRect());
         }}
       >
@@ -141,6 +125,7 @@ export function ZoneShellButton({
         createPortal(
           <div
             className="mini-shell-menu mini-shell-pick"
+            data-solid
             role="menu"
             aria-label={t.shell.pickFolder}
             ref={pick}
@@ -154,7 +139,7 @@ export function ZoneShellButton({
                 title={f.cwd}
                 onClick={() => {
                   setMenu(null);
-                  openMiniShell(f);
+                  open(f, notify);
                 }}
               >
                 <span>{shellLabel(f.cwd)}</span>
