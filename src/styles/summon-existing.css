@@ -1,0 +1,130 @@
+/* Project "+" → bring back an away colleague: a grouped card inside the summon sheet. */
+.summon-existing {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.summon-existing > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.summon-existing > summary::-webkit-details-marker {
+  display: none;
+}
+.summon-existing > summary > span {
+  flex: 1;
+}
+.summon-existing > summary > small {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.summon-existing[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.summon-existing[open] > summary > svg:last-child {
+  transform: rotate(180deg);
+}
+.tmux-resume .summon-existing-intro,
+.tmux-resume .summon-existing-more {
+  margin: 10px 12px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.summon-existing-list {
+  max-height: 196px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  list-style: none;
+}
+.summon-existing-list li + li {
+  border-top: 1px solid var(--line);
+}
+.summon-existing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  color: var(--text);
+  text-align: left;
+}
+.summon-existing-row:hover:not(:disabled),
+.summon-existing-row[aria-pressed='true'] {
+  background: var(--bg-4);
+}
+.summon-existing-row:disabled {
+  cursor: default;
+}
+.summon-existing-row:disabled .summon-existing-name b {
+  color: var(--text-3);
+}
+.summon-existing-row:focus-visible {
+  outline: 2px solid var(--line-3);
+  outline-offset: -2px;
+}
+.summon-existing-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.summon-existing-name b {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summon-existing-name small {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.summon-existing-name .summon-existing-reason {
+  color: var(--text-2);
+}
+.summon-existing-zone {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.summon-existing-zone[data-zone='archive'] {
+  color: var(--text-3);
+}
+.summon-existing-chosen {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.summon-existing-chosen .tmux-session-status strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summon-existing-chosen > :is(.tmux-caution, .tmux-error) {
+  margin: 0 12px;
+}
+.summon-existing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 12px;
+}
+.summon-existing-actions .button {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}

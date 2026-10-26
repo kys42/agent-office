@@ -121,7 +121,10 @@ export function DeskRow({
   demo = false,
   onArrange,
   onReorder,
+  onReturn,
 }: {
+  /** The existing "bring back to the office": lets a project's "+" offer away colleagues. */
+  onReturn?: (id: string) => unknown;
   variant?: 'office' | 'floor';
   /** Helper-desk size, status only. */
   tiny?: boolean;
@@ -199,6 +202,7 @@ export function DeskRow({
   const veiledCount = model.veiled.length + model.veiledHelpers.length;
   const signature = layoutSignature(sessions);
   const { display } = model;
+  const bringBack = onReturn ? { zones: model.zones, onReturn } : undefined;
   const baseLayout = useMemo(
     () =>
       layoutRow(sessions, {
@@ -468,6 +472,7 @@ export function DeskRow({
                             privacy={privacy}
                             notify={notify}
                             demo={demo}
+                            bringBack={bringBack}
                           />
                           {zoneVeil}
                         </div>
@@ -514,6 +519,7 @@ export function DeskRow({
                           privacy={privacy}
                           notify={notify}
                           demo={demo}
+                          bringBack={bringBack}
                         />
                         {zoneVeil}
                       </div>

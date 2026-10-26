@@ -1,4 +1,4 @@
-import { ProjectSummon } from './ProjectSummon';
+import { ProjectSummon, type BringBack } from './ProjectSummon';
 import {
   useEffect,
   useMemo,
@@ -78,7 +78,10 @@ export function Office({
   quotaOf,
   helperStackAt = HELPER_STACK_AT,
   demo = false,
+  bringBack,
 }: {
+  /** Lets each project's "+" offer bringing back its lounge/archive colleagues. */
+  bringBack?: BringBack;
   demo?: boolean;
   sessions: Session[];
   notices: OfficeNotice[];
@@ -483,6 +486,7 @@ export function Office({
                       privacy={privacy}
                       notify={notify ?? (() => {})}
                       demo={demo}
+                      bringBack={bringBack}
                     />
                     {onVeilZone && veilIds.length > 0 && (
                       <VeilButton zone name={areaName} onVeil={() => onVeilZone(veilIds)} />

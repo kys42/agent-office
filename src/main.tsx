@@ -26,6 +26,7 @@ import './styles/effects.css';
 import './styles/pets.css';
 import './styles/guide.css';
 import './styles/tmux.css';
+import './styles/summon-existing.css';
 import './styles/native.css';
 import './styles/windows.css';
 class Boundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {

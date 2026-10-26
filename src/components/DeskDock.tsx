@@ -52,8 +52,18 @@ export function DeskDock() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { model, snapshot, error, receipt, veil, pin, reorderSeats, refresh, refreshing } =
-    useOffice(demo, notify);
+  const {
+    model,
+    snapshot,
+    error,
+    receipt,
+    veil,
+    pin,
+    reorderSeats,
+    refresh,
+    refreshing,
+    returnToOffice,
+  } = useOffice(demo, notify);
   // Replies from unfolded bubbles; the setting may change in the big office, so re-read it
   // whenever the dock comes back into use.
   const send = useTerminalSend(demo, notify);
@@ -190,6 +200,7 @@ export function DeskDock() {
           demo={demo}
           onArrange={arrange}
           onReorder={(ids) => void reorderSeats(ids)}
+          onReturn={returnToOffice}
           variant={mode === 'floor' ? 'floor' : 'office'}
           tiny={tiny}
           onTiny={shrink}

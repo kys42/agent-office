@@ -251,6 +251,7 @@ export function OfficeWorkspace({
             onReorder={onReorder}
             onReply={onReply}
             notify={notify}
+            bringBack={{ zones: model.zones, onReturn }}
             footer={
               <>
                 {model.veiled.length + model.veiledHelpers.length > 0 && (
