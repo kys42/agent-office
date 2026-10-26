@@ -1,4 +1,3 @@
-import { MiniShellDock } from './MiniShell';
 import { PetAppearanceContext } from './PetAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
@@ -122,9 +121,7 @@ export function DockCard() {
     // open, or a jump to the terminal) the caret would blink while keys go to that app.
     const press = (e: PointerEvent) => {
       const field =
-        e.target instanceof Element
-          ? e.target.closest('input, textarea, [contenteditable], .xterm')
-          : null;
+        e.target instanceof Element ? e.target.closest('input, textarea, [contenteditable]') : null;
       if (field) void api.card?.('focus');
     };
     window.addEventListener('keydown', key);
@@ -202,7 +199,6 @@ export function DockCard() {
           </button>
         </div>
       )}
-      <MiniShellDock privacy={prefs?.privacy ?? false} scope={target?.id ?? null} />
       {toast && (
         <div className="dock-card-toast" role="status">
           {toast}

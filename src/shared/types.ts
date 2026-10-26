@@ -824,6 +824,16 @@ export interface OfficeAPI {
     input: (ptyId: string, data: string) => void;
     onData: (cb: (ptyId: string, data: string) => void) => () => void;
     onExit: (cb: (ptyId: string) => void) => () => void;
+    /**
+     * The mini terminal's own window, one per folder shell: `open` opens it beside the asking
+     * window (or brings it forward); in that window, `target` reads what it shows, `focus` takes
+     * the keyboard and `close` closes it (detaching). `close-all` is the big office's only.
+     */
+    window: {
+      (action: 'open', target: import('./mini-shell').ShellTarget): Promise<void>;
+      (action: 'target'): Promise<import('./mini-shell').ShellTarget>;
+      (action: 'close' | 'focus' | 'close-all'): Promise<void>;
+    };
   };
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */

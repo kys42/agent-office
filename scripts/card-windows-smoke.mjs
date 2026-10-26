@@ -146,6 +146,8 @@ try {
     'aria-pressed',
     'true',
   );
+  // Pinned means kept open, not kept on top: other windows may cover it.
+  assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'a pinned card is ordinary');
   const titleA = await a.locator('.card-head h2').textContent();
   const b = await newCard('claude:claude-test');
   await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();

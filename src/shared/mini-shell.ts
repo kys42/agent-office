@@ -49,8 +49,6 @@ export const SHELL_LIMITS = {
   maxRows: 150,
   /** One IPC write: a key, or a paste. Larger pastes are refused, not cut. */
   maxInput: 64 * 1024,
-  /** The compact panel's height in rows; expanded it takes most of the window. */
-  compactRows: 12,
   /** Output written to the view but not yet drawn: above `high` the PTY pauses, and it
    * resumes below `low`. Keeps a flood (`yes`, a huge `cat`) bounded in memory. */
   flowHigh: 256 * 1024,

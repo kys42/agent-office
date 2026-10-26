@@ -1,35 +1,49 @@
-/* Mini terminal: a compact drawer at the bottom of the window (MiniShell.tsx). The terminal
-   itself stays dark in both themes, like a real terminal; the bar follows the app. */
-.mini-shell {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  /* Below dialogs and the command palette (.modal-backdrop 8000, .palette-backdrop 8500). */
-  z-index: 7500;
-  display: flex;
-  flex-direction: column;
-  height: 248px;
-  max-height: calc(100vh - 24px);
-  border-radius: 10px;
+/* Mini terminal: its own frameless window (ShellWindow.tsx, desktop/shell-windows.ts), the
+   terminal filling it. The terminal itself stays dark in both themes, like a real terminal; the
+   bar follows the app and moves the window. */
+body.shell-mode {
   overflow: hidden;
   background: #1c1c1e;
-  border: 1px solid var(--line-3);
-  box-shadow: 0 10px 30px #0004;
 }
-.mini-shell.is-expanded {
-  height: min(70vh, calc(100vh - 24px));
+.shell-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: #1c1c1e;
+}
+.shell-window-error {
+  margin: auto;
+  padding: 16px;
+  font-size: 12px;
+  color: #e5e5ea;
+  text-align: center;
+}
+.mini-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #1c1c1e;
 }
 .mini-shell-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: 32px;
   padding: 0 6px 0 10px;
   font-size: 12px;
   color: var(--text);
   background: var(--bg-1);
   border-bottom: 1px solid var(--line-2);
+  /* The frameless window is moved by its header; its controls stay clickable. */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.mini-shell-bar button,
+.mini-shell-menu {
+  -webkit-app-region: no-drag;
 }
 .mini-shell-bar b {
   flex-shrink: 0;
@@ -83,7 +97,7 @@
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: 7600;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   min-width: 200px;
@@ -97,6 +111,8 @@
   box-shadow: 0 6px 20px #0003;
 }
 .mini-shell-pick {
+  /* A zone's folder menu in the office: above the floor, below dialogs (.modal-backdrop 8000). */
+  z-index: 7600;
   position: fixed;
   right: auto;
   overflow-y: auto;
@@ -166,13 +182,4 @@
   color: #aeaeb2;
   background: #1c1c1e;
   border-top: 1px solid #fff1;
-}
-/* The small colleague card window: the drawer takes the lower half, edge to edge. */
-.dock-card .mini-shell {
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
-}
-.dock-card .mini-shell:not(.is-expanded) {
-  height: min(248px, 55vh);
 }

@@ -75,7 +75,7 @@ export function ProjectSummon({
           }
         />
       )}
-      <ZoneShellButton sessions={sessions} privacy={privacy} demo={demo} />
+      <ZoneShellButton sessions={sessions} privacy={privacy} demo={demo} notify={notify} />
     </>
   );
 }

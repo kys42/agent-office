@@ -65,6 +65,22 @@ export function useLocalePreference(
     } catch {}
   }, [preference, ready, resolved]);
 }
+/**
+ * For windows that get no snapshot (the terminal window): follow the language the office window
+ * resolved and stored, as soon as it changes there (same profile, so a `storage` event).
+ */
+export function useSharedLocale() {
+  useEffect(() => {
+    const follow = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && isLocale(e.newValue) && !pinned()) {
+        setLocale(e.newValue);
+        document.documentElement.lang = e.newValue;
+      }
+    };
+    addEventListener('storage', follow);
+    return () => removeEventListener('storage', follow);
+  }, []);
+}
 /** Re-renders on a language switch. `t` is the active catalog: `t.app.title`, `t.common.minutesAgo(3)`. */
 export function useI18n() {
   const locale = useSyncExternalStore(onLocaleChange, getLocale, getLocale);

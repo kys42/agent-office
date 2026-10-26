@@ -44,6 +44,8 @@ export class CardWindows {
       dir: string;
       secure: (window: BrowserWindow) => void;
       watch: (window: BrowserWindow) => void;
+      /** A window that counts as "still here" for a preview card (its mini terminal window). */
+      companion?: () => boolean;
     },
   ) {
     this.position = readCardPosition(this.read('card-position.json'));
@@ -104,6 +106,18 @@ export class CardWindows {
     for (const e of this.entries)
       if (!e.window.isDestroyed())
         e.window.webContents.send('office:card-state', this.state(e.window.webContents));
+  }
+  /**
+   * The preview floats over other apps (it closes as soon as they take focus); a pinned card is
+   * an ordinary window. A quiet run's card always stays behind the person's work.
+   */
+  private layer(window: BrowserWindow, float: boolean) {
+    if (quiet || window.isDestroyed()) return;
+    window.setAlwaysOnTop(float, 'pop-up-menu');
+    window.setVisibleOnAllWorkspaces(float, {
+      visibleOnFullScreen: float,
+      skipTransformProcessType: true,
+    });
   }
   private cancelHide(e: Entry) {
     if (e.hide) clearTimeout(e.hide);
@@ -232,7 +246,8 @@ export class CardWindows {
         sandbox: true,
       },
     });
-    // The card holds the mini terminal: Ctrl+C must reach it, not the app's Edit menu.
+    // Like the big window: no app Edit menu of its own on Windows/Linux, so Ctrl keys reach the
+    // page.
     dropAppMenu(window);
     const e: Entry = {
       window,
@@ -248,24 +263,8 @@ export class CardWindows {
     this.options.secure(window);
     this.options.watch(window);
     // A quiet run's card stays behind the person's work, on its own Space.
-    if (!quiet) {
-      window.setAlwaysOnTop(true, 'pop-up-menu');
-      window.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-        skipTransformProcessType: true,
-      });
-    }
-    window.on('blur', () => {
-      if (e.dialogs || e.pinned) return;
-      this.cancelHide(e);
-      e.hide = setTimeout(
-        () => {
-          e.hide = undefined;
-          if (!e.pinned && !e.dialogs && !window.isDestroyed() && !window.isFocused()) this.hide(e);
-        },
-        Math.max(150, e.shownAt + 500 - Date.now()),
-      );
-    });
+    this.layer(window, true);
+    window.on('blur', () => this.blurred(e));
     window.on('closed', () => {
       this.cancelHide(e);
       this.stopDrag(e);
@@ -287,6 +286,32 @@ export class CardWindows {
     window.webContents.on('did-finish-load', () => this.revealEntry(e));
     void window.loadFile(this.options.index, { hash: 'card' });
     return e;
+  }
+
+  /** A preview card goes away once the person works elsewhere (not in its terminal window). */
+  private blurred(e: Entry) {
+    if (e.dialogs || e.pinned) return;
+    this.cancelHide(e);
+    e.hide = setTimeout(
+      () => {
+        e.hide = undefined;
+        if (
+          !e.pinned &&
+          !e.dialogs &&
+          !e.window.isDestroyed() &&
+          !e.window.isFocused() &&
+          !this.options.companion?.()
+        )
+          this.hide(e);
+      },
+      Math.max(150, e.shownAt + 500 - Date.now()),
+    );
+  }
+  /** Focus left a companion window: a preview card that is not focused either goes away. */
+  recheck() {
+    const e = this.preview;
+    if (e && !e.window.isDestroyed() && e.window.isVisible() && !e.window.isFocused())
+      this.blurred(e);
   }
 
   private stopDrag(e: Entry) {
@@ -350,6 +375,8 @@ export class CardWindows {
         return;
       }
       e.pinned = true;
+      // Kept open is all a pin means: an ordinary window that other apps may cover.
+      this.layer(e.window, false);
       this.cancelHide(e);
       if (this.preview === e) this.preview = null;
       this.states();
@@ -364,6 +391,7 @@ export class CardWindows {
         old.window.destroy();
       }
       e.pinned = false;
+      this.layer(e.window, true);
       this.preview = e;
       this.states();
       return;

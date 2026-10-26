@@ -1,6 +1,8 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
-import { MiniShells } from './mini-shell.js';
+import { describeShell, MiniShells } from './mini-shell.js';
+import { ShellWindows } from './shell-windows.js';
+import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
@@ -96,6 +98,7 @@ let main: BrowserWindow | null = null,
   bridge: ServiceBridge,
   quitting = false;
 let cards: CardWindows;
+let shellWindows: ShellWindows;
 let notifier: Notifier;
 // The colleague card open in the big office, as its page reports it (notifications skip it).
 let mainSelected: string | null = null;
@@ -131,8 +134,17 @@ else {
       dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
       secure,
       watch,
+      // A preview card stays while the person works in the terminal window it opened.
+      companion: () => !!shellWindows?.focused(),
     });
     app.on('before-quit', () => cards.dispose());
+    shellWindows = new ShellWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      blurred: () => cards.recheck(),
+    });
     notifier = new Notifier({
       // Quiet runs, and test runs that take the real focus (CI), record instead of showing.
       record: quiet || recordNotifications,
@@ -163,8 +175,13 @@ else {
     const followLanguage = (s: Snapshot) => {
       if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
     };
+    // Hiding the screen's content (화면 내용 숨기기) closes the terminal windows: tmux keeps them.
+    const hideShells = (s: Snapshot) => {
+      if (s.preferences?.privacy) shellWindows.closeAll();
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
+      hideShells(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -172,6 +189,7 @@ else {
     bridge.on('patch', (patch: SnapshotPatch) => {
       if (delivery.update(patch, windows())) {
         followLanguage(delivery.latest!);
+        hideShells(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
@@ -209,6 +227,7 @@ else {
     const reseat = () => {
       if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
       cards.reseat();
+      shellWindows.reseat();
     };
     screen.on('display-removed', reseat);
     screen.on('display-metrics-changed', reseat);
@@ -556,6 +575,11 @@ function trusted(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>)
   )
     throw new Error(m().desktop.untrustedWindow);
 }
+/** The mini terminal's IPC also trusts its own windows (and nothing else does). */
+function trustedShell(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
+  if (shellWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
+  trusted(e);
+}
 /**
  * The mini terminal (docs/development/TERMINAL.md · Mini terminal). A window names a local
  * session (its folder is read here, never taken from the window), an existing shell, or its own
@@ -582,8 +606,52 @@ function setupMiniShell() {
       if (!sender.isDestroyed()) sender.send('office:shell-exit', ptyId);
     },
   });
+  // A terminal window per folder shell, beside the window that asked for it (shell-windows.ts).
+  ipcMain.handle('office:shell-window', async (e, what: unknown, raw: unknown) => {
+    trustedShell(e);
+    if (what === 'target') return shellWindows.target(e.sender);
+    if (what === 'close' || what === 'focus') return shellWindows.action(e.sender, what);
+    if (what === 'close-all') {
+      // The big office turning into the sample office lets go of every real shell.
+      if (e.sender !== main?.webContents) throw new Error(m().desktop.untrustedWindow);
+      return shellWindows.closeAll();
+    }
+    if (what !== 'open') throw new Error(m().desktop.badRequest);
+    let target;
+    try {
+      target = parseShellWindowTarget(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().shell.hidden);
+    let key: string, cwd: string;
+    if (target.name) {
+      const found = (await shells.list()).find((s) => s.name === target.name);
+      if (!found) throw new Error(m().shell.gone);
+      ({ name: key, cwd } = found);
+    } else {
+      if (isRemoteId(target.id!)) throw new Error(m().federation.readOnly);
+      // The folder is read here, never taken from the window.
+      const session: Session = await bridge.call('detail', [target.id]);
+      if (!session?.cwd || session.remote) throw new Error(m().shell.folderMissing);
+      ({ name: key, cwd } = describeShell(session.cwd));
+    }
+    // Privacy may have come on while the folder was looked up: never open a window after it.
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().shell.hidden);
+    const from = BrowserWindow.fromWebContents(e.sender);
+    if (!from || from.isDestroyed()) return;
+    shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
+      // Only beside a window that floats (a preview card, the desk dock) does it float too: a
+      // pinned card, the big office or an ordinary terminal window give an ordinary window.
+      float: from !== main && from.isAlwaysOnTop(),
+    });
+  });
   ipcMain.handle('office:shell', async (e, raw) => {
-    trusted(e);
+    trustedShell(e);
+    // A terminal never attaches while screen content is hidden.
+    const kind = (raw as { type?: unknown } | null)?.type;
+    if (delivery.latest?.preferences?.privacy && (kind === 'open' || kind === 'attach'))
+      throw new Error(m().shell.hidden);
     let command;
     try {
       command = parseShellCommand(raw);
@@ -647,7 +715,7 @@ function setupMiniShell() {
   });
   ipcMain.on('office:shell-input', (e, ptyId: unknown, data: unknown) => {
     try {
-      trusted(e);
+      trustedShell(e);
     } catch {
       return;
     }
