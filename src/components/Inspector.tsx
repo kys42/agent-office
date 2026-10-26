@@ -1125,7 +1125,7 @@ export function Inspector({
                 );
                 if (result.status === 'sent') {
                   markSent(id);
-                  remember(id, text, startedAt);
+                  remember(id, text, startedAt, images?.length ?? 0);
                 }
                 return result;
               }}

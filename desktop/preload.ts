@@ -92,6 +92,7 @@ const api: OfficeAPI = {
   jump: (id) => action('office:jump', id),
   send: (id, text, options) => action('office:send', id, text, options),
   attachImage: (bytes) => action('office:attach-image', bytes),
+  attachmentPreview: (id) => action('office:attachment-preview', id),
   inspectDraft: (id) => action('office:inspect-draft', id),
   terminalSend: (enable) => action('office:terminal-send', enable),
   prompt: (id) => action('office:prompt', id),

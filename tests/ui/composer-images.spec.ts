@@ -41,9 +41,22 @@ async function desktop(
         card: async () => {},
         attachImage: async (bytes: Uint8Array) => {
           if (!(bytes instanceof Uint8Array)) throw new Error('not bytes');
-          const id = `00000000-0000-4000-8000-${String(w.attached.length).padStart(12, '0')}`;
+          // Numbered across reloads, as main's files outlive a window.
+          const n = Number(localStorage.getItem('test:attached') ?? 0);
+          localStorage.setItem('test:attached', String(n + 1));
+          const id = `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
           w.attached.push({ id, size: bytes.length });
+          if (w.deferAttach) await new Promise<void>((resolve) => (w.finishAttach = resolve));
           return { id };
+        },
+        // Main's copy of a saved image, by id; a removed one is gone.
+        attachmentPreview: async (id: string) => {
+          w.previewed = [...(w.previewed ?? []), id];
+          if ((localStorage.getItem('test:gone') ?? '').includes(id)) return null;
+          return {
+            type: 'image/png',
+            bytes: Uint8Array.from(atob(w.png), (c) => c.charCodeAt(0)),
+          };
         },
         send: async (id: string, text: string, options?: { images?: string[] }) => {
           w.sends.push({ id, text, images: options?.images ?? null });
@@ -98,13 +111,11 @@ test('Pasted, dropped and picked images show as thumbnails, can be removed, and 
   await expect(thumbs(page)).toHaveCount(1);
   await drop(page, 'dropped.png');
   await expect(thumbs(page)).toHaveCount(2);
-  await page
-    .locator('.terminal-send-chat input[type=file]')
-    .setInputFiles({
-      name: 'picked.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(PNG, 'base64'),
-    });
+  await page.locator('.terminal-send-chat input[type=file]').setInputFiles({
+    name: 'picked.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(PNG, 'base64'),
+  });
   await expect(thumbs(page)).toHaveCount(3);
   // The bytes went to the desktop app; ids came back.
   expect(await page.evaluate(() => (window as any).attached.length)).toBe(3);
@@ -166,23 +177,64 @@ test('Where the target takes no images, there is no attach button and a paste sa
   expect(await page.evaluate(() => (window as any).attached.length)).toBe(0);
 });
 
-test('Codex CLI targets say images go as paths; text drafts survive reopening, images in memory', async ({
+test('Codex CLI targets say images go as paths; images stay with the draft when the card closes', async ({
   page,
 }) => {
   await desktop(page, { images: 'path' });
   await expect(page.getByRole('button', { name: '이미지 첨부' })).toBeVisible();
   await paste(page, 'shot.png');
+  await paste(page, 'second.png');
   await expect(page.locator('.composer-images-note')).toContainText('파일 경로로 전달돼요');
   await field(page).fill('초안');
   await page.evaluate(() => (window as any).showCard(null));
   await expect(field(page)).toHaveCount(0);
   await page.evaluate(() => (window as any).showCard('demo:0'));
   await expect(field(page)).toHaveValue('초안');
-  await expect(thumbs(page)).toHaveCount(1);
-  // Not kept across a restart (a reload here): the text draft is.
+  await expect(thumbs(page)).toHaveCount(2);
+  // A closed card's window is destroyed (a reload here): ids come back with the text draft and
+  // their thumbnails from main; one main no longer has is dropped without a word.
+  await page.evaluate(() =>
+    localStorage.setItem('test:gone', '00000000-0000-4000-8000-000000000001'),
+  );
   await page.reload();
   await expect(field(page)).toHaveValue('초안');
+  await expect(thumbs(page)).toHaveCount(1);
+  await expect(thumbs(page).first()).toHaveAttribute('alt', 'shot.png');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await field(page).press('Enter');
   await expect(thumbs(page)).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).sends)).toEqual([
+    { id: 'demo:0', text: '초안', images: ['00000000-0000-4000-8000-000000000000'] },
+  ]);
+  // Sent: nothing comes back after the next reopen.
+  await page.reload();
+  await expect(field(page)).toHaveValue('');
+  await expect(page.locator('.terminal-send-chat .composer-image')).toHaveCount(0);
+});
+
+test('An image still uploading keeps Send off, even after the card is closed and reopened', async ({
+  page,
+}) => {
+  await desktop(page);
+  const send = page.locator('.terminal-send-chat button[type=submit]');
+  await field(page).fill('봐줘');
+  await page.evaluate(() => ((window as any).deferAttach = true));
+  await paste(page, 'slow.png');
+  await expect(page.locator('.composer-image-busy')).toBeVisible();
+  await expect(send).toBeDisabled();
+  await page.evaluate(() => (window as any).showCard(null));
+  await expect(field(page)).toHaveCount(0);
+  await page.evaluate(() => (window as any).showCard('demo:0'));
+  await expect(field(page)).toHaveValue('봐줘');
+  await expect(page.locator('.composer-image-busy')).toBeVisible();
+  await expect(send).toBeDisabled();
+  await page.evaluate(() => (window as any).finishAttach());
+  await expect(thumbs(page)).toHaveCount(1);
+  await expect(send).toBeEnabled();
+  await send.click();
+  expect(await page.evaluate(() => (window as any).sends)).toEqual([
+    { id: 'demo:0', text: '봐줘', images: ['00000000-0000-4000-8000-000000000000'] },
+  ]);
 });
 
 test('With screen content hidden, attached images show as plain tiles', async ({ page }) => {

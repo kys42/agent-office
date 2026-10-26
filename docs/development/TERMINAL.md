@@ -111,7 +111,9 @@ terminal_title = ["session-id", "thread-name", "project"]
   - **Codex Desktop: `attach`.** `thread-follower-start-turn`의 `input`에 앱 서버 프로토콜의 로컬 이미지 항목 `{ type: 'localImage', path }`를 글 앞에 넣는다(글이 없으면 글 항목 없음).
   - **Codex CLI 대기열: `path`.** `codex queue`는 이미지를 받지 않는다(0.163/0.164: `--image`를 주면 "`codex queue` does not support image attachments"로 끝남). 그래서 글 뒤에 빈 줄, 그다음 경로를 한 줄에 하나씩 붙여 보낸다. 입력창에 "Codex CLI에는 이미지 파일 경로로 전달돼요"라고 적는다.
   - **OpenClaw·원격 오피스·웹·데모·Orca 탭만 찾은 경우: 없음.** 첨부 버튼을 숨기고, 붙여넣거나 놓으면 이유 한 줄을 보인다. main도 이미지를 실은 원격 보내기와 이미지를 못 받는 어댑터를 거절한다.
-- **초안:** 글 초안은 그대로 로컬 프로필에 저장된다. 이미지는 메모리에만 있어 카드를 닫았다 열어도 남지만 앱을 다시 켜면 사라진다(버튼 설명에 적음).
+- **초안:** 고정 카드를 닫으면 그 창이 없어지므로, 업무 카드의 첨부 목록(id와 파일 이름만)을 글 초안 옆 로컬 프로필(`office:reply-images:v1:<동료>`)에 둔다. 다시 열면(앱을 다시 켜도) 목록을 읽고 썸네일은 main에 id로 다시 받는다(IPC `office:attachment-preview`, 신뢰한 창만, 앱 폴더의 자기 이미지 파일만 — 형식을 다시 확인하고 경로는 돌려주지 않음). main에 없는 id(7일 정리 등)는 말없이 뺀다. 보내면 보낸 id만, 빼기 버튼은 그 id만 목록에서 지운다. 말풍선 빠른 답장은 열려 있는 동안만 메모리에 둔다.
+- **올리는 중:** 아직 main에 넘어가는 중인 이미지 수는 입력창 단위로 창 전체에서 공유한다. 카드를 닫았다 열어도 그 수가 남아 다 올라갈 때까지 보내기가 꺼져 있다.
+- **보낸 글 말풍선:** 기록에 나타날 때까지 보이는 '보냄' 말풍선은 이미지 장수도 기억한다. 기록과 맞출 때 에이전트마다 이미지가 남는 모양을 그 장수만큼만 허용한다: Claude는 글 앞의 `[Image #N]`(또는 첨부되지 않은 경로), Codex 대기열은 글 뒤의 앱 폴더 경로 줄(`…/attachments/<uuid>.<ext>`), Codex Desktop은 글 그대로.
 - 보안 정책: 썸네일은 `blob:` 주소라 `index.html` CSP의 `img-src`에 `blob:`를 더했다.
 - 확인하지 않은 것: 실제 Claude Code·Codex Desktop 세션에 보내 보지는 않았다(키를 실제 세션에 넣지 않는 원칙). Claude는 번들 코드를 읽어 판단했고, Orca가 `draft`로 따로 알려 주는 입력창 글에도 `[Image #N]`이 그대로 들어오는지, Codex Desktop이 `localImage`를 받아 주는지는 실측 전이다.
 
@@ -226,7 +228,7 @@ terminal_title = ["session-id", "thread-name", "project"]
 
 ## 경계
 
-- IPC `office:terminals`·`office:jump`·`office:send`·`office:attach-image`·`office:terminal-send`·`office:prompt`·`office:answer`·`office:answer-settings`는 `desktop/main.ts`에만 있다. `OfficeService.call`(개발 HTTP `/api/rpc`와 공유)에는 없어 웹 미리보기·Tailscale로는 도달할 수 없다. 테스트로 고정했다.
+- IPC `office:terminals`·`office:jump`·`office:send`·`office:attach-image`·`office:attachment-preview`·`office:terminal-send`·`office:prompt`·`office:answer`·`office:answer-settings`는 `desktop/main.ts`에만 있다. `OfficeService.call`(개발 HTTP `/api/rpc`와 공유)에는 없어 웹 미리보기·Tailscale로는 도달할 수 없다. 테스트로 고정했다.
 - 켜짐 여부는 main이 데스크탑 프로필 파일에서 매번 확인한다(터미널로 보내기: 파일 없음 → 기본 켜짐, 읽을 수 없음 → 꺼짐. 답하기 두 개: 파일 없음·읽을 수 없음 → 꺼짐). 공유 설정·웹 미리보기와 무관하다.
 - 외부 명령은 shell 없이 `execFile`과 인수 배열, timeout·출력 한도로 실행한다. `orca`·`tmux`·`codex`는 Finder 실행의 좁은 PATH를 고려해 고정 경로 후보에서 찾는다.
 - 로그·DB에 handle과 입력 내용을 남기지 않는다. 터미널에서 읽은 입력창 글은 확인 미리보기로만 렌더러에 잠깐 전해지고(저장하지 않음), 지울 때는 main이 클립보드에 넣는다. 내가 업무 카드에서 작성한 미전송 채팅은 실행별 로컬 프로필에 즉시 임시 저장하며 팝업·전체 카드가 공유한다. 성공 전송 시 같은 초안만 지우고 실패·확인 취소·터미널 글 대신 보내기는 유지한다. 서버 DB·공유 환경설정·인수인계에는 초안을 넣지 않는다.

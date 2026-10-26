@@ -636,6 +636,11 @@
 .terminal-send-bar .composer-attach + .button {
   margin-left: 0;
 }
+/* A sent message's images, while it waits for the record. */
+.message-pending-images {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
 /* Dragging files over a composer. */
 .composer-drop {
   outline: 1.5px dashed var(--accent);

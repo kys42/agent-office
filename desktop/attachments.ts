@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   ATTACHMENT_FILE,
   ATTACHMENT_TTL_MS,
   IMAGE_EXTS,
+  IMAGE_TYPES,
   MAX_IMAGE_BYTES,
   MAX_IMAGES,
   isAttachmentId,
@@ -47,6 +48,21 @@ export class AttachmentStore {
       if (info?.isFile()) return file;
     }
     return null;
+  }
+
+  /**
+   * A saved image's bytes and type, to show its thumbnail again (a card window is recreated on
+   * every open). Only this store's own files; null when the id is malformed or the file is gone,
+   * too large, or no longer an image.
+   */
+  async preview(id: unknown): Promise<{ type: string; bytes: Uint8Array } | null> {
+    const file = await this.resolve(id);
+    if (!file) return null;
+    const bytes = await readFile(file).catch(() => null);
+    if (!bytes || bytes.byteLength > MAX_IMAGE_BYTES) return null;
+    const ext = sniffImage(bytes);
+    if (!ext || path.extname(file) !== `.${ext}`) return null;
+    return { type: IMAGE_TYPES[ext], bytes: new Uint8Array(bytes) };
   }
 
   /** Every id, in order, as paths; any malformed, duplicate or missing one refuses the send. */

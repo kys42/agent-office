@@ -64,11 +64,9 @@ export function ImageAttachButton({
   const { t } = useI18n();
   const input = useRef<HTMLInputElement>(null);
   if (block) return null;
-  const tip = [
-    t.terminal.images.attachHint,
-    ...(asPaths ? [t.terminal.images.asPaths] : []),
-    t.terminal.images.notSaved,
-  ].join(' · ');
+  const tip = asPaths
+    ? `${t.terminal.images.attachHint} · ${t.terminal.images.asPaths}`
+    : t.terminal.images.attachHint;
   return (
     <>
       <button
@@ -123,10 +121,10 @@ export function ImageStrip({
         <ul className="composer-image-list" aria-label={t.terminal.images.attach}>
           {images.map((image, i) => (
             <li key={image.id} className="composer-image">
-              {privacy ? (
+              {privacy || !image.url ? (
                 <span
                   className="composer-image-hidden"
-                  aria-label={t.terminal.images.hidden(i + 1)}
+                  aria-label={privacy ? t.terminal.images.hidden(i + 1) : image.name}
                 >
                   <ImageIcon size={14} />
                 </span>

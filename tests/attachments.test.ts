@@ -8,6 +8,7 @@ import {
   MAX_IMAGES,
   imageBlock,
   isAttachmentId,
+  parseStoredImages,
   sniffImage,
   withImagePaths,
 } from '../src/shared/attachments.js';
@@ -112,6 +113,53 @@ test('The store keeps checked bytes under a random id and resolves only its own 
     await symlink(file!, path.join(dir, 'attachments', `${linked}.png`));
     assert.equal(await store.resolve(linked), null);
   });
+});
+
+test("A thumbnail is read back by id, from the store's own image files only", async () => {
+  await withDir(async (dir) => {
+    const store = new AttachmentStore(dir);
+    const { id } = await store.save(PNG);
+    assert.deepEqual(await store.preview(id), { type: 'image/png', bytes: PNG });
+    for (const bad of [`${id}.png`, '../x', '/etc/passwd', 7])
+      assert.equal(await store.preview(bad), null);
+    // A file changed behind the store's back (no longer that image) is not shown.
+    await writeFile(path.join(dir, `${id}.png`), 'not an image');
+    assert.equal(await store.preview(id), null);
+    const linked = '11111111-2222-4333-8444-555555555555';
+    await writeFile(path.join(dir, 'real.png'), PNG);
+    await symlink(path.join(dir, 'real.png'), path.join(dir, `${linked}.png`));
+    assert.equal(await store.preview(linked), null);
+    assert.equal(await store.preview('22222222-3333-4444-8555-666666666666'), null);
+  });
+});
+
+test('A draft keeps image ids and names only, and drops anything malformed', () => {
+  const a = '11111111-2222-4333-8444-555555555555';
+  const b = '22222222-3333-4444-8555-666666666666';
+  assert.deepEqual(parseStoredImages(null), []);
+  assert.deepEqual(parseStoredImages('not json'), []);
+  assert.deepEqual(parseStoredImages('{"id":"x"}'), []);
+  assert.deepEqual(
+    parseStoredImages(
+      JSON.stringify([
+        { id: a, name: 'shot.png' },
+        { id: a, name: 'again' },
+        { id: '/etc/passwd', name: 'x' },
+        { id: `${b}.png` },
+        { id: b, name: 42 },
+        null,
+      ]),
+    ),
+    [
+      { id: a, name: 'shot.png' },
+      { id: b, name: '' },
+    ],
+  );
+  const many = Array.from({ length: MAX_IMAGES + 2 }, (_, i) => ({
+    id: `11111111-2222-4333-8444-${String(i).padStart(12, '0')}`,
+    name: '',
+  }));
+  assert.equal(parseStoredImages(JSON.stringify(many)).length, MAX_IMAGES);
 });
 
 test('A send names ids: in order, each once, a handful at most, every one still there', async () => {

@@ -58,7 +58,6 @@ export const terminal: Messages['terminal'] = {
     uploading: '첨부하는 중…',
     asPaths: 'Codex CLI에는 이미지 파일 경로로 전달돼요',
     dropHere: '여기에 놓으면 이미지가 첨부돼요',
-    notSaved: '첨부한 이미지는 앱을 다시 켜면 남지 않아요.',
     blocked: {
       desktop: '이미지는 데스크톱 앱에서만 보낼 수 있어요.',
       remote: '다른 사무실 동료에게는 이미지를 보낼 수 없어요.',

@@ -25,6 +25,12 @@ export const ATTACHMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export const isAttachmentId = (value: unknown): value is string =>
   typeof value === 'string' && ID.test(value);
+/**
+ * A saved image's absolute path as it appears in an agent's record (the Codex queue gets paths in
+ * its text): any folder ending in `attachments/`, then `<id>.<ext>`. A regex source.
+ */
+export const SAVED_IMAGE_PATH =
+  '/[^\\n]*?/attachments/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\\.(?:png|jpg|gif|webp)';
 /** A file in the attachments folder: `<id>.<ext>`. */
 export const ATTACHMENT_FILE = /^([0-9a-f-]{36})\.(png|jpg|gif|webp)$/;
 
@@ -64,4 +70,34 @@ export function imageBlock(
 export function withImagePaths(text: string, paths: readonly string[]): string {
   if (!paths.length) return text;
   return text ? `${text}\n\n${paths.join('\n')}` : paths.join('\n');
+}
+
+/** An attached image as a composer draft keeps it: the id main gave back, and the file's name. */
+export interface StoredImage {
+  id: string;
+  name: string;
+}
+/**
+ * A composer's attached images as saved with its draft (ids only, never paths or bytes). Anything
+ * malformed is dropped: a bad entry, a repeated id, more than the most a send takes.
+ */
+export function parseStoredImages(raw: string | null | undefined): StoredImage[] {
+  if (!raw) return [];
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const images: StoredImage[] = [];
+  for (const entry of value) {
+    const id = (entry as Partial<StoredImage> | null)?.id;
+    const name = (entry as Partial<StoredImage> | null)?.name;
+    if (!isAttachmentId(id) || seen.has(id) || images.length >= MAX_IMAGES) continue;
+    seen.add(id);
+    images.push({ id, name: typeof name === 'string' ? name.slice(0, 200) : '' });
+  }
+  return images;
 }

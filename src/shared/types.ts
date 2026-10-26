@@ -858,6 +858,8 @@ export interface OfficeAPI {
    * attachments folder and returns an opaque id for `send`. No path ever crosses back.
    */
   attachImage?: (bytes: Uint8Array) => Promise<{ id: string }>;
+  /** Desktop only: an attached image's bytes by id (app-owned files only), or null when gone. */
+  attachmentPreview?: (id: string) => Promise<{ type: string; bytes: Uint8Array } | null>;
   /** Desktop only: reads the owned terminal's current draft without typing or submitting. */
   inspectDraft?: (id: string) => Promise<Extract<SendResult, { status: 'needs-confirm' }> | null>;
   /**

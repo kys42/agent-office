@@ -74,7 +74,6 @@ export const terminal = {
     /** The Codex CLI queue takes text only: the images go as file paths. */
     asPaths: 'Codex CLI gets the images as file paths',
     dropHere: 'Drop images to attach',
-    notSaved: 'Attached images are not kept after the app restarts.',
     /** Why images can't be attached here. */
     blocked: {
       desktop: 'Images can be sent from the desktop app only.',

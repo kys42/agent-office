@@ -1368,6 +1368,12 @@ function setupIPC() {
       throw new Error(m().desktop.badFile);
     }
   });
+  // A thumbnail again, for a composer window that was recreated: bytes of this store's own
+  // files only, by id. Never a path, never a file elsewhere.
+  ipcMain.handle('office:attachment-preview', async (e, id) => {
+    trusted(e);
+    return attachments().preview(id);
+  });
   const sendMessage = async (
     id: unknown,
     text: unknown,
