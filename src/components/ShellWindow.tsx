@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { useI18n } from '../lib/i18n';
+import { useI18n, useSharedLocale } from '../lib/i18n';
 import { isMac } from '../lib/platform';
 import { shellLabel, type ShellTarget } from '../shared/mini-shell';
 
@@ -14,6 +14,7 @@ const MiniShellPanel = lazy(() => import('./MiniShellPanel'));
  */
 export function ShellWindow() {
   const { t } = useI18n();
+  useSharedLocale();
   const [target, setTarget] = useState<ShellTarget | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {

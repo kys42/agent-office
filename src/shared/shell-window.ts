@@ -58,11 +58,23 @@ export function shellWindowBounds(
       height,
     };
   base = clampInto(base, area);
-  for (let step = 0; step <= occupied.length; step++) {
-    const next = clampInto({ ...base, x: base.x - step * STEP, y: base.y + step * STEP }, area);
-    if (!occupied.some((r) => Math.abs(r.x - next.x) < NEAR && Math.abs(r.y - next.y) < NEAR))
-      return next;
-  }
+  // Step away from windows already there, trying each diagonal: at an edge one direction
+  // clamps back onto the same spot, another still has room.
+  const free = (r: Rect) =>
+    !occupied.some((o) => Math.abs(o.x - r.x) < NEAR && Math.abs(o.y - r.y) < NEAR);
+  for (let step = 0; step <= occupied.length; step++)
+    for (const [dx, dy] of [
+      [-1, 1],
+      [1, 1],
+      [-1, -1],
+      [1, -1],
+    ]) {
+      const next = clampInto(
+        { ...base, x: base.x + dx * step * STEP, y: base.y + dy * step * STEP },
+        area,
+      );
+      if (free(next)) return next;
+    }
   return base;
 }
 

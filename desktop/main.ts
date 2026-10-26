@@ -636,6 +636,8 @@ function setupMiniShell() {
       if (!session?.cwd || session.remote) throw new Error(m().shell.folderMissing);
       ({ name: key, cwd } = describeShell(session.cwd));
     }
+    // Privacy may have come on while the folder was looked up: never open a window after it.
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().shell.hidden);
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
     shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
@@ -646,6 +648,10 @@ function setupMiniShell() {
   });
   ipcMain.handle('office:shell', async (e, raw) => {
     trustedShell(e);
+    // A terminal never attaches while screen content is hidden.
+    const kind = (raw as { type?: unknown } | null)?.type;
+    if (delivery.latest?.preferences?.privacy && (kind === 'open' || kind === 'attach'))
+      throw new Error(m().shell.hidden);
     let command;
     try {
       command = parseShellCommand(raw);

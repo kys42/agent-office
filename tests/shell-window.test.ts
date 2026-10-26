@@ -120,3 +120,11 @@ test('a window may ask for a session or an existing shell, nothing else', () => 
   ])
     assert.throws(() => parseShellWindowTarget(bad));
 });
+
+test('at a corner the next terminal steps the way that still has room', () => {
+  const area = { x: 0, y: 0, width: 1200, height: 800 };
+  const anchor = { x: 0, y: 400, width: 1200, height: 400 };
+  const first = shellWindowBounds(anchor, area, { width: 640, height: 400 }, []);
+  const second = shellWindowBounds(anchor, area, { width: 640, height: 400 }, [first]);
+  assert.notDeepEqual([second.x, second.y], [first.x, first.y]);
+});

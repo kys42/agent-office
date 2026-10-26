@@ -188,14 +188,20 @@ export class ShellWindows {
       this.entries.delete(e);
       this.options.blurred?.();
     });
-    window.on('resized', () => {
+    // `resize` (debounced) rather than `resized`, which Linux never emits.
+    let resizing: NodeJS.Timeout | undefined;
+    window.on('resize', () => {
+      clearTimeout(resizing);
+      resizing = setTimeout(() => persist(), 300);
+    });
+    const persist = () => {
       if (window.isDestroyed()) return;
       const [width, height] = window.getSize();
       if (width === e.placed.width && height === e.placed.height) return;
       e.placed = { width, height };
       this.size = { width, height };
       void this.saveSize().catch((error) => console.error('Terminal window size:', error));
-    });
+    };
     window.webContents.once('did-finish-load', () => {
       e.ready = true;
       this.present(e);
