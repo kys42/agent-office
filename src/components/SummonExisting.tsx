@@ -16,7 +16,7 @@ import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
 import { residentLabel } from '../shared/office-model';
 import type { AwayColleague } from '../shared/summon-existing';
-import type { OrcaLaunchInfo, TmuxResumeInfo } from '../shared/types';
+import type { DuplicateCheck, OrcaLaunchInfo, TmuxResumeInfo } from '../shared/types';
 
 const PROVIDER: Record<string, string> = { claude: 'Claude', codex: 'Codex', openclaw: 'OpenClaw' };
 
@@ -38,7 +38,7 @@ export function SummonExisting({
   total: number;
   privacy: boolean;
   notify: (message: string) => void;
-  /** The existing "bring back to the office" (store `returnToOffice`). */
+  /** The existing "bring back to the office" (store `returnToOffice`): true once stored. */
   onReturn: (id: string) => unknown;
   close: () => void;
 }) {
@@ -52,12 +52,25 @@ export function SummonExisting({
   const [error, setError] = useState('');
   const request = useRef(0);
   const returned = useRef(new Set<string>());
+  /** Remembered only once the store confirmed it: a failed restore is tried again next time. */
   const bringBack = async (id: string) => {
     if (returned.current.has(id)) return;
-    returned.current.add(id);
-    await onReturn(id);
+    if ((await onReturn(id)) === true) returned.current.add(id);
   };
-  const run = async <T,>(work: (ticket: number) => Promise<T>) => {
+  /**
+   * Main's duplicate-launch check, from whichever status answered (tmux or Orca): the answer to
+   * the newest request wins, as in the resume sheet. It only shapes the buttons; main checks
+   * again before any launch.
+   */
+  const [duplicate, setDuplicate] = useState<DuplicateCheck | undefined>();
+  const duplicateRequest = useRef(0);
+  const duplicateShown = useRef(0);
+  const noteDuplicate = (ticket: number, value: DuplicateCheck | undefined) => {
+    if (!value || ticket < duplicateShown.current) return;
+    duplicateShown.current = ticket;
+    setDuplicate(value);
+  };
+  const run = async (work: (ticket: number) => Promise<unknown>) => {
     if (busy) return;
     const ticket = ++request.current;
     setBusy(true);
@@ -70,32 +83,50 @@ export function SummonExisting({
       if (ticket === request.current) setBusy(false);
     }
   };
+  /** Both status reads, independently: a missing tmux must not hide a working Orca. */
+  const check = async (id: string, ticket: number) => {
+    const askedOrca = ++duplicateRequest.current;
+    const askedTmux = ++duplicateRequest.current;
+    const [tmux, launch] = await Promise.allSettled([
+      api.tmuxResume!(id, 'status'),
+      api.orcaLaunch ? api.orcaLaunch(id, 'status') : Promise.resolve(null),
+    ]);
+    if (ticket !== request.current) return;
+    if (launch.status === 'fulfilled') noteDuplicate(askedOrca, launch.value?.duplicate);
+    if (tmux.status === 'fulfilled') noteDuplicate(askedTmux, tmux.value.duplicate);
+    setInfo(tmux.status === 'fulfilled' ? tmux.value : null);
+    setOrca(launch.status === 'fulfilled' ? launch.value : null);
+    if (tmux.status === 'rejected') throw tmux.reason;
+  };
+  /** A refusal (e.g. it already runs) may change the buttons: read again, keep its message. */
+  const refused = async (id: string, ticket: number, e: unknown) => {
+    if (ticket !== request.current) return;
+    await check(id, ticket).catch(() => {});
+    if (ticket === request.current) throw e;
+  };
   const pick = (c: AwayColleague) => {
     if (c.block || !api.tmuxResume) return;
     request.current++;
     setChosen(c);
     setInfo(null);
     setOrca(null);
+    setDuplicate(undefined);
+    duplicateShown.current = duplicateRequest.current;
     setError('');
     setBusy(false);
-    const id = c.session.id;
-    void run(async (ticket) => {
-      // Independent checks: a missing tmux must not hide a working Orca, nor the other way round.
-      const [tmux, launch] = await Promise.allSettled([
-        api.tmuxResume!(id, 'status'),
-        api.orcaLaunch ? api.orcaLaunch(id, 'status') : Promise.resolve(null),
-      ]);
-      if (ticket !== request.current) return;
-      setInfo(tmux.status === 'fulfilled' ? tmux.value : null);
-      setOrca(launch.status === 'fulfilled' ? launch.value : null);
-      if (tmux.status === 'rejected') throw tmux.reason;
-    });
+    void run((ticket) => check(c.session.id, ticket));
   };
   const tmux = (action: 'start' | 'open') =>
     chosen &&
     run(async (ticket) => {
       const id = chosen.session.id;
-      const result = await api.tmuxResume!(id, action);
+      let result: TmuxResumeInfo;
+      try {
+        result = await api.tmuxResume!(id, action);
+      } catch (e) {
+        if (action === 'start') return refused(id, ticket, e);
+        throw e;
+      }
       if (ticket !== request.current) return;
       setInfo(result);
       // A cancelled confirmation leaves it where it was.
@@ -105,7 +136,12 @@ export function SummonExisting({
     chosen &&
     run(async (ticket) => {
       const id = chosen.session.id;
-      const result = await api.orcaLaunch!(id, 'start');
+      let result: OrcaLaunchInfo;
+      try {
+        result = await api.orcaLaunch!(id, 'start');
+      } catch (e) {
+        return refused(id, ticket, e);
+      }
       if (ticket !== request.current || !result.launched) return;
       await bringBack(id);
       notify(result.message ?? t.tmux.orcaLaunched);
@@ -117,6 +153,29 @@ export function SummonExisting({
       // A vanished terminal only copies the resume command: nothing opened, nobody comes back.
       if ((await jumpOrCopy(id, notify)) !== 'copy') await bringBack(chosen.session.id);
     });
+  /** The conversation's own Orca tab, matched again in main (never a jump's fallback). */
+  const focusTab = () =>
+    chosen &&
+    run(async (ticket) => {
+      const id = chosen.session.id;
+      let result: OrcaLaunchInfo;
+      try {
+        result = await api.orcaLaunch!(id, 'focus');
+      } catch (e) {
+        return refused(id, ticket, e);
+      }
+      if (result.message) notify(result.message);
+      await bringBack(id);
+    });
+  const runningElsewhere = duplicate?.state === 'running';
+  const openElsewhere = duplicate?.state === 'open';
+  const place =
+    duplicate?.state === 'running' || duplicate?.state === 'open'
+      ? t.tmux.place[duplicate.where]
+      : '';
+  const openTab = openElsewhere && duplicate.where === 'orca' && !!api.orcaLaunch;
+  // The own tmux session shows its (separately labelled) reconnect controls instead.
+  const openOther = openElsewhere && !(duplicate.where === 'tmux' && info?.running);
   const label = (c: AwayColleague) => residentLabel(c.session, privacy).name;
   const live = info?.connections?.filter((c) => c.id) ?? [];
   if (!total && !chosen) return null;
@@ -181,28 +240,69 @@ export function SummonExisting({
             <Info size={14} aria-hidden="true" />
             {text.hint}
           </p>
+          {info?.running && (
+            <p className="tmux-caution">
+              <Info size={14} aria-hidden="true" />
+              {t.tmux.ownSessionNote}
+            </p>
+          )}
+          {runningElsewhere && (
+            <p className="tmux-caution" role="status">
+              <AlertCircle size={14} aria-hidden="true" />
+              {t.tmux.runningNotice(place)}
+            </p>
+          )}
+          {openOther && (
+            <p className="tmux-caution" role="status">
+              <AlertCircle size={14} aria-hidden="true" />
+              {t.tmux.openNotice(place)} {t.tmux.openHint}
+            </p>
+          )}
+          {duplicate?.state === 'unknown' && (
+            <p className="tmux-caution" role="status">
+              <Info size={14} aria-hidden="true" />
+              {t.tmux.unknownNotice}
+            </p>
+          )}
           {error && (
             <p className="tmux-error" role="alert">
               <AlertCircle size={15} aria-hidden="true" />
               <span>{error}</span>
             </p>
           )}
-          {(info || orca?.available) && (
+          {(info || orca?.available || runningElsewhere || openTab) && (
             <div className="summon-existing-actions">
-              {live.map((c) => (
-                <button
-                  key={c.id}
-                  className="button"
-                  disabled={busy}
-                  onClick={() => void jump(c.id!)}
-                >
-                  <ArrowUpRight size={13} aria-hidden="true" />
-                  {t.tmux.existingOpen} · {c.label}
-                </button>
-              ))}
-              {info?.running && info.canOpen && (
+              {runningElsewhere && (
                 <button
                   className="button primary"
+                  disabled={busy}
+                  onClick={() => void jump(chosen.session.id)}
+                >
+                  <ArrowUpRight size={13} aria-hidden="true" />
+                  {t.tmux.jumpToTerminal}
+                </button>
+              )}
+              {openTab && (
+                <button className="button primary" disabled={busy} onClick={() => void focusTab()}>
+                  <ArrowUpRight size={13} aria-hidden="true" />
+                  {t.tmux.jumpToTab}
+                </button>
+              )}
+              {!runningElsewhere &&
+                live.map((c) => (
+                  <button
+                    key={c.id}
+                    className="button"
+                    disabled={busy}
+                    onClick={() => void jump(c.id!)}
+                  >
+                    <ArrowUpRight size={13} aria-hidden="true" />
+                    {t.tmux.existingOpen} · {c.label}
+                  </button>
+                ))}
+              {info?.running && info.canOpen && (
+                <button
+                  className={runningElsewhere || openTab ? 'button' : 'button primary'}
                   disabled={busy}
                   onClick={() => void tmux('open')}
                 >
@@ -224,20 +324,21 @@ export function SummonExisting({
                   {t.tmux.copy}
                 </button>
               )}
-              {info && !info.running && (
+              {/* Launches follow the conversation's own evidence, not the owned tmux pane. */}
+              {info && !info.running && !runningElsewhere && (
                 <button
-                  className="button primary"
+                  className={openElsewhere ? 'button' : 'button primary'}
                   disabled={busy}
                   onClick={() => void tmux('start')}
                 >
                   <Terminal size={13} aria-hidden="true" />
-                  {text.tmuxStart}
+                  {openElsewhere ? t.tmux.forceStart : text.tmuxStart}
                 </button>
               )}
-              {orca?.available && !info?.running && (
+              {orca?.available && !runningElsewhere && (
                 <button className="button" disabled={busy} onClick={() => void launchOrca()}>
                   <ArrowUpRight size={13} aria-hidden="true" />
-                  {text.orcaStart}
+                  {openElsewhere ? t.tmux.forceOrca : text.orcaStart}
                 </button>
               )}
             </div>

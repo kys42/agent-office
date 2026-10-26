@@ -467,15 +467,17 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
       notify((e as Error).message);
     }
   };
-  const returnToOffice = async (id: string) => {
+  /** Resolves true once the store took it (false: the failure was already shown). */
+  const returnToOffice = async (id: string): Promise<boolean> => {
     if (!demo) {
       try {
         accept(await api.returnToOffice(id));
         notify(m().app.toast.returned);
+        return true;
       } catch (e) {
         notify((e as Error).message);
+        return false;
       }
-      return;
     }
     setSnapshot((s) => {
       if (!s) return s;
@@ -502,6 +504,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
         })),
       };
     });
+    return true;
   };
   return {
     snapshot: shown,

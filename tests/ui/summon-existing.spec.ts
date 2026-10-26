@@ -53,6 +53,10 @@ async function setup(page: import('@playwright/test').Page, route: string, orca 
         visit: async () => structuredClone(w.fixture),
         returnToOffice: async (id: string) => {
           w.returned.push(id);
+          if (w.returnFails) {
+            w.returnFails--;
+            throw new Error('저장하지 못했어요');
+          }
           const x = w.fixture.sessions.find((y: any) => y.id === id);
           Object.assign(x, { archived: false, returnedAt: Date.now(), zone: 'office' });
           return structuredClone(w.fixture);
@@ -68,14 +72,18 @@ async function setup(page: import('@playwright/test').Page, route: string, orca 
           w.actions.push('tmux:' + action + ':' + id);
           if (w.tmuxError) throw new Error(w.tmuxError);
           if (action === 'start' && !w.cancel) w['running_' + id] = true;
-          return info(!!w['running_' + id]);
+          return {
+            ...info(!!w['running_' + id]),
+            ...(action === 'status' && w.tmuxDuplicate ? { duplicate: w.tmuxDuplicate } : {}),
+          };
         },
         orcaLaunch: async (id: string, action: string) => {
           w.actions.push('orca:' + action + ':' + id);
-          if (!orca) return { available: false };
+          if (action === 'focus') return { available: true, message: 'Orca 탭으로 이동했어요' };
+          if (!orca) return { available: false, duplicate: w.orcaDuplicate };
           return action === 'start'
             ? { available: true, launched: true, message: 'Orca 새 탭에서 열었어요' }
-            : { available: true, command: 'claude --resume x' };
+            : { available: true, command: 'claude --resume x', duplicate: w.orcaDuplicate };
         },
         jump: async () =>
           w.jumpAction === 'copy'
@@ -194,4 +202,61 @@ test('moving to a live terminal brings back only when one was really focused', a
   await page.evaluate(() => ((window as any).jumpAction = 'focused'));
   await move.click();
   await expect.poll(() => page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+});
+
+test('without tmux, a conversation already running in Orca offers a jump, not a new tab', async ({
+  page,
+}) => {
+  await setup(page, '/');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.tmuxError = 'tmux를 설치해주세요';
+    w.orcaDuplicate = { state: 'running', where: 'orca' };
+  });
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await expect(
+    modal.getByText('이 대화는 이미 Orca에서 실행 중이에요', { exact: false }),
+  ).toBeVisible();
+  await expect(modal.getByRole('button', { name: 'Orca 새 탭으로 불러오기' })).toHaveCount(0);
+  await page.evaluate(() => ((window as any).jumpAction = 'copy'));
+  await modal.getByRole('button', { name: '터미널로 이동' }).click();
+  await expect(modal.getByRole('button', { name: '터미널로 이동' })).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).returned)).toEqual([]);
+  await page.evaluate(() => ((window as any).jumpAction = 'focused'));
+  await modal.getByRole('button', { name: '터미널로 이동' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+});
+
+test('an open Orca tab is focused through Orca, and the own tmux pane does not hide Orca', async ({
+  page,
+}) => {
+  await setup(page, '/');
+  await page.evaluate(() => {
+    const w = window as any;
+    w['running_demo:6'] = true;
+    w.tmuxDuplicate = { state: 'open', where: 'orca' };
+  });
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await expect(modal.getByText('/new·/clear', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('button', { name: '그래도 Orca에서 새로 띄우기' })).toBeVisible();
+  await modal.getByRole('button', { name: '그 탭으로 이동' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+  expect(await page.evaluate(() => (window as any).actions)).toContain('orca:focus:demo:6');
+});
+
+test('a failed bring-back is tried again on the next open terminal', async ({ page }) => {
+  await setup(page, '/', false);
+  await page.evaluate(() => ((window as any).returnFails = 1));
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await modal.getByRole('button', { name: 'tmux로 불러오기' }).click();
+  const open = modal.getByRole('button', { name: '터미널에서 열기' });
+  await expect(open).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+  await open.click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).returned))
+    .toEqual(['demo:6', 'demo:6']);
 });
