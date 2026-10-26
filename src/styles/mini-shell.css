@@ -99,6 +99,7 @@
 .mini-shell-pick {
   position: fixed;
   right: auto;
+  overflow-y: auto;
 }
 .mini-shell-menu button {
   display: flex;

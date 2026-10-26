@@ -388,11 +388,22 @@ export class MiniShells {
       now.incarnation !== shell.incarnation
     )
       throw new Error(m().shell.gone);
+    // The check and the kill run as one tmux command: if the server restarted meanwhile and
+    // `$id` now names another shell, its start value differs and nothing is ended.
     try {
-      await this.tmux(['kill-session', '-t', shell.sessionId]);
+      await this.tmux([
+        'if-shell',
+        '-t',
+        shell.sessionId,
+        '-F',
+        `#{==:#{@agent_office_shell_once},${shell.incarnation}}`,
+        `kill-session -t ${shell.sessionId}`,
+      ]);
     } catch {
       throw new Error(m().shell.failed);
     }
+    if ((await this.list()).some((s) => s.incarnation === shell.incarnation))
+      throw new Error(m().shell.failed);
     return true;
   }
   /** Quitting the app leaves every shell running; only the clients end. */

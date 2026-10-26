@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SquareTerminal } from 'lucide-react';
 import { api } from '../lib/api';
@@ -82,6 +82,22 @@ export function ZoneShellButton({
   const { t } = useI18n();
   const button = useRef<HTMLButtonElement>(null);
   const [menu, setMenu] = useState<DOMRect | null>(null);
+  const pick = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  // Measured once drawn: kept inside the window, opening above the button when below is short.
+  useLayoutEffect(() => {
+    const el = pick.current;
+    if (!menu || !el) return setPlace(null);
+    const gap = 8;
+    const { width, height } = el.getBoundingClientRect();
+    const left = Math.max(gap, Math.min(menu.left, innerWidth - width - gap));
+    const below = innerHeight - menu.bottom - 4 - gap;
+    const above = menu.top - 4 - gap;
+    const up = height > below && above > below;
+    const room = Math.max(80, up ? above : below);
+    const shown = Math.min(height, room);
+    setPlace({ left, top: up ? menu.top - 4 - shown : menu.bottom + 4, maxHeight: room });
+  }, [menu]);
   useEffect(() => {
     if (!menu) return;
     const close = (e: Event) => {
@@ -127,7 +143,8 @@ export function ZoneShellButton({
             className="mini-shell-menu mini-shell-pick"
             role="menu"
             aria-label={t.shell.pickFolder}
-            style={{ left: menu.left, top: menu.bottom + 4 }}
+            ref={pick}
+            style={place ?? { left: menu.left, top: menu.bottom + 4, visibility: 'hidden' }}
           >
             {folders.map((f) => (
               <button

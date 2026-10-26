@@ -100,6 +100,14 @@ function fixture(options: { rows?: string[]; noServer?: boolean; platform?: stri
         ];
         noServer = false;
       }
+      if (cmd === 'if-shell') {
+        // `if-shell -t $id -F '#{==:#{@agent_office_shell_once},<uuid>}' 'kill-session -t $id'`
+        const target = args[args.indexOf('-t') + 1];
+        const want = /,([0-9a-f-]{36})\}$/.exec(args[args.indexOf('-F') + 1])?.[1];
+        const row = rows.find((r) => r.split('\t')[4] === target);
+        if (row && row.split('\t')[6] === want) rows = rows.filter((r) => r !== row);
+        return '';
+      }
       if (cmd === 'kill-session') {
         const target = args[args.indexOf('-t') + 1];
         rows = rows.filter((r) =>
@@ -263,7 +271,7 @@ test('keys reach only the window that attached; closing detaches without ending 
   f.shells.detachOwner(1);
   assert.equal(pty.killed, true);
   assert.equal(f.shells.attachedCount, 0);
-  assert.equal(f.calls.filter((c) => c.includes('kill-session')).length, 0);
+  assert.equal(f.calls.filter((c) => c.includes('if-shell')).length, 0);
   assert.equal((await f.shells.list()).length, 1, 'the shell keeps running in tmux');
 });
 
@@ -271,7 +279,7 @@ test('ending a shell asks first and targets the exact session', async () => {
   const f = fixture();
   const a = await f.shells.open(1, '/work/app', 80, 12, f.sink());
   assert.equal(await f.shells.kill(a.name, async () => false), false);
-  assert.equal(f.calls.filter((c) => c.includes('kill-session')).length, 0);
+  assert.equal(f.calls.filter((c) => c.includes('if-shell')).length, 0);
   let asked = '';
   assert.equal(
     await f.shells.kill(a.name, async (s) => {
@@ -282,11 +290,9 @@ test('ending a shell asks first and targets the exact session', async () => {
   );
   assert.equal(asked, '/work/app');
   // By tmux's own session id, the one the person was asked about.
-  assert.deepEqual(f.calls.find((c) => c.includes('kill-session'))!.slice(-3), [
-    'kill-session',
-    '-t',
-    '$1',
-  ]);
+  const kill = f.calls.find((c) => c.includes('if-shell'))!;
+  assert.equal(kill[kill.indexOf('-t') + 1], '$1');
+  assert.equal(kill.at(-1), 'kill-session -t $1');
   await assert.rejects(
     f.shells.kill(a.name, async () => true),
     /no longer running/,
@@ -469,7 +475,7 @@ test('ending asks about one shell: a replacement started meanwhile is not ended'
     }),
     /no longer running/,
   );
-  assert.equal(f.calls.filter((c) => c.includes('kill-session')).length, 0);
+  assert.equal(f.calls.filter((c) => c.includes('if-shell')).length, 0);
   assert.equal((await f.shells.list()).length, 1, 'the replacement keeps running');
 });
 
@@ -537,7 +543,7 @@ test('ending asks about one start of the shell: a restart in the same second wit
     }),
     /no longer running/,
   );
-  assert.equal(f.calls.filter((c) => c.includes('kill-session')).length, 0);
+  assert.equal(f.calls.filter((c) => c.includes('if-shell')).length, 0);
 });
 
 test('a running shell reattaches even after its folder went away', async () => {
