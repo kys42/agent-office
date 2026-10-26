@@ -43,9 +43,16 @@ export const claudeLiveness: LivenessAdapter = {
 export const codexLiveness: LivenessAdapter = {
   async lookup(nativeId, fresh, deps) {
     const screen = await codexThreadOnScreen(nativeId, { fresh, deps });
-    return screen.kind === 'found'
-      ? { kind: 'found', terminal: { where: screen.terminal.host.kind } }
-      : screen;
+    if (screen.kind === 'found')
+      return { kind: 'found', terminal: { where: screen.terminal.host.kind } };
+    // Only macOS terminals (`ttys…`) are read; elsewhere (Linux `pts/…`) a Codex screen could
+    // exist unseen, so its absence is never proven there.
+    if (
+      screen.kind === 'none' &&
+      ((deps as { platform?: string } | undefined)?.platform ?? process.platform) !== 'darwin'
+    )
+      return { kind: 'unknown' };
+    return screen;
   },
 };
 

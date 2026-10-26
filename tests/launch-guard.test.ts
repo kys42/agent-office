@@ -376,3 +376,25 @@ test('going to "that tab" re-reads Orca afresh and switches only to this convers
   );
   assert.equal(focused.length, 1);
 });
+
+test('Codex absence is proven only where its screens are read (macOS ttys), never on Linux pts', async () => {
+  const empty = (platform: string) =>
+    ({
+      sessionsDir: '/no-claude-records',
+      codexHome: '/home/codex',
+      alive: () => true,
+      bin: (name: string) => `/bin/${name}`,
+      wait: async () => {},
+      run: async () => '',
+      platform,
+    }) as unknown as Parameters<ReturnType<typeof livenessFor>['lookup']>[2];
+  const codex = livenessFor('codex');
+  assert.equal(
+    (await codex.lookup('019a0000-0000-7000-8000-000000000001', true, empty('darwin'))).kind,
+    'none',
+  );
+  assert.equal(
+    (await codex.lookup('019a0000-0000-7000-8000-000000000001', true, empty('linux'))).kind,
+    'unknown',
+  );
+});
