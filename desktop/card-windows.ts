@@ -107,6 +107,18 @@ export class CardWindows {
       if (!e.window.isDestroyed())
         e.window.webContents.send('office:card-state', this.state(e.window.webContents));
   }
+  /**
+   * The preview floats over other apps (it closes as soon as they take focus); a pinned card is
+   * an ordinary window. A quiet run's card always stays behind the person's work.
+   */
+  private layer(window: BrowserWindow, float: boolean) {
+    if (quiet || window.isDestroyed()) return;
+    window.setAlwaysOnTop(float, 'pop-up-menu');
+    window.setVisibleOnAllWorkspaces(float, {
+      visibleOnFullScreen: float,
+      skipTransformProcessType: true,
+    });
+  }
   private cancelHide(e: Entry) {
     if (e.hide) clearTimeout(e.hide);
     e.hide = undefined;
@@ -251,13 +263,7 @@ export class CardWindows {
     this.options.secure(window);
     this.options.watch(window);
     // A quiet run's card stays behind the person's work, on its own Space.
-    if (!quiet) {
-      window.setAlwaysOnTop(true, 'pop-up-menu');
-      window.setVisibleOnAllWorkspaces(true, {
-        visibleOnFullScreen: true,
-        skipTransformProcessType: true,
-      });
-    }
+    this.layer(window, true);
     window.on('blur', () => this.blurred(e));
     window.on('closed', () => {
       this.cancelHide(e);
@@ -369,6 +375,8 @@ export class CardWindows {
         return;
       }
       e.pinned = true;
+      // Kept open is all a pin means: an ordinary window that other apps may cover.
+      this.layer(e.window, false);
       this.cancelHide(e);
       if (this.preview === e) this.preview = null;
       this.states();
@@ -383,6 +391,7 @@ export class CardWindows {
         old.window.destroy();
       }
       e.pinned = false;
+      this.layer(e.window, true);
       this.preview = e;
       this.states();
       return;

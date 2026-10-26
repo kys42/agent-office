@@ -639,8 +639,9 @@ function setupMiniShell() {
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
     shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
-      // Opened from a floating card, the desk dock or another floating terminal: it floats too.
-      float: from !== main && (!shellWindows.owns(e.sender) || shellWindows.floats(e.sender)),
+      // Only beside a window that floats (a preview card, the desk dock) does it float too: a
+      // pinned card, the big office or an ordinary terminal window give an ordinary window.
+      float: from !== main && from.isAlwaysOnTop(),
     });
   });
   ipcMain.handle('office:shell', async (e, raw) => {
