@@ -1,7 +1,8 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
 import { OrcaLaunch } from './orca-launch.js';
-import { findOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { TerminalFocusError } from './terminal-host.js';
 import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
 import {
   app,
@@ -811,10 +812,25 @@ function setupIPC() {
   });
   ipcMain.handle('office:orca-launch', async (e, id, action) => {
     trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
+    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'focus'].includes(action))
       throw new Error(m().desktop.badRequest);
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
     const session: Session = await bridge.call('detail', [id]);
+    if (action === 'focus') {
+      // Only the conversation's own tab, matched again right now (never a jump's fallback).
+      try {
+        const text = await focusOrcaTab(
+          session,
+          defaultTerminalDeps(),
+          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+        );
+        cards.afterJump(e.sender);
+        return { available: true, message: text };
+      } catch (error) {
+        if (error instanceof TerminalFocusError) throw new Error(error.message);
+        throw new Error(m().desktop.terminal.jumpFailed('Orca'));
+      }
+    }
     const skip = skipPermissions();
     const saved = { ...session, skipPermissions: skip };
     if (action === 'status') {

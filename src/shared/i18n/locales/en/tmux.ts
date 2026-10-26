@@ -103,4 +103,5 @@ export const tmux = {
     `Warning: this conversation is already open in ${place}. Starting it again can run the same conversation twice, and the two can overwrite each other’s work.`,
   unknownConfirm:
     'Could not confirm that this conversation is not open somewhere else. If it is, the same conversation will run twice.',
+  tabGone: 'That Orca tab could not be found again. Check the status again.',
 };

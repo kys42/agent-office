@@ -1,9 +1,12 @@
 import path from 'node:path';
 import type { Provider, Session, TerminalTarget } from '../src/shared/types.js';
 import { codexTitleThread } from './codex-focus.js';
+import { m } from '../src/shared/i18n/index.js';
 import {
+  focusHost,
   focusTarget,
   orcaTerminalList,
+  TerminalFocusError,
   type TerminalHostDeps,
   type TerminalLookup,
 } from './terminal-host.js';
@@ -160,6 +163,22 @@ export async function lookupOrcaTab(
   // A partial list could hide a second matching tab: no fallback then.
   const { byHandle, complete } = await orcaTerminalList(deps, fresh);
   return complete ? lookupOrcaTabIn(byHandle.values(), session, others) : { kind: 'unknown' };
+}
+
+/**
+ * Switches to the conversation's Orca tab itself (the duplicate-launch warning's "go to that
+ * tab"), not to whatever a jump would pick: the list is read afresh and Orca switches only when
+ * exactly this conversation's tab still matches. Nothing is typed into it.
+ */
+export async function focusOrcaTab(
+  session: OrcaTabSession,
+  deps: TerminalHostDeps,
+  others: Iterable<OrcaTabSession> = [],
+  focus: (tab: OrcaTab) => Promise<string> = (tab) => focusHost(tab, deps),
+): Promise<string> {
+  const match = await lookupOrcaTab(session, deps, true, others);
+  if (match.kind !== 'found') throw new TerminalFocusError(m().tmux.tabGone);
+  return focus(match.terminal);
 }
 
 /** A jump-only destination: nothing is ever typed into it. */

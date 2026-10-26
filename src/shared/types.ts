@@ -802,8 +802,11 @@ export interface OfficeAPI {
     initialMessage?: string,
   ) => Promise<TmuxResumeInfo>;
   tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
-  /** Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab. */
-  orcaLaunch?: (id: string, action: 'status' | 'start') => Promise<OrcaLaunchInfo>;
+  /**
+   * Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab; `focus`
+   * switches to its existing Orca tab, re-verified afresh in main.
+   */
+  orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;

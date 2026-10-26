@@ -17,7 +17,7 @@ import { Modal } from './Modal';
 import { api } from '../lib/api';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
-import type { OrcaLaunchInfo, Session, TmuxResumeInfo } from '../shared/types';
+import type { DuplicateCheck, OrcaLaunchInfo, Session, TmuxResumeInfo } from '../shared/types';
 
 export function TmuxResume({
   id,
@@ -57,10 +57,25 @@ export function TmuxResume({
   /** Resuming in a new Orca tab instead (saved conversations only, when Orca answers). */
   const [orca, setOrca] = useState<OrcaLaunchInfo | null>(null);
   const orcaRequest = useRef(0);
+  /**
+   * Whether this conversation already runs or is open elsewhere (main's duplicate-launch check;
+   * main checks again before launching, this only shapes the buttons). One state for both
+   * status reads: the answer to the newest request wins, whichever launcher asked.
+   */
+  const [duplicate, setDuplicate] = useState<DuplicateCheck | undefined>();
+  const duplicateRequest = useRef(0);
+  const duplicateShown = useRef(0);
+  const noteDuplicate = (ticket: number, value: DuplicateCheck | undefined) => {
+    if (!value || ticket < duplicateShown.current) return;
+    duplicateShown.current = ticket;
+    setDuplicate(value);
+  };
   const checkOrca = async () => {
     if (summon || !api.orcaLaunch) return;
     const ticket = ++orcaRequest.current;
+    const asked = ++duplicateRequest.current;
     const result = await api.orcaLaunch(id, 'status').catch(() => null);
+    noteDuplicate(asked, result?.duplicate);
     if (ticket === orcaRequest.current) setOrca(result);
   };
   const launchOrca = async () => {
@@ -84,11 +99,6 @@ export function TmuxResume({
       if (ticket === request.current) setBusy(false);
     }
   };
-  /**
-   * Whether this conversation already runs or is open elsewhere (main's duplicate-launch check;
-   * main checks again before launching, this only shapes the buttons).
-   */
-  const duplicate = summon ? undefined : (info?.duplicate ?? orca?.duplicate);
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
   const place =
@@ -96,6 +106,20 @@ export function TmuxResume({
       ? t.tmux.place[duplicate.where]
       : '';
   const jump = () => void jumpOrCopy(id, notify).catch((e) => setError(e.message));
+  /** The conversation's own Orca tab, matched again in main (never a jump's fallback). */
+  const focusTab = async () => {
+    if (!api.orcaLaunch) return;
+    try {
+      const result = await api.orcaLaunch(id, 'focus');
+      if (result.message) notify(result.message);
+    } catch (e) {
+      setError((e as Error).message);
+      void checkOrca();
+    }
+  };
+  /** An own tmux session already shows its reconnect controls; no second notice for it. */
+  const openTab = openElsewhere && duplicate.where === 'orca';
+  const openOther = openElsewhere && !(duplicate.where === 'tmux' && info?.running);
   const projectIds = projects?.map((p) => p.id).join('\n');
   useEffect(() => {
     const ids = projectIds?.split('\n');
@@ -120,17 +144,23 @@ export function TmuxResume({
     if (projects && !projects.some((p) => p.id === projectId)) return;
     if (action === 'status') void checkOrca();
     const ticket = ++request.current;
+    const asked = summon ? 0 : ++duplicateRequest.current;
     setBusy(true);
     setError('');
     try {
       const result = summon
         ? await api.tmuxSummon!(projectId, action, selected, agentName, initialMessage)
         : await api.tmuxResume!(id, action);
+      if (!summon) noteDuplicate(asked, result.duplicate);
       if (ticket === request.current) setInfo(result);
+      // A launch changes what runs where: read the shared check again.
+      if (action === 'start') void checkOrca();
     } catch (e) {
       if (ticket !== request.current) return;
       if (action !== 'open') setInfo(null);
       setError((e as Error).message);
+      // A refusal (e.g. it already runs) may change which buttons make sense.
+      if (action === 'start') void checkOrca();
     } finally {
       if (ticket === request.current) setBusy(false);
     }
@@ -343,7 +373,7 @@ export function TmuxResume({
                   {text.runningNotice(place)}
                 </p>
               )}
-              {openElsewhere && (
+              {openOther && (
                 <p className="tmux-caution" role="status">
                   <AlertCircle size={14} aria-hidden="true" />
                   {text.openNotice(place)} {text.openHint}
@@ -391,10 +421,16 @@ export function TmuxResume({
                 )}
                 {busy ? text.loading : summon ? text.summonCheck : text.refresh}
               </button>
-              {((runningElsewhere && !info?.running) || openElsewhere) && (
+              {runningElsewhere && !info?.running && (
                 <button className="button primary" disabled={busy} onClick={jump}>
                   <ArrowUpRight size={14} aria-hidden="true" />
-                  {openElsewhere ? text.jumpToTab : text.jumpToTerminal}
+                  {text.jumpToTerminal}
+                </button>
+              )}
+              {openTab && (
+                <button className="button primary" disabled={busy} onClick={() => void focusTab()}>
+                  <ArrowUpRight size={14} aria-hidden="true" />
+                  {text.jumpToTab}
                 </button>
               )}
               {info && !info.running && !runningElsewhere && (

@@ -11,8 +11,8 @@ import {
 } from '../desktop/launch-guard.js';
 import { OrcaLaunch, type OrcaLaunchDeps } from '../desktop/orca-launch.js';
 import { TmuxResume, type ResumeDeps } from '../desktop/tmux-resume.js';
-import { lookupOrcaTab } from '../desktop/orca-tabs.js';
-import type { TerminalHostDeps } from '../desktop/terminal-host.js';
+import { focusOrcaTab, lookupOrcaTab } from '../desktop/orca-tabs.js';
+import { TerminalFocusError, type TerminalHostDeps } from '../desktop/terminal-host.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck } from '../src/shared/types.js';
 
@@ -47,7 +47,15 @@ test('the decision: running beats open beats unknown beats none', () => {
     ),
     { state: 'running', where: 'orca' },
   );
-  assert.deepEqual(decideDuplicate(evidence({ ownTmux: { kind: 'found', terminal: null } })), {
+  // A live own tmux pane may show another conversation now (Claude `/clear`, Codex `/new`):
+  // open, never running, unless the agent adapter itself finds this conversation there.
+  const pane = { kind: 'found', terminal: null } as const;
+  assert.deepEqual(decideDuplicate(evidence({ ownTmux: pane })), { state: 'open', where: 'tmux' });
+  assert.deepEqual(decideDuplicate(evidence({ agent: unknown, ownTmux: pane })), {
+    state: 'open',
+    where: 'tmux',
+  });
+  assert.deepEqual(decideDuplicate(evidence({ agent: found('tmux'), ownTmux: pane })), {
     state: 'running',
     where: 'tmux',
   });
@@ -343,4 +351,28 @@ test('Orca tab evidence: a sleeping tab is found; a partial list or two fitting 
     await lookupOrcaTab(session, orcaList({ terminals: [tabRow({ title: '✳ other' })] }), true),
     none,
   );
+});
+
+test('going to "that tab" re-reads Orca afresh and switches only to this conversation’s tab', async () => {
+  const session = { ...claude, nativeTitle: true };
+  let terminals: unknown[] = [tabRow()];
+  const deps: TerminalHostDeps = {
+    bin: () => '/bin/orca',
+    run: async () => JSON.stringify({ ok: true, result: { terminals } }),
+  };
+  const focused: string[] = [];
+  const focus = async (tab: { handle: string }) => (focused.push(tab.handle), 'switched');
+  assert.equal(await focusOrcaTab(session, deps, [], focus), 'switched');
+  assert.deepEqual(focused, [tabRow().handle]);
+  // Warm the 5 s cache, then let the tab go: the fresh read notices and nothing is switched.
+  await lookupOrcaTab(session, deps, false);
+  terminals = [];
+  await assert.rejects(focusOrcaTab(session, deps, [], focus), { message: m().tmux.tabGone });
+  // Another conversation's tab fits the same title: not exactly this one, no switch.
+  terminals = [tabRow()];
+  await assert.rejects(
+    focusOrcaTab(session, deps, [{ ...session, nativeId: 'other-session' }], focus),
+    TerminalFocusError,
+  );
+  assert.equal(focused.length, 1);
 });

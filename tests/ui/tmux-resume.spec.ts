@@ -82,6 +82,22 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
           ...(w.duplicate ? { duplicate: w.duplicate } : {}),
         };
       },
+      orcaLaunch: async (_id: string, action: string) => {
+        (w.orcaActions ??= []).push(action);
+        if (action === 'focus') return { available: true, message: 'Orca 탭으로 이동했어요' };
+        if (action === 'start') {
+          // main's fresh re-check found it running meanwhile: refused, status now says so.
+          w.orcaDuplicate = { state: 'running', where: 'tmux' };
+          throw new Error('이미 실행 중이라 새로 띄우지 않았어요');
+        }
+        return {
+          available: !!w.orcaAvailable,
+          ...(w.orcaAvailable ? { command: 'claude --resume x' } : {}),
+          ...((w.orcaDuplicate ?? w.duplicate)
+            ? { duplicate: w.orcaDuplicate ?? w.duplicate }
+            : {}),
+        };
+      },
       jump: async () => {
         w.jumped = true;
         return { action: 'focused', text: 'Orca' };
@@ -244,8 +260,10 @@ test('a conversation already running or open elsewhere offers going there before
   );
   const force = modal.getByRole('button', { name: '그래도 tmux로 새로 띄우기', exact: true });
   await expect(force).not.toHaveClass(/primary/);
+  // Its own freshly verified Orca tab, never the jump (which may fall back elsewhere).
   await modal.getByRole('button', { name: '그 탭으로 이동', exact: true }).click();
-  expect(await page.evaluate(() => (window as any).jumped)).toBe(true);
+  await expect.poll(() => page.evaluate(() => (window as any).orcaActions.at(-1))).toBe('focus');
+  expect(await page.evaluate(() => (window as any).jumped)).toBe(false);
 
   await page.evaluate(() => {
     (window as any).duplicate = { state: 'unknown' };
@@ -253,6 +271,27 @@ test('a conversation already running or open elsewhere offers going there before
   await modal.getByRole('button', { name: '다시 확인', exact: true }).click();
   await expect(modal.getByText('확인하지 못했어요', { exact: false })).toBeVisible();
   await expect(modal.getByRole('button', { name: 'tmux로 따로 띄우기' })).toBeVisible();
+});
+
+test('an Orca launch refusal hides the launch buttons even though the tmux status is older', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.orcaAvailable = true;
+    w.duplicate = { state: 'none' };
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await modal.getByRole('button', { name: 'Orca에서 새로 띄우기', exact: true }).click();
+  await expect(modal.getByRole('alert')).toContainText('새로 띄우지 않았어요');
+  await expect(
+    modal.getByText('이 대화는 이미 tmux에서 실행 중이에요', { exact: false }),
+  ).toBeVisible();
+  await expect(modal.getByRole('button', { name: 'tmux로 따로 띄우기' })).toHaveCount(0);
+  await expect(modal.getByRole('button', { name: 'Orca에서 새로 띄우기' })).toHaveCount(0);
+  await expect(modal.getByRole('button', { name: '터미널로 이동', exact: true })).toBeVisible();
 });
 
 test('project membership changes cannot launch a stale session folder', async ({ page }) => {
