@@ -1,3 +1,27 @@
+## 2026-10-26 — 터미널 연결 묶음: Orca 탭 찾기·새 탭 재개, tmux 보내기·이동, 중복 실행 확인, 기존 동료 불러오기, 미니 터미널
+
+- [PR #245](https://github.com/kys42/agent-office/pull/245): Orca 탭 자동 찾기와 Orca 새 탭으로 재개.
+  - 살아 있는 에이전트를 못 찾으면, 같은 폴더·같은 제목의 Orca 탭이 정확히 하나일 때만 이동 대상으로 써요(입력은 안 함).
+  - 'Orca에서 새로 띄우기'에도 권한 확인 없이 띄우기 설정이 적용돼요.
+  - Orca 호출은 원격 선택 변수 없이 이 컴퓨터에서만 해요.
+- [PR #249](https://github.com/kys42/agent-office/pull/249): tmux에서 가려진 초안 때문에 '지우고 보내기'가 반복되던 문제를 고쳤어요.
+  - 비운 뒤 한 번 더 확인하고, 앱이 넣은 글은 정확히 그 글이 보일 때만 기억해요.
+  - 줄바꿈·공백·빈 줄·글자 폭(한중일·이모지·결합 문자)은 보수적으로 비교해요.
+  - '터미널로 이동'이 실제로 창을 띄워요: 붙은 창이 없으면 Terminal로 attach(세션 id 사용), 있으면 Orca·Terminal·iTerm2의 그 창이나 탭을 고르고, 모르면 사실대로 안내해요.
+  - 앱이 띄우는 tmux는 200×50으로 만들어요.
+- [PR #268](https://github.com/kys42/agent-office/pull/268): 재개 전 중복 실행 확인(tmux 재개·Orca 새 탭).
+  - 판단 순서는 실행 중 > 열려 있음 > 판단 불가 > 없음이에요.
+  - 확인 창 전후로 main이 새로 확인하고, 상황이 나빠졌으면 거절해요.
+  - Codex는 맞는 화면이 하나라도 있으면 실행 중으로 봐요. 리눅스에서는 화면 부재를 증명하지 못해서 '판단 불가'로 둬요.
+- [PR #270](https://github.com/kys42/agent-office/pull/270): 프로젝트 +에서 대기·보관 동료를 골라 tmux나 Orca로 이어가요.
+  - 터미널이 실제로 열렸을 때만 `returnToOffice`로 사무실에 데려와요. 실패하면 다시 시도해요.
+- [PR #272](https://github.com/kys42/agent-office/pull/272): 앱 안 미니 터미널.
+  - 카드·프로젝트 폴더의 셸을 전용 tmux 서버(`agent-office-shell`)에 둬서 닫거나 껐다 켜도 유지돼요.
+  - node-pty(optional, spawn-helper 권한 수정, asar unpack)와 xterm.js를 써요. 창별 접속 ID, 출력 흐름 제어가 있어요.
+  - 종료는 확인 후 tmux `if-shell`로, 그 셸의 시작 값이 같을 때만 해요.
+- 모두 Codex 리뷰를 여러 번 반영했고, 위 PR을 포함해 앱을 다시 빌드해 `/Applications`에 설치했어요.
+- 남은 일: [#227](https://github.com/kys42/agent-office/issues/227) 로컬 서명 인증서(문서 폴더 권한 창), 페이지 넘김 UI 테스트가 가끔 실패하는 문제([#82](https://github.com/kys42/agent-office/issues/82)), 미니 터미널 후속(서랍 높이 기억·탭·테마, Windows).
+
 ## 2026-10-24 — 외장 디스크로 옮긴 세션 누락 수정
 
 - Codex가 계속 사용하는 과거 월 폴더의 심볼릭 링크를 공통 JSONL 탐색기가 건너뛰어 세션을 누락하던 원인을 확인했다.
