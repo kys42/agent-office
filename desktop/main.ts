@@ -54,6 +54,7 @@ import { OPENABLE_FILE, fileLink, webLink } from '../src/shared/links.js';
 import {
   clampInto,
   dockHeight,
+  moveOntoArea,
   petBounds,
   petFeet,
   readDockPrefs,
@@ -169,7 +170,8 @@ else {
         // A summary (no one colleague) opens the big office beside the dock, which stays.
         const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
         if (sessionId && docked) cards.reveal({ id: sessionId, news: false }, dock!.getBounds());
-        else showMain(sessionId, { keepDock: docked });
+        else
+          showMain(sessionId, { keepDock: docked, from: docked ? dock!.getBounds() : undefined });
       },
     });
     app.on('before-quit', () => notifier.dispose());
@@ -366,12 +368,44 @@ function createMain() {
     }
   });
 }
-function showMain(id?: string, { keepDock = false } = {}) {
+/**
+ * Opened from another window (the desk pet, the row, a card), the big office comes to that
+ * window's display, never back to whichever monitor it was last on. Same size and relative
+ * spot (moveOntoArea); a maximized or full-screen office is that again on the new display.
+ */
+function bringMainOnto(origin: Rect) {
+  const window = main;
+  if (!window || window.isDestroyed()) return;
+  const to = screen.getDisplayMatching(origin);
+  const from = screen.getDisplayMatching(window.getBounds());
+  if (from.id === to.id) return;
+  const place = () => {
+    if (window.isDestroyed()) return;
+    const normal = window.getNormalBounds();
+    window.setBounds(moveOntoArea(normal, screen.getDisplayMatching(normal).workArea, to.workArea));
+  };
+  if (window.isFullScreen()) {
+    window.once('leave-full-screen', () => {
+      place();
+      if (!window.isDestroyed()) window.setFullScreen(true);
+    });
+    window.setFullScreen(false);
+  } else if (window.isMaximized()) {
+    window.unmaximize();
+    place();
+    window.maximize();
+  } else place();
+}
+function showMain(
+  id?: string,
+  { keepDock = false, from }: { keepDock?: boolean; from?: Rect } = {},
+) {
   if (!main || main.isDestroyed()) createMain();
   stopDrag(false);
   if (!keepDock && dock && !dock.isDestroyed()) dock.hide();
   const window = main!;
   if (window.isMinimized()) window.restore();
+  if (from) bringMainOnto(from);
   present(window);
   if (id) {
     const select = () => {
@@ -797,7 +831,12 @@ function setupIPC() {
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
     if (action === 'mini') showDock('pet');
-    else if (action === 'main') showMain(typeof id === 'string' ? id : undefined);
+    // From the pet, the row or a card: on that window's display (the big office's own
+    // window matches itself, so nothing moves).
+    else if (action === 'main')
+      showMain(typeof id === 'string' ? id : undefined, {
+        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+      });
     else if (action === 'hide') {
       if (e.sender === dock?.webContents) {
         stopDrag(false);
@@ -862,8 +901,10 @@ function setupIPC() {
         : {}),
     };
     if (action !== 'open') {
+      // The card's spot before it closes: the big office opens on its display.
+      const from = BrowserWindow.fromWebContents(e.sender)?.getBounds();
       const expanded = await cards.action(e.sender, action, chosen);
-      if (expanded) showMain(expanded);
+      if (expanded) showMain(expanded, { from });
       return;
     }
     if (e.sender !== dock?.webContents) throw new Error(m().desktop.untrustedWindow);
