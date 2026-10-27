@@ -187,7 +187,11 @@ test('summoning starts a fresh CLI once and rediscovers it by project/provider',
     const launches = f.calls.filter((x) => x.args.includes('new-session'));
     assert.equal(launches.length, 1);
     const args = launches[0].args;
-    assert.equal(args[args.indexOf('/bin/' + provider) + 1], ';');
+    // Claude's new conversation gets its id up front (`--session-id`); Codex picks its own.
+    const at = args.indexOf('/bin/' + provider);
+    const own = provider === 'claude' ? 2 : 0;
+    if (own) assert.equal(args[at + 1], '--session-id');
+    assert.equal(args[at + 1 + own], ';');
     assert.ok(!args.includes('resume') && !args.includes('--resume'));
     assert.equal(
       (await new TmuxResume(f.deps).status(summonSession(session.cwd, provider))).running,
@@ -244,8 +248,8 @@ for (const provider of ['claude', 'codex'] as const)
     );
     await f.manager.start(fresh, async () => true);
     const args = f.calls.find((x) => x.args.includes('new-session'))!.args;
-    const at = args.indexOf('/bin/' + provider);
-    assert.deepEqual(args.slice(at + 1, at + 3), ['--', prompt.slice(0, -1) + '\\;']);
+    const at = args.indexOf('--', args.indexOf('/bin/' + provider));
+    assert.deepEqual(args.slice(at, at + 2), ['--', prompt.slice(0, -1) + '\\;']);
     await f.manager.start(summonSession(session.cwd, provider, 'Review', 'second'), async () => {
       throw new Error('Existing session must not restart or send another message');
     });
@@ -291,12 +295,13 @@ test('without permission prompts only when the person chose it: each agent its o
     );
     const summoned = fresh.calls.find((x) => x.args.includes('new-session'))!.args;
     const from = summoned.indexOf('/bin/' + provider);
-    assert.deepEqual(summoned.slice(from + 1, from + 4), [
+    const until = summoned.indexOf(';', from);
+    const agentArgs = summoned.slice(from + 1, until);
+    assert.deepEqual(
+      agentArgs.filter((_, i) => agentArgs[i - 1] !== '--session-id'),
       provider === 'claude'
-        ? '--dangerously-skip-permissions'
-        : '--dangerously-bypass-approvals-and-sandbox',
-      '--',
-      'hello\\;',
-    ]);
+        ? ['--dangerously-skip-permissions', '--session-id', '--', 'hello\\;']
+        : ['--dangerously-bypass-approvals-and-sandbox', '--', 'hello\\;'],
+    );
   }
 });

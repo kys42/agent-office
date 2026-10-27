@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { access, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
@@ -10,19 +10,53 @@ import type { DuplicateCheck, Session, TmuxResumeInfo } from '../src/shared/type
 import { confirmLaunch } from './launch-guard.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
+/** A session of our dedicated server with its ownership options (cwd and alias decoded). */
+interface OwnedRow {
+  name: string;
+  token: string;
+  native: string;
+  cwd: string;
+  alias: string;
+}
 type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
   fresh?: boolean;
   /** Launch without the agent's permission prompts (the person's `tmuxSkipPermissions`). */
   skipPermissions?: boolean;
   agentName?: string;
   initialMessage?: string;
+  /** A fresh summon's conversation id, chosen before launch where the agent allows it. */
+  sessionId?: string;
 };
 /** Each agent's own flag for running without permission prompts. */
 export const SKIP_PERMISSIONS = {
   claude: '--dangerously-skip-permissions',
   codex: '--dangerously-bypass-approvals-and-sandbox',
 } as const;
-/** The agent's arguments for a resume or a fresh summon; Codex takes it as an option of `resume`. */
+/**
+ * How each agent is started: its resume arguments, and whether a new conversation's id can be
+ * chosen up front (Claude `--session-id`). Codex picks its own thread id, so its summoned
+ * session is tagged later, once its live screen is verified on the owned pane (`adopt`).
+ */
+interface LaunchAdapter {
+  resume(flags: string[], nativeId: string): string[];
+  fresh(flags: string[], sessionId?: string): string[];
+  newSessionId?(): string;
+}
+const LAUNCH: Record<'claude' | 'codex', LaunchAdapter> = {
+  claude: {
+    resume: (flags, id) => [...flags, '--resume', id],
+    fresh: (flags, id) => [...flags, ...(id ? ['--session-id', id] : [])],
+    newSessionId: () => randomUUID(),
+  },
+  codex: {
+    // Codex takes the flags as options of `resume`.
+    resume: (flags, id) => ['resume', ...flags, id],
+    fresh: (flags) => flags,
+  },
+};
+/** `describe` has already refused any other provider. */
+const launcher = (provider: Session['provider']) => LAUNCH[provider as 'claude' | 'codex'];
+/** The agent's arguments for a resume or a fresh summon. */
 export function launchArgs(s: SavedSession): string[] {
   const flags =
     s.skipPermissions && (s.provider === 'claude' || s.provider === 'codex')
@@ -31,11 +65,16 @@ export function launchArgs(s: SavedSession): string[] {
   // tmux treats a trailing semicolon as a command separator even in a separate argv.
   // Escape it for tmux only; execvp still receives the original literal prompt.
   if (s.fresh)
-    return [...flags, ...(s.initialMessage ? ['--', s.initialMessage.replace(/;$/, '\\;')] : [])];
-  return s.provider === 'claude'
-    ? [...flags, '--resume', s.nativeId]
-    : ['resume', ...flags, s.nativeId];
+    return [
+      ...launcher(s.provider).fresh(flags, s.sessionId),
+      ...(s.initialMessage ? ['--', s.initialMessage.replace(/;$/, '\\;')] : []),
+    ];
+  return launcher(s.provider).resume(flags, s.nativeId);
 }
+/** What a tmux session runs (`@agent_office_native`): `<provider>:<conversation id>`. */
+const nativeTag = (provider: string, nativeId: string) => `${provider}:${nativeId}`;
+const ALIAS = /^[\p{L}\p{N} _-]{1,40}$/u;
+const decode = (value: string | undefined) => Buffer.from(value ?? '', 'base64').toString('utf8');
 /** One reconnectable fresh conversation slot per project and provider. */
 export function summonSession(
   cwd: string,
@@ -117,10 +156,8 @@ export class TmuxResume {
       : `office-${s.provider}-${token.slice(0, 16)}`;
     return { token, name, cwd: s.cwd };
   }
-  private async inspect(s: SavedSession) {
-    const data = this.describe(s);
-    const tmux = await this.deps.binary('tmux');
-    // A missing server is expected; other failures must not be interpreted as permission to start.
+  /** Our dedicated server's sessions. A missing server is an empty list; other failures refuse. */
+  private async sessions(tmux: string): Promise<OwnedRow[]> {
     let rows: string;
     try {
       rows = await this.deps.run(tmux, [
@@ -128,7 +165,7 @@ export class TmuxResume {
         this.deps.server,
         'list-sessions',
         '-F',
-        '#{session_name}\t#{@agent_office_resume}',
+        '#{session_name}\t#{@agent_office_resume}\t#{@agent_office_native}\t#{@agent_office_cwd}\t#{@agent_office_alias}',
       ]);
     } catch (error) {
       const e = error as Error & { stderr?: string };
@@ -140,46 +177,104 @@ export class TmuxResume {
         throw new Error(m().tmux.failed);
       rows = '';
     }
-    const row = rows
+    return rows
       .split('\n')
-      .map((x) => x.split('\t'))
-      .find(([name]) => name === data.name);
-    if (row && row[1] !== data.token) throw new Error(m().tmux.conflict);
-    let deadPane: string | undefined;
-    if (row) {
-      const panes = (
-        await this.deps.run(tmux, [
-          '-L',
-          this.deps.server,
-          'list-panes',
-          '-s',
-          '-t',
-          data.name,
-          '-F',
-          '#{pane_id}\t#{pane_dead}',
-        ])
-      )
-        .trim()
-        .split('\n')
-        .map((line) => line.split('\t'));
-      if (
-        !panes.length ||
-        panes.some(([id, dead]) => !/^%\d+$/.test(id) || !['0', '1'].includes(dead))
-      )
-        throw new Error(m().tmux.failed);
-      if (panes.every(([, dead]) => dead === '1')) {
-        if (panes.length !== 1) throw new Error(m().tmux.ended);
-        deadPane = panes[0][0];
+      .filter(Boolean)
+      .map((line) => {
+        const [name, token, native, cwd, alias] = line.split('\t');
+        return {
+          name,
+          token: token ?? '',
+          native: native ?? '',
+          cwd: decode(cwd),
+          alias: decode(alias),
+        };
+      });
+  }
+  /** One of our summons: its name and token are exactly what its folder, agent and name give. */
+  private summoned(row: OwnedRow, provider: 'claude' | 'codex') {
+    if (!path.isAbsolute(row.cwd) || !ALIAS.test(row.alias)) return false;
+    try {
+      const expected = this.describe(summonSession(row.cwd, provider, row.alias));
+      return expected.name === row.name && expected.token === row.token;
+    } catch {
+      return false;
+    }
+  }
+  /** The single dead pane to respawn, `undefined` while one runs. */
+  private async deadPaneOf(tmux: string, name: string): Promise<string | undefined> {
+    const panes = (
+      await this.deps.run(tmux, [
+        '-L',
+        this.deps.server,
+        'list-panes',
+        '-s',
+        '-t',
+        name,
+        '-F',
+        '#{pane_id}\t#{pane_dead}',
+      ])
+    )
+      .trim()
+      .split('\n')
+      .map((line) => line.split('\t'));
+    if (
+      !panes.length ||
+      panes.some(([id, dead]) => !/^%\d+$/.test(id) || !['0', '1'].includes(dead))
+    )
+      throw new Error(m().tmux.failed);
+    if (panes.every(([, dead]) => dead === '1')) {
+      if (panes.length !== 1) throw new Error(m().tmux.ended);
+      return panes[0][0];
+    }
+    return undefined;
+  }
+  private async inspect(s: SavedSession) {
+    const data = this.describe(s);
+    const tmux = await this.deps.binary('tmux');
+    const rows = await this.sessions(tmux);
+    const own = rows.find((row) => row.name === data.name);
+    if (own && own.token !== data.token) throw new Error(m().tmux.conflict);
+    // A summoned conversation stays in its summon's session after it has an id: tagged there at
+    // launch (Claude `--session-id`) or once its live screen was verified on that pane (`adopt`).
+    const tag = nativeTag(s.provider, s.nativeId);
+    const tagged = s.fresh
+      ? []
+      : rows.filter(
+          (row) =>
+            row !== own &&
+            row.native === tag &&
+            this.summoned(row, s.provider as 'claude' | 'codex'),
+        );
+    const found: { row: OwnedRow; deadPane?: string }[] = [];
+    if (own) found.push({ row: own, deadPane: await this.deadPaneOf(tmux, own.name) });
+    for (const row of tagged) {
+      try {
+        found.push({ row, deadPane: await this.deadPaneOf(tmux, row.name) });
+      } catch {
+        /* A summon that cannot be resumed in place is not this conversation's session. */
       }
     }
+    // A live one first; otherwise the exact resume name, then a tagged summon to respawn.
+    const pick = found.find((x) => !x.deadPane) ?? found[0];
+    const name = pick?.row.name ?? data.name;
     const info: TmuxResumeInfo = {
-      name: data.name,
+      name,
       cwd: data.cwd,
-      running: !!row && !deadPane,
-      command: `${quote(tmux)} -L ${quote(this.deps.server)} attach-session -t ${quote(tmuxArg('=' + data.name))}`,
+      running: !!pick && !pick.deadPane,
+      command: `${quote(tmux)} -L ${quote(this.deps.server)} attach-session -t ${quote(tmuxArg('=' + name))}`,
       canOpen: this.deps.platform === 'darwin',
     };
-    return { ...data, tmux, info, deadPane };
+    return {
+      name,
+      token: pick?.row.token ?? data.token,
+      // A summon resumed in place keeps the name it was summoned with.
+      alias: pick && pick.row !== own ? pick.row.alias : (s.agentName ?? ''),
+      cwd: data.cwd,
+      tmux,
+      info,
+      deadPane: pick?.deadPane,
+    };
   }
   async status(s: SavedSession) {
     return (await this.inspect(s)).info;
@@ -205,7 +300,15 @@ export class TmuxResume {
       current = await this.inspect(s);
       if (current.info.running) return current.info;
       if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
-      const args = launchArgs(s);
+      // A new conversation's id where the agent takes one, recorded with the session so the
+      // conversation still finds this session once the office knows it by that id.
+      const sessionId = s.fresh ? launcher(s.provider).newSessionId?.() : undefined;
+      const args = launchArgs({ ...s, sessionId });
+      const native = s.fresh
+        ? sessionId
+          ? nativeTag(s.provider, sessionId)
+          : ''
+        : nativeTag(s.provider, s.nativeId);
       // Multiple command arguments use tmux execvp, not its shell-command parser.
       // Set the ownership marker in the same tmux command queue as session creation.
       const env: NodeJS.ProcessEnv = {
@@ -269,7 +372,13 @@ export class TmuxResume {
             '-t',
             current.name,
             '@agent_office_alias',
-            Buffer.from(s.agentName ?? '').toString('base64'),
+            Buffer.from(current.alias).toString('base64'),
+            ';',
+            'set-option',
+            '-t',
+            current.name,
+            '@agent_office_native',
+            native,
             ';',
             'set-option',
             '-t',
@@ -349,6 +458,51 @@ export class TmuxResume {
     } catch {
       return new Set();
     }
+  }
+  /**
+   * Records which conversation a summoned session runs (`@agent_office_native`), after the
+   * caller verified that conversation's live process on this exact pane (its terminal lookup).
+   * Only a pane of our dedicated server whose session is exactly one of our summons is tagged.
+   * Covers Codex (no id at launch), Claude after `/clear`, and summons made before the tag.
+   * `true` once the session carries the tag.
+   */
+  async adopt(host: TerminalHost, provider: 'claude' | 'codex', nativeId: string) {
+    if (host.kind !== 'tmux' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$/.test(nativeId)) return false;
+    const tmux = await this.deps.binary('tmux');
+    const [socket, name, token, native, cwd, alias] = (
+      await this.deps.run(tmux, [
+        '-L',
+        this.deps.server,
+        'display-message',
+        '-p',
+        '-t',
+        host.pane,
+        '#{socket_path}\t#{session_name}\t#{@agent_office_resume}\t#{@agent_office_native}\t#{@agent_office_cwd}\t#{@agent_office_alias}',
+      ])
+    )
+      .replace(/\r?\n$/, '')
+      .split('\t');
+    if (socket !== host.socket || !name) return false;
+    const row = {
+      name,
+      token: token ?? '',
+      native: native ?? '',
+      cwd: decode(cwd),
+      alias: decode(alias),
+    };
+    if (!this.summoned(row, provider)) return false;
+    const tag = nativeTag(provider, nativeId);
+    if (row.native === tag) return true;
+    await this.deps.run(tmux, [
+      '-L',
+      this.deps.server,
+      'set-option',
+      '-t',
+      host.pane,
+      '@agent_office_native',
+      tag,
+    ]);
+    return true;
   }
   /** Only names from our dedicated server and the exact discovered pane may be adopted. */
   async aliasFor(host: TerminalHost, id: string): Promise<string | null> {
