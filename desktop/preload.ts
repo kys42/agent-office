@@ -85,6 +85,13 @@ const api: OfficeAPI = {
     ? {
         orcaLaunch: (id: string, actionName: 'status' | 'start' | 'focus') =>
           action('office:orca-launch', id, actionName),
+        orcaSummon: (
+          id: string,
+          actionName: 'status' | 'start',
+          provider: 'claude' | 'codex',
+          name: string,
+          initialMessage?: string,
+        ) => action('office:orca-summon', id, actionName, provider, name, initialMessage),
       }
     : {}),
   resume: (id) => ipcRenderer.invoke('office:resume', id),

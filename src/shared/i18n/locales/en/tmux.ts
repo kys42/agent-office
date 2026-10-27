@@ -78,6 +78,13 @@ export const tmux = {
   orcaCommand: 'Command',
   orcaHint: 'Orca is running: this conversation can also open in a new Orca tab.',
   orcaLaunched: 'Opened a new Orca tab for this conversation',
+  /** Summoning a new agent in a new Orca tab instead of tmux. */
+  summonOrca: 'Summon in a new Orca tab',
+  summonOrcaConfirm: 'Start a new agent in a new Orca tab for this project?',
+  summonOrcaIntro:
+    'Opens a new terminal tab in Orca for this project folder and starts a new conversation with the command below.',
+  summonOrcaHint: 'Orca is running: the agent can also start in a new Orca tab instead of tmux.',
+  summonOrcaLaunched: 'Started a new agent in a new Orca tab',
   orcaUnsupported: 'Orca resume supports local Claude and Codex sessions on macOS.',
   orcaUnavailable: 'Orca is not running or not reachable. Open Orca and try again.',
   orcaRefused: (reason: string) =>

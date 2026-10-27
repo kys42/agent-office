@@ -524,11 +524,27 @@ function dockBounds(mode: DockMode): Rect {
   // The row (or the floor desks) opens along the bottom of whichever display the pet is on.
   return mode === 'pet' ? pet : rowBounds(area, dockHeight(mode === 'floor', dockTiny));
 }
+/** A dialog open in the row or floor (a tiny strip is too short for one): grow upward. */
+let dockRoom = false;
+const DOCK_ROOM_HEIGHT = 760;
+function roomyBounds(mode: DockMode): Rect {
+  const b = dockBounds(mode);
+  if (!dockRoom || mode === 'pet') return b;
+  const area = workAreaFor(b);
+  const height = Math.max(b.height, Math.min(DOCK_ROOM_HEIGHT, area.height));
+  // The desks stand on the window's bottom edge: keep it, take the room above.
+  return { ...b, y: b.y + b.height - height, height };
+}
+function setDockRoom(on: boolean) {
+  if (dockRoom === on) return;
+  dockRoom = on;
+  if (dock && !dock.isDestroyed() && dockMode !== 'pet') dock.setBounds(roomyBounds(dockMode));
+}
 function setDockMode(mode: DockMode) {
   stopDrag(false);
   dockMode = mode;
   if (!dock || dock.isDestroyed()) return;
-  dock.setBounds(dockBounds(mode));
+  dock.setBounds(roomyBounds(mode));
   // Start see-through; the renderer claims the mouse again over drawn things.
   dock.setIgnoreMouseEvents(true, { forward: true });
   dock.webContents.send('office:dock', mode, dockTiny);
@@ -576,6 +592,7 @@ function showDock(mode: DockMode = 'pet') {
     dock.setIgnoreMouseEvents(true, { forward: true });
     dock.on('closed', () => {
       stopDrag(false);
+      dockRoom = false;
       dock = null;
     });
     // The renderer follows the main process; tell it the mode it may have missed while loading.
@@ -869,6 +886,7 @@ function setupIPC() {
     else if (action === 'drag-end') stopDrag(true);
     else if (action === 'solid') dock.setIgnoreMouseEvents(false);
     else if (action === 'through') dock.setIgnoreMouseEvents(true, { forward: true });
+    else if (action === 'room-on' || action === 'room-off') setDockRoom(action === 'room-on');
     else throw new Error(m().desktop.badRequest);
   });
   ipcMain.handle('office:card-state', (e) => {
@@ -1176,6 +1194,44 @@ function setupIPC() {
         endCardDialog();
       }
     });
+  });
+  ipcMain.handle('office:orca-summon', async (e, id, action, provider, name, initialMessage) => {
+    trusted(e);
+    if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
+      throw new Error(m().desktop.badRequest);
+    if (!['claude', 'codex'].includes(provider) || typeof name !== 'string')
+      throw new Error(m().desktop.badRequest);
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
+    const original: Session = await bridge.call('detail', [id]);
+    const skip = skipPermissions();
+    // The same new agent as a tmux summon (name and first message checked the same way), in a
+    // new Orca tab of the project's own registered folder; its name titles the tab.
+    const fresh = summonSession(original.cwd ?? '', provider, name, initialMessage);
+    const session = { ...fresh, alias: fresh.agentName, skipPermissions: skip };
+    if (action === 'status') return orcaLaunch.status(session);
+    const result = await orcaLaunch.start(session, async (info) => {
+      const owner = BrowserWindow.fromWebContents(e.sender);
+      const t = m().tmux;
+      const options = {
+        type: 'question' as const,
+        title: t.summonTitle,
+        message: t.summonOrcaConfirm,
+        detail: `${t.summonOrcaIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}${skipNote(skip)}`,
+        buttons: [t.cancel, t.summonOrca],
+        defaultId: 0,
+        cancelId: 0,
+      };
+      const endCardDialog = cards.dialog(e.sender);
+      try {
+        const answer = owner
+          ? await dialog.showMessageBox(owner, options)
+          : await dialog.showMessageBox(options);
+        return answer.response === 1;
+      } finally {
+        endCardDialog();
+      }
+    });
+    return result.launched ? { ...result, message: m().tmux.summonOrcaLaunched } : result;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();

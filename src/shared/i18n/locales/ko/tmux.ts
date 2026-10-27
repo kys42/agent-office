@@ -74,6 +74,13 @@ export const tmux: Messages['tmux'] = {
   orcaCommand: '실행 명령',
   orcaHint: 'Orca가 실행 중이라 이 대화를 Orca 새 탭에서 이어갈 수도 있어요.',
   orcaLaunched: 'Orca 새 탭에서 이 대화를 열었어요',
+  /** Summoning a new agent in a new Orca tab instead of tmux. */
+  summonOrca: 'Orca 새 탭에 소환하기',
+  summonOrcaConfirm: '이 프로젝트의 Orca 새 탭에 새 에이전트를 띄울까요?',
+  summonOrcaIntro:
+    '이 프로젝트 폴더로 Orca에 새 터미널 탭을 열고 아래 명령으로 새 대화를 시작해요.',
+  summonOrcaHint: 'Orca가 실행 중이라 tmux 대신 Orca 새 탭에 띄울 수도 있어요.',
+  summonOrcaLaunched: 'Orca 새 탭에 새 에이전트를 띄웠어요',
   orcaUnsupported: 'macOS의 로컬 Claude·Codex 세션에서 Orca 재개를 지원해요.',
   orcaUnavailable: 'Orca가 실행 중이 아니거나 응답하지 않아요. Orca를 연 뒤 다시 시도해주세요.',
   orcaRefused: (reason) =>

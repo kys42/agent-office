@@ -135,6 +135,25 @@ export function DeskDock() {
       }),
     [reload],
   );
+  // A dialog (summon, a folder shell's confirm…) needs more than the strip's height, a tiny
+  // one's above all: the window grows upward while one is open, the desks staying put.
+  useEffect(() => {
+    if (!api.dock || mode === 'pet') return;
+    let room = false;
+    const check = () => {
+      const open = !!document.querySelector('.modal-backdrop');
+      if (open === room) return;
+      room = open;
+      void api.dock!(open ? 'room-on' : 'room-off');
+    };
+    check();
+    const watch = new MutationObserver(check);
+    watch.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      watch.disconnect();
+      if (room) void api.dock!('room-off');
+    };
+  }, [mode]);
   useEffect(() => {
     document.body.classList.add('dock-mode');
     return () => document.body.classList.remove('dock-mode');
