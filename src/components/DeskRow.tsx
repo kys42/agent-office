@@ -85,6 +85,7 @@ import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import { useI18n } from '../lib/i18n';
+import { walksIn } from '../lib/commute';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -607,7 +608,7 @@ export function DeskRow({
                         <Furniture kind="chair" />
                         <div className="pet-shadow" />
                         <button
-                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''}`}
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
