@@ -1207,6 +1207,8 @@ export class OfficeService extends EventEmitter {
         );
       case 'bookmarks':
         return this.store.bookmarks(bookmarkQuerySchema.optional().parse(args[0] ?? undefined));
+      case 'bookmarkById':
+        return this.store.bookmarkById(z.string().max(100).parse(args[0]));
       case 'bookmark': {
         const bookmark = this.store.bookmark(
           z.string().max(400).parse(args[0]),

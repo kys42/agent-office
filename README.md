@@ -122,7 +122,7 @@ When you want the whole picture, open the full office: every project on its own 
 | 📋 **Select, copy & open links** | Drag across a bubble to select and copy its words, or copy a whole expanded bubble in one click. Web links in bubbles and the conversation open in your default browser (hover shows the real address); anything that isn't http(s) stays plain text. Right-click selected text for Copy / Select All, or a link for Open / Copy Link, in every window. |
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
-| 🔖 **Message bookmarks** | Bookmark an important message in a conversation; Memory and the teammate’s Notes tab collect them with context and short annotations; open the conversation right at the saved message. |
+| 🔖 **Message bookmarks** | Bookmark an important message in a conversation; Memory and the teammate’s Notes tab collect them with context and short annotations; open the conversation right at the saved message, or read the saved conversation in its own window beside the office while you work. |
 | ↔ **Place your teams** | Drag a project sign or floor flag to move its desks together across the row. Positions are remembered; reset from the dock toolbar. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
 | 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |

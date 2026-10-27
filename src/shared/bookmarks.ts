@@ -20,6 +20,13 @@ export interface BookmarkFocus {
 }
 export const BOOKMARK_PAGE_MAX = 200;
 
+/** Whose conversation a bookmark is from: its colleague as shown now, else as saved. */
+export function bookmarkName(
+  bookmark: Bookmark,
+  session?: Pick<Session, 'alias' | 'title'>,
+): string {
+  return session ? session.alias || session.title : bookmark.source.alias || bookmark.source.title;
+}
 /** Saved context in reading order; repeated forms appear once and the saved message wins. */
 export function savedConversation(bookmark: Bookmark): BookmarkLine[] {
   const lines = new Map<string, BookmarkLine>();

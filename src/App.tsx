@@ -229,10 +229,18 @@ export default function App() {
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
     () =>
-      api.onSelect?.((id) => {
+      api.onSelect?.((id, bookmark) => {
         setView('office');
         setEngaged(true);
         setSelected(id);
+        // From a reader window: the conversation at the bookmarked message.
+        if (bookmark)
+          setBookmarkFocus({
+            sessionId: id,
+            eventId: bookmark.eventId,
+            at: bookmark.at,
+            key: Date.now(),
+          });
       }),
     [],
   );
