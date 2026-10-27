@@ -739,7 +739,16 @@ export interface CardWindowState {
 }
 /** `tiny-on`/`tiny-off`: the row and floor at helper-desk size (remembered by the main process). */
 export type DockAction =
-  DockMode | 'tiny-on' | 'tiny-off' | 'drag-start' | 'drag-end' | 'solid' | 'through';
+  | DockMode
+  | 'tiny-on'
+  | 'tiny-off'
+  | 'drag-start'
+  | 'drag-end'
+  | 'solid'
+  | 'through'
+  /** A dialog is open in the row or floor: room above the desks for it, and back. */
+  | 'room-on'
+  | 'room-off';
 export interface OfficeAPI {
   mobile?: (
     command: import('./mobile').MobileCommand,
@@ -832,6 +841,14 @@ export interface OfficeAPI {
    * switches to its existing Orca tab, re-verified afresh in main.
    */
   orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
+  /** Desktop (macOS) only: summon a new agent in a new Orca tab of this project's folder. */
+  orcaSummon?: (
+    id: string,
+    action: 'status' | 'start',
+    provider: 'claude' | 'codex',
+    name: string,
+    initialMessage?: string,
+  ) => Promise<OrcaLaunchInfo>;
   /** Desktop (macOS/Linux) only: the mini terminal, kept alive by tmux (see mini-shell.ts). */
   shell?: {
     command: <C extends import('./mini-shell').ShellCommand>(

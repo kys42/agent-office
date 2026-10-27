@@ -48,6 +48,8 @@ export function TmuxResume({
       }
     : t.tmux;
   const [projectId, setProjectId] = useState(id);
+  const projectRef = useRef(projectId);
+  projectRef.current = projectId;
   const [agentName, setAgentName] = useState(t.tmux.summonDefault);
   const [initialMessage, setInitialMessage] = useState('');
   const [provider, setProvider] = useState<'claude' | 'codex'>('claude');
@@ -73,8 +75,18 @@ export function TmuxResume({
     duplicateShown.current = ticket;
     setDuplicate(value);
   };
-  const checkOrca = async () => {
-    if (summon || !api.orcaLaunch) return;
+  const checkOrca = async (selected = provider) => {
+    if (summon) {
+      // A new agent can start in a new Orca tab too, when this folder is an Orca workspace.
+      if (!api.orcaSummon) return;
+      const ticket = ++orcaRequest.current;
+      const result = await api
+        .orcaSummon(projectId, 'status', selected, agentName, initialMessage)
+        .catch(() => null);
+      if (ticket === orcaRequest.current) setOrca(result);
+      return;
+    }
+    if (!api.orcaLaunch) return;
     const ticket = ++orcaRequest.current;
     const asked = ++duplicateRequest.current;
     const result = await api.orcaLaunch(id, 'status').catch(() => null);
@@ -82,16 +94,18 @@ export function TmuxResume({
     if (ticket === orcaRequest.current) setOrca(result);
   };
   const launchOrca = async () => {
-    if (busy || summon || !api.orcaLaunch) return;
+    if (busy || (summon ? !api.orcaSummon : !api.orcaLaunch)) return;
     const ticket = ++request.current;
     setBusy(true);
     setError('');
     let refused = false;
     try {
-      const result = await api.orcaLaunch(id, 'start');
+      const result = summon
+        ? await api.orcaSummon!(projectId, 'start', provider, agentName, initialMessage)
+        : await api.orcaLaunch!(id, 'start');
       if (ticket !== request.current) return;
       if (result.launched) {
-        notify(result.message ?? t.tmux.orcaLaunched);
+        notify(result.message ?? (summon ? t.tmux.summonOrcaLaunched : t.tmux.orcaLaunched));
         setOpen(false);
       }
     } catch (e) {
@@ -157,7 +171,7 @@ export function TmuxResume({
   ) => {
     if (busy || (summon ? !api.tmuxSummon : !api.tmuxResume)) return;
     if (projects && !projects.some((p) => p.id === projectId)) return;
-    if (action === 'status') void checkOrca();
+    if (action === 'status') void checkOrca(selected);
     const ticket = ++request.current;
     const asked = summon ? 0 : ++duplicateRequest.current;
     setBusy(true);
@@ -170,7 +184,7 @@ export function TmuxResume({
       if (!summon) noteDuplicate(asked, result.duplicate);
       if (ticket === request.current) setInfo(result);
       // A launch changes what runs where: read the shared check again.
-      if (action === 'start') void checkOrca();
+      if (action === 'start') void checkOrca(selected);
     } catch (e) {
       if (ticket !== request.current) return;
       if (action !== 'open') setInfo(null);
@@ -252,6 +266,18 @@ export function TmuxResume({
                         onChange={(e) => {
                           setProjectId(e.target.value);
                           setInfo(null);
+                          // Another folder may or may not be an Orca workspace: drop the answer
+                          // for the old one (and any still on its way), then ask again.
+                          orcaRequest.current++;
+                          setOrca(null);
+                          const next = e.target.value;
+                          if (api.orcaSummon)
+                            void api
+                              .orcaSummon(next, 'status', provider, agentName, initialMessage)
+                              .catch(() => null)
+                              .then((result) => {
+                                if (next === projectRef.current) setOrca(result);
+                              });
                         }}
                       >
                         {projects.map((p) => (
@@ -409,10 +435,10 @@ export function TmuxResume({
                   {text.unknownNotice}
                 </p>
               )}
-              {!summon && orca?.available && !runningElsewhere && (
+              {orca?.available && !runningElsewhere && (
                 <p className="tmux-discovery">
                   <Info size={13} aria-hidden="true" />
-                  {text.orcaHint}
+                  {summon ? text.summonOrcaHint : text.orcaHint}
                 </p>
               )}
               {!summon && info && !info.running && (
@@ -471,10 +497,10 @@ export function TmuxResume({
                   {openElsewhere ? text.forceStart : text.start}
                 </button>
               )}
-              {!summon && orca?.available && !runningElsewhere && (
+              {orca?.available && !runningElsewhere && (
                 <button className="button" disabled={busy} onClick={() => void launchOrca()}>
                   <ArrowUpRight size={14} aria-hidden="true" />
-                  {openElsewhere ? text.forceOrca : text.orcaStart}
+                  {summon ? text.summonOrca : openElsewhere ? text.forceOrca : text.orcaStart}
                 </button>
               )}
               {info?.running && info.canOpen && (

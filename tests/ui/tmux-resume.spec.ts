@@ -100,6 +100,21 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
             : {}),
         };
       },
+      orcaSummon: async (
+        id: string,
+        action: string,
+        provider: string,
+        name: string,
+        initialMessage?: string,
+      ) => {
+        (w.orcaSummons ??= []).push({ id, action, provider, name, initialMessage });
+        return action === 'start'
+          ? { available: true, launched: true, message: 'Orca 새 탭에 새 에이전트를 띄웠어요' }
+          : { available: !!w.orcaAvailable, command: provider + ' -- hi' };
+      },
+      dock: async (action: string) => {
+        (w.dockActions ??= []).push(action);
+      },
       jump: async () => {
         w.jumped = true;
         return { action: 'focused', text: 'Orca' };
@@ -231,6 +246,27 @@ for (const route of ['/', '/#mini=floor'])
       ).toEqual(['codex:start']);
     },
   );
+
+test('the dock makes room for the summon dialog, which can start the agent in a new Orca tab', async ({
+  page,
+}) => {
+  await page.addInitScript(() => ((window as any).orcaAvailable = true));
+  await setup(page, false, '/#mini=floor');
+  await page.locator('.zone-flag-cloth').first().hover();
+  await page.getByRole('button', { name: '새 에이전트 소환', exact: true }).first().click();
+  const modal = page.getByRole('dialog', { name: '새 에이전트 소환' });
+  await expect(modal).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).dockActions?.at(-1))).toBe('room-on');
+  await modal.getByLabel('에이전트 이름', { exact: true }).fill('리뷰 봇');
+  await modal.getByRole('button', { name: 'Codex', exact: true }).click();
+  await modal.getByRole('button', { name: 'Orca 새 탭에 소환하기', exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  const calls = await page.evaluate(() => (window as any).orcaSummons);
+  expect(calls.at(-1)).toMatchObject({ action: 'start', provider: 'codex', name: '리뷰 봇' });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).dockActions?.at(-1)))
+    .toBe('room-off');
+});
 
 test('a conversation already running or open elsewhere offers going there before launching', async ({
   page,
