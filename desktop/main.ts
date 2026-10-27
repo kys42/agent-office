@@ -1447,8 +1447,11 @@ function setupIPC() {
   };
   // Adopt a launch name only once, after an exact native-session -> owned tmux pane match.
   // It is stored as the normal personal alias; later manual edits (including clearing) win.
+  // The same match also tags the summoned tmux session with the conversation it runs, so its
+  // resume, jump and the duplicate-launch check find that session by the conversation's id.
   let naming = false;
   const named = new Set<string>();
+  const tagged = new Set<string>();
   const nameTimer = setInterval(async () => {
     if (naming) return;
     naming = true;
@@ -1459,7 +1462,7 @@ function setupIPC() {
       for (const s of snapshot.sessions.filter(
         (s) =>
           !s.remote &&
-          !named.has(s.id) &&
+          !(named.has(s.id) && tagged.has(s.id)) &&
           s.cwd &&
           folders.has(path.resolve(s.cwd)) &&
           ['claude', 'codex'].includes(s.provider),
@@ -1469,6 +1472,14 @@ function setupIPC() {
             ? await locateTerminal(s.nativeId)
             : await findCodexTerminal(s.nativeId);
         if (!terminal || terminal.host.kind !== 'tmux') continue;
+        if (
+          !tagged.has(s.id) &&
+          (await tmuxResume
+            .adopt(terminal.host, s.provider as 'claude' | 'codex', s.nativeId)
+            .catch(() => false))
+        )
+          tagged.add(s.id);
+        if (named.has(s.id)) continue;
         const alias = await tmuxResume.aliasFor(terminal.host, s.id).catch(() => null);
         if (!alias) continue;
         const current: Session = await bridge.call('detail', [s.id]);
