@@ -162,3 +162,25 @@ test('a colleague just brought in or on its first conversation walks in awake, t
   assert.equal(presentSession(fresh, now).commuting, true);
   assert.equal(presentSession(fresh, now).posture, 'typing');
 });
+
+test('a record read only at its ends never counts as a new conversation; each arrival walks in once', async () => {
+  const { walksIn } = await import('../src/lib/commute.js');
+  const windowed = make({
+    startedAt: now - 1_000,
+    windowed: true,
+    status: 'sleep',
+    updatedAt: now - hour,
+  });
+  assert.equal(presentSession(windowed, now).commuting, false);
+  assert.equal(presentSession({ ...windowed, returnedAt: now - 1_000 }, now).commuting, true);
+  const back = make({ id: 'walker', startedAt: now - 30 * 24 * hour, returnedAt: now - 1_000 });
+  assert.equal(walksIn(back, true, now), true);
+  assert.equal(walksIn(back, true, now + 1_000), true, 'the same walk, drawn again');
+  assert.equal(walksIn(back, true, now + 10_000), false, 'drawn anew later: no second walk');
+  assert.equal(
+    walksIn({ ...back, returnedAt: now + 20_000 }, true, now + 20_000),
+    true,
+    'brought back again',
+  );
+  assert.equal(walksIn(back, false, now), false);
+});

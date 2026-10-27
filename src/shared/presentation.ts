@@ -34,12 +34,18 @@ export const AWAKE_MS = 5 * 60_000;
 
 /**
  * When a colleague came to the office: brought back from the lounge or archive (`returnedAt`)
- * or a brand-new conversation (`startedAt`). Pure, like a request's arrival, so every view and
- * a late window agree; an old colleague just sitting there never commutes.
+ * or a brand-new conversation (`startedAt`). A record read only at its head and tail
+ * (`windowed`) may carry the file's time there instead, so only `returnedAt` counts for it.
+ */
+export const arrivedAt = (s: Session) =>
+  Math.max(s.returnedAt ?? 0, s.windowed ? 0 : (s.startedAt ?? 0));
+
+/**
+ * Pure, like a request's arrival, so every view and a late window agree; an old colleague just
+ * sitting there never commutes.
  */
 export function arrival(s: Session, now = Date.now()) {
-  const at = Math.max(s.returnedAt ?? 0, s.startedAt ?? 0);
-  const age = now - at;
+  const age = now - arrivedAt(s);
   return { commuting: age >= 0 && age < COMMUTE_MS, awake: age >= 0 && age < AWAKE_MS };
 }
 
@@ -101,7 +107,7 @@ export function presentSession(s: Session, now = Date.now()) {
     decorative: resting,
     seed,
     working: isWorking(s, now),
-    /** Walks in to its desk (once, as the view first draws it). */
+    /** Just arrived: a view drawing it now walks it in (see `walksIn`). */
     commuting,
   };
 }

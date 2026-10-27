@@ -47,6 +47,7 @@ import { jumpOrCopy } from '../lib/resume';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
+import { walksIn } from '../lib/commute';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -587,7 +588,7 @@ export function Office({
                         <Furniture kind="chair" />
                         <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                         <button
-                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${pose.commuting ? 'commuting' : ''}`}
+                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''}`}
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
                           aria-label={t.office.station(

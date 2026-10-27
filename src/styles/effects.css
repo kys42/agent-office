@@ -470,15 +470,21 @@
 /* A colleague just brought in (or on its first conversation) walks in to its chair once, with
    little steps, instead of turning up asleep. Papers that land meanwhile hop after the walk. */
 .office-pet.commuting {
-  animation: commute-in 2.2s linear both;
+  /* No fill after the walk: hover, a call's hop and the rest take over as soon as it ends. */
+  animation: commute-in 2.2s linear backwards;
 }
 .office-pet.commuting .sprite-window {
   animation: commute-step 0.28s steps(2, jump-none) 7;
 }
 .office-pet.commuting.work-arrival {
   animation:
-    commute-in 2.2s linear both,
+    commute-in 2.2s linear backwards,
     arrival-hop 0.38s ease-out 2.4s 3 alternate;
+}
+.office-pet.commuting.pose-calling {
+  animation:
+    commute-in 2.2s linear backwards,
+    hop 1s ease-in-out 2.25s infinite;
 }
 @keyframes commute-in {
   0% {
