@@ -587,7 +587,7 @@ export function Office({
                         <Furniture kind="chair" />
                         <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                         <button
-                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${pose.commuting ? 'commuting' : ''}`}
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
                           aria-label={t.office.station(

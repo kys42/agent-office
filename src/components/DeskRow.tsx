@@ -607,7 +607,7 @@ export function DeskRow({
                         <Furniture kind="chair" />
                         <div className="pet-shadow" />
                         <button
-                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${pose.commuting ? 'commuting' : ''}`}
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}

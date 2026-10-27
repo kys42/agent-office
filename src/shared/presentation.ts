@@ -27,6 +27,22 @@ export function isStandingBy(s: Session, now = Date.now()) {
   );
 }
 
+/** A just-arrived colleague walks in to its desk if a view sees it within this long. */
+export const COMMUTE_MS = 60_000;
+/** ...and stays awake this long after arriving (no doze or stroll on day one). */
+export const AWAKE_MS = 5 * 60_000;
+
+/**
+ * When a colleague came to the office: brought back from the lounge or archive (`returnedAt`)
+ * or a brand-new conversation (`startedAt`). Pure, like a request's arrival, so every view and
+ * a late window agree; an old colleague just sitting there never commutes.
+ */
+export function arrival(s: Session, now = Date.now()) {
+  const at = Math.max(s.returnedAt ?? 0, s.startedAt ?? 0);
+  const age = now - at;
+  return { commuting: age >= 0 && age < COMMUTE_MS, awake: age >= 0 && age < AWAKE_MS };
+}
+
 export function presentSession(s: Session, now = Date.now()) {
   const runtime =
     s.runtime ?? runtimeObservation(s.observedStatus ?? s.status, s.updatedAt, s.statusReason);
@@ -42,7 +58,8 @@ export function presentSession(s: Session, now = Date.now()) {
   const seed = [...s.id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);
   // Decorative time is independent of execution: no fake reading/reviewing/commits.
   const cycle = Math.floor((now + (seed % 45_000)) / 15_000) % 8;
-  const posture =
+  const { commuting, awake } = arrival(s, now);
+  const drawn =
     s.zone === 'archive'
       ? 'stored'
       : s.status === 'call'
@@ -66,6 +83,8 @@ export function presentSession(s: Session, now = Date.now()) {
                     : s.status === 'done'
                       ? 'result'
                       : 'resting';
+  // Just in: sits up at the desk instead of dozing off or wandering away.
+  const posture = awake && (drawn === 'dozing' || drawn === 'strolling') ? 'resting' : drawn;
   const mood: Mood =
     posture === 'dozing'
       ? 'sleep'
@@ -74,7 +93,17 @@ export function presentSession(s: Session, now = Date.now()) {
         : posture === 'strolling' || (resting && stale)
           ? 'idle'
           : s.status;
-  return { runtime, stale, posture, mood, decorative: resting, seed, working: isWorking(s, now) };
+  return {
+    runtime,
+    stale,
+    posture,
+    mood: awake && mood === 'sleep' ? 'idle' : mood,
+    decorative: resting,
+    seed,
+    working: isWorking(s, now),
+    /** Walks in to its desk (once, as the view first draws it). */
+    commuting,
+  };
 }
 export const POSTURE_LABELS: Record<string, string> = liveLabels(
   (t) => t.shared.presentation.posture,

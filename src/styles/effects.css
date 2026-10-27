@@ -467,6 +467,43 @@
   animation: arrival-hop 0.38s ease-out 0.75s 3 alternate;
 }
 
+/* A colleague just brought in (or on its first conversation) walks in to its chair once, with
+   little steps, instead of turning up asleep. Papers that land meanwhile hop after the walk. */
+.office-pet.commuting {
+  animation: commute-in 2.2s linear both;
+}
+.office-pet.commuting .sprite-window {
+  animation: commute-step 0.28s steps(2, jump-none) 7;
+}
+.office-pet.commuting.work-arrival {
+  animation:
+    commute-in 2.2s linear both,
+    arrival-hop 0.38s ease-out 2.4s 3 alternate;
+}
+@keyframes commute-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-84px);
+  }
+  12% {
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes commute-step {
+  from {
+    transform: translateY(0) rotate(-4deg);
+  }
+  to {
+    transform: translateY(-4px) rotate(4deg);
+  }
+}
+
 /* ───────── Pet arrival (inside the 116×148 pet anchor) ───────── */
 .pet-arrival {
   position: absolute;
@@ -668,8 +705,10 @@
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
 .motion-paused :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
-.motion-paused :is(.office-pet.work-arrival, .working-beacon),
-.reduce-motion :is(.office-pet.work-arrival, .working-beacon),
+.motion-paused :is(.office-pet.work-arrival, .office-pet.commuting, .working-beacon),
+.reduce-motion :is(.office-pet.work-arrival, .office-pet.commuting, .working-beacon),
+.motion-paused .office-pet.commuting .sprite-window,
+.reduce-motion .office-pet.commuting .sprite-window,
 .motion-paused .working-beacon::after,
 .reduce-motion .working-beacon::after {
   animation: none !important;
@@ -683,6 +722,8 @@
   :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
   :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
   .office-pet.work-arrival,
+  .office-pet.commuting,
+  .office-pet.commuting .sprite-window,
   .working-beacon,
   .working-beacon::after {
     animation: none !important;
