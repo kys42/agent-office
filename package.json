@@ -34,6 +34,7 @@
     "test:mcp": "tsx scripts/mcp-smoke.ts",
     "test:shell": "tsx scripts/mini-shell-smoke.ts",
     "test:shell:desktop": "node scripts/mini-shell-desktop-smoke.mjs",
+    "test:reader:desktop": "node scripts/reader-window-desktop-smoke.mjs",
     "format": "prettier --write \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "package:dmg": "npm run package && node scripts/dmg.mjs",

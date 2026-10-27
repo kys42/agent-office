@@ -308,6 +308,87 @@
   padding-top: 10px;
   border-top: 1px solid var(--line-2);
 }
+/* The bookmark reader's own window (ReaderWindow.tsx, desktop/reader-windows.ts): frameless,
+   moved by its header, the reading body filling the rest. Follows the app's theme. */
+body.reader-mode {
+  overflow: hidden;
+  background: var(--bg-0);
+}
+.reader-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+  color: var(--text);
+}
+.reader-window-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 14px;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-2);
+  user-select: none;
+  /* The frameless window is moved by its header; its controls stay clickable. */
+  -webkit-app-region: drag;
+}
+.reader-window-bar > b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.reader-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+.reader-window-actions .button {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.reader-window-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px 0;
+}
+.reader-window-body > .bookmark-reader {
+  flex: 1;
+}
+.reader-window-body > .empty-state {
+  margin: auto;
+}
+.reader-window-opening {
+  margin: auto;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.reader-window-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 50;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
 .bookmark-note-edit {
   display: flex;
   flex-direction: column;

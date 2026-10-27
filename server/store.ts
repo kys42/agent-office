@@ -1301,6 +1301,27 @@ export class OfficeStore {
   ) {
     return this.visible(places.get(b.sessionId) ?? b.source, prefs);
   }
+  /**
+   * One bookmark by its id, for a reader window: null when it was removed, or when the settings
+   * no longer show it (an excluded project, a tool turned off) — the same filter as the list.
+   */
+  bookmarkById(id: string): Bookmark | null {
+    let row: { data: string } | undefined;
+    try {
+      row = this.db.prepare('SELECT data FROM bookmarks WHERE id=?').get(id) as typeof row;
+    } catch (e) {
+      if (/no such table/.test(String(e))) return null;
+      throw e;
+    }
+    if (!row) return null;
+    let b: Bookmark;
+    try {
+      b = JSON.parse(row.data) as Bookmark;
+    } catch {
+      return null;
+    }
+    return this.bookmarkShown(b, this.preferences(), this.placesOf([b.sessionId])) ? b : null;
+  }
   unbookmark(id: string) {
     if (!this.bookmarkRow('id=?', id)) return;
     this.db.prepare('DELETE FROM bookmarks WHERE id=?').run(id);

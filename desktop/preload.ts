@@ -36,6 +36,8 @@ const api: OfficeAPI = {
   unbookmark: (id) => call('unbookmark', id),
   unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
+  bookmarkById: (id) => call('bookmarkById', id),
+  bookmarkWindow: (what, target) => action('office:reader-window', what, target),
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),
   subscribe: (callback) => {
@@ -117,7 +119,8 @@ const api: OfficeAPI = {
   },
   exportFile: (name, content) => ipcRenderer.invoke('office:export', name, content),
   onSelect: (cb) => {
-    const f = (_: unknown, id: string) => cb(id);
+    const f = (_: unknown, id: string, bookmark?: { eventId: string; at: number }) =>
+      cb(id, bookmark);
     ipcRenderer.on('office:select', f);
     return () => ipcRenderer.removeListener('office:select', f);
   },

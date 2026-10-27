@@ -94,7 +94,12 @@ function customizedDemo() {
   return snapshot;
 }
 
-export function useOffice(demo: boolean, notify: (message: string) => void = () => {}) {
+export function useOffice(
+  demo: boolean,
+  notify: (message: string) => void = () => {},
+  /** `quotas: false`: a window that draws no desks (a reader window) reads no usage limits. */
+  { quotas: readQuotas = true }: { quotas?: boolean } = {},
+) {
   const { locale } = useI18n();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(demo ? customizedDemo() : null);
   const [error, setError] = useState('');
@@ -234,7 +239,7 @@ export function useOffice(demo: boolean, notify: (message: string) => void = () 
   // Only the service's own office says whether privacy is on: leaving the demo, its snapshot
   // lingers for a render, and its settings must not start a real read.
   const quotas = useQuotas(
-    demo,
+    demo || !readQuotas,
     !demo && snapshot && fromService.current.has(snapshot) ? !!snapshot.preferences.privacy : null,
   );
   const model = useMemo(() => buildOfficeModel(shown, Date.now(), quotas), [shown, clock, quotas]);

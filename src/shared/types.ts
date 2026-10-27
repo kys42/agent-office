@@ -788,6 +788,18 @@ export interface OfficeAPI {
   /** Take the bookmark of one message off (no-op when it has none). */
   unbookmarkMessage: (sessionId: string, eventId: string) => Promise<Snapshot>;
   bookmarkNote: (id: string, note: string) => Promise<Bookmark>;
+  /** One bookmark by id; null when it was removed or the settings no longer show it. */
+  bookmarkById: (id: string) => Promise<Bookmark | null>;
+  /**
+   * Desktop only: the bookmark reader's own window, one per bookmark. `open` opens it beside the
+   * asking window (or brings it forward) with only the bookmark's id; in that window, `target`
+   * reads which bookmark it shows, `focus`/`close` act on it and `go` shows the big office at
+   * the bookmarked message.
+   */
+  bookmarkWindow?: (
+    action: 'open' | 'target' | 'focus' | 'close' | 'go',
+    target?: { id: string },
+  ) => Promise<{ id: string } | void>;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**
@@ -917,7 +929,10 @@ export interface OfficeAPI {
   visible?: () => Promise<boolean>;
   onVisibility?: (callback: (shown: boolean) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
-  onSelect?: (callback: (id: string) => void) => () => void;
+  /** The big office is asked to show a colleague (at a bookmarked message, when given). */
+  onSelect?: (
+    callback: (id: string, bookmark?: { eventId: string; at: number }) => void,
+  ) => () => void;
   /** Desktop big office only: the colleague card open now, so a notification about it is skipped. */
   selected?: (id: string | null) => void;
   /** Desktop only. Browser previews switch the dock layout locally. */

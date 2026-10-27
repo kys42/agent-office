@@ -2,6 +2,9 @@ import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-la
 import { TmuxResume, summonSession } from './tmux-resume.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
+import { ReaderWindows } from './reader-windows.js';
+import { parseReaderTarget } from '../src/shared/bookmark-window.js';
+import { popupFloats } from '../src/shared/popup-window.js';
 import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
@@ -32,6 +35,7 @@ import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
 import type {
+  Bookmark,
   AnswerResult,
   AnswerSetting,
   AnswerSettings,
@@ -106,6 +110,7 @@ let main: BrowserWindow | null = null,
   quitting = false;
 let cards: CardWindows;
 let shellWindows: ShellWindows;
+let readerWindows: ReaderWindows;
 let notifier: Notifier;
 // The colleague card open in the big office, as its page reports it (notifications skip it).
 let mainSelected: string | null = null;
@@ -145,8 +150,8 @@ else {
       dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
       secure,
       watch,
-      // A preview card stays while the person works in the terminal window it opened.
-      companion: () => !!shellWindows?.focused(),
+      // A preview card stays while the person works in a terminal or reader window it opened.
+      companion: () => !!shellWindows?.focused() || !!readerWindows?.focused(),
     });
     app.on('before-quit', () => cards.dispose());
     shellWindows = new ShellWindows({
@@ -155,6 +160,15 @@ else {
       dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
       secure,
       blurred: () => cards.recheck(),
+    });
+    // The bookmark reader's windows read the office like the other windows: snapshots too.
+    readerWindows = new ReaderWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      blurred: () => cards.recheck(),
+      created: watch,
     });
     notifier = new Notifier({
       // Quiet runs, and test runs that take the real focus (CI), record instead of showing.
@@ -180,20 +194,23 @@ else {
       (globalThis as { __agentOfficeNotifications?: unknown }).__agentOfficeNotifications =
         notifier.recorded;
     const windows = () =>
-      [main, dock, settingsWindow, ...cards.windows()]
+      [main, dock, settingsWindow, ...cards.windows(), ...readerWindows.windows()]
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
         .map(viewer);
     // Follow the language the collector actually resolved, so tray and windows always agree.
     const followLanguage = (s: Snapshot) => {
       if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
     };
-    // Hiding the screen's content (화면 내용 숨기기) closes the terminal windows: tmux keeps them.
-    const hideShells = (s: Snapshot) => {
-      if (s.preferences?.privacy) shellWindows.closeAll();
+    // Hiding the screen's content (화면 내용 숨기기) closes the popup windows: tmux keeps the
+    // shells, and a reader closes like the in-page one does.
+    const hidePopups = (s: Snapshot) => {
+      if (!s.preferences?.privacy) return;
+      shellWindows.closeAll();
+      readerWindows.closeAll();
     };
     const publish = (s: Snapshot) => {
       followLanguage(s);
-      hideShells(s);
+      hidePopups(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -201,7 +218,7 @@ else {
     bridge.on('patch', (patch: SnapshotPatch) => {
       if (delivery.update(patch, windows())) {
         followLanguage(delivery.latest!);
-        hideShells(delivery.latest!);
+        hidePopups(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
@@ -240,6 +257,7 @@ else {
       if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
       cards.reseat();
       shellWindows.reseat();
+      readerWindows.reseat();
     };
     screen.on('display-removed', reseat);
     screen.on('display-metrics-changed', reseat);
@@ -405,7 +423,11 @@ function bringMainOnto(origin: Rect) {
 }
 function showMain(
   id?: string,
-  { keepDock = false, from }: { keepDock?: boolean; from?: Rect } = {},
+  {
+    keepDock = false,
+    from,
+    bookmark,
+  }: { keepDock?: boolean; from?: Rect; bookmark?: { eventId: string; at: number } } = {},
 ) {
   if (!main || main.isDestroyed()) createMain();
   stopDrag(false);
@@ -416,7 +438,9 @@ function showMain(
   present(window);
   if (id) {
     const select = () => {
-      if (!window.isDestroyed()) window.webContents.send('office:select', id);
+      if (window.isDestroyed()) return;
+      if (bookmark) window.webContents.send('office:select', id, bookmark);
+      else window.webContents.send('office:select', id);
     };
     if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', select);
     else select();
@@ -626,6 +650,16 @@ function trusted(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>)
   )
     throw new Error(m().desktop.untrustedWindow);
 }
+/** What a reader window may ask the service: the office it shows and the bookmark it reads. */
+const READER_CALLS = new Set(['snapshot', 'bookmarkById']);
+/**
+ * The bookmark reader's IPC (its window, the office's reads, copying and opening links) also
+ * trusts the reader windows; nothing else does.
+ */
+function trustedReader(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
+  if (readerWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
+  trusted(e);
+}
 /** The mini terminal's IPC also trusts its own windows (and nothing else does). */
 function trustedShell(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
   if (shellWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
@@ -694,7 +728,7 @@ function setupMiniShell() {
     shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
       // Only beside a window that floats (a preview card, the desk dock) does it float too: a
       // pinned card, the big office or an ordinary terminal window give an ordinary window.
-      float: from !== main && from.isAlwaysOnTop(),
+      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
     });
   });
   ipcMain.handle('office:shell', async (e, raw) => {
@@ -773,19 +807,57 @@ function setupMiniShell() {
     if (validShellInput(ptyId, data)) shells.write(e.sender.id, ptyId as string, data);
   });
 }
+/**
+ * The bookmark reader's windows (docs/development/POPUP-CARDS.md · 옆에 뜨는 팝업 창): a window
+ * names only a bookmark id; the reader reads the bookmark itself through the office API, and
+ * "open in office" reads it again here, so the service decides what is there to show.
+ */
+function setupReader() {
+  ipcMain.handle('office:reader-window', async (e, what: unknown, raw: unknown) => {
+    trustedReader(e);
+    const reader = readerWindows.owns(e.sender);
+    if (what === 'target') return readerWindows.target(e.sender);
+    if (what === 'close' || what === 'focus') return readerWindows.action(e.sender, what);
+    if (what === 'go') {
+      if (!reader) throw new Error(m().desktop.untrustedWindow);
+      const { id } = readerWindows.target(e.sender);
+      const b: Bookmark | null = await bridge.call('bookmarkById', [id]);
+      if (!b) throw new Error(m().memory.readerGoneTitle);
+      // Like the in-page reader's "open": the big office at that message, on this display.
+      showMain(b.sessionId, {
+        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+        bookmark: { eventId: b.eventId, at: b.at },
+      });
+      return;
+    }
+    if (what !== 'open') throw new Error(m().desktop.badRequest);
+    let target;
+    try {
+      target = parseReaderTarget(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().memory.readerHidden);
+    const from = BrowserWindow.fromWebContents(e.sender);
+    if (!from || from.isDestroyed()) return;
+    readerWindows.open(target.id, target, from.getBounds(), {
+      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+    });
+  });
+}
 function setupIPC() {
   ipcMain.on('office:selected', (e, id: unknown) => {
     if (!main || e.sender !== main.webContents || e.senderFrame !== e.sender.mainFrame) return;
     mainSelected = typeof id === 'string' && id.length <= 400 ? id : null;
   });
   ipcMain.handle('office:open-artifact', async (e, url) => {
-    trusted(e);
+    trustedReader(e);
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;
     if (!artifact) throw new Error(m().desktop.unsupportedLink);
     await shell.openExternal(artifact.url);
   });
   ipcMain.handle('office:open-link', async (e, url) => {
-    trusted(e);
+    trustedReader(e);
     const link = webLink(url);
     if (!link) throw new Error(m().desktop.webLinksOnly);
     await shell.openExternal(link);
@@ -794,7 +866,7 @@ function setupIPC() {
   // else (an app, a script, any folder — X.app is one) is only shown in its folder, never run.
   // Judged by the real path, so a link named like a document can't open what it points to.
   ipcMain.handle('office:open-file', async (e, raw) => {
-    trusted(e);
+    trustedReader(e);
     const named = fileLink(raw);
     if (!named) throw new Error(m().desktop.badRequest);
     const given = path.resolve(
@@ -809,18 +881,20 @@ function setupIPC() {
     return 'revealed';
   });
   ipcMain.handle('office:copy', (e, text) => {
-    trusted(e);
+    trustedReader(e);
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
     clipboard.writeText(text);
   });
   // Whether this page's window is on screen right now (the page also hears each change).
   ipcMain.handle('office:visible', (e) => {
-    trusted(e);
+    trustedReader(e);
     const w = BrowserWindow.fromWebContents(e.sender);
     return w ? onScreen(w) : true;
   });
   ipcMain.handle('office:call', async (e, method, args) => {
-    trusted(e);
+    if (readerWindows.owns(e.sender) && !READER_CALLS.has(method))
+      throw new Error(m().desktop.untrustedWindow);
+    trustedReader(e);
     if (
       typeof method !== 'string' ||
       ['federation', 'remote-send', 'remote-targets', 'remote-launch'].includes(method) ||
@@ -1034,6 +1108,7 @@ function setupIPC() {
     );
   });
   setupMiniShell();
+  setupReader();
   ipcMain.handle('office:orca-launch', async (e, id, action) => {
     trusted(e);
     if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'focus'].includes(action))
