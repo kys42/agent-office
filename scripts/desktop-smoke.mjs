@@ -444,15 +444,21 @@ try {
     await card.locator('.bookmark-note .message-text').innerText(),
     'Remember this decision',
   );
-  await card.getByRole('button', { name: '저장한 대화 읽기', exact: true }).click();
-  const reader = card.getByRole('dialog', { name: '저장한 대화 읽기' });
-  await reader.waitFor();
+  // In the app the saved conversation opens in its own window beside the card (#283).
+  const [readerPage] = await Promise.all([
+    app.waitForEvent('window', { predicate: (p) => p.url().endsWith('#reader') }),
+    card.getByRole('button', { name: '저장한 대화 읽기', exact: true }).click(),
+  ]);
+  const reader = readerPage.locator('.bookmark-reader');
+  await reader.waitFor({ timeout: 15000 });
   assert.equal(await reader.locator('.message-user .message-meta b').innerText(), '나');
   assert.ok(
     (await reader.locator('[data-saved="true"]').innerText()).includes('작은 사무실 만들기'),
   );
-  await reader.press('Escape');
-  assert.equal(await reader.count(), 0);
+  await Promise.all([
+    readerPage.waitForEvent('close'),
+    readerPage.keyboard.press('Escape').catch(() => {}),
+  ]);
   assert.equal(await notes.inputValue(), 'Panel keyboard input');
   const persisted = await page.evaluate(() =>
     window.office.bookmarks({ sessionIds: ['codex:codex-test'] }),
