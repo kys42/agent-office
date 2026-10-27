@@ -237,7 +237,7 @@ else {
     });
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
-      if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
+      if (dock && !dock.isDestroyed() && !drag) dock.setBounds(roomyBounds(dockMode));
       cards.reseat();
       shellWindows.reseat();
     };
@@ -596,9 +596,11 @@ function showDock(mode: DockMode = 'pet') {
       dock = null;
     });
     // The renderer follows the main process; tell it the mode it may have missed while loading.
-    dock.webContents.on('did-finish-load', () =>
-      dock?.webContents.send('office:dock', dockMode, dockTiny),
-    );
+    // A reloaded page has no dialog open: drop any room an earlier one asked for.
+    dock.webContents.on('did-finish-load', () => {
+      setDockRoom(false);
+      dock?.webContents.send('office:dock', dockMode, dockTiny);
+    });
     void dock.loadFile(index, {
       hash: mode === 'pet' ? 'mini' : `mini=${mode}${dockTiny ? '&tiny' : ''}`,
     });

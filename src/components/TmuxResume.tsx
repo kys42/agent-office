@@ -48,6 +48,8 @@ export function TmuxResume({
       }
     : t.tmux;
   const [projectId, setProjectId] = useState(id);
+  const projectRef = useRef(projectId);
+  projectRef.current = projectId;
   const [agentName, setAgentName] = useState(t.tmux.summonDefault);
   const [initialMessage, setInitialMessage] = useState('');
   const [provider, setProvider] = useState<'claude' | 'codex'>('claude');
@@ -264,8 +266,18 @@ export function TmuxResume({
                         onChange={(e) => {
                           setProjectId(e.target.value);
                           setInfo(null);
-                          // Another folder may or may not be an Orca workspace: check again.
+                          // Another folder may or may not be an Orca workspace: drop the answer
+                          // for the old one (and any still on its way), then ask again.
+                          orcaRequest.current++;
                           setOrca(null);
+                          const next = e.target.value;
+                          if (api.orcaSummon)
+                            void api
+                              .orcaSummon(next, 'status', provider, agentName, initialMessage)
+                              .catch(() => null)
+                              .then((result) => {
+                                if (next === projectRef.current) setOrca(result);
+                              });
                         }}
                       >
                         {projects.map((p) => (
