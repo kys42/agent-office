@@ -953,12 +953,13 @@ export default function App() {
                 {prefs?.privacy ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
               <button
-                className="icon-btn mini-button"
+                className="mini-button"
                 aria-label={t.app.header.mini}
                 title={t.app.header.miniTitle}
                 onClick={() => api.window('mini')}
               >
-                <PictureInPicture2 size={16} />
+                <PictureInPicture2 size={15} />
+                <span>{t.app.header.mini}</span>
               </button>
             </div>
           </header>

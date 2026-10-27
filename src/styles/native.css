@@ -517,6 +517,13 @@
   }
 }
 @container bar (max-width: 720px) {
+  /* Still the accent pill, just the icon (its name stays on aria-label). */
+  .mini-button {
+    padding: 0 7px;
+  }
+  .mini-button span {
+    display: none;
+  }
   .zone-tabs button {
     padding: 0 8px;
   }
