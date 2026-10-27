@@ -336,12 +336,14 @@ function secure(w: BrowserWindow) {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: w });
   });
 }
+/** The big office's smallest size, lowered only for a display smaller than this. */
+const MAIN_MIN = { width: 1050, height: 740 };
 function createMain() {
   main = new BrowserWindow({
     width: 1440,
     height: 970,
-    minWidth: 1050,
-    minHeight: 740,
+    minWidth: MAIN_MIN.width,
+    minHeight: MAIN_MIN.height,
     title: 'Agent Office',
     icon: path.join(root, 'dist', 'icon.png'),
     show: !quiet,
@@ -382,6 +384,11 @@ function bringMainOnto(origin: Rect) {
   const place = () => {
     if (window.isDestroyed()) return;
     const normal = window.getNormalBounds();
+    // A display smaller than the office's usual minimum (1050×740) lowers it, so the window fits.
+    window.setMinimumSize(
+      Math.min(MAIN_MIN.width, to.workArea.width),
+      Math.min(MAIN_MIN.height, to.workArea.height),
+    );
     window.setBounds(moveOntoArea(normal, screen.getDisplayMatching(normal).workArea, to.workArea));
   };
   if (window.isFullScreen()) {
