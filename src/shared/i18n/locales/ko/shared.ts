@@ -180,7 +180,8 @@ export const shared: Messages['shared'] = {
     hidden: '[숨김]',
   },
   api: {
-    checkConnection: '연결을 확인해 주세요',
+    checkConnection:
+      '실시간 연결이 끊겼어요. 마지막 사무실을 표시하고 있어요. 연결 상태를 확인해 주세요.',
     revealDesktopOnly: '원본 위치 열기는 데스크탑 앱에서 사용할 수 있어요.',
   },
 };

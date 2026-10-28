@@ -1,12 +1,12 @@
 # macOS DMG 배포
 
-개발용 **preview**와 **Developer ID 서명·Apple 공증** 경로를 분리한다. 기본 명령은 preview이며, 정식 경로는 아래 환경변수를 명시한다. 서명/공증 실패 시 preview로 대체하지 않는다. 빌드는 사용자 세션이나 인증 파일을 포함하지 않는다. 자동 업데이트와 공개 게시는 별도 작업이다.
+개발용 **preview**와 **Developer ID 서명·Apple 공증** 경로를 분리한다. `package:dmg`는 서명·공증 경로이며, preview는 `package:preview` / `package:dmg:preview`로만 명시해서 실행한다. 내부 `package` 명령은 서명 모드가 없으면 실패한다. 서명/공증 실패 시 preview로 대체하지 않는다. 빌드는 사용자 세션이나 인증 파일을 포함하지 않는다. 자동 업데이트와 공개 게시는 별도 작업이다.
 
 ## 로컬 생성과 설치
 
 앱 아이콘 원본은 `public/icon.png`(투명 배경의 1024px PNG)다. 선택한 맥북 앞 미니 로봇 시안으로 교체했으며, 브라우저 favicon과 실행 중 Mac Dock도 같은 파일을 사용한다. 메뉴바의 흑백 template 심벌은 메뉴바용으로 유지한다. PNG를 변경하면 macOS에서 `npm run icon:mac`으로 16–1024px ICNS를 재생성해 `public/icon.icns`와 함께 커밋한다. 패키징은 커밋된 ICNS를 사용하며 Linux CI에서 Mac 변환 도구를 실행하지 않는다.
 
-Node 24+와 macOS가 필요하다. 릴리스용 checkout에서 아래 명령을 실행한다. 전달할 최종 산출물은 커밋을 확정한 깨끗한 checkout에서 다시 생성한다.
+Node 24+와 macOS, 아래의 Developer ID 인증서·개인키·공증 프로필이 필요하다. 릴리스용 checkout에서 아래 명령을 실행한다. 전달할 최종 산출물은 커밋을 확정한 깨끗한 checkout에서 다시 생성한다.
 
 ```bash
 npm ci
@@ -62,7 +62,7 @@ npm run package:dmg
 npm run test:package
 ```
 
-`npm run package`까지만 실행하면 로컬 진단용 **서명 완료·미공증 앱**을 만들 수 있다. `package:dmg`의 정식 모드는 깨끗한 커밋, 공증 프로필, 앱 서명 검증을 요구한다. 인증/네트워크 오류나 Apple 심사 거절을 성공으로 취급하지 않는다. 공증 대기에는 제출당 20분 제한이 있다. 시간 초과 뒤에는 아래 receipt 재개 절차를 사용한다.
+`npm run release:mac -- app`을 실행하면 로컬 진단용 **서명 완료·미공증 앱**을 만들 수 있다. `package:dmg`의 정식 모드는 깨끗한 커밋, 공증 프로필, 앱 서명 검증을 요구한다. 인증/네트워크 오류나 Apple 심사 거절을 성공으로 취급하지 않는다. 공증 대기에는 제출당 20분 제한이 있다. 시간 초과 뒤에는 아래 receipt 재개 절차를 사용한다.
 
 순서는 **패키징 → 실행 파일 UUID 부여 → hardened runtime 서명 → 앱 ZIP 공증 → 앱 ticket staple/검증 → Gatekeeper 검사 → DMG 생성/서명 → DMG 공증/staple → 최종 체크섬 → DMG 설치본 실행 검수**다. 공증은 Apple에 앱/DMG 바이너리를 제출하는 작업이다. `scripts/entitlements.mac.plist`는 Electron JIT 권한만 선언한다. App Sandbox나 카메라·마이크·전체 디스크 권한을 일괄 부여하지 않는다.
 
@@ -119,6 +119,18 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 - 최종 DMG와 manifest, checksums, source SHA, 공증 제출 ID를 함께 보존한다. artifact 보관은 30일이며 장기 배포 저장소는 별도 결정한다.
 - macOS 권한은 OS·사용자별로 관리된다. 서명은 신원 안정화이며 권한 자동 승인이나 기기 간 권한 복사를 뜻하지 않는다. 임시 서명에서 최초 전환할 때 사용자의 재승인이 필요할 수 있다.
 - 자동 서명과 앱 자동 업데이트(OTA)는 별개다. 이 workflow는 artifact까지만 만들며 GitHub Release 공개 게시나 설치된 앱의 자동 교체를 수행하지 않는다. Windows Authenticode도 별도 인증서·파이프라인이 필요하다.
+
+## 업데이트마다 권한을 묻는 경우
+
+새 컴퓨터의 첫 승인과 같은 컴퓨터에서 업데이트할 때 반복되는 승인을 구분한다. **설정 → 연결 → 앱 정보와 권한**에서 실제 `codesign` 검증 결과, 개발자 Team ID와 source commit을 확인한다. 진단 복사는 버전·서명·빌드 정보만 담으며 세션 내용, 경로, 인증값은 제외한다. 서명 확인은 이 탭을 열 때만 수행하고 앱 실행 중 결과를 재사용한다.
+
+1. 반복되는 기기에서 설치 경로와 실행 파일을 확인한다. `/Applications/Agent Office.app` 외에 예전 복사본이나 개발 Electron이 실행 중이지 않은지 본다.
+2. 업데이트 전후 **Developer ID + 동일 Team ID + 동일 bundle ID**를 유지한다. 매 빌드의 CDHash는 달라질 수 있으므로 단순 hash 변경을 신원 변경으로 보지 않는다. preview를 정식 설치본에 덮어쓰지 않는다.
+3. 다른 서버에서도 서명된 동일 DMG를 받아 설치하는 경로를 우선한다. 소스를 직접 빌드한다면 그 macOS 빌더에 같은 팀의 인증서 개인키·공증 프로필을 안전하게 준비해야 한다. 소스 저장소만 복제하면 키체인/OS 권한까지 복제되는 것은 아니다.
+4. macOS의 파일 및 폴더, 로컬 네트워크, 터미널 조작 권한은 쓰는 기능에 맞게 사용자가 허용한다. 앱에서 해당 시스템 설정만 열어 주며 권한 승인 여부를 추측해서 녹색 체크로 표시하지 않는다. 전체 디스크 접근을 모든 사용자에게 일괄 요구하거나 TCC DB를 수정하지 않는다.
+5. 동일 신원에서 계속 발생하면 UUID와 helper 서명, macOS 버전, 실제 차단 기능을 함께 조사한다. 권한 DB 초기화를 첫 해결책으로 사용하지 않는다.
+
+이 작업의 원인 후보: main은 임시 서명만 포함하고 정식 서명 PR235는 아직 별도였으며, 이 Mac은 그 PR을 통합한 별도 설치본을 사용했다. 다른 기기의 실제 설치본을 검사하기 전까지 동일 원인이라고 확정하지 않는다.
 
 ## 로컬 네트워크 권한과 Electron UUID
 

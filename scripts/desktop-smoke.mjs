@@ -117,6 +117,25 @@ try {
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
   );
+  // Diagnostics verify the executing bundle, not a claim in release.json. No private data.
+  const health = await page.evaluate(() => window.office.appHealth());
+  assert.deepEqual(
+    Object.keys(health).sort(),
+    ['version', 'platform', 'arch', 'commit', 'builtAt', 'signature', 'teamId'].sort(),
+  );
+  assert.equal(health.platform, process.platform);
+  if (process.env.AGENT_OFFICE_EXECUTABLE && process.platform === 'darwin') {
+    const metadata = JSON.parse(
+      await readFile(
+        path.resolve(process.env.AGENT_OFFICE_EXECUTABLE, '../../Resources/release.json'),
+        'utf8',
+      ),
+    );
+    assert.equal(health.commit, metadata.sourceCommit);
+    assert.equal(health.signature, metadata.signing === 'developer-id' ? 'developer-id' : 'ad-hoc');
+    if (metadata.signing === 'developer-id') assert.equal(health.teamId, metadata.teamId);
+  } else assert.equal(health.signature, 'development');
+  await assert.rejects(page.evaluate(() => window.office.openPrivacy('https://invalid.example')));
   // The settings window (#87): opened at a section, shares preferences, stays open on blur.
   const settingsWindow = (fn) =>
     app.evaluate(
@@ -639,11 +658,28 @@ try {
       ipcPersistence: true,
       rendererIsolation: true,
       firstRunGuide: true,
+      installationIdentity: health,
       settingsWindow: true,
       notifications: true,
       macDockIcon: process.platform === 'darwin',
     }),
   );
+} catch (error) {
+  if (app) {
+    for (const [i, window] of app.windows().entries()) {
+      console.error(
+        JSON.stringify({
+          url: window.url(),
+          buttons: await window
+            .locator('button[aria-label]')
+            .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label')))
+            .catch(() => []),
+        }),
+      );
+      await window.screenshot({ path: `.local/native-failure-${i}.png` }).catch(() => {});
+    }
+  }
+  throw error;
 } finally {
   if (app) await app.close();
   await rm(temp, { recursive: true, force: true });

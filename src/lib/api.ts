@@ -14,6 +14,7 @@ const rpc = async (method: string, ...args: unknown[]) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Agent-Office': '1' },
     body: JSON.stringify({ method, args }),
+    ...(method === 'snapshot' && { signal: AbortSignal.timeout(15000) }),
   });
   const data = await r.json();
   if (!r.ok || data.error) throw new Error(data.error ?? m().shared.api.checkConnection);
@@ -53,7 +54,7 @@ export const api: OfficeAPI = window.office ?? {
   bookmarkById: (id) => rpc('bookmarkById', id),
   handoff: (id, r) => rpc('handoff', id, r),
   preferences: (p) => rpc('preferences', p),
-  subscribe: (cb, since) => {
+  subscribe: (cb, since, health) => {
     // Polls only while the tab is visible, and says which version it holds: an office that did
     // not change answers in a few bytes, one that did sends only what changed.
     let active = true,
@@ -68,9 +69,12 @@ export const api: OfficeAPI = window.office ?? {
           held?.epoch ?? null,
           held?.version ?? null,
         );
-        if (active && !('unchanged' in m)) cb(m);
+        if (active) {
+          if (!('unchanged' in m)) cb(m);
+          health?.(null);
+        }
       } catch {
-        /* initial fetch and refresh expose failures */
+        if (active) health?.(m().shared.api.checkConnection);
       } finally {
         running = false;
       }

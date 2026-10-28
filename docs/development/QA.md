@@ -1,3 +1,15 @@
+# 2026-10-29 · 프로덕션 3회 검토
+
+- 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), Issue #290, `feat/production-readiness`.
+- macOS arm64 / Node 25.5.0 / Electron 44.5.1. Node 24 CI 검증은 별도 확인한다.
+- `npm test`: 806 pass. `npm run test:ui`: 431 pass. `npm run build`, `format:check`, MCP smoke 통과.
+- Electron native smoke: 3 providers, 첫 실행/설정/저장/데스크 펫·row·floor/카드·북마크 reader/IPC 격리·앱 신원 출력·잘못된 privacy URL 거부 통과. quiet 실행은 OS 포커스 단계를 생략한다.
+- 첫 native 실행은 바닥 책상 전환 버튼 탐색 timeout; 재실행에서 통과. 실패 증거 자동 캡처 추가. 최종 설치본에서 다시 검수한다.
+- UI: 라이트/다크, 480px, 키보드 펼침, 실패/재시도, 연결 중단/patch gap/demo 전환, 동시 창 전송 확인/재시작/첨부 정합성. Impeccable detector 0건.
+- `release:mac -- preflight`: Developer ID 및 Apple 공증 API 접근 확인. 최종 앱/DMG 서명·공증·설치 검수는 아래에 실제 근거로 추가한다.
+
+---
+
 # Codex 원격 owner 전송 · 2026-10-21
 
 - main `9dd9dc0` 기준 별도 `codex/office-remote-send` worktree에서 구현했다. 원래 checkout의 미커밋 문서는 수정하지 않았다.

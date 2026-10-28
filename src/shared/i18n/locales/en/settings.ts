@@ -1,4 +1,48 @@
 export const settings = {
+  appHealth: {
+    title: 'App & permissions',
+    loading: 'Checking this installation…',
+    failed: 'Could not read this installation.',
+    retry: 'Check again',
+    signatures: {
+      'developer-id': 'Developer ID signature verified',
+      'ad-hoc': 'Temporary preview build',
+      unverified: 'Signature could not be verified',
+      development: 'Development app',
+      unavailable: 'Signature check unavailable',
+    },
+    signedHint:
+      'Updates must keep the same developer identity. A new computer still needs its own permission approvals.',
+    previewHint:
+      'For everyday use, install a verified release. Replacing it with a temporary build can ask for permissions again.',
+    build: 'Build',
+    platform: 'System',
+    team: 'Developer team',
+    unknown: 'Not recorded',
+    copy: 'Copy app information',
+    copied: 'Copied',
+    copyFailed: 'Could not copy app information.',
+    safeCopy:
+      'Includes only version, build and signature information. No conversations, file paths or credentials.',
+    permissions: 'Access only what you use',
+    permissionHint:
+      'macOS grants each permission separately. Signing does not enable permissions for you.',
+    open: 'Open settings',
+    openFailed: 'Open System Settings → Privacy & Security to review permissions.',
+    panes: {
+      files: {
+        title: 'Files and folders',
+        hint: 'Read session records in protected folders or on external drives.',
+      },
+      network: { title: 'Local network', hint: 'Connect to an Office on another computer.' },
+      accessibility: {
+        title: 'Accessibility',
+        hint: 'Control a supported terminal when sending or switching to it. Not needed just to read sessions.',
+      },
+    },
+    restartHint:
+      'If macOS asks you to restart after a change, quit and reopen Agent Office. For repeated prompts, compare the build and developer identity before resetting permissions.',
+  },
   windowsSupport:
     'Windows preview: session browsing, search, notes and desk pets are available. Local terminal focus, sending and prompt answers are not supported yet. A remote office has its own host capabilities and permissions.',
   title: 'Connections & Settings',

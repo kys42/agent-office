@@ -11,7 +11,8 @@ import * as notary from '../scripts/notarize.mjs';
 const { notaryCredentials, notarizeArtifact, canResumeDmg, assertNoPendingNotarization } = notary;
 
 test('Developer ID configuration fails closed instead of falling back to ad-hoc', () => {
-  assert.equal(signingConfig({}).mode, 'ad-hoc');
+  assert.throws(() => signingConfig({}), /Choose a release/);
+  assert.equal(signingConfig({ AGENT_OFFICE_SIGNING: 'ad-hoc' }).mode, 'ad-hoc');
   for (const env of [
     { AGENT_OFFICE_SIGNING: 'typo' },
     { AGENT_OFFICE_SIGNING: 'developer-id' },

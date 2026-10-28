@@ -1,3 +1,15 @@
+## 2026-10-29 — 프로덕션 검토·개선 3회, 배포 신원과 연결/전송 신뢰성
+
+- Issue #290 / `feat/production-readiness`, base main `ba9b9e4`. 별도 PR235의 서명 파이프라인을 최신 node-pty 패키징과 함께 통합했다.
+- 1회차: preview/정식 패키징을 명시적으로 분리하고, worker 종료·웹 폴링 실패·patch gap의 조용한 정지를 화면에 알리고 제한된 재시도로 복구한다.
+- 2회차: 설정에서 실제 앱 서명/빌드와 필요한 OS 권한을 확인한다. 안내를 접어 기본 연결 흐름을 유지하고 좁은 창·키보드·다크 모드를 확인했다. 이미지 단독 입력의 전송 확인과 공급자 기록 제한을 표시한다.
+- 3회차: 독립 리뷰 후 전송 본문 추가 보관을 제거하고 metadata/SHA-256 지문만 저장했다. 다중 창 UUID/Web Locks/재시작 대응을 검증하고, worker가 잠깐 성공 후 반복 종료해도 무한 재시도하지 않게 했다. 미처리 전송이 없으면 저장소 조회를 하지 않는다.
+- 검증: 단위 806개, 전체 UI 431개, typecheck/production build/format, Electron 3개 공급자·MCP smoke 통과. 첫 native 실행의 버튼 timeout은 재실행에서 재현되지 않았으며 최종 패키지에서 재검수한다. 변경 UI 탐지 0건.
+- Developer ID/Apple 공증 사전 접근 확인 완료. 최종 signed DMG·설치본 smoke와 PR CI 결과는 [프로덕션 검토](docs/development/PRODUCTION-REVIEW.md) 및 [QA](docs/development/QA.md)에 후속 기록한다. 공개 배포·main 병합·실제 사용자 설치본 교체는 아직 수행하지 않았다.
+- 원래 main의 미커밋 문서, 기존 사용자 DB/세션, 별도 열린 기능 PR은 보존했다. 검수 산출물은 별도 worktree `.local/` 및 `release/`에 둔다.
+
+---
+
 ## 2026-10-26 — 미니 터미널 별도 창, 고정 카드는 보통 창, 채팅창 이미지 첨부
 
 - [PR #275](https://github.com/kys42/agent-office/pull/275): 미니 터미널을 채팅 서랍 대신 연 창 옆의 별도 터미널 창으로 바꿨어요.

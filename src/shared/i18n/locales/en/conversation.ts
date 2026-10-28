@@ -1,5 +1,8 @@
 export const conversation = {
   pending: 'Sent · awaiting the transcript',
+  sentUnrecorded: 'Sent · this tool does not record image-only requests',
+  restoredSend:
+    'Request sent. Its text is kept in the original conversation; this is a delivery receipt.',
   /** Images that went with a sent message still waiting for the transcript. */
   pendingImages: (n: number) => (n === 1 ? 'With 1 image' : `With ${n} images`),
   hideSent: 'Hide temporary sent message',

@@ -66,7 +66,7 @@ if (mode !== 'app') {
   console.log('Developer ID and Apple notarization access verified.');
 }
 if (mode !== 'preflight') {
-  const args =
-    mode === 'resume' ? ['scripts/dmg.mjs'] : ['run', mode === 'app' ? 'package' : 'package:dmg'];
-  execFileSync(mode === 'resume' ? process.execPath : 'npm', args, { env, stdio: 'inherit' });
+  if (mode !== 'resume') execFileSync('npm', ['run', 'package'], { env, stdio: 'inherit' });
+  if (mode !== 'app')
+    execFileSync(process.execPath, ['scripts/dmg.mjs'], { env, stdio: 'inherit' });
 }

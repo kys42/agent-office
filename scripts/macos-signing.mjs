@@ -6,7 +6,11 @@ import path from 'node:path';
 export const bundleId = 'dev.kys.agentoffice';
 
 export function signingConfig(env = process.env) {
-  const mode = env.AGENT_OFFICE_SIGNING ?? 'ad-hoc';
+  const mode = env.AGENT_OFFICE_SIGNING;
+  if (!mode)
+    throw new Error(
+      'Choose a release: npm run release:mac -- dmg, or npm run package:preview for an explicitly temporary build.',
+    );
   if (!['ad-hoc', 'developer-id'].includes(mode)) throw new Error('Invalid AGENT_OFFICE_SIGNING.');
   if (mode === 'ad-hoc') return { mode, identity: '-' };
   const identity = env.AGENT_OFFICE_SIGN_IDENTITY;

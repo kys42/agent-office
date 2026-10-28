@@ -268,7 +268,7 @@ test('A thumbnail fetched again shows up even when the list changes while it is 
   await expect(thumbs(page).first()).toHaveAttribute('alt', 'first.png');
 });
 
-test('The sent receipt counts its images, and none waits for a record that will not show it', async ({
+test('The sent receipt counts images and explains image-only delivery without waiting for a transcript', async ({
   page,
 }) => {
   await desktop(page);
@@ -278,11 +278,23 @@ test('The sent receipt counts its images, and none waits for a record that will 
   await expect(thumbs(page)).toHaveCount(1);
   await page.locator('.terminal-send-chat button[type=submit]').click();
   await expect(thumbs(page)).toHaveCount(0);
-  await expect(pending).toHaveCount(0);
+  await expect(pending).toHaveCount(1);
+  await expect(pending).toContainText('이미지 단독 요청을 기록하지 않아요');
   await paste(page, 'with-text.png');
   await field(page).fill('이 화면 봐줘');
   await field(page).press('Enter');
-  await expect(pending).toHaveCount(1);
-  await expect(pending).toContainText('이 화면 봐줘');
-  await expect(pending).toContainText('이미지 1장 첨부');
+  await expect(pending).toHaveCount(2);
+  await expect(pending.last()).toContainText('이 화면 봐줘');
+  await expect(pending.last()).toContainText('이미지 1장 첨부');
+  await page.reload();
+  await expect(pending).toHaveCount(2);
+  await expect(pending.last()).toContainText('본문은 원래 대화에서 확인해 주세요');
+  await expect(pending.last()).not.toContainText('이 화면 봐줘');
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('office:sent:v1:'))
+        .some((k) => localStorage.getItem(k)?.includes('이 화면 봐줘')),
+    ),
+  ).toBe(false);
 });

@@ -2,6 +2,9 @@ import type { Messages } from '../en';
 
 export const conversation: Messages['conversation'] = {
   pending: '보냄 · 대화 기록 확인 중',
+  sentUnrecorded: '보냄 · 이 도구는 이미지 단독 요청을 기록하지 않아요',
+  restoredSend:
+    '요청을 보냈어요. 본문은 원래 대화에서 확인해 주세요. 이곳에는 전송 확인만 보관해요.',
   pendingImages: (n) => `이미지 ${n}장 첨부`,
   hideSent: '보낸 메시지 임시 표시 숨기기',
   hideSentHint: '이 임시 표시만 숨겨요. 터미널이나 대기열에 보낸 메시지는 취소되지 않아요.',
