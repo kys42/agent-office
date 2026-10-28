@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { releaseArchitecture, releaseStem, sha256 } from './release-utils.mjs';
+import { verifyDeveloperId } from './macos-signing.mjs';
 
 const arch = releaseArchitecture(process.env.AGENT_OFFICE_ARCH ?? process.arch);
 const packaged = path.resolve(`release/Agent Office-darwin-${arch}/Agent Office.app`);
@@ -42,6 +43,13 @@ try {
     'Installed bundle contains the approved application icon',
   );
   execFileSync('codesign', ['--verify', '--deep', '--strict', installed], { stdio: 'inherit' });
+  if (actual.signing === 'developer-id') {
+    assert.equal(manifest.notarized, true, 'Signed distribution must be notarized');
+    verifyDeveloperId(installed, actual.teamId);
+    for (const artifact of [installed, dmg])
+      execFileSync('xcrun', ['stapler', 'validate', artifact], { stdio: 'inherit' });
+    execFileSync('spctl', ['--assess', '--type', 'execute', installed], { stdio: 'inherit' });
+  }
   for (const smoke of ['scripts/desktop-smoke.mjs', 'scripts/card-windows-smoke.mjs'])
     execFileSync(process.execPath, [smoke], {
       stdio: 'inherit',
@@ -58,7 +66,7 @@ try {
       sourceCommit: actual.sourceCommit,
       arch,
       signing: actual.signing,
-      notarized: actual.notarized,
+      notarized: manifest.notarized,
     }),
   );
 } finally {
