@@ -102,3 +102,27 @@ test('A send with images settles against the record each agent writes around its
   assert.ok(!settles(`${a} ${b} 봐줘`, '봐줘', 1));
   assert.ok(!settles(`${a}\n${b}`, '', 1));
 });
+
+test('A paste recorded inside the terminal paste markers still settles its send', () => {
+  const body =
+    '1. OCR 구성: KHC 자체 개발인지, 외부 업체나 클라우드 API인지.\n2. AI 범주: 영수증 판독 외에 문서 종류 식별';
+  const sent = `${body} @teammate 이렇게 쓸라고`;
+  const recorded = `<pasted_content id="ae82">\n${body}\n</pasted_content> @teammate 이렇게 쓸라고`;
+  const list = settleSends(
+    [send('a', sent, 1000)],
+    's1',
+    [user('u1', recorded, 2000)],
+    new Set(),
+    3000,
+  );
+  assert.deepEqual(list, []);
+  // Short sends still match whole: the markers do not loosen the comparison.
+  const short = settleSends(
+    [send('b', 'ok', 1000)],
+    's1',
+    [user('u2', '<pasted_content id="x1">ok then run tests</pasted_content>', 2000)],
+    new Set(),
+    3000,
+  );
+  assert.equal(short.length, 1);
+});

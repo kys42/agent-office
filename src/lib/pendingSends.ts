@@ -45,8 +45,11 @@ export function dismissSend(id: string) {
   publish(pending.filter((p) => p.id !== id));
 }
 
+// A terminal may record a long paste inside its own paste markers; the words are still the send's.
+const PASTE_MARKER = /<\/?pasted_content(?:\s+id="[^"]*")?\s*>/g;
 const plain = (text: string) =>
   text
+    .replace(PASTE_MARKER, ' ')
     .normalize('NFC')
     .replace(/[\u200b\u2060\ufeff]/g, '')
     .replace(/\s+/g, ' ')
