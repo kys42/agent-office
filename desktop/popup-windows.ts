@@ -10,7 +10,9 @@ import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
 import { clampInto, type Rect } from '../src/shared/dock-geometry.js';
 import {
+  floatLayer,
   popupOpenPlan,
+  popupReopenFloats,
   popupWindowBounds,
   readWindowSize,
   type WindowSize,
@@ -50,7 +52,10 @@ interface Entry<Target> {
   /** One window per key (a folder's shell, a bookmark). */
   key: string;
   target: Target;
-  /** Floats like the window it was opened from (cards, the desk dock), or is an ordinary window. */
+  /**
+   * Stays on top: at first like the window it was opened from (cards, the desk dock), then as
+   * the person sets it with the window's own toggle (`setOnTop`).
+   */
   float: boolean;
   placed: WindowSize;
   /** Take the person's focus once loaded (opened by a click, not in a quiet run). */
@@ -64,7 +69,8 @@ interface Entry<Target> {
  * (`popupWindowBounds`, stepped aside from the same kind's windows). A window opened again by
  * its key comes forward where the person left it. The person's last size is remembered per
  * kind. Quiet runs only show them inactive. Each kind's IPC trusts only its own windows
- * (`owns`), and a window asks for what it shows (`target`) once loaded.
+ * (`owns`), and a window asks for what it shows (`target`) once loaded. Each window's header
+ * toggles whether it stays on top (`setOnTop`, `onTop`).
  */
 export class PopupWindows<Target> {
   private entries = new Set<Entry<Target>>();
@@ -142,12 +148,17 @@ export class PopupWindows<Target> {
     e.steal = false;
   }
   private setFloat(e: Entry<Target>, float: boolean) {
+    const changed = e.float !== float;
     e.float = float;
-    // A quiet run's window stays behind the person's work.
-    if (quiet || e.window.isDestroyed()) return;
-    e.window.setAlwaysOnTop(float, 'pop-up-menu');
-    e.window.setVisibleOnAllWorkspaces(float, {
-      visibleOnFullScreen: float,
+    if (e.window.isDestroyed()) return;
+    // The window's own on-top toggle hears every change (a floating opener floats it again too).
+    if (changed) e.window.webContents.send('office:popup-on-top', float);
+    // Layered for real, quiet runs too: there the window is invisible and click-through
+    // (desktop/quiet.ts), so floating it gets in nobody's way.
+    const layer = floatLayer(float);
+    e.window.setAlwaysOnTop(layer.alwaysOnTop, layer.level);
+    e.window.setVisibleOnAllWorkspaces(layer.allSpaces, {
+      visibleOnFullScreen: layer.allSpaces,
       skipTransformProcessType: true,
     });
   }
@@ -160,7 +171,7 @@ export class PopupWindows<Target> {
     const plan = popupOpenPlan(this.live(), key, this.kind.max);
     if ('focus' in plan) {
       const open = plan.focus;
-      if (float && !open.float) this.setFloat(open, true);
+      this.setFloat(open, popupReopenFloats(open.float, float));
       open.steal = true;
       if (open.ready) this.present(open);
       return;
@@ -244,6 +255,20 @@ export class PopupWindows<Target> {
       e.steal = true;
       this.present(e);
     }
+  }
+  /**
+   * That window's own on-top toggle (its header): `on` keeps it above other windows like a
+   * preview card, off makes it an ordinary window. Only a window of this kind sets its own; it
+   * never takes the focus. Returns what it is now.
+   */
+  setOnTop(sender: WebContents, on: boolean) {
+    const e = this.require(sender);
+    this.setFloat(e, on);
+    return e.float;
+  }
+  /** Whether that window (of this kind only) stays on top now. */
+  onTop(sender: WebContents) {
+    return this.require(sender).float;
   }
   /** Closes every window of this kind. */
   closeAll() {

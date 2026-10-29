@@ -141,20 +141,14 @@ try {
   await a.locator('.inspector-card').waitFor();
   assert.deepEqual(await bounds(a), remembered, 'another anchor does not move a remembered popup');
   await a.locator('.card-composer textarea').fill('A의 미전송 글');
-  await a.getByRole('button', { name: '이 카드 고정', exact: true }).click();
-  await expect(a.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await a.locator('.card-head .card-pin').click();
+  await expect(a.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'true');
   // Pinned means kept open, not kept on top: other windows may cover it.
   assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'a pinned card is ordinary');
   const titleA = await a.locator('.card-head h2').textContent();
   const b = await newCard('claude:claude-test');
-  await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();
-  await expect(b.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await b.locator('.card-head .card-pin').click();
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'true');
   await b.locator('.card-composer textarea').fill('B의 미전송 글');
   assert.deepEqual(await bounds(a), remembered, 'pinning never repositions an existing card');
   assert.notDeepEqual(await bounds(b), remembered, 'new popup leaves the pinned header reachable');
@@ -231,15 +225,31 @@ try {
   assert.equal(await visible(a), true);
   assert.equal(await visible(b), true, 'blur closes only the ordinary preview');
   await assert.rejects(() => main.evaluate(() => window.office.card('pin-on')));
+  await assert.rejects(() => main.evaluate(() => window.office.card('pin-top')));
   await b.bringToFront();
-  await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();
-  await expect(b.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
+  const bw = await app.browserWindow(b);
+  // The pin's next state: pinned on top. Still kept open, now above other windows.
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'pinned');
+  await b.locator('.card-head .card-pin').click();
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'top');
+  await expect(b.locator('.card-head .card-pin')).toHaveAccessibleName(
+    '이 카드 고정: 맨 위 고정 → 고정 안 함',
   );
+  assert.equal(await bw.evaluate((w) => w.isAlwaysOnTop()), true, 'pinned on top floats');
+  assert.equal(await visible(c), false, 'pinning on top leaves the hidden preview alone');
+  await aw.evaluate((w) => w.focus());
+  await b.waitForTimeout(700);
+  assert.equal(await visible(b), true, 'a card pinned on top stays when focus leaves');
+  assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'other pins stay ordinary');
+  await b.bringToFront();
+  // …and the cycle's last step returns it to the preview.
+  await b.locator('.card-head .card-pin').click();
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'false');
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'off');
+  assert.equal(await bw.evaluate((w) => w.isAlwaysOnTop()), true, 'the preview floats again');
   await expect.poll(() => c.isClosed()).toBe(true);
   await expect(b.locator('.card-composer textarea')).toHaveValue('B의 미전송 글');
-  await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();
+  await b.locator('.card-head .card-pin').click();
   await a.bringToFront();
   await a.getByRole('button', { name: '업무 카드 닫기', exact: true }).click();
   await expect.poll(() => a.isClosed()).toBe(true);
@@ -287,10 +297,7 @@ try {
     'aria-pressed',
     'true',
   );
-  await expect(restored.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
+  await expect(restored.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'false');
   await restored.getByRole('button', { name: '위치 기억', exact: true }).click();
   await restored.evaluate(() => window.office.card('close'));
   await dock2.evaluate(() =>

@@ -1462,6 +1462,27 @@ body.card-mode:not(.is-mac) .dock-card {
 .inspector-card .card-head .icon-btn.is-on {
   color: var(--accent);
 }
+/* Pinned on top: the filled pin in an accent ring, with a small up arrow. */
+.inspector-card .card-head .icon-btn.card-pin.is-top {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.pin-top-icon {
+  position: relative;
+  display: inline-flex;
+}
+.pin-top-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  padding: 0.5px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+}
+.mini-shell-btn.on-top-toggle.is-on {
+  color: var(--accent);
+}
 
 .project-summon-button {
   display: inline-flex;

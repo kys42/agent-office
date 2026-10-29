@@ -715,6 +715,10 @@ function setupMiniShell() {
     trustedShell(e);
     if (what === 'target') return shellWindows.target(e.sender);
     if (what === 'close' || what === 'focus') return shellWindows.action(e.sender, what);
+    // Its own on-top toggle: only a terminal window reads or sets its own.
+    if (what === 'top') return shellWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return shellWindows.setOnTop(e.sender, what === 'top-on');
     if (what === 'close-all') {
       // The big office turning into the sample office lets go of every real shell.
       if (e.sender !== main?.webContents) throw new Error(m().desktop.untrustedWindow);
@@ -745,8 +749,9 @@ function setupMiniShell() {
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
     shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
-      // Only beside a window that floats (a preview card, the desk dock) does it float too: a
-      // pinned card, the big office or an ordinary terminal window give an ordinary window.
+      // Only beside a window that floats (a preview card, a card pinned on top, the desk dock, a
+      // popup set on top) does it float too: a plain pinned card, the big office or an ordinary
+      // terminal window give an ordinary window. Its own header toggle changes it later.
       float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
     });
   });
@@ -837,6 +842,10 @@ function setupReader() {
     const reader = readerWindows.owns(e.sender);
     if (what === 'target') return readerWindows.target(e.sender);
     if (what === 'close' || what === 'focus') return readerWindows.action(e.sender, what);
+    // Its own on-top toggle: only a reader window reads or sets its own.
+    if (what === 'top') return readerWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return readerWindows.setOnTop(e.sender, what === 'top-on');
     if (what === 'go') {
       if (!reader) throw new Error(m().desktop.untrustedWindow);
       const { id } = readerWindows.target(e.sender);

@@ -11,7 +11,13 @@ import {
   type Point,
   type Rect,
 } from '../src/shared/dock-geometry.js';
-import { popupBounds, readCardPosition } from '../src/shared/card-windows.js';
+import {
+  cardFloats,
+  popupBounds,
+  readCardPosition,
+  type CardPin,
+} from '../src/shared/card-windows.js';
+import { floatLayer } from '../src/shared/popup-window.js';
 import { m } from '../src/shared/i18n/index.js';
 import { quiet } from './quiet.js';
 import { dropAppMenu } from './window-style.js';
@@ -19,7 +25,10 @@ import { dropAppMenu } from './window-style.js';
 interface Entry {
   window: BrowserWindow;
   target: CardTarget | null;
+  /** Kept open: not the replaceable preview. */
   pinned: boolean;
+  /** A pinned card that also stays on top (`CardPin` `top`). */
+  onTop: boolean;
   shownAt: number;
   askedAt: number;
   dialogs: number;
@@ -29,7 +38,12 @@ interface Entry {
   drag?: ReturnType<typeof setInterval>;
 }
 
-/** One replaceable preview, plus independent, explicitly pinned colleague windows. */
+const pinOf = (e: Entry): CardPin => (!e.pinned ? 'off' : e.onTop ? 'top' : 'pinned');
+
+/**
+ * One replaceable preview, plus independent, explicitly pinned colleague windows (each pinned as
+ * an ordinary window or on top, for that window's lifetime: pinned cards are not reopened).
+ */
 export class CardWindows {
   private entries = new Set<Entry>();
   private preview: Entry | null = null;
@@ -97,6 +111,7 @@ export class CardWindows {
     const at = e.window.getBounds();
     return {
       pinned: e.pinned,
+      pin: pinOf(e),
       target: e.target,
       positionRemembered:
         !!this.position && (!e.pinned || (at.x === this.position.x && at.y === this.position.y)),
@@ -108,14 +123,16 @@ export class CardWindows {
         e.window.webContents.send('office:card-state', this.state(e.window.webContents));
   }
   /**
-   * The preview floats over other apps (it closes as soon as they take focus); a pinned card is
-   * an ordinary window. A quiet run's card always stays behind the person's work.
+   * The preview floats over other apps (it closes as soon as they take focus), and so does a card
+   * pinned on top; a plain pinned card is an ordinary window (`cardFloats`). A quiet run layers
+   * for real: its windows are invisible and click-through (desktop/quiet.ts).
    */
-  private layer(window: BrowserWindow, float: boolean) {
-    if (quiet || window.isDestroyed()) return;
-    window.setAlwaysOnTop(float, 'pop-up-menu');
-    window.setVisibleOnAllWorkspaces(float, {
-      visibleOnFullScreen: float,
+  private layer(window: BrowserWindow, pin: CardPin) {
+    if (window.isDestroyed()) return;
+    const layer = floatLayer(cardFloats(pin));
+    window.setAlwaysOnTop(layer.alwaysOnTop, layer.level);
+    window.setVisibleOnAllWorkspaces(layer.allSpaces, {
+      visibleOnFullScreen: layer.allSpaces,
       skipTransformProcessType: true,
     });
   }
@@ -253,6 +270,7 @@ export class CardWindows {
       window,
       target: null,
       pinned: false,
+      onTop: false,
       shownAt: 0,
       askedAt: Date.now(),
       dialogs: 0,
@@ -262,8 +280,8 @@ export class CardWindows {
     this.preview = e;
     this.options.secure(window);
     this.options.watch(window);
-    // A quiet run's card stays behind the person's work, on its own Space.
-    this.layer(window, true);
+    // The preview floats (in a quiet run too, where every window is invisible and click-through).
+    this.layer(window, 'off');
     window.on('blur', () => this.blurred(e));
     window.on('closed', () => {
       this.cancelHide(e);
@@ -364,7 +382,7 @@ export class CardWindows {
     }
     if (action === 'position-on' || action === 'position-off')
       return this.remember(e, action === 'position-on');
-    if (action === 'pin-on') {
+    if (action === 'pin-on' || action === 'pin-top') {
       if (!e.target) throw new Error(m().desktop.badRequest);
       const other = [...this.entries].find(
         (w) => w !== e && w.pinned && w.target?.id === e.target!.id,
@@ -375,8 +393,10 @@ export class CardWindows {
         return;
       }
       e.pinned = true;
-      // Kept open is all a pin means: an ordinary window that other apps may cover.
-      this.layer(e.window, false);
+      e.onTop = action === 'pin-top';
+      // A pin keeps the card open: an ordinary window other apps may cover, or one that stays on
+      // top when the person chose that. Neither moves the focus.
+      this.layer(e.window, pinOf(e));
       this.cancelHide(e);
       if (this.preview === e) this.preview = null;
       this.states();
@@ -391,7 +411,8 @@ export class CardWindows {
         old.window.destroy();
       }
       e.pinned = false;
-      this.layer(e.window, true);
+      e.onTop = false;
+      this.layer(e.window, 'off');
       this.preview = e;
       this.states();
       return;

@@ -160,6 +160,24 @@ try {
   assert.equal((await windows(app)).filter((w) => w.url.endsWith('#shell')).length, 1);
   // Other windows (the big office) cannot drive the shell's window or forge its keys.
   await assert.rejects(page.evaluate(() => window.office.shell.window('target')));
+  await assert.rejects(page.evaluate(() => window.office.shell.window('top-on')));
+  // Its own on-top toggle (opened beside the big office: an ordinary window).
+  const shellWindow = await app.browserWindow(shell);
+  const pressed = (v) =>
+    shell.waitForFunction(
+      (v) =>
+        document.querySelector('.mini-shell-bar .on-top-toggle')?.getAttribute('aria-pressed') ===
+        v,
+      v,
+    );
+  await pressed('false');
+  await shell.locator('.mini-shell-bar .on-top-toggle').click();
+  await pressed('true');
+  assert.equal(await shell.evaluate(() => window.office.shell.window('top')), true);
+  assert.equal(await shellWindow.evaluate((w) => w.isAlwaysOnTop()), true);
+  await shell.locator('.mini-shell-bar .on-top-toggle').click();
+  await pressed('false');
+  assert.equal(await shellWindow.evaluate((w) => w.isAlwaysOnTop()), false);
   // Closing the window only detaches.
   const closed = shell.waitForEvent('close');
   await shell.getByRole('button', { name: close }).click();

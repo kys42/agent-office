@@ -37,3 +37,34 @@ export function popupBounds(
   }
   return base;
 }
+
+/**
+ * A card window's pin, cycled by its one pin button: `off` is the replaceable preview (it closes
+ * once focus leaves), `pinned` keeps it open as an ordinary window other windows may cover, and
+ * `top` keeps it open and always on top.
+ */
+export type CardPin = 'off' | 'pinned' | 'top';
+
+/** The pin button's fixed cycle: off → pinned → on top → off. */
+export function nextCardPin(pin: CardPin): CardPin {
+  return pin === 'off' ? 'pinned' : pin === 'pinned' ? 'top' : 'off';
+}
+
+/** The card IPC action that puts a card window in `pin`. */
+export function cardPinAction(pin: CardPin): 'pin-off' | 'pin-on' | 'pin-top' {
+  return pin === 'off' ? 'pin-off' : pin === 'pinned' ? 'pin-on' : 'pin-top';
+}
+
+/**
+ * Whether a card window floats over other apps: the preview does (it goes away as soon as they
+ * take focus) and so does a card pinned on top. A plain pinned card is an ordinary window.
+ */
+export function cardFloats(pin: CardPin) {
+  return pin !== 'pinned';
+}
+
+/** A card's pin from its window state; a state without one is read from `pinned`. */
+export function readCardPin(state: { pin?: unknown; pinned?: unknown }): CardPin {
+  if (state.pin === 'off' || state.pin === 'pinned' || state.pin === 'top') return state.pin;
+  return state.pinned === true ? 'pinned' : 'off';
+}
