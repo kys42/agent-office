@@ -638,8 +638,9 @@ try {
   assert.ok(native.some((w) => w.alwaysOnTop && !w.visible));
   if (!focusTests) {
     // Quiet runs: every window is invisible to the person (desktop/quiet.ts), yet still renders.
+    // Linux has no window opacity; there quiet windows only never float (their layer is recorded).
     assert.ok(
-      native.every((w) => w.opacity === 0),
+      process.platform === 'linux' || native.every((w) => w.opacity === 0),
       'quiet windows are fully transparent',
     );
     const captured = await app.evaluate(async ({ BrowserWindow }) => {

@@ -23,8 +23,19 @@ import { app, type BrowserWindow } from 'electron';
  */
 export const quiet = process.env.AGENT_OFFICE_QUIET === '1';
 
+/** Linux has no window opacity: there a quiet window must never float over the person's work. */
+const opacityWorks = process.platform !== 'linux';
+
 /** Makes a window invisible and untouchable for the person while it keeps working. */
 export function hideFromPerson(window: BrowserWindow) {
+  if (!opacityWorks) {
+    // The layer the app chose is only recorded (still read by `isAlwaysOnTop()`), never applied.
+    let top = false;
+    window.setAlwaysOnTop = (flag: boolean) => {
+      top = flag;
+    };
+    window.isAlwaysOnTop = () => top;
+  }
   window.setOpacity(0);
   window.setIgnoreMouseEvents(true);
   // The app's own later changes never bring it back into view or under the pointer.
