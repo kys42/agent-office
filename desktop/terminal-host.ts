@@ -179,6 +179,37 @@ export async function findHost(
 }
 
 /**
+ * The title the terminal shows right now (tmux `pane_title`, Orca's tab title), read afresh.
+ * Null for an Orca terminal no longer connected and writable; a failed read throws.
+ */
+export async function screenTitle(
+  host: TerminalHost,
+  deps: TerminalHostDeps,
+): Promise<string | null> {
+  if (host.kind === 'tmux')
+    return (
+      await deps.run(deps.bin('tmux'), [
+        '-S',
+        host.socket,
+        'display-message',
+        '-p',
+        '-t',
+        host.pane,
+        '#{pane_title}',
+      ])
+    ).trim();
+  const result = JSON.parse(
+    await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json'], {
+      env: localOrcaEnv(),
+    }),
+  );
+  const t = result?.result?.terminal;
+  if (result.ok !== true || t?.handle !== host.handle || typeof t.title !== 'string')
+    throw new Error('Cannot verify current terminal title');
+  return t.connected === true && t.writable !== false && t.orphaned !== true ? t.title : null;
+}
+
+/**
  * A terminal lookup that tells "nothing there" from "could not tell": only `none` lets a weaker
  * fallback (the Orca tab by title, desktop/orca-tabs.ts) stand in.
  */

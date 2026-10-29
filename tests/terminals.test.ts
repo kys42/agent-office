@@ -7,6 +7,9 @@ import path from 'node:path';
 import {
   cleanInput,
   claudeAbsent,
+  claudeAttachCommand,
+  claudeNoTerminalReason,
+  titleNames,
   findClaudeProcess,
   findHost,
   focusTerminal,
@@ -26,6 +29,7 @@ import {
   type TerminalDeps,
 } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
+import { liveClaudeProcesses } from '../server/adapters/claude-live.js';
 import type { SendResult } from '../src/shared/types.js';
 import { claudeCodeComposer, codexQueueComposer, composerFor } from '../desktop/composer/index.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -149,6 +153,8 @@ function fakeDeps(
     /** With `orcaDraft`: the rendered prompt line (measured: the suggestion is drawn there). */
     orcaTail?: (typed: string) => string;
     fail?: (file: string, args: string[]) => Error | undefined;
+    /** The title `orca terminal show` reports now (default: `orcaShow`'s). */
+    showTitle?: () => string;
   } = {},
 ) {
   const calls: { file: string; args: string[]; options?: RunOptions }[] = [];
@@ -201,6 +207,15 @@ function fakeDeps(
             },
           },
         });
+      }
+      if (file === '/bin/orca' && args[1] === 'show') {
+        const shown = options.orcaShow as { result?: { terminal?: Record<string, unknown> } };
+        const title = options.showTitle?.();
+        return JSON.stringify(
+          title === undefined
+            ? (shown ?? {})
+            : { ...shown, result: { terminal: { ...shown?.result?.terminal, title } } },
+        );
       }
       if (file === '/bin/orca' && args[1] === 'list') {
         const t = (options.orcaShow as { result?: { terminal?: unknown } })?.result?.terminal;
@@ -2124,4 +2139,214 @@ test("Claude Code's default renderer never scrolls its box: a tall box on the ma
     assert.equal(asked.status === 'needs-confirm' && !!asked.partial, partial, alternate);
   }
   draft = '';
+});
+
+// Claude Code 2.1.312, measured: a window that moved its conversation to the background (← for
+// agents) records the job as `parkedJobId` and shows that job; the job is its own `bg` record,
+// run by Claude's daemon in a pty no terminal app owns. The window's own record is left stale.
+const WINDOW_SESSION = '9390c38e-a4eb-4202-a55a-46ecc4029fa8';
+const JOB = '89fe72dc';
+const JOB_SESSION = '89fe72dc-5783-416d-b904-7b00fcb87571';
+const JOB_NAME = 'PSP-POC OCR 위변조 탐지';
+const parkedWindow = (over: Record<string, unknown> = {}) =>
+  record(4242, {
+    sessionId: WINDOW_SESSION,
+    name: 'ocr-ef',
+    nameSource: 'derived',
+    status: 'busy',
+    parkedJobId: JOB,
+    ...over,
+  });
+const bgJob = (pid = 7777, over: Record<string, unknown> = {}) =>
+  record(pid, {
+    sessionId: JOB_SESSION,
+    kind: 'bg',
+    jobId: JOB,
+    name: JOB_NAME,
+    status: 'idle',
+    updatedAt: 2000,
+    ...over,
+  });
+const PARKED = { '4242.json': parkedWindow(), '7777.json': bgJob() };
+const jobShown = (title = `✳ ${JOB_NAME}`) => ({
+  env: ORCA_ENV,
+  orcaShow: orcaShow({ title }),
+  alive: [4242, 7777],
+});
+
+test('Background and parked records are read with their job, name and park', () => {
+  const job = parseClaudeProcess('7777.json', bgJob());
+  assert.equal(job?.kind, 'bg');
+  assert.equal(job?.jobId, JOB);
+  assert.equal(job?.name, JOB_NAME);
+  assert.equal(parseClaudeProcess('4242.json', parkedWindow())?.parkedJobId, JOB);
+  assert.equal(parseClaudeProcess('4242.json', record(4242))?.parkedJobId, undefined);
+  // A background record must name its job, and the job is its session id's prefix.
+  assert.equal(parseClaudeProcess('7777.json', bgJob(7777, { jobId: undefined })), null);
+  assert.equal(parseClaudeProcess('7777.json', bgJob(7777, { jobId: 'deadbeef' })), null);
+  assert.equal(parseClaudeProcess('7777.json', bgJob(7777, { jobId: '../x' })), null);
+});
+
+test('A background session shown by the window that parked it is located at that window', async () => {
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    assert.equal(live.process.pid, 7777);
+    assert.equal(live.window?.pid, 4242);
+    assert.deepEqual(live.host, { kind: 'orca', handle: HANDLE, title: `✳ ${JOB_NAME}` });
+    // The job's own state, not the window's stale `busy`.
+    const view = terminalTarget(live);
+    assert.equal(view.status, 'idle');
+    assert.equal(view.canSend, true);
+    assert.equal((await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind, 'found');
+    assert.equal(await claudeAttachCommand(JOB_SESSION, deps), 'claude attach 89fe72dc');
+  });
+});
+
+test("The parked window's own session is never a target: typing there reaches the job", async () => {
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    assert.equal(await locateTerminal(WINDOW_SESSION, { fresh: true, deps }), null);
+    // Its process is alive: unknown, so no Orca tab by title stands in either.
+    assert.equal((await lookupTerminal(WINDOW_SESSION, { fresh: true, deps })).kind, 'unknown');
+    assert.equal(await findClaudeProcess(WINDOW_SESSION, deps, true), null);
+    assert.equal(
+      (await findClaudeProcess(WINDOW_SESSION, deps, true, { parked: true }))?.pid,
+      4242,
+    );
+    assert.match((await claudeNoTerminalReason(WINDOW_SESSION, deps))!, /백그라운드 세션 ‘PSP-POC/);
+    assert.equal(await claudeAttachCommand(WINDOW_SESSION, deps), null);
+    // Still running for the duplicate-launch check: the window may return to it.
+    assert.deepEqual(await claudeLiveness.lookup(WINDOW_SESSION, true, deps), {
+      kind: 'found',
+      terminal: { where: 'other' },
+    });
+  });
+});
+
+test('A background session no window provably shows is unknown, with its attach command', async () => {
+  const cases: [string, Record<string, string>, Parameters<typeof fakeDeps>[1]][] = [
+    ['no window parked it', { '7777.json': bgJob() }, jobShown()],
+    ['the window shows another title', PARKED, jobShown('✳ ocr-ef')],
+    ['a longer name only starts the same', PARKED, jobShown(`✳ ${JOB_NAME} 2`)],
+    [
+      'two windows parked it',
+      { ...PARKED, '4343.json': parkedWindow({ pid: 4343, sessionId: 'aaaaaaaa-other' }) },
+      { ...jobShown(), alive: [4242, 4343, 7777] },
+    ],
+    [
+      'another live job has the same name',
+      {
+        ...PARKED,
+        '8888.json': bgJob(8888, {
+          sessionId: 'abcdef12-0000-4000-8000-000000000000',
+          jobId: 'abcdef12',
+        }),
+      },
+      { ...jobShown(), alive: [4242, 7777, 8888] },
+    ],
+    [
+      'the job has no name',
+      { ...PARKED, '7777.json': bgJob(7777, { name: undefined }) },
+      jobShown(),
+    ],
+    ['the parking window ended', PARKED, { ...jobShown(), alive: [7777] }],
+    [
+      'the parking window is a reused PID',
+      PARKED,
+      { ...jobShown(), lstart: { 4242: 'Wed Oct  7 09:00:00 2026' } },
+    ],
+  ];
+  for (const [name, files, options] of cases)
+    await withSessions(files, async (dir) => {
+      const { deps } = fakeDeps(dir, options);
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, name);
+      assert.equal(
+        (await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind,
+        'unknown',
+        name,
+      );
+      assert.equal(await claudeAttachCommand(JOB_SESSION, deps), 'claude attach 89fe72dc', name);
+      assert.match(
+        (await claudeNoTerminalReason(JOB_SESSION, deps))!,
+        /백그라운드.*claude attach 89fe72dc/,
+        name,
+      );
+      // It runs: a resume elsewhere would start a second copy.
+      assert.deepEqual(
+        await claudeLiveness.lookup(JOB_SESSION, true, deps),
+        { kind: 'found', terminal: { where: 'other' } },
+        name,
+      );
+    });
+});
+
+test("A send to a background session types into its window's terminal, checking the window", async () => {
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, jobShown());
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    assert.equal(await said(sendToTerminal(live, 'hello', deps)), 'Orca 터미널에 보냈어요');
+    // Ownership is the window's (the job's own pty has no terminal app); never the job's pid.
+    const owners = calls.filter((c) => c.args.includes('stat=,pgid=,tpgid='));
+    assert.ok(owners.length > 0);
+    assert.ok(owners.every((c) => c.args.at(-1) === '4242'));
+    // The title is read afresh before Enter.
+    assert.ok(calls.some((c) => c.file === '/bin/orca' && c.args[1] === 'show'));
+    assert.ok(calls.some((c) => c.args.includes('--enter')));
+  });
+});
+
+test('A background send stops when the window switched to another job before Enter', async () => {
+  await withSessions(PARKED, async (dir) => {
+    let shows = 0;
+    const { deps, calls } = fakeDeps(dir, {
+      ...jobShown(),
+      // In front while typing starts; another job by the time Enter would go.
+      showTitle: () => (shows++ < 2 ? `✳ ${JOB_NAME}` : '✳ other job'),
+    });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(calls.some((c) => c.args.some((arg) => arg.startsWith('--text='))));
+    assert.ok(!calls.some((c) => c.args.includes('--enter')));
+  });
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { ...jobShown(), showTitle: () => '✳ other job' });
+    // A fresh look reads the title itself; a polled one (Orca's list) still showed the job.
+    assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+    const live = await locateTerminal(JOB_SESSION, { deps: fakeDeps(dir, jobShown()).deps });
+    assert.ok(live);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(!calls.some((c) => c.args[1] === 'send'));
+  });
+});
+
+test("A parked window's stale status never makes its own session look busy or waiting", async () => {
+  await withSessions(
+    {
+      '4242.json': parkedWindow({ status: 'waiting' }),
+      '7777.json': bgJob(7777, { status: 'busy' }),
+    },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, jobShown());
+      const found = await liveClaudeProcesses(
+        deps,
+        new Set([WINDOW_SESSION, JOB_SESSION]),
+        new Set(['busy', 'waiting']),
+      );
+      assert.deepEqual([...found.keys()], [JOB_SESSION]);
+    },
+  );
+});
+
+test('A Claude title names a session only as a whole', () => {
+  assert.equal(titleNames(`✳ ${JOB_NAME}`, JOB_NAME), true);
+  assert.equal(titleNames(`⠂ ${JOB_NAME}`, JOB_NAME), true);
+  assert.equal(titleNames(JOB_NAME, JOB_NAME), true);
+  assert.equal(titleNames(`[ ! ] Action Required | ✳ ${JOB_NAME}`, JOB_NAME), true);
+  assert.equal(titleNames(`✳ ${JOB_NAME} 2`, JOB_NAME), false);
+  assert.equal(titleNames('✳ PSP-POC', JOB_NAME), false);
+  assert.equal(titleNames('', JOB_NAME), false);
 });
