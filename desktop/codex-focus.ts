@@ -3,7 +3,7 @@ import { defaultTerminalDeps, ownsTerminal } from './terminals.js';
 import {
   findHost,
   inspectProcess,
-  localOrcaEnv,
+  screenTitle,
   type TerminalHost,
   type TerminalLookup,
 } from './terminal-host.js';
@@ -63,30 +63,6 @@ export function codexScreens(table: string): { pids: number[]; oversized: boolea
   }
   // An unexpectedly large inventory is unknown, never silently pick the first few screens.
   return found.size <= 64 ? { pids: [...found], oversized: false } : { pids: [], oversized: true };
-}
-
-async function screenTitle(host: TerminalHost, deps: TerminalDeps): Promise<string | null> {
-  if (host.kind === 'tmux')
-    return (
-      await deps.run(deps.bin('tmux'), [
-        '-S',
-        host.socket,
-        'display-message',
-        '-p',
-        '-t',
-        host.pane,
-        '#{pane_title}',
-      ])
-    ).trim();
-  const result = JSON.parse(
-    await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json'], {
-      env: localOrcaEnv(),
-    }),
-  );
-  const t = result?.result?.terminal;
-  if (result.ok !== true || t?.handle !== host.handle || typeof t.title !== 'string')
-    throw new Error('Cannot verify current terminal title');
-  return t.connected === true && t.writable !== false && t.orphaned !== true ? t.title : null;
 }
 
 async function readScreen(

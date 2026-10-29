@@ -6,6 +6,7 @@ import {
   hostName,
   TerminalFocusError,
   localOrcaEnv,
+  screenTitle,
 } from './terminal-host.js';
 import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
@@ -36,8 +37,13 @@ import {
   type Screen,
 } from './composer/index.js';
 import {
+  findClaudeJob,
   findClaudeProcess,
   forget,
+  isParked,
+  namesakeJobs,
+  parkedWindows,
+  titleKey,
   parseClaudeProcess,
   processAlive,
   remember,
@@ -74,9 +80,19 @@ export interface TerminalDeps extends ClaudeLiveDeps {
 }
 
 export interface LiveTerminal {
+  /** The session's own process: an interactive window, or a background session. */
   process: ClaudeProcess;
   host: TerminalHost;
+  /**
+   * A background session only: the window that parked it and shows it now. Its terminal is the
+   * host, and it is the process that must own that terminal.
+   */
+  window?: ClaudeProcess;
 }
+
+/** The process in front of the terminal: the window showing a background session, or itself. */
+const screenPid = (live: Pick<LiveTerminal, 'process' | 'window'>) =>
+  (live.window ?? live.process).pid;
 
 const BINARIES = {
   orca: ['/usr/local/bin/orca', '/opt/homebrew/bin/orca'],
@@ -133,18 +149,106 @@ export function locateTerminal(
   return remember(deps, `locate:${sessionId}`, 1500, fresh, async () => {
     const proc = await findClaudeProcess(sessionId, deps, fresh);
     if (!proc) return null;
-    const key = `${proc.pid}:${proc.procStart}`;
+    // A background session has no terminal of its own: only a window that shows it has one.
+    const screen = proc.kind === 'bg' ? await jobWindow(proc, deps, fresh) : proc;
+    if (!screen) return null;
+    const key = `${screen.pid}:${screen.procStart}`;
     // Environment and pty owner are fixed for the process's life; a failed read is retried.
     const view = remember(deps, `view:${key}`, Infinity, false, () =>
-      inspectProcess(proc.pid, deps),
+      inspectProcess(screen.pid, deps),
     );
     if (!(await view).owner) forget(deps, `view:${key}`);
     // Host verification rarely changes; cheap polls reuse it, actions always re-check.
     const host = await remember(deps, `host:${key}`, 15_000, fresh, () =>
-      findHost(proc.pid, deps, view, fresh),
+      findHost(screen.pid, deps, view, fresh),
     );
-    return host ? { process: proc, host } : null;
+    if (!host) return null;
+    if (screen === proc) return { process: proc, host };
+    return (await showsJob(proc, host, deps, fresh))
+      ? { process: proc, host, window: screen }
+      : null;
   });
+}
+
+/**
+ * The one window that parked this background job (`parkedJobId`, see claude-live.ts). Claude
+ * routes a message for the window's session to that job the same way. Two windows, a job without
+ * a name, another live job of the same name, or any process record that could not be read or
+ * parsed (it may be either): no window can be proven to show it.
+ */
+async function jobWindow(
+  job: ClaudeProcess,
+  deps: TerminalDeps,
+  fresh: boolean,
+): Promise<ClaudeProcess | null> {
+  if (!job.name) return null;
+  // Every record must have been read and understood: one unreadable (permissions, I/O) or
+  // malformed (mid-write, a newer format) could be a competing window or job of the same name.
+  const inventory = await claudeRecordInventory(deps, fresh);
+  if (!inventory.complete || inventory.unparsed.length) return null;
+  // Fail closed: a window or namesake whose process cannot be verified may be the one in front.
+  const windows = await parkedWindows(job, deps, fresh);
+  if (windows?.length !== 1) return null;
+  const namesakes = await namesakeJobs(job, deps, fresh);
+  if (namesakes === null || namesakes.length) return null;
+  return windows[0];
+}
+
+/**
+ * The parked window's terminal shows the job now: its title is the job's name, as Claude draws
+ * it (`✳ name`, a spinner while working). The agents view can switch jobs, so the link alone
+ * does not prove which one is in front. `fresh` reads the title again, right before typing.
+ */
+async function showsJob(
+  job: ClaudeProcess,
+  host: TerminalHost,
+  deps: TerminalDeps,
+  fresh: boolean,
+): Promise<boolean> {
+  let title: string | null;
+  try {
+    // Orca's title came with the host check (as fresh as it); tmux's is read here.
+    // The whole title, never the one clipped for display.
+    title =
+      host.kind === 'orca' && !fresh
+        ? (host.fullTitle ?? host.title)
+        : await screenTitle(host, deps);
+  } catch {
+    return false;
+  }
+  return !!job.name && title !== null && titleNames(title, job.name);
+}
+
+/**
+ * Claude Code titles its terminal `<glyph> <name>` (✳ at rest, a spinner while working); Orca
+ * may put an attention marker in front. Both reduce alike (`titleKey`), the same reduction that
+ * tells namesake jobs apart, so a title can only ever match one job that passed that check.
+ */
+export function titleNames(title: string, name: string): boolean {
+  const key = titleKey(name);
+  return !!key && titleKey(title) === key;
+}
+
+/**
+ * The same session, process and screen as when it was located, its status accepted by `open`:
+ * the check before each key and before Enter. For a background session the window must still
+ * be the only one parking it, no other live job may share its name, and its terminal must still
+ * show it (title read afresh).
+ */
+export async function stillLive(
+  live: LiveTerminal,
+  deps: TerminalDeps,
+  open: (status: string) => boolean = acceptsInput,
+): Promise<ClaudeProcess | null> {
+  const now = await findClaudeProcess(live.process.sessionId, deps, true);
+  if (now?.pid !== live.process.pid || !open(now.status)) return null;
+  if (live.window) {
+    // Every rule of the lookup again, namesakes included: a job of the same name started since
+    // could be the one the agents view switched to, under the same title.
+    if ((await jobWindow(now, deps, true))?.pid !== live.window.pid) return null;
+    if (!(await showsJob(now, live.host, deps, true))) return null;
+  }
+  return (await ownsTerminal(screenPid(live), deps)) ? now : null;
 }
 
 /**
@@ -236,6 +340,36 @@ export async function claudeAbsent(
   return true;
 }
 
+/**
+ * Why a live Claude session has no terminal to type into, when its process records can say:
+ * a background session no window shows (or none provably), or a window that parked its own
+ * conversation in the background and now shows a job. Null otherwise.
+ */
+export async function claudeNoTerminalReason(
+  sessionId: string,
+  deps = defaultTerminalDeps(),
+): Promise<string | null> {
+  const t = m().desktop.terminal;
+  const proc = await findClaudeProcess(sessionId, deps, true, { parked: true });
+  if (!proc) return null;
+  if (proc.kind === 'bg' && proc.jobId) return t.background(attachCommand(proc.jobId));
+  if (!isParked(proc)) return null;
+  const job = proc.parkedJobId ? await findClaudeJob(proc.parkedJobId, deps, true) : null;
+  return t.parked(job?.name ?? proc.parkedJobId ?? '');
+}
+
+/** `claude attach <job>` for a live background session: what opens it in a terminal. */
+export async function claudeAttachCommand(
+  sessionId: string,
+  deps = defaultTerminalDeps(),
+): Promise<string | null> {
+  const proc = await findClaudeProcess(sessionId, deps, true);
+  return proc?.kind === 'bg' && proc.jobId ? attachCommand(proc.jobId) : null;
+}
+
+// Job ids are validated as 8 hex characters: nothing to quote.
+const attachCommand = (jobId: string) => `claude attach ${jobId}`;
+
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */
 export const forgetTerminal = (sessionId: string) =>
   forget(defaultTerminalDeps(), `locate:${sessionId}`);
@@ -298,8 +432,10 @@ export async function inspectTerminalDraft(
   composer: ComposerAdapter = claudeCodeComposer,
   deps = defaultTerminalDeps(),
 ): Promise<Extract<SendResult, { status: 'needs-confirm' }> | null> {
-  if (!acceptsInput(live.process.status) || !(await ownsTerminal(live.process.pid, deps)))
+  if (!acceptsInput(live.process.status) || !(await ownsTerminal(screenPid(live), deps)))
     return null;
+  // A background session's window may have switched to another job meanwhile.
+  if (live.window && !(await stillLive(live, deps))) return null;
   const io = composerHost(live.host, deps);
   const can = composer.capabilities(io);
   if (can.delivery !== 'terminal' || !can.canInspect) return null;
@@ -643,21 +779,16 @@ async function deliver(
   const text = cleanInput(input, { allowEmpty: images.length > 0 });
   const t = m().desktop.terminal;
   /** The same process, still on this session, open to input and in front of its terminal. */
-  const current = async () => {
-    const now = await findClaudeProcess(live.process.sessionId, deps, true);
-    return now?.pid === live.process.pid &&
-      acceptsInput(now.status) &&
-      (await ownsTerminal(now.pid, deps))
-      ? now
-      : null;
-  };
+  const current = () => stillLive(live, deps);
   // A leading `!` turns Claude's prompt into shell mode: the text would run as a command.
   if (text.startsWith('!')) throw new TerminalInputError(t.shellPrefix);
   // A send that waited its turn looks again: the one before may have ended or replaced the
   // session (`/clear`).
   if (waited && !(await current())) throw new TerminalInputError(t.stateChanged);
   if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
-  if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
+  if (!(await ownsTerminal(screenPid(live), deps))) throw new TerminalInputError(t.notOwner);
+  // A background session's window may have switched to another job meanwhile.
+  if (live.window && !(await current())) throw new TerminalInputError(t.stateChanged);
   const { host } = live;
   const key = live.process.sessionId;
   const memory = backupMemory(deps);

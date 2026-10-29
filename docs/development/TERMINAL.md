@@ -19,13 +19,30 @@
 
 정본 `desktop/terminals.ts`. 모든 단계는 검증에 실패하면 "터미널 없음"으로 끝나고 기존 동작(재개 명령 복사)을 쓴다.
 
-1. **세션 → 프로세스.** Claude Code가 쓰는 `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`에서 `sessionId`가 같은 기록을 찾는다. 문서화되지 않은 CLI 상태라 `pid`·파일명 일치, `sessionId` 형식, `procStart`/`status` 존재, `kind: interactive`를 모두 확인한다. 살아 있는 pid라도 `TZ=UTC LC_ALL=C ps -o lstart=`가 `procStart`와 다르면 재사용된 PID로 보고 버린다. 같은 세션 기록이 여럿이면 최근 `updatedAt`부터 본다. 이 읽기·검증은 `server/adapters/claude-live.ts`에 있고, 수집기도 같은 코드로 권한 확인 대기(`waiting`)를 호출로 보여 준다([세션 수집](SESSION-INGESTION.md#claude-실행-기록과-호출-office-v11)).
+1. **세션 → 프로세스.** Claude Code가 쓰는 `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json`에서 `sessionId`가 같은 기록을 찾는다. 문서화되지 않은 CLI 상태라 `pid`·파일명 일치, `sessionId` 형식, `procStart`/`status` 존재, `kind`(`interactive`, 또는 [백그라운드 `bg`](#claude-백그라운드-세션과-그-창-2026-10-29))를 모두 확인한다. `parkedJobId`가 있는 창 기록은 그 세션의 프로세스로 보지 않는다. 살아 있는 pid라도 `TZ=UTC LC_ALL=C ps -o lstart=`가 `procStart`와 다르면 재사용된 PID로 보고 버린다. 같은 세션 기록이 여럿이면 최근 `updatedAt`부터 본다. 이 읽기·검증은 `server/adapters/claude-live.ts`에 있고, 수집기도 같은 코드로 권한 확인 대기(`waiting`)를 호출로 보여 준다([세션 수집](SESSION-INGESTION.md#claude-실행-기록과-호출-office-v11)).
 2. **프로세스 → 호스트.** `ps -wwE`(인수+환경)에서 `ps -ww`(인수)를 잘라낸 나머지만 환경으로 읽는다. 인수 속 `ORCA_TERMINAL_HANDLE=…` 같은 글자는 무시된다. 값은 엄격한 정규식(`term_…`, `%숫자`, 절대 경로 소켓)만 허용한다. 환경변수는 상속되므로 **pty 소유자**로 진짜 호스트를 정한다. 부모를 따라 올라가며 같은 tty를 쓰는 동안 계속 오르고, 처음으로 다른 tty(또는 없음)에 있는 조상이 그 pty를 연 프로그램이다(`ps -axo pid,ppid,tty,comm`). 환경과 소유자는 프로세스 수명 동안 바뀌지 않아 `pid:procStart`로 캐시한다.
    - **tmux**(`TMUX`, `TMUX_PANE`)가 직접 호스트이므로 먼저 본다. 소유자가 tmux 서버이고 `tmux -S <socket> display-message -t <pane> '#{pane_tty}…'`의 tty가 같아야 인정한다. tmux 표식이 있는데 확인이 안 되면 **대상 없음**이다. Orca 안에서 띄운 tmux는 바깥 Orca 핸들을 물려받지만, 그 탭은 다른 패널이나 셸을 보여 줄 수 있다.
    - **Orca**(`ORCA_TERMINAL_HANDLE`, `ORCA_TAB_ID`)는 소유자가 `Orca.app` 프로세스이고 `orca terminal show --json`이 connected·writable·not orphaned·같은 `tabId`여야 인정한다. Orca 탭 안의 screen·zellij·nvim `:terminal`에서 띄운 Claude는 핸들을 물려받아도 소유자가 달라 제외된다. 라벨은 탭 제목이다. 탭 제목만으로 매칭하지 않는다(실측에서 제목과 세션 이름이 다른 경우가 있었다).
 3. **렌더러에는 `TerminalTarget { kind, label, status, canSend, canFocus, queues?, desktop? }`만** 보낸다. handle·소켓·pane은 넘기지 않고, main이 이동·보내기마다 다시 찾는다. 반복 조회가 가볍도록 세션 기록 디렉터리는 1초, 호스트 확인(Orca CLI)은 15초 재사용한다. 이동·보내기는 캐시 없이 새로 확인하고 보낸 뒤 캐시를 지운다.
 
 Ghostty·Warp·VS Code 내장 터미널 등 위 두 호스트 밖에서 실행한 Claude 세션은 이동·보내기 대상이 아니다.
+
+## Claude 백그라운드 세션과 그 창 (2026-10-29)
+
+Claude Code(2.1.312에서 확인)는 대화를 **백그라운드로 옮길 수 있다**(입력창의 `← for agents`). 이때 실제로 일어나는 일(사용자 컴퓨터의 기록·프로세스로 읽기 전용 확인):
+
+- 창(대화형 프로세스)은 지금 대화를 **새 세션으로 갈라** 데몬에 넘긴다. 데몬(`claude daemon run --spawned-by {"pid":<창>}`) → `claude --bg-pty-host …/pty/<job>.sock` → `claude --session-id <새 id> --fork-session --resume <원래 기록> --reply-on-resume`. 새 세션의 기록은 `kind: "bg"`, `jobId`(세션 id 앞 8자), `name`을 갖는다. 그 pty는 데몬이 열었으므로 Orca·tmux 터미널이 아니다.
+- 창의 기록에는 `parkedJobId: <job>`이 붙고, 창은 agents 화면을 열어 그 job을 보여 준다. 창 기록의 `sessionId`·`status`는 옮기던 순간에 멈춘다. 창의 터미널에 치는 글은 job으로 간다.
+- Claude 자신도 같은 규칙을 쓴다: `parkedJobId`가 있는 기록은 메시지 상대에서 빼고, 창의 원래 세션 앞으로 온 메시지는 그 job으로 보낸다. `claude agents --json`에도 그 창은 나오지 않는다. CLI 코드에는 창이 세션을 다시 등록할 때와 (별도 프로세스로 띄운) agents 화면이 끝날 때 `parkedJobId`를 지우는 경로가 있다(실측 아님).
+- agents 화면은 다른 job으로 바꿀 수 있어서, `parkedJobId`만으로는 **지금** 어느 job이 앞에 있는지 알 수 없다.
+
+그래서 사무실에는 같은 제목의 동료가 둘 보인다(원래 대화와 갈라진 백그라운드 대화). 정본 `server/adapters/claude-live.ts`(기록)와 `desktop/terminals.ts`(화면).
+
+- **백그라운드 세션 → 창.** `kind: "bg"` 기록은 `jobId`가 8자리 hex이고 세션 id의 앞자리여야 읽는다. 터미널은 그 job을 `parkedJobId`로 가진 **살아 있는 창이 하나뿐**이고(PID 재사용 검사 포함), job에 이름이 있고, 같은 이름의 다른 살아 있는 job이 없고, 창의 터미널(검증된 Orca·tmux 호스트) **제목이 job 이름**일 때만 인정한다. 제목은 Claude가 그리는 `✳ 이름`(작업 중이면 회전 기호)이며 이름 전체가 같아야 한다. 하나라도 어긋나면 `unknown`이고 다른 탭으로 대신하지 않는다.
+- **보내기·답하기.** 상태는 job의 기록(`idle`·`busy`·`waiting`)을 쓰고, 터미널 앞자리 검사(`ownsTerminal`)는 창 프로세스로 한다. 글을 넣기 전, 입력창을 비우는 키마다, Enter 직전에 창이 여전히 유일하게 그 job을 가졌는지와 **제목을 새로 읽어** 확인한다(`stillLive`). agents 목록 화면은 기존 입력창 판독이 거절한다.
+- **창의 원래 세션.** `parkedJobId`가 있는 기록은 그 세션의 프로세스로 보지 않는다. 이동·보내기는 `unknown`이고, 보내기 오류는 "백그라운드 세션 ‘이름’으로 옮겨졌으니 그 카드에서 보내 달라"고 알린다. 수집기도 그 기록의 멈춘 `busy`·`waiting`으로 세션을 부르거나 핫으로 올리지 않는다. 중복 실행 검사에는 여전히 '실행 중'(창이 돌아갈 수 있음)이다.
+- **두 카드.** 원래 대화 카드를 숨기거나 합치지 않는다. 둘은 서로 다른 기록 파일·대화이고, 창이 원래 대화로 돌아가는 순간을 사무실이 확실히 알 수 없다. 대신 보낼 수 있는 쪽은 백그라운드 카드뿐이고, 원래 카드는 이유를 말한다.
+- **창이 없는(또는 확인되지 않는) 백그라운드 세션.** 이동·재개 명령 복사는 `claude --resume` 대신 `claude attach <job>`을 복사한다(`--resume`은 살아 있는 대화를 하나 더 띄운다). 보내기 오류는 백그라운드 세션임과 그 명령을 알린다. tmux 재개·Orca 새 탭은 중복 실행 검사가 '실행 중'으로 막는다. 전용 tmux 서버에서 `claude attach`로 여는 것은 하지 않았다: `attach`로 연 창의 기록이 어떻게 남는지 아직 재지 않아서, 열어도 보낼 수 있다는 보장이 없다.
 
 ## Codex CLI: 대기열로 전달
 

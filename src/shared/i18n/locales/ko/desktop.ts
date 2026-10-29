@@ -57,6 +57,10 @@ export const desktop: Messages['desktop'] = {
     codexUnconfirmed:
       'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
     noTarget: '지금 보낼 수 있는 Orca·tmux 터미널이나 Codex 세션을 찾지 못했어요.',
+    background: (command) =>
+      `백그라운드에서 도는 Claude 세션이라 보여 주는 터미널을 확인하지 못했어요. 터미널에서 ${command}로 연 뒤 보내 주세요.`,
+    parked: (job) =>
+      `이 대화는 백그라운드 세션${job ? ` ‘${job}’` : ''}으로 옮겨졌어요. 그 터미널에 치면 그쪽으로 가니, 그 세션 카드에서 보내 주세요.`,
     unconfirmed: (host) =>
       `${host}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
     orcaNoSwitch: 'Orca가 그 터미널로 이동하지 못했어요.',
