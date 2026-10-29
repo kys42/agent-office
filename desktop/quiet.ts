@@ -30,11 +30,18 @@ const opacityWorks = process.platform !== 'linux';
 export function hideFromPerson(window: BrowserWindow) {
   if (!opacityWorks) {
     // The layer the app chose is only recorded (still read by `isAlwaysOnTop()`), never applied.
-    let top = false;
+    // A window made always-on-top by its options reads so from the start.
+    let top = window.isAlwaysOnTop();
+    if (top) window.setAlwaysOnTop(false);
     window.setAlwaysOnTop = (flag: boolean) => {
       top = flag;
     };
     window.isAlwaysOnTop = () => top;
+    let everywhere = false;
+    window.setVisibleOnAllWorkspaces = (flag: boolean) => {
+      everywhere = flag;
+    };
+    window.isVisibleOnAllWorkspaces = () => everywhere;
   }
   window.setOpacity(0);
   window.setIgnoreMouseEvents(true);
