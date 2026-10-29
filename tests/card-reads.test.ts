@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CARD_READ_ATTEMPTS, CardReads, cardReadKey } from '../src/shared/card-reads.js';
+import {
+  CARD_READ_ATTEMPTS,
+  CARD_READ_BUDGET,
+  CardReads,
+  cardReadKey,
+} from '../src/shared/card-reads.js';
 import type { OfficeNotice } from '../src/shared/types.js';
 const now = Date.now();
 const notice = (id: string, patch: Partial<OfficeNotice> = {}): OfficeNotice => ({
@@ -65,4 +70,19 @@ test('only the colleague’s runs are observed and read; calls are not', () => {
   ];
   reads.observe(list, ['a', 'a2']);
   assert.deepEqual(ids(reads.due(list, ['a', 'a2'])), ['a2']);
+});
+
+test('A long-open card has a fixed receipt budget without forgetting intentional unread', () => {
+  const reads = new CardReads('a');
+  const first = Array.from({ length: 100 }, (_, i) => notice(`pending-${i}`));
+  reads.begin(reads.due(first, ['a']));
+  reads.observe(
+    Array.from({ length: CARD_READ_BUDGET * 2 }, (_, i) => notice(`old-${i}`, { seenAt: now })),
+    ['a'],
+  );
+  reads.settle(first, true);
+  assert.equal((reads as any).done.size, CARD_READ_BUDGET);
+  assert.equal(reads.readNow.size, 100);
+  assert.deepEqual(reads.due([...first, notice('next')], ['a']), []);
+  assert.deepEqual(ids(new CardReads('a').due([notice('next')], ['a'])), ['next']);
 });

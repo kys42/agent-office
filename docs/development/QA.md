@@ -1,3 +1,47 @@
+# 2026-10-29 · 실제 설치 및 OpenClaw SQLite 경계 검수
+
+- 사용자의 로컬 적용 요청에 따라 `e5cb58f`의 Developer ID/앱·DMG 공증, Gatekeeper, DMG 설치본 합성 3공급자 검사를 통과하고 Applications에 설치했다. 기존 앱·Office 데이터는 외장 볼륨에 백업하고 백업 DB 무결성을 확인했다. 개인 설정 22행은 이전과 동일했고 신규 수집에 따라 좌석 설정만 갱신됐다.
+- 실제 사무실과 오른쪽 대화 카드, 현재 세션 진행 설명·작업 브랜치 갱신, 이전 대화 불러오기를 확인했다. 기존 설치본의 Helper/Renderer CPU 합계 약 200% 상태는 교체 뒤 재현되지 않았다. 새 앱 첫 관찰의 프로세스 CPU 합계는 28–35%, RSS 합계 약 546–673MiB였다. 다른 Electron 버전·실행 시간·압축/스왑 조건이며, 이 차이 전체를 이번 최적화 단독 효과로 해석하지 않는다.
+- 추가로 실제 OpenClaw DB에서 JSON `null` 이벤트 때문에 178개 세션이 중단되는 경계를 재현했다(원문·제목은 fixture로 복제하지 않음). 객체가 아닌 이벤트 행만 건너뛰고 `partial`로 표시하도록 JSONL 경계와 맞췄다. 관련 회귀 38개·build·format 통과 및 독립 재리뷰에서 차단 이슈 없음을 확인했다. 수정 어댑터로 실제 DB를 읽기 전용 재조회해 errors 178→0, 정상 반환 28→120(설정된 조회 상한)을 확인했다. 손상 행·head/tail 범위 때문에 부분 기록인 항목은 partial을 유지한다. 최종 수정본의 공증/설치/CI 결과는 PR #297에 연결한다.
+
+- `f177aba`의 Developer ID 앱·DMG를 재공증하고 Gatekeeper/DMG 설치 검사를 통과한 뒤 같은 Applications 경로에 교체했다. 설치본은 합성 3공급자·설정 IPC·renderer 격리를 통과했다. 실제 사무실에서도 OpenClaw 연결 표시가 정상으로 바뀌었다. 기존 사용자 DB를 정상 종료 후 다시 백업하고 무결성을 확인했다.
+- f177aba 원격 검증은 단위 820개·build/format/MCP·Windows 통과, Linux UI 436/437 통과였다. 나머지 1건은 자동 이전 페이지 로딩이 버튼을 제거한 뒤 테스트의 count-then-click이 기다리던 경합이었다. 사용자처럼 위로 스크롤하고 각 이전 구간의 도달을 기다리도록 테스트를 바꾸었다. 페이지 관련 8개를 두 번 반복해 16/16 통과했다. 최종 전체 CI 링크는 PR에서 확인한다.
+
+---
+
+# 2026-10-29 · 대량 기록 메모리·페이지 최적화 (#296)
+
+- 기준 `9a05a23`(PR #291) → `perf/bounded-working-set`. 정본 [경량화 설계](PERFORMANCE-DESIGN.md), [기계 판독 측정값](benchmarks/2026-10-29-working-set.json). 모든 부하는 합성 provider home/임시 DB이며 실제 사용자 데이터·설치 앱은 건드리지 않았다.
+- 같은 합성 세션 100개/소식 50,000개. 아래 CPU는 측정 시퀀스의 user+system 누적 시간으로, 앱 전체 CPU 점유율이 아니다. RSS는 두 번 GC 직후 표본이고 OS allocator/캐시 영향이 있으며 단독 보장값이 아니다.
+
+| 지표 | 변경 전 | 변경 후 |
+| --- | ---: | ---: |
+| snapshot 뒤 heap | 89.83 MiB | 21.85 MiB |
+| hot stage 뒤 heap | 201.80 MiB | 21.99 MiB |
+| snapshot 뒤 RSS | 975.59 MiB | 169.53 MiB |
+| 반복 snapshot 평균 | 566.20 ms | 52.00 ms |
+| 소식 50개 조회 | 592.89 ms | 24.88 ms |
+| 최신 대화 조회 | 349.73 ms | 0.86 ms |
+| hot stage | 364.25 ms | 0.46 ms |
+| 시퀀스 누적 CPU | 6,558.96 ms | 575.87 ms |
+| 전송 소식 / snapshot bytes | 1,047 / 1,934,285 | 동일 |
+| 미확인 / 전체 소식 수 | 26,667 / 50,000 | 동일 |
+
+- 소식 **200,000개**에서도 stage 뒤 heap **22.03 MiB**, RSS **170.77 MiB**, 최신 대화 **0.99 ms**, stage **0.79 ms**. 반복 snapshot **177.55 ms**, 소식 page **102.52 ms**로 정확한 SQL 집계의 CPU 비용은 역사량에 비례한다. 일정한 상주 heap과 일정한 쿼리 시간은 다른 주장이다.
+- 가속 연속 수집 **720회·세션 40개**: 준비 뒤 heap **76.5→79.2 MiB(+3.5%)**, window 예산 유지. 실제 한 시간 방치 검수와 구분한다. 이 검수는 cold tier 추가 전이며 40개 모두 hot cache에 들어간다.
+- 최종 압축 tier의 예산 초과 검수 **24회·세션 80개**: heap **78.6→79.3 MiB(+0.9%)**, hot 41개, cold 약 **0.6 MiB**. 단위 회귀는 hot 1개/파일 3개/5회 순회에도 원본 read가 3회로 유지됨, stamp 변경·손상·prune을 검증한다. single entry 8 MiB 초과 또는 두 tier 모두 꽉 찬 경우는 bounded source 재읽기 fallback이다.
+- 단위 **819개 통과**. migration/legacy writer/read-only, 같은 시각 포함 1,600개 excerpt cursor, 오래된 bookmark reach, 원본·읽음 보존, 정확한 count/read-all, stalled request 교체, patch 8 MiB 이후 전체 snapshot 복구, 디스크 checkpoint 실패 시 대기 보존, 150,000 usage iterator를 포함한다.
+- production build(typecheck 포함)·format·MCP smoke 통과. Electron smoke는 합성 3개 공급자, 카드/책상/설정, IPC persistence, renderer isolation을 통과했고 OS focus/Dock 검수는 quiet 모드에서 생략했다. 서명·공증한 새 릴리스 검수는 이 변경의 범위가 아니다.
+- UI 전체 435개 중 첫 run **433 pass / 2 fail**. 첫 failure는 추가한 1,000개 대화 검수에서 초기 detail을 기다리지 않은 fixture, 두 번째는 debounce→throttle 변경 뒤 이전 ‘반드시 한 번만’ 기대값이었다. fixture/기대값을 수정하고 집중 재검증했다. 기존 스크롤 fixture의 앵커 복구와 `scrollTo` 경합은 실제 휠 입력으로 검증하도록 보완했다. 최종 집중 UI **13개 모두 통과**. 전체 CI 결과는 PR 근거를 따른다.
+- 첫 Linux CI는 433/435 통과. 대량 대화 탐색에서 자동 로딩이 클릭보다 먼저 마지막 페이지에 도달하는 경합과, 480개 소식 상태의 브라우저 응답 지연을 확인했다. 최종 페이지 도달을 성공으로 처리하고, Markdown memo 및 기록 프로필의 정지 프레임으로 불필요한 렌더링/애니메이션을 줄였다. 로컬 관련 UI **27개 통과**(대화·소식·북마크·파일 링크 포함).
+- 첫 Windows CI는 빌드/패키지 및 Windows 고유 UI smoke를 통과했으나 공통 desktop smoke의 펫 전환 click 대기가 끝나지 않아 이 작업의 run을 취소했다. 새 펫 창 생성은 확인됐고, 숨겨진 원래 창의 mouse frame 완료 대신 버튼 handler→새 창 검증으로 수정했다. Windows CI에 중복 실행 취소·job 20분/실행 검수 5분 상한을 추가했다. 최종 원격 실행은 PR 체크를 따른다.
+- 두 번째 Linux CI 전체 **435개 통과**. Windows 두 번째 실행은 숨겨진 main 창의 기본 rAF 기반 `waitForFunction`에서 멈췄다. 숨겨진 창의 저장값을 Node에서 polling하고 펫→사무실 복귀도 창 가시성으로 검증하도록 보완했다. 제품의 background throttling은 바꾸지 않았다.
+- 소식의 이전 페이지 요청 도중 최신 복귀, 입력 없는 사무실에서 일시 실패 후 제한된 backoff 재조회 회귀를 추가했다. 소식 paging **8개 통과**, build·format 통과, 독립 재리뷰에서 차단 이슈 없음. 최종 head의 전체 CI는 PR 체크에 기록한다.
+- 실제 화면에서 1,000개 대화의 400개 window·live 중 읽던 범위 유지·최신 복귀, 1,200개 소식의 500개 window·끝까지 조회·최신 복귀를 확인한다. 긴 스트림 도중에도 주기적인 소식 refresh가 진행되고 조용해지면 요청이 멎는 것을 검증한다.
+- 초기 실패 로그와 합성 화면은 worktree `.local/`에 보존한다. 무제한 전체 앱 RAM 보장, 실제 사용자 작업의 장기 RSS, release 패키지 성능으로 일반화하지 않는다.
+
+---
+
 # 2026-10-29 · 프로덕션 3회 검토 및 최종 공증 DMG
 
 - 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), [PR #291](https://github.com/kys42/agent-office/pull/291), Issue #290, `feat/production-readiness`.

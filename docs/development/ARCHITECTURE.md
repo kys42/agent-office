@@ -119,3 +119,8 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 `row-placement.ts`는 기존 `layoutRow`의 구역 내부 공동 책상/보조 구조를 유지하며 구역의 x좌표만 계산한다. 사용한 공간 안에서 수평 위치를 비율로 저장하고, 가까운 구역은 간격을 보존하며 밀어 겹침을 막는다. canvas는 기본 가구 폭보다 줄어들지 않는다. 시각적 순서를 바꿔도 DOM key/순서는 유지하여 Chromium pointer capture가 중간에 풀리지 않게 한다.
 
 `useRowPlacement`는 pointer capture, 끝부분 자동 스크롤, Esc/blur/구조 변경 취소, 키보드 이동을 처리한다. 저장은 `office:row-zones:v1:live`/`demo` localStorage이며 서버 DB/업무 자리 번호를 수정하지 않는다. 화면에 잠시 없는 구역도 한도500개 안에서 기억한다. DeskDock은 제스처 동안 그려진 표지에서 시작한 native 마우스 입력을 붙잡고 끝나면 실제 hit-test로 클릭 통과를 복원한다.
+
+
+## 기록 조회와 메모리 예산 (#296)
+
+수집기 → SQLite 정본/조회 인덱스 → bounded snapshot·cursor page → bounded 화면 window로 나눈다. 소식의 정확한 총계와 영속 receipt는 화면에 실은 본문 수와 독립적이다. 파싱 cache, OpenClaw cache, patch 이력에는 크기와 개수 제한을 함께 둔다. 상세 구현·수치·마이그레이션·검증법은 [경량화 설계](PERFORMANCE-DESIGN.md), 수집 의미는 [세션 기록 분석](SESSION-INGESTION.md)에 둔다.

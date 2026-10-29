@@ -1,3 +1,6 @@
+import { serialize, deserialize } from 'node:v8';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import { BoundedCache } from './bounded-cache.js';
 import { QuotaService } from './quotas.js';
 import path from 'node:path';
 import os from 'node:os';
@@ -306,18 +309,44 @@ export class OfficeService extends EventEmitter {
   private healthAt = 0;
   /**
    * Every visible notice as the office last listed it, for `emitChanged` to merge into. Kept
-   * between passes: the same objects every full emit builds anyway, so its size follows the
-   * notices table (about what one `officeView` holds).
+   * between passes: the same objects every full emit builds anyway, with a bounded live set (the same projection `officeView` holds).
    */
   private notices: { all: OfficeNotice[]; locale: Locale } | null = null;
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
+  private patchSizes: number[] = [];
+  private patchBytes = 0;
   private polledAt = 0;
+  /** Evicted normalized parses, compressed instead of repeatedly reparsing large raw logs.
+   * This tier has its own byte budget and exactly the same source stamp validation. */
+  coldCache = new BoundedCache<string, { stamp: string; provider: Provider; data: Buffer }>(
+    16 * 1048576,
+    4000,
+    (value) => value.data.byteLength + 512,
+  );
   /** `key` feeds revisions: the stamp, plus a marker once a re-verification found drift. */
-  cache = new Map<string, { stamp: string; key?: string; session: Session }>();
+  cache = new BoundedCache<string, { stamp: string; key?: string; session: Session }>(
+    48 * 1048576,
+    4000,
+    undefined,
+    (file, entry) => {
+      try {
+        const packed = serialize(entry);
+        // Avoid a large transient compression allocation for an exceptional single session.
+        if (packed.byteLength > 8 * 1048576) return;
+        this.coldCache.set(file, {
+          stamp: entry.stamp,
+          provider: entry.session.provider,
+          data: deflateRawSync(packed, { level: 1 }),
+        });
+      } catch {
+        /* Cache admission must never make collection fail. */
+      }
+    },
+  );
   /** JSONL read windows: changed files read only their appended lines. */
   windows = new RecordWindowCache();
-  clawCache = new Map<string, Session>();
+  clawCache = new BoundedCache<string, Session>(16 * 1048576, 1000);
   timer: ReturnType<typeof setTimeout> | null = null;
   pending: Promise<Snapshot> | null = null;
   stopped = false;
@@ -449,17 +478,27 @@ export class OfficeService extends EventEmitter {
           }
         : null;
     this.sent = { index, at: now, snapshot: s };
-    if (patch && now - this.polledAt < POLLER_MS)
-      this.patches = [...this.patches.slice(-(PATCH_HISTORY - 1)), patch];
-    else this.patches = [];
+    if (patch && now - this.polledAt < POLLER_MS) {
+      const size = JSON.stringify(patch).length * 2;
+      this.patches.push(patch);
+      this.patchSizes.push(size);
+      this.patchBytes += size;
+      while (this.patches.length > PATCH_HISTORY || this.patchBytes > 8 * 1048576) {
+        this.patches.shift();
+        this.patchBytes -= this.patchSizes.shift()!;
+      }
+    } else {
+      this.patches = [];
+      this.patchSizes = [];
+      this.patchBytes = 0;
+    }
     this.emit('snapshot', s, patch);
     return s;
   }
   /**
    * After a hot pass: sends what changed in just these sessions without rebuilding the office.
    * Their rows are read and decorated one by one, attached against the published colleagues,
-   * their notices merged into the last full list of notices, and the carried notices and counts
-   * chosen again from it. The result is what `emitSnapshot` would publish, as long as nothing
+   * their live notice projection and exact counts queried from the indexed store. The result is what `emitSnapshot` would publish, as long as nothing
    * about these sessions can move anyone else: the same zone, desk, attachment, relations, actor
    * and background standing, and no unattached helper hanging off them. Otherwise, and before
    * anything was published, it is `emitSnapshot`. Time-driven changes of other colleagues wait
@@ -521,16 +560,8 @@ export class OfficeService extends EventEmitter {
         if (isHelper(s) && !s.attachedTo) return null;
         next.set(s.id, localizeSession(s, locale));
       }
-    // Notices: these sessions' own, merged into the rest as last listed.
-    const background = new Set(
-      [...rows.values()].filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
-    );
-    const merged = all
-      .filter((n) => !changed.has(n.sessionId))
-      .concat(this.store.noticesOf([...changed], background, locale))
-      .sort(noticeOrder);
-    const carried = residentNotices(merged);
-    const noticeStats = { unread: unreadNoticeCount(merged), total: merged.length };
+    // Query only the live working set. Old notice bodies never remain in the collector.
+    const { notices: carried, noticeStats } = this.store.noticeView(locale, list);
     // The patch, against the published index.
     const prev = sent.index;
     const index: SnapshotIndex = {
@@ -565,7 +596,7 @@ export class OfficeService extends EventEmitter {
       index.fields.set('noticeStats', stats);
       patch.fields = { noticeStats };
     }
-    return { patch: Object.keys(patch).length ? patch : null, index, all: merged };
+    return { patch: Object.keys(patch).length ? patch : null, index, all: carried };
   }
   /**
    * The office as last published. Every client must hold exactly what a version was published
@@ -783,7 +814,19 @@ export class OfficeService extends EventEmitter {
     metadata: Map<string, CodexMeta>,
   ): Promise<Session | null | 'error'> {
     const stamp = `office-v11:${file.size}:${file.mtime}`;
-    const cached = this.cache.get(file.path);
+    let cached = this.cache.get(file.path);
+    if (!cached) {
+      const cold = this.coldCache.get(file.path);
+      if (cold?.stamp === stamp) {
+        try {
+          cached = deserialize(inflateRawSync(cold.data, { maxOutputLength: 8 * 1048576 }));
+          // Keep cold hits compressed. Promoting every file in a sequential scan would
+          // evict/recompress the hot tier repeatedly. A changed file earns hot admission.
+        } catch {
+          this.coldCache.delete(file.path);
+        }
+      }
+    }
     let s = cached?.stamp === stamp ? cached.session : null;
     let key = (s && cached?.key) || stamp;
     // A window built by appends trusts its guard bytes; re-verify it in full on schedule
@@ -862,17 +905,15 @@ export class OfficeService extends EventEmitter {
   }
   /** Parse cache with a size cap as a safety net; pruning to discovered files keeps it far below. */
   private remember(file: string, entry: { stamp: string; key: string; session: Session }) {
-    this.cache.delete(file);
+    this.coldCache.delete(file);
     this.cache.set(file, entry);
-    for (const key of this.cache.keys()) {
-      if (this.cache.size <= 4000) break;
-      this.cache.delete(key);
-    }
   }
   /** Drop one provider's read caches for files that are no longer discovered. */
   private forget(provider: Provider, keep: Set<string>) {
     for (const [file, entry] of this.cache)
       if (entry.session.provider === provider && !keep.has(file)) this.cache.delete(file);
+    for (const [file, entry] of this.coldCache)
+      if (entry.provider === provider && !keep.has(file)) this.coldCache.delete(file);
     this.windows.prune(keep, this.roots[provider]);
   }
   /**
@@ -1080,7 +1121,11 @@ export class OfficeService extends EventEmitter {
           break;
         }
         files.push({ path: file, size: st.size, mtime: st.mtimeMs });
-        if (this.cache.get(file)?.stamp !== `office-v11:${st.size}:${st.mtimeMs}`) moved = true;
+        if (
+          (this.cache.get(file)?.stamp ?? this.coldCache.get(file)?.stamp) !==
+          `office-v11:${st.size}:${st.mtimeMs}`
+        )
+          moved = true;
       }
       if (moved) due.push({ k, files, live });
     }

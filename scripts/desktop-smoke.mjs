@@ -340,7 +340,11 @@ try {
   );
   const [dock] = await Promise.all([
     app.waitForEvent('window'),
-    page.getByRole('button', { name: '데스크 펫', exact: true }).click(),
+    // This action hides its source window. Dispatch the button handler without waiting for
+    // a mouse-frame acknowledgement from a hidden Windows renderer; verify the new window.
+    page
+      .getByRole('button', { name: '데스크 펫', exact: true })
+      .evaluate((button) => button.click()),
   ]);
   await dock.waitForSelector('.desk-pet');
   const dockBounds = () =>
@@ -437,10 +441,13 @@ try {
   const chat = card.locator('.terminal-send-chat textarea');
   await chat.pressSequentially('Unsent reply draft');
   assert.equal(await chat.inputValue(), 'Unsent reply draft', 'popup chat accepts OS keyboard');
-  await page.waitForFunction(
-    () =>
-      localStorage.getItem('office:reply-draft:v1:live:codex:codex-test') === 'Unsent reply draft',
-  );
+  // The office is hidden while its card is open. Poll from Node: a Windows hidden
+  // renderer may suspend rAF, including waitForFunction's default polling loop.
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem('office:reply-draft:v1:live:codex:codex-test')),
+    )
+    .toBe('Unsent reply draft');
   assert.equal(
     await page.evaluate(() => localStorage.getItem('office:reply-draft:v1:live:codex:codex-test')),
     'Unsent reply draft',
@@ -639,7 +646,16 @@ try {
   assert.deepEqual([back.x, back.y, back.width], [pet.x, pet.y, pet.width], 'pet returns home');
   // The pet's tools appear (and take clicks) only while the pet is pointed at.
   await dock.locator('.dock-pet-anchor').hover();
-  await dock.getByRole('button', { name: '사무실 펼치기' }).click();
+  await dock.getByRole('button', { name: '사무실 펼치기' }).evaluate((button) => button.click());
+  await expect
+    .poll(() =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .filter((w) => w.isVisible())
+          .map((w) => w.webContents.getURL().split('#')[1] ?? 'office'),
+      ),
+    )
+    .toEqual(['office']);
   await checkMacDock('return to main office');
   const native = await app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().map((w) => ({
