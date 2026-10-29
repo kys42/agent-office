@@ -58,6 +58,10 @@ export const desktop = {
     codexUnconfirmed:
       "Couldn't confirm it reached Codex. Check the Codex screen before sending again.",
     noTarget: "Couldn't find an Orca or tmux terminal, or a Codex session, to send to right now.",
+    background: (command: string) =>
+      `This Claude session runs in the background, and no terminal could be confirmed to show it. Open it with ${command} in a terminal, then send.`,
+    parked: (job: string) =>
+      `This conversation was moved to the background${job ? ` as ‘${job}’` : ''}. Typing in its terminal goes there, so send from that session's card.`,
     unconfirmed: (host: string) =>
       `Couldn't confirm it was sent to ${host}. Check the terminal before sending again.`,
     orcaNoSwitch: "Orca couldn't switch to that terminal.",

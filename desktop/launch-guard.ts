@@ -30,7 +30,11 @@ export const claudeLiveness: LivenessAdapter = {
     if (terminal.kind === 'found')
       return { kind: 'found', terminal: { where: terminal.terminal.host.kind } };
     if (terminal.kind === 'none') return terminal;
-    const process = await findClaudeProcess(nativeId, deps ?? defaultTerminalDeps(), fresh);
+    // A window that parked this conversation in the background still holds it, and a
+    // background session runs with no terminal: both are running, just nowhere to jump.
+    const process = await findClaudeProcess(nativeId, deps ?? defaultTerminalDeps(), fresh, {
+      parked: true,
+    });
     return process ? { kind: 'found', terminal: { where: 'other' } } : { kind: 'unknown' };
   },
 };

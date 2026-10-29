@@ -72,6 +72,8 @@ import {
   focusTerminal,
   forgetTerminal,
   hostName,
+  claudeAttachCommand,
+  claudeNoTerminalReason,
   locateTerminal,
   lookupTerminal,
   sendToTerminal,
@@ -1339,6 +1341,11 @@ function setupIPC() {
   };
   const live = (known: SessionIdentity, fresh = false) =>
     known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
+  /** Why `live` found no terminal, when the agent's records can tell (else the generic note). */
+  const noTerminal = async (known: SessionIdentity) =>
+    (known.provider === 'claude'
+      ? await claudeNoTerminalReason(known.nativeId).catch(() => null)
+      : null) ?? m().desktop.terminal.noTarget;
   const codex = (known: SessionIdentity, fresh = false) =>
     known.provider === 'codex'
       ? findCodexDestination(known.nativeId, known.sourcePath, { fresh })
@@ -1631,7 +1638,7 @@ function setupIPC() {
         throw new Error(m().desktop.terminal.codexUnconfirmed);
       }
     const terminal = await live(known, true);
-    if (!terminal) throw new Error(m().desktop.terminal.noTarget);
+    if (!terminal) throw new Error(await noTerminal(known));
     try {
       return await sendToTerminal(terminal, text, undefined, {
         composer,
@@ -1864,6 +1871,10 @@ async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpRe
     await shell.openExternal(`codex://threads/${s.nativeId}`);
     return { action: 'opened', text: m().desktop.codexOpened };
   }
+  // A live background session is opened where it runs: `--resume` would start a second copy.
+  const attach =
+    s.provider === 'claude' ? await claudeAttachCommand(s.nativeId).catch(() => null) : null;
+  if (attach) return { action: 'copy', text: attach };
   return {
     action: 'copy',
     text:

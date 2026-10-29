@@ -24,7 +24,14 @@ export interface TerminalHostDeps {
 }
 
 export type TerminalHost =
-  | { kind: 'orca'; handle: string; title: string }
+  | {
+      kind: 'orca';
+      handle: string;
+      /** The tab title, clipped for display. */
+      title: string;
+      /** The whole title, only when clipping shortened it: for matching, never shown. */
+      fullTitle?: string;
+    }
   | { kind: 'tmux'; socket: string; pane: string; label: string };
 
 export interface ProcessEnv {
@@ -173,9 +180,43 @@ export async function findHost(
         kind: 'orca',
         handle: env.orcaHandle,
         title: typeof t.title === 'string' ? t.title.slice(0, 120) : '',
+        ...(typeof t.title === 'string' &&
+          t.title.length > 120 &&
+          t.title.length <= 4096 && { fullTitle: t.title }),
       };
   }
   return null;
+}
+
+/**
+ * The title the terminal shows right now (tmux `pane_title`, Orca's tab title), read afresh.
+ * Null for an Orca terminal no longer connected and writable; a failed read throws.
+ */
+export async function screenTitle(
+  host: TerminalHost,
+  deps: TerminalHostDeps,
+): Promise<string | null> {
+  if (host.kind === 'tmux')
+    return (
+      await deps.run(deps.bin('tmux'), [
+        '-S',
+        host.socket,
+        'display-message',
+        '-p',
+        '-t',
+        host.pane,
+        '#{pane_title}',
+      ])
+    ).trim();
+  const result = JSON.parse(
+    await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json'], {
+      env: localOrcaEnv(),
+    }),
+  );
+  const t = result?.result?.terminal;
+  if (result.ok !== true || t?.handle !== host.handle || typeof t.title !== 'string')
+    throw new Error('Cannot verify current terminal title');
+  return t.connected === true && t.writable !== false && t.orphaned !== true ? t.title : null;
 }
 
 /**
