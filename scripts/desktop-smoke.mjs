@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from '@playwright/test';
 import { appendFile, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -160,6 +161,14 @@ try {
   await settings.waitForSelector('.settings-popup [data-guide-section="office"]');
   assert.equal(await tab('office').getAttribute('aria-selected'), 'true');
   await assert.rejects(page.evaluate(() => window.office.settings.open('nope')));
+  // DOM readiness can precede Electron's ready-to-show (especially from a cold DMG copy).
+  // Exercise blur only after the native window has actually been presented.
+  await expect
+    .poll(() => settingsWindow((w) => !!w && w.isVisible()), {
+      message: 'settings is shown before blur',
+      timeout: 15_000,
+    })
+    .toBe(true);
   await settingsWindow((w) => w.blur());
   if (focusTests) await page.bringToFront();
   await settings.waitForTimeout(400);
@@ -665,7 +674,8 @@ try {
       installationIdentity: health,
       settingsWindow: true,
       notifications: true,
-      macDockIcon: process.platform === 'darwin',
+      macDockIcon:
+        process.platform !== 'darwin' ? 'not-applicable' : focusTests ? 'passed' : 'skipped',
     }),
   );
 } catch (error) {

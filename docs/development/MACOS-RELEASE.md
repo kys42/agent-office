@@ -14,6 +14,8 @@ npm run package:dmg
 npm run test:package
 ```
 
+내부 디스크가 부족하면 **checkout 전체**를 여유 있는 볼륨에 두고 해당 빌드의 `TMPDIR`도 여유 있는 디렉터리로 지정한다. 산출물은 checkout 내부 `release/`에 있어야 하며, checkout 밖으로 향하는 링크는 공증 경로 검증에서 거부한다. 설치 smoke는 macOS의 외장 볼륨 안 image mount 거부를 피하려고 작은 mountpoint만 `/private/tmp`에 만들고, 대용량 앱 복사본과 프로필은 `TMPDIR`을 사용한다.
+
 기본 아키텍처는 현재 Mac이다. `AGENT_OFFICE_ARCH=arm64` 또는 `x64`로 지정할 수 있다. 설치본 실행 검증은 해당 아키텍처의 Mac에서 수행한다. Intel은 별도 CI runner에서 패키징·실행한다.
 
 `release/Agent-Office-<version>-macOS-<arch>-<sha7>.dmg`를 열고 `Agent Office.app`을 Applications로 옮긴다. 기존 앱은 트레이 메뉴에서 종료하고 교체한다. 다운로드한 preview가 macOS에 막히면 출처를 확인한 뒤 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기를 사용한다. 설치 안내는 DMG의 `INSTALL.txt`에도 들어 있다.
@@ -41,7 +43,7 @@ shasum -a 256 -c SHA256SUMS-arm64.txt
 
 ## 설치본 검증과 복구
 
-`npm run test:package`는 DMG hash와 설치본 메타데이터를 비교하고 `codesign --verify --deep --strict`를 실행한다. 임시 Claude·Codex·OpenClaw 합성 기록과 별도 앱 프로필·DB로 실행해 세 공급자 수집, 설정 저장, 언어 전환, 데스크 펫·책상 줄·바닥 책상, renderer 격리를 확인한다. macOS Dock 아이콘이 시작·펫·책상 줄·바닥·팝업·전체 복귀에서 유지되고 팝업이 키보드 입력을 받는지도 검증한다. 개발 Electron이나 브라우저 결과만으로 DMG 검증을 대신하지 않는다.
+`npm run test:package`는 DMG hash와 설치본 메타데이터를 비교하고 `codesign --verify --deep --strict`를 실행한다. 임시 Claude·Codex·OpenClaw 합성 기록과 별도 앱 프로필·DB로 실행해 세 공급자 수집, 설정 저장, 언어 전환, 데스크 펫·책상 줄·바닥 책상, renderer 격리를 확인한다. 기본 로컬 quiet 실행은 사용자 작업을 방해하지 않으며 실제 OS 포커스/Dock 검사와 별도 카드 창 focus smoke는 생략한다. 화면을 사용하지 않는 전용 검수 환경에서 `AGENT_OFFICE_FOCUS_TESTS=1 npm run test:package` 또는 CI로 실행하면 macOS Dock 유지와 팝업 키보드 입력도 검사한다. 설정 창은 DOM 렌더링과 native 표시가 다른 시점임을 고려해 실제 표시를 확인한 뒤 blur 검사를 수행한다. 개발 Electron이나 브라우저 결과만으로 DMG 검증을 대신하지 않는다.
 
 사용자 설치 뒤 첫 실행에서는 전체 사무실·트레이·펫 모드와 기존 세션 수집을 확인한다. 인터넷 다운로드의 Gatekeeper 검수와 Intel 검수는 해당 전달 경로 및 기기에서 별도로 확인한다. 테스트가 합성 DB에서 통과했다는 근거를 실제 개인 DB 업그레이드 검증으로 확대하지 않는다.
 

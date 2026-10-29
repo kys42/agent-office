@@ -4,9 +4,9 @@
 - 1회차: preview/정식 패키징을 명시적으로 분리하고, worker 종료·웹 폴링 실패·patch gap의 조용한 정지를 화면에 알리고 제한된 재시도로 복구한다.
 - 2회차: 설정에서 실제 앱 서명/빌드와 필요한 OS 권한을 확인한다. 안내를 접어 기본 연결 흐름을 유지하고 좁은 창·키보드·다크 모드를 확인했다. 이미지 단독 입력의 전송 확인과 공급자 기록 제한을 표시한다.
 - 3회차: 독립 리뷰 후 전송 본문 추가 보관을 제거하고 metadata/SHA-256 지문만 저장했다. 다중 창 UUID/Web Locks/재시작 대응을 검증하고, worker가 잠깐 성공 후 반복 종료해도 무한 재시도하지 않게 했다. 미처리 전송이 없으면 저장소 조회를 하지 않는다.
-- 검증: 단위 806개, 전체 UI 431개, typecheck/production build/format, Electron 3개 공급자·MCP smoke 통과. 첫 native 실행의 버튼 timeout은 재실행에서 재현되지 않았으며 최종 패키지에서 재검수한다. 변경 UI 탐지 0건.
+- 검증: 단위 806개, typecheck/build/format/MCP 통과. 의존성 갱신 후 로컬 UI 426 pass·6 timeout, 실패 6개 재실행 모두 통과. 전체 432개 suite를 포함한 Linux CI와 Windows CI 통과. 변경 UI 탐지 0건.
 - 추가 배포 검수: Electron 44.10.0 및 호환 의존성 보안 갱신으로 npm audit 10건 → 0건. Windows packaged 상태 검수 기대값·한국어 설치 명령·외장 출력 링크 ignore를 수정했고, 디스크 여유 사전 검사와 CI 보안 게이트/중복 실행 제한을 추가했다.
-- Developer ID/Apple 공증 사전 접근 확인 완료. 최종 signed DMG·설치본 smoke와 PR CI 결과는 [프로덕션 검토](docs/development/PRODUCTION-REVIEW.md) 및 [QA](docs/development/QA.md)에 후속 기록한다. 공개 배포·main 병합·실제 사용자 설치본 교체는 아직 수행하지 않았다.
+- source `c453a57`의 Developer ID 앱·DMG를 Apple 공증·staple·Gatekeeper 검증했다. DMG 임시 설치본 3종 공급자/설정/IPC 및 packaged 미니 터미널 smoke 통과. 외장 mountpoint와 native 창 준비 시점의 검수 스크립트도 보완했다. quiet 모드의 실제 포커스/Dock·카드 창 검수는 생략됐다. 전체 근거는 [프로덕션 검토](docs/development/PRODUCTION-REVIEW.md)와 [QA](docs/development/QA.md)에 기록했다. 공개 배포·main 병합·실제 사용자 설치본 교체는 수행하지 않았다. GitHub 서명 environment 준비는 미확인이다.
 - 원래 main의 미커밋 문서, 기존 사용자 DB/세션, 별도 열린 기능 PR은 보존했다. 검수 산출물은 별도 worktree `.local/` 및 `release/`에 둔다.
 
 ---

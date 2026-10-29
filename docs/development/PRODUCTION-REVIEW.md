@@ -40,7 +40,19 @@ CI에는 high 이상 감사 게이트를 추가하고 main push/PR로 범위를 
 
 최초 서명 작업에서 내부 디스크 여유가 약 203 MiB였고 큰 framework 서명이 내부 오류로 실패했다. 작은 실행 파일의 동일 인증서 서명은 성공했고, 산출물을 외장 SSD로 옮긴 다음 전체 서명은 진행됐다. 외장 출력의 `release` 심볼릭 링크가 디렉터리 전용 gitignore 규칙에서 빠져 `sourceDirty`로 차단된 것도 발견했다. 루트 산출물 경로를 링크/디렉터리 모두 제외하도록 수정하고 실제 Git 판정으로 검증한다. 이 실패 산출물의 DMG 공증은 수행하지 않았다. 릴리스 진입점에 출력/임시 볼륨 각각 3 GiB 사전 여유 검사도 추가했다. 최종 전달은 갱신된 의존성이 커밋된 clean checkout에서 새로 생성한다.
 
-작업 도중 `/private/tmp` 검수 폴더가 없어져 원격에 이미 보존된 커밋을 이번 작업의 기존 worktree로 복구했다. 현재 경로는 `/Users/kys/projects/feat/office-production`이며, 빌드 산출물은 외장 SSD의 작업 전용 폴더에 둔다. 원본 사용자 세션·설치 앱은 수정하지 않았다.
+작업 도중 `/private/tmp` 검수 폴더가 없어져 원격에 이미 보존된 커밋을 이번 작업의 기존 worktree로 복구했다. 현재 경로는 `/Users/kys/projects/feat/office-production`이며, checkout 자체가 외장 SSD에 있으며 빌드 산출물은 그 안의 `release/`에 둔다. 공증의 실제 경로 검사는 checkout 밖을 가리키는 `release` 링크를 허용하지 않는다. 원본 사용자 세션·설치 앱은 수정하지 않았다.
+
+## 최종 배포본 검증 · 2026-10-29
+
+- 런타임 source: `c453a575bd9e80d0152385d7c73616138934c662`, clean checkout, Electron **44.10.0**, macOS arm64. 이후 최종 기록과 설치 검수 스크립트만 수정했으며 이 DMG의 앱 소스는 위 SHA로 식별한다.
+- 단위 **806개**, typecheck·production build·format·MCP 통과. 갱신 의존성의 로컬 전체 UI는 **426개 통과·6개 timeout**이었고, 동일 코드에서 실패한 6개를 단일 worker로 재실행해 모두 통과했다. 첫 실패 자료는 `.local/ui-before-retry/`에 보존했다. 최종 suite는 432개이며, [동일 SHA Linux CI](https://github.com/kys42/agent-office/actions/runs/40812354016) 전체 검증과 [Windows CI](https://github.com/kys42/agent-office/actions/runs/40812353794)가 통과했다. PR 최종 head의 CI 상태는 PR에서 확인한다.
+- 앱과 DMG 각각 Developer ID 서명, Apple 공증 Accepted, ticket staple/validate, Gatekeeper 검사 통과. Team ID `35T2XJJQHT`.
+- 앱 공증 ID `4b108de5-d565-4017-88c8-9d132d19f777`, DMG 공증 ID `6186a48f-54d8-4316-b3da-e3f6d3781030`.
+- `release/Agent-Office-0.1.0-macOS-arm64-c453a57.dmg`, **161,419,964 bytes**. SHA-256: `8104655c36a8e090635935ba492bc21502cdfa3f15a996493069eac214806d93`.
+- `npm run test:package` 통과: readonly DMG mount → 임시 설치 복사 → 아이콘/metadata/hash/서명/ticket/Gatekeeper 확인 → 설치된 실행 파일에서 합성 3종 공급자·첫 실행·설정·저장·데스크 펫/줄/바닥·IPC 격리·서명 진단 검증. 별도 실제 packaged 미니 터미널 smoke도 통과했다.
+- 설치 검수에서 외장 SSD 내부 mountpoint가 거부되어 작은 mountpoint만 `/private/tmp`로 옮겼다. 대용량 설치 복사본/프로필은 외장 TMPDIR을 사용한다. 설정 창의 DOM 렌더링이 native `ready-to-show`보다 빠른 경우를 확인하고 실제 표시 뒤 blur 동작을 검사하도록 테스트를 수정했다. 같은 DMG 재검수에서 통과했으며 앱 런타임을 바꾼 것은 아니다.
+- quiet 검수는 사용자 작업을 방해하지 않는다. 실제 OS 포커스·Dock 유지 및 별도 card-windows focus smoke는 생략되므로 해당 보장으로 확대하지 않는다. 과거 출력의 `macDockIcon: true`는 quiet 실행에서 실제 검증을 뜻하지 않는다.
+- `/Applications` 설치본·사용자 DB는 교체하지 않았다. GitHub `macos-release` environment 조회는 404여서 비밀값/보호 규칙 준비를 확인하지 못했다. 이 Mac의 기존 로컬 Apple 프로필만으로 공증했으며 개인키를 추출·업로드하지 않았다. 다른 빌더의 자동 서명 가동은 별도 자격증명 준비가 필요하다.
 
 ## 핵심 흐름 검토표
 

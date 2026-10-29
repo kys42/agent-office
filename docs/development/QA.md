@@ -1,12 +1,15 @@
-# 2026-10-29 · 프로덕션 3회 검토
+# 2026-10-29 · 프로덕션 3회 검토 및 최종 공증 DMG
 
-- 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), Issue #290, `feat/production-readiness`.
-- macOS arm64 / Node 25.5.0 / Electron 44.5.1. Node 24 CI 검증은 별도 확인한다.
-- `npm test`: 806 pass. `npm run test:ui`: 431 pass. `npm run build`, `format:check`, MCP smoke 통과.
-- Electron native smoke: 3 providers, 첫 실행/설정/저장/데스크 펫·row·floor/카드·북마크 reader/IPC 격리·앱 신원 출력·잘못된 privacy URL 거부 통과. quiet 실행은 OS 포커스 단계를 생략한다.
-- 첫 native 실행은 바닥 책상 전환 버튼 탐색 timeout; 재실행에서 통과. 실패 증거 자동 캡처 추가. 최종 설치본에서 다시 검수한다.
+- 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), [PR #291](https://github.com/kys42/agent-office/pull/291), Issue #290, `feat/production-readiness`.
+- 최종 앱 source `c453a57`: macOS arm64 / Node 25.5.0 / Electron **44.10.0**. 최초 44.5.1 검증 뒤 보안 갱신을 적용했고 npm audit **10건 → 0건**이다.
+- 단위 **806개**, typecheck·production build·format·MCP 통과. 로컬 UI **426 pass + 6 timeout**, 같은 코드의 실패 6개 단일 worker 재실행은 **6 pass**. 전체 suite 432개. 최초 실패 자료를 보존했다.
+- [Linux / Node 24 CI](https://github.com/kys42/agent-office/actions/runs/40812354016)와 [Windows CI](https://github.com/kys42/agent-office/actions/runs/40812353794) 모두 통과. Windows는 portable 패키징과 실제 native 3종 공급자 smoke를 포함한다. PR 최종 head CI는 PR 상태를 따른다.
+- **앱·DMG 공증 및 설치 smoke 통과**: Developer ID/Team ID, deep strict 서명, stapled ticket, Gatekeeper, checksum/아이콘/metadata. DMG에서 임시 설치한 앱으로 첫 실행·설정·저장·펫/row/floor·3종 공급자·IPC 격리·앱 신원·잘못된 privacy URL 거부 확인. 별도 packaged 미니 터미널 smoke도 통과.
+- 외장 SSD mountpoint 거부는 `/private/tmp` mountpoint로 해결했다. 설정 DOM ready/native ready-to-show 사이 테스트 race는 실제 창 표시를 기다린 뒤 blur 검사하도록 수정했고 같은 DMG 재검수가 통과했다.
+- quiet 실행에서 OS 포커스/Dock 검수와 별도 card-windows focus smoke는 생략했다. 인터넷 다운로드 최초 실행, 다른 물리 Mac/Intel, 실제 사용자 DB 업그레이드·권한 연속성을 검증한 것은 아니다.
 - UI: 라이트/다크, 480px, 키보드 펼침, 실패/재시도, 연결 중단/patch gap/demo 전환, 동시 창 전송 확인/재시작/첨부 정합성. Impeccable detector 0건.
-- `release:mac -- preflight`: Developer ID 및 Apple 공증 API 접근 확인. 최종 앱/DMG 서명·공증·설치 검수는 아래에 실제 근거로 추가한다.
+- 산출물: `release/Agent-Office-0.1.0-macOS-arm64-c453a57.dmg` 및 manifest/체크섬. 전체 SHA·공증 ID는 정본 검토 문서에 기록했다. `.local/production-*`는 로컬 근거이며 Git에 포함하지 않는다.
+- 설치된 Applications 앱과 사용자 DB는 보존했다. 공개 게시/OTA/main 병합은 하지 않았다. GitHub 서명 environment는 조회 404로 준비 여부 미확인이며, 이번 성공은 기존 로컬 Apple 프로필 기준이다.
 
 ---
 

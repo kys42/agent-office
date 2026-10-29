@@ -16,7 +16,10 @@ const dmg = path.resolve('release', `${stem}.dmg`);
 const manifest = JSON.parse(await readFile(path.resolve('release', `${stem}.json`), 'utf8'));
 assert.equal(await sha256(dmg), manifest.dmg.sha256, 'DMG checksum');
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-installed-'));
-const mount = path.join(temp, 'volume');
+// macOS can reject nested image mounts on removable volumes. Keep only the mountpoint
+// on the system volume; the large installed copy/profile may still use an external TMPDIR.
+const mountRoot = await mkdtemp('/private/tmp/agent-office-mount-');
+const mount = path.join(mountRoot, 'volume');
 let attached = false;
 try {
   execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg], {
@@ -72,4 +75,5 @@ try {
 } finally {
   if (attached) execFileSync('hdiutil', ['detach', mount], { stdio: 'inherit' });
   await rm(temp, { recursive: true, force: true });
+  await rm(mountRoot, { recursive: true, force: true });
 }
