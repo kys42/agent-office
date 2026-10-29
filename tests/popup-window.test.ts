@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  floatLayer,
   popupFloats,
   popupOpenPlan,
+  popupReopenFloats,
   popupWindowBounds,
   readWindowSize,
 } from '../src/shared/popup-window.js';
@@ -63,6 +65,28 @@ test('a popup floats only beside a floating window that is not the big office', 
   assert.equal(popupFloats({ main: false, alwaysOnTop: true }), true);
   assert.equal(popupFloats({ main: false, alwaysOnTop: false }), false);
   assert.equal(popupFloats({ main: true, alwaysOnTop: true }), false);
+});
+
+test('a floating window sits at the preview level on every Space; an ordinary one does not', () => {
+  assert.deepEqual(floatLayer(true), {
+    alwaysOnTop: true,
+    level: 'pop-up-menu',
+    allSpaces: true,
+  });
+  assert.deepEqual(floatLayer(false), {
+    alwaysOnTop: false,
+    level: 'pop-up-menu',
+    allSpaces: false,
+  });
+});
+
+test('a popup asked again keeps its own on-top choice unless a floating window asks', () => {
+  // Set on top by the person: asked again from the big office, it stays on top.
+  assert.equal(popupReopenFloats(true, false), true);
+  // Set back to an ordinary window: a floating card asking again floats it (not hidden behind).
+  assert.equal(popupReopenFloats(false, true), true);
+  assert.equal(popupReopenFloats(false, false), false);
+  assert.equal(popupReopenFloats(true, true), true);
 });
 
 test('opening by key brings the open one forward, else makes one (closing the oldest at max)', () => {

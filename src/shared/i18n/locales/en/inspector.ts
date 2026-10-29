@@ -50,8 +50,14 @@ export const inspector = {
     positionOn: 'Open future popups here · click to forget this position',
     positionOff: 'Open future popups at this position',
     pinCard: 'Pin this card',
-    pinOn: 'Stays here when you open another colleague · click to unpin',
-    pinOff: 'Keep this colleague in an independent window',
+    /** The card pin's three states, cycled by one button (src/shared/card-windows.ts). */
+    pinStates: { off: 'Not pinned', pinned: 'Pinned', top: 'Pinned on top' },
+    pinHints: {
+      off: 'Closes when you click elsewhere',
+      pinned: 'Stays open · other windows can cover it',
+      top: 'Stays open · always above other windows',
+    },
+    pinLabel: (now: string, next: string) => `Pin this card: ${now} → ${next}`,
   },
   tabs: {
     overview: 'Details',

@@ -20,8 +20,9 @@ import {
   Maximize2,
   ListFilter,
   MapPin,
-  PinOff,
 } from 'lucide-react';
+import { CardPinIcon } from './WindowPin';
+import { nextCardPin, type CardPin } from '../shared/card-windows';
 import type {
   Session,
   SessionPatch,
@@ -98,7 +99,7 @@ export function Inspector({
   focus,
   onFocused,
   movable = false,
-  cardPinned = false,
+  cardPin = 'off',
   onCardPin,
   positionRemembered = false,
   onPositionRemember,
@@ -154,9 +155,12 @@ export function Inspector({
    * the big office's right column. `movable`: it is the card window, moved by its header.
    */
   movable?: boolean;
-  /** Independent native window, separate from keeping a colleague in the office. */
-  cardPinned?: boolean;
-  onCardPin?: (on: boolean) => void;
+  /**
+   * Independent native window, separate from keeping a colleague in the office: the preview,
+   * pinned, or pinned on top. One button cycles them (`nextCardPin`) and asks for the next.
+   */
+  cardPin?: CardPin;
+  onCardPin?: (next: CardPin) => void;
   positionRemembered?: boolean;
   onPositionRemember?: (on: boolean) => void;
   windowBusy?: boolean;
@@ -932,14 +936,20 @@ export function Inspector({
             )}
             {onCardPin && (
               <button
-                className={`icon-btn ${cardPinned ? 'is-on' : ''}`}
-                aria-label={t.inspector.card.pinCard}
-                aria-pressed={cardPinned}
-                data-tip={cardPinned ? t.inspector.card.pinOn : t.inspector.card.pinOff}
+                className={`icon-btn card-pin ${cardPin !== 'off' ? 'is-on' : ''} ${cardPin === 'top' ? 'is-top' : ''}`}
+                aria-label={t.inspector.card.pinLabel(
+                  t.inspector.card.pinStates[cardPin],
+                  t.inspector.card.pinStates[nextCardPin(cardPin)],
+                )}
+                aria-pressed={cardPin !== 'off'}
+                data-pin={cardPin}
+                data-tip={`${t.inspector.card.pinStates[cardPin]} → ${
+                  t.inspector.card.pinStates[nextCardPin(cardPin)]
+                } · ${t.inspector.card.pinHints[cardPin]}`}
                 disabled={windowBusy}
-                onClick={() => onCardPin(!cardPinned)}
+                onClick={() => onCardPin(nextCardPin(cardPin))}
               >
-                {cardPinned ? <PinOff size={15} /> : <Pin size={15} />}
+                <CardPinIcon pin={cardPin} />
               </button>
             )}
             {onExpand && (

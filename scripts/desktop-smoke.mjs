@@ -582,7 +582,24 @@ try {
   await blurCard();
   await card.waitForTimeout(900);
   assert.equal(await cardShown(), true, 'a kept-open card stays when focus goes elsewhere');
+  const cardOnTop = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .isAlwaysOnTop(),
+    );
+  assert.equal(await cardOnTop(), false, 'a plain pinned card is an ordinary window');
+  // The pin's third state: still kept open, now always on top (a quiet run's windows are
+  // invisible and click-through, so it floats for real there too).
+  await card.evaluate(() => window.office.card('pin-top'));
+  const topState = await card.evaluate(() => window.office.cardState());
+  assert.deepEqual([topState.pin, topState.pinned], ['top', true]);
+  await blurCard();
+  await card.waitForTimeout(900);
+  assert.equal(await cardShown(), true, 'a card pinned on top stays when focus goes elsewhere');
+  assert.equal(await cardOnTop(), true, 'pinned on top floats');
   await card.evaluate(() => window.office.card('pin-off'));
+  assert.equal((await card.evaluate(() => window.office.cardState())).pin, 'off');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
@@ -614,10 +631,30 @@ try {
       transparent: w.getBackgroundColor(),
       alwaysOnTop: w.isAlwaysOnTop(),
       visible: w.isVisible(),
+      opacity: w.getOpacity(),
       webPreferences: w.webContents.getLastWebPreferences(),
     })),
   );
   assert.ok(native.some((w) => w.alwaysOnTop && !w.visible));
+  if (!focusTests) {
+    // Quiet runs: every window is invisible to the person (desktop/quiet.ts), yet still renders.
+    // Linux has no window opacity; there quiet windows only never float (their layer is recorded).
+    assert.ok(
+      process.platform === 'linux' || native.every((w) => w.opacity === 0),
+      'quiet windows are fully transparent',
+    );
+    const captured = await app.evaluate(async ({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows().find((x) => x.isVisible());
+      const image = await w.webContents.capturePage();
+      const { width, height } = image.getSize();
+      // Any pixel that is not fully transparent: the page was drawn.
+      const bitmap = image.toBitmap();
+      let drawn = false;
+      for (let i = 3; i < bitmap.length && !drawn; i += 4) drawn = bitmap[i] > 0;
+      return { width, height, drawn };
+    });
+    assert.ok(captured.width > 0 && captured.height > 0 && captured.drawn, 'capturePage works');
+  }
   assert.equal(native.filter((w) => w.visible).length, 1);
   assert.ok(
     native.every(

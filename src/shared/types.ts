@@ -732,11 +732,16 @@ export interface CardTarget {
 }
 /** Native popup presentation state; independent of the colleague's office pin. */
 export interface CardWindowState {
+  /** Kept open (pinned, or pinned on top). */
   pinned: boolean;
+  /** Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, or pinned on top. */
+  pin?: import('./card-windows').CardPin;
   positionRemembered: boolean;
   /** Initial state handshake also recovers a target sent before the renderer subscribed. */
   target?: CardTarget | null;
 }
+/** A popup window's own on-top control: read it (`top`), or set it on top or back to ordinary. */
+export type PopupOnTopAction = 'top' | 'top-on' | 'top-off';
 /** `tiny-on`/`tiny-off`: the row and floor at helper-desk size (remembered by the main process). */
 export type DockAction =
   | DockMode
@@ -803,12 +808,20 @@ export interface OfficeAPI {
    * Desktop only: the bookmark reader's own window, one per bookmark. `open` opens it beside the
    * asking window (or brings it forward) with only the bookmark's id; in that window, `target`
    * reads which bookmark it shows, `focus`/`close` act on it and `go` shows the big office at
-   * the bookmarked message.
+   * the bookmarked message. `top` reads whether that window stays on top and `top-on`/`top-off`
+   * set it (`onPopupOnTop` hears each change).
    */
-  bookmarkWindow?: (
-    action: 'open' | 'target' | 'focus' | 'close' | 'go',
-    target?: { id: string },
-  ) => Promise<{ id: string } | void>;
+  bookmarkWindow?: {
+    (action: 'open', target: { id: string }): Promise<void>;
+    (action: 'target'): Promise<{ id: string }>;
+    (action: 'focus' | 'close' | 'go'): Promise<void>;
+    (action: PopupOnTopAction): Promise<boolean>;
+  };
+  /**
+   * Desktop popup windows (mini terminal, bookmark reader): whether this window stays on top,
+   * each time that changes (set by its own toggle, or floated again by a floating opener).
+   */
+  onPopupOnTop?: (callback: (on: boolean) => void) => () => void;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**
@@ -870,11 +883,13 @@ export interface OfficeAPI {
      * The mini terminal's own window, one per folder shell: `open` opens it beside the asking
      * window (or brings it forward); in that window, `target` reads what it shows, `focus` takes
      * the keyboard and `close` closes it (detaching). `close-all` is the big office's only.
+     * `top` reads whether that window stays on top and `top-on`/`top-off` set it.
      */
     window: {
       (action: 'open', target: import('./mini-shell').ShellTarget): Promise<void>;
       (action: 'target'): Promise<import('./mini-shell').ShellTarget>;
       (action: 'close' | 'focus' | 'close-all'): Promise<void>;
+      (action: PopupOnTopAction): Promise<boolean>;
     };
   };
 
@@ -931,6 +946,7 @@ export interface OfficeAPI {
       | 'drag-end'
       | 'select'
       | 'pin-on'
+      | 'pin-top'
       | 'pin-off'
       | 'position-on'
       | 'position-off'

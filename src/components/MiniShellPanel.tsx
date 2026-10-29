@@ -6,6 +6,7 @@ import { ChevronDown, LoaderCircle, Power, SquareTerminal, X } from 'lucide-reac
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { closeMiniShell, openMiniShell } from '../lib/miniShell';
+import { OnTopButton, usePopupOnTop } from './WindowPin';
 import {
   clampCols,
   clampRows,
@@ -38,6 +39,8 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
   const [othersOpen, setOthersOpen] = useState(false);
   const [round, setRound] = useState(0);
   const fitRef = useRef<() => void>(() => {});
+  // This terminal window's own on-top toggle (desktop/popup-windows.ts `setOnTop`).
+  const onTop = usePopupOnTop(shell.window);
 
   // The page's own shortcuts (Esc closes a card, letters jump around) must not see terminal keys.
   useEffect(() => {
@@ -253,6 +256,13 @@ export default function MiniShellPanel({ target }: { target: ShellTarget }) {
           <Power size={12} />
           {t.shell.kill}
         </button>
+        <OnTopButton
+          className="mini-shell-btn icon"
+          size={13}
+          on={onTop.on}
+          busy={onTop.busy}
+          onToggle={() => void onTop.toggle().catch((e: Error) => setNote(e.message))}
+        />
         <button
           type="button"
           className="mini-shell-btn icon"
