@@ -340,7 +340,11 @@ try {
   );
   const [dock] = await Promise.all([
     app.waitForEvent('window'),
-    page.getByRole('button', { name: '데스크 펫', exact: true }).click(),
+    // This action hides its source window. Dispatch the button handler without waiting for
+    // a mouse-frame acknowledgement from a hidden Windows renderer; verify the new window.
+    page
+      .getByRole('button', { name: '데스크 펫', exact: true })
+      .evaluate((button) => button.click()),
   ]);
   await dock.waitForSelector('.desk-pet');
   const dockBounds = () =>

@@ -1219,6 +1219,12 @@
   border: 1px solid var(--line);
   transition: border-color 0.15s;
 }
+/* History can show hundreds of repeated portraits. Keep them static so each old entry
+   does not retain an animated sprite compositor layer. The office pet still shows its state. */
+.news-item .sprite {
+  animation: none;
+  will-change: auto;
+}
 .news-item:hover {
   border-color: var(--line-2);
 }

@@ -22,6 +22,8 @@
 - 단위 **819개 통과**. migration/legacy writer/read-only, 같은 시각 포함 1,600개 excerpt cursor, 오래된 bookmark reach, 원본·읽음 보존, 정확한 count/read-all, stalled request 교체, patch 8 MiB 이후 전체 snapshot 복구, 디스크 checkpoint 실패 시 대기 보존, 150,000 usage iterator를 포함한다.
 - production build(typecheck 포함)·format·MCP smoke 통과. Electron smoke는 합성 3개 공급자, 카드/책상/설정, IPC persistence, renderer isolation을 통과했고 OS focus/Dock 검수는 quiet 모드에서 생략했다. 서명·공증한 새 릴리스 검수는 이 변경의 범위가 아니다.
 - UI 전체 435개 중 첫 run **433 pass / 2 fail**. 첫 failure는 추가한 1,000개 대화 검수에서 초기 detail을 기다리지 않은 fixture, 두 번째는 debounce→throttle 변경 뒤 이전 ‘반드시 한 번만’ 기대값이었다. fixture/기대값을 수정하고 집중 재검증했다. 기존 스크롤 fixture의 앵커 복구와 `scrollTo` 경합은 실제 휠 입력으로 검증하도록 보완했다. 최종 집중 UI **13개 모두 통과**. 전체 CI 결과는 PR 근거를 따른다.
+- 첫 Linux CI는 433/435 통과. 대량 대화 탐색에서 자동 로딩이 클릭보다 먼저 마지막 페이지에 도달하는 경합과, 480개 소식 상태의 브라우저 응답 지연을 확인했다. 최종 페이지 도달을 성공으로 처리하고, Markdown memo 및 기록 프로필의 정지 프레임으로 불필요한 렌더링/애니메이션을 줄였다. 로컬 관련 UI **27개 통과**(대화·소식·북마크·파일 링크 포함).
+- 첫 Windows CI는 빌드/패키지 및 Windows 고유 UI smoke를 통과했으나 공통 desktop smoke의 펫 전환 click 대기가 끝나지 않아 이 작업의 run을 취소했다. 새 펫 창 생성은 확인됐고, 숨겨진 원래 창의 mouse frame 완료 대신 버튼 handler→새 창 검증으로 수정했다. Windows CI에 중복 실행 취소·job 20분/실행 검수 5분 상한을 추가했다. 최종 원격 실행은 PR 체크를 따른다.
 - 실제 화면에서 1,000개 대화의 400개 window·live 중 읽던 범위 유지·최신 복귀, 1,200개 소식의 500개 window·끝까지 조회·최신 복귀를 확인한다. 긴 스트림 도중에도 주기적인 소식 refresh가 진행되고 조용해지면 요청이 멎는 것을 검증한다.
 - 초기 실패 로그와 합성 화면은 worktree `.local/`에 보존한다. 무제한 전체 앱 RAM 보장, 실제 사용자 작업의 장기 RSS, release 패키지 성능으로 일반화하지 않는다.
 

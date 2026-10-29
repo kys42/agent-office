@@ -397,10 +397,16 @@ test('A long news browse releases recent pages, reaches the oldest and returns t
   const older = inbox.locator('.news-feed-scroll .news-load');
   for (let i = 0; i < 60 && (await older.count()); i++) {
     await older.click();
-    await expect.poll(() => inbox.locator('.news-item').count()).toBeLessThanOrEqual(500);
+    expect(await inbox.locator('.news-item').count()).toBeLessThanOrEqual(500);
   }
   await expect(inbox.locator('.news-item').last()).toContainText('소식 #1199');
   await expect(inbox.locator('.news-item')).toHaveCount(500);
+  expect(
+    await inbox
+      .locator('.news-item .sprite')
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName),
+  ).toBe('none');
   await expect(older).toHaveCount(0);
   await inbox.locator('.news-feed > .news-load').click();
   await expect(inbox.locator('.news-item').first()).toContainText('소식 #000');

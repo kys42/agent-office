@@ -193,7 +193,14 @@ test('Reading a thousand messages keeps a bounded window, holds it through new w
   const older = page.locator('.older-messages');
   await expect(older).toBeVisible();
   for (let i = 0; i < 90 && (await older.count()); i++) {
-    await older.click();
+    try {
+      await older.click({ timeout: 2000 });
+    } catch (error) {
+      // Scrolling the button into view may auto-load the final page before the click lands.
+      // That is successful navigation, not a button that should reappear for 120 seconds.
+      if (!(await page.locator('[data-event-id="e0"]').count())) throw error;
+      break;
+    }
     await expect.poll(() => page.locator('.conversation-message').count()).toBeLessThanOrEqual(400);
   }
   await expect(page.locator('[data-event-id="e0"]')).toBeAttached();
