@@ -203,6 +203,10 @@ async function newsOffice(page: Page, count: number, read: (i: number) => boolea
         },
         noticePage: async (q: any) => {
           w.calls.push(['page', q.filter, q.before?.id ?? null]);
+          if (w.failPages > 0) {
+            w.failPages--;
+            throw new Error('fixture temporary offline');
+          }
           if (q.before && w.hold) await new Promise((r) => (w.release = r));
           const after = (n: any) =>
             !q.before || n.at < q.before.at || (n.at === q.before.at && n.id < q.before.id);
@@ -433,4 +437,49 @@ test('Continuous incoming snapshots do not starve news page refreshes', async ({
   const after = await page.evaluate(() => (window as any).calls.length);
   expect(after - before).toBeGreaterThanOrEqual(2);
   expect(after - before).toBeLessThanOrEqual(6);
+});
+
+test('Jumping to latest while an older news page is pending discards its old cursor safely', async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await newsOffice(page, 900, () => true);
+  await page.goto('/');
+  await page.getByRole('button', { name: '소식함 열기' }).click();
+  const inbox = page.locator('.news-inbox');
+  await inbox.getByRole('button', { name: /전체 기록/ }).click();
+  await inbox.getByRole('checkbox').check();
+  const older = inbox.locator('.news-feed-scroll .news-load');
+  for (let i = 0; i < 20; i++) await older.click();
+  await expect(inbox.locator('.news-feed > .news-load')).toBeVisible();
+  await page.evaluate(() => ((window as any).hold = true));
+  await older.click();
+  await expect.poll(() => page.evaluate(() => typeof (window as any).release)).toBe('function');
+  await inbox.locator('.news-feed > .news-load').click();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.hold = false;
+    w.release();
+  });
+  await expect(inbox.locator('.news-item').first()).toContainText('소식 #000');
+  await expect.poll(() => inbox.locator('.news-item').count()).toBeLessThanOrEqual(100);
+  expect(errors).toEqual([]);
+});
+
+test('A quiet inbox retries a transient page failure without another incoming snapshot', async ({
+  page,
+}) => {
+  await newsOffice(page, 1000, () => false);
+  await page.addInitScript(() => ((window as any).failPages = 1));
+  await page.goto('/');
+  await page.getByRole('button', { name: '소식함 열기' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).calls.filter((c: any[]) => c[0] === 'page').length),
+    )
+    .toBe(2);
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => (window as any).calls.length)).toBe(2);
 });

@@ -283,10 +283,13 @@ export function NewsFeed({
     let valid = true;
     let busy = false;
     let requested: string | undefined;
+    let retryAt = 0;
+    let failures = 0;
     let task: ReturnType<LatestTask<NoticePage>['request']> | undefined;
     const refresh = () => {
-      if (busy || requested === latestRefresh.current) return;
+      if (busy || Date.now() < retryAt || (requested === latestRefresh.current && !retryAt)) return;
       requested = latestRefresh.current;
+      retryAt = 0;
       busy = true;
       const g = ++generation.current;
       const before = depth.current.before;
@@ -296,8 +299,13 @@ export function NewsFeed({
       reading.current = task.promise
         .then((p) => {
           if (valid && p && g === generation.current) show({ ...p, key, before });
+          failures = 0;
         })
-        .catch(() => {})
+        .catch(() => {
+          // A quiet office must recover after a transient failure too. Back off without
+          // retaining queued requests; a continuous stream cannot bypass this delay.
+          retryAt = Date.now() + Math.min(30000, 1000 * 2 ** Math.min(failures++, 5));
+        })
         .finally(() => {
           busy = false;
         });
@@ -327,7 +335,8 @@ export function NewsFeed({
         limit: NOTICE_PAGE,
       });
       if (g !== generation.current) continue;
-      const p = current.current!;
+      const p = current.current;
+      if (!p || p.key !== key) return;
       const ids = new Set(p.notices.map((n) => n.id));
       const notices = [...p.notices, ...next.notices.filter((n) => !ids.has(n.id))];
       const excess = Math.max(0, notices.length - NEWS_WINDOW);
@@ -390,6 +399,7 @@ export function NewsFeed({
         <button
           className="button news-load"
           onClick={() => {
+            ++generation.current;
             depth.current = { key, count: NOTICE_PAGE, before: null };
             show(null);
             setSettled((n) => n + 1);
