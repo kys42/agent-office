@@ -31,7 +31,7 @@ import {
   type TerminalDeps,
 } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
-import { liveClaudeProcesses } from '../server/adapters/claude-live.js';
+import { liveClaudeProcesses, titleKey } from '../server/adapters/claude-live.js';
 import type { SendResult } from '../src/shared/types.js';
 import { claudeCodeComposer, codexQueueComposer, composerFor } from '../desktop/composer/index.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -2405,4 +2405,111 @@ test('A long job name matches the whole Orca title while polling; the display st
       assert.equal(titleNames(`✳ ${long}`.slice(0, 120), long), false);
     },
   );
+});
+
+const OTHER_JOB = {
+  sessionId: 'abcdef12-0000-4000-8000-000000000000',
+  jobId: 'abcdef12',
+};
+
+test('Jobs whose names could draw the same title are namesakes, whichever has the glyph', async () => {
+  const pairs: [string, string | undefined][] = [
+    ['Build', '✳ Build'],
+    ['✳ Build', 'Build'],
+    ['Build', '[ ! ] Action Required | ✳ Build'],
+    ['Build', 'Build  '],
+    // A job with no name of its own could show any title.
+    ['Build', undefined],
+  ];
+  for (const [ours, theirs] of pairs)
+    await withSessions(
+      {
+        '4242.json': parkedWindow(),
+        '7777.json': bgJob(7777, { name: ours }),
+        '8888.json': bgJob(8888, { ...OTHER_JOB, name: theirs }),
+      },
+      async (dir) => {
+        const { deps } = fakeDeps(dir, { ...jobShown('✳ Build'), alive: [4242, 7777, 8888] });
+        const name = `${ours} / ${theirs}`;
+        assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, name);
+        assert.equal(
+          (await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind,
+          'unknown',
+          name,
+        );
+      },
+    );
+  // Distinct titles stay distinct.
+  await withSessions(
+    {
+      '4242.json': parkedWindow(),
+      '7777.json': bgJob(7777, { name: 'Build' }),
+      '8888.json': bgJob(8888, { ...OTHER_JOB, name: 'Build 2' }),
+    },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, { ...jobShown('✳ Build'), alive: [4242, 7777, 8888] });
+      assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+    },
+  );
+});
+
+test('A competing job or window whose process cannot be verified keeps the job unknown', async () => {
+  const lstartFails = (pid: number) => (file: string, args: string[]) =>
+    file === '/bin/ps' && args.includes('lstart=') && args.at(-1) === String(pid)
+      ? new Error('ps failed')
+      : undefined;
+  const namesake = { ...PARKED, '8888.json': bgJob(8888, OTHER_JOB) };
+  // Alive, start time unreadable: it may be live, so it may be the job on screen.
+  await withSessions(namesake, async (dir) => {
+    const { deps } = fakeDeps(dir, {
+      ...jobShown(),
+      alive: [4242, 7777, 8888],
+      fail: lstartFails(8888),
+    });
+    assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+    assert.equal((await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind, 'unknown');
+  });
+  // Proven gone (ended, or a recycled PID): no longer a namesake.
+  for (const options of [
+    { alive: [4242, 7777] },
+    { alive: [4242, 7777, 8888], lstart: { 8888: 'Wed Oct  7 09:00:00 2026' } },
+  ])
+    await withSessions(namesake, async (dir) => {
+      const { deps } = fakeDeps(dir, { ...jobShown(), ...options });
+      assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+    });
+  // A second parking window that cannot be verified may be the one showing it.
+  await withSessions(
+    { ...PARKED, '4343.json': parkedWindow({ pid: 4343, sessionId: 'aaaaaaaa-other' }) },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, {
+        ...jobShown(),
+        alive: [4242, 4343, 7777],
+        fail: lstartFails(4343),
+      });
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+    },
+  );
+  // Found first, then a namesake turns unverifiable: the next check refuses.
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, {
+      ...jobShown(),
+      alive: [4242, 7777, 8888],
+      fail: lstartFails(8888),
+    });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await writeFile(path.join(dir, '8888.json'), bgJob(8888, OTHER_JOB));
+    assert.equal(await stillLive(live, deps), null);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+  });
+});
+
+test('Titles and job names reduce alike', () => {
+  assert.equal(titleKey('✳ Build'), 'Build');
+  assert.equal(titleKey('[ ! ] Action Required | ⠂ Build'), 'Build');
+  assert.equal(titleKey('  Build   now '), 'Build now');
+  assert.equal(titleNames('✳ Build', '✳ Build'), true);
+  assert.equal(titleNames('✳ ✳ Build', 'Build'), true);
+  assert.equal(titleNames('✳ Build', '✳'), false);
 });

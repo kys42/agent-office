@@ -206,15 +206,17 @@ export async function readClaudeProcessesCached(
 }
 
 /**
- * The record's process is alive and is the one that wrote it: a recycled PID started at another
- * time. procStart is written in UTC with the C locale. A failed check is not remembered.
+ * Whether the record's process is alive and is the one that wrote it: `live`; `gone` when it
+ * ended or its PID was recycled (it started at another time); `unknown` when the PID is alive
+ * but its start time could not be read. procStart is written in UTC with the C locale. A failed
+ * check is not remembered.
  */
-export async function isLiveProcess(
+export async function processIdentity(
   record: ClaudeProcess,
   deps: ClaudeLiveDeps,
   fresh = false,
-): Promise<boolean> {
-  if (!deps.alive(record.pid)) return false;
+): Promise<'live' | 'gone' | 'unknown'> {
+  if (!deps.alive(record.pid)) return 'gone';
   const key = `lstart:${record.pid}:${record.procStart}`;
   const started = await remember(deps, key, 30_000, fresh, () =>
     deps
@@ -223,8 +225,54 @@ export async function isLiveProcess(
       })
       .catch(() => ''),
   );
-  if (!started.trim()) forget(deps, key);
-  return !!started && spaces(started) === spaces(record.procStart);
+  if (!started.trim()) {
+    forget(deps, key);
+    // `ps` fails for a PID that just ended; while it is alive, nothing is known.
+    return deps.alive(record.pid) ? 'unknown' : 'gone';
+  }
+  return spaces(started) === spaces(record.procStart) ? 'live' : 'gone';
+}
+
+/** The record's process is alive and is the one that wrote it (`processIdentity`). */
+export const isLiveProcess = async (record: ClaudeProcess, deps: ClaudeLiveDeps, fresh = false) =>
+  (await processIdentity(record, deps, fresh)) === 'live';
+
+/**
+ * The records that pass `match` and whose process is live, or null while any of them cannot be
+ * verified (alive, start time unreadable): it may be one of them, so nothing is proven.
+ */
+async function liveMatches(
+  deps: ClaudeLiveDeps,
+  fresh: boolean,
+  match: (record: ClaudeProcess) => boolean,
+): Promise<ClaudeProcess[] | null> {
+  const found: ClaudeProcess[] = [];
+  let unknown = false;
+  for (const record of await recordsOf(deps, fresh)) {
+    if (!match(record)) continue;
+    const identity = await processIdentity(record, deps, fresh);
+    if (identity === 'live') found.push(record);
+    else if (identity === 'unknown') unknown = true;
+  }
+  return unknown ? null : found;
+}
+
+/**
+ * A session name as a terminal title shows it, reduced to what tells two titles apart: Orca's
+ * attention marker and Claude's leading status glyph (`✳ `, a spinner) are dropped, repeatedly,
+ * and runs of spaces are one. A title shows a job only when both reduce alike, and two jobs
+ * whose names reduce alike could show the same title: they are namesakes.
+ */
+export function titleKey(text: string): string {
+  let key = spaces(text);
+  for (let i = 0; i < 16; i++) {
+    const next = spaces(
+      key.replace(/^\[ [.!] \] Action Required \| /, '').replace(/^[^\p{L}\p{N}\s]{1,2} /u, ''),
+    );
+    if (next === key) break;
+    key = next;
+  }
+  return key;
 }
 
 /** A window that moved its conversation to the background: its own record is stale. */
@@ -265,17 +313,13 @@ export async function parkedWindows(
   job: ClaudeProcess,
   deps: ClaudeLiveDeps,
   fresh = false,
-): Promise<ClaudeProcess[]> {
+): Promise<ClaudeProcess[] | null> {
   if (job.kind !== 'bg' || !job.jobId) return [];
-  const found: ClaudeProcess[] = [];
-  for (const record of await recordsOf(deps, fresh))
-    if (
-      record.kind !== 'bg' &&
-      record.parkedJobId === job.jobId &&
-      (await isLiveProcess(record, deps, fresh))
-    )
-      found.push(record);
-  return found;
+  return liveMatches(
+    deps,
+    fresh,
+    (record) => record.kind !== 'bg' && record.parkedJobId === job.jobId,
+  );
 }
 
 /** The live background session of a job id, verified against PID reuse. */
@@ -294,22 +338,27 @@ export async function findClaudeJob(
   return null;
 }
 
-/** Live background sessions other than `job` that carry the same name. */
+/**
+ * Live background sessions other than `job` whose title could read as the same (`titleKey`), or
+ * null while one of them cannot be verified (it may be live). A job without a name, or with one
+ * that reduces to nothing, has no title of its own: null.
+ */
 export async function namesakeJobs(
   job: ClaudeProcess,
   deps: ClaudeLiveDeps,
   fresh = false,
-): Promise<ClaudeProcess[]> {
-  const found: ClaudeProcess[] = [];
-  for (const record of await recordsOf(deps, fresh))
-    if (
+): Promise<ClaudeProcess[] | null> {
+  const key = job.name ? titleKey(job.name) : '';
+  if (!key) return null;
+  return liveMatches(
+    deps,
+    fresh,
+    (record) =>
       record.kind === 'bg' &&
       record.sessionId !== job.sessionId &&
-      record.name === job.name &&
-      (await isLiveProcess(record, deps, fresh))
-    )
-      found.push(record);
-  return found;
+      // A namesake without a name of its own could show any title.
+      (!record.name || titleKey(record.name) === key),
+  );
 }
 
 /**

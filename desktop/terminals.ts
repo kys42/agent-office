@@ -43,6 +43,7 @@ import {
   isParked,
   namesakeJobs,
   parkedWindows,
+  titleKey,
   parseClaudeProcess,
   processAlive,
   remember,
@@ -180,9 +181,11 @@ async function jobWindow(
   fresh: boolean,
 ): Promise<ClaudeProcess | null> {
   if (!job.name) return null;
+  // Fail closed: a window or namesake whose process cannot be verified may be the one in front.
   const windows = await parkedWindows(job, deps, fresh);
-  if (windows.length !== 1) return null;
-  if ((await namesakeJobs(job, deps, fresh)).length) return null;
+  if (windows?.length !== 1) return null;
+  const namesakes = await namesakeJobs(job, deps, fresh);
+  if (namesakes === null || namesakes.length) return null;
   return windows[0];
 }
 
@@ -213,12 +216,12 @@ async function showsJob(
 
 /**
  * Claude Code titles its terminal `<glyph> <name>` (✳ at rest, a spinner while working); Orca
- * may put an attention marker in front. Only the whole name counts.
+ * may put an attention marker in front. Both reduce alike (`titleKey`), the same reduction that
+ * tells namesake jobs apart, so a title can only ever match one job that passed that check.
  */
 export function titleNames(title: string, name: string): boolean {
-  const shown = spaces(title.replace(/^\[ [.!] \] Action Required \| /, ''));
-  const bare = shown.replace(/^[^\p{L}\p{N}\s]{1,2} /u, '');
-  return shown === spaces(name) || bare === spaces(name);
+  const key = titleKey(name);
+  return !!key && titleKey(title) === key;
 }
 
 /**
