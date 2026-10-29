@@ -285,7 +285,7 @@ test('The inbox reads older notices by page, and receipts and read-all reach not
   await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('0');
 });
 
-test('A paged list stays whole while it changes: no gap from a page racing a re-read, no shrinking past one page, one re-read per burst', async ({
+test('A paged list stays whole while it changes: no gap from a page racing a re-read, no shrinking past one page, bounded re-reads during a burst', async ({
   page,
 }) => {
   await newsOffice(page, 300, () => true);
@@ -331,7 +331,7 @@ test('A paged list stays whole while it changes: no gap from a page racing a re-
   await expect(items).toHaveCount(301);
   const reads = await tops();
   const pages = (await calls()).length;
-  // A burst of changes is read once, after it settles.
+  // A throttle boundary can split a burst into two reads; a continuous stream must not starve.
   await page.evaluate(async () => {
     const w = window as any;
     for (let i = 0; i < 3; i++) {
@@ -341,9 +341,12 @@ test('A paged list stays whole while it changes: no gap from a page racing a re-
     }
   });
   await expect(inbox.getByText('새 소식 2')).toBeVisible();
-  await expect.poll(tops).toBe(reads + 1);
+  await expect.poll(tops).toBeGreaterThanOrEqual(reads + 1);
   await page.waitForTimeout(600);
-  expect(await tops()).toBe(reads + 1);
+  const settled = await tops();
+  expect(settled).toBeLessThanOrEqual(reads + 2);
+  await page.waitForTimeout(450);
+  expect(await tops()).toBe(settled);
   expect((await calls()).length - pages).toBeGreaterThanOrEqual(3);
   await expect(items).toHaveCount(301);
   expect(await ids()).toEqual(await newest(301));
@@ -376,4 +379,52 @@ test('Reading all of a paged list outside the inbox clears it at once and stays 
   await page.waitForTimeout(600);
   await expect(inbox.locator('.news-item')).toHaveCount(0);
   await expect(all).toContainText('0');
+});
+
+test('A long news browse releases recent pages, reaches the oldest and returns to latest', async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  await newsOffice(page, 1200, () => true);
+  await page.goto('/');
+  await page
+    .getByRole('button', { name: /소식함/ })
+    .first()
+    .click();
+  const inbox = page.locator('.news-inbox');
+  await inbox.getByRole('button', { name: /^전체/ }).click();
+  await inbox.getByRole('checkbox').check();
+  const older = inbox.locator('.news-feed-scroll .news-load');
+  for (let i = 0; i < 60 && (await older.count()); i++) {
+    await older.click();
+    await expect.poll(() => inbox.locator('.news-item').count()).toBeLessThanOrEqual(500);
+  }
+  await expect(inbox.locator('.news-item').last()).toContainText('소식 #1199');
+  await expect(inbox.locator('.news-item')).toHaveCount(500);
+  await expect(older).toHaveCount(0);
+  await inbox.locator('.news-feed > .news-load').click();
+  await expect(inbox.locator('.news-item').first()).toContainText('소식 #000');
+  await expect.poll(() => inbox.locator('.news-item').count()).toBeLessThanOrEqual(100);
+});
+
+test('Continuous incoming snapshots do not starve news page refreshes', async ({ page }) => {
+  await newsOffice(page, 1000, () => false);
+  await page.goto('/');
+  await page
+    .getByRole('button', { name: /소식함/ })
+    .first()
+    .click();
+  await expect.poll(() => page.evaluate(() => (window as any).calls.length)).toBeGreaterThan(0);
+  const before = await page.evaluate(() => (window as any).calls.length);
+  await page.evaluate(async () => {
+    const w = window as any;
+    for (let i = 0; i < 20; i++) {
+      w.all[0].version = `live-${i}`;
+      w.push();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+    }
+  });
+  const after = await page.evaluate(() => (window as any).calls.length);
+  expect(after - before).toBeGreaterThanOrEqual(2);
+  expect(after - before).toBeLessThanOrEqual(6);
 });

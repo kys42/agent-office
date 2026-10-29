@@ -148,6 +148,8 @@ export function Conversation({
   older = false,
   loadingOlder = false,
   onOlder,
+  newer = false,
+  onLatest,
   bookmarked = [],
   onBookmark,
   focus,
@@ -167,6 +169,8 @@ export function Conversation({
   older?: boolean;
   loadingOlder?: boolean;
   onOlder?: () => void;
+  newer?: boolean;
+  onLatest?: () => void;
   /** Ids of the bookmarked messages; `onBookmark` (absent where nothing is kept) toggles one. */
   bookmarked?: string[];
   onBookmark?: (eventId: string, on: boolean) => void;
@@ -214,11 +218,21 @@ export function Conversation({
   // message not yet read is never shown as if the record had lost it.
   const events = useMemo(() => {
     const first = older ? session.events[0]?.at : undefined;
+    const last = newer ? session.events.at(-1)?.at : undefined;
     return retainedConversation(
       session.events,
-      first === undefined ? notices : notices.filter((n) => n.at >= first),
+      notices.filter(
+        (n) => (first === undefined || n.at >= first) && (last === undefined || n.at <= last),
+      ),
     );
-  }, [session.events, notices, older]);
+  }, [session.events, notices, older, newer]);
+  useEffect(() => {
+    const ids = new Set(events.map((e) => e.id));
+    setExpanded((old) => {
+      const kept = new Set([...old].filter((id) => ids.has(id)));
+      return kept.size === old.size ? old : kept;
+    });
+  }, [events]);
   const counts = Object.fromEntries(
     ['request', 'progress', 'reply', 'message', 'work'].map((kind) => [
       kind,
@@ -735,11 +749,12 @@ export function Conversation({
           </>
         )}
       </div>
-      {newBelow && (
+      {(newBelow || newer) && (
         <button
           className="new-messages"
           onClick={() => {
             follow.current = true;
+            if (newer) onLatest?.();
             scrollBottom();
             setNewBelow(false);
           }}

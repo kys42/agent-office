@@ -1,3 +1,32 @@
+# 2026-10-29 · 대량 기록 메모리·페이지 최적화 (#296)
+
+- 기준 `9a05a23`(PR #291) → `perf/bounded-working-set`. 정본 [경량화 설계](PERFORMANCE-DESIGN.md), [기계 판독 측정값](benchmarks/2026-10-29-working-set.json). 모든 부하는 합성 provider home/임시 DB이며 실제 사용자 데이터·설치 앱은 건드리지 않았다.
+- 같은 합성 세션 100개/소식 50,000개. 아래 CPU는 측정 시퀀스의 user+system 누적 시간으로, 앱 전체 CPU 점유율이 아니다. RSS는 두 번 GC 직후 표본이고 OS allocator/캐시 영향이 있으며 단독 보장값이 아니다.
+
+| 지표 | 변경 전 | 변경 후 |
+| --- | ---: | ---: |
+| snapshot 뒤 heap | 89.83 MiB | 21.85 MiB |
+| hot stage 뒤 heap | 201.80 MiB | 21.99 MiB |
+| snapshot 뒤 RSS | 975.59 MiB | 169.53 MiB |
+| 반복 snapshot 평균 | 566.20 ms | 52.00 ms |
+| 소식 50개 조회 | 592.89 ms | 24.88 ms |
+| 최신 대화 조회 | 349.73 ms | 0.86 ms |
+| hot stage | 364.25 ms | 0.46 ms |
+| 시퀀스 누적 CPU | 6,558.96 ms | 575.87 ms |
+| 전송 소식 / snapshot bytes | 1,047 / 1,934,285 | 동일 |
+| 미확인 / 전체 소식 수 | 26,667 / 50,000 | 동일 |
+
+- 소식 **200,000개**에서도 stage 뒤 heap **22.03 MiB**, RSS **170.77 MiB**, 최신 대화 **0.99 ms**, stage **0.79 ms**. 반복 snapshot **177.55 ms**, 소식 page **102.52 ms**로 정확한 SQL 집계의 CPU 비용은 역사량에 비례한다. 일정한 상주 heap과 일정한 쿼리 시간은 다른 주장이다.
+- 가속 연속 수집 **720회·세션 40개**: 준비 뒤 heap **76.5→79.2 MiB(+3.5%)**, window 예산 유지. 실제 한 시간 방치 검수와 구분한다. 이 검수는 cold tier 추가 전이며 40개 모두 hot cache에 들어간다.
+- 최종 압축 tier의 예산 초과 검수 **24회·세션 80개**: heap **78.6→79.3 MiB(+0.9%)**, hot 41개, cold 약 **0.6 MiB**. 단위 회귀는 hot 1개/파일 3개/5회 순회에도 원본 read가 3회로 유지됨, stamp 변경·손상·prune을 검증한다. single entry 8 MiB 초과 또는 두 tier 모두 꽉 찬 경우는 bounded source 재읽기 fallback이다.
+- 단위 **819개 통과**. migration/legacy writer/read-only, 같은 시각 포함 1,600개 excerpt cursor, 오래된 bookmark reach, 원본·읽음 보존, 정확한 count/read-all, stalled request 교체, patch 8 MiB 이후 전체 snapshot 복구, 디스크 checkpoint 실패 시 대기 보존, 150,000 usage iterator를 포함한다.
+- production build(typecheck 포함)·format·MCP smoke 통과. Electron smoke는 합성 3개 공급자, 카드/책상/설정, IPC persistence, renderer isolation을 통과했고 OS focus/Dock 검수는 quiet 모드에서 생략했다. 서명·공증한 새 릴리스 검수는 이 변경의 범위가 아니다.
+- UI 전체 435개 중 첫 run **433 pass / 2 fail**. 첫 failure는 추가한 1,000개 대화 검수에서 초기 detail을 기다리지 않은 fixture, 두 번째는 debounce→throttle 변경 뒤 이전 ‘반드시 한 번만’ 기대값이었다. fixture/기대값을 수정하고 집중 재검증했다. 기존 스크롤 fixture의 앵커 복구와 `scrollTo` 경합은 실제 휠 입력으로 검증하도록 보완했다. 최종 집중 UI **13개 모두 통과**. 전체 CI 결과는 PR 근거를 따른다.
+- 실제 화면에서 1,000개 대화의 400개 window·live 중 읽던 범위 유지·최신 복귀, 1,200개 소식의 500개 window·끝까지 조회·최신 복귀를 확인한다. 긴 스트림 도중에도 주기적인 소식 refresh가 진행되고 조용해지면 요청이 멎는 것을 검증한다.
+- 초기 실패 로그와 합성 화면은 worktree `.local/`에 보존한다. 무제한 전체 앱 RAM 보장, 실제 사용자 작업의 장기 RSS, release 패키지 성능으로 일반화하지 않는다.
+
+---
+
 # 2026-10-29 · 프로덕션 3회 검토 및 최종 공증 DMG
 
 - 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), [PR #291](https://github.com/kys42/agent-office/pull/291), Issue #290, `feat/production-readiness`.

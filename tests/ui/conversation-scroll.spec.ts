@@ -95,7 +95,9 @@ test('scrolling near earlier messages during the paging cooldown still loads wit
   // Reach the newly moved top before the cooldown expires; no more input is necessary.
   await scroll.evaluate((el) => el.scrollTo(0, 0));
   await expect(page.locator('[data-event-id="e88"]')).toBeAttached();
-  await scroll.evaluate((el) => el.scrollTo(0, 0));
+  // Real input is distinct from the anchor restoration scroll emitted by layout.
+  await scroll.hover();
+  await page.mouse.wheel(0, -4000);
   await expect.poll(() => page.evaluate(() => (window as any).pages.includes('e80'))).toBe(true);
 });
 
@@ -181,4 +183,29 @@ test('upward wheel at a non-scrolling filtered page finds older visible messages
     'e80',
     'e40',
   ]);
+});
+
+test('Reading a thousand messages keeps a bounded window, holds it through new work and jumps back', async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  const scroll = await card(page, 1000);
+  const older = page.locator('.older-messages');
+  await expect(older).toBeVisible();
+  for (let i = 0; i < 90 && (await older.count()); i++) {
+    await older.click();
+    await expect.poll(() => page.locator('.conversation-message').count()).toBeLessThanOrEqual(400);
+  }
+  await expect(page.locator('[data-event-id="e0"]')).toBeAttached();
+  await expect(older).toHaveCount(0);
+  await page.evaluate(() => (window as any).push());
+  await expect(page.locator('[data-event-id="e0"]')).toBeAttached();
+  await expect(page.locator('[data-event-id="e1000"]')).toHaveCount(0);
+  await page.screenshot({ path: '.local/memory-history-window.png' });
+  await page.locator('.new-messages').click();
+  await expect(page.locator('[data-event-id="e1000"]')).toBeAttached();
+  await expect(page.locator('[data-event-id="e0"]')).toHaveCount(0);
+  await expect
+    .poll(() => scroll.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThan(100);
 });

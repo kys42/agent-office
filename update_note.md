@@ -1,3 +1,11 @@
+## 2026-10-29 — 대량 기록 상주 메모리와 페이지 조회 최적화 (#296)
+
+- 최근 소식만 SQL로 읽고 전체 count/receipt는 보존한다. 파생 인덱스와 legacy writer 트리거, 행별 cold session parse, iterator 비용 합산, 변경분만 남기는 hot overlay를 적용했다.
+- parser 48 MiB + 압축 보조 16 MiB, OpenClaw 16 MiB, patch 8 MiB 예산을 적용했다. cache overflow 시 순차 전체 재파싱을 피하고 디스크 장애가 길어지면 저장 대기 checkpoint 후 추가 수용을 제한한다.
+- 대화 400개/소식 500개 window, 이전 페이지 탐색과 최신 복귀, 오래된 발췌 북마크 직접 조회, 상세 요청 교체·소식 throttle을 구현했다. 읽음/접기와 캐시 축출은 분리했다.
+- 합성 5만 소식에서 stage heap 201.80→21.99 MiB, snapshot 평균 566.20→52.00ms. 20만 소식에서도 stage heap 22.03 MiB. 720회 수집 heap +3.5%, 80개 큰 세션 압축 overflow 24회 +0.9%. 자세한 조건/한계와 검증은 [QA](docs/development/QA.md), 재현 명령은 [경량화 설계](docs/development/PERFORMANCE-DESIGN.md)에 기록했다.
+- 골든 관측 계약·아키텍처·수집 문서·문서 지도를 함께 갱신했다. 기존 설치 앱과 PR #291 공증 DMG는 이 최적화와 별도이며 교체하지 않았다. 원본 main 변경과 기존 사용자 데이터를 보존했다.
+
 ## 2026-10-29 — 프로덕션 검토·개선 3회, 배포 신원과 연결/전송 신뢰성
 
 - Issue #290 / `feat/production-readiness`, base main `ba9b9e4`. 별도 PR235의 서명 파이프라인을 최신 node-pty 패키징과 함께 통합했다.

@@ -191,3 +191,12 @@ office-v9는 `taskStartedAt`을 새로 채우도록 캐시를 갱신한다. 정�
 - **불변**: 저장 기록은 canonical, 소식 ID·버전·이벤트 ID는 그대로다. 일시정지·공급자 끄기에서는 hot 집합이 비워진다.
 
 검증은 `tests/hot-path.test.ts`(append가 전체 수집 없이 다음 tick에 저장·patch, 전체 수집·새 수집기와 같은 revision, 승격·유예·강등·상한 8, 실행 기록 승격과 권한 대기, 전체 수집과 겹치지 않음·한 번만 읽음, 감시 힌트와 감시 실패 시 stat 폴백, `stop()` 뒤 타이머·감시 없음, 부분 upsert, 실행 기록 캐시, hot patch를 직전 게시본에 적용한 결과와 전체 재구성의 동일성(부모·도우미·최종 응답·동시 변경), 전체 재구성으로 되돌아가는 경우, 실어 보내는 소식에서 밀려난 소식 제거, hot pass는 디스크에 쓰지 않고 다음 전체 수집이 보인 그대로 씀, 그사이 읽은 소식이 한 번만·읽은 채로 남음, 바로 쓴 경우와 같은 소식, 닫을 때 기록)다.
+
+
+## 대량 기록의 조회·상주 경계 (#296)
+
+`notice_meta`/`notice_generation`은 `notices`에서 SQL 트리거로 유지하는 파생 자료다. 정본은 소식 JSON과 receipt이며, 읽음/접기 이관 규칙은 바뀌지 않는다. `officeView`와 hot patch는 전체 notice 본문을 불러오지 않는다. UI cursor 페이지와 정확한 count는 DB에서 읽고, 세션별 최신 소식 cache는 generation/현재 staged receipt/시간으로 무효화한다. 구버전 writer가 저장한 변경도 같은 트리거를 거친다.
+
+hot overlay에는 현재 입력 window에서 확인하는 관측 버전과 실제 수정한 notice·usage만 남긴다. 기존 DB의 모든 버전·비용 행을 복제하지 않는다. 대기 항목이 예산을 넘으면 다음 stage 전에 checkpoint하며, 실패하면 기존 데이터를 보존하고 추가 stage를 거절한다. 평상시 5초 전체 수집·즉시 receipt 저장·종료 flush 계약은 같다. 비용 합산은 정렬된 DB iterator와 staged 변경의 병합이다.
+
+대화 `detail`은 source event와 보관된 notice excerpt를 합친 작은 페이지를 준다. 원본 밖의 과거 원문 전체를 읽는 기능은 아니다. 오래된 북마크의 `reach`는 해당 위치 주변을 바로 조회하고 `newerEvents`로 최신 복귀를 제공한다. 캐시·UI의 구체적인 예산과 성능 검증은 [경량화 설계](PERFORMANCE-DESIGN.md#대량-기록의-상주-예산--2026-10-29-296)를 따른다.

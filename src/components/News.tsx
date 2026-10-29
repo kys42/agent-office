@@ -1,3 +1,5 @@
+import { LatestTask } from '../lib/latest-task';
+import type { NoticeCursor } from '../shared/types';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Mail, X, ArrowUpRight } from 'lucide-react';
 import type {
@@ -71,9 +73,16 @@ export function NewsList({
         setLoading(false);
       }
     }
-    setLimit((n) => n + 30);
+    setLimit((n) => Math.min(NEWS_WINDOW, n + 30));
   };
   const [expanded, setExpanded] = useState(new Set<string>());
+  useEffect(() => {
+    const ids = new Set(notices.map((n) => n.id));
+    setExpanded((old) => {
+      const kept = new Set([...old].filter((id) => ids.has(id)));
+      return kept.size === old.size ? old : kept;
+    });
+  }, [notices]);
   return (
     <div className="news-list">
       {!notices.length && (
@@ -164,18 +173,32 @@ export function NewsList({
     </div>
   );
 }
-type LoadedPage = Omit<NoticePage, 'notices'> & { key: string; notices: OfficeNotice[] };
+const NEWS_WINDOW = 500;
+type LoadedPage = Omit<NoticePage, 'notices'> & {
+  key: string;
+  notices: OfficeNotice[];
+  before?: NoticeCursor | null;
+};
 /** A paged list waits this long after a change before reading again (changes come in bursts). */
 const REREAD_MS = 400;
 /** Pages a list reads again at most (a read from the top keeps the depth scrolled to). */
 const REREAD_PAGES = 20;
 /** The first `count` notices of `query`, a page at a time; read-all goes by the first read. */
-async function readPages(query: NoticeQuery, count: number): Promise<NoticePage> {
+async function readPages(
+  query: NoticeQuery,
+  count: number,
+  start: NoticeCursor | null,
+  active: () => boolean,
+): Promise<NoticePage> {
   const notices: OfficeNotice[] = [];
   let page: NoticePage | undefined;
   let at: number | undefined;
-  for (let i = 0; i < REREAD_PAGES && notices.length < count; i++) {
-    const before = notices.length ? noticeCursor(notices.at(-1)!) : null;
+  for (
+    let i = 0;
+    i < REREAD_PAGES && notices.length < Math.min(count, NEWS_WINDOW) && active();
+    i++
+  ) {
+    const before = notices.length ? noticeCursor(notices.at(-1)!) : start;
     const limit = Math.min(NOTICE_PAGE_MAX, Math.max(1, count - notices.length));
     page = await api.noticePage({ ...query, before, limit });
     at ??= page.at;
@@ -238,7 +261,12 @@ export function NewsFeed({
     current.current = next;
     setPage(next);
   };
-  const depth = useRef({ key, count: NOTICE_PAGE });
+  const depth = useRef<{ key: string; count: number; before: NoticeCursor | null }>({
+    key,
+    count: NOTICE_PAGE,
+    before: null,
+  });
+  const reads = useRef(new LatestTask<NoticePage>());
   // Bumped by each read from the top: an older page asked for before it no longer follows on.
   const generation = useRef(0);
   const reading = useRef<Promise<void>>(Promise.resolve());
@@ -246,26 +274,44 @@ export function NewsFeed({
   const carried = notices
     .map((n) => `${n.id}:${n.version}:${n.seenAt}:${n.dismissedAt}:${n.resolvedAt}`)
     .join('\n');
+  const refreshStamp = JSON.stringify([carried, stats, settled]);
+  const latestRefresh = useRef(refreshStamp);
+  latestRefresh.current = refreshStamp;
   useEffect(() => {
     if (!paged) return show(null);
-    if (depth.current.key !== key) depth.current = { key, count: NOTICE_PAGE };
+    if (depth.current.key !== key) depth.current = { key, count: NOTICE_PAGE, before: null };
     let valid = true;
-    const timer = setTimeout(
-      () => {
-        const g = ++generation.current;
-        reading.current = readPages(query, depth.current.count)
-          .then((p) => {
-            if (valid && g === generation.current) show({ ...p, key });
-          })
-          .catch(() => {});
-      },
-      current.current?.key === key ? REREAD_MS : 0,
-    );
+    let busy = false;
+    let requested: string | undefined;
+    let task: ReturnType<LatestTask<NoticePage>['request']> | undefined;
+    const refresh = () => {
+      if (busy || requested === latestRefresh.current) return;
+      requested = latestRefresh.current;
+      busy = true;
+      const g = ++generation.current;
+      const before = depth.current.before;
+      task = reads.current.request(() =>
+        readPages(query, depth.current.count, before, () => valid),
+      );
+      reading.current = task.promise
+        .then((p) => {
+          if (valid && p && g === generation.current) show({ ...p, key, before });
+        })
+        .catch(() => {})
+        .finally(() => {
+          busy = false;
+        });
+    };
+    refresh();
+    // Throttle, not trailing debounce: a continuous stream still refreshes the visible page.
+    // No queued work or reads while unchanged, and at most one transport runs at a time.
+    const timer = setInterval(refresh, REREAD_MS);
     return () => {
       valid = false;
-      clearTimeout(timer);
+      task?.cancel();
+      clearInterval(timer);
     };
-  }, [paged, key, carried, stats, settled]);
+  }, [paged, key]);
   const loaded = paged && page?.key === key ? page : null;
   const onMore = async () => {
     // A page continues the list it was asked from; one overtaken by a read from the top is
@@ -284,8 +330,11 @@ export function NewsFeed({
       const p = current.current!;
       const ids = new Set(p.notices.map((n) => n.id));
       const notices = [...p.notices, ...next.notices.filter((n) => !ids.has(n.id))];
-      depth.current = { key, count: notices.length };
-      return show({ ...p, notices, more: next.more, unread: next.unread });
+      const excess = Math.max(0, notices.length - NEWS_WINDOW);
+      const before = excess ? noticeCursor(notices[excess - 1]) : (p.before ?? null);
+      const kept = notices.slice(excess);
+      depth.current = { key, count: kept.length, before };
+      return show({ ...p, before, notices: kept, more: next.more, unread: next.unread });
     }
   };
   // A receipt shows at once on paged-in notices and their counts; once saved, the list is read
@@ -313,7 +362,8 @@ export function NewsFeed({
   const listed = (n: OfficeNotice) =>
     matchesQuery(n, query) ||
     (!!keep?.has(`${n.id}\n${n.version}`) && matchesQuery(n, { ...query, includeRead: true }));
-  const selected = loaded ? merged(loaded, notices, listed) : notices.filter(listed);
+  const candidates = loaded ? merged(loaded, notices, listed) : notices.filter(listed);
+  const selected = candidates.slice(0, NEWS_WINDOW);
   const unread = selected.filter((n) => !n.seenAt);
   const unreadCount = loaded ? loaded.unread[filter] : unread.length;
   return (
@@ -334,6 +384,18 @@ export function NewsFeed({
       {filter === 'final' && counts('attention') > 0 && (
         <button className="news-attention-link" onClick={() => setFilter('attention')}>
           {f.waiting(counts('attention'))} <ArrowUpRight size={13} />
+        </button>
+      )}
+      {loaded?.before && (
+        <button
+          className="button news-load"
+          onClick={() => {
+            depth.current = { key, count: NOTICE_PAGE, before: null };
+            show(null);
+            setSettled((n) => n + 1);
+          }}
+        >
+          {t.conversation.newEntries}
         </button>
       )}
       <div className="news-review-bar">
@@ -372,7 +434,7 @@ export function NewsFeed({
           onSelect={onSelect}
           emptyText={f.empty[filter]}
           emptyDetail={f.emptyDetail[filter]}
-          hasMore={!!loaded?.more}
+          hasMore={!!loaded?.more || candidates.length > NEWS_WINDOW}
           onMore={onMore}
         />
       </div>
@@ -387,7 +449,12 @@ function merged(page: LoadedPage, carried: OfficeNotice[], listed: (n: OfficeNot
   const last = page.notices.at(-1);
   const byId = new Map(page.notices.map((n) => [n.id, n]));
   for (const n of carried)
-    if (byId.has(n.id) || !page.more || !last || noticeOrder(n, last) < 0) byId.set(n.id, n);
+    if (
+      byId.has(n.id) ||
+      ((!page.before || noticeOrder(n, page.before as OfficeNotice) > 0) &&
+        (!page.more || !last || noticeOrder(n, last) < 0))
+    )
+      byId.set(n.id, n);
   return [...byId.values()].filter(listed).sort(noticeOrder);
 }
 export function NewsInbox({

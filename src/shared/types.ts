@@ -224,11 +224,12 @@ export interface BookmarkPage {
 }
 /** A session with one page of its conversation. */
 export type SessionDetail = Session & {
+  /** A reached archived page has newer messages available via jump-to-latest. */
+  newerEvents?: boolean;
   /** Older events exist before this page (absent from callers that send whole sessions). */
   olderEvents?: boolean;
   /**
-   * This session's notices from the page's first event on (the oldest page: all earlier ones
-   * too), for excerpts of messages the bounded source window no longer holds.
+   * Bounded notices for this page's retained excerpts. Older excerpts arrive on earlier pages.
    */
   notices?: OfficeNotice[];
 };

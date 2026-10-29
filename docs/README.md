@@ -46,7 +46,7 @@ docs/
 | 휴대폰에서 오피스 조회·메시지 전송 | [모바일 웹](development/MOBILE-WEB.md) |
 | 실행 구조·저장·IPC·보안 확인 | [아키텍처](development/ARCHITECTURE.md) |
 | 여러 컴퓨터의 Office 연결 | [여러 Office 베타](development/MULTI-OFFICE.md) |
-| CPU·메모리 경량화 계획 | [측정과 경량화 설계 — 제안](development/PERFORMANCE-DESIGN.md) |
+| CPU·메모리 경량화와 상주 예산 | [측정과 경량화 설계](development/PERFORMANCE-DESIGN.md) |
 | 외부 코드 도입·업데이트 판단 | [레퍼런스 감사](research/INGESTION-REFERENCE-AUDIT.md) |
 | macOS 설치·DMG·배포 파이프라인 | [macOS 배포](development/MACOS-RELEASE.md) |
 | 실행과 검증 | [루트 README](../README.md), [검증 기록](development/QA.md), [MCP 연결](development/MCP.md) |
