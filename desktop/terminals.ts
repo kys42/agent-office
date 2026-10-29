@@ -200,7 +200,11 @@ async function showsJob(
   let title: string | null;
   try {
     // Orca's title came with the host check (as fresh as it); tmux's is read here.
-    title = host.kind === 'orca' && !fresh ? host.title : await screenTitle(host, deps);
+    // The whole title, never the one clipped for display.
+    title =
+      host.kind === 'orca' && !fresh
+        ? (host.fullTitle ?? host.title)
+        : await screenTitle(host, deps);
   } catch {
     return false;
   }
@@ -220,7 +224,8 @@ export function titleNames(title: string, name: string): boolean {
 /**
  * The same session, process and screen as when it was located, its status accepted by `open`:
  * the check before each key and before Enter. For a background session the window must still
- * be the only one parking it and its terminal must still show it (title read afresh).
+ * be the only one parking it, no other live job may share its name, and its terminal must still
+ * show it (title read afresh).
  */
 export async function stillLive(
   live: LiveTerminal,
@@ -230,8 +235,9 @@ export async function stillLive(
   const now = await findClaudeProcess(live.process.sessionId, deps, true);
   if (now?.pid !== live.process.pid || !open(now.status)) return null;
   if (live.window) {
-    const windows = await parkedWindows(now, deps, true);
-    if (windows.length !== 1 || windows[0].pid !== live.window.pid) return null;
+    // Every rule of the lookup again, namesakes included: a job of the same name started since
+    // could be the one the agents view switched to, under the same title.
+    if ((await jobWindow(now, deps, true))?.pid !== live.window.pid) return null;
     if (!(await showsJob(now, live.host, deps, true))) return null;
   }
   return (await ownsTerminal(screenPid(live), deps)) ? now : null;

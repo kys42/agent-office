@@ -2,6 +2,7 @@ import { claudeLiveness } from '../desktop/launch-guard.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -9,6 +10,7 @@ import {
   claudeAbsent,
   claudeAttachCommand,
   claudeNoTerminalReason,
+  stillLive,
   titleNames,
   findClaudeProcess,
   findHost,
@@ -2349,4 +2351,58 @@ test('A Claude title names a session only as a whole', () => {
   assert.equal(titleNames(`✳ ${JOB_NAME} 2`, JOB_NAME), false);
   assert.equal(titleNames('✳ PSP-POC', JOB_NAME), false);
   assert.equal(titleNames('', JOB_NAME), false);
+});
+
+test('A job of the same name started after locating stops the send before Enter', async () => {
+  const namesake = bgJob(8888, {
+    sessionId: 'abcdef12-0000-4000-8000-000000000000',
+    jobId: 'abcdef12',
+  });
+  // Present before typing: nothing is typed at all.
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await writeFile(path.join(dir, '8888.json'), namesake);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(!calls.some((c) => c.args[1] === 'send'));
+    // A prompt answer runs the same check.
+    assert.equal(await stillLive(live, deps, () => true), null);
+  });
+  // Started while the text went in (the agents view may switch to it under the same title).
+  await withSessions(PARKED, async (dir) => {
+    let shows = 0;
+    const { deps, calls } = fakeDeps(dir, {
+      ...jobShown(),
+      alive: [4242, 7777, 8888],
+      showTitle: () => {
+        // 0: the fresh lookup, 1: the check before typing; the next check is before Enter.
+        if (shows++ === 1) writeFileSync(path.join(dir, '8888.json'), namesake);
+        return `✳ ${JOB_NAME}`;
+      },
+    });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(calls.some((c) => c.args.some((arg) => arg.startsWith('--text='))));
+    assert.ok(!calls.some((c) => c.args.includes('--enter')));
+  });
+});
+
+test('A long job name matches the whole Orca title while polling; the display stays clipped', async () => {
+  const long = `${JOB_NAME} ${'긴 이름 '.repeat(30)}끝`;
+  await withSessions(
+    { '4242.json': parkedWindow(), '7777.json': bgJob(7777, { name: long }) },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, jobShown(`✳ ${long}`));
+      for (const fresh of [false, true]) {
+        const live = await locateTerminal(JOB_SESSION, { fresh, deps });
+        assert.ok(live, `fresh: ${fresh}`);
+        assert.equal(live.host.kind === 'orca' && live.host.title.length, 120);
+        assert.equal(terminalTarget(live).label.length, 120);
+      }
+      // A clipped title alone never names the job.
+      assert.equal(titleNames(`✳ ${long}`.slice(0, 120), long), false);
+    },
+  );
 });

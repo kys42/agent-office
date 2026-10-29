@@ -24,7 +24,14 @@ export interface TerminalHostDeps {
 }
 
 export type TerminalHost =
-  | { kind: 'orca'; handle: string; title: string }
+  | {
+      kind: 'orca';
+      handle: string;
+      /** The tab title, clipped for display. */
+      title: string;
+      /** The whole title, only when clipping shortened it: for matching, never shown. */
+      fullTitle?: string;
+    }
   | { kind: 'tmux'; socket: string; pane: string; label: string };
 
 export interface ProcessEnv {
@@ -173,6 +180,9 @@ export async function findHost(
         kind: 'orca',
         handle: env.orcaHandle,
         title: typeof t.title === 'string' ? t.title.slice(0, 120) : '',
+        ...(typeof t.title === 'string' &&
+          t.title.length > 120 &&
+          t.title.length <= 4096 && { fullTitle: t.title }),
       };
   }
   return null;
