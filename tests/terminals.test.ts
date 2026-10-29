@@ -1,7 +1,7 @@
 import { claudeLiveness } from '../desktop/launch-guard.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
 import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -2512,4 +2512,58 @@ test('Titles and job names reduce alike', () => {
   assert.equal(titleNames('✳ Build', '✳ Build'), true);
   assert.equal(titleNames('✳ ✳ Build', 'Build'), true);
   assert.equal(titleNames('✳ Build', '✳'), false);
+});
+
+test('A process record that cannot be read or parsed keeps a background job unknown', async () => {
+  // Unreadable (EACCES): it could be a second window or a job of the same name.
+  await withSessions({ ...PARKED, '8888.json': bgJob(8888, OTHER_JOB) }, async (dir) => {
+    await chmod(path.join(dir, '8888.json'), 0o000);
+    try {
+      const { deps } = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] });
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+      assert.equal((await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind, 'unknown');
+      // The same through an injected reader, wherever the process runs.
+      const injected = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] }).deps;
+      injected.records = {
+        list: (d) => readdir(d),
+        read: async (file) => {
+          if (file.endsWith('8888.json'))
+            throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          return readFile(file, 'utf8');
+        },
+      };
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps: injected }), null);
+    } finally {
+      await chmod(path.join(dir, '8888.json'), 0o600);
+    }
+  });
+  // Malformed (mid-write, or a format this app does not know).
+  for (const text of [
+    '{"pid":8888,"sessionId":"abcdef12-',
+    bgJob(8888, { ...OTHER_JOB, kind: 'remote' }),
+  ])
+    await withSessions({ ...PARKED, '8888.json': text }, async (dir) => {
+      const { deps } = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] });
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, text);
+      assert.equal(
+        (await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind,
+        'unknown',
+        text,
+      );
+    });
+  // Found first, then a record turns unreadable: the check before typing refuses.
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, jobShown());
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await writeFile(path.join(dir, '9999.json'), '{broken');
+    assert.equal(await stillLive(live, deps), null);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(!calls.some((c) => c.args[1] === 'send'));
+  });
+  // Files that are not process records (`<pid>.<hash>.key`, notes) do not count.
+  await withSessions({ ...PARKED, '4242.abc.key': 'x', 'notes.txt': '{' }, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+  });
 });

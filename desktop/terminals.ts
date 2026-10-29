@@ -173,7 +173,8 @@ export function locateTerminal(
 /**
  * The one window that parked this background job (`parkedJobId`, see claude-live.ts). Claude
  * routes a message for the window's session to that job the same way. Two windows, a job without
- * a name, or another live job of the same name: no window can be proven to show it.
+ * a name, another live job of the same name, or any process record that could not be read or
+ * parsed (it may be either): no window can be proven to show it.
  */
 async function jobWindow(
   job: ClaudeProcess,
@@ -181,6 +182,10 @@ async function jobWindow(
   fresh: boolean,
 ): Promise<ClaudeProcess | null> {
   if (!job.name) return null;
+  // Every record must have been read and understood: one unreadable (permissions, I/O) or
+  // malformed (mid-write, a newer format) could be a competing window or job of the same name.
+  const inventory = await claudeRecordInventory(deps, fresh);
+  if (!inventory.complete || inventory.unparsed.length) return null;
   // Fail closed: a window or namesake whose process cannot be verified may be the one in front.
   const windows = await parkedWindows(job, deps, fresh);
   if (windows?.length !== 1) return null;
