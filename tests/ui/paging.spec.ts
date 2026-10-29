@@ -84,7 +84,15 @@ test('A colleague card reads older messages by page, keeps the reading position 
     .poll(() => card.locator('.inspector-scroll').evaluate((el) => el.scrollTop))
     .toBeGreaterThan(1000);
 
-  for (let i = 0; i < 6 && (await older.count()); i++) await older.click();
+  // Scrolling to the button also starts automatic paging. A count-then-click races that
+  // observer and can wait forever for a button it legitimately removed. Drive the same
+  // user scroll, waiting for each earlier chunk before asking for the next one.
+  for (const first of [48, 24, 0]) {
+    await card
+      .locator('.inspector-scroll')
+      .evaluate((el) => el.scrollTo({ top: 0, behavior: 'instant' }));
+    await expect(conversation.getByText(label(first))).toBeAttached();
+  }
   await expect(conversation.getByText(label(0))).toBeAttached();
   await expect(older).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).pages)).toEqual([null, 'e80', 'e40']);
