@@ -32,6 +32,16 @@
 - 검증: 단위 **806개**, 전체 UI **431개**, typecheck·production build·format 통과. Impeccable 변경 UI 탐지 결과 `[]`. 서명 리뷰에서 node-pty의 `pty.node`/`spawn-helper`가 서명 대상에 들어가고 실행 권한을 복원하는 것 확인.
 - Native: 합성 3개 공급자/별도 프로필의 실제 Electron smoke와 MCP smoke 통과. 설치 신원 IPC와 임의 권한 URL 거부도 검증했다. 첫 native 실행의 바닥 책상 버튼 탐색 timeout은 재실행에서 재현되지 않았다. 실패 시 창/스크린샷 근거를 남기도록 smoke를 보강했으며, 최종 signed DMG 설치본에서도 재검수한다. OS 포커스 검수는 사용자 작업 방해를 피하는 quiet 실행에서 생략했으므로 Dock/키보드의 실제 포커스 보장으로 확대하지 않는다.
 
+## 추가 검수 · 보안 의존성과 실제 배포
+
+배포 CI의 dependency 감사 경고를 조사해 기존 lockfile의 10건(critical 2, high 5, moderate 3)을 확인했다. Electron 44.5.1은 TLS 인증서 차단 보안 수정이 빠져 있어 44.10.0으로 고정 갱신하고, 나머지는 major 강제 변경 없이 호환 버전으로 수정했다. `npm audit fix` 후 전체 dependency 감사는 **0건**이다. Zod/HTTP 관련 runtime과 Vite/개발 도구를 모두 포함해 검증한다. [Electron 공식 보안 공지](https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9)를 근거로 했다.
+
+CI에는 high 이상 감사 게이트를 추가하고 main push/PR로 범위를 나눠 중복 실행을 줄였다. 오래된 실행은 취소하고 20분 상한을 둔다. Windows native 검수는 packaged 비-Mac의 `unavailable` 상태를 개발 실행과 구분하도록 수정했다.
+
+최초 서명 작업에서 내부 디스크 여유가 약 203 MiB였고 큰 framework 서명이 내부 오류로 실패했다. 작은 실행 파일의 동일 인증서 서명은 성공했고, 산출물을 외장 SSD로 옮긴 다음 전체 서명은 진행됐다. 외장 출력의 `release` 심볼릭 링크가 디렉터리 전용 gitignore 규칙에서 빠져 `sourceDirty`로 차단된 것도 발견했다. 루트 산출물 경로를 링크/디렉터리 모두 제외하도록 수정하고 실제 Git 판정으로 검증한다. 이 실패 산출물의 DMG 공증은 수행하지 않았다. 릴리스 진입점에 출력/임시 볼륨 각각 3 GiB 사전 여유 검사도 추가했다. 최종 전달은 갱신된 의존성이 커밋된 clean checkout에서 새로 생성한다.
+
+작업 도중 `/private/tmp` 검수 폴더가 없어져 원격에 이미 보존된 커밋을 이번 작업의 기존 worktree로 복구했다. 현재 경로는 `/Users/kys/projects/feat/office-production`이며, 빌드 산출물은 외장 SSD의 작업 전용 폴더에 둔다. 원본 사용자 세션·설치 앱은 수정하지 않았다.
+
 ## 핵심 흐름 검토표
 
 | 영역 | 확인 방법 | 이번 판단 |

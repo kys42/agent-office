@@ -134,7 +134,11 @@ try {
     assert.equal(health.commit, metadata.sourceCommit);
     assert.equal(health.signature, metadata.signing === 'developer-id' ? 'developer-id' : 'ad-hoc');
     if (metadata.signing === 'developer-id') assert.equal(health.teamId, metadata.teamId);
-  } else assert.equal(health.signature, 'development');
+  } else
+    assert.equal(
+      health.signature,
+      process.env.AGENT_OFFICE_EXECUTABLE ? 'unavailable' : 'development',
+    );
   await assert.rejects(page.evaluate(() => window.office.openPrivacy('https://invalid.example')));
   // The settings window (#87): opened at a section, shares preferences, stays open on blur.
   const settingsWindow = (fn) =>

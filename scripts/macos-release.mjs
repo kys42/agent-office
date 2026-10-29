@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync, readFileSync, realpathSync, statSync, statfsSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { signingConfig } from './macos-signing.mjs';
 import { notaryCredentials } from './notarize.mjs';
@@ -10,6 +10,18 @@ import { notaryCredentials } from './notarize.mjs';
 const mode = process.argv[2] ?? 'preflight';
 if (!['preflight', 'app', 'dmg', 'resume'].includes(mode)) throw new Error('Invalid release mode.');
 if (process.platform !== 'darwin') throw new Error('macOS required.');
+// Signing and DMG staging rewrite large binaries. Fail clearly before an opaque codesign
+// error, rather than filling the user's system disk halfway through a release.
+for (const [label, directory] of [
+  ['release output', existsSync('release') ? realpathSync('release') : realpathSync('.')],
+  ['temporary storage', tmpdir()],
+]) {
+  const space = statfsSync(directory);
+  if (space.bavail * space.bsize < 3 * 1024 ** 3)
+    throw new Error(
+      `At least 3 GiB free is required for ${label}. Move build artifacts or free space before retrying.`,
+    );
+}
 const env = { ...process.env, AGENT_OFFICE_SIGNING: 'developer-id' };
 const defaultProfile = path.join(
   homedir(),
