@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  changePoints,
   createTicker,
+  loopPosition,
+  pausedByCss,
   FRAME_MS,
   RESTING_AFTER_MS,
   RESTING_FRAME_MS,
   stepKey,
   tickInterval,
+  type LoopState,
 } from '../src/lib/office-tick.js';
 
 /** A fake clock: timers run only when the test moves time forward. */
@@ -127,20 +131,98 @@ test('Repeating the same conditions does not reschedule', () => {
   assert.equal(pending(), 1);
 });
 
+const kf = (...frames: [number, string][]) =>
+  frames.map(([computedOffset, easing]) => ({ computedOffset, easing }));
+
 test('A step key changes only when the picture does', () => {
   // A 2s idle sprite with 4 drawn frames changes every 500ms, not every office frame.
-  const keys = [0, 125, 250, 375, 500, 625, 1000].map((t) => stepKey(t, 0, 2000, 4));
-  assert.deepEqual(keys, [0, 0, 0, 0, 1, 1, 2]);
+  const sprite = changePoints(kf([0, 'steps(4)'], [1, 'steps(4)']));
+  assert.deepEqual(sprite, [0, 0.25, 0.5, 0.75]);
+  const keys = [0, 125, 250, 375, 500, 625, 1000, 2000].map((t) => stepKey(t, 0, 2000, sprite));
+  assert.deepEqual(keys, [0, 0, 0, 0, 1, 1, 2, 4]);
   // A smooth loop changes every office frame.
   assert.deepEqual(
-    [0, 125, 250, 1625].map((t) => stepKey(t, 0, 1625)),
+    [0, 125, 250, 1625].map((t) => stepKey(t, 0, 1625, null)),
     [0, 1, 2, 13],
   );
-  // Never finer than the office frame, however many steps are drawn.
-  assert.equal(stepKey(125, 0, 500, 8), stepKey(200, 0, 500, 8));
   // Before its delay it is on its first frame and stays there.
-  assert.equal(stepKey(100, 375, 1000), -1);
-  assert.equal(stepKey(250, 375, 1000), -1);
+  assert.equal(stepKey(100, 375, 1000, null), -1);
+  assert.equal(stepKey(250, 375, 1000, sprite), -1);
   // A negative delay starts it part-way through.
-  assert.equal(stepKey(0, -375, 750), 3);
+  assert.equal(stepKey(0, -375, 750, null), 3);
+});
+
+test('Easing steps each keyframe segment, so a mid-loop keyframe adds changes', () => {
+  // dock-pet-bang: steps(2) with a 50% keyframe changes four times a cycle, not twice.
+  assert.deepEqual(
+    changePoints(kf([0, 'steps(2)'], [0.5, 'steps(2)'], [1, 'steps(2)'])),
+    [0, 0.25, 0.5, 0.75],
+  );
+  // A keyframe's own easing overrides the animation's for its segment.
+  assert.deepEqual(
+    changePoints(kf([0, 'steps(1)'], [0.4, 'steps(3)'], [1, 'linear'])),
+    [0, 0.4, 0.6, 0.8],
+  );
+  // Any smooth segment, or an easing on the whole effect, changes continuously.
+  assert.equal(changePoints(kf([0, 'steps(2)'], [0.5, 'ease-in-out'], [1, 'linear'])), null);
+  assert.equal(changePoints(kf([0, 'linear'], [1, 'linear'])), null);
+  assert.equal(changePoints(kf([0, 'steps(4)'], [1, 'steps(4)']), 'normal', 'ease'), null);
+  // Played backwards on alternate turns, the mirrored points count too.
+  assert.deepEqual(
+    changePoints(kf([0, 'steps(1)'], [0.25, 'steps(1)'], [1, 'steps(1)']), 'alternate'),
+    [0, 0.25, 0.75],
+  );
+});
+
+test('Sampling on office frames never misses a stepped change', () => {
+  // The picture of a steps(n)-per-segment loop at a progress, computed the way CSS does.
+  const frames = kf([0, 'steps(2)'], [0.3, 'steps(3)'], [0.5, 'steps(1)'], [1, 'steps(1)']);
+  const picture = (p: number) => {
+    for (let i = frames.length - 2; i >= 0; i--) {
+      const from = frames[i].computedOffset;
+      const to = frames[i + 1].computedOffset;
+      if (p >= from) {
+        const n = Number(frames[i].easing.match(/\d+/)![0]);
+        return `${i}:${Math.floor(((p - from) / (to - from)) * n)}`;
+      }
+    }
+    return 'start';
+  };
+  const points = changePoints(frames);
+  const duration = 2000;
+  let previous = { key: stepKey(0, 0, duration, points), picture: picture(0) };
+  for (let t = FRAME_MS; t <= 3 * duration; t += FRAME_MS) {
+    const now = {
+      key: stepKey(t, 0, duration, points),
+      picture: picture((t % duration) / duration),
+    };
+    if (now.picture !== previous.picture) assert.notEqual(now.key, previous.key, `at ${t}ms`);
+    previous = now;
+  }
+});
+
+test('A pause the stylesheet asks for holds the loop, and it resumes where it stopped', () => {
+  assert.equal(pausedByCss('zone-flag-wave', 'paused', 'zone-flag-wave'), true);
+  assert.equal(pausedByCss('a, zone-flag-wave', 'running, paused', 'zone-flag-wave'), true);
+  assert.equal(pausedByCss('a, b', 'paused, running', 'b'), false);
+  // A shorter play-state list repeats, as in CSS.
+  assert.equal(pausedByCss('a, b, c', 'running, paused', 'c'), false);
+  assert.equal(pausedByCss('a, b', 'paused', 'b'), true);
+  assert.equal(pausedByCss('none', 'paused', 'b'), false);
+
+  const loop: LoopState = { origin: 0, pausedAt: null, key: NaN };
+  const timing = { delay: 0, duration: 4500 };
+  assert.equal(loopPosition(loop, 1000, false, timing, null), 1000);
+  // Dragging a zone flag: no moves while CSS holds it, however many ticks pass.
+  assert.equal(loopPosition(loop, 1125, true, timing, null), null);
+  assert.equal(loopPosition(loop, 3000, true, timing, null), null);
+  // Released: it carries on from 1000ms into its loop, not 3125.
+  assert.equal(loopPosition(loop, 3125, false, timing, null), 1125);
+  assert.equal(loopPosition(loop, 3250, false, timing, null), 1250);
+  // An unchanged picture is left alone.
+  const sprite = { origin: 0, pausedAt: null, key: NaN };
+  const quarters = [0, 0.25, 0.5, 0.75];
+  assert.equal(loopPosition(sprite, 0, false, { delay: 0, duration: 2000 }, quarters), 0);
+  assert.equal(loopPosition(sprite, 125, false, { delay: 0, duration: 2000 }, quarters), null);
+  assert.equal(loopPosition(sprite, 500, false, { delay: 0, duration: 2000 }, quarters), 500);
 });

@@ -1,5 +1,13 @@
 import { onPageVisibility, isPageHidden } from './visibility';
-import { createTicker, FRAME_MS, stepKey } from './office-tick';
+import {
+  changePoints,
+  createTicker,
+  FRAME_MS,
+  loopPosition,
+  pausedByCss,
+  type KeyframeTiming,
+  type LoopState,
+} from './office-tick';
 
 export { FRAME_MS } from './office-tick';
 
@@ -22,36 +30,28 @@ export { FRAME_MS } from './office-tick';
 /** Short-lived loading spinners read better smooth and are not part of the scene. */
 const SMOOTH = new Set(['spin']);
 
-interface Loop {
-  /** Timeline time of its first frame, on the grid. */
-  origin: number;
-  /** Steps already in the keyframes (sprites: 4 frames); 1 for smooth keyframes. */
-  steps: number;
-  /** Last step shown (see stepKey); NaN when it must be set again. */
-  key: number;
+interface Loop extends LoopState {
+  name: string;
+  /** Where its picture changes within an iteration (null: every office frame). */
+  points: number[] | null;
+  /** Its element's live computed style, to see what the stylesheet asks (a CSS pause). */
+  style: CSSStyleDeclaration;
 }
 const loops = new Map<Animation, Loop>();
 const now = () => document.timeline.currentTime as number;
 const snap = (t: number) => Math.round(t / FRAME_MS) * FRAME_MS;
 
-function keyframeSteps(effect: KeyframeEffect) {
-  let steps = 1;
-  for (const k of effect.getKeyframes()) {
-    const n = Number(String(k.easing ?? '').match(/^steps\((\d+)/)?.[1] ?? 1);
-    steps = Math.max(steps, n);
-  }
-  return steps;
-}
-
-/** Where one loop should be as of `at`, or null if its picture is unchanged. Reads only. */
+/** Where one loop should be as of `at`, or null to leave it. Reads only. */
 function due(animation: Animation, loop: Loop, at: number) {
   const timing = (animation.effect as KeyframeEffect).getTiming();
-  const duration = Number(timing.duration) || FRAME_MS;
-  const local = at - loop.origin;
-  const key = stepKey(local, Number(timing.delay) || 0, duration, loop.steps);
-  if (key === loop.key) return null;
-  loop.key = key;
-  return local;
+  const paused = pausedByCss(loop.style.animationName, loop.style.animationPlayState, loop.name);
+  return loopPosition(
+    loop,
+    at,
+    paused,
+    { delay: Number(timing.delay) || 0, duration: Number(timing.duration) || FRAME_MS },
+    loop.points,
+  );
 }
 
 /** Whether CSS still has this loop (seeking a cancelled one would bring it back, orphaned). */
@@ -92,7 +92,19 @@ function takeOver() {
     const timing = effect.getComputedTiming();
     if (timing.iterations !== Infinity || !Number(timing.duration)) continue;
     const elapsed = Number(animation.currentTime ?? 0);
-    const loop: Loop = { origin: snap(now() - elapsed), steps: keyframeSteps(effect), key: NaN };
+    const target = effect.target!;
+    const loop: Loop = {
+      name: animation.animationName,
+      origin: snap(now() - elapsed),
+      pausedAt: null,
+      key: NaN,
+      points: changePoints(
+        effect.getKeyframes() as KeyframeTiming[],
+        String(timing.direction),
+        String(timing.easing),
+      ),
+      style: getComputedStyle(target, effect.pseudoElement),
+    };
     fresh.push([animation, loop, still ? 0 : due(animation, loop, at)]);
     if (still) loop.key = -2;
   }

@@ -76,6 +76,18 @@ test('Loops step on the office tick: paused between frames, one meter bar per de
   const meters = await page.locator('.working-beacon').count();
   expect(meters).toBeGreaterThan(0);
   expect(before.filter((l) => l.name === 'work-meter')).toHaveLength(meters);
+  // A pause the stylesheet asks for (a zone flag while it is dragged) holds the loop; let go, it
+  // carries on from where it stopped.
+  const sheet = page.locator('.office-pet .sprite').first();
+  const time = () => sheet.evaluate((el) => Number(el.getAnimations()[0].currentTime));
+  await sheet.evaluate((el) => ((el as HTMLElement).style.animationPlayState = 'paused'));
+  await page.waitForTimeout(300);
+  const held = await time();
+  await page.waitForTimeout(600);
+  expect(await time()).toBe(held);
+  await sheet.evaluate((el) => ((el as HTMLElement).style.animationPlayState = ''));
+  await expect.poll(time).toBeGreaterThan(held);
+  expect(await time()).toBeLessThan(held + 600);
   // Typing dots: still until that bubble is looked at.
   const bubble = page.locator('.speech-bubble:has(.bubble-typing)').first();
   if (await bubble.count()) {
