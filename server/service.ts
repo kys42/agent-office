@@ -124,6 +124,7 @@ const prefsSchema = z
     tmuxSkipPermissions: z.boolean().optional(),
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
+    windowGlass: z.number().int().min(0).max(70).nullable().optional(),
     petAppearance: z
       .object({
         version: z.literal(1),

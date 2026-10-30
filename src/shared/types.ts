@@ -477,6 +477,11 @@ export interface Preferences {
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
   readingFont?: ReadingFont;
+  /**
+   * How see-through the work card popup and the big office's side columns are, in percent
+   * (0 solid … GLASS_MAX). Missing or null: each platform's own look from before.
+   */
+  windowGlass?: number | null;
 }
 export type TextSize = 'small' | 'normal' | 'large' | 'larger';
 /** `system`: the app's stack from before (system font, then Pretendard). */

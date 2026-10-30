@@ -548,3 +548,31 @@ test('stack threshold 2 stacks two helpers in the row and the office', async ({ 
   await expect(page.locator('.helper-stack')).toHaveCount(1);
   await expect(page.locator('.helper-stack-desk')).toHaveText(/×2/);
 });
+
+test('window glass: the slider saves a see-through level for the card and side columns, and resets', async ({
+  page,
+}) => {
+  await bridge(page, office());
+  await openSettings(page, '모습');
+  const glass = page.getByRole('tabpanel').locator('[data-guide-section="glass"]');
+  await expect(glass.getByRole('heading', { name: '창 유리' })).toBeVisible();
+  await expect(glass.locator('output')).toHaveText('기본');
+  await glass.getByRole('slider', { name: '투명도' }).fill('40');
+  await expect(glass.locator('output')).toHaveText('40%');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixture.preferences.windowGlass))
+    .toBe(40);
+  await expect(page.locator('html')).toHaveAttribute('data-glass', '40');
+  if (await page.locator('body.is-mac').count()) {
+    // macOS: the side columns let the window's glass through (60% of their colour).
+    const bg = await page
+      .getByRole('complementary', { name: '주 메뉴' })
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toMatch(/0\.6\)$|\/ 0\.6\)$/);
+  }
+  await glass.getByRole('button', { name: '기본', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixture.preferences.windowGlass))
+    .toBeNull();
+  await expect(page.locator('html')).not.toHaveAttribute('data-glass', /.*/);
+});

@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
+import { GLASS_MAX, GLASS_STEP, glassLevel } from '../shared/glass';
 import { Sprite } from './Sprite';
 import { shortPath, ago } from '../lib/format';
 import { ZONE_MATCH_LABELS, isCustomZone, ruleZoneKey } from '../shared/zones';
@@ -572,6 +573,15 @@ export function Settings({
           </div>
         </section>
       )}
+      {isDesktop && (
+        <section className="settings-section" data-guide-section="glass" tabIndex={-1}>
+          <h2>{s.glass.title}</h2>
+          <GlassSetting
+            level={glassLevel(p)}
+            onChange={(windowGlass) => onPrefs({ windowGlass })}
+          />
+        </section>
+      )}
       <section className="settings-section" data-guide-section="panels" tabIndex={-1}>
         <h2>{s.panels.title}</h2>
         <div className="setting-row">
@@ -1012,5 +1022,94 @@ export function Settings({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The glass slider: saves once the hand stops (a drag would otherwise write the preferences on
+ * every step); every window, this one too, follows the saved value. `null` is each platform's
+ * look from before.
+ */
+function GlassSetting({
+  level,
+  onChange,
+}: {
+  level: number | null;
+  onChange: (level: number | null) => void;
+}) {
+  const { t } = useI18n();
+  const s = t.settings.glass;
+  const id = useId();
+  const [draft, setDraft] = useState<number | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** A value still waiting for its save: leaving the page saves it rather than dropping it. */
+  const pending = useRef<number | null>(null);
+  const save = useRef(onChange);
+  save.current = onChange;
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      if (pending.current !== null) save.current(pending.current);
+    },
+    [],
+  );
+  // The draft holds until the saved value comes back, so the slider never jumps back meanwhile.
+  useEffect(() => {
+    if (draft !== null && level === draft && pending.current === null) setDraft(null);
+  }, [level, draft]);
+  const shown = draft ?? level;
+  const move = (value: number) => {
+    setDraft(value);
+    pending.current = value;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      pending.current = null;
+      onChange(value);
+    }, 250);
+  };
+  return (
+    <>
+      <div className="setting-row glass-row">
+        <Layers size={18} />
+        <div>
+          <b id={id}>{s.level}</b>
+          <p>{s.hint}</p>
+          <p>{s.platformHint}</p>
+        </div>
+        <div className="glass-control">
+          <input
+            type="range"
+            min={0}
+            max={GLASS_MAX}
+            step={GLASS_STEP}
+            value={shown ?? 10}
+            aria-labelledby={id}
+            aria-valuetext={shown === null ? s.off : s.value(shown)}
+            onChange={(e) => move(Number(e.target.value))}
+          />
+          <output aria-live="polite">{shown === null ? s.off : s.value(shown)}</output>
+        </div>
+      </div>
+      {level !== null && (
+        <div className="setting-row">
+          <div>
+            <b>{s.reset}</b>
+            <p>{s.resetHint}</p>
+          </div>
+          <button
+            type="button"
+            className="setting-action"
+            onClick={() => {
+              clearTimeout(timer.current);
+              pending.current = null;
+              setDraft(null);
+              onChange(null);
+            }}
+          >
+            {s.off}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
