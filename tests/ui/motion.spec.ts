@@ -42,3 +42,48 @@ test('Without a preference the same pulses run, on transform and opacity only', 
       'none',
     );
 });
+
+// #302: no loop runs on its own (a running one keeps the compositor at display rate); the office
+// tick holds them paused and steps them, and each desk keeps only the loops worth showing.
+test('Loops step on the office tick: paused between frames, one meter bar per desk', async ({
+  page,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('office:onboarding:v1:demo', 'seen'));
+  await page.goto('/?demo');
+  await expect(page.locator('.office-pet').first()).toBeVisible();
+  const loops = () =>
+    page.evaluate(() =>
+      document
+        .getAnimations()
+        .filter(
+          (a) =>
+            a.effect?.getComputedTiming().iterations === Infinity &&
+            (a as CSSAnimation).animationName !== 'spin',
+        )
+        .map((a) => ({
+          name: (a as CSSAnimation).animationName,
+          state: a.playState,
+          time: Number(a.currentTime),
+        })),
+    );
+  await expect.poll(async () => (await loops()).filter((l) => l.state === 'running')).toEqual([]);
+  const before = await loops();
+  expect(before.length).toBeGreaterThan(10);
+  // They still move: the tick steps them forward.
+  await expect
+    .poll(async () => (await loops()).filter((l, i) => l.time > (before[i]?.time ?? 0)).length)
+    .toBeGreaterThan(10);
+  const meters = await page.locator('.working-beacon').count();
+  expect(meters).toBeGreaterThan(0);
+  expect(before.filter((l) => l.name === 'work-meter')).toHaveLength(meters);
+  // Typing dots: still until that bubble is looked at.
+  const bubble = page.locator('.speech-bubble:has(.bubble-typing)').first();
+  if (await bubble.count()) {
+    const dot = bubble.locator('.bubble-typing i').first();
+    expect(await dot.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
+    await bubble.hover();
+    await expect
+      .poll(() => dot.evaluate((el) => getComputedStyle(el).animationName))
+      .toBe('bubble-typing');
+  }
+});

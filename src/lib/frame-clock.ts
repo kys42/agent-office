@@ -1,23 +1,39 @@
-import { onPageVisibility } from './visibility';
+import { onPageVisibility, isPageHidden } from './visibility';
+import { createTicker, FRAME_MS, stepKey } from './office-tick';
+
+export { FRAME_MS } from './office-tick';
 
 /**
  * The office draws at its own frame rate, like a pixel game, not at the display's (60–120Hz).
  *
- * Every looping animation advances in steps of one office frame (FRAME_MS), and its start time
- * sits on a shared FRAME_MS grid of the document timeline, so whatever changes changes at the
- * same instants. Between those instants nothing on screen differs, and the browser has nothing
- * to paint or composite: about 1000 / FRAME_MS frames a second however many colleagues move.
- * Snapping (not zeroing) the start keeps each loop's own phase, so colleagues don't move in
- * lockstep and a new one starts from its first frame.
+ * The stylesheets still say what loops and how (sprite frames, the work meter, typing dots,
+ * pulses), but no looping animation runs on its own: each one is paused as it appears and the
+ * office tick (office-tick.ts) moves it to where it would be, on a shared FRAME_MS grid, and only
+ * when its picture changes. A running infinite animation, even one that changes 8 times a second,
+ * keeps the compositor asking for a frame at display rate; paused ones leave it asleep until the
+ * tick changes something. Each loop keeps its own phase, so colleagues don't move in lockstep,
+ * and a new one starts from its first frame.
  *
- * Looping durations and delays in the stylesheets are multiples of FRAME_MS (tested), so the
- * steps land on the grid. One-shot effects (arrivals, entrances) stay smooth.
+ * The tick rests with the window (out of sight), slows when another app has had the focus for a
+ * while, and holds every loop on its first frame when less motion is asked for. Looping durations
+ * and delays in the stylesheets are multiples of FRAME_MS (tested), so the steps land on the
+ * grid. One-shot effects (arrivals, entrances) stay smooth CSS.
  */
-export const FRAME_MS = 125;
 /** Short-lived loading spinners read better smooth and are not part of the scene. */
 const SMOOTH = new Set(['spin']);
 
-/** Steps already in the keyframes (sprites: 4 frames). Office steps must be a multiple of it. */
+interface Loop {
+  /** Timeline time of its first frame, on the grid. */
+  origin: number;
+  /** Steps already in the keyframes (sprites: 4 frames); 1 for smooth keyframes. */
+  steps: number;
+  /** Last step shown (see stepKey); NaN when it must be set again. */
+  key: number;
+}
+const loops = new Map<Animation, Loop>();
+const now = () => document.timeline.currentTime as number;
+const snap = (t: number) => Math.round(t / FRAME_MS) * FRAME_MS;
+
 function keyframeSteps(effect: KeyframeEffect) {
   let steps = 1;
   for (const k of effect.getKeyframes()) {
@@ -27,31 +43,108 @@ function keyframeSteps(effect: KeyframeEffect) {
   return steps;
 }
 
-function fit(animation: Animation) {
-  if (typeof CSSAnimation === 'undefined' || !(animation instanceof CSSAnimation)) return;
-  if (SMOOTH.has(animation.animationName)) return;
-  const effect = animation.effect as KeyframeEffect | null;
-  if (!effect) return;
-  const timing = effect.getComputedTiming();
-  const duration = Number(timing.duration);
-  if (timing.iterations !== Infinity || !duration) return;
-  // Whole office frames, and never fewer than the keyframes' own steps (no frame skipped).
-  const own = keyframeSteps(effect);
-  const steps = Math.max(own, Math.round(duration / FRAME_MS / own) * own);
-  // A smooth back-and-forth loop shows both of its ends (same step length: jump-none spreads
-  // the values, not the time). Loops with their own keyframe steps keep their frames as drawn.
-  const alternate = String(timing.direction).startsWith('alternate') && own === 1 && steps > 1;
-  const easing = alternate ? `steps(${steps}, jump-none)` : `steps(${steps})`;
-  // Only the easing is set by script: duration, delay and play state still follow the CSS (a
-  // mood change, `.page-hidden`), and this runs again on the next iteration.
-  if (effect.getTiming().easing !== easing) effect.updateTiming({ easing });
-  const start = animation.startTime;
-  if (animation.playState !== 'running' || start === null) return;
-  const snapped = Math.round(Number(start) / FRAME_MS) * FRAME_MS;
-  if (snapped !== start) animation.startTime = snapped;
+/** Where one loop should be as of `at`, or null if its picture is unchanged. Reads only. */
+function due(animation: Animation, loop: Loop, at: number) {
+  const timing = (animation.effect as KeyframeEffect).getTiming();
+  const duration = Number(timing.duration) || FRAME_MS;
+  const local = at - loop.origin;
+  const key = stepKey(local, Number(timing.delay) || 0, duration, loop.steps);
+  if (key === loop.key) return null;
+  loop.key = key;
+  return local;
 }
 
-function fitTarget(event: AnimationEvent) {
+/** Whether CSS still has this loop (seeking a cancelled one would bring it back, orphaned). */
+function live(animation: Animation) {
+  const target = (animation.effect as KeyframeEffect | null)?.target;
+  return animation.playState !== 'idle' && !!target?.isConnected;
+}
+
+/** Less motion: every loop sits on its first frame. */
+function hold(animation: Animation, loop: Loop) {
+  if (loop.key === -2 || !live(animation)) return;
+  loop.key = -2;
+  animation.currentTime = 0;
+}
+
+/** Loops seen but not yet taken over: a burst of `animationstart` events is taken in one go. */
+const pending = new Set<Animation>();
+let flushTimer: ReturnType<typeof setTimeout> | undefined;
+
+function adopt(animation: Animation) {
+  if (loops.has(animation) || pending.has(animation)) return;
+  pending.add(animation);
+  flushTimer ??= setTimeout(takeOver, 0);
+}
+
+/** Pauses newly seen loops and puts them where the office clock has them. */
+function takeOver() {
+  flushTimer = undefined;
+  const at = Math.floor(now() / FRAME_MS) * FRAME_MS;
+  const still = ticker.conditions.still;
+  // Reads first, then writes (see `step`).
+  const fresh: [Animation, Loop, number | null][] = [];
+  for (const animation of pending) {
+    if (typeof CSSAnimation === 'undefined' || !(animation instanceof CSSAnimation)) continue;
+    if (SMOOTH.has(animation.animationName) || animation.playState === 'idle') continue;
+    const effect = animation.effect as KeyframeEffect | null;
+    if (!effect) continue;
+    const timing = effect.getComputedTiming();
+    if (timing.iterations !== Infinity || !Number(timing.duration)) continue;
+    const elapsed = Number(animation.currentTime ?? 0);
+    const loop: Loop = { origin: snap(now() - elapsed), steps: keyframeSteps(effect), key: NaN };
+    fresh.push([animation, loop, still ? 0 : due(animation, loop, at)]);
+    if (still) loop.key = -2;
+  }
+  pending.clear();
+  for (const [animation, loop, local] of fresh) {
+    animation.pause();
+    loops.set(animation, loop);
+    if (local !== null) animation.currentTime = local;
+  }
+  if (fresh.length) ticker.update({ busy: true });
+}
+
+/** Steps between looks for loops that slipped past `animationstart` (about once a second). */
+const RESCAN_STEPS = 8;
+let sinceScan = 0;
+
+function step(at: number) {
+  // Something else (a screenshot tool, devtools) may cancel and replay a loop: it would then run
+  // freely at display rate, so catch it again.
+  if (++sinceScan >= RESCAN_STEPS) {
+    sinceScan = 0;
+    adoptAll();
+  }
+  // All reads first, then all writes: reading a CSS animation brings styles up to date, so
+  // interleaving would recalculate the page's style once per loop instead of once per step.
+  const moves: [Animation, number, boolean][] = [];
+  for (const [animation, loop] of loops) {
+    // Gone from the stylesheet or the page: CSS cancelled it.
+    if (!live(animation)) {
+      loops.delete(animation);
+      continue;
+    }
+    const running = animation.playState === 'running';
+    if (running) loop.key = NaN;
+    const local = due(animation, loop, at);
+    if (local !== null) moves.push([animation, local, running]);
+  }
+  for (const [animation, local, running] of moves) {
+    if (running) animation.pause();
+    animation.currentTime = local;
+  }
+  if (!loops.size) ticker.update({ busy: false });
+}
+
+const ticker = createTicker({
+  now: () => performance.now(),
+  setTimer: (run, ms) => setTimeout(run, ms),
+  clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  onTick: step,
+});
+
+function adoptTarget(event: AnimationEvent) {
   const target = event.target;
   if (!(target instanceof Element)) return;
   const pseudo = event.pseudoElement ?? '';
@@ -62,22 +155,48 @@ function fitTarget(event: AnimationEvent) {
       animation.animationName === event.animationName &&
       ((animation.effect as KeyframeEffect | null)?.pseudoElement ?? '') === pseudo
     )
-      fit(animation);
+      adopt(animation);
 }
 
-/** Back on screen: resumed loops get a new start time; put them on the grid once ready. */
-function refit() {
-  for (const animation of document.getAnimations())
-    animation.ready.then(() => fit(animation)).catch(() => {});
+/** Loops that started unseen (out of sight, before this ran) join on the next look. */
+function adoptAll() {
+  for (const animation of document.getAnimations()) adopt(animation);
+}
+
+let appStill = false;
+let systemStill: MediaQueryList | null = null;
+function updateStill() {
+  const still = appStill || !!systemStill?.matches;
+  if (still === ticker.conditions.still) return;
+  ticker.update({ still });
+  if (still) for (const [animation, loop] of loops) hold(animation, loop);
+  else adoptAll();
+}
+
+/** The app's own "less motion" setting, which every window reads from the shared preferences. */
+export function setMotionReduced(reduced: boolean) {
+  appStill = reduced;
+  updateStill();
 }
 
 let started = false;
-/** Puts every looping animation of this page on the office clock, now and as they appear. */
+/** Puts every looping animation of this page on the office tick, now and as they appear. */
 export function startFrameClock() {
   if (started || typeof document === 'undefined' || !document.getAnimations) return;
   started = true;
-  document.addEventListener('animationstart', fitTarget, true);
-  document.addEventListener('animationiteration', fitTarget, true);
-  onPageVisibility(() => requestAnimationFrame(refit));
-  for (const animation of document.getAnimations()) fit(animation);
+  document.addEventListener('animationstart', adoptTarget, true);
+  const visibility = () => {
+    ticker.update({ hidden: isPageHidden() });
+    if (!isPageHidden()) adoptAll();
+  };
+  onPageVisibility(visibility);
+  visibility();
+  const focus = () => ticker.update({ focused: document.hasFocus() });
+  window.addEventListener('focus', focus);
+  window.addEventListener('blur', focus);
+  focus();
+  systemStill = window.matchMedia?.('(prefers-reduced-motion: reduce)') ?? null;
+  systemStill?.addEventListener('change', updateStill);
+  updateStill();
+  adoptAll();
 }
