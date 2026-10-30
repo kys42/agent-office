@@ -237,7 +237,6 @@ test('local text and snapshots remain compatible with beta off or enabled withou
         ['reorderSeats', [['codex:local', remote]]],
         ['identities', [[remote]]],
         ['bookmark', ['codex:local', remote, 'note']],
-        ['noticeReadAll', [{ filter: 'all', sessionIds: [remote] }, Date.now()]],
         ['notices', [[{ id: remote, version: '1' }], 'read']],
         ['preferences', [{ zoneRules: [{ match: 'session', value: remote, name: 'blocked' }] }]],
         ['preferences', [{ petAppearance: { colleagues: { [remote]: null } } }]],

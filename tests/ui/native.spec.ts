@@ -162,11 +162,10 @@ test('A to-do item seen from the lounge brings the office back with the card', a
   await expect(page.getByRole('tab', { name: /^사무실/ })).toHaveAttribute('aria-selected', 'true');
 });
 
-test('Choosing a project shows its roster even with the inbox open', async ({ page }) => {
+test('Choosing a project shows its roster even with the usage panel open', async ({ page }) => {
   await page.goto('/?demo&lang=ko');
   await expect(page.locator('.office-pet').first()).toBeVisible();
-  // The toolbar's inbox button (not the shortcut: a key pressed before the app listens is lost).
-  await page.locator('.toolbar .inbox-button').click();
+  await page.locator('.toolbar .usage-button').click();
   await expect(page.locator('.app.has-dock')).toHaveCount(1);
   const sidebar = page.getByRole('complementary', { name: '주 메뉴' });
   await sidebar.getByRole('button', { name: /my-notes/ }).click();

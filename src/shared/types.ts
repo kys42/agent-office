@@ -110,35 +110,6 @@ export interface NoticeReceipt {
   version: string;
 }
 export type NoticeAction = 'read' | 'dismiss' | 'unread' | 'view';
-/** The news lists' kinds: confirmed finals, open calls, everything. */
-export type NoticeFilter = 'final' | 'attention' | 'all';
-/** Which notices a news list shows. */
-export interface NoticeQuery {
-  filter: NoticeFilter;
-  includeRead?: boolean;
-  /** Finals of background runs and helpers count too (a colleague's own news tab). */
-  includeBackground?: boolean;
-  /** Only these sessions' notices; absent means the whole office. */
-  sessionIds?: string[];
-}
-/** A place in the news order (newest first, then id): pages continue strictly after it. */
-export interface NoticeCursor {
-  at: number;
-  id: string;
-}
-export interface NoticePageRequest extends NoticeQuery {
-  before?: NoticeCursor | null;
-  limit?: number;
-}
-export interface NoticePage {
-  notices: OfficeNotice[];
-  /** More matching notices come after this page. */
-  more: boolean;
-  /** Exact unread counts of each kind in the query's scope (sessions, background), all pages. */
-  unread: Record<NoticeFilter, number>;
-  /** When the collector read it: a later "read all" leaves what arrived after this alone. */
-  at: number;
-}
 /** A page of a conversation: the newest `limit` events before the `before` event. */
 export interface DetailPage {
   before?: string;
@@ -504,7 +475,7 @@ export interface Snapshot {
   epoch?: string;
   /**
    * The notices the office needs live (the latest per colleague, every open call and unread
-   * final, the most recent ones); older ones are read a page at a time (`noticePage`).
+   * final, the most recent ones); a conversation reads older excerpts with its pages.
    */
   notices?: OfficeNotice[];
   /** Exact over all visible notices, not only the ones carried in `notices`. */
@@ -727,7 +698,6 @@ export interface ScreenRect {
 /** What the dock card shows: a colleague, opened from its bubble (news first) or its desk. */
 export interface CardTarget {
   id: string;
-  news: boolean;
   /** Explicit navigation intent, also delivered when reusing another pinned window. */
   bookmark?: { eventId: string; at: number };
 }
@@ -766,10 +736,6 @@ export interface OfficeAPI {
   visit: (id: string) => Promise<Snapshot>;
   returnToOffice: (id: string) => Promise<Snapshot>;
   notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
-  /** A page of the news, older ones included. */
-  noticePage: (request: NoticePageRequest) => Promise<NoticePage>;
-  /** Mark every unread notice matching `query` read, except those received after `asOf`. */
-  noticeReadAll: (query: NoticeQuery, asOf: number) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
   /** Open a web page (http/https only) from session text in the default browser. */

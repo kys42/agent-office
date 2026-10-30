@@ -185,7 +185,7 @@ else {
         // toggled closed if already open); otherwise the big office opens at that colleague.
         // A summary (no one colleague) opens the big office beside the dock, which stays.
         const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
-        if (sessionId && docked) cards.reveal({ id: sessionId, news: false }, dock!.getBounds());
+        if (sessionId && docked) cards.reveal({ id: sessionId }, dock!.getBounds());
         else
           showMain(sessionId, { keepDock: docked, from: docked ? dock!.getBounds() : undefined });
       },
@@ -996,13 +996,7 @@ function setupIPC() {
     trusted(e);
     if (typeof action !== 'string') throw new Error(m().desktop.badRequest);
     if (action === 'open' || action === 'select' || action === 'expand') {
-      if (
-        !target ||
-        typeof target.id !== 'string' ||
-        !target.id.length ||
-        target.id.length > 400 ||
-        typeof target.news !== 'boolean'
-      )
+      if (!target || typeof target.id !== 'string' || !target.id.length || target.id.length > 400)
         throw new Error(m().desktop.badRequest);
       if (
         target.bookmark !== undefined &&
@@ -1012,14 +1006,12 @@ function setupIPC() {
           target.bookmark.eventId.length > 1000 ||
           typeof target.bookmark.at !== 'number' ||
           !Number.isSafeInteger(target.bookmark.at) ||
-          target.bookmark.at < 0 ||
-          target.news)
+          target.bookmark.at < 0)
       )
         throw new Error(m().desktop.badRequest);
     }
     const chosen: CardTarget | undefined = target && {
       id: target.id,
-      news: target.news,
       ...(target.bookmark
         ? { bookmark: { eventId: target.bookmark.eventId, at: target.bookmark.at } }
         : {}),

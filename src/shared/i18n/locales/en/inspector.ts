@@ -56,7 +56,6 @@ export const inspector = {
   tabs: {
     overview: 'Details',
     history: 'Chat',
-    news: (unread: number) => (unread ? `Updates ${unread}` : 'Updates'),
     notes: 'Notes',
   },
   linkedRuns: (n: number) => `Linked helpers and forks · ${n}`,

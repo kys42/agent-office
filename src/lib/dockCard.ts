@@ -5,16 +5,13 @@ import { api } from './api';
  * the big office. The anchor is the clicked bubble, else the colleague's desk on screen.
  * A browser preview has no card window, so it opens the big office view as before.
  */
-export function openColleague(
-  id: string,
-  options: { anchor?: Element | null; news?: boolean } = {},
-) {
+export function openColleague(id: string, options: { anchor?: Element | null } = {}) {
   const anchor = options.anchor ?? document.querySelector(`[data-session-id="${CSS.escape(id)}"]`);
   if (!api.card || !anchor) return api.window('main', id);
   const r = anchor.getBoundingClientRect();
   return api.card(
     'open',
-    { id, news: !!options.news },
+    { id },
     { x: window.screenX + r.left, y: window.screenY + r.top, width: r.width, height: r.height },
   );
 }

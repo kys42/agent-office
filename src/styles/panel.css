@@ -336,6 +336,14 @@
   color: var(--accent-ink);
   background: var(--accent);
 }
+/* Only whether the latest result is unseen, never how many (#300). */
+.session-copy strong em.unread-dot {
+  min-width: 0;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+}
 .session-meta {
   font-size: calc(11px * var(--read-scale));
   color: var(--text-3);
@@ -364,7 +372,7 @@
   font-weight: 560;
 }
 
-/* ───────────────────────── Dock panel (inspector & inbox) ───────────────────────── */
+/* ───────────────────────── Dock panel (inspector) ───────────────────────── */
 .app-body > .inspector {
   width: var(--dock-w);
   min-width: 0;
@@ -723,14 +731,12 @@
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
-.conversation-filters,
-.news-filter-bar {
+.conversation-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
 }
-.conversation-filters button,
-.news-filter-bar button {
+.conversation-filters button {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -742,29 +748,24 @@
   border: 1px solid transparent;
   white-space: nowrap;
 }
-.conversation-filters button span,
-.news-filter-bar button span {
+.conversation-filters button span {
   font-family: var(--font-mono);
   font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
 }
-.conversation-filters button:hover,
-.news-filter-bar button:hover {
+.conversation-filters button:hover {
   color: var(--text-2);
   background: var(--bg-3);
 }
-.conversation-filters button.active,
-.news-filter-bar button.active {
+.conversation-filters button.active {
   color: var(--text);
   background: var(--bg-4);
   border-color: var(--line-2);
 }
-.conversation-filters button.active span,
-.news-filter-bar button.active span {
+.conversation-filters button.active span {
   color: var(--accent);
 }
-.conversation-tools-toggle,
-.news-review-bar label {
+.conversation-tools-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -775,8 +776,7 @@
 .conversation-tools-toggle:has(:disabled) {
   opacity: 0.45;
 }
-.conversation-tools-toggle input,
-.news-review-bar input {
+.conversation-tools-toggle input {
   accent-color: var(--accent);
   width: 13px;
   height: 13px;
@@ -1097,280 +1097,6 @@
 .conversation .empty-small small {
   max-width: 240px;
   line-height: 1.6;
-}
-
-/* ───────────────────────── News / inbox ───────────────────────── */
-.inbox-heading {
-  flex-shrink: 0;
-  padding: 16px 16px 12px;
-}
-.inbox-heading h2 {
-  font-size: calc(18px * var(--read-scale));
-  font-weight: 700;
-  letter-spacing: -0.025em;
-}
-.inbox-heading h2 b {
-  font-family: var(--font-mono);
-  font-weight: 500;
-  color: var(--accent);
-}
-.inbox-heading p {
-  margin-top: 4px;
-  font-size: calc(12px * var(--read-scale));
-  line-height: 1.55;
-  color: var(--text-3);
-}
-.news-feed {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.news-filter-bar {
-  flex-shrink: 0;
-  padding: 0 16px 8px;
-}
-.news-attention-link {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 16px 8px;
-  padding: 8px 11px;
-  border-radius: 9px;
-  font-size: calc(11.5px * var(--read-scale));
-  text-align: left;
-  color: var(--st-call);
-  background: rgba(255, 122, 138, 0.08);
-  border: 1px solid rgba(255, 122, 138, 0.25);
-}
-.news-review-bar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 0 16px 10px;
-  border-bottom: 1px solid var(--line);
-}
-.news-review-bar button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: 7px;
-  font-size: calc(11px * var(--read-scale));
-  font-weight: 560;
-  color: var(--text-2);
-  border: 1px solid var(--line-2);
-}
-.news-review-bar button:hover:not(:disabled) {
-  color: var(--text);
-  background: var(--bg-3);
-}
-.news-review-bar button:disabled {
-  opacity: 0.4;
-}
-.news-feed-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-anchor: none;
-  padding: 10px 16px 14px;
-}
-.inspector-scroll.news-tab-scroll {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  padding: 12px 0 0;
-}
-.news-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.news-empty {
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  padding: 40px 16px;
-  text-align: center;
-  color: var(--text-3);
-}
-.news-empty h3 {
-  margin-top: 4px;
-  font-size: calc(13.5px * var(--read-scale));
-  font-weight: 600;
-  color: var(--text-2);
-}
-.news-empty p {
-  font-size: calc(11.5px * var(--read-scale));
-  max-width: 240px;
-}
-.news-item {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 11px 12px 10px;
-  border-radius: 12px;
-  background: var(--bg-2);
-  border: 1px solid var(--line);
-  transition: border-color 0.15s;
-}
-/* History can show hundreds of repeated portraits. Keep them static so each old entry
-   does not retain an animated sprite compositor layer. The office pet still shows its state. */
-.news-item .sprite {
-  animation: none;
-  will-change: auto;
-}
-.news-item:hover {
-  border-color: var(--line-2);
-}
-.news-item.unread {
-  border-color: var(--line-2);
-  background: linear-gradient(180deg, rgba(244, 184, 108, 0.05), transparent 60%), var(--bg-2);
-}
-.news-item.seen {
-  opacity: 0.72;
-}
-.news-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: calc(10.5px * var(--read-scale));
-  color: var(--text-4);
-}
-.news-kind {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 7px;
-  border-radius: 5px;
-  font-size: calc(10.5px * var(--read-scale));
-  font-weight: 600;
-  line-height: 19px;
-  color: var(--text-2);
-  background: var(--bg-4);
-}
-.news-kind i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.news-reply .news-kind {
-  color: var(--st-done);
-  background: rgba(120, 182, 255, 0.12);
-}
-.news-progress .news-kind {
-  color: var(--st-work);
-  background: rgba(95, 214, 155, 0.1);
-}
-.news-request .news-kind {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-.news-attention .news-kind,
-.news-error .news-kind {
-  color: var(--st-call);
-  background: rgba(255, 122, 138, 0.1);
-}
-.news-attention,
-.news-error {
-  border-color: rgba(255, 122, 138, 0.25) !important;
-}
-.notice-exposure {
-  margin-left: auto;
-}
-.news-meta time {
-  font-family: var(--font-read-num);
-  font-size: calc(10px * var(--read-scale));
-}
-.news-session {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  align-self: flex-start;
-  max-width: 100%;
-  font-size: calc(12.5px * var(--read-scale));
-  font-weight: 600;
-  color: var(--text);
-}
-.news-session > span:nth-child(2) {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.news-session span.face {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-}
-.news-session > svg {
-  color: var(--text-4);
-  flex-shrink: 0;
-}
-.news-session:hover > svg {
-  color: var(--accent);
-}
-.news-item > p {
-  font-size: calc(12px * var(--read-scale));
-  line-height: 1.62;
-  color: var(--text-2);
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.news-item > p.expanded {
-  display: block;
-}
-.news-more {
-  align-self: flex-start;
-  font-size: calc(11px * var(--read-scale));
-  font-weight: 560;
-  color: var(--accent);
-}
-.news-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-top: 7px;
-  border-top: 1px solid var(--line);
-}
-.news-actions button {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: calc(11px * var(--read-scale));
-  color: var(--text-3);
-}
-.news-actions button:hover {
-  color: var(--text);
-  background: var(--bg-4);
-}
-.news-actions small {
-  font-size: calc(10.5px * var(--read-scale));
-  color: var(--text-4);
-  margin-left: 4px;
-}
-.news-load {
-  width: 100%;
-  margin-top: 4px;
-}
-.news-footnote {
-  flex-shrink: 0;
-  padding: 9px 16px 12px;
-  border-top: 1px solid var(--line);
-  font-size: calc(10.5px * var(--read-scale));
-  color: var(--text-4);
 }
 
 /* Narrow: dock floats over the stage */

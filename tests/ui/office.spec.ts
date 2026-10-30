@@ -207,7 +207,7 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await expect(page.locator('.desk-row .row-zone-mark').first()).toHaveAttribute('data-solid');
   await expect(page.locator('.desk-row .shared-bench').first()).toBeVisible();
   await expect(page.locator('.desk-row .speech-bubble').first()).toBeVisible();
-  await expect(page.locator('.desk-row .desk-name em').first()).toContainText('소식');
+  await expect(page.locator('.desk-row .desk-name em').first()).toHaveText('새 결과');
   await page.locator('.desk-row').screenshot({ path: '.local/desk-row.png' });
   await page.keyboard.press('Escape');
   await expect(desks).toHaveCount(0);
@@ -470,26 +470,20 @@ test('Dock preserves room interaction and stays out of the office bounds', async
   expect(narrowDock!.y).toBeGreaterThan(narrowOffice!.y + narrowOffice!.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
-test('Progress bubbles do not inflate the inbox; final read receipts preserve the bubble', async ({
+test('Progress bubbles do not count as unread; reading a result preserves the bubble', async ({
   page,
 }) => {
   await page.goto('/?demo');
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('1');
+  await expect(page).toHaveTitle('(1) Agent Office');
   await page.getByRole('button', { name: '코코 말풍선 접기', exact: true }).locator('..').hover();
   await page.getByRole('button', { name: '코코 말풍선 접기', exact: true }).click();
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('1');
-  await page.getByRole('button', { name: '소식함 열기' }).click();
-  const inbox = page.getByRole('complementary', { name: '소식함' });
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await expect(inbox.locator('.news-item')).toContainText('모모');
-  await inbox.getByRole('button', { name: '읽음으로 표시', exact: true }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(0);
+  await expect(page).toHaveTitle('(1) Agent Office');
+  const results = page.locator('.group-results');
+  await expect(results.locator('.session-row')).toContainText('모모');
+  await results.getByRole('button', { name: '모두 읽음' }).click();
+  await expect(page).toHaveTitle('Agent Office · 우리 사무실');
+  await expect(page.locator('.group-results')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '모모 말풍선 접기', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('0');
-  await inbox.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await inbox.getByRole('button', { name: /전체 기록/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(6);
 });
 test('Same branch shares a table and true children use accessible small desks', async ({
   page,
@@ -812,88 +806,4 @@ test('Conversation filters public phases, hides tools by default and preserves e
   await page.screenshot({ path: '.local/conversation-categories.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-});
-
-test('Inbox defaults to finals, retains attention, and batch read only affects the selected category', async ({
-  page,
-}) => {
-  const fixture = demoSnapshot();
-  const base = fixture.notices![0];
-  fixture.notices = [
-    ...Array.from({ length: 20 }, (_, i) => ({
-      ...base,
-      id: `progress-${i}`,
-      kind: 'progress' as const,
-      phase: 'commentary' as const,
-    })),
-    {
-      ...base,
-      id: 'important-final',
-      kind: 'reply',
-      phase: 'final',
-      text: '기능 구현과 검증을 마쳤습니다.',
-    },
-    {
-      ...base,
-      id: 'important-attention',
-      kind: 'attention',
-      phase: undefined,
-      text: '원래 앱에서 답변해 주세요.',
-    },
-    {
-      ...base,
-      id: 'resolved-attention',
-      kind: 'attention',
-      phase: undefined,
-      resolvedAt: Date.now(),
-    },
-    {
-      ...base,
-      id: 'legacy-unknown',
-      kind: 'reply',
-      phase: undefined,
-      text: '완료 여부를 구분할 수 없는 이전 응답',
-    },
-  ];
-  await page.addInitScript((s) => {
-    const w = window as any;
-    w.fixture = s;
-    w.office = {
-      snapshot: async () => structuredClone(w.fixture),
-      subscribe: () => () => {},
-      notices: async (receipts: any[], action: string) => {
-        for (const n of w.fixture.notices)
-          if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
-            if (action === 'read') n.seenAt = Date.now();
-            else if (action === 'unread') n.seenAt = null;
-            else n.dismissedAt = Date.now();
-          }
-        return structuredClone(w.fixture);
-      },
-    };
-  }, fixture);
-  await page.goto('/');
-  const badge = page.getByRole('button', { name: '소식함 열기' });
-  await expect(badge).toContainText('2');
-  await badge.click();
-  const inbox = page.getByRole('complementary', { name: '소식함' });
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await expect(inbox.locator('.news-item')).toContainText('기능 구현과 검증을 마쳤습니다.');
-  await expect(
-    inbox.getByRole('button', { name: /답변이나 확인을 기다리는 소식 1건/ }),
-  ).toBeVisible();
-  await inbox.getByRole('button', { name: '미확인 1건 읽음', exact: true }).click();
-  await expect(badge).toContainText('1');
-  await expect(inbox.locator('.news-item')).toHaveCount(0);
-  await inbox.getByRole('button', { name: /답변이나 확인을 기다리는 소식 1건/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await inbox.getByRole('button', { name: '미확인 1건 읽음', exact: true }).click();
-  await expect(badge).toContainText('0');
-  await inbox.getByRole('button', { name: /전체 기록/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(22);
-  await inbox.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
-  await expect(inbox.locator('.news-item')).toHaveCount(24);
-  await inbox.getByRole('button', { name: /최종 응답/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await page.screenshot({ path: '.local/inbox-final-responses.png', fullPage: true });
 });

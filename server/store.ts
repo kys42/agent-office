@@ -24,9 +24,6 @@ import type {
   SessionPatch,
   OfficeNotice,
   NoticeReceipt,
-  NoticePage,
-  NoticePageRequest,
-  NoticeQuery,
   DetailPage,
   SessionDetail,
   UsageEntry,
@@ -50,12 +47,7 @@ import {
   requestClosedAt,
   unreadNoticeCount,
 } from '../src/shared/notices.js';
-import {
-  matchesQuery,
-  noticeOrder,
-  pageNotices,
-  residentNotices,
-} from '../src/shared/notice-pages.js';
+import { noticeOrder, residentNotices } from '../src/shared/notice-pages.js';
 import { detailPage } from '../src/shared/conversation-pages.js';
 import { retainedConversation } from '../src/shared/conversation.js';
 import {
@@ -803,46 +795,6 @@ export class OfficeStore {
       notices: query.resident().map((n) => localizeNotice(n, locale)),
       noticeStats: { unread: counts.inbox, total: counts.total },
     };
-  }
-  /** A page of the news by cursor: the same notices, rules and order as the snapshot's. */
-  noticePage(request: NoticePageRequest, locale: Locale = getLocale()): NoticePage {
-    if (!this.indexedNotices) return pageNotices(this.noticeList(locale), request);
-    const page = this.noticeIndex(this.list(false, CANONICAL)).page(request);
-    return { ...page, notices: page.notices.map((n) => localizeNotice(n, locale)) };
-  }
-  /**
-   * Marks every unread notice matching `query` read, carried in a snapshot or not, except those
-   * received after `asOf` (the person had not seen them yet, nor a newer version of one).
-   */
-  noticeReadAll(query: NoticeQuery, asOf: number) {
-    const now = Date.now();
-    const index = this.indexedNotices ? this.noticeIndex(this.list(false, CANONICAL)) : null;
-    this.db.exec('BEGIN');
-    try {
-      if (index) {
-        let before: { at: number; id: string } | undefined;
-        for (;;) {
-          const batch = index.readAllPage(query, asOf, before);
-          if (!batch.length) break;
-          for (const n of batch) {
-            const found = this.noticeById(n.id);
-            if (found) this.writeNotice({ ...found.n, seenAt: now }, found.staged);
-          }
-          before = { at: batch.at(-1)!.at, id: batch.at(-1)!.id };
-        }
-      } else {
-        for (const n of this.noticeList(CANONICAL).filter(
-          (n) => matchesQuery(n, { ...query, includeRead: false }) && n.receivedAt <= asOf,
-        )) {
-          const found = this.noticeById(n.id);
-          if (found) this.writeNotice({ ...found.n, seenAt: now }, found.staged);
-        }
-      }
-      this.db.exec('COMMIT');
-    } catch (e) {
-      this.db.exec('ROLLBACK');
-      throw e;
-    }
   }
   noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
     for (const receipt of receipts) {

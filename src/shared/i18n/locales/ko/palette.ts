@@ -20,9 +20,6 @@ export const palette: Messages['palette'] = {
     all: '모든 단축키',
   },
   actions: {
-    inbox: '소식함 열기',
-    inboxHint: (n) => `확인할 소식 ${n}건`,
-    inboxKeywords: '알림 결과 응답',
     office: '사무실 보기',
     lounge: '대기 라운지 보기',
     loungeKeywords: '쉬는 퇴근',

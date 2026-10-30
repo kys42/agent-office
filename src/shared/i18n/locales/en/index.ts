@@ -14,7 +14,6 @@ import { artifacts } from './artifacts';
 import { settings } from './settings';
 import { zoneEditor } from './zoneEditor';
 import { usage } from './usage';
-import { news } from './news';
 import { office } from './office';
 import { roster } from './roster';
 import { lounge } from './lounge';
@@ -44,7 +43,6 @@ export const en = {
   settings,
   zoneEditor,
   usage,
-  news,
   office,
   roster,
   lounge,

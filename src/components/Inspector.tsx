@@ -55,9 +55,7 @@ import {
 import { ArtifactCards } from './ArtifactCards';
 import { sessionName, parentSession } from '../shared/office';
 import { nowState } from '../shared/now-state';
-import { unreadNoticeCount } from '../shared/notices';
 import { CardMenu } from './CardMenu';
-import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
@@ -67,6 +65,7 @@ import { openRequest } from '../shared/requests';
 import { useSendTargets } from '../lib/useSendTargets';
 import { useI18n } from '../lib/i18n';
 import { useReadOnOpen } from '../lib/useReadOnOpen';
+import type { ReceiptHandler } from '../lib/useOffice';
 export function Inspector({
   session,
   sessions,
@@ -75,7 +74,6 @@ export function Inspector({
   resident,
   onReceipt,
   onSelect,
-  showNews,
   readOnOpen = true,
   reading,
   onClose,
@@ -118,7 +116,6 @@ export function Inspector({
   resident?: Session;
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
-  showNews?: string | null;
   /** False while a card restored on startup waits for the person to touch the office. */
   readOnOpen?: boolean;
   /** The person's reading preferences (cardReadSettings): off, or after how long. */
@@ -181,7 +178,7 @@ export function Inspector({
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, [session.id]);
-  const [tab, setTab] = useState<'overview' | 'history' | 'notes' | 'news'>('history');
+  const [tab, setTab] = useState<'overview' | 'history' | 'notes'>('history');
   useEffect(() => {
     if (tab !== 'history') {
       const scroller = panelRef.current?.querySelector('.inspector-scroll');
@@ -259,9 +256,6 @@ export function Inspector({
     setTab('history');
     setPacket(null);
   }, [session.id]);
-  useEffect(() => {
-    if (showNews) setTab('news');
-  }, [showNews]);
   useEffect(() => {
     if (!notesDirty) setNotes(session.notes);
   }, [session.notes, notesDirty]);
@@ -385,7 +379,7 @@ export function Inspector({
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
   // Opening the card reads the colleague's final replies (not while privacy hides them).
   // A restored card waits for the person to touch the office first (`readOnOpen`).
-  const readNow = useReadOnOpen(
+  useReadOnOpen(
     session.id,
     notices,
     memberIds ?? [session.id],
@@ -636,7 +630,7 @@ export function Inspector({
   const tabBar = (
     <>
       <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
-        {(['history', 'news', 'overview', 'notes'] as const)
+        {(['history', 'overview', 'notes'] as const)
           .filter((key) => !s.remote || key === 'history' || key === 'overview')
           .map((key) => (
             <button
@@ -646,9 +640,7 @@ export function Inspector({
               className={tab === key ? 'active' : ''}
               onClick={() => setTab(key)}
             >
-              {key === 'news'
-                ? t.inspector.tabs.news(unreadNoticeCount(news))
-                : t.inspector.tabs[key]}
+              {t.inspector.tabs[key]}
               {key === 'notes' &&
                 (s.notes || [...members].some((id) => bookmarkMarks?.[id]?.length)) && <i />}
             </button>
@@ -658,7 +650,7 @@ export function Inspector({
   );
   const scrollArea = (
     <>
-      <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
+      <div className="inspector-scroll">
         {loadError && <div className="inline-error">{loadError}</div>}
 
         {privacy ? (
@@ -667,18 +659,6 @@ export function Inspector({
             <h3>{t.inspector.privacy.title}</h3>
             <p>{t.inspector.privacy.body}</p>
           </div>
-        ) : tab === 'news' ? (
-          <NewsFeed
-            key={s.id + (showNews ?? '')}
-            includeBackground
-            initialFilter={showNews ? 'all' : 'final'}
-            notices={news}
-            sessionIds={[s.id]}
-            keep={readNow}
-            sessions={sessions}
-            privacy={privacy}
-            onReceipt={onReceipt}
-          />
         ) : tab === 'overview' ? (
           cardOverview
         ) : tab === 'history' ? (

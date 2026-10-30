@@ -167,7 +167,7 @@ export class CardWindows {
    */
   reveal(target: CardTarget, anchor: Rect) {
     const e = this.preview;
-    if (e?.window.isVisible() && e.target?.id === target.id && e.target.news === target.news) {
+    if (e?.window.isVisible() && e.target?.id === target.id) {
       this.cancelHide(e);
       e.askedAt = Date.now();
       this.revealEntry(e);
@@ -180,7 +180,7 @@ export class CardWindows {
     const pinned = [...this.entries].find((e) => e.pinned && e.target?.id === target.id);
     if (pinned) {
       this.cancelHide(pinned);
-      if (target.bookmark || pinned.target?.news !== target.news) {
+      if (target.bookmark) {
         pinned.target = target;
         this.revealEntry(pinned);
       } else {
@@ -191,7 +191,7 @@ export class CardWindows {
       return;
     }
     let e = this.preview;
-    if (e?.window.isVisible() && e.target?.id === target.id && e.target.news === target.news) {
+    if (e?.window.isVisible() && e.target?.id === target.id) {
       this.hide(e);
       return;
     }

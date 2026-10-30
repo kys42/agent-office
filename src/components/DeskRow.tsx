@@ -352,8 +352,7 @@ export function DeskRow({
     }
   };
   // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
-  const open = (id: string, anchor?: Element | null, news = false) =>
-    openColleague(id, { anchor, news });
+  const open = (id: string, anchor?: Element | null) => openColleague(id, { anchor });
   const desk = STATION_WIDTH * scale;
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * scale })),
@@ -743,7 +742,7 @@ export function DeskRow({
                                       : t.desk.working
                                     : MOODS[s.status].label}
                                 </span>
-                                {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
+                                {speech.unread > 0 && <em>{t.desk.unread}</em>}
                               </small>
                             </button>
                           </>

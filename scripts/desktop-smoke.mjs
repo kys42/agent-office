@@ -420,7 +420,7 @@ try {
     dock.evaluate(() =>
       window.office.card(
         'open',
-        { id: 'codex:codex-test', news: false },
+        { id: 'codex:codex-test' },
         {
           x: 400,
           y: 600,
@@ -517,7 +517,7 @@ try {
   await dock.evaluate(() =>
     window.office.card(
       'open',
-      { id: 'codex:codex-test', news: false },
+      { id: 'codex:codex-test' },
       { x: 400, y: 600, width: 200, height: 100 },
     ),
   );
@@ -548,7 +548,7 @@ try {
     dock.evaluate(() =>
       window.office.card(
         'open',
-        { id: 'codex:codex-test', news: false },
+        { id: 'codex:codex-test' },
         { x: 400, y: 600, width: 200, height: 100 },
       ),
     );
@@ -561,13 +561,11 @@ try {
   await dock.evaluate(() =>
     window.office.card(
       'open',
-      { id: 'claude:claude-test', news: false },
+      { id: 'claude:claude-test' },
       { x: 400, y: 600, width: 200, height: 100 },
     ),
   );
-  await card.evaluate(() =>
-    window.office.card('select', { id: 'claude:claude-test', news: false }),
-  );
+  await card.evaluate(() => window.office.card('select', { id: 'claude:claude-test' }));
   await takeFocus(card);
   await card.waitForFunction(() => document.querySelectorAll('.conversation-message').length >= 24);
   const scroll = card.locator('.inspector-scroll');

@@ -39,7 +39,7 @@ import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
-import type { ReceiptHandler } from './News';
+import type { ReceiptHandler } from '../lib/useOffice';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
 import { api } from '../lib/api';
@@ -59,7 +59,6 @@ export function Office({
   bubbleHours,
   selected,
   onSelect,
-  onNews,
   onReceipt,
   reducedMotion,
   privacy,
@@ -89,7 +88,6 @@ export function Office({
   bubbleHours: number;
   selected: string | null;
   onSelect: (id: string) => void;
-  onNews: (id: string) => void;
   onReceipt: ReceiptHandler;
   reducedMotion: boolean;
   privacy: boolean;
@@ -666,7 +664,7 @@ export function Office({
                                   : t.desk.working
                                 : MOODS[s.status].label}
                             </span>
-                            {unread > 0 && <em>{t.desk.unread(unread)}</em>}
+                            {unread > 0 && <em>{t.desk.unread}</em>}
                           </small>
                         </button>
                         {shown && (
@@ -680,12 +678,11 @@ export function Office({
                               if (bubble && !privacy)
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
                             }}
+                            // The bubble opens its colleague's card on the conversation.
                             onOpen={() => {
-                              if (bubble) {
-                                if (!privacy)
-                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                                onNews(bubble.sessionId);
-                              } else onSelect(s.id);
+                              if (bubble && !privacy)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                              onSelect(bubble?.sessionId ?? s.id);
                             }}
                             onDismiss={() => {
                               setClosed(s.id);

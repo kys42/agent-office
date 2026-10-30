@@ -38,7 +38,6 @@ import {
   type ClaudeProcess,
 } from './adapters/claude-live.js';
 import { mergeSessions } from './adapters/merge.js';
-import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
 import {
@@ -167,24 +166,6 @@ const bookmarkQuerySchema = z
   })
   .strict();
 const noteSchema = z.string().max(BOOKMARK_NOTE);
-const noticeQueryShape = {
-  filter: z.enum(['final', 'attention', 'all']),
-  includeRead: z.boolean().optional(),
-  includeBackground: z.boolean().optional(),
-  sessionIds: z.array(z.string().max(400)).max(500).optional(),
-};
-const noticeQuerySchema = z.object(noticeQueryShape).strict();
-const noticePageSchema = z
-  .object({
-    ...noticeQueryShape,
-    before: z
-      .object({ at: z.number(), id: z.string().max(1000) })
-      .strict()
-      .nullable()
-      .optional(),
-    limit: z.number().int().min(1).max(NOTICE_PAGE_MAX).optional(),
-  })
-  .strict();
 /** A quiet office still reports that it checked, at this pace. */
 const HEALTH_MS = 60_000;
 /** Changes kept for pollers that fell behind; further back they get the whole office. */
@@ -1210,14 +1191,6 @@ export class OfficeService extends EventEmitter {
             .max(1000)
             .parse(args[0]),
           z.enum(['read', 'dismiss', 'unread', 'view']).parse(args[1]),
-        );
-        return this.emitSnapshot();
-      case 'noticePage':
-        return this.store.noticePage(noticePageSchema.parse(args[0]));
-      case 'noticeReadAll':
-        this.store.noticeReadAll(
-          noticeQuerySchema.parse(args[0]),
-          z.number().nonnegative().parse(args[1]),
         );
         return this.emitSnapshot();
       case 'patch':

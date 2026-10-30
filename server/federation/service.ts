@@ -33,8 +33,7 @@ function remoteReferences(method: string, args: unknown[]): boolean {
   const input = record(args[0]);
   let references: unknown[] = [];
   if (['veil', 'pin', 'reorderSeats', 'identities'].includes(method)) references = list(args[0]);
-  if (['bookmarks', 'noticePage', 'noticeReadAll'].includes(method))
-    references = list(input.sessionIds);
+  if (method === 'bookmarks') references = list(input.sessionIds);
   if (method === 'notices') references = list(args[0]).map((item) => record(item).id);
   if (['unbookmark', 'bookmarkNote', 'bookmarkById'].includes(method)) references = [args[0]];
   if (['bookmark', 'unbookmarkMessage'].includes(method)) references = [args[1]];

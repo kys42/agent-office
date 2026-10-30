@@ -34,7 +34,7 @@ async function desktop(
             ]),
           ),
         onCard: (cb: any) => {
-          w.showCard = (id: string | null) => cb(id ? { id, news: false } : null);
+          w.showCard = (id: string | null) => cb(id ? { id } : null);
           setTimeout(() => w.showCard('demo:0'), 20);
           return () => {};
         },

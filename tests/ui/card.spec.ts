@@ -168,7 +168,7 @@ async function card(
         },
         cardState: async () => ({
           ...w.windowState,
-          ...(handshakeOnly ? { target: { id: w.cardId, news: false } } : {}),
+          ...(handshakeOnly ? { target: { id: w.cardId } } : {}),
         }),
         onCardState: (cb: any) => {
           w.windowStateListener = cb;
@@ -178,7 +178,7 @@ async function card(
         },
         onCard: (cb: any) => {
           w.cardListener = cb;
-          if (!handshakeOnly) setTimeout(() => cb({ id: w.cardId, news: false }), 50);
+          if (!handshakeOnly) setTimeout(() => cb({ id: w.cardId }), 50);
           return () => {};
         },
       };
@@ -322,7 +322,7 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   await expect(aside.locator('.artifact-tray')).toHaveCount(0);
   const box = (await recent.boundingBox())!;
   expect(box.height).toBeLessThanOrEqual(152);
-  await expect(aside.getByRole('tab')).toHaveText(['대화', /^소식/, '작업 정보', '기억 메모']);
+  await expect(aside.getByRole('tab')).toHaveText(['대화', '작업 정보', '기억 메모']);
   await expect(aside.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
   // The chat box sits at the bottom.
   const composer = (await aside.locator('.card-composer').boundingBox())!;

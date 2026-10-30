@@ -26,7 +26,7 @@ so you can see who's working, who's waiting on you, and what just finished witho
 
 ## 👋 Your first visit
 
-The first launch includes a four-step tour: meet your teammates, catch up on questions and results, try the desk pet, and make the office yours. Skip it or finish it once; it stays out of the way next time. **Guide** in the sidebar or the **⌘K** command palette opens the tour and feature guide again. Feature cards take you straight to the Inbox, character settings, Memory, Usage and other screens. The sample office has its own guide and does not complete your live-office tour.
+The first launch includes a four-step tour: meet your teammates, catch up on questions and results, try the desk pet, and make the office yours. Skip it or finish it once; it stays out of the way next time. **Guide** in the sidebar or the **⌘K** command palette opens the tour and feature guide again. Feature cards take you straight to character settings, Memory, Usage and other screens. The sample office has its own guide and does not complete your live-office tour.
 
 ## 🖥️ A team that lives on your desktop
 
@@ -58,7 +58,7 @@ Agent Office isn't another window to keep checking. It docks to your desktop, st
 When three agents are running in five terminals across two worktrees, the hard part isn't the code — it's **knowing what needs you right now**. Agent Office reads the session logs your tools already write, and gives every session a desk:
 
 - 🙋 **Waiting on you** — a teammate raises a hand when a session asks a question or needs input.
-- 📬 **Results to review** — final replies land in an Inbox instead of scrolling away in a terminal.
+- 📬 **Results to review** — a finished reply puts a dot on that teammate instead of scrolling away in a terminal; open their card or message them and it clears.
 - ⌨️ **Working** — live progress shows up in speech bubbles, in plain words rather than raw tool names.
 - ☕ **Standing by → Off duty** — after a reply a teammate stands by for 30 minutes, then rests. Four quiet hours later they clock off to the Lounge, and after a week to the Archive.
 
@@ -73,7 +73,7 @@ No hooks to install, no wrappers around your CLI, no cloud. Your sources are ope
 
 When you want the whole picture, open the full office: every project on its own floor, a roster ordered by what needs you, and a work card for each teammate.
 
-<img src="docs/images/en/hero.gif" alt="Tour of the big office: opening a work card, searching with the command palette, and the Inbox" width="100%" />
+<img src="docs/images/en/hero.gif" alt="Tour of the big office: opening a work card and searching with the command palette" width="100%" />
 
 <table>
   <tr>
@@ -84,21 +84,20 @@ When you want the whole picture, open the full office: every project on its own 
       Chat drafts are saved on this Mac for each session and shared with the popup card. Close and reopen a card to continue writing; a successful send clears only the text that was sent.
     </td>
     <td width="50%" valign="top">
-      <img src="docs/images/en/inbox.png" alt="Inbox" /><br/>
-      <b>Inbox</b><br/>
-      Final replies first. Questions are split out as <i>needs a look</i>, everything else stays in the full history. Read state survives restarts, and bubbles stay up for 3 hours by default.
+      <img src="docs/images/en/palette.png" alt="Command palette" /><br/>
+      <b>⌘K command palette & keyboard triage</b><br/>
+      Jump to any teammate, record or command. <kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>R</kbd> to read, <kbd>?</kbd> for every shortcut — plus a “while you were away” digest when you come back.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/images/en/palette.png" alt="Command palette" /><br/>
-      <b>⌘K command palette & keyboard triage</b><br/>
-      Jump to any teammate, record or command. <kbd>J</kbd>/<kbd>K</kbd> to move, <kbd>R</kbd> to read, <kbd>I</kbd> for the Inbox, <kbd>?</kbd> for every shortcut — plus a “while you were away” digest when you come back.
-    </td>
-    <td width="50%" valign="top">
       <img src="docs/images/en/lounge.png" alt="Lounge" /><br/>
       <b>Lounge & Archive</b><br/>
       Teammates with no new activity clock off to the sofas after 4 hours and move to the Archive after 7 days — both configurable. Pin anyone to keep them at their desk.
+    </td>
+    <td width="50%" valign="top">
+      <b>One dot per teammate</b><br/>
+      You can't tell from here whether you already read a reply in the terminal, so the office only tracks one thing: have you seen their latest result? A dot in the list and a mark on the desk say so — no counts. Opening their card, sending them a message or jumping to their terminal clears it. Bubbles stay up for 3 hours by default.
     </td>
   </tr>
 </table>
@@ -183,7 +182,7 @@ flowchart LR
   end
   subgraph WK["Collector · worker thread · every 5 s"]
     direction TB
-    AD["Provider adapters"] --> OP["Office Observation<br/>Protocol v1"] --> PO["Office policy<br/>zones · status · inbox · lifecycle"]
+    AD["Provider adapters"] --> OP["Office Observation<br/>Protocol v1"] --> PO["Office policy<br/>zones · status · results · lifecycle"]
   end
   CC & CX & OC --> AD
   PO --> DB[("office.sqlite<br/>+ FTS5")]
@@ -191,7 +190,7 @@ flowchart LR
   DB --> MCP["Read-only MCP server"] --> AG["Your agents"]
 ```
 
-Raw provider formats end at the adapters; the office only ever reads one shared protocol. Provider evidence, grouping and relationships, run state, inbox lifetime, and what isn't supported yet are documented separately — see [Docs](#-docs).
+Raw provider formats end at the adapters; the office only ever reads one shared protocol. Provider evidence, grouping and relationships, run state, notice lifetime, and what isn't supported yet are documented separately — see [Docs](#-docs).
 
 - **Electron main → sandboxed preload IPC → worker thread.** The renderer never touches files, processes or Node APIs.
 - **Observed, not assumed.** Status comes from what the logs show. A finished reply is never reported as “task done”, and a quiet session isn't declared dead.

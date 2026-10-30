@@ -3,13 +3,13 @@
    header on every column, segmented controls instead of underline tabs, Messages-style
    conversation, Spotlight-style palette. Only chrome lives here; the pixel office does not. */
 
-/* ── Right column: roster, inspector, inbox, usage share one grouped surface ── */
+/* ── Right column: roster, inspector, usage share one grouped surface ── */
 .roster,
 .app-body > .inspector {
   background: var(--grouped);
   border-left: 0.5px solid var(--line-2);
 }
-.panel-tabs {
+.panel-bar {
   position: relative;
   flex-shrink: 0;
   height: var(--bar-h);
@@ -20,48 +20,11 @@
   border-bottom: 0.5px solid var(--line-2);
   -webkit-app-region: drag;
 }
-.panel-tabs button {
-  -webkit-app-region: no-drag;
-}
-.roster > .panel-tabs {
+.roster > .panel-bar {
   margin: 0 -14px;
   padding: 0 10px 0 14px;
-}
-.news-inbox > .panel-tabs {
-  padding: 0 10px 0 16px;
-}
-
-.panel-tabs .panel-switch {
-  display: inline-flex;
-  padding: 2px;
-  gap: 0;
-  background: var(--bg-4);
-  border: 0;
-  border-radius: 7px;
-}
-.panel-tabs .panel-switch button {
-  height: 22px;
-  padding: 0 11px;
-  gap: 5px;
-  border-radius: 5px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-}
-.panel-tabs .panel-switch button[aria-pressed='true'] {
-  background: var(--control);
-  box-shadow:
-    0 0 0 0.5px var(--control-line),
-    0 1px 2px rgba(0, 0, 0, 0.12);
-}
-.panel-tabs .panel-switch button b {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  font-size: 10px;
-  line-height: 15px;
-  color: #ffffff;
-  background: var(--badge);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* ── Roster as an inset-grouped list ── */
@@ -266,8 +229,7 @@
   padding: 4px 16px 18px;
 }
 .artifact-card,
-.completion-button,
-.news-item {
+.completion-button {
   background: var(--bg-2);
   border: 0;
   border-radius: 10px;
@@ -290,8 +252,7 @@
   backdrop-filter: blur(16px) saturate(1.5);
   border-bottom: 0.5px solid var(--line-2);
 }
-.conversation-filters button,
-.news-filter-bar button {
+.conversation-filters button {
   height: 22px;
   padding: 0 8px;
   border: 0;
@@ -299,24 +260,20 @@
   font-size: calc(12px * var(--read-scale));
   color: var(--text-2);
 }
-.conversation-filters button:hover,
-.news-filter-bar button:hover {
+.conversation-filters button:hover {
   background: var(--bg-4);
 }
-.conversation-filters button.active,
-.news-filter-bar button.active {
+.conversation-filters button.active {
   color: var(--accent-ink);
   background: var(--accent);
   border: 0;
 }
-.conversation-filters button span,
-.news-filter-bar button span {
+.conversation-filters button span {
   font-family: var(--font-read);
   color: inherit;
   opacity: 0.7;
 }
-.conversation-filters button.active span,
-.news-filter-bar button.active span {
+.conversation-filters button.active span {
   color: inherit;
 }
 .message-meta b {
@@ -374,37 +331,6 @@
 }
 .new-messages {
   box-shadow: var(--shadow-pop);
-}
-
-/* ── Inbox ── */
-.inbox-heading h2 {
-  font-family: var(--font-read-display);
-  font-size: calc(17px * var(--read-scale));
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.inbox-heading h2 b {
-  font-family: var(--font-read-display);
-  font-weight: 700;
-}
-.news-item.unread {
-  background: var(--bg-2);
-  box-shadow:
-    0 0 0 0.5px var(--line-2),
-    inset 3px 0 0 var(--accent);
-}
-.news-review-bar {
-  border-bottom-color: var(--line-2);
-}
-.news-review-bar button {
-  border: 0;
-  color: var(--accent);
-}
-.news-actions {
-  border-top-color: var(--line);
-}
-.news-footnote {
-  border-top-color: var(--line-2);
 }
 
 /* ── Palette: Spotlight ── */
@@ -541,7 +467,7 @@
 }
 
 /* Narrow windows: the dock floats over the stage, under the toolbar — never over its buttons
-   (search, inbox, usage, hide and the desk pet stay reachable with a card open). */
+   (search, usage, hide and the desk pet stay reachable with a card open). */
 .app-body {
   position: relative;
 }

@@ -1,11 +1,9 @@
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
-import type { NoticePageRequest, NoticeQuery, OfficeNotice, Session } from '../src/shared/types.js';
+import type { OfficeNotice, Session } from '../src/shared/types.js';
 import { isBackground, isHelper } from '../src/shared/residents.js';
 import { isAttentionNotice, isFinalNotice, isInboxNotice } from '../src/shared/notices.js';
 import {
-  matchesQuery,
   noticeOrder,
-  NOTICE_PAGE,
   RECENT_NOTICES,
   UNREAD_FINALS,
   residentNotices,
@@ -124,84 +122,21 @@ export class NoticeIndex {
       .sort(noticeOrder)
       .slice(0, limit);
   }
-  private query(q: NoticeQuery) {
-    const parts: string[] = [];
-    const args: SQLInputValue[] = [];
-    if (q.sessionIds) {
-      parts.push('n.session_id IN (SELECT value FROM json_each(?))');
-      args.push(JSON.stringify(q.sessionIds));
-    }
-    if (!q.includeRead) parts.push('n.seen_at IS NULL');
-    if (q.filter === 'attention') parts.push('n.attention=1');
-    if (q.filter === 'final') {
-      parts.push('n.final=1');
-      if (!q.includeBackground) {
-        parts.push('n.session_id NOT IN (SELECT value FROM json_each(?))');
-        args.push(JSON.stringify([...this.background]));
-      }
-    }
-    return { where: parts.join(' AND ') || '1', args };
-  }
-  counts(q: Omit<NoticeQuery, 'filter'> = {}) {
-    let where = this.base;
-    const args = [...this.args];
-    if (q.sessionIds) {
-      where += ' AND n.session_id IN (SELECT value FROM json_each(?))';
-      args.push(JSON.stringify(q.sessionIds));
-    }
-    const background = q.includeBackground ? [] : [...this.background];
+  /** Exact counts over every visible notice (stored and staged), not only the carried ones. */
+  counts() {
+    const background = JSON.stringify([...this.background]);
     const row = this.db
       .prepare(
         `SELECT COUNT(*) total,
-      COALESCE(SUM(n.seen_at IS NULL),0) unread_all,
-      COALESCE(SUM(n.seen_at IS NULL AND n.attention=1),0) attention,
-      COALESCE(SUM(n.seen_at IS NULL AND n.final=1 AND n.session_id NOT IN (SELECT value FROM json_each(?))),0) final,
       COALESCE(SUM(n.seen_at IS NULL AND (n.attention=1 OR (n.final=1 AND n.session_id NOT IN (SELECT value FROM json_each(?))))),0) inbox
-      FROM notice_meta n WHERE ${where}`,
+      FROM notice_meta n WHERE ${this.base}`,
       )
-      .get(JSON.stringify(background), JSON.stringify(background), ...args) as {
-      total: number;
-      unread_all: number;
-      attention: number;
-      final: number;
-      inbox: number;
-    };
+      .get(background, ...this.args) as { total: number; inbox: number };
     for (const n of this.staged) {
-      if (q.sessionIds && !q.sessionIds.includes(n.sessionId)) continue;
       row.total++;
-      if (!n.seenAt) {
-        row.unread_all++;
-        if (isAttentionNotice(n)) row.attention++;
-        if (isFinalNotice(n) && (q.includeBackground || !n.background)) row.final++;
-        if (isAttentionNotice(n) || (isFinalNotice(n) && (q.includeBackground || !n.background)))
-          row.inbox++;
-      }
+      if (!n.seenAt && (isAttentionNotice(n) || (isFinalNotice(n) && !n.background))) row.inbox++;
     }
-    return {
-      total: row.total,
-      inbox: row.inbox,
-      unread: { all: row.unread_all, attention: row.attention, final: row.final },
-    };
-  }
-  page(q: NoticePageRequest) {
-    const { where, args } = this.query(q);
-    const before = q.before;
-    const after = (n: OfficeNotice) =>
-      !before || n.at < before.at || (n.at === before.at && n.id < before.id);
-    const cursor = before ? ' AND (n.at<? OR (n.at=? AND n.id<?))' : '';
-    const limit = q.limit ?? NOTICE_PAGE;
-    const list = this.read(
-      where + cursor,
-      [...args, ...(before ? [before.at, before.at, before.id] : [])],
-      (n) => matchesQuery(n, q) && after(n),
-      limit + 1,
-    );
-    return {
-      notices: list.slice(0, limit),
-      more: list.length > limit,
-      unread: this.counts(q).unread,
-      at: Date.now(),
-    };
+    return { total: row.total, inbox: row.inbox };
   }
   /** Same product choices as residentNotices, with explicit bounds on calls/timestamp ties. */
   resident() {
@@ -216,11 +151,10 @@ export class NoticeIndex {
         LIVE_NOTICE_LIMIT,
       ),
     );
-    const query = this.query({ filter: 'final' });
     rows.push(
       ...this.read(
-        query.where,
-        query.args,
+        'n.seen_at IS NULL AND n.final=1 AND n.session_id NOT IN (SELECT value FROM json_each(?))',
+        [JSON.stringify([...this.background])],
         (n) => !n.seenAt && !n.background && isFinalNotice(n),
         UNREAD_FINALS,
       ),
@@ -312,7 +246,7 @@ export class NoticeIndex {
       limit,
     );
   }
-  /** Bounded excerpt source in the same total order as notice paging. */
+  /** Bounded excerpt source in the same total order as the snapshot's notices. */
   excerpts(id: string, cursor: { at: number; id?: string } | undefined, limit: number) {
     const where = cursor
       ? cursor.id
@@ -327,19 +261,6 @@ export class NoticeIndex {
         n.sessionId === id &&
         (!cursor || n.at < cursor.at || (!!cursor.id && n.at === cursor.at && n.id < cursor.id)),
       limit,
-    );
-  }
-  readAllPage(q: NoticeQuery, asOf: number, before?: { at: number; id: string }) {
-    const query = this.query({ ...q, includeRead: false });
-    const cursor = before ? ' AND (n.at<? OR (n.at=? AND n.id<?))' : '';
-    return this.read(
-      query.where + ' AND n.received_at<=?' + cursor,
-      [...query.args, asOf, ...(before ? [before.at, before.at, before.id] : [])],
-      (n) =>
-        matchesQuery(n, { ...q, includeRead: false }) &&
-        n.receivedAt <= asOf &&
-        (!before || n.at < before.at || (n.at === before.at && n.id < before.id)),
-      200,
     );
   }
 }

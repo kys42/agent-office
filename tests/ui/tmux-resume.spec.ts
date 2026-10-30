@@ -39,12 +39,12 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
         w.publish = cb;
         return () => {};
       },
-      card: async () => ({ id: s.sessions[0].id, news: false }),
+      card: async () => ({ id: s.sessions[0].id }),
       onCard: () => () => {},
       cardState: async () => ({
         pinned: false,
         positionRemembered: false,
-        target: { id: s.sessions[0].id, news: false },
+        target: { id: s.sessions[0].id },
       }),
       tmuxSummon: async (
         id: string,

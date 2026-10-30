@@ -10,7 +10,6 @@ import { unreadNoticeCount } from '../src/shared/notices.js';
 import {
   RECENT_NOTICES,
   UNREAD_FINALS,
-  noticeCursor,
   noticeOrder,
   residentNotices,
 } from '../src/shared/notice-pages.js';
@@ -20,13 +19,7 @@ import {
   mergeNewest,
   prependPage,
 } from '../src/shared/conversation-pages.js';
-import type {
-  NoticePageRequest,
-  OfficeEvent,
-  OfficeNotice,
-  Session,
-  Snapshot,
-} from '../src/shared/types.js';
+import type { OfficeEvent, OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
 
 const now = Date.now();
 const base = demoSnapshot().sessions[0];
@@ -84,19 +77,6 @@ async function withStore(run: (store: OfficeStore, dir: string) => void | Promis
     store.close();
     await rm(dir, { recursive: true, force: true });
   }
-}
-/** Every page of `request`, followed by cursor. */
-function allPages(store: OfficeStore, request: NoticePageRequest) {
-  const out: OfficeNotice[] = [];
-  let before: NoticePageRequest['before'] = null;
-  for (let i = 0; i < 100; i++) {
-    const page = store.noticePage({ ...request, before });
-    out.push(...page.notices);
-    if (!page.more) return out;
-    assert.equal(page.notices.length, request.limit);
-    before = noticeCursor(page.notices.at(-1)!);
-  }
-  throw new Error('paging did not end');
 }
 
 test('A conversation is read newest page first, then older pages by cursor, to the start', async () => {
@@ -169,7 +149,7 @@ test('Each page brings the notices its excerpts need, the oldest page all earlie
   });
 });
 
-test('The snapshot carries what the office needs live; counts and pages cover every notice', async () => {
+test('The snapshot carries what the office needs live; counts cover every notice', async () => {
   await withStore((store) => {
     store.upsert(
       [session('claude:a'), session('claude:b'), session('claude:hidden', [], 'secret')],
@@ -201,32 +181,11 @@ test('The snapshot carries what the office needs live; counts and pages cover ev
       assert.ok(carried.has(id), id);
     assert.deepEqual(view.noticeStats, { unread: unreadNoticeCount(all), total: all.length });
     assert.equal(view.noticeStats.unread, 2);
-    // Pages, in snapshot order, reach every notice once.
-    const paged = allPages(store, { filter: 'all', includeRead: true, limit: 50 });
-    assert.deepEqual(
-      paged.map((n) => n.id),
-      all.map((n) => n.id),
-    );
-    assert.deepEqual(paged, [...paged].sort(noticeOrder));
-    assert.equal(new Set(paged.map((n) => n.id)).size, paged.length);
-    // Kinds, read state and scope match the lists.
-    assert.deepEqual(
-      store.noticePage({ filter: 'final' }).notices.map((n) => n.id),
-      ['claude:a::n500'],
-    );
-    assert.deepEqual(
-      store.noticePage({ filter: 'final', includeRead: true, sessionIds: ['claude:b'] }).notices,
-      [all.find((n) => n.id === 'claude:b::n900')],
-    );
-    assert.deepEqual(store.noticePage({ filter: 'all', sessionIds: ['claude:a'] }).unread, {
-      final: 1,
-      attention: 1,
-      all: 2,
-    });
+    assert.deepEqual(view.notices, [...view.notices].sort(noticeOrder));
   });
 });
 
-test('Receipts and read-all reach notices the snapshot does not carry, and counts follow', async () => {
+test('Receipts reach notices the snapshot does not carry, and counts follow', async () => {
   await withStore((store) => {
     store.upsert([session('claude:a'), session('claude:b')], 'claude');
     const finals = Array.from({ length: UNREAD_FINALS + 5 }, (_, i) =>
@@ -242,29 +201,13 @@ test('Receipts and read-all reach notices the snapshot does not carry, and count
     assert.ok(!view.notices.some((n) => n.id === oldest.id), 'beyond the cap');
     store.noticeReceipt([{ id: oldest.id, version: oldest.version }], 'read');
     assert.equal(store.officeView().noticeStats.unread, UNREAD_FINALS + 4);
-    const read = store
-      .noticePage({
-        filter: 'final',
-        includeRead: true,
-        limit: 500,
-        before: noticeCursor(finals[600]),
-      })
-      .notices.find((n) => n.id === oldest.id);
-    assert.ok(read?.seenAt);
+    assert.ok(store.noticeList().find((n) => n.id === oldest.id)?.seenAt);
     store.noticeReceipt([{ id: oldest.id, version: oldest.version }], 'unread');
     assert.equal(store.officeView().noticeStats.unread, UNREAD_FINALS + 5);
-    // Read all in one kind: every unread final, carried or not; progress untouched.
-    store.noticeReadAll({ filter: 'final' }, now);
-    assert.equal(store.officeView().noticeStats.unread, 0);
-    assert.equal(store.noticePage({ filter: 'all', limit: 500 }).unread.all, 200);
-    // What arrived after the person's reading is left unread, as is another colleague's.
-    const late = notice('claude:b', 3000, { receivedAt: now + 60_000, at: now - 2000 });
-    put(store, [late]);
-    store.noticeReadAll({ filter: 'all', sessionIds: ['claude:b'] }, now);
-    const unread = store.noticePage({ filter: 'all', limit: 500 }).notices;
-    assert.deepEqual(
-      unread.map((n) => n.id),
-      [late.id],
+    // Progress never counts, read or not.
+    assert.equal(
+      store.noticeList().filter((n) => n.sessionId === 'claude:b' && !n.seenAt).length,
+      progress.length,
     );
   });
 });
@@ -293,15 +236,8 @@ test('The service validates the paged reads and answers the old detail shape wit
     await assert.rejects(service.call('detail', ['claude:long', { limit: 0 }]));
     await assert.rejects(service.call('detail', ['claude:long', { limit: 201 }]));
     await assert.rejects(service.call('detail', ['claude:long', { from: 'e1' }]));
-    await assert.rejects(service.call('noticePage', [{ filter: 'all', limit: 501 }]));
-    await assert.rejects(service.call('noticePage', [{ filter: 'unknown' }]));
-    const before = (await service.call('snapshot')) as Snapshot;
-    assert.equal(before.noticeStats?.unread, 1);
-    const after = (await service.call('noticeReadAll', [
-      { filter: 'final' },
-      Date.now(),
-    ])) as Snapshot;
-    assert.equal(after.noticeStats?.unread, 0);
+    const snapshot = (await service.call('snapshot')) as Snapshot;
+    assert.equal(snapshot.noticeStats?.unread, 1);
   } finally {
     service.stop();
     await rm(temp, { recursive: true, force: true });
