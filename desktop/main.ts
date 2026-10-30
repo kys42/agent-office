@@ -25,7 +25,6 @@ import {
   nativeTheme,
 } from 'electron';
 import { dropAppMenu, windowStyle } from './window-style.js';
-import { glassLevel } from '../src/shared/glass.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -155,7 +154,6 @@ else {
       watch,
       // A preview card stays while the person works in a terminal or reader window it opened.
       companion: () => !!shellWindows?.focused() || !!readerWindows?.focused(),
-      frosted: () => glassLevel(delivery.latest?.preferences) === null,
     });
     app.on('before-quit', () => cards.dispose());
     shellWindows = new ShellWindows({
@@ -212,18 +210,9 @@ else {
       shellWindows.closeAll();
       readerWindows.closeAll();
     };
-    // Settings › Look › Glass: open cards drop (or take back) their frosted material.
-    let frosted = true;
-    const followGlass = (s: Snapshot) => {
-      const next = glassLevel(s.preferences) === null;
-      if (next === frosted) return;
-      frosted = next;
-      cards.setFrosted(next);
-    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
       hidePopups(s);
-      followGlass(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -232,7 +221,6 @@ else {
       if (delivery.update(patch, windows())) {
         followLanguage(delivery.latest!);
         hidePopups(delivery.latest!);
-        followGlass(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).

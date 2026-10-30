@@ -60,11 +60,6 @@ export class CardWindows {
       watch: (window: BrowserWindow) => void;
       /** A window that counts as "still here" for a preview card (its mini terminal window). */
       companion?: () => boolean;
-      /**
-       * macOS: cards sit on the frosted system material unless the person chose their own glass
-       * level (Settings › Look), which shows the desktop through instead, as on Windows.
-       */
-      frosted?: () => boolean;
     },
   ) {
     this.position = readCardPosition(this.read('card-position.json'));
@@ -100,21 +95,10 @@ export class CardWindows {
   windows() {
     return [...this.entries].map((e) => e.window).filter((w) => !w.isDestroyed());
   }
-  /**
-   * The glass choice changed. A put-away preview is kept for reuse, still with its old
-   * material: it goes, so the next card is made afresh with the right one. Cards on screen swap
-   * their material at once.
-   */
-  setFrosted(on: boolean) {
-    if (process.platform !== 'darwin') return;
-    for (const e of [...this.entries]) {
-      if (e.window.isDestroyed()) continue;
-      if (!e.window.isVisible() && !e.pinned) e.window.destroy();
-      else e.window.setVibrancy(on ? 'under-window' : null);
-    }
-  }
   private entry(sender: WebContents) {
-    return [...this.entries].find((e) => e.window.webContents === sender);
+    return [...this.entries].find(
+      (e) => !e.window.isDestroyed() && e.window.webContents === sender,
+    );
   }
   owns(sender: WebContents) {
     return !!this.entry(sender);
@@ -268,7 +252,7 @@ export class CardWindows {
       skipTaskbar: true,
       ...(process.platform === 'darwin'
         ? {
-            ...((this.options.frosted?.() ?? true) ? { vibrancy: 'under-window' as const } : {}),
+            vibrancy: 'under-window' as const,
             visualEffectState: 'active' as const,
             roundedCorners: true,
             type: 'panel' as const,
