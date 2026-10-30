@@ -99,3 +99,51 @@ test('Loops step on the office tick: paused between frames, one meter bar per de
       .toBe('bubble-typing');
   }
 });
+
+// With less motion the tick is stopped, so nothing steps the loops: whenever the clock's state
+// changes (shown again, motion back on) any loop that got set running is put back under it.
+test('Shown again or back from less motion, no loop is left running at display rate', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => localStorage.setItem('office:onboarding:v1:demo', 'seen'));
+  await page.goto('/?demo');
+  await expect(page.locator('.office-pet').first()).toBeVisible();
+  // A loop with no reduced-motion rule of its own (like the conversation's typing dots).
+  await page.evaluate(() => {
+    const style = document.createElement('style');
+    style.textContent =
+      '@keyframes test-loop { to { opacity: 0.2 } } .test-loop { animation: test-loop 1s infinite }';
+    document.head.append(style);
+    const el = document.createElement('div');
+    el.className = 'test-loop';
+    document.body.append(el);
+  });
+  const loop = () =>
+    page.evaluate(() => {
+      const a = document.querySelector('.test-loop')!.getAnimations()[0];
+      return { state: a.playState, time: Number(a.currentTime) };
+    });
+  await expect.poll(loop).toEqual({ state: 'paused', time: 0 });
+  // Something flips it running (a play-state change, a tool replaying it) while no tick runs.
+  const loose = () =>
+    page.evaluate(() => document.querySelector('.test-loop')!.getAnimations()[0].play());
+  const setHidden = (hidden: boolean) =>
+    page.evaluate((h) => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, hidden);
+  await loose();
+  await setHidden(true);
+  await setHidden(false);
+  await expect.poll(loop).toEqual({ state: 'paused', time: 0 });
+  // Back from less motion it is stepped by the tick again, not left running.
+  await loose();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect.poll(async () => (await loop()).state).toBe('paused');
+  await expect.poll(async () => (await loop()).time).toBeGreaterThan(0);
+  // And into less motion again: back on its first frame.
+  await loose();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect.poll(loop).toEqual({ state: 'paused', time: 0 });
+});

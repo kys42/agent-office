@@ -60,13 +60,6 @@ function live(animation: Animation) {
   return animation.playState !== 'idle' && !!target?.isConnected;
 }
 
-/** Less motion: every loop sits on its first frame. */
-function hold(animation: Animation, loop: Loop) {
-  if (loop.key === -2 || !live(animation)) return;
-  loop.key = -2;
-  animation.currentTime = 0;
-}
-
 /** Loops seen but not yet taken over: a burst of `animationstart` events is taken in one go. */
 const pending = new Set<Animation>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -175,14 +168,39 @@ function adoptAll() {
   for (const animation of document.getAnimations()) adopt(animation);
 }
 
+/**
+ * Puts every loop already on the clock back under it whenever the clock's state changes (shown
+ * again, less motion on or off), even when no tick follows: anything that set one running (a
+ * play-state flip, a tool that cancels and replays) would otherwise leave it running at display
+ * rate. Under less motion it goes back to its first frame.
+ */
+function reconcile() {
+  const still = ticker.conditions.still;
+  const loose: [Animation, Loop][] = [];
+  // Reads first, then writes (see `step`).
+  for (const [animation, loop] of loops) {
+    if (!live(animation)) loops.delete(animation);
+    else if (animation.playState === 'running' || (still && loop.key !== -2))
+      loose.push([animation, loop]);
+  }
+  for (const [animation, loop] of loose) {
+    animation.pause();
+    if (still) {
+      loop.key = -2;
+      animation.currentTime = 0;
+    } else loop.key = NaN;
+  }
+  if (!loops.size) ticker.update({ busy: false });
+}
+
 let appStill = false;
 let systemStill: MediaQueryList | null = null;
 function updateStill() {
   const still = appStill || !!systemStill?.matches;
   if (still === ticker.conditions.still) return;
   ticker.update({ still });
-  if (still) for (const [animation, loop] of loops) hold(animation, loop);
-  else adoptAll();
+  reconcile();
+  if (!still) adoptAll();
 }
 
 /** The app's own "less motion" setting, which every window reads from the shared preferences. */
@@ -199,6 +217,7 @@ export function startFrameClock() {
   document.addEventListener('animationstart', adoptTarget, true);
   const visibility = () => {
     ticker.update({ hidden: isPageHidden() });
+    reconcile();
     if (!isPageHidden()) adoptAll();
   };
   onPageVisibility(visibility);
