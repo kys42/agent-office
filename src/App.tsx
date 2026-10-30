@@ -976,6 +976,7 @@ export default function App() {
                     choose(digest.sessionIds[0]);
                   } else {
                     setSelected(null);
+                    setShowUsage(false);
                     goZone('office');
                   }
                 }}
