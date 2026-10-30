@@ -280,7 +280,7 @@ test('The card chat box asks about text in the prompt the same way, inside the c
     const w = window as any;
     w.office.card = async () => {};
     w.office.onCard = (cb: any) => {
-      setTimeout(() => cb({ id: 'demo:0', news: false }), 50);
+      setTimeout(() => cb({ id: 'demo:0' }), 50);
       return () => {};
     };
   });

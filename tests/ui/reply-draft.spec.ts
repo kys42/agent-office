@@ -36,7 +36,7 @@ async function desktop(page: Page, initial = 'demo:0', blockedStorage = false) {
             ids.map((id) => [id, { kind: 'tmux', status: 'idle', canSend: true }]),
           ),
         onCard: (cb: any) => {
-          w.showCard = (id: string | null) => cb(id ? { id, news: false } : null);
+          w.showCard = (id: string | null) => cb(id ? { id } : null);
           setTimeout(() => w.showCard(initial), 20);
           return () => {};
         },

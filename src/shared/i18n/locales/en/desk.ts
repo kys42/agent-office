@@ -9,7 +9,7 @@ export const desk = {
   openWork: (name: string) => `View ${name}'s work`,
   working: 'Working',
   runningTasks: (n: number) => `${n} ${n === 1 ? 'task' : 'tasks'} running`,
-  unread: (n: number) => `${n} new`,
+  unread: 'New',
   // Effects: the arrival tag, the minutes on the working beacon, the pet's chip.
   arrival: "Work's here!",
   focusMinutes: (minutes: number) => `${minutes}m+`,
@@ -68,7 +68,7 @@ export const desk = {
     copied: 'Copied',
     dismiss: (name?: string) =>
       name ? `Dismiss ${name}'s speech bubble` : 'Dismiss speech bubble',
-    dismissTitle: 'Dismiss just the bubble · unread updates stay in the Inbox',
+    dismissTitle: 'Dismiss just the bubble · its result stays unread',
     keep: (name?: string) => `Keep ${name ?? 'colleague'}'s bubble up`,
     keepTitle: 'Keep it up · for later (marks it unread again)',
   },

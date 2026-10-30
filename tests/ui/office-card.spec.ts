@@ -30,7 +30,7 @@ test("The big office's right column is the same card as the pop-up, without the 
   await expect(head.locator('h2')).not.toBeEmpty();
   for (const name of ['인수인계 꾸리기', '사무실에 고정', '카드 메뉴', '업무 카드 닫기'])
     await expect(head.getByRole('button', { name })).toBeVisible();
-  await expect(aside.getByRole('tab')).toHaveCount(4);
+  await expect(aside.getByRole('tab')).toHaveCount(3);
   await expect(aside.locator('.card-composer')).toBeVisible();
   // Already in the big office, and it is not a window of its own: no 'full view' or 'keep open'.
   await expect(head.getByRole('button', { name: '큰 사무실에서 보기' })).toHaveCount(0);

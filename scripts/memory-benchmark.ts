@@ -73,9 +73,6 @@ try {
   for (let i = 0; i < 8; i++) snapshot = service.emitSnapshot();
   const steadyMs = (performance.now() - steady) / 8;
   const after = memory();
-  const paging = performance.now();
-  const page = service.store.noticePage({ filter: 'final', includeRead: true, limit: 50 });
-  const pageMs = performance.now() - paging;
   const detailStart = performance.now();
   const detail = service.store.detail(sessions[0].id);
   const detailMs = performance.now() - detailStart;
@@ -94,13 +91,11 @@ try {
         staged,
         firstMs,
         steadyMs,
-        pageMs,
         detailMs,
         stageMs,
         cpuMs: (used.user + used.system) / 1000,
         snapshotNotices: snapshot.notices?.length,
         snapshotBytes: Buffer.byteLength(JSON.stringify(snapshot)),
-        pageNotices: page.notices.length,
         detailNotices: detail.notices?.length,
         stats: snapshot.noticeStats,
       },

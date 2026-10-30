@@ -221,7 +221,7 @@ export function DeskPet({
               onPopup={(el) =>
                 void openColleague(replyId!, {
                   anchor: el.closest('.dock-pet-anchor'),
-                  news: false,
+                  conversation: true,
                 })
               }
               onOpen={() => {
@@ -253,10 +253,7 @@ export function DeskPet({
                         {who.project} · {branchInfo(view.session).label}
                       </span>
                     )}
-                    <span>
-                      {view.unread.length > 1 ? d.unread(view.unread.length) : ''}
-                      {d.detailHint}
-                    </span>
+                    <span>{d.detailHint}</span>
                   </>
                 )
               }
@@ -301,7 +298,7 @@ export function DeskPet({
               onClick={(e) =>
                 void openColleague(bubble?.sessionId ?? view.session.id, {
                   anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                  news: !!bubble,
+                  conversation: !!bubble,
                 })
               }
             >

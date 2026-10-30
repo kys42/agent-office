@@ -4,27 +4,20 @@ import { isRemoteId } from '../shared/federation';
 import { savedLocalePreference, useI18n, useLocalePreference } from './i18n';
 import { getLocale, m } from '../shared/i18n';
 import { demoDeriver, demoSnapshot, reconcileDemo } from './demo';
-import { applyNoticeReceipt } from '../shared/notices';
-import { matchesQuery } from '../shared/notice-pages';
+import { applyNoticeReceipt, cardReadNotices } from '../shared/notices';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
 import { helperUnfinishedMs } from '../shared/view-prefs';
 import { allocateSeats, officeZone, reorderSeatMap, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
-import type {
-  NoticeQuery,
-  NoticeReceipt,
-  Preferences,
-  Session,
-  SessionPatch,
-  Snapshot,
-} from '../shared/types';
+import type { NoticeReceipt, Preferences, Session, SessionPatch, Snapshot } from '../shared/types';
 import { useWakeAt } from './useWakeAt';
 import { useQuotas } from './useQuotas';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
 import { isPageHidden, onPageVisibility } from './visibility';
 import { useReadingText } from './useReadingText';
+import { onReached } from './reached';
 
 /**
  * The demo rewritten in the active language, carrying over what the viewer did in it: preferences
@@ -73,6 +66,7 @@ function relocalizedDemo(prev: Snapshot): Snapshot {
   });
 }
 export type ReceiptAction = 'read' | 'dismiss' | 'unread' | 'view';
+export type ReceiptHandler = (receipts: NoticeReceipt[], action: ReceiptAction) => unknown;
 /** Decorative/derived time (working → resting after 2 minutes) refreshes at this pace. */
 const CLOCK_MS = 15_000;
 /** Matches the service's per-request limit for `veil` and `pin`. */
@@ -387,31 +381,26 @@ export function useOffice(
     }
   };
   /**
-   * Read every unread notice a list shows, carried or not (the collector marks them), except
-   * what arrived after `asOf`.
+   * A message sent to a colleague's run, or a jump to its terminal, reads its results (#300):
+   * every unread final reply that run had by then, carried in the snapshot or not (the collector
+   * marks them). Calls and errors stay; a remote office's notices are read-only here.
    */
-  const readAll = async (query: NoticeQuery, asOf: number) => {
+  const readReplies = async (id: string, asOf: number) => {
     if (demo) {
-      setSnapshot((s) =>
-        s
-          ? {
-              ...s,
-              notices: (s.notices ?? []).map((n) =>
-                matchesQuery(n, { ...query, includeRead: false }) && n.receivedAt <= asOf
-                  ? { ...n, seenAt: Date.now() }
-                  : n,
-              ),
-            }
-          : s,
-      );
+      const due = cardReadNotices(held.current?.notices ?? [], [id]);
+      if (due.length) await receipt(due, 'read');
       return;
     }
+    if (isRemoteId(id)) return;
     try {
-      accept(await api.noticeReadAll(query, asOf));
+      accept(await api.readReplies(id, asOf));
     } catch (e) {
       notify((e as Error).message);
     }
   };
+  const latestReadReplies = useRef(readReplies);
+  latestReadReplies.current = readReplies;
+  useEffect(() => onReached((id) => void latestReadReplies.current(id, Date.now())), []);
   /** Count an open of this colleague (frequent sort); never blocks the selection. */
   const visit = (id: string) => {
     if (!demo) {
@@ -544,7 +533,6 @@ export function useOffice(
     patch,
     pin,
     receipt,
-    readAll,
     visit,
     veil,
     reorderSeats,

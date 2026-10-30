@@ -39,7 +39,7 @@ async function setup(
           w.publish = cb;
           return () => {};
         },
-        card: async () => ({ id: s.sessions[0].id, news: false }),
+        card: async () => ({ id: s.sessions[0].id }),
         onCard: (cb: any) => {
           w.cardTarget = cb;
           return () => {};
@@ -47,7 +47,7 @@ async function setup(
         cardState: async () => ({
           pinned: false,
           positionRemembered: false,
-          target: { id: s.sessions[0].id, news: false },
+          target: { id: s.sessions[0].id },
         }),
         ...(shell
           ? {

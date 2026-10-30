@@ -22,7 +22,7 @@ async function card(page: Page) {
         return () => {};
       },
       onCard: (cb: any) => {
-        w.show = (index: number) => cb({ id: snapshot.sessions[index].id, news: false });
+        w.show = (index: number) => cb({ id: snapshot.sessions[index].id });
         setTimeout(() => w.show(0), 20);
         return () => {};
       },

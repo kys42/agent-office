@@ -7,7 +7,6 @@ import type { CardTarget, CardWindowState, ZoneRule } from '../shared/types';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
-import { NoticePagingContext } from '../lib/notice-paging';
 import { cardReadSettings } from '../shared/card-reads';
 
 /**
@@ -25,18 +24,8 @@ export function DockCard() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const {
-    snapshot,
-    model,
-    setPrefs,
-    patch,
-    pin,
-    receipt,
-    readAll,
-    returnToOffice,
-    bookmark,
-    unbookmark,
-  } = useOffice(false, notify);
+  const { snapshot, model, setPrefs, patch, pin, receipt, returnToOffice, bookmark, unbookmark } =
+    useOffice(false, notify);
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
   const targetRef = useRef<CardTarget | null>(null);
@@ -44,6 +33,7 @@ export function DockCard() {
   const focusSerial = useRef(0);
   const receivedTarget = useRef(false);
   const [opened, setOpened] = useState(0);
+  const [conversation, setConversation] = useState(0);
   const { reload } = send;
   const acceptTarget = useCallback(
     (next: CardTarget | null) => {
@@ -63,7 +53,8 @@ export function DockCard() {
       );
       if (!next) return;
       // A bookmark in the same card preserves notes and the pages already read.
-      if (previous?.id !== next.id || previous.news !== next.news) setOpened((n) => n + 1);
+      if (previous?.id !== next.id) setOpened((n) => n + 1);
+      if (next.conversation) setConversation((n) => n + 1);
       reload();
     },
     [reload],
@@ -141,7 +132,7 @@ export function DockCard() {
       {session && target ? (
         <Inspector
           onPrefs={setPrefs}
-          // A fresh card per open: a desk opens on the conversation even after a bubble chose news.
+          // A fresh card per colleague: it opens on the conversation.
           key={`${session.id}:${opened}`}
           session={session}
           sessions={sessions}
@@ -149,10 +140,10 @@ export function DockCard() {
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
-          onSelect={(id) => select({ id, news: false })}
-          showNews={target.news ? `${session.id}:${opened}` : null}
+          onSelect={(id) => select({ id })}
+          showConversation={conversation}
           onClose={close}
-          onExpand={() => void api.card?.('expand', { id: session.id, news: false })}
+          onExpand={() => void api.card?.('expand', { id: session.id })}
           onPatch={patch}
           onPin={(s) =>
             void pin(s)
@@ -180,7 +171,7 @@ export function DockCard() {
           ])}
           onUnbookmark={unbookmark}
           onOpenBookmark={(b) =>
-            select({ id: b.sessionId, news: false, bookmark: { eventId: b.eventId, at: b.at } })
+            select({ id: b.sessionId, bookmark: { eventId: b.eventId, at: b.at } })
           }
           focus={bookmarkFocus}
           onFocused={() => setBookmarkFocus(null)}
@@ -209,15 +200,7 @@ export function DockCard() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <NoticePagingContext.Provider
-        value={{
-          paged: model.noticesPaged,
-          stats: JSON.stringify(snapshot?.noticeStats ?? null),
-          readAll,
-        }}
-      >
-        {content}
-      </NoticePagingContext.Provider>
+      {content}
     </PetAppearanceContext.Provider>
   );
 }

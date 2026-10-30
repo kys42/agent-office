@@ -24,7 +24,7 @@ import { officeSchedule } from '../shared/lifecycle';
 import { sessionScopeLabel } from '../shared/residents';
 import { RestLounge } from './RestLounge';
 import { Sprite } from './Sprite';
-import type { ReceiptHandler } from './News';
+import type { ReceiptHandler } from '../lib/useOffice';
 import { useI18n } from '../lib/i18n';
 function saved<T>(key: string, fallback: T): T {
   try {
@@ -42,16 +42,14 @@ const ZONES = [
 export function OfficeWorkspace({
   snapshot,
   onReceipt,
-  onNews,
   selected,
   onSelect,
+  onConversation,
   onReturn,
   onRefresh,
   onSettings,
   refreshing,
   demo,
-  unread,
-  onInbox,
   zoneRequest,
   onZoneHandled,
   onZoneChange,
@@ -67,16 +65,14 @@ export function OfficeWorkspace({
 }: {
   snapshot: Snapshot;
   onReceipt: ReceiptHandler;
-  onNews: (id: string) => void;
   selected: string | null;
   onSelect: (id: string) => void;
+  onConversation: (id: string) => void;
   onReturn: (id: string) => void;
   onRefresh: () => void;
   onSettings: () => void;
   refreshing: boolean;
   demo: boolean;
-  unread: number;
-  onInbox: () => void;
   zoneRequest?: { zone: OfficeZone; at: number } | null;
   onZoneHandled?: () => void;
   /** The sidebar and window title mirror the zone shown here. */
@@ -229,9 +225,9 @@ export function OfficeWorkspace({
             notices={snapshot.notices ?? []}
             bubbleHours={prefs.bubbleHours ?? 3}
             onReceipt={onReceipt}
-            onNews={onNews}
             selected={selected}
             onSelect={onSelect}
+            onConversation={onConversation}
             reducedMotion={prefs.reducedMotion}
             privacy={prefs.privacy}
             onShowWaiting={() => setZone('waiting')}
@@ -406,8 +402,6 @@ export function OfficeWorkspace({
         totalSessions={office}
         zoneCount={zones[zone].length}
         notices={snapshot.notices ?? []}
-        unread={unread}
-        onInbox={onInbox}
         onReceipt={onReceipt}
         hovered={deskHover ?? listHover}
         onHover={setListHover}

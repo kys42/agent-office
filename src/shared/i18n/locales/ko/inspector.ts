@@ -57,7 +57,6 @@ export const inspector: Messages['inspector'] = {
   tabs: {
     overview: '작업 정보',
     history: '대화',
-    news: (unread) => `소식 ${unread || ''}`,
     notes: '기억 메모',
   },
   linkedRuns: (n) => `연결된 보조·분기 작업 ${n}개`,

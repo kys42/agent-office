@@ -98,12 +98,7 @@ try {
   await dock.waitForFunction(() => !!window.office);
   const open = (id) =>
     dock.evaluate(
-      (id) =>
-        window.office.card(
-          'open',
-          { id, news: false },
-          { x: 1000, y: 700, width: 120, height: 60 },
-        ),
+      (id) => window.office.card('open', { id }, { x: 1000, y: 700, width: 120, height: 60 }),
       id,
     );
   const newCard = async (id) => {
@@ -183,7 +178,6 @@ try {
     (bookmark) =>
       window.office.card('select', {
         id: bookmark.sessionId,
-        news: false,
         bookmark: { eventId: bookmark.eventId, at: bookmark.at },
       }),
     bookmark,
@@ -203,7 +197,6 @@ try {
     b.evaluate(() =>
       window.office.card('select', {
         id: 'codex:codex-test',
-        news: false,
         bookmark: { eventId: 'x'.repeat(1001), at: 1 },
       }),
     ),
@@ -214,14 +207,14 @@ try {
   );
   assert.ok(clawId);
   const c = await newCard(clawId);
-  await b.evaluate((id) => window.office.card('select', { id, news: false }), clawId);
+  await b.evaluate((id) => window.office.card('select', { id }), clawId);
   await expect
     .poll(() => b.evaluate(async () => (await window.office.cardState()).target.id))
     .toBe(clawId);
   await expect.poll(() => visible(c)).toBe(false);
   await assert.rejects(() => c.evaluate(() => window.office.card('pin-on')));
   assert.equal((await b.evaluate(() => window.office.cardState())).pinned, true);
-  await b.evaluate(() => window.office.card('select', { id: 'claude:claude-test', news: false }));
+  await b.evaluate(() => window.office.card('select', { id: 'claude:claude-test' }));
   await open(clawId);
   await c.locator('.inspector-card').waitFor();
   await c.bringToFront();
@@ -272,7 +265,7 @@ try {
     dock2.evaluate(() =>
       window.office.card(
         'open',
-        { id: 'codex:codex-test', news: false },
+        { id: 'codex:codex-test' },
         { x: 1100, y: 800, width: 100, height: 50 },
       ),
     ),
@@ -296,7 +289,7 @@ try {
   await dock2.evaluate(() =>
     window.office.card(
       'open',
-      { id: 'claude:claude-test', news: false },
+      { id: 'claude:claude-test' },
       { x: 1100, y: 800, width: 100, height: 50 },
     ),
   );

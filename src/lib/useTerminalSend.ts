@@ -3,6 +3,7 @@ import type { ReplySender, SendResult } from '../shared/types';
 import { m } from '../shared/i18n';
 import { api } from './api';
 import { followDesktopSettings } from './desktop-settings';
+import { reached } from './reached';
 
 /**
  * Sends a follow-up through the desktop app and reports a finished send (and, when the agent's
@@ -34,12 +35,14 @@ export async function sendFollowUp(
     if (!draft) throw error;
     return { ...draft, reason: (error as Error).message };
   }
-  if (result.status === 'sent')
+  if (result.status === 'sent') {
+    reached(id);
     notify(
       result.cleared
         ? `${result.message} · ${result.partialBackup ? m().terminal.partialClearedToClipboard : m().terminal.clearedToClipboard}`
         : result.message,
     );
+  }
   return result;
 }
 

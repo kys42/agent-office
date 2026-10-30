@@ -13,8 +13,6 @@ type Receipts = (receipts: { id: string; version: string }[], action: ReceiptAct
  * person chose otherwise; 0 reads at once) — J/K stepping past does not read —, and then each new one as it arrives. Every window then drops the same blue marks
  * from the snapshot it receives. Calls and errors are not read here. `enabled` is false while
  * the card shows no conversation (privacy) or before the person touched a restored card.
- *
- * Returns the versions this open read, which the card keeps listing in its news.
  */
 export function useReadOnOpen(
   colleague: string,
@@ -23,7 +21,7 @@ export function useReadOnOpen(
   onReceipt: Receipts,
   enabled = true,
   dwellMs = CARD_READ_DWELL_MS,
-): ReadonlySet<string> {
+) {
   const [shown, setShown] = useState(isPageShown);
   useEffect(() => {
     setShown(isPageShown());
@@ -65,5 +63,4 @@ export function useReadOnOpen(
         if (ok) setSettled((n) => n + 1);
       });
   }, [looking, dwelled, colleague, members, notices]);
-  return reads.current.readNow;
 }
