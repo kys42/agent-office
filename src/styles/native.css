@@ -722,21 +722,56 @@ body.card-mode:not(.is-mac) .dock-card {
   background: color-mix(in srgb, var(--grouped) 90%, transparent);
   backdrop-filter: blur(28px) saturate(1.6);
 }
-/* Settings › Look › Glass: the person's own see-through level, the same on every platform. The
-   card window drops its frosted material then (desktop/main.ts), so the desktop shows through
-   as it does on Windows. */
-:root[data-glass] body.card-mode .dock-card {
-  background: color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+/* Settings › Look › Glass: frosted glass in the manner of Liquid Glass. On macOS the card and
+   the big office sit on the system's blurring material; the slider sets how much colour lies
+   over it (less colour, more of the blurred desktop), and a light rim and sheen catch the edge.
+   A Windows window has no blurring material, so its card keeps its look. */
+:root {
+  --glass-sheen: rgba(255, 255, 255, 0.22);
+  --glass-rim: rgba(255, 255, 255, 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.28);
+  --glass-foot: rgba(0, 0, 0, 0.06);
 }
-/* The big office's side columns in the same style (macOS: the window's material behind them;
-   a Windows window is solid, so its columns keep their colour). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-sheen: rgba(255, 255, 255, 0.07);
+    --glass-rim: rgba(255, 255, 255, 0.16);
+    --glass-edge: rgba(255, 255, 255, 0.1);
+    --glass-foot: rgba(0, 0, 0, 0.25);
+  }
+}
+:root[data-glass] body.card-mode.is-mac .dock-card {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 38%),
+    color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-edge),
+    inset 0 -1px 0 var(--glass-foot);
+}
+/* The big office's side columns in the same glass (a Windows window is solid, so its columns
+   keep their colour). */
 :root[data-glass] body.is-mac:not(.card-mode) .sidebar {
-  background: color-mix(in srgb, var(--sidebar) var(--glass-fill), transparent);
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 30%),
+    color-mix(in srgb, var(--sidebar) var(--glass-fill), transparent);
+  box-shadow: inset -1px 0 0 var(--glass-edge);
 }
 :root[data-glass]
   body.is-mac:not(.card-mode)
   :is(.roster, .app-body > .inspector, .app-body > .inspector-card) {
-  background: color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 30%),
+    color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  box-shadow: inset 1px 0 0 var(--glass-edge);
+}
+/* Behind the right column: the column's own space (and the office page around the stage)
+   lets the glass through too; the pixel stage itself stays solid. */
+:root[data-glass] body.is-mac:not(.card-mode) :is(.app-body, .main-content.view-office) {
+  background: transparent;
+}
+:root[data-glass] body.is-mac:not(.card-mode) .main-content.view-office .office-column {
+  background: var(--bg-0);
 }
 /* Narrow windows float the right column over the pixel office: there it stays solid, or the
    scene would show through the words. */

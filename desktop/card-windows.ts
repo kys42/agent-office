@@ -22,6 +22,8 @@ import { m } from '../src/shared/i18n/index.js';
 import { quiet } from './quiet.js';
 import { dropAppMenu } from './window-style.js';
 
+export type CardMaterial = 'under-window' | 'popover';
+
 interface Entry {
   window: BrowserWindow;
   target: CardTarget | null;
@@ -61,10 +63,11 @@ export class CardWindows {
       /** A window that counts as "still here" for a preview card (its mini terminal window). */
       companion?: () => boolean;
       /**
-       * macOS: cards sit on the frosted system material unless the person chose their own glass
-       * level (Settings › Look), which shows the desktop through instead, as on Windows.
+       * macOS: the glass the card sits on. `under-window` is nearly solid grey; with the
+       * person's own glass level (Settings › Look) cards take the clearer `popover` glass,
+       * which lets the colours behind bleed through as the window moves.
        */
-      frosted?: () => boolean;
+      material?: () => CardMaterial;
     },
   ) {
     this.position = readCardPosition(this.read('card-position.json'));
@@ -100,13 +103,15 @@ export class CardWindows {
   windows() {
     return [...this.entries].map((e) => e.window).filter((w) => !w.isDestroyed());
   }
-  /** The glass choice changed: open cards swap their material at once. */
-  setFrosted(on: boolean) {
+  /** The glass choice changed: every card swaps its material in place. */
+  setMaterial(material: CardMaterial) {
     if (process.platform !== 'darwin') return;
-    for (const w of this.windows()) w.setVibrancy(on ? 'under-window' : null);
+    for (const w of this.windows()) w.setVibrancy(material);
   }
   private entry(sender: WebContents) {
-    return [...this.entries].find((e) => e.window.webContents === sender);
+    return [...this.entries].find(
+      (e) => !e.window.isDestroyed() && e.window.webContents === sender,
+    );
   }
   owns(sender: WebContents) {
     return !!this.entry(sender);
@@ -260,7 +265,7 @@ export class CardWindows {
       skipTaskbar: true,
       ...(process.platform === 'darwin'
         ? {
-            ...((this.options.frosted?.() ?? true) ? { vibrancy: 'under-window' as const } : {}),
+            vibrancy: this.options.material?.() ?? 'under-window',
             visualEffectState: 'active' as const,
             roundedCorners: true,
             type: 'panel' as const,
