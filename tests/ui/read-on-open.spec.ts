@@ -113,6 +113,7 @@ async function bridge(page: Page, snapshot: Snapshot, card?: string) {
               cardState: async () => ({ pinned: false, positionRemembered: false }),
               onCardState: () => () => {},
               onCard: (cb: any) => {
+                w.showCard = cb;
                 setTimeout(() => cb({ id: card }), 50);
                 return () => {};
               },
@@ -388,7 +389,20 @@ test('Sending a message or jumping to its terminal reads that colleague’s resu
         ),
       jump: async () => ({ action: 'focused', text: '터미널로 이동했어요' }),
       send: async () => ({ status: 'sent', message: '보냈어요' }),
+      // Like the collector: every unread final of the run by then, carried in the snapshot or not.
+      readReplies: async (id: string, asOf: number) => {
+        w.receipts.push(['replies', [id]]);
+        for (const n of [...w.fixture.notices, ...w.uncarried])
+          if (n.sessionId === id && !n.seenAt && n.phase === 'final' && n.receivedAt <= asOf)
+            n.seenAt = Date.now();
+        return structuredClone(w.fixture);
+      },
     });
+    // An older unread reply of run-0 the bounded snapshot does not carry.
+    const first = w.fixture.notices[0];
+    w.uncarried = [
+      { ...first, id: 'old-final-0', eventId: 'old-final-0', at: first.at - 3600_000 },
+    ];
   });
   await page.goto('/');
   await pet(page, 0).click();
@@ -398,7 +412,8 @@ test('Sending a message or jumping to its terminal reads that colleague’s resu
   const input = card(page).locator('.terminal-send-chat textarea');
   await input.fill('고마워요');
   await input.press('Enter');
-  await expect.poll(() => receipts(page)).toEqual([['read', ['final-0']]]);
+  await expect.poll(() => receipts(page)).toEqual([['replies', ['run-0']]]);
+  expect(await page.evaluate(() => !!(window as any).uncarried[0].seenAt)).toBe(true);
   // The calling colleague: the jump reads its result, the call stays until it is handled.
   await pet(page, 1).click();
   await expect(card(page).locator('.card-head h2')).toHaveAttribute('title', '동료 1');
@@ -406,8 +421,34 @@ test('Sending a message or jumping to its terminal reads that colleague’s resu
   await expect
     .poll(() => receipts(page))
     .toEqual([
-      ['read', ['final-0']],
-      ['read', ['final-1']],
+      ['replies', ['run-0']],
+      ['replies', ['run-1']],
     ]);
   await expect(page).toHaveTitle('(1) Agent Office');
+  const left = await page.evaluate(() =>
+    (window as any).fixture.notices.filter((n: any) => !n.seenAt).map((n: any) => n.id),
+  );
+  expect(left).toEqual(['call-1']);
+});
+
+test('Dock card: a bubble opening the open card shows the conversation again (#300)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 480, height: 760 });
+  await bridge(page, office(), 'run-1');
+  await page.goto('/#card');
+  await expect(card(page)).toBeVisible();
+  await card(page).getByRole('tab', { name: '작업 정보' }).click();
+  // The same colleague again without the bubble's intent leaves the tab alone.
+  await page.evaluate(() => (window as any).showCard({ id: 'run-1' }));
+  await page.waitForTimeout(200);
+  await expect(card(page).getByRole('tab', { name: '작업 정보' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.evaluate(() => (window as any).showCard({ id: 'run-1', conversation: true }));
+  await expect(card(page).getByRole('tab', { name: '대화' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 });

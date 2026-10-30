@@ -59,6 +59,7 @@ export function Office({
   bubbleHours,
   selected,
   onSelect,
+  onConversation,
   onReceipt,
   reducedMotion,
   privacy,
@@ -88,6 +89,8 @@ export function Office({
   bubbleHours: number;
   selected: string | null;
   onSelect: (id: string) => void;
+  /** A bubble opens its colleague's card on the conversation, whatever tab it was on. */
+  onConversation: (id: string) => void;
   onReceipt: ReceiptHandler;
   reducedMotion: boolean;
   privacy: boolean;
@@ -682,7 +685,7 @@ export function Office({
                             onOpen={() => {
                               if (bubble && !privacy)
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                              onSelect(bubble?.sessionId ?? s.id);
+                              onConversation(bubble?.sessionId ?? s.id);
                             }}
                             onDismiss={() => {
                               setClosed(s.id);

@@ -74,6 +74,7 @@ export function Inspector({
   resident,
   onReceipt,
   onSelect,
+  showConversation,
   readOnOpen = true,
   reading,
   onClose,
@@ -116,6 +117,8 @@ export function Inspector({
   resident?: Session;
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
+  /** Changes each time a bubble opens this card: it shows the conversation again. */
+  showConversation?: number;
   /** False while a card restored on startup waits for the person to touch the office. */
   readOnOpen?: boolean;
   /** The person's reading preferences (cardReadSettings): off, or after how long. */
@@ -256,6 +259,9 @@ export function Inspector({
     setTab('history');
     setPacket(null);
   }, [session.id]);
+  useEffect(() => {
+    if (showConversation) setTab('history');
+  }, [showConversation]);
   useEffect(() => {
     if (!notesDirty) setNotes(session.notes);
   }, [session.notes, notesDirty]);

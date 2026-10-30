@@ -996,7 +996,13 @@ function setupIPC() {
     trusted(e);
     if (typeof action !== 'string') throw new Error(m().desktop.badRequest);
     if (action === 'open' || action === 'select' || action === 'expand') {
-      if (!target || typeof target.id !== 'string' || !target.id.length || target.id.length > 400)
+      if (
+        !target ||
+        typeof target.id !== 'string' ||
+        !target.id.length ||
+        target.id.length > 400 ||
+        (target.conversation !== undefined && typeof target.conversation !== 'boolean')
+      )
         throw new Error(m().desktop.badRequest);
       if (
         target.bookmark !== undefined &&
@@ -1012,6 +1018,7 @@ function setupIPC() {
     }
     const chosen: CardTarget | undefined = target && {
       id: target.id,
+      ...(target.conversation ? { conversation: true } : {}),
       ...(target.bookmark
         ? { bookmark: { eventId: target.bookmark.eventId, at: target.bookmark.at } }
         : {}),

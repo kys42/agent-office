@@ -238,6 +238,7 @@ test('local text and snapshots remain compatible with beta off or enabled withou
         ['identities', [[remote]]],
         ['bookmark', ['codex:local', remote, 'note']],
         ['notices', [[{ id: remote, version: '1' }], 'read']],
+        ['readReplies', [remote, Date.now()]],
         ['preferences', [{ zoneRules: [{ match: 'session', value: remote, name: 'blocked' }] }]],
         ['preferences', [{ petAppearance: { colleagues: { [remote]: null } } }]],
       ] as [string, unknown[]][]) {

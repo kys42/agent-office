@@ -180,7 +180,7 @@ export class CardWindows {
     const pinned = [...this.entries].find((e) => e.pinned && e.target?.id === target.id);
     if (pinned) {
       this.cancelHide(pinned);
-      if (target.bookmark) {
+      if (target.bookmark || target.conversation) {
         pinned.target = target;
         this.revealEntry(pinned);
       } else {
@@ -192,7 +192,13 @@ export class CardWindows {
     }
     let e = this.preview;
     if (e?.window.isVisible() && e.target?.id === target.id) {
-      this.hide(e);
+      // A bubble asks for the conversation: shown, not toggled away.
+      if (target.conversation) {
+        this.cancelHide(e);
+        e.target = target;
+        e.askedAt = Date.now();
+        this.revealEntry(e);
+      } else this.hide(e);
       return;
     }
     const size = this.size;

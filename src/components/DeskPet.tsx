@@ -221,6 +221,7 @@ export function DeskPet({
               onPopup={(el) =>
                 void openColleague(replyId!, {
                   anchor: el.closest('.dock-pet-anchor'),
+                  conversation: true,
                 })
               }
               onOpen={() => {
@@ -297,6 +298,7 @@ export function DeskPet({
               onClick={(e) =>
                 void openColleague(bubble?.sessionId ?? view.session.id, {
                   anchor: e.currentTarget.closest('.dock-pet-anchor'),
+                  conversation: !!bubble,
                 })
               }
             >

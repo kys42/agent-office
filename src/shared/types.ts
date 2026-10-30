@@ -698,6 +698,11 @@ export interface ScreenRect {
 /** What the dock card shows: a colleague, opened from its bubble (news first) or its desk. */
 export interface CardTarget {
   id: string;
+  /**
+   * Explicit navigation to the conversation (a bubble opened the card): shown even when that
+   * colleague's card is already open on another tab.
+   */
+  conversation?: boolean;
   /** Explicit navigation intent, also delivered when reusing another pinned window. */
   bookmark?: { eventId: string; at: number };
 }
@@ -736,6 +741,11 @@ export interface OfficeAPI {
   visit: (id: string) => Promise<Snapshot>;
   returnToOffice: (id: string) => Promise<Snapshot>;
   notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
+  /**
+   * Read every unread final reply of one run received by `asOf`, carried in the snapshot or not
+   * (a message sent to it, a jump to its terminal; #300). Calls and errors stay.
+   */
+  readReplies: (sessionId: string, asOf: number) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
   /** Open a web page (http/https only) from session text in the default browser. */

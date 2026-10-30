@@ -19,6 +19,7 @@ const api: OfficeAPI = {
   detail: (id, page) => call('detail', id, page),
   visit: (id) => call('visit', id),
   notices: (receipts, action) => call('notices', receipts, action),
+  readReplies: (sessionId, asOf) => call('readReplies', sessionId, asOf),
   returnToOffice: (id) => call('returnToOffice', id),
   artifacts: (id) => call('artifacts', id),
   openArtifact: (url) => ipcRenderer.invoke('office:open-artifact', url),

@@ -41,6 +41,7 @@ import {
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
 import { helperUnfinishedMs } from '../src/shared/view-prefs.js';
 import {
+  isFinalNotice,
   localizeNotice,
   noticeCandidates,
   noticeContentVersion,
@@ -815,6 +816,43 @@ export class OfficeStore {
               : { dismissedAt: Date.now() }),
       };
       this.writeNotice(next, found.staged);
+    }
+  }
+  /**
+   * The person reached a colleague's run outside its card (sent it a message, jumped to its
+   * terminal, #300): every unread final reply of that run received by `asOf` is read, carried in
+   * a snapshot or not. Calls and errors stay until handled, as do replies that came later.
+   * Background runs and helpers have no results to read (their replies never count).
+   */
+  noticeReadReplies(sessionId: string, asOf: number) {
+    const session = this.get(sessionId); // same exclusion policy as detail/search/MCP
+    if (isBackground(session) || isHelper(session)) return;
+    const now = Date.now();
+    this.db.exec('BEGIN');
+    try {
+      if (this.indexedNotices) {
+        const index = this.noticeIndex([session]);
+        let before: { at: number; id: string } | undefined;
+        for (;;) {
+          const batch = index.unreadReplies(session.id, asOf, before);
+          if (!batch.length) break;
+          for (const n of batch) {
+            const found = this.noticeById(n.id);
+            if (found) this.writeNotice({ ...found.n, seenAt: now }, found.staged);
+          }
+          before = { at: batch.at(-1)!.at, id: batch.at(-1)!.id };
+        }
+      } else {
+        for (const n of this.noticeList(CANONICAL, [session]))
+          if (!n.seenAt && isFinalNotice(n) && n.receivedAt <= asOf) {
+            const found = this.noticeById(n.id);
+            if (found) this.writeNotice({ ...found.n, seenAt: now }, found.staged);
+          }
+      }
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
     }
   }
   visible(s: Pick<Session, 'provider' | 'project'>, prefs = this.preferences()): boolean {

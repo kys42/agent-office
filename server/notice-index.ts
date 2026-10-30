@@ -246,6 +246,21 @@ export class NoticeIndex {
       limit,
     );
   }
+  /** A batch of one session's unread final replies received by `asOf`, older than `before`. */
+  unreadReplies(id: string, asOf: number, before?: { at: number; id: string }) {
+    const cursor = before ? ' AND (n.at<? OR (n.at=? AND n.id<?))' : '';
+    return this.read(
+      'n.session_id=? AND n.seen_at IS NULL AND n.final=1 AND n.received_at<=?' + cursor,
+      [id, asOf, ...(before ? [before.at, before.at, before.id] : [])],
+      (n) =>
+        n.sessionId === id &&
+        !n.seenAt &&
+        isFinalNotice(n) &&
+        n.receivedAt <= asOf &&
+        (!before || n.at < before.at || (n.at === before.at && n.id < before.id)),
+      200,
+    );
+  }
   /** Bounded excerpt source in the same total order as the snapshot's notices. */
   excerpts(id: string, cursor: { at: number; id?: string } | undefined, limit: number) {
     const where = cursor

@@ -212,6 +212,33 @@ test('Receipts reach notices the snapshot does not carry, and counts follow', as
   });
 });
 
+test('Reaching a run reads all its finals by then, carried or not; calls, later replies and other runs stay (#300)', async () => {
+  await withStore((store) => {
+    store.upsert([session('claude:a'), session('claude:b')], 'claude');
+    // More unread finals than the snapshot carries, so most are not in it.
+    const finals = Array.from({ length: UNREAD_FINALS + 5 }, (_, i) =>
+      notice('claude:a', i, { kind: 'reply', phase: 'final' }),
+    );
+    const call = notice('claude:a', 5000, { kind: 'attention', phase: undefined });
+    const late = notice('claude:a', 5001, {
+      kind: 'reply',
+      phase: 'final',
+      receivedAt: now + 60_000,
+    });
+    const other = notice('claude:b', 6000, { kind: 'reply', phase: 'final' });
+    put(store, [...finals, call, late, other]);
+    assert.equal(store.officeView().noticeStats.unread, UNREAD_FINALS + 8);
+    store.noticeReadReplies('claude:a', now);
+    const unread = store
+      .noticeList()
+      .filter((n) => !n.seenAt)
+      .map((n) => n.id)
+      .sort();
+    assert.deepEqual(unread, [call.id, late.id, other.id].sort());
+    assert.equal(store.officeView().noticeStats.unread, 3);
+  });
+});
+
 test('The service validates the paged reads and answers the old detail shape with the newest page', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'office-paging-service-'));
   const service = new OfficeService(path.join(temp, 'data'), temp);
@@ -238,6 +265,10 @@ test('The service validates the paged reads and answers the old detail shape wit
     await assert.rejects(service.call('detail', ['claude:long', { from: 'e1' }]));
     const snapshot = (await service.call('snapshot')) as Snapshot;
     assert.equal(snapshot.noticeStats?.unread, 1);
+    await assert.rejects(service.call('readReplies', ['claude:long', 'now']));
+    await assert.rejects(service.call('readReplies', ['claude:long', -1]));
+    const after = (await service.call('readReplies', ['claude:long', Date.now()])) as Snapshot;
+    assert.equal(after.noticeStats?.unread, 0);
   } finally {
     service.stop();
     await rm(temp, { recursive: true, force: true });

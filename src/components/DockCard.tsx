@@ -33,6 +33,7 @@ export function DockCard() {
   const focusSerial = useRef(0);
   const receivedTarget = useRef(false);
   const [opened, setOpened] = useState(0);
+  const [conversation, setConversation] = useState(0);
   const { reload } = send;
   const acceptTarget = useCallback(
     (next: CardTarget | null) => {
@@ -53,6 +54,7 @@ export function DockCard() {
       if (!next) return;
       // A bookmark in the same card preserves notes and the pages already read.
       if (previous?.id !== next.id) setOpened((n) => n + 1);
+      if (next.conversation) setConversation((n) => n + 1);
       reload();
     },
     [reload],
@@ -139,6 +141,7 @@ export function DockCard() {
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
           onSelect={(id) => select({ id })}
+          showConversation={conversation}
           onClose={close}
           onExpand={() => void api.card?.('expand', { id: session.id })}
           onPatch={patch}

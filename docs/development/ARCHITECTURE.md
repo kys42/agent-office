@@ -111,7 +111,7 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 
 `src/shared/conversation.ts`가 OfficeEvent의 공개 단계에 따라 사용자 요청/진행/최종/미분류/도구를 나누고 중복 공개 이벤트를 정리한다. Conversation은 이 기준으로 종류 필터와 말풍선 라벨을 적용하며 도구 기록은 기본 숨긴다. 분류를 바꿔도 메시지 확장 상태를 보존한다.
 
-소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 표시(점·창 제목 수)와 snapshot.noticeStats.unread가 같은 selector를 사용한다. 소식을 모아 보는 목록 화면은 없다(#300): 동료마다 마지막 결과를 봤는지만 점으로 보이고, 카드 열기·말 보내기·터미널 이동이 그 결과를 읽음으로 기록한다. snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식은 대화 발췌·북마크가 대화 페이지와 함께 cursor `(at,id)`로 읽는다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
+소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 표시(점·창 제목 수)와 snapshot.noticeStats.unread가 같은 selector를 사용한다. 소식을 모아 보는 목록 화면은 없다(#300): 동료마다 마지막 결과를 봤는지만 점으로 보이고, 카드 열기·말 보내기·터미널 이동이 그 결과를 읽음으로 기록한다(보내기·이동은 `readReplies(sessionId, asOf)`로 snapshot 밖의 응답까지). snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식은 대화 발췌·북마크가 대화 페이지와 함께 cursor `(at,id)`로 읽는다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
 
 
 ## 한줄 모드 구역 위치

@@ -44,6 +44,7 @@ export function OfficeWorkspace({
   onReceipt,
   selected,
   onSelect,
+  onConversation,
   onReturn,
   onRefresh,
   onSettings,
@@ -66,6 +67,7 @@ export function OfficeWorkspace({
   onReceipt: ReceiptHandler;
   selected: string | null;
   onSelect: (id: string) => void;
+  onConversation: (id: string) => void;
   onReturn: (id: string) => void;
   onRefresh: () => void;
   onSettings: () => void;
@@ -225,6 +227,7 @@ export function OfficeWorkspace({
             onReceipt={onReceipt}
             selected={selected}
             onSelect={onSelect}
+            onConversation={onConversation}
             reducedMotion={prefs.reducedMotion}
             privacy={prefs.privacy}
             onShowWaiting={() => setZone('waiting')}

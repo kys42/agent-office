@@ -113,9 +113,18 @@ test('The right panel is the colleagues alone; a result is a dot, and its bubble
   await expect(row.locator('.unread-dot')).toHaveCount(1);
   await expect(row.locator('.unread-dot')).toHaveText('');
   await expect(row).toContainText(/새 결과 · /);
-  await page.locator('.desk-station[data-station-id="demo:5"] .speech-bubble').click();
+  const bubble = page.locator('.desk-station[data-station-id="demo:5"] .speech-bubble');
+  await bubble.click();
   const card = page.getByRole('complementary', { name: '동료의 업무 카드' });
   await expect(card.locator('.card-head h2')).toHaveAttribute('title', '모모');
+  await expect(card.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
+  // Already open on another tab, the bubble still brings the conversation back.
+  await card.getByRole('tab', { name: '작업 정보' }).click();
+  await expect(card.getByRole('tab', { name: '작업 정보' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await bubble.click();
   await expect(card.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
 });
 

@@ -27,6 +27,7 @@ export const api: OfficeAPI = window.office ?? {
   detail: (id, page) => rpc('detail', id, page),
   visit: (id) => rpc('visit', id),
   notices: (receipts, action) => rpc('notices', receipts, action),
+  readReplies: (sessionId, asOf) => rpc('readReplies', sessionId, asOf),
   returnToOffice: (id) => rpc('returnToOffice', id),
   artifacts: (id) => rpc('artifacts', id),
   openArtifact: async (url) => {

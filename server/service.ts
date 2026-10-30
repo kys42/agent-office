@@ -1193,6 +1193,12 @@ export class OfficeService extends EventEmitter {
           z.enum(['read', 'dismiss', 'unread', 'view']).parse(args[1]),
         );
         return this.emitSnapshot();
+      case 'readReplies':
+        this.store.noticeReadReplies(
+          z.string().max(400).parse(args[0]),
+          z.number().nonnegative().parse(args[1]),
+        );
+        return this.emitSnapshot();
       case 'patch':
         this.store.patch(z.string().max(400).parse(args[0]), patchSchema.parse(args[1]));
         return this.emitSnapshot();

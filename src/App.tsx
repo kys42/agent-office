@@ -149,6 +149,8 @@ export default function App() {
     return () => window.removeEventListener('resize', resized);
   }, []);
   const [showUsage, setShowUsage] = useState(false);
+  // Bumped when a bubble opens a card: the card shows the conversation, whatever tab it was on.
+  const [conversationAt, setConversationAt] = useState(0);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
   const [selected, setSelected] = useState<string | null>(
     location.hash.startsWith('#session=')
@@ -1024,6 +1026,10 @@ export default function App() {
               onSettings={() => openSettings('office')}
               selected={selected}
               onSelect={choose}
+              onConversation={(id) => {
+                choose(id);
+                setConversationAt((n) => n + 1);
+              }}
               onReturn={returnToOffice}
               onReceipt={onReceipt}
               onRefresh={refresh}
@@ -1098,6 +1104,7 @@ export default function App() {
             resident={ownerOf(current.id)}
             onReceipt={onReceipt}
             onSelect={choose}
+            showConversation={conversationAt}
             readOnOpen={engaged}
             reading={cardReadSettings(prefs)}
             onClose={() => setSelected(null)}

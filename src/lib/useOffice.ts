@@ -380,21 +380,27 @@ export function useOffice(
       return false;
     }
   };
-  // A message sent to a colleague, or a jump to its terminal, reads its results (#300).
-  const latestReceipt = useRef(receipt);
-  latestReceipt.current = receipt;
-  useEffect(
-    () =>
-      onReached((id) => {
-        const due = cardReadNotices(held.current?.notices ?? [], [id]);
-        if (due.length)
-          void latestReceipt.current(
-            due.map(({ id, version }) => ({ id, version })),
-            'read',
-          );
-      }),
-    [],
-  );
+  /**
+   * A message sent to a colleague's run, or a jump to its terminal, reads its results (#300):
+   * every unread final reply that run had by then, carried in the snapshot or not (the collector
+   * marks them). Calls and errors stay; a remote office's notices are read-only here.
+   */
+  const readReplies = async (id: string, asOf: number) => {
+    if (demo) {
+      const due = cardReadNotices(held.current?.notices ?? [], [id]);
+      if (due.length) await receipt(due, 'read');
+      return;
+    }
+    if (isRemoteId(id)) return;
+    try {
+      accept(await api.readReplies(id, asOf));
+    } catch (e) {
+      notify((e as Error).message);
+    }
+  };
+  const latestReadReplies = useRef(readReplies);
+  latestReadReplies.current = readReplies;
+  useEffect(() => onReached((id) => void latestReadReplies.current(id, Date.now())), []);
   /** Count an open of this colleague (frequent sort); never blocks the selection. */
   const visit = (id: string) => {
     if (!demo) {
