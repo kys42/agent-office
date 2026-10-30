@@ -760,6 +760,8 @@ export type DockAction =
   | 'room-on'
   | 'room-off';
 export interface OfficeAPI {
+  appHealth?: () => Promise<import('./app-health').AppHealth>;
+  openPrivacy?: (pane: import('./app-health').PrivacyPane) => Promise<void>;
   mobile?: (
     command: import('./mobile').MobileCommand,
   ) => Promise<import('./mobile').MobileSettings>;
@@ -836,6 +838,7 @@ export interface OfficeAPI {
   subscribe: (
     callback: (message: SnapshotMessage) => void,
     since?: () => Pick<Snapshot, 'epoch' | 'version'> | null,
+    health?: (error: string | null) => void,
   ) => () => void;
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;

@@ -1,3 +1,18 @@
+# 2026-10-29 · 프로덕션 3회 검토 및 최종 공증 DMG
+
+- 정본: [PRODUCTION-REVIEW](PRODUCTION-REVIEW.md), [PR #291](https://github.com/kys42/agent-office/pull/291), Issue #290, `feat/production-readiness`.
+- 최종 앱 source `c453a57`: macOS arm64 / Node 25.5.0 / Electron **44.10.0**. 최초 44.5.1 검증 뒤 보안 갱신을 적용했고 npm audit **10건 → 0건**이다.
+- 단위 **806개**, typecheck·production build·format·MCP 통과. 로컬 UI **426 pass + 6 timeout**, 같은 코드의 실패 6개 단일 worker 재실행은 **6 pass**. 전체 suite 432개. 최초 실패 자료를 보존했다.
+- [Linux / Node 24 CI](https://github.com/kys42/agent-office/actions/runs/40812354016)와 [Windows CI](https://github.com/kys42/agent-office/actions/runs/40812353794) 모두 통과. Windows는 portable 패키징과 실제 native 3종 공급자 smoke를 포함한다. PR 최종 head CI는 PR 상태를 따른다.
+- **앱·DMG 공증 및 설치 smoke 통과**: Developer ID/Team ID, deep strict 서명, stapled ticket, Gatekeeper, checksum/아이콘/metadata. DMG에서 임시 설치한 앱으로 첫 실행·설정·저장·펫/row/floor·3종 공급자·IPC 격리·앱 신원·잘못된 privacy URL 거부 확인. 별도 packaged 미니 터미널 smoke도 통과.
+- 외장 SSD mountpoint 거부는 `/private/tmp` mountpoint로 해결했다. 설정 DOM ready/native ready-to-show 사이 테스트 race는 실제 창 표시를 기다린 뒤 blur 검사하도록 수정했고 같은 DMG 재검수가 통과했다.
+- quiet 실행에서 OS 포커스/Dock 검수와 별도 card-windows focus smoke는 생략했다. 인터넷 다운로드 최초 실행, 다른 물리 Mac/Intel, 실제 사용자 DB 업그레이드·권한 연속성을 검증한 것은 아니다.
+- UI: 라이트/다크, 480px, 키보드 펼침, 실패/재시도, 연결 중단/patch gap/demo 전환, 동시 창 전송 확인/재시작/첨부 정합성. Impeccable detector 0건.
+- 산출물: `release/Agent-Office-0.1.0-macOS-arm64-c453a57.dmg` 및 manifest/체크섬. 전체 SHA·공증 ID는 정본 검토 문서에 기록했다. `.local/production-*`는 로컬 근거이며 Git에 포함하지 않는다.
+- 설치된 Applications 앱과 사용자 DB는 보존했다. 공개 게시/OTA/main 병합은 하지 않았다. GitHub 서명 environment는 조회 404로 준비 여부 미확인이며, 이번 성공은 기존 로컬 Apple 프로필 기준이다.
+
+---
+
 # Codex 원격 owner 전송 · 2026-10-21
 
 - main `9dd9dc0` 기준 별도 `codex/office-remote-send` worktree에서 구현했다. 원래 checkout의 미커밋 문서는 수정하지 않았다.
@@ -6,6 +21,13 @@
 - 회귀는 정확한 host·opaque ID·provider, 충돌 host, owner/설정 부재, 권한 회수, 베타 해제, 기존 오프라인 매핑 편집, pending/sent 저널 재시작 및 다른 경로로 재전송하지 않음을 확인한다. 독립 리뷰의 UI/설정 2건을 수정하고 재리뷰에서 추가 finding 없음.
 - 실제 Mac mini 연결은 read-only discovery에서 현재 owner를 찾지 못했다. 실사용 대화에 테스트 메시지는 보내지 않았으며 실제 Mac mini 종단 전송, Windows native 동작은 확인하지 않았다. Codex에서 해당 원격 대화를 열고 host 매핑을 선택한 뒤 재조회가 필요하다. 설치된 앱과 원격 exporter는 이번 PR 작성으로 바뀌지 않는다.
 - CI 결과와 최종 SHA는 PR을 따른다. 열려 있는 PR의 worktree를 유지하며 자동 병합하지 않는다.
+# 2026-10-20 · Developer ID 패키징 검증
+
+- main `9dd9dc0` 기반 macOS arm64의 서명 개발 산출물에서 `codesign --verify --deep --strict`, Apple 신뢰 체인·Developer ID Application OID·Team ID·bundle ID 요구 조건을 검증했다. `codesign -dvv`에 runtime 플래그와 secure timestamp를 확인했다. 원본 Electron UUID와 패키징 후 UUID가 다르다.
+- 타입, 빌드, 포맷, MCP, 단위574개 및 actionlint 통과. 신규 검사는 잘못된 서명 구성, Mach-O 손상/중복/결정성, 공증 timeout 뒤 같은 ID 재개·바이트 변조·Invalid·불확실한 제출 재전송 차단을 포함한다. 공증 호출은 이 회귀 테스트에서 모의 실행이며 Apple 실제 공증 성공 근거가 아니다.
+- 실제 Apple preflight는 기존 Team API 키를 사용했으나 계약 미동의/만료403으로 중단됐다. 앱/DMG 공증·stapling·Gatekeeper 승인 및 다운로드 경로 검수는 미완료다.
+- native 전체 검사 실패: quiet settings 창 `kept open on blur`, focus 실행 카드 `the card holds the keyboard after asking for it`, 다중 카드 `blur closes only the ordinary preview` 이전 visibility poll. settings visibility 실패는 패키징 전 개발 Electron에서도 재현했다. 서명 앱은 그 외 실제 실행/합성 세 공급자 수집·IPC·설정 렌더링까지 진행했지만 전체 native 통과로 취급하지 않는다.
+- 실행 중인 Applications 앱/사용자 DB를 이번 작업에서 교체하지 않았다. 서명 앱 설치 후 OS 권한 창, 실제 Windows peer snapshot/detail 및 문서 폴더 권한 연속성은 별도 검수한다. 작업 상태와 최종 source SHA는 PR/결과 카드에 기록한다.
 
 # tmux 기존 대화 재개 · 2026-10-19 (Issue #178)
 

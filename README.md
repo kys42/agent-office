@@ -144,18 +144,25 @@ npm run build
 npm start
 ```
 
-Package it as a macOS app:
+Package a local preview for testing:
 
 ```bash
-npm run package
+npm run package:preview
 open "release/Agent Office-darwin-arm64/Agent Office.app"
 ```
 
-> The preview uses ad-hoc signing; it is not Developer ID signed or Apple-notarized.
+> Preview builds use ad-hoc signing. Keep an installed signed app on the signed release path; replacing it with a preview can cause permission prompts again. For repeatable Developer ID signing and Apple notarization, see [macOS release setup](docs/development/MACOS-RELEASE.md). Credentials must be configured before using signed releases.
 
-Create an installer with `npm run package:dmg`, then verify the app installed from it with `npm run test:package`. The DMG includes an Applications shortcut and installation instructions. Manual builds and version tags produce arm64 / Intel artifacts through [macOS DMG Preview](.github/workflows/macos-dmg.yml); see the [release guide](docs/development/MACOS-RELEASE.md).
+Create an installer with `npm run package:dmg`, then verify the app installed from it with `npm run test:package`. The DMG includes an Applications shortcut and installation instructions. Manual preview builds produce arm64 / Intel artifacts through [macOS DMG Preview](.github/workflows/macos-dmg.yml). Version tags use [macOS Signed Release](.github/workflows/macos-signed.yml) with configured signing credentials; see the [release guide](docs/development/MACOS-RELEASE.md).
 
-Just want to look around? Run the browser preview with **synthetic demo data** — nothing on your machine is read:
+Just want to look around? Run only the UI with **synthetic demo data** (no collector):
+
+```bash
+npx vite --host 127.0.0.1
+# http://127.0.0.1:5173/?demo
+```
+
+For development with the local session collector, use:
 
 ```bash
 npm run dev
@@ -271,7 +278,7 @@ Tests use synthetic data and never modify your sources; only the live-connection
 
 ## 🗺️ Roadmap
 
-Not built yet, and deliberately not faked in the UI: automatic approvals, answering Codex prompts, controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, account-based remote sync, and signing / notarization / auto-update.
+Not built yet, and deliberately not faked in the UI: automatic approvals, answering Codex prompts, controlling sessions outside Orca/tmux, model-based summaries and semantic search, scheduled retros, teammates that grow over time, account-based remote sync, and auto-update.
 
 ## 📄 License
 

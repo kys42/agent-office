@@ -1,4 +1,5 @@
 import { _electron as electron } from 'playwright';
+import { expect } from '@playwright/test';
 import { appendFile, mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -117,6 +118,29 @@ try {
     s.connectors.map((c) => c.state),
     ['connected', 'connected', 'connected'],
   );
+  // Diagnostics verify the executing bundle, not a claim in release.json. No private data.
+  const health = await page.evaluate(() => window.office.appHealth());
+  assert.deepEqual(
+    Object.keys(health).sort(),
+    ['version', 'platform', 'arch', 'commit', 'builtAt', 'signature', 'teamId'].sort(),
+  );
+  assert.equal(health.platform, process.platform);
+  if (process.env.AGENT_OFFICE_EXECUTABLE && process.platform === 'darwin') {
+    const metadata = JSON.parse(
+      await readFile(
+        path.resolve(process.env.AGENT_OFFICE_EXECUTABLE, '../../Resources/release.json'),
+        'utf8',
+      ),
+    );
+    assert.equal(health.commit, metadata.sourceCommit);
+    assert.equal(health.signature, metadata.signing === 'developer-id' ? 'developer-id' : 'ad-hoc');
+    if (metadata.signing === 'developer-id') assert.equal(health.teamId, metadata.teamId);
+  } else
+    assert.equal(
+      health.signature,
+      process.env.AGENT_OFFICE_EXECUTABLE ? 'unavailable' : 'development',
+    );
+  await assert.rejects(page.evaluate(() => window.office.openPrivacy('https://invalid.example')));
   // The settings window (#87): opened at a section, shares preferences, stays open on blur.
   const settingsWindow = (fn) =>
     app.evaluate(
@@ -137,6 +161,14 @@ try {
   await settings.waitForSelector('.settings-popup [data-guide-section="office"]');
   assert.equal(await tab('office').getAttribute('aria-selected'), 'true');
   await assert.rejects(page.evaluate(() => window.office.settings.open('nope')));
+  // DOM readiness can precede Electron's ready-to-show (especially from a cold DMG copy).
+  // Exercise blur only after the native window has actually been presented.
+  await expect
+    .poll(() => settingsWindow((w) => !!w && w.isVisible()), {
+      message: 'settings is shown before blur',
+      timeout: 15_000,
+    })
+    .toBe(true);
   await settingsWindow((w) => w.blur());
   if (focusTests) await page.bringToFront();
   await settings.waitForTimeout(400);
@@ -676,11 +708,29 @@ try {
       ipcPersistence: true,
       rendererIsolation: true,
       firstRunGuide: true,
+      installationIdentity: health,
       settingsWindow: true,
       notifications: true,
-      macDockIcon: process.platform === 'darwin',
+      macDockIcon:
+        process.platform !== 'darwin' ? 'not-applicable' : focusTests ? 'passed' : 'skipped',
     }),
   );
+} catch (error) {
+  if (app) {
+    for (const [i, window] of app.windows().entries()) {
+      console.error(
+        JSON.stringify({
+          url: window.url(),
+          buttons: await window
+            .locator('button[aria-label]')
+            .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label')))
+            .catch(() => []),
+        }),
+      );
+      await window.screenshot({ path: `.local/native-failure-${i}.png` }).catch(() => {});
+    }
+  }
+  throw error;
 } finally {
   if (app) await app.close();
   await rm(temp, { recursive: true, force: true });

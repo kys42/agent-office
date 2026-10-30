@@ -987,10 +987,12 @@ export default function App() {
             </div>
           )}
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="status">
               <AlertCircle size={16} />
               <span>{error}</span>
-              <button onClick={refresh}>{t.app.reconnect}</button>
+              <button onClick={refresh} disabled={refreshing}>
+                {t.app.reconnect}
+              </button>
             </div>
           )}
           {digest && digest.results + digest.attention > 0 && (
@@ -1041,7 +1043,7 @@ export default function App() {
               <h2>{t.app.offline.title}</h2>
               <p>{t.app.offline.body}</p>
               <div className="empty-actions">
-                <button className="button primary" onClick={refresh}>
+                <button className="button primary" onClick={refresh} disabled={refreshing}>
                   {t.app.reconnect}
                 </button>
                 <button className="button subtle" onClick={() => setDemo(true)}>

@@ -4,7 +4,17 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { releaseArchitecture, releaseInfo } from './release-utils.mjs';
 import { fixSpawnHelper } from './node-pty-helper.mjs';
+import { sign } from '@electron/osx-sign';
+import { assertNoPendingNotarization } from './notarize.mjs';
+import {
+  bundleId,
+  namespaceAppExecutables,
+  signingConfig,
+  verifyDeveloperId,
+} from './macos-signing.mjs';
 if (process.platform !== 'darwin') throw new Error('macOS packaging requires a macOS host.');
+const signing = signingConfig();
+await assertNoPendingNotarization();
 const arch = releaseArchitecture(process.env.AGENT_OFFICE_ARCH ?? process.arch);
 const source = path.resolve('.local/package', arch);
 await rm(source, { recursive: true, force: true });
@@ -40,6 +50,12 @@ await writeFile(
 );
 await fixSpawnHelper(ptyTarget);
 const metadata = releaseInfo(pkg, arch);
+metadata.signing = signing.mode;
+metadata.teamId = signing.team ?? null;
+metadata.channel = signing.mode === 'developer-id' ? 'signed' : 'preview';
+// Embedded metadata describes signing time. The final DMG manifest and Apple's
+// stapled ticket attest notarization; never edit sealed resources after signing.
+metadata.notarizationStatusSource = 'stapled-ticket-and-dmg-manifest';
 await writeFile(path.join(source, 'release.json'), JSON.stringify(metadata, null, 2) + '\n');
 await writeFile(
   path.join(source, 'package.json'),
@@ -61,7 +77,7 @@ await writeFile(
 const result = await packager({
   dir: source,
   name: 'Agent Office',
-  appBundleId: 'dev.kys.agentoffice',
+  appBundleId: bundleId,
   appCategoryType: 'public.app-category.developer-tools',
   platform: 'darwin',
   arch,
@@ -73,19 +89,39 @@ const result = await packager({
   icon: 'public/icon.icns',
   prune: true,
   extraResource: [path.join(source, 'release.json'), 'LICENSE.md', 'THIRD_PARTY_NOTICES.md'],
-  osxSign: {
-    identity: '-',
-    identityValidation: false,
+  osxSign: false,
+  extendInfo: {
+    NSHighResolutionCapable: true,
+    NSLocalNetworkUsageDescription:
+      'Connect to your other Agent Office computers to show their agents and conversations.',
+  },
+});
+for (const directory of result) {
+  const app = path.join(directory, 'Agent Office.app');
+  const executableUuids = await namespaceAppExecutables(app);
+  await writeFile(
+    path.join(app, 'Contents/Resources/release.json'),
+    JSON.stringify({ ...metadata, executableUuids }, null, 2) + '\n',
+  );
+  await sign({
+    app,
+    platform: 'darwin',
+    version: pkg.devDependencies.electron,
+    identity: signing.identity,
+    keychain: signing.keychain,
+    identityValidation: signing.mode === 'developer-id',
     preAutoEntitlements: false,
     preEmbedProvisioningProfile: false,
-    optionsForFile: () => ({ hardenedRuntime: false, timestamp: 'none' }),
-  },
-  extendInfo: { NSHighResolutionCapable: true },
-});
-for (const directory of result)
+    optionsForFile: () =>
+      signing.mode === 'developer-id'
+        ? { hardenedRuntime: true, entitlements: path.resolve('scripts/entitlements.mac.plist') }
+        : { hardenedRuntime: false, timestamp: 'none' },
+  });
   execFileSync(
     'codesign',
     ['--verify', '--deep', '--strict', path.join(directory, 'Agent Office.app')],
     { stdio: 'inherit' },
   );
+  if (signing.mode === 'developer-id') verifyDeveloperId(app, signing.team);
+}
 console.log(result.join('\n'));

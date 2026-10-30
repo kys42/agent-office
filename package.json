@@ -37,10 +37,13 @@
     "test:reader:desktop": "node scripts/reader-window-desktop-smoke.mjs",
     "format": "prettier --write \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
     "format:check": "prettier --check \"{src,server,desktop,tests,scripts}/**/*.{ts,tsx,css,mjs}\" *.ts *.json",
-    "package:dmg": "npm run package && node scripts/dmg.mjs",
+    "package:dmg": "node scripts/macos-release.mjs dmg",
+    "package:preview": "node scripts/preview-mac.mjs app",
+    "package:dmg:preview": "node scripts/preview-mac.mjs dmg",
     "test:package": "node scripts/dmg-smoke.mjs",
     "test:mobile": "node scripts/mobile-smoke.mjs",
-    "postinstall": "node scripts/node-pty-helper.mjs"
+    "postinstall": "node scripts/node-pty-helper.mjs",
+    "release:mac": "node scripts/macos-release.mjs"
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -61,6 +64,7 @@
     "node-pty": "1.1.0"
   },
   "devDependencies": {
+    "@electron/osx-sign": "^2.7.1",
     "@electron/packager": "^20.3.0",
     "@playwright/test": "^1.58.2",
     "@types/node": "^24.10.0",
@@ -68,7 +72,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.0",
     "concurrently": "^9.2.1",
-    "electron": "44.5.1",
+    "electron": "44.10.0",
     "esbuild": "^0.28.2",
     "prettier": "^3.9.9",
     "tsx": "^4.21.0",

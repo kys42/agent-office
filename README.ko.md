@@ -142,18 +142,25 @@ npm run build
 npm start
 ```
 
-macOS 앱으로 패키징:
+로컬 테스트용 macOS preview 패키징:
 
 ```bash
-npm run package
+npm run package:preview
 open "release/Agent Office-darwin-arm64/Agent Office.app"
 ```
 
-> preview는 ad-hoc 서명입니다. Apple Developer ID 서명·공증은 아직 적용하지 않았습니다.
+> preview는 ad-hoc 서명입니다. 기존 정식 설치본을 preview로 덮어쓰면 권한을 다시 물을 수 있으므로, 계속 사용할 앱은 서명·공증 경로를 유지하세요. Developer ID 서명·Apple 공증 경로는 [macOS 배포 설정](docs/development/MACOS-RELEASE.md)을 참고하세요. 정식 배포에는 자격증명 등록과 실제 공증 검증이 필요합니다.
 
-`npm run package:dmg`로 설치용 DMG를 만들고 `npm run test:package`로 DMG에서 꺼낸 실제 앱을 검증합니다. Applications 바로가기와 설치 안내가 포함됩니다. [macOS DMG Preview](.github/workflows/macos-dmg.yml)를 수동 실행하거나 버전 태그를 push하면 arm64 / Intel 산출물을 만듭니다. 절차와 배포 범위는 [배포 가이드](docs/development/MACOS-RELEASE.md)를 확인하세요.
+`npm run package:dmg`로 설치용 DMG를 만들고 `npm run test:package`로 DMG에서 꺼낸 실제 앱을 검증합니다. Applications 바로가기와 설치 안내가 포함됩니다. [macOS DMG Preview](.github/workflows/macos-dmg.yml)는 수동 실행으로 arm64 / Intel 산출물을 만듭니다. 버전 태그는 자격증명이 설정된 [macOS Signed Release](.github/workflows/macos-signed.yml)에서 처리합니다. 절차와 배포 범위는 [배포 가이드](docs/development/MACOS-RELEASE.md)를 확인하세요.
 
-둘러보기만 하려면 **합성 데모 데이터**로 브라우저 미리보기를 띄우세요. 내 컴퓨터의 기록은 읽지 않습니다.
+둘러보기만 하려면 수집기 없이 **합성 데모 데이터**로 UI만 실행하세요.
+
+```bash
+npx vite --host 127.0.0.1
+# http://127.0.0.1:5173/?demo
+```
+
+실제 로컬 세션을 수집하는 개발 서버는 아래 명령으로 실행합니다.
 
 ```bash
 npm run dev
@@ -267,7 +274,7 @@ node scripts/readme-desktop.mjs ko  # 바탕화면 장면 PNG·GIF (npm run dev 
 
 ## 🗺️ 로드맵
 
-아직 만들지 않았고, 화면에서 된 것처럼 꾸미지도 않는 것들: 자동 승인·Codex 질문에 답하기·Orca/tmux 밖 터미널의 세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 동료 성장, 원격 동기화, 서명·공증·자동 업데이트.
+아직 만들지 않았고, 화면에서 된 것처럼 꾸미지도 않는 것들: 자동 승인·Codex 질문에 답하기·Orca/tmux 밖 터미널의 세션 제어, 모델 기반 요약·의미 검색, 회고 예약, 동료 성장, 원격 동기화, 자동 업데이트.
 
 ## 📄 라이선스
 

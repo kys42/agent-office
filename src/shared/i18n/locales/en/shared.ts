@@ -190,7 +190,8 @@ export const shared = {
     hidden: '[hidden]',
   },
   api: {
-    checkConnection: 'Check the connection',
+    checkConnection:
+      'Live updates are disconnected. Showing the last available office. Check the connection.',
     revealDesktopOnly: 'Opening the source location is available in the desktop app.',
   },
 };

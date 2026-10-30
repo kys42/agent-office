@@ -1,3 +1,16 @@
+## 2026-10-29 — 프로덕션 검토·개선 3회, 배포 신원과 연결/전송 신뢰성
+
+- Issue #290 / `feat/production-readiness`, base main `ba9b9e4`. 별도 PR235의 서명 파이프라인을 최신 node-pty 패키징과 함께 통합했다.
+- 1회차: preview/정식 패키징을 명시적으로 분리하고, worker 종료·웹 폴링 실패·patch gap의 조용한 정지를 화면에 알리고 제한된 재시도로 복구한다.
+- 2회차: 설정에서 실제 앱 서명/빌드와 필요한 OS 권한을 확인한다. 안내를 접어 기본 연결 흐름을 유지하고 좁은 창·키보드·다크 모드를 확인했다. 이미지 단독 입력의 전송 확인과 공급자 기록 제한을 표시한다.
+- 3회차: 독립 리뷰 후 전송 본문 추가 보관을 제거하고 metadata/SHA-256 지문만 저장했다. 다중 창 UUID/Web Locks/재시작 대응을 검증하고, worker가 잠깐 성공 후 반복 종료해도 무한 재시도하지 않게 했다. 미처리 전송이 없으면 저장소 조회를 하지 않는다.
+- 검증: 단위 806개, typecheck/build/format/MCP 통과. 의존성 갱신 후 로컬 UI 426 pass·6 timeout, 실패 6개 재실행 모두 통과. 전체 432개 suite를 포함한 Linux CI와 Windows CI 통과. 변경 UI 탐지 0건.
+- 추가 배포 검수: Electron 44.10.0 및 호환 의존성 보안 갱신으로 npm audit 10건 → 0건. Windows packaged 상태 검수 기대값·한국어 설치 명령·외장 출력 링크 ignore를 수정했고, 디스크 여유 사전 검사와 CI 보안 게이트/중복 실행 제한을 추가했다.
+- source `c453a57`의 Developer ID 앱·DMG를 Apple 공증·staple·Gatekeeper 검증했다. DMG 임시 설치본 3종 공급자/설정/IPC 및 packaged 미니 터미널 smoke 통과. 외장 mountpoint와 native 창 준비 시점의 검수 스크립트도 보완했다. quiet 모드의 실제 포커스/Dock·카드 창 검수는 생략됐다. 전체 근거는 [프로덕션 검토](docs/development/PRODUCTION-REVIEW.md)와 [QA](docs/development/QA.md)에 기록했다. 공개 배포·main 병합·실제 사용자 설치본 교체는 수행하지 않았다. GitHub 서명 environment 준비는 미확인이다.
+- 원래 main의 미커밋 문서, 기존 사용자 DB/세션, 별도 열린 기능 PR은 보존했다. 검수 산출물은 별도 worktree `.local/` 및 `release/`에 둔다.
+
+---
+
 ## 2026-10-26 — 미니 터미널 별도 창, 고정 카드는 보통 창, 채팅창 이미지 첨부
 
 - [PR #275](https://github.com/kys42/agent-office/pull/275): 미니 터미널을 채팅 서랍 대신 연 창 옆의 별도 터미널 창으로 바꿨어요.
@@ -85,6 +98,20 @@
 - 대화창에 원격 전송 경로와 대상 다시 확인 버튼을 표시합니다. 대화가 열려 있지 않거나 권한을 확인하지 못하면 전송하지 않습니다.
 - 호스트·대화 ID를 정확히 대조하고 전송 직전 양쪽 권한을 확인합니다. 결과가 불확실한 요청은 앱 재시작 뒤에도 자동 재전송하지 않습니다.
 - 로컬 검증과 실제 Mac mini 대화의 검증 범위는 QA 및 PR에 기록합니다. PR 코드와 설치된 앱은 별개입니다.
+
+## 2026-10-20 — Developer ID 서명·공증 경로와 기존 Apple 프로필 재사용
+
+- 최신 main `9dd9dc0`에서 시작했다. 기존 작업 폴더의 미커밋 문서는 보존했다.
+- `scripts/package.mjs`에 명시적 Developer ID 모드를 추가했다. Team ID/인증서 종류를 검사하고 hardened runtime·타임스탬프·최소 JIT entitlement로 서명한다. 실패 시 ad-hoc으로 대체하지 않는다. 기본 개발 preview는 별도 유지한다.
+- 앱/Helper의 Electron 공용 LC_UUID를 서명 전에 bundle ID별로 구분하고 로컬 네트워크 사용 설명을 넣었다. Apple TN3178/3179를 근거로 하되 기존 권한 장애 원인 확정이나 해결 완료를 주장하지 않는다.
+- TaskDeck/반려주식에서 쓰던 비밀 아닌 Apple Team 프로필을 `release:mac`에서 참조한다. 키를 복사하거나 새로 발급하지 않는다. 앱·DMG 공증과 receipt 재개, 불확실한 제출 재전송 차단, CI 임시 키체인/실패 복구 artifact를 추가했다.
+- [기존 권한 이슈 #227](https://github.com/kys42/agent-office/issues/227)의 자체 인증서 제안 대신 이미 존재하는 Developer ID를 사용하는 방향이다. 설치 후 실제 권한 연속성 확인 전에는 이슈를 닫지 않는다.
+- 단위 574개, 타입, 웹/데스크톱 빌드, 포맷, MCP, actionlint 통과. 실제 arm64 앱의 Developer ID·Team ID·secure timestamp·hardened runtime·strict/deep 서명 검증과 고유 UUID를 확인했다.
+- 전체 native smoke는 통과하지 않았다. 로컬 quiet settings visibility, focus 카드 키보드, 다중 카드 blur assertion이 실패했다. settings visibility는 서명 변경 전 개발 Electron에서도 재현했다. 이를 서명 실패로 단정하지 않으며 최종 설치 검수 성공으로도 기록하지 않는다.
+- 기존 Apple API 키로 읽기 전용 `notarytool history`를 호출했으나 필수 계약 미동의/만료 **403**. 계정 소유자 계약 확인 뒤 preflight/공증 재개가 필요하다. CI secrets/environment 등록, 원격 signed workflow 실행, 실제 앱 교체와 권한/연결 검수, 공개 게시·자동 업데이트는 완료하지 않았다.
+- 정본: [macOS 배포](docs/development/MACOS-RELEASE.md), [결과 카드](https://app.notion.com/p/3ff9c0323a9e81c7b07aebb93405ccd3).
+
+---
 
 ## 2026-10-20 — 앱에서 답하기 Submit 멈춤 수정, 로컬 Electron 검사 조용한 모드
 

@@ -1,4 +1,6 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
+import { readAppHealth } from './app-health.js';
+import { privacyPane } from '../src/shared/app-health.js';
 import { TmuxResume, summonSession } from './tmux-resume.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
@@ -238,7 +240,11 @@ else {
       // A change that does not start from what is held here (e.g. the collector restarted).
       else void bridge.call('snapshot').then(publish, () => {});
     });
-    bridge.on('failure', (message) => console.error('Collector worker:', message));
+    bridge.on('failure', (message) => {
+      console.error('Collector worker:', message);
+      for (const w of BrowserWindow.getAllWindows())
+        if (!w.isDestroyed()) w.webContents.send('office:health', m().shared.api.checkConnection);
+    });
     petSpot = loadPetSpot();
     dockTiny = loadDockTiny();
     createMain();
@@ -888,6 +894,23 @@ function setupReader() {
   });
 }
 function setupIPC() {
+  let health: ReturnType<typeof readAppHealth> | undefined;
+  ipcMain.handle('office:app-health', (e) => {
+    trusted(e);
+    // Read only when Settings is opened, once per application process. No background polling.
+    return (health ??= readAppHealth(
+      app.getVersion(),
+      app.isPackaged,
+      process.resourcesPath,
+      path.dirname(path.dirname(path.dirname(process.execPath))),
+    ));
+  });
+  ipcMain.handle('office:privacy-settings', async (e, pane: unknown) => {
+    trusted(e);
+    const url = privacyPane(pane);
+    if (process.platform !== 'darwin' || !url) throw new Error(m().desktop.badRequest);
+    await shell.openExternal(url);
+  });
   ipcMain.on('office:selected', (e, id: unknown) => {
     if (!main || e.sender !== main.webContents || e.senderFrame !== e.sender.mainFrame) return;
     mainSelected = typeof id === 'string' && id.length <= 400 ? id : null;

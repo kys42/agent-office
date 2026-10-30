@@ -115,6 +115,7 @@ export function useOffice(
   // Live, only `accept` moves it (an effect could step it back behind a newer patch); the demo
   // changes its snapshot directly, so there it follows the state.
   const resyncing = useRef(false);
+  const resyncTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (demo) held.current = snapshot;
   }, [demo, snapshot]);
@@ -134,15 +135,26 @@ export function useOffice(
         if (resyncing.current) return;
         resyncing.current = true;
         const live = generation.current;
-        void api
-          .snapshot()
-          .then(
-            (s) => live === generation.current && accept(s),
-            () => {},
-          )
-          .finally(() => {
-            resyncing.current = false;
-          });
+        const request = (attempt: number) => {
+          if (live !== generation.current) return;
+          void api.snapshot().then(
+            (s) => {
+              if (live !== generation.current) return;
+              resyncing.current = false;
+              accept(s);
+              setError('');
+            },
+            (e) => {
+              if (live !== generation.current) return;
+              setError(e.message);
+              const delay = [1000, 3000, 10000][attempt];
+              if (delay !== undefined)
+                resyncTimer.current = setTimeout(() => request(attempt + 1), delay);
+              else resyncing.current = false;
+            },
+          );
+        };
+        request(0);
         return;
       }
       next = applyPatch(prev, message);
@@ -151,6 +163,8 @@ export function useOffice(
       if (next === prev) return;
     }
     held.current = next;
+    clearTimeout(resyncTimer.current);
+    resyncing.current = false;
     fromService.current.add(next);
     setSnapshot(next);
   }, []);
@@ -177,7 +191,7 @@ export function useOffice(
       .then((s) => {
         if (active) {
           accept(s);
-          setError('');
+          if (!resyncing.current) setError('');
         }
       })
       .catch((e) => {
@@ -187,13 +201,18 @@ export function useOffice(
       (message) => {
         if (active) {
           accept(message);
-          setError('');
+          if (!resyncing.current) setError('');
         }
       },
       () => held.current && { epoch: held.current.epoch, version: held.current.version },
+      (message) => {
+        if (active && (message || !resyncing.current)) setError(message ?? '');
+      },
     );
     return () => {
       active = false;
+      clearTimeout(resyncTimer.current);
+      resyncing.current = false;
       if (generation.current === live) generation.current++;
       unsubscribe();
     };
@@ -252,11 +271,15 @@ export function useOffice(
       return;
     }
     setRefreshing(true);
+    const live = generation.current;
     try {
-      accept(await api.refresh());
+      const next = await api.refresh();
+      if (live !== generation.current) return;
+      accept(next);
       setError('');
       notify(m().app.toast.refreshed);
     } catch (e) {
+      if (live !== generation.current) return;
       setError((e as Error).message);
       notify((e as Error).message);
     } finally {

@@ -9,8 +9,6 @@ on:
         default: arm64
         type: choice
         options: [arm64, x64, both]
-  push:
-    tags: ['v[0-9]*']
 
 permissions:
   contents: read
@@ -73,7 +71,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run package:dmg
+      - run: npm run package:dmg:preview
       - name: Install from DMG and test the packaged app
         run: npm run test:package
       - name: Verify published checksums
