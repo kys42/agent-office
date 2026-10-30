@@ -118,11 +118,13 @@ export const settings = {
     title: 'Window glass',
     level: 'See-through',
     hint: "How much the work card popup and the big office's left menu and right column let the background show through. Higher shows more behind, with less crisp text.",
-    platformHint: "On a Mac the card shows the desktop itself instead of frosted glass; the big office shows the window's glass material. On Windows the big office window is solid, so only the card changes.",
+    platformHint:
+      "On a Mac the card shows the desktop itself instead of frosted glass; the big office shows the window's glass material. On Windows the big office window is solid, so only the card changes.",
     value: (n: number) => `${n}%`,
     off: 'Default',
     reset: 'Back to default',
-    resetHint: 'Returns to the look before (frosted glass on a Mac, a lightly see-through card on Windows).',
+    resetHint:
+      'Returns to the look before (frosted glass on a Mac, a lightly see-through card on Windows).',
   },
   panels: {
     title: 'Panel widths',

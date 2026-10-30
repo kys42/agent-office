@@ -27,7 +27,11 @@ export function bootGlass() {
 }
 
 /** Every window follows the shared preference, live (the main process swaps the material). */
-export function useGlass(prefs: Pick<Preferences, 'windowGlass'> | undefined, ready: boolean, demo = false) {
+export function useGlass(
+  prefs: Pick<Preferences, 'windowGlass'> | undefined,
+  ready: boolean,
+  demo = false,
+) {
   const level = glassLevel(prefs);
   useEffect(() => {
     if (!ready) return;
