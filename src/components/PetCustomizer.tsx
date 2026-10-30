@@ -18,6 +18,8 @@ import {
 import { usePetAppearance } from './PetAppearanceContext';
 import { Modal } from './Modal';
 import { Sprite } from './Sprite';
+import { PetJoy } from './PetJoy';
+import { joyClass, reactPet, usePetReactions } from '../lib/petReaction';
 
 export function PetCustomizer({
   provider,
@@ -36,6 +38,9 @@ export function PetCustomizer({
   const [draft, setDraft] = useState<PetLook>(() => petLook(provider, saved, session));
   const [mood, setMood] = useState<Mood>('idle');
   const [walking, setWalking] = useState(false);
+  // The preview pet answers the same reactions as a pet at its desk.
+  const previewId = `preview:${provider}:${session?.id ?? ''}`;
+  const joy = usePetReactions()(previewId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const save = async (reset = false) => {
@@ -68,13 +73,16 @@ export function PetCustomizer({
           <div className="pet-preview-stage">
             <span className="pet-preview-spark spark-one">✦</span>
             <span className="pet-preview-spark spark-two">✧</span>
-            <Sprite
-              provider={provider}
-              appearance={draft}
-              mood={mood}
-              walking={walking}
-              size={160}
-            />
+            <span className={`pet-preview-body joy-host ${joyClass(joy)}`}>
+              <Sprite
+                provider={provider}
+                appearance={draft}
+                mood={joy ? 'idle' : mood}
+                walking={walking && !joy}
+                size={160}
+              />
+              {joy && <PetJoy key={joy.key} reaction={joy} />}
+            </span>
             <span className="pet-preview-shadow" />
           </div>
           <h3>{character.name}</h3>
@@ -97,6 +105,10 @@ export function PetCustomizer({
             <button aria-pressed={walking} onClick={() => setWalking(true)}>
               {p.walk}
             </button>
+          </div>
+          <div className="pet-preview-moods pet-preview-joy" role="group" aria-label={p.joyHint}>
+            <button onClick={() => reactPet(previewId, 'pat')}>♥ {p.pat}</button>
+            <button onClick={() => reactPet(previewId, 'praise')}>✦ {p.praise}</button>
           </div>
           <div className="pet-scope-note">
             <Sparkles size={14} />

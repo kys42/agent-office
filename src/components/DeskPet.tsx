@@ -35,6 +35,9 @@ import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { PetArrival } from './DeskEffects';
 import { useI18n } from '../lib/i18n';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
 
 const DRAG_SLOP = 4;
 
@@ -70,6 +73,8 @@ export function DeskPet({
   onRefresh: () => void;
 }) {
   const { t } = useI18n();
+  const reactionOf = usePetReactions();
+  const petting = usePetting();
   const d = t.dock.pet;
   const pet = petSummary(model);
   const total = model.seats.length;
@@ -181,6 +186,7 @@ export function DeskPet({
     };
   }, []);
   const lead = view ?? pet.lead;
+  const joy = reactionOf(lead?.session.id);
   const dark = !status && !speaks && !!lead?.quota && dimsDesk(lead.session, lead.pose.working);
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
@@ -391,6 +397,8 @@ export function DeskPet({
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
           onLostPointerCapture={endDrag}
+          // Rubbing the pet pets the colleague it stands for (a drag holds the button).
+          {...petting(lead?.session.id)}
           onClick={() => {
             // A drag that ends on the pet is a move, not a request to open the row.
             if (dragged.current) dragged.current = false;
@@ -400,13 +408,17 @@ export function DeskPet({
           {/* While another colleague speaks, the pill still says who is waiting. */}
           {pet.calling && !speaks && <span className="dock-pet-bang">!</span>}
           {/* Re-keyed per notice so a new arrival replays the hop. */}
-          <span className="dock-pet-body" key={speaks ? speaker.notice.id : (id ?? 'pet')}>
+          <span
+            className={`dock-pet-body joy-host ${joyClass(joy)}`}
+            key={speaks ? speaker.notice.id : (id ?? 'pet')}
+          >
             <Sprite
               session={lead?.session}
               provider={lead?.session.provider ?? 'claude'}
-              mood={status ? 'think' : (lead?.pose.mood ?? 'idle')}
+              mood={status ? 'think' : joy ? 'idle' : (lead?.pose.mood ?? 'idle')}
               size={72}
             />
+            {joy && <PetJoy key={joy.key} reaction={joy} />}
           </span>
           <span className="dock-pet-shadow" />
           {who && (speaks || shown.chosen || hover) && (
