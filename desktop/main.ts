@@ -25,6 +25,7 @@ import {
   nativeTheme,
 } from 'electron';
 import { dropAppMenu, windowStyle } from './window-style.js';
+import { glassLevel } from '../src/shared/glass.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -97,7 +98,7 @@ import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
 import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
-import { CardWindows } from './card-windows.js';
+import { CardWindows, type CardMaterial } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
@@ -154,6 +155,7 @@ else {
       watch,
       // A preview card stays while the person works in a terminal or reader window it opened.
       companion: () => !!shellWindows?.focused() || !!readerWindows?.focused(),
+      material: () => cardMaterial(delivery.latest),
     });
     app.on('before-quit', () => cards.dispose());
     shellWindows = new ShellWindows({
@@ -210,9 +212,18 @@ else {
       shellWindows.closeAll();
       readerWindows.closeAll();
     };
+    // Settings › Look › Glass: cards on the clearer glass while the person set their own level.
+    let material = cardMaterial(null);
+    const followGlass = (s: Snapshot) => {
+      const next = cardMaterial(s);
+      if (next === material) return;
+      material = next;
+      cards.setMaterial(next);
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
       hidePopups(s);
+      followGlass(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -221,6 +232,7 @@ else {
       if (delivery.update(patch, windows())) {
         followLanguage(delivery.latest!);
         hidePopups(delivery.latest!);
+        followGlass(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
@@ -357,6 +369,9 @@ function secure(w: BrowserWindow) {
   });
 }
 /** The big office's smallest size, lowered only for a display smaller than this. */
+/** The card's glass: the clearer `popover` once the person chose a glass level. */
+const cardMaterial = (s: Snapshot | null): CardMaterial =>
+  glassLevel(s?.preferences) === null ? 'under-window' : 'popover';
 const MAIN_MIN = { width: 1050, height: 740 };
 function createMain() {
   main = new BrowserWindow({
