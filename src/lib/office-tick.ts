@@ -45,16 +45,16 @@ const round = (p: number) => Math.round(p * 1e9) / 1e9;
 /**
  * Where, as a fraction of one iteration, a stepped loop's picture changes; null when it changes
  * continuously. Easing applies per keyframe segment in CSS, so a `steps(2)` loop with a 50%
- * keyframe changes four times (0, 25, 50, 75%), not twice. Any smooth segment or effect easing
- * makes the whole loop continuous; a reversing direction adds the mirrored points (a superset,
- * so a change is never missed).
+ * keyframe changes four times (0, 25, 50, 75%), not twice. Any smooth segment, an easing on the
+ * whole effect, or any direction but `normal` (a reversed `steps()` lands its jumps elsewhere)
+ * counts as continuous: such a loop is set every office frame, which is never wrong.
  */
 export function changePoints(
   keyframes: readonly KeyframeTiming[],
   direction = 'normal',
   effectEasing = 'linear',
 ): number[] | null {
-  if (effectEasing !== 'linear') return null;
+  if (effectEasing !== 'linear' || direction !== 'normal') return null;
   const points = new Set([0]);
   for (let i = 0; i < keyframes.length - 1; i++) {
     const from = keyframes[i].computedOffset;
@@ -64,7 +64,6 @@ export function changePoints(
     if (!n) return null;
     for (let k = 0; k < n; k++) points.add(round(from + ((to - from) * k) / n));
   }
-  if (direction !== 'normal') for (const p of [...points]) points.add(round(p ? 1 - p : 0));
   return [...points].filter((p) => p < 1).sort((a, b) => a - b);
 }
 

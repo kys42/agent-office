@@ -147,3 +147,44 @@ test('Shown again or back from less motion, no loop is left running at display r
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect.poll(loop).toEqual({ state: 'paused', time: 0 });
 });
+
+// Under less motion no tick runs, so letting go of loops whose element left must not wait for one:
+// typing dots come and go with every reply.
+test('Loops that come and go under less motion are let go, not kept with their elements', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => localStorage.setItem('office:onboarding:v1:demo', 'seen'));
+  await page.goto('/?demo');
+  await expect(page.locator('.office-pet').first()).toBeVisible();
+  // The page's own clock module (the dev server serves it once per URL).
+  const tracked = () =>
+    page.evaluate(async (url) => {
+      const clock: { trackedLoops(): number } = await import(/* @vite-ignore */ url);
+      return clock.trackedLoops();
+    }, '/src/lib/frame-clock.ts');
+  await page.evaluate(() => {
+    const style = document.createElement('style');
+    style.textContent =
+      '@keyframes test-loop { to { opacity: 0.2 } } .test-loop { animation: test-loop 1s infinite }';
+    document.head.append(style);
+  });
+  const mount = () =>
+    page.evaluate(() => {
+      const el = document.createElement('i');
+      el.className = 'test-loop';
+      document.body.append(el);
+    });
+  const unmount = () =>
+    page.evaluate(() => document.querySelectorAll('.test-loop').forEach((el) => el.remove()));
+  const base = await tracked();
+  await mount();
+  await expect.poll(tracked).toBe(base + 1);
+  for (let i = 0; i < 10; i++) {
+    await unmount();
+    await mount();
+    await page.waitForTimeout(50);
+  }
+  // Only the dots on the page now are held; the nine before them were let go.
+  await expect.poll(tracked).toBe(base + 1);
+});

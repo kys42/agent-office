@@ -70,9 +70,25 @@ function adopt(animation: Animation) {
   flushTimer ??= setTimeout(takeOver, 0);
 }
 
+/**
+ * Lets go of loops CSS has dropped (their element left the page, their rule went away). Runs
+ * with every batch of new loops and every clock change, not only on ticks: under less motion
+ * no tick runs, and mounting and unmounting (a conversation's typing dots) would otherwise keep
+ * the old animations and their detached elements alive.
+ */
+function prune() {
+  for (const animation of loops.keys()) if (!live(animation)) loops.delete(animation);
+}
+
+/** Loops this window's clock holds now (for tests and diagnostics). */
+export function trackedLoops() {
+  return loops.size;
+}
+
 /** Pauses newly seen loops and puts them where the office clock has them. */
 function takeOver() {
   flushTimer = undefined;
+  prune();
   const at = Math.floor(now() / FRAME_MS) * FRAME_MS;
   const still = ticker.conditions.still;
   // Reads first, then writes (see `step`).
@@ -107,7 +123,7 @@ function takeOver() {
     loops.set(animation, loop);
     if (local !== null) animation.currentTime = local;
   }
-  if (fresh.length) ticker.update({ busy: true });
+  ticker.update({ busy: loops.size > 0 });
 }
 
 /** Steps between looks for loops that slipped past `animationstart` (about once a second). */
@@ -175,12 +191,13 @@ function adoptAll() {
  * rate. Under less motion it goes back to its first frame.
  */
 function reconcile() {
+  prune();
   const still = ticker.conditions.still;
   const loose: [Animation, Loop][] = [];
   // Reads first, then writes (see `step`).
   for (const [animation, loop] of loops) {
-    if (!live(animation)) loops.delete(animation);
-    else if (animation.playState === 'running' || (still && loop.key !== -2))
+    if (!live(animation)) continue;
+    if (animation.playState === 'running' || (still && loop.key !== -2))
       loose.push([animation, loop]);
   }
   for (const [animation, loop] of loose) {
@@ -215,6 +232,12 @@ export function startFrameClock() {
   if (started || typeof document === 'undefined' || !document.getAnimations) return;
   started = true;
   document.addEventListener('animationstart', adoptTarget, true);
+  // A loop CSS drops says so: let go of it on the next batch, tick or no tick.
+  document.addEventListener(
+    'animationcancel',
+    () => (flushTimer ??= setTimeout(takeOver, 0)),
+    true,
+  );
   const visibility = () => {
     ticker.update({ hidden: isPageHidden() });
     reconcile();

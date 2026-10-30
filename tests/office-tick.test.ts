@@ -167,11 +167,9 @@ test('Easing steps each keyframe segment, so a mid-loop keyframe adds changes', 
   assert.equal(changePoints(kf([0, 'steps(2)'], [0.5, 'ease-in-out'], [1, 'linear'])), null);
   assert.equal(changePoints(kf([0, 'linear'], [1, 'linear'])), null);
   assert.equal(changePoints(kf([0, 'steps(4)'], [1, 'steps(4)']), 'normal', 'ease'), null);
-  // Played backwards on alternate turns, the mirrored points count too.
-  assert.deepEqual(
-    changePoints(kf([0, 'steps(1)'], [0.25, 'steps(1)'], [1, 'steps(1)']), 'alternate'),
-    [0, 0.25, 0.75],
-  );
+  // Any direction but normal is set every office frame (a reversed steps() jumps elsewhere).
+  for (const direction of ['alternate', 'alternate-reverse', 'reverse'])
+    assert.equal(changePoints(kf([0, 'steps(3)'], [1, 'steps(3)']), direction), null);
 });
 
 test('Sampling on office frames never misses a stepped change', () => {
@@ -199,6 +197,35 @@ test('Sampling on office frames never misses a stepped change', () => {
     if (now.picture !== previous.picture) assert.notEqual(now.key, previous.key, `at ${t}ms`);
     previous = now;
   }
+});
+
+test('work-meter (750ms steps(3) alternate): every CSS step change gets a new key', () => {
+  // CSS: alternate plays odd iterations backwards and the easing applies to that directed
+  // progress; steps(3) (jump-end) floors it into thirds, but an input of exactly 1 gives 1 (the
+  // start of a backward turn shows the full meter).
+  const duration = 750;
+  const value = (t: number) => {
+    const iteration = Math.floor(t / duration);
+    const p = (t - iteration * duration) / duration;
+    const directed = iteration % 2 ? 1 - p : p;
+    return directed >= 1 ? 1 : Math.floor(directed * 3) / 3;
+  };
+  const points = changePoints(kf([0, 'steps(3)'], [1, 'steps(3)']), 'alternate');
+  let changes = 0;
+  for (let t = FRAME_MS; t <= 8 * duration; t += FRAME_MS) {
+    const before = t - FRAME_MS;
+    if (value(t) === value(before)) continue;
+    changes++;
+    assert.notEqual(
+      stepKey(t, 0, duration, points),
+      stepKey(before, 0, duration, points),
+      `${t}ms`,
+    );
+  }
+  assert.ok(changes > 8, 'the meter moved over several cycles');
+  // The case from review: 750ms and 875ms show different steps, so they must differ in key.
+  assert.notEqual(value(750), value(875));
+  assert.notEqual(stepKey(750, 0, duration, points), stepKey(875, 0, duration, points));
 });
 
 test('A pause the stylesheet asks for holds the loop, and it resumes where it stopped', () => {
