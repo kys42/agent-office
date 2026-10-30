@@ -302,7 +302,11 @@
 :is(.selected-station .speech-bubble, .speech-bubble:is(.is-expanded, :hover, :focus-within))
   .bubble-typing
   i {
-  animation: bubble-typing 1.25s ease-in-out infinite;
+  /* Longhands, so the staggered delays below still apply. */
+  animation-name: bubble-typing;
+  animation-duration: 1.25s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 .bubble-typing i:nth-child(2) {
   animation-delay: 0.125s;
