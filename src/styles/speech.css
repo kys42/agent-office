@@ -293,7 +293,20 @@
   height: 3px;
   border-radius: 50%;
   background: currentColor;
-  animation: bubble-typing 1.25s ease-in-out infinite;
+  opacity: 0.55;
+}
+/*
+ * Only the bubble being looked at types (the chosen desk's, an unfolded or pointed-at one); the
+ * rest show still dots, so a busy office is not a dozen loops for the same hint.
+ */
+:is(.selected-station .speech-bubble, .speech-bubble:is(.is-expanded, :hover, :focus-within))
+  .bubble-typing
+  i {
+  /* Longhands, so the staggered delays below still apply. */
+  animation-name: bubble-typing;
+  animation-duration: 1.25s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 .bubble-typing i:nth-child(2) {
   animation-delay: 0.125s;
