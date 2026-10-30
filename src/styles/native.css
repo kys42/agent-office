@@ -738,6 +738,14 @@ body.card-mode:not(.is-mac) .dock-card {
   :is(.roster, .app-body > .inspector, .app-body > .inspector-card) {
   background: color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
 }
+/* Behind the right column: the column's own space (and the office page around the stage)
+   lets the glass through too; the pixel stage itself stays solid. */
+:root[data-glass] body.is-mac:not(.card-mode) :is(.app-body, .main-content.view-office) {
+  background: transparent;
+}
+:root[data-glass] body.is-mac:not(.card-mode) .main-content.view-office .office-column {
+  background: var(--bg-0);
+}
 /* Narrow windows float the right column over the pixel office: there it stays solid, or the
    scene would show through the words. */
 @media (max-width: 1100px) and (min-width: 861px) {

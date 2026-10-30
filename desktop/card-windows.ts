@@ -100,10 +100,18 @@ export class CardWindows {
   windows() {
     return [...this.entries].map((e) => e.window).filter((w) => !w.isDestroyed());
   }
-  /** The glass choice changed: open cards swap their material at once. */
+  /**
+   * The glass choice changed. A put-away preview is kept for reuse, still with its old
+   * material: it goes, so the next card is made afresh with the right one. Cards on screen swap
+   * their material at once.
+   */
   setFrosted(on: boolean) {
     if (process.platform !== 'darwin') return;
-    for (const w of this.windows()) w.setVibrancy(on ? 'under-window' : null);
+    for (const e of [...this.entries]) {
+      if (e.window.isDestroyed()) continue;
+      if (!e.window.isVisible() && !e.pinned) e.window.destroy();
+      else e.window.setVibrancy(on ? 'under-window' : null);
+    }
   }
   private entry(sender: WebContents) {
     return [...this.entries].find((e) => e.window.webContents === sender);
