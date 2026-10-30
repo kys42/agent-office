@@ -341,3 +341,11 @@
 .modal:has(.pet-customizer) > * {
   flex-shrink: 0;
 }
+/* #306: the preview pet's box, so its reactions (hops, hearts) sit on it like at a desk. */
+.pet-preview-body {
+  position: relative;
+  display: inline-block;
+}
+.pet-preview-joy {
+  margin-top: 6px;
+}

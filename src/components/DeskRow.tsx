@@ -86,6 +86,9 @@ import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import { useI18n } from '../lib/i18n';
 import { walksIn } from '../lib/commute';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -154,6 +157,9 @@ export function DeskRow({
   onReorder?: (ids: string[]) => void;
 }) {
   const { t, locale } = useI18n();
+  // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
+  const reactionOf = usePetReactions();
+  const petting = usePetting();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
   // Tiny has no bubbles to make room for: the scene starts just above the heads.
@@ -551,6 +557,7 @@ export function DeskRow({
                     const s = byId.get(station.id)!;
                     const v = model.view(s.id)!;
                     const pose = v.pose;
+                    const joy = reactionOf(s.id);
                     const label = residentLabel(s, privacy);
                     const branch = branchInfo(s);
                     // A just-arrived request plays on the desk and speaks first.
@@ -608,7 +615,7 @@ export function DeskRow({
                         <Furniture kind="chair" />
                         <div className="pet-shadow" />
                         <button
-                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''}`}
+                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
@@ -630,13 +637,20 @@ export function DeskRow({
                           }
                           {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
                           {...zoneGrab}
+                          {...petting(s.id)}
                           onClick={(e) => {
                             if (!reorder.consumeClick(e) && !placement.consumeClick(e)) open(s.id);
                           }}
                         >
                           {/* The same effects as the full size, shrunk with the scene. */}
                           <FocusEffects level={focus} />
-                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={joy ? 'idle' : pose.mood}
+                            size={80}
+                          />
+                          {joy && <PetJoy key={joy.key} reaction={joy} />}
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
                         {dot && (

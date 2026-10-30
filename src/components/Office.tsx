@@ -48,6 +48,9 @@ import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
 import { walksIn } from '../lib/commute';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -120,6 +123,9 @@ export function Office({
   helperStackAt?: number;
 }) {
   const { t, locale } = useI18n();
+  // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
+  const reactionOf = usePetReactions();
+  const petting = usePetting();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
@@ -507,6 +513,7 @@ export function Office({
                     const members = s.resident?.sessionIds ?? [s.id];
                     const active = members.includes(selected ?? '');
                     const pose = presentSession(s, clock);
+                    const joy = reactionOf(s.id);
                     // A just-arrived request plays on the desk and speaks first.
                     const speech = deskSpeech(s, notices, bubbleHours, clock);
                     const { unread, arrival, hop } = speech;
@@ -588,7 +595,7 @@ export function Office({
                         <Furniture kind="chair" />
                         <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                         <button
-                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''}`}
+                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
                           aria-label={t.office.station(
@@ -614,10 +621,21 @@ export function Office({
                           onDragEnd={endDrag}
                           onClick={() => onSelect(s.id)}
                           onMouseEnter={() => onHover?.(s.id)}
-                          onMouseLeave={() => onHover?.(null)}
+                          onMouseMove={petting(s.id).onMouseMove}
+                          onMouseLeave={() => {
+                            onHover?.(null);
+                            petting(s.id).onMouseLeave?.();
+                          }}
                         >
                           <FocusEffects level={focus} />
-                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {/* A pleased pet looks up from its work for a moment. */}
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={joy ? 'idle' : pose.mood}
+                            size={80}
+                          />
+                          {joy && <PetJoy key={joy.key} reaction={joy} />}
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
                         {onVeil && canVeil(s) && (

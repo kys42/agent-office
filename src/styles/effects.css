@@ -706,6 +706,141 @@
   }
 }
 
+/* ───────── A pleased pet (#306): petted (hearts) or praised (sparkles) ─────────
+   Two bounding hops with a squash, blushing cheeks, and three marks that float up and fade,
+   all inside 1.6s (PET_REACTION_MS). joy-0/joy-1 alternate per reaction so a new one replays. */
+.office-pet.reacting.joy-0,
+.joy-host.reacting.joy-0 {
+  animation: joy-hop-0 0.75s var(--ease-out) 2 both;
+}
+.office-pet.reacting.joy-1,
+.joy-host.reacting.joy-1 {
+  animation: joy-hop-1 0.75s var(--ease-out) 2 both;
+}
+:is(.office-pet, .joy-host).reacting .sprite-window {
+  animation: joy-squish 0.75s var(--ease-out) 2;
+  transform-origin: 50% 100%;
+}
+@keyframes joy-hop-0 {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-12px);
+  }
+}
+@keyframes joy-hop-1 {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  45% {
+    transform: translateY(-12px);
+  }
+}
+@keyframes joy-squish {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  15% {
+    transform: scale(1.12, 0.86);
+  }
+  45% {
+    transform: scale(0.94, 1.08);
+  }
+  80% {
+    transform: scale(1.06, 0.95);
+  }
+}
+.pet-joy {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.joy-cheek {
+  position: absolute;
+  top: 58%;
+  width: 14%;
+  height: 7%;
+  border-radius: 50%;
+  background: rgba(255, 120, 150, 0.55);
+  animation: joy-blush 1.6s ease-out both;
+}
+.joy-cheek.left {
+  left: 24%;
+}
+.joy-cheek.right {
+  right: 24%;
+}
+@keyframes joy-blush {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  15%,
+  75% {
+    opacity: 1;
+  }
+}
+.pet-joy b {
+  position: absolute;
+  top: 18%;
+  left: calc(22% + var(--i) * 26%);
+  font-family: var(--font-pixel);
+  font-size: 15px;
+  line-height: 1;
+  color: #ff6f91;
+  text-shadow:
+    1px 1px 0 #fff,
+    -1px -1px 0 #fff;
+  opacity: 0;
+  animation: joy-rise 1.25s ease-out calc(var(--i) * 0.125s) both;
+}
+.pet-joy.joy-praise b {
+  color: #ffc23d;
+}
+@keyframes joy-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-34px) scale(0.9);
+  }
+}
+/* Without motion: no hops, no rising marks — the cheeks and the marks just show for the moment. */
+:is(.motion-paused, .reduce-motion)
+  :is(
+    .office-pet.reacting,
+    .joy-host.reacting,
+    .office-pet.reacting .sprite-window,
+    .joy-host.reacting .sprite-window
+  ),
+:is(.motion-paused, .reduce-motion) .pet-joy :is(b, .joy-cheek) {
+  animation: none !important;
+}
+:is(.motion-paused, .reduce-motion) .pet-joy :is(b, .joy-cheek) {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.office-pet, .joy-host).reacting,
+  :is(.office-pet, .joy-host).reacting .sprite-window,
+  .pet-joy :is(b, .joy-cheek) {
+    animation: none !important;
+  }
+  .pet-joy :is(b, .joy-cheek) {
+    opacity: 1;
+  }
+}
+
 /* ───────── Motion budget: still pictures only ───────── */
 .motion-paused :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
