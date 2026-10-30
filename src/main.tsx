@@ -14,6 +14,7 @@ import { bootLocale, useI18n } from './lib/i18n';
 import { isWindows } from './lib/platform';
 import { startFrameClock } from './lib/frame-clock';
 import { bootReadingText } from './lib/useReadingText';
+import { bootGlass } from './lib/useGlass';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
@@ -55,6 +56,7 @@ function Crashed() {
 }
 bootLocale();
 bootReadingText();
+bootGlass();
 document.body.classList.toggle('is-windows', !!window.office && isWindows);
 // The office's own frame rate for every looping animation (see frame-clock.ts).
 startFrameClock();

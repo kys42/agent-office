@@ -25,6 +25,7 @@ const SECTION_CATEGORY = {
   text: 'appearance',
   dock: 'appearance',
   panels: 'appearance',
+  glass: 'appearance',
   office: 'office',
   helpers: 'office',
   spaces: 'spaces',

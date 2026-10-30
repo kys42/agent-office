@@ -947,6 +947,23 @@ body.is-windows .settings-window-bar {
 .text-choice-row > div:not(.segmented) {
   flex-basis: 220px;
 }
+/* Settings › Look › Window glass: a slider with its value beside it. */
+.glass-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.glass-control input[type='range'] {
+  width: 160px;
+  accent-color: var(--accent);
+}
+.glass-control output {
+  min-width: 3.2em;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--text-2);
+}
 .text-preview {
   margin: 4px 0 0;
   padding: 10px 12px;

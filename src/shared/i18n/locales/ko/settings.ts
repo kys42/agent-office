@@ -109,6 +109,16 @@ export const settings: Messages['settings'] = {
     preview: '미리 보기',
     previewText: '끝났어요. 로그인 흐름의 테스트 3개를 고쳤고 npm test가 통과해요.',
   },
+  glass: {
+    title: '창 유리',
+    level: '투명도',
+    hint: '업무 카드 팝업과 큰 사무실의 왼쪽 메뉴·오른쪽 칸이 얼마나 비쳐 보일지 정해요. 높을수록 뒤가 잘 보이고 글자는 덜 또렷해요.',
+    platformHint: '맥에서는 카드가 흐린 유리 대신 바탕화면이 그대로 비쳐요. 큰 사무실은 창의 유리 재질이 비쳐요. 윈도우의 큰 사무실은 창이 불투명해서 카드에만 적용돼요.',
+    value: (n: number) => `${n}%`,
+    off: '기본',
+    reset: '기본 모습으로',
+    resetHint: '설정하기 전의 모습(맥은 흐린 유리, 윈도우는 살짝 비치는 카드)으로 돌아가요.',
+  },
   panels: {
     title: '패널 폭',
     reset: '패널 폭 초기화',
