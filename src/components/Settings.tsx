@@ -1026,8 +1026,9 @@ export function Settings({
 }
 
 /**
- * The glass slider: moves live in this window, and saves once the hand stops (a drag would
- * otherwise write the preferences on every step). `null` is each platform's look from before.
+ * The glass slider: saves once the hand stops (a drag would otherwise write the preferences on
+ * every step); every window, this one too, follows the saved value. `null` is each platform's
+ * look from before.
  */
 function GlassSetting({
   level,
@@ -1041,14 +1042,29 @@ function GlassSetting({
   const id = useId();
   const [draft, setDraft] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  /** A value still waiting for its save: leaving the page saves it rather than dropping it. */
+  const pending = useRef<number | null>(null);
+  const save = useRef(onChange);
+  save.current = onChange;
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      if (pending.current !== null) save.current(pending.current);
+    },
+    [],
+  );
+  // The draft holds until the saved value comes back, so the slider never jumps back meanwhile.
+  useEffect(() => {
+    if (draft !== null && level === draft && pending.current === null) setDraft(null);
+  }, [level, draft]);
   const shown = draft ?? level;
   const move = (value: number) => {
     setDraft(value);
+    pending.current = value;
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
+      pending.current = null;
       onChange(value);
-      setDraft(null);
     }, 250);
   };
   return (
@@ -1085,6 +1101,7 @@ function GlassSetting({
             className="setting-action"
             onClick={() => {
               clearTimeout(timer.current);
+              pending.current = null;
               setDraft(null);
               onChange(null);
             }}
