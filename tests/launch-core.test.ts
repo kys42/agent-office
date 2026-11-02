@@ -435,12 +435,12 @@ test('every destination types the same agent words: tmux argv, Orca tab, Termina
   const tab = orcaSession(target);
   assert.equal(tab.fork, true);
   assert.equal(tab.alias, '갈래');
-  const typed = `'/usr/bin/env' '-u' 'CLAUDE_CONFIG_DIR' 'claude' '--session-id' '${sid}' '--fork-session' '--resume' '${ID}' '--' 'it'\\''s; ok\n둘째 줄'`;
+  const typed = `'/usr/bin/env' '-u' 'CLAUDE_CONFIG_DIR' 'claude' '--session-id' '${sid}' '--fork-session' '--resume' '${ID}' '--' 'it'"'"'s; ok\n둘째 줄'`;
   assert.equal(folderCommand(target, {}), `cd '${CWD}' && ${typed}`);
   // A folder with a quote stays one shell word.
   assert.equal(
     folderCommand({ ...resume, cwd: "/a b/it's" }, {}, '/opt/bin/claude'),
-    `cd '/a b/it'\\''s' && '/usr/bin/env' '-u' 'CLAUDE_CONFIG_DIR' '/opt/bin/claude' '--resume' '${ID}'`,
+    `cd '/a b/it'"'"'s' && '/usr/bin/env' '-u' 'CLAUDE_CONFIG_DIR' '/opt/bin/claude' '--resume' '${ID}'`,
   );
   const ran: string[][] = [];
   const terminal = terminalAppDestination({

@@ -267,11 +267,20 @@ try {
   await reopened.keyboard.press('Escape');
   await reopened.screenshot({ path: '.local/popup-position-and-pin.png' });
   await b.screenshot({ path: '.local/popup-pinned-colleague.png' });
+  // B is still pinned as the app quits: it comes back where it was.
+  const pinnedAt = await bounds(b);
   await app.close();
   app = await launch();
   const restarted = await app.firstWindow();
   await restarted.waitForFunction(() => !!window.office);
-  assert.equal(cardsCount(), 0, 'pinned windows are not automatically reopened on app restart');
+  await expect.poll(() => cardsCount(), { timeout: 15_000 }).toBe(1);
+  const back = app.windows().find((p) => p.url().endsWith('#card'));
+  await back.locator('.inspector-card').waitFor();
+  assert.deepEqual(await bounds(back), pinnedAt, 'a pinned card reopens where it was');
+  await expect(back.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'pinned');
+  // Closed by the person, it stays closed on the next start.
+  await back.evaluate(() => window.office.card('close')).catch(() => {});
+  await expect.poll(() => back.isClosed()).toBe(true);
   const [dock2] = await Promise.all([
     app.waitForEvent('window'),
     restarted.evaluate(() => window.office.window('mini')),
@@ -318,6 +327,7 @@ try {
       blurIsolation: true,
       draftIsolation: true,
       positionRestart: true,
+      pinnedRestore: true,
       positionOff: true,
       ipcIsolation: true,
       bookmarkFocus: true,

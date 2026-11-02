@@ -81,9 +81,7 @@ export const tmux = {
     "Orca made the tab but hasn't confirmed the start yet. It starts once you open Orca.",
   orcaReveal: 'Open Orca',
   orcaNotWorkspace:
-    'This folder is not an Orca workspace. Add the project in Orca first, or start it in tmux.',
-  orcaSubfolder: (root: string) =>
-    `This folder is inside the Orca workspace ${root}. Orca opens new tabs only at a workspace's own folder; start it in tmux instead.`,
+    'This folder is not in an Orca workspace on this Mac. Add the project in Orca first, or start it in tmux.',
   /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
   place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
   runningNotice: (place: string) =>

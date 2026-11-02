@@ -242,10 +242,24 @@ else {
       material = next;
       cards.setMaterial(next);
     };
+    // Cards pinned when the app last ran come back as their colleagues appear: each snapshot
+    // tries the ones still missing (a peer office still connecting, a collector still reading)
+    // for a few minutes of restoring; after that the missing are taken as gone. Not while screen
+    // sharing hides the office's content, nor with the setting off (they wait for either).
+    let restoreUntil = 0;
+    const restorePinned = (s: Snapshot) => {
+      if (!cards.restoring()) return;
+      if (s.preferences?.restorePinnedCards === false || s.preferences?.privacy) return;
+      restoreUntil ||= Date.now() + 5 * 60_000;
+      const known = new Set(s.sessions.flatMap((x) => [x.id, ...(x.resident?.sessionIds ?? [])]));
+      cards.restore((id) => known.has(id));
+      if (Date.now() > restoreUntil) cards.giveUp();
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
       hidePopups(s);
       followGlass(s);
+      restorePinned(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -255,6 +269,7 @@ else {
         followLanguage(delivery.latest!);
         hidePopups(delivery.latest!);
         followGlass(delivery.latest!);
+        restorePinned(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
@@ -1917,10 +1932,9 @@ function setupIPC() {
     let target: PromptTarget | null = null;
     try {
       const which = settingFor(open.request.kind);
-      const setting = (await answerSettings())[which];
-      if (setting === 'off') throw new TerminalInputError(t.off);
-      if (setting === 'unset') {
-        // The first answer of a kind asks once; the choice stays in the desktop profile.
+      if ((await answerSettings())[which] !== 'on') {
+        // Not on yet (never asked, or turned off): this press asks natively, and agreeing turns
+        // the kind on (kept in the desktop profile). Declining sends nothing and changes nothing.
         if ((await changeSetting(e, which, true))[which] !== 'on')
           return { status: 'cancelled', message: '' };
         // The dialog may have changed while the confirmation was open: the same call, or nothing.

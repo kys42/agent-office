@@ -80,26 +80,50 @@ export function shellWord(word: string): string {
 }
 
 /**
- * A single-quoted shell word for a value that may hold spaces or quotes (a folder path). An
- * embedded `'` closes, escapes and reopens the quote; control characters are refused.
+ * Single quotes around any text: an embedded `'` closes the quote, is written as `"'"` and
+ * reopens it. The shell reads `'\''` the same, but Orca reads the command's leading words with a
+ * tokenizer that knows quotes and not `\` (to find the agent behind `env`): with `"'"` it splits
+ * the words exactly as the shell does.
+ */
+const quoted = (text: string) => `'${text.replace(/'/g, `'"'"'`)}'`;
+
+/**
+ * A single-quoted shell word for a value that may hold spaces or quotes (a folder path); control
+ * characters are refused.
  */
 export function shellQuote(value: string): string {
   if (!value || CONTROL.test(value)) throw new Error(m().tmux.unsupported);
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+  return quoted(value);
+}
+
+/**
+ * `env`'s own option that starts the agent in `folder` (`-C<folder>`, attached) as ONE word, so
+ * Orca skips it as an `env` option and still finds the agent after it.
+ */
+export function chdirWord(folder: string): string {
+  if (!folder || !path.isAbsolute(folder) || CONTROL.test(folder))
+    throw new Error(m().tmux.folderMissing);
+  return quoted(`-C${folder}`);
 }
 
 /**
  * The agent's home as Agent Office sees it, so the new tab resumes from the same place: set to
  * Agent Office's value, or unset (the default home) when Agent Office has none, whatever the
- * login shell exports. The same rule as a tmux launch.
+ * login shell exports. The same rule as a tmux launch. `chdir`: the folder the agent starts in
+ * when it is not the tab's own (`env -C`, an option, so before any `NAME=value`).
  */
-function homeWords(provider: Session['provider'], env: NodeJS.ProcessEnv): string[] {
+function homeWords(
+  provider: Session['provider'],
+  env: NodeJS.ProcessEnv,
+  chdir?: string,
+): string[] {
   const name = agentLauncher(provider).home;
   if (!name) throw new Error(m().tmux.orcaUnsupported);
+  const into = chdir ? [chdirWord(chdir)] : [];
   const value = env[name];
-  if (!value) return ['/usr/bin/env', '-u', name].map(shellWord);
+  if (!value) return [...['/usr/bin/env', '-u', name].map(shellWord), ...into];
   if (!path.isAbsolute(value)) throw new Error(m().tmux.unsupported);
-  return [shellWord('/usr/bin/env'), shellQuote(`${name}=${value}`)];
+  return [shellWord('/usr/bin/env'), ...into, shellQuote(`${name}=${value}`)];
 }
 
 const kindOf = (s: Pick<OrcaLaunchSession, 'fresh' | 'fork'>) =>
@@ -108,7 +132,9 @@ const kindOf = (s: Pick<OrcaLaunchSession, 'fresh' | 'fork'>) =>
 /**
  * The command a login shell runs for this launch, as single-quoted words: the agent's home, the
  * agent (`executable` when given), its words from the shared adapter and the first prompt.
- * Shared by an Orca tab, a Terminal.app window and a copied command.
+ * Shared by an Orca tab, a Terminal.app window and a copied command. `chdir`: start the agent in
+ * that folder rather than the shell's own (an Orca tab opens at its worktree's root; the
+ * conversation may live in a folder inside it).
  */
 export function shellCommand(
   s: Pick<
@@ -123,6 +149,7 @@ export function shellCommand(
     | 'executable'
   >,
   env: NodeJS.ProcessEnv = process.env,
+  chdir?: string,
 ): string {
   // The resolved CLI, as a tmux launch runs it; without one the login shell looks the agent up
   // on its own PATH, as if the person typed it there.
@@ -130,17 +157,30 @@ export function shellCommand(
   const agent = s.executable ? shellQuote(s.executable) : shellWord(s.provider);
   const words = agentWords({ ...s, kind: kindOf(s) });
   return [
-    ...homeWords(s.provider, env),
+    ...homeWords(s.provider, env, chdir),
     agent,
     ...words.args.map(shellWord),
-    // The prompt keeps its line breaks: only `'` is closed, escaped and reopened.
-    ...(words.message !== undefined
-      ? [shellWord('--'), `'${words.message.replace(/'/g, `'\\''`)}'`]
-      : []),
+    // The prompt keeps its line breaks: only `'` is closed, quoted and reopened.
+    ...(words.message !== undefined ? [shellWord('--'), quoted(words.message)] : []),
   ].join(' ');
 }
 
-function describe(s: OrcaLaunchSession, platform: string, env: NodeJS.ProcessEnv = process.env) {
+/** Folder boundaries only: `/a/bc` is not inside `/a/b`. */
+const inside = (root: string, folder: string) =>
+  folder.startsWith(root === path.sep ? root : root + path.sep);
+
+/**
+ * The launch in Orca's terms. `cwd`: the conversation's folder; `root`: the Orca worktree the tab
+ * opens in (`root` given: the worktree holding `cwd`, else `cwd` itself). Orca cannot open a tab
+ * anywhere but at a worktree's root, so a conversation in a folder inside it starts its agent
+ * there through `env -C` (`chdirWord`), every other word unchanged.
+ */
+function describe(
+  s: OrcaLaunchSession,
+  platform: string,
+  env: NodeJS.ProcessEnv = process.env,
+  root?: string,
+) {
   if (
     platform !== 'darwin' ||
     s.remote ||
@@ -150,29 +190,46 @@ function describe(s: OrcaLaunchSession, platform: string, env: NodeJS.ProcessEnv
     throw new Error(m().tmux.orcaUnsupported);
   if (!s.cwd || !path.isAbsolute(s.cwd) || CONTROL.test(s.cwd))
     throw new Error(m().tmux.folderMissing);
-  const command = shellCommand(s, env);
+  const cwd = path.resolve(s.cwd);
+  const worktree = root === undefined ? cwd : path.resolve(root);
+  if (
+    root !== undefined &&
+    (!path.isAbsolute(root) || CONTROL.test(root) || (worktree !== cwd && !inside(worktree, cwd)))
+  )
+    throw new Error(m().tmux.orcaNotWorkspace);
+  const command = shellCommand(s, env, worktree === cwd ? undefined : cwd);
   const shown = (s.alias || s.title || '')
     .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   const name = shown.slice(0, 60) || `${s.provider} ${s.nativeId.slice(0, 8)}`;
-  return { cwd: path.resolve(s.cwd), command, name };
+  return { cwd, root: worktree, command, name };
 }
 
-/** The `orca` arguments for the launch; `--flag=value` so no value can pose as an option. */
+/**
+ * The `orca` arguments for the launch; `--flag=value` so no value can pose as an option. `root`:
+ * the Orca worktree holding the conversation's folder when that folder is inside it, not its own.
+ */
 export function orcaCreateArgs(
   s: OrcaLaunchSession,
   platform = 'darwin',
   env: NodeJS.ProcessEnv = process.env,
+  root?: string,
 ): string[] {
-  const { cwd, command, name } = describe(s, platform, env);
+  return createArgs(describe(s, platform, env, root), s.background);
+}
+
+function createArgs(
+  { root, command, name }: { root: string; command: string; name: string },
+  background?: boolean,
+): string[] {
   return [
     'terminal',
     'create',
-    `--worktree=path:${cwd}`,
+    `--worktree=path:${root}`,
     `--title=${name}`,
     `--command=${command}`,
-    ...(s.background ? [] : ['--focus']),
+    ...(background ? [] : ['--focus']),
     '--json',
   ];
 }
@@ -241,8 +298,8 @@ export function classifyOrcaCreate(stdout: string | undefined, error?: unknown):
 
 /**
  * Whether the folder is a registered workspace on this Orca host: `local` yes; `subfolder` when
- * it lies inside one (Orca opens tabs only at a workspace's own folder); `none` when no local
- * workspace holds it; `unknown` when Orca did not answer.
+ * it lies inside one (`root`, the deepest: the tab opens there and the agent starts in the
+ * folder); `none` when no local workspace holds it; `unknown` when Orca did not answer.
  */
 export type WorkspaceCheck =
   { kind: 'local' } | { kind: 'subfolder'; root: string } | { kind: 'none' } | { kind: 'unknown' };
@@ -265,10 +322,14 @@ interface OrcaTerminalRow {
   worktreePath?: unknown;
 }
 
-/** What an Orca probe carries to its start. */
+/**
+ * What an Orca probe carries to its start: `info.cwd` the conversation's folder, `info.root` the
+ * worktree the tab opens in (that folder, or the worktree holding it), `info.command` what the
+ * tab types (the confirmation shows it as is).
+ */
 export interface OrcaPlan {
   session: OrcaLaunchSession;
-  info: { cwd: string; command: string; name: string };
+  info: { cwd: string; root: string; command: string; name: string };
 }
 
 const defaults = (orca: () => string): OrcaLaunchDeps => ({
@@ -301,8 +362,10 @@ export class OrcaLaunch {
     try {
       const result = await this.json(['worktree', 'show', `--worktree=path:${cwd}`, '--json']);
       const w = (result?.result as { worktree?: OrcaWorktree } | undefined)?.worktree;
-      if (result?.ok === true && w)
-        return w.path === cwd && isLocal(w) ? { kind: 'local' } : { kind: 'none' };
+      // Its own folder, here or on another host. Another worktree's answer (one holding the
+      // folder) leaves it to the list below, which names the deepest local one.
+      if (result?.ok === true && w && w.path === cwd)
+        return isLocal(w) ? { kind: 'local' } : { kind: 'none' };
     } catch {
       /* Not a workspace of its own, or Orca did not answer: the list below tells which. */
     }
@@ -316,7 +379,7 @@ export class OrcaLaunch {
         const folder = path.resolve(w.path);
         // Its own folder that `worktree show` did not confirm: Orca could not tell, nor can we.
         if (folder === cwd) return { kind: 'unknown' };
-        if (cwd.startsWith(folder + path.sep) && folder.length > root.length) root = folder;
+        if (inside(folder, cwd) && folder.length > root.length) root = folder;
       }
       return root ? { kind: 'subfolder', root } : { kind: 'none' };
     } catch {
@@ -400,7 +463,7 @@ export class OrcaLaunch {
    * person opened meanwhile, so it is never adopted and the start stays unconfirmed.
    */
   private async adopt(
-    info: { cwd: string; name: string },
+    info: { root: string; name: string },
     before: { handles: Set<string>; complete: boolean },
   ): Promise<string | undefined> {
     // A terminal missing from a cut-short earlier list is not new: titles repeat (reopening the
@@ -409,7 +472,7 @@ export class OrcaLaunch {
     const wait = this.deps.wait ?? ((ms) => new Promise<void>((done) => setTimeout(done, ms)));
     for (let look = 0; look < ADOPT_LOOKS; look++) {
       await wait(ADOPT_EVERY);
-      const titled = (await this.terminals(info.cwd)).rows.find(
+      const titled = (await this.terminals(info.root)).rows.find(
         (t) => !before.handles.has(t.handle) && t.title === info.name,
       );
       if (titled) return titled.handle;
@@ -418,7 +481,8 @@ export class OrcaLaunch {
   }
   /**
    * Read-only, for the launch pipeline: whether this folder can take a new tab now, with the
-   * reason when not (Orca missing, stopped or slow; not a workspace; a subfolder). `fresh`
+   * reason when not (Orca missing, stopped or slow; in no local workspace). A folder inside a
+   * workspace takes a tab at the workspace, its agent started in the folder. `fresh`
    * asks Orca again instead of its answer of the last 5 s. `workspace`: the reason is the
    * folder (the older status shows only that one).
    */
@@ -430,19 +494,21 @@ export class OrcaLaunch {
     const l = m().launch;
     try {
       const session = await this.resolved(s);
-      const info = describe(session, this.deps.platform, this.deps.env);
+      const own = describe(session, this.deps.platform, this.deps.env);
       const unavailable = (reason: string) => ({ available: false, reason });
-      if (!(await this.deps.directory(info.cwd))) return unavailable(t.folderMissing);
+      if (!(await this.deps.directory(own.cwd))) return unavailable(t.folderMissing);
       const runtime = await this.runtime(fresh);
       if (runtime !== 'ready')
         return unavailable(
           runtime === 'missing' ? l.orcaMissing : runtime === 'slow' ? l.orcaSlow : l.orcaStopped,
         );
       const check = await this.workspace(session);
-      if (check.kind === 'subfolder')
-        return { ...unavailable(t.orcaSubfolder(check.root)), workspace: true };
       if (check.kind === 'none') return { ...unavailable(t.orcaNotWorkspace), workspace: true };
-      if (check.kind !== 'local') return unavailable(l.orcaUnknownWorkspace);
+      if (check.kind === 'unknown') return unavailable(l.orcaUnknownWorkspace);
+      const info =
+        check.kind === 'subfolder'
+          ? describe(session, this.deps.platform, this.deps.env, check.root)
+          : own;
       return { available: true, command: info.command, detail: { session, info } };
     } catch (error) {
       return { available: false, reason: (error as Error).message };
@@ -468,7 +534,7 @@ export class OrcaLaunch {
   ): Promise<DestinationStart<OrcaLaunchInfo>> {
     const t = m().tmux;
     const { session, info } = context.probe.detail!;
-    const before = await this.terminals(info.cwd);
+    const before = await this.terminals(info.root);
     // Last moment before create: the listing above may take seconds while access is revoked.
     context.authorized?.();
     let out: string | undefined;
@@ -476,7 +542,8 @@ export class OrcaLaunch {
     try {
       out = await this.deps.run(
         this.deps.orca(),
-        orcaCreateArgs(session, this.deps.platform, this.deps.env),
+        // The very command the confirmation showed, in the worktree the probe found.
+        createArgs(info, session.background),
         { timeout: CREATE_TIMEOUT, env: localOrcaEnv(this.deps.env ?? process.env) },
       );
     } catch (error) {

@@ -370,6 +370,26 @@ test("the card's main action jumps when there is a terminal, and opens the sheet
   await expect(page.getByText('명령을 복사했어요. 터미널에서 실행하세요.')).toBeVisible();
 });
 
+test('a conversation already running somewhere offers a fork, not continuing it again', async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 380, height: 480 });
+  await page.evaluate(() => {
+    const w = window as any;
+    w.terminals = {
+      'demo:0': { kind: 'tmux', label: 'work:1', status: 'idle', canSend: true, canFocus: true },
+    };
+    w.fixture.version++;
+    w.publish(structuredClone(w.fixture));
+  });
+  const actions = page.locator('.card-actions');
+  await expect(actions.getByRole('button', { name: '복제해서 새로' })).toHaveCount(1);
+  await expect(actions.getByRole('button', { name: '터미널에서 이어가기' })).toHaveCount(0);
+  await actions.getByRole('button', { name: '복제해서 새로' }).click();
+  const modal = page.getByRole('dialog', { name: '세션 시작' });
+  await expect(kind(modal, '복제해서 새로')).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('remote colleagues never offer a local launch', async ({ page }) => {
   await setup(page, '/#card');
   await page.evaluate(() => {
@@ -846,7 +866,7 @@ for (const colorScheme of ['light', 'dark'] as const)
         orca: {
           available: false,
           reason:
-            '이 폴더는 Orca 작업 공간(/projects) 안의 하위 폴더예요. Orca는 작업 공간 폴더에서만 새 탭을 열 수 있어요. tmux로 띄워주세요.',
+            '이 폴더는 이 Mac의 Orca 작업 공간 안에 있지 않아요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
         },
       },
     });

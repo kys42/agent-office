@@ -10,6 +10,7 @@ import {
   Pin,
   Folder,
   GitBranch,
+  GitFork,
   Clock,
   Copy,
   ChevronLeft,
@@ -1128,6 +1129,8 @@ export function Inspector({
                 {t.terminal.jumpTo(focusName(live))}
               </button>
             )}
+            {/* Already running where the main action goes: continuing it again is not offered,
+                a fork of it is. */}
             {canLaunch && !sheetFallback && (
               <button
                 className="card-action"
@@ -1135,14 +1138,14 @@ export function Inspector({
                 disabled={privacy}
                 onClick={() => setLaunching(true)}
               >
-                <Terminal size={13} />
-                {t.launchSheet.cardContinue}
+                {live?.canFocus ? <GitFork size={13} /> : <Terminal size={13} />}
+                {live?.canFocus ? t.launchSheet.cardFork : t.launchSheet.cardContinue}
               </button>
             )}
             {launching && canLaunch && (
               <LaunchSheet
                 key={s.id}
-                entry={{ from: 'card', session: s }}
+                entry={{ from: 'card', session: s, kind: live?.canFocus ? 'fork' : 'resume' }}
                 privacy={privacy}
                 notify={notify}
                 onClose={() => setLaunching(false)}

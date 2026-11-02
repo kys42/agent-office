@@ -56,6 +56,7 @@ import {
   MessageSquareOff,
   WandSparkles,
   type LucideIcon,
+  Pin,
 } from 'lucide-react';
 import type {
   AnswerSettings,
@@ -435,6 +436,25 @@ export function Settings({
               ))}
           </select>
         </div>
+        {/* Desktop: popup cards are the app's windows. */}
+        {isDesktop && (
+          <div className="setting-row">
+            <Pin size={18} />
+            <div>
+              <b>{s.reading.restorePinned}</b>
+              <p>{s.reading.restorePinnedHint}</p>
+            </div>
+            <Toggle
+              checked={snapshot.preferences?.restorePinnedCards !== false}
+              label={s.reading.restorePinned}
+              onChange={() =>
+                onPrefs({
+                  restorePinnedCards: snapshot.preferences?.restorePinnedCards === false,
+                })
+              }
+            />
+          </div>
+        )}
       </section>
       {isDesktop && !demo && (
         <section className="settings-section" data-guide-section="notifications" tabIndex={-1}>
