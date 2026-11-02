@@ -185,7 +185,7 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
   await expect(pet).toBeVisible();
   // The pill counts the office: someone waits for the person.
-  await expect(pet.locator('.dock-pet-tally .tally-attention')).toBeVisible();
+  await expect(page.locator('.dock-pet-tally .tally-attention')).toBeVisible();
   const desks = page.locator('.desk-row [data-station-id]');
   await expect(desks).toHaveCount(0);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });

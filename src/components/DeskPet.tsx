@@ -1,5 +1,5 @@
 import { focusLine } from '../shared/terminal-target';
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -94,9 +94,39 @@ export function DeskPet({
   // the lead), or the one the person picked with its arrows — until someone else speaks.
   const [chosen, setChosen] = useState<string | null>(null);
   const spoke = speaker?.notice.id ?? null;
+  // Which way the pet turned to someone else (arrows); a new speaker just pops in.
+  const [enter, setEnter] = useState<'next' | 'prev' | null>(null);
   useEffect(() => {
-    if (spoke) setChosen(null);
+    if (!spoke) return;
+    setChosen(null);
+    setEnter(null);
   }, [spoke]);
+  // Hovering a number in the pill lists who it counts; a name opens that colleague's card.
+  const [listed, setListed] = useState<(typeof TALLY)[number] | null>(null);
+  const unlist = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const list = (group: (typeof TALLY)[number] | null) => {
+    clearTimeout(unlist.current);
+    setListed(group);
+  };
+  // A pointer only passing over a number (or resting there as the pet appears) does not open
+  // its list: it opens after a short stay, or at once on a click or Enter.
+  const listSoon = (group: (typeof TALLY)[number]) => {
+    clearTimeout(unlist.current);
+    unlist.current = setTimeout(() => setListed(group), 250);
+  };
+  // Leaving the number for the list (or back) must not close it on the way.
+  const listLater = () => {
+    clearTimeout(unlist.current);
+    unlist.current = setTimeout(() => setListed(null), 200);
+  };
+  useEffect(() => () => clearTimeout(unlist.current), []);
+  // The pill counts every desk shown, helpers too (model.counts): list the same ones.
+  const members = listed
+    ? model.seats
+        .filter((v) => !v.veiled)
+        .flatMap((v) => [v, ...v.helpers.filter((h) => !h.veiled)])
+        .filter((v) => v.group === listed)
+    : [];
   // Laid out once per change of who is drawn (not per pointer move), as the row does.
   const all = useMemo(() => petChoices(model), [model.scene]);
   const choices = status ? [] : all;
@@ -108,7 +138,9 @@ export function DeskPet({
   const place = choices.findIndex((v) => v.session.id === at) + 1;
   const step = (by: -1 | 1) => {
     const next = petStep(choices, at ?? undefined, by);
-    if (next) setChosen(next.session.id);
+    if (!next) return;
+    setChosen(next.session.id);
+    setEnter(by > 0 ? 'next' : 'prev');
   };
   const [hover, setHover] = useState(false);
   // A bubble closed while pointing stays closed until the pointer leaves (as on a desk), even
@@ -136,7 +168,8 @@ export function DeskPet({
   // Pointing at the pet shows what its colleague says — or the last thing it said, as a desk
   // does; otherwise it speaks only what just arrived.
   // An unfolded or replying bubble (a peek too) stays without the pointer, as on a desk.
-  const pointing = (hover || expanded || replying) && !closed;
+  // A list open from the pill takes the view: no peeking bubble behind it.
+  const pointing = (hover || expanded || replying) && !closed && !listed;
   const reveal = pointing || expanded || replying;
   const speech =
     view && said
@@ -197,6 +230,19 @@ export function DeskPet({
   const lead = view ?? pet.lead;
   const joy = reactionOf(lead?.session.id);
   const dark = !status && !speaks && !!lead?.quota && dimsDesk(lead.session, lead.pose.working);
+  // Like a desk of the row: its colleague's card pops up right here, on the conversation. The
+  // row and the floor unfold from their own button; an office with nobody in it still unfolds.
+  const activate = (from: Element) => {
+    if (view)
+      void openColleague(bubble?.sessionId ?? view.session.id, {
+        anchor: from.closest('.dock-pet-anchor'),
+        news: false,
+      });
+    else onExpand();
+  };
+  const listId = useId();
+  // The slide plays only for the person's own turn (arrows), never later on its own.
+  const entering = enter && shown.chosen && !speaks ? enter : null;
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
@@ -208,7 +254,7 @@ export function DeskPet({
   return (
     <div className="desk-pet-stage" style={PET_SIZE}>
       <div
-        className="dock-pet-anchor"
+        className={`dock-pet-anchor ${listed ? 'is-listing' : ''}`}
         // Only what is drawn counts: the window's see-through edges let the pointer pass by.
         onMouseOver={(e) => {
           if (e.target instanceof Element && e.target.closest('[data-solid]')) setHover(true);
@@ -421,22 +467,27 @@ export function DeskPet({
               dragged.current = false;
               return;
             }
-            // Like a desk of the row: its colleague's card pops up right here, on the
-            // conversation. The row and the floor unfold from their own button; an office with
-            // nobody in it still unfolds.
-            if (view)
-              void openColleague(bubble?.sessionId ?? view.session.id, {
-                anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                news: false,
-              });
-            else onExpand();
+            activate(e.currentTarget);
           }}
         >
           {/* While another colleague speaks, the pill still says who is waiting. */}
           {pet.calling && !speaks && <span className="dock-pet-bang">!</span>}
           {/* Re-keyed per notice so a new arrival replays the hop. */}
+          {/* A quick puff when the person turns the pet to someone, or a new colleague speaks. */}
+          {(entering || speaks) && (
+            <span
+              className="pet-swap-puff"
+              key={`puff:${speaks ? speaker.notice.id : id}`}
+              aria-hidden="true"
+            >
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
           <span
-            className={`dock-pet-body joy-host ${joyClass(joy)}`}
+            className={`dock-pet-body joy-host ${entering ? `enter-${entering}` : ''} ${joyClass(joy)}`}
             key={speaks ? speaker.notice.id : (id ?? 'pet')}
           >
             <Sprite
@@ -456,24 +507,106 @@ export function DeskPet({
           {hover && place > 0 && choices.length > 1 && (
             <span className="dock-pet-place">{d.place(place, choices.length)}</span>
           )}
-          {/* Who is doing what at a glance: a coloured dot and a number per group (none at 0). */}
+        </button>
+        {/* Who is doing what at a glance: a coloured dot and a number per group (none at 0).
+            Its own controls under the pet, outside the pet's button (which drags and opens the
+            card): each number is a button that lists who it counts, by mouse or keyboard. */}
+        <div
+          className={`dock-pet-pillbar tone-${status ? 'resting' : pet.group}`}
+          data-solid
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setListed(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || !listed) return;
+            // Close the list first; the dock folds only on an Esc with nothing open.
+            e.preventDefault();
+            e.stopPropagation();
+            setListed(null);
+            e.currentTarget.querySelector<HTMLElement>(`.tally-${listed}`)?.focus();
+          }}
+        >
+          {listed && members.length > 0 && (
+            <div
+              className={`dock-pet-list tally-${listed}`}
+              id={listId}
+              role="group"
+              aria-label={`${TRIAGE_LABELS[listed]} ${members.length}`}
+              onMouseEnter={() => list(listed)}
+              onMouseLeave={listLater}
+            >
+              <b>
+                <i />
+                {TRIAGE_LABELS[listed]} {members.length}
+              </b>
+              {members.map((v) => {
+                const name = residentLabel(v.session, privacy);
+                return (
+                  <button
+                    key={v.session.id}
+                    type="button"
+                    aria-label={d.openCardOf(name.name)}
+                    onClick={(e) => {
+                      void openColleague(v.session.id, {
+                        anchor: e.currentTarget.closest('.dock-pet-anchor'),
+                        news: false,
+                      });
+                      // The pet turns to that colleague too, when it can stand for it.
+                      if (choices.some((c) => c.session.id === v.session.id)) {
+                        setChosen(v.session.id);
+                        setEnter(null);
+                      }
+                      setListed(null);
+                    }}
+                  >
+                    <Sprite
+                      session={v.session}
+                      provider={v.session.provider}
+                      mood={v.pose.mood}
+                      size={22}
+                    />
+                    <span className="pet-list-name">{name.name}</span>
+                    <small>{MOODS[v.session.status].label}</small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {tally.length ? (
-            <span className="dock-pet-pill dock-pet-tally" title={tallyWords}>
+            <div className="dock-pet-pill dock-pet-tally" role="group" aria-label={tallyWords}>
               {tally.map((g) => (
-                <span key={g.group} className={`tally-${g.group}`}>
+                <button
+                  key={g.group}
+                  type="button"
+                  className={listed === g.group ? `tally-${g.group} is-listed` : `tally-${g.group}`}
+                  title={`${TRIAGE_LABELS[g.group]} ${g.count}`}
+                  aria-label={d.listOf(TRIAGE_LABELS[g.group], g.count)}
+                  aria-expanded={listed === g.group}
+                  aria-controls={listed === g.group ? listId : undefined}
+                  onMouseEnter={() => (listed ? list(g.group) : listSoon(g.group))}
+                  onMouseLeave={listLater}
+                  // Opens (a hover may already have): Esc, leaving or another number closes it.
+                  onClick={() => list(g.group)}
+                >
                   <i />
                   {g.count}
-                </span>
+                </button>
               ))}
-            </span>
+            </div>
           ) : (
-            <span className="dock-pet-pill">
+            // Nobody counted (still loading, or all resting): the pill does what the pet does.
+            <button
+              type="button"
+              className="dock-pet-pill"
+              aria-label={d.aria(label, count)}
+              onClick={(e) => activate(e.currentTarget)}
+            >
               <i />
               {label}
               {count !== null && <b>{count}</b>}
-            </span>
+            </button>
           )}
-        </button>
+        </div>
       </div>
     </div>
   );

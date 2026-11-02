@@ -298,12 +298,15 @@ export function petSummary(model: OfficeModel) {
 
 /**
  * Who the pet can stand for, in the desk row's order (zones side by side): the colleagues the
- * scene draws, helpers left out.
+ * scene draws, helpers left out — and only those its pill counts (waiting, results, at work,
+ * standing by), so the arrows skip whoever rests. A quiet office, all resting, keeps everyone.
  */
 export function petChoices(model: OfficeModel): ResidentView[] {
-  return layoutRow(model.scene)
+  const drawn = layoutRow(model.scene)
     .zones.flatMap((z) => z.stations.map((st) => model.view(st.id)))
     .filter((v): v is ResidentView => !!v && !v.veiled && !v.session.attachedTo);
+  const busy = drawn.filter((v) => v.group !== 'resting');
+  return busy.length ? busy : drawn;
 }
 
 /**
