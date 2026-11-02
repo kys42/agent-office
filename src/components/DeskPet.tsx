@@ -108,6 +108,12 @@ export function DeskPet({
     clearTimeout(unlist.current);
     setListed(group);
   };
+  // A pointer only passing over a number (or resting there as the pet appears) does not open
+  // its list: it opens after a short stay, or at once on a click or Enter.
+  const listSoon = (group: (typeof TALLY)[number]) => {
+    clearTimeout(unlist.current);
+    unlist.current = setTimeout(() => setListed(group), 250);
+  };
   // Leaving the number for the list (or back) must not close it on the way.
   const listLater = () => {
     clearTimeout(unlist.current);
@@ -577,7 +583,7 @@ export function DeskPet({
                   aria-label={d.listOf(TRIAGE_LABELS[g.group], g.count)}
                   aria-expanded={listed === g.group}
                   aria-controls={listed === g.group ? listId : undefined}
-                  onMouseEnter={() => list(g.group)}
+                  onMouseEnter={() => (listed ? list(g.group) : listSoon(g.group))}
                   onMouseLeave={listLater}
                   // Opens (a hover may already have): Esc, leaving or another number closes it.
                   onClick={() => list(g.group)}

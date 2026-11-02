@@ -347,9 +347,9 @@ body.dock-mode {
   font-size: 10px;
   color: var(--text-3);
 }
-/* While a list is open the pet's tools, arrows and bubble step aside. */
-.dock-pet-anchor.is-listing
-  :is(.dock-pet-tools, .dock-pet-actions, .dock-pet-nav, .dock-pet-speech) {
+/* While a list is open the bubble steps aside (the tools stay: the dock folds and unfolds from
+   there, whatever is listed). */
+.dock-pet-anchor.is-listing .dock-pet-speech {
   visibility: hidden;
 }
 /* Turning to another colleague: it slides in from the side the arrow points to, with a puff. */
