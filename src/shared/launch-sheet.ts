@@ -203,10 +203,13 @@ export function duplicateView(
   if (!check || check.state === 'none') return { notice: '', tone: 'none', blocks: false };
   if (check.state === 'unknown') return { notice: t.unknownNotice, tone: 'caution', blocks: false };
   const place = t.place[check.where];
-  const inOwnTmux = check.where === 'tmux' && !!own;
-  const copy = inOwnTmux ? { copy: own } : {};
   const openTmux = opens.includes('tmux') ? ('tmux' as const) : undefined;
   if (check.state === 'running') {
+    // Main verified it runs in the own session's pane: open that session (or copy its attach
+    // command). Otherwise the verified terminal it was found in is jumped to: a live own pane
+    // may show another conversation (after `/clear` or `/new`).
+    const inOwnTmux = !!check.inOwnTmux && !!own;
+    const copy = inOwnTmux ? { copy: own } : {};
     const go: GoThere | undefined = inOwnTmux ? openTmux : 'jump';
     return {
       notice: t.runningNotice(place),
@@ -223,6 +226,8 @@ export function duplicateView(
       reveal: check.where === 'orca',
       blocks: true,
     };
+  // Open in the own tmux session (agent not verified): that session's way in, as it is.
+  const copy = check.where === 'tmux' && own ? { copy: own } : {};
   const go: GoThere | undefined =
     check.where === 'orca' && opens.includes('orca')
       ? 'orca-tab'

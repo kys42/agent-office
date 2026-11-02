@@ -1043,7 +1043,12 @@ export type DuplicateCheck =
    * (a Terminal window, an Orca tab) and the agent not seen running yet.
    */
   | { state: 'open'; where: LaunchPlace; pending?: true; starting?: true }
-  | { state: 'running'; where: LaunchPlace };
+  /**
+   * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
+   * this conversation (main matched the terminal it found to that session's panes). Without
+   * it the conversation may run elsewhere while the own pane shows another one.
+   */
+  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true };
 export interface OrcaLaunchInfo {
   available: boolean;
   /** Set by `status`: whether this conversation already runs or is open somewhere. */

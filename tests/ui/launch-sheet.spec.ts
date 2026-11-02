@@ -584,7 +584,7 @@ for (const opens of [['orca', 'tmux'], []])
       { width: 760, height: 900 },
       {
         support: { supported: true, opens },
-        duplicate: { resume: { state: 'running', where: 'tmux' } },
+        duplicate: { resume: { state: 'running', where: 'tmux', inOwnTmux: true } },
         probes: { tmux: { available: true, running: true, command: attach } },
       },
     );
@@ -610,6 +610,28 @@ for (const opens of [['orca', 'tmux'], []])
     }
     expect(await read(page, 'jumps')).toEqual([]);
   });
+
+test('running in another tmux pane while the own pane lives on jumps to the verified terminal', async ({
+  page,
+}) => {
+  // After /clear the app's own pane shows another conversation: main did not match the
+  // verified terminal to it, so only the jump is offered, never the own session.
+  await setup(
+    page,
+    '/#card',
+    { width: 760, height: 900 },
+    {
+      duplicate: { resume: { state: 'running', where: 'tmux' } },
+      probes: { tmux: { available: true, running: true, command: 'tmux attach -t =own' } },
+    },
+  );
+  const modal = await openCard(page);
+  await expect(modal.locator('.launch-actions-main button')).toHaveText(['그곳으로 이동']);
+  await modal.getByRole('button', { name: '그곳으로 이동' }).click();
+  await expect(modal).toHaveCount(0);
+  expect(await read(page, 'jumps')).toEqual(['demo:0']);
+  expect((await read(page, 'launches')).filter((l: any) => l.action === 'open')).toEqual([]);
+});
 
 for (const route of ['/#card', '/'])
   test(`where no destination can ever work (Windows) ${route} offers no launch sheet`, async ({

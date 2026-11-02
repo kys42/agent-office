@@ -1111,9 +1111,9 @@ function setupIPC() {
           },
           ownTmux: async () => {
             try {
-              return (await tmuxResume.status(session)).running
-                ? { kind: 'found', terminal: null }
-                : { kind: 'none' };
+              // Its panes too: a verified agent terminal in one of them runs it there.
+              const own = await tmuxResume.ownPanes(session);
+              return own ? { kind: 'found', terminal: own.at } : { kind: 'none' };
             } catch (error) {
               // No tmux installed: there is no own session.
               if ((error as Error).message === m().tmux.missing) return { kind: 'none' };

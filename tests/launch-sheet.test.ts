@@ -162,10 +162,10 @@ test('the duplicate check: running only goes there, an unconfirmed start only wa
   assert.equal(duplicateView({ state: 'open', where: 'orca' }, ['tmux']).go, undefined);
   assert.equal(duplicateView({ state: 'open', where: 'other' }).go, undefined);
   assert.equal(duplicateView({ state: 'unknown' }).blocks, false);
-  // In the app's own detached tmux session there is no terminal to jump to: it opens in
-  // Terminal where `open` works (macOS), and its attach command can always be copied (Linux).
+  // Main verified it runs in the app's own detached tmux session: no terminal to jump to, so it
+  // opens in Terminal where `open` works (macOS), and its attach command can be copied (Linux).
   const own = 'tmux -L agent-office attach -t =office-claude';
-  const runningTmux = { state: 'running', where: 'tmux' } as const;
+  const runningTmux = { state: 'running', where: 'tmux', inOwnTmux: true } as const;
   assert.deepEqual(duplicateActions(duplicateView(runningTmux, ['tmux'], own)), [
     { kind: 'go', go: 'tmux' },
     { kind: 'copy-command', command: own },
@@ -178,6 +178,14 @@ test('the duplicate check: running only goes there, an unconfirmed start only wa
   assert.deepEqual(duplicateActions(duplicateView(runningTmux, [], undefined)), [
     { kind: 'go', go: 'jump' },
   ]);
+  // Running in tmux, and the own pane alive, but not verified to be the same: after `/clear`
+  // or `/new` the own pane shows another conversation. The verified terminal is jumped to and
+  // the own session is not offered.
+  for (const opens of [['tmux'], []] as const)
+    assert.deepEqual(
+      duplicateActions(duplicateView({ state: 'running', where: 'tmux' }, opens, own)),
+      [{ kind: 'go', go: 'jump' }],
+    );
   assert.deepEqual(duplicateActions(duplicateView({ state: 'open', where: 'tmux' }, [], own)), [
     { kind: 'copy-command', command: own },
   ]);
