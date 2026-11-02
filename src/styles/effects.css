@@ -717,7 +717,8 @@
 :is(.office-pet, .desk-pet, .pet-preview-body):hover {
   cursor: var(--pat-cursor);
 }
-:is(.office-pet, .desk-pet):active,
+/* Only pets that can be dragged grab (a still pet just gets patted). */
+:is(.office-pet[draggable='true'], .office-pet[data-desk-handle], .desk-pet):active,
 .desk-station.is-desk-dragging .office-pet,
 .is-dragging .office-pet {
   cursor: grabbing;
