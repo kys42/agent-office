@@ -2674,6 +2674,57 @@ test('Send as is: Enter only, after the box is seen holding exactly the previewe
     });
 });
 
+test('Edited in the card: replaced only while the box draws exactly the rows taken in', async () => {
+  const taken = 'steps:\n    - build';
+  /** The box holds `held` until the clearing keys empty it; then what the send pastes. */
+  const boxOf = (initial: string) => {
+    let held = initial;
+    return {
+      screen: (typed: string) => claudeScreen(held || typed),
+      fail: (_file: string, args: string[]) => {
+        if (clears(args)) held = '';
+        return undefined;
+      },
+    };
+  };
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Only an indent changed in the terminal since: asked (changed), nothing cleared or typed.
+    const box = boxOf('steps:\n  - build');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const backups: string[] = [];
+    const backup = async (text: string) => void backups.push(text);
+    const result = await sendToTerminal(tmuxLive(), 'steps:\n    - build\n    - test', deps, {
+      backup,
+      replaceDraft: taken,
+      exactDraft: true,
+    });
+    assert.equal(result.status, 'needs-confirm');
+    assert.equal(result.status === 'needs-confirm' && result.changed, true);
+    assert.ok(!calls.some((c) => clears(c.args)) && !typedAny(calls) && !sent(calls));
+    assert.deepEqual(backups, []);
+    // The older confirmation (no `exactDraft`) still goes by the drawn shape, as before.
+    const older = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      backup,
+      replaceDraft: taken,
+    });
+    assert.equal(older.status, 'sent');
+  });
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Unchanged: backed up, cleared, and the card's text sent in its place.
+    const box = boxOf(taken);
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const backups: string[] = [];
+    const result = await sendToTerminal(tmuxLive(), 'steps:\n    - build\n    - test', deps, {
+      backup: async (text) => void backups.push(text),
+      replaceDraft: taken,
+      exactDraft: true,
+    });
+    assert.equal(result.status, 'sent');
+    assert.ok(calls.some((c) => clears(c.args)) && sent(calls));
+    assert.deepEqual(backups, ['steps:\n- build']);
+  });
+});
+
 test('Send as is presses nothing when only an indent changed after the preview', async () => {
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     // Previewed with four spaces; the person took two out in the terminal meanwhile.

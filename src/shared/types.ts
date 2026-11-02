@@ -721,6 +721,12 @@ export interface SendOptions {
   replaceDraft?: string;
   /** The person accepted losing content that the screen could not fully show or back up. */
   allowPartialDraft?: boolean;
+  /**
+   * `replaceDraft` is the box's rows as drawn (indents kept) when the person took them into the
+   * card to edit: replaced only while the box still draws exactly that — a change in spaces,
+   * line breaks or indents there is asked about (`changed`), never cleared silently.
+   */
+  exactDraft?: boolean;
   /** Ids from `attachImage`, in order. Desktop main resolves them to its own files. */
   images?: string[];
 }
@@ -731,6 +737,8 @@ export type ReplySender = (
   replaceDraft?: string,
   allowPartialDraft?: boolean,
   images?: string[],
+  /** See `SendOptions.exactDraft`. */
+  exactDraft?: boolean,
 ) => Promise<SendResult>;
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';

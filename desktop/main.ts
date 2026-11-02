@@ -1726,7 +1726,12 @@ function setupIPC() {
   const sendMessage = async (
     id: unknown,
     text: unknown,
-    options?: { replaceDraft?: string; allowPartialDraft?: boolean; images?: unknown },
+    options?: {
+      replaceDraft?: string;
+      allowPartialDraft?: boolean;
+      exactDraft?: boolean;
+      images?: unknown;
+    },
     authorized?: () => Promise<void>,
   ): Promise<SendResult> => {
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
@@ -1734,8 +1739,11 @@ function setupIPC() {
     const images = await attachments().resolveAll(options?.images);
     const replaceDraft: unknown = options?.replaceDraft;
     const allowPartialDraft: unknown = options?.allowPartialDraft;
+    const exactDraft: unknown = options?.exactDraft;
     if (
       (options != null && typeof options !== 'object') ||
+      (exactDraft !== undefined && typeof exactDraft !== 'boolean') ||
+      (exactDraft === true && replaceDraft === undefined) ||
       (allowPartialDraft !== undefined && typeof allowPartialDraft !== 'boolean') ||
       (allowPartialDraft === true && replaceDraft === undefined) ||
       (replaceDraft !== undefined &&
@@ -1793,6 +1801,7 @@ function setupIPC() {
         composer,
         replaceDraft,
         allowPartialDraft: allowPartialDraft === true,
+        exactDraft: exactDraft === true,
         beforeSend: authorized,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),

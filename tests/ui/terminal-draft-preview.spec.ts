@@ -75,10 +75,22 @@ async function card(
           w.box = '';
           return { status: 'sent', message: 'tmux work:1.0에 보냈어요' };
         },
-        send: async (id: string, text: string, options?: { replaceDraft?: string }) => {
-          w.sends.push({ id, text, replaceDraft: options?.replaceDraft ?? null });
-          // Main clears exactly the confirmed box text, then types the card's text.
-          if (options?.replaceDraft !== undefined && options.replaceDraft === w.box) w.box = '';
+        send: async (
+          id: string,
+          text: string,
+          options?: { replaceDraft?: string; exactDraft?: boolean },
+        ) => {
+          w.sends.push({
+            id,
+            text,
+            replaceDraft: options?.replaceDraft ?? null,
+            ...(options?.exactDraft && { exactDraft: true }),
+          });
+          // Main clears exactly the confirmed box text, then types the card's text; any other
+          // box text (even only an indent) is asked about, nothing cleared.
+          if (w.box && options?.replaceDraft !== w.box)
+            return { status: 'needs-confirm', draft: w.box, agent: 'Claude', changed: true };
+          w.box = '';
           return { status: 'sent', message: 'tmux work:1.0에 보냈어요', cleared: true };
         },
         jump: async () => ({ action: 'focused', text: '' }),
@@ -194,6 +206,7 @@ test('Edit in card takes the text into the chat box; sending then replaces it in
       id: 'demo:0',
       text: '로그인 버그 고쳐 줘. 세션 만료도 같이 봐 줘',
       replaceDraft: '로그인 버그 고쳐 줘',
+      exactDraft: true,
     },
   ]);
   await expect(preview).toHaveCount(0);
@@ -213,6 +226,32 @@ test('Text the box wrapped over rows is never taken into the card, only sent as 
   expect(await w(page, 'submits')).toEqual([['demo:0', read]]);
   // Its receipt waits too, matched with the box's wrapping ignored.
   await expect(aside.locator('.message-pending')).toContainText('https://example.com');
+});
+
+test('Taken into the card, then only an indent changed in the terminal: sending asks, clears nothing', async ({
+  page,
+}) => {
+  const aside = await card(page, { box: 'steps:\n    - build' });
+  const preview = aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' });
+  const field = aside.locator('.card-composer textarea');
+  await preview.getByRole('button', { name: '카드에서 고치기' }).click();
+  await expect(field).toHaveValue('steps:\n    - build');
+  await page.evaluate(() => ((window as any).box = 'steps:\n  - build'));
+  await field.fill('steps:\n    - build\n    - test');
+  await field.press('Enter');
+  // The terminal's edit is shown and asked about; the card keeps what was written.
+  const confirm = aside.locator('.draft-confirm');
+  await expect(confirm).toContainText('그사이 입력창 글이 바뀌었어요');
+  await expect(field).toHaveValue('steps:\n    - build\n    - test');
+  expect(await w(page, 'box')).toBe('steps:\n  - build');
+  expect(await w(page, 'sends')).toEqual([
+    {
+      id: 'demo:0',
+      text: 'steps:\n    - build\n    - test',
+      replaceDraft: 'steps:\n    - build',
+      exactDraft: true,
+    },
+  ]);
 });
 
 test('A partial box is shown but never sent from the card', async ({ page }) => {

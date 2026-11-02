@@ -135,13 +135,13 @@ export function TerminalSend({
       imported={
         box.view?.kind === 'draft' &&
         box.view.logical !== undefined &&
-        reply.replaces === box.view.logical
+        reply.replaces === box.view.text
       }
       onSubmit={() => void box.submit()}
       onImport={() => {
         // Only the text as typed: rows the box merely wrapped would split words, paths, URLs.
         if (box.view?.kind !== 'draft' || box.view.logical === undefined) return;
-        reply.importDraft(box.view.logical);
+        reply.importDraft(box.view.logical, box.view.text);
         field.current?.focus();
       }}
       onJump={target?.canFocus ? onJump : undefined}

@@ -846,6 +846,12 @@ export interface TerminalSendOptions {
   replaceDraft?: string;
   /** Explicit confirmation that hidden content may be lost. */
   allowPartialDraft?: boolean;
+  /**
+   * `replaceDraft` is the box's rows as drawn (`rows`, indents kept), taken into the card to
+   * edit: replaced only while the box still draws exactly that. Any other difference — even in
+   * spaces, line breaks or indents, which the drawn-shape comparison ignores — is asked about.
+   */
+  exactDraft?: boolean;
   /** Puts the composer's text on the clipboard before it is cleared. Without it nothing is. */
   backup?: (text: string) => void | Promise<void>;
   /** What the clipboard holds now: an earlier backup counts only while it is still there. */
@@ -1017,6 +1023,9 @@ async function deliver(
   if (!own) {
     if (confirmed === undefined) return ask(state.text, state.whole);
     if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+    // Taken into the card to edit: exactly those rows, or the person is asked.
+    if (options.exactDraft && (state.rows ?? state.text) !== confirmed)
+      return ask(state.text, state.whole, true);
     if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
   }
   const backup = options.backup;

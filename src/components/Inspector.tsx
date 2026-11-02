@@ -1186,7 +1186,7 @@ export function Inspector({
                     }
                   : undefined
               }
-              onSend={async (text, replaceDraft, allowPartialDraft, images) => {
+              onSend={async (text, replaceDraft, allowPartialDraft, images, exactDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();
                 const result = await sendFollowUp(
@@ -1196,6 +1196,7 @@ export function Inspector({
                   notify,
                   allowPartialDraft,
                   images,
+                  exactDraft,
                 );
                 if (result.status === 'sent') {
                   markSent(id);
