@@ -343,7 +343,7 @@ export class OrcaLaunch {
   /**
    * The terminal of a tab whose start Orca did not confirm: a handle of the same worktree that
    * the list taken before creating it did not have, titled as the launch; else the only new one,
-   * when that earlier list was whole. Between several untitled new ones it never guesses.
+   * when both lists were whole. Between several untitled new ones it never guesses.
    */
   private async adopt(
     info: { cwd: string; name: string },
@@ -352,12 +352,12 @@ export class OrcaLaunch {
     const wait = this.deps.wait ?? ((ms) => new Promise<void>((done) => setTimeout(done, ms)));
     for (let look = 0; look < ADOPT_LOOKS; look++) {
       await wait(ADOPT_EVERY);
-      const added = (await this.terminals(info.cwd)).rows.filter(
-        (t) => !before.handles.has(t.handle),
-      );
+      const now = await this.terminals(info.cwd);
+      const added = now.rows.filter((t) => !before.handles.has(t.handle));
       const titled = added.find((t) => t.title === info.name);
       if (titled) return titled.handle;
-      if (before.complete && added.length === 1) return added[0].handle;
+      // "The only new one" holds only when neither list was cut short.
+      if (before.complete && now.complete && added.length === 1) return added[0].handle;
     }
     return undefined;
   }
@@ -437,6 +437,8 @@ export class OrcaLaunch {
         this.pending.clear(target);
         return launched;
       }
+      // Guard against a second start of this conversation while the tab is looked for.
+      this.pending.add(target);
       // The person asked for this tab: Orca in front mounts it, which starts its command.
       if (!session.background) await this.reveal();
       const handle = await this.adopt(info, {
@@ -455,6 +457,7 @@ export class OrcaLaunch {
             .catch(() => '');
         return launched;
       }
+      // Still unseen: the guard runs its full window from now.
       this.pending.add(target);
       return {
         available: true,
