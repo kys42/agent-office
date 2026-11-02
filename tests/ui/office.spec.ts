@@ -184,11 +184,14 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await page.getByRole('button', { name: '데스크 펫', exact: true }).click();
   const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
   await expect(pet).toBeVisible();
-  await expect(pet).toContainText('기다려요');
+  // The pill counts the office: someone waits for the person.
+  await expect(pet.locator('.dock-pet-tally .tally-attention')).toBeVisible();
   const desks = page.locator('.desk-row [data-station-id]');
   await expect(desks).toHaveCount(0);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });
-  await pet.click();
+  // The pet itself opens its colleague's card; the desks unfold from the button beside it.
+  await page.locator('.dock-pet-anchor').hover();
+  await page.getByRole('button', { name: '책상 펼치기' }).click();
   await expect(desks).toHaveCount(6);
   const tops = await desks.evaluateAll((els) =>
     els.map((e) => Math.round(e.getBoundingClientRect().top)),
@@ -211,10 +214,14 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await page.locator('.desk-row').screenshot({ path: '.local/desk-row.png' });
   await page.keyboard.press('Escape');
   await expect(desks).toHaveCount(0);
-  await pet.click();
+  const unfold = async () => {
+    await page.locator('.dock-pet-anchor').hover();
+    await page.getByRole('button', { name: '책상 펼치기' }).click();
+  };
+  await unfold();
   await page.getByRole('button', { name: '책상 줄 접기' }).click();
   await expect(pet).toBeVisible();
-  await pet.click();
+  await unfold();
   await page.locator('.desk-row .office-pet').nth(1).click();
   await expect(page.locator('.office-map')).toBeVisible();
   await expect(page.locator('.inspector')).toBeVisible();
@@ -303,18 +310,14 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await desk.hover();
   await desk.getByRole('button', { name: /가리기$/ }).click();
   await expect(strip.locator('[data-station-id]')).toHaveCount(5);
-  // Switch looks; the pet reopens the last one used.
+  // Switch looks; the unfold button reopens the last one used.
   await page.getByRole('button', { name: '사무실 줄로 보기' }).click();
   await expect(page.locator('.desk-row:not(.desk-floor) .row-zone-floor').first()).toBeVisible();
   await page.getByRole('button', { name: '바닥 책상으로 보기' }).click();
   await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
   await page.keyboard.press('Escape');
-  const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
-  await pet.click();
-  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
-  await page.getByRole('button', { name: '책상 줄 접기' }).click();
   await page.locator('.dock-pet-anchor').hover();
-  await page.getByRole('button', { name: '바닥 책상 펼치기' }).click();
+  await page.getByRole('button', { name: '책상 펼치기' }).click();
   await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
 });
 

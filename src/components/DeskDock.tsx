@@ -209,7 +209,6 @@ export function DeskDock() {
           onReceipt={receipt}
           status={snapshot ? null : error ? t.dock.status.check : t.dock.status.connecting}
           onExpand={() => go(expanded)}
-          onFloor={() => go('floor')}
           onReply={send.sendReply}
           onRefresh={() => void refresh()}
           notify={notify}
