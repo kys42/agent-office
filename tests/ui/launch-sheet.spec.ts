@@ -846,7 +846,7 @@ for (const colorScheme of ['light', 'dark'] as const)
         orca: {
           available: false,
           reason:
-            '이 폴더는 Orca 작업 공간(/projects) 안의 하위 폴더예요. Orca는 작업 공간 폴더에서만 새 탭을 열 수 있어요. tmux로 띄워주세요.',
+            '이 폴더는 이 Mac의 Orca 작업 공간 안에 있지 않아요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
         },
       },
     });
