@@ -13,6 +13,7 @@ import {
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
+import { TRIAGE_LABELS } from '../shared/triage';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
 import { targetLine } from './TerminalSend';
@@ -45,13 +46,15 @@ const DRAG_SLOP = 4;
  * The collapsed dock: the colleague who most needs the person, as a small desktop pet.
  * A just-arrived result or question turns the pet into that colleague, speaking it.
  */
+/** The groups the pet's pill counts, in triage order (resting colleagues are not counted). */
+const TALLY = ['attention', 'results', 'working', 'standby'] as const;
+
 export function DeskPet({
   model,
   status,
   privacy,
   onReceipt,
   onExpand,
-  onFloor,
   onReply,
   onRefresh,
   notify,
@@ -61,10 +64,8 @@ export function DeskPet({
   status: string | null;
   privacy: boolean;
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
-  /** Unfold in the last used look (office row or floor desks). */
+  /** Unfold in the last used look (office row or floor desks), from its own button. */
   onExpand: () => void;
-  /** Unfold the floor desks: desks on the screen's bottom edge, zones marked by flags. */
-  onFloor: () => void;
   /** Desktop, with Send to terminal on: the speaking colleague can be answered right under its bubble. */
   onReply?: ReplySender;
   /** Says what a jump to the terminal did (or the resume command it copied). */
@@ -80,6 +81,13 @@ export function DeskPet({
   const total = model.seats.length;
   const label = status ?? pet.label;
   const count = !status && pet.group !== 'resting' ? pet.count : null;
+  // The office in numbers: waiting for the person, results to read, at work, standing by.
+  const tally = status
+    ? []
+    : TALLY.filter((group) => model.counts[group] > 0).map((group) => ({
+        group,
+        count: model.counts[group],
+      }));
   const speaker = status ? undefined : pet.speaker;
   // The pet stands for one colleague at a time, like one desk of the row: who just spoke (or
   // the lead), or the one the person picked with its arrows — until someone else speaks.
@@ -342,7 +350,12 @@ export function DeskPet({
           >
             <RotateCw size={12} />
           </button>
-          <button className="icon-btn" aria-label={d.floor} title={d.floorTitle} onClick={onFloor}>
+          <button
+            className="icon-btn"
+            aria-label={d.unfold}
+            title={d.unfoldTitle}
+            onClick={onExpand}
+          >
             <Flag size={12} />
           </button>
           <button
@@ -399,9 +412,19 @@ export function DeskPet({
           onLostPointerCapture={endDrag}
           // Rubbing the pet pets the colleague it stands for (a drag holds the button).
           {...petting(lead?.session.id)}
-          onClick={() => {
-            // A drag that ends on the pet is a move, not a request to open the row.
-            if (dragged.current) dragged.current = false;
+          onClick={(e) => {
+            // A drag that ends on the pet is a move, not a request to open anything.
+            if (dragged.current) {
+              dragged.current = false;
+              return;
+            }
+            // Like a desk of the row: its colleague's card pops up right here. The row and the
+            // floor unfold from their own button; an office with nobody in it still unfolds.
+            if (view)
+              void openColleague(bubble?.sessionId ?? view.session.id, {
+                anchor: e.currentTarget.closest('.dock-pet-anchor'),
+                news: !!bubble,
+              });
             else onExpand();
           }}
         >
@@ -429,11 +452,26 @@ export function DeskPet({
           {hover && place > 0 && choices.length > 1 && (
             <span className="dock-pet-place">{d.place(place, choices.length)}</span>
           )}
-          <span className="dock-pet-pill">
-            <i />
-            {label}
-            {count !== null && <b>{count}</b>}
-          </span>
+          {/* Who is doing what at a glance: a coloured dot and a number per group (none at 0). */}
+          {tally.length ? (
+            <span
+              className="dock-pet-pill dock-pet-tally"
+              title={tally.map((g) => `${TRIAGE_LABELS[g.group]} ${g.count}`).join(' · ')}
+            >
+              {tally.map((g) => (
+                <span key={g.group} className={`tally-${g.group}`}>
+                  <i />
+                  {g.count}
+                </span>
+              ))}
+            </span>
+          ) : (
+            <span className="dock-pet-pill">
+              <i />
+              {label}
+              {count !== null && <b>{count}</b>}
+            </span>
+          )}
         </button>
       </div>
     </div>

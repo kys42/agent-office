@@ -215,6 +215,33 @@ body.dock-mode {
   background: var(--st-work);
   box-shadow: 0 0 0 3px rgba(95, 214, 155, 0.16);
 }
+/* The pill in numbers: a dot and a count per group, nothing for an empty one. */
+.dock-pet-tally {
+  gap: 8px;
+  padding: 0 9px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.dock-pet-tally > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dock-pet-tally i {
+  box-shadow: none;
+}
+.dock-pet-tally .tally-attention i {
+  background: var(--st-call);
+}
+.dock-pet-tally .tally-results i {
+  background: var(--accent);
+}
+.dock-pet-tally .tally-working i {
+  background: var(--st-work);
+}
+.dock-pet-tally .tally-standby i {
+  background: #7fc4d9;
+}
 .dock-pet-bang {
   position: absolute;
   top: 6px;

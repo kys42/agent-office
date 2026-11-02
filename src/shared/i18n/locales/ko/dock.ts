@@ -15,9 +15,10 @@ export const dock: Messages['dock'] = {
     opening: '사무실 문을 여는 중…',
   },
   pet: {
-    aria: (label, count) => `데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 펼치기`,
+    aria: (label, count) =>
+      `데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 업무 카드 열기`,
     title: (total) =>
-      `우리 사무실 · 동료 ${total}명\n누르면 마지막에 쓴 모습(책상 줄·바닥 책상)으로 펼쳐지고, 끌어서 옮길 수 있어요`,
+      `우리 사무실 · 동료 ${total}명\n누르면 이 동료의 업무 카드가 열리고, 끌어서 옮길 수 있어요 · 책상은 옆 버튼으로 펼쳐요`,
     unread: (n) => `읽지 않은 소식 ${n}건 · `,
     detailHint: '누르면 크게 보여요 · 업무 카드는 옆 도구에서',
     someone: '동료',
@@ -27,8 +28,8 @@ export const dock: Messages['dock'] = {
     expandTitle: '큰 사무실 열기',
     refresh: '새로고침',
     refreshTitle: '새로고침 · 지금 기록을 다시 확인해요',
-    floor: '바닥 책상 펼치기',
-    floorTitle: '바닥 책상 · 화면 맨 아래에 책상만, 구역은 깃발',
+    unfold: '책상 펼치기',
+    unfoldTitle: '책상 펼치기 · 마지막에 쓴 모습(사무실 줄·바닥 책상)으로 펼쳐요',
     previous: '이전 동료',
     previousTitle: '이전 동료 보기 · ←',
     next: '다음 동료',
