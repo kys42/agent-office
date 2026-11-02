@@ -7,6 +7,7 @@ import {
   type ComposerAdapter,
   type ComposerHost,
   type ComposerState,
+  type DraftSubmitOutcome,
 } from './types.js';
 
 export { drawn };
@@ -423,8 +424,11 @@ export const claudeCodeComposer: ComposerAdapter = {
     canClear: !!host,
     // A pasted image path becomes Claude Code's own `[Image #N]` (see afterImages).
     images: 'attach',
+    // Its box is read on either host; Enter alone submits it (see submitDraft).
+    canSubmitDraft: true,
   }),
   inspect,
+  submitDraft,
   async clear(host, from, backup, proceed, options): Promise<ClearResult> {
     if (!from.whole) {
       if (!options?.allowPartial) return { status: 'failed', state: from, partial: true };
@@ -489,6 +493,38 @@ export const claudeCodeComposer: ComposerAdapter = {
     return { status: 'failed', state: { kind: 'unknown', text: previous, whole: true } };
   },
 };
+
+/**
+ * The composer's own text, submitted as it is: Enter only, while the box shows exactly what the
+ * person saw in the preview, all of it. Read twice — once, then again after `proceed` (the same
+ * Claude, open to input, in front of its terminal) right before the key — since a permission
+ * prompt or menu may replace the box at any moment, and Enter there picks a choice. The box
+ * itself rules out the rest: `!` shell mode changes its marker and completion lists, the agents
+ * view and dialogs read as closed (`promptBox`). Text not known whole (a scrolled box, a
+ * collapsed paste, an image) is never submitted: the person did not see all of what would go.
+ */
+async function submitDraft(
+  host: ComposerHost,
+  expected: string,
+  proceed: () => Promise<boolean>,
+): Promise<DraftSubmitOutcome> {
+  const check = async (): Promise<DraftSubmitOutcome | null> => {
+    const state = await inspect(host);
+    if (state.kind === 'closed' || state.kind === 'unreadable')
+      return { status: 'refused', reason: state.kind };
+    // Exactly as previewed, wrapping included: a resized box re-wraps, and is shown again.
+    if (!holdsText(state) || state.text !== expected) return { status: 'changed', state };
+    if (!state.whole) return { status: 'refused', reason: 'partial' };
+    return null;
+  };
+  const first = await check();
+  if (first) return first;
+  if (!(await proceed())) return { status: 'refused', reason: 'lost' };
+  const again = await check();
+  if (again) return again;
+  await host.submit();
+  return { status: 'submitted' };
+}
 
 /** Explicitly accepted loss of hidden content: collect readable fragments before each pair.
  * Nothing is sent until the composer is empty or its suggestion is verified. Once its whole

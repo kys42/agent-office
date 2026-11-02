@@ -298,6 +298,12 @@ function fakePrompt(
         col += typed.length;
       }
     },
+    // Enter submits the box: it empties (and shows the suggestion again, if any).
+    async submit() {
+      pressed.push(['Enter']);
+      lines = [[]];
+      [row, col] = [0, 0];
+    },
   };
   return { host, pressed, text };
 }
@@ -610,6 +616,7 @@ test('Each agent states what its composer supports', () => {
     canDetectSuggestion: true,
     canClear: true,
     images: 'attach',
+    canSubmitDraft: true,
   });
   assert.deepEqual(claudeCodeComposer.capabilities({ styled: false }), {
     delivery: 'terminal',
@@ -617,6 +624,7 @@ test('Each agent states what its composer supports', () => {
     canDetectSuggestion: false,
     canClear: true,
     images: 'attach',
+    canSubmitDraft: true,
   });
   // Codex takes follow-ups through its queue: there is no composer to check or clear.
   assert.equal(composerFor('codex'), codexQueueComposer);

@@ -188,6 +188,22 @@ terminal_title = ["session-id", "thread-name", "project"]
 - **실제 비우기 확인:** 이 어댑터로 실제 Claude Code 입력창을 비웠다. 40×16(최대 3줄): 한 줄·이모지/키릴 문자·한글 두 줄·접힌 붙여넣기는 첫 키 전 백업 1번으로 빈 입력창이 됐고, 3줄 초안과 긴 문단은 최대 줄 수에 닿아 아무것도 누르지 않고 거부했다. 120×40(최대 15줄): 3줄·긴 문단(약 900자)까지 모두 비워졌고 백업은 원래 글과 같았다.
 - **Codex:** `codex queue`는 입력창을 거치지 않으므로(위 Codex 절) TUI는 따로 측정하지 않았다.
 
+## 입력창에 쓰다 만 글 미리보기와 그대로 보내기 (#328)
+
+정본 `desktop/composer/preview.ts`(`draftView`, 에이전트 무관)·`claude-code.ts`(`submitDraft`)와 `desktop/terminals.ts`(`previewTerminalDraft`·`submitTerminalDraft`), IPC `office:composer-draft`·`office:submit-draft`, 렌더러 `src/lib/terminalDraft.ts`(순수 규칙)·`src/lib/useTerminalDraft.ts`(읽기 주기)·`src/components/TerminalDraftPreview.tsx`(그리기만).
+
+- **무엇:** 동료 터미널(Orca·tmux) 입력창에 쳐 두고 보내지 않은 글을 업무 카드(큰 사무실 오른쪽 칸·팝업 카드 공통 `TerminalSend`) 입력칸 위에 "터미널 입력창에 쓰다 만 글"로 보여 준다. 여러 줄은 세 줄까지 접고 [펼치기]로 연다.
+- **읽기(읽기 전용):** 보내기와 같은 대상 규칙(`live` = `locateTerminal`)으로 찾은 터미널에서, Claude 기록이 입력을 받는 상태(`idle·busy·shell`)이고 그 프로세스가 터미널 전면을 가질 때만(`ownsTerminal`, 백그라운드 세션은 창이 지금 그 job을 보여 줄 때만) 어댑터 `inspect`로 화면을 읽는다. 키·클립보드는 건드리지 않고, 앱이 넣고 제출하지 못한 글의 기억(`typedMemory`)도 바꾸지 않는다(보여 주려는 읽기가 다음 보내기 판단을 바꾸면 안 됨). 보내기가 진행 중이면(`oneAtATime`) 읽지 않고 `sending`으로 답한다 — 앱이 넣는 중인 글을 쓰다 만 글로 보여 주지 않는다.
+  - 결과 `ComposerDraftView`: `draft { text, agent, submittable, partial?, maybeSuggestion? } | empty | unknown { reason }`. 빈 입력창·예시 안내·추천 글(tmux 흐림)·빈 줄뿐은 `empty`, 승인 창·메뉴·완성 목록·`!` 셸 모드는 `unknown: closed`. 일부만 보이는 글(스크롤된 상자, `[Pasted text #N]`·`[Image #N]`)은 `partial`로 보여 주되 보내지 않는다. Orca처럼 추천 글을 구분 못 하는 화면은 `maybeSuggestion`("추천 글일 수도 있어요").
+  - **캐시:** main이 세션마다 1.5초 동안 한 번 읽은 결과를 나눠 준다(`remember`): 같은 동료 카드를 여러 창이 열어도 화면 읽기는 한 번. 보내기·그대로 보내기가 끝나면 바로 버린다.
+  - **읽기 주기(렌더러):** 카드가 열려 있고, 창이 보이고(`isPageShown`), '터미널로 보내기'가 켜져 있고, 대상이 입력을 받는 Orca·tmux(`previewsTarget`: Codex 대기열·Codex Desktop·Orca 탭만·다른 사무실 제외)이고, 화면 숨기기가 아니고, 카드가 보내는 중이거나 입력창 질문(`DraftConfirm`)을 띄운 중이 아닐 때만 읽는다. 처음·변화 뒤 2.5초, 그대로면 1.5배씩 늘려 글 6초·빈 입력창 8초·못 읽음 15초까지. 창이 숨으면 멈추고, 다시 보이거나 창이 포커스를 받으면(터미널에서 돌아옴) 바로 읽는다.
+- **[그대로 보내기]:** `submitDraft(id, text)`. **아무것도 입력하지 않고 Enter만** 누른다. main이 세션 한 줄 대기열(`oneAtATime`, 보내기와 공유)에서 기록·전면을 확인한 뒤 어댑터가 입력창을 읽고, `proceed`(같은 Claude·입력 받음·전면 소유, 그리고 '터미널로 보내기'가 아직 켜짐)를 거쳐 **한 번 더** 읽어, 두 번 다 입력창이 미리보기 글과 **정확히 같고**(줄바꿈까지, 상자가 다시 감기면 바뀐 것으로 봄) 전체가 보일 때만 Enter(tmux `send-keys Enter`, Orca `--enter`)를 누른다. 다르면 누르지 않고 `changed`로 새로 읽은 글과 "그사이 입력창 글이 바뀌어 보내지 않았어요"를 돌려주고, 카드는 이유를 보이며 미리보기를 바꾼다. 승인 창·메뉴가 입력창 자리를 차지했으면 `changed`(closed) + "지금은 입력을 받지 않아요". 일부만 보임·상태 바뀜·못 읽음은 거절. Enter 뒤 최대 3×150ms 안에 입력창이 그 글을 더는 들고 있지 않아야 보낸 것으로 본다(그대로면 "Enter를 눌렀지만 입력창에 같은 글이 그대로예요"). Enter는 입력창이 그 글을 들고 있을 때만 누르므로 다시 눌러도 두 번 보내지지 않는다.
+  - 보낸 뒤에는 보통 보내기처럼 알림("tmux work:1.0에 보냈어요", 작업 중이면 대기열 안내)과 대화의 '보냄' 말풍선(`rememberSend`)이 기록에 나타날 때까지 남는다. 화면에서 읽은 글은 상자의 자동 줄바꿈이 단어 중간에 들어갈 수 있어 `wrapped`로 기억해 공백·줄바꿈을 모두 빼고 비교한다(`sameUnwrapped`). `/`로 시작하는 명령은 요청으로 기록되지 않으므로 말풍선을 남기지 않는다.
+- **[카드에서 고치기]:** 그 글을 카드 입력칸으로 가져온다(쓰던 글이 있으면 뒤에 빈 줄을 두고 붙임, 이미 있으면 그대로). 터미널 입력창은 아직 비우지 않는다. 카드는 가져온 글을 기억하고(`replaces`, 창 메모리만), **다음 보내기를 `replaceDraft: <가져온 글>`로 보낸다** — 기존 '지우고 보내기' 경로 그대로: main이 입력창이 그 글과 같을 때만(그려진 모양) 클립보드에 백업하고 비운 뒤 카드 글을 입력·확인·Enter. 그래서 고친 글이 원래 글 옆에 이어 붙거나 둘 다 보내지는 일이 없다. 그사이 터미널에서 글이 바뀌었으면 보내지 않고 기존 질문(`DraftConfirm`, `changed`)으로 다시 묻고, 그사이 입력창이 비었으면 보통 보내기로 넣는다. 화면에서 읽은 글이라 줄바꿈·들여쓰기가 원래와 다를 수 있다고 카드에 적는다. 일부만 보이는 글은 가져오지 않는다(이유 + [터미널로 이동]).
+  - 왜 이 방식인가: 기존 보내기는 입력창에 글이 있으면 절대 이어 넣지 않고 `needs-confirm`으로 묻는다. 가져오기만 하고 아무 표시가 없으면 보낼 때 같은 글을 두고 또 묻게 되어 헷갈리고, 묻지 않고 이어 넣으면 지시가 섞인다. 가져오기 자체를 "이 글을 대신하겠다"는 확인으로 보고, 그 글이 **그대로일 때만** 바꾼다.
+- **화면 숨기기:** 미리보기를 그리지 않고 읽지도 않는다(질문 카드 `RequestCard`처럼 통째로 숨김). 웹 미리보기·데모·다른 사무실에는 없다.
+- **어댑터:** `ComposerCapabilities.canSubmitDraft`와 `ComposerAdapter.submitDraft?(host, expected, proceed)`. 호스트에는 `ComposerHost.submit()`(에이전트의 제출 키)을 더했다. Claude Code만 켜져 있다. Codex CLI는 `codex queue`로 보내 TUI 입력창을 읽지 않으므로(`canInspect: false`) 미리보기 대상이 아니고(Codex TUI 입력창 화면 형식은 측정하지 않음), OpenClaw도 지원하지 않는다 — IPC가 어댑터 능력을 보고 `unsupported`로 답한다. 호출부에 에이전트 분기는 없다.
+
 ## 질문·플랜·권한 확인에 답하기 (#127)
 
 정본 `desktop/prompts/`(에이전트별 어댑터: `claude-code.ts` 화면·키, `claude-target.ts` 세션·기록), `desktop/answers.ts`(공통 흐름), `desktop/main.ts`(IPC·설정·확인창), 렌더러 `src/components/RequestCard.tsx`·`src/lib/usePrompt.ts`. 수집 쪽은 `server/adapters/requests.ts`.

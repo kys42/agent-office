@@ -665,6 +665,42 @@ export type SendResult =
       /** A failed send can offer this freshly read draft as an explicit recovery. */
       reason?: string;
     };
+/**
+ * What the agent's terminal input box holds right now, read by the desktop app from the verified
+ * terminal for the work card's preview (never stored). `draft`: text sitting there, not sent;
+ * `empty`: nothing (or only the agent's own suggestion); `unknown`: not read, and why.
+ */
+export type ComposerDraftView =
+  | {
+      kind: 'draft';
+      /** As read from the screen: the box's own wrapping may show as line breaks. */
+      text: string;
+      /** The agent whose box it is, e.g. "Claude". A brand, never translated. */
+      agent: string;
+      /** It can be submitted as it is from here: known whole, on an agent that allows it. */
+      submittable: boolean;
+      /** Not all of it is on screen (a box too short, a collapsed paste, an image). */
+      partial?: boolean;
+      /** The screen cannot tell it from the agent's own suggestion. */
+      maybeSuggestion?: boolean;
+    }
+  | { kind: 'empty' }
+  | { kind: 'unknown'; reason: ComposerDraftUnknown };
+/**
+ * Why the box was not read: sending is off, the agent's box is not read from here, no verified
+ * terminal, the agent is not taking input, a dialog or menu replaced the box, the screen could
+ * not be read, or a send is typing into it right now.
+ */
+export type ComposerDraftUnknown =
+  'off' | 'unsupported' | 'no-terminal' | 'not-ready' | 'closed' | 'unreadable' | 'sending';
+/**
+ * What submitting the box as it is did. `sent`: Enter went in while the box held exactly the
+ * previewed text. `changed`: it held something else, so nothing was pressed; `draft` is the
+ * fresh read to show instead, `message` why.
+ */
+export type DraftSubmitResult =
+  | { status: 'sent'; message: string }
+  | { status: 'changed'; message: string; draft: ComposerDraftView };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */
   replaceDraft?: string;
@@ -961,6 +997,16 @@ export interface OfficeAPI {
   attachmentPreview?: (id: string) => Promise<{ type: string; bytes: Uint8Array } | null>;
   /** Desktop only: reads the owned terminal's current draft without typing or submitting. */
   inspectDraft?: (id: string) => Promise<Extract<SendResult, { status: 'needs-confirm' }> | null>;
+  /**
+   * Desktop only, read-only: what the session's terminal input box holds now (briefly cached in
+   * main, so several windows share one screen read). Nothing is typed or pressed.
+   */
+  composerDraft?: (id: string) => Promise<ComposerDraftView>;
+  /**
+   * Desktop only: submits the box as it is (Enter, nothing typed), only while it still holds
+   * exactly `text` — main reads the screen again right before the key.
+   */
+  submitDraft?: (id: string, text: string) => Promise<DraftSubmitResult>;
   /**
    * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
    * profile, outside the preferences shared with the web preview; turning it back on asks for

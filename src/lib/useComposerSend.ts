@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { SendResult } from '../shared/types';
 import { useComposerDraft } from './useComposerDraft';
 import { useComposerImages } from './useComposerImages';
+import { importDraft } from './terminalDraft';
 
 export type DraftPrompt = Extract<SendResult, { status: 'needs-confirm' }>;
 
@@ -29,6 +30,12 @@ export function useComposerSend(
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<DraftPrompt | null>(null);
+  /**
+   * The terminal box's text the person took into this box to edit ([Edit in card]). The next
+   * send replaces it: main clears exactly that text (to the clipboard) before typing, so the
+   * edited version never lands next to the original. Changed there meanwhile, they are asked.
+   */
+  const [replaces, setReplaces] = useState<string | undefined>(undefined);
   /** `instead`: the composer's own text goes out in place of the reply, which then stays. */
   const send = async (replaceDraft?: string, instead?: string, allowPartialDraft?: boolean) => {
     const message = instead ?? text;
@@ -53,6 +60,7 @@ export function useComposerSend(
       setSending(false);
       if (instead === undefined) {
         attached.clearSent(ids);
+        setReplaces(undefined);
         onSent(message);
       }
     } catch (e) {
@@ -71,7 +79,14 @@ export function useComposerSend(
     sending,
     error,
     draft,
-    submit: () => send(),
+    submit: () => send(replaces),
+    /** The terminal box's text this box took in to edit, until it is sent. */
+    replaces,
+    /** Takes the terminal box's text in to edit; sending then replaces it there. */
+    importDraft: (boxText: string) => {
+      setText(importDraft(text, boxText));
+      setReplaces(boxText);
+    },
     confirm: () => (draft ? send(draft.draft, undefined, draft.partial === true) : undefined),
     /** The composer's text, sent as it is (typed over itself after the same clearing). */
     sendDraft: () => (draft ? send(draft.draft, draft.draft) : undefined),

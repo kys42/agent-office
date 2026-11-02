@@ -116,6 +116,12 @@ export const desktop: Messages['desktop'] = {
     imagesNotShown:
       '입력창에 이미지를 붙였지만 첨부된 걸 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
     imagesUnsupported: '이 대화에는 여기서 이미지를 보낼 수 없어요.',
+    draftMoved: '그사이 입력창 글이 바뀌어 보내지 않았어요. 지금 들어 있는 글을 보여 드려요.',
+    draftNotWhole: '입력창 글이 다 보이지 않아 여기서 보내지 않았어요. 터미널을 확인해 주세요.',
+    draftStopped: '에이전트 상태가 바뀌어 보내지 않았어요. 터미널을 확인해 주세요.',
+    draftNotSubmitted: (host) => `${host}에 Enter를 보내지 못했어요. 글은 입력창에 그대로 있어요.`,
+    draftNotTaken: (host) =>
+      `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. 터미널을 확인해 주세요.`,
   },
   attachments: {
     notImage: 'PNG, JPEG, GIF, WebP 이미지만 첨부할 수 있어요.',
