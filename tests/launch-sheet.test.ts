@@ -82,6 +82,12 @@ test('a draft becomes the core intent only once it is valid, and always passes i
     kind: 'resume',
     session: 's1',
   });
+  // A message kept from new/fork does not block a resume, which sends none.
+  assert.deepEqual(draftIntent(draft({ kind: 'resume', session: 's1', message: 'esc\x1b[0m' })), {
+    kind: 'resume',
+    session: 's1',
+  });
+  assert.equal(draftIntent(draft({ kind: 'fork', session: 's1', message: 'esc\x1b[0m' })), null);
   assert.equal(draftIntent(draft({ kind: 'fork', session: 's1', forkName: '' })), null);
   const fork = draftIntent(draft({ kind: 'fork', session: 's1', forkName: '  Copy ' }));
   assert.deepEqual(fork, { kind: 'fork', session: 's1', name: 'Copy', initialMessage: '' });

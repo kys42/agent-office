@@ -89,7 +89,8 @@ export function forkDefaultName(original: string): string {
  */
 export function draftIntent(draft: LaunchDraft, probe = false): LaunchIntent | null {
   const initialMessage = probe ? '' : draft.message;
-  if (!probe && messageProblem(draft.message)) return null;
+  // Resume sends no message: a kept new/fork draft must not block it.
+  if (!probe && draft.kind !== 'resume' && messageProblem(draft.message)) return null;
   if (draft.kind === 'new') {
     if (!draft.at || nameProblem(draft.name)) return null;
     return {
