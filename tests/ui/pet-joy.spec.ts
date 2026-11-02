@@ -81,3 +81,10 @@ test('a pet walking in keeps walking while petted: only its sprite bounces', asy
   await expect(walker).toHaveCSS('animation-name', /commute-in/);
   await expect(walker.locator('.sprite-window')).toHaveCSS('animation-name', /joy-bounce-/);
 });
+
+test('over a pet the pointer is a petting hand', async ({ page }) => {
+  await office(page, '');
+  const pet = page.locator('.office-pet').first();
+  await pet.hover();
+  await expect(pet).toHaveCSS('cursor', /url\("data:image\/svg\+xml.*16 16, grab/);
+});

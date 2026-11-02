@@ -170,21 +170,23 @@ test('desks start as today’s and follow office, project and colleague looks', 
   await expect(bench(page, 'team-a')).toHaveAttribute('data-desk-top', 'charcoal');
   await expect(bench(page, 'team-b')).toHaveAttribute('data-desk-top', 'mint');
 
-  // One colleague, from the work card: the top stays the bench's.
+  // One colleague, from the work card: its own monitor and items; a top picked here dresses
+  // the whole project bench it shares.
   await station(page, 0).locator('.office-pet').click();
   await page.getByRole('button', { name: '카드 메뉴' }).click();
   await page.getByRole('menuitem', { name: '책상 꾸미기' }).click();
   await expect(
     dialog.getByRole('group', { name: '적용 범위' }).getByRole('button', { name: '이 동료' }),
   ).toHaveAttribute('aria-pressed', 'true');
-  await expect(dialog.getByRole('button', { name: '상판 민트' })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: '상판 민트' })).toBeEnabled();
+  await dialog.getByRole('button', { name: '상판 월넛' }).click();
   await dialog.getByRole('button', { name: '모니터 듀얼' }).click();
   await dialog.getByRole('button', { name: '오른쪽 소품 러버덕' }).click();
   await dialog.getByRole('button', { name: '이 책상으로 저장' }).click();
   await expect(dialog).toBeHidden();
-  expect((await saved(page)).at(-1)!.deskAppearance!.colleagues).toEqual({
-    'run-0': { monitor: 'dual', itemRight: 'duck' },
-  });
+  const dressed = (await saved(page)).at(-1)!.deskAppearance!;
+  expect(dressed.colleagues).toEqual({ 'run-0': { monitor: 'dual', itemRight: 'duck' } });
+  expect(Object.values(dressed.projects)).toEqual([{ top: 'walnut' }]);
   await expect(equipment(page, 0)).toHaveAttribute('data-desk-monitor', 'dual');
   await expect(equipment(page, 0)).toHaveAttribute('data-desk-items', 'plant,duck');
   await expect(equipment(page, 0).locator('.desk-screen')).toHaveCount(2);
@@ -193,7 +195,8 @@ test('desks start as today’s and follow office, project and colleague looks', 
     /item-duck\.png/,
   );
   await expect(equipment(page, 1)).toHaveAttribute('data-desk-monitor', 'crt');
-  await expect(bench(page, 'team-a')).toHaveAttribute('data-desk-top', 'charcoal');
+  await expect(bench(page, 'team-a')).toHaveAttribute('data-desk-top', 'walnut');
+  await expect(bench(page, 'team-b')).toHaveAttribute('data-desk-top', 'mint');
 
   // Following the project again drops the colleague's own layer.
   await page.getByRole('button', { name: '카드 메뉴' }).click();

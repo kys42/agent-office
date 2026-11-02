@@ -113,18 +113,34 @@ export function DeskCustomizer({
     setZone(key);
     setDraft(lookAt(next, key));
   };
+  /** The project's own layer with this top (dropped again when it is the office's top). */
+  const benchLayer = (top: DeskLook['top']): Partial<DeskLook> | null => {
+    const { top: _, ...rest } = saved?.projects?.[zone!] ?? {};
+    const next = top === deskLook(saved).top ? rest : { ...rest, top };
+    return Object.keys(next).length ? next : null;
+  };
   const save = async (reset = false) => {
     setBusy(true);
     setError('');
     // A layer keeps only what it changes, so later changes below it still show through.
     const layer = deskLayer(draft, below(scope));
-    // A colleague's desk sits on the zone's shared bench.
+    // A colleague's desk sits on the zone's shared bench: a top picked here goes to the
+    // project, for every desk on that bench; the rest stays this colleague's own.
     if (scope === 'colleague') delete layer.top;
     const value = reset || Object.keys(layer).length === 0 ? null : layer;
+    const bench =
+      scope === 'colleague' && zone && !reset && draft.top !== lookAt('project').top
+        ? benchLayer(draft.top)
+        : undefined;
     const deskAppearance: DeskCustomization = {
       version: 1,
       ...(scope === 'office' ? { office: value } : {}),
-      projects: scope === 'project' && zone ? { [zone]: value } : {},
+      projects:
+        scope === 'project' && zone
+          ? { [zone]: value }
+          : bench !== undefined
+            ? { [zone!]: bench }
+            : {},
       colleagues: scope === 'colleague' && session ? { [petKey(session)]: value } : {},
     };
     try {
@@ -219,7 +235,7 @@ export function DeskCustomizer({
           </div>
         </div>
         <div className="pet-options desk-options">
-          <fieldset disabled={busy || scope === 'colleague'}>
+          <fieldset disabled={busy}>
             <legend>
               01 <b>{d.chooseTop}</b>
             </legend>
