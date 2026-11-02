@@ -409,8 +409,9 @@ export class OrcaLaunch {
       if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
       const changed = await this.workspaceRefusal(session);
       if (changed) throw new Error(changed);
-      authorized?.();
       const before = await this.terminals(info.cwd);
+      // Last moment before create: the listing above may take seconds while access is revoked.
+      authorized?.();
       let out: string | undefined;
       let failure: unknown;
       try {
@@ -444,12 +445,14 @@ export class OrcaLaunch {
       });
       if (handle) {
         this.pending.clear(target);
-        await this.deps
-          .run(this.deps.orca(), ['terminal', 'switch', `--terminal=${handle}`, '--json'], {
-            timeout: 8000,
-            env: localOrcaEnv(this.deps.env ?? process.env),
-          })
-          .catch(() => '');
+        // A background (remote) launch must not change the person's active tab.
+        if (!session.background)
+          await this.deps
+            .run(this.deps.orca(), ['terminal', 'switch', `--terminal=${handle}`, '--json'], {
+              timeout: 8000,
+              env: localOrcaEnv(this.deps.env ?? process.env),
+            })
+            .catch(() => '');
         return launched;
       }
       this.pending.add(target);
