@@ -243,6 +243,173 @@ body.dock-mode {
 .dock-pet-tally .tally-standby i {
   background: #7fc4d9;
 }
+/* Hovering a number lists who it counts, right above the pill; a name opens that card. */
+.dock-pet-tally > span {
+  cursor: pointer;
+  border-radius: 99px;
+  padding: 1px 3px;
+  margin: 0 -3px;
+}
+.dock-pet-tally > span.is-listed {
+  background: var(--bg-5);
+}
+.dock-pet-list {
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  z-index: 6;
+  width: 196px;
+  max-height: 188px;
+  overflow-y: auto;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px;
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(17, 18, 22, 0.96);
+  border: 1px solid var(--line-3);
+  box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.7);
+  animation: pet-list-in 0.125s var(--ease-out);
+}
+@keyframes pet-list-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 4px);
+  }
+}
+.dock-pet-list > b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px 5px;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+.dock-pet-list > b i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-idle);
+}
+.dock-pet-list.tally-attention > b i {
+  background: var(--st-call);
+}
+.dock-pet-list.tally-results > b i {
+  background: var(--accent);
+}
+.dock-pet-list.tally-working > b i {
+  background: var(--st-work);
+}
+.dock-pet-list.tally-standby > b i {
+  background: #7fc4d9;
+}
+.dock-pet-list button {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  text-align: left;
+  color: var(--text);
+}
+.dock-pet-list button:is(:hover, :focus-visible) {
+  background: var(--bg-4);
+}
+.dock-pet-list .pet-list-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dock-pet-list button small {
+  font-size: 10px;
+  color: var(--text-3);
+}
+/* While a list is open the pet's tools and arrows step aside. */
+.dock-pet-anchor.is-listing :is(.dock-pet-tools, .dock-pet-actions, .dock-pet-nav) {
+  visibility: hidden;
+}
+/* Turning to another colleague: it slides in from the side the arrow points to, with a puff. */
+.dock-pet-body.enter-next {
+  animation:
+    pet-in-next 0.25s var(--ease-out),
+    dock-pet-bob 2.75s ease-in-out 0.25s infinite;
+}
+.dock-pet-body.enter-prev {
+  animation:
+    pet-in-prev 0.25s var(--ease-out),
+    dock-pet-bob 2.75s ease-in-out 0.25s infinite;
+}
+@keyframes pet-in-next {
+  from {
+    opacity: 0;
+    transform: translateX(22px) scale(0.9);
+  }
+}
+@keyframes pet-in-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-22px) scale(0.9);
+  }
+}
+.pet-swap-puff {
+  position: absolute;
+  left: 50%;
+  bottom: 44px;
+  z-index: 1;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.pet-swap-puff i {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.75);
+  opacity: 0;
+  animation: pet-puff 0.375s ease-out;
+}
+.pet-swap-puff i:nth-child(1) {
+  --dx: -26px;
+  --dy: -4px;
+}
+.pet-swap-puff i:nth-child(2) {
+  --dx: 26px;
+  --dy: -6px;
+}
+.pet-swap-puff i:nth-child(3) {
+  --dx: -16px;
+  --dy: 8px;
+}
+.pet-swap-puff i:nth-child(4) {
+  --dx: 18px;
+  --dy: 9px;
+}
+@keyframes pet-puff {
+  0% {
+    opacity: 0.9;
+    transform: translate(0, 0) scale(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(1.4);
+  }
+}
+.reduce-motion
+  :is(.dock-pet-body.enter-next, .dock-pet-body.enter-prev, .pet-swap-puff i, .dock-pet-list) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.dock-pet-body.enter-next, .dock-pet-body.enter-prev, .pet-swap-puff i, .dock-pet-list) {
+    animation: none;
+  }
+}
 .dock-pet-bang {
   position: absolute;
   top: 6px;

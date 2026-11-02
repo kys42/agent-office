@@ -25,6 +25,7 @@ export const dock = {
     someone: 'your teammate',
     openCard: 'Open work card',
     openCardTitle: "Open as popup · the speaking teammate's work card",
+    openCardOf: (name: string) => `Open ${name}'s work card`,
     expand: 'Expand office',
     expandTitle: 'Open the big office',
     refresh: 'Refresh',
