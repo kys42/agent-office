@@ -43,6 +43,7 @@ export const launch = {
     "tmux didn't answer in time, so the start couldn't be confirmed. It may already be running: check its status before starting it again.",
   tmuxLaunched: 'Started in tmux. Open it in a terminal to work there.',
   tmuxRunning: 'Its tmux session is already running. Open it in a terminal.',
+  tmuxOpened: 'Opened its tmux session in Terminal.',
   starting: (place: string) =>
     `It was just started in ${place} and may still be starting. Check there before starting it again.`,
   copied: 'Command copied. Run it in a terminal.',

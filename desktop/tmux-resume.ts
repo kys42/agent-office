@@ -268,6 +268,41 @@ export class TmuxResume {
     return (await this.inspect(s)).info;
   }
   /**
+   * This conversation's own session, when it runs: `at` is its server's socket path and live
+   * panes (null when they could not be listed), so a verified agent terminal can be matched
+   * to it (desktop/launch-guard.ts). Null when it does not run.
+   */
+  async ownPanes(
+    s: SavedSession,
+  ): Promise<{ at: { socket: string; panes: string[] } | null } | null> {
+    const current = await this.inspect(s);
+    if (!current.info.running) return null;
+    try {
+      const rows = (
+        await this.deps.run(current.tmux, [
+          '-L',
+          this.deps.server,
+          'list-panes',
+          '-s',
+          '-t',
+          current.name,
+          '-F',
+          '#{socket_path}\t#{pane_id}\t#{pane_dead}',
+        ])
+      )
+        .trim()
+        .split('\n')
+        .map((line) => line.split('\t'));
+      const socket = rows[0]?.[0] ?? '';
+      const panes = rows
+        .filter(([path, id, dead]) => path === socket && /^%\d+$/.test(id ?? '') && dead === '0')
+        .map(([, id]) => id);
+      return { at: socket && panes.length ? { socket, panes } : null };
+    } catch {
+      return { at: null };
+    }
+  }
+  /**
    * Read-only, for the launch pipeline (desktop/launch/pipeline.ts): `running` when this
    * launch's own session already runs (nothing new starts), otherwise whether it can start.
    */

@@ -182,33 +182,42 @@ try {
   await page.waitForSelector('.office-pet');
   await settings.screenshot({ path: '.local/native-settings.png' });
   await settingsWindow((w) => w.close());
-  // Unsupported platforms expose no process-launch capability.
-  const supportsTmux = ['darwin', 'linux'].includes(process.platform);
-  assert.equal(
-    await page.evaluate(() => typeof window.office.tmuxResume),
-    supportsTmux ? 'function' : 'undefined',
-  );
-  assert.equal(
-    await page.evaluate(() => typeof window.office.tmuxSummon),
-    supportsTmux ? 'function' : 'undefined',
-  );
-  if (supportsTmux) {
-    await assert.rejects(
-      page.evaluate(() =>
-        window.office.tmuxSummon('remote-office:test:claude:demo', 'start', 'claude'),
-      ),
-    );
-    await assert.rejects(
-      page.evaluate((id) => window.office.tmuxSummon(id, 'start', 'invalid'), s.sessions[0].id),
-    );
-    await assert.rejects(
-      page.evaluate(() => window.office.tmuxResume('remote-office:test:claude:demo', 'start')),
-    );
-    const openclawSession = s.sessions.find((session) => session.provider === 'openclaw');
-    await assert.rejects(
-      page.evaluate((id) => window.office.tmuxResume(id, 'start'), openclawSession.id),
-    );
+  // What this platform can launch at all decides whether the launch sheet is offered (#319).
+  {
+    const support = await page.evaluate(() => window.office.launchSupport());
+    assert.equal(support.supported, process.platform !== 'win32');
+    assert.deepEqual(support.opens, process.platform === 'darwin' ? ['orca', 'tmux'] : []);
   }
+  // The older launch channels are gone (#319): every launch goes through `office:launch`.
+  for (const name of ['tmuxResume', 'tmuxSummon', 'orcaLaunch', 'orcaSummon'])
+    assert.equal(await page.evaluate((n) => typeof window.office[n], name), 'undefined');
+  // A remote office's session is never launched here; `open` takes only a destination that has
+  // a place of its own (tmux, a resume's Orca tab).
+  await assert.rejects(
+    page.evaluate(() =>
+      window.office.launch({
+        intent: {
+          kind: 'new',
+          at: 'remote-office:test:claude:demo',
+          provider: 'claude',
+          name: 'smoke',
+        },
+        destination: 'tmux',
+        action: 'start',
+      }),
+    ),
+  );
+  await assert.rejects(
+    page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id },
+          destination: 'copy',
+          action: 'open',
+        }),
+      s.sessions[0].id,
+    ),
+  );
   // The launch core (#318): a strict request shape; an agent that cannot start is refused with
   // its reason at every destination, before anything is probed or asked.
   await assert.rejects(

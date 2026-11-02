@@ -335,3 +335,22 @@ test('an agent that exits right after tmux started it is told apart from tmux fa
   const fine = fixture();
   assert.equal((await fine.manager.start(session, async () => true)).running, true);
 });
+test("own panes: the running session's server socket and live panes, for matching a verified terminal", async () => {
+  const f = fixture();
+  assert.equal(await f.manager.ownPanes(session), null, 'not running: no own session');
+  await f.manager.start(session, async () => true);
+  const run = f.deps.run;
+  f.deps.run = async (file, args) =>
+    args.includes('#{socket_path}\t#{pane_id}\t#{pane_dead}')
+      ? '/tmp/tmux-501/test-office\t%1\t0\n/tmp/tmux-501/test-office\t%2\t1'
+      : run(file, args);
+  assert.deepEqual(await new TmuxResume(f.deps).ownPanes(session), {
+    at: { socket: '/tmp/tmux-501/test-office', panes: ['%1'] },
+  });
+  // Panes that cannot be listed: alive, but nothing to match a terminal to.
+  f.deps.run = async (file, args) => {
+    if (args.includes('#{socket_path}\t#{pane_id}\t#{pane_dead}')) throw new Error('no server');
+    return run(file, args);
+  };
+  assert.deepEqual(await new TmuxResume(f.deps).ownPanes(session), { at: null });
+});

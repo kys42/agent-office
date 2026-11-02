@@ -129,7 +129,7 @@ export const settings: Messages['settings'] = {
   terminalTitle: '터미널과 답하기',
   tmuxSkip: '권한 확인 없이 터미널에 띄우기',
   tmuxSkipHint:
-    'tmux로 재개·소환하거나 Orca 새 탭에서 재개할 때 Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
+    '세션 시작 창에서 새 세션·이어가기·복제를 띄울 때(Orca·tmux·터미널 앱·명령 복사) Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
   notifications: {
     title: '알림',
     finals: '최종 응답',
