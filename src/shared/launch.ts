@@ -60,7 +60,12 @@ export const launchRequestSchema = z
   .object({
     intent: launchIntentSchema,
     destination: z.enum(LAUNCH_DESTINATIONS),
-    action: z.enum(['probe', 'start']),
+    /**
+     * `open`: this launch's own place as it is now, nothing started. tmux opens its running
+     * session in a terminal (a resume's, or a new/fork slot of that name); Orca brings a
+     * resume's open tab to the front. Other destinations have nothing of their own to open.
+     */
+    action: z.enum(['probe', 'start', 'open']),
   })
   .strict();
 export type LaunchRequest = z.input<typeof launchRequestSchema>;
@@ -74,6 +79,16 @@ export interface LaunchProbe {
   command?: string;
   /** tmux: this launch's own session already runs there (starting opens nothing new). */
   running?: boolean;
+}
+
+/**
+ * `office:launch-support`: what this computer's platform can ever do, before any intent.
+ * `supported`: at least one destination can work here (else the sheet's entry points hide);
+ * `opens`: the destinations whose own place `open` can bring to the front here.
+ */
+export interface LaunchSupport {
+  supported: boolean;
+  opens: LaunchDestinationId[];
 }
 
 /** `office:launch-options`: every destination probed for one intent. */
@@ -113,11 +128,12 @@ export function pendingNotice(where: LaunchPlace, starting = false): string {
  * - `copied`: the command is on the clipboard.
  * - `cancelled`: the person said no in the confirmation.
  * - `refused`: nothing started, with why; `duplicate` when it already runs or changed meanwhile.
+ * - `opened`: an `open` brought its own place to the front (nothing started).
  */
 export type LaunchResult =
   | { state: 'probed'; destination: LaunchDestinationId; probe: LaunchProbe }
   | {
-      state: 'launched' | 'running' | 'uncertain' | 'copied';
+      state: 'launched' | 'running' | 'uncertain' | 'copied' | 'opened';
       destination: LaunchDestinationId;
       message: string;
       command?: string;

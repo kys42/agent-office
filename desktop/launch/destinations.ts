@@ -64,6 +64,9 @@ export function tmuxDestination(tmux: TmuxResume): LaunchDestination {
     id: 'tmux',
     launches: true,
     place: 'tmux',
+    supports: (platform) => platform === 'darwin' || platform === 'linux',
+    // Its session opens in Terminal through AppleScript (`TmuxResume.open`).
+    opens: (platform) => platform === 'darwin',
     async probe(t) {
       const probe = await tmux.probe(tmuxSession(t));
       return probe.running ? { ...probe, message: m().launch.tmuxRunning } : probe;
@@ -83,6 +86,9 @@ export function orcaDestination(orca: OrcaLaunch): LaunchDestination {
     launches: true,
     place: 'orca',
     reserves: true,
+    // Orca is a macOS app; `open` switches to a resume's own tab.
+    supports: (platform) => platform === 'darwin',
+    opens: (platform) => platform === 'darwin',
     probe: (t, fresh) => orca.probe(orcaSession(t), fresh),
     async start(t, context) {
       const started = await orca.create(orcaSession(t), context as StartContext<OrcaPlan>);
@@ -152,6 +158,7 @@ export function terminalAppDestination(deps: ShellDestinationDeps): LaunchDestin
     launches: true,
     place: 'other',
     reserves: true,
+    supports: (platform) => platform === 'darwin',
     async probe(t) {
       if (deps.platform !== 'darwin')
         return { available: false, reason: m().launch.terminalAppUnsupported };
@@ -184,6 +191,8 @@ export function copyDestination(deps: ShellDestinationDeps): LaunchDestination {
   return {
     id: 'copy',
     launches: false,
+    // A POSIX shell command.
+    supports: (platform) => platform !== 'win32',
     async probe(t) {
       // A POSIX shell command: Windows shells read its quoting otherwise.
       if (deps.platform === 'win32')

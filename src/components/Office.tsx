@@ -53,6 +53,7 @@ import { walksIn } from '../lib/commute';
 import { joyClass, usePetReactions } from '../lib/petReaction';
 import { usePetting } from '../lib/usePetting';
 import { PetJoy } from './PetJoy';
+import { DEFAULT_DESK_VIEW, type DeskView } from '../shared/view-prefs';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -85,7 +86,16 @@ export function Office({
   helperStackAt = HELPER_STACK_AT,
   demo = false,
   bringBack,
+  show = DEFAULT_DESK_VIEW,
+  preview = false,
 }: {
+  /** What the person chose to see on the desks (#324). Missing: the look from before. */
+  show?: DeskView;
+  /**
+   * Drawn small in the settings (#324): the same room, without anything that reaches outside
+   * it — no app commands, keys or terminal lookups.
+   */
+  preview?: boolean;
   /** Lets each project's "+" offer bringing back its lounge/archive colleagues. */
   bringBack?: BringBack;
   demo?: boolean;
@@ -169,7 +179,10 @@ export function Office({
     const el = holder.current!.parentElement!;
     let windowSize = '';
     const ro = new ResizeObserver(() => {
-      const box = el.getBoundingClientRect();
+      // A preview is drawn scaled (#324): its own, untransformed size is the room it has.
+      const box = preview
+        ? { width: el.offsetWidth, height: el.offsetHeight }
+        : el.getBoundingClientRect();
       const width = Math.floor(box.width),
         height = Math.floor(box.height);
       setViewport((v) => (v.width === width && v.height === height ? v : { width, height }));
@@ -235,7 +248,7 @@ export function Office({
     ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
     : [];
   const { targets: replyTargets, markSent } = useSendTargets(replyable.map(replyFor), {
-    enabled: quick,
+    enabled: quick && !preview,
     // Asks again when a record moves (a turn ended); no 4s polling across the whole floor.
     stamp: Math.max(0, ...replyable.map((s) => s.updatedAt)),
     pollBusy: false,
@@ -262,6 +275,7 @@ export function Office({
   };
   const focusZone = (key: string) => (focusKey === key ? fit() : setFocusKey(key));
   useEffect(() => {
+    if (preview) return;
     const command = (e: Event) => {
       const what = (e as CustomEvent<string>).detail;
       if (what === 'fit') fit();
@@ -327,7 +341,7 @@ export function Office({
   // Esc goes back to the whole room, one layer at a time like the app's own Esc: a field or
   // an open colleague closes first.
   useEffect(() => {
-    if (!focusKey) return;
+    if (!focusKey || preview) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || selected) return;
       if (
@@ -626,13 +640,13 @@ export function Office({
                           onDragEnd={endDrag}
                           onClick={() => onSelect(s.id)}
                           onMouseEnter={() => onHover?.(s.id)}
-                          onMouseMove={petting(s.id).onMouseMove}
+                          onMouseMove={preview ? undefined : petting(s.id).onMouseMove}
                           onMouseLeave={() => {
                             onHover?.(null);
-                            petting(s.id).onMouseLeave?.();
+                            if (!preview) petting(s.id).onMouseLeave?.();
                           }}
                         >
-                          <FocusEffects level={focus} />
+                          {show.focus && <FocusEffects level={focus} />}
                           {/* A pleased pet looks up from its work for a moment. */}
                           <Sprite
                             session={s}
@@ -658,19 +672,21 @@ export function Office({
                         )}
                         <Furniture kind="equipment" look={desk} />
                         {quota && <QuotaBadge quota={quota} />}
-                        <PaperPile count={deskPapers(s, clock)} level={focus} />
+                        {show.papers && <PaperPile count={deskPapers(s, clock)} level={focus} />}
                         {arrival && (
                           <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
                         )}
-                        {pose.working && <WorkingBeacon level={focus} />}
-                        <button
-                          className={`desk-branch branch-${branch.kind}`}
-                          title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                          onClick={() => onSelect(s.id)}
-                        >
-                          <GitBranch size={9} />
-                          <span>{privacy ? t.desk.hidden : branch.label}</span>
-                        </button>
+                        {show.beacon && pose.working && <WorkingBeacon level={focus} />}
+                        {show.branch && (
+                          <button
+                            className={`desk-branch branch-${branch.kind}`}
+                            title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                            onClick={() => onSelect(s.id)}
+                          >
+                            <GitBranch size={9} />
+                            <span>{privacy ? t.desk.hidden : branch.label}</span>
+                          </button>
+                        )}
                         <button
                           className={`desk-name ${active ? 'selected' : ''}`}
                           onClick={() => onSelect(s.id)}

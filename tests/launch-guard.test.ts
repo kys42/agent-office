@@ -32,6 +32,30 @@ const evidence = (over: Partial<LaunchEvidence> = {}): LaunchEvidence => ({
   ...over,
 });
 
+test('running in the own tmux session only when the verified pane is one of its panes', () => {
+  const inTmux = (pane: string, socket = '/tmp/tmux-501/agent-office') =>
+    ({ kind: 'found', terminal: { where: 'tmux', tmux: { socket, pane } } }) as const;
+  const own = {
+    kind: 'found',
+    terminal: { socket: '/tmp/tmux-501/agent-office', panes: ['%3', '%4'] },
+  } as const;
+  assert.deepEqual(decideDuplicate(evidence({ agent: inTmux('%4'), ownTmux: own })), {
+    state: 'running',
+    where: 'tmux',
+    inOwnTmux: true,
+  });
+  // Another pane (the own pane shows another conversation after /clear), another server, or
+  // own panes not listed: running in tmux, not in the own session.
+  for (const e of [
+    evidence({ agent: inTmux('%9'), ownTmux: own }),
+    evidence({ agent: inTmux('%4', '/tmp/tmux-501/default'), ownTmux: own }),
+    evidence({ agent: inTmux('%4'), ownTmux: { kind: 'found', terminal: null } }),
+    evidence({ agent: inTmux('%4'), ownTmux: none }),
+    evidence({ agent: found('tmux'), ownTmux: own }),
+  ])
+    assert.deepEqual(decideDuplicate(e), { state: 'running', where: 'tmux' });
+});
+
 test('the decision: running beats open beats unknown beats none', () => {
   assert.deepEqual(decideDuplicate(evidence()), { state: 'none' });
   assert.deepEqual(decideDuplicate(evidence({ agent: found('other') })), {

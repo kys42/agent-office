@@ -1,9 +1,13 @@
+import { useState } from 'react';
+import { Plus } from 'lucide-react';
 import { RemoteSummon } from './RemoteSummon';
+import { LaunchSheet } from './LaunchSheet';
+import { ZoneShellButton } from './MiniShell';
 import { api } from '../lib/api';
+import { useLaunchSupport } from '../lib/useLaunchSupport';
+import { useI18n } from '../lib/i18n';
+import { conversationChoices } from '../shared/launch-sheet';
 import type { Session } from '../shared/types';
-import { TmuxResume } from './TmuxResume';
-import { SummonExisting } from './SummonExisting';
-import { awayColleagues } from '../shared/summon-existing';
 import type { OfficeModel } from '../shared/office-model';
 
 /** What the "+" needs to offer bringing back an away colleague of this project. */
@@ -12,8 +16,12 @@ export interface BringBack {
   /** The existing "bring back to the office" (unarchive + return time). */
   onReturn: (id: string) => unknown;
 }
-import { ZoneShellButton } from './MiniShell';
-/** A custom zone may hold several actual project folders: never guess which one to launch in. */
+/**
+ * A project's "+": the launch sheet (#319) for a new session in its folder, or for continuing
+ * or forking one of its conversations (the office's, then the lounge's and the archive's).
+ * A custom zone may hold several actual project folders: never guess which one to launch in.
+ * A project of a connected remote office keeps its own summon (RemoteSummon).
+ */
 export function ProjectSummon({
   sessions,
   privacy,
@@ -27,6 +35,10 @@ export function ProjectSummon({
   notify: (message: string) => void;
   demo?: boolean;
 }) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  // Hidden where no destination can ever work on this platform (main decides, e.g. Windows).
+  const support = useLaunchSupport();
   const remote = [
     ...new Map(
       sessions
@@ -46,33 +58,29 @@ export function ProjectSummon({
   const projects = [
     ...new Map(sessions.filter((s) => !s.remote && s.cwd).map((s) => [s.cwd, s])).values(),
   ];
-  const away =
-    bringBack && api.tmuxResume && api.tmuxSummon && !demo && !privacy
-      ? awayColleagues(bringBack.zones, sessions)
-      : null;
+  const launchable =
+    !!support?.supported && !!api.launch && !!api.launchOptions && !demo && projects.length > 0;
+  const choices = open ? conversationChoices(bringBack?.zones, sessions) : null;
   return (
     <>
-      {api.tmuxSummon && !demo && !privacy && projects.length > 0 && (
-        <TmuxResume
-          id={projects[0].id}
-          projects={projects}
+      {launchable && !privacy && (
+        <button
+          className="project-summon-button"
+          data-solid
+          aria-label={t.launchSheet.title}
+          title={t.launchSheet.title}
+          onClick={() => setOpen(true)}
+        >
+          <Plus size={15} />
+        </button>
+      )}
+      {launchable && open && choices && (
+        <LaunchSheet
+          entry={{ from: 'project', projects, choices: choices.list, hidden: choices.hidden }}
           privacy={privacy}
           notify={notify}
-          summon
-          existing={
-            away
-              ? (close) => (
-                  <SummonExisting
-                    colleagues={away.list}
-                    total={away.total}
-                    privacy={privacy}
-                    notify={notify}
-                    onReturn={bringBack!.onReturn}
-                    close={close}
-                  />
-                )
-              : undefined
-          }
+          onClose={() => setOpen(false)}
+          onReturn={bringBack?.onReturn}
         />
       )}
       <ZoneShellButton sessions={sessions} privacy={privacy} demo={demo} notify={notify} />

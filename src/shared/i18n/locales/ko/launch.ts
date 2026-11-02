@@ -39,6 +39,7 @@ export const launch: Messages['launch'] = {
     'tmux가 제때 답하지 않아 시작을 확인하지 못했어요. 이미 실행 중일 수 있으니 다시 띄우기 전에 상태를 확인해주세요.',
   tmuxLaunched: 'tmux에서 시작했어요. 터미널에서 열어 작업하세요.',
   tmuxRunning: '이 tmux 세션이 이미 실행 중이에요. 터미널에서 열어주세요.',
+  tmuxOpened: '터미널에서 tmux 세션을 열었어요.',
   starting: (place) =>
     `방금 ${place}에서 띄웠어요. 아직 시작 중일 수 있으니 다시 띄우기 전에 그곳을 확인해주세요.`,
   copied: '명령을 복사했어요. 터미널에서 실행하세요.',

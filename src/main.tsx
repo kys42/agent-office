@@ -15,6 +15,7 @@ import { isWindows } from './lib/platform';
 import { startFrameClock } from './lib/frame-clock';
 import { bootReadingText } from './lib/useReadingText';
 import { bootGlass } from './lib/useGlass';
+import { bootPatCursor } from './lib/patCursor';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
@@ -28,9 +29,10 @@ import './styles/speech.css';
 import './styles/effects.css';
 import './styles/pets.css';
 import './styles/desks.css';
+import './styles/views-settings.css';
 import './styles/guide.css';
 import './styles/tmux.css';
-import './styles/summon-existing.css';
+import './styles/launch-sheet.css';
 import './styles/mini-shell.css';
 import './styles/native.css';
 import './styles/windows.css';
@@ -58,6 +60,7 @@ function Crashed() {
 bootLocale();
 bootReadingText();
 bootGlass();
+bootPatCursor();
 document.body.classList.toggle('is-windows', !!window.office && isWindows);
 // The office's own frame rate for every looping animation (see frame-clock.ts).
 startFrameClock();

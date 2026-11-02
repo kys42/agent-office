@@ -490,7 +490,51 @@ export interface Preferences {
    * (0 solid … GLASS_MAX). Missing or null: each platform's own look from before.
    */
   windowGlass?: number | null;
+  /**
+   * What each screen shows (#324), mode by mode. Every key is optional: a missing one keeps the
+   * look from before it existed (see `viewPrefs`).
+   */
+  views?: ViewSettings;
 }
+/** The groups the desk pet's pill can count, in triage order. */
+export type PetTallyGroup = 'attention' | 'results' | 'working' | 'standby';
+/** When the desk pet shows its colleague's name: while it speaks (or is picked/hovered), always, never. */
+export type PetNameMode = 'speaking' | 'always' | 'never';
+/** The desk effects a desk scene can draw (row/floor, big office). */
+export interface DeskViewSettings {
+  /** The branch tag under each desk (office row and the big office; the floor has plates). */
+  branch?: boolean;
+  /** Papers stacking up on a busy desk. */
+  papers?: boolean;
+  /** The light over a desk at work. */
+  beacon?: boolean;
+  /** Sparks and heat around a colleague deep in work. */
+  focus?: boolean;
+}
+export interface ViewSettings {
+  pet?: {
+    /** The coloured numbers pill. Off: the single-label pill from before. */
+    tally?: boolean;
+    tallyGroups?: PetTallyGroup[];
+    name?: PetNameMode;
+    /** The slide and puff when the pet turns to someone else. */
+    turnEffect?: boolean;
+    /** Rubbing the pet pats it (and the pointer becomes a hand). */
+    petting?: boolean;
+  };
+  /** The office row and the floor desks. */
+  dock?: DeskViewSettings & {
+    /** A read final reply leaves its desk (a peek brings it back). */
+    hideRead?: boolean;
+  };
+  tiny?: {
+    /** Focus effects and paper piles on tiny desks. */
+    effects?: boolean;
+  };
+  /** The big office. */
+  office?: DeskViewSettings;
+}
+export type ViewMode = keyof ViewSettings;
 export type TextSize = 'small' | 'normal' | 'large' | 'larger';
 /** `system`: the app's stack from before (system font, then Pretendard). */
 export type ReadingFont = 'system' | 'pretendard' | 'mono';
@@ -856,36 +900,17 @@ export interface OfficeAPI {
     action: 'status' | 'start',
     spec: import('./remote-launch').RemoteLaunchSpec,
   ) => Promise<import('./remote-launch').RemoteLaunchInfo>;
-  /** Local desktop only. Starting requires confirmation in the main process. */
-  tmuxSummon?: (
-    id: string,
-    action: 'status' | 'start' | 'open',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<TmuxResumeInfo>;
-  tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
-  /**
-   * Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab; `focus`
-   * switches to its existing Orca tab, re-verified afresh in main.
-   */
-  orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
-  /** Desktop (macOS) only: summon a new agent in a new Orca tab of this project's folder. */
-  orcaSummon?: (
-    id: string,
-    action: 'status' | 'start',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<OrcaLaunchInfo>;
   /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
   orcaReveal?: () => Promise<void>;
   /**
-   * Desktop only (#318): probe or start one launch (new, resume, fork) at one destination.
-   * Starting asks a native confirmation in the main process; a refusal is an answer, not an
-   * error (`state: 'refused'` with its reason).
+   * Desktop only (#318): probe, start or open one launch (new, resume, fork) at one
+   * destination. Starting asks a native confirmation in the main process; a refusal is an
+   * answer, not an error (`state: 'refused'` with its reason). The launch sheet (#319) is its
+   * only window caller.
    */
   launch?: (request: import('./launch').LaunchRequest) => Promise<import('./launch').LaunchResult>;
+  /** Desktop only: whether this platform can launch at all, and which destinations open. */
+  launchSupport?: () => Promise<import('./launch').LaunchSupport>;
   /** Desktop only: every destination probed for an intent, with the one to offer first. */
   launchOptions?: (
     intent: import('./launch').LaunchIntent,
@@ -1065,7 +1090,12 @@ export type DuplicateCheck =
    * (a Terminal window, an Orca tab) and the agent not seen running yet.
    */
   | { state: 'open'; where: LaunchPlace; pending?: true; starting?: true }
-  | { state: 'running'; where: LaunchPlace };
+  /**
+   * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
+   * this conversation (main matched the terminal it found to that session's panes). Without
+   * it the conversation may run elsewhere while the own pane shows another one.
+   */
+  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true };
 export interface OrcaLaunchInfo {
   available: boolean;
   /** Set by `status`: whether this conversation already runs or is open somewhere. */

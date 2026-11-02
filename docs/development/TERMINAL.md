@@ -313,7 +313,7 @@ origin/owner 검증, 설정 상속, 잘못된 권한/프로토콜, 응답 유실
 
 ## 오래된 세션을 tmux로 재개 (#178)
 
-로컬 Claude/Codex 업무 카드의 **tmux로 재개**는 저장된 provider/nativeId/cwd를 사용해 기존 대화를 이어간다. 새 대화 생성이나 자동 메시지 전송은 하지 않는다. 프로젝트 폴더·tmux 이름·재접속 안내를 먼저 표시하고, main의 네이티브 확인창에 동의해야 프로세스를 띄운다. 실행 중인 같은 대화가 있으면 먼저 작업을 마치도록 안내한다.
+로컬 Claude/Codex 업무 카드의 **터미널에서 이어가기**(예전 이름 'tmux로 재개', 지금은 [실행 시트](#실행-시트-319)의 tmux 행선지)는 저장된 provider/nativeId/cwd를 사용해 기존 대화를 이어간다. 새 대화 생성이나 자동 메시지 전송은 하지 않는다. main의 네이티브 확인창이 프로젝트 폴더·tmux 이름을 보이고, 동의해야 프로세스를 띄운다(시작한 뒤 macOS는 바로 Terminal에서 연다). 실행 중인 같은 대화가 있으면 먼저 작업을 마치도록 안내한다.
 
 전용 `tmux -L agent-office` 서버에 `office-<provider>-<ID hash>` 이름을 사용한다. 처음 서버를 만들 때 사용자 tmux 설정을 읽지 않아 기본 Ctrl+B, D 안내와 종료 동작을 유지한다. 앱 재시작 후에도 이름과 소유 마커로 다시 찾으며 일반 사용자 pane에 명령을 입력하지 않는다. 살아 있는 관리 세션은 재사용하고, 소유한 단일 dead pane은 확인 후 `respawn-pane`으로 재개한다(`-k` 없음). 새 세션은 `new-session -d -x 200 -y 50`으로 만든다: 기본 80×24에서는 Claude 입력창이 7줄까지만 보여 긴 초안이 가려진다. 클라이언트가 붙으면 tmux(`window-size latest`)가 그 크기로 바꾸고, 떨어진 뒤에는 마지막 크기를 유지한다(tmux 3.6a 임시 서버로 확인). 다른 세션의 이름 충돌·조회 실패는 실행하지 않는다. 시작 요청은 [실행 코어](#실행-코어-318)의 한 줄 대기열에서 직렬화하고(Orca·Terminal·원격 실행과 같은 줄), 확인 후 폴더와 tmux를 재검사한다.
 
@@ -336,17 +336,17 @@ create 직전에 `orca terminal list --worktree=path:<cwd> --limit=10000 --json`
 
 ## 실행 코어 (#318)
 
-세션을 띄우는 길은 모두 `desktop/launch/`를 지난다: 업무 카드의 tmux 재개·Orca 새 탭, 프로젝트 **+**의 소환·기존 동료 불러오기, 원격 사무실의 소환, 그리고 새 IPC `office:launch`. 화면은 무엇을(의도) 어디서(행선지) 할지만 말하고, 순서·검사·에이전트 인자는 코어가 정한다.
+세션을 띄우는 길은 모두 `desktop/launch/`를 지난다: [실행 시트](#실행-시트-319)(업무 카드와 프로젝트 **+**), 원격 사무실의 소환. 창 쪽 입구는 IPC `office:launch` 하나다. 화면은 무엇을(의도) 어디서(행선지) 할지만 말하고, 순서·검사·에이전트 인자는 코어가 정한다.
 
 - **의도 `LaunchIntent`** (`src/shared/launch.ts`, zod로 엄격 검사): `new`(그 프로젝트의 세션 id `at`·에이전트·이름·첫 메시지), `resume`(세션 id), `fork`(세션 id·이름·첫 메시지). 창은 경로·명령·실행 파일을 보내지 못하고, main이 저장된 세션에서 폴더·대화 id를 찾아 `LaunchTarget`을 만든다. 원격 사무실 세션 id는 거절한다.
 - **행선지** (`destinations.ts`): `orca`(새 Orca 탭, `desktop/orca-launch.ts`), `tmux`(전용 서버, `desktop/tmux-resume.ts`), `terminalApp`(macOS Terminal 새 창에서 `cd <폴더> && <명령>`), `copy`(같은 명령을 클립보드에). 각각 `probe`(사용 가능 여부와 **이유**: Orca 미설치·꺼짐·응답 없음·작업 공간 아님·하위 폴더, tmux·CLI 없음, 폴더 없음, macOS 전용 등)와 `start`(launched / uncertain / copied, 거절은 이유와 함께 throw)를 가진다. 이어받기(`adopt`)는 해당하는 곳에만 있다: Orca는 확인 못 한 탭을 제목으로 찾고(아래), tmux는 소환 세션에 대화 표식을 남긴다. Terminal 창과 복사한 명령은 일반 터미널처럼 프로세스로 찾는다.
 - **파이프라인** (`pipeline.ts` `runLaunch`): probe → 중복 확인 → 네이티브 확인 → 중복 확인 다시 → probe 다시 → start → 확인 못 한 시작은 대기 기록. **앱 전체가 한 줄 대기열**(`launchQueue`)을 쓴다: Orca가 확인 못 한 탭을 30초 찾는 동안 tmux 시작도 기다렸다가 그 결과(대기 기록)를 본다. probe가 `running`(같은 tmux 슬롯이 이미 실행 중)이면 묻지 않고 그대로 알린다. 복사처럼 아무것도 띄우지 않는 행선지는 확인창·대기 기록이 없지만, 실행 중인 대화는 여전히 거절한다.
-- **시작 중 예약** (`starting`): Terminal 창이 열렸다(`do script` 성공)거나 Orca가 탭을 확인·이어받았다는 것은 명령을 넘겼다는 뜻일 뿐, 에이전트가 중복 확인에 보이는 것은 아니다. 그래서 이 두 행선지(`reserves`)는 `launched` 뒤에도 대기 기록을 지우지 않고 같은 창(약 2분) 동안 `{ where, starting: true }`로 남긴다. 그 사이 다시 띄우면 확인창이 '그곳에 열려 있음'으로 경고하고, 에이전트가 보이면 `running`이 이겨 묻지 않고 거절한다. tmux는 시작 직후 자기 pane이 살아 있는 것을 확인하고 같은 슬롯·`ownTmux`가 재시도를 막으므로 예약하지 않는다. 예전 화면은 이 상태를 '확인 못 함'([Orca 열기]만)이 아니라 열려 있음으로 그리고, 문구는 `pendingNotice(where, true)`("방금 …에서 띄웠어요. 아직 시작 중일 수 있으니…")다.
+- **시작 중 예약** (`starting`): Terminal 창이 열렸다(`do script` 성공)거나 Orca가 탭을 확인·이어받았다는 것은 명령을 넘겼다는 뜻일 뿐, 에이전트가 중복 확인에 보이는 것은 아니다. 그래서 이 두 행선지(`reserves`)는 `launched` 뒤에도 대기 기록을 지우지 않고 같은 창(약 2분) 동안 `{ where, starting: true }`로 남긴다. 그 사이 다시 띄우면 확인창이 '그곳에 열려 있음'으로 경고하고, 에이전트가 보이면 `running`이 이겨 묻지 않고 거절한다. tmux는 시작 직후 자기 pane이 살아 있는 것을 확인하고 같은 슬롯·`ownTmux`가 재시도를 막으므로 예약하지 않는다. 실행 시트는 이 상태를 '확인 못 함'([Orca 열기]만)이 아니라 열려 있음으로 그리고, 문구는 `pendingNotice(where, true)`("방금 …에서 띄웠어요. 아직 시작 중일 수 있으니…")다.
 - **확인 못 한 시작** (`uncertain`): 행선지가 명령을 받았을 수도 있는데 시작을 보지 못한 경우다. 실패가 아니므로 다른 곳을 권하지 않고, 대기 기록(`PendingLaunches`, 약 2분)에 **행선지 자리**(`orca`·`tmux`·`other`)와 함께 남겨 다시 띄우기를 '그곳에 열려 있음'으로 경고한다(이어가기는 확인 후에도 그 사이 생겼으면 거절).
   - Orca: 탭을 만들고 터미널을 아직 못 띄움(아래 #317).
   - Terminal.app: `osascript`가 우리 시간 제한(8초)에 끊김. Terminal은 이미 `do script`를 받아 창을 열었을 수 있고, 호출을 죽여도 취소되지 않는다. Terminal이 명령을 받기 전이 확실한 실패만 거절한다: `osascript` 실행 불가(`ENOENT` 등), 자동화 권한 없음(-1743·-1744, 시스템 설정 → 자동화 안내), Terminal 없음(-10814·-600). 그 밖의 알 수 없는 오류도 `uncertain`이다(`terminalAppFailure`).
-  - tmux: `new-session` 호출이 실패하거나 끊기면 먼저 세션을 다시 본다. 만들어졌으면 `launched`(같은 슬롯이라 재시도는 `running`이 된다), 끊겼거나 세션 목록을 읽지 못하면 `uncertain`, tmux가 답한 실패인데 세션이 없을 때만 `failed`다. 명령이 성공한 뒤 확인(세션 다시 읽기)이 실패해도 `uncertain`이고(에이전트가 이미 돌 수 있다), 세션이 없거나 pane이 죽은 것을 **확인한** 경우만 `exitedAtStart`다. Orca(생성 뒤 찾기·전환), Terminal, 복사는 명령을 넘긴 뒤 던지는 단계가 없다(실패해도 무시). 예전 tmux 채널은 이 경우 "상태를 다시 확인" 안내를 오류로 돌려준다.
-  - 예전 화면(tmux 재개 창·기존 동료 불러오기)은 대기 기록의 자리에 맞는 안내를 보이고([Orca 열기]는 Orca일 때만), 문구는 공용 `pendingNotice(where)`가 정한다.
+  - tmux: `new-session` 호출이 실패하거나 끊기면 먼저 세션을 다시 본다. 만들어졌으면 `launched`(같은 슬롯이라 재시도는 `running`이 된다), 끊겼거나 세션 목록을 읽지 못하면 `uncertain`, tmux가 답한 실패인데 세션이 없을 때만 `failed`다. 명령이 성공한 뒤 확인(세션 다시 읽기)이 실패해도 `uncertain`이고(에이전트가 이미 돌 수 있다), 세션이 없거나 pane이 죽은 것을 **확인한** 경우만 `exitedAtStart`다. Orca(생성 뒤 찾기·전환), Terminal, 복사는 명령을 넘긴 뒤 던지는 단계가 없다(실패해도 무시). 실행 시트는 이 경우 tmux의 '확인 못 함' 안내만 보인다.
+  - 실행 시트는 대기 기록의 자리에 맞는 안내를 보이고([Orca 열기]는 Orca일 때만), 문구는 공용 `pendingNotice(where)`가 정한다.
 - **중복 확인** (`core.ts` `guard`): 이어가기는 대화 전체 확인(`launch-guard.ts`: 에이전트 프로세스·Orca 탭·자기 tmux·대기 기록). 새 세션과 복제는 **같은 실행이 아직 시작 중인지**만 본다(`PendingLaunches` 키: 새 세션 `new:<에이전트>:<폴더>:<이름>`, 복제 `fork:<에이전트>:<원래 id>:<폴더>:<이름>`). 복제는 다른 대화이므로 원래 대화가 실행 중이어도 막지 않는다.
 - **에이전트 어댑터** (`agents.ts`): 실행 인자·권한 우회 플래그·홈 변수(`CLAUDE_CONFIG_DIR`/`CODEX_HOME`)·새 대화 id를 정한다. 호출부에는 에이전트 분기가 없다.
   - Claude: 새 세션 `--session-id <uuid>`, 이어가기 `--resume <id>`, 복제 `--session-id <새 uuid> --fork-session --resume <id>`. `--session-id`는 `--resume`과 함께일 때 `--fork-session`이 있어야만 허용된다(Claude Code 2.1.316 바이너리의 검사 문구 "--session-id can only be used with --continue or --resume if --fork-session is also specified", Claude 데몬도 같은 조합으로 갈래를 띄운다). id는 시작마다 한 번 코어가 정해, 확인창에 보인 명령과 실제로 치는 명령이 같다. Orca·Terminal·복사로 띄운 새 Claude도 이 id를 가지므로 사무실이 그 대화를 알아보고, 이름(`launchedNames`, main 메모리 24시간)을 대화가 수집되면 별명으로 한 번 붙인다(직접 바꾼 별명이 이긴다. 앱을 다시 켜면 잊는다). tmux는 기존처럼 세션 옵션으로 붙인다.
@@ -354,15 +354,36 @@ create 직전에 `orca terminal list --worktree=path:<cwd> --limit=10000 --json`
   - OpenClaw: 터미널 실행·복제 모두 이유와 함께 거절(`launch.forkUnsupported` 등).
   - 첫 메시지는 늘 `--` 뒤에 둔다. tmux는 argv로(끝 `;`만 tmux용 escape), 셸 행선지는 작은따옴표 한 단어로(줄바꿈 유지) 넘긴다. 실행 파일은 tmux와 같은 방식으로 찾은 절대경로를 쓴다(Orca는 파일 이름이 에이전트 이름일 때만, 복사는 사람이 칠 명령이라 이름 그대로).
 - **복제의 tmux 슬롯**: 같은 폴더·에이전트·이름의 소환과 같은 슬롯(`new:` 토큰)을 쓴다. 그래서 연결 목록·표식·이어가기가 소환과 똑같이 동작하고, 같은 이름으로 실행 중이면 새로 띄우지 않고 그 세션을 알린다. 복제는 원래 대화의 폴더에서 띄운다(새 worktree 옵션 없음).
-- **IPC**: `office:launch({ intent, destination, action: 'probe' | 'start' })` → `LaunchResult`(`probed`·`launched`·`running`·`uncertain`·`copied`·`cancelled`·`refused{reason, duplicate?}`; 거절은 오류가 아니라 답이다). `office:launch-options(intent)` → 네 행선지의 probe, 중복 상태, 마지막 선택(`remembered`), 기본값, 복제면 원래 대화가 지금 있는 곳(`origin`). 기본값은 복제의 `origin`(Orca/tmux) → 마지막 선택 → Orca → tmux → 그 밖의 가능한 행선지 순서이고 모두 사용 가능할 때만이다. 실행이 진행되면(열림·확인 못 함·이미 실행 중·복사) 그 행선지를 `preferences.launchDestination`에 남긴다(원격 실행은 남기지 않는다). 예전 채널(`office:tmux-resume`·`tmux-summon`·`orca-launch`·`orca-summon`의 `start`)은 같은 코어를 부르는 얇은 래퍼라 기존 화면은 그대로 동작한다(`status`·`open`·`focus`는 기존 읽기·이동). 확인창은 하나의 빌더가 행선지·의도별 문구로 만든다(tmux·Orca의 기존 문구 유지).
+- **IPC**: `office:launch({ intent, destination, action: 'probe' | 'start' | 'open' })` → `LaunchResult`(`probed`·`launched`·`running`·`uncertain`·`copied`·`cancelled`·`opened`·`refused{reason, duplicate?}`; 거절은 오류가 아니라 답이다). `open`은 아무것도 띄우지 않고 그 실행의 자리를 앞으로 가져온다: tmux는 실행 중인 자기 세션(이어가기의 것, 또는 그 이름의 새 세션·복제 슬롯)을 Terminal에서 열고(`tmuxResume.open(tmuxSession(target))`), Orca는 이어가기 대화의 탭을 지금 다시 맞춰 본 뒤 전환한다(`focusOrcaTab`, 이동의 대체 경로 없음). 그 밖의 행선지는 `badRequest`. `office:launch-support()` → `{ supported, opens }`: 이 플랫폼에서 쓸 수 있는 행선지가 하나라도 있는지와 `open`이 되는 행선지(macOS: tmux·Orca, Linux: 없음, Windows: `supported: false`). 행선지마다 `supports(platform)`·`opens(platform)`을 갖고 코어(`LaunchCore.support`)가 모은다. `office:launch-options(intent)` → 네 행선지의 probe, 중복 상태, 마지막 선택(`remembered`), 기본값, 복제면 원래 대화가 지금 있는 곳(`origin`). 기본값은 복제의 `origin`(Orca/tmux) → 마지막 선택 → Orca → tmux → 그 밖의 가능한 행선지 순서이고 모두 사용 가능할 때만이다. 실행이 진행되면(열림·확인 못 함·이미 실행 중·복사) 그 행선지를 `preferences.launchDestination`에 남긴다(원격 실행은 남기지 않는다). 예전 채널(`office:tmux-resume`·`tmux-summon`·`orca-launch`·`orca-summon`)과 preload의 `tmuxResume`·`tmuxSummon`·`orcaLaunch`·`orcaSummon`은 실행 시트로 옮기면서 지웠다(#319). 읽기는 `launch-options`, 이동은 `open`, Orca 앞으로 가져오기는 `office:orca-reveal`이 맡는다. 확인창은 하나의 빌더가 행선지·의도별 문구로 만든다(tmux·Orca의 기존 문구 유지).
 - **원격 실행** (`server/federation/launcher.ts`): 원격 쪽 프로세스에서 같은 코어(행선지 tmux·Orca, 자체 대기 기록)를 `background: true`로 부른다. 확인은 요청 쪽 네이티브 확인이고 여기서는 `authorized`로 권한만 다시 본다. Orca가 확인 못 한 시작은 `uncertain`으로 답한다.
 - **탭 찾기 보강**: Orca 탭 찾기(`orca-tabs.ts`)는 세션 cwd가 worktree의 하위 폴더여도 그 worktree의 탭을 후보로 본다(`holdsFolder`, 폴더 경계 기준). 제목 일치는 그대로 필수이고, 후보가 여럿(중첩 worktree)이거나 그 worktree 안 다른 대화도 같은 제목이면 대체하지 않는다. `orca terminal list`는 `--limit=10000`으로 묻고 응답은 16MB까지 읽는다(기본 제한에 잘리면 중복 확인이 늘 '확인 못 함'이 됐다). Orca `terminal switch`가 제때 답하지 않거나 Orca가 이유를 주면 일반 "이동하지 못했어요" 대신 그 사실을 알린다(`orcaSwitchFailure`).
 
+## 실행 시트 (#319)
+
+세션을 띄우는 화면은 **실행 시트** 하나다(`src/components/LaunchSheet.tsx`). 화면은 그리기만 하고, 상태와 호출은 훅 `src/lib/useLaunch.ts`, 판단은 순수 함수 `src/shared/launch-sheet.ts`(단위 테스트 `tests/launch-sheet.test.ts`)가 한다. 에이전트는 데이터(`NEW_AGENTS`)이고 행선지는 코어의 목록이라 컴포넌트에 에이전트·행선지 분기가 없다.
+
+- **입구**
+  - 프로젝트 구역·깃발의 **+**(`ProjectSummon`, 사무실·책상 줄·바닥 공통): **새 세션**으로 열린다. 이어가기·복제 목록은 이 구역의 사무실 대화(최근 순) 다음에 같은 프로젝트의 대기·보관 동료(예전 '기존 동료 불러오기', `awayColleagues`)다(`conversationChoices`).
+  - 업무 카드: 이동할 터미널이 있으면 주 버튼은 그대로 **이동**(`jumpOrCopy`)이고 옆에 **터미널에서 이어가기**가 있다. 이동할 곳이 없으면 주 버튼이 **터미널에서 이어가기**가 되어 시트를 연다(재개 명령 복사는 시트의 '명령 복사' 행선지). 시트는 그 대화가 골라진 **이어가기**로 열린다. 원격 동료·OpenClaw·대화 id나 절대 경로 폴더가 없는 대화(`resumeBlock`)·데모·웹은 예전처럼 복사/이동만 한다.
+  - `launch-support`가 `supported: false`인 플랫폼(Windows)에서는 +와 카드의 **터미널에서 이어가기**를 아예 보이지 않는다(`useLaunchSupport`, 렌더러의 플랫폼 분기 없음).
+  - 원격 사무실 프로젝트의 **+**는 바꾸지 않았다(`RemoteSummon`). 원격 실행은 요청 쪽 확인·원격 쪽 코어 실행이라는 다른 계약이라 이번에 옮기지 않는다.
+- **① 무엇을**: [새 세션] / [이어가기] / [복제해서 새로]. 새 세션은 에이전트(Claude/Codex)·폴더(구역에 여러 폴더가 있을 때)·이름·첫 메시지, 복제는 이름(기본값 `"<원래 이름> 복제"`, 이름 규칙에 맞게 다듬고 40자 이내 `forkDefaultName`)·첫 메시지다. 이름·첫 메시지는 코어와 같은 zod 규칙으로 바로 검사한다. 이어가기 대화가 이미 **실행 중**이면 ②를 숨기고 [그곳으로 이동](`jump`)만 둔다. main이 확인한 실행 터미널이 앱의 자기 tmux 세션의 살아 있는 pane일 때만(`DuplicateCheck.inOwnTmux`: 에이전트 어댑터가 찾은 tmux pane의 소켓·pane id가 `TmuxResume.ownPanes`의 소켓·pane 목록과 같음, `decideDuplicate`) 붙은 터미널이 없는 세션으로 보고 이동은 `open`(Terminal로 열기, `launch-support`의 `opens`에 tmux가 있을 때만), [재접속 명령 복사]를 함께 둔다(Linux는 복사만). 자기 pane이 살아 있어도 그 증거가 없으면(`/clear`·`/new` 뒤 다른 pane에서 이 대화가 도는 경우) 확인된 터미널로 `jump`만 둔다. 복제는 막지 않는다. 열려 있음(Orca 탭·자기 tmux)은 주의와 함께 [그곳으로 이동](Orca는 `open`으로 그 탭, tmux는 `open`) + [그래도 …에서 시작]이다. 확인 못 한 시작이 대기 중이면(`pending`, `starting` 아님) 시작을 막고 Orca일 때만 [Orca 열기]다.
+- **② 어디서**: `office:launch-options`의 네 행선지를 라디오 목록으로 보인다. 행마다 설명, '사용 가능'·'실행 중'·'사용할 수 없음' 배지, 쓸 수 없으면 그 이유(Orca 꺼짐·작업 공간 아님·tmux 없음·macOS 전용 등)를 그대로 적는다. 선택은 사람이 고른 것이 아직 가능하면 그것, 아니면 코어의 기본값(복제는 원래 대화가 있는 곳 → 마지막 선택 → Orca → tmux)이고, 마지막 선택에는 '지난번 선택' 표시가 붙는다. 이름을 고치거나 종류를 바꾸면 250ms 뒤 다시 묻고, 그동안 이전 답을 흐리게 둔다(시작은 새 답이 와야 가능). tmux를 고르면 **시작하면 터미널에서 열기**(macOS, 기본 켬, 창 `localStorage`에 기억)가 있다. 권한 우회는 그대로 설정의 `tmuxSkipPermissions`이고 main 확인 창이 알린다.
+- **③ 진행**: 확인 중 → 여는 중(main의 네이티브 확인 창이 떠 있는 동안) → 결과(`resultView`).
+  - `launched`·`opened`·`copied`: 시트를 닫고 알림(복사는 main이 이미 클립보드에 넣었다). tmux 시작 뒤 열기가 켜져 있으면 바로 `open`을 부르고, 실패하면 [터미널에서 열기]·[재접속 명령 복사]를 남긴다. 아무것도 열지 않은 tmux 시작(열기를 끈 macOS, `open`이 없는 Linux)도 닫지 않고 [터미널에서 열기](열 수 있을 때만)·[재접속 명령 복사]를 남긴다: 세션이 화면 밖에서 돌기 때문이다.
+  - `running`(같은 tmux 슬롯이 이미 실행 중): [터미널에서 열기]·[재접속 명령 복사].
+  - `uncertain`: 행선지 자리(`placeOf`)에 맞는 안내. Orca면 [Orca 열기]만, tmux·Terminal이면 버튼 없이 안내만. 다른 행선지를 권하지 않는다.
+  - `refused` + `duplicate`: 그 상태의 [그곳으로 이동](또는 대기 중 Orca면 [Orca 열기]). `refused`만(행선지 재확인 실패 등): 옵션을 다시 읽어 아직 가능한 **다른** 행선지를 [… 에서 시작] 버튼으로 권한다.
+  - `cancelled`: 아무 말 없이 양식으로 돌아간다.
+- **사무실로 데려오기**: +의 대기·보관 동료를 이어가 그 대화가 어딘가 열리면(`launched`·`uncertain`·`running`·`opened`, 또는 이동이 실제로 터미널을 앞으로 가져왔을 때) 기존 `returnToOffice`를 부른다. 복사만 했거나 확인을 취소하면 부르지 않는다. 저장에 실패하면 시트를 닫지 않고 [사무실로 다시 데려오기]를 둔다(다시 띄우지 않는다).
+- **화면 숨기기**: 켜지면 시트를 닫고, +는 숨기고 카드 버튼은 비활성이다. 목록 이름은 `residentLabel`을 따른다.
+- **모양**: 터미널 시트 틀(`tmux.css`의 `.tmux-resume` 프레임·`.summon-field`·`.summon-provider`)에 `launch-sheet.css`의 번호 단계·라디오 목록·배지. 380×480 카드 창에서도 아래 버튼 줄이 화면 안에 남고 가로 스크롤이 없다.
+
 ## 새 에이전트 소환
 
-프로젝트 구역/깃발의 **+** → 폴더 선택(여러 원본 프로젝트가 있는 구역) → Claude/Codex와 에이전트 이름·첫 메시지(선택) → 연결과 이름 확인 → tmux에 소환하기. 채팅 카드에는 기존 대화 재개만 둔다. 바닥 깃발 아래의 +와 프로젝트 숨김은 평소 감추고, 깃발에 마우스를 올리거나 키보드로 포커스할 때 검은 버튼으로 함께 표시한다. 같은 창 맨 위의 **기존 동료 불러오기**는 이 프로젝트의 대기·보관 동료를 골라 기존 tmux 재개·Orca 새 탭 재개로 이어가고, 터미널이 열린 뒤 `returnToOffice`로 사무실에 데려온다([기능 정책](../golden/FEATURE-POLICY.md#프로젝트--기존-동료-불러오기)).
+프로젝트 구역/깃발의 **+** → [실행 시트](#실행-시트-319)의 **새 세션**: Claude/Codex, 폴더(여러 원본 프로젝트가 있는 구역), 에이전트 이름·첫 메시지(선택) → 행선지(Orca·tmux·터미널 앱·명령 복사) → 시작. 바닥 깃발 아래의 +와 프로젝트 숨김은 평소 감추고, 깃발에 마우스를 올리거나 키보드로 포커스할 때 검은 버튼으로 함께 표시한다. 같은 시트의 **이어가기** 목록에 이 프로젝트의 대기·보관 동료가 함께 나오고, 터미널이 열린 뒤 `returnToOffice`로 사무실에 데려온다([기능 정책](../golden/FEATURE-POLICY.md#실행-시트-319)).
 
-macOS/Linux에서 tmux와 선택한 CLI가 필요하다. 동일 프로젝트의 기존 Orca/tmux 연결을 보여주며 기존 세션으로 이동할 수 있다. 실제 실행 직전에 연결 상태를 다시 확인해 새 tmux를 띄울지 네이티브 확인한다. 기존 대화 재개도 같은 대화가 연결돼 있으면 확인에 표시한다.
+tmux 행선지는 macOS/Linux에서 tmux와 선택한 CLI가 필요하다. 동일 프로젝트의 기존 Orca/tmux 연결은 tmux 소환의 네이티브 확인 창에 보이고, 시트의 이어가기 목록에서 그 대화로 이동할 수 있다. 실제 실행 직전에 연결 상태를 다시 확인해 새 tmux를 띄울지 네이티브 확인한다. 기존 대화 재개도 같은 대화가 연결돼 있으면 확인에 표시한다.
 
 입력한 이름(글자·숫자·공백·하이픈·밑줄, 1~40자)을 tmux 이름에 넣고 provider/짧은 구분자를 붙인다. 같은 프로젝트·종류·이름의 실행 중 세션은 재사용하며 다른 이름이면 별도 에이전트를 시작한다. 종료 후 소환은 새 대화이며 이전 대화 재개는 해당 대화 카드에서 한다.
 

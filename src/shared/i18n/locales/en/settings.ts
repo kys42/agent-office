@@ -75,6 +75,47 @@ export const settings = {
     pillResetDone: 'The dock pill went back to the right end.',
     resetButton: 'Reset',
   },
+  /** What each screen shows (#324): one card per mode, the rest under 'More'. */
+  views: {
+    title: 'What each screen shows',
+    hint: 'Pick what each look draws. Left alone it stays as it is; open More for the finer details.',
+    more: 'More',
+    preview: (mode: string) => `${mode} preview`,
+    demo: 'Shown with sample teammates until yours arrive.',
+    modes: {
+      pet: { title: 'Desk pet', hint: 'The small pet of the folded dock.' },
+      dock: { title: 'Office row & floor', hint: 'The desks along the bottom of the screen.' },
+      tiny: { title: 'Tiny', hint: 'The row and floor at helper-desk size.' },
+      office: { title: 'Big office', hint: 'The office map of the main window.' },
+    },
+    pet: {
+      tally: 'Numbers pill',
+      tallyHint: 'Counts who waits, has results, works or stands by. Off, one short summary.',
+      groups: 'What it counts',
+      groupsHint: 'The groups on the pill. The arrows step through these teammates only.',
+      name: 'Name tag',
+      nameHint: 'When the name shows under the pet.',
+      names: { speaking: 'When speaking', always: 'Always', never: 'Never' },
+      turnEffect: 'Turn effect',
+      turnEffectHint: 'A slide and a puff when the pet turns to someone else.',
+      petting: 'Petting',
+      pettingHint: 'Rub the pet to make it happy. Off, the hand cursor goes too.',
+    },
+    desk: {
+      branch: 'Branch tags',
+      branchHint: 'The git branch under each desk.',
+      hideRead: 'Fold read replies',
+      hideReadHint: 'A final reply you read leaves its bubble; hovering brings it back.',
+      papers: 'Paper piles',
+      papersHint: 'Papers stack up on a busy desk.',
+      beacon: 'Working light',
+      beaconHint: 'A light over each desk at work.',
+      focus: 'Focus effects',
+      focusHint: 'Sparks and heat around a teammate deep in work.',
+      effects: 'Desk effects',
+      effectsHint: 'Focus effects and paper piles on tiny desks too.',
+    },
+  },
   /** Reading final replies by opening a card (#228). */
   reading: {
     title: 'Read on open',
@@ -134,7 +175,7 @@ export const settings = {
   terminalTitle: 'Terminal and answers',
   tmuxSkip: 'Start terminals without permission prompts',
   tmuxSkipHint:
-    'Resuming or summoning in tmux, or resuming in a new Orca tab, runs Claude Code with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox (--yolo). Commands and file edits run without asking, so turn this on only for projects you trust. A terminal already running picks it up on its next start.',
+    'Starting a new session, continuing or forking one from the Start a session sheet (Orca, tmux, Terminal or a copied command) runs Claude Code with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox (--yolo). Commands and file edits run without asking, so turn this on only for projects you trust. A terminal already running picks it up on its next start.',
   /** Desktop only (#229). */
   notifications: {
     title: 'Notifications',

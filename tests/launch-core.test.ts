@@ -560,9 +560,11 @@ test('IPC: one strict request shape; paths, commands and unknown fields never pa
       action: 'start',
     }),
   );
+  // The launch sheet (#319) opens a launch's own place (tmux session, Orca tab) the same way.
+  assert.ok(ok({ intent: { kind: 'resume', session: 's1' }, destination: 'orca', action: 'open' }));
   for (const bad of [
     { intent, destination: 'iterm', action: 'start' },
-    { intent, destination: 'orca', action: 'open' },
+    { intent, destination: 'orca', action: 'focus' },
     { intent, destination: 'orca', action: 'start', cwd: '/etc' },
     { intent: { ...intent, cwd: '/etc' }, destination: 'orca', action: 'start' },
     {
@@ -666,4 +668,22 @@ test('the last destination is kept in preferences; anything else is refused', as
     service.stop();
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('platform support: the sheet hides where no destination can ever work (Windows)', () => {
+  const shell = { platform: 'darwin', run: async () => '', directory: async () => true };
+  const all = core({
+    orca: orcaDestination(new OrcaLaunch(() => '/bin/false')),
+    tmux: tmuxDestination(new TmuxResume()),
+    terminalApp: terminalAppDestination(shell),
+    copy: copyDestination(shell),
+  });
+  assert.deepEqual(all.support('darwin'), { supported: true, opens: ['orca', 'tmux'] });
+  // Linux: tmux and a copied command, and nothing whose own place can be opened.
+  assert.deepEqual(all.support('linux'), { supported: true, opens: [] });
+  assert.deepEqual(all.support('win32'), { supported: false, opens: [] });
+  // A destination that says nothing about platforms counts as working everywhere.
+  const plain = { id: 'copy', launches: false } as unknown as LaunchDestination;
+  assert.deepEqual(core({ copy: plain }).support('win32'), { supported: true, opens: [] });
+  assert.deepEqual(core({}).support('darwin'), { supported: false, opens: [] });
 });

@@ -50,6 +50,10 @@ export interface Destination<T, D = unknown, R = unknown> {
   readonly id: LaunchDestinationId;
   /** false: nothing starts there (a copied command): no confirmation and nothing pending. */
   readonly launches: boolean;
+  /** Whether it can ever work on `platform` (left out: everywhere). Probes still decide now. */
+  supports?(platform: string): boolean;
+  /** Whether `open` (its own place brought to the front) works on `platform` (left out: never). */
+  opens?(platform: string): boolean;
   /** Where a launch of it runs, as the duplicate check names it (`other` when left out). */
   readonly place?: LaunchPlace;
   /**

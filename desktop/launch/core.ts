@@ -7,6 +7,7 @@ import {
   type LaunchOptions,
   type LaunchProbe,
   type LaunchResult,
+  type LaunchSupport,
 } from '../../src/shared/launch.js';
 import type { DuplicateCheck, LaunchPlace, Provider, Session } from '../../src/shared/types.js';
 import { pendingCheck } from '../launch-guard.js';
@@ -148,6 +149,17 @@ export class LaunchCore {
     const destination = this.deps.destinations[id];
     if (!destination) throw new Error(m().launch.agentUnsupported);
     return destination;
+  }
+  /** What `platform` can ever do: whether any destination works there, and which open. */
+  support(platform: string = process.platform): LaunchSupport {
+    const ids = LAUNCH_DESTINATIONS.filter((id) => {
+      const d = this.deps.destinations[id];
+      return !!d && (d.supports?.(platform) ?? true);
+    });
+    return {
+      supported: ids.length > 0,
+      opens: ids.filter((id) => this.deps.destinations[id]!.opens?.(platform) ?? false),
+    };
   }
   /** Read-only: whether `id` can take this launch now, and why not. */
   async probe(target: LaunchTarget, id: LaunchDestinationId, fresh = false): Promise<LaunchProbe> {

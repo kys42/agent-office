@@ -15,9 +15,16 @@ import {
 import { runtimeObservation } from '../src/shared/runtime.js';
 import { deskSpeech, speechDot } from '../src/shared/speech.js';
 import { CARD_READ_DWELL_MS, cardReadSettings } from '../src/shared/card-reads.js';
-import { buildOfficeModel } from '../src/shared/office-model.js';
+import { buildOfficeModel, petChoices } from '../src/shared/office-model.js';
 import { readWidths, readWidthsAt } from '../src/shared/panel-widths.js';
-import { resetDue, viewPrefs } from '../src/shared/view-prefs.js';
+import {
+  mergeViews,
+  PET_TALLY_GROUPS,
+  resetDue,
+  resolveViews,
+  tallyGroups,
+  viewPrefs,
+} from '../src/shared/view-prefs.js';
 import { isSettingsSection, settingsCategory } from '../src/shared/settings.js';
 import type { OfficeNotice, Session, Snapshot } from '../src/shared/types.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -85,6 +92,7 @@ test('missing view preferences are the behaviour from before', () => {
     helperDesks: true,
     helperStackAt: HELPER_STACK_AT,
     helperUnfinishedMs: HELPER_UNFINISHED_MS,
+    views: resolveViews(undefined),
   });
   const set = viewPrefs({
     tinyNames: false,
@@ -279,4 +287,89 @@ test('the new settings sections deep-link into their categories', () => {
   assert.equal(settingsCategory('reading'), 'general');
   assert.equal(settingsCategory('helpers'), 'office');
   assert.ok(isSettingsSection('dock'));
+  assert.equal(settingsCategory('views'), 'appearance');
+  assert.ok(isSettingsSection('views'));
+});
+
+// #324: what each screen shows. Nothing chosen is the look from before.
+test('missing screen choices are the look from before', () => {
+  const desk = { branch: true, papers: true, beacon: true, focus: true };
+  const defaults = {
+    pet: {
+      tally: true,
+      tallyGroups: ['attention', 'results', 'working', 'standby'],
+      name: 'speaking',
+      turnEffect: true,
+      petting: true,
+    },
+    dock: { ...desk, hideRead: true },
+    tiny: { effects: true },
+    office: desk,
+  };
+  assert.deepEqual(resolveViews(undefined), defaults);
+  assert.deepEqual(resolveViews({}), defaults);
+  assert.deepEqual(viewPrefs({ views: { pet: {} } }).views, defaults);
+});
+
+test('screen choices resolve per mode; nonsense falls back to the default', () => {
+  const v = resolveViews({
+    pet: { tally: false, tallyGroups: ['working', 'attention'], name: 'always', petting: false },
+    dock: { branch: false, hideRead: false },
+    tiny: { effects: false },
+    office: { papers: false, beacon: false },
+  });
+  assert.equal(v.pet.tally, false);
+  // Triage order, whatever order they were saved in.
+  assert.deepEqual(v.pet.tallyGroups, ['attention', 'working']);
+  assert.equal(v.pet.name, 'always');
+  assert.equal(v.pet.turnEffect, true);
+  assert.equal(v.pet.petting, false);
+  assert.deepEqual(v.dock, {
+    branch: false,
+    papers: true,
+    beacon: true,
+    focus: true,
+    hideRead: false,
+  });
+  assert.deepEqual(v.tiny, { effects: false });
+  assert.deepEqual(v.office, { branch: true, papers: false, beacon: false, focus: true });
+  // Unknown groups and names from an old or hand-edited store.
+  assert.deepEqual(tallyGroups(['results', 'nope', 'results']), ['results']);
+  assert.deepEqual(tallyGroups('all'), [...PET_TALLY_GROUPS]);
+  assert.deepEqual(tallyGroups([]), []);
+  assert.equal(resolveViews({ pet: { name: 'loud' as never } }).pet.name, 'speaking');
+});
+
+test('saving one screen choice keeps the others', () => {
+  const base = { pet: { tally: false, name: 'never' as const }, office: { branch: false } };
+  const next = mergeViews(base, { pet: { petting: false }, dock: { papers: false } });
+  assert.deepEqual(next, {
+    pet: { tally: false, name: 'never', petting: false },
+    office: { branch: false },
+    dock: { papers: false },
+  });
+  assert.deepEqual(mergeViews(undefined, { tiny: { effects: false } }), {
+    tiny: { effects: false },
+  });
+  // The base is never changed in place.
+  assert.deepEqual(base.pet, { tally: false, name: 'never' });
+});
+
+test('the pet arrows step only through the groups its pill counts', () => {
+  const working = make('w', { officeSeat: 1, status: 'work' });
+  const calling = make('c', { officeSeat: 2, status: 'call' });
+  const snap = (views?: Snapshot['preferences']['views']): Snapshot => ({
+    ...demoSnapshot(),
+    sessions: [working, calling],
+    notices: [],
+    preferences: { ...demoSnapshot().preferences, views },
+  });
+  const ids = (s: Snapshot) => petChoices(buildOfficeModel(s, now)).map((v) => v.session.id);
+  assert.deepEqual(ids(snap()), ['w', 'c']);
+  assert.deepEqual(ids(snap({ pet: { tallyGroups: ['attention'] } })), ['c']);
+  assert.deepEqual(ids(snap({ pet: { tallyGroups: ['working'] } })), ['w']);
+  // Nobody in the counted groups: everyone drawn, as in an all-resting office.
+  assert.deepEqual(ids(snap({ pet: { tallyGroups: ['results'] } })), ['w', 'c']);
+  // Without the numbers pill nothing is filtered by group: every busy colleague.
+  assert.deepEqual(ids(snap({ pet: { tally: false, tallyGroups: ['attention'] } })), ['w', 'c']);
 });

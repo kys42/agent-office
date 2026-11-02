@@ -38,6 +38,8 @@ import { mergeSessions } from './adapters/merge.js';
 import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
 import { LAUNCH_DESTINATIONS } from '../src/shared/launch.js';
+import { PET_NAME_CHOICES, PET_TALLY_GROUPS } from '../src/shared/view-prefs.js';
+import type { PetNameMode, PetTallyGroup } from '../src/shared/types.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
 import {
   applyPatch,
@@ -113,6 +115,36 @@ const zoneRuleSchema = z
     target: z.string().max(1100).optional(),
   })
   .strict();
+const deskViewShape = {
+  branch: z.boolean().optional(),
+  papers: z.boolean().optional(),
+  beacon: z.boolean().optional(),
+  focus: z.boolean().optional(),
+};
+/** #324: what each screen shows; each mode and key optional, nothing else accepted. */
+const viewsSchema = z
+  .object({
+    pet: z
+      .object({
+        tally: z.boolean().optional(),
+        tallyGroups: z
+          .array(z.enum(PET_TALLY_GROUPS as [PetTallyGroup, ...PetTallyGroup[]]))
+          .max(PET_TALLY_GROUPS.length)
+          .optional(),
+        name: z.enum(PET_NAME_CHOICES as [PetNameMode, ...PetNameMode[]]).optional(),
+        turnEffect: z.boolean().optional(),
+        petting: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    dock: z
+      .object({ ...deskViewShape, hideRead: z.boolean().optional() })
+      .strict()
+      .optional(),
+    tiny: z.object({ effects: z.boolean().optional() }).strict().optional(),
+    office: z.object(deskViewShape).strict().optional(),
+  })
+  .strict();
 const prefsSchema = z
   .object({
     paused: z.boolean().optional(),
@@ -149,6 +181,7 @@ const prefsSchema = z
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
     windowGlass: z.number().int().min(0).max(70).nullable().optional(),
+    views: viewsSchema.optional(),
     petAppearance: z
       .object({
         version: z.literal(1),
