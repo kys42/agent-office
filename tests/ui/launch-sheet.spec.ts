@@ -110,6 +110,7 @@ async function setup(
         launch: async (request: any) => {
           w.launches.push(request);
           if (request.action === 'open') {
+            if (w.holdOpen) await new Promise((resolve) => (w.releaseOpen = resolve));
             if (w.openError) throw new Error(w.openError);
             return {
               state: 'opened',
@@ -658,6 +659,66 @@ for (const route of ['/#card', '/'])
     }
     expect(await read(page, 'optionCalls')).toEqual([]);
   });
+
+test('a start answered after its sheet closed neither opens Terminal nor closes the next sheet', async ({
+  page,
+}) => {
+  await setup(page);
+  let modal = await openProject(page);
+  await kind(modal, '이어가기').click();
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await destination(modal, 'tmux').check();
+  await set(page, { holdStart: true });
+  await modal.getByRole('button', { name: 'tmux에서 시작' }).click();
+  await expect(modal.getByText('여는 중', { exact: false })).toBeVisible();
+  await expect
+    .poll(() => page.evaluate(() => typeof (window as any).releaseStart))
+    .toBe('function');
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+  // Another sheet with a draft of its own, then the old start answers (tmux launched).
+  await set(page, { holdStart: false });
+  modal = await openProject(page);
+  await modal.getByLabel('에이전트 이름', { exact: true }).fill('새 리뷰어');
+  await page.evaluate(() => (window as any).releaseStart());
+  // The colleague whose conversation did start still comes back to the office…
+  await expect.poll(() => read(page, 'returned')).toEqual(['demo:6']);
+  // …but nothing happens on screen: no Terminal opened, the new sheet and its draft stay.
+  await expect(modal).toBeVisible();
+  await expect(modal.getByLabel('에이전트 이름', { exact: true })).toHaveValue('새 리뷰어');
+  expect((await read(page, 'launches')).map((l: any) => l.action)).toEqual(['start']);
+});
+
+test('opening a terminal is one action at a time: repeated clicks open it once', async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 760, height: 900 });
+  await set(page, {
+    results: [
+      {
+        state: 'running',
+        message: '이 tmux 세션이 이미 실행 중이에요. 터미널에서 열어주세요.',
+        command: 'tmux -L agent-office attach -t =office-claude',
+      },
+    ],
+    holdOpen: true,
+  });
+  const modal = await openCard(page);
+  await destination(modal, 'tmux').check();
+  await modal.getByRole('button', { name: 'tmux에서 시작' }).click();
+  const open = modal.getByRole('button', { name: '터미널에서 열기' });
+  // Two clicks in the same moment, before the sheet could redraw.
+  await open.evaluate((button) => {
+    (button as HTMLButtonElement).click();
+    (button as HTMLButtonElement).click();
+  });
+  await expect(open).toBeDisabled();
+  await expect(modal.getByRole('button', { name: '재접속 명령 복사' })).toBeDisabled();
+  await expect(modal.getByRole('button', { name: '다시 확인' })).toBeDisabled();
+  await page.evaluate(() => (window as any).releaseOpen());
+  await expect(modal).toHaveCount(0);
+  expect((await read(page, 'launches')).filter((l: any) => l.action === 'open')).toHaveLength(1);
+});
 
 test('privacy closes the sheet and disables its entry points', async ({ page }) => {
   await setup(page, '/#card', { width: 760, height: 900 });

@@ -130,7 +130,7 @@ export function LaunchSheet({
     }
   };
   const progress = (() => {
-    if (l.busy) return { icon: 'spin', text: s.progress.starting } as const;
+    if (l.starting) return { icon: 'spin', text: s.progress.starting } as const;
     if (l.phase === 'result' && l.result && !l.result.close)
       return { icon: l.result.tone === 'error' ? 'alert' : 'info', text: l.result.text } as const;
     if (draft.kind !== 'new' && !draft.session) return { icon: 'info', text: s.progress.pick };

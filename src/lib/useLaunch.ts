@@ -97,7 +97,25 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
   const hooksRef = useRef(hooks);
   hooksRef.current = hooks;
   const optionsTicket = useRef(0);
+  /**
+   * The current action. Bumped by a draft change and by closing the sheet: an answer to an
+   * older one then does nothing on screen (no Terminal opened, no close, no result) — the
+   * sheet may be gone or another one open. Bringing an away colleague back is not on screen:
+   * a launch that did start still brings them back.
+   */
   const actionTicket = useRef(0);
+  /** One action at a time: a second click before the first answers is ignored. */
+  const inFlight = useRef(false);
+  const [working, setWorking] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      actionTicket.current++;
+      optionsTicket.current++;
+    };
+  }, []);
   const returned = useRef(new Set<string>());
   // Where `open` works on this platform (main's answer): tmux into Terminal, an Orca tab.
   const opens = useLaunchSupport()?.opens ?? [];
@@ -172,7 +190,9 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
   const rows = destinationRows(shown);
   const chosen = chosenDestination(shown, picked);
   const intent = draftIntent(draft);
-  const busy = phase === 'starting';
+  const starting = phase === 'starting';
+  /** A start, an open, a jump or a copy is under way: every control waits for it. */
+  const busy = starting || working;
   const canStart = !!intent && !!chosen && !!current && !duplicate.blocks && !busy && !checking;
   const away = !!conversation && conversation.zone !== 'office' && draft.kind === 'resume';
 
@@ -225,8 +245,9 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
     return true;
   };
   /** Shows a finished view: closes on success unless the colleague did not come back. */
-  const finish = async (view: ResultView, brought: boolean) => {
+  const finish = async (ticket: number, view: ResultView, brought: boolean) => {
     const back = brought ? await bringBack() : true;
+    if (ticket !== actionTicket.current) return;
     if (view.close && back) {
       hooksRef.current.notify(view.toast);
       hooksRef.current.close();
@@ -242,7 +263,9 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
     setPhase('result');
   };
   const run = async (work: (ticket: number) => Promise<void>) => {
-    if (busy) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setWorking(true);
     const ticket = ++actionTicket.current;
     setError('');
     try {
@@ -252,7 +275,19 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       setError((e as Error).message);
       setPhase((p) => (p === 'starting' ? 'form' : p));
       void fetchOptions(probeIntent, key);
+    } finally {
+      inFlight.current = false;
+      if (alive.current) setWorking(false);
     }
+  };
+  /**
+   * An answer to an older action (the sheet closed or the draft changed meanwhile): nothing on
+   * screen, but a colleague whose conversation did open still comes back to the office.
+   */
+  const stale = (ticket: number, answer?: LaunchResult | 'opened') => {
+    if (ticket === actionTicket.current) return false;
+    if (answer && (answer === 'opened' || broughtUp(answer))) void bringBack();
+    return true;
   };
   /** An `open` of this launch's own place (tmux session, Orca tab). */
   const open = (destination: LaunchDestinationId, asked: LaunchIntent) =>
@@ -266,17 +301,19 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       setResult(null);
       setUnreturned(false);
       let answer: LaunchResult = await api.launch({ intent, destination, action: 'start' });
-      if (ticket !== actionTicket.current) return;
+      if (stale(ticket, answer)) return;
       // tmux keeps it in the background: open it in a terminal right away unless turned off.
       if (answer.state === 'launched' && destination === 'tmux' && openAfter && opensTmux) {
         const started = answer;
         try {
           answer = await open('tmux', intent);
         } catch (e) {
-          if (ticket !== actionTicket.current) return;
+          if (stale(ticket, started)) return;
           hooksRef.current.notify(started.message);
           // It runs in tmux all the same: an away colleague comes back.
-          setUnreturned(!(await bringBack()));
+          const back = await bringBack();
+          if (ticket !== actionTicket.current) return;
+          setUnreturned(!back);
           setResult({
             close: false,
             tone: 'error',
@@ -294,13 +331,13 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       }
       // A refusal may change the duplicate state or what is available: read them again.
       const fresh = answer.state === 'refused' ? await fetchOptions(probeIntent, key) : current;
-      if (ticket !== actionTicket.current) return;
+      if (stale(ticket, answer)) return;
       const view = resultView(answer, fresh, opens);
       if (!view) {
         setPhase('form');
         return;
       }
-      await finish(view, broughtUp(answer));
+      await finish(ticket, view, broughtUp(answer));
     });
 
   const goThere = (go: GoThere) =>
@@ -310,8 +347,10 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
         if (!id) return;
         // A vanished terminal only copies the resume command: nothing opened, nobody comes back.
         const how = await jumpOrCopy(id, hooksRef.current.notify);
+        if (stale(ticket, how !== 'copy' ? 'opened' : undefined)) return;
+        const back = how === 'copy' || (await bringBack());
         if (ticket !== actionTicket.current) return;
-        if (how !== 'copy' && !(await bringBack())) {
+        if (!back) {
           setUnreturned(true);
           return;
         }
@@ -322,27 +361,30 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
         go === 'orca-tab' && id ? { kind: 'resume' as const, session: id } : probeIntent;
       if (!asked) return;
       const answer = await open(go === 'orca-tab' ? 'orca' : 'tmux', asked);
-      if (ticket !== actionTicket.current) return;
-      await finish(resultView(answer, null, opens)!, true);
+      if (stale(ticket, answer)) return;
+      await finish(ticket, resultView(answer, null, opens)!, true);
     });
 
   const act = (action: ResultAction) => {
     switch (action.kind) {
       case 'reveal':
-        return void api.orcaReveal?.().catch((e) => setError((e as Error).message));
+        return void run(async () => {
+          await api.orcaReveal?.();
+        });
       case 'go':
         return void goThere(action.go);
       case 'open-terminal':
         return void goThere('tmux');
       case 'copy-command':
-        return void copyText(action.command, hooksRef.current.notify);
+        return void run(() => copyText(action.command, hooksRef.current.notify));
       case 'suggest':
         return void start(action.destination);
     }
   };
   const returnAgain = () =>
-    run(async () => {
+    run(async (ticket) => {
       const back = await bringBack();
+      if (ticket !== actionTicket.current) return;
       setUnreturned(!back);
       if (back) hooksRef.current.close();
     });
@@ -367,6 +409,8 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
     intent,
     canStart,
     busy,
+    /** A start is under way (main's confirmation may be up). */
+    starting,
     phase,
     result,
     error,
@@ -380,6 +424,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
     act,
     returnAgain: () => void returnAgain(),
     refresh: () => {
+      if (inFlight.current) return;
       setError('');
       setResult(null);
       setPhase('form');
