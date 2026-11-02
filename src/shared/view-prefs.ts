@@ -1,4 +1,10 @@
-import type { DockPillVisibility, Preferences } from './types';
+import type {
+  DockPillVisibility,
+  PetNameMode,
+  PetTallyGroup,
+  Preferences,
+  ViewSettings,
+} from './types';
 import { HELPER_STACK_AT } from './office-layout';
 import { HELPER_UNFINISHED_MS } from './residents';
 
@@ -16,6 +22,77 @@ export interface ViewPrefs {
   helperStackAt: number;
   /** Milliseconds a quiet helper still mid-task keeps its desk. */
   helperUnfinishedMs: number;
+  /** What each screen shows (#324), every choice filled in. */
+  views: ResolvedViews;
+}
+
+/** A desk scene's effects with their defaults filled in. */
+export interface DeskView {
+  branch: boolean;
+  papers: boolean;
+  beacon: boolean;
+  focus: boolean;
+}
+export interface ResolvedViews {
+  pet: {
+    tally: boolean;
+    tallyGroups: PetTallyGroup[];
+    name: PetNameMode;
+    turnEffect: boolean;
+    petting: boolean;
+  };
+  dock: DeskView & { hideRead: boolean };
+  tiny: { effects: boolean };
+  office: DeskView;
+}
+
+/** Every group the pet's pill can count, in triage order (resting colleagues never are). */
+export const PET_TALLY_GROUPS: readonly PetTallyGroup[] = [
+  'attention',
+  'results',
+  'working',
+  'standby',
+];
+export const PET_NAME_CHOICES: readonly PetNameMode[] = ['speaking', 'always', 'never'];
+
+const on = (v: unknown) => v !== false;
+
+/** The pet's counted groups: known ones only, once each, in triage order. Missing: all of them. */
+export const tallyGroups = (v: unknown): PetTallyGroup[] =>
+  Array.isArray(v) ? PET_TALLY_GROUPS.filter((g) => v.includes(g)) : [...PET_TALLY_GROUPS];
+
+const deskView = (v?: ViewSettings['office']): DeskView => ({
+  branch: on(v?.branch),
+  papers: on(v?.papers),
+  beacon: on(v?.beacon),
+  focus: on(v?.focus),
+});
+
+/** #324: every screen's choices, a missing one being the look from before it existed. */
+export function resolveViews(v?: ViewSettings | null): ResolvedViews {
+  return {
+    pet: {
+      tally: on(v?.pet?.tally),
+      tallyGroups: tallyGroups(v?.pet?.tallyGroups),
+      name: PET_NAME_CHOICES.includes(v?.pet?.name as PetNameMode) ? v!.pet!.name! : 'speaking',
+      turnEffect: on(v?.pet?.turnEffect),
+      petting: on(v?.pet?.petting),
+    },
+    dock: { ...deskView(v?.dock), hideRead: on(v?.dock?.hideRead) },
+    tiny: { effects: on(v?.tiny?.effects) },
+    office: deskView(v?.office),
+  };
+}
+
+/**
+ * Saving one screen's choice keeps the others: views merge mode by mode, and within a mode key by
+ * key (a patch carries only what changed).
+ */
+export function mergeViews(base: ViewSettings | undefined, patch: ViewSettings): ViewSettings {
+  const next: ViewSettings = { ...base };
+  for (const mode of Object.keys(patch) as (keyof ViewSettings)[])
+    if (patch[mode]) next[mode] = { ...base?.[mode], ...patch[mode] } as never;
+  return next;
 }
 
 export const DEFAULT_HELPER_STACK_AT = HELPER_STACK_AT;
@@ -39,6 +116,7 @@ export function viewPrefs(p?: Partial<Preferences> | null): ViewPrefs {
     helperDesks: p?.helperDesks !== false,
     helperStackAt: helperStackAt(p),
     helperUnfinishedMs: helperUnfinishedMs(p),
+    views: resolveViews(p?.views),
   };
 }
 

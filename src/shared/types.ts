@@ -490,7 +490,51 @@ export interface Preferences {
    * (0 solid … GLASS_MAX). Missing or null: each platform's own look from before.
    */
   windowGlass?: number | null;
+  /**
+   * What each screen shows (#324), mode by mode. Every key is optional: a missing one keeps the
+   * look from before it existed (see `viewPrefs`).
+   */
+  views?: ViewSettings;
 }
+/** The groups the desk pet's pill can count, in triage order. */
+export type PetTallyGroup = 'attention' | 'results' | 'working' | 'standby';
+/** When the desk pet shows its colleague's name: while it speaks (or is picked/hovered), always, never. */
+export type PetNameMode = 'speaking' | 'always' | 'never';
+/** The desk effects a desk scene can draw (row/floor, big office). */
+export interface DeskViewSettings {
+  /** The branch tag under each desk (office row and the big office; the floor has plates). */
+  branch?: boolean;
+  /** Papers stacking up on a busy desk. */
+  papers?: boolean;
+  /** The light over a desk at work. */
+  beacon?: boolean;
+  /** Sparks and heat around a colleague deep in work. */
+  focus?: boolean;
+}
+export interface ViewSettings {
+  pet?: {
+    /** The coloured numbers pill. Off: the single-label pill from before. */
+    tally?: boolean;
+    tallyGroups?: PetTallyGroup[];
+    name?: PetNameMode;
+    /** The slide and puff when the pet turns to someone else. */
+    turnEffect?: boolean;
+    /** Rubbing the pet pats it (and the pointer becomes a hand). */
+    petting?: boolean;
+  };
+  /** The office row and the floor desks. */
+  dock?: DeskViewSettings & {
+    /** A read final reply leaves its desk (a peek brings it back). */
+    hideRead?: boolean;
+  };
+  tiny?: {
+    /** Focus effects and paper piles on tiny desks. */
+    effects?: boolean;
+  };
+  /** The big office. */
+  office?: DeskViewSettings;
+}
+export type ViewMode = keyof ViewSettings;
 export type TextSize = 'small' | 'normal' | 'large' | 'larger';
 /** `system`: the app's stack from before (system font, then Pretendard). */
 export type ReadingFont = 'system' | 'pretendard' | 'mono';

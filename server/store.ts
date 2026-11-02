@@ -41,7 +41,7 @@ import {
   seatKey,
 } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
-import { helperUnfinishedMs } from '../src/shared/view-prefs.js';
+import { helperUnfinishedMs, mergeViews } from '../src/shared/view-prefs.js';
 import {
   localizeNotice,
   noticeCandidates,
@@ -208,7 +208,9 @@ export class OfficeStore {
       const deskAppearance = patch.deskAppearance
         ? mergeDeskCustomization(prefs.deskAppearance, patch.deskAppearance)
         : prefs.deskAppearance;
-      Object.assign(prefs, patch, { petAppearance, deskAppearance });
+      const views = patch.views ? mergeViews(prefs.views, patch.views) : prefs.views;
+      Object.assign(prefs, patch, { petAppearance, deskAppearance, views });
+      if (!views) delete prefs.views;
       if (patch.excludedProjects)
         prefs.excludedProjects = [...new Set(patch.excludedProjects.map(canonicalProject))];
       if (!validOfficeSchedule(prefs)) throw new Error(m().server.prefs.scheduleOrder);
