@@ -52,6 +52,13 @@ export interface Destination<T, D = unknown, R = unknown> {
   readonly launches: boolean;
   /** Where a launch of it runs, as the duplicate check names it (`other` when left out). */
   readonly place?: LaunchPlace;
+  /**
+   * Its `launched` proves only that it took the command (a Terminal window, an Orca tab), not
+   * that the agent runs where the duplicate check can see it: the launch is then reserved
+   * (pending, `starting`) for the usual window instead of cleared, so a second start before
+   * the agent shows up is cautioned. Once it runs, `running` beats the reservation.
+   */
+  readonly reserves?: boolean;
   /** Read-only. `fresh`: no cached answer (right before and after a confirmation). */
   probe(target: T, fresh: boolean): Promise<DestinationProbe<D>>;
   /** Starts it; a refusal throws with its reason. */
@@ -144,8 +151,10 @@ export function runLaunch<T, D, R>(
         hold,
       });
       if (pending && key && destination.launches) {
-        // Still unseen: the guard runs its full window from now. Seen: nothing is pending.
+        // Still unseen: the guard runs its full window from now. Handed over: reserved while the
+        // agent starts. Seen running (tmux checks its pane): nothing is pending.
         if (result.state === 'uncertain') pending.add(key, destination.place ?? 'other');
+        else if (destination.reserves) pending.add(key, destination.place ?? 'other', true);
         else pending.clear(key);
       }
       return { ...result, probe };

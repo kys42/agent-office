@@ -206,7 +206,8 @@ test('an unconfirmed start is found by its title, adopted and switched to', asyn
     f.calls.findIndex((c) => c.args[1] === 'list') <
       f.calls.findIndex((c) => c.args[1] === 'create'),
   );
-  assert.equal(f.launcher.pending.has(claude), false);
+  // Adopted: no longer unconfirmed, only reserved while the agent starts in that tab.
+  assert.deepEqual(f.launcher.pending.state(claude), { where: 'orca', starting: true });
 });
 
 test('an unconfirmed start is not tied to a new terminal of another title', async () => {
@@ -314,12 +315,13 @@ test('never found: uncertain (no tmux hint), looked for about 30 s, kept pending
   assert.deepEqual(await check(), { state: 'none' });
 });
 
-test('a later confirmed launch of the same conversation clears its pending record', async () => {
+test('a later confirmed launch turns its unconfirmed record into a startup reservation', async () => {
   const pending = new PendingLaunches();
   pending.add(claude);
   const f = fixture({ pending });
   assert.equal((await f.launcher.start(claude, async () => true)).launched, true);
-  assert.equal(pending.has(claude), false);
+  // The tab exists, but the agent in it may not show yet: still cautioned, now as "starting".
+  assert.deepEqual(pending.state(claude), { where: 'orca', starting: true });
 });
 
 test('a fresh summon is kept pending by agent, folder and name', async () => {

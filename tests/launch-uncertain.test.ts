@@ -212,3 +212,87 @@ test('tmux cut off with no session yet: uncertain and held, never "check your in
     },
   );
 });
+
+test('a Terminal window that opened is only a startup reservation: a second resume before the agent shows is cautioned', async () => {
+  const pending = new PendingLaunches();
+  const typed: string[] = [];
+  // Terminal takes `do script` at once; the agent in it takes a while to show as a process.
+  let agentRunning = false;
+  const core = new LaunchCore({
+    destinations: {
+      terminalApp: terminalAppDestination({
+        platform: 'darwin',
+        directory: async () => true,
+        env: {},
+        run: async (_file, args) => (typed.push(args.at(-1)!), ''),
+      }),
+    },
+    pending,
+    queue: new LaunchQueue(),
+    // As main checks a saved conversation: its process first, then what is held pending.
+    conversationCheck: () => (fresh) =>
+      checkDuplicate(
+        {
+          agent: async () =>
+            agentRunning ? { kind: 'found', terminal: { where: 'other' } } : { kind: 'none' },
+          orcaTab: async () => ({ kind: 'none' }),
+          ownTmux: async () => ({ kind: 'none' }),
+          pending: () => pending.state(pendingKey(resume)),
+        },
+        fresh,
+      ),
+  });
+  const first = await core.start(resume, 'terminalApp', { confirm: async () => true });
+  assert.equal(first.state, 'launched');
+  assert.deepEqual(pending.state(pendingKey(resume)), { where: 'other', starting: true });
+  // Again before the agent shows up: warned that it was just started there, and stopped.
+  const seen: DuplicateCheck[] = [];
+  const again = await core.start(resume, 'terminalApp', {
+    confirm: async (_p: DestinationProbe, check) => (seen.push(check), false),
+  });
+  assert.equal(again.state, 'cancelled');
+  assert.deepEqual(seen, [{ state: 'open', where: 'other', pending: true, starting: true }]);
+  assert.equal(typed.length, 1);
+  assert.equal(pendingNotice('other', true), m().launch.starting(m().tmux.place.other));
+  // Once the agent runs, that beats the reservation: refused without asking.
+  agentRunning = true;
+  const running = await core.start(resume, 'terminalApp', {
+    confirm: async () => assert.fail('a running conversation is not asked about'),
+  });
+  assert.equal(running.state, 'refused');
+  assert.deepEqual(running.state === 'refused' && running.duplicate, {
+    state: 'running',
+    where: 'other',
+  });
+  assert.equal(typed.length, 1);
+});
+
+test('a tmux start seen running reserves nothing: its own session already answers a retry', async () => {
+  const launches: string[][] = [];
+  let rows = '';
+  const tmux = new TmuxResume({
+    platform: 'darwin',
+    server: 'aotest-launch-reserve',
+    binary: async (name) => '/bin/' + name,
+    directory: async () => true,
+    run: async (_file, args) => {
+      if (args.includes('list-sessions')) return rows;
+      if (args.includes('list-panes')) return '%1\t0';
+      if (args.includes('new-session')) {
+        launches.push(args);
+        rows = `${args[args.indexOf('-s') + 1]}\t${args.at(-1)}\t\t\t`;
+      }
+      return '';
+    },
+  });
+  const pending = new PendingLaunches();
+  const core = new LaunchCore({
+    destinations: { tmux: tmuxDestination(tmux) },
+    pending,
+    queue: new LaunchQueue(),
+  });
+  assert.equal((await core.start(resume, 'tmux', { confirm: async () => true })).state, 'launched');
+  assert.equal(pending.has(pendingKey(resume)), false);
+  assert.equal((await core.start(resume, 'tmux', { confirm: async () => true })).state, 'running');
+  assert.equal(launches.length, 1);
+});

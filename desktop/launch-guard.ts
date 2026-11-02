@@ -1,6 +1,7 @@
 import { findClaudeProcess } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck, LaunchPlace, Provider } from '../src/shared/types.js';
+import type { PendingState } from './pending-launch.js';
 import { codexThreadOnScreen } from './codex-focus.js';
 import type { TerminalLookup } from './terminal-host.js';
 import { defaultTerminalDeps, lookupTerminal, type TerminalDeps } from './terminals.js';
@@ -78,21 +79,28 @@ export interface LaunchEvidence {
   /**
    * A launch of it that may still start or started unseen (desktop/pending-launch.ts): Orca
    * made the tab, or Terminal/tmux was cut off after taking the command, but no terminal or
-   * process shows it yet. It counts as open there (`true`: in Orca) until it expires.
+   * process shows it yet. It counts as open there (`true`: in Orca) until it expires, or until
+   * the agent is seen running (`running` beats it). `starting`: the destination took it.
    */
-  pending?: boolean | LaunchPlace;
+  pending?: boolean | LaunchPlace | PendingState;
 }
 
 /** The pure decision: running beats open beats unknown beats none. */
 export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
   if (e.agent.kind === 'found') return { state: 'running', where: e.agent.terminal.where };
   if (e.orcaTab.kind === 'found') return { state: 'open', where: 'orca' };
-  if (e.pending)
+  if (e.pending) {
+    const held: PendingState =
+      typeof e.pending === 'object'
+        ? e.pending
+        : { where: typeof e.pending === 'string' ? e.pending : 'orca' };
     return {
       state: 'open',
-      where: typeof e.pending === 'string' ? e.pending : 'orca',
+      where: held.where,
       pending: true,
+      ...(held.starting && { starting: true as const }),
     };
+  }
   // A live own pane is not proof of this conversation: after Claude `/clear` or Codex `/new`
   // the same process shows another one. Only the agent adapter above can say it runs.
   if (e.ownTmux.kind === 'found') return { state: 'open', where: 'tmux' };
@@ -107,7 +115,7 @@ export interface DuplicateDeps {
   orcaTab: (fresh: boolean) => Promise<TerminalLookup<unknown>>;
   ownTmux: (fresh: boolean) => Promise<TerminalLookup<unknown>>;
   /** Where a launch of it may still start, if anywhere (main-process memory, never throws). */
-  pending?: () => boolean | LaunchPlace | undefined;
+  pending?: () => boolean | LaunchPlace | PendingState | undefined;
 }
 
 export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promise<DuplicateCheck> {
@@ -125,7 +133,8 @@ export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promis
  * launch of the same one (agent, folder, name; a fork's original) that may still start.
  */
 export const pendingCheck =
-  (pending: () => boolean | LaunchPlace | undefined) => async (): Promise<DuplicateCheck> =>
+  (pending: () => boolean | LaunchPlace | PendingState | undefined) =>
+  async (): Promise<DuplicateCheck> =>
     decideDuplicate({
       agent: { kind: 'none' },
       orcaTab: { kind: 'none' },

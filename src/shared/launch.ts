@@ -91,10 +91,12 @@ export interface LaunchOptions {
 
 /**
  * What to tell about a launch held pending (`DuplicateCheck.pending`) at `where`: an Orca tab
- * starts once Orca shows it; Terminal or tmux may already be running it unseen. Never a
- * suggestion to start it elsewhere.
+ * starts once Orca shows it; Terminal or tmux may already be running it unseen. `starting`: it
+ * was just handed over there and the agent may still be starting. Never a suggestion to start
+ * it elsewhere.
  */
-export function pendingNotice(where: LaunchPlace): string {
+export function pendingNotice(where: LaunchPlace, starting = false): string {
+  if (starting) return m().launch.starting(m().tmux.place[where]);
   if (where === 'orca') return m().tmux.orcaUncertain;
   return where === 'tmux' ? m().launch.tmuxUncertain : m().launch.terminalAppUncertain;
 }
@@ -103,6 +105,8 @@ export function pendingNotice(where: LaunchPlace): string {
  * What a start did:
  * - `launched`: it started (Orca confirmed the tab, tmux saw the agent alive, Terminal opened).
  * - `running`: this launch's own tmux session already runs; nothing new was started.
+ *   A Terminal window or an Orca tab only shows it was handed over: it stays reserved
+ *   (`DuplicateCheck.starting`) while the agent starts, so a second start is cautioned.
  * - `uncertain`: it may have started but was not seen to: Orca made the tab (it starts once Orca
  *   shows it), or Terminal/tmux was cut off after it may have taken the command. Launching it
  *   again is cautioned as "open" there for a while. Never suggest another place.

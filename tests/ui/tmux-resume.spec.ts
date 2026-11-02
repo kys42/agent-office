@@ -581,3 +581,22 @@ test('a start Terminal may already be running is told as such, without Open Orca
     modal.getByRole('button', { name: 'Orca에서 새로 띄우기', exact: true }),
   ).toHaveCount(0);
 });
+
+test('a tab just opened in Orca reads as starting, not as an unconfirmed start', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.orcaAvailable = true;
+    // Orca confirmed (or the office adopted) the tab; the agent in it does not show yet.
+    w.duplicate = { state: 'open', where: 'orca', pending: true, starting: true };
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await expect(modal.getByText('방금 Orca에서 띄웠어요', { exact: false })).toBeVisible();
+  await expect(modal.getByText('Orca를 열면 시작돼요', { exact: false })).toHaveCount(0);
+  // The usual "open in Orca" choices, not the Open-Orca-only state of an unconfirmed start.
+  await expect(modal.getByRole('button', { name: '그 탭으로 이동' })).toBeVisible();
+  await expect(modal.getByRole('button', { name: 'Orca 열기', exact: true })).toHaveCount(0);
+});

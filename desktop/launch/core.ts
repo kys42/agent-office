@@ -142,7 +142,7 @@ export class LaunchCore {
     const whole = target.kind === 'resume' ? this.deps.conversationCheck?.(target) : undefined;
     if (whole) return whole;
     const key = pendingKey(target);
-    return pendingCheck(() => this.deps.pending.where(key));
+    return pendingCheck(() => this.deps.pending.state(key));
   }
   private destination(id: LaunchDestinationId): LaunchDestination {
     const destination = this.deps.destinations[id];

@@ -86,7 +86,8 @@ export function TmuxResume({
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
   // Reopened after an unconfirmed start: main still holds it pending, with no tab to go to yet.
-  const pendingStart = duplicate?.state === 'open' && !!duplicate.pending;
+  // A start just handed over (`starting`) is not unconfirmed: it shows as open there, below.
+  const pendingStart = duplicate?.state === 'open' && !!duplicate.pending && !duplicate.starting;
   // Only an Orca start waits for Orca to show it; elsewhere it may already run unseen.
   const pendingOutsideOrca = pendingStart && duplicate.where !== 'orca';
   const uncertain =
@@ -451,7 +452,9 @@ export function TmuxResume({
               {openOther && (
                 <p className="tmux-caution" role="status">
                   <AlertCircle size={14} aria-hidden="true" />
-                  {text.openNotice(place)} {text.openHint}
+                  {duplicate.starting
+                    ? pendingNotice(duplicate.where, true)
+                    : `${text.openNotice(place)} ${text.openHint}`}
                 </p>
               )}
               {duplicate?.state === 'unknown' && (

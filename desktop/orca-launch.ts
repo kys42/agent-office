@@ -531,6 +531,7 @@ export class OrcaLaunch {
       id: 'orca',
       launches: true,
       place: 'orca',
+      reserves: true,
       probe: (s, fresh) => this.probe(s, fresh),
       start: (s, context) => this.create(s, context),
     };

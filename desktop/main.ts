@@ -1097,7 +1097,7 @@ function setupIPC() {
         {
           agent: (f) => livenessFor(session.provider).lookup(session.nativeId, f),
           // A launch of it that may still start (once Orca shows its tab) or started unseen.
-          pending: () => orcaLaunch.pending.where(session),
+          pending: () => orcaLaunch.pending.state(session),
           orcaTab: async (f) => {
             const tab = await lookupOrcaTab(
               session,

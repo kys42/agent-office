@@ -34,29 +34,48 @@ export function pendingLaunchKey(s: PendingLaunchTarget): string {
     : `${s.provider}:${s.nativeId}`;
 }
 
+/**
+ * A launch held pending, and where. `starting`: the destination confirmed it took the command
+ * (a Terminal window, an Orca tab) but that is not the agent seen running yet: a startup
+ * reservation, not an unconfirmed start.
+ */
+export interface PendingState {
+  where: LaunchPlace;
+  starting?: true;
+}
+
 export class PendingLaunches {
-  private until = new Map<string, { until: number; where: LaunchPlace }>();
+  private until = new Map<string, PendingState & { until: number }>();
   constructor(
     private ttl = PENDING_LAUNCH_MS,
     private now: () => number = Date.now,
   ) {}
   /** `where`: the place it may be starting in (an Orca tab unless said otherwise). */
-  add(target: PendingLaunchTarget, where: LaunchPlace = 'orca') {
-    this.until.set(pendingLaunchKey(target), { until: this.now() + this.ttl, where });
+  add(target: PendingLaunchTarget, where: LaunchPlace = 'orca', starting = false) {
+    this.until.set(pendingLaunchKey(target), {
+      until: this.now() + this.ttl,
+      where,
+      ...(starting && { starting: true as const }),
+    });
   }
   clear(target: PendingLaunchTarget) {
     this.until.delete(pendingLaunchKey(target));
   }
-  /** Where a launch of it may still be starting; `undefined` when none is. */
-  where(target: PendingLaunchTarget): LaunchPlace | undefined {
+  /** The launch of it held pending; `undefined` when none is. */
+  state(target: PendingLaunchTarget): PendingState | undefined {
     const key = pendingLaunchKey(target);
     const entry = this.until.get(key);
     if (entry === undefined) return undefined;
-    if (entry.until > this.now()) return entry.where;
+    if (entry.until > this.now())
+      return { where: entry.where, ...(entry.starting && { starting: true as const }) };
     this.until.delete(key);
     return undefined;
   }
+  /** Where a launch of it may still be starting; `undefined` when none is. */
+  where(target: PendingLaunchTarget): LaunchPlace | undefined {
+    return this.state(target)?.where;
+  }
   has(target: PendingLaunchTarget): boolean {
-    return this.where(target) !== undefined;
+    return this.state(target) !== undefined;
   }
 }

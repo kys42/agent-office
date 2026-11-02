@@ -188,7 +188,11 @@ export function SummonExisting({
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
   // Reopened (or started elsewhere): main still holds an unconfirmed Orca start, no tab yet.
-  const pendingWhere = duplicate?.state === 'open' && duplicate.pending ? duplicate.where : null;
+  // A start just handed over (`starting`) is not unconfirmed: it shows as open there, below.
+  const pendingWhere =
+    duplicate?.state === 'open' && duplicate.pending && !duplicate.starting
+      ? duplicate.where
+      : null;
   const uncertain = launchUncertain || (pendingWhere ? pendingNotice(pendingWhere) : '');
   // Opening Orca starts only an Orca tab; Terminal or tmux may already be running it.
   const revealable = !pendingWhere || pendingWhere === 'orca';
@@ -278,7 +282,9 @@ export function SummonExisting({
           {openOther && (
             <p className="tmux-caution" role="status">
               <AlertCircle size={14} aria-hidden="true" />
-              {t.tmux.openNotice(place)} {t.tmux.openHint}
+              {duplicate.starting
+                ? pendingNotice(duplicate.where, true)
+                : `${t.tmux.openNotice(place)} ${t.tmux.openHint}`}
             </p>
           )}
           {duplicate?.state === 'unknown' && (

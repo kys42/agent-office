@@ -82,6 +82,7 @@ export function orcaDestination(orca: OrcaLaunch): LaunchDestination {
     id: 'orca',
     launches: true,
     place: 'orca',
+    reserves: true,
     probe: (t, fresh) => orca.probe(orcaSession(t), fresh),
     async start(t, context) {
       const started = await orca.create(orcaSession(t), context as StartContext<OrcaPlan>);
@@ -150,6 +151,7 @@ export function terminalAppDestination(deps: ShellDestinationDeps): LaunchDestin
     id: 'terminalApp',
     launches: true,
     place: 'other',
+    reserves: true,
     async probe(t) {
       if (deps.platform !== 'darwin')
         return { available: false, reason: m().launch.terminalAppUnsupported };
