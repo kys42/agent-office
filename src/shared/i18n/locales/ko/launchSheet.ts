@@ -3,6 +3,7 @@ import type { Messages } from '../en';
 export const launchSheet: Messages['launchSheet'] = {
   title: '세션 시작',
   cardContinue: '터미널에서 이어가기',
+  cardFork: '복제해서 새로',
   step: { what: '무엇을', where: '어디서', progress: '진행' },
   conversation: '대화',
   noConversations: '이 프로젝트에서 여기서 이어갈 수 있는 대화가 없어요.',

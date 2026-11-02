@@ -107,7 +107,8 @@ export async function inspectPrompt(
   const no = (reason: PromptUnavailable) => unavailable(adapter.agent, reason);
   if (!asking) return no('no-request');
   if (!adapter.answers('tmux').size && !adapter.answers('orca').size) return no('unsupported');
-  if (setting === 'off') return no('off');
+  // Not turned on (never asked, or turned off): the choices are still offered, and the first
+  // press asks natively before anything is sent (main). Reading the screen presses nothing.
   if (uncheckable(asking)) return no('unverifiable');
   if (!target) return no('no-terminal');
   if (!adapter.answers(target.host.kind).has(asking.request.kind)) return no('unsupported');
@@ -133,6 +134,7 @@ export async function inspectPrompt(
       : {}),
     ...(asked.request.kind === 'permission' ? { tool: asked.request.tool } : {}),
     ...(asked.subject ? { subject: shown(asked.subject) } : {}),
+    ...(setting !== 'on' ? { consent: setting } : {}),
   };
 }
 
