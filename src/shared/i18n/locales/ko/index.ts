@@ -28,7 +28,7 @@ import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
-import { summonExisting } from './summonExisting';
+import { launchSheet } from './launchSheet';
 import { launch } from './launch';
 
 export const ko: Messages = {
@@ -61,6 +61,6 @@ export const ko: Messages = {
   pets,
   desks,
   guide,
-  summonExisting,
+  launchSheet,
   launch,
 };

@@ -1,5 +1,6 @@
 import { CardShellButton } from './MiniShell';
-import { TmuxResume } from './TmuxResume';
+import { LaunchSheet } from './LaunchSheet';
+import { resumeBlock } from '../shared/summon-existing';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -394,15 +395,26 @@ export function Inspector({
   );
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;
+  // The launch sheet (#319) continues this conversation where it can start on this computer.
+  const canLaunch = !!api.launch && !demo && !s.remote && !resumeBlock(s);
+  const [launching, setLaunching] = useState(false);
+  // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
+  const sheetFallback = canLaunch && !codexApp && !live?.canFocus;
   const resumeLabel = codexApp
     ? t.inspector.openInCodex
     : live?.canFocus
       ? t.terminal.jumpTo(focusName(live))
-      : t.inspector.copyResume;
+      : sheetFallback
+        ? t.launchSheet.cardContinue
+        : t.inspector.copyResume;
   const resume = async () => {
     try {
       if (codexApp) {
         notify(await api.resume(s.id));
+        return;
+      }
+      if (sheetFallback) {
+        if (!privacy) setLaunching(true);
         return;
       }
       if (api.jump) {
@@ -1096,7 +1108,7 @@ export function Inspector({
           <div className="card-actions">
             <button
               className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo || !!s.remote}
+              disabled={demo || !!s.remote || (sheetFallback && privacy)}
               onClick={resume}
             >
               <Terminal size={13} />
@@ -1112,8 +1124,25 @@ export function Inspector({
                 {t.terminal.jumpTo(focusName(live))}
               </button>
             )}
-            {api.tmuxResume && !demo && !s.remote && ['claude', 'codex'].includes(s.provider) && (
-              <TmuxResume key={s.id} id={s.id} privacy={privacy} notify={notify} />
+            {canLaunch && !sheetFallback && (
+              <button
+                className="card-action"
+                data-solid
+                disabled={privacy}
+                onClick={() => setLaunching(true)}
+              >
+                <Terminal size={13} />
+                {t.launchSheet.cardContinue}
+              </button>
+            )}
+            {launching && canLaunch && (
+              <LaunchSheet
+                key={s.id}
+                entry={{ from: 'card', session: s }}
+                privacy={privacy}
+                notify={notify}
+                onClose={() => setLaunching(false)}
+              />
             )}
             <CardShellButton session={s} privacy={privacy} demo={demo} notify={notify} />
             {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}

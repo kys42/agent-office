@@ -61,15 +61,6 @@ const api: OfficeAPI = {
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
   ...(['darwin', 'linux'].includes(process.platform)
     ? {
-        tmuxSummon: (
-          id: string,
-          actionName: 'status' | 'start' | 'open',
-          provider: 'claude' | 'codex',
-          name: string,
-          initialMessage?: string,
-        ) => action('office:tmux-summon', id, actionName, provider, name, initialMessage),
-        tmuxResume: (id: string, actionName: 'status' | 'start' | 'open') =>
-          action('office:tmux-resume', id, actionName),
         shell: {
           command: (command: unknown) => action('office:shell', command),
           input: (ptyId: string, data: string) =>
@@ -88,21 +79,8 @@ const api: OfficeAPI = {
         } as OfficeAPI['shell'],
       }
     : {}),
-  // Orca is a macOS app: its launch is offered there only.
-  ...(process.platform === 'darwin'
-    ? {
-        orcaLaunch: (id: string, actionName: 'status' | 'start' | 'focus') =>
-          action('office:orca-launch', id, actionName),
-        orcaSummon: (
-          id: string,
-          actionName: 'status' | 'start',
-          provider: 'claude' | 'codex',
-          name: string,
-          initialMessage?: string,
-        ) => action('office:orca-summon', id, actionName, provider, name, initialMessage),
-        orcaReveal: () => action('office:orca-reveal'),
-      }
-    : {}),
+  // Orca is a macOS app: bringing it to the front is offered there only.
+  ...(process.platform === 'darwin' ? { orcaReveal: () => action('office:orca-reveal') } : {}),
   // Every destination says itself whether this platform has it (desktop/launch/).
   launch: (request) => action('office:launch', request),
   launchOptions: (intent) => action('office:launch-options', intent),

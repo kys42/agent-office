@@ -16,12 +16,8 @@ export const tmux: Messages['tmux'] = {
   summonIntro:
     '이 프로젝트에 새 에이전트를 소환해요. tmux로 터미널 세션을 유지하므로 필요할 때 직접 들어가 작업하고 언제든 다시 연결할 수 있어요.',
   summonDescription: '프로젝트에 함께할 새 동료를 설정하세요.',
-  resumeDescription: '저장된 대화를 별도 터미널에서 이어가요. 언제든 다시 연결할 수 있어요.',
   agentSettings: '새 동료 설정',
   agentType: '에이전트',
-  sessionDetails: '터미널 세션 정보',
-  guide: 'tmux로 세션 관리하기',
-  summonDiscovery: '오피스에는 첫 대화 기록이 감지되면 자동으로 나타나요.',
   agentName: '에이전트 이름',
   invalidName: '이름은 글자·숫자·공백·하이픈·밑줄로 1~40자 입력해주세요.',
   nameHint: '오피스와 tmux에서 사용할 이름이에요. 첫 대화가 감지되면 오피스에 반영돼요.',
@@ -29,10 +25,7 @@ export const tmux: Messages['tmux'] = {
   messagePlaceholder: '예: 이 프로젝트를 살펴보고 해야 할 일을 정리해줘',
   messageHint: '최대 4,000자 · 새 세션을 시작할 때 한 번만 보내요.',
   invalidMessage: '첫 메시지는 제어 문자 없이 4,000자 이내로 입력해주세요.',
-  summonRunning: 'tmux가 실행 중이에요',
-  existingTitle: '이 프로젝트에 이미 연결된 에이전트',
   existingConfirm: '이 프로젝트에 연결된 에이전트가 있어요. 별도의 tmux 세션을 새로 띄울까요?',
-  existingOpen: '기존 세션으로 이동',
   summonCheck: '연결과 이름 확인',
   summonDefault: '새 동료',
   summonConfirm: '이 프로젝트에 새 에이전트를 소환할까요?',
@@ -44,17 +37,11 @@ export const tmux: Messages['tmux'] = {
   intro: '저장된 이 대화를 별도 터미널에서 이어갑니다. 새 대화를 만드는 동작은 아니에요.',
   name: 'tmux 이름',
   folder: '프로젝트 폴더',
-  command: '다시 들어가는 명령',
-  ready: '재개할 준비가 됐어요',
-  running: '다시 들어갈 tmux가 있어요',
-  hint: '터미널을 닫거나 Ctrl+B를 누른 뒤 D를 누르면 화면에서만 나옵니다. 컴퓨터가 깨어 있는 동안 에이전트는 계속 실행돼요. 재부팅하거나 에이전트가 종료되면 여기서 다시 재개하세요.',
   skipPermissions:
     '권한 확인 없이 실행해요(Claude: --dangerously-skip-permissions, Codex: --dangerously-bypass-approvals-and-sandbox). 설정 → 터미널과 답하기에서 끌 수 있어요.',
   caution:
     '이 대화가 다른 곳에서 작업 중이라면 먼저 그 작업을 마쳐주세요. 같은 대화를 두 곳에서 동시에 진행할 수 있어요.',
   start: 'tmux로 따로 띄우기',
-  open: '터미널에서 열기',
-  copy: '재접속 명령 복사',
   refresh: '다시 확인',
   loading: '확인 중…',
   cancel: '취소',
@@ -74,17 +61,14 @@ export const tmux: Messages['tmux'] = {
   orcaIntro:
     '이 프로젝트 폴더로 Orca에 새 터미널 탭을 열고 아래 명령을 실행해요. 새 대화를 만드는 동작은 아니에요.',
   orcaCommand: '실행 명령',
-  orcaHint: 'Orca가 실행 중이라 이 대화를 Orca 새 탭에서 이어갈 수도 있어요.',
   orcaLaunched: 'Orca 새 탭에서 이 대화를 열었어요',
   /** Summoning a new agent in a new Orca tab instead of tmux. */
   summonOrca: 'Orca 새 탭에 소환하기',
   summonOrcaConfirm: '이 프로젝트의 Orca 새 탭에 새 에이전트를 띄울까요?',
   summonOrcaIntro:
     '이 프로젝트 폴더로 Orca에 새 터미널 탭을 열고 아래 명령으로 새 대화를 시작해요.',
-  summonOrcaHint: 'Orca가 실행 중이라 tmux 대신 Orca 새 탭에 띄울 수도 있어요.',
   summonOrcaLaunched: 'Orca 새 탭에 새 에이전트를 띄웠어요',
   orcaUnsupported: 'macOS의 로컬 Claude·Codex 세션에서 Orca 재개를 지원해요.',
-  orcaUnavailable: 'Orca가 실행 중이 아니거나 응답하지 않아요. Orca를 연 뒤 다시 시도해주세요.',
   orcaRefused: (reason, workspace = false) =>
     `Orca가 탭을 열지 않았어요${reason ? `: ${reason}` : '.'}${workspace ? ' 이 폴더는 Orca 작업 공간이 아니에요.' : ''} tmux로 따로 띄워보세요.`,
   orcaUncertain: 'Orca에 탭을 만들었지만 시작을 아직 확인하지 못했어요. Orca를 열면 시작돼요.',
@@ -101,10 +85,6 @@ export const tmux: Messages['tmux'] = {
     '그 안에서 에이전트가 실행 중인지는 확인하지 못했어요. 새로 띄우면 같은 대화가 두 개 돌 수 있어요.',
   unknownNotice:
     '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 띄우기 전에 확인해주세요.',
-  jumpToTerminal: '터미널로 이동',
-  jumpToTab: '그 탭으로 이동',
-  forceStart: '그래도 tmux로 새로 띄우기',
-  forceOrca: '그래도 Orca에서 새로 띄우기',
   runningRefused: (place) =>
     `이 대화가 이미 ${place}에서 실행 중이라 새로 띄우지 않았어요. 터미널로 이동해주세요.`,
   changedRefused:
@@ -114,6 +94,4 @@ export const tmux: Messages['tmux'] = {
   unknownConfirm:
     '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 이미 열려 있다면 같은 대화가 두 번 돌아가요.',
   tabGone: '그 Orca 탭을 다시 찾지 못했어요. 상태를 다시 확인해주세요.',
-  ownSessionNote:
-    '이 대화로 앱이 띄웠던 tmux 세션이에요. 그 안에서 /new·/clear를 했다면 지금은 다른 대화일 수 있어요.',
 };

@@ -1,13 +1,14 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
-import { TmuxResume, defaultResumeDeps, summonSession } from './tmux-resume.js';
+import { TmuxResume, defaultResumeDeps } from './tmux-resume.js';
 import { LaunchCore, launchResult, type LaunchTarget } from './launch/core.js';
 import {
   copyDestination,
   orcaDestination,
   terminalAppDestination,
   tmuxDestination,
+  tmuxSession,
 } from './launch/destinations.js';
-import type { DestinationProbe, LaunchOutcome } from './launch/pipeline.js';
+import type { DestinationProbe } from './launch/pipeline.js';
 import {
   launchIntentSchema,
   launchRequestSchema,
@@ -68,8 +69,6 @@ import type {
   SessionIdentity,
   Snapshot,
   DuplicateCheck,
-  OrcaLaunchInfo,
-  TmuxResumeInfo,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
@@ -1190,29 +1189,6 @@ function setupIPC() {
       from: s,
     };
   };
-  /** A summon of the older channels: the same target as a `new` intent, checked by the core. */
-  const summonTarget = async (
-    id: unknown,
-    provider: unknown,
-    name: unknown,
-    initialMessage: unknown,
-  ): Promise<LaunchTarget> => {
-    if (typeof id !== 'string' || id.length > 400) throw new Error(m().desktop.badRequest);
-    if (!['claude', 'codex'].includes(provider as string) || typeof name !== 'string')
-      throw new Error(m().desktop.badRequest);
-    if (initialMessage !== undefined && typeof initialMessage !== 'string')
-      throw new Error(m().tmux.invalidMessage);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const original: Session = await bridge.call('detail', [id]);
-    return {
-      kind: 'new',
-      provider: provider as 'claude' | 'codex',
-      cwd: original.cwd ?? '',
-      name: name.trim().normalize('NFC'),
-      initialMessage: initialMessage ?? '',
-      skipPermissions: skipPermissions(),
-    };
-  };
   /** Native confirmations warn about an open tab or an unverifiable check. */
   const dialogType = (check: DuplicateCheck) =>
     check.state === 'none' ? ('question' as const) : ('warning' as const);
@@ -1322,23 +1298,36 @@ function setupIPC() {
     }
     return outcome;
   };
-  /** The older tmux channels' answer: its session's info; a refusal throws as it did. */
-  const tmuxAnswer = (outcome: LaunchOutcome): TmuxResumeInfo => {
-    if (outcome.state === 'refused') throw outcome.error;
-    // Maybe started (tmux cut off): its message says to check first, not to start again.
-    if (outcome.state === 'uncertain') throw new Error(outcome.message);
-    return (
-      ('detail' in outcome && (outcome.detail as TmuxResumeInfo | undefined)) ||
-      (outcome.probe.detail as { info: TmuxResumeInfo }).info
-    );
-  };
-  /** The older Orca channels' answer. */
-  const orcaAnswer = (outcome: LaunchOutcome): OrcaLaunchInfo => {
-    if (outcome.state === 'refused') throw outcome.error;
-    if (!('detail' in outcome) || !outcome.detail)
-      return { available: true, command: outcome.probe.command, launched: false };
-    const info = outcome.detail as OrcaLaunchInfo;
-    return outcome.state === 'launched' ? { ...info, message: outcome.message } : info;
+  /**
+   * A launch's own place brought to the front, nothing started (the launch sheet's "open in a
+   * terminal" and "go there"): tmux opens its running session (a resume's, or the new/fork
+   * slot of that name) in Terminal; Orca switches to a resume's own tab, matched again now
+   * (never a jump's fallback). A failure throws with its reason.
+   */
+  const openLaunch = async (
+    e: Electron.IpcMainInvokeEvent,
+    target: LaunchTarget,
+    destination: LaunchDestinationId,
+  ): Promise<LaunchResult> => {
+    if (destination === 'tmux') {
+      await tmuxResume.open(tmuxSession(target));
+      return { state: 'opened', destination, message: m().launch.tmuxOpened };
+    }
+    if (destination === 'orca' && target.kind === 'resume' && target.from) {
+      try {
+        const text = await focusOrcaTab(
+          target.from,
+          defaultTerminalDeps(),
+          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+        );
+        cards.afterJump(e.sender);
+        return { state: 'opened', destination, message: text };
+      } catch (error) {
+        if (error instanceof TerminalFocusError) throw new Error(error.message);
+        throw new Error(m().desktop.terminal.jumpFailed('Orca'));
+      }
+    }
+    throw new Error(m().desktop.badRequest);
   };
   ipcMain.handle('office:launch', async (e, raw: unknown): Promise<LaunchResult> => {
     trusted(e);
@@ -1348,61 +1337,15 @@ function setupIPC() {
     const target = await launchTarget(request.data.intent);
     if (action === 'probe')
       return { state: 'probed', destination, probe: await launchCore.probe(target, destination) };
+    if (action === 'open') return openLaunch(e, target, destination);
     return launchResult(destination, await launch(e, target, destination));
   });
   ipcMain.handle('office:launch-options', async (e, raw: unknown): Promise<LaunchOptions> => {
     trusted(e);
     return launchCore.options(await launchTarget(raw));
   });
-  ipcMain.handle('office:tmux-resume', async (e, id, action) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const session: Session = await bridge.call('detail', [id]);
-    if (action === 'status') {
-      const [info, connections, duplicate] = await Promise.all([
-        tmuxResume.status(session),
-        projectConnections(session.cwd),
-        duplicateCheck(session)(false),
-      ]);
-      return { ...info, duplicate, connections: connections.filter((c) => c.id === session.id) };
-    }
-    if (action === 'open') return tmuxResume.open(session);
-    return tmuxAnswer(await launch(e, await launchTarget({ kind: 'resume', session: id }), 'tmux'));
-  });
   setupMiniShell();
   setupReader();
-  ipcMain.handle('office:orca-launch', async (e, id, action) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'focus'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const session: Session = await bridge.call('detail', [id]);
-    if (action === 'focus') {
-      // Only the conversation's own tab, matched again right now (never a jump's fallback).
-      try {
-        const text = await focusOrcaTab(
-          session,
-          defaultTerminalDeps(),
-          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
-        );
-        cards.afterJump(e.sender);
-        return { available: true, message: text };
-      } catch (error) {
-        if (error instanceof TerminalFocusError) throw new Error(error.message);
-        throw new Error(m().desktop.terminal.jumpFailed('Orca'));
-      }
-    }
-    if (action === 'status') {
-      const [info, duplicate] = await Promise.all([
-        orcaLaunch.status({ ...session, skipPermissions: skipPermissions() }),
-        duplicateCheck(session)(false),
-      ]);
-      return { ...info, duplicate };
-    }
-    return orcaAnswer(await launch(e, await launchTarget({ kind: 'resume', session: id }), 'orca'));
-  });
   ipcMain.handle('office:remote-launch', async (e, id, action, value) => {
     trusted(e);
     if (
@@ -1448,51 +1391,9 @@ function setupIPC() {
       authorize,
     );
   });
-  ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name, initialMessage) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (!['claude', 'codex'].includes(provider)) throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    if (action === 'start')
-      return tmuxAnswer(
-        await launch(e, await summonTarget(id, provider, name, initialMessage), 'tmux'),
-      );
-    const original: Session = await bridge.call('detail', [id]);
-    if (typeof name !== 'string') throw new Error(m().desktop.badRequest);
-    const session = summonSession(original.cwd ?? '', provider, name, initialMessage);
-    if (action === 'status')
-      return {
-        ...(await tmuxResume.status(session)),
-        connections: await projectConnections(original.cwd),
-      };
-    return tmuxResume.open(session);
-  });
   ipcMain.handle('office:orca-reveal', async (e) => {
     trusted(e);
     await orcaLaunch.reveal();
-  });
-  ipcMain.handle('office:orca-summon', async (e, id, action, provider, name, initialMessage) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    const target = await summonTarget(id, provider, name, initialMessage);
-    if (action === 'status') {
-      // The same new agent as a tmux summon (name and first message checked the same way), in
-      // a new Orca tab of the project's own registered folder; its name titles the tab.
-      const fresh = summonSession(
-        target.cwd,
-        target.provider as 'claude' | 'codex',
-        name as string,
-        initialMessage as string | undefined,
-      );
-      return orcaLaunch.status({
-        ...fresh,
-        alias: fresh.agentName,
-        skipPermissions: target.skipPermissions,
-      });
-    }
-    return orcaAnswer(await launch(e, target, 'orca'));
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();

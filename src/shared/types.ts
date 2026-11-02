@@ -853,34 +853,13 @@ export interface OfficeAPI {
     action: 'status' | 'start',
     spec: import('./remote-launch').RemoteLaunchSpec,
   ) => Promise<import('./remote-launch').RemoteLaunchInfo>;
-  /** Local desktop only. Starting requires confirmation in the main process. */
-  tmuxSummon?: (
-    id: string,
-    action: 'status' | 'start' | 'open',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<TmuxResumeInfo>;
-  tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
-  /**
-   * Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab; `focus`
-   * switches to its existing Orca tab, re-verified afresh in main.
-   */
-  orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
-  /** Desktop (macOS) only: summon a new agent in a new Orca tab of this project's folder. */
-  orcaSummon?: (
-    id: string,
-    action: 'status' | 'start',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<OrcaLaunchInfo>;
   /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
   orcaReveal?: () => Promise<void>;
   /**
-   * Desktop only (#318): probe or start one launch (new, resume, fork) at one destination.
-   * Starting asks a native confirmation in the main process; a refusal is an answer, not an
-   * error (`state: 'refused'` with its reason).
+   * Desktop only (#318): probe, start or open one launch (new, resume, fork) at one
+   * destination. Starting asks a native confirmation in the main process; a refusal is an
+   * answer, not an error (`state: 'refused'` with its reason). The launch sheet (#319) is its
+   * only window caller.
    */
   launch?: (request: import('./launch').LaunchRequest) => Promise<import('./launch').LaunchResult>;
   /** Desktop only: every destination probed for an intent, with the one to offer first. */

@@ -30,7 +30,7 @@ import './styles/pets.css';
 import './styles/desks.css';
 import './styles/guide.css';
 import './styles/tmux.css';
-import './styles/summon-existing.css';
+import './styles/launch-sheet.css';
 import './styles/mini-shell.css';
 import './styles/native.css';
 import './styles/windows.css';

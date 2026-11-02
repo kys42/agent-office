@@ -560,9 +560,11 @@ test('IPC: one strict request shape; paths, commands and unknown fields never pa
       action: 'start',
     }),
   );
+  // The launch sheet (#319) opens a launch's own place (tmux session, Orca tab) the same way.
+  assert.ok(ok({ intent: { kind: 'resume', session: 's1' }, destination: 'orca', action: 'open' }));
   for (const bad of [
     { intent, destination: 'iterm', action: 'start' },
-    { intent, destination: 'orca', action: 'open' },
+    { intent, destination: 'orca', action: 'focus' },
     { intent, destination: 'orca', action: 'start', cwd: '/etc' },
     { intent: { ...intent, cwd: '/etc' }, destination: 'orca', action: 'start' },
     {
