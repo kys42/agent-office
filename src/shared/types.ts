@@ -476,6 +476,8 @@ export interface Preferences {
    * Codex with `--dangerously-bypass-approvals-and-sandbox`. Missing: off.
    */
   tmuxSkipPermissions?: boolean;
+  /** Desktop: cards pinned when the app last ran open again where they were. Missing: on. */
+  restorePinnedCards?: boolean;
   /**
    * Desktop: where the person last started a session (#318): the launch sheet offers it first
    * while it is available, else Orca, else tmux. Missing: never chosen.

@@ -119,6 +119,9 @@ export const settings = {
   /** Reading final replies by opening a card (#228). */
   reading: {
     title: 'Read on open',
+    restorePinned: 'Reopen pinned cards',
+    restorePinnedHint:
+      'When the app starts again, the work cards you pinned open where they were. Colleagues moved to the lounge or the archive open too; ones whose records are gone are skipped.',
     readOnOpen: 'Opening a card marks replies read',
     readOnOpenHint:
       "A teammate's work card you keep open marks its final replies read. Off, they stay unread until you mark them.",

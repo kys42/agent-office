@@ -238,10 +238,21 @@ else {
       material = next;
       cards.setMaterial(next);
     };
+    // Cards pinned when the app last ran come back once the office is known (a colleague whose
+    // records are gone stays closed). Not while screen sharing hides the office's content.
+    let restored = false;
+    const restorePinned = (s: Snapshot) => {
+      if (restored) return;
+      restored = true;
+      if (s.preferences?.restorePinnedCards === false || s.preferences?.privacy) return;
+      const known = new Set(s.sessions.flatMap((x) => [x.id, ...(x.resident?.sessionIds ?? [])]));
+      cards.restore((id) => known.has(id));
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
       hidePopups(s);
       followGlass(s);
+      restorePinned(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
