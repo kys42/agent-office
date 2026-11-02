@@ -1371,6 +1371,107 @@ test('2.1.316: addresses in a plan count letter for letter, however the pane wra
   assert.equal(oneOf(linked, withPlan(RELEASE.plan.replace('v2.1.316', 'v2.1.317'))), 'none');
 });
 
+/** A whole 2.1.316 plan dialog around these drawn plan lines. */
+const planDialog = (lines: string[], file = 'cleanup.md') =>
+  parseDialog({
+    text: [
+      '  ' + '─'.repeat(116),
+      '   Ready to code?',
+      '',
+      "   Here is Claude's plan:",
+      '  ' + '╌'.repeat(116),
+      ...lines.map((line) => (line ? `   ${line}` : '')),
+      '  ' + '╌'.repeat(116),
+      '',
+      '  ' + '─'.repeat(116),
+      '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
+      '',
+      ...PLAN_ROWS_316.map((label, i) => `   ${i ? ' ' : '❯'} ${i + 1}. ${label}`),
+      '        shift+tab to approve with this feedback',
+      '',
+      `   ctrl+g to edit in VS Code · ~/.claude/plans/${file}`,
+    ].join('\n'),
+  }) as Dialog;
+
+test('2.1.316: every character of a plan counts, punctuation included; only spacing does not', () => {
+  const CLEANUP = {
+    plan: [
+      '## Cleanup',
+      '',
+      '1. Fetch https://trusted.example/path/release.tar.gz',
+      '2. Run `rm -rf build/tmp; npm ci, npm test`',
+      '   1. Check `value != null` before use',
+      '   2. Keep `a < b` in the guard',
+      '      - Nested *note*',
+      '3. Done',
+      '',
+      '> Careful: **only** the build folder.',
+    ].join('\n'),
+    planFilePath: '/Users/someone.xyz/.claude/plans/cleanup.md',
+  };
+  // As its renderer draws it: no `#`/backticks/`*`, nested ordered items lettered, the quote bar.
+  const screen = planDialog([
+    'Cleanup',
+    '',
+    '1. Fetch https://trusted.example/path/release.tar.gz',
+    '2. Run rm -rf build/tmp; npm ci, npm test',
+    '   a. Check value != null before use',
+    '   b. Keep a < b in the guard',
+    '      - Nested note',
+    '3. Done',
+    '',
+    '▎ Careful: only the build folder.',
+  ]);
+  const withPlan = (plan: string) => [call('p', 'ExitPlanMode', { ...CLEANUP, plan })];
+  assert.equal(oneOf(screen, withPlan(CLEANUP.plan)), 'p');
+  for (const [from, to] of [
+    ['trusted.example', 'trustedexample'],
+    ['!=', '=='],
+    ['a < b', 'a > b'],
+    ['build/tmp', 'build-tmp'],
+    ['path/release', 'path/../release'],
+    ['rm -rf', 'rm -f'],
+    ['build/tmp; npm ci, npm test', 'build/tmp, npm ci; npm test'],
+    ['**only**', 'ONLY'],
+  ])
+    assert.equal(oneOf(screen, withPlan(CLEANUP.plan.replace(from, to))), 'none', `${from}→${to}`);
+  // The same change seen on the screen instead: none either.
+  const drawnAs = (from: string, to: string) =>
+    planDialog((screen as { plan: string }).plan.replace(from, to).split('\n'), 'cleanup.md');
+  assert.equal(oneOf(drawnAs('!=', '=='), withPlan(CLEANUP.plan)), 'none');
+  assert.equal(oneOf(drawnAs('trusted.example', 'trustedexample'), withPlan(CLEANUP.plan)), 'none');
+  // Numbers a nested list would not draw (`1.` where it draws `a.`): none, never loosened.
+  assert.equal(oneOf(drawnAs('a. Check', '1. Check'), withPlan(CLEANUP.plan)), 'none');
+  // Wrapped anywhere, even mid-word: the same plan.
+  assert.equal(
+    oneOf(drawnAs('npm ci, npm test', 'npm ci, np\nm test'), withPlan(CLEANUP.plan)),
+    'p',
+  );
+});
+
+test('2.1.316: a code block label shows where the highlighter lacks it; unknown drawings never match', () => {
+  const plan = ['Draw it:', '', '```mermaid', 'graph TD; A-->B', '```', '', 'Then **ship**.'].join(
+    '\n',
+  );
+  const input = { plan, planFilePath: '/Users/someone.xyz/.claude/plans/cleanup.md' };
+  const calls = [call('p', 'ExitPlanMode', input)];
+  // A language the highlighter does not know: its label drawn above the code; or not.
+  const labelled = planDialog(['Draw it:', '', 'mermaid', 'graph TD; A-->B', '', 'Then ship.']);
+  const bare = planDialog(['Draw it:', '', 'graph TD; A-->B', '', 'Then ship.']);
+  assert.equal(oneOf(labelled, calls), 'p');
+  assert.equal(oneOf(bare, calls), 'p');
+  assert.equal(
+    oneOf(planDialog(['Draw it:', '', 'graph TD; A->B', '', 'Then ship.']), calls),
+    'none',
+  );
+  // A character reference is drawn as written by Claude Code's parser: not reproduced, none.
+  const amp = { ...input, plan: 'Run `make` &amp; check the log.' };
+  assert.equal(
+    oneOf(planDialog(['Run make &amp; check the log.']), [call('p', 'ExitPlanMode', amp)]),
+    'none',
+  );
+});
+
 test('2.1.316: a plan whose every Yes is withheld offers no button', () => {
   const screen = [
     '  ' + '─'.repeat(116),

@@ -9,6 +9,7 @@ import type {
 import { inputRequest } from '../../server/adapters/requests.js';
 import { drawn, type Screen } from '../composer/screen.js';
 import { readPrompt } from '../composer/claude-code.js';
+import { drawnMarkdown } from './claude-markdown.js';
 import type {
   AnswerOutcome,
   Asked,
@@ -353,35 +354,6 @@ export function parseDialog(screen: Screen | null): DialogState {
 
 /** Spacing never decides a match; every other character (shell punctuation too) does. */
 const spaced = (text: string) => text.replace(/\s+/g, ' ').trim();
-/** A code block's fence line (```` ```ts ````, `~~~`): drawn as the code alone. */
-const CODE_FENCE = /^\s*(?:`{3,}|~{3,})/;
-/**
- * A Markdown link without a title, `[text](address)`. Claude Code 2.1.316 (its bundle's link
- * renderer, `Cw`) draws it in one of two ways, by whether the terminal takes hyperlinks: the
- * text alone with the address hidden in an OSC 8 link, or `text (address)`. A link whose text is
- * its address draws the address once. (With a title both forms also draw ` (address)`, which
- * reads as the link as written.)
- */
-const MD_LINK = /\[([^\]\n]*)\]\(\s*<?([^\s()<>]+)>?\s*\)/g;
-/**
- * Letters and digits only. The dialog draws the plan's markdown rendered: no `#`, `**` or code
- * fences, its own bullets and table rules, wrapped at the pane's width (a long address too,
- * mid-path). So marks, spacing and line breaks never decide a match; every word, number and
- * address of the plan still does, letter for letter.
- */
-const planKey = (text: string) => text.normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, '');
-/**
- * The plan as the call wrote it, as the dialog may draw it: its code fence lines left out, and
- * its links either as written (`text (address)` reads the same) or as their text alone. One
- * terminal draws every link the same way, so a plan that mixes both never matches.
- */
-function planKeys(markdown: string): string[] {
-  const body = markdown
-    .split('\n')
-    .filter((line) => !CODE_FENCE.test(line))
-    .join('\n');
-  return [...new Set([planKey(body), planKey(body.replace(MD_LINK, '$1'))])];
-}
 
 /** The heading Claude Code draws for each tool it asks permission for (measured). */
 const TITLES: Record<string, string> = {
@@ -485,6 +457,8 @@ function questionMatches(
  * stored copy hides secret-like words the screen still shows): all of it when the whole box is
  * on screen, its start when the bottom is cut, its end when the top is cut (then the plan file
  * must be named on both sides too). A plan edited in the meantime (ctrl+g) never matches.
+ * The plan is drawn as Claude Code renders its markdown (claude-markdown.ts); only spacing and
+ * line wrapping are left out of the comparison, every other character counts.
  */
 function plans(
   d: Extract<Dialog, { kind: 'plan' }>,
@@ -497,9 +471,9 @@ function plans(
       ? raw.planFilePath.trim()
       : r.planFile;
   if (file && d.planFile && path.basename(file) !== path.basename(d.planFile)) return false;
-  const shown = planKey(d.plan);
+  const shown = drawn(d.plan);
   if (d.shows === 'end' && !(file && d.planFile)) return false;
-  return planKeys(typeof raw.plan === 'string' ? raw.plan : r.plan).some(
+  return drawnMarkdown(typeof raw.plan === 'string' ? raw.plan : r.plan).some(
     (want) =>
       !!shown &&
       shown.length >= Math.min(8, want.length) &&
