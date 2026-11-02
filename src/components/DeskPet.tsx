@@ -58,6 +58,7 @@ export function DeskPet({
   onReply,
   onRefresh,
   notify,
+  preview = false,
 }: {
   model: OfficeModel;
   /** Shown instead of the summary until the first snapshot arrives (or fails). */
@@ -72,22 +73,33 @@ export function DeskPet({
   notify?: (message: string) => void;
   /** Look at the session records again now (and restart a stopped collector). */
   onRefresh: () => void;
+  /**
+   * Drawn small in the settings (#324): the same pet, without anything that reaches outside it —
+   * no window keys, terminal lookups, dock window calls or cards.
+   */
+  preview?: boolean;
 }) {
   const { t } = useI18n();
   const reactionOf = usePetReactions((id) => model.view(id) !== undefined);
   const petting = usePetting();
+  // What the person chose to see on the pet (#324); unset, the look from before.
+  const show = model.display.views.pet;
+  const pats = show.petting && !preview;
   const d = t.dock.pet;
   const pet = petSummary(model);
   const total = model.seats.length;
   const label = status ?? pet.label;
   const count = !status && pet.group !== 'resting' ? pet.count : null;
   // The office in numbers: waiting for the person, results to read, at work, standing by.
-  const tally = status
-    ? []
-    : TALLY.filter((group) => model.counts[group] > 0).map((group) => ({
-        group,
-        count: model.counts[group],
-      }));
+  const tally =
+    status || !show.tally
+      ? []
+      : TALLY.filter((group) => show.tallyGroups.includes(group) && model.counts[group] > 0).map(
+          (group) => ({
+            group,
+            count: model.counts[group],
+          }),
+        );
   const tallyWords = tally.map((g) => `${TRIAGE_LABELS[g.group]} ${g.count}`).join(' · ');
   const speaker = status ? undefined : pet.speaker;
   // The pet stands for one colleague at a time, like one desk of the row: who just spoke (or
@@ -128,7 +140,8 @@ export function DeskPet({
         .filter((v) => v.group === listed)
     : [];
   // Laid out once per change of who is drawn (not per pointer move), as the row does.
-  const all = useMemo(() => petChoices(model), [model.scene]);
+  const counted = show.tally ? show.tallyGroups.join() : '';
+  const all = useMemo(() => petChoices(model), [model.scene, show.tally, counted]);
   const choices = status ? [] : all;
   const shown = status ? { view: undefined, chosen: false } : petShown(choices, pet, chosen);
   const view = shown.view;
@@ -191,7 +204,7 @@ export function DeskPet({
   const who = view && residentLabel(view.session, privacy);
   const replyId = bubble?.sessionId ?? id;
   const { targets, markSent } = useSendTargets(privacy || !id ? [] : [...new Set([id, replyId!])], {
-    enabled: !privacy,
+    enabled: !privacy && !preview,
     pollBusy: false,
   });
   const target = replyId ? targets[replyId] : undefined;
@@ -214,6 +227,7 @@ export function DeskPet({
     step(e.key === 'ArrowLeft' ? -1 : 1);
   });
   useEffect(() => {
+    if (preview) return;
     const key = (e: KeyboardEvent) => onKey(e);
     // The pointer leaving the window fast may skip the anchor's own leave.
     const left = () => {
@@ -233,6 +247,7 @@ export function DeskPet({
   // Like a desk of the row: its colleague's card pops up right here, on the conversation. The
   // row and the floor unfold from their own button; an office with nobody in it still unfolds.
   const activate = (from: Element) => {
+    if (preview) return;
     if (view)
       void openColleague(bubble?.sessionId ?? view.session.id, {
         anchor: from.closest('.dock-pet-anchor'),
@@ -242,14 +257,14 @@ export function DeskPet({
   };
   const listId = useId();
   // The slide plays only for the person's own turn (arrows), never later on its own.
-  const entering = enter && shown.chosen && !speaks ? enter : null;
+  const entering = show.turnEffect && enter && shown.chosen && !speaks ? enter : null;
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
     if (!press.current) return;
     dragged.current = press.current.moved;
     press.current = null;
-    void api.dock?.('drag-end');
+    if (!preview) void api.dock?.('drag-end');
   };
   return (
     <div className="desk-pet-stage" style={PET_SIZE}>
@@ -439,13 +454,13 @@ export function DeskPet({
         {/* The colleague it stands for used up its tool's limit: a dim pet with the badge. */}
         {!status && lead?.quota && <QuotaBadge quota={lead.quota} className="dock-pet-quota" />}
         <button
-          className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaks ? 'is-speaking' : ''} ${dark ? 'lights-out' : ''}`}
+          className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaks ? 'is-speaking' : ''} ${dark ? 'lights-out' : ''} ${pats ? '' : 'no-petting'}`}
           data-solid
           // Screen readers hear the same tally the pill draws, in words.
           aria-label={tally.length ? d.aria(tallyWords, null) : d.aria(label, count)}
           title={d.title(total)}
           onPointerDown={(e) => {
-            if (e.button !== 0) return;
+            if (e.button !== 0 || preview) return;
             e.currentTarget.setPointerCapture(e.pointerId);
             press.current = { x: e.screenX, y: e.screenY, moved: false };
             dragged.current = false;
@@ -460,7 +475,7 @@ export function DeskPet({
           onPointerCancel={endDrag}
           onLostPointerCapture={endDrag}
           // Rubbing the pet pets the colleague it stands for (a drag holds the button).
-          {...petting(lead?.session.id)}
+          {...(pats ? petting(lead?.session.id) : {})}
           onClick={(e) => {
             // A drag that ends on the pet is a move, not a request to open anything.
             if (dragged.current) {
@@ -474,7 +489,7 @@ export function DeskPet({
           {pet.calling && !speaks && <span className="dock-pet-bang">!</span>}
           {/* Re-keyed per notice so a new arrival replays the hop. */}
           {/* A quick puff when the person turns the pet to someone, or a new colleague speaks. */}
-          {(entering || speaks) && (
+          {show.turnEffect && (entering || speaks) && (
             <span
               className="pet-swap-puff"
               key={`puff:${speaks ? speaker.notice.id : id}`}
@@ -499,11 +514,13 @@ export function DeskPet({
             {joy && <PetJoy key={joy.key} reaction={joy} />}
           </span>
           <span className="dock-pet-shadow" />
-          {who && (speaks || shown.chosen || hover) && (
-            <span className="dock-pet-name" title={privacy ? undefined : who.detail}>
-              {who.name}
-            </span>
-          )}
+          {who &&
+            (show.name === 'always' ||
+              (show.name === 'speaking' && (speaks || shown.chosen || hover))) && (
+              <span className="dock-pet-name" title={privacy ? undefined : who.detail}>
+                {who.name}
+              </span>
+            )}
           {hover && place > 0 && choices.length > 1 && (
             <span className="dock-pet-place">{d.place(place, choices.length)}</span>
           )}

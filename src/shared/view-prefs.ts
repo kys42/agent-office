@@ -61,6 +61,14 @@ const on = (v: unknown) => v !== false;
 export const tallyGroups = (v: unknown): PetTallyGroup[] =>
   Array.isArray(v) ? PET_TALLY_GROUPS.filter((g) => v.includes(g)) : [...PET_TALLY_GROUPS];
 
+/** A desk scene with nothing chosen: everything shows, as before #324. */
+export const DEFAULT_DESK_VIEW: DeskView = {
+  branch: true,
+  papers: true,
+  beacon: true,
+  focus: true,
+};
+
 const deskView = (v?: ViewSettings['office']): DeskView => ({
   branch: on(v?.branch),
   papers: on(v?.papers),
