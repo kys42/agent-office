@@ -675,6 +675,12 @@ export type ComposerDraftView =
       kind: 'draft';
       /** As read from the screen: the box's own wrapping may show as line breaks. */
       text: string;
+      /**
+       * The text as typed (its own line breaks and indents, not the box's wrapping), when that
+       * can be told for sure. Taking it into the card needs it; absent, the screen cannot say
+       * where a URL, path or word was merely wrapped.
+       */
+      logical?: string;
       /** The agent whose box it is, e.g. "Claude". A brand, never translated. */
       agent: string;
       /** It can be submitted as it is from here: known whole, on an agent that allows it. */

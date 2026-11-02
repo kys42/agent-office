@@ -9,23 +9,38 @@ import { demoSnapshot } from '../../src/lib/demo';
  */
 async function card(
   page: Page,
-  opts: { box?: string; privacy?: boolean; canSend?: boolean; hash?: string } = {},
+  opts: {
+    box?: string;
+    privacy?: boolean;
+    canSend?: boolean;
+    hash?: string;
+    /** The box wrapped it over rows: the text as typed cannot be told. */
+    wrapped?: boolean;
+  } = {},
 ) {
   const snapshot = demoSnapshot();
   snapshot.preferences.privacy = !!opts.privacy;
   if (!opts.hash) await page.setViewportSize({ width: 480, height: 760 });
   await page.addInitScript(
-    ({ s, box, canSend }) => {
+    ({ s, box, canSend, wrapped }) => {
       const w = window as any;
       w.fixture = s;
       w.box = box;
+      w.wrapped = wrapped;
       w.reads = 0;
       w.submits = [];
       w.sends = [];
       w.cardCalls = [];
       const view = () =>
         w.box
-          ? { kind: 'draft', text: w.box, agent: 'Claude', submittable: !w.box.includes('[Pasted') }
+          ? {
+              kind: 'draft',
+              text: w.box,
+              agent: 'Claude',
+              submittable: !w.box.includes('[Pasted'),
+              // As typed, unless the box wrapped it where that cannot be told (main's rule).
+              ...(!w.wrapped && { logical: w.box }),
+            }
           : { kind: 'empty' };
       w.office = {
         snapshot: async () => structuredClone(w.fixture),
@@ -78,7 +93,7 @@ async function card(
         },
       };
     },
-    { s: snapshot, box: opts.box ?? '', canSend: opts.canSend ?? true },
+    { s: snapshot, box: opts.box ?? '', canSend: opts.canSend ?? true, wrapped: !!opts.wrapped },
   );
   await page.goto(opts.hash ?? '/#card');
   // The big office: its right column opens on a desk click.
@@ -167,6 +182,22 @@ test('Edit in card takes the text into the chat box; sending then replaces it in
     },
   ]);
   await expect(preview).toHaveCount(0);
+});
+
+test('Text the box wrapped over rows is never taken into the card, only sent as is', async ({
+  page,
+}) => {
+  const read = 'https://example.com/very/long/path/that/the/box/\nwrapped/over/two/rows';
+  const aside = await card(page, { box: read, wrapped: true });
+  const preview = aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' });
+  await expect(preview).toContainText('원래 줄바꿈을 알 수 없어서');
+  await expect(preview.getByRole('button', { name: '카드에서 고치기' })).toBeDisabled();
+  await expect(aside.locator('.card-composer textarea')).toHaveValue('');
+  // Enter alone sends what was typed there, wrapping and all: still offered.
+  await preview.getByRole('button', { name: '그대로 보내기' }).click();
+  expect(await w(page, 'submits')).toEqual([['demo:0', read]]);
+  // Its receipt waits too, matched with the box's wrapping ignored.
+  await expect(aside.locator('.message-pending')).toContainText('https://example.com');
 });
 
 test('A partial box is shown but never sent from the card', async ({ page }) => {

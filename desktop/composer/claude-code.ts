@@ -251,8 +251,12 @@ export function classifyPrompt(screen: Screen): ComposerState {
   const whole = (shown: string) => wholeText(screen, box, shown);
   if (screen.composer !== undefined) {
     // Orca's `draft` holds only what sits in the box (the examples stay on screen): any text
-    // there may be typed, even text that reads like an example.
-    if (screen.composer) return { kind: 'unknown', text, whole: whole(text) };
+    // there may be typed, even text that reads like an example. It is the text itself, not
+    // rows of the box (as `ownText` in terminals.ts relies on too).
+    if (screen.composer) {
+      const known = whole(text);
+      return { kind: 'unknown', text, whole: known, ...(known && { logical: text }) };
+    }
     const shown = box.lines[box.top + 1].replace(/^❯\s?/, '').trim();
     return rows === 1 && (!shown || HINT.test(shown))
       ? { kind: 'empty' }
@@ -262,12 +266,17 @@ export function classifyPrompt(screen: Screen): ComposerState {
   // it. Box-drawing dashes take one cell each. Rounded up: a doubtful row break counts as typed.
   const ruled = Math.max([...box.lines[box.top]].length, [...box.lines[box.bottom]].length) - 2;
   const width = ruled > 0 ? { width: ruled } : {};
+  // As typed, when no row break on screen could be the box's wrapping (and all of it shows).
+  const asTyped = (shown: string) => {
+    const lines = whole(shown) ? typedLines(box, ruled) : null;
+    return lines === null ? {} : { logical: lines };
+  };
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
     // Orca draws the suggestion on screen with no styles (1.4.216 keeps typed text apart, in
     // `draft`; an older one draws it here too): unknown, and a short one is known whole, so it
     // can be cleared — the deletion keys take typing, the one-letter probe tells a suggestion.
-    return { kind: 'unknown', text, whole: whole(text), ...width };
+    return { kind: 'unknown', text, whole: whole(text), ...width, ...asTyped(text) };
   }
   let faint = 0;
   let plain = 0;
@@ -283,9 +292,48 @@ export function classifyPrompt(screen: Screen): ComposerState {
       }
   }
   if (!plain && !faint)
-    return rows === 1 ? { kind: 'empty' } : { kind: 'draft', text, whole: whole(text), ...width };
-  if (plain) return { kind: 'draft', text, whole: whole(text), ...width };
+    return rows === 1
+      ? { kind: 'empty' }
+      : { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
+  if (plain) return { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
   return HINT.test(text) ? { kind: 'empty' } : { kind: 'suggestion', text };
+}
+
+/** Margin under the rules' width: the box's padding is not measured, so a row is held full early. */
+const WRAP_MARGIN = 4;
+
+/**
+ * The box's text as typed, from its rows as drawn — or null when that cannot be told for sure.
+ * Claude Code draws the first row after `❯ ` and every other row after two spaces (measured,
+ * 2.1.296), its own wrapping included, and nothing on screen marks a wrapped row (tmux's `-J`
+ * joins only rows the terminal itself wrapped, never ones an app draws row by row). So a row
+ * break counts as typed only where the next word could not have fitted on the row: the row,
+ * a space and that word, counted at their widest (every non-ASCII character as two cells), take
+ * fewer cells than the box offers less a margin. Any break that could be a wrap, a row not
+ * drawn after the expected indent, or no width at all: null. Rows keep their indentation past
+ * the box's own; only spaces at a row's end are lost (`lines` was trimmed there).
+ */
+export function typedLines(box: PromptBox, ruled: number): string | null {
+  const room = ruled - 2 - WRAP_MARGIN;
+  if (room < 10) return null;
+  const rows = box.lines.slice(box.top + 1, box.bottom);
+  const lines: string[] = [];
+  for (const [i, row] of rows.entries()) {
+    if (i === 0) {
+      const first = /^\s*❯(?:[ \u00a0](.*))?$/.exec(row);
+      if (!first) return null;
+      lines.push(first[1] ?? '');
+    } else if (!row.trim()) lines.push('');
+    else if (row.startsWith('  ')) lines.push(row.slice(2));
+    else return null;
+  }
+  for (let i = 0; i + 1 < lines.length; i++) {
+    // Its first word with any spaces before it: a wrap may carry a space over to the next row.
+    const next = /^\s*\S+/.exec(lines[i + 1]);
+    if (!lines[i].trim() || !next) continue;
+    if (widest(lines[i]) + 1 + widest(next[0]) > room) return null;
+  }
+  return lines.join('\n');
 }
 
 async function inspect(host: ComposerHost): Promise<ComposerState> {

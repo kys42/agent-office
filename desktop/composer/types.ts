@@ -35,6 +35,9 @@ export interface ComposerHost {
  *   too short for its text shows only part of it; such a composer needs explicit permission to clear hidden content.
  *   `width`: the most cells a row of text in the box can take, when the box was read from the
  *   screen (an overestimate); absent when the host reports the text apart (Orca's `draft`).
+ *   `logical`: the text as typed — its own line breaks and indents, none of the box's wrapping —
+ *   when that can be told for sure: the host reports it apart (Orca's `draft`), or every row
+ *   break on screen falls where no wrap could have (see `typedLines`). Absent otherwise.
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
@@ -42,8 +45,8 @@ export interface ComposerHost {
 export type ComposerState =
   | { kind: 'empty' }
   | { kind: 'suggestion'; text: string; inferred?: boolean }
-  | { kind: 'draft'; text: string; whole: boolean; width?: number }
-  | { kind: 'unknown'; text: string; whole: boolean; width?: number }
+  | { kind: 'draft'; text: string; whole: boolean; width?: number; logical?: string }
+  | { kind: 'unknown'; text: string; whole: boolean; width?: number; logical?: string }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };

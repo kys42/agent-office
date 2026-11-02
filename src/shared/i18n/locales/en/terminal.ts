@@ -76,7 +76,10 @@ export const terminal = {
     importTitle:
       'Copies it into the box below. Sending from the card then replaces it in the terminal.',
     imported:
-      'Copied into the box below. Read off the screen, so line breaks may differ. Sending clears this from the terminal input (it goes to your clipboard) and sends yours instead.',
+      'Copied into the box below. Sending clears this from the terminal input (it goes to your clipboard) and sends yours instead.',
+    /** The box wrapped rows where the text's own breaks can't be told apart: no [Edit in card]. */
+    notImportable:
+      "The terminal wrapped this over rows, so where its own lines break can't be told. Edit it in the terminal, or send it as is.",
     partial:
       "Not all of it is visible here, so it can't be sent from the card. Check the terminal.",
     maybeSuggestion: 'It may be a suggestion the prompt shows rather than something typed.',

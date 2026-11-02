@@ -2602,6 +2602,7 @@ test('The card preview reads the box read-only, once for every window asking at 
       text: 'half-written idea',
       agent: 'Claude',
       submittable: true,
+      logical: 'half-written idea',
     });
     assert.deepEqual(b, a);
     // A third ask right after shares it too: one screen read in all.
@@ -2634,6 +2635,7 @@ test('The card preview reads the box read-only, once for every window asking at 
     text: 'from orca',
     agent: 'Claude',
     submittable: true,
+    logical: 'from orca',
     maybeSuggestion: true,
   });
 });
@@ -2682,6 +2684,7 @@ test('Send as is presses nothing when the box changed, closed, or Claude is not 
       text: 'half-written idea, edited',
       agent: 'Claude',
       submittable: true,
+      logical: 'half-written idea, edited',
     });
     assert.match(result.status === 'changed' ? result.message : '', /바뀌어 보내지 않았어요/);
     assert.equal(enters(calls), 0);

@@ -94,12 +94,14 @@ test('The preview shows typed text only: empty, placeholder and suggestion are n
     text: 'hello draft',
     agent: 'Claude',
     submittable: true,
+    logical: 'hello draft',
   });
   assert.deepEqual(view(SCREENS.multi), {
     kind: 'draft',
     text: 'first line\nsecond line\nthird line',
     agent: 'Claude',
     submittable: true,
+    logical: 'first line\nsecond line\nthird line',
   });
   // A collapsed paste stands for text not on screen: shown, never submitted from here.
   assert.deepEqual(view(SCREENS.pasted), {
@@ -138,8 +140,36 @@ test('The preview shows typed text only: empty, placeholder and suggestion are n
     text: 'run the tests',
     agent: 'Claude',
     submittable: true,
+    logical: 'run the tests',
     maybeSuggestion: true,
   });
+});
+
+test('Only rows that cannot be the box wrapping are taken as typed lines', () => {
+  const can = claudeCodeComposer.capabilities({ styled: true });
+  const view = (...rows: string[]) => {
+    const shown = draftView(classifyPrompt(tmux(box(...rows))), 'Claude', can);
+    assert.equal(shown.kind, 'draft');
+    return shown.kind === 'draft' ? shown : null;
+  };
+  // Short rows far from the edge: every break was typed, and indentation past the box's own
+  // two spaces is the text's (it is lost from `text`, which trims each row).
+  const code = view('\x1b[39m❯\xa0if (ok) {', '    run();', '  }', '', '  done');
+  assert.equal(code?.text, 'if (ok) {\nrun();\n}\n\ndone');
+  assert.equal(code?.logical, 'if (ok) {\n  run();\n}\n\ndone');
+  // A row filled to the edge then a URL: the box may have split it. Shown, never rebuilt.
+  const url = 'https://example.com/' + 'a'.repeat(140);
+  const wrapped = view(`\x1b[39m❯\xa0see ${url.slice(0, 112)}`, `  ${url.slice(112)}`);
+  assert.equal(wrapped?.logical, undefined);
+  assert.equal(wrapped?.submittable, true, 'Enter alone still sends it as typed');
+  // A long row of words followed by a word that would have fitted no more: a possible wrap.
+  const words = Array.from({ length: 22 }, (_, i) => `word${i}`).join(' ');
+  assert.equal(view(`\x1b[39m❯\xa0${words}`, '  tail')?.logical, undefined);
+  // Korean counts two cells a character: 56 of them leave no room on a 120-wide box.
+  assert.equal(view(`\x1b[39m❯\xa0${'가'.repeat(56)}`, '  나')?.logical, undefined);
+  assert.equal(view(`\x1b[39m❯\xa0${'가'.repeat(20)}`, '  나')?.logical, `${'가'.repeat(20)}\n나`);
+  // A row not drawn after the box's indent is no row of the text: not rebuilt.
+  assert.equal(view('\x1b[39m❯\xa0one', 'two')?.logical, undefined);
 });
 
 test('Only Claude Code submits its box as is: Codex (a queue) and OpenClaw never', () => {

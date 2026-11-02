@@ -40,6 +40,7 @@ export function sameDraftView(a: ComposerDraftView | null, b: ComposerDraftView 
   if (a.kind === 'draft' && b.kind === 'draft')
     return (
       a.text === b.text &&
+      a.logical === b.logical &&
       a.agent === b.agent &&
       a.submittable === b.submittable &&
       !!a.partial === !!b.partial &&

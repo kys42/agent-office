@@ -79,7 +79,7 @@ export function TerminalSend({
   draftPreview?: {
     id: string;
     notify: (message: string) => void;
-    onSubmitted: (text: string, startedAt: number) => void;
+    onSubmitted: (text: string, startedAt: number, logical?: string) => void;
   };
 }) {
   const { t } = useI18n();
@@ -132,11 +132,16 @@ export function TerminalSend({
       view={box.view}
       notice={box.notice}
       submitting={box.submitting}
-      imported={box.view?.kind === 'draft' && reply.replaces === box.view.text}
+      imported={
+        box.view?.kind === 'draft' &&
+        box.view.logical !== undefined &&
+        reply.replaces === box.view.logical
+      }
       onSubmit={() => void box.submit()}
       onImport={() => {
-        if (box.view?.kind !== 'draft') return;
-        reply.importDraft(box.view.text);
+        // Only the text as typed: rows the box merely wrapped would split words, paths, URLs.
+        if (box.view?.kind !== 'draft' || box.view.logical === undefined) return;
+        reply.importDraft(box.view.logical);
         field.current?.focus();
       }}
       onJump={target?.canFocus ? onJump : undefined}

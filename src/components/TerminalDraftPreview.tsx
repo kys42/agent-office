@@ -62,6 +62,7 @@ export function TerminalDraftPreview({
       {draft.partial && <small>{p.partial}</small>}
       {!draft.partial && draft.maybeSuggestion && <small>{p.maybeSuggestion}</small>}
       {imported && <small>{p.imported}</small>}
+      {!draft.partial && draft.logical === undefined && <small>{p.notImportable}</small>}
       {notice && (
         <small className="draft-preview-notice" role="alert">
           {notice}
@@ -78,7 +79,12 @@ export function TerminalDraftPreview({
         ) : (
           <>
             {!imported && (
-              <button type="button" title={p.importTitle} onClick={onImport} disabled={submitting}>
+              <button
+                type="button"
+                title={p.importTitle}
+                onClick={onImport}
+                disabled={submitting || draft.logical === undefined}
+              >
                 <PencilLine size={12} />
                 {p.import}
               </button>

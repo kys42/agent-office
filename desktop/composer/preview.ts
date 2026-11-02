@@ -30,6 +30,7 @@ export function draftView(
     text: state.text,
     agent,
     submittable: !!can.canSubmitDraft && state.whole,
+    ...(state.whole && state.logical !== undefined && { logical: state.logical }),
     ...(!state.whole && { partial: true }),
     ...(state.kind === 'unknown' && !can.canDetectSuggestion && { maybeSuggestion: true }),
   };

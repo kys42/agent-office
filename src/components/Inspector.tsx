@@ -1174,12 +1174,14 @@ export function Inspector({
                   ? {
                       id: s.id,
                       notify,
-                      onSubmitted: (text, startedAt) => {
+                      onSubmitted: (text, startedAt, logical) => {
                         markSent(s.id);
-                        // Read off the box, whose wrapping may split words (see pendingSends).
                         // A slash command runs; it is not recorded as a request to wait for.
-                        if (!text.trimStart().startsWith('/'))
-                          remember(s.id, text, startedAt, 0, { wrapped: true });
+                        if ((logical ?? text).trimStart().startsWith('/')) return;
+                        // The text as typed when the screen could tell; else as read off the
+                        // box, whose wrapping may split words (matched loosely, see pendingSends).
+                        if (logical !== undefined) remember(s.id, logical, startedAt);
+                        else remember(s.id, text, startedAt, 0, { wrapped: true });
                       },
                     }
                   : undefined

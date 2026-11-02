@@ -76,10 +76,18 @@ test('A styled capture reads as the plain capture, with faint characters marked'
 
 /** tmux reads the pane height with the screen: 40 rows (the box shows up to 15). */
 const tmux = (raw: string, height = 40): Screen => ({ ...parseStyledScreen(raw), height });
-/** A state without the box width (checked on its own below). */
+/** A state without the box width nor the text as typed (each checked on its own). */
 const noWidth = <T>(state: T): T => {
-  if (!state || typeof state !== 'object' || !('width' in state)) return state;
-  const { width: _width, ...rest } = state as T & { width: unknown };
+  if (!state || typeof state !== 'object' || !('width' in state || 'logical' in state))
+    return state;
+  const {
+    width: _width,
+    logical: _logical,
+    ...rest
+  } = state as T & {
+    width: unknown;
+    logical: unknown;
+  };
   return rest as T;
 };
 const classify = (screen: Screen) => noWidth(classifyPrompt(screen));
