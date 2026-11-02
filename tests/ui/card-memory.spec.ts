@@ -466,3 +466,37 @@ test('Failed bookmark note save keeps the editor and draft, then can retry', asy
   await expect(first.locator('.bookmark-note .message-text')).toHaveText('놓치면 안 되는 메모');
   expect(errors).toEqual([]);
 });
+
+test('A card window copies through the app while unfocused, and my bubble shows its selection', async ({
+  page,
+}) => {
+  const card = await memory(page, { popup: true, count: 3, markdown: true });
+  // An unfocused window's own clipboard refuses; the app's clipboard (main) must be used.
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async () => Promise.reject(new Error('Document is not focused')) },
+    }),
+  );
+  await card.getByRole('tab', { name: '대화', exact: true }).click();
+  const message = card.locator('.conversation-message').last();
+  await message.hover();
+  await message.getByRole('button', { name: '메시지 복사' }).click();
+  await expect(page.getByText('메시지를 복사했어요')).toBeVisible();
+  expect(await page.evaluate(() => (window as any).copied.length)).toBe(1);
+  // My own bubble (accent): the app's soft-accent selection would vanish on it.
+  const [selection, bubble] = await card.evaluate((root) => {
+    const article = document.createElement('article');
+    article.className = 'conversation-message message-user';
+    article.innerHTML =
+      '<div class="message-bubble"><div class="message-text">내 메시지</div></div>';
+    root.querySelector('.inspector-scroll')!.append(article);
+    const el = article.querySelector('.message-text')!;
+    return [
+      getComputedStyle(el, '::selection').backgroundColor,
+      getComputedStyle(article.querySelector('.message-bubble')!).backgroundColor,
+    ];
+  });
+  expect(selection).not.toBe(bubble);
+  expect(selection).toBe('rgba(255, 255, 255, 0.9)');
+});

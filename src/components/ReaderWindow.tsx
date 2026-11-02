@@ -3,6 +3,7 @@ import { ArrowUpRight, BookmarkCheck, Copy, EyeOff, X } from 'lucide-react';
 import type { Bookmark } from '../shared/types';
 import { bookmarkName } from '../shared/bookmarks';
 import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 import { useOffice } from '../lib/useOffice';
 import { useI18n, useSharedLocale } from '../lib/i18n';
 import { isMac, isWindows } from '../lib/platform';
@@ -99,7 +100,7 @@ export function ReaderWindow() {
   const shown = !privacy && bookmark ? bookmark : null;
   const copy = () => {
     if (!shown) return;
-    void (api.copyText ?? ((s: string) => navigator.clipboard.writeText(s)))(shown.text)
+    void writeClipboard(shown.text)
       .then(() => notify(t.memory.copied))
       .catch(() => notify(t.memory.copyFailed));
   };

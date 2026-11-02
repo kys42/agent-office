@@ -30,7 +30,7 @@ import {
   type ConversationFilter,
 } from '../shared/conversation';
 import { time, date } from '../lib/format';
-import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 import { useI18n } from '../lib/i18n';
 import { intlLocale } from '../shared/i18n';
 function Message({
@@ -95,8 +95,7 @@ function Message({
         <button
           aria-label={t.conversation.copyMessage}
           onClick={() =>
-            navigator.clipboard
-              .writeText(event.text)
+            writeClipboard(event.text)
               .then(() => notify(t.conversation.copied))
               .catch(() => notify(t.conversation.copyFailed))
           }

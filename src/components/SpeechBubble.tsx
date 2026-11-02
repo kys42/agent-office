@@ -34,7 +34,7 @@ import { ago } from '../lib/format';
 import { BubbleMarkdown } from './BubbleMarkdown';
 import { useI18n } from '../lib/i18n';
 import { FilesHere, LinkifiedText } from './WebLink';
-import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 
 /** A non-empty text selection inside this element (the person is selecting, not clicking). */
 function selectionWithin(el: HTMLElement) {
@@ -266,7 +266,7 @@ export function SpeechBubble({
           onClick={(e) => {
             e.stopPropagation();
             const words = markdown ?? text;
-            void (api.copyText ?? ((value: string) => navigator.clipboard.writeText(value)))(words)
+            void writeClipboard(words)
               .then(() => {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
