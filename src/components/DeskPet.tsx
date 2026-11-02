@@ -1,5 +1,5 @@
 import { focusLine } from '../shared/terminal-target';
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -224,6 +224,19 @@ export function DeskPet({
   const lead = view ?? pet.lead;
   const joy = reactionOf(lead?.session.id);
   const dark = !status && !speaks && !!lead?.quota && dimsDesk(lead.session, lead.pose.working);
+  // Like a desk of the row: its colleague's card pops up right here, on the conversation. The
+  // row and the floor unfold from their own button; an office with nobody in it still unfolds.
+  const activate = (from: Element) => {
+    if (view)
+      void openColleague(bubble?.sessionId ?? view.session.id, {
+        anchor: from.closest('.dock-pet-anchor'),
+        news: false,
+      });
+    else onExpand();
+  };
+  const listId = useId();
+  // The slide plays only for the person's own turn (arrows), never later on its own.
+  const entering = enter && shown.chosen && !speaks ? enter : null;
   const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const dragged = useRef(false);
   const endDrag = () => {
@@ -448,33 +461,27 @@ export function DeskPet({
               dragged.current = false;
               return;
             }
-            // Like a desk of the row: its colleague's card pops up right here, on the
-            // conversation. The row and the floor unfold from their own button; an office with
-            // nobody in it still unfolds.
-            if (view)
-              void openColleague(bubble?.sessionId ?? view.session.id, {
-                anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                news: false,
-              });
-            else onExpand();
+            activate(e.currentTarget);
           }}
         >
           {/* While another colleague speaks, the pill still says who is waiting. */}
           {pet.calling && !speaks && <span className="dock-pet-bang">!</span>}
           {/* Re-keyed per notice so a new arrival replays the hop. */}
-          {/* A quick puff each time the pet becomes someone else. */}
+          {/* A quick puff when the person turns the pet to someone, or a new colleague speaks. */}
+          {(entering || speaks) && (
+            <span
+              className="pet-swap-puff"
+              key={`puff:${speaks ? speaker.notice.id : id}`}
+              aria-hidden="true"
+            >
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
           <span
-            className="pet-swap-puff"
-            key={`puff:${speaks ? speaker.notice.id : id}`}
-            aria-hidden="true"
-          >
-            <i />
-            <i />
-            <i />
-            <i />
-          </span>
-          <span
-            className={`dock-pet-body joy-host ${enter && !speaks ? `enter-${enter}` : ''} ${joyClass(joy)}`}
+            className={`dock-pet-body joy-host ${entering ? `enter-${entering}` : ''} ${joyClass(joy)}`}
             key={speaks ? speaker.notice.id : (id ?? 'pet')}
           >
             <Sprite
@@ -494,81 +501,106 @@ export function DeskPet({
           {hover && place > 0 && choices.length > 1 && (
             <span className="dock-pet-place">{d.place(place, choices.length)}</span>
           )}
-          {/* Who is doing what at a glance: a coloured dot and a number per group (none at 0). */}
+        </button>
+        {/* Who is doing what at a glance: a coloured dot and a number per group (none at 0).
+            Its own controls under the pet, outside the pet's button (which drags and opens the
+            card): each number is a button that lists who it counts, by mouse or keyboard. */}
+        <div
+          className={`dock-pet-pillbar tone-${status ? 'resting' : pet.group}`}
+          data-solid
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setListed(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape' || !listed) return;
+            // Close the list first; the dock folds only on an Esc with nothing open.
+            e.preventDefault();
+            e.stopPropagation();
+            setListed(null);
+            e.currentTarget.querySelector<HTMLElement>(`.tally-${listed}`)?.focus();
+          }}
+        >
+          {listed && members.length > 0 && (
+            <div
+              className={`dock-pet-list tally-${listed}`}
+              id={listId}
+              role="group"
+              aria-label={`${TRIAGE_LABELS[listed]} ${members.length}`}
+              onMouseEnter={() => list(listed)}
+              onMouseLeave={listLater}
+            >
+              <b>
+                <i />
+                {TRIAGE_LABELS[listed]} {members.length}
+              </b>
+              {members.map((v) => {
+                const name = residentLabel(v.session, privacy);
+                return (
+                  <button
+                    key={v.session.id}
+                    type="button"
+                    aria-label={d.openCardOf(name.name)}
+                    onClick={(e) => {
+                      void openColleague(v.session.id, {
+                        anchor: e.currentTarget.closest('.dock-pet-anchor'),
+                        news: false,
+                      });
+                      // The pet turns to that colleague too, when it can stand for it.
+                      if (choices.some((c) => c.session.id === v.session.id)) {
+                        setChosen(v.session.id);
+                        setEnter(null);
+                      }
+                      setListed(null);
+                    }}
+                  >
+                    <Sprite
+                      session={v.session}
+                      provider={v.session.provider}
+                      mood={v.pose.mood}
+                      size={22}
+                    />
+                    <span className="pet-list-name">{name.name}</span>
+                    <small>{MOODS[v.session.status].label}</small>
+                  </button>
+                );
+              })}
+            </div>
+          )}
           {tally.length ? (
-            <span className="dock-pet-pill dock-pet-tally">
+            <div className="dock-pet-pill dock-pet-tally" role="group" aria-label={tallyWords}>
               {tally.map((g) => (
-                <span
+                <button
                   key={g.group}
+                  type="button"
                   className={listed === g.group ? `tally-${g.group} is-listed` : `tally-${g.group}`}
                   title={`${TRIAGE_LABELS[g.group]} ${g.count}`}
+                  aria-label={d.listOf(TRIAGE_LABELS[g.group], g.count)}
+                  aria-expanded={listed === g.group}
+                  aria-controls={listed === g.group ? listId : undefined}
                   onMouseEnter={() => list(g.group)}
                   onMouseLeave={listLater}
-                  onClick={(e) => {
-                    // A number shows its list, it does not open the pet's own card.
-                    e.stopPropagation();
-                    list(listed === g.group ? null : g.group);
-                  }}
+                  // Opens (a hover may already have): Esc, leaving or another number closes it.
+                  onClick={() => list(g.group)}
                 >
                   <i />
                   {g.count}
-                </span>
+                </button>
               ))}
-            </span>
+            </div>
           ) : (
-            <span className="dock-pet-pill">
+            // Nobody counted (still loading, or all resting): the pill does what the pet does.
+            <button
+              type="button"
+              className="dock-pet-pill"
+              aria-label={d.aria(label, count)}
+              onClick={(e) => activate(e.currentTarget)}
+            >
               <i />
               {label}
               {count !== null && <b>{count}</b>}
-            </span>
+            </button>
           )}
-        </button>
-        {listed && members.length > 0 && (
-          <div
-            className={`dock-pet-list tally-${listed}`}
-            data-solid
-            role="group"
-            aria-label={`${TRIAGE_LABELS[listed]} ${members.length}`}
-            onMouseEnter={() => list(listed)}
-            onMouseLeave={listLater}
-          >
-            <b>
-              <i />
-              {TRIAGE_LABELS[listed]} {members.length}
-            </b>
-            {members.map((v) => {
-              const name = residentLabel(v.session, privacy);
-              return (
-                <button
-                  key={v.session.id}
-                  type="button"
-                  aria-label={d.openCardOf(name.name)}
-                  onClick={(e) => {
-                    void openColleague(v.session.id, {
-                      anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                      news: false,
-                    });
-                    // The pet turns to that colleague too, when it can stand for it.
-                    if (choices.some((c) => c.session.id === v.session.id)) {
-                      setChosen(v.session.id);
-                      setEnter(null);
-                    }
-                    setListed(null);
-                  }}
-                >
-                  <Sprite
-                    session={v.session}
-                    provider={v.session.provider}
-                    mood={v.pose.mood}
-                    size={22}
-                  />
-                  <span className="pet-list-name">{name.name}</span>
-                  <small>{MOODS[v.session.status].label}</small>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

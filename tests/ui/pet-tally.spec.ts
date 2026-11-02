@@ -33,7 +33,7 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
   await expect(pill).toBeVisible();
   // Every group shown has a number above zero, in triage order, and the tooltip names them.
   const groups = await pill
-    .locator('> span')
+    .locator('> button')
     .evaluateAll((spans) => spans.map((el) => [el.className, Number(el.textContent)]));
   // The demo office: one calls, one result to read, four at work (as its roster counts them).
   expect(groups).toEqual([
@@ -65,13 +65,14 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
   await expect(page.locator('.desk-pet')).toBeVisible();
 });
 
-test('hovering a number lists who it counts; a name opens that card and the pet turns to them', async ({
+test('a number lists who it counts (mouse or keys); a name opens that card and turns the pet', async ({
   page,
 }) => {
   const s = demoSnapshot();
   await page.addInitScript((s) => {
     const w = window as any;
     w.cards = [];
+    w.docks = [];
     w.office = {
       snapshot: async () => structuredClone(s),
       subscribe: () => () => {},
@@ -82,18 +83,26 @@ test('hovering a number lists who it counts; a name opens that card and the pet 
       card: async (action: string, target: any) => {
         w.cards.push({ action, id: target?.id, news: target?.news });
       },
-      dock: async () => {},
+      dock: async (action: string) => {
+        w.docks.push(action);
+      },
       window: async () => {},
     };
   }, s);
   await page.goto('/?lang=ko#mini');
-  const working = page.locator('.dock-pet-tally .tally-working');
-  await working.hover();
+  // No puff on arrival: it marks a turn, not the pet appearing.
+  await expect(page.locator('.pet-swap-puff')).toHaveCount(0);
+  const working = page.getByRole('button', { name: /^일하는 중 4명/ });
   const list = page.locator('.dock-pet-list');
+  // A real click on the number (hover first, as a hand does): the list opens and stays open,
+  // nothing is dragged and no card opens.
+  await working.hover();
+  await working.click();
   await expect(list).toBeVisible();
-  await expect(list.getByRole('button')).toHaveCount(Number(await working.textContent()));
-  await page.screenshot({ path: '.local/pet-list.png' });
-  // Leaving the number for the list keeps it open; a name opens that colleague's card.
+  await expect(list.getByRole('button')).toHaveCount(4);
+  expect(await page.evaluate(() => (window as any).cards)).toEqual([]);
+  expect(await page.evaluate(() => (window as any).docks)).not.toContain('drag-start');
+  // Up into the list without it closing; a name opens that colleague's card.
   const first = list.getByRole('button').first();
   await first.hover();
   await expect(list).toBeVisible();
@@ -103,7 +112,21 @@ test('hovering a number lists who it counts; a name opens that card and the pet 
   await expect(list).toHaveCount(0);
   await page.locator('.dock-pet-anchor').hover();
   await expect(page.locator('.dock-pet-name')).toHaveText(name);
-  // The arrows step only through the counted colleagues, sliding the pet in.
+
+  // Keys: focus a number, Enter opens, Tab reaches the names, Esc closes back to the number.
+  await page.mouse.move(0, 0);
+  await working.focus();
+  await page.keyboard.press('Enter');
+  await expect(list).toBeVisible();
+  await expect(working).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(list).toHaveCount(0);
+  await expect(working).toBeFocused();
+  // The dock itself stayed: that Esc only closed the list.
+  await expect(page.locator('.desk-pet')).toBeVisible();
+
+  // The arrows slide the pet in, with a puff, only for that turn.
+  await page.locator('.dock-pet-anchor').hover();
   await page.getByRole('button', { name: '다음 동료' }).click();
   await expect(page.locator('.dock-pet-body')).toHaveClass(/enter-next/);
   await expect(page.locator('.pet-swap-puff')).toHaveCount(1);

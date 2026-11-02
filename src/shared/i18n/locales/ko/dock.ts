@@ -25,6 +25,7 @@ export const dock: Messages['dock'] = {
     openCard: '업무 카드 열기',
     openCardTitle: '팝업으로 보기 · 말하는 동료의 업무 카드',
     openCardOf: (name) => `${name} 업무 카드 열기`,
+    listOf: (group, n) => `${group} ${n}명 · 누구인지 보기`,
     expand: '사무실 펼치기',
     expandTitle: '큰 사무실 열기',
     refresh: '새로고침',
