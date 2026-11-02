@@ -143,6 +143,28 @@ test('The preview shows typed text only: empty, placeholder and suggestion are n
     logical: 'run the tests',
     maybeSuggestion: true,
   });
+  // A paste placeholder (Claude Code's exact form) only a paste puts there: shown in part, and
+  // never called a suggestion (#333). Look-alikes are not that form: the caveat stays.
+  for (const draft of [
+    '[Pasted text #4 +6 lines]',
+    '[Pasted text #2]',
+    'see [Image #1]',
+    'a [...Truncated text #3 +9 lines...] b',
+  ])
+    assert.deepEqual(
+      orca(draft),
+      { kind: 'draft', text: draft, agent: 'Claude', submittable: false, partial: true },
+      draft,
+    );
+  for (const draft of ['[Pasted text #0 +6 lines]', '[Pasted text #4 +0 lines]', '[Pasted text]'])
+    assert.equal((orca(draft) as { maybeSuggestion?: boolean }).maybeSuggestion, true, draft);
+  // Orca drawing the box on screen (no `draft`): the same.
+  const drawnBox = draftView(
+    classifyPrompt({ text: strip(box('❯\xa0[Pasted text #4 +6 lines]')) }),
+    'Claude',
+    claudeCodeComposer.capabilities({ styled: false }),
+  );
+  assert.equal(drawnBox.kind === 'draft' && !drawnBox.maybeSuggestion && drawnBox.partial, true);
 });
 
 test('Only rows that cannot be the box wrapping are taken as typed lines', () => {

@@ -29,6 +29,7 @@ import {
   drawn,
   holdsText,
   parseStyledScreen,
+  placeholderIds,
   promptHolds,
   promptHoldsImages,
   readImages,
@@ -59,7 +60,7 @@ import {
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
 import type { PromptHost, PromptKey } from './prompts/types.js';
-export { promptHolds, promptHoldsImages, readPrompt } from './composer/index.js';
+export { placeholderIds, promptHolds, promptHoldsImages, readPrompt } from './composer/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
 // never reachable through OfficeService.call (shared with the web preview). Reading the
@@ -453,7 +454,7 @@ export async function inspectTerminalDraft(
     status: 'needs-confirm',
     agent: composer.agent,
     draft: state.text,
-    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...(state.kind === 'unknown' && !can.canDetectSuggestion && { maybeSuggestion: true }),
     ...(!can.canClear && { clearable: false }),
     ...(!state.whole && { partial: true }),
   };
@@ -977,7 +978,25 @@ async function deliver(
   const typed = typedMemory(deps);
   const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
   const composer = options.composer ?? claudeCodeComposer;
-  const io = composerHost(host, deps);
+  /**
+   * Placeholder ids on every screen read before the text goes in, up to the read that found the
+   * box empty: Claude Code collapses a long paste into `[Pasted text #N +K lines]`, and only an
+   * id new since then can be that paste's (`collapsedPaste`). With no screen read, none counts.
+   */
+  const seen = new Set<number>();
+  let looked = false;
+  const terminalIo = composerHost(host, deps);
+  const io: ComposerHost = {
+    ...terminalIo,
+    read: async () => {
+      const screen = await terminalIo.read();
+      if (screen) {
+        looked = true;
+        for (const id of placeholderIds(screen)) seen.add(id);
+      }
+      return screen;
+    },
+  };
   const can = composer.capabilities(io);
   // Typing into a terminal is only for agents whose composer can be read first.
   if (can.delivery !== 'terminal' || !can.canInspect)
@@ -1009,11 +1028,17 @@ async function deliver(
     }
   }
   let saved = false;
-  const ask = (draft: string, whole: boolean, changed = false): SendResult => ({
+  // A draft the adapter told from a suggestion (a paste placeholder) is never called one.
+  const ask = (
+    draft: string,
+    whole: boolean,
+    changed = false,
+    maybeSuggestion = !can.canDetectSuggestion,
+  ): SendResult => ({
     status: 'needs-confirm',
     draft,
     agent: composer.agent,
-    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...(maybeSuggestion && { maybeSuggestion: true }),
     ...(changed && { changed: true }),
     ...((saved || base !== undefined) && { clipboard: true }),
     // A partial preview needs explicit acceptance of hidden-content loss.
@@ -1021,12 +1046,15 @@ async function deliver(
   });
   const confirmed = options.replaceDraft;
   if (!own) {
-    if (confirmed === undefined) return ask(state.text, state.whole);
-    if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+    const suggestion = state.kind === 'unknown' && !can.canDetectSuggestion;
+    if (confirmed === undefined) return ask(state.text, state.whole, false, suggestion);
+    if (drawn(confirmed) !== drawn(state.text))
+      return ask(state.text, state.whole, true, suggestion);
     // Taken into the card to edit: exactly those rows, or the person is asked.
     if (options.exactDraft && (state.rows ?? state.text) !== confirmed)
-      return ask(state.text, state.whole, true);
-    if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
+      return ask(state.text, state.whole, true, suggestion);
+    if (!state.whole && !options.allowPartialDraft)
+      return ask(state.text, false, false, suggestion);
   }
   const backup = options.backup;
   try {
@@ -1075,7 +1103,7 @@ async function deliver(
               : t.clearFailed(composer.agent),
       );
     // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
-    // prompt must hold exactly the text, never a collapsed or shortened view of it.
+    // prompt must hold exactly the text or its own placeholder alone, never the end of it.
     const inferred = result.state.kind === 'suggestion' && !!result.state.inferred;
     return await submit(true, inferred || !state.whole);
   } catch (error) {
@@ -1094,13 +1122,15 @@ async function deliver(
 
   /**
    * Types the text and presses Enter once the prompt holds it: exactly, or (the prompt being
-   * verified empty) as the placeholder of a long paste or the end of a long text. `strict`
-   * after a clearing that could only infer the box was empty: the exact text only.
+   * verified empty) as the one placeholder its own paste collapsed into (a new id, its line
+   * count, nothing else: `collapsedPaste`) or the end of a long text. `strict` after a clearing
+   * that could only infer the box was empty: no end of a text, which may sit next to what the
+   * keys could not reach; the placeholder alone in the box still counts.
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await options.beforeSend?.();
     if (images.length) await attachImages();
-    else
+    else {
       // Remembered once it may reach the pane: whatever happens next, the text may be in the
       // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
       // app's: the same words typed by the person later are their draft.
@@ -1112,11 +1142,14 @@ async function deliver(
         if (error instanceof OrcaRefusal) typed.drop(key);
         throw error;
       }
+    }
+    // Copied: reads after the paste must not add its own id.
+    const before = looked ? new Set(seen) : undefined;
     const holds = async () => {
       const screen = (await readScreen(host, deps)) ?? '';
       return images.length
-        ? promptHoldsImages(screen, text, images, strict)
-        : promptHolds(screen, text, strict);
+        ? promptHoldsImages(screen, text, images, strict, before)
+        : promptHolds(screen, text, strict, before);
     };
     // The prompt may take a moment to draw the text.
     let shown = false;
@@ -1162,7 +1195,8 @@ async function deliver(
    * splits a paste at spaces before `/`). Only once the prompt holds exactly those, and nothing
    * else, does the text go in, as its own paste. What a send with images leaves behind is never
    * claimed as the app's own reply: the prompt shows placeholders, not the typed text, so a
-   * retry asks about it like any draft.
+   * retry asks about it like any draft. The images' own ids join those seen before the text's
+   * paste (see `submit`).
    */
   async function attachImages() {
     typed.drop(key);
@@ -1170,7 +1204,7 @@ async function deliver(
     let attached: ReturnType<typeof readImages> = null;
     for (let tries = 0; attached?.rest !== '' && tries < IMAGE_TRIES; tries++) {
       await deps.wait(150);
-      const screen = await readScreen(host, deps);
+      const screen = await io.read();
       const shown = screen ? readPrompt(screen) : null;
       attached = shown === null ? null : readImages(shown, images);
     }

@@ -20,6 +20,7 @@ import {
   parseClaudeProcess,
   parseProcessEnv,
   promptHolds,
+  placeholderIds,
   readPrompt,
   ptyOwner,
   sendToTerminal,
@@ -610,7 +611,10 @@ test('The prompt must hold exactly the typed text, as drawn', () => {
     promptHolds(claudeScreen('가'.repeat(50) + '\n' + '가'.repeat(30)), '가'.repeat(80)),
     true,
   );
-  assert.equal(promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14)), true);
+  assert.equal(
+    promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14), false, new Set()),
+    true,
+  );
   assert.equal(promptHolds(claudeScreen('good 👍'), 'good 👍️'), true);
   // A long text the composer shows only the end of.
   const long = Array.from({ length: 30 }, (_, i) => `line ${i} of a long reply`).join('\n');
@@ -620,6 +624,61 @@ test('The prompt must hold exactly the typed text, as drawn', () => {
   assert.equal(promptHolds(claudeScreen('hi hi'), 'hi'), false);
   assert.equal(promptHolds(claudeScreen('draft then mine'), 'mine'), false);
   assert.equal(promptHolds(agentsScreen('hi'), 'hi'), false);
+});
+
+test('A collapsed paste counts only as the one placeholder this very paste made', () => {
+  // Claude Code 2.1.316: K counts the line breaks (7 lines: +6), N comes from a counter that only
+  // grows, and one line over 800 characters shows no `+K lines`.
+  const seven = Array.from({ length: 7 }, (_, i) => `line ${i + 1} of the reply`).join('\n');
+  const none = new Set<number>();
+  const holds = (typed: string, text = seven, strict = false, before: Set<number> = none) =>
+    promptHolds(claudeScreen(typed), text, strict, before);
+  assert.ok(holds('[Pasted text #4 +6 lines]'));
+  // Also after a clearing that could only infer the box empty: alone in the box, it is all.
+  assert.ok(holds('[Pasted text #4 +6 lines]', seven, true));
+  assert.ok(holds('[Pasted text #2]', 'x'.repeat(801)));
+  // Wrapped by a narrow box, it is the same token.
+  assert.ok(holds('[Pasted text #4 +6\nlines]'));
+  // Without a look before the paste, never.
+  assert.equal(promptHolds(claudeScreen('[Pasted text #4 +6 lines]'), seven), false);
+  // A line count that is not the text's: another paste.
+  for (const k of [5, 7]) assert.ok(!holds(`[Pasted text #4 +${k} lines]`), `+${k}`);
+  assert.ok(!holds('[Pasted text #4]'), 'no +K for seven lines');
+  assert.ok(!holds('[Pasted text #4 +0 lines]', 'x'.repeat(1000)));
+  assert.ok(!holds('[Pasted text #2]', 'x'.repeat(800)), 'not over 800: never collapsed');
+  // An id already on screen before the paste is not this paste's.
+  assert.ok(!holds('[Pasted text #4 +6 lines]', seven, false, new Set([4])));
+  // Anything next to it: someone else's text, a second placeholder, a blank row.
+  assert.ok(!holds('draft [Pasted text #4 +6 lines]'));
+  assert.ok(!holds('[Pasted text #4 +6 lines] more'));
+  assert.ok(!holds('[Pasted text #3 +6 lines][Pasted text #4 +6 lines]'));
+  assert.ok(!holds('\n[Pasted text #4 +6 lines]'));
+  const trailing = claudeScreen('[Pasted text #4 +6 lines]').replace('lines]\n', 'lines]\n  \n');
+  assert.equal(promptHolds(trailing, seven, false, none), false);
+  // Orca reports the box apart: exactly the token, nothing around it.
+  const orca = (composer: string) => ({ text: claudeScreen(''), composer });
+  assert.ok(promptHolds(orca('[Pasted text #4 +6 lines]'), seven, true, none));
+  assert.ok(!promptHolds(orca('[Pasted text #4 +6 lines]\n'), seven, true, none));
+  assert.ok(!promptHolds(orca('hi [Pasted text #4 +6 lines]'), seven, true, none));
+  assert.ok(!holds('[Image #4]'));
+  assert.ok(!holds('[...Truncated text #4 +6 lines...]'));
+  assert.ok(!holds('[✦ Team setup guide #4 +6 lines]'));
+  // Not on a dialog.
+  assert.equal(promptHolds(agentsScreen('[Pasted text #4 +6 lines]'), seven, false, none), false);
+});
+
+test('Placeholder ids are read from the whole screen, wrapped or not', () => {
+  const screen = [
+    '❯ see [Pasted text #3 +6',
+    '  lines] and [Image #5]',
+    '⏺ [...Truncated text #8 +2 lines...]',
+    claudeScreen(''),
+  ].join('\n');
+  assert.deepEqual([...placeholderIds(screen)].sort(), [3, 5, 8]);
+  assert.deepEqual(
+    [...placeholderIds({ text: claudeScreen(''), composer: '[Pasted text #9]' })],
+    [9],
+  );
 });
 
 test('Orca types the text, looks again, then presses Enter on its own', async () => {
@@ -1056,6 +1115,11 @@ test('A collapsed paste or an image in the prompt is never cleared from here', a
     const { deps, calls } = fakeDeps('/x', options);
     const asked = await sendToTerminal(live, 'hi', deps, { backup: async () => {} });
     assert.equal(asked.status === 'needs-confirm' && asked.partial, true, live.host.kind);
+    // Only a paste or an attachment makes a placeholder: never called a suggestion, Orca too.
+    assert.equal(asked.status === 'needs-confirm' && asked.maybeSuggestion, undefined);
+    const shown = await inspectTerminalDraft(live, claudeCodeComposer, deps);
+    assert.equal(shown?.partial, true);
+    assert.equal(shown?.maybeSuggestion, undefined);
     assert.equal(
       (
         await sendToTerminal(live, 'hi', deps, {
@@ -1173,11 +1237,15 @@ test('An interrupted clearing confirmed again never backs up less than before', 
 });
 
 test('A verified empty prompt takes a long reply as Claude shows it; an inferred one does not', async () => {
-  /** Claude collapses a paste of 4 lines or more, or over 800 characters (measured). */
-  const collapse = (text: string) =>
-    text.split('\n').length >= 4 || text.length > 800
-      ? `[Pasted text #1 +${text.split('\n').length - 1} lines]`
-      : text;
+  /**
+   * Claude collapses a paste of 4 lines or more, or over 800 characters (measured); 2.1.316
+   * counts the line breaks, and shows no `+K lines` for one line.
+   */
+  const collapse = (text: string) => {
+    const breaks = text.split('\n').length - 1;
+    if (breaks < 3 && text.length <= 800) return text;
+    return breaks ? `[Pasted text #1 +${breaks} lines]` : '[Pasted text #1]';
+  };
   for (const reply of [
     Array.from({ length: 5 }, (_, i) => `step ${i + 1}: check it`).join('\n'),
     'x'.repeat(1000),
@@ -1201,6 +1269,74 @@ test('A verified empty prompt takes a long reply as Claude shows it; an inferred
     });
   // The inferred case (Orca, text the keys never touch after the draft went) refuses a long
   // reply shown in part: tested below with what it would hide.
+});
+
+test('Its own collapsed paste is submitted, even after an inferred suggestion; nothing else is', async () => {
+  // The reported case (#333): Orca, Claude's suggestion on the prompt line (told by the probe),
+  // then a 7-line reply that Claude shows as `[Pasted text #4 +6 lines]` only.
+  const reply = Array.from({ length: 7 }, (_, i) => `step ${i + 1}: check it`).join('\n');
+  // Sent: the probe told the suggestion, the box then held its own placeholder alone.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      orcaDraft: (typed) => (typed === reply ? '[Pasted text #4 +6 lines]' : typed || undefined),
+      orcaTail: (typed) => claudeScreen(typed ? '' : '결과 나오면 추천안대로 ㄱㄱ'),
+    });
+    const asked = await sendToTerminal(orcaLive(), reply, deps, { backup: async () => {} });
+    assert.equal(asked.status, 'needs-confirm');
+    const result = await sendToTerminal(orcaLive(), reply, deps, {
+      backup: async () => {},
+      replaceDraft: '결과 나오면 추천안대로 ㄱㄱ',
+    });
+    assert.equal(result.status, 'sent');
+    assert.ok(sent(calls));
+  });
+  // Refused, with no Enter: a line count that is not the reply's, an id seen before the paste,
+  // the placeholder next to leftover text, or two of them.
+  for (const [shown, earlier] of [
+    ['[Pasted text #4 +7 lines]', ''],
+    ['[Pasted text #4 +6 lines]', '⏺ Read [Pasted text #4 +6 lines] again'],
+    ['stale words here [Pasted text #4 +6 lines]', ''],
+    ['[Pasted text #3 +2 lines][Pasted text #4 +6 lines]', ''],
+  ] as const)
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir, {
+        orcaDraft: (typed) => (typed === reply ? shown : typed || undefined),
+        orcaTail: (typed) =>
+          [earlier, claudeScreen(typed ? '' : '결과 나오면 추천안대로 ㄱㄱ')]
+            .filter(Boolean)
+            .join('\n'),
+      });
+      await assert.rejects(
+        sendToTerminal(orcaLive(), reply, deps, {
+          backup: async () => {},
+          replaceDraft: '결과 나오면 추천안대로 ㄱㄱ',
+        }),
+        /넣은 글만 있는지 확인하지 못해 제출하지 않았어요/,
+        shown,
+      );
+      assert.ok(typedAny(calls));
+      assert.ok(!sent(calls), `no Enter: ${shown}`);
+    });
+});
+
+test('tmux: an empty box, then its own placeholder: submitted; an id on screen before: not', async () => {
+  const reply = Array.from({ length: 7 }, (_, i) => `line ${i + 1}`).join('\n');
+  for (const [earlier, ok] of [
+    ['', true],
+    ['⏺ You pasted [Pasted text #4 +6 lines] before.', false],
+  ] as const)
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir, {
+        screen: (typed) =>
+          [earlier, claudeScreen(typed === reply ? '[Pasted text #4 +6 lines]' : typed)]
+            .filter(Boolean)
+            .join('\n'),
+      });
+      const result = sendToTerminal(tmuxLive(), reply, deps);
+      if (ok) assert.equal((await result).status, 'sent');
+      else await assert.rejects(result, /그사이|상태가 바뀌/);
+      assert.equal(sent(calls), ok);
+    });
 });
 
 test('Blank rows in the box are no empty prompt, and a box that may hide text is never cleared', async () => {

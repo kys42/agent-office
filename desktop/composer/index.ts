@@ -5,7 +5,9 @@ import type { ComposerAdapter } from './types.js';
 export {
   claudeCodeComposer,
   classifyPrompt,
+  collapsedPaste,
   drawn,
+  placeholderIds,
   promptHolds,
   promptHoldsImages,
   afterImages,
