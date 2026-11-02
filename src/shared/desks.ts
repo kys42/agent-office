@@ -234,9 +234,6 @@ export function deskLook(
     ...colleague,
   };
 }
-/** A session's desk in the office it sits in. */
-export const sessionDesk = (customization: DeskCustomization | undefined, session: Session) =>
-  deskLook(customization, projectKey(session), session);
 /** The parts of `look` that differ from what the layers below already give. */
 export function deskLayer(look: DeskLook, inherited: DeskLook): Partial<DeskLook> {
   return Object.fromEntries(
@@ -247,7 +244,11 @@ export function deskAssets(look: DeskLook) {
   return {
     monitor: `./sprites/desk/monitor-${look.monitor}.png`,
     chair: `./sprites/desk/chair-${look.chair}.png`,
-    itemLeft: look.itemLeft === 'none' ? undefined : `./sprites/desk/item-${look.itemLeft}.png`,
+    // Two screens take the desk's left end too: a left item there would cover one of them.
+    itemLeft:
+      look.itemLeft === 'none' || look.monitor === 'dual'
+        ? undefined
+        : `./sprites/desk/item-${look.itemLeft}.png`,
     itemRight: look.itemRight === 'none' ? undefined : `./sprites/desk/item-${look.itemRight}.png`,
   };
 }

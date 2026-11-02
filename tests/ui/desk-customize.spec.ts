@@ -222,3 +222,22 @@ test('the floor desk row draws the same customized desk', async ({ page }) => {
     'walnut',
   );
 });
+
+test('screen sharing hides project names in the desk customizer; dual screens leave no left item', async ({
+  page,
+}) => {
+  const snapshot = office();
+  snapshot.preferences = { ...snapshot.preferences, privacy: true };
+  await bridge(page, snapshot);
+  await page.goto('/?lang=ko');
+  const dialog = await openDesks(page);
+  await dialog.getByRole('button', { name: '프로젝트', exact: true }).click();
+  const pick = dialog.getByRole('combobox');
+  await expect(pick.locator('option').first()).toHaveText('프로젝트 1');
+  await expect(dialog).not.toContainText('team-a');
+  await expect(dialog).not.toContainText('team-b');
+  // Two screens fill the left end: its items are off, with the reason beside them.
+  await dialog.getByRole('button', { name: '모니터 듀얼' }).click();
+  await expect(dialog.getByRole('button', { name: '왼쪽 소품 화분' })).toBeDisabled();
+  await expect(dialog.locator('.desk-crowded')).toBeVisible();
+});

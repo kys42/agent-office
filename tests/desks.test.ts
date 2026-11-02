@@ -177,3 +177,11 @@ test('The service saves desk looks through preferences and rejects unknown parts
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('dual screens take the left end of the desk: no left item is drawn beside them', () => {
+  const look = { ...DEFAULT_DESK_LOOK, itemLeft: 'lamp' as const, itemRight: 'duck' as const };
+  assert.ok(deskAssets(look).itemLeft?.endsWith('item-lamp.png'));
+  const dual = deskAssets({ ...look, monitor: 'dual' });
+  assert.equal(dual.itemLeft, undefined);
+  assert.ok(dual.itemRight?.endsWith('item-duck.png'), 'the right item stays');
+});

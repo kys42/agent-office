@@ -46,6 +46,8 @@ export const desks: Messages['desks'] = {
   projectPick: '프로젝트',
   project: '프로젝트',
   noProjects: '아직 사무실에 프로젝트가 없어요',
+  hiddenProject: (n: number) => `프로젝트 ${n}`,
+  dualLeft: '듀얼 모니터가 왼쪽 자리까지 써서 왼쪽 소품은 놓지 않아요.',
   officeNote: '모든 책상이 이 모습에서 시작해요.',
   projectNote: (name: string) => `${name} 구역의 책상이에요. 전체 모습에서 바꾼 부분만 덮어써요.`,
   colleagueNote: '이 동료의 책상에만 적용해요. 상판은 프로젝트 벤치를 따라가요.',

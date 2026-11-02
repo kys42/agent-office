@@ -182,3 +182,10 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+/* Dual screens leave no room for a left item: say why the choices are off. */
+.desk-crowded {
+  display: block;
+  margin: -2px 0 8px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}

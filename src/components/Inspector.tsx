@@ -596,6 +596,7 @@ export function Inspector({
         <DeskCustomizer
           key={session.id}
           session={session}
+          privacy={privacy}
           onPrefs={onPrefs}
           onClose={() => setDeskOpen(false)}
         />

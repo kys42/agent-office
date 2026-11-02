@@ -45,6 +45,8 @@ export const desks = {
   projectPick: 'A project',
   project: 'Project',
   noProjects: 'No projects in the office yet',
+  hiddenProject: (n: number) => `Project ${n}`,
+  dualLeft: 'Dual screens fill the left end, so no left item goes there.',
   officeNote: 'Every desk starts from this look.',
   projectNote: (name: string) => `Desks in ${name}. They change from the office look.`,
   colleagueNote: "Only this colleague's desk. The top follows the project bench.",

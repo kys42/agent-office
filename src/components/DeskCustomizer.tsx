@@ -73,20 +73,23 @@ export function DeskPreview({
 export function DeskCustomizer({
   session,
   zones = [],
+  privacy = false,
   onPrefs,
   onClose,
 }: {
   session?: Session;
   zones?: DeskZone[];
+  /** Screen sharing: project names stay hidden here as everywhere else. */
+  privacy?: boolean;
   onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const d = t.desks;
   const saved = useDeskAppearance();
-  const choices: DeskZone[] = session
-    ? [{ key: projectKey(session), name: zoneLabel(session) }]
-    : zones;
+  const choices: DeskZone[] = (
+    session ? [{ key: projectKey(session), name: zoneLabel(session) }] : zones
+  ).map((z, i) => (privacy ? { ...z, name: d.hiddenProject(i + 1) } : z));
   const [scope, setScope] = useState<Scope>(session ? 'colleague' : 'office');
   const [zone, setZone] = useState(choices[0]?.key);
   const zoneName = choices.find((z) => z.key === zone)?.name ?? '';
@@ -135,11 +138,15 @@ export function DeskCustomizer({
   };
   const set = (patch: Partial<DeskLook>) => setDraft({ ...draft, ...patch });
   const assets = (look: Partial<DeskLook>) => deskAssets({ ...draft, ...look });
+  // Dual screens take the left end of the desk: no left item beside them.
+  const crowded = (side: 'itemLeft' | 'itemRight') =>
+    side === 'itemLeft' && draft.monitor === 'dual';
   const itemGrid = (side: 'itemLeft' | 'itemRight', legend: string, n: string) => (
-    <fieldset disabled={busy}>
+    <fieldset disabled={busy || crowded(side)}>
       <legend>
         {n} <b>{legend}</b>
       </legend>
+      {crowded(side) && <small className="desk-crowded">{d.dualLeft}</small>}
       <div className="desk-item-grid">
         {(Object.entries(DESK_ITEMS) as [DeskItem, string][]).map(([id, name]) => {
           const image = assets({ [side]: id })[side];

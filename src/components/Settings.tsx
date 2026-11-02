@@ -230,13 +230,17 @@ export function Settings({
   const zones = [...new Set(zoneRules.map(ruleZoneKey))].sort(
     (a, b) => Number(isCustomZone(b)) - Number(isCustomZone(a)) || a.localeCompare(b),
   );
-  // Project zones with desks in the office, for a project's own desk look.
+  // Project zones with desks in the office, for a project's own desk look — and any project
+  // already dressed, even with nobody in it now, so its look can still be changed or reset.
   const deskZones: DeskZone[] = [
-    ...new Map(
-      snapshot.sessions
+    ...new Map([
+      ...Object.keys(p.deskAppearance?.projects ?? {}).map(
+        (key) => [key, { key, name: key }] as const,
+      ),
+      ...snapshot.sessions
         .filter((s) => s.zone === 'office' && !s.attachedTo && !s.remote)
-        .map((s) => [projectKey(s), { key: projectKey(s), name: zoneLabel(s) }]),
-    ).values(),
+        .map((s) => [projectKey(s), { key: projectKey(s), name: zoneLabel(s) }] as const),
+    ]).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
   const desk = deskLook(p.deskAppearance);
   const members = (key: string) =>
@@ -1060,7 +1064,12 @@ export function Settings({
         />
       )}
       {decorating && (
-        <DeskCustomizer zones={deskZones} onPrefs={onPrefs} onClose={() => setDecorating(false)} />
+        <DeskCustomizer
+          zones={deskZones}
+          privacy={p.privacy}
+          onPrefs={onPrefs}
+          onClose={() => setDecorating(false)}
+        />
       )}
     </div>
   );
