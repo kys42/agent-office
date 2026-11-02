@@ -344,6 +344,12 @@
 .message-user .message-text code {
   background: rgba(255, 255, 255, 0.2);
 }
+/* The app's soft-accent selection vanishes on the accent bubble: invert it there. */
+.message-user .message-bubble::selection,
+.message-user .message-bubble *::selection {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.9);
+}
 .conversation-message.category-reply .message-bubble {
   box-shadow:
     0 0 0 0.5px color-mix(in srgb, var(--st-done) 40%, transparent),
