@@ -1,0 +1,34 @@
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Ready to code?
+
+   Here is Claude's plan:
+  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+   Launch core refactor
+
+   Context
+
+   Every launch path (new session, resume, fork) goes through desktop/launch/. The Orca and tmux paths still differ
+   in how they confirm a start.
+
+   Steps
+
+   1. Move the confirm step into pipeline.ts and call it from every destination.
+   2. Keep the waiting record for 2 minutes when the start cannot be confirmed:
+
+      const WAIT_MS = 120_000;
+
+   3. Update tests/launch.test.ts with the new order.
+   - Check the Orca tab with orca terminal list (see Orca docs (https://example.com/orca-docs))
+
+   | Destination | Confirmed by     |
+   |-------------|------------------|
+   | Orca        | the tab's handle |
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Claude has written up a plan and is ready to execute. Would you like to proceed?
+
+   ❯ 1. Yes, auto-accept edits
+     2. Yes, manually approve edits
+     3. No, keep planning
+        shift+tab to approve with this feedback
+
+   ctrl+g to edit in VS Code · ~/.claude/plans/launch-core-refactor-quiet-otter.md

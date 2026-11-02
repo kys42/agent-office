@@ -714,9 +714,7 @@ export type PromptUnavailable =
   | 'unreadable'
   | 'no-request'
   /** The request cannot be checked against a screen (cut at rest, no call id, no transcript). */
-  | 'unverifiable'
-  /** The person turned answering this kind off in Settings. */
-  | 'off';
+  | 'unverifiable';
 /**
  * The dialog on the session's terminal, read by the desktop app and checked against the open
  * request it recorded. `ready` only when both say the same (same kind, same question and
@@ -743,6 +741,11 @@ export type PromptView =
        */
       tool?: string;
       subject?: PromptSubject;
+      /**
+       * Answering this kind is not on yet (never asked, or turned off): the first press asks
+       * natively before anything is sent, and turns it on when the person agrees.
+       */
+      consent?: 'unset' | 'off';
     }
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
 /** One question's answer: picked options (indices into the recorded options) or typed words. */
@@ -757,8 +760,8 @@ export interface AnswerResult {
   message: string;
 }
 /**
- * One answering setting: never asked yet (the first answer asks natively), turned on, or turned
- * off explicitly (no answer buttons until turned on in Settings).
+ * One answering setting: never asked yet, turned on, or turned off explicitly. Unless it is on,
+ * the card still offers the choices and the first press asks natively (agreeing turns it on).
  */
 export type AnswerSetting = 'unset' | 'on' | 'off';
 /** Desktop profile settings (never shared preferences): off until the person agrees. */
