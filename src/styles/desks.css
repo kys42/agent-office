@@ -1,0 +1,184 @@
+/* Desk customizer (#305): the pet customizer's frame with desk parts. */
+.desk-preview-stage {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 170px;
+}
+/* One station cropped to the desk: x -6…170, y 60…184 of its 164×238. */
+.desk-preview-scene {
+  --desk-preview-scale: 1;
+  position: relative;
+  flex-shrink: 0;
+  width: calc(176px * var(--desk-preview-scale));
+  height: calc(124px * var(--desk-preview-scale));
+  overflow: hidden;
+  pointer-events: none;
+}
+.desk-preview-frame {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 164px;
+  height: 238px;
+  transform-origin: 0 0;
+  transform: scale(var(--desk-preview-scale)) translate(6px, -60px);
+}
+.desk-scope {
+  display: flex;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 3px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.desk-scope button {
+  padding: 5px 10px;
+  border-radius: 7px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.desk-scope button[aria-pressed='true'] {
+  background: var(--bg-1);
+  color: var(--text);
+  box-shadow: 0 1px 2px #0000002a;
+}
+.desk-scope button:disabled {
+  opacity: 0.45;
+}
+.desk-zone-pick {
+  margin-top: 8px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--bg-1);
+  font: inherit;
+  font-size: 11px;
+}
+.desk-preview small {
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.desk-top-grid {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.desk-top-grid button {
+  min-width: 52px;
+}
+.desk-top-shared {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.desk-part-grid,
+.desk-item-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+.desk-item-grid {
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 4px;
+}
+.desk-part-grid button,
+.desk-item-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-3);
+  font-size: 10px;
+  background: var(--bg-2);
+}
+.desk-part-grid button span,
+.desk-item-grid button span {
+  max-width: 100%;
+  min-height: 2.4em;
+  line-height: 1.2;
+  text-align: center;
+  word-break: keep-all;
+}
+.desk-part-grid button[aria-pressed='true'],
+.desk-item-grid button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--text);
+  background: #ffb96810;
+}
+.desk-part-grid button:hover,
+.desk-item-grid button:hover {
+  background: var(--bg-3);
+}
+.desk-thumb {
+  display: block;
+  flex-shrink: 0;
+  background: center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
+/* Monitors and chairs at 1:1, cropped to where they draw; items at twice their size. */
+.desk-thumb.monitor {
+  width: 84px;
+  max-width: 100%;
+  height: 52px;
+  background-size: 84px 52px;
+}
+.desk-thumb.chair {
+  width: 60px;
+  height: 62px;
+}
+.desk-thumb.item {
+  width: 30px;
+  height: 39px;
+}
+.desk-thumb-none {
+  height: 39px;
+  color: var(--text-3);
+}
+.desk-settings-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 14px 10px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-2);
+  text-align: left;
+  transition: border-color 0.16s;
+}
+.desk-settings-card:hover {
+  border-color: var(--accent);
+}
+.desk-settings-card .desk-preview-scene {
+  border-radius: 9px;
+  background: var(--scene-backdrop, #222a2b);
+}
+.desk-settings-card b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+.desk-settings-card small {
+  color: var(--text-3);
+  font-size: 11px;
+}
+.desk-settings-card > svg {
+  margin-left: auto;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+@media (max-width: 650px) {
+  .desk-part-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

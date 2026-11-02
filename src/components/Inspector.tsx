@@ -33,6 +33,7 @@ import type {
   Preferences,
 } from '../shared/types';
 import { PetCustomizer } from './PetCustomizer';
+import { DeskCustomizer } from './DeskCustomizer';
 import { MOODS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -194,6 +195,7 @@ export function Inspector({
   const [editing, setEditing] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
   const [petOpen, setPetOpen] = useState(false);
+  const [deskOpen, setDeskOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
   const [notesDirty, setNotesDirty] = useState(false);
   const [packet, setPacket] = useState<Handoff | null>(null);
@@ -252,6 +254,7 @@ export function Inspector({
     setEditing(false);
     setZoneOpen(false);
     setPetOpen(false);
+    setDeskOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
@@ -587,6 +590,14 @@ export function Inspector({
           session={session}
           onPrefs={onPrefs}
           onClose={() => setPetOpen(false)}
+        />
+      )}
+      {deskOpen && (
+        <DeskCustomizer
+          key={session.id}
+          session={session}
+          onPrefs={onPrefs}
+          onClose={() => setDeskOpen(false)}
         />
       )}
     </>
@@ -977,6 +988,7 @@ export function Inspector({
                       item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
                     {item(t.inspector.rename, () => setEditing(true), close)}
                     {item(t.pets.individualTitle, () => setPetOpen(true), close)}
+                    {!s.attachedTo && item(t.desks.menuItem, () => setDeskOpen(true), close)}
                     {!privacy &&
                       onZoneRules &&
                       item(t.inspector.zone, () => setZoneOpen(true), close)}
