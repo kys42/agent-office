@@ -131,3 +131,15 @@ test('a number lists who it counts (mouse or keys); a name opens that card and t
   await expect(page.locator('.dock-pet-body')).toHaveClass(/enter-next/);
   await expect(page.locator('.pet-swap-puff')).toHaveCount(1);
 });
+
+test('an open list never covers the pet tools: the desks still unfold from there', async ({
+  page,
+}) => {
+  await page.goto('/?demo&lang=ko#mini');
+  const working = page.getByRole('button', { name: /^일하는 중 \d+명/ });
+  await working.click();
+  await expect(page.locator('.dock-pet-list')).toBeVisible();
+  await page.locator('.dock-pet-anchor').hover();
+  await page.getByRole('button', { name: '책상 펼치기' }).click({ timeout: 3000 });
+  await expect(page.locator('.desk-row [data-station-id]').first()).toBeVisible();
+});
