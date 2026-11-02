@@ -15,6 +15,7 @@ import {
   type LaunchDestinationId,
   type LaunchOptions,
   type LaunchResult,
+  type LaunchSupport,
 } from '../src/shared/launch.js';
 import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
@@ -1339,6 +1340,10 @@ function setupIPC() {
       return { state: 'probed', destination, probe: await launchCore.probe(target, destination) };
     if (action === 'open') return openLaunch(e, target, destination);
     return launchResult(destination, await launch(e, target, destination));
+  });
+  ipcMain.handle('office:launch-support', (e): LaunchSupport => {
+    trusted(e);
+    return launchCore.support();
   });
   ipcMain.handle('office:launch-options', async (e, raw: unknown): Promise<LaunchOptions> => {
     trusted(e);

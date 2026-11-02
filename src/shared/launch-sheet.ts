@@ -170,11 +170,18 @@ export interface DuplicateView {
   blocks: boolean;
 }
 
+/** Where `open` works when the platform's answer is not known (`LaunchSupport.opens`). */
+const OPENS: readonly LaunchDestinationId[] = ['orca', 'tmux'];
+
 /**
  * The duplicate check, as the sheet draws it. A resume checks the whole conversation; a new
- * session or a fork only the same launch still starting (the core decides which).
+ * session or a fork only the same launch still starting (the core decides which). `opens`:
+ * the destinations whose own place can be brought to the front on this platform.
  */
-export function duplicateView(check: DuplicateCheck | undefined): DuplicateView {
+export function duplicateView(
+  check: DuplicateCheck | undefined,
+  opens: readonly LaunchDestinationId[] = OPENS,
+): DuplicateView {
   const t = m().tmux;
   if (!check || check.state === 'none') return { notice: '', tone: 'none', blocks: false };
   if (check.state === 'unknown') return { notice: t.unknownNotice, tone: 'caution', blocks: false };
@@ -189,7 +196,11 @@ export function duplicateView(check: DuplicateCheck | undefined): DuplicateView 
       blocks: true,
     };
   const go: GoThere | undefined =
-    check.where === 'orca' ? 'orca-tab' : check.where === 'tmux' ? 'tmux' : undefined;
+    check.where === 'orca' && opens.includes('orca')
+      ? 'orca-tab'
+      : check.where === 'tmux' && opens.includes('tmux')
+        ? 'tmux'
+        : undefined;
   return {
     notice: check.starting
       ? pendingNotice(check.where, true)
@@ -281,8 +292,11 @@ export type ResultView =
 /**
  * What a start's result means for the sheet. `options`: read again after a refusal, so a
  * destination that failed its re-check can suggest the others still available.
- * - launched, copied, opened: done (main already copied a copied command).
+ * - launched, copied, opened: done (main already copied a copied command). Except a tmux
+ *   start that nothing opened (`open` not offered here, or turned off): it runs out of sight,
+ *   so its reconnect controls stay, as the old tmux sheet had them.
  * - running: its tmux session already runs: open it in a terminal (or copy its command).
+ * `opens`: the destinations whose own place `open` can bring to the front on this platform.
  * - uncertain: maybe started; only "Open Orca" when it waits in Orca, else the place's hint.
  *   Never another destination: it could start twice.
  * - refused because it runs or is open: go there. Refused otherwise: the other destinations.
@@ -291,13 +305,28 @@ export type ResultView =
 export function resultView(
   result: LaunchResult,
   options: LaunchOptions | null = null,
+  opens: readonly LaunchDestinationId[] = OPENS,
 ): ResultView | null {
   const s = m().launchSheet;
+  /** A tmux session runs in the background: the ways back into it. */
+  const reconnect = (command?: string): ResultAction[] =>
+    result.destination !== 'tmux'
+      ? []
+      : [
+          ...(opens.includes('tmux') ? [{ kind: 'open-terminal' } as const] : []),
+          ...(command ? [{ kind: 'copy-command', command } as const] : []),
+        ];
   switch (result.state) {
     case 'probed':
     case 'cancelled':
       return null;
-    case 'launched':
+    case 'launched': {
+      const toast = result.message || s.launched(placeName(result.destination));
+      const actions = reconnect(result.command);
+      return actions.length
+        ? { close: false, tone: 'info', text: toast, actions }
+        : { close: true, toast };
+    }
     case 'opened':
       return { close: true, toast: result.message || s.launched(placeName(result.destination)) };
     case 'copied':
@@ -307,10 +336,7 @@ export function resultView(
         close: false,
         tone: 'info',
         text: result.message || m().launch.tmuxRunning,
-        actions: [
-          ...(result.destination === 'tmux' ? [{ kind: 'open-terminal' } as const] : []),
-          ...(result.command ? [{ kind: 'copy-command', command: result.command } as const] : []),
-        ],
+        actions: reconnect(result.command),
       };
     case 'uncertain': {
       const where = placeOf(result.destination) ?? 'other';
@@ -323,7 +349,7 @@ export function resultView(
     }
     case 'refused': {
       if (result.duplicate && result.duplicate.state !== 'none') {
-        const view = duplicateView(result.duplicate);
+        const view = duplicateView(result.duplicate, opens);
         return {
           close: false,
           tone: 'error',

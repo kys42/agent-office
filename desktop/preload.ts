@@ -84,6 +84,7 @@ const api: OfficeAPI = {
   // Every destination says itself whether this platform has it (desktop/launch/).
   launch: (request) => action('office:launch', request),
   launchOptions: (intent) => action('office:launch-options', intent),
+  launchSupport: () => action('office:launch-support'),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
-import { isMac } from './platform';
+import { useLaunchSupport } from './useLaunchSupport';
 import { copyText, jumpOrCopy } from './resume';
 import { m } from '../shared/i18n';
 import {
@@ -98,6 +98,9 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
   const optionsTicket = useRef(0);
   const actionTicket = useRef(0);
   const returned = useRef(new Set<string>());
+  // Where `open` works on this platform (main's answer): tmux into Terminal, an Orca tab.
+  const opens = useLaunchSupport()?.opens ?? [];
+  const opensTmux = opens.includes('tmux');
 
   const choices = entry.from === 'project' ? entry.choices : [];
   const projects = entry.from === 'project' ? entry.projects : [entry.session];
@@ -164,7 +167,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
   // While the options are read again (a name typed, another kind), the last answer stays on
   // screen instead of flashing every row back to "checking"; only a fresh one can start.
   const shown = current ?? options?.value ?? null;
-  const duplicate = duplicateView(current?.duplicate);
+  const duplicate = duplicateView(current?.duplicate, opens);
   const rows = destinationRows(shown);
   const chosen = chosenDestination(shown, picked);
   const intent = draftIntent(draft);
@@ -264,7 +267,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       let answer: LaunchResult = await api.launch({ intent, destination, action: 'start' });
       if (ticket !== actionTicket.current) return;
       // tmux keeps it in the background: open it in a terminal right away unless turned off.
-      if (answer.state === 'launched' && destination === 'tmux' && openAfter && isMac) {
+      if (answer.state === 'launched' && destination === 'tmux' && openAfter && opensTmux) {
         const started = answer;
         try {
           answer = await open('tmux', intent);
@@ -291,7 +294,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       // A refusal may change the duplicate state or what is available: read them again.
       const fresh = answer.state === 'refused' ? await fetchOptions(probeIntent, key) : current;
       if (ticket !== actionTicket.current) return;
-      const view = resultView(answer, fresh);
+      const view = resultView(answer, fresh, opens);
       if (!view) {
         setPhase('form');
         return;
@@ -319,7 +322,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       if (!asked) return;
       const answer = await open(go === 'orca-tab' ? 'orca' : 'tmux', asked);
       if (ticket !== actionTicket.current) return;
-      await finish(resultView(answer)!, true);
+      await finish(resultView(answer, null, opens)!, true);
     });
 
   const act = (action: ResultAction) => {
@@ -370,7 +373,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
     unreturned,
     openAfter,
     setOpenAfter,
-    canOpenAfter: isMac,
+    canOpenAfter: opensTmux,
     start: () => void start(),
     goThere: (go: GoThere) => void goThere(go),
     act,

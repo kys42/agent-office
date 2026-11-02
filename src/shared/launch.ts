@@ -81,6 +81,16 @@ export interface LaunchProbe {
   running?: boolean;
 }
 
+/**
+ * `office:launch-support`: what this computer's platform can ever do, before any intent.
+ * `supported`: at least one destination can work here (else the sheet's entry points hide);
+ * `opens`: the destinations whose own place `open` can bring to the front here.
+ */
+export interface LaunchSupport {
+  supported: boolean;
+  opens: LaunchDestinationId[];
+}
+
 /** `office:launch-options`: every destination probed for one intent. */
 export interface LaunchOptions {
   destinations: { id: LaunchDestinationId; probe: LaunchProbe }[];

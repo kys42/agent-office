@@ -4,6 +4,7 @@ import { RemoteSummon } from './RemoteSummon';
 import { LaunchSheet } from './LaunchSheet';
 import { ZoneShellButton } from './MiniShell';
 import { api } from '../lib/api';
+import { useLaunchSupport } from '../lib/useLaunchSupport';
 import { useI18n } from '../lib/i18n';
 import { conversationChoices } from '../shared/launch-sheet';
 import type { Session } from '../shared/types';
@@ -36,6 +37,8 @@ export function ProjectSummon({
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  // Hidden where no destination can ever work on this platform (main decides, e.g. Windows).
+  const support = useLaunchSupport();
   const remote = [
     ...new Map(
       sessions
@@ -55,7 +58,8 @@ export function ProjectSummon({
   const projects = [
     ...new Map(sessions.filter((s) => !s.remote && s.cwd).map((s) => [s.cwd, s])).values(),
   ];
-  const launchable = !!api.launch && !!api.launchOptions && !demo && projects.length > 0;
+  const launchable =
+    !!support?.supported && !!api.launch && !!api.launchOptions && !demo && projects.length > 0;
   const choices = open ? conversationChoices(bringBack?.zones, sessions) : null;
   return (
     <>

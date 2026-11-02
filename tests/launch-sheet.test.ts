@@ -155,6 +155,9 @@ test('the duplicate check: running only goes there, an unconfirmed start only wa
   assert.equal(starting.go, 'orca-tab');
   assert.equal(starting.notice, m().launch.starting('Orca'));
   assert.equal(duplicateView({ state: 'open', where: 'tmux' }).go, 'tmux');
+  // Where its place cannot be opened on this platform, nothing to go to (a caution only).
+  assert.equal(duplicateView({ state: 'open', where: 'tmux' }, []).go, undefined);
+  assert.equal(duplicateView({ state: 'open', where: 'orca' }, ['tmux']).go, undefined);
   assert.equal(duplicateView({ state: 'open', where: 'other' }).go, undefined);
   assert.equal(duplicateView({ state: 'unknown' }).blocks, false);
 });
@@ -202,6 +205,34 @@ test('results: done closes, running opens, uncertain waits, refusals go there or
     toast: m().launch.copied,
   });
   assert.equal(resultView({ state: 'cancelled', destination: 'tmux' }), null);
+  // A tmux start nothing opened runs out of sight: its way back in stays on the sheet.
+  const tmuxStarted = {
+    state: 'launched',
+    destination: 'tmux',
+    message: 'Started in tmux.',
+    command: 'tmux a',
+  } as const;
+  assert.deepEqual(resultView(tmuxStarted, null, ['tmux']), {
+    close: false,
+    tone: 'info',
+    text: 'Started in tmux.',
+    actions: [{ kind: 'open-terminal' }, { kind: 'copy-command', command: 'tmux a' }],
+  });
+  // Linux: no Terminal to open it in, only the attach command.
+  assert.deepEqual(resultView(tmuxStarted, null, []), {
+    close: false,
+    tone: 'info',
+    text: 'Started in tmux.',
+    actions: [{ kind: 'copy-command', command: 'tmux a' }],
+  });
+  assert.deepEqual(resultView({ ...tmuxStarted, command: undefined }, null, []), {
+    close: true,
+    toast: 'Started in tmux.',
+  });
+  assert.deepEqual(resultView({ state: 'opened', destination: 'tmux', message: 'Opened' }), {
+    close: true,
+    toast: 'Opened',
+  });
   assert.deepEqual(
     resultView({ state: 'running', destination: 'tmux', message: 'm', command: 'tmux a' }),
     {

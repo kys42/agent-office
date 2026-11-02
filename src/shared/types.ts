@@ -862,6 +862,8 @@ export interface OfficeAPI {
    * only window caller.
    */
   launch?: (request: import('./launch').LaunchRequest) => Promise<import('./launch').LaunchResult>;
+  /** Desktop only: whether this platform can launch at all, and which destinations open. */
+  launchSupport?: () => Promise<import('./launch').LaunchSupport>;
   /** Desktop only: every destination probed for an intent, with the one to offer first. */
   launchOptions?: (
     intent: import('./launch').LaunchIntent,

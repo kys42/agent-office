@@ -1,5 +1,6 @@
 import { CardShellButton } from './MiniShell';
 import { LaunchSheet } from './LaunchSheet';
+import { useLaunchSupport } from '../lib/useLaunchSupport';
 import { resumeBlock } from '../shared/summon-existing';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
@@ -396,7 +397,10 @@ export function Inspector({
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;
   // The launch sheet (#319) continues this conversation where it can start on this computer.
-  const canLaunch = !!api.launch && !demo && !s.remote && !resumeBlock(s);
+  // Not where no destination can ever work on this platform (main decides, e.g. Windows).
+  const launchSupport = useLaunchSupport();
+  const canLaunch =
+    !!launchSupport?.supported && !!api.launch && !demo && !s.remote && !resumeBlock(s);
   const [launching, setLaunching] = useState(false);
   // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
   const sheetFallback = canLaunch && !codexApp && !live?.canFocus;

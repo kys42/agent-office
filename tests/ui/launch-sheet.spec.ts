@@ -7,7 +7,13 @@ import { demoSnapshot } from '../../src/lib/demo';
 // terminal, Orca or tmux is touched, no real records are read.
 const ORCA_OFF = 'Orca가 실행 중이 아니에요. Orca를 연 뒤 다시 확인해주세요.';
 
-async function setup(page: Page, route = '/', size?: { width: number; height: number }) {
+async function setup(
+  page: Page,
+  route = '/',
+  size?: { width: number; height: number },
+  /** Set before the app loads (what main says this platform supports). */
+  before: Record<string, unknown> = {},
+) {
   const s = demoSnapshot();
   for (const x of s.sessions) x.cwd = '/projects/' + x.project;
   const project = { cwd: '/projects/example', project: 'example', workspace: undefined };
@@ -28,113 +34,118 @@ async function setup(page: Page, route = '/', size?: { width: number; height: nu
     updatedAt: Date.now() - 3 * 86400_000,
   });
   if (size) await page.setViewportSize(size);
-  await page.addInitScript((s) => {
-    const w = window as any;
-    w.fixture = s;
-    w.launches = [];
-    w.optionCalls = [];
-    w.returned = [];
-    w.revealed = 0;
-    w.jumps = [];
-    Object.defineProperty(navigator, 'clipboard', {
-      value: {
-        writeText: async (text: string) => {
+  await page.addInitScript(
+    ({ s, before }) => {
+      const w = window as any;
+      Object.assign(w, before);
+      w.fixture = s;
+      w.launches = [];
+      w.optionCalls = [];
+      w.returned = [];
+      w.revealed = 0;
+      w.jumps = [];
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => {
+            w.copied = text;
+          },
+        },
+      });
+      localStorage.setItem('office:onboarding:v1:live', 'seen');
+      const ids = ['orca', 'tmux', 'terminalApp', 'copy'];
+      /** What the core would answer: probes, the remembered default, a fork's origin. */
+      const options = (intent: any) => {
+        const probes: Record<string, any> = {
+          orca: { available: true, command: 'claude --resume x' },
+          tmux: { available: true, command: 'tmux -L agent-office attach -t =office-claude' },
+          terminalApp: { available: true, command: "cd '/projects/example' && claude" },
+          copy: { available: true, command: "cd '/projects/example' && claude" },
+          ...w.probes,
+        };
+        const destinations = ids.map((id) => ({ id, probe: probes[id] }));
+        const ok = (id?: string) => destinations.find((d) => d.id === id && d.probe.available)?.id;
+        const origin = intent.kind === 'fork' ? w.origin : undefined;
+        return {
+          destinations,
+          default: ok(origin) ?? ok(w.remembered) ?? ok('orca') ?? ok('tmux') ?? null,
+          ...(w.remembered && { remembered: w.remembered }),
+          duplicate: w.duplicate?.[intent.kind] ?? { state: 'none' },
+          ...(origin && { origin }),
+        };
+      };
+      w.office = {
+        snapshot: async () => structuredClone(w.fixture),
+        detail: async (id: string) =>
+          structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
+        visit: async () => structuredClone(w.fixture),
+        artifacts: async () => [],
+        terminals: async () => w.terminals ?? {},
+        subscribe: (cb: any) => {
+          w.publish = cb;
+          return () => {};
+        },
+        card: async () => ({ id: s.sessions[0].id, news: false }),
+        onCard: () => () => {},
+        cardState: async () => ({
+          pinned: false,
+          positionRemembered: false,
+          target: { id: s.sessions[0].id, news: false },
+        }),
+        returnToOffice: async (id: string) => {
+          w.returned.push(id);
+          if (w.returnFails) {
+            w.returnFails--;
+            throw new Error('저장하지 못했어요');
+          }
+          const x = w.fixture.sessions.find((y: any) => y.id === id);
+          Object.assign(x, { archived: false, returnedAt: Date.now(), zone: 'office' });
+          return structuredClone(w.fixture);
+        },
+        launchSupport: async () => w.support ?? { supported: true, opens: ['orca', 'tmux'] },
+        launchOptions: async (intent: any) => {
+          w.optionCalls.push(intent);
+          if (w.holdOptions) await new Promise((resolve) => (w.releaseOptions = resolve));
+          return options(intent);
+        },
+        launch: async (request: any) => {
+          w.launches.push(request);
+          if (request.action === 'open') {
+            if (w.openError) throw new Error(w.openError);
+            return {
+              state: 'opened',
+              destination: request.destination,
+              message: '터미널에서 tmux 세션을 열었어요.',
+            };
+          }
+          if (w.holdStart) await new Promise((resolve) => (w.releaseStart = resolve));
+          const next = w.results?.shift() ?? {
+            state: 'launched',
+            message: '열었어요: ' + request.destination,
+          };
+          if (['launched', 'uncertain', 'running', 'copied'].includes(next.state))
+            w.remembered = request.destination;
+          if (next.after) Object.assign(w, next.after);
+          return { destination: request.destination, ...next, after: undefined };
+        },
+        orcaReveal: async () => {
+          w.revealed++;
+        },
+        dock: async (action: string) => {
+          (w.dockActions ??= []).push(action);
+        },
+        jump: async (id: string) => {
+          w.jumps.push(id);
+          return w.jumpAction === 'copy'
+            ? { action: 'copy', text: 'claude --resume x' }
+            : { action: 'focused', text: 'Orca로 이동했어요' };
+        },
+        copyText: async (text: string) => {
           w.copied = text;
         },
-      },
-    });
-    localStorage.setItem('office:onboarding:v1:live', 'seen');
-    const ids = ['orca', 'tmux', 'terminalApp', 'copy'];
-    /** What the core would answer: probes, the remembered default, a fork's origin. */
-    const options = (intent: any) => {
-      const probes: Record<string, any> = {
-        orca: { available: true, command: 'claude --resume x' },
-        tmux: { available: true, command: 'tmux -L agent-office attach -t =office-claude' },
-        terminalApp: { available: true, command: "cd '/projects/example' && claude" },
-        copy: { available: true, command: "cd '/projects/example' && claude" },
-        ...w.probes,
       };
-      const destinations = ids.map((id) => ({ id, probe: probes[id] }));
-      const ok = (id?: string) => destinations.find((d) => d.id === id && d.probe.available)?.id;
-      const origin = intent.kind === 'fork' ? w.origin : undefined;
-      return {
-        destinations,
-        default: ok(origin) ?? ok(w.remembered) ?? ok('orca') ?? ok('tmux') ?? null,
-        ...(w.remembered && { remembered: w.remembered }),
-        duplicate: w.duplicate?.[intent.kind] ?? { state: 'none' },
-        ...(origin && { origin }),
-      };
-    };
-    w.office = {
-      snapshot: async () => structuredClone(w.fixture),
-      detail: async (id: string) =>
-        structuredClone(w.fixture.sessions.find((x: any) => x.id === id)),
-      visit: async () => structuredClone(w.fixture),
-      artifacts: async () => [],
-      terminals: async () => w.terminals ?? {},
-      subscribe: (cb: any) => {
-        w.publish = cb;
-        return () => {};
-      },
-      card: async () => ({ id: s.sessions[0].id, news: false }),
-      onCard: () => () => {},
-      cardState: async () => ({
-        pinned: false,
-        positionRemembered: false,
-        target: { id: s.sessions[0].id, news: false },
-      }),
-      returnToOffice: async (id: string) => {
-        w.returned.push(id);
-        if (w.returnFails) {
-          w.returnFails--;
-          throw new Error('저장하지 못했어요');
-        }
-        const x = w.fixture.sessions.find((y: any) => y.id === id);
-        Object.assign(x, { archived: false, returnedAt: Date.now(), zone: 'office' });
-        return structuredClone(w.fixture);
-      },
-      launchOptions: async (intent: any) => {
-        w.optionCalls.push(intent);
-        if (w.holdOptions) await new Promise((resolve) => (w.releaseOptions = resolve));
-        return options(intent);
-      },
-      launch: async (request: any) => {
-        w.launches.push(request);
-        if (request.action === 'open') {
-          if (w.openError) throw new Error(w.openError);
-          return {
-            state: 'opened',
-            destination: request.destination,
-            message: '터미널에서 tmux 세션을 열었어요.',
-          };
-        }
-        if (w.holdStart) await new Promise((resolve) => (w.releaseStart = resolve));
-        const next = w.results?.shift() ?? {
-          state: 'launched',
-          message: '열었어요: ' + request.destination,
-        };
-        if (['launched', 'uncertain', 'running', 'copied'].includes(next.state))
-          w.remembered = request.destination;
-        if (next.after) Object.assign(w, next.after);
-        return { destination: request.destination, ...next, after: undefined };
-      },
-      orcaReveal: async () => {
-        w.revealed++;
-      },
-      dock: async (action: string) => {
-        (w.dockActions ??= []).push(action);
-      },
-      jump: async (id: string) => {
-        w.jumps.push(id);
-        return w.jumpAction === 'copy'
-          ? { action: 'copy', text: 'claude --resume x' }
-          : { action: 'focused', text: 'Orca로 이동했어요' };
-      },
-      copyText: async (text: string) => {
-        w.copied = text;
-      },
-    };
-  }, s);
+    },
+    { s, before },
+  );
   await page.goto(route);
 }
 
@@ -507,12 +518,86 @@ test('the tmux "open once started" choice can be turned off and is remembered', 
   const openAfter = modal.getByRole('checkbox', { name: '시작하면 터미널에서 열기' });
   await expect(openAfter).toBeChecked();
   await openAfter.uncheck();
+  await set(page, {
+    results: [
+      {
+        state: 'launched',
+        message: 'tmux에서 시작했어요. 터미널에서 열어 작업하세요.',
+        command: 'tmux -L agent-office attach -t =office-claude',
+      },
+    ],
+  });
   await modal.getByRole('button', { name: 'tmux에서 시작' }).click();
-  await expect(modal).toHaveCount(0);
+  // Nothing opened: it runs out of sight, so the way back in stays on the sheet.
+  await expect(modal.getByText('tmux에서 시작했어요', { exact: false }).first()).toBeVisible();
+  await expect(modal.locator('.launch-actions-main button')).toHaveText([
+    '터미널에서 열기',
+    '재접속 명령 복사',
+  ]);
+  await expect(modal.getByRole('radio')).toHaveCount(0);
   expect((await read(page, 'launches')).map((l: any) => l.action)).toEqual(['start']);
+  await modal.getByRole('button', { name: '재접속 명령 복사' }).click();
+  expect(await read(page, 'copied')).toBe('tmux -L agent-office attach -t =office-claude');
+  await modal.getByRole('button', { name: '터미널에서 열기' }).click();
+  await expect(modal).toHaveCount(0);
+  expect((await read(page, 'launches')).map((l: any) => l.action)).toEqual(['start', 'open']);
   await openCard(page);
   await expect(openAfter).not.toBeChecked();
 });
+
+test('where tmux cannot open a terminal (Linux) a started session keeps its attach command', async ({
+  page,
+}) => {
+  await setup(
+    page,
+    '/#card',
+    { width: 760, height: 900 },
+    {
+      support: { supported: true, opens: [] },
+    },
+  );
+  const modal = await openCard(page);
+  await destination(modal, 'tmux').check();
+  await expect(modal.getByRole('checkbox', { name: '시작하면 터미널에서 열기' })).toHaveCount(0);
+  await set(page, {
+    results: [
+      {
+        state: 'launched',
+        message: 'tmux에서 시작했어요. 터미널에서 열어 작업하세요.',
+        command: 'tmux -L agent-office attach -t =office-claude',
+      },
+    ],
+  });
+  await modal.getByRole('button', { name: 'tmux에서 시작' }).click();
+  await expect(modal.locator('.launch-actions-main button')).toHaveText(['재접속 명령 복사']);
+  expect((await read(page, 'launches')).map((l: any) => l.action)).toEqual(['start']);
+});
+
+for (const route of ['/#card', '/'])
+  test(`where no destination can ever work (Windows) ${route} offers no launch sheet`, async ({
+    page,
+  }) => {
+    await setup(
+      page,
+      route,
+      { width: 760, height: 900 },
+      {
+        support: { supported: false, opens: [] },
+      },
+    );
+    if (route === '/#card') {
+      const actions = page.locator('.card-actions');
+      await expect(actions.getByRole('button', { name: '재개 명령 복사' })).toBeVisible();
+      await expect(page.getByRole('button', { name: '터미널에서 이어가기' })).toHaveCount(0);
+    } else {
+      await expect(page.locator('.app')).toBeVisible();
+      await expect(
+        page.locator('.zone-flag, .project-floor-mark, .area-sign').first(),
+      ).toBeAttached();
+      await expect(page.getByRole('button', { name: '세션 시작', exact: true })).toHaveCount(0);
+    }
+    expect(await read(page, 'optionCalls')).toEqual([]);
+  });
 
 test('privacy closes the sheet and disables its entry points', async ({ page }) => {
   await setup(page, '/#card', { width: 760, height: 900 });

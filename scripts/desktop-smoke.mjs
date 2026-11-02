@@ -182,6 +182,12 @@ try {
   await page.waitForSelector('.office-pet');
   await settings.screenshot({ path: '.local/native-settings.png' });
   await settingsWindow((w) => w.close());
+  // What this platform can launch at all decides whether the launch sheet is offered (#319).
+  {
+    const support = await page.evaluate(() => window.office.launchSupport());
+    assert.equal(support.supported, process.platform !== 'win32');
+    assert.deepEqual(support.opens, process.platform === 'darwin' ? ['orca', 'tmux'] : []);
+  }
   // The older launch channels are gone (#319): every launch goes through `office:launch`.
   for (const name of ['tmuxResume', 'tmuxSummon', 'orcaLaunch', 'orcaSummon'])
     assert.equal(await page.evaluate((n) => typeof window.office[n], name), 'undefined');
