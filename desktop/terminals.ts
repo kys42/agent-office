@@ -587,6 +587,10 @@ async function submitDraftNow(
             : t.unsupportedAgent(composer.agent),
     );
   }
+  // What went, as typed, from the look right before Enter (never the preview's older one).
+  const went = draftView(outcome.state, composer.agent, can);
+  const logical =
+    went.kind === 'draft' && went.logical !== undefined ? { logical: went.logical } : {};
   // Whatever the app once typed there and left is gone with it.
   typedMemory(deps).drop(live.process.sessionId);
   // The box empties as Claude takes it (mid-turn too: queued above the box). Still holding
@@ -595,13 +599,19 @@ async function submitDraftNow(
   for (let tries = 0; !taken && tries < 3; tries++) {
     await deps.wait(150);
     const state = await composer.inspect(io);
-    taken = !(holdsText(state) && state.text === expected);
+    taken = !(holdsText(state) && (state.rows ?? state.text) === expected);
   }
   if (!taken) throw new TerminalInputError(t.draftNotTaken(where));
   const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
-  if (after?.status === 'waiting') return { status: 'sent', message: t.sentThenPrompt(where) };
-  if (status === 'busy') return { status: 'sent', message: t.queued(where) };
-  return { status: 'sent', message: host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label) };
+  const message =
+    after?.status === 'waiting'
+      ? t.sentThenPrompt(where)
+      : status === 'busy'
+        ? t.queued(where)
+        : host.kind === 'orca'
+          ? t.orcaSent
+          : t.tmuxSent(host.label);
+  return { status: 'sent', message, ...logical };
 }
 
 /**

@@ -673,7 +673,11 @@ export type SendResult =
 export type ComposerDraftView =
   | {
       kind: 'draft';
-      /** As read from the screen: the box's own wrapping may show as line breaks. */
+      /**
+       * The box's rows as drawn, indents kept (only its frame taken off): the box's own wrapping
+       * may show as line breaks. [Send as is] hands this very string back, and Enter goes only
+       * while the box still draws exactly it.
+       */
       text: string;
       /**
        * The text as typed (its own line breaks and indents, not the box's wrapping), when that
@@ -705,7 +709,12 @@ export type ComposerDraftUnknown =
  * fresh read to show instead, `message` why.
  */
 export type DraftSubmitResult =
-  | { status: 'sent'; message: string }
+  | {
+      status: 'sent';
+      message: string;
+      /** The text as typed, from the look right before Enter, when the screen could tell. */
+      logical?: string;
+    }
   | { status: 'changed'; message: string; draft: ComposerDraftView };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */

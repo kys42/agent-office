@@ -255,7 +255,7 @@ export function classifyPrompt(screen: Screen): ComposerState {
     // rows of the box (as `ownText` in terminals.ts relies on too).
     if (screen.composer) {
       const known = whole(text);
-      return { kind: 'unknown', text, whole: known, ...(known && { logical: text }) };
+      return { kind: 'unknown', text, whole: known, rows: text, ...(known && { logical: text }) };
     }
     const shown = box.lines[box.top + 1].replace(/^❯\s?/, '').trim();
     return rows === 1 && (!shown || HINT.test(shown))
@@ -266,10 +266,11 @@ export function classifyPrompt(screen: Screen): ComposerState {
   // it. Box-drawing dashes take one cell each. Rounded up: a doubtful row break counts as typed.
   const ruled = Math.max([...box.lines[box.top]].length, [...box.lines[box.bottom]].length) - 2;
   const width = ruled > 0 ? { width: ruled } : {};
-  // As typed, when no row break on screen could be the box's wrapping (and all of it shows).
+  // The rows as drawn, indents kept; and as typed, when no row break on screen could be the
+  // box's wrapping (and all of it shows).
   const asTyped = (shown: string) => {
     const lines = whole(shown) ? typedLines(box, ruled) : null;
-    return lines === null ? {} : { logical: lines };
+    return { rows: boxRows(box).text, ...(lines !== null && { logical: lines }) };
   };
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
@@ -316,17 +317,8 @@ const WRAP_MARGIN = 4;
 export function typedLines(box: PromptBox, ruled: number): string | null {
   const room = ruled - 2 - WRAP_MARGIN;
   if (room < 10) return null;
-  const rows = box.lines.slice(box.top + 1, box.bottom);
-  const lines: string[] = [];
-  for (const [i, row] of rows.entries()) {
-    if (i === 0) {
-      const first = /^\s*❯(?:[ \u00a0](.*))?$/.exec(row);
-      if (!first) return null;
-      lines.push(first[1] ?? '');
-    } else if (!row.trim()) lines.push('');
-    else if (row.startsWith('  ')) lines.push(row.slice(2));
-    else return null;
-  }
+  const { lines, aligned } = boxRows(box);
+  if (!aligned) return null;
   for (let i = 0; i + 1 < lines.length; i++) {
     // Its first word with any spaces before it: a wrap may carry a space over to the next row.
     const next = /^\s*\S+/.exec(lines[i + 1]);
@@ -334,6 +326,29 @@ export function typedLines(box: PromptBox, ruled: number): string | null {
     if (widest(lines[i]) + 1 + widest(next[0]) > room) return null;
   }
   return lines.join('\n');
+}
+
+/**
+ * The box's rows as drawn, whitespace kept: only the frame is taken off — the `❯ ` before the
+ * first row and the box's own two-column indent before the others (`aligned`: every row had
+ * exactly that). Unlike `text`, whose rows are trimmed, an indent added or taken out (Python,
+ * YAML) is a different string here; spaces at a row's end are not on the screen read at all.
+ */
+export function boxRows(box: PromptBox): { text: string; lines: string[]; aligned: boolean } {
+  let aligned = true;
+  const lines = box.lines.slice(box.top + 1, box.bottom).map((row, i) => {
+    if (i === 0) {
+      const first = /^\s*❯(?:[ \u00a0](.*))?$/.exec(row);
+      if (first) return first[1] ?? '';
+      aligned = false;
+      return row;
+    }
+    if (!row.trim()) return '';
+    if (row.startsWith('  ')) return row.slice(2);
+    aligned = false;
+    return row;
+  });
+  return { text: lines.join('\n'), lines, aligned };
 }
 
 async function inspect(host: ComposerHost): Promise<ComposerState> {
@@ -556,12 +571,15 @@ async function submitDraft(
   expected: string,
   proceed: () => Promise<boolean>,
 ): Promise<DraftSubmitOutcome> {
+  let seen: ComposerState = { kind: 'unreadable' };
   const check = async (): Promise<DraftSubmitOutcome | null> => {
-    const state = await inspect(host);
+    const state = (seen = await inspect(host));
     if (state.kind === 'closed' || state.kind === 'unreadable')
       return { status: 'refused', reason: state.kind };
-    // Exactly as previewed, wrapping included: a resized box re-wraps, and is shown again.
-    if (!holdsText(state) || state.text !== expected) return { status: 'changed', state };
+    // Exactly as previewed, indents and wrapping included (`rows`, untrimmed): an indent
+    // changed there (Python, YAML) or a resized box re-wrapping is another text, shown again.
+    if (!holdsText(state) || (state.rows ?? state.text) !== expected)
+      return { status: 'changed', state };
     if (!state.whole) return { status: 'refused', reason: 'partial' };
     return null;
   };
@@ -571,7 +589,7 @@ async function submitDraft(
   const again = await check();
   if (again) return again;
   await host.submit();
-  return { status: 'submitted' };
+  return { status: 'submitted', state: seen };
 }
 
 /** Explicitly accepted loss of hidden content: collect readable fragments before each pair.

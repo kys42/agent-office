@@ -27,7 +27,8 @@ export function draftView(
   if (!state.text.trim()) return { kind: 'empty' };
   return {
     kind: 'draft',
-    text: state.text,
+    // As drawn, indents kept: shown so, and the very string [Send as is] hands back to compare.
+    text: state.rows ?? state.text,
     agent,
     submittable: !!can.canSubmitDraft && state.whole,
     ...(state.whole && state.logical !== undefined && { logical: state.logical }),

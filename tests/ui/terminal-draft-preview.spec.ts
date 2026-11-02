@@ -157,6 +157,21 @@ test('Changed in the terminal meanwhile: nothing is sent, the reason and the new
   await expect(aside.locator('.message-pending')).toHaveCount(0);
 });
 
+test('Only an indent changed in the terminal: nothing is sent, the reason and new indent show', async ({
+  page,
+}) => {
+  const aside = await card(page, { box: 'steps:\n    - build\n    - test' });
+  const preview = aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' });
+  await expect(preview.locator('.draft-preview-text')).toHaveText(
+    'steps:\n    - build\n    - test',
+  );
+  await page.evaluate(() => ((window as any).box = 'steps:\n  - build\n  - test'));
+  await preview.getByRole('button', { name: '그대로 보내기' }).click();
+  await expect(preview.getByRole('alert')).toContainText('바뀌어 보내지 않았어요');
+  await expect(preview.locator('.draft-preview-text')).toHaveText('steps:\n  - build\n  - test');
+  expect(await w(page, 'submits')).toEqual([]);
+});
+
 test('Edit in card takes the text into the chat box; sending then replaces it in the terminal', async ({
   page,
 }) => {

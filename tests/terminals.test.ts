@@ -2665,11 +2665,29 @@ test('Send as is: Enter only, after the box is seen holding exactly the previewe
       assert.deepEqual(result, {
         status: 'sent',
         message: live.host.kind === 'orca' ? 'Orca 터미널에 보냈어요' : 'tmux work:1.0에 보냈어요',
+        // As typed, from the look right before Enter: for the "sent" receipt.
+        logical: 'half-written idea\nsecond line',
       });
       assert.equal(enters(calls), 1);
       // Nothing typed, deleted or pasted: the box's own text went.
       assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
     });
+});
+
+test('Send as is presses nothing when only an indent changed after the preview', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Previewed with four spaces; the person took two out in the terminal meanwhile.
+    const box = draftBox('items:\n  - a');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), 'items:\n    - a', deps);
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /바뀌어 보내지 않았어요/);
+    assert.equal(
+      result.status === 'changed' && result.draft.kind === 'draft' && result.draft.text,
+      'items:\n  - a',
+    );
+    assert.equal(enters(calls), 0);
+  });
 });
 
 test('Send as is presses nothing when the box changed, closed, or Claude is not there', async () => {

@@ -155,7 +155,8 @@ test('Only rows that cannot be the box wrapping are taken as typed lines', () =>
   // Short rows far from the edge: every break was typed, and indentation past the box's own
   // two spaces is the text's (it is lost from `text`, which trims each row).
   const code = view('\x1b[39m❯\xa0if (ok) {', '    run();', '  }', '', '  done');
-  assert.equal(code?.text, 'if (ok) {\nrun();\n}\n\ndone');
+  // Shown (and handed back to [Send as is]) as drawn: the indent past the box's own stays.
+  assert.equal(code?.text, 'if (ok) {\n  run();\n}\n\ndone');
   assert.equal(code?.logical, 'if (ok) {\n  run();\n}\n\ndone');
   // A row filled to the edge then a URL: the box may have split it. Shown, never rebuilt.
   const url = 'https://example.com/' + 'a'.repeat(140);
@@ -187,7 +188,7 @@ test('Submitting as is presses Enter only while the box holds exactly that text'
   const ok = screens(typed, typed);
   assert.deepEqual(
     await claudeCodeComposer.submitDraft!(ok.host, 'hello draft', async () => true),
-    { status: 'submitted' },
+    { status: 'submitted', state: classifyPrompt(typed) },
   );
   assert.equal(ok.submitted(), 1);
   assert.deepEqual(ok.pressed, [], 'nothing typed or deleted');
@@ -258,9 +259,42 @@ test('Submitting as is presses Enter only while the box holds exactly that text'
       'first line\nsecond line\nthird line',
       async () => true,
     ),
-    { status: 'submitted' },
+    { status: 'submitted', state: classifyPrompt(multi) },
   );
   assert.equal(lines.submitted(), 1);
+});
+
+test('An indent changed after the preview is a change: no Enter (Python, YAML)', async () => {
+  const shown = (indent: string) =>
+    tmux(box('\x1b[39m❯\xa0def total(xs):', `  ${indent}return sum(xs)`));
+  const before = shown('    ');
+  const can = claudeCodeComposer.capabilities({ styled: true });
+  const preview = draftView(classifyPrompt(before), 'Claude', can);
+  assert.equal(preview.kind === 'draft' && preview.text, 'def total(xs):\n    return sum(xs)');
+  // The trimmed rows read the same either way: only the untrimmed form tells them apart.
+  const after = shown('  ');
+  assert.equal(
+    (classifyPrompt(after) as { text: string }).text,
+    (classifyPrompt(before) as { text: string }).text,
+  );
+  const expected = preview.kind === 'draft' ? preview.text : '';
+  for (const looks of [
+    [after, after],
+    [before, after],
+  ]) {
+    const host = screens(...looks);
+    const result = await claudeCodeComposer.submitDraft!(host.host, expected, async () => true);
+    assert.equal(result.status, 'changed');
+    assert.equal(host.submitted(), 0);
+  }
+  // Unchanged: it goes, and the last look before Enter says what went, as typed.
+  const same = screens(before, before);
+  const went = await claudeCodeComposer.submitDraft!(same.host, expected, async () => true);
+  assert.equal(went.status, 'submitted');
+  assert.equal(
+    went.status === 'submitted' && 'logical' in went.state && went.state.logical,
+    'def total(xs):\n    return sum(xs)',
+  );
 });
 
 const target = (over: Partial<TerminalTarget> = {}): TerminalTarget => ({

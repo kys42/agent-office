@@ -99,7 +99,7 @@ export function useTerminalDraft(
   const submit = async () => {
     if (!id || !api.submitDraft || submitting) return;
     if (view?.kind !== 'draft' || !view.submittable) return;
-    const { text, logical } = view;
+    const { text } = view;
     const startedAt = Date.now();
     setSubmitting(true);
     setNotice('');
@@ -107,7 +107,8 @@ export function useTerminalDraft(
       const result = await api.submitDraft(id, text);
       if (result.status === 'sent') {
         latest.current.notify(result.message);
-        latest.current.onSubmitted(text, startedAt, logical);
+        // As typed from main's last look before Enter: the preview's may be older.
+        latest.current.onSubmitted(text, startedAt, result.logical);
         last.current = { kind: 'empty' };
         setView(last.current);
       } else {

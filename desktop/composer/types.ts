@@ -35,6 +35,8 @@ export interface ComposerHost {
  *   too short for its text shows only part of it; such a composer needs explicit permission to clear hidden content.
  *   `width`: the most cells a row of text in the box can take, when the box was read from the
  *   screen (an overestimate); absent when the host reports the text apart (Orca's `draft`).
+ *   `rows`: the box's rows as drawn with only its frame taken off, indents kept (`text` trims
+ *   each row): what [Send as is] compares, so an indent changed after the preview is a change.
  *   `logical`: the text as typed — its own line breaks and indents, none of the box's wrapping —
  *   when that can be told for sure: the host reports it apart (Orca's `draft`), or every row
  *   break on screen falls where no wrap could have (see `typedLines`). Absent otherwise.
@@ -45,8 +47,15 @@ export interface ComposerHost {
 export type ComposerState =
   | { kind: 'empty' }
   | { kind: 'suggestion'; text: string; inferred?: boolean }
-  | { kind: 'draft'; text: string; whole: boolean; width?: number; logical?: string }
-  | { kind: 'unknown'; text: string; whole: boolean; width?: number; logical?: string }
+  | { kind: 'draft'; text: string; whole: boolean; width?: number; rows?: string; logical?: string }
+  | {
+      kind: 'unknown';
+      text: string;
+      whole: boolean;
+      width?: number;
+      rows?: string;
+      logical?: string;
+    }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
@@ -93,14 +102,14 @@ export type ClearResult =
   | { status: 'changed'; text: string; whole: boolean; hidden?: boolean };
 
 /**
- * How submitting the composer's own text ended (`submitDraft`). `submitted`: Enter went in right
- * after the box was seen holding exactly the expected text, all of it. Otherwise nothing was
- * pressed: `changed` the box holds something else now (`state`); `partial` not all of its text
+ * How submitting the composer's own text ended (`submitDraft`). `submitted`: Enter went in
+ * right after the box was seen holding exactly the expected text, all of it (`state`: that last
+ * look). Otherwise nothing was pressed: `changed` the box holds something else now (`state`); `partial` not all of its text
  * is known; `lost` the agent stopped being the one at the terminal; `closed` a dialog or menu
  * replaced the box; `unreadable` the screen could not be read; `unsupported` no such adapter.
  */
 export type DraftSubmitOutcome =
-  | { status: 'submitted' }
+  | { status: 'submitted'; state: ComposerState }
   | { status: 'changed'; state: ComposerState }
   | { status: 'refused'; reason: 'partial' | 'lost' | 'closed' | 'unreadable' | 'unsupported' };
 
