@@ -1,3 +1,39 @@
+## 2026-11-02 — 책상 꾸미기, 펫 기쁨 모션·쓰다듬기, 펫 모드 인원 표시, 창 유리, Orca 소환, 출근 모션, 읽은 말풍선 접기
+
+- [PR #310](https://github.com/kys42/agent-office/pull/310) 책상 꾸미기([#305](https://github.com/kys42/agent-office/issues/305)): 펫처럼 책상도 꾸밀 수 있어요.
+  - 부품: 상판 8종(CSS 팔레트), 모니터 5종, 의자 5종, 왼쪽·오른쪽 소품 8종
+  - 그림 생성: `scripts/generate-desks.py`(`uv run --with pillow`)가 `public/sprites/desk/`에 레이어별 PNG 18장을 만들어요. CSS 1px를 그림 1칸으로 그리고 2배로 저장하며, 화면에서는 pixelated로 그려요.
+  - 적용 순서는 기본 → 전체 → 프로젝트 → 동료예요. 범위마다 아래 단계와 달라진 부분만 저장해서(`deskLayer`), 전체 모습을 나중에 바꾸면 따로 고르지 않은 부분은 따라가요.
+  - 상판은 벤치를 함께 쓰니까 동료 범위에서는 고를 수 없어요(normalize·`deskLook`·저장 세 곳 모두에서 무시).
+  - 빛나는 화면은 계속 CSS(`.desk-screen`)예요. 모니터마다 화면 위치를 `DESK_MONITORS`에 데이터로 갖고 있고, 듀얼은 화면이 2개예요. 듀얼은 책상 왼쪽 끝까지 써서 왼쪽 소품을 그리지 않아요.
+  - 여는 곳: 설정 › 모습(전체·프로젝트. 사람이 없어도 꾸민 적 있는 프로젝트는 목록에 나와요), 업무 카드 ⋯ 메뉴(전체·이 프로젝트·이 동료. 보조는 빼요). 화면 공유 중에는 프로젝트 이름을 '프로젝트 N'으로 가려요.
+  - 저장은 `Preferences.deskAppearance`예요(zod strict, 상한, 원격 동료 키 거절). 기본값은 지금 책상과 픽셀까지 같아요.
+  - 남은 점: 일하는 중 서류 더미가 왼쪽 소품 자리를 덮고, 의자는 펫 뒤라 게이밍 말고는 차이가 잘 안 보여요. 보조 책상·라운지는 범위 밖이에요.
+- [PR #307](https://github.com/kys42/agent-office/pull/307) 펫 기쁨 모션과 쓰다듬기([#306](https://github.com/kys42/agent-office/issues/306)):
+  - 펫 위에서 버튼 없이 좌우로 문지르면 쓰다듬기예요. 1초 안에 방향을 3번 바꾸면 되고, 그 뒤 2초는 쉬어요.
+  - 반응하면 그림 창(`.sprite-window`)만 통통 뛰고 말랑해져요. 펫 자신의 동작(출근·서류·호출·산책·독 bob)은 끊기지 않아요. 볼터치를 띄우고, 쓰다듬기는 하트, 칭찬은 반짝이를 띄워요.
+  - 공통 입구는 `reactPet(id, 'pat'|'praise')`(`src/lib/petReaction.ts`)예요. 앞으로 만들 칭찬하기 버튼도 이걸 부르면 돼요. 반응은 창 하나 안에서만 나요. 다른 창으로 전달할지는 칭찬하기를 만들 때 정해요.
+  - 쓰다듬기는 mouse 이벤트(`buttons===0`)로 받아요. 끌기 손잡이가 pointer 이벤트를 쓰기 때문이에요. 장면마다 구독 하나(`usePetReactions`)와 추적기 하나(`usePetting`)를 써요(책상이 반복문 안에서 그려져서 책상마다 훅을 쓸 수 없어요).
+  - 펫 꾸미기 미리보기에 쓰다듬기·칭찬하기 시험 버튼이 있어요. 동작 줄이기에서는 움직이지 않아요.
+- [PR #309](https://github.com/kys42/agent-office/pull/309) 데스크 펫([#308](https://github.com/kys42/agent-office/issues/308)):
+  - 알약에 상태별 인원을 색 점과 숫자로 보여 줘요(기다려요 빨강·확인할 결과 파랑·일하는 중 초록·대기 하늘색, 0명 생략). 스크린리더도 같은 숫자를 읽어요.
+  - 펫을 누르면 그 동료의 업무 카드 팝업이 열려요(다른 책상과 같은 동작).
+  - 깃발 버튼은 '책상 펼치기'가 되어 마지막에 쓴 모습(사무실 줄·바닥 책상)으로 펼쳐요. desktop-smoke·screenshots·readme-desktop 스크립트도 이 버튼을 쓰게 바꿨어요.
+- [PR #299](https://github.com/kys42/agent-office/pull/299)·[#301](https://github.com/kys42/agent-office/pull/301) 창 유리([#298](https://github.com/kys42/agent-office/issues/298)): 설정 › 모습 › 창 유리(0~70%).
+  - 업무 카드와 큰 사무실 왼쪽 메뉴·오른쪽 칸을 반투명 흐림 유리(리퀴드 글래스 느낌, 윤기·가장자리 빛)로 바꿔요.
+  - 맥 카드는 값을 정하면 `under-window` 대신 더 맑은 `popover` 재질을 써요. `under-window`는 거의 불투명한 회색이라 색을 걷어도 뒤가 안 비쳤어요. 재질을 아예 끄는 '투명'은 난잡해 보여서 뺐어요.
+  - 큰 사무실은 `.app-body`·사무실 페이지를 비치게 하고, 픽셀 사무실 칸과 좁은 창에서 떠 있는 오른쪽 칸은 불투명하게 둬요. 윈도우는 흐림 재질이 없어 그대로예요.
+- [PR #286](https://github.com/kys42/agent-office/pull/286) 소환 창에 'Orca 새 탭에 소환하기'를 추가했어요(원격 소환이 쓰던 `OrcaLaunch` 새 대화 경로를 재사용, `office:orca-summon`).
+  - 독에서 대화창이 열리면 독 창을 아래 가장자리는 그대로 둔 채 위로 최대 760px까지 늘려요(`room-on/off`, 쪼꼬미 포함).
+- [PR #280](https://github.com/kys42/agent-office/pull/280) 출근 모션:
+  - 데려오거나(`returnedAt`) 새 대화(`startedAt`)로 1분 안에 처음 그려지는 동료는 옆에서 총총 걸어 들어와요. 도착하고 5분은 졸거나 산책하지 않아요.
+  - 한 도착에 한 번만 걸어요(`walksIn`). 앞뒤만 읽은 기록(`windowed`)은 새 대화로 보지 않아요.
+- [PR #251](https://github.com/kys42/agent-office/pull/251) 독 줄·바닥에서 읽은 최종 답변 말풍선을 접어요. 손을 올리면 '지난 말풍선'으로 보이고, 핀을 누르면 다시 미확인이 돼서 계속 떠 있어요.
+- 모두 독립 세션과 Codex 듀얼 리뷰를 반영해 머지했고, 앱을 다시 빌드해 `/Applications`에 설치했어요.
+- 운영 메모
+  - 작업 폴더(worktree)는 `~/orca/workspaces/agent-office/<브랜치>`에 만들어요. 세션 임시 폴더는 재부팅 때 비워져서 커밋 전 작업이 한 번 사라졌어요.
+  - 화면 테스트는 `.local/pw.config.ts`로 포트를 나눠 돌려요. office.spec 'Isolated local collector'는 원래부터 실패해요.
+
 ## 2026-10-26 — 미니 터미널 별도 창, 고정 카드는 보통 창, 채팅창 이미지 첨부
 
 - [PR #275](https://github.com/kys42/agent-office/pull/275): 미니 터미널을 채팅 서랍 대신 연 창 옆의 별도 터미널 창으로 바꿨어요.
