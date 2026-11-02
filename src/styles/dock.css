@@ -227,7 +227,8 @@ body.dock-mode {
   align-items: center;
   gap: 4px;
 }
-.dock-pet-tally i {
+/* Above the pet's own tone (.tone-working's glow would ring every dot). */
+.dock-pet-pill.dock-pet-tally i {
   box-shadow: none;
 }
 .dock-pet-tally .tally-attention i {

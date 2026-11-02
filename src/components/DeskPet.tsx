@@ -88,6 +88,7 @@ export function DeskPet({
         group,
         count: model.counts[group],
       }));
+  const tallyWords = tally.map((g) => `${TRIAGE_LABELS[g.group]} ${g.count}`).join(' · ');
   const speaker = status ? undefined : pet.speaker;
   // The pet stands for one colleague at a time, like one desk of the row: who just spoke (or
   // the lead), or the one the person picked with its arrows — until someone else speaks.
@@ -393,7 +394,8 @@ export function DeskPet({
         <button
           className={`desk-pet tone-${status ? 'resting' : pet.group} ${speaks ? 'is-speaking' : ''} ${dark ? 'lights-out' : ''}`}
           data-solid
-          aria-label={d.aria(label, count)}
+          // Screen readers hear the same tally the pill draws, in words.
+          aria-label={tally.length ? d.aria(tallyWords, null) : d.aria(label, count)}
           title={d.title(total)}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
@@ -454,10 +456,7 @@ export function DeskPet({
           )}
           {/* Who is doing what at a glance: a coloured dot and a number per group (none at 0). */}
           {tally.length ? (
-            <span
-              className="dock-pet-pill dock-pet-tally"
-              title={tally.map((g) => `${TRIAGE_LABELS[g.group]} ${g.count}`).join(' · ')}
-            >
+            <span className="dock-pet-pill dock-pet-tally" title={tallyWords}>
               {tally.map((g) => (
                 <span key={g.group} className={`tally-${g.group}`}>
                   <i />

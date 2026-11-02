@@ -322,7 +322,9 @@ try {
   await dock.waitForTimeout(400); // entrance fade
   await checkMacDock('desk pet');
   await dock.screenshot({ path: '.local/native-pet.png' });
-  await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
+  // The pet opens its colleague's card; its side button unfolds the desks.
+  await dock.locator('.dock-pet-anchor').hover();
+  await dock.getByRole('button', { name: '책상 펼치기' }).click();
   await dock.waitForSelector('.desk-row [data-station-id]');
   assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();

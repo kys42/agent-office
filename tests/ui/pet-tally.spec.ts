@@ -35,16 +35,28 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
   const groups = await pill
     .locator('> span')
     .evaluateAll((spans) => spans.map((el) => [el.className, Number(el.textContent)]));
-  expect(groups.length).toBeGreaterThan(1);
-  for (const [, n] of groups) expect(n).toBeGreaterThan(0);
+  // The demo office: one calls, one result to read, four at work (as its roster counts them).
+  expect(groups).toEqual([
+    ['tally-attention', 1],
+    ['tally-results', 1],
+    ['tally-working', 4],
+  ]);
   const order = ['attention', 'results', 'working', 'standby'];
   const seen = groups.map(([c]) => order.indexOf(String(c).replace('tally-', '')));
   expect(seen).toEqual([...seen].sort((a, b) => a - b));
-  await expect(pill).toHaveAttribute('title', /일하는 중 \d+/);
+  await expect(pill).toHaveAttribute('title', '나를 기다려요 1 · 확인할 결과 1 · 일하는 중 4');
+  // Screen readers hear the same numbers.
+  await expect(page.locator('.desk-pet')).toHaveAttribute(
+    'aria-label',
+    /나를 기다려요 1 · 확인할 결과 1 · 일하는 중 4/,
+  );
   await page.screenshot({ path: '.local/pet-tally.png' });
 
   await page.locator('.desk-pet').click();
   await expect.poll(() => page.evaluate(() => (window as any).cards.at(-1)?.action)).toBe('open');
+  // The card is the colleague the pet stands for: the one calling the person.
+  const opened = await page.evaluate(() => (window as any).cards.at(-1).id);
+  expect(s.sessions.find((x) => x.id === opened)?.status).toBe('call');
   // No unfolding: the pet stays a pet.
   expect(await page.evaluate(() => (window as any).docks)).not.toContain('row');
   await expect(page.locator('.desk-pet')).toBeVisible();
