@@ -8,7 +8,7 @@ import { applyNoticeReceipt } from '../shared/notices';
 import { matchesQuery } from '../shared/notice-pages';
 import { adoptSnapshot, applyPatch, isPatch, type SnapshotMessage } from '../shared/snapshot-patch';
 import { officeResidents } from '../shared/residents';
-import { helperUnfinishedMs } from '../shared/view-prefs';
+import { helperUnfinishedMs, mergeViews } from '../shared/view-prefs';
 import { allocateSeats, officeZone, reorderSeatMap, seatKey } from '../shared/office';
 import { buildOfficeModel } from '../shared/office-model';
 import type {
@@ -302,6 +302,7 @@ export function useOffice(
                 deskAppearance: p.deskAppearance
                   ? mergeDeskCustomization(s.preferences.deskAppearance, p.deskAppearance)
                   : s.preferences.deskAppearance,
+                views: p.views ? mergeViews(s.preferences.views, p.views) : s.preferences.views,
               },
             })
           : s,

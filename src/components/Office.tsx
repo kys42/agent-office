@@ -179,7 +179,10 @@ export function Office({
     const el = holder.current!.parentElement!;
     let windowSize = '';
     const ro = new ResizeObserver(() => {
-      const box = el.getBoundingClientRect();
+      // A preview is drawn scaled (#324): its own, untransformed size is the room it has.
+      const box = preview
+        ? { width: el.offsetWidth, height: el.offsetHeight }
+        : el.getBoundingClientRect();
       const width = Math.floor(box.width),
         height = Math.floor(box.height);
       setViewport((v) => (v.width === width && v.height === height ? v : { width, height }));
