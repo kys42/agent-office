@@ -74,9 +74,7 @@ export const tmux: Messages['tmux'] = {
   orcaUncertain: 'Orca에 탭을 만들었지만 시작을 아직 확인하지 못했어요. Orca를 열면 시작돼요.',
   orcaReveal: 'Orca 열기',
   orcaNotWorkspace:
-    '이 폴더는 Orca 작업 공간이 아니에요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
-  orcaSubfolder: (root) =>
-    `이 폴더는 Orca 작업 공간(${root}) 안의 하위 폴더예요. Orca는 작업 공간 폴더에서만 새 탭을 열 수 있어요. tmux로 띄워주세요.`,
+    '이 폴더는 이 Mac의 Orca 작업 공간 안에 있지 않아요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
   place: { orca: 'Orca', tmux: 'tmux', other: '다른 터미널' },
   runningNotice: (place) =>
     `이 대화는 이미 ${place}에서 실행 중이에요. 새로 띄우지 말고 그쪽으로 이동하세요.`,

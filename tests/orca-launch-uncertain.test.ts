@@ -343,44 +343,67 @@ test('our own time limit with nothing printed is uncertain too, never a refusal'
   assert.equal((await f.launcher.start(claude, async () => true)).uncertain, true);
 });
 
-test('a resume checks the workspace too, telling a subfolder from no workspace', async () => {
+test('a folder inside a workspace opens a tab at the workspace and starts the agent there', async () => {
   let shown: unknown = { ok: false, error: { code: 'selector_not_found' } };
   let worktrees: unknown[] = [{ path: '/projects', hostId: 'local' }];
   const f = fixture({ shown: () => shown, worktrees: () => worktrees });
   const t = m().tmux;
-  // Inside /projects: a subfolder of a workspace.
-  assert.deepEqual(await f.launcher.status(claude), {
-    available: false,
-    reason: t.orcaSubfolder('/projects'),
-  });
-  await assert.rejects(
-    f.launcher.start(claude, async () => true),
-    {
-      message: t.orcaSubfolder('/projects'),
-    },
+  // The agent starts in the folder through `env -C`, one word whatever its quotes and spaces.
+  const into = (folder: string) => `'${`-C${folder}`.replace(/'/g, `'"'"'`)}'`;
+  const inFolder = `${CL}${into(claude.cwd)} 'claude' '--resume' '${claude.nativeId}'`;
+  // Inside /projects: offered, the tab at /projects.
+  assert.deepEqual(await f.launcher.status(claude), { available: true, command: inFolder });
+  let asked: { cwd: string; command: string } | undefined;
+  const started = await f.launcher.start(claude, async (info) => ((asked = info), true));
+  assert.equal(started.launched, true);
+  const create = f.calls.find((c) => c.args[1] === 'create')!.args;
+  assert.equal(create[2], '--worktree=path:/projects');
+  // The confirmation names the conversation's folder and shows exactly what is typed.
+  assert.equal(asked?.cwd, claude.cwd);
+  assert.equal(asked?.command, inFolder);
+  assert.equal(command(create), inFolder);
+  assert.equal(started.command, inFolder);
+  // The tabs listed before creating are the workspace's (adoption looks there).
+  assert.equal(
+    f.calls.find((c) => c.args[0] === 'terminal' && c.args[1] === 'list')?.args[2],
+    '--worktree=path:/projects',
   );
+  // Reserved under the conversation itself, as any launch.
+  assert.deepEqual(f.launcher.pending.state(claude), { where: 'orca', starting: true });
   assert.deepEqual(f.calls.find((c) => c.args[1] === 'list' && c.args[0] === 'worktree')?.args, [
     'worktree',
     'list',
     '--limit=10000',
     '--json',
   ]);
-  // The deepest enclosing workspace is named; a name that only starts the same, or a remote
+  // The deepest enclosing local workspace; a name that only starts the same, or a remote
   // workspace, never counts.
   worktrees = [
     { path: '/projects', hostId: 'local' },
     { path: "/projects/a 'quoted'", hostId: 'local' },
     { path: claude.cwd, hostId: 'remote' },
   ];
-  assert.equal((await f.launcher.status(claude)).reason, t.orcaSubfolder('/projects'));
+  assert.equal((await f.launcher.status(claude)).command, inFolder);
   worktrees = [
     { path: '/projects', hostId: 'local' },
     { path: claude.cwd, hostId: 'local' },
   ];
+  const nested = `${claude.cwd}/packages/web`;
   assert.equal(
-    (await f.launcher.status({ ...claude, cwd: `${claude.cwd}/packages/web` })).reason,
-    t.orcaSubfolder(claude.cwd),
+    (await f.launcher.status({ ...claude, cwd: nested })).command,
+    `${CL}${into(nested)} 'claude' '--resume' '${claude.nativeId}'`,
   );
+  // Orca's `worktree show` answering with the worktree that holds the folder: the list decides.
+  shown = { ok: true, result: { worktree: { path: '/projects', hostId: 'local' } } };
+  worktrees = [{ path: '/projects', hostId: 'local' }];
+  assert.equal((await f.launcher.status(claude)).command, inFolder);
+  shown = { ok: false, error: { code: 'selector_not_found' } };
+  // Only a remote workspace holds it: not offered.
+  worktrees = [{ path: '/projects', hostId: 'remote' }];
+  assert.deepEqual(await f.launcher.status(claude), {
+    available: false,
+    reason: t.orcaNotWorkspace,
+  });
   // In no workspace at all.
   worktrees = [{ path: '/elsewhere', hostId: 'local' }];
   assert.deepEqual(await f.launcher.status(claude), {
@@ -396,11 +419,42 @@ test('a resume checks the workspace too, telling a subfolder from no workspace',
   // Listed but not shown: Orca could not tell, so unavailable without a guessed reason.
   worktrees = [{ path: claude.cwd, hostId: 'local' }];
   assert.deepEqual(await f.launcher.status(claude), { available: false });
-  // Its own registered workspace: offered and launched.
+  // Its own registered workspace: offered and launched as before, no `-C`.
   shown = { ok: true, result: { worktree: { path: claude.cwd, hostId: 'local' } } };
-  assert.equal((await f.launcher.status(claude)).available, true);
+  assert.deepEqual(await f.launcher.status(claude), {
+    available: true,
+    command: `${CL}'claude' '--resume' '${claude.nativeId}'`,
+  });
   assert.equal((await f.launcher.start(claude, async () => true)).launched, true);
-  assert.equal(f.calls.filter((c) => c.args[1] === 'create').length, 1);
+  const own = f.calls.filter((c) => c.args[1] === 'create').at(-1)!.args;
+  assert.equal(own[2], `--worktree=path:${claude.cwd}`);
+  assert.equal(command(own), `${CL}'claude' '--resume' '${claude.nativeId}'`);
+});
+
+test('an unconfirmed start in a folder inside a workspace is adopted from the workspace’s tabs', async () => {
+  const f = fixture({
+    shown: () => ({ ok: false, error: { code: 'selector_not_found' } }),
+    worktrees: () => [{ path: '/projects', hostId: 'local' }],
+    create: () => HANDLE_TIMEOUT,
+    lists: [
+      listed(term('term_old', '기능 담당', '/projects')),
+      listed(
+        term('term_old', '기능 담당', '/projects'),
+        // A tab of the folder's own path is not this worktree's: Orca opened ours at /projects.
+        term('term_wrong', '기능 담당', claude.cwd),
+        term('term_new', '기능 담당', '/projects'),
+      ),
+    ],
+  });
+  const result = await f.launcher.start(claude, async () => true);
+  assert.equal(result.launched, true);
+  assert.deepEqual(f.calls.find((c) => c.args[1] === 'switch')?.args, [
+    'terminal',
+    'switch',
+    '--terminal=term_new',
+    '--json',
+  ]);
+  assert.deepEqual(f.launcher.pending.state(claude), { where: 'orca', starting: true });
 });
 
 test('the agent CLI resolved as for tmux goes with the Orca command, else its bare name', async () => {
