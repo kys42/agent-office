@@ -68,6 +68,7 @@ function fake(
   const destination: LaunchDestination = {
     id,
     launches: options.launches ?? true,
+    place: id === 'orca' || id === 'tmux' ? id : 'other',
     async probe(target) {
       log.push(`probe ${target.sessionId ?? ''}`.trim());
       return probes.length > 1 ? probes.shift()! : probes[0];

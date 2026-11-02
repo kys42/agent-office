@@ -35,6 +35,12 @@ export const launch = {
   terminalAppUnsupported: 'Opening Terminal is available on macOS only.',
   terminalAppLaunched: 'Opened in a new Terminal window.',
   terminalAppFailed: "Couldn't open Terminal. Copy the command and run it in a terminal.",
+  terminalAppDenied:
+    "Agent Office isn't allowed to control Terminal. Allow it in System Settings → Privacy & Security → Automation, or copy the command.",
+  terminalAppUncertain:
+    "Terminal didn't answer in time, so the start couldn't be confirmed. It may already be running in a Terminal window: check there before starting it again.",
+  tmuxUncertain:
+    "tmux didn't answer in time, so the start couldn't be confirmed. It may already be running: check its status before starting it again.",
   tmuxLaunched: 'Started in tmux. Open it in a terminal to work there.',
   tmuxRunning: 'Its tmux session is already running. Open it in a terminal.',
   copied: 'Command copied. Run it in a terminal.',

@@ -392,7 +392,15 @@ export class TmuxResume {
         ],
         { env },
       );
-    } catch {
+    } catch (error) {
+      // tmux may have made the session before it failed or our time limit cut it off: look
+      // before answering. Started: it is launched. Cut off and not there (yet): it may still
+      // appear, so it is `uncertain` (held pending), never a refusal to retry.
+      const after = await this.inspect(s).catch(() => null);
+      if (after?.info.running) return { state: 'launched', detail: after.info };
+      const cut = error as { killed?: unknown; signal?: unknown; code?: unknown } | undefined;
+      if (cut?.killed === true || !!cut?.signal || cut?.code === 'ETIMEDOUT')
+        return { state: 'uncertain', message: m().launch.tmuxUncertain };
       throw new Error(m().tmux.failed);
     }
     // tmux started it: a session gone (or a dead pane) right after means the agent itself
@@ -408,6 +416,7 @@ export class TmuxResume {
     return {
       id: 'tmux',
       launches: true,
+      place: 'tmux',
       probe: (s) => this.probe(s),
       start: (s, context) => this.launch(s, context),
     };
@@ -432,6 +441,8 @@ export class TmuxResume {
         authorized,
       }),
     );
+    // Not seen to start, maybe started: told as such, never as a start to try again.
+    if (result.state === 'uncertain') throw new Error(result.message);
     return ('detail' in result && result.detail) || result.probe.detail!.info;
   }
   async connections(cwd: string): Promise<NonNullable<TmuxResumeInfo['connections']>> {

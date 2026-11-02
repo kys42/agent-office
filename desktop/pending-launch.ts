@@ -1,11 +1,13 @@
 import path from 'node:path';
+import type { LaunchPlace } from '../src/shared/types.js';
 
 /**
- * Launches that may still start on their own: Orca made the tab and queued the command, but its
- * terminal had not appeared when we stopped looking (it starts once Orca mounts the tab). Until
- * then neither a process nor an Orca terminal shows it, so the duplicate-launch check
- * (desktop/launch-guard.ts) reads this record as "open in Orca" for a while instead of letting
- * the same conversation start a second time. Main-process memory only; nothing is stored.
+ * Launches that may still start on their own, or may have started unseen: Orca made the tab and
+ * queued the command, but its terminal had not appeared when we stopped looking (it starts once
+ * Orca mounts the tab); Terminal or tmux was cut off by our time limit after it may already have
+ * taken the command. Until a process shows it, the duplicate-launch check
+ * (desktop/launch-guard.ts) reads this record as "open" where it went, for a while, instead of
+ * letting the same conversation start a second time. Main-process memory only.
  */
 export const PENDING_LAUNCH_MS = 120_000;
 
@@ -33,23 +35,28 @@ export function pendingLaunchKey(s: PendingLaunchTarget): string {
 }
 
 export class PendingLaunches {
-  private until = new Map<string, number>();
+  private until = new Map<string, { until: number; where: LaunchPlace }>();
   constructor(
     private ttl = PENDING_LAUNCH_MS,
     private now: () => number = Date.now,
   ) {}
-  add(target: PendingLaunchTarget) {
-    this.until.set(pendingLaunchKey(target), this.now() + this.ttl);
+  /** `where`: the place it may be starting in (an Orca tab unless said otherwise). */
+  add(target: PendingLaunchTarget, where: LaunchPlace = 'orca') {
+    this.until.set(pendingLaunchKey(target), { until: this.now() + this.ttl, where });
   }
   clear(target: PendingLaunchTarget) {
     this.until.delete(pendingLaunchKey(target));
   }
-  has(target: PendingLaunchTarget): boolean {
+  /** Where a launch of it may still be starting; `undefined` when none is. */
+  where(target: PendingLaunchTarget): LaunchPlace | undefined {
     const key = pendingLaunchKey(target);
-    const until = this.until.get(key);
-    if (until === undefined) return false;
-    if (until > this.now()) return true;
+    const entry = this.until.get(key);
+    if (entry === undefined) return undefined;
+    if (entry.until > this.now()) return entry.where;
     this.until.delete(key);
-    return false;
+    return undefined;
+  }
+  has(target: PendingLaunchTarget): boolean {
+    return this.where(target) !== undefined;
   }
 }

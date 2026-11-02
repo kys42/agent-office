@@ -559,3 +559,25 @@ test('a folder Orca cannot open a tab in says why instead of hiding the choice s
   await expect(modal.getByText('안의 하위 폴더예요', { exact: false })).toBeVisible();
   await expect(modal.getByRole('button', { name: 'Orca에서 새로 띄우기' })).toHaveCount(0);
 });
+
+test('a start Terminal may already be running is told as such, without Open Orca or a new start', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.orcaAvailable = true;
+    // A Terminal launch cut off by the time limit: main holds it pending in "another terminal".
+    w.duplicate = { state: 'open', where: 'other', pending: true };
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await expect(
+    modal.getByText('이미 터미널 창에서 실행 중일 수 있으니', { exact: false }),
+  ).toBeVisible();
+  await expect(modal.getByText('Orca를 열면 시작돼요', { exact: false })).toHaveCount(0);
+  await expect(modal.locator('.tmux-resume-actions button')).toHaveCount(0);
+  await expect(
+    modal.getByRole('button', { name: 'Orca에서 새로 띄우기', exact: true }),
+  ).toHaveCount(0);
+});

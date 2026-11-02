@@ -31,6 +31,12 @@ export const launch: Messages['launch'] = {
   terminalAppUnsupported: '터미널 앱으로 열기는 macOS에서만 지원해요.',
   terminalAppLaunched: '터미널 새 창에서 열었어요.',
   terminalAppFailed: '터미널을 열지 못했어요. 명령을 복사해 터미널에서 실행해주세요.',
+  terminalAppDenied:
+    'Agent Office가 터미널을 제어할 권한이 없어요. 시스템 설정 → 개인정보 보호 및 보안 → 자동화에서 허용하거나 명령을 복사해주세요.',
+  terminalAppUncertain:
+    '터미널이 제때 답하지 않아 시작을 확인하지 못했어요. 이미 터미널 창에서 실행 중일 수 있으니 다시 띄우기 전에 확인해주세요.',
+  tmuxUncertain:
+    'tmux가 제때 답하지 않아 시작을 확인하지 못했어요. 이미 실행 중일 수 있으니 다시 띄우기 전에 상태를 확인해주세요.',
   tmuxLaunched: 'tmux에서 시작했어요. 터미널에서 열어 작업하세요.',
   tmuxRunning: '이 tmux 세션이 이미 실행 중이에요. 터미널에서 열어주세요.',
   copied: '명령을 복사했어요. 터미널에서 실행하세요.',

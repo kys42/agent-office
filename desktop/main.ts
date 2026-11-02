@@ -1096,8 +1096,8 @@ function setupIPC() {
       checkDuplicate(
         {
           agent: (f) => livenessFor(session.provider).lookup(session.nativeId, f),
-          // A launch of it that may still start once Orca shows its tab.
-          pending: () => orcaLaunch.pending.has(session),
+          // A launch of it that may still start (once Orca shows its tab) or started unseen.
+          pending: () => orcaLaunch.pending.where(session),
           orcaTab: async (f) => {
             const tab = await lookupOrcaTab(
               session,
@@ -1325,6 +1325,8 @@ function setupIPC() {
   /** The older tmux channels' answer: its session's info; a refusal throws as it did. */
   const tmuxAnswer = (outcome: LaunchOutcome): TmuxResumeInfo => {
     if (outcome.state === 'refused') throw outcome.error;
+    // Maybe started (tmux cut off): its message says to check first, not to start again.
+    if (outcome.state === 'uncertain') throw new Error(outcome.message);
     return (
       ('detail' in outcome && (outcome.detail as TmuxResumeInfo | undefined)) ||
       (outcome.probe.detail as { info: TmuxResumeInfo }).info

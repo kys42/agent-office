@@ -1,5 +1,5 @@
 import type { LaunchDestinationId, LaunchProbe } from '../../src/shared/launch.js';
-import type { DuplicateCheck } from '../../src/shared/types.js';
+import type { DuplicateCheck, LaunchPlace } from '../../src/shared/types.js';
 import { confirmLaunch, DuplicateLaunchError } from '../launch-guard.js';
 import { PendingLaunches, type PendingLaunchTarget } from '../pending-launch.js';
 
@@ -26,10 +26,18 @@ export interface StartContext<D = unknown> {
   probe: DestinationProbe<D>;
   /** Called at the last moment before anything starts (a revoked permission throws). */
   authorized?: () => void;
-  /** Holds this launch as pending while a start Orca did not confirm is looked for. */
+  /**
+   * Holds this launch as pending (where this destination is) while a start that was not
+   * confirmed is looked for, or once it may have started unseen.
+   */
   hold(): void;
 }
 
+/**
+ * `uncertain`: the destination may have taken the command without our seeing it start (Orca's
+ * tab not mounted yet, Terminal or tmux cut off by our time limit after accepting it). Never a
+ * refusal: launching it again would start it twice, so it is kept pending for a while.
+ */
 export interface DestinationStart<R = unknown> {
   state: 'launched' | 'uncertain' | 'copied';
   message?: string;
@@ -42,6 +50,8 @@ export interface Destination<T, D = unknown, R = unknown> {
   readonly id: LaunchDestinationId;
   /** false: nothing starts there (a copied command): no confirmation and nothing pending. */
   readonly launches: boolean;
+  /** Where a launch of it runs, as the duplicate check names it (`other` when left out). */
+  readonly place?: LaunchPlace;
   /** Read-only. `fresh`: no cached answer (right before and after a confirmation). */
   probe(target: T, fresh: boolean): Promise<DestinationProbe<D>>;
   /** Starts it; a refusal throws with its reason. */
@@ -126,7 +136,7 @@ export function runLaunch<T, D, R>(
       if (!probe.available) return refused(new Error(probe.reason ?? ''), probe);
       if (probe.running) return { state: 'running', probe };
       const hold = () => {
-        if (pending && key) pending.add(key);
+        if (pending && key) pending.add(key, destination.place ?? 'other');
       };
       const result = await destination.start(target, {
         probe,
@@ -135,7 +145,7 @@ export function runLaunch<T, D, R>(
       });
       if (pending && key && destination.launches) {
         // Still unseen: the guard runs its full window from now. Seen: nothing is pending.
-        if (result.state === 'uncertain') pending.add(key);
+        if (result.state === 'uncertain') pending.add(key, destination.place ?? 'other');
         else pending.clear(key);
       }
       return { ...result, probe };

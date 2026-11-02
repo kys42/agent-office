@@ -63,13 +63,16 @@ export function tmuxDestination(tmux: TmuxResume): LaunchDestination {
   return {
     id: 'tmux',
     launches: true,
+    place: 'tmux',
     async probe(t) {
       const probe = await tmux.probe(tmuxSession(t));
       return probe.running ? { ...probe, message: m().launch.tmuxRunning } : probe;
     },
     async start(t, context) {
       const started = await tmux.launch(tmuxSession(t), context as StartContext<TmuxInspection>);
-      return { ...started, message: m().launch.tmuxLaunched, command: started.detail?.command };
+      return started.state === 'launched'
+        ? { ...started, message: m().launch.tmuxLaunched, command: started.detail?.command }
+        : started;
     },
   };
 }
@@ -78,6 +81,7 @@ export function orcaDestination(orca: OrcaLaunch): LaunchDestination {
   return {
     id: 'orca',
     launches: true,
+    place: 'orca',
     probe: (t, fresh) => orca.probe(orcaSession(t), fresh),
     async start(t, context) {
       const started = await orca.create(orcaSession(t), context as StartContext<OrcaPlan>);
@@ -123,10 +127,29 @@ async function plan(t: LaunchTarget, deps: ShellDestinationDeps, resolve: boolea
   return command;
 }
 
+/**
+ * What a failed `osascript … do script` call says about the command. Only a failure that
+ * happened before Terminal could take it is a refusal: osascript could not start (`spawn`
+ * error), macOS did not let us control Terminal (-1743, -1744: Automation not allowed), or no
+ * Terminal app answered (-10814 not found, -600 not running). Anything else, our time limit
+ * above all, may come after Terminal already opened the window and typed the command: killing
+ * osascript does not undo that, so it is `uncertain`, never a refusal to retry.
+ */
+export function terminalAppFailure(error: unknown): 'denied' | 'failed' | 'uncertain' {
+  const e = error as { code?: unknown; killed?: unknown; signal?: unknown; message?: unknown };
+  if (e?.killed === true || !!e?.signal || e?.code === 'ETIMEDOUT') return 'uncertain';
+  if (typeof e?.code === 'string' && /^(ENOENT|EACCES|EPERM)$/.test(e.code)) return 'failed';
+  const text = typeof e?.message === 'string' ? e.message : '';
+  if (/\((-1743|-1744)\)/.test(text)) return 'denied';
+  if (/\((-10814|-600)\)/.test(text)) return 'failed';
+  return 'uncertain';
+}
+
 export function terminalAppDestination(deps: ShellDestinationDeps): LaunchDestination {
   return {
     id: 'terminalApp',
     launches: true,
+    place: 'other',
     async probe(t) {
       if (deps.platform !== 'darwin')
         return { available: false, reason: m().launch.terminalAppUnsupported };
@@ -142,8 +165,13 @@ export function terminalAppDestination(deps: ShellDestinationDeps): LaunchDestin
       context.authorized?.();
       try {
         await openInTerminalApp(deps.run, command);
-      } catch {
-        throw new Error(m().launch.terminalAppFailed);
+      } catch (error) {
+        const failure = terminalAppFailure(error);
+        if (failure === 'denied') throw new Error(m().launch.terminalAppDenied);
+        if (failure === 'failed') throw new Error(m().launch.terminalAppFailed);
+        // Terminal may already be running it: held like an unconfirmed Orca tab, never retried.
+        context.hold();
+        return { state: 'uncertain', message: m().launch.terminalAppUncertain, command };
       }
       return { state: 'launched', message: m().launch.terminalAppLaunched, command };
     },

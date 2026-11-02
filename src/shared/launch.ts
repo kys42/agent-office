@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { m } from './i18n';
 import type { DuplicateCheck, LaunchPlace } from './types';
 
 /**
@@ -89,11 +90,22 @@ export interface LaunchOptions {
 }
 
 /**
+ * What to tell about a launch held pending (`DuplicateCheck.pending`) at `where`: an Orca tab
+ * starts once Orca shows it; Terminal or tmux may already be running it unseen. Never a
+ * suggestion to start it elsewhere.
+ */
+export function pendingNotice(where: LaunchPlace): string {
+  if (where === 'orca') return m().tmux.orcaUncertain;
+  return where === 'tmux' ? m().launch.tmuxUncertain : m().launch.terminalAppUncertain;
+}
+
+/**
  * What a start did:
  * - `launched`: it started (Orca confirmed the tab, tmux saw the agent alive, Terminal opened).
  * - `running`: this launch's own tmux session already runs; nothing new was started.
- * - `uncertain`: Orca made the tab but its start was not seen yet; it starts once Orca shows it.
- *   Launching it again is refused as "open" for a while meanwhile. Never suggest another place.
+ * - `uncertain`: it may have started but was not seen to: Orca made the tab (it starts once Orca
+ *   shows it), or Terminal/tmux was cut off after it may have taken the command. Launching it
+ *   again is cautioned as "open" there for a while. Never suggest another place.
  * - `copied`: the command is on the clipboard.
  * - `cancelled`: the person said no in the confirmation.
  * - `refused`: nothing started, with why; `duplicate` when it already runs or changed meanwhile.

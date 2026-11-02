@@ -530,6 +530,7 @@ export class OrcaLaunch {
     return {
       id: 'orca',
       launches: true,
+      place: 'orca',
       probe: (s, fresh) => this.probe(s, fresh),
       start: (s, context) => this.create(s, context),
     };
