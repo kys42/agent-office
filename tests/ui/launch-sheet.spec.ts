@@ -573,6 +573,44 @@ test('where tmux cannot open a terminal (Linux) a started session keeps its atta
   expect((await read(page, 'launches')).map((l: any) => l.action)).toEqual(['start']);
 });
 
+for (const opens of [['orca', 'tmux'], []])
+  test(`a conversation running in the app's own tmux session (opens: ${opens.join('+') || 'none'}) offers its attach command`, async ({
+    page,
+  }) => {
+    const attach = 'tmux -L agent-office attach -t =office-claude-0123';
+    await setup(
+      page,
+      '/#card',
+      { width: 760, height: 900 },
+      {
+        support: { supported: true, opens },
+        duplicate: { resume: { state: 'running', where: 'tmux' } },
+        probes: { tmux: { available: true, running: true, command: attach } },
+      },
+    );
+    const modal = await openCard(page);
+    await expect(
+      modal.getByText('이 대화는 이미 tmux에서 실행 중이에요', { exact: false }),
+    ).toBeVisible();
+    await expect(modal.getByRole('radio')).toHaveCount(0);
+    const buttons = modal.locator('.launch-actions-main button');
+    // A detached session has no terminal to jump to: Terminal opens it where it can (macOS).
+    await expect(buttons).toHaveText(
+      opens.length ? ['그곳으로 이동', '재접속 명령 복사'] : ['재접속 명령 복사'],
+    );
+    await modal.getByRole('button', { name: '재접속 명령 복사' }).click();
+    expect(await read(page, 'copied')).toBe(attach);
+    if (opens.length) {
+      await modal.getByRole('button', { name: '그곳으로 이동' }).click();
+      await expect(modal).toHaveCount(0);
+      expect((await read(page, 'launches')).at(-1)).toMatchObject({
+        destination: 'tmux',
+        action: 'open',
+      });
+    }
+    expect(await read(page, 'jumps')).toEqual([]);
+  });
+
 for (const route of ['/#card', '/'])
   test(`where no destination can ever work (Windows) ${route} offers no launch sheet`, async ({
     page,

@@ -163,6 +163,8 @@ export interface DuplicateView {
   go?: GoThere;
   /** An unconfirmed Orca start: only bringing Orca to the front helps. */
   reveal?: boolean;
+  /** It is in the app's own tmux session: its attach command, to copy (works everywhere). */
+  copy?: string;
   /**
    * Nothing new may be started from here: it already runs (go there instead), or a start
    * of it was not confirmed (never suggest another place: it may start twice).
@@ -174,20 +176,46 @@ export interface DuplicateView {
 const OPENS: readonly LaunchDestinationId[] = ['orca', 'tmux'];
 
 /**
+ * The app's own tmux session of this launch, when it runs: its attach command (the tmux
+ * probe says `running` with the command to reconnect).
+ */
+export function ownTmuxCommand(options: LaunchOptions | null): string | undefined {
+  const probe = options?.destinations.find((d) => d.id === 'tmux')?.probe;
+  return probe?.available && probe.running ? probe.command : undefined;
+}
+
+/**
  * The duplicate check, as the sheet draws it. A resume checks the whole conversation; a new
  * session or a fork only the same launch still starting (the core decides which). `opens`:
- * the destinations whose own place can be brought to the front on this platform.
+ * the destinations whose own place can be brought to the front on this platform. `own`: the
+ * attach command of the app's own tmux session of it, when that runs (`ownTmuxCommand`).
+ *
+ * In the app's own tmux session it runs detached: there is no terminal to jump to (Linux
+ * has none to open either). It is opened in Terminal where `open` works, and its attach
+ * command can always be copied.
  */
 export function duplicateView(
   check: DuplicateCheck | undefined,
   opens: readonly LaunchDestinationId[] = OPENS,
+  own?: string,
 ): DuplicateView {
   const t = m().tmux;
   if (!check || check.state === 'none') return { notice: '', tone: 'none', blocks: false };
   if (check.state === 'unknown') return { notice: t.unknownNotice, tone: 'caution', blocks: false };
   const place = t.place[check.where];
-  if (check.state === 'running')
-    return { notice: t.runningNotice(place), tone: 'running', go: 'jump', blocks: true };
+  const inOwnTmux = check.where === 'tmux' && !!own;
+  const copy = inOwnTmux ? { copy: own } : {};
+  const openTmux = opens.includes('tmux') ? ('tmux' as const) : undefined;
+  if (check.state === 'running') {
+    const go: GoThere | undefined = inOwnTmux ? openTmux : 'jump';
+    return {
+      notice: t.runningNotice(place),
+      tone: 'running',
+      ...(go && { go }),
+      ...copy,
+      blocks: true,
+    };
+  }
   if (check.pending && !check.starting)
     return {
       notice: pendingNotice(check.where),
@@ -198,8 +226,8 @@ export function duplicateView(
   const go: GoThere | undefined =
     check.where === 'orca' && opens.includes('orca')
       ? 'orca-tab'
-      : check.where === 'tmux' && opens.includes('tmux')
-        ? 'tmux'
+      : check.where === 'tmux'
+        ? openTmux
         : undefined;
   return {
     notice: check.starting
@@ -207,6 +235,7 @@ export function duplicateView(
       : `${t.openNotice(place)} ${t.openHint}`,
     tone: 'caution',
     ...(go && { go }),
+    ...copy,
     blocks: false,
   };
 }
@@ -349,16 +378,12 @@ export function resultView(
     }
     case 'refused': {
       if (result.duplicate && result.duplicate.state !== 'none') {
-        const view = duplicateView(result.duplicate, opens);
+        const view = duplicateView(result.duplicate, opens, ownTmuxCommand(options));
         return {
           close: false,
           tone: 'error',
           text: result.reason,
-          actions: view.reveal
-            ? [{ kind: 'reveal' }]
-            : view.go
-              ? [{ kind: 'go', go: view.go }]
-              : [],
+          actions: view.reveal ? [{ kind: 'reveal' }] : duplicateActions(view),
         };
       }
       const others = (options?.destinations ?? []).filter(
@@ -383,6 +408,12 @@ export const keepsDestinations = (view: ResultView | null) =>
   !view || view.close || view.actions.some((a) => a.kind === 'suggest');
 
 const placeName = (id: LaunchDestinationId) => m().launch.destination[id];
+
+/** The ways to where it already is: going there, and its own tmux session's attach command. */
+export const duplicateActions = (view: DuplicateView): ResultAction[] => [
+  ...(view.go ? [{ kind: 'go', go: view.go } as const] : []),
+  ...(view.copy ? [{ kind: 'copy-command', command: view.copy } as const] : []),
+];
 
 /**
  * Whether a result put the conversation somewhere a person can work in it: an away colleague

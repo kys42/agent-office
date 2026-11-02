@@ -21,6 +21,7 @@ import {
   LAUNCH_KINDS,
   NEW_AGENTS,
   agentLabel,
+  duplicateActions,
   keepsDestinations,
   messageProblem,
   nameProblem,
@@ -140,6 +141,8 @@ export function LaunchSheet({
     if (l.chosen) return { icon: 'ready', text: s.progress.ready(place) } as const;
     return null;
   })();
+  // A resume already somewhere: the ways there come first, a new start only "anyway".
+  const hasWays = draft.kind === 'resume' && duplicateActions(l.duplicate).length > 0;
   const resultActions =
     l.phase === 'result' && l.result && !l.result.close ? l.result.actions : null;
   return createPortal(
@@ -427,19 +430,16 @@ export function LaunchSheet({
           ) : l.duplicate.blocks ? (
             l.duplicate.reveal ? (
               action({ kind: 'reveal' }, true)
-            ) : l.duplicate.go ? (
-              action({ kind: 'go', go: l.duplicate.go }, true)
-            ) : null
+            ) : (
+              duplicateActions(l.duplicate).map((a, i) => action(a, i === 0))
+            )
           ) : (
             <>
-              {l.duplicate.go &&
-                draft.kind === 'resume' &&
-                action({ kind: 'go', go: l.duplicate.go }, true)}
+              {draft.kind === 'resume' &&
+                duplicateActions(l.duplicate).map((a, i) => action(a, i === 0))}
               {showWhere && (
                 <button
-                  className={
-                    l.duplicate.go && draft.kind === 'resume' ? 'button' : 'button primary'
-                  }
+                  className={hasWays ? 'button' : 'button primary'}
                   disabled={!l.canStart}
                   onClick={l.start}
                 >
@@ -448,9 +448,7 @@ export function LaunchSheet({
                   ) : (
                     <Terminal size={14} aria-hidden="true" />
                   )}
-                  {l.chosen
-                    ? startLabel(l.chosen, !!l.duplicate.go && draft.kind === 'resume')
-                    : s.start}
+                  {l.chosen ? startLabel(l.chosen, hasWays) : s.start}
                 </button>
               )}
             </>

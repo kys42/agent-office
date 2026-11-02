@@ -8,6 +8,7 @@ import {
   destinationRows,
   draftIntent,
   duplicateView,
+  ownTmuxCommand,
   firstResumable,
   forkDefaultName,
   broughtUp,
@@ -167,7 +168,7 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
   // While the options are read again (a name typed, another kind), the last answer stays on
   // screen instead of flashing every row back to "checking"; only a fresh one can start.
   const shown = current ?? options?.value ?? null;
-  const duplicate = duplicateView(current?.duplicate, opens);
+  const duplicate = duplicateView(current?.duplicate, opens, ownTmuxCommand(current));
   const rows = destinationRows(shown);
   const chosen = chosenDestination(shown, picked);
   const intent = draftIntent(draft);

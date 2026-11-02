@@ -12,7 +12,9 @@ import {
   forkDefaultName,
   messageProblem,
   nameProblem,
+  duplicateActions,
   keepsDestinations,
+  ownTmuxCommand,
   placeOf,
   resultView,
   startLabel,
@@ -160,6 +162,30 @@ test('the duplicate check: running only goes there, an unconfirmed start only wa
   assert.equal(duplicateView({ state: 'open', where: 'orca' }, ['tmux']).go, undefined);
   assert.equal(duplicateView({ state: 'open', where: 'other' }).go, undefined);
   assert.equal(duplicateView({ state: 'unknown' }).blocks, false);
+  // In the app's own detached tmux session there is no terminal to jump to: it opens in
+  // Terminal where `open` works (macOS), and its attach command can always be copied (Linux).
+  const own = 'tmux -L agent-office attach -t =office-claude';
+  const runningTmux = { state: 'running', where: 'tmux' } as const;
+  assert.deepEqual(duplicateActions(duplicateView(runningTmux, ['tmux'], own)), [
+    { kind: 'go', go: 'tmux' },
+    { kind: 'copy-command', command: own },
+  ]);
+  assert.deepEqual(duplicateActions(duplicateView(runningTmux, [], own)), [
+    { kind: 'copy-command', command: own },
+  ]);
+  assert.equal(duplicateView(runningTmux, [], own).blocks, true);
+  // Another tmux (not the app's own session): its terminal is jumped to as before.
+  assert.deepEqual(duplicateActions(duplicateView(runningTmux, [], undefined)), [
+    { kind: 'go', go: 'jump' },
+  ]);
+  assert.deepEqual(duplicateActions(duplicateView({ state: 'open', where: 'tmux' }, [], own)), [
+    { kind: 'copy-command', command: own },
+  ]);
+  const ownRunning = options({
+    destinations: [{ id: 'tmux', probe: probe(true, { running: true, command: own }) }],
+  });
+  assert.equal(ownTmuxCommand(ownRunning), own);
+  assert.equal(ownTmuxCommand(options()), undefined, 'not running: no own session');
 });
 
 test('destinations show availability and the reason; the pick wins while it is available', () => {
