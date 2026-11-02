@@ -23,6 +23,7 @@ import { useWakeAt } from './useWakeAt';
 import { useQuotas } from './useQuotas';
 import { arrivalEnds } from '../shared/speech';
 import { mergePetCustomization, normalizePetCustomization } from '../shared/pets';
+import { mergeDeskCustomization, normalizeDeskCustomization } from '../shared/desks';
 import { isPageHidden, onPageVisibility } from './visibility';
 import { useReadingText } from './useReadingText';
 import { useGlass } from './useGlass';
@@ -92,6 +93,13 @@ function customizedDemo() {
     );
   } catch {
     // An invalid demo setting falls back to the original characters.
+  }
+  try {
+    snapshot.preferences.deskAppearance = normalizeDeskCustomization(
+      JSON.parse(localStorage.getItem('office:demo-desks') || 'null'),
+    );
+  } catch {
+    // …and to the original desks.
   }
   return snapshot;
 }
@@ -207,6 +215,17 @@ export function useOffice(
       // Demo still works when local storage is unavailable.
     }
   }, [demo, snapshot?.preferences.petAppearance]);
+  useEffect(() => {
+    if (!demo || !snapshot?.preferences.deskAppearance) return;
+    try {
+      localStorage.setItem(
+        'office:demo-desks',
+        JSON.stringify(snapshot.preferences.deskAppearance),
+      );
+    } catch {
+      // Demo still works when local storage is unavailable.
+    }
+  }, [demo, snapshot?.preferences.deskAppearance]);
   // Every window (big office, desk pet / row, dock card) follows the saved language.
   useLocalePreference(snapshot?.preferences.locale, !!snapshot, snapshot?.locale);
   // …and the saved reading-text size and font (#246).
@@ -280,6 +299,9 @@ export function useOffice(
                 petAppearance: p.petAppearance
                   ? mergePetCustomization(s.preferences.petAppearance, p.petAppearance)
                   : s.preferences.petAppearance,
+                deskAppearance: p.deskAppearance
+                  ? mergeDeskCustomization(s.preferences.deskAppearance, p.deskAppearance)
+                  : s.preferences.deskAppearance,
               },
             })
           : s,

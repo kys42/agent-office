@@ -63,6 +63,28 @@ import {
 import { CANONICAL, localizePreferences, localizeSession } from '../src/shared/canonical.js';
 import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
 import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
+import {
+  DESK_CHAIRS,
+  DESK_COLLEAGUE_CAP,
+  DESK_ITEMS,
+  DESK_MONITORS,
+  DESK_PROJECT_CAP,
+  type DeskChair,
+  type DeskItem,
+  type DeskMonitor,
+  type DeskTop,
+} from '../src/shared/desks.js';
+import { OFFICE_PALETTES } from '../src/shared/office-assets.js';
+const deskItem = z.enum(Object.keys(DESK_ITEMS) as [DeskItem, ...DeskItem[]]);
+const deskLayerSchema = z
+  .object({
+    top: z.enum(Object.keys(OFFICE_PALETTES) as [DeskTop, ...DeskTop[]]).optional(),
+    monitor: z.enum(Object.keys(DESK_MONITORS) as [DeskMonitor, ...DeskMonitor[]]).optional(),
+    chair: z.enum(Object.keys(DESK_CHAIRS) as [DeskChair, ...DeskChair[]]).optional(),
+    itemLeft: deskItem.optional(),
+    itemRight: deskItem.optional(),
+  })
+  .strict();
 const petLookSchema = z
   .object({
     character: z.enum(Object.keys(PET_CHARACTERS) as [PetCharacter, ...PetCharacter[]]),
@@ -138,6 +160,23 @@ const prefsSchema = z
         colleagues: z
           .record(z.string().min(1).max(500), petLookSchema.nullable())
           .refine((value) => Object.keys(value).length <= 3000, { error: () => m().pets.tooMany }),
+      })
+      .strict()
+      .optional(),
+    deskAppearance: z
+      .object({
+        version: z.literal(1),
+        office: deskLayerSchema.nullable().optional(),
+        projects: z
+          .record(z.string().min(1).max(500), deskLayerSchema.nullable())
+          .refine((value) => Object.keys(value).length <= DESK_PROJECT_CAP, {
+            error: () => m().desks.tooMany,
+          }),
+        colleagues: z
+          .record(z.string().min(1).max(500), deskLayerSchema.nullable())
+          .refine((value) => Object.keys(value).length <= DESK_COLLEAGUE_CAP, {
+            error: () => m().desks.tooMany,
+          }),
       })
       .strict()
       .optional(),

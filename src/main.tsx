@@ -27,6 +27,7 @@ import './styles/veil.css';
 import './styles/speech.css';
 import './styles/effects.css';
 import './styles/pets.css';
+import './styles/desks.css';
 import './styles/guide.css';
 import './styles/tmux.css';
 import './styles/summon-existing.css';

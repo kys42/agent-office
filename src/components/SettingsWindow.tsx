@@ -7,6 +7,7 @@ import { useI18n } from '../lib/i18n';
 import { isWindows } from '../lib/platform';
 import { settingsHashSection, type SettingsSection } from '../shared/settings';
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { Settings } from './Settings';
 
 /**
@@ -66,35 +67,37 @@ export function SettingsWindow() {
   const prefs = snapshot?.preferences;
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      {/* Reduced motion follows the shared preference live, as in the big office. */}
-      <div className={`settings-window${prefs?.reducedMotion ? ' reduce-motion' : ''}`}>
-        <header className="settings-window-bar">
-          <b>{t.settings.window.title}</b>
-        </header>
-        {snapshot ? (
-          <Settings
-            layout="popup"
-            snapshot={snapshot}
-            onPrefs={setPrefs}
-            onRefresh={refresh}
-            notify={notify}
-            terminalSend={send.available ? send.enabled : undefined}
-            onTerminalSend={send.toggle}
-            answers={answers.available ? answers.settings : undefined}
-            onAnswers={(key) => void answers.toggle(key)}
-            focusSection={focus}
-            onSectionFocused={clearFocus}
-          />
-        ) : (
-          <p className="settings-window-opening">{t.settings.window.opening}</p>
-        )}
-        {toast && (
-          <div className="toast" role="status">
-            <span className="live-dot" />
-            {toast}
-          </div>
-        )}
-      </div>
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
+        {/* Reduced motion follows the shared preference live, as in the big office. */}
+        <div className={`settings-window${prefs?.reducedMotion ? ' reduce-motion' : ''}`}>
+          <header className="settings-window-bar">
+            <b>{t.settings.window.title}</b>
+          </header>
+          {snapshot ? (
+            <Settings
+              layout="popup"
+              snapshot={snapshot}
+              onPrefs={setPrefs}
+              onRefresh={refresh}
+              notify={notify}
+              terminalSend={send.available ? send.enabled : undefined}
+              onTerminalSend={send.toggle}
+              answers={answers.available ? answers.settings : undefined}
+              onAnswers={(key) => void answers.toggle(key)}
+              focusSection={focus}
+              onSectionFocused={clearFocus}
+            />
+          ) : (
+            <p className="settings-window-opening">{t.settings.window.opening}</p>
+          )}
+          {toast && (
+            <div className="toast" role="status">
+              <span className="live-dot" />
+              {toast}
+            </div>
+          )}
+        </div>
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

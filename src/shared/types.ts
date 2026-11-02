@@ -1,6 +1,7 @@
 import type { SnapshotMessage } from './snapshot-patch';
 import { m, type Locale, type LocalePreference } from './i18n';
 import type { PetCustomization } from './pets';
+import type { DeskCustomization } from './desks';
 export type Provider = 'claude' | 'codex' | 'openclaw';
 /**
  * Office status. Observed (work/think/call/error/done) or derived from time since the last
@@ -445,6 +446,8 @@ export interface Preferences {
   /** UI and collector language. Missing means `auto` (system language, else English). */
   locale?: LocalePreference;
   petAppearance?: PetCustomization;
+  /** Desk tops, monitors, chairs and items: office → project → colleague (#305). */
+  deskAppearance?: DeskCustomization;
   /** Desktop OS notifications (#229). Missing: calls and errors only, silently. */
   notifications?: NotifyPreferences;
   // #228 — every one optional; a missing value keeps the behaviour from before it existed.

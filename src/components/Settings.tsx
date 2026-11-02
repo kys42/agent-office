@@ -1,6 +1,9 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { PetCustomizer } from './PetCustomizer';
+import { DeskCustomizer, DeskPreview, type DeskZone } from './DeskCustomizer';
+import { DESK_CHAIRS, DESK_ITEMS, DESK_MONITORS, DESK_TOPS, deskLook } from '../shared/desks';
+import { zoneLabel } from '../shared/zones';
 import { MobileSettings } from './MobileSettings';
 import { FederationSettings } from './FederationSettings';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
@@ -159,6 +162,7 @@ export function Settings({
     if (await onPrefs({ [key]: Date.now() })) notify(done);
   };
   const [customizing, setCustomizing] = useState<Provider | null>(null);
+  const [decorating, setDecorating] = useState(false);
   const [category, setCategory] = useState<SettingsCategory>(() =>
     focusSection
       ? settingsCategory(focusSection.section)
@@ -226,6 +230,19 @@ export function Settings({
   const zones = [...new Set(zoneRules.map(ruleZoneKey))].sort(
     (a, b) => Number(isCustomZone(b)) - Number(isCustomZone(a)) || a.localeCompare(b),
   );
+  // Project zones with desks in the office, for a project's own desk look — and any project
+  // already dressed, even with nobody in it now, so its look can still be changed or reset.
+  const deskZones: DeskZone[] = [
+    ...new Map([
+      ...Object.keys(p.deskAppearance?.projects ?? {}).map(
+        (key) => [key, { key, name: key }] as const,
+      ),
+      ...snapshot.sessions
+        .filter((s) => s.zone === 'office' && !s.attachedTo && !s.remote)
+        .map((s) => [projectKey(s), { key: projectKey(s), name: zoneLabel(s) }] as const),
+    ]).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  const desk = deskLook(p.deskAppearance);
   const members = (key: string) =>
     snapshot.sessions.filter(
       (s) => s.area && projectKey(s) === key && s.zone === 'office' && !s.attachedTo,
@@ -449,6 +466,31 @@ export function Settings({
             );
           })}
         </div>
+      </section>
+      <section className="pet-settings settings-section" data-guide-section="desks" tabIndex={-1}>
+        <div className="section-title">
+          <div>
+            <span className="eyebrow">Desk corner</span>
+            <h2>{t.desks.settingsTitle}</h2>
+          </div>
+        </div>
+        <p>{t.desks.settingsHint}</p>
+        <button
+          className="desk-settings-card"
+          onClick={() => setDecorating(true)}
+          aria-label={t.desks.open}
+        >
+          <DeskPreview look={desk} scale={0.6} />
+          <div>
+            <b>
+              {DESK_TOPS[desk.top].name} · {DESK_MONITORS[desk.monitor].name}
+            </b>
+            <small>
+              {DESK_CHAIRS[desk.chair]} · {DESK_ITEMS[desk.itemLeft]} · {DESK_ITEMS[desk.itemRight]}
+            </small>
+          </div>
+          <Pencil size={15} />
+        </button>
       </section>
       <section className="settings-section" data-guide-section="motion" tabIndex={-1}>
         <div className="setting-row">
@@ -1019,6 +1061,14 @@ export function Settings({
           provider={customizing}
           onPrefs={onPrefs}
           onClose={() => setCustomizing(null)}
+        />
+      )}
+      {decorating && (
+        <DeskCustomizer
+          zones={deskZones}
+          privacy={p.privacy}
+          onPrefs={onPrefs}
+          onClose={() => setDecorating(false)}
         />
       )}
     </div>
