@@ -343,24 +343,23 @@ export class OrcaLaunch {
   /**
    * The terminal of a tab whose start Orca did not confirm: a handle of the same worktree that
    * the list taken before creating it did not have (so that list must be whole), titled as the
-   * launch; else the only new one, when the later list is whole too. Between several untitled new ones it never guesses.
+   * launch. Only the title ties a terminal to this launch: a new untitled one may be any tab the
+   * person opened meanwhile, so it is never adopted and the start stays unconfirmed.
    */
   private async adopt(
     info: { cwd: string; name: string },
     before: { handles: Set<string>; complete: boolean },
   ): Promise<string | undefined> {
+    // A terminal missing from a cut-short earlier list is not new: titles repeat (reopening the
+    // same conversation), so nothing is adopted without a whole baseline.
+    if (!before.complete) return undefined;
     const wait = this.deps.wait ?? ((ms) => new Promise<void>((done) => setTimeout(done, ms)));
     for (let look = 0; look < ADOPT_LOOKS; look++) {
       await wait(ADOPT_EVERY);
-      const now = await this.terminals(info.cwd);
-      const added = now.rows.filter((t) => !before.handles.has(t.handle));
-      // A terminal missing from a cut-short earlier list is not new: titles repeat (reopening
-      // the same conversation), so nothing is adopted without a whole baseline.
-      if (!before.complete) continue;
-      const titled = added.find((t) => t.title === info.name);
+      const titled = (await this.terminals(info.cwd)).rows.find(
+        (t) => !before.handles.has(t.handle) && t.title === info.name,
+      );
       if (titled) return titled.handle;
-      // "The only new one" holds only when the later list is whole too.
-      if (now.complete && added.length === 1) return added[0].handle;
     }
     return undefined;
   }
@@ -442,22 +441,23 @@ export class OrcaLaunch {
       }
       // Guard against a second start of this conversation while the tab is looked for.
       this.pending.add(target);
-      // The person asked for this tab: Orca in front mounts it, which starts its command.
+      // The person asked for this tab: Orca in front mounts it, which starts its command. A
+      // background (remote) launch answers at once: its caller's request has its own deadline.
       if (!session.background) await this.reveal();
-      const handle = await this.adopt(info, {
-        handles: new Set(before.rows.map((row) => row.handle)),
-        complete: before.complete,
-      });
+      const handle = session.background
+        ? undefined
+        : await this.adopt(info, {
+            handles: new Set(before.rows.map((row) => row.handle)),
+            complete: before.complete,
+          });
       if (handle) {
         this.pending.clear(target);
-        // A background (remote) launch must not change the person's active tab.
-        if (!session.background)
-          await this.deps
-            .run(this.deps.orca(), ['terminal', 'switch', `--terminal=${handle}`, '--json'], {
-              timeout: 8000,
-              env: localOrcaEnv(this.deps.env ?? process.env),
-            })
-            .catch(() => '');
+        await this.deps
+          .run(this.deps.orca(), ['terminal', 'switch', `--terminal=${handle}`, '--json'], {
+            timeout: 8000,
+            env: localOrcaEnv(this.deps.env ?? process.env),
+          })
+          .catch(() => '');
         return launched;
       }
       // Still unseen: the guard runs its full window from now.

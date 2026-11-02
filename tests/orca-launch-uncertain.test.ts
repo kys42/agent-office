@@ -202,13 +202,32 @@ test('an unconfirmed start is found by its title, adopted and switched to', asyn
   assert.equal(f.launcher.pending.has(claude), false);
 });
 
-test('an unconfirmed start whose tab was retitled: the only new terminal is adopted', async () => {
+test('an unconfirmed start is not tied to a new terminal of another title', async () => {
+  // The only new one may be a tab the person opened meanwhile: it stays unconfirmed.
   const f = fixture({
     create: () => HANDLE_TIMEOUT,
     lists: [listed(term('term_old')), listed(term('term_old'), term('term_new', '✳ Claude'))],
   });
-  assert.equal((await f.launcher.start(claude, async () => true)).launched, true);
-  assert.ok(f.calls.some((c) => c.args.includes('--terminal=term_new')));
+  const result = await f.launcher.start(claude, async () => true);
+  assert.equal(result.launched, false);
+  assert.equal(result.uncertain, true);
+  assert.equal(
+    f.calls.some((c) => c.args[1] === 'switch'),
+    false,
+  );
+});
+
+test('a background (remote) unconfirmed start answers at once, without looking or switching', async () => {
+  const f = fixture({
+    create: () => HANDLE_TIMEOUT,
+    lists: [listed(), listed(term('term_new', '기능 담당'))],
+  });
+  const result = await f.launcher.start({ ...claude, background: true }, async () => true);
+  assert.equal(result.uncertain, true);
+  assert.equal(
+    f.calls.some((c) => c.args[1] === 'switch'),
+    false,
+  );
 });
 
 test('title mismatch: several new terminals, a partial list before, or another worktree adopt nothing', async () => {
