@@ -353,27 +353,35 @@ export function parseDialog(screen: Screen | null): DialogState {
 
 /** Spacing never decides a match; every other character (shell punctuation too) does. */
 const spaced = (text: string) => text.replace(/\s+/g, ' ').trim();
-/** Web addresses: a link may be drawn as its text, its address or both. */
-const ADDRESS = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>()[\]]+/gi;
 /** A code block's fence line (```` ```ts ````, `~~~`): drawn as the code alone. */
 const CODE_FENCE = /^\s*(?:`{3,}|~{3,})/;
 /**
- * A plan as letters and digits only. The dialog draws its markdown rendered: no `#`, `**`, code
- * fences or link syntax, its own bullets and table rules, wrapped at the pane's width. So marks,
- * spacing and addresses never decide a match; every word and number of the plan still does.
- * `source`: the plan as the call wrote it (markdown), whose code fence lines are not drawn.
+ * A Markdown link without a title, `[text](address)`. Claude Code 2.1.316 (its bundle's link
+ * renderer, `Cw`) draws it in one of two ways, by whether the terminal takes hyperlinks: the
+ * text alone with the address hidden in an OSC 8 link, or `text (address)`. A link whose text is
+ * its address draws the address once. (With a title both forms also draw ` (address)`, which
+ * reads as the link as written.)
  */
-const planKey = (text: string, source = false) =>
-  (source
-    ? text
-        .split('\n')
-        .filter((line) => !CODE_FENCE.test(line))
-        .join('\n')
-    : text
-  )
-    .replace(ADDRESS, '')
-    .normalize('NFKC')
-    .replace(/[^\p{L}\p{N}]+/gu, '');
+const MD_LINK = /\[([^\]\n]*)\]\(\s*<?([^\s()<>]+)>?\s*\)/g;
+/**
+ * Letters and digits only. The dialog draws the plan's markdown rendered: no `#`, `**` or code
+ * fences, its own bullets and table rules, wrapped at the pane's width (a long address too,
+ * mid-path). So marks, spacing and line breaks never decide a match; every word, number and
+ * address of the plan still does, letter for letter.
+ */
+const planKey = (text: string) => text.normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, '');
+/**
+ * The plan as the call wrote it, as the dialog may draw it: its code fence lines left out, and
+ * its links either as written (`text (address)` reads the same) or as their text alone. One
+ * terminal draws every link the same way, so a plan that mixes both never matches.
+ */
+function planKeys(markdown: string): string[] {
+  const body = markdown
+    .split('\n')
+    .filter((line) => !CODE_FENCE.test(line))
+    .join('\n');
+  return [...new Set([planKey(body), planKey(body.replace(MD_LINK, '$1'))])];
+}
 
 /** The heading Claude Code draws for each tool it asks permission for (measured). */
 const TITLES: Record<string, string> = {
@@ -490,11 +498,17 @@ function plans(
       : r.planFile;
   if (file && d.planFile && path.basename(file) !== path.basename(d.planFile)) return false;
   const shown = planKey(d.plan);
-  const want = planKey(typeof raw.plan === 'string' ? raw.plan : r.plan, true);
-  if (!shown || shown.length < Math.min(8, want.length)) return false;
-  if (d.shows === 'start') return want.startsWith(shown);
-  if (d.shows === 'end') return !!file && !!d.planFile && want.endsWith(shown);
-  return want === shown;
+  if (d.shows === 'end' && !(file && d.planFile)) return false;
+  return planKeys(typeof raw.plan === 'string' ? raw.plan : r.plan).some(
+    (want) =>
+      !!shown &&
+      shown.length >= Math.min(8, want.length) &&
+      (d.shows === 'start'
+        ? want.startsWith(shown)
+        : d.shows === 'end'
+          ? want.endsWith(shown)
+          : want === shown),
+  );
 }
 
 /** The dialog asks this request: a question (or its review) or this plan. */

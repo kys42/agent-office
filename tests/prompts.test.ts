@@ -1319,6 +1319,58 @@ test('2.1.316: a plan taller than the pane is read as far as it shows, and appro
   );
 });
 
+test('2.1.316: addresses in a plan count letter for letter, however the pane wraps them', () => {
+  const RELEASE = {
+    plan: [
+      '# Release',
+      '',
+      '1. Download from https://trusted.example/releases/v2.1.316/agent-office.dmg',
+      '2. Read the [release notes](https://trusted.example/notes/v2) first.',
+    ].join('\n'),
+    planFilePath: '/Users/someone.xyz/.claude/plans/release-v2.md',
+  };
+  const planOf = (input: Record<string, unknown>) => [call('p', 'ExitPlanMode', input)];
+  const withPlan = (plan: string) => planOf({ ...RELEASE, plan });
+  // A narrow pane: the address and the link (drawn `text (address)`) wrap mid-path.
+  const narrow = plan316('p316-plan-narrow');
+  assert.equal(narrow.shows, 'all');
+  assert.equal(narrow.planFile, '~/.claude/plans/release-v2.md');
+  assert.deepEqual(claudeCodePrompts.choices(narrow), [
+    { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(oneOf(narrow, planOf(RELEASE)), 'p');
+  // Another address, plain or behind the link, is another plan.
+  for (const other of [
+    RELEASE.plan.replace(
+      'https://trusted.example/releases/v2.1.316/agent-office.dmg',
+      'https://other.example/payload',
+    ),
+    RELEASE.plan.replace('trusted.example/releases', 'trusted.example.evil/releases'),
+    RELEASE.plan.replace('(https://trusted.example/notes/v2)', '(https://other.example/notes)'),
+    // The link's address is on screen: its text alone is not what it shows.
+    RELEASE.plan.replace('[release notes](https://trusted.example/notes/v2)', 'release notes'),
+  ])
+    assert.equal(oneOf(narrow, withPlan(other)), 'none', other);
+  // A plain address the screen shows another way: none (the safe side).
+  const screen = (from: string, to: string) =>
+    parseDialog({ text: plainScreen('p316-plan-narrow').text.replace(from, to) }) as Dialog;
+  const swapped = screen('https://trusted.example\n', 'https://other.example/payload\n');
+  assert.equal(oneOf(swapped, planOf(RELEASE)), 'none');
+  // A terminal that takes hyperlinks draws the link's text alone (the address hidden in it).
+  const linked = screen(
+    'release notes\n      (https://trusted.example/notes/v2)\n      first.',
+    'release notes first.',
+  );
+  assert.equal((linked as { plan: string }).plan.includes('notes/v2'), false);
+  assert.equal(oneOf(linked, planOf(RELEASE)), 'p');
+  assert.equal(
+    oneOf(linked, withPlan(RELEASE.plan.replace('release notes', 'release checklist'))),
+    'none',
+  );
+  // The plain address is still drawn there: changing it is another plan.
+  assert.equal(oneOf(linked, withPlan(RELEASE.plan.replace('v2.1.316', 'v2.1.317'))), 'none');
+});
+
 test('2.1.316: a plan whose every Yes is withheld offers no button', () => {
   const screen = [
     '  ' + '─'.repeat(116),
