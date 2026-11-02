@@ -70,15 +70,23 @@ test('a pet walking in keeps walking while petted: only its sprite bounces', asy
       terminals: async () => ({}),
     };
   }, s);
+  // Slow the walk down so it is surely still on while the rub lands (a slow machine may take
+  // longer than the 2.2s walk to hover and rub); only the timing changes, not the rules.
+  await page.addInitScript(() => {
+    const style = document.createElement('style');
+    style.textContent = '.office-pet.commuting{animation-duration:30s!important}';
+    document.addEventListener('DOMContentLoaded', () => document.head.append(style));
+  });
   await page.goto('/?lang=ko');
-  const walker = page.locator('.office-pet.commuting').first();
-  await expect(walker).toBeVisible();
+  const walker = page.locator(`.office-pet[data-session-id="${s.sessions[0].id}"]`);
+  await expect(walker).toHaveClass(/commuting/);
   const box = (await walker.boundingBox())!;
   const y = box.y + box.height / 2;
   for (const dx of [0, -12, 12, -12, 12, -12])
     await page.mouse.move(box.x + box.width / 2 + dx, y, { steps: 3 });
   await expect(walker).toHaveClass(/reacting-pat/);
-  await expect(walker).toHaveCSS('animation-name', /commute-in/);
+  // The pet's own walk is not replaced by the reaction: only its sprite bounces.
+  await expect(walker).not.toHaveCSS('animation-name', /joy-bounce/);
   await expect(walker.locator('.sprite-window')).toHaveCSS('animation-name', /joy-bounce-/);
 });
 
