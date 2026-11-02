@@ -32,3 +32,12 @@ test('after a pat the pet rests a moment; leaving starts the count over', () => 
   u.leave();
   assert.ok(!rub(u, [20], 300).some(Boolean), 'a fresh pass after leaving');
 });
+
+test('rubbing on through the rest, then pausing, never pats on the next lone move', () => {
+  const t = rubTracker();
+  rub(t, [0, 20, 0, 20, 0]); // a pat at 240ms
+  rub(t, [20, 0, 20, 0, 20, 0], 300); // turns while resting
+  // Past the rest and past the window, one move the same way: no stale turns left to count.
+  assert.equal(t.move(40, 300 + RUB_COOLDOWN_MS + RUB_WINDOW_MS), false);
+  assert.equal(t.move(60, 300 + RUB_COOLDOWN_MS + RUB_WINDOW_MS + 60), false);
+});

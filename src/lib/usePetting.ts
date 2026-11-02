@@ -35,10 +35,16 @@ export function rubTracker() {
       if (Math.abs(dx) < RUB_STEP) return false;
       lastX = x;
       const next = Math.sign(dx);
-      if (direction && next !== direction)
-        turns = [...turns.filter((t) => at - t < RUB_WINDOW_MS), at];
+      // Only the turns of the last moment count, whether or not this move turns.
+      turns = turns.filter((t) => at - t < RUB_WINDOW_MS);
+      if (direction && next !== direction) turns.push(at);
       direction = next;
-      if (at < quietUntil || turns.length < RUB_TURNS) return false;
+      // Resting after a pat: turns made meanwhile never pile up into the next one.
+      if (at < quietUntil) {
+        turns = [];
+        return false;
+      }
+      if (turns.length < RUB_TURNS) return false;
       turns = [];
       quietUntil = at + RUB_COOLDOWN_MS;
       return true;

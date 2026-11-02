@@ -158,7 +158,7 @@ export function DeskRow({
 }) {
   const { t, locale } = useI18n();
   // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
-  const reactionOf = usePetReactions();
+  const reactionOf = usePetReactions((id) => model.view(id) !== undefined);
   const petting = usePetting();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).

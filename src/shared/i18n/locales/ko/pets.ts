@@ -57,6 +57,7 @@ export const pets: Messages['pets'] = {
   walk: '걷기',
   pat: '쓰다듬기',
   praise: '칭찬하기',
+  joyGroup: '기쁨 반응 미리 보기',
   joyHint: '책상의 펫 위에서 마우스를 좌우로 문지르면 쓰다듬어요.',
   actorScope: '이 동료의 다른 대화에도 같은 모습을 써요.',
   sessionScope: '이 동료에게만 적용해요.',

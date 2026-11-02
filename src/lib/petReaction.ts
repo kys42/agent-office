@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * A colleague's pet showing it is pleased: `pat` (petted, hearts) or `praise` (praised,
@@ -25,12 +25,18 @@ export type PetReaction = { kind: PetReactionKind; key: number };
  * desks are drawn in a loop, where hooks can't go). `key` changes with each reaction, so a
  * second pat while the first still plays starts the hops and hearts over.
  */
-export function usePetReactions(): (id: string | undefined) => PetReaction | null {
+export function usePetReactions(
+  /** Whether this scene draws that pet: other pets' reactions never re-render it. */
+  draws: (id: string) => boolean = () => true,
+): (id: string | undefined) => PetReaction | null {
   const [playing, setPlaying] = useState<ReadonlyMap<string, PetReaction>>(new Map());
+  const drawn = useRef(draws);
+  drawn.current = draws;
   useEffect(() => {
     const timers = new Map<string, ReturnType<typeof setTimeout>>();
     let count = 0;
     const listen: Listener = (id, kind) => {
+      if (!drawn.current(id)) return;
       clearTimeout(timers.get(id));
       setPlaying((p) => new Map(p).set(id, { kind, key: ++count }));
       timers.set(

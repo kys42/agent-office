@@ -40,7 +40,7 @@ export function PetCustomizer({
   const [walking, setWalking] = useState(false);
   // The preview pet answers the same reactions as a pet at its desk.
   const previewId = `preview:${provider}:${session?.id ?? ''}`;
-  const joy = usePetReactions()(previewId);
+  const joy = usePetReactions((id) => id === previewId)(previewId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const save = async (reset = false) => {
@@ -106,10 +106,11 @@ export function PetCustomizer({
               {p.walk}
             </button>
           </div>
-          <div className="pet-preview-moods pet-preview-joy" role="group" aria-label={p.joyHint}>
+          <div className="pet-preview-moods pet-preview-joy" role="group" aria-label={p.joyGroup}>
             <button onClick={() => reactPet(previewId, 'pat')}>♥ {p.pat}</button>
             <button onClick={() => reactPet(previewId, 'praise')}>✦ {p.praise}</button>
           </div>
+          <p className="pet-joy-hint">{p.joyHint}</p>
           <div className="pet-scope-note">
             <Sparkles size={14} />
             <span>

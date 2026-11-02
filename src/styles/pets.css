@@ -349,3 +349,8 @@
 .pet-preview-joy {
   margin-top: 6px;
 }
+.pet-joy-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-3);
+}

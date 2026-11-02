@@ -56,6 +56,7 @@ export const pets = {
   walk: 'Walk',
   pat: 'Pat',
   praise: 'Praise',
+  joyGroup: 'Preview a happy reaction',
   joyHint: 'Rub the mouse side to side over a pet at its desk to pat it.',
   actorScope: 'This look follows this teammate across conversations.',
   sessionScope: 'Applies only to this teammate.',

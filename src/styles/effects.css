@@ -708,50 +708,45 @@
 
 /* ───────── A pleased pet (#306): petted (hearts) or praised (sparkles) ─────────
    Two bounding hops with a squash, blushing cheeks, and three marks that float up and fade,
-   all inside 1.6s (PET_REACTION_MS). joy-0/joy-1 alternate per reaction so a new one replays. */
-.office-pet.reacting.joy-0,
-.joy-host.reacting.joy-0 {
-  animation: joy-hop-0 0.75s var(--ease-out) 2 both;
-}
-.office-pet.reacting.joy-1,
-.joy-host.reacting.joy-1 {
-  animation: joy-hop-1 0.75s var(--ease-out) 2 both;
-}
-:is(.office-pet, .joy-host).reacting .sprite-window {
-  animation: joy-squish 0.75s var(--ease-out) 2;
+   all inside 1.6s (PET_REACTION_MS). Only the sprite's window moves, so whatever the pet itself
+   is doing (walking in, hopping for papers, calling, strolling, the dock pet's bob) carries on
+   untouched. joy-0/joy-1 alternate per reaction so a new one replays. */
+:is(.office-pet, .joy-host).reacting.joy-0 .sprite-window {
+  animation: joy-bounce-0 0.75s var(--ease-out) 2;
   transform-origin: 50% 100%;
 }
-@keyframes joy-hop-0 {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  45% {
-    transform: translateY(-12px);
-  }
+:is(.office-pet, .joy-host).reacting.joy-1 .sprite-window {
+  animation: joy-bounce-1 0.75s var(--ease-out) 2;
+  transform-origin: 50% 100%;
 }
-@keyframes joy-hop-1 {
+@keyframes joy-bounce-0 {
   0%,
   100% {
-    transform: translateY(0);
-  }
-  45% {
-    transform: translateY(-12px);
-  }
-}
-@keyframes joy-squish {
-  0%,
-  100% {
-    transform: scale(1, 1);
+    transform: translateY(0) scale(1, 1);
   }
   15% {
-    transform: scale(1.12, 0.86);
+    transform: translateY(0) scale(1.12, 0.86);
   }
   45% {
-    transform: scale(0.94, 1.08);
+    transform: translateY(-12px) scale(0.94, 1.08);
   }
   80% {
-    transform: scale(1.06, 0.95);
+    transform: translateY(0) scale(1.06, 0.95);
+  }
+}
+@keyframes joy-bounce-1 {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.12, 0.86);
+  }
+  45% {
+    transform: translateY(-12px) scale(0.94, 1.08);
+  }
+  80% {
+    transform: translateY(0) scale(1.06, 0.95);
   }
 }
 .pet-joy {
@@ -817,13 +812,7 @@
   }
 }
 /* Without motion: no hops, no rising marks — the cheeks and the marks just show for the moment. */
-:is(.motion-paused, .reduce-motion)
-  :is(
-    .office-pet.reacting,
-    .joy-host.reacting,
-    .office-pet.reacting .sprite-window,
-    .joy-host.reacting .sprite-window
-  ),
+:is(.motion-paused, .reduce-motion) :is(.office-pet, .joy-host).reacting .sprite-window,
 :is(.motion-paused, .reduce-motion) .pet-joy :is(b, .joy-cheek) {
   animation: none !important;
 }
@@ -831,7 +820,6 @@
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.office-pet, .joy-host).reacting,
   :is(.office-pet, .joy-host).reacting .sprite-window,
   .pet-joy :is(b, .joy-cheek) {
     animation: none !important;
@@ -905,7 +893,8 @@
   box-shadow: 0 4px 0 -1px #4b4f45;
 }
 .desk-station.lights-out .office-pet .sprite-window,
-.desk-pet.lights-out .dock-pet-body {
+/* The pet dims, not the hearts it gives off (#306). */
+.desk-pet.lights-out .dock-pet-body .sprite-window {
   filter: brightness(0.7) saturate(0.55);
 }
 .quota-badge {

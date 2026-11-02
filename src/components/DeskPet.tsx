@@ -73,7 +73,7 @@ export function DeskPet({
   onRefresh: () => void;
 }) {
   const { t } = useI18n();
-  const reactionOf = usePetReactions();
+  const reactionOf = usePetReactions((id) => model.view(id) !== undefined);
   const petting = usePetting();
   const d = t.dock.pet;
   const pet = petSummary(model);

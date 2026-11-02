@@ -124,7 +124,7 @@ export function Office({
 }) {
   const { t, locale } = useI18n();
   // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
-  const reactionOf = usePetReactions();
+  const reactionOf = usePetReactions((id) => byId.has(id));
   const petting = usePetting();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });

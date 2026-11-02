@@ -39,7 +39,7 @@ for (const route of ['', '#mini=row'])
     const pet = await rubPet(page);
     await expect(pet).toHaveClass(/reacting-pat/);
     await expect(pet.locator('.pet-joy.joy-pat b')).toHaveCount(3);
-    await expect(pet).toHaveCSS('animation-name', /joy-hop-/);
+    await expect(pet.locator('.sprite-window')).toHaveCSS('animation-name', /joy-bounce-/);
     // A rub is no click: no card opened, no desk selected.
     await expect(page.locator('.selected-station')).toHaveCount(0);
     await expect(pet).not.toHaveClass(/reacting/, { timeout: 3000 });
@@ -50,7 +50,34 @@ test('without motion a petted pet stays still and just shows its hearts', async 
   await office(page, '', true);
   const pet = await rubPet(page);
   await expect(pet).toHaveClass(/reacting-pat/);
-  await expect(pet).toHaveCSS('animation-name', 'none');
+  await expect(pet.locator('.sprite-window')).toHaveCSS('animation-name', 'none');
   await expect(pet.locator('.pet-joy b').first()).toHaveCSS('animation-name', 'none');
   await expect(pet.locator('.pet-joy b').first()).toHaveCSS('opacity', '1');
+});
+
+test('a pet walking in keeps walking while petted: only its sprite bounces', async ({ page }) => {
+  const s = demoSnapshot();
+  const now = Date.now();
+  // Brought back just now: it walks in (commute-in) for its first seconds.
+  Object.assign(s.sessions[0], { returnedAt: now - 200 });
+  await page.addInitScript((s) => {
+    (window as any).office = {
+      snapshot: async () => structuredClone(s),
+      subscribe: () => () => {},
+      detail: async (id: string) => structuredClone(s.sessions.find((x: any) => x.id === id)),
+      artifacts: async () => [],
+      visit: async () => structuredClone(s),
+      terminals: async () => ({}),
+    };
+  }, s);
+  await page.goto('/?lang=ko');
+  const walker = page.locator('.office-pet.commuting').first();
+  await expect(walker).toBeVisible();
+  const box = (await walker.boundingBox())!;
+  const y = box.y + box.height / 2;
+  for (const dx of [0, -12, 12, -12, 12, -12])
+    await page.mouse.move(box.x + box.width / 2 + dx, y, { steps: 3 });
+  await expect(walker).toHaveClass(/reacting-pat/);
+  await expect(walker).toHaveCSS('animation-name', /commute-in/);
+  await expect(walker.locator('.sprite-window')).toHaveCSS('animation-name', /joy-bounce-/);
 });
