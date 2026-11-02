@@ -1041,7 +1041,8 @@ export type LaunchPlace = 'orca' | 'tmux' | 'other';
 export type DuplicateCheck =
   | { state: 'none' }
   | { state: 'unknown' }
-  | { state: 'open'; where: LaunchPlace }
+  /** `pending`: an Orca start not confirmed yet (no tab to go to; opening Orca starts it). */
+  | { state: 'open'; where: LaunchPlace; pending?: true }
   | { state: 'running'; where: LaunchPlace };
 export interface OrcaLaunchInfo {
   available: boolean;

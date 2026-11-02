@@ -167,8 +167,18 @@ function orcaFixture() {
 }
 
 test('a pending Orca launch counts as open in Orca, behind a running agent', async () => {
-  assert.deepEqual(decideDuplicate(evidence({ pending: true })), { state: 'open', where: 'orca' });
+  assert.deepEqual(decideDuplicate(evidence({ pending: true })), {
+    state: 'open',
+    where: 'orca',
+    pending: true,
+  });
   assert.deepEqual(decideDuplicate(evidence({ pending: true, orcaTab: unknown })), {
+    state: 'open',
+    where: 'orca',
+    pending: true,
+  });
+  // A found tab is somewhere to go: not marked pending.
+  assert.deepEqual(decideDuplicate(evidence({ pending: true, orcaTab: found('orca') })), {
     state: 'open',
     where: 'orca',
   });
@@ -182,9 +192,13 @@ test('a pending Orca launch counts as open in Orca, behind a running agent', asy
     ownTmux: async () => none,
     pending: () => true,
   });
-  assert.deepEqual(check, { state: 'open', where: 'orca' });
+  assert.deepEqual(check, { state: 'open', where: 'orca', pending: true });
   // A fresh summon has only the pending record to go by.
-  assert.deepEqual(await pendingCheck(() => true)(), { state: 'open', where: 'orca' });
+  assert.deepEqual(await pendingCheck(() => true)(), {
+    state: 'open',
+    where: 'orca',
+    pending: true,
+  });
   assert.deepEqual(await pendingCheck(() => false)(), { state: 'none' });
 });
 

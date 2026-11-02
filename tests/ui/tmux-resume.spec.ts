@@ -88,7 +88,7 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
         if (action === 'focus') return { available: true, message: 'Orca 탭으로 이동했어요' };
         if (action === 'start' && w.orcaUncertain) {
           // Orca made the tab but did not confirm its start; main now counts it as open.
-          w.duplicate = { state: 'open', where: 'orca' };
+          w.duplicate = { state: 'open', where: 'orca', pending: true };
           return {
             available: true,
             launched: false,
@@ -536,13 +536,14 @@ test('an Orca start that was not confirmed is not a failure: only Open Orca, no 
   await actions.click();
   await expect.poll(() => page.evaluate(() => (window as any).revealed)).toBe(1);
   await page.screenshot({ path: '.local/orca-uncertain.png', animations: 'disabled' });
-  // Reopened later: the pending launch reads as open in Orca, with a caution before a relaunch.
+  // Reopened later: main still holds the start pending, with no tab to go to yet, so the dialog
+  // offers Open Orca again rather than a tab it cannot find.
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
-  await expect(
-    modal.getByText('Orca에 이 대화가 이미 열려 있어요', { exact: false }),
-  ).toBeVisible();
-  await expect(modal.getByRole('button', { name: '그래도 tmux로 새로 띄우기' })).toBeVisible();
+  await expect(modal.getByText('Orca를 열면 시작돼요', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('button', { name: '그 탭으로 이동' })).toHaveCount(0);
+  await expect(actions).toHaveCount(1);
+  await expect(actions).toHaveText('Orca 열기');
 });
 
 test('a folder Orca cannot open a tab in says why instead of hiding the choice silently', async ({

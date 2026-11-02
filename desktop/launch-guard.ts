@@ -85,7 +85,8 @@ export interface LaunchEvidence {
 /** The pure decision: running beats open beats unknown beats none. */
 export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
   if (e.agent.kind === 'found') return { state: 'running', where: e.agent.terminal.where };
-  if (e.orcaTab.kind === 'found' || e.pending) return { state: 'open', where: 'orca' };
+  if (e.orcaTab.kind === 'found') return { state: 'open', where: 'orca' };
+  if (e.pending) return { state: 'open', where: 'orca', pending: true };
   // A live own pane is not proof of this conversation: after Claude `/clear` or Codex `/new`
   // the same process shows another one. Only the agent adapter above can say it runs.
   if (e.ownTmux.kind === 'found') return { state: 'open', where: 'tmux' };

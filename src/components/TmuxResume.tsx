@@ -68,9 +68,6 @@ export function TmuxResume({
    * It belongs to the target launched: choosing another agent, project or name lifts it.
    */
   const [unconfirmed, setUnconfirmed] = useState<{ target: string; message: string } | null>(null);
-  const target = [provider, projectId, agentName.trim()].join('\0');
-  const uncertain = unconfirmed?.target === target ? unconfirmed.message : '';
-  const setUncertain = (message: string) => setUnconfirmed(message ? { target, message } : null);
   /**
    * Whether this conversation already runs or is open elsewhere (main's duplicate-launch check;
    * main checks again before launching, this only shapes the buttons). One state for both
@@ -84,6 +81,14 @@ export function TmuxResume({
     duplicateShown.current = ticket;
     setDuplicate(value);
   };
+  const target = [provider, projectId, agentName.trim()].join('\0');
+  const runningElsewhere = duplicate?.state === 'running';
+  const openElsewhere = duplicate?.state === 'open';
+  // Reopened after an unconfirmed start: main still holds it pending, with no tab to go to yet.
+  const pendingStart = duplicate?.state === 'open' && !!duplicate.pending;
+  const uncertain =
+    unconfirmed?.target === target ? unconfirmed.message : pendingStart ? t.tmux.orcaUncertain : '';
+  const setUncertain = (message: string) => setUnconfirmed(message ? { target, message } : null);
   const checkOrca = async (selected = provider) => {
     if (summon) {
       // A new agent can start in a new Orca tab too, when this folder is an Orca workspace.
@@ -132,8 +137,6 @@ export function TmuxResume({
     // whole status again, keeping the refusal on screen.
     if (refused) void act('status', provider, true);
   };
-  const runningElsewhere = duplicate?.state === 'running';
-  const openElsewhere = duplicate?.state === 'open';
   const place =
     duplicate?.state === 'running' || duplicate?.state === 'open'
       ? t.tmux.place[duplicate.where]
@@ -156,7 +159,7 @@ export function TmuxResume({
    * be alive while showing another conversation (/new, /clear). An own tmux session already
    * shows its (separately labelled) reconnect controls, so no second "open" notice for it.
    */
-  const openTab = openElsewhere && duplicate.where === 'orca';
+  const openTab = openElsewhere && duplicate.where === 'orca' && !uncertain;
   const openOther = openElsewhere && !uncertain && !(duplicate.where === 'tmux' && info?.running);
   const projectIds = projects?.map((p) => p.id).join('\n');
   useEffect(() => {
