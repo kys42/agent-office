@@ -20,7 +20,7 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
       visit: async () => structuredClone(s),
       terminals: async () => ({}),
       card: async (action: string, target: any) => {
-        w.cards.push({ action, id: target?.id });
+        w.cards.push({ action, id: target?.id, news: target?.news });
       },
       dock: async (action: string) => {
         w.docks.push(action);
@@ -57,6 +57,8 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
   // The card is the colleague the pet stands for: the one calling the person.
   const opened = await page.evaluate(() => (window as any).cards.at(-1).id);
   expect(s.sessions.find((x) => x.id === opened)?.status).toBe('call');
+  // On its conversation, as a desk's card opens — even while the pet speaks a notice.
+  expect(await page.evaluate(() => (window as any).cards.at(-1).news)).toBe(false);
   // No unfolding: the pet stays a pet.
   expect(await page.evaluate(() => (window as any).docks)).not.toContain('row');
   await expect(page.locator('.desk-pet')).toBeVisible();

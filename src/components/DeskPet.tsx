@@ -314,9 +314,10 @@ export function DeskPet({
               aria-label={d.openCard}
               title={d.openCardTitle}
               onClick={(e) =>
+                // Like every card opened from a desk: on its conversation, not its news.
                 void openColleague(bubble?.sessionId ?? view.session.id, {
                   anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                  news: !!bubble,
+                  news: false,
                 })
               }
             >
@@ -420,12 +421,13 @@ export function DeskPet({
               dragged.current = false;
               return;
             }
-            // Like a desk of the row: its colleague's card pops up right here. The row and the
-            // floor unfold from their own button; an office with nobody in it still unfolds.
+            // Like a desk of the row: its colleague's card pops up right here, on the
+            // conversation. The row and the floor unfold from their own button; an office with
+            // nobody in it still unfolds.
             if (view)
               void openColleague(bubble?.sessionId ?? view.session.id, {
                 anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                news: !!bubble,
+                news: false,
               });
             else onExpand();
           }}
