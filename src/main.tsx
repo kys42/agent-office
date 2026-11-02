@@ -29,6 +29,7 @@ import './styles/speech.css';
 import './styles/effects.css';
 import './styles/pets.css';
 import './styles/desks.css';
+import './styles/views-settings.css';
 import './styles/guide.css';
 import './styles/tmux.css';
 import './styles/launch-sheet.css';

@@ -184,3 +184,42 @@ test('The view preferences of #228 save, round-trip, and refuse out-of-range val
     await rm(temp, { recursive: true, force: true });
   }
 });
+
+test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown values', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-views-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  try {
+    assert.equal(service.store.preferences().views, undefined);
+    const call = async (views: unknown) =>
+      ((await service.call('preferences', [{ views }])) as Snapshot).preferences.views;
+    assert.deepEqual(await call({ pet: { tally: false, tallyGroups: ['attention'] } }), {
+      pet: { tally: false, tallyGroups: ['attention'] },
+    });
+    // Another key of the same mode, then another mode: nothing chosen before is lost.
+    await call({ pet: { name: 'always' } });
+    assert.deepEqual(await call({ office: { branch: false }, tiny: { effects: false } }), {
+      pet: { tally: false, tallyGroups: ['attention'], name: 'always' },
+      office: { branch: false },
+      tiny: { effects: false },
+    });
+    // A patch without views leaves them as they are.
+    await service.call('preferences', [{ tinyNames: false }]);
+    assert.deepEqual(service.store.preferences().views?.office, { branch: false });
+    for (const bad of [
+      { pet: { tallyGroups: ['resting'] } },
+      { pet: { tallyGroups: ['attention', 'results', 'working', 'standby', 'attention'] } },
+      { pet: { name: 'sometimes' } },
+      { pet: { petting: 'yes' } },
+      { pet: { size: 2 } },
+      { dock: { hideRead: 1 } },
+      { tiny: { branch: false } },
+      { office: { hideRead: false } },
+      { card: { tally: true } },
+    ])
+      await assert.rejects(service.call('preferences', [{ views: bad }]), JSON.stringify(bad));
+    assert.deepEqual(service.store.preferences().views?.pet?.name, 'always');
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});

@@ -715,7 +715,8 @@
       16 16,
     grab;
 }
-:is(.office-pet, .desk-pet, .pet-preview-body):hover {
+/* A pet the person turned petting off for (#324) keeps its plain cursor. */
+:is(.office-pet, .desk-pet, .pet-preview-body):where(:not(.no-petting)):hover {
   cursor: var(--pat-cursor);
 }
 /* Only pets that can be dragged grab (a still pet just gets patted). */
