@@ -706,6 +706,23 @@
   }
 }
 
+/* Over a pet the pointer becomes a petting hand (rub it to pat, #306); a held button is a drag,
+   so pressing or dragging still shows the grabbing hand. */
+:root {
+  --pat-cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Cpath fill='%23352f45' d='M4 1h1v1h-1zM6 1h1v1h-1zM8 1h1v1h-1zM3 2h1v1h-1zM5 2h1v1h-1zM7 2h1v1h-1zM9 2h1v1h-1zM3 3h1v1h-1zM5 3h1v1h-1zM7 3h1v1h-1zM9 3h1v1h-1zM3 4h1v1h-1zM5 4h1v1h-1zM7 4h1v1h-1zM9 4h1v1h-1zM11 4h2v1h-2zM3 5h1v1h-1zM9 5h2v1h-2zM12 5h1v1h-1zM2 6h2v1h-2zM11 6h1v1h-1zM1 7h1v1h-1zM3 7h1v1h-1zM11 7h1v1h-1zM1 8h1v1h-1zM10 8h1v1h-1zM2 9h1v1h-1zM10 9h1v1h-1zM3 10h1v1h-1zM10 10h1v1h-1zM4 11h1v1h-1zM10 11h1v1h-1zM5 12h5v1h-5z'/%3E%3Cpath fill='%23ffe3c4' d='M4 2h1v1h-1zM6 2h1v1h-1zM8 2h1v1h-1zM4 3h1v1h-1zM6 3h1v1h-1zM8 3h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM8 4h1v1h-1zM4 5h5v1h-5zM11 5h1v1h-1zM4 6h7v1h-7zM2 7h1v1h-1zM4 7h7v1h-7zM2 8h8v1h-8zM3 9h7v1h-7zM4 10h6v1h-6zM5 11h5v1h-5z'/%3E%3C/svg%3E")
+      16 16,
+    grab;
+}
+:is(.office-pet, .desk-pet, .pet-preview-body):hover {
+  cursor: var(--pat-cursor);
+}
+:is(.office-pet, .desk-pet):active,
+.desk-station.is-desk-dragging .office-pet,
+.is-dragging .office-pet {
+  cursor: grabbing;
+}
+
 /* ───────── A pleased pet (#306): petted (hearts) or praised (sparkles) ─────────
    Two bounding hops with a squash, blushing cheeks, and three marks that float up and fade,
    all inside 1.6s (PET_REACTION_MS). Only the sprite's window moves, so whatever the pet itself
