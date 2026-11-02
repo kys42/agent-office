@@ -24,7 +24,6 @@ const FOOT =
   /do you want|esc to (?:cancel|clear|close|return)|\benter to\b|space to reply|ctrl\+o to toggle|search prompts:|no matching prompt/i;
 /** What an empty prompt shows in place of text: examples, and queued-message help. */
 export const HINT = /^(?:Try "[\s\S]*"|Press (?:up|Enter) to [\s\S]*)$/;
-const PASTED = /^\[Pasted text #\d+[^\]]*\]$/;
 
 interface PromptBox {
   lines: string[];
@@ -84,25 +83,89 @@ export function readPrompt(screen: string | Screen): string | null {
   return promptBox(asScreen(screen))?.typed ?? null;
 }
 
+/** Placeholder ids as drawn: a collapsed paste, an image, a truncated input, a setup guide. */
+const TOKEN_ID = /\[(?:Pastedtext|Image|\.\.\.Truncatedtext|✦Teamsetupguide)#(\d{1,10})/g;
+
+/**
+ * The ids of Claude Code's placeholders anywhere on screen (the box, Orca's `draft`, earlier turns
+ * above): a collapsed paste, an image, a truncated input. Read as drawn, so a token wrapped over
+ * rows still counts. Claude Code mints ids from one counter that only grows (2.1.316: `mint()`
+ * after `advancePast` every id seen), so an id seen before a paste is never that paste's.
+ */
+export function placeholderIds(screen: string | Screen): Set<number> {
+  const { text, composer } = asScreen(screen);
+  const ids = new Set<number>();
+  for (const m of drawn(`${text}\n${composer ?? ''}`).matchAll(TOKEN_ID)) ids.add(Number(m[1]));
+  return ids;
+}
+
+/** A collapsed text paste as drawn: `[Pasted text #N]` or `[Pasted text #N +K lines]`. */
+const COLLAPSED_DRAWN = /^\[Pastedtext#([1-9]\d{0,9})(?:\+([1-9]\d{0,9})lines)?\]$/;
+/** Claude Code collapses a paste over this many characters even on one line (2.1.316: 800). */
+const COLLAPSE_LENGTH = 800;
+
+/**
+ * `shown` (the box, or what follows the images in it) is exactly the one placeholder Claude Code
+ * collapses `pasted` into, and nothing else. From the 2.1.316 bundle (the main prompt's paste
+ * handler): line breaks become `\n`, tabs four spaces; K counts the line breaks (`\r\n|\r|\n`),
+ * so 7 lines show `+6 lines`; a paste of more than 800 characters or more than min(rows − 10, 2)
+ * line breaks collapses, and with K = 0 the placeholder is `[Pasted text #N]` (no `+0 lines`).
+ * Input is shortened into `[...Truncated text #N …]` only past 10,000 characters (a send is at
+ * most 4,000), so the paste stays one token: no part of it is left literal. `N` must be new (not
+ * in `before`, read right before the paste), and the box holds no blank row: a line break typed
+ * next to the paste would be someone else's.
+ */
+export function collapsedPaste(
+  shown: string,
+  pasted: string,
+  before: ReadonlySet<number>,
+): boolean {
+  if (shown.split('\n').some((row) => !row.trim())) return false;
+  const token = COLLAPSED_DRAWN.exec(drawn(shown));
+  if (!token || before.has(Number(token[1]))) return false;
+  const breaks = (pasted.match(/\r\n|\r|\n/g) ?? []).length;
+  if (token[2] === undefined)
+    return breaks === 0 && pasted.replaceAll('\t', '    ').length > COLLAPSE_LENGTH;
+  return Number(token[2]) === breaks;
+}
+
+/**
+ * The box's first row (the `❯` one) is blank while rows below hold text: a line break typed
+ * ahead of them, which `readPrompt` does not keep (it takes the marker and the break after it).
+ * Text reported apart (Orca's `draft`) keeps its own breaks.
+ */
+function blankMarkerRow(screen: Screen): boolean {
+  const box = promptBox(screen);
+  if (!box || screen.composer !== undefined) return false;
+  return !box.lines[box.top + 1].replace(/^❯/, '').trim() && box.bottom - box.top > 2;
+}
+
 /**
  * The prompt holds exactly `text`. When the prompt was verified empty before typing, two
- * shapes also count (both measured on 2.1.296): the placeholder a long paste collapses into
- * (`[Pasted text #N …]`: from 4 lines, or over 800 characters), and the end of a long text
- * when the box shows only its last rows (a pane too short for it). `strict` accepts the exact
- * text only: after clearing, whatever the keys could not reach must never pass as a match.
+ * shapes also count: the one placeholder this very paste collapsed into (`collapsedPaste`: its
+ * line count, an id not on screen in `before`, nothing else in the box), and (not `strict`) the
+ * end of a long text when the box shows only its last rows (a pane too short for it, measured on
+ * 2.1.296). `strict` accepts no shortened view: after a clearing that could only infer the box
+ * was empty, a tail may sit next to whatever the keys could not reach. The placeholder needs no
+ * such care — alone in the box, it is all there is — but without `before` it never counts.
  */
-export function promptHolds(screen: string | Screen, text: string, strict = false): boolean {
+export function promptHolds(
+  screen: string | Screen,
+  text: string,
+  strict = false,
+  before?: ReadonlySet<number>,
+): boolean {
   const typed = readPrompt(screen);
   if (typed === null) return false;
   const shown = drawn(typed);
   if (shown === drawn(text)) return true;
-  return !strict && (PASTED.test(typed) || (shown.length >= 40 && drawn(text).endsWith(shown)));
+  if (before && !blankMarkerRow(asScreen(screen)) && collapsedPaste(typed, text, before))
+    return true;
+  return !strict && shown.length >= 40 && drawn(text).endsWith(shown);
 }
 
 /** `[Image #N]` as drawn (spaces taken out). */
 const IMAGE_DRAWN = /^\[Image#([1-9]\d{0,9})\]/;
-/** A collapsed paste as drawn: `[Pasted text #N +k lines]`. */
-const PASTED_DRAWN = /^\[Pastedtext#\d+[^\]]*\]$/;
 
 /**
  * What the prompt shows after `paths` were pasted, one image per path, in order: each one as
@@ -155,17 +218,18 @@ export function separatedAfter(typed: string, file: string): boolean {
 }
 
 /**
- * The prompt holds the pasted images (see `afterImages`) and then exactly `text` — or, unless
- * `strict`, the placeholder of a long paste in its place. An image-only send holds nothing more.
- * Any other text, an image too many or too few, is no match. The end of a long text with the
- * images scrolled out of view counts as for `promptHolds`, since the images alone were verified
- * first.
+ * The prompt holds the pasted images (see `afterImages`) and then exactly `text` — or the one
+ * placeholder the text's own paste collapsed into (`collapsedPaste`, `before` read once the
+ * images were shown). An image-only send holds nothing more. Any other text, an image too many or
+ * too few, a blank row, is no match. Unless `strict`, the end of a long text with the images
+ * scrolled out of view counts as for `promptHolds`, since the images alone were verified first.
  */
 export function promptHoldsImages(
   screen: string | Screen,
   text: string,
   paths: readonly string[],
   strict = false,
+  before?: ReadonlySet<number>,
 ): boolean {
   const typed = readPrompt(screen);
   if (typed === null) return false;
@@ -173,7 +237,16 @@ export function promptHoldsImages(
   const want = drawn(text);
   if (read !== null && (!want || !read.lastPath || separatedAfter(typed, read.lastPath))) {
     if (read.rest === want) return true;
-    if (!strict && want && PASTED_DRAWN.test(read.rest)) return true;
+    // A path left as text puts a space before the text's paste (see terminals.ts).
+    const pasted = read.lastPath ? ` ${text}` : text;
+    if (
+      want &&
+      before &&
+      !blankMarkerRow(asScreen(screen)) &&
+      !typed.split('\n').some((row) => !row.trim()) &&
+      collapsedPaste(read.rest, pasted, before)
+    )
+      return true;
   }
   const shown = drawn(typed);
   return !strict && !!want && shown.length >= 40 && want.endsWith(shown);
@@ -191,8 +264,12 @@ export const maxBoxRows = (height: number) => Math.max(3, Math.floor((height - 1
 // Below height 12 the box's lower edge is cut off (measured at 8–11): no prompt is read there
 // at all, and `wholeText` never counts one whole.
 
-/** Placeholders for content the box does not show: a collapsed paste, an attached image. */
-const PLACEHOLDER = /\[(?:Pasted text #\d+[^\]]*|Image #\d+[^\]]*)\]/;
+/**
+ * Placeholders for content the box does not show: a collapsed paste, an attached image, the
+ * middle of a very long input.
+ */
+const PLACEHOLDER =
+  /\[(?:Pasted text #\d+[^\]]*|Image #\d+[^\]]*|\.\.\.Truncated text #\d+[^\]]*)\]/;
 /** The task list's own hint below the box. */
 const TASKS = /ctrl\+t to (?:hide|show) tasks/i;
 /** Task rows right above the box (☐ pending, ◼ in progress, ✔ done). */
@@ -235,6 +312,21 @@ function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
 }
 
 /**
+ * A placeholder in Claude Code's exact form (2.1.316's `_qr`, the team setup guide aside): a
+ * collapsed paste, an attached image, a truncated input. Only a paste or an attachment makes one;
+ * the suggestion Claude offers is text it wrote, never one of these.
+ */
+const PASTE_TOKEN =
+  /\[(?:Pasted text #[1-9]\d{0,9}(?: \+[1-9]\d{0,9} lines)?|Image #[1-9]\d{0,9}|\.\.\.Truncated text #[1-9]\d{0,9} \+\d{1,10} lines\.\.\.)\]/;
+
+/**
+ * Text read with no styles (Orca): a suggestion reads like typing, so it is `unknown` — unless it
+ * holds a placeholder, which only a paste or an attachment puts there: a `draft`, shown in part.
+ */
+const plainKind = (text: string): 'draft' | 'unknown' =>
+  PASTE_TOKEN.test(text) ? 'draft' : 'unknown';
+
+/**
  * The composer's state from one screen. Claude Code draws its prompt suggestion (offered after
  * a reply) and the empty-box examples faint (SGR 2) right after `❯ `, with the cursor at the
  * start of the box; typed and pasted text is drawn plain, the cursor after it (measured on
@@ -255,12 +347,18 @@ export function classifyPrompt(screen: Screen): ComposerState {
     // rows of the box (as `ownText` in terminals.ts relies on too).
     if (screen.composer) {
       const known = whole(text);
-      return { kind: 'unknown', text, whole: known, rows: text, ...(known && { logical: text }) };
+      return {
+        kind: plainKind(text),
+        text,
+        whole: known,
+        rows: text,
+        ...(known && { logical: text }),
+      };
     }
     const shown = box.lines[box.top + 1].replace(/^❯\s?/, '').trim();
     return rows === 1 && (!shown || HINT.test(shown))
       ? { kind: 'empty' }
-      : { kind: 'unknown', text: shown, whole: whole(shown) };
+      : { kind: plainKind(shown), text: shown, whole: whole(shown) };
   }
   // The rules span the box; a row of text takes at most that less the `❯ ` (or indent) before
   // it. Box-drawing dashes take one cell each. Rounded up: a doubtful row break counts as typed.
@@ -277,7 +375,7 @@ export function classifyPrompt(screen: Screen): ComposerState {
     // Orca draws the suggestion on screen with no styles (1.4.216 keeps typed text apart, in
     // `draft`; an older one draws it here too): unknown, and a short one is known whole, so it
     // can be cleared — the deletion keys take typing, the one-letter probe tells a suggestion.
-    return { kind: 'unknown', text, whole: whole(text), ...width, ...asTyped(text) };
+    return { kind: plainKind(text), text, whole: whole(text), ...width, ...asTyped(text) };
   }
   let faint = 0;
   let plain = 0;

@@ -222,8 +222,8 @@ test('The prompt must show exactly one [Image #N] (or the path itself) per paste
   assert.equal(afterImages('[Pasted text #1] [Image #2]', [P1, P2]), null);
   assert.equal(afterImages('[Image #0]', [P1]), null);
 
-  const holds = (typed: string, text: string, strict = false) =>
-    promptHoldsImages(claudeScreen(typed), text, [P1, P2], strict);
+  const holds = (typed: string, text: string, strict = false, before = new Set([1, 2])) =>
+    promptHoldsImages(claudeScreen(typed), text, [P1, P2], strict, before);
   assert.ok(holds('[Image #1] [Image #2]look at this', 'look at this'));
   assert.ok(holds('[Image #1] [Image #2]', ''));
   // A path left as text must be followed by a break before the text, never glued to it.
@@ -239,10 +239,23 @@ test('The prompt must show exactly one [Image #N] (or the path itself) per paste
   assert.ok(!holds('[Image #1]look', 'look'));
   assert.ok(!holds('[Image #1] [Image #2]', 'look'));
   assert.ok(!holds('[Image #1] [Image #2]draft look', 'look'));
-  // A long text collapsed into Claude's own placeholder, unless only the exact text may pass.
-  assert.ok(holds('[Image #1] [Image #2][Pasted text #3 +12 lines]', 'a\n'.repeat(13)));
-  assert.ok(!holds('[Image #1] [Image #2][Pasted text #3 +12 lines]', 'a\n'.repeat(13), true));
+  // A long text collapsed into its own placeholder (a new id, its line breaks), strict or not.
+  const long = 'a\n'.repeat(12) + 'a';
+  assert.ok(holds('[Image #1] [Image #2][Pasted text #3 +12 lines]', long));
+  assert.ok(holds('[Image #1] [Image #2][Pasted text #3 +12 lines]', long, true));
+  assert.ok(holds(`[Image #1] ${P2} [Pasted text #3 +12 lines]`, long));
+  assert.ok(!holds('[Image #1] [Image #2][Pasted text #3 +11 lines]', long));
+  assert.ok(!holds('[Image #1] [Image #2][Pasted text #2 +12 lines]', long), 'an id seen before');
+  assert.ok(!holds('[Image #1] [Image #2][Pasted text #3 +12 lines]', long, false, new Set([3])));
+  assert.ok(!holds('[Image #1] [Image #2]hi [Pasted text #3 +12 lines]', long));
   assert.ok(!holds('[Image #1] [Image #2][Pasted text #3 +12 lines]', ''));
+  // Without a look before the paste, never.
+  assert.ok(
+    !promptHoldsImages(claudeScreen('[Image #1] [Image #2][Pasted text #3 +12 lines]'), long, [
+      P1,
+      P2,
+    ]),
+  );
   // Not on a dialog.
   assert.ok(!promptHoldsImages('Do you want to proceed?\n ❯ 1. Yes', '', [P1]));
 });
