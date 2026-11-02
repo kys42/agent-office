@@ -15,7 +15,9 @@ import {
   cardFloats,
   popupBounds,
   readCardPosition,
+  readPinnedCards,
   type CardPin,
+  type PinnedCard,
 } from '../src/shared/card-windows.js';
 import { floatLayer } from '../src/shared/popup-window.js';
 import { m } from '../src/shared/i18n/index.js';
@@ -36,6 +38,10 @@ interface Entry {
   dialogs: number;
   placed: { width: number; height: number };
   openingBounds?: Rect;
+  /** Brought back at start: shown without taking the focus from what the person is doing. */
+  restored?: boolean;
+  /** A restored card's saved spot, kept until the person moves or resizes it. */
+  savedBounds?: Rect;
   hide?: ReturnType<typeof setTimeout>;
   drag?: ReturnType<typeof setInterval>;
 }
@@ -44,7 +50,8 @@ const pinOf = (e: Entry): CardPin => (!e.pinned ? 'off' : e.onTop ? 'top' : 'pin
 
 /**
  * One replaceable preview, plus independent, explicitly pinned colleague windows (each pinned as
- * an ordinary window or on top, for that window's lifetime: pinned cards are not reopened).
+ * an ordinary window or on top). Pinned cards are written down as they change, and come back
+ * where they were when the app starts again (`restore`).
  */
 export class CardWindows {
   private entries = new Set<Entry>();
@@ -52,6 +59,15 @@ export class CardWindows {
   private position: Point | null;
   private size: { width: number; height: number };
   private writes: Promise<unknown> = Promise.resolve();
+  /** The app is quitting: its windows closing is not the person closing pinned cards. */
+  private quitting = false;
+  /**
+   * Pinned cards from the last run whose colleague is not in the office yet (a federated peer
+   * still connecting, a collector still reading): kept in the file and tried again as snapshots
+   * arrive, until `giveUp`.
+   */
+  private pending: PinnedCard[] | null = null;
+  private resizeWrite?: ReturnType<typeof setTimeout>;
 
   constructor(
     private options: {
@@ -92,6 +108,81 @@ export class CardWindows {
     const next = this.writes.then(write);
     this.writes = next.catch(() => {});
     return next;
+  }
+
+  /** Writes down the pinned cards as they are now, for the next start. */
+  private rememberPinned() {
+    if (this.quitting) return;
+    // Pins from the last run not brought back yet (setting off, screen sharing, a colleague still
+    // missing) are kept, never overwritten by this run's.
+    this.pending ??= readPinnedCards(this.read('pinned-cards.json'));
+    const open: PinnedCard[] = [...this.entries]
+      .filter((e) => e.pinned && e.target && !e.window.isDestroyed())
+      .map((e) => ({
+        target: { id: e.target!.id, news: e.target!.news },
+        pin: e.onTop ? 'top' : 'pinned',
+        // Where it was saved until the person moves it: a card pulled onto the screen with a
+        // display missing goes back there once the display returns.
+        bounds: e.savedBounds ?? e.window.getBounds(),
+      }));
+    // Cards still waiting for their colleague stay written down too.
+    const waiting = (this.pending ?? []).filter(
+      (c) => !open.some((o) => o.target.id === c.target.id),
+    );
+    const cards = [...open, ...waiting];
+    void this.save('pinned-cards.json', { v: 1, cards }).catch((error) =>
+      console.error('Pinned cards:', error),
+    );
+  }
+  /**
+   * Opens again the cards pinned when the app last ran, where they were, without taking the
+   * focus. A colleague the office no longer has (`exists`) stays closed; one moved to the lounge
+   * or the archive still comes back, as the person pinned it.
+   */
+  restore(exists: (id: string) => boolean) {
+    this.pending ??= readPinnedCards(this.read('pinned-cards.json'));
+    if (!this.pending.length) return;
+    const due = this.pending;
+    this.pending = [];
+    let opened = 0;
+    for (const card of due) {
+      if ([...this.entries].some((e) => e.pinned && e.target?.id === card.target.id)) continue;
+      if (!exists(card.target.id)) {
+        this.pending.push(card);
+        continue;
+      }
+      const area = screen.getDisplayMatching(card.bounds).workArea;
+      const bounds = clampInto(card.bounds, area);
+      const preview = this.preview;
+      const e = this.create(bounds);
+      // A restored card is pinned from the start, never the replaceable preview.
+      this.preview = preview;
+      e.pinned = true;
+      e.onTop = card.pin === 'top';
+      e.restored = true;
+      e.savedBounds = card.bounds;
+      e.target = { id: card.target.id, news: card.target.news };
+      this.layer(e.window, pinOf(e));
+      opened++;
+    }
+    if (opened) this.rememberPinned();
+  }
+  /** The person moved or resized a pinned card: remember where once it settles. */
+  private rememberSoon(e: Entry) {
+    if (this.quitting) return;
+    e.savedBounds = undefined;
+    clearTimeout(this.resizeWrite);
+    this.resizeWrite = setTimeout(() => this.rememberPinned(), 300);
+  }
+  /** Whether some pinned cards from the last run still wait for their colleague. */
+  restoring() {
+    return this.pending === null || this.pending.length > 0;
+  }
+  /** Long enough: colleagues still missing are gone, and their cards with them. */
+  giveUp() {
+    if (!this.pending?.length) return;
+    this.pending = [];
+    this.rememberPinned();
   }
 
   /** The colleagues whose card is on screen now. */
@@ -168,9 +259,10 @@ export class CardWindows {
     e.window.webContents.send('office:card', e.target);
     e.window.webContents.send('office:card-state', this.state(e.window.webContents));
     e.shownAt = Date.now();
-    if (quiet) e.window.showInactive();
+    if (quiet || e.restored) e.window.showInactive();
     else e.window.show();
-    this.focus(e, Date.now() - e.askedAt < 2000);
+    if (!e.restored) this.focus(e, Date.now() - e.askedAt < 2000);
+    e.restored = false;
     // macOS can reposition a hidden panel while activating it.
     // Place an ordinary popup after activation; pinned cards keep their own position.
     if (e.openingBounds) {
@@ -303,6 +395,21 @@ export class CardWindows {
       this.stopDrag(e);
       this.entries.delete(e);
       if (this.preview === e) this.preview = null;
+      // The person closed a pinned card: it does not come back.
+      if (e.pinned) this.rememberPinned();
+    });
+    // Windows logging off or shutting down closes the app without before-quit: still a quit, not
+    // the person closing each pinned card.
+    window.on('session-end', () => this.dispose());
+    // A pinned card moved or resized (a drag, its edge, the system) is remembered there once it
+    // stops moving: a drag moves it every frame.
+    window.on('moved', () => {
+      if (e.pinned) this.rememberSoon(e);
+    });
+    // `resized` is macOS/Windows only; a pinned card's size is caught on `resize` everywhere,
+    // written once the edge stops moving.
+    window.on('resize', () => {
+      if (e.pinned) this.rememberSoon(e);
     });
     window.on('resized', () => {
       if (window.isDestroyed() || e.pinned) return;
@@ -393,6 +500,7 @@ export class CardWindows {
       this.stopDrag(e);
       if (moved && !e.pinned && this.position) await this.remember(e, true);
       else this.states();
+      if (moved && e.pinned) this.rememberSoon(e);
       return;
     }
     if (action === 'position-on' || action === 'position-off')
@@ -415,6 +523,7 @@ export class CardWindows {
       this.cancelHide(e);
       if (this.preview === e) this.preview = null;
       this.states();
+      this.rememberPinned();
       return;
     }
     if (action === 'pin-off') {
@@ -430,6 +539,7 @@ export class CardWindows {
       this.layer(e.window, 'off');
       this.preview = e;
       this.states();
+      this.rememberPinned();
       return;
     }
     if (action === 'select' && target) {
@@ -447,6 +557,7 @@ export class CardWindows {
       if (e.pinned && this.preview?.target?.id === target.id) this.hide(this.preview);
       e.target = target;
       e.window.webContents.send('office:card', target);
+      if (e.pinned) this.rememberPinned();
       return;
     }
     if (action === 'expand' && target) {
@@ -478,6 +589,9 @@ export class CardWindows {
     this.states();
   }
   dispose() {
+    // From here on windows close because the app quits: the pinned cards stay written down.
+    this.quitting = true;
+    clearTimeout(this.resizeWrite);
     for (const e of this.entries) {
       this.stopDrag(e);
       this.cancelHide(e);

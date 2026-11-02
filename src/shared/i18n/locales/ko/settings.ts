@@ -116,6 +116,9 @@ export const settings: Messages['settings'] = {
   },
   reading: {
     title: '읽음 처리',
+    restorePinned: '고정한 카드 다시 열기',
+    restorePinnedHint:
+      '앱을 다시 켜면 고정해 둔 업무 카드가 있던 자리에 다시 떠요. 대기 라운지·보관으로 간 동료도 열리고, 기록이 사라진 동료는 건너뛰어요.',
     readOnOpen: '카드를 열면 최종 응답 읽음 처리',
     readOnOpenHint:
       '동료의 업무 카드를 열어 두면 그 동료의 최종 응답을 읽음으로 바꿔요. 끄면 직접 읽음 처리할 때까지 안 읽음으로 남아요.',

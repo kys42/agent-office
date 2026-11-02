@@ -238,10 +238,24 @@ else {
       material = next;
       cards.setMaterial(next);
     };
+    // Cards pinned when the app last ran come back as their colleagues appear: each snapshot
+    // tries the ones still missing (a peer office still connecting, a collector still reading)
+    // for a few minutes of restoring; after that the missing are taken as gone. Not while screen
+    // sharing hides the office's content, nor with the setting off (they wait for either).
+    let restoreUntil = 0;
+    const restorePinned = (s: Snapshot) => {
+      if (!cards.restoring()) return;
+      if (s.preferences?.restorePinnedCards === false || s.preferences?.privacy) return;
+      restoreUntil ||= Date.now() + 5 * 60_000;
+      const known = new Set(s.sessions.flatMap((x) => [x.id, ...(x.resident?.sessionIds ?? [])]));
+      cards.restore((id) => known.has(id));
+      if (Date.now() > restoreUntil) cards.giveUp();
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
       hidePopups(s);
       followGlass(s);
+      restorePinned(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -251,6 +265,7 @@ else {
         followLanguage(delivery.latest!);
         hidePopups(delivery.latest!);
         followGlass(delivery.latest!);
+        restorePinned(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
