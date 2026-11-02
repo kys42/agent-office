@@ -394,20 +394,21 @@ export class TmuxResume {
       );
     } catch (error) {
       // tmux may have made the session before it failed or our time limit cut it off: look
-      // before answering. Started: it is launched. Cut off and not there (yet): it may still
-      // appear, so it is `uncertain` (held pending), never a refusal to retry.
+      // before answering. Started: it is launched. Cut off, or not readable now: it may still
+      // appear, so it is `uncertain` (held pending), never a refusal to retry. Only a failure
+      // tmux answered while its session list shows nothing is `failed`.
       const after = await this.inspect(s).catch(() => null);
       if (after?.info.running) return { state: 'launched', detail: after.info };
       const cut = error as { killed?: unknown; signal?: unknown; code?: unknown } | undefined;
-      if (cut?.killed === true || !!cut?.signal || cut?.code === 'ETIMEDOUT')
+      if (!after || cut?.killed === true || !!cut?.signal || cut?.code === 'ETIMEDOUT')
         return { state: 'uncertain', message: m().launch.tmuxUncertain };
       throw new Error(m().tmux.failed);
     }
-    // tmux started it: a session gone (or a dead pane) right after means the agent itself
-    // exited, often at a login or folder-trust prompt never finished, not a broken install.
-    const result = await this.inspect(s).catch(() => {
-      throw new Error(m().tmux.failed);
-    });
+    // tmux took it. A session gone (or a dead pane) right after means the agent itself exited,
+    // often at a login or folder-trust prompt never finished, not a broken install. A look that
+    // fails proves nothing either way: the agent may be running, so `uncertain`, not refused.
+    const result = await this.inspect(s).catch(() => null);
+    if (!result) return { state: 'uncertain', message: m().launch.tmuxUncertain };
     if (!result.info.running) throw new Error(m().tmux.exitedAtStart);
     return { state: 'launched', detail: result.info };
   }

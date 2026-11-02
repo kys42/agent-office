@@ -296,3 +296,49 @@ test('a tmux start seen running reserves nothing: its own session already answer
   assert.equal((await core.start(resume, 'tmux', { confirm: async () => true })).state, 'running');
   assert.equal(launches.length, 1);
 });
+
+for (const target of [fresh, { ...fresh, kind: 'fork', provider: 'claude', nativeId: ID }] as const)
+  test(`tmux took the ${target.kind} command but its session could not be read after: uncertain, and Terminal is cautioned`, async () => {
+    const launches: string[][] = [];
+    let accepted = false;
+    const tmux = new TmuxResume({
+      platform: 'darwin',
+      server: 'aotest-launch-unreadable',
+      binary: async (name) => '/bin/' + name,
+      directory: async () => true,
+      run: async (_file, args) => {
+        if (args.includes('list-sessions')) {
+          // Readable before the launch; after it, the server does not answer the look.
+          if (accepted) throw Object.assign(new Error('timeout'), { killed: true });
+          return '';
+        }
+        if (args.includes('new-session')) {
+          launches.push(args);
+          accepted = true;
+        }
+        return '';
+      },
+    });
+    const pending = new PendingLaunches();
+    const terminal = slowTerminal(() =>
+      assert.fail('a cautioned start that is cancelled types nothing'),
+    );
+    const core = new LaunchCore({
+      destinations: { tmux: tmuxDestination(tmux), terminalApp: terminal.destination },
+      pending,
+      queue: new LaunchQueue(),
+    });
+    const first = await core.start(target, 'tmux', { confirm: async () => true });
+    assert.equal(first.state, 'uncertain');
+    assert.equal(first.state === 'uncertain' && first.message, m().launch.tmuxUncertain);
+    assert.equal(pending.where(pendingKey(target)), 'tmux');
+    // The same new agent (or fork) somewhere else: only the pending record guards it.
+    const seen: DuplicateCheck[] = [];
+    const elsewhere = await core.start(target, 'terminalApp', {
+      confirm: async (_p, check) => (seen.push(check), false),
+    });
+    assert.equal(elsewhere.state, 'cancelled');
+    assert.deepEqual(seen, [{ state: 'open', where: 'tmux', pending: true }]);
+    assert.equal(terminal.typed.length, 0);
+    assert.equal(launches.length, 1);
+  });

@@ -64,12 +64,13 @@ export function nativePeerLauncher(): PeerLauncher {
         },
         authorized,
       });
-      // Even an answer that starts nothing is given only while the requester may still ask.
-      authorized();
-      if (outcome.state === 'running') return 'running';
+      // An answer that starts nothing is given only while the requester may still ask. A start
+      // that went ahead is never turned into a failure afterwards.
       if (outcome.state === 'launched') return 'started';
       // Orca made the tab but did not confirm it: never answered as started, never replayed.
       if (outcome.state === 'uncertain') return 'uncertain';
+      authorized();
+      if (outcome.state === 'running') return 'running';
       throw Error('launch-failed');
     },
   };

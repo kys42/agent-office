@@ -343,7 +343,7 @@ create 직전에 `orca terminal list --worktree=path:<cwd> --limit=10000 --json`
 - **확인 못 한 시작** (`uncertain`): 행선지가 명령을 받았을 수도 있는데 시작을 보지 못한 경우다. 실패가 아니므로 다른 곳을 권하지 않고, 대기 기록(`PendingLaunches`, 약 2분)에 **행선지 자리**(`orca`·`tmux`·`other`)와 함께 남겨 다시 띄우기를 '그곳에 열려 있음'으로 경고한다(이어가기는 확인 후에도 그 사이 생겼으면 거절).
   - Orca: 탭을 만들고 터미널을 아직 못 띄움(아래 #317).
   - Terminal.app: `osascript`가 우리 시간 제한(8초)에 끊김. Terminal은 이미 `do script`를 받아 창을 열었을 수 있고, 호출을 죽여도 취소되지 않는다. Terminal이 명령을 받기 전이 확실한 실패만 거절한다: `osascript` 실행 불가(`ENOENT` 등), 자동화 권한 없음(-1743·-1744, 시스템 설정 → 자동화 안내), Terminal 없음(-10814·-600). 그 밖의 알 수 없는 오류도 `uncertain`이다(`terminalAppFailure`).
-  - tmux: `new-session` 호출이 실패하거나 끊기면 먼저 세션을 다시 본다. 만들어졌으면 `launched`(같은 슬롯이라 재시도는 `running`이 된다), 끊겼는데 아직 없으면 `uncertain`, 끊기지 않은 실패만 `failed`다. 예전 tmux 채널은 이 경우 "상태를 다시 확인" 안내를 오류로 돌려준다.
+  - tmux: `new-session` 호출이 실패하거나 끊기면 먼저 세션을 다시 본다. 만들어졌으면 `launched`(같은 슬롯이라 재시도는 `running`이 된다), 끊겼거나 세션 목록을 읽지 못하면 `uncertain`, tmux가 답한 실패인데 세션이 없을 때만 `failed`다. 명령이 성공한 뒤 확인(세션 다시 읽기)이 실패해도 `uncertain`이고(에이전트가 이미 돌 수 있다), 세션이 없거나 pane이 죽은 것을 **확인한** 경우만 `exitedAtStart`다. Orca(생성 뒤 찾기·전환), Terminal, 복사는 명령을 넘긴 뒤 던지는 단계가 없다(실패해도 무시). 예전 tmux 채널은 이 경우 "상태를 다시 확인" 안내를 오류로 돌려준다.
   - 예전 화면(tmux 재개 창·기존 동료 불러오기)은 대기 기록의 자리에 맞는 안내를 보이고([Orca 열기]는 Orca일 때만), 문구는 공용 `pendingNotice(where)`가 정한다.
 - **중복 확인** (`core.ts` `guard`): 이어가기는 대화 전체 확인(`launch-guard.ts`: 에이전트 프로세스·Orca 탭·자기 tmux·대기 기록). 새 세션과 복제는 **같은 실행이 아직 시작 중인지**만 본다(`PendingLaunches` 키: 새 세션 `new:<에이전트>:<폴더>:<이름>`, 복제 `fork:<에이전트>:<원래 id>:<폴더>:<이름>`). 복제는 다른 대화이므로 원래 대화가 실행 중이어도 막지 않는다.
 - **에이전트 어댑터** (`agents.ts`): 실행 인자·권한 우회 플래그·홈 변수(`CLAUDE_CONFIG_DIR`/`CODEX_HOME`)·새 대화 id를 정한다. 호출부에는 에이전트 분기가 없다.
