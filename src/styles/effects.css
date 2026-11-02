@@ -706,8 +706,9 @@
   }
 }
 
-/* Over a pet the pointer becomes a petting hand (palm down, fingers stroking; rub it to pat,
-   #306); a held button is a drag, so pressing or dragging still shows the grabbing hand. */
+/* Over a pet the pointer becomes a petting hand (rub it to pat, #306): the system's palm-down
+   emoji when it can be drawn (src/lib/patCursor.ts sets --pat-cursor), else this drawn hand. A
+   held button is a drag, so pressing or dragging still shows the grabbing hand. */
 :root {
   --pat-cursor:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg fill='%23ffe1c2' stroke='%233a2f45' stroke-width='1.5' stroke-linejoin='round' transform='rotate(-40 17 17)'%3E%3Crect x='6.4' y='12.6' width='3.6' height='8' rx='1.8' transform='rotate(-35 8.2 16.6)'/%3E%3Crect x='9.5' y='16' width='3.6' height='10' rx='1.8'/%3E%3Crect x='13.1' y='16' width='3.6' height='11.5' rx='1.8'/%3E%3Crect x='16.7' y='16' width='3.6' height='11' rx='1.8'/%3E%3Crect x='20.3' y='16' width='3.4' height='9' rx='1.7'/%3E%3Cpath d='M9.5 18C9.5 10 11 7 16.5 7S23.7 10 23.7 18Z'/%3E%3C/g%3E%3Cg fill='none' stroke='%23ff7fa3' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M3 8q3-3 6 0'/%3E%3Cpath d='M24 4q3-3 6 0'/%3E%3C/g%3E%3C/svg%3E")
