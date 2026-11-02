@@ -29,6 +29,7 @@ import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
 import { summonExisting } from './summonExisting';
+import { launch } from './launch';
 
 export const ko: Messages = {
   tmux,
@@ -61,4 +62,5 @@ export const ko: Messages = {
   desks,
   guide,
   summonExisting,
+  launch,
 };

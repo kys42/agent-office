@@ -394,7 +394,7 @@ test('Orca is accepted only when Orca holds the pty, for a live writable termina
   // One list call covers every Orca terminal; no per-handle CLI call.
   assert.deepEqual(
     ok.calls.filter((c) => c.file === '/bin/orca').map((c) => c.args),
-    [['terminal', 'list', '--json']],
+    [['terminal', 'list', '--limit=10000', '--json']],
   );
   for (const over of [
     { connected: false },

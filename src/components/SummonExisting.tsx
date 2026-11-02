@@ -14,6 +14,7 @@ import { api } from '../lib/api';
 import { ago } from '../lib/format';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
+import { pendingNotice } from '../shared/launch';
 import { residentLabel } from '../shared/office-model';
 import type { AwayColleague } from '../shared/summon-existing';
 import type { DuplicateCheck, OrcaLaunchInfo, TmuxResumeInfo } from '../shared/types';
@@ -187,9 +188,14 @@ export function SummonExisting({
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
   // Reopened (or started elsewhere): main still holds an unconfirmed Orca start, no tab yet.
-  const uncertain =
-    launchUncertain ||
-    (duplicate?.state === 'open' && duplicate.pending ? t.tmux.orcaUncertain : '');
+  // A start just handed over (`starting`) is not unconfirmed: it shows as open there, below.
+  const pendingWhere =
+    duplicate?.state === 'open' && duplicate.pending && !duplicate.starting
+      ? duplicate.where
+      : null;
+  const uncertain = launchUncertain || (pendingWhere ? pendingNotice(pendingWhere) : '');
+  // Opening Orca starts only an Orca tab; Terminal or tmux may already be running it.
+  const revealable = !pendingWhere || pendingWhere === 'orca';
   const place =
     duplicate?.state === 'running' || duplicate?.state === 'open'
       ? t.tmux.place[duplicate.where]
@@ -276,7 +282,9 @@ export function SummonExisting({
           {openOther && (
             <p className="tmux-caution" role="status">
               <AlertCircle size={14} aria-hidden="true" />
-              {t.tmux.openNotice(place)} {t.tmux.openHint}
+              {duplicate.starting
+                ? pendingNotice(duplicate.where, true)
+                : `${t.tmux.openNotice(place)} ${t.tmux.openHint}`}
             </p>
           )}
           {duplicate?.state === 'unknown' && (
@@ -303,7 +311,7 @@ export function SummonExisting({
               {uncertain}
             </p>
           )}
-          {uncertain && (api.orcaReveal || unreturned) && (
+          {uncertain && ((api.orcaReveal && revealable) || unreturned) && (
             <div className="summon-existing-actions">
               {unreturned && (
                 <button
@@ -316,7 +324,7 @@ export function SummonExisting({
                   {text.returnAgain}
                 </button>
               )}
-              {api.orcaReveal && (
+              {api.orcaReveal && revealable && (
                 <button
                   className="button primary"
                   disabled={busy}

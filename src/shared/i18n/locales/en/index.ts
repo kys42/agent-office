@@ -28,6 +28,7 @@ import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
 import { summonExisting } from './summonExisting';
+import { launch } from './launch';
 
 /** English is the source catalog: every other language must match its shape. */
 export const en = {
@@ -61,6 +62,7 @@ export const en = {
   desks,
   guide,
   summonExisting,
+  launch,
 };
 
 export type Messages = typeof en;

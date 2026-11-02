@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { access, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
@@ -7,7 +7,17 @@ import { runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import { tmuxArg, type TerminalHost } from './terminal-host.js';
 import type { DuplicateCheck, Session, TmuxResumeInfo } from '../src/shared/types.js';
-import { confirmLaunch } from './launch-guard.js';
+import { agentWords, chooseSessionId, NATIVE_ID } from './launch/agents.js';
+import {
+  launchQueue,
+  runLaunch,
+  startOrThrow,
+  type Destination,
+  type DestinationProbe,
+  type DestinationStart,
+  type LaunchQueue,
+  type StartContext,
+} from './launch/pipeline.js';
 
 const quote = (s: string) => "'" + s.replace(/'/g, "'\\''") + "'";
 /** A session of our dedicated server with its ownership options (cwd and alias decoded). */
@@ -18,58 +28,33 @@ interface OwnedRow {
   cwd: string;
   alias: string;
 }
-type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
+export type SavedSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> & {
+  /** A new conversation: a named slot of its folder, agent and name. */
   fresh?: boolean;
+  /**
+   * A fork of `nativeId`: a new conversation branched off it. It takes the same named slot as
+   * a summon of that name (so it is listed, tagged and resumed like one), never the original's.
+   */
+  fork?: boolean;
   /** Launch without the agent's permission prompts (the person's `tmuxSkipPermissions`). */
   skipPermissions?: boolean;
   agentName?: string;
   initialMessage?: string;
-  /** A fresh summon's conversation id, chosen before launch where the agent allows it. */
+  /** A new conversation's id, chosen before launch where the agent allows it. */
   sessionId?: string;
 };
-/** Each agent's own flag for running without permission prompts. */
-export const SKIP_PERMISSIONS = {
-  claude: '--dangerously-skip-permissions',
-  codex: '--dangerously-bypass-approvals-and-sandbox',
-} as const;
+/** A new conversation in a named slot (a summon or a fork), as opposed to a resume. */
+const inSlot = (s: Pick<SavedSession, 'fresh' | 'fork'>) => !!(s.fresh || s.fork);
+const kindOf = (s: Pick<SavedSession, 'fresh' | 'fork'>) =>
+  s.fork ? ('fork' as const) : s.fresh ? ('new' as const) : ('resume' as const);
 /**
- * How each agent is started: its resume arguments, and whether a new conversation's id can be
- * chosen up front (Claude `--session-id`). Codex picks its own thread id, so its summoned
- * session is tagged later, once its live screen is verified on the owned pane (`adopt`).
+ * The agent's arguments for this session, as tmux gets them (desktop/launch/agents.ts decides
+ * them). tmux treats a trailing semicolon as a command separator even in a separate argv: it is
+ * escaped for tmux only; execvp still receives the original literal prompt.
  */
-interface LaunchAdapter {
-  resume(flags: string[], nativeId: string): string[];
-  fresh(flags: string[], sessionId?: string): string[];
-  newSessionId?(): string;
-}
-const LAUNCH: Record<'claude' | 'codex', LaunchAdapter> = {
-  claude: {
-    resume: (flags, id) => [...flags, '--resume', id],
-    fresh: (flags, id) => [...flags, ...(id ? ['--session-id', id] : [])],
-    newSessionId: () => randomUUID(),
-  },
-  codex: {
-    // Codex takes the flags as options of `resume`.
-    resume: (flags, id) => ['resume', ...flags, id],
-    fresh: (flags) => flags,
-  },
-};
-/** `describe` has already refused any other provider. */
-const launcher = (provider: Session['provider']) => LAUNCH[provider as 'claude' | 'codex'];
-/** The agent's arguments for a resume or a fresh summon. */
 export function launchArgs(s: SavedSession): string[] {
-  const flags =
-    s.skipPermissions && (s.provider === 'claude' || s.provider === 'codex')
-      ? [SKIP_PERMISSIONS[s.provider]]
-      : [];
-  // tmux treats a trailing semicolon as a command separator even in a separate argv.
-  // Escape it for tmux only; execvp still receives the original literal prompt.
-  if (s.fresh)
-    return [
-      ...launcher(s.provider).fresh(flags, s.sessionId),
-      ...(s.initialMessage ? ['--', s.initialMessage.replace(/;$/, '\\;')] : []),
-    ];
-  return launcher(s.provider).resume(flags, s.nativeId);
+  const words = agentWords({ ...s, kind: kindOf(s) });
+  return [...words.args, ...(words.message !== undefined ? ['--', tmuxArg(words.message)] : [])];
 }
 /** What a tmux session runs (`@agent_office_native`): `<provider>:<conversation id>`. */
 const nativeTag = (provider: string, nativeId: string) => `${provider}:${nativeId}`;
@@ -106,6 +91,8 @@ export interface ResumeDeps {
   directory: (cwd: string) => Promise<boolean>;
   platform: string;
   server: string;
+  /** The launch queue (desktop/launch/pipeline.ts); the app's own one when left out. */
+  queue?: LaunchQueue;
 }
 export const defaultResumeDeps: ResumeDeps = {
   run: runCommand,
@@ -132,21 +119,22 @@ export const defaultResumeDeps: ResumeDeps = {
   server: 'agent-office',
 };
 /** Dedicated server and exact targets: never reuses an arbitrary user pane or injects input. */
+/** What a probe carries to the start: the inspection right before it. */
+export type TmuxInspection = Awaited<ReturnType<TmuxResume['inspect']>>;
 export class TmuxResume {
-  private queue: Promise<unknown> = Promise.resolve();
   constructor(private deps: ResumeDeps = defaultResumeDeps) {}
   private describe(s: SavedSession) {
     if (
       !['darwin', 'linux'].includes(this.deps.platform) ||
       !['claude', 'codex'].includes(s.provider) ||
-      !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$/.test(s.nativeId)
+      !NATIVE_ID.test(s.nativeId)
     )
       throw new Error(m().tmux.unsupported);
     if (!s.cwd || !path.isAbsolute(s.cwd) || /[\x00-\x1f\x7f]/.test(s.cwd))
       throw new Error(m().tmux.folderMissing);
     const token = createHash('sha256')
       .update(
-        s.fresh
+        inSlot(s)
           ? `new:${s.provider}:${path.resolve(s.cwd)}${s.agentName ? ':' + s.agentName : ''}`
           : `${s.provider}:${s.nativeId}`,
       )
@@ -229,7 +217,7 @@ export class TmuxResume {
     }
     return undefined;
   }
-  private async inspect(s: SavedSession) {
+  async inspect(s: SavedSession) {
     const data = this.describe(s);
     const tmux = await this.deps.binary('tmux');
     const rows = await this.sessions(tmux);
@@ -238,7 +226,7 @@ export class TmuxResume {
     // A summoned conversation stays in its summon's session after it has an id: tagged there at
     // launch (Claude `--session-id`) or once its live screen was verified on that pane (`adopt`).
     const tag = nativeTag(s.provider, s.nativeId);
-    const tagged = s.fresh
+    const tagged = inSlot(s)
       ? []
       : rows.filter(
           (row) =>
@@ -280,133 +268,183 @@ export class TmuxResume {
     return (await this.inspect(s)).info;
   }
   /**
-   * `duplicate`: for a resume, the fresh duplicate-launch check (desktop/launch-guard.ts), run
-   * before the confirmation and again after it; a conversation already running elsewhere is
-   * never launched. A summon (a new conversation) has none.
+   * Read-only, for the launch pipeline (desktop/launch/pipeline.ts): `running` when this
+   * launch's own session already runs (nothing new starts), otherwise whether it can start.
    */
-  start(
+  async probe(s: SavedSession): Promise<DestinationProbe<TmuxInspection>> {
+    try {
+      const current = await this.inspect(s);
+      const { info } = current;
+      if (info.running)
+        return { available: true, running: true, command: info.command, detail: current };
+      if (!(await this.deps.directory(current.cwd)))
+        return { available: false, reason: m().tmux.folderMissing, detail: current };
+      await this.deps.binary(s.provider);
+      return { available: true, command: info.command, detail: current };
+    } catch (error) {
+      return { available: false, reason: (error as Error).message };
+    }
+  }
+  /**
+   * Starts the agent in this launch's session, after the pipeline's confirmation, from the
+   * inspection its probe just took: a dead pane of it is respawned, otherwise a new session.
+   */
+  async launch(
+    s: SavedSession,
+    context: Pick<StartContext<TmuxInspection>, 'probe' | 'authorized'>,
+  ): Promise<DestinationStart<TmuxResumeInfo>> {
+    const current = context.probe.detail ?? (await this.inspect(s));
+    const binary = await this.deps.binary(s.provider);
+    // A new conversation's id where the agent takes one, recorded with the session so the
+    // conversation still finds this session once the office knows it by that id.
+    const sessionId = inSlot(s)
+      ? (s.sessionId ?? chooseSessionId({ kind: kindOf(s), provider: s.provider }))
+      : undefined;
+    const args = launchArgs({ ...s, sessionId });
+    const native = inSlot(s)
+      ? sessionId
+        ? nativeTag(s.provider, sessionId)
+        : ''
+      : nativeTag(s.provider, s.nativeId);
+    // Multiple command arguments use tmux execvp, not its shell-command parser.
+    // Set the ownership marker in the same tmux command queue as session creation.
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: [
+        path.dirname(binary),
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        process.env.PATH ?? '/usr/bin:/bin',
+      ].join(path.delimiter),
+    };
+    delete env.TMUX;
+    delete env.TMUX_PANE;
+    delete env.CLAUDECODE;
+    // The last moment before anything starts: a revoked permission keeps its own message.
+    context.authorized?.();
+    try {
+      await this.deps.run(
+        current.tmux,
+        [
+          '-L',
+          this.deps.server,
+          '-f',
+          '/dev/null',
+          ...(current.deadPane
+            ? ['respawn-pane', '-t', current.deadPane, '-c', current.cwd]
+            : // Detached, a new window would be 80×24: Claude Code's box then shows 7 rows
+              // and a longer draft hides its start. A client that attaches still resizes it.
+              [
+                'new-session',
+                '-d',
+                '-x',
+                '200',
+                '-y',
+                '50',
+                '-s',
+                current.name,
+                '-c',
+                current.cwd,
+              ]),
+          '/usr/bin/env',
+          '-u',
+          'CLAUDECODE',
+          '-u',
+          'CODEX_HOME',
+          '-u',
+          'CLAUDE_CONFIG_DIR',
+          `PATH=${env.PATH}`,
+          ...['CODEX_HOME', 'CLAUDE_CONFIG_DIR'].flatMap((key) =>
+            env[key] ? [`${key}=${env[key]}`] : [],
+          ),
+          binary,
+          ...args,
+          ';',
+          'set-option',
+          '-t',
+          current.name,
+          '@agent_office_cwd',
+          Buffer.from(current.cwd).toString('base64'),
+          ';',
+          'set-option',
+          '-t',
+          current.name,
+          '@agent_office_alias',
+          Buffer.from(current.alias).toString('base64'),
+          ';',
+          'set-option',
+          '-t',
+          current.name,
+          '@agent_office_native',
+          native,
+          ';',
+          'set-option',
+          '-t',
+          current.name,
+          '@agent_office_claimed',
+          '',
+          ';',
+          'set-option',
+          '-t',
+          current.name,
+          '@agent_office_resume',
+          current.token,
+        ],
+        { env },
+      );
+    } catch (error) {
+      // tmux may have made the session before it failed or our time limit cut it off: look
+      // before answering. Started: it is launched. Cut off, or not readable now: it may still
+      // appear, so it is `uncertain` (held pending), never a refusal to retry. Only a failure
+      // tmux answered while its session list shows nothing is `failed`.
+      const after = await this.inspect(s).catch(() => null);
+      if (after?.info.running) return { state: 'launched', detail: after.info };
+      const cut = error as { killed?: unknown; signal?: unknown; code?: unknown } | undefined;
+      if (!after || cut?.killed === true || !!cut?.signal || cut?.code === 'ETIMEDOUT')
+        return { state: 'uncertain', message: m().launch.tmuxUncertain };
+      throw new Error(m().tmux.failed);
+    }
+    // tmux took it. A session gone (or a dead pane) right after means the agent itself exited,
+    // often at a login or folder-trust prompt never finished, not a broken install. A look that
+    // fails proves nothing either way: the agent may be running, so `uncertain`, not refused.
+    const result = await this.inspect(s).catch(() => null);
+    if (!result) return { state: 'uncertain', message: m().launch.tmuxUncertain };
+    if (!result.info.running) throw new Error(m().tmux.exitedAtStart);
+    return { state: 'launched', detail: result.info };
+  }
+  /** tmux as a launch destination of this session alone (the older entry points, tests). */
+  private destination(): Destination<SavedSession, TmuxInspection, TmuxResumeInfo> {
+    return {
+      id: 'tmux',
+      launches: true,
+      place: 'tmux',
+      probe: (s) => this.probe(s),
+      start: (s, context) => this.launch(s, context),
+    };
+  }
+  /**
+   * The launch pipeline (desktop/launch/pipeline.ts) for this one destination. `duplicate`:
+   * for a resume, the fresh duplicate-launch check (desktop/launch-guard.ts), run before the
+   * confirmation and again after it; a conversation already running elsewhere is never
+   * launched. A summon (a new conversation) has none. A refusal throws its reason.
+   */
+  async start(
     s: SavedSession,
     confirm: (info: TmuxResumeInfo, duplicate: DuplicateCheck) => Promise<boolean>,
     authorized?: () => void,
     duplicate?: (fresh: boolean) => Promise<DuplicateCheck>,
-  ) {
-    const task = this.queue.then(async () => {
-      let current = await this.inspect(s);
-      if (current.info.running) return current.info;
-      if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
-      const binary = await this.deps.binary(s.provider);
-      const info = current.info;
-      if (!(await confirmLaunch(duplicate, (check) => confirm(info, check)))) return info;
-      current = await this.inspect(s);
-      if (current.info.running) return current.info;
-      if (!(await this.deps.directory(current.cwd))) throw new Error(m().tmux.folderMissing);
-      // A new conversation's id where the agent takes one, recorded with the session so the
-      // conversation still finds this session once the office knows it by that id.
-      const sessionId = s.fresh ? launcher(s.provider).newSessionId?.() : undefined;
-      const args = launchArgs({ ...s, sessionId });
-      const native = s.fresh
-        ? sessionId
-          ? nativeTag(s.provider, sessionId)
-          : ''
-        : nativeTag(s.provider, s.nativeId);
-      // Multiple command arguments use tmux execvp, not its shell-command parser.
-      // Set the ownership marker in the same tmux command queue as session creation.
-      const env: NodeJS.ProcessEnv = {
-        ...process.env,
-        PATH: [
-          path.dirname(binary),
-          '/opt/homebrew/bin',
-          '/usr/local/bin',
-          process.env.PATH ?? '/usr/bin:/bin',
-        ].join(path.delimiter),
-      };
-      delete env.TMUX;
-      delete env.TMUX_PANE;
-      delete env.CLAUDECODE;
-      try {
-        authorized?.();
-        await this.deps.run(
-          current.tmux,
-          [
-            '-L',
-            this.deps.server,
-            '-f',
-            '/dev/null',
-            ...(current.deadPane
-              ? ['respawn-pane', '-t', current.deadPane, '-c', current.cwd]
-              : // Detached, a new window would be 80×24: Claude Code's box then shows 7 rows
-                // and a longer draft hides its start. A client that attaches still resizes it.
-                [
-                  'new-session',
-                  '-d',
-                  '-x',
-                  '200',
-                  '-y',
-                  '50',
-                  '-s',
-                  current.name,
-                  '-c',
-                  current.cwd,
-                ]),
-            '/usr/bin/env',
-            '-u',
-            'CLAUDECODE',
-            '-u',
-            'CODEX_HOME',
-            '-u',
-            'CLAUDE_CONFIG_DIR',
-            `PATH=${env.PATH}`,
-            ...['CODEX_HOME', 'CLAUDE_CONFIG_DIR'].flatMap((key) =>
-              env[key] ? [`${key}=${env[key]}`] : [],
-            ),
-            binary,
-            ...args,
-            ';',
-            'set-option',
-            '-t',
-            current.name,
-            '@agent_office_cwd',
-            Buffer.from(current.cwd).toString('base64'),
-            ';',
-            'set-option',
-            '-t',
-            current.name,
-            '@agent_office_alias',
-            Buffer.from(current.alias).toString('base64'),
-            ';',
-            'set-option',
-            '-t',
-            current.name,
-            '@agent_office_native',
-            native,
-            ';',
-            'set-option',
-            '-t',
-            current.name,
-            '@agent_office_claimed',
-            '',
-            ';',
-            'set-option',
-            '-t',
-            current.name,
-            '@agent_office_resume',
-            current.token,
-          ],
-          { env },
-        );
-      } catch {
-        throw new Error(m().tmux.failed);
-      }
-      // tmux started it: a session gone (or a dead pane) right after means the agent itself
-      // exited, often at a login or folder-trust prompt never finished, not a broken install.
-      const result = await this.inspect(s).catch(() => {
-        throw new Error(m().tmux.failed);
-      });
-      if (!result.info.running) throw new Error(m().tmux.exitedAtStart);
-      return result.info;
-    });
-    this.queue = task.catch(() => undefined);
-    return task;
+  ): Promise<TmuxResumeInfo> {
+    const result = await startOrThrow(
+      runLaunch(this.destination(), s, {
+        queue: this.deps.queue ?? launchQueue,
+        check: duplicate,
+        confirm: (probe, check) => confirm(probe.detail!.info, check),
+        authorized,
+      }),
+    );
+    // Not seen to start, maybe started: told as such, never as a start to try again.
+    if (result.state === 'uncertain') throw new Error(result.message);
+    return ('detail' in result && result.detail) || result.probe.detail!.info;
   }
   async connections(cwd: string): Promise<NonNullable<TmuxResumeInfo['connections']>> {
     const tmux = await this.deps.binary('tmux');

@@ -3,23 +3,39 @@ import { stat } from 'node:fs/promises';
 import { remember, runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck, OrcaLaunchInfo, Session } from '../src/shared/types.js';
-import { confirmLaunch } from './launch-guard.js';
 import { PendingLaunches, type PendingLaunchTarget } from './pending-launch.js';
-import { defaultResumeDeps, launchArgs } from './tmux-resume.js';
-import { localOrcaEnv } from './terminal-host.js';
+import { defaultResumeDeps } from './tmux-resume.js';
+import { localOrcaEnv, ORCA_LIST_LIMIT, ORCA_LIST_BUFFER } from './terminal-host.js';
+import { agentLauncher, agentWords, chooseSessionId } from './launch/agents.js';
+import {
+  launchQueue,
+  runLaunch,
+  startOrThrow,
+  type Destination,
+  type DestinationProbe,
+  type DestinationStart,
+  type LaunchQueue,
+  type StartContext,
+} from './launch/pipeline.js';
 export { localOrcaEnv };
 
 /**
- * Resumes a saved conversation in a new Orca terminal tab (`orca terminal create`). Orca types
- * `--command` into the tab's login shell, so every word of it is checked against a plain
- * character set and single-quoted; nothing else from the session reaches that shell. The
- * folder and title go to Orca as separate arguments, never through a shell.
+ * Starts a conversation in a new Orca terminal tab (`orca terminal create`): a saved one resumed,
+ * a new one summoned, or a fork. Orca types `--command` into the tab's login shell, so every
+ * word of it is checked against a plain character set and single-quoted (the first prompt is
+ * quoted whole); nothing else from the session reaches that shell. The folder and title go to
+ * Orca as separate arguments, never through a shell. The agent's words come from the shared
+ * agent adapter (desktop/launch/agents.ts), the same as a tmux launch.
  */
 export type OrcaLaunchSession = Pick<Session, 'provider' | 'nativeId' | 'cwd'> &
   Partial<Pick<Session, 'title' | 'alias' | 'remote'>> & {
     /** The person's `tmuxSkipPermissions`: the same agent flags as a tmux launch. */
     skipPermissions?: boolean;
     fresh?: boolean;
+    /** A fork of `nativeId` (a new conversation branched off it). */
+    fork?: boolean;
+    /** new / fork: the conversation id chosen up front (Claude `--session-id`). */
+    sessionId?: string;
     initialMessage?: string;
     background?: boolean;
     /** Locally resolved CLI; never supplied by a remote request. */
@@ -43,6 +59,8 @@ export interface OrcaLaunchDeps {
   wait?: (ms: number) => Promise<void>;
   /** Launches that may still start: shared with the duplicate-launch check. */
   pending?: PendingLaunches;
+  /** The launch queue (desktop/launch/pipeline.ts); the app's own one when left out. */
+  queue?: LaunchQueue;
 }
 
 /** Orca's worst case is 10 s for the tab plus 10 s for its terminal, after its own CLI start. */
@@ -70,20 +88,56 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Where each agent keeps its conversations, when not in its default home. */
-const HOME_VARIABLE = { claude: 'CLAUDE_CONFIG_DIR', codex: 'CODEX_HOME' } as const;
-
 /**
  * The agent's home as Agent Office sees it, so the new tab resumes from the same place: set to
  * Agent Office's value, or unset (the default home) when Agent Office has none, whatever the
  * login shell exports. The same rule as a tmux launch.
  */
-function homeWords(provider: 'claude' | 'codex', env: NodeJS.ProcessEnv): string[] {
-  const name = HOME_VARIABLE[provider];
+function homeWords(provider: Session['provider'], env: NodeJS.ProcessEnv): string[] {
+  const name = agentLauncher(provider).home;
+  if (!name) throw new Error(m().tmux.orcaUnsupported);
   const value = env[name];
   if (!value) return ['/usr/bin/env', '-u', name].map(shellWord);
   if (!path.isAbsolute(value)) throw new Error(m().tmux.unsupported);
   return [shellWord('/usr/bin/env'), shellQuote(`${name}=${value}`)];
+}
+
+const kindOf = (s: Pick<OrcaLaunchSession, 'fresh' | 'fork'>) =>
+  s.fork ? ('fork' as const) : s.fresh ? ('new' as const) : ('resume' as const);
+
+/**
+ * The command a login shell runs for this launch, as single-quoted words: the agent's home, the
+ * agent (`executable` when given), its words from the shared adapter and the first prompt.
+ * Shared by an Orca tab, a Terminal.app window and a copied command.
+ */
+export function shellCommand(
+  s: Pick<
+    OrcaLaunchSession,
+    | 'provider'
+    | 'nativeId'
+    | 'fresh'
+    | 'fork'
+    | 'sessionId'
+    | 'initialMessage'
+    | 'skipPermissions'
+    | 'executable'
+  >,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  // The resolved CLI, as a tmux launch runs it; without one the login shell looks the agent up
+  // on its own PATH, as if the person typed it there.
+  if (s.executable && !path.isAbsolute(s.executable)) throw Error(m().tmux.unsupported);
+  const agent = s.executable ? shellQuote(s.executable) : shellWord(s.provider);
+  const words = agentWords({ ...s, kind: kindOf(s) });
+  return [
+    ...homeWords(s.provider, env),
+    agent,
+    ...words.args.map(shellWord),
+    // The prompt keeps its line breaks: only `'` is closed, escaped and reopened.
+    ...(words.message !== undefined
+      ? [shellWord('--'), `'${words.message.replace(/'/g, `'\\''`)}'`]
+      : []),
+  ].join(' ');
 }
 
 function describe(s: OrcaLaunchSession, platform: string, env: NodeJS.ProcessEnv = process.env) {
@@ -96,28 +150,7 @@ function describe(s: OrcaLaunchSession, platform: string, env: NodeJS.ProcessEnv
     throw new Error(m().tmux.orcaUnsupported);
   if (!s.cwd || !path.isAbsolute(s.cwd) || CONTROL.test(s.cwd))
     throw new Error(m().tmux.folderMissing);
-  // The resolved CLI, as a tmux launch runs it; without one the tab's login shell looks the
-  // agent up on its own PATH, as if the person typed it there.
-  if (s.executable && !path.isAbsolute(s.executable)) throw Error(m().tmux.unsupported);
-  const agent = s.executable ? shellQuote(s.executable) : shellWord(s.provider);
-  const words = s.fresh
-    ? [
-        agent,
-        ...(s.skipPermissions
-          ? [shellWord(launchArgs({ ...s, fresh: true, initialMessage: undefined })[0])]
-          : []),
-        ...(s.initialMessage
-          ? [shellWord('--'), `'${s.initialMessage.replace(/'/g, `'\\''`)}'`]
-          : []),
-      ]
-    : [agent, ...launchArgs({ ...s, fresh: false }).map(shellWord)];
-  if (
-    s.fresh &&
-    s.initialMessage &&
-    (s.initialMessage.length > 4000 || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(s.initialMessage))
-  )
-    throw new Error(m().tmux.invalidMessage);
-  const command = [...homeWords(s.provider, env), ...words].join(' ');
+  const command = shellCommand(s, env);
   const shown = (s.alias || s.title || '')
     .replace(/[\x00-\x1f\x7f-\x9f]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -177,6 +210,12 @@ const NOT_YET_STARTED =
 /** Refusals that name the folder: no Orca workspace matched it. */
 const NOT_A_WORKSPACE = /^(selector_not_found|worktree_not_found|worktree_host_unresolved)$/;
 
+/** Our own time limit ended a call before it answered (`execFile` killed it). */
+export const cutOff = (error: unknown) => {
+  const cut = error as { killed?: unknown; signal?: unknown; code?: unknown } | undefined;
+  return cut?.killed === true || !!cut?.signal || cut?.code === 'ETIMEDOUT';
+};
+
 export function classifyOrcaCreate(stdout: string | undefined, error?: unknown): OrcaCreateResult {
   let answer: { ok?: unknown; error?: { code?: unknown; message?: unknown; data?: unknown } };
   try {
@@ -192,9 +231,7 @@ export function classifyOrcaCreate(stdout: string | undefined, error?: unknown):
   );
   if (texts.some((x) => NOT_YET_STARTED.test(x))) return { kind: 'uncertain' };
   // Our own time limit ended the call before Orca answered: whether it made the tab is unknown.
-  const cut = error as { killed?: unknown; signal?: unknown; code?: unknown } | undefined;
-  if (!e && (cut?.killed === true || !!cut?.signal || cut?.code === 'ETIMEDOUT'))
-    return { kind: 'uncertain' };
+  if (!e && cutOff(error)) return { kind: 'uncertain' };
   return {
     kind: 'refused',
     reason: orcaRefusal(stdout),
@@ -210,6 +247,13 @@ export function classifyOrcaCreate(stdout: string | undefined, error?: unknown):
 export type WorkspaceCheck =
   { kind: 'local' } | { kind: 'subfolder'; root: string } | { kind: 'none' } | { kind: 'unknown' };
 
+/**
+ * Orca itself: `ready` (installed, its runtime answering), `missing` (no Orca CLI here),
+ * `stopped` (Orca answered that its runtime is not running, or failed), `slow` (no answer in
+ * time). Only `ready` takes a launch; the others are the reason shown for it.
+ */
+export type OrcaRuntime = 'ready' | 'missing' | 'stopped' | 'slow';
+
 type OrcaWorktree = { path?: unknown; hostId?: unknown; identity?: { executionHostId?: unknown } };
 const isLocal = (w: OrcaWorktree) =>
   (w.identity?.executionHostId ?? w.hostId) === 'local' && (!w.hostId || w.hostId === 'local');
@@ -221,6 +265,12 @@ interface OrcaTerminalRow {
   worktreePath?: unknown;
 }
 
+/** What an Orca probe carries to its start. */
+export interface OrcaPlan {
+  session: OrcaLaunchSession;
+  info: { cwd: string; command: string; name: string };
+}
+
 const defaults = (orca: () => string): OrcaLaunchDeps => ({
   run: runCommand,
   orca,
@@ -230,7 +280,6 @@ const defaults = (orca: () => string): OrcaLaunchDeps => ({
 });
 
 export class OrcaLaunch {
-  private queue: Promise<unknown> = Promise.resolve();
   private deps: OrcaLaunchDeps;
   /** Launches Orca did not confirm, read by the duplicate-launch check for a while. */
   readonly pending: PendingLaunches;
@@ -274,30 +323,24 @@ export class OrcaLaunch {
       return { kind: 'unknown' };
     }
   }
-  /** Why the folder cannot take a new Orca tab; `''` when it can. */
-  private async workspaceRefusal(s: OrcaLaunchSession): Promise<string> {
-    const t = m().tmux;
-    const check = await this.workspace(s);
-    if (check.kind === 'local') return '';
-    if (check.kind === 'subfolder') return t.orcaSubfolder(check.root);
-    if (check.kind === 'none') return t.orcaNotWorkspace;
-    return t.orcaUnavailable;
-  }
   /** Orca installed and its runtime answering (`orca status`), checked at most every 5 s. */
-  reachable(fresh = false): Promise<boolean> {
+  runtime(fresh = false): Promise<OrcaRuntime> {
     return remember(this, 'orca-status', 5000, fresh, async () => {
-      if (!path.isAbsolute(this.deps.orca())) return false;
+      if (!path.isAbsolute(this.deps.orca())) return 'missing';
       try {
         const status = await this.json(['status', '--json']);
-        return (
-          status?.ok === true &&
+        return status?.ok === true &&
           (status.result as { runtime?: { reachable?: unknown } } | undefined)?.runtime
             ?.reachable === true
-        );
-      } catch {
-        return false;
+          ? 'ready'
+          : 'stopped';
+      } catch (error) {
+        return cutOff(error) ? 'slow' : 'stopped';
       }
     });
+  }
+  async reachable(fresh = false): Promise<boolean> {
+    return (await this.runtime(fresh)) === 'ready';
   }
   /** Brings Orca to the front, where it mounts the tab it shows (and so starts its command). */
   async reveal(): Promise<void> {
@@ -309,7 +352,7 @@ export class OrcaLaunch {
    * name of the command's program (`claude`, `codex`), so only such a path is used; otherwise
    * the tab's login shell finds the agent on its own PATH, as before.
    */
-  private async resolved(s: OrcaLaunchSession): Promise<OrcaLaunchSession> {
+  async resolved(s: OrcaLaunchSession): Promise<OrcaLaunchSession> {
     if (s.executable || !this.deps.binary) return s;
     try {
       const executable = await this.deps.binary(s.provider);
@@ -323,7 +366,17 @@ export class OrcaLaunch {
   /** The worktree's terminals now; `complete` only when Orca listed every one of them. */
   private async terminals(cwd: string) {
     try {
-      const result = await this.json(['terminal', 'list', `--worktree=path:${cwd}`, '--json']);
+      const result = JSON.parse(
+        await this.deps.run(
+          this.deps.orca(),
+          ['terminal', 'list', `--worktree=path:${cwd}`, `--limit=${ORCA_LIST_LIMIT}`, '--json'],
+          {
+            timeout: 5000,
+            maxBuffer: ORCA_LIST_BUFFER,
+            env: localOrcaEnv(this.deps.env ?? process.env),
+          },
+        ),
+      );
       const list = (result?.result ?? {}) as { terminals?: unknown; truncated?: unknown };
       const rows = (Array.isArray(list.terminals) ? list.terminals : []).filter(
         (t): t is OrcaTerminalRow =>
@@ -363,31 +416,132 @@ export class OrcaLaunch {
     }
     return undefined;
   }
-  /** Read-only: whether the action can be offered, and the command it would type. */
-  async status(s: OrcaLaunchSession): Promise<OrcaLaunchInfo> {
+  /**
+   * Read-only, for the launch pipeline: whether this folder can take a new tab now, with the
+   * reason when not (Orca missing, stopped or slow; not a workspace; a subfolder). `fresh`
+   * asks Orca again instead of its answer of the last 5 s. `workspace`: the reason is the
+   * folder (the older status shows only that one).
+   */
+  async probe(
+    s: OrcaLaunchSession,
+    fresh = false,
+  ): Promise<DestinationProbe<OrcaPlan> & { workspace?: true }> {
+    const t = m().tmux;
+    const l = m().launch;
     try {
       const session = await this.resolved(s);
-      const { cwd, command } = describe(session, this.deps.platform, this.deps.env);
-      if (!(await this.deps.directory(cwd)) || !(await this.reachable()))
-        return { available: false };
+      const info = describe(session, this.deps.platform, this.deps.env);
+      const unavailable = (reason: string) => ({ available: false, reason });
+      if (!(await this.deps.directory(info.cwd))) return unavailable(t.folderMissing);
+      const runtime = await this.runtime(fresh);
+      if (runtime !== 'ready')
+        return unavailable(
+          runtime === 'missing' ? l.orcaMissing : runtime === 'slow' ? l.orcaSlow : l.orcaStopped,
+        );
       const check = await this.workspace(session);
-      const t = m().tmux;
       if (check.kind === 'subfolder')
-        return { available: false, reason: t.orcaSubfolder(check.root) };
-      if (check.kind === 'none') return { available: false, reason: t.orcaNotWorkspace };
-      if (check.kind !== 'local') return { available: false };
-      return { available: true, command };
-    } catch {
-      return { available: false };
+        return { ...unavailable(t.orcaSubfolder(check.root)), workspace: true };
+      if (check.kind === 'none') return { ...unavailable(t.orcaNotWorkspace), workspace: true };
+      if (check.kind !== 'local') return unavailable(l.orcaUnknownWorkspace);
+      return { available: true, command: info.command, detail: { session, info } };
+    } catch (error) {
+      return { available: false, reason: (error as Error).message };
     }
   }
   /**
-   * `duplicate`: the fresh duplicate-launch check (desktop/launch-guard.ts), run before the
-   * confirmation and again after it; a conversation already running is never launched.
-   * A start Orca did not confirm is looked for (`adopt`); still unseen, it is answered as
-   * `uncertain` and kept in `pending`, never as a refusal: its tab starts once Orca shows it.
+   * Read-only: whether the action can be offered, and the command it would type. Only a reason
+   * about the folder is given (the older sheets hide the Orca button otherwise).
    */
-  start(
+  async status(s: OrcaLaunchSession): Promise<OrcaLaunchInfo> {
+    const probe = await this.probe(s);
+    if (probe.available) return { available: true, command: probe.command };
+    return probe.workspace ? { available: false, reason: probe.reason } : { available: false };
+  }
+  /**
+   * Creates the tab (after the pipeline's confirmation) from the plan its probe just made. A
+   * start Orca did not confirm is held pending and looked for (`adopt`); still unseen, it is
+   * answered as `uncertain`, never as a refusal: its tab starts once Orca shows it.
+   */
+  async create(
+    _s: OrcaLaunchSession,
+    context: Pick<StartContext<OrcaPlan>, 'probe' | 'authorized' | 'hold'>,
+  ): Promise<DestinationStart<OrcaLaunchInfo>> {
+    const t = m().tmux;
+    const { session, info } = context.probe.detail!;
+    const before = await this.terminals(info.cwd);
+    // Last moment before create: the listing above may take seconds while access is revoked.
+    context.authorized?.();
+    let out: string | undefined;
+    let failure: unknown;
+    try {
+      out = await this.deps.run(
+        this.deps.orca(),
+        orcaCreateArgs(session, this.deps.platform, this.deps.env),
+        { timeout: CREATE_TIMEOUT, env: localOrcaEnv(this.deps.env ?? process.env) },
+      );
+    } catch (error) {
+      failure = error ?? new Error('failed');
+      out = (error as { stdout?: string } | undefined)?.stdout;
+    }
+    const result = classifyOrcaCreate(out, failure);
+    if (result.kind === 'refused') throw new Error(t.orcaRefused(result.reason, result.workspace));
+    const launched: DestinationStart<OrcaLaunchInfo> = {
+      state: 'launched',
+      message: t.orcaLaunched,
+      command: info.command,
+      detail: { available: true, command: info.command, launched: true, message: t.orcaLaunched },
+    };
+    if (result.kind === 'launched') return launched;
+    // Guard against a second start of this conversation while the tab is looked for.
+    context.hold();
+    // The person asked for this tab: Orca in front mounts it, which starts its command. A
+    // background (remote) launch answers at once: its caller's request has its own deadline.
+    if (!session.background) await this.reveal();
+    const handle = session.background
+      ? undefined
+      : await this.adopt(info, {
+          handles: new Set(before.rows.map((row) => row.handle)),
+          complete: before.complete,
+        });
+    if (handle) {
+      await this.deps
+        .run(this.deps.orca(), ['terminal', 'switch', `--terminal=${handle}`, '--json'], {
+          timeout: 8000,
+          env: localOrcaEnv(this.deps.env ?? process.env),
+        })
+        .catch(() => '');
+      return launched;
+    }
+    return {
+      state: 'uncertain',
+      message: t.orcaUncertain,
+      command: info.command,
+      detail: {
+        available: true,
+        command: info.command,
+        launched: false,
+        uncertain: true,
+        message: t.orcaUncertain,
+      },
+    };
+  }
+  /** Orca as a launch destination of this session alone (the older entry points, tests). */
+  private destination(): Destination<OrcaLaunchSession, OrcaPlan, OrcaLaunchInfo> {
+    return {
+      id: 'orca',
+      launches: true,
+      place: 'orca',
+      reserves: true,
+      probe: (s, fresh) => this.probe(s, fresh),
+      start: (s, context) => this.create(s, context),
+    };
+  }
+  /**
+   * The launch pipeline (desktop/launch/pipeline.ts) for this one destination. `duplicate`: the
+   * fresh duplicate-launch check (desktop/launch-guard.ts), run before the confirmation and
+   * again after it; a conversation already running is never launched. A refusal throws.
+   */
+  async start(
     s: OrcaLaunchSession,
     confirm: (
       info: { name: string; cwd: string; command: string },
@@ -396,81 +550,24 @@ export class OrcaLaunch {
     authorized?: () => void,
     duplicate?: (fresh: boolean) => Promise<DuplicateCheck>,
   ): Promise<OrcaLaunchInfo> {
-    const task = this.queue.then(async () => {
-      const t = m().tmux;
-      const session = await this.resolved(s);
-      const info = describe(session, this.deps.platform, this.deps.env);
-      // A fresh summon is known by its agent, folder and name (its tmux summon is the same one).
-      const target: PendingLaunchTarget = { ...session, name: session.alias ?? '' };
-      if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
-      if (!(await this.reachable(true))) throw new Error(t.orcaUnavailable);
-      const refusal = await this.workspaceRefusal(session);
-      if (refusal) throw new Error(refusal);
-      if (!(await confirmLaunch(duplicate, (check) => confirm(info, check))))
-        return { available: true, command: info.command, launched: false };
-      if (!(await this.deps.directory(info.cwd))) throw new Error(t.folderMissing);
-      const changed = await this.workspaceRefusal(session);
-      if (changed) throw new Error(changed);
-      const before = await this.terminals(info.cwd);
-      // Last moment before create: the listing above may take seconds while access is revoked.
-      authorized?.();
-      let out: string | undefined;
-      let failure: unknown;
-      try {
-        out = await this.deps.run(
-          this.deps.orca(),
-          orcaCreateArgs(session, this.deps.platform, this.deps.env),
-          { timeout: CREATE_TIMEOUT, env: localOrcaEnv(this.deps.env ?? process.env) },
-        );
-      } catch (error) {
-        failure = error ?? new Error('failed');
-        out = (error as { stdout?: string } | undefined)?.stdout;
-      }
-      const result = classifyOrcaCreate(out, failure);
-      if (result.kind === 'refused')
-        throw new Error(t.orcaRefused(result.reason, result.workspace));
-      const launched = {
-        available: true,
-        command: info.command,
-        launched: true,
-        message: t.orcaLaunched,
-      };
-      if (result.kind === 'launched') {
-        this.pending.clear(target);
-        return launched;
-      }
-      // Guard against a second start of this conversation while the tab is looked for.
-      this.pending.add(target);
-      // The person asked for this tab: Orca in front mounts it, which starts its command. A
-      // background (remote) launch answers at once: its caller's request has its own deadline.
-      if (!session.background) await this.reveal();
-      const handle = session.background
-        ? undefined
-        : await this.adopt(info, {
-            handles: new Set(before.rows.map((row) => row.handle)),
-            complete: before.complete,
-          });
-      if (handle) {
-        this.pending.clear(target);
-        await this.deps
-          .run(this.deps.orca(), ['terminal', 'switch', `--terminal=${handle}`, '--json'], {
-            timeout: 8000,
-            env: localOrcaEnv(this.deps.env ?? process.env),
-          })
-          .catch(() => '');
-        return launched;
-      }
-      // Still unseen: the guard runs its full window from now.
-      this.pending.add(target);
-      return {
-        available: true,
-        command: info.command,
-        launched: false,
-        uncertain: true,
-        message: t.orcaUncertain,
-      };
-    });
-    this.queue = task.catch(() => undefined);
-    return task;
+    // A new conversation's id where the agent takes one, fixed before the confirmation shows
+    // the command (and the same one is typed).
+    const session =
+      (s.fresh || s.fork) && !s.sessionId
+        ? { ...s, sessionId: chooseSessionId({ kind: kindOf(s), provider: s.provider }) }
+        : s;
+    const result = await startOrThrow(
+      runLaunch(this.destination(), session, {
+        queue: this.deps.queue ?? launchQueue,
+        pending: this.pending,
+        // A fresh summon is known by its agent, folder and name (its tmux summon is the same one).
+        key: { ...session, name: session.alias ?? '' } satisfies PendingLaunchTarget,
+        check: duplicate,
+        confirm: (probe, check) => confirm(probe.detail!.info, check),
+        authorized,
+      }),
+    );
+    if ('detail' in result && result.detail) return result.detail;
+    return { available: true, command: result.probe.command, launched: false };
   }
 }

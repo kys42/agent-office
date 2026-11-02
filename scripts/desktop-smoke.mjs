@@ -209,6 +209,51 @@ try {
       page.evaluate((id) => window.office.tmuxResume(id, 'start'), openclawSession.id),
     );
   }
+  // The launch core (#318): a strict request shape; an agent that cannot start is refused with
+  // its reason at every destination, before anything is probed or asked.
+  await assert.rejects(
+    page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id, cwd: '/etc' },
+          destination: 'tmux',
+          action: 'start',
+        }),
+      s.sessions[0].id,
+    ),
+  );
+  await assert.rejects(
+    page.evaluate(() =>
+      window.office.launch({
+        intent: { kind: 'resume', session: 'remote-office:test:claude:demo' },
+        destination: 'copy',
+        action: 'probe',
+      }),
+    ),
+  );
+  {
+    const openclaw = s.sessions.find((session) => session.provider === 'openclaw');
+    const options = await page.evaluate(
+      (id) => window.office.launchOptions({ kind: 'fork', session: id, name: 'fork' }),
+      openclaw.id,
+    );
+    assert.deepEqual(
+      options.destinations.map((d) => d.id),
+      ['orca', 'tmux', 'terminalApp', 'copy'],
+    );
+    assert.ok(options.destinations.every((d) => !d.probe.available && d.probe.reason));
+    assert.equal(options.default, null);
+    const refused = await page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id },
+          destination: 'copy',
+          action: 'start',
+        }),
+      openclaw.id,
+    );
+    assert.equal(refused.state, 'refused');
+  }
   const firstNotice = s.notices?.[0];
   assert.ok(firstNotice, 'Native collector emits normalized news');
   const read = await page.evaluate(

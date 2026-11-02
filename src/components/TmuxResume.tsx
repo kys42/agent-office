@@ -17,6 +17,7 @@ import { Modal } from './Modal';
 import { api } from '../lib/api';
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { useI18n } from '../lib/i18n';
+import { pendingNotice } from '../shared/launch';
 import type { DuplicateCheck, OrcaLaunchInfo, Session, TmuxResumeInfo } from '../shared/types';
 
 export function TmuxResume({
@@ -85,9 +86,16 @@ export function TmuxResume({
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
   // Reopened after an unconfirmed start: main still holds it pending, with no tab to go to yet.
-  const pendingStart = duplicate?.state === 'open' && !!duplicate.pending;
+  // A start just handed over (`starting`) is not unconfirmed: it shows as open there, below.
+  const pendingStart = duplicate?.state === 'open' && !!duplicate.pending && !duplicate.starting;
+  // Only an Orca start waits for Orca to show it; elsewhere it may already run unseen.
+  const pendingOutsideOrca = pendingStart && duplicate.where !== 'orca';
   const uncertain =
-    unconfirmed?.target === target ? unconfirmed.message : pendingStart ? t.tmux.orcaUncertain : '';
+    unconfirmed?.target === target
+      ? unconfirmed.message
+      : pendingStart
+        ? pendingNotice(duplicate.where)
+        : '';
   const setUncertain = (message: string) => setUnconfirmed(message ? { target, message } : null);
   const checkOrca = async (selected = provider) => {
     if (summon) {
@@ -444,7 +452,9 @@ export function TmuxResume({
               {openOther && (
                 <p className="tmux-caution" role="status">
                   <AlertCircle size={14} aria-hidden="true" />
-                  {text.openNotice(place)} {text.openHint}
+                  {duplicate.starting
+                    ? pendingNotice(duplicate.where, true)
+                    : `${text.openNotice(place)} ${text.openHint}`}
                 </p>
               )}
               {duplicate?.state === 'unknown' && (
@@ -494,7 +504,8 @@ export function TmuxResume({
             </div>
             <div className="tmux-resume-actions" data-solid>
               {uncertain ? (
-                api.orcaReveal && (
+                api.orcaReveal &&
+                !pendingOutsideOrca && (
                   <button className="button primary" disabled={busy} onClick={revealOrca}>
                     <ArrowUpRight size={14} aria-hidden="true" />
                     {text.orcaReveal}

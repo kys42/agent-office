@@ -64,6 +64,9 @@ export const desktop: Messages['desktop'] = {
     unconfirmed: (host) =>
       `${host}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
     orcaNoSwitch: 'Orca가 그 터미널로 이동하지 못했어요.',
+    orcaSlow:
+      'Orca가 제때 답하지 않았어요. 아직 화면에 띄우지 않은 탭일 수 있어요. Orca를 앞으로 가져온 뒤 다시 시도해주세요.',
+    orcaRefusedSwitch: (reason) => `Orca가 그 터미널로 이동하지 못했어요: ${reason}`,
     orcaFocused: 'Orca의 해당 터미널로 이동했어요',
     tmuxFocused: (label, app) => `${app}에서 tmux ${label} 패널로 이동했어요`,
     tmuxAttached: (label) => `터미널을 열어 tmux ${label}에 연결했어요`,

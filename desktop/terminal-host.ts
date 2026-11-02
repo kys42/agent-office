@@ -110,19 +110,30 @@ export async function inspectProcess(pid: number, deps: TerminalHostDeps): Promi
 }
 
 /**
+ * Rows asked of `orca terminal list`: its default limit is small enough to cut a busy Orca's
+ * list short, and a cut list (`truncated`) can prove no tab absent. The answer may then be
+ * large: up to 16 MB of it is read.
+ */
+export const ORCA_LIST_LIMIT = 10_000;
+export const ORCA_LIST_BUFFER = 16_000_000;
+
+/**
  * All Orca terminals by handle: one CLI call (~0.5s) instead of one per session. Shared by the
  * live-process lookup below and the tab-only fallback (desktop/orca-tabs.ts). `complete` only
- * when Orca answered with the whole list: not `truncated` (Orca's default row limit), not failed.
- * Matching one known handle works on a partial list; proving a tab is the only match does not.
+ * when Orca answered with the whole list: not `truncated` (more rows than even
+ * `ORCA_LIST_LIMIT`), not failed. Matching one known handle works on a partial list; proving a
+ * tab is the only match does not.
  */
 export function orcaTerminalList(deps: TerminalHostDeps, fresh: boolean) {
   return remember(deps, 'orca-terminals', 5000, fresh, async () => {
     const byHandle = new Map<string, Record<string, unknown>>();
     let complete = false;
     try {
-      const out = await deps.run(deps.bin('orca'), ['terminal', 'list', '--json'], {
-        env: localOrcaEnv(),
-      });
+      const out = await deps.run(
+        deps.bin('orca'),
+        ['terminal', 'list', `--limit=${ORCA_LIST_LIMIT}`, '--json'],
+        { env: localOrcaEnv(), maxBuffer: ORCA_LIST_BUFFER },
+      );
       const result = JSON.parse(out)?.result;
       for (const t of result?.terminals ?? [])
         if (typeof t?.handle === 'string') byHandle.set(t.handle, t);
@@ -236,13 +247,40 @@ export function focusTarget(host: TerminalHost): NonNullable<TerminalTarget['foc
 /** A navigation refusal whose message may be shown directly; transport errors stay private. */
 export class TerminalFocusError extends Error {}
 
+/**
+ * Why an Orca switch failed, when that is worth telling: it did not answer in time (a tab that
+ * is not mounted yet, Orca busy), or Orca's own reason. `null`: a transport error, kept private.
+ */
+export function orcaSwitchFailure(error: unknown): string | null {
+  const e = error as { killed?: unknown; signal?: unknown; code?: unknown; stdout?: unknown };
+  if (e?.killed === true || !!e?.signal || e?.code === 'ETIMEDOUT')
+    return m().desktop.terminal.orcaSlow;
+  try {
+    const reason = JSON.parse(typeof e?.stdout === 'string' ? e.stdout : '')?.error?.message;
+    if (typeof reason === 'string' && reason.trim())
+      return m().desktop.terminal.orcaRefusedSwitch(
+        reason.replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').slice(0, 200),
+      );
+  } catch {
+    /* No JSON answer: nothing of Orca's own to tell. */
+  }
+  return null;
+}
+
 export async function focusHost(host: TerminalHost, deps: TerminalHostDeps): Promise<string> {
   if (host.kind === 'orca') {
-    const out = await deps.run(
-      deps.bin('orca'),
-      ['terminal', 'switch', `--terminal=${host.handle}`, '--json'],
-      { env: localOrcaEnv() },
-    );
+    let out: string;
+    try {
+      out = await deps.run(
+        deps.bin('orca'),
+        ['terminal', 'switch', `--terminal=${host.handle}`, '--json'],
+        { env: localOrcaEnv() },
+      );
+    } catch (error) {
+      const reason = orcaSwitchFailure(error);
+      if (reason) throw new TerminalFocusError(reason);
+      throw error;
+    }
     let navigated: unknown;
     try {
       navigated = JSON.parse(out)?.result?.focus?.navigated;
