@@ -76,6 +76,8 @@ import { deskSpeech, hopping, shownSpeech, speechDot } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
+import { useDeskAppearance } from './DeskAppearanceContext';
+import { deskLook } from '../shared/desks';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
@@ -160,6 +162,7 @@ export function DeskRow({
   // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
   const reactionOf = usePetReactions((id) => model.view(id) !== undefined);
   const petting = usePetting();
+  const desks = useDeskAppearance();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
   // Tiny has no bubbles to make room for: the scene starts just above the heads.
@@ -549,6 +552,7 @@ export function DeskRow({
                       kind="desk"
                       key={`${bench.key}:${i}`}
                       shared={bench.shared}
+                      look={deskLook(desks, zone.key)}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: benchY, width: bench.width }}
                     />
@@ -560,6 +564,7 @@ export function DeskRow({
                     const joy = reactionOf(s.id);
                     const label = residentLabel(s, privacy);
                     const branch = branchInfo(s);
+                    const desk = deskLook(desks, zone.key, s);
                     // A just-arrived request plays on the desk and speaks first.
                     const speech = speeches.get(s.id)!;
                     const { arrival, hop } = speech;
@@ -612,7 +617,7 @@ export function DeskRow({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture kind="chair" look={desk} />
                         <div className="pet-shadow" />
                         <button
                           className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
@@ -697,7 +702,7 @@ export function DeskRow({
                             onClick={() => void jump(s.id)}
                           />
                         )}
-                        <Furniture kind="equipment" />
+                        <Furniture kind="equipment" look={desk} />
                         {/* Tiny keeps every desk effect (scaled with the scene, z-ordered under
                             its dot and name); only the quota's words are too small to read. */}
                         {!tiny && v.quota && <QuotaBadge quota={v.quota} />}

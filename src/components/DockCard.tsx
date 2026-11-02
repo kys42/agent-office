@@ -1,4 +1,5 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -212,15 +213,17 @@ export function DockCard() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <NoticePagingContext.Provider
-        value={{
-          paged: model.noticesPaged,
-          stats: JSON.stringify(snapshot?.noticeStats ?? null),
-          readAll,
-        }}
-      >
-        {content}
-      </NoticePagingContext.Provider>
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
+        <NoticePagingContext.Provider
+          value={{
+            paged: model.noticesPaged,
+            stats: JSON.stringify(snapshot?.noticeStats ?? null),
+            readAll,
+          }}
+        >
+          {content}
+        </NoticePagingContext.Provider>
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

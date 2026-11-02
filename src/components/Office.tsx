@@ -27,6 +27,8 @@ import {
 } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
+import { useDeskAppearance } from './DeskAppearanceContext';
+import { deskLook } from '../shared/desks';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
@@ -126,6 +128,7 @@ export function Office({
   // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
   const reactionOf = usePetReactions((id) => byId.has(id));
   const petting = usePetting();
+  const desks = useDeskAppearance();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
@@ -504,6 +507,7 @@ export function Office({
                       kind="desk"
                       key={`${bench.key}:${i}`}
                       shared={bench.shared}
+                      look={deskLook(desks, area.key)}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: bench.y, width: bench.width }}
                     />
@@ -535,6 +539,7 @@ export function Office({
                     const branch = branchInfo(s);
                     const quota = quotaOf?.(s);
                     const dark = !!quota && dimsDesk(s, pose.working);
+                    const desk = deskLook(desks, area.key, s);
                     // Which edge a drop on this desk's half would mark, and the order it sends.
                     const plan = (e: DragEvent<HTMLElement>) => {
                       const box = e.currentTarget.getBoundingClientRect();
@@ -592,7 +597,7 @@ export function Office({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture kind="chair" look={desk} />
                         <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                         <button
                           className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
@@ -651,7 +656,7 @@ export function Office({
                             onPin={() => onPin(s)}
                           />
                         )}
-                        <Furniture kind="equipment" />
+                        <Furniture kind="equipment" look={desk} />
                         {quota && <QuotaBadge quota={quota} />}
                         <PaperPile count={deskPapers(s, clock)} level={focus} />
                         {arrival && (

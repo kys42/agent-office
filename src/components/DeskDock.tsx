@@ -1,4 +1,5 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -254,7 +255,9 @@ export function DeskDock() {
 
   return (
     <PetAppearanceContext.Provider value={snapshot?.preferences.petAppearance}>
-      {content}
+      <DeskAppearanceContext.Provider value={snapshot?.preferences.deskAppearance}>
+        {content}
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }
