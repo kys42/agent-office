@@ -476,6 +476,11 @@ export interface Preferences {
    * Codex with `--dangerously-bypass-approvals-and-sandbox`. Missing: off.
    */
   tmuxSkipPermissions?: boolean;
+  /**
+   * Desktop: where the person last started a session (#318): the launch sheet offers it first
+   * while it is available, else Orca, else tmux. Missing: never chosen.
+   */
+  launchDestination?: import('./launch').LaunchDestinationId;
   /** Size of reading text (#246) in every window. Missing: `normal`. */
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
@@ -872,6 +877,16 @@ export interface OfficeAPI {
   ) => Promise<OrcaLaunchInfo>;
   /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
   orcaReveal?: () => Promise<void>;
+  /**
+   * Desktop only (#318): probe or start one launch (new, resume, fork) at one destination.
+   * Starting asks a native confirmation in the main process; a refusal is an answer, not an
+   * error (`state: 'refused'` with its reason).
+   */
+  launch?: (request: import('./launch').LaunchRequest) => Promise<import('./launch').LaunchResult>;
+  /** Desktop only: every destination probed for an intent, with the one to offer first. */
+  launchOptions?: (
+    intent: import('./launch').LaunchIntent,
+  ) => Promise<import('./launch').LaunchOptions>;
   /** Desktop (macOS/Linux) only: the mini terminal, kept alive by tmux (see mini-shell.ts). */
   shell?: {
     command: <C extends import('./mini-shell').ShellCommand>(

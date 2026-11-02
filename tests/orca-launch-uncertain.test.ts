@@ -194,7 +194,14 @@ test('an unconfirmed start is found by its title, adopted and switched to', asyn
   assert.deepEqual(f.calls[switched].args, ['terminal', 'switch', '--terminal=term_new', '--json']);
   // The list before creating is taken for the same worktree.
   const lists = f.calls.filter((c) => c.args[1] === 'list');
-  assert.deepEqual(lists[0].args, ['terminal', 'list', `--worktree=path:${claude.cwd}`, '--json']);
+  // Asked for every row: Orca's default limit could cut a busy worktree's list short.
+  assert.deepEqual(lists[0].args, [
+    'terminal',
+    'list',
+    `--worktree=path:${claude.cwd}`,
+    '--limit=10000',
+    '--json',
+  ]);
   assert.ok(
     f.calls.findIndex((c) => c.args[1] === 'list') <
       f.calls.findIndex((c) => c.args[1] === 'create'),

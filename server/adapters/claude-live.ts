@@ -21,6 +21,8 @@ export interface RunOptions {
   /** Written to stdin, for text that must not pass through argv parsing. */
   input?: string;
   timeout?: number;
+  /** Bytes of stdout kept; a longer answer fails. 1 MB when left out. */
+  maxBuffer?: number;
 }
 
 export interface ClaudeLiveDeps {
@@ -71,7 +73,11 @@ export const runCommand: ClaudeLiveDeps['run'] = (file, args, options = {}) =>
     const child = execFile(
       file,
       args,
-      { timeout: options.timeout ?? 8000, maxBuffer: 1_000_000, env: options.env ?? process.env },
+      {
+        timeout: options.timeout ?? 8000,
+        maxBuffer: options.maxBuffer ?? 1_000_000,
+        env: options.env ?? process.env,
+      },
       (error, stdout) =>
         error ? reject(Object.assign(error, { stdout: String(stdout ?? '') })) : resolve(stdout),
     );

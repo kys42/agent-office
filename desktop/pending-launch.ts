@@ -9,17 +9,24 @@ import path from 'node:path';
  */
 export const PENDING_LAUNCH_MS = 120_000;
 
-/** What a launch starts: a saved conversation, or a fresh summon (agent, folder and name). */
+/**
+ * What a launch starts: a saved conversation, a fresh summon (agent, folder and name), or a
+ * fork of a conversation (`fork`: its original in `nativeId`, plus folder and name). A fork is
+ * a new conversation, so it is never the original's record: only the same fork is held back.
+ */
 export interface PendingLaunchTarget {
   provider: string;
   nativeId: string;
   cwd: string | null;
   fresh?: boolean;
-  /** A fresh summon's name (its tab title / tmux name). */
+  fork?: boolean;
+  /** A fresh summon's or a fork's name (its tab title / tmux name). */
   name?: string;
 }
 
 export function pendingLaunchKey(s: PendingLaunchTarget): string {
+  if (s.fork)
+    return `fork:${s.provider}:${s.nativeId}:${path.resolve(s.cwd ?? '')}:${s.name ?? ''}`;
   return s.fresh
     ? `new:${s.provider}:${path.resolve(s.cwd ?? '')}:${s.name ?? ''}`
     : `${s.provider}:${s.nativeId}`;

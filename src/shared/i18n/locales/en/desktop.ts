@@ -65,6 +65,9 @@ export const desktop = {
     unconfirmed: (host: string) =>
       `Couldn't confirm it was sent to ${host}. Check the terminal before sending again.`,
     orcaNoSwitch: "Orca couldn't switch to that terminal.",
+    orcaSlow:
+      "Orca didn't answer in time. Bring Orca to the front (its tab may not be shown yet) and try again.",
+    orcaRefusedSwitch: (reason: string) => `Orca couldn't switch to that terminal: ${reason}`,
     orcaFocused: 'Switched to the terminal in Orca',
     tmuxFocused: (label: string, app: string) => `Switched to tmux pane ${label} in ${app}`,
     /** No client was attached, so a new Terminal window was opened attached to the session. */

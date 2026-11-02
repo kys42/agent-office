@@ -37,6 +37,7 @@ import {
 import { mergeSessions } from './adapters/merge.js';
 import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
+import { LAUNCH_DESTINATIONS } from '../src/shared/launch.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
 import {
   applyPatch,
@@ -144,6 +145,7 @@ const prefsSchema = z
     helperStackAt: z.number().int().min(2).max(8).optional(),
     helperRetainMinutes: z.number().int().min(5).max(240).optional(),
     tmuxSkipPermissions: z.boolean().optional(),
+    launchDestination: z.enum(LAUNCH_DESTINATIONS).optional(),
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
     windowGlass: z.number().int().min(0).max(70).nullable().optional(),

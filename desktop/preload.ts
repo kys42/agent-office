@@ -103,6 +103,9 @@ const api: OfficeAPI = {
         orcaReveal: () => action('office:orca-reveal'),
       }
     : {}),
+  // Every destination says itself whether this platform has it (desktop/launch/).
+  launch: (request) => action('office:launch', request),
+  launchOptions: (intent) => action('office:launch-options', intent),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),
