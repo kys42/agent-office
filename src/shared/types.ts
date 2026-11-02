@@ -870,6 +870,8 @@ export interface OfficeAPI {
     name: string,
     initialMessage?: string,
   ) => Promise<OrcaLaunchInfo>;
+  /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
+  orcaReveal?: () => Promise<void>;
   /** Desktop (macOS/Linux) only: the mini terminal, kept alive by tmux (see mini-shell.ts). */
   shell?: {
     command: <C extends import('./mini-shell').ShellCommand>(
@@ -1039,7 +1041,8 @@ export type LaunchPlace = 'orca' | 'tmux' | 'other';
 export type DuplicateCheck =
   | { state: 'none' }
   | { state: 'unknown' }
-  | { state: 'open'; where: LaunchPlace }
+  /** `pending`: an Orca start not confirmed yet (no tab to go to; opening Orca starts it). */
+  | { state: 'open'; where: LaunchPlace; pending?: true }
   | { state: 'running'; where: LaunchPlace };
 export interface OrcaLaunchInfo {
   available: boolean;
@@ -1047,8 +1050,15 @@ export interface OrcaLaunchInfo {
   duplicate?: DuplicateCheck;
   /** The command typed into the new tab's shell (shown before confirming). */
   command?: string;
-  /** Set after `start`: false when the person cancelled. */
+  /** Set after `start`: false when the person cancelled, or when Orca did not confirm it. */
   launched?: boolean;
+  /**
+   * Set after `start`: Orca made the tab but its start was not seen yet. Not a failure: the tab
+   * starts once Orca shows it, and launching it again is cautioned for a while meanwhile.
+   */
+  uncertain?: boolean;
+  /** Set by `status` when the folder cannot take a new Orca tab: why (not a workspace, etc.). */
+  reason?: string;
   message?: string;
 }
 export interface TmuxResumeInfo {

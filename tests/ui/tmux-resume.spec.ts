@@ -86,6 +86,16 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
       orcaLaunch: async (_id: string, action: string) => {
         (w.orcaActions ??= []).push(action);
         if (action === 'focus') return { available: true, message: 'Orca 탭으로 이동했어요' };
+        if (action === 'start' && w.orcaUncertain) {
+          // Orca made the tab but did not confirm its start; main now counts it as open.
+          w.duplicate = { state: 'open', where: 'orca', pending: true };
+          return {
+            available: true,
+            launched: false,
+            uncertain: true,
+            message: 'Orca에 탭을 만들었지만 시작을 아직 확인하지 못했어요. Orca를 열면 시작돼요.',
+          };
+        }
         if (action === 'start') {
           // main's fresh re-check found it running meanwhile: refused, status now says so.
           w.orcaDuplicate = w.duplicate = { state: 'running', where: 'tmux' };
@@ -95,6 +105,7 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
         return {
           available: !!w.orcaAvailable,
           ...(w.orcaAvailable ? { command: 'claude --resume x' } : {}),
+          ...(w.orcaReason ? { reason: w.orcaReason } : {}),
           ...((w.orcaDuplicate ?? w.duplicate)
             ? { duplicate: w.orcaDuplicate ?? w.duplicate }
             : {}),
@@ -111,6 +122,9 @@ async function setup(page: import('@playwright/test').Page, remote = false, rout
         return action === 'start'
           ? { available: true, launched: true, message: 'Orca 새 탭에 새 에이전트를 띄웠어요' }
           : { available: !!w.orcaAvailable, command: provider + ' -- hi' };
+      },
+      orcaReveal: async () => {
+        w.revealed = (w.revealed ?? 0) + 1;
       },
       dock: async (action: string) => {
         (w.dockActions ??= []).push(action);
@@ -499,4 +513,49 @@ test('session help stays keyboard-accessible while the connection check disables
   await expect(modal.locator('.tmux-resume-actions .primary')).toBeEnabled();
   await page.keyboard.press('Escape');
   await expect(modal).toHaveCount(0);
+});
+
+test('an Orca start that was not confirmed is not a failure: only Open Orca, no tmux', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.orcaAvailable = true;
+    w.orcaUncertain = true;
+    w.duplicate = { state: 'none' };
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await modal.getByRole('button', { name: 'Orca에서 새로 띄우기', exact: true }).click();
+  await expect(modal.getByText('Orca를 열면 시작돼요', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('alert')).toHaveCount(0);
+  const actions = modal.locator('.tmux-resume-actions button');
+  await expect(actions).toHaveCount(1);
+  await expect(actions).toHaveText('Orca 열기');
+  await actions.click();
+  await expect.poll(() => page.evaluate(() => (window as any).revealed)).toBe(1);
+  await page.screenshot({ path: '.local/orca-uncertain.png', animations: 'disabled' });
+  // Reopened later: main still holds the start pending, with no tab to go to yet, so the dialog
+  // offers Open Orca again rather than a tab it cannot find.
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  await expect(modal.getByText('Orca를 열면 시작돼요', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('button', { name: '그 탭으로 이동' })).toHaveCount(0);
+  await expect(actions).toHaveCount(1);
+  await expect(actions).toHaveText('Orca 열기');
+});
+
+test('a folder Orca cannot open a tab in says why instead of hiding the choice silently', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.evaluate(() => {
+    (window as any).orcaReason =
+      '이 폴더는 Orca 작업 공간(/projects/example) 안의 하위 폴더예요. Orca는 작업 공간 폴더에서만 새 탭을 열 수 있어요. tmux로 띄워주세요.';
+  });
+  await page.getByRole('button', { name: 'tmux로 재개', exact: true }).click();
+  const modal = page.getByRole('dialog', { name: 'tmux로 재개' });
+  await expect(modal.getByText('안의 하위 폴더예요', { exact: false })).toBeVisible();
+  await expect(modal.getByRole('button', { name: 'Orca에서 새로 띄우기' })).toHaveCount(0);
 });

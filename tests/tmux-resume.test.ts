@@ -305,3 +305,33 @@ test('without permission prompts only when the person chose it: each agent its o
     );
   }
 });
+test('an agent that exits right after tmux started it is told apart from tmux failing', async () => {
+  const { m } = await import('../src/shared/i18n/index.js');
+  // tmux created the session, but it is gone at once: the agent itself ended (login, trust).
+  const exited = fixture();
+  exited.deps.run = async (_file, args) => {
+    exited.calls.push({ file: _file, args });
+    return '';
+  };
+  await assert.rejects(
+    new TmuxResume(exited.deps).start(session, async () => true),
+    {
+      message: m().tmux.exitedAtStart,
+    },
+  );
+  // tmux itself refused the command: the install hint.
+  const broken = fixture();
+  broken.deps.run = async (_file, args) => {
+    if (args.includes('new-session')) throw new Error('tmux: unknown option');
+    return '';
+  };
+  await assert.rejects(
+    new TmuxResume(broken.deps).start(session, async () => true),
+    {
+      message: m().tmux.failed,
+    },
+  );
+  // Started and still running: no error at all.
+  const fine = fixture();
+  assert.equal((await fine.manager.start(session, async () => true)).running, true);
+});

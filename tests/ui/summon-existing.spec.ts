@@ -81,9 +81,20 @@ async function setup(page: import('@playwright/test').Page, route: string, orca 
           w.actions.push('orca:' + action + ':' + id);
           if (action === 'focus') return { available: true, message: 'Orca 탭으로 이동했어요' };
           if (!orca) return { available: false, duplicate: w.orcaDuplicate };
+          if (action === 'start' && w.orcaUncertain)
+            return {
+              available: true,
+              launched: false,
+              uncertain: true,
+              message:
+                'Orca에 탭을 만들었지만 시작을 아직 확인하지 못했어요. Orca를 열면 시작돼요.',
+            };
           return action === 'start'
             ? { available: true, launched: true, message: 'Orca 새 탭에서 열었어요' }
             : { available: true, command: 'claude --resume x', duplicate: w.orcaDuplicate };
+        },
+        orcaReveal: async () => {
+          w.revealed = (w.revealed ?? 0) + 1;
         },
         jump: async () =>
           w.jumpAction === 'copy'
@@ -151,6 +162,63 @@ test('Orca launch brings the lounge colleague back and closes the sheet', async 
   await modal.getByRole('button', { name: 'Orca 새 탭으로 불러오기' }).click();
   await expect(modal).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+});
+
+test('an Orca start not yet confirmed still brings the colleague back, offering only Open Orca', async ({
+  page,
+}) => {
+  await setup(page, '/#mini=floor');
+  await page.evaluate(() => ((window as any).orcaUncertain = true));
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await modal.getByRole('button', { name: 'Orca 새 탭으로 불러오기' }).click();
+  const chosen = modal.getByRole('region', { name: '불러올 동료' });
+  await expect(chosen.getByText('Orca를 열면 시작돼요', { exact: false })).toBeVisible();
+  await expect(chosen.getByRole('alert')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).returned)).toEqual(['demo:6']);
+  await expect(chosen.getByRole('button', { name: 'tmux로 불러오기' })).toHaveCount(0);
+  await expect(chosen.getByRole('button', { name: 'Orca 새 탭으로 불러오기' })).toHaveCount(0);
+  await chosen.getByRole('button', { name: 'Orca 열기' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).revealed)).toBe(1);
+});
+
+test('a pending Orca start read back from main offers Open Orca, not a tab that is not there', async ({
+  page,
+}) => {
+  await setup(page, '/#mini=floor');
+  await page.evaluate(
+    () => ((window as any).orcaDuplicate = { state: 'open', where: 'orca', pending: true }),
+  );
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  const chosen = modal.getByRole('region', { name: '불러올 동료' });
+  await expect(chosen.getByText('Orca를 열면 시작돼요', { exact: false })).toBeVisible();
+  await expect(chosen.getByRole('button', { name: '그 탭으로 이동' })).toHaveCount(0);
+  await expect(chosen.getByRole('button', { name: 'Orca 새 탭으로 불러오기' })).toHaveCount(0);
+  await expect(chosen.getByRole('button', { name: 'Orca 열기' })).toBeVisible();
+});
+
+test('an unconfirmed Orca start whose bring-back failed offers bringing back again, no relaunch', async ({
+  page,
+}) => {
+  await setup(page, '/#mini=floor');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.orcaUncertain = true;
+    w.returnFails = 1;
+  });
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await modal.getByRole('button', { name: 'Orca 새 탭으로 불러오기' }).click();
+  const chosen = modal.getByRole('region', { name: '불러올 동료' });
+  const again = chosen.getByRole('button', { name: '사무실로 다시 데려오기' });
+  await again.click();
+  await expect(again).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).returned)).toEqual(['demo:6', 'demo:6']);
+  const starts = await page.evaluate(() =>
+    (window as any).actions.filter((a: string) => a.startsWith('orca:start')),
+  );
+  expect(starts).toHaveLength(1);
 });
 
 test('without Orca only tmux is offered', async ({ page }) => {

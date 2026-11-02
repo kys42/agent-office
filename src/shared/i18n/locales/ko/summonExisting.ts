@@ -17,5 +17,6 @@ export const summonExisting: Messages['summonExisting'] = {
   chosen: '불러올 동료',
   tmuxStart: 'tmux로 불러오기',
   orcaStart: 'Orca 새 탭으로 불러오기',
+  returnAgain: '사무실로 다시 데려오기',
   hint: '터미널이 열리면 사무실로 데려와요(보관된 동료는 보관 해제). 실행 전에 확인 창이 떠요.',
 };

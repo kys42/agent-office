@@ -50,6 +50,10 @@ export function SummonExisting({
   const [orca, setOrca] = useState<OrcaLaunchInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  /** Orca made the tab but did not confirm its start: only "Open Orca" is offered then. */
+  const [launchUncertain, setUncertain] = useState('');
+  /** After such a start, the colleague's return was not saved: offered again, never relaunched. */
+  const [unreturned, setUnreturned] = useState(false);
   const request = useRef(0);
   const returned = useRef(new Set<string>());
   /** Remembered only once the store confirmed it: a failed restore is tried again next time. */
@@ -115,6 +119,8 @@ export function SummonExisting({
     setDuplicate(undefined);
     duplicateShown.current = duplicateRequest.current;
     setError('');
+    setUncertain('');
+    setUnreturned(false);
     setBusy(false);
     void run((ticket) => check(c.session.id, ticket));
   };
@@ -144,7 +150,14 @@ export function SummonExisting({
       } catch (e) {
         return refused(id, ticket, e);
       }
-      if (ticket !== request.current || !result.launched) return;
+      if (ticket !== request.current) return;
+      if (result.uncertain) {
+        // Not a failure: the tab starts once Orca shows it, so the colleague comes back now.
+        setUncertain(result.message ?? t.tmux.orcaUncertain);
+        setUnreturned(!(await bringBack(id)));
+        return;
+      }
+      if (!result.launched) return;
       // The tab is open; a failed restore keeps the sheet (its error toast stays) and re-checks,
       // so the now-running conversation offers 터미널로 이동, which tries the restore again.
       if (!(await bringBack(id))) return check(id, ++request.current);
@@ -173,11 +186,15 @@ export function SummonExisting({
     });
   const runningElsewhere = duplicate?.state === 'running';
   const openElsewhere = duplicate?.state === 'open';
+  // Reopened (or started elsewhere): main still holds an unconfirmed Orca start, no tab yet.
+  const uncertain =
+    launchUncertain ||
+    (duplicate?.state === 'open' && duplicate.pending ? t.tmux.orcaUncertain : '');
   const place =
     duplicate?.state === 'running' || duplicate?.state === 'open'
       ? t.tmux.place[duplicate.where]
       : '';
-  const openTab = openElsewhere && duplicate.where === 'orca' && !!api.orcaLaunch;
+  const openTab = openElsewhere && duplicate.where === 'orca' && !!api.orcaLaunch && !uncertain;
   // The own tmux session shows its (separately labelled) reconnect controls instead.
   const openOther = openElsewhere && !(duplicate.where === 'tmux' && info?.running);
   const label = (c: AwayColleague) => residentLabel(c.session, privacy).name;
@@ -274,7 +291,46 @@ export function SummonExisting({
               <span>{error}</span>
             </p>
           )}
-          {(info || orca?.available || runningElsewhere || openTab) && (
+          {orca && !orca.available && orca.reason && !runningElsewhere && !uncertain && (
+            <p className="tmux-caution">
+              <Info size={14} aria-hidden="true" />
+              {orca.reason}
+            </p>
+          )}
+          {uncertain && (
+            <p className="tmux-caution" role="status">
+              <Info size={14} aria-hidden="true" />
+              {uncertain}
+            </p>
+          )}
+          {uncertain && (api.orcaReveal || unreturned) && (
+            <div className="summon-existing-actions">
+              {unreturned && (
+                <button
+                  className="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => setUnreturned(!(await bringBack(chosen.session.id))))
+                  }
+                >
+                  {text.returnAgain}
+                </button>
+              )}
+              {api.orcaReveal && (
+                <button
+                  className="button primary"
+                  disabled={busy}
+                  onClick={() =>
+                    void api.orcaReveal?.().catch((e) => setError((e as Error).message))
+                  }
+                >
+                  <ArrowUpRight size={13} aria-hidden="true" />
+                  {t.tmux.orcaReveal}
+                </button>
+              )}
+            </div>
+          )}
+          {!uncertain && (info || orca?.available || runningElsewhere || openTab) && (
             <div className="summon-existing-actions">
               {runningElsewhere && (
                 <button

@@ -10,7 +10,7 @@ import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js'
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
 import { TerminalFocusError } from './terminal-host.js';
-import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
+import { checkDuplicate, duplicateNote, livenessFor, pendingCheck } from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -1078,6 +1078,8 @@ function setupIPC() {
       checkDuplicate(
         {
           agent: (f) => livenessFor(session.provider).lookup(session.nativeId, f),
+          // An Orca launch of it that may still start once Orca shows its tab.
+          pending: () => orcaLaunch.pending.has(session),
           orcaTab: async (f) => {
             const tab = await lookupOrcaTab(
               session,
@@ -1274,29 +1276,39 @@ function setupIPC() {
       };
     if (action === 'open') return tmuxResume.open(session);
     const skip = skipPermissions();
-    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
-      const connections = await projectConnections(original.cwd);
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.summonTitle,
-        message: t.summonConfirm,
-        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${skipNote(skip)}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
-        buttons: [t.cancel, t.summonStart],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const result = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
+    return tmuxResume.start(
+      { ...session, skipPermissions: skip },
+      async (info, check) => {
+        const connections = await projectConnections(original.cwd);
+        const owner = BrowserWindow.fromWebContents(e.sender);
+        const t = m().tmux;
+        const options = {
+          type: dialogType(check),
+          title: t.summonTitle,
+          message: t.summonConfirm,
+          detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${skipNote(skip)}${duplicateNote(check)}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
+          buttons: [t.cancel, t.summonStart],
+          defaultId: 0,
+          cancelId: 0,
+        };
+        const endCardDialog = cards.dialog(e.sender);
+        try {
+          const result = owner
+            ? await dialog.showMessageBox(owner, options)
+            : await dialog.showMessageBox(options);
+          return result.response === 1;
+        } finally {
+          endCardDialog();
+        }
+      },
+      undefined,
+      // The same agent, folder and name may still be starting in an Orca tab.
+      pendingCheck(() => orcaLaunch.pending.has({ ...session, name: session.agentName })),
+    );
+  });
+  ipcMain.handle('office:orca-reveal', async (e) => {
+    trusted(e);
+    await orcaLaunch.reveal();
   });
   ipcMain.handle('office:orca-summon', async (e, id, action, provider, name, initialMessage) => {
     trusted(e);
@@ -1312,28 +1324,33 @@ function setupIPC() {
     const fresh = summonSession(original.cwd ?? '', provider, name, initialMessage);
     const session = { ...fresh, alias: fresh.agentName, skipPermissions: skip };
     if (action === 'status') return orcaLaunch.status(session);
-    const result = await orcaLaunch.start(session, async (info) => {
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.summonTitle,
-        message: t.summonOrcaConfirm,
-        detail: `${t.summonOrcaIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}${skipNote(skip)}`,
-        buttons: [t.cancel, t.summonOrca],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const answer = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return answer.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
+    const result = await orcaLaunch.start(
+      session,
+      async (info, check) => {
+        const owner = BrowserWindow.fromWebContents(e.sender);
+        const t = m().tmux;
+        const options = {
+          type: dialogType(check),
+          title: t.summonTitle,
+          message: t.summonOrcaConfirm,
+          detail: `${t.summonOrcaIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}${skipNote(skip)}${duplicateNote(check)}`,
+          buttons: [t.cancel, t.summonOrca],
+          defaultId: 0,
+          cancelId: 0,
+        };
+        const endCardDialog = cards.dialog(e.sender);
+        try {
+          const answer = owner
+            ? await dialog.showMessageBox(owner, options)
+            : await dialog.showMessageBox(options);
+          return answer.response === 1;
+        } finally {
+          endCardDialog();
+        }
+      },
+      undefined,
+      pendingCheck(() => orcaLaunch.pending.has({ ...session, name: session.alias })),
+    );
     return result.launched ? { ...result, message: m().tmux.summonOrcaLaunched } : result;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.

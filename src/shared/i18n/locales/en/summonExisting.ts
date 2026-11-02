@@ -16,5 +16,6 @@ export const summonExisting = {
   chosen: 'Colleague to bring back',
   tmuxStart: 'Bring back in tmux',
   orcaStart: 'Bring back in a new Orca tab',
+  returnAgain: 'Bring them back to the office again',
   hint: 'They return to the office (archived ones are restored) once their terminal is open. A confirmation appears before anything starts.',
 };

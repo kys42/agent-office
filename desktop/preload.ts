@@ -100,6 +100,7 @@ const api: OfficeAPI = {
           name: string,
           initialMessage?: string,
         ) => action('office:orca-summon', id, actionName, provider, name, initialMessage),
+        orcaReveal: () => action('office:orca-reveal'),
       }
     : {}),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
