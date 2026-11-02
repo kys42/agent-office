@@ -1,6 +1,6 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { ModePreview } from './ModePreview';
+import { ModePreview, usePreviewOffice } from './ModePreview';
 import { TRIAGE_LABELS } from '../shared/triage';
 import { PetCustomizer } from './PetCustomizer';
 import { DeskCustomizer, DeskPreview, type DeskZone } from './DeskCustomizer';
@@ -84,6 +84,8 @@ import {
   PET_NAME_CHOICES,
   PET_TALLY_GROUPS,
   READ_DWELL_CHOICES,
+  mergeViews,
+  resolveViews,
   viewPrefs,
 } from '../shared/view-prefs';
 import { READING_FONT_CHOICES, TEXT_SIZE_CHOICES, textPrefs } from '../shared/text-prefs';
@@ -199,7 +201,7 @@ function ViewCard({
       {preview}
       {children}
       <details className="view-card-more">
-        <summary>
+        <summary aria-label={`${title} · ${more}`}>
           <ChevronRight size={14} />
           {more}
         </summary>
@@ -258,6 +260,10 @@ export function Settings({
   };
   const [customizing, setCustomizing] = useState<Provider | null>(null);
   const [decorating, setDecorating] = useState(false);
+  // #324: screen choices saved but not back yet, so quick clicks build on each other (a second
+  // click before the first comes back must not undo it).
+  const [viewsDraft, setViewsDraft] = useState<ViewSettings | undefined>();
+  useEffect(() => setViewsDraft(undefined), [snapshot.preferences.views]);
   const [category, setCategory] = useState<SettingsCategory>(() =>
     focusSection
       ? settingsCategory(focusSection.section)
@@ -265,6 +271,8 @@ export function Settings({
         ? lastPageCategory()
         : 'general',
   );
+  // One office for all four previews, built only while the Look tab is shown.
+  const previewOffice = usePreviewOffice(snapshot, category === 'appearance');
   // The page comes back to the category last open in this session.
   useEffect(() => {
     if (layout !== 'page') return;
@@ -523,10 +531,13 @@ export function Settings({
   );
   // #324: what each screen shows. Each card: a line, the live preview, the main choices, and
   // the rest under 'More'. The dock's cards are the desktop app's (a browser has no dock).
-  const shows = view.views;
+  const shows = viewsDraft ? resolveViews(viewsDraft) : view.views;
   const v = s.views;
-  const setView = <M extends ViewMode>(mode: M, patch: NonNullable<ViewSettings[M]>) =>
-    void onPrefs({ views: { [mode]: patch } });
+  const setView = <M extends ViewMode>(mode: M, patch: NonNullable<ViewSettings[M]>) => {
+    const next = mergeViews(viewsDraft ?? snapshot.preferences.views, { [mode]: patch });
+    setViewsDraft(next);
+    void onPrefs({ views: { [mode]: next[mode] } });
+  };
   const deskSwitch = (
     mode: 'dock' | 'office',
     key: 'branch' | 'papers' | 'beacon' | 'focus',
@@ -540,7 +551,8 @@ export function Settings({
       onChange={() => setView(mode, { [key]: !shows[mode][key] })}
     />
   );
-  const preview = (mode: ViewMode) => <ModePreview mode={mode} snapshot={snapshot} demo={demo} />;
+  const preview = (mode: ViewMode) =>
+    previewOffice && <ModePreview mode={mode} office={previewOffice} demo={demo} />;
   const viewsSection = (
     <section className="settings-section" data-guide-section="views" tabIndex={-1}>
       <h2>{v.title}</h2>
@@ -569,7 +581,10 @@ export function Settings({
                           type="button"
                           key={group}
                           aria-pressed={counted}
-                          disabled={!shows.pet.tally}
+                          // The pill counts at least one group: the last one stays on.
+                          disabled={
+                            !shows.pet.tally || (counted && shows.pet.tallyGroups.length === 1)
+                          }
                           onClick={() =>
                             setView('pet', {
                               tallyGroups: counted

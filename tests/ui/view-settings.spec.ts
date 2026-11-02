@@ -98,6 +98,8 @@ async function bridge(page: Page, snapshot: Snapshot, width = 1440) {
       },
       preferences: async (p: any) => {
         w.saved.push(p);
+        // A slow office: the answer comes back after the next click.
+        if (w.slow) await new Promise((r) => setTimeout(r, 400));
         const prior = w.fixture.preferences.views ?? {};
         const views = p.views ? { ...prior } : undefined;
         for (const mode of Object.keys(p.views ?? {}))
@@ -229,16 +231,19 @@ test('a choice saves, and the preview follows it at once', async ({ page }) => {
   await tiny.getByText('자세히', { exact: true }).click();
   await tiny.getByRole('switch', { name: '책상 효과' }).click();
 
-  expect(await saved(page)).toEqual([
-    { views: { office: { branch: false } } },
-    { views: { dock: { branch: false } } },
-    { views: { pet: { tally: false } } },
-    { views: { pet: { tally: true } } },
-    { views: { pet: { tallyGroups: ['attention', 'results', 'standby'] } } },
-    { views: { pet: { name: 'always' } } },
-    { views: { pet: { petting: false } } },
-    { views: { tiny: { effects: false } } },
-  ]);
+  // Each click saved its card's whole choice, so what is stored is everything just picked.
+  expect(await saved(page)).toHaveLength(8);
+  expect(await page.evaluate(() => (window as any).fixture.preferences.views)).toEqual({
+    office: { branch: false },
+    dock: { branch: false },
+    pet: {
+      tally: true,
+      tallyGroups: ['attention', 'results', 'standby'],
+      name: 'always',
+      petting: false,
+    },
+    tiny: { effects: false },
+  });
 });
 
 const chosen: ViewSettings = {
@@ -346,3 +351,40 @@ for (const theme of ['light', 'dark'] as const)
     await expect(section.locator('.office-card .desk-station').first()).toBeVisible();
     await section.screenshot({ path: `.local/view-settings-window-${theme}.png` });
   });
+
+test('quick clicks on the counted groups build on each other; the last group stays on', async ({
+  page,
+}) => {
+  await bridge(page, office());
+  await page.addInitScript(() => ((window as any).slow = true));
+  await openLook(page);
+  const pet = card(page, '데스크 펫');
+  await pet.getByText('자세히', { exact: true }).click();
+  const groups = pet.getByRole('group', { name: '셀 항목' });
+  // Two clicks before the first answer is back: both stick.
+  await groups.getByRole('button', { name: '확인할 결과' }).click();
+  await groups.getByRole('button', { name: '대기' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixture.preferences.views?.pet?.tallyGroups))
+    .toEqual(['attention', 'working']);
+  await groups.getByRole('button', { name: '나를 기다려요' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixture.preferences.views?.pet?.tallyGroups))
+    .toEqual(['working']);
+  // The pill must count something: the last group cannot be turned off.
+  await expect(groups.getByRole('button', { name: '일하는 중' })).toBeDisabled();
+});
+
+test('counting only a group the pet is not showing still lets the arrows reach it', async ({
+  page,
+}) => {
+  const snapshot = office({ views: { pet: { tallyGroups: ['working'] } } });
+  // One at work, one calling (the pet shows the caller), one long resting; no news to read.
+  Object.assign(snapshot.sessions[2], { status: 'idle', updatedAt: Date.now() - 5 * 3600_000 });
+  snapshot.notices = [];
+  await bridge(page, snapshot);
+  await page.goto('/?lang=ko#mini');
+  await page.locator('.dock-pet-anchor').hover();
+  await page.getByRole('button', { name: '다음 동료' }).click();
+  await expect(page.locator('.dock-pet-name')).toHaveText('동료 0');
+});

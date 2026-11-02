@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Snapshot, ViewMode } from '../shared/types';
-import { buildOfficeModel } from '../shared/office-model';
+import { buildOfficeModel, type OfficeModel } from '../shared/office-model';
 import { PET_SIZE, dockHeight } from '../shared/dock-geometry';
 import { demoSnapshot } from '../lib/demo';
 import { useI18n } from '../lib/i18n';
@@ -16,23 +16,42 @@ const SCALE: Record<Exclude<ViewMode, 'office'>, number> = { pet: 0.6, dock: 0.4
 /** The pet's window keeps headroom for long bubbles; the preview shows its lower part. */
 const PET_SHOWN = 250;
 
+/** The office every preview draws, built once for the four cards. */
+export type PreviewOffice = { model: OfficeModel; sampled: boolean; snapshot: Snapshot };
+
+/**
+ * The office the previews draw: the person's own (or the sample office, dressed in their
+ * choices, while theirs is empty). Built once per snapshot and only while `on` (the Look tab is
+ * shown), so the other tabs never pay for four live scenes.
+ */
+export function usePreviewOffice(snapshot: Snapshot, on: boolean): PreviewOffice | null {
+  const { locale } = useI18n();
+  const sample = useMemo(() => (on ? demoSnapshot() : null), [on, locale]);
+  return useMemo(() => {
+    if (!on || !sample) return null;
+    const own = buildOfficeModel(snapshot, Date.now());
+    if (own.seats.length) return { model: own, sampled: false, snapshot };
+    const shown = { ...sample, preferences: snapshot.preferences };
+    return { model: buildOfficeModel(shown, Date.now()), sampled: true, snapshot };
+  }, [on, snapshot, sample]);
+}
+
 /**
  * A settings card's live preview (#324): the real pet, row, tiny row or big office, drawn small
- * from the person's own office (or the sample office while theirs is empty) with the choices
- * just saved. `preview` turns off everything that would reach outside it, and the box is inert:
- * nothing in it takes the mouse, the keyboard or a screen reader (the box itself says what it
- * shows). Names follow privacy like everywhere else.
+ * from `usePreviewOffice` with the choices just saved. `preview` turns off everything that would
+ * reach outside it, and the box is inert: nothing in it takes the mouse, the keyboard or a
+ * screen reader (the box itself says what it shows). Names follow privacy like everywhere else.
  */
 export function ModePreview({
   mode,
-  snapshot,
+  office,
   demo = false,
 }: {
   mode: ViewMode;
-  snapshot: Snapshot;
+  office: PreviewOffice;
   demo?: boolean;
 }) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(560);
   useLayoutEffect(() => {
@@ -44,14 +63,7 @@ export function ModePreview({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const sample = useMemo(() => demoSnapshot(), [locale]);
-  const { model, sampled } = useMemo(() => {
-    const own = buildOfficeModel(snapshot, Date.now());
-    if (own.seats.length) return { model: own, sampled: false };
-    // Nobody yet: the sample office, dressed in the person's own choices.
-    const shown = { ...sample, preferences: snapshot.preferences };
-    return { model: buildOfficeModel(shown, Date.now()), sampled: true };
-  }, [snapshot, sample]);
+  const { model, sampled, snapshot } = office;
   const p = snapshot.preferences;
   const room =
     mode === 'office'

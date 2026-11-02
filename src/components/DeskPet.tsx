@@ -91,15 +91,14 @@ export function DeskPet({
   const label = status ?? pet.label;
   const count = !status && pet.group !== 'resting' ? pet.count : null;
   // The office in numbers: waiting for the person, results to read, at work, standing by.
+  // Nobody in the chosen groups: they show at 0 rather than falling back to a pill that names
+  // a group the person left out.
+  const picked = TALLY.filter((group) => show.tallyGroups.includes(group));
+  const busy = picked.filter((group) => model.counts[group] > 0);
   const tally =
     status || !show.tally
       ? []
-      : TALLY.filter((group) => show.tallyGroups.includes(group) && model.counts[group] > 0).map(
-          (group) => ({
-            group,
-            count: model.counts[group],
-          }),
-        );
+      : (busy.length ? busy : picked).map((group) => ({ group, count: model.counts[group] }));
   const tallyWords = tally.map((g) => `${TRIAGE_LABELS[g.group]} ${g.count}`).join(' · ');
   const speaker = status ? undefined : pet.speaker;
   // The pet stands for one colleague at a time, like one desk of the row: who just spoke (or
@@ -149,6 +148,9 @@ export function DeskPet({
   // A helper speaking stands at its colleague's place among the arrows.
   const at = view?.session.attachedTo ?? id;
   const place = choices.findIndex((v) => v.session.id === at) + 1;
+  // The arrows go somewhere: to another counted colleague, or to the only one counted when the
+  // pet now shows someone outside the counted groups (the lead, a speaker).
+  const canStep = choices.length > 1 || (choices.length === 1 && place === 0);
   const step = (by: -1 | 1) => {
     const next = petStep(choices, at ?? undefined, by);
     if (!next) return;
@@ -222,7 +224,7 @@ export function DeskPet({
       return;
     if (e.target instanceof Element && e.target.closest('input, textarea, select, .quick-reply'))
       return;
-    if (choices.length < 2) return;
+    if (!canStep) return;
     e.preventDefault();
     step(e.key === 'ArrowLeft' ? -1 : 1);
   });
@@ -431,7 +433,7 @@ export function DeskPet({
           </button>
         </div>
         {/* Who the pet stands for: the colleague before or after, as the row's arrows. */}
-        {choices.length > 1 && (
+        {canStep && (
           <div className="dock-pet-nav" data-solid>
             <button
               className="dock-pet-step is-prev"
