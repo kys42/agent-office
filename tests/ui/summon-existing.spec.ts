@@ -182,6 +182,45 @@ test('an Orca start not yet confirmed still brings the colleague back, offering 
   await expect.poll(() => page.evaluate(() => (window as any).revealed)).toBe(1);
 });
 
+test('a pending Orca start read back from main offers Open Orca, not a tab that is not there', async ({
+  page,
+}) => {
+  await setup(page, '/#mini=floor');
+  await page.evaluate(
+    () => ((window as any).orcaDuplicate = { state: 'open', where: 'orca', pending: true }),
+  );
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  const chosen = modal.getByRole('region', { name: '불러올 동료' });
+  await expect(chosen.getByText('Orca를 열면 시작돼요', { exact: false })).toBeVisible();
+  await expect(chosen.getByRole('button', { name: '그 탭으로 이동' })).toHaveCount(0);
+  await expect(chosen.getByRole('button', { name: 'Orca 새 탭으로 불러오기' })).toHaveCount(0);
+  await expect(chosen.getByRole('button', { name: 'Orca 열기' })).toBeVisible();
+});
+
+test('an unconfirmed Orca start whose bring-back failed offers bringing back again, no relaunch', async ({
+  page,
+}) => {
+  await setup(page, '/#mini=floor');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.orcaUncertain = true;
+    w.returnFails = 1;
+  });
+  const modal = await openSummon(page);
+  await modal.getByRole('button', { name: /라운지 리뷰어/ }).click();
+  await modal.getByRole('button', { name: 'Orca 새 탭으로 불러오기' }).click();
+  const chosen = modal.getByRole('region', { name: '불러올 동료' });
+  const again = chosen.getByRole('button', { name: '사무실로 다시 데려오기' });
+  await again.click();
+  await expect(again).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).returned)).toEqual(['demo:6', 'demo:6']);
+  const starts = await page.evaluate(() =>
+    (window as any).actions.filter((a: string) => a.startsWith('orca:start')),
+  );
+  expect(starts).toHaveLength(1);
+});
+
 test('without Orca only tmux is offered', async ({ page }) => {
   await setup(page, '/', false);
   const modal = await openSummon(page);
