@@ -94,5 +94,7 @@ test('over a pet the pointer is a petting hand', async ({ page }) => {
   await office(page, '');
   const pet = page.locator('.office-pet').first();
   await pet.hover();
-  await expect(pet).toHaveCSS('cursor', /url\("data:image\/svg\+xml.*16 16, grab/);
+  // The system's palm-down emoji where it can be drawn (a PNG), else the drawn SVG hand.
+  await expect(pet).toHaveCSS('cursor', /data:image\/(png|svg\+xml).*, grab$/);
+  if (process.platform === 'darwin') await expect(pet).toHaveCSS('cursor', /data:image\/png/);
 });
