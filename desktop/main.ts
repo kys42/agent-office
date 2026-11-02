@@ -1958,10 +1958,9 @@ function setupIPC() {
     let target: PromptTarget | null = null;
     try {
       const which = settingFor(open.request.kind);
-      const setting = (await answerSettings())[which];
-      if (setting === 'off') throw new TerminalInputError(t.off);
-      if (setting === 'unset') {
-        // The first answer of a kind asks once; the choice stays in the desktop profile.
+      if ((await answerSettings())[which] !== 'on') {
+        // Not on yet (never asked, or turned off): this press asks natively, and agreeing turns
+        // the kind on (kept in the desktop profile). Declining sends nothing and changes nothing.
         if ((await changeSetting(e, which, true))[which] !== 'on')
           return { status: 'cancelled', message: '' };
         // The dialog may have changed while the confirmation was open: the same call, or nothing.
