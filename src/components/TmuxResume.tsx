@@ -65,8 +65,12 @@ export function TmuxResume({
   /**
    * Orca made the tab but did not confirm its start (`uncertain`): not a failure. Only "Open
    * Orca" is offered then, never another launch (main cautions one for a while meanwhile).
+   * It belongs to the target launched: choosing another agent, project or name lifts it.
    */
-  const [uncertain, setUncertain] = useState('');
+  const [unconfirmed, setUnconfirmed] = useState<{ target: string; message: string } | null>(null);
+  const target = [provider, projectId, agentName.trim()].join('\0');
+  const uncertain = unconfirmed?.target === target ? unconfirmed.message : '';
+  const setUncertain = (message: string) => setUnconfirmed(message ? { target, message } : null);
   /**
    * Whether this conversation already runs or is open elsewhere (main's duplicate-launch check;
    * main checks again before launching, this only shapes the buttons). One state for both

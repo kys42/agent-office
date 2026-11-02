@@ -342,8 +342,8 @@ export class OrcaLaunch {
   }
   /**
    * The terminal of a tab whose start Orca did not confirm: a handle of the same worktree that
-   * the list taken before creating it did not have, titled as the launch; else the only new one,
-   * when both lists were whole. Between several untitled new ones it never guesses.
+   * the list taken before creating it did not have (so that list must be whole), titled as the
+   * launch; else the only new one, when the later list is whole too. Between several untitled new ones it never guesses.
    */
   private async adopt(
     info: { cwd: string; name: string },
@@ -354,10 +354,13 @@ export class OrcaLaunch {
       await wait(ADOPT_EVERY);
       const now = await this.terminals(info.cwd);
       const added = now.rows.filter((t) => !before.handles.has(t.handle));
+      // A terminal missing from a cut-short earlier list is not new: titles repeat (reopening
+      // the same conversation), so nothing is adopted without a whole baseline.
+      if (!before.complete) continue;
       const titled = added.find((t) => t.title === info.name);
       if (titled) return titled.handle;
-      // "The only new one" holds only when neither list was cut short.
-      if (before.complete && now.complete && added.length === 1) return added[0].handle;
+      // "The only new one" holds only when the later list is whole too.
+      if (now.complete && added.length === 1) return added[0].handle;
     }
     return undefined;
   }

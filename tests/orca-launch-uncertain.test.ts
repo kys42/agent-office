@@ -229,7 +229,8 @@ test('title mismatch: several new terminals, a partial list before, or another w
       false,
     );
   }
-  // A partial list still adopts the one titled as the launch.
+  // Nor is the one titled as the launch after a partial list: titles repeat (an older tab of the
+  // same conversation may be the one the list left out), so it stays unconfirmed.
   const titled = fixture({
     create: () => HANDLE_TIMEOUT,
     lists: [
@@ -237,8 +238,13 @@ test('title mismatch: several new terminals, a partial list before, or another w
       listed(term('term_a', 'zsh'), term('term_b', '기능 담당')),
     ],
   });
-  assert.equal((await titled.launcher.start(claude, async () => true)).launched, true);
-  assert.ok(titled.calls.some((c) => c.args.includes('--terminal=term_b')));
+  const kept = await titled.launcher.start(claude, async () => true);
+  assert.equal(kept.launched, false);
+  assert.equal(kept.uncertain, true);
+  assert.equal(
+    titled.calls.some((c) => c.args[1] === 'switch'),
+    false,
+  );
 });
 
 test('never found: uncertain (no tmux hint), looked for about 30 s, kept pending for 2 min', async () => {
