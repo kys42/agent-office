@@ -1171,7 +1171,25 @@ export function Inspector({
               enabled={terminalSend}
               privacy={privacy}
               onJump={!s.remote && api.jump ? () => void resume() : undefined}
-              onSend={async (text, replaceDraft, allowPartialDraft, images) => {
+              // What sits in its terminal input box: shown here and sent as is on request.
+              draftPreview={
+                !s.remote && !demo && api.composerDraft
+                  ? {
+                      id: s.id,
+                      notify,
+                      onSubmitted: (text, startedAt, logical) => {
+                        markSent(s.id);
+                        // A slash command runs; it is not recorded as a request to wait for.
+                        if ((logical ?? text).trimStart().startsWith('/')) return;
+                        // The text as typed when the screen could tell; else as read off the
+                        // box, whose wrapping may split words (matched loosely, see pendingSends).
+                        if (logical !== undefined) remember(s.id, logical, startedAt);
+                        else remember(s.id, text, startedAt, 0, { wrapped: true });
+                      },
+                    }
+                  : undefined
+              }
+              onSend={async (text, replaceDraft, allowPartialDraft, images, exactDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();
                 const result = await sendFollowUp(
@@ -1181,6 +1199,7 @@ export function Inspector({
                   notify,
                   allowPartialDraft,
                   images,
+                  exactDraft,
                 );
                 if (result.status === 'sent') {
                   markSent(id);

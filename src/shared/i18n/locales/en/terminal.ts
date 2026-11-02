@@ -62,6 +62,28 @@ export const terminal = {
   sendDraft: 'Send this as is',
   sendDraftTitle: 'Sends the text in the prompt instead. What you wrote stays in the box.',
   cancelClear: 'Cancel',
+  /** Text sitting in the terminal's input box (typed there, not sent), shown on the work card. */
+  preview: {
+    title: 'Half-written in the terminal input',
+    /** `agent`: e.g. Claude. */
+    where: (agent: string) => `${agent} input box`,
+    expand: 'Show all',
+    collapse: 'Show less',
+    send: 'Send as is',
+    sendTitle:
+      'Presses Enter in the terminal, only if its input box still holds exactly this text. Nothing is typed.',
+    import: 'Edit in card',
+    importTitle:
+      'Copies it into the box below. Sending from the card then replaces it in the terminal.',
+    imported:
+      'Copied into the box below. Sending clears this from the terminal input (it goes to your clipboard) and sends yours instead.',
+    /** The box wrapped rows where the text's own breaks can't be told apart: no [Edit in card]. */
+    notImportable:
+      "The terminal wrapped this over rows, so where its own lines break can't be told. Edit it in the terminal, or send it as is.",
+    partial:
+      "Not all of it is visible here, so it can't be sent from the card. Check the terminal.",
+    maybeSuggestion: 'It may be a suggestion the prompt shows rather than something typed.',
+  },
   clearedToClipboard: 'The cleared text is on your clipboard',
   /** Images in the composer: paste (⌘V), drop, or the attach button. */
   images: {

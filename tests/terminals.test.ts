@@ -24,6 +24,8 @@ import {
   ptyOwner,
   sendToTerminal,
   inspectTerminalDraft,
+  previewTerminalDraft,
+  submitTerminalDraft,
   terminalTarget,
   TerminalInputError,
   type LiveTerminal,
@@ -2565,5 +2567,264 @@ test('A process record that cannot be read or parsed keeps a background job unkn
   await withSessions({ ...PARKED, '4242.abc.key': 'x', 'notes.txt': '{' }, async (dir) => {
     const { deps } = fakeDeps(dir, jobShown());
     assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+  });
+});
+
+/** A box holding `text` until Enter goes in (tmux `send-keys … Enter`, Orca `--enter`). */
+function draftBox(text: string, options: { taken?: boolean } = {}) {
+  let held = text;
+  return {
+    screen: () => claudeScreen(held),
+    fail: (_file: string, args: string[]) => {
+      const enter =
+        (args.includes('send-keys') && args.includes('Enter')) || args.includes('--enter');
+      if (enter && options.taken !== false) held = '';
+      return undefined;
+    },
+  };
+}
+const enters = (calls: { args: string[] }[]) =>
+  calls.filter(
+    (c) => (c.args.includes('send-keys') && c.args.includes('Enter')) || c.args.includes('--enter'),
+  ).length;
+const captures = (calls: { file: string; args: string[] }[]) =>
+  calls.filter((c) => c.args.includes('capture-pane') || c.args[1] === 'read').length;
+
+test('The card preview reads the box read-only, once for every window asking at once', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { screen: () => claudeScreen('half-written idea') });
+    const [a, b] = await Promise.all([
+      previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps),
+      previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps),
+    ]);
+    assert.deepEqual(a, {
+      kind: 'draft',
+      text: 'half-written idea',
+      agent: 'Claude',
+      submittable: true,
+      logical: 'half-written idea',
+    });
+    assert.deepEqual(b, a);
+    // A third ask right after shares it too: one screen read in all.
+    await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps);
+    assert.equal(captures(calls), 1);
+    assert.ok(!sent(calls) && !typedAny(calls) && !calls.some((c) => clears(c.args)));
+  });
+  // Not taking input (a permission prompt), or another process in front: not read at all.
+  const waiting = fakeDeps('/x', { screen: () => claudeScreen('mine') });
+  assert.deepEqual(
+    await previewTerminalDraft(tmuxLive('waiting'), claudeCodeComposer, waiting.deps),
+    { kind: 'unknown', reason: 'not-ready' },
+  );
+  const foreign = fakeDeps('/x', { fg: 'T 4242 4000', screen: () => claudeScreen('mine') });
+  assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, foreign.deps), {
+    kind: 'unknown',
+    reason: 'not-ready',
+  });
+  assert.equal(captures(waiting.calls) + captures(foreign.calls), 0);
+  // A queue (Codex) has no box to read here.
+  const queue = fakeDeps('/x');
+  assert.deepEqual(await previewTerminalDraft(tmuxLive(), codexQueueComposer, queue.deps), {
+    kind: 'unknown',
+    reason: 'unsupported',
+  });
+  // Orca: its reported `draft`, with the suggestion caveat.
+  const orca = fakeDeps('/x', { orcaDraft: () => 'from orca' });
+  assert.deepEqual(await previewTerminalDraft(orcaLive(), claudeCodeComposer, orca.deps), {
+    kind: 'draft',
+    text: 'from orca',
+    agent: 'Claude',
+    submittable: true,
+    logical: 'from orca',
+    maybeSuggestion: true,
+  });
+});
+
+test('While a send types into the box, the preview says so instead of showing its text', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps } = fakeDeps(dir);
+    const sending = sendToTerminal(tmuxLive(), 'my reply', deps);
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'unknown',
+      reason: 'sending',
+    });
+    await sending;
+    // The send is over: the next look reads afresh (its cached answer was dropped).
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'empty',
+    });
+  });
+});
+
+test('Send as is: Enter only, after the box is seen holding exactly the previewed text', async () => {
+  for (const live of [tmuxLive(), orcaLive()])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const box = draftBox('half-written idea\nsecond line');
+      const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+      const result = await submitTerminalDraft(live, 'half-written idea\nsecond line', deps);
+      assert.deepEqual(result, {
+        status: 'sent',
+        message: live.host.kind === 'orca' ? 'Orca 터미널에 보냈어요' : 'tmux work:1.0에 보냈어요',
+        // As typed, from the look right before Enter: for the "sent" receipt.
+        logical: 'half-written idea\nsecond line',
+      });
+      assert.equal(enters(calls), 1);
+      // Nothing typed, deleted or pasted: the box's own text went.
+      assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
+    });
+});
+
+test('Edited in the card: replaced only while the box draws exactly the rows taken in', async () => {
+  const taken = 'steps:\n    - build';
+  /** The box holds `held` until the clearing keys empty it; then what the send pastes. */
+  const boxOf = (initial: string) => {
+    let held = initial;
+    return {
+      screen: (typed: string) => claudeScreen(held || typed),
+      fail: (_file: string, args: string[]) => {
+        if (clears(args)) held = '';
+        return undefined;
+      },
+    };
+  };
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Only an indent changed in the terminal since: asked (changed), nothing cleared or typed.
+    const box = boxOf('steps:\n  - build');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const backups: string[] = [];
+    const backup = async (text: string) => void backups.push(text);
+    const result = await sendToTerminal(tmuxLive(), 'steps:\n    - build\n    - test', deps, {
+      backup,
+      replaceDraft: taken,
+      exactDraft: true,
+    });
+    assert.equal(result.status, 'needs-confirm');
+    assert.equal(result.status === 'needs-confirm' && result.changed, true);
+    assert.ok(!calls.some((c) => clears(c.args)) && !typedAny(calls) && !sent(calls));
+    assert.deepEqual(backups, []);
+    // The older confirmation (no `exactDraft`) still goes by the drawn shape, as before.
+    const older = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      backup,
+      replaceDraft: taken,
+    });
+    assert.equal(older.status, 'sent');
+  });
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Unchanged: backed up, cleared, and the card's text sent in its place.
+    const box = boxOf(taken);
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const backups: string[] = [];
+    const result = await sendToTerminal(tmuxLive(), 'steps:\n    - build\n    - test', deps, {
+      backup: async (text) => void backups.push(text),
+      replaceDraft: taken,
+      exactDraft: true,
+    });
+    assert.equal(result.status, 'sent');
+    assert.ok(calls.some((c) => clears(c.args)) && sent(calls));
+    assert.deepEqual(backups, ['steps:\n- build']);
+  });
+});
+
+test('Send as is presses nothing when only an indent changed after the preview', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Previewed with four spaces; the person took two out in the terminal meanwhile.
+    const box = draftBox('items:\n  - a');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), 'items:\n    - a', deps);
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /바뀌어 보내지 않았어요/);
+    assert.equal(
+      result.status === 'changed' && result.draft.kind === 'draft' && result.draft.text,
+      'items:\n  - a',
+    );
+    assert.equal(enters(calls), 0);
+  });
+});
+
+test('Send as is presses nothing when the box changed, closed, or Claude is not there', async () => {
+  // Edited in the terminal since the preview: no key; the fresh text comes back to show.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('half-written idea, edited');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), 'half-written idea', deps);
+    assert.equal(result.status, 'changed');
+    assert.deepEqual(result.status === 'changed' && result.draft, {
+      kind: 'draft',
+      text: 'half-written idea, edited',
+      agent: 'Claude',
+      submittable: true,
+      logical: 'half-written idea, edited',
+    });
+    assert.match(result.status === 'changed' ? result.message : '', /바뀌어 보내지 않았어요/);
+    assert.equal(enters(calls), 0);
+    assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
+  });
+  // A permission prompt replaced the box between the two looks: no Enter (it would pick Yes).
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (_typed, read) => (read === 0 ? claudeScreen('go on') : permissionScreen),
+    });
+    const result = await submitTerminalDraft(tmuxLive(), 'go on', deps);
+    assert.deepEqual(result.status === 'changed' && result.draft, {
+      kind: 'unknown',
+      reason: 'closed',
+    });
+    assert.equal(enters(calls), 0);
+  });
+  // Emptied meanwhile (sent from the terminal itself): nothing to send twice.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(orcaLive(), 'go on', deps);
+    assert.deepEqual(result.status === 'changed' && result.draft, { kind: 'empty' });
+    assert.equal(enters(calls), 0);
+  });
+  // Waiting on a dialog, a foreign foreground, sending turned off right before the key.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('go on');
+    const waiting = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive('waiting'), 'go on', waiting.deps),
+      TerminalInputError,
+    );
+    const foreign = fakeDeps(dir, { screen: box.screen, fail: box.fail, fg: 'T 4242 4000' });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), 'go on', foreign.deps),
+      TerminalInputError,
+    );
+    const off = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), 'go on', off.deps, { allowed: async () => false }),
+      /상태가 바뀌어 보내지 않았어요/,
+    );
+    assert.equal(enters(waiting.calls) + enters(foreign.calls) + enters(off.calls), 0);
+  });
+  // Not all of it on screen (a collapsed paste): never sent from the card.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('[Pasted text #1 +12 lines]');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), '[Pasted text #1 +12 lines]', deps),
+      /다 보이지 않아/,
+    );
+    assert.equal(enters(calls), 0);
+  });
+  // Codex's queue: refused before any read.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { screen: () => claudeScreen('go on') });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), 'go on', deps, { composer: codexQueueComposer }),
+      /Codex에는 여기서 보낼 수 없어요/,
+    );
+    assert.equal(captures(calls), 0);
+  });
+});
+
+test('Send as is says so when Enter left the text in the box, and never presses twice', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('go on', { taken: false });
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(submitTerminalDraft(tmuxLive(), 'go on', deps), /같은 글이 그대로예요/);
+    assert.equal(enters(calls), 1);
   });
 });

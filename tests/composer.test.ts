@@ -76,10 +76,16 @@ test('A styled capture reads as the plain capture, with faint characters marked'
 
 /** tmux reads the pane height with the screen: 40 rows (the box shows up to 15). */
 const tmux = (raw: string, height = 40): Screen => ({ ...parseStyledScreen(raw), height });
-/** A state without the box width (checked on its own below). */
+/** A state without the box width, its rows as drawn, nor the text as typed (checked apart). */
 const noWidth = <T>(state: T): T => {
-  if (!state || typeof state !== 'object' || !('width' in state)) return state;
-  const { width: _width, ...rest } = state as T & { width: unknown };
+  if (!state || typeof state !== 'object') return state;
+  if (!('width' in state || 'logical' in state || 'rows' in state)) return state;
+  const {
+    width: _width,
+    logical: _logical,
+    rows: _rows,
+    ...rest
+  } = state as T & { width: unknown; logical: unknown; rows: unknown };
   return rest as T;
 };
 const classify = (screen: Screen) => noWidth(classifyPrompt(screen));
@@ -297,6 +303,12 @@ function fakePrompt(
         lines[row] = [...lines[row].slice(0, col), ...typed, ...lines[row].slice(col)];
         col += typed.length;
       }
+    },
+    // Enter submits the box: it empties (and shows the suggestion again, if any).
+    async submit() {
+      pressed.push(['Enter']);
+      lines = [[]];
+      [row, col] = [0, 0];
     },
   };
   return { host, pressed, text };
@@ -610,6 +622,7 @@ test('Each agent states what its composer supports', () => {
     canDetectSuggestion: true,
     canClear: true,
     images: 'attach',
+    canSubmitDraft: true,
   });
   assert.deepEqual(claudeCodeComposer.capabilities({ styled: false }), {
     delivery: 'terminal',
@@ -617,6 +630,7 @@ test('Each agent states what its composer supports', () => {
     canDetectSuggestion: false,
     canClear: true,
     images: 'attach',
+    canSubmitDraft: true,
   });
   // Codex takes follow-ups through its queue: there is no composer to check or clear.
   assert.equal(composerFor('codex'), codexQueueComposer);

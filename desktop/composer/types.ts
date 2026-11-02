@@ -19,6 +19,8 @@ export interface ComposerHost {
   /** The screen as shown now, or null when it cannot be read. */
   read(): Promise<Screen | null>;
   press(keys: readonly ComposerKey[]): Promise<void>;
+  /** The agent's submit key (Enter): tmux `send-keys Enter`, Orca's own `--enter`. */
+  submit(): Promise<void>;
   wait(ms: number): Promise<void>;
 }
 
@@ -33,6 +35,11 @@ export interface ComposerHost {
  *   too short for its text shows only part of it; such a composer needs explicit permission to clear hidden content.
  *   `width`: the most cells a row of text in the box can take, when the box was read from the
  *   screen (an overestimate); absent when the host reports the text apart (Orca's `draft`).
+ *   `rows`: the box's rows as drawn with only its frame taken off, indents kept (`text` trims
+ *   each row): what [Send as is] compares, so an indent changed after the preview is a change.
+ *   `logical`: the text as typed — its own line breaks and indents, none of the box's wrapping —
+ *   when that can be told for sure: the host reports it apart (Orca's `draft`), or every row
+ *   break on screen falls where no wrap could have (see `typedLines`). Absent otherwise.
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
@@ -40,8 +47,15 @@ export interface ComposerHost {
 export type ComposerState =
   | { kind: 'empty' }
   | { kind: 'suggestion'; text: string; inferred?: boolean }
-  | { kind: 'draft'; text: string; whole: boolean; width?: number }
-  | { kind: 'unknown'; text: string; whole: boolean; width?: number }
+  | { kind: 'draft'; text: string; whole: boolean; width?: number; rows?: string; logical?: string }
+  | {
+      kind: 'unknown';
+      text: string;
+      whole: boolean;
+      width?: number;
+      rows?: string;
+      logical?: string;
+    }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
@@ -63,6 +77,11 @@ export interface ComposerCapabilities {
    * not at all, and a send with images is refused before anything is typed.
    */
   images?: ImageDelivery;
+  /**
+   * What sits in the composer can be shown as a preview and submitted as it is (`submitDraft`):
+   * only Enter is pressed, nothing typed. Off for a queue and for agents with no known composer.
+   */
+  canSubmitDraft?: boolean;
 }
 
 /** Saves the composer's text (the clipboard) before anything of it is deleted. */
@@ -81,6 +100,18 @@ export type ClearResult =
   | { status: 'cleared'; state: ComposerState }
   | { status: 'failed'; state: ComposerState; partial?: boolean; lost?: boolean }
   | { status: 'changed'; text: string; whole: boolean; hidden?: boolean };
+
+/**
+ * How submitting the composer's own text ended (`submitDraft`). `submitted`: Enter went in
+ * right after the box was seen holding exactly the expected text, all of it (`state`: that last
+ * look). Otherwise nothing was pressed: `changed` the box holds something else now (`state`); `partial` not all of its text
+ * is known; `lost` the agent stopped being the one at the terminal; `closed` a dialog or menu
+ * replaced the box; `unreadable` the screen could not be read; `unsupported` no such adapter.
+ */
+export type DraftSubmitOutcome =
+  | { status: 'submitted'; state: ComposerState }
+  | { status: 'changed'; state: ComposerState }
+  | { status: 'refused'; reason: 'partial' | 'lost' | 'closed' | 'unreadable' | 'unsupported' };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */
@@ -101,6 +132,16 @@ export interface ComposerAdapter {
     proceed?: () => Promise<boolean>,
     options?: { allowPartial?: boolean },
   ): Promise<ClearResult>;
+  /**
+   * Submits what the composer holds, exactly as it is: the box is read, then (after `proceed`)
+   * read once more right before the key, and the submit key goes in only while both reads show
+   * exactly `expected`, all of it. Nothing is typed or deleted. Absent: not offered.
+   */
+  submitDraft?(
+    host: ComposerHost,
+    expected: string,
+    proceed: () => Promise<boolean>,
+  ): Promise<DraftSubmitOutcome>;
 }
 
 /** Ready to type into: typing replaces a suggestion, and the box is otherwise empty. */

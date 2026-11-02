@@ -66,6 +66,8 @@ import type {
   DockMode,
   JumpResult,
   SendResult,
+  ComposerDraftView,
+  DraftSubmitResult,
   Session,
   SessionIdentity,
   Snapshot,
@@ -97,6 +99,8 @@ import {
   lookupTerminal,
   sendToTerminal,
   inspectTerminalDraft,
+  previewTerminalDraft,
+  submitTerminalDraft,
   terminalTarget,
   TerminalInputError,
   type TerminalHost,
@@ -1677,6 +1681,46 @@ function setupIPC() {
     const terminal = await live(known, true);
     return terminal ? inspectTerminalDraft(terminal, composer) : null;
   });
+  // What the session's terminal input box holds, for the card's preview: read-only, from the
+  // terminal verified as for a send, only while sending is on. Reads share a short cache in
+  // terminals.ts, so several windows polling the same card cost one screen read.
+  ipcMain.handle('office:composer-draft', async (e, id): Promise<ComposerDraftView> => {
+    trusted(e);
+    if (!(await terminalSendEnabled())) return { kind: 'unknown', reason: 'off' };
+    if (typeof id !== 'string' || isRemoteId(id)) return { kind: 'unknown', reason: 'unsupported' };
+    const known = await identity(id);
+    const composer = composerFor(known.provider);
+    // Each agent's adapter says whether its box is read and submitted from here at all.
+    if (!composer.capabilities(null).canSubmitDraft)
+      return { kind: 'unknown', reason: 'unsupported' };
+    const terminal = await live(known);
+    if (!terminal) return { kind: 'unknown', reason: 'no-terminal' };
+    return previewTerminalDraft(terminal, composer);
+  });
+  // [Send as is]: Enter only, after main read the box again and found exactly `text` there.
+  ipcMain.handle('office:submit-draft', async (e, id, text): Promise<DraftSubmitResult> => {
+    trusted(e);
+    if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+    if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+    const known = await identity(id);
+    const composer = composerFor(known.provider);
+    if (!composer.capabilities(null).canSubmitDraft)
+      throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+    const terminal = await live(known, true);
+    if (!terminal) throw new Error(await noTerminal(known));
+    try {
+      return await submitTerminalDraft(terminal, text, undefined, {
+        composer,
+        allowed: terminalSendEnabled,
+      });
+    } catch (error) {
+      if (error instanceof TerminalInputError) throw error;
+      // Enter may have gone in; a retry presses only while the box still holds the text.
+      throw new Error(m().desktop.terminal.unconfirmed(hostName(terminal.host)));
+    } finally {
+      forgetTerminal(terminal.process.sessionId);
+    }
+  });
   // The renderer hands over an image's bytes; main checks them and keeps the file. Only an
   // opaque id goes back: a send names ids, never paths.
   ipcMain.handle('office:attach-image', async (e, bytes) => {
@@ -1697,7 +1741,12 @@ function setupIPC() {
   const sendMessage = async (
     id: unknown,
     text: unknown,
-    options?: { replaceDraft?: string; allowPartialDraft?: boolean; images?: unknown },
+    options?: {
+      replaceDraft?: string;
+      allowPartialDraft?: boolean;
+      exactDraft?: boolean;
+      images?: unknown;
+    },
     authorized?: () => Promise<void>,
   ): Promise<SendResult> => {
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
@@ -1705,8 +1754,11 @@ function setupIPC() {
     const images = await attachments().resolveAll(options?.images);
     const replaceDraft: unknown = options?.replaceDraft;
     const allowPartialDraft: unknown = options?.allowPartialDraft;
+    const exactDraft: unknown = options?.exactDraft;
     if (
       (options != null && typeof options !== 'object') ||
+      (exactDraft !== undefined && typeof exactDraft !== 'boolean') ||
+      (exactDraft === true && replaceDraft === undefined) ||
       (allowPartialDraft !== undefined && typeof allowPartialDraft !== 'boolean') ||
       (allowPartialDraft === true && replaceDraft === undefined) ||
       (replaceDraft !== undefined &&
@@ -1764,6 +1816,7 @@ function setupIPC() {
         composer,
         replaceDraft,
         allowPartialDraft: allowPartialDraft === true,
+        exactDraft: exactDraft === true,
         beforeSend: authorized,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),

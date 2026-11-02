@@ -16,10 +16,16 @@ import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import type { SendResult, TerminalTarget } from '../src/shared/types.js';
+import type {
+  ComposerDraftView,
+  DraftSubmitResult,
+  SendResult,
+  TerminalTarget,
+} from '../src/shared/types.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
 import {
   claudeCodeComposer,
+  draftView,
   drawn,
   holdsText,
   parseStyledScreen,
@@ -453,6 +459,161 @@ export async function inspectTerminalDraft(
   };
 }
 
+/** How long one read of a box serves every window asking (polls from several cards). */
+const PREVIEW_TTL = 1500;
+const previewKey = (sessionId: string) => `draft-preview:${sessionId}`;
+
+/**
+ * What the composer holds, for the card's preview: read-only, from the terminal `live` verified
+ * (the same rules as sending), while the agent takes input and owns its terminal. No key, no
+ * clipboard, and no claim on the app's own leftover reply is touched: a look meant for showing
+ * must never change what the next send decides. Concurrent and repeated asks within a moment
+ * share one screen read; any send or submit on the session drops it.
+ */
+export function previewTerminalDraft(
+  live: LiveTerminal,
+  composer: ComposerAdapter = claudeCodeComposer,
+  deps = defaultTerminalDeps(),
+): Promise<ComposerDraftView> {
+  const key = live.process.sessionId;
+  const unknown = (reason: Extract<ComposerDraftView, { kind: 'unknown' }>['reason']) =>
+    ({ kind: 'unknown', reason }) as const;
+  return remember(
+    deps,
+    previewKey(key),
+    PREVIEW_TTL,
+    false,
+    async (): Promise<ComposerDraftView> => {
+      const io = composerHost(live.host, deps);
+      const can = composer.capabilities(io);
+      if (can.delivery !== 'terminal' || !can.canInspect) return unknown('unsupported');
+      // A send types into this very box: its text is not the person's draft.
+      if (sending.has(key)) return unknown('sending');
+      if (!acceptsInput(live.process.status) || !(await ownsTerminal(screenPid(live), deps)))
+        return unknown('not-ready');
+      // A background session's window may have switched to another job meanwhile.
+      if (live.window && !(await stillLive(live, deps))) return unknown('not-ready');
+      const state = await composer.inspect(io);
+      if (sending.has(key)) return unknown('sending');
+      return draftView(state, composer.agent, can);
+    },
+  ).catch(() => unknown('unreadable'));
+}
+
+export interface DraftSubmitOptions {
+  composer?: ComposerAdapter;
+  /** Asked again right before Enter (e.g. the send setting): false stops, nothing pressed. */
+  allowed?: () => Promise<boolean>;
+}
+
+/**
+ * Submits the composer's text as it is — the card's [Send as is] for what sits in the box.
+ * Nothing is typed, deleted or copied: only Enter, and only while the box still holds exactly
+ * `expected` (what the preview showed), all of it, on the same Claude, open to input and in front
+ * of its terminal, checked as for a send right before the key. Anything else presses nothing:
+ * other text comes back as `changed` with a fresh read to show, a dialog or menu as `changed`
+ * too (the box is gone), the rest as a refusal. Since Enter goes only to a box that holds the
+ * text, a retry after an unclear outcome can never submit it twice.
+ */
+export function submitTerminalDraft(
+  live: LiveTerminal,
+  expected: unknown,
+  deps = defaultTerminalDeps(),
+  options: DraftSubmitOptions = {},
+): Promise<DraftSubmitResult> {
+  return oneAtATime(live.process.sessionId, deps, (waited) =>
+    submitDraftNow(live, expected, deps, waited, options),
+  );
+}
+
+async function submitDraftNow(
+  live: LiveTerminal,
+  expected: unknown,
+  deps: TerminalDeps,
+  waited: boolean,
+  options: DraftSubmitOptions,
+): Promise<DraftSubmitResult> {
+  const t = m().desktop.terminal;
+  if (typeof expected !== 'string' || !expected.trim() || expected.length > 20000)
+    throw new TerminalInputError(t.empty);
+  const current = () => stillLive(live, deps);
+  if (waited && !(await current())) throw new TerminalInputError(t.draftStopped);
+  if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
+  if (!(await ownsTerminal(screenPid(live), deps))) throw new TerminalInputError(t.notOwner);
+  if (live.window && !(await current())) throw new TerminalInputError(t.draftStopped);
+  const { host } = live;
+  const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
+  const composer = options.composer ?? claudeCodeComposer;
+  const io = composerHost(host, deps);
+  const can = composer.capabilities(io);
+  if (can.delivery !== 'terminal' || !can.canSubmitDraft || !composer.submitDraft)
+    throw new TerminalInputError(t.unsupportedAgent(composer.agent));
+  let status: string | undefined;
+  let outcome: Awaited<ReturnType<NonNullable<ComposerAdapter['submitDraft']>>>;
+  try {
+    outcome = await composer.submitDraft(io, expected, async () => {
+      // The record and the foreground last, as before a send's Enter; then the setting.
+      const again = await current();
+      status = again?.status;
+      return !!again && (await (options.allowed?.() ?? true));
+    });
+  } catch (error) {
+    // Enter itself failed: the text is still in the box, as it was.
+    if (error instanceof TerminalInputError)
+      throw new TerminalInputError(t.draftNotSubmitted(where));
+    throw error;
+  }
+  if (outcome.status === 'changed')
+    return {
+      status: 'changed',
+      message: t.draftMoved,
+      draft: draftView(outcome.state, composer.agent, can),
+    };
+  if (outcome.status === 'refused') {
+    // A dialog or menu took the box's place: shown as such, like any other change.
+    if (outcome.reason === 'closed')
+      return {
+        status: 'changed',
+        message: t.notReady,
+        draft: { kind: 'unknown', reason: 'closed' },
+      };
+    throw new TerminalInputError(
+      outcome.reason === 'partial'
+        ? t.draftNotWhole
+        : outcome.reason === 'unreadable'
+          ? t.unreadable(hostName(host))
+          : outcome.reason === 'lost'
+            ? t.draftStopped
+            : t.unsupportedAgent(composer.agent),
+    );
+  }
+  // What went, as typed, from the look right before Enter (never the preview's older one).
+  const went = draftView(outcome.state, composer.agent, can);
+  const logical =
+    went.kind === 'draft' && went.logical !== undefined ? { logical: went.logical } : {};
+  // Whatever the app once typed there and left is gone with it.
+  typedMemory(deps).drop(live.process.sessionId);
+  // The box empties as Claude takes it (mid-turn too: queued above the box). Still holding
+  // exactly the text after a moment, it was not taken: said so, never pressed again.
+  let taken = false;
+  for (let tries = 0; !taken && tries < 3; tries++) {
+    await deps.wait(150);
+    const state = await composer.inspect(io);
+    taken = !(holdsText(state) && (state.rows ?? state.text) === expected);
+  }
+  if (!taken) throw new TerminalInputError(t.draftNotTaken(where));
+  const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
+  const message =
+    after?.status === 'waiting'
+      ? t.sentThenPrompt(where)
+      : status === 'busy'
+        ? t.queued(where)
+        : host.kind === 'orca'
+          ? t.orcaSent
+          : t.tmuxSent(host.label);
+  return { status: 'sent', message, ...logical };
+}
+
 /**
  * The composer holds exactly, and all of, what this app typed there and left unsubmitted. Spaces
  * count (only the box's own wrapping is ignored): an edit as small as one space removed makes it
@@ -570,6 +731,9 @@ export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHo
         return orcaSend(host, [`--text=${keys.map((key) => KEY_BYTES[key]).join('')}`], deps);
       await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
     },
+    submit: async () => {
+      await pressEnter(host, deps);
+    },
   };
 }
 
@@ -682,6 +846,12 @@ export interface TerminalSendOptions {
   replaceDraft?: string;
   /** Explicit confirmation that hidden content may be lost. */
   allowPartialDraft?: boolean;
+  /**
+   * `replaceDraft` is the box's rows as drawn (`rows`, indents kept), taken into the card to
+   * edit: replaced only while the box still draws exactly that. Any other difference — even in
+   * spaces, line breaks or indents, which the drawn-shape comparison ignores — is asked about.
+   */
+  exactDraft?: boolean;
   /** Puts the composer's text on the clipboard before it is cleared. Without it nothing is. */
   backup?: (text: string) => void | Promise<void>;
   /** What the clipboard holds now: an earlier backup counts only while it is still there. */
@@ -719,21 +889,33 @@ export function sendToTerminal(
   deps = defaultTerminalDeps(),
   options: TerminalSendOptions = {},
 ): Promise<SendResult> {
-  // One send per session at a time: two surfaces sending at once would type into each other.
-  const key = live.process.sessionId;
+  return oneAtATime(live.process.sessionId, deps, (waited) =>
+    deliver(live, input, deps, waited, options),
+  );
+}
+
+/**
+ * One action on a session's box at a time (a send, submitting its text as it is): two surfaces
+ * acting at once would type into each other. `waited`: another one ran first. A preview read
+ * while one runs says so instead of showing the text being typed, and the next one reads afresh.
+ */
+function oneAtATime<T>(
+  key: string,
+  deps: TerminalDeps,
+  act: (waited: boolean) => Promise<T>,
+): Promise<T> {
   const before = sending.get(key);
-  const turn = (before ?? Promise.resolve())
-    .catch(() => undefined)
-    .then(() => deliver(live, input, deps, !!before, options));
+  const turn = (before ?? Promise.resolve()).catch(() => undefined).then(() => act(!!before));
   sending.set(key, turn);
   const done = () => {
     if (sending.get(key) === turn) sending.delete(key);
+    forget(deps, previewKey(key));
   };
   turn.then(done, done);
   return turn;
 }
 
-const sending = new Map<string, Promise<SendResult>>();
+const sending = new Map<string, Promise<unknown>>();
 
 /**
  * What clearing put on the clipboard, per session, until a send goes through: a clearing that
@@ -841,6 +1023,9 @@ async function deliver(
   if (!own) {
     if (confirmed === undefined) return ask(state.text, state.whole);
     if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
+    // Taken into the card to edit: exactly those rows, or the person is asked.
+    if (options.exactDraft && (state.rows ?? state.text) !== confirmed)
+      return ask(state.text, state.whole, true);
     if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
   }
   const backup = options.backup;

@@ -9,6 +9,11 @@ export type PendingSend = {
   at: number;
   /** Images that went with it: the record shows them around the text (see `sameWithImages`). */
   images?: number;
+  /**
+   * The text as read off the terminal's input box (submitted there as it was): the box's own
+   * wrapping shows as line breaks, even inside words, so it is matched with all spacing ignored.
+   */
+  wrapped?: boolean;
 };
 type Recorded = { id: string; kind: string; text: string; at: number };
 
@@ -27,7 +32,13 @@ function publish(next: PendingSend[]) {
   for (const fn of listeners) fn();
 }
 
-export function rememberSend(sessionId: string, text: string, now = Date.now(), images = 0) {
+export function rememberSend(
+  sessionId: string,
+  text: string,
+  now = Date.now(),
+  images = 0,
+  options: { wrapped?: boolean } = {},
+) {
   publish([
     ...pending,
     {
@@ -36,6 +47,7 @@ export function rememberSend(sessionId: string, text: string, now = Date.now(), 
       text: text.trim(),
       at: now,
       ...(images > 0 && { images }),
+      ...(options.wrapped && { wrapped: true }),
     },
   ]);
 }
@@ -77,6 +89,14 @@ export function sameWithImages(recorded: string, text: string, images: number): 
   return record.startsWith(want) && after.test(record.slice(want.length));
 }
 
+/** Words with every space and line break taken out: a box's wrapping may split a word. */
+const unspaced = (text: string) => plain(text).replace(/\s+/g, '');
+
+/** `sameWithImages` for text read off a wrapped input box: spacing and line breaks ignored. */
+export function sameUnwrapped(recorded: string, text: string): boolean {
+  return same(unspaced(recorded), unspaced(text));
+}
+
 /**
  * Settles the session's sends against its recorded requests: each record clears one send at
  * most, and only a record from around or after the send. Old sends expire.
@@ -98,7 +118,7 @@ export function settleSends(
       (e) =>
         !taken.has(`${sessionId}:${e.id}`) &&
         e.at >= p.at - 10_000 &&
-        sameWithImages(e.text, p.text, p.images ?? 0),
+        (p.wrapped ? sameUnwrapped(e.text, p.text) : sameWithImages(e.text, p.text, p.images ?? 0)),
     );
     if (!match) return true;
     taken.add(`${sessionId}:${match.id}`);

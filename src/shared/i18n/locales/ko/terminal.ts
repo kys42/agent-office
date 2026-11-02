@@ -49,6 +49,23 @@ export const terminal: Messages['terminal'] = {
   sendDraft: '이 글 그대로 보내기',
   sendDraftTitle: '입력창의 이 글을 대신 보내요. 내가 쓴 글은 입력칸에 남아요.',
   cancelClear: '취소',
+  preview: {
+    title: '터미널 입력창에 쓰다 만 글',
+    where: (agent) => `${agent} 입력창`,
+    expand: '펼치기',
+    collapse: '접기',
+    send: '그대로 보내기',
+    sendTitle:
+      '터미널 입력창에 이 글이 그대로 있을 때만 Enter를 눌러 보내요. 아무것도 새로 입력하지 않아요.',
+    import: '카드에서 고치기',
+    importTitle: '아래 입력칸으로 가져와요. 카드에서 보내면 터미널 입력창의 이 글을 대신해요.',
+    imported:
+      '아래 입력칸으로 가져왔어요. 보내면 터미널 입력창의 이 글은 지우고(클립보드에 보관) 카드의 글을 보내요.',
+    notImportable:
+      '터미널에서 줄이 접혀 보여 원래 줄바꿈을 알 수 없어서 카드로 가져올 수 없어요. 터미널에서 고치거나 그대로 보내 주세요.',
+    partial: '글이 다 보이지 않아 카드에서는 보낼 수 없어요. 터미널에서 확인해 주세요.',
+    maybeSuggestion: '직접 쓴 글이 아니라 입력창에 뜬 추천 글일 수도 있어요.',
+  },
   clearedToClipboard: '지운 글은 클립보드에 있어요',
   images: {
     attach: '이미지 첨부',

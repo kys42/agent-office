@@ -7,6 +7,7 @@ import {
   type ComposerAdapter,
   type ComposerHost,
   type ComposerState,
+  type DraftSubmitOutcome,
 } from './types.js';
 
 export { drawn };
@@ -250,8 +251,12 @@ export function classifyPrompt(screen: Screen): ComposerState {
   const whole = (shown: string) => wholeText(screen, box, shown);
   if (screen.composer !== undefined) {
     // Orca's `draft` holds only what sits in the box (the examples stay on screen): any text
-    // there may be typed, even text that reads like an example.
-    if (screen.composer) return { kind: 'unknown', text, whole: whole(text) };
+    // there may be typed, even text that reads like an example. It is the text itself, not
+    // rows of the box (as `ownText` in terminals.ts relies on too).
+    if (screen.composer) {
+      const known = whole(text);
+      return { kind: 'unknown', text, whole: known, rows: text, ...(known && { logical: text }) };
+    }
     const shown = box.lines[box.top + 1].replace(/^❯\s?/, '').trim();
     return rows === 1 && (!shown || HINT.test(shown))
       ? { kind: 'empty' }
@@ -261,12 +266,18 @@ export function classifyPrompt(screen: Screen): ComposerState {
   // it. Box-drawing dashes take one cell each. Rounded up: a doubtful row break counts as typed.
   const ruled = Math.max([...box.lines[box.top]].length, [...box.lines[box.bottom]].length) - 2;
   const width = ruled > 0 ? { width: ruled } : {};
+  // The rows as drawn, indents kept; and as typed, when no row break on screen could be the
+  // box's wrapping (and all of it shows).
+  const asTyped = (shown: string) => {
+    const lines = whole(shown) ? typedLines(box, ruled) : null;
+    return { rows: boxRows(box).text, ...(lines !== null && { logical: lines }) };
+  };
   if (!screen.faint) {
     if (rows === 1 && (!text.trim() || HINT.test(text))) return { kind: 'empty' };
     // Orca draws the suggestion on screen with no styles (1.4.216 keeps typed text apart, in
     // `draft`; an older one draws it here too): unknown, and a short one is known whole, so it
     // can be cleared — the deletion keys take typing, the one-letter probe tells a suggestion.
-    return { kind: 'unknown', text, whole: whole(text), ...width };
+    return { kind: 'unknown', text, whole: whole(text), ...width, ...asTyped(text) };
   }
   let faint = 0;
   let plain = 0;
@@ -282,9 +293,62 @@ export function classifyPrompt(screen: Screen): ComposerState {
       }
   }
   if (!plain && !faint)
-    return rows === 1 ? { kind: 'empty' } : { kind: 'draft', text, whole: whole(text), ...width };
-  if (plain) return { kind: 'draft', text, whole: whole(text), ...width };
+    return rows === 1
+      ? { kind: 'empty' }
+      : { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
+  if (plain) return { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
   return HINT.test(text) ? { kind: 'empty' } : { kind: 'suggestion', text };
+}
+
+/** Margin under the rules' width: the box's padding is not measured, so a row is held full early. */
+const WRAP_MARGIN = 4;
+
+/**
+ * The box's text as typed, from its rows as drawn — or null when that cannot be told for sure.
+ * Claude Code draws the first row after `❯ ` and every other row after two spaces (measured,
+ * 2.1.296), its own wrapping included, and nothing on screen marks a wrapped row (tmux's `-J`
+ * joins only rows the terminal itself wrapped, never ones an app draws row by row). So a row
+ * break counts as typed only where the next word could not have fitted on the row: the row,
+ * a space and that word, counted at their widest (every non-ASCII character as two cells), take
+ * fewer cells than the box offers less a margin. Any break that could be a wrap, a row not
+ * drawn after the expected indent, or no width at all: null. Rows keep their indentation past
+ * the box's own; only spaces at a row's end are lost (`lines` was trimmed there).
+ */
+export function typedLines(box: PromptBox, ruled: number): string | null {
+  const room = ruled - 2 - WRAP_MARGIN;
+  if (room < 10) return null;
+  const { lines, aligned } = boxRows(box);
+  if (!aligned) return null;
+  for (let i = 0; i + 1 < lines.length; i++) {
+    // Its first word with any spaces before it: a wrap may carry a space over to the next row.
+    const next = /^\s*\S+/.exec(lines[i + 1]);
+    if (!lines[i].trim() || !next) continue;
+    if (widest(lines[i]) + 1 + widest(next[0]) > room) return null;
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The box's rows as drawn, whitespace kept: only the frame is taken off — the `❯ ` before the
+ * first row and the box's own two-column indent before the others (`aligned`: every row had
+ * exactly that). Unlike `text`, whose rows are trimmed, an indent added or taken out (Python,
+ * YAML) is a different string here; spaces at a row's end are not on the screen read at all.
+ */
+export function boxRows(box: PromptBox): { text: string; lines: string[]; aligned: boolean } {
+  let aligned = true;
+  const lines = box.lines.slice(box.top + 1, box.bottom).map((row, i) => {
+    if (i === 0) {
+      const first = /^\s*❯(?:[ \u00a0](.*))?$/.exec(row);
+      if (first) return first[1] ?? '';
+      aligned = false;
+      return row;
+    }
+    if (!row.trim()) return '';
+    if (row.startsWith('  ')) return row.slice(2);
+    aligned = false;
+    return row;
+  });
+  return { text: lines.join('\n'), lines, aligned };
 }
 
 async function inspect(host: ComposerHost): Promise<ComposerState> {
@@ -423,8 +487,11 @@ export const claudeCodeComposer: ComposerAdapter = {
     canClear: !!host,
     // A pasted image path becomes Claude Code's own `[Image #N]` (see afterImages).
     images: 'attach',
+    // Its box is read on either host; Enter alone submits it (see submitDraft).
+    canSubmitDraft: true,
   }),
   inspect,
+  submitDraft,
   async clear(host, from, backup, proceed, options): Promise<ClearResult> {
     if (!from.whole) {
       if (!options?.allowPartial) return { status: 'failed', state: from, partial: true };
@@ -489,6 +556,41 @@ export const claudeCodeComposer: ComposerAdapter = {
     return { status: 'failed', state: { kind: 'unknown', text: previous, whole: true } };
   },
 };
+
+/**
+ * The composer's own text, submitted as it is: Enter only, while the box shows exactly what the
+ * person saw in the preview, all of it. Read twice — once, then again after `proceed` (the same
+ * Claude, open to input, in front of its terminal) right before the key — since a permission
+ * prompt or menu may replace the box at any moment, and Enter there picks a choice. The box
+ * itself rules out the rest: `!` shell mode changes its marker and completion lists, the agents
+ * view and dialogs read as closed (`promptBox`). Text not known whole (a scrolled box, a
+ * collapsed paste, an image) is never submitted: the person did not see all of what would go.
+ */
+async function submitDraft(
+  host: ComposerHost,
+  expected: string,
+  proceed: () => Promise<boolean>,
+): Promise<DraftSubmitOutcome> {
+  let seen: ComposerState = { kind: 'unreadable' };
+  const check = async (): Promise<DraftSubmitOutcome | null> => {
+    const state = (seen = await inspect(host));
+    if (state.kind === 'closed' || state.kind === 'unreadable')
+      return { status: 'refused', reason: state.kind };
+    // Exactly as previewed, indents and wrapping included (`rows`, untrimmed): an indent
+    // changed there (Python, YAML) or a resized box re-wrapping is another text, shown again.
+    if (!holdsText(state) || (state.rows ?? state.text) !== expected)
+      return { status: 'changed', state };
+    if (!state.whole) return { status: 'refused', reason: 'partial' };
+    return null;
+  };
+  const first = await check();
+  if (first) return first;
+  if (!(await proceed())) return { status: 'refused', reason: 'lost' };
+  const again = await check();
+  if (again) return again;
+  await host.submit();
+  return { status: 'submitted', state: seen };
+}
 
 /** Explicitly accepted loss of hidden content: collect readable fragments before each pair.
  * Nothing is sent until the composer is empty or its suggestion is verified. Once its whole

@@ -16,6 +16,8 @@ export async function sendFollowUp(
   notify: (message: string) => void,
   allowPartialDraft?: boolean,
   images?: string[],
+  /** `replaceDraft` is the box's rows taken in to edit: replaced only while drawn exactly so. */
+  exactDraft?: boolean,
 ): Promise<SendResult> {
   let result: SendResult;
   try {
@@ -23,6 +25,7 @@ export async function sendFollowUp(
       ...(replaceDraft !== undefined && {
         replaceDraft,
         ...(allowPartialDraft && { allowPartialDraft: true }),
+        ...(exactDraft && { exactDraft: true }),
       }),
       ...(images?.length && { images }),
     };
@@ -69,9 +72,17 @@ export function useTerminalSend(demo: boolean, notify: (message: string) => void
   const on = enabled && !demo;
   const sendReply: ReplySender | undefined =
     on && api.send
-      ? async (id, text, replaceDraft, allowPartialDraft, images) => {
+      ? async (id, text, replaceDraft, allowPartialDraft, images, exactDraft) => {
           try {
-            return await sendFollowUp(id, text, replaceDraft, notify, allowPartialDraft, images);
+            return await sendFollowUp(
+              id,
+              text,
+              replaceDraft,
+              notify,
+              allowPartialDraft,
+              images,
+              exactDraft,
+            );
           } catch (e) {
             // Also shown in the reply box; the toast survives if the box is gone.
             notify((e as Error).message);
