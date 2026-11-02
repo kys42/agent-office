@@ -394,12 +394,16 @@ export class TmuxResume {
           ],
           { env },
         );
-        const result = await this.inspect(s);
-        if (!result.info.running) throw new Error(m().tmux.ended);
-        return result.info;
       } catch {
         throw new Error(m().tmux.failed);
       }
+      // tmux started it: a session gone (or a dead pane) right after means the agent itself
+      // exited, often at a login or folder-trust prompt never finished, not a broken install.
+      const result = await this.inspect(s).catch(() => {
+        throw new Error(m().tmux.failed);
+      });
+      if (!result.info.running) throw new Error(m().tmux.exitedAtStart);
+      return result.info;
     });
     this.queue = task.catch(() => undefined);
     return task;

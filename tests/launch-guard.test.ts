@@ -6,9 +6,11 @@ import {
   decideDuplicate,
   duplicateNote,
   livenessFor,
+  pendingCheck,
   DuplicateLaunchError,
   type LaunchEvidence,
 } from '../desktop/launch-guard.js';
+import { PendingLaunches, pendingLaunchKey } from '../desktop/pending-launch.js';
 import { OrcaLaunch, type OrcaLaunchDeps } from '../desktop/orca-launch.js';
 import { TmuxResume, type ResumeDeps } from '../desktop/tmux-resume.js';
 import { focusOrcaTab, lookupOrcaTab } from '../desktop/orca-tabs.js';
@@ -148,6 +150,12 @@ function orcaFixture() {
     run: async (_file, args) => {
       if (args[0] === 'status')
         return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
+      if (args[0] === 'worktree' && args[1] === 'show')
+        return JSON.stringify({
+          ok: true,
+          result: { worktree: { path: claude.cwd, hostId: 'local' } },
+        });
+      if (args[1] === 'list') return JSON.stringify({ ok: true, result: { terminals: [] } });
       if (args[1] === 'create') {
         created.push(args);
         return JSON.stringify({ ok: true, result: {} });
@@ -157,6 +165,51 @@ function orcaFixture() {
   };
   return { created, launcher: new OrcaLaunch(deps) };
 }
+
+test('a pending Orca launch counts as open in Orca, behind a running agent', async () => {
+  assert.deepEqual(decideDuplicate(evidence({ pending: true })), { state: 'open', where: 'orca' });
+  assert.deepEqual(decideDuplicate(evidence({ pending: true, orcaTab: unknown })), {
+    state: 'open',
+    where: 'orca',
+  });
+  assert.deepEqual(decideDuplicate(evidence({ pending: true, agent: found('tmux') })), {
+    state: 'running',
+    where: 'tmux',
+  });
+  const check = await checkDuplicate({
+    agent: async () => none,
+    orcaTab: async () => none,
+    ownTmux: async () => none,
+    pending: () => true,
+  });
+  assert.deepEqual(check, { state: 'open', where: 'orca' });
+  // A fresh summon has only the pending record to go by.
+  assert.deepEqual(await pendingCheck(() => true)(), { state: 'open', where: 'orca' });
+  assert.deepEqual(await pendingCheck(() => false)(), { state: 'none' });
+});
+
+test('the pending record keeps a launch for its window only, by conversation or by summon', () => {
+  let now = 1000;
+  const pending = new PendingLaunches(120_000, () => now);
+  const resume = { provider: 'claude', nativeId: 'abc', cwd: '/p' };
+  const summon = { provider: 'codex', nativeId: 'new', cwd: '/p/', fresh: true, name: '새 동료' };
+  pending.add(resume);
+  pending.add(summon);
+  assert.equal(pending.has({ ...resume, cwd: '/elsewhere' }), true);
+  assert.equal(pending.has({ ...resume, nativeId: 'other' }), false);
+  // The same summon whatever the folder's spelling; another name or agent is another one.
+  assert.equal(pending.has({ ...summon, cwd: '/p' }), true);
+  assert.equal(pending.has({ ...summon, name: '다른 이름' }), false);
+  assert.equal(pending.has({ ...summon, provider: 'claude' }), false);
+  assert.equal(pendingLaunchKey(summon), pendingLaunchKey({ ...summon, cwd: '/p' }));
+  now += 119_999;
+  assert.equal(pending.has(resume), true);
+  now += 1;
+  assert.equal(pending.has(resume), false);
+  pending.add(resume);
+  pending.clear(resume);
+  assert.equal(pending.has(resume), false);
+});
 
 /** A fake duplicate check answering from a list, one answer per call (the last one repeats). */
 const answers = (...checks: DuplicateCheck[]) => {

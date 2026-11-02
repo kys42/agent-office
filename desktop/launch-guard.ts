@@ -75,12 +75,17 @@ export interface LaunchEvidence {
   orcaTab: TerminalLookup<unknown>;
   /** The app's own tmux session for this conversation: `found` while its pane is alive. */
   ownTmux: TerminalLookup<unknown>;
+  /**
+   * An Orca launch of it that may still start (desktop/pending-launch.ts): Orca made the tab,
+   * but no terminal or process shows it yet. It counts as open in Orca until it expires.
+   */
+  pending?: boolean;
 }
 
 /** The pure decision: running beats open beats unknown beats none. */
 export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
   if (e.agent.kind === 'found') return { state: 'running', where: e.agent.terminal.where };
-  if (e.orcaTab.kind === 'found') return { state: 'open', where: 'orca' };
+  if (e.orcaTab.kind === 'found' || e.pending) return { state: 'open', where: 'orca' };
   // A live own pane is not proof of this conversation: after Claude `/clear` or Codex `/new`
   // the same process shows another one. Only the agent adapter above can say it runs.
   if (e.ownTmux.kind === 'found') return { state: 'open', where: 'tmux' };
@@ -94,6 +99,8 @@ export interface DuplicateDeps {
   agent: (fresh: boolean) => Promise<Liveness>;
   orcaTab: (fresh: boolean) => Promise<TerminalLookup<unknown>>;
   ownTmux: (fresh: boolean) => Promise<TerminalLookup<unknown>>;
+  /** Whether an Orca launch of it may still start (main-process memory, never throws). */
+  pending?: () => boolean;
 }
 
 export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promise<DuplicateCheck> {
@@ -103,8 +110,20 @@ export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promis
     deps.orcaTab(fresh).catch(() => unknown),
     deps.ownTmux(fresh).catch(() => unknown),
   ]);
-  return decideDuplicate({ agent, orcaTab, ownTmux });
+  return decideDuplicate({ agent, orcaTab, ownTmux, pending: deps.pending?.() });
 }
+
+/**
+ * The check for a fresh summon, which has no conversation to look for yet: only an Orca launch
+ * of the same agent, folder and name that may still start.
+ */
+export const pendingCheck = (pending: () => boolean) => async (): Promise<DuplicateCheck> =>
+  decideDuplicate({
+    agent: { kind: 'none' },
+    orcaTab: { kind: 'none' },
+    ownTmux: { kind: 'none' },
+    pending: pending(),
+  });
 
 const SEVERITY: Record<DuplicateCheck['state'], number> = {
   none: 0,

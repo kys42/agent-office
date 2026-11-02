@@ -68,6 +68,9 @@ export const tmux = {
   unsupported: 'tmux resume supports local Claude and Codex sessions on macOS and Linux.',
   conflict: 'This tmux name belongs to another session. It was not changed.',
   ended: 'This tmux session has ended. Resume it again to reconnect.',
+  /** tmux started, but the agent exited right away (often an unfinished login or trust prompt). */
+  exitedAtStart:
+    'tmux started, but the agent exited right away. Run it once in a terminal to finish its login and folder trust, then try again.',
   openFailed: 'Could not open Terminal. Copy the reconnect command and run it in your terminal.',
   /** Resuming in a new Orca terminal tab instead of tmux. */
   orcaTitle: 'Resume in Orca',
@@ -87,8 +90,17 @@ export const tmux = {
   summonOrcaLaunched: 'Started a new agent in a new Orca tab',
   orcaUnsupported: 'Orca resume supports local Claude and Codex sessions on macOS.',
   orcaUnavailable: 'Orca is not running or not reachable. Open Orca and try again.',
-  orcaRefused: (reason: string) =>
-    `Orca did not open the tab${reason ? `: ${reason}` : '.'} The folder may not be an Orca workspace; you can start it in tmux instead.`,
+  /** Orca said why it made no tab; `workspace` when that reason is the folder itself. */
+  orcaRefused: (reason: string, workspace = false) =>
+    `Orca did not open the tab${reason ? `: ${reason}` : '.'}${workspace ? ' This folder is not an Orca workspace.' : ''} You can start it in tmux instead.`,
+  /** Orca made the tab but its start was not seen yet: never a failure, never a tmux hint. */
+  orcaUncertain:
+    "Orca made the tab but hasn't confirmed the start yet. It starts once you open Orca.",
+  orcaReveal: 'Open Orca',
+  orcaNotWorkspace:
+    'This folder is not an Orca workspace. Add the project in Orca first, or start it in tmux.',
+  orcaSubfolder: (root: string) =>
+    `This folder is inside the Orca workspace ${root}. Orca opens new tabs only at a workspace's own folder; start it in tmux instead.`,
   /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
   place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
   runningNotice: (place: string) =>

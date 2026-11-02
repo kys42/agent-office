@@ -63,6 +63,11 @@ export function TmuxResume({
   const [orca, setOrca] = useState<OrcaLaunchInfo | null>(null);
   const orcaRequest = useRef(0);
   /**
+   * Orca made the tab but did not confirm its start (`uncertain`): not a failure. Only "Open
+   * Orca" is offered then, never another launch (main cautions one for a while meanwhile).
+   */
+  const [uncertain, setUncertain] = useState('');
+  /**
    * Whether this conversation already runs or is open elsewhere (main's duplicate-launch check;
    * main checks again before launching, this only shapes the buttons). One state for both
    * status reads: the answer to the newest request wins, whichever launcher asked.
@@ -107,6 +112,10 @@ export function TmuxResume({
       if (result.launched) {
         notify(result.message ?? (summon ? t.tmux.summonOrcaLaunched : t.tmux.orcaLaunched));
         setOpen(false);
+      } else if (result.uncertain) {
+        setUncertain(result.message ?? t.tmux.orcaUncertain);
+        // Main now counts it as open in Orca: the shared check shows that.
+        if (!summon) void checkOrca();
       }
     } catch (e) {
       if (ticket !== request.current) return;
@@ -126,6 +135,7 @@ export function TmuxResume({
       ? t.tmux.place[duplicate.where]
       : '';
   const jump = () => void jumpOrCopy(id, notify).catch((e) => setError(e.message));
+  const revealOrca = () => void api.orcaReveal?.().catch((e) => setError((e as Error).message));
   /** The conversation's own Orca tab, matched again in main (never a jump's fallback). */
   const focusTab = async () => {
     if (!api.orcaLaunch) return;
@@ -143,7 +153,7 @@ export function TmuxResume({
    * shows its (separately labelled) reconnect controls, so no second "open" notice for it.
    */
   const openTab = openElsewhere && duplicate.where === 'orca';
-  const openOther = openElsewhere && !(duplicate.where === 'tmux' && info?.running);
+  const openOther = openElsewhere && !uncertain && !(duplicate.where === 'tmux' && info?.running);
   const projectIds = projects?.map((p) => p.id).join('\n');
   useEffect(() => {
     const ids = projectIds?.split('\n');
@@ -206,6 +216,7 @@ export function TmuxResume({
         disabled={privacy}
         onClick={() => {
           setOpen(true);
+          setUncertain('');
           void act('status');
         }}
       >
@@ -435,10 +446,22 @@ export function TmuxResume({
                   {text.unknownNotice}
                 </p>
               )}
-              {orca?.available && !runningElsewhere && (
+              {orca?.available && !runningElsewhere && !uncertain && (
                 <p className="tmux-discovery">
                   <Info size={13} aria-hidden="true" />
                   {summon ? text.summonOrcaHint : text.orcaHint}
+                </p>
+              )}
+              {orca && !orca.available && orca.reason && !runningElsewhere && (
+                <p className="tmux-discovery">
+                  <Info size={13} aria-hidden="true" />
+                  {orca.reason}
+                </p>
+              )}
+              {uncertain && (
+                <p className="tmux-caution" role="status">
+                  <Info size={14} aria-hidden="true" />
+                  {uncertain}
                 </p>
               )}
               {!summon && info && !info.running && (
@@ -463,55 +486,74 @@ export function TmuxResume({
               )}
             </div>
             <div className="tmux-resume-actions" data-solid>
-              <button className="button subtle" disabled={busy} onClick={() => void act('status')}>
-                {busy ? (
-                  <LoaderCircle size={14} className="now-spin" aria-hidden="true" />
-                ) : (
-                  <RotateCw size={14} aria-hidden="true" />
-                )}
-                {busy ? text.loading : summon ? text.summonCheck : text.refresh}
-              </button>
-              {runningElsewhere && (
-                <button className="button primary" disabled={busy} onClick={jump}>
-                  <ArrowUpRight size={14} aria-hidden="true" />
-                  {text.jumpToTerminal}
-                </button>
-              )}
-              {openTab && (
-                <button className="button primary" disabled={busy} onClick={() => void focusTab()}>
-                  <ArrowUpRight size={14} aria-hidden="true" />
-                  {text.jumpToTab}
-                </button>
-              )}
-              {info && !info.running && !runningElsewhere && (
-                <button
-                  className={openElsewhere ? 'button' : 'button primary'}
-                  disabled={busy}
-                  onClick={() => void act('start')}
-                >
-                  {summon ? (
-                    <Plus size={14} aria-hidden="true" />
-                  ) : (
-                    <Terminal size={14} aria-hidden="true" />
+              {uncertain ? (
+                api.orcaReveal && (
+                  <button className="button primary" disabled={busy} onClick={revealOrca}>
+                    <ArrowUpRight size={14} aria-hidden="true" />
+                    {text.orcaReveal}
+                  </button>
+                )
+              ) : (
+                <>
+                  <button
+                    className="button subtle"
+                    disabled={busy}
+                    onClick={() => void act('status')}
+                  >
+                    {busy ? (
+                      <LoaderCircle size={14} className="now-spin" aria-hidden="true" />
+                    ) : (
+                      <RotateCw size={14} aria-hidden="true" />
+                    )}
+                    {busy ? text.loading : summon ? text.summonCheck : text.refresh}
+                  </button>
+                  {runningElsewhere && (
+                    <button className="button primary" disabled={busy} onClick={jump}>
+                      <ArrowUpRight size={14} aria-hidden="true" />
+                      {text.jumpToTerminal}
+                    </button>
                   )}
-                  {openElsewhere ? text.forceStart : text.start}
-                </button>
-              )}
-              {orca?.available && !runningElsewhere && (
-                <button className="button" disabled={busy} onClick={() => void launchOrca()}>
-                  <ArrowUpRight size={14} aria-hidden="true" />
-                  {summon ? text.summonOrca : openElsewhere ? text.forceOrca : text.orcaStart}
-                </button>
-              )}
-              {info?.running && info.canOpen && (
-                <button
-                  className={runningElsewhere ? 'button' : 'button primary'}
-                  disabled={busy}
-                  onClick={() => void act('open')}
-                >
-                  <ArrowUpRight size={14} aria-hidden="true" />
-                  {text.open}
-                </button>
+                  {openTab && (
+                    <button
+                      className="button primary"
+                      disabled={busy}
+                      onClick={() => void focusTab()}
+                    >
+                      <ArrowUpRight size={14} aria-hidden="true" />
+                      {text.jumpToTab}
+                    </button>
+                  )}
+                  {info && !info.running && !runningElsewhere && (
+                    <button
+                      className={openElsewhere ? 'button' : 'button primary'}
+                      disabled={busy}
+                      onClick={() => void act('start')}
+                    >
+                      {summon ? (
+                        <Plus size={14} aria-hidden="true" />
+                      ) : (
+                        <Terminal size={14} aria-hidden="true" />
+                      )}
+                      {openElsewhere ? text.forceStart : text.start}
+                    </button>
+                  )}
+                  {orca?.available && !runningElsewhere && (
+                    <button className="button" disabled={busy} onClick={() => void launchOrca()}>
+                      <ArrowUpRight size={14} aria-hidden="true" />
+                      {summon ? text.summonOrca : openElsewhere ? text.forceOrca : text.orcaStart}
+                    </button>
+                  )}
+                  {info?.running && info.canOpen && (
+                    <button
+                      className={runningElsewhere ? 'button' : 'button primary'}
+                      disabled={busy}
+                      onClick={() => void act('open')}
+                    >
+                      <ArrowUpRight size={14} aria-hidden="true" />
+                      {text.open}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </Modal>,

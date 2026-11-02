@@ -75,18 +75,39 @@ test('anything that could change the shell command is refused, not escaped', () 
   assert.throws(() => orcaCreateArgs(claude, 'linux'));
 });
 
-function fixture(options: { status?: unknown; create?: () => string; dir?: boolean } = {}) {
-  const calls: { file: string; args: string[] }[] = [];
+/** A registered local workspace for the session's folder, as `orca worktree show` answers. */
+const workspaceOf = (cwd: string) =>
+  JSON.stringify({ ok: true, result: { worktree: { path: cwd, hostId: 'local' } } });
+
+function fixture(
+  options: {
+    status?: unknown;
+    create?: () => string;
+    dir?: boolean;
+    /** `terminal list` answers, one per call (the last one repeats). */
+    lists?: unknown[];
+    binary?: (name: string) => Promise<string>;
+  } = {},
+) {
+  const calls: { file: string; args: string[]; timeout?: number }[] = [];
+  const lists = [...(options.lists ?? [{ ok: true, result: { terminals: [] } }])];
   const deps: OrcaLaunchDeps = {
     platform: 'darwin',
     orca: () => '/bin/orca',
     directory: async () => options.dir ?? true,
-    run: async (file, args) => {
-      calls.push({ file, args });
+    binary: options.binary,
+    wait: async () => {},
+    run: async (file, args, runOptions) => {
+      calls.push({ file, args, timeout: runOptions?.timeout });
+      if (file === '/usr/bin/open') return '';
       if (args[0] === 'status')
         return JSON.stringify(
           options.status ?? { ok: true, result: { runtime: { reachable: true } } },
         );
+      if (args[0] === 'worktree' && args[1] === 'show')
+        return workspaceOf(args[2].slice('--worktree=path:'.length));
+      if (args[1] === 'list') return JSON.stringify(lists.length > 1 ? lists.shift() : lists[0]);
+      if (args[1] === 'switch') return JSON.stringify({ ok: true });
       if (args[1] === 'create')
         return options.create?.() ?? JSON.stringify({ ok: true, result: {} });
       throw new Error('unexpected');
@@ -222,6 +243,8 @@ test('the launcher uses its own environment for the agent home', async () => {
     run: async (_file, args) => {
       if (args[0] === 'status')
         return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
+      if (args[0] === 'worktree') return workspaceOf(claude.cwd);
+      if (args[1] === 'list') return JSON.stringify({ ok: true, result: { terminals: [] } });
       created = args;
       return JSON.stringify({ ok: true, result: {} });
     },
@@ -240,6 +263,7 @@ test('Orca calls stay on this computer even when a remote Orca runtime is select
     env: { PATH: '/usr/bin', ORCA_ENVIRONMENT: 'remote-box', ORCA_PAIRING_CODE: 'secret' },
     run: async (_file, args, options) => {
       seen.push(options?.env);
+      if (args[0] === 'worktree') return workspaceOf(claude.cwd);
       return args[0] === 'status'
         ? JSON.stringify({ ok: true, result: { runtime: { reachable: true } } })
         : JSON.stringify({ ok: true, result: {} });
@@ -289,7 +313,10 @@ test('fresh Orca refuses missing, mismatched and remote workspaces before creati
     run: async (_file, args) => {
       if (args[0] === 'status')
         return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
-      if (args[0] === 'worktree') return JSON.stringify({ ok: true, result: { worktree } });
+      if (args[0] === 'worktree' && args[1] === 'show')
+        return JSON.stringify({ ok: true, result: { worktree } });
+      if (args[0] === 'worktree') return JSON.stringify({ ok: true, result: { worktrees: [] } });
+      if (args[1] === 'list') return JSON.stringify({ ok: true, result: { terminals: [] } });
       creates++;
       return JSON.stringify({ ok: true });
     },

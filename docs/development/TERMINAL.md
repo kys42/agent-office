@@ -319,6 +319,19 @@ origin/owner 검증, 설정 상속, 잘못된 권한/프로토콜, 응답 유실
 
 재접속 명령 복사는 macOS/Linux에서 제공하고 macOS는 Terminal에서 열기도 제공한다. 터미널을 닫아도 tmux는 유지되지만 재부팅·프로세스 종료 후에는 다시 재개해야 한다. Windows/OpenClaw·웹/모바일·다른 오피스 세션에는 기존 대화의 재개 API를 제공하지 않는다. 네이티브 확인창 동안 `cards.dialog`로 카드 blur 숨김을 보류한다.
 
+시작 실패는 둘로 나눈다(#317). tmux 명령 자체가 실패하면 `failed`("tmux와 에이전트 CLI 설치 상태를 확인"), tmux는 세션을 만들었는데 바로 다시 읽었을 때 세션이 없거나 pane이 죽어 있으면 `exitedAtStart`(에이전트가 곧바로 종료됨 — 대개 로그인·폴더 신뢰 확인 미완료. 터미널에서 한 번 직접 실행하라고 안내)다.
+
+### Orca 새 탭: 확인하지 못한 시작 (#317)
+
+`desktop/orca-launch.ts`. 재개·소환 모두 실행 전에 그 폴더가 이 컴퓨터 Orca의 등록된 작업 공간인지 본다(`orca worktree show --worktree=path:<cwd>`; 실패하면 `worktree list --limit=10000`으로 하위 폴더인지·아예 없는지를 가려 이유를 돌려준다. Orca가 답하지 않으면 이유 없이 사용 불가). 실행 파일은 tmux와 같은 `defaultResumeDeps.binary`로 찾은 절대경로를 쓴다. Orca CLI는 `--command`의 `env -u …` 접두를 걷어낸 첫 단어의 **파일 이름**이 `claude`/`codex`면 대화형 에이전트로 보고 렌더러 탭 경로(`rendererBacked`)로 만든다(`out/cli/codex-command-classification.js`의 `commandBasename`). 그래서 절대경로여도 분류는 같고, 찾은 경로의 파일 이름이 다르면(래퍼 등) 이름만 넘겨 로그인 셸 PATH에 맡긴다. `sh -c`로 감싸 렌더러 경로를 피하는 방법은 Orca의 에이전트 기능을 잃으므로 쓰지 않는다.
+
+`orca terminal create … --focus --json`의 결과는 `classifyOrcaCreate`가 나눈다.
+- **launched**: `ok: true`.
+- **uncertain**: Orca 런타임의 `Timed out waiting for terminal handle after creation`(탭 생성·명령 대기열 등록 뒤 PTY를 10초 기다림)·`Terminal creation timed out`(렌더러 회신 10초)·`runtime_timeout`, 또는 Orca가 아무것도 답하기 전에 우리 실행 제한(35초, `execFile` killed)이 끝난 경우. Orca는 이 탭과 대기 중 명령을 취소하지 않는다: 창이 뒤에 있거나 다른 Space에 있어 칸이 늦게 마운트되면 사람이 Orca로 갔을 때 시작된다.
+- **refused**: 그 밖에 사유가 있는 거절. 작업 공간 문구는 `selector_not_found`·`worktree_not_found`·`worktree_host_unresolved`일 때만 붙인다.
+
+create 직전에 `orca terminal list --worktree=path:<cwd> --json`으로 핸들을 찍어 둔다. uncertain이면 `open -a Orca`로 앞으로 가져온 뒤(사람이 누른 `--focus` 실행이라 포커스를 가져와도 된다) 2초마다 15번(약 30초) 같은 목록을 다시 읽어, 직전에 없던 핸들 중 제목이 우리 `--title`과 같은 것, 없으면 직전 목록이 온전(`truncated` 아님)할 때 새 핸들이 하나뿐이면 그것을 이어받고 `terminal switch`한다. 다른 worktree의 핸들이나 여러 개 중 고르기는 하지 않는다. 끝내 못 찾으면 `{ launched: false, uncertain: true }`와 "Orca를 열면 시작돼요"를 돌려주고, 화면은 [Orca 열기](`office:orca-reveal` → `open -a Orca`)만 보인다(tmux 권유 없음). 이 실행은 `PendingLaunches`(main 메모리, 2분, 재개는 `<provider>:<대화 id>`, 소환은 `new:<provider>:<폴더>:<이름>`)에 남고, `launch-guard`의 `decideDuplicate`가 `pending`을 Orca 탭처럼 **열려 있음**으로 본다. PTY가 생기기 전 탭은 `terminal list`에 없고 에이전트 프로세스도 없어서, 이 기록이 없으면 tmux로 다시 띄우는 것을 막지 못한다. 나중에 같은 대상이 확인된 실행으로 열리면 기록을 지운다.
+
 ## 새 에이전트 소환
 
 프로젝트 구역/깃발의 **+** → 폴더 선택(여러 원본 프로젝트가 있는 구역) → Claude/Codex와 에이전트 이름·첫 메시지(선택) → 연결과 이름 확인 → tmux에 소환하기. 채팅 카드에는 기존 대화 재개만 둔다. 바닥 깃발 아래의 +와 프로젝트 숨김은 평소 감추고, 깃발에 마우스를 올리거나 키보드로 포커스할 때 검은 버튼으로 함께 표시한다. 같은 창 맨 위의 **기존 동료 불러오기**는 이 프로젝트의 대기·보관 동료를 골라 기존 tmux 재개·Orca 새 탭 재개로 이어가고, 터미널이 열린 뒤 `returnToOffice`로 사무실에 데려온다([기능 정책](../golden/FEATURE-POLICY.md#프로젝트--기존-동료-불러오기)).
