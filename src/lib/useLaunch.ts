@@ -30,8 +30,8 @@ import type { Session } from '../shared/types';
 
 /** Where the sheet was opened from, and what it may offer. */
 export type LaunchEntry =
-  /** A work card: its own conversation, preselected. */
-  | { from: 'card'; session: Session }
+  /** A work card: its own conversation, preselected (`fork` when it already runs somewhere). */
+  | { from: 'card'; session: Session; kind?: 'resume' | 'fork' }
   /**
    * A project "+": a new session in one of its folders, or one of its conversations (the
    * office's, then the lounge's and the archive's: those come back to the office once open).
@@ -61,7 +61,7 @@ function initialDraft(entry: LaunchEntry): LaunchDraft {
   if (entry.from === 'card')
     return {
       ...base,
-      kind: 'resume',
+      kind: entry.kind ?? 'resume',
       at: entry.session.id,
       session: entry.session.id,
       forkName: forkDefaultName(sessionName(entry.session)),

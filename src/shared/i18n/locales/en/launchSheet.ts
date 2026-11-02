@@ -3,6 +3,7 @@ export const launchSheet = {
   title: 'Start a session',
   /** The work card's way into the sheet for its own conversation. */
   cardContinue: 'Continue in a terminal',
+  cardFork: 'Fork into a new session',
   step: { what: 'What', where: 'Where', progress: 'Progress' },
   conversation: 'Conversation',
   noConversations: 'No conversation of this project can be continued from here.',
