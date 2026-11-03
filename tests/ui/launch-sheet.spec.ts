@@ -390,6 +390,23 @@ test('a conversation already running somewhere offers a fork, not continuing it 
   await expect(kind(modal, '복제해서 새로')).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('a fork is offered on every card, beside continuing (a Codex card too)', async ({ page }) => {
+  await setup(page, '/#card', { width: 380, height: 480 });
+  const actions = page.locator('.card-actions');
+  await expect(actions.getByRole('button', { name: '복제해서 새로' })).toHaveCount(1);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.sessions[0].provider = 'codex';
+    w.fixture.version++;
+    w.publish(structuredClone(w.fixture));
+  });
+  // Codex's main action opens it in the Codex app; continuing in a terminal and a fork stay.
+  await expect(actions.getByRole('button', { name: '터미널에서 이어가기' })).toHaveCount(1);
+  await actions.getByRole('button', { name: '복제해서 새로' }).click();
+  const modal = page.getByRole('dialog', { name: '세션 시작' });
+  await expect(kind(modal, '복제해서 새로')).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('remote colleagues never offer a local launch', async ({ page }) => {
   await setup(page, '/#card');
   await page.evaluate(() => {
