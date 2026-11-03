@@ -670,7 +670,8 @@ export type SendResult =
 /**
  * What the agent's terminal input box holds right now, read by the desktop app from the verified
  * terminal for the work card's preview (never stored). `draft`: text sitting there, not sent;
- * `empty`: nothing (or only the agent's own suggestion); `unknown`: not read, and why.
+ * `suggestion`: only the agent's own suggestion, told by its style; `empty`: nothing (or a
+ * suggestion where only inferred); `unknown`: not read, and why.
  */
 export type ComposerDraftView =
   | {
@@ -695,6 +696,24 @@ export type ComposerDraftView =
       partial?: boolean;
       /** The screen cannot tell it from the agent's own suggestion. */
       maybeSuggestion?: boolean;
+      /**
+       * With `maybeSuggestion`: sent with `{ suggestion: true }` — the agent's accept key first
+       * (a suggestion is taken in, typed text stays as it is), then Enter only while the box holds
+       * exactly this text. One line known whole only.
+       */
+      acceptsSuggestion?: boolean;
+    }
+  | {
+      /**
+       * The agent's own suggestion (Claude Code's prompt suggestion, accepted with Tab), told
+       * apart from typing by its style: the box holds nothing typed. Never the person's draft.
+       */
+      kind: 'suggestion';
+      /** As drawn on its one row. [Send suggestion] hands it back to compare. */
+      text: string;
+      agent: string;
+      /** Taken in and submitted from here: all of it shows, on a host that tells it apart. */
+      submittable: boolean;
     }
   | { kind: 'empty' }
   | { kind: 'unknown'; reason: ComposerDraftUnknown };
@@ -1034,7 +1053,15 @@ export interface OfficeAPI {
    * Desktop only: submits the box as it is (Enter, nothing typed), only while it still holds
    * exactly `text` — main reads the screen again right before the key.
    */
-  submitDraft?: (id: string, text: string) => Promise<DraftSubmitResult>;
+  submitDraft?: (
+    id: string,
+    text: string,
+    /**
+     * `suggestion`: `text` is the agent's own suggestion — taken into the box (Tab) only while
+     * it is all the box holds, then submitted only if the box then holds exactly it.
+     */
+    options?: { suggestion?: boolean },
+  ) => Promise<DraftSubmitResult>;
   /**
    * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
    * profile, outside the preferences shared with the web preview; turning it back on asks for

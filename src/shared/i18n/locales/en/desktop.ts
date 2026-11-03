@@ -151,6 +151,21 @@ export const desktop = {
     /** [Send as is]: Enter went in, yet the box still holds the same text. */
     draftNotTaken: (host: string) =>
       `Pressed Enter in ${host}, but the input box still shows the same text. Check the terminal.`,
+    /** [Send as is] on text the screen can't tell from Claude's suggestion, and Enter didn't take it. */
+    draftNotTakenSuggestion: (host: string) =>
+      `Pressed Enter in ${host}, but the input box still shows the same text. If it's Claude's suggestion, Enter doesn't send it: press Tab in the terminal to take it, then send.`,
+    /** [Send suggestion] on text that can't go that way (more than one line, no such adapter). */
+    suggestionUnsupported:
+      "This text can't be sent as a suggestion (one line only). Check the terminal.",
+    /** [Send suggestion]: the suggestion is cut short on screen. */
+    suggestionNotWhole:
+      "Not all of the suggestion is visible, so it wasn't sent from here. Press Tab in the terminal to take it.",
+    /** [Send suggestion]: pressing Tab or Enter failed. */
+    suggestionNotSubmitted: (host: string) =>
+      `Couldn't send the suggestion in ${host}. Check the terminal.`,
+    /** [Send suggestion]: the accept key went in, but the box didn't then hold exactly it: no Enter. */
+    suggestionHeld: (host: string) =>
+      `Pressed the key that takes the suggestion in ${host}, but the input box didn't match before Enter, so nothing was sent. Check the terminal.`,
   },
   /** Images attached in the composer, saved in the app's own folder. */
   attachments: {

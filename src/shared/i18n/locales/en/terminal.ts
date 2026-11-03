@@ -82,7 +82,28 @@ export const terminal = {
       "The terminal wrapped this over rows, so where its own lines break can't be told. Edit it in the terminal, or send it as is.",
     partial:
       "Not all of it is visible here, so it can't be sent from the card. Check the terminal.",
-    maybeSuggestion: 'It may be a suggestion the prompt shows rather than something typed.',
+    maybeSuggestion:
+      "It may be Claude's suggestion rather than something typed. A suggestion isn't sent with Enter: press Tab in the terminal to take it.",
+    /** One line that may be Claude's suggestion, sent through the accept key first. */
+    maybeSuggestionSend:
+      "It may be Claude's suggestion. If it is, it's taken in first; if you typed it, it's sent as is.",
+    sendMaybeSuggestionTitle:
+      "Presses → in the terminal (it takes Claude's suggestion in, typed text stays as is), then Enter only if the input box holds exactly this text.",
+    /** Not all of it shows, and it may be Claude's suggestion (Orca can't tell). */
+    partialMaybeSuggestion:
+      "It may be Claude's suggestion, which Tab takes in the terminal. Whether all of it shows can't be told here, so it can't be sent from the card.",
+    /** Claude Code's own prompt suggestion, told apart from typing: nobody typed it. */
+    suggestion: {
+      /** `agent`: e.g. Claude. */
+      title: (agent: string) => `${agent} suggestion`,
+      hint: (agent: string) =>
+        `${agent} suggests this as your next message. In the terminal, Tab takes it.`,
+      send: 'Send suggestion',
+      sendTitle:
+        'Takes the suggestion in (→, like Tab) while the input box holds only it, then presses Enter only if the box then holds exactly this text.',
+      partial:
+        "Not all of the suggestion is visible, so it can't be sent from the card. Press Tab in the terminal to take it.",
+    },
   },
   clearedToClipboard: 'The cleared text is on your clipboard',
   /** Images in the composer: paste (⌘V), drop, or the attach button. */

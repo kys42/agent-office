@@ -714,6 +714,18 @@
   line-height: 1.45;
   color: var(--text);
 }
+/* The agent's own suggestion (nobody typed it): marked apart from a draft, its text faint as in
+   the terminal. */
+.draft-preview.is-suggestion {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line-3));
+}
+.draft-preview.is-suggestion .draft-preview-head {
+  color: var(--accent);
+}
+.draft-preview.is-suggestion .draft-preview-text {
+  color: var(--text-2);
+}
 .draft-preview-head {
   display: flex;
   align-items: center;

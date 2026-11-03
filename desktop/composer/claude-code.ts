@@ -260,7 +260,9 @@ export function promptHoldsImages(
  * (2.1.309: `max(3, ⌊rows / 2⌋ − 5)`, a window centred on the cursor row, clamped to the text),
  * so with the cursor away from the end the rows below it are hidden too.
  */
-export const maxBoxRows = (height: number) => Math.max(3, Math.floor((height - 10) / 2));
+export const maxBoxRows = (height: number) => Math.max(MIN_BOX_ROWS, Math.floor((height - 10) / 2));
+/** The fewest rows a box capped by the fullscreen renderer shows (both formulas clamp to it). */
+const MIN_BOX_ROWS = 3;
 // Below height 12 the box's lower edge is cut off (measured at 8–11): no prompt is read there
 // at all, and `wholeText` never counts one whole.
 
@@ -290,9 +292,16 @@ const widest = (text: string) =>
 function wholeText(screen: Screen, box: PromptBox, text: string): boolean {
   // A collapsed paste or an attached image stands for content that is not on screen.
   if (PLACEHOLDER.test(text)) return false;
-  // The task list (ctrl+t) takes rows of its own; the box's height there was not measured.
-  if (TASKS.test(box.lines.slice(box.bottom + 1).join(' ')) || hasTaskList(box)) return false;
   const rows = box.bottom - box.top - 1;
+  // The task list (ctrl+t) takes rows of its own; how tall the box may grow beside it was not
+  // measured. A capped box still shows at least MIN_BOX_ROWS rows (both renderers clamp to it),
+  // so a box drawn in fewer rows, between its two rules, is never cut short: the list above it
+  // changes nothing there (Orca leaves only the marker row when it reports the text apart).
+  if (
+    rows >= MIN_BOX_ROWS &&
+    (TASKS.test(box.lines.slice(box.bottom + 1).join(' ')) || hasTaskList(box))
+  )
+    return false;
   // tmux: the box's rows against the pane. Orca (styles never read) draws a short box whole.
   if (screen.faint) {
     // Claude Code's default (inline) renderer, on the main screen, never caps the box: with
@@ -379,6 +388,8 @@ export function classifyPrompt(screen: Screen): ComposerState {
   }
   let faint = 0;
   let plain = 0;
+  /** The first character drawn after the marker is the only plain one (the cursor's cell). */
+  let cursorFirst = false;
   for (let row = box.top + 1; row < box.bottom; row++) {
     const line = box.lines[row];
     const flags = screen.faint[row] ?? [];
@@ -387,15 +398,24 @@ export function classifyPrompt(screen: Screen): ComposerState {
     for (let i = from; i < line.length; i++)
       if (line[i].trim()) {
         if (flags[i]) faint++;
-        else plain++;
+        else if (!plain++ && !faint && row === box.top + 1) cursorFirst = true;
+        else cursorFirst = false;
       }
   }
   if (!plain && !faint)
     return rows === 1
       ? { kind: 'empty' }
       : { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
-  if (plain) return { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
-  return HINT.test(text) ? { kind: 'empty' } : { kind: 'suggestion', text };
+  // With the terminal focused, Claude Code draws the cursor on the suggestion's first character
+  // (2.1.316: `invert(t[0]) + dim(t.slice(1))`, or that character plain where the terminal's own
+  // cursor is used): one plain character first, all the rest faint, on one row. Typed text is
+  // never drawn faint, so a box like that holds nothing typed.
+  if (plain && !(plain === 1 && cursorFirst && faint && rows === 1))
+    return { kind: 'draft', text, whole: whole(text), ...width, ...asTyped(text) };
+  if (HINT.test(text)) return { kind: 'empty' };
+  // The suggestion is drawn on one row, cut short with `…` when it does not fit (2.1.316:
+  // `wrap: "truncate-end"`); accepting takes all of it, not what shows.
+  return { kind: 'suggestion', text, whole: rows === 1 && !/…$/.test(text) };
 }
 
 /** Margin under the rules' width: the box's padding is not measured, so a row is held full early. */
@@ -587,9 +607,13 @@ export const claudeCodeComposer: ComposerAdapter = {
     images: 'attach',
     // Its box is read on either host; Enter alone submits it (see submitDraft).
     canSubmitDraft: true,
+    // tmux tells the suggestion by its style; Orca reads it like typing, so there only a one-line
+    // text known whole goes this way, the accept key leaving typed text as it is.
+    canSubmitSuggestion: true,
   }),
   inspect,
   submitDraft,
+  submitSuggestion,
   async clear(host, from, backup, proceed, options): Promise<ClearResult> {
     if (!from.whole) {
       if (!options?.allowPartial) return { status: 'failed', state: from, partial: true };
@@ -688,6 +712,80 @@ async function submitDraft(
   if (again) return again;
   await host.submit();
   return { status: 'submitted', state: seen };
+}
+
+/** Reads after the accept key, for the box to show the suggestion taken in. */
+const ACCEPT_READS = 3;
+
+/**
+ * The key that takes Claude Code's suggestion into the box. From the 2.1.316 bundle (the main
+ * prompt's key handler): with the box empty, a suggestion shown and no agent view, Right (like
+ * Tab) puts all of the suggestion in the box as typed text, the cursor after it, and submits
+ * nothing. Unlike Tab, Right with text in the box does nothing but move the cursor (no binding in
+ * the Chat or Global contexts, no completion), while Tab there runs completion: a partial
+ * `/command`, or a file and agent search for the word before the cursor (`PQt`: `@…` or any run of
+ * letters, digits, marks and `_-./\()[]~:` — so a Korean word too), opening a list when anything
+ * matches, completing at once in shell mode. Enter on an empty box submits nothing
+ * (`prompt_submit_empty`).
+ */
+const ACCEPT_KEY = 'Right';
+
+/**
+ * A box that may hold the agent's suggestion, submitted ([Send suggestion], or [Send as is] on
+ * text a plain screen cannot tell from one): the accept key, then Enter as for [Send as is].
+ * - tmux (styled): only while the box holds just `expected` as the suggestion, told by its
+ *   style, all of it; after the key the box must hold exactly it as typed text.
+ * - Orca (plain): one line, known whole, that the screen cannot tell from the suggestion. The key
+ *   takes a suggestion in, and leaves typed text as it is (only the cursor moves): either way the
+ *   box must still hold exactly `expected` afterwards, and Enter then sends exactly what the
+ *   person saw.
+ * Read twice before the key (the second right after `proceed`); after it, up to three reads for the
+ * box to settle, then `submitDraft` reads twice more and presses Enter. Anything else stops with
+ * nothing more pressed (`accepted` once the key went in).
+ */
+async function submitSuggestion(
+  host: ComposerHost,
+  expected: string,
+  proceed: () => Promise<boolean>,
+): Promise<DraftSubmitOutcome> {
+  if (expected.includes('\n')) return { status: 'refused', reason: 'unsupported' };
+  const exact = (state: ComposerState) =>
+    holdsText(state) && state.text === expected && (state.rows ?? state.text) === expected;
+  const check = async (): Promise<DraftSubmitOutcome | null> => {
+    const state = await inspect(host);
+    if (state.kind === 'closed' || state.kind === 'unreadable')
+      return { status: 'refused', reason: state.kind };
+    if (host.styled) {
+      if (state.kind !== 'suggestion' || state.inferred || state.text !== expected)
+        return { status: 'changed', state };
+      if (!state.whole) return { status: 'refused', reason: 'partial' };
+      return null;
+    }
+    // Plain: text the screen cannot tell from a suggestion, exactly as previewed.
+    if (state.kind !== 'unknown' || !exact(state)) return { status: 'changed', state };
+    if (!state.whole) return { status: 'refused', reason: 'partial' };
+    return null;
+  };
+  const first = await check();
+  if (first) return first;
+  if (!(await proceed())) return { status: 'refused', reason: 'lost' };
+  const again = await check();
+  if (again) return again;
+  await host.press([ACCEPT_KEY]);
+  let state: ComposerState = { kind: 'unreadable' };
+  for (let read = 0; read < ACCEPT_READS; read++) {
+    await host.wait(REDRAW_MS);
+    state = await inspect(host);
+    // Not redrawn yet: the suggestion still shows as it was (a plain screen shows no change).
+    if (!(host.styled && state.kind === 'suggestion' && state.text === expected)) break;
+  }
+  const taken = host.styled ? state.kind === 'draft' : holdsText(state);
+  if (!taken || !exact(state) || !(state as { whole?: boolean }).whole)
+    return state.kind === 'closed' || state.kind === 'unreadable'
+      ? { status: 'refused', reason: state.kind, accepted: true }
+      : { status: 'changed', state, accepted: true };
+  const sent = await submitDraft(host, expected, proceed);
+  return sent.status === 'submitted' ? sent : { ...sent, accepted: true };
 }
 
 /** Explicitly accepted loss of hidden content: collect readable fragments before each pair.

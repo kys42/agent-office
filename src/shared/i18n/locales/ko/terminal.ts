@@ -64,7 +64,24 @@ export const terminal: Messages['terminal'] = {
     notImportable:
       '터미널에서 줄이 접혀 보여 원래 줄바꿈을 알 수 없어서 카드로 가져올 수 없어요. 터미널에서 고치거나 그대로 보내 주세요.',
     partial: '글이 다 보이지 않아 카드에서는 보낼 수 없어요. 터미널에서 확인해 주세요.',
-    maybeSuggestion: '직접 쓴 글이 아니라 입력창에 뜬 추천 글일 수도 있어요.',
+    maybeSuggestion:
+      '직접 쓴 글이 아니라 Claude 추천 글일 수도 있어요. 추천 글은 Enter로 보내지지 않으니 터미널에서 Tab으로 받아 주세요.',
+    maybeSuggestionSend:
+      'Claude 추천 글일 수도 있어요. 추천 글이면 받아서, 직접 친 글이면 그대로 보내요.',
+    sendMaybeSuggestionTitle:
+      '터미널에서 →를 눌러(추천 글이면 받고, 직접 친 글은 그대로) 입력창에 정확히 이 글이 있을 때만 Enter를 눌러요.',
+    partialMaybeSuggestion:
+      '터미널에서 Tab으로 받는 Claude 추천 글일 수도 있어요. 여기서는 글이 다 보이는지 알 수 없어 카드에서는 보낼 수 없어요.',
+    suggestion: {
+      title: (agent) => `${agent} 추천 글`,
+      hint: (agent) =>
+        `${agent}가 다음에 보낼 글로 추천했어요. 터미널에서는 Tab으로 받는 글이에요.`,
+      send: '추천 글 보내기',
+      sendTitle:
+        '입력창에 이 추천 글만 있을 때 받고(→, Tab과 같음), 입력창에 정확히 이 글이 들어간 걸 확인한 뒤에만 Enter를 눌러요.',
+      partial:
+        '추천 글이 다 보이지 않아 카드에서는 보낼 수 없어요. 터미널에서 Tab으로 받아 주세요.',
+    },
   },
   clearedToClipboard: '지운 글은 클립보드에 있어요',
   images: {

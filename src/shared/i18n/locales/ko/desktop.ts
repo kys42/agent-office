@@ -122,6 +122,16 @@ export const desktop: Messages['desktop'] = {
     draftNotSubmitted: (host) => `${host}에 Enter를 보내지 못했어요. 글은 입력창에 그대로 있어요.`,
     draftNotTaken: (host) =>
       `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. 터미널을 확인해 주세요.`,
+    draftNotTakenSuggestion: (host) =>
+      `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. Claude 추천 글이면 Enter로는 보내지지 않아요. 터미널에서 Tab으로 받은 뒤 보내 주세요.`,
+    suggestionUnsupported:
+      '이 글은 추천 글로 받아 보낼 수 없어요(한 줄 글만 돼요). 터미널에서 확인해 주세요.',
+    suggestionNotWhole:
+      '추천 글이 다 보이지 않아 여기서 보내지 않았어요. 터미널에서 Tab으로 받아 주세요.',
+    suggestionNotSubmitted: (host) =>
+      `${host}에 추천 글을 보내지 못했어요. 터미널을 확인해 주세요.`,
+    suggestionHeld: (host) =>
+      `${host}에서 추천 글 받기 키(→)를 눌렀지만 Enter 직전 입력창 확인이 맞지 않아 보내지 않았어요. 터미널을 확인해 주세요.`,
   },
   attachments: {
     notImage: 'PNG, JPEG, GIF, WebP 이미지만 첨부할 수 있어요.',

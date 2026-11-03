@@ -2773,6 +2773,7 @@ test('The card preview reads the box read-only, once for every window asking at 
     submittable: true,
     logical: 'from orca',
     maybeSuggestion: true,
+    acceptsSuggestion: true,
   });
 });
 
@@ -2962,5 +2963,165 @@ test('Send as is says so when Enter left the text in the box, and never presses 
     const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
     await assert.rejects(submitTerminalDraft(tmuxLive(), 'go on', deps), /같은 글이 그대로예요/);
     assert.equal(enters(calls), 1);
+  });
+});
+
+/**
+ * Claude Code 2.1.316 with its prompt suggestion shown (#338): faint after `❯ `, the cursor's
+ * cell first (tmux), or reported in Orca's `draft` like typing. Right (or Tab) with the box empty
+ * takes it in as typed text; Right with text typed only moves the cursor; Enter submits what is
+ * typed and nothing on an empty box. `typed`: text in the box from the start. `onAccept` changes
+ * what the key takes in (a mismatch).
+ */
+function suggestionBox(
+  suggestion: string,
+  options: { typed?: string; onAccept?: (shown: string) => string } = {},
+) {
+  let held = options.typed ?? '';
+  let shown: string | null = suggestion;
+  const submitted: string[] = [];
+  return {
+    submitted,
+    screen: () =>
+      held || !shown
+        ? claudeScreen(held)
+        : claudeScreen('').replace(
+            /^❯$/m,
+            `❯ \x1b[7m${shown[0]}\x1b[27m\x1b[2m${shown.slice(1)}\x1b[0m`,
+          ),
+    /** Orca's `draft`: whatever the box shows, the suggestion as typing. */
+    orcaDraft: () => held || shown || undefined,
+    fail: (_file: string, args: string[]) => {
+      if (!args.includes('send-keys') && args[1] !== 'send') return undefined;
+      const accept =
+        args.includes('Right') || args.includes('Tab') || args.includes('--text=\x1b[C');
+      const enter = args.includes('Enter') || args.includes('--enter');
+      if (accept && !held && shown) held = options.onAccept ? options.onAccept(shown) : shown;
+      if (enter && held) {
+        submitted.push(held);
+        held = '';
+        shown = null;
+      }
+      return undefined;
+    },
+  };
+}
+const accepts = (calls: { args: string[] }[]) =>
+  calls.filter((c) => c.args.includes('Right') || c.args.includes('--text=\x1b[C')).length;
+const tabs = (calls: { args: string[] }[]) =>
+  calls.filter((c) => c.args.includes('Tab') || c.args.includes('--text=\t')).length;
+
+test('Send suggestion: the accept key while the box holds only it, Enter once it holds exactly it', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    // The preview shows it as Claude's suggestion, not as a draft.
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'suggestion',
+      text: '커밋해줘',
+      agent: 'Claude',
+      submittable: true,
+    });
+    const result = await submitTerminalDraft(tmuxLive(), '커밋해줘', deps, { suggestion: true });
+    assert.deepEqual(result, {
+      status: 'sent',
+      message: 'tmux work:1.0에 보냈어요',
+      logical: '커밋해줘',
+    });
+    assert.equal(accepts(calls), 1);
+    assert.equal(tabs(calls), 0, 'never Tab: it runs completion on typed text');
+    assert.equal(enters(calls), 1);
+    assert.deepEqual(box.submitted, ['커밋해줘']);
+    // Nothing typed, pasted or deleted: only the accept key, then Enter.
+    assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
+  });
+});
+
+test('Orca: a one-line text that may be the suggestion is sent whichever it is', async () => {
+  // The reported case (#338): Orca reports the suggestion in `draft`, like typing.
+  for (const typed of [undefined, '커밋해줘'])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const box = suggestionBox(typed ? '다른 추천' : '커밋해줘', { typed });
+      const { deps, calls } = fakeDeps(dir, { orcaDraft: box.orcaDraft, fail: box.fail });
+      const preview = await previewTerminalDraft(orcaLive(), claudeCodeComposer, deps);
+      assert.equal(preview.kind === 'draft' && preview.acceptsSuggestion, true);
+      const result = await submitTerminalDraft(orcaLive(), '커밋해줘', deps, { suggestion: true });
+      assert.equal(result.status, 'sent', typed ?? 'suggestion');
+      // The suggestion was taken in, or the typed text left as it was: exactly it went.
+      assert.deepEqual(box.submitted, ['커밋해줘']);
+      assert.equal(accepts(calls), 1);
+      assert.equal(tabs(calls), 0);
+      assert.equal(enters(calls), 1);
+    });
+  // Something else after the key: no Enter, said so.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘', { onAccept: (s) => `${s} 하고 푸시` });
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: box.orcaDraft, fail: box.fail });
+    const result = await submitTerminalDraft(orcaLive(), '커밋해줘', deps, { suggestion: true });
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /받기 키\(→\)를 눌렀지만/);
+    assert.equal(enters(calls), 0);
+    assert.deepEqual(box.submitted, []);
+  });
+});
+
+test('Send suggestion stops with nothing more pressed on a mismatch or a draft', async () => {
+  // The key took in other text than was shown: no Enter, said so, and the box shown again.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘', { onAccept: (s) => `${s} 하고 푸시` });
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), '커밋해줘', deps, { suggestion: true });
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /Enter 직전 입력창 확인/);
+    assert.equal(
+      result.status === 'changed' && result.draft.kind === 'draft' && result.draft.text,
+      '커밋해줘 하고 푸시',
+    );
+    assert.equal(accepts(calls), 1);
+    assert.equal(enters(calls), 0);
+    assert.deepEqual(box.submitted, []);
+  });
+  // tmux: the box holds typed text (told by its style): no key at all.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('커밋해줘');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), '커밋해줘', deps, { suggestion: true });
+    assert.equal(result.status, 'changed');
+    assert.equal(accepts(calls) + enters(calls), 0);
+  });
+  // Sending turned off right before the key: nothing pressed.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), '커밋해줘', deps, {
+        suggestion: true,
+        allowed: async () => false,
+      }),
+      /상태가 바뀌어 보내지 않았어요/,
+    );
+    assert.equal(accepts(calls) + enters(calls), 0);
+  });
+  // More than one line is never a suggestion: refused before any key.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: () => '한 줄\n두 줄' });
+    await assert.rejects(
+      submitTerminalDraft(orcaLive(), '한 줄\n두 줄', deps, { suggestion: true }),
+      /한 줄 글만 돼요/,
+    );
+    assert.equal(accepts(calls) + enters(calls), 0);
+  });
+});
+
+test('Send as is on Orca text that stayed after Enter says it may be a suggestion', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Orca reports the suggestion in `draft` like typing; Enter alone submits nothing.
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: () => '커밋해줘' });
+    await assert.rejects(
+      submitTerminalDraft(orcaLive(), '커밋해줘', deps),
+      /Claude 추천 글이면 Enter로는 보내지지 않아요/,
+    );
+    assert.equal(enters(calls), 1);
+    assert.equal(accepts(calls) + tabs(calls), 0);
   });
 });

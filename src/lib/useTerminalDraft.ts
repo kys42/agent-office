@@ -11,8 +11,9 @@ import { isPageShown, onPageVisibility } from './visibility';
  * read briefly, so several windows on the same colleague share one screen read.
  *
  * `submit` sends the box's text as it is (main presses Enter only while the box still holds
- * exactly that text); `onSubmitted` then gets that text as read, and as typed when the screen
- * could tell (`logical`), for the "sent" receipt.
+ * exactly that text); for the agent's own suggestion, main takes it in with Tab first and presses
+ * Enter only once the box holds exactly it. `onSubmitted` then gets that text as read, and as
+ * typed when the screen could tell (`logical`), for the "sent" receipt.
  */
 export function useTerminalDraft(
   id: string | null,
@@ -98,13 +99,16 @@ export function useTerminalDraft(
   const refresh = useCallback(() => refreshRef.current(), []);
   const submit = async () => {
     if (!id || !api.submitDraft || submitting) return;
-    if (view?.kind !== 'draft' || !view.submittable) return;
+    if ((view?.kind !== 'draft' && view?.kind !== 'suggestion') || !view.submittable) return;
     const { text } = view;
+    // The agent's suggestion, or text that may be one (taken in first, typed text left as is).
+    const suggestion =
+      view.kind === 'suggestion' || (view.kind === 'draft' && !!view.acceptsSuggestion);
     const startedAt = Date.now();
     setSubmitting(true);
     setNotice('');
     try {
-      const result = await api.submitDraft(id, text);
+      const result = await api.submitDraft(id, text, suggestion ? { suggestion } : undefined);
       if (result.status === 'sent') {
         latest.current.notify(result.message);
         // As typed from main's last look before Enter: the preview's may be older.
