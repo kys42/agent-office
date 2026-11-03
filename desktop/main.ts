@@ -1698,29 +1698,39 @@ function setupIPC() {
     return previewTerminalDraft(terminal, composer);
   });
   // [Send as is]: Enter only, after main read the box again and found exactly `text` there.
-  ipcMain.handle('office:submit-draft', async (e, id, text): Promise<DraftSubmitResult> => {
-    trusted(e);
-    if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
-    if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
-    const known = await identity(id);
-    const composer = composerFor(known.provider);
-    if (!composer.capabilities(null).canSubmitDraft)
-      throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
-    const terminal = await live(known, true);
-    if (!terminal) throw new Error(await noTerminal(known));
-    try {
-      return await submitTerminalDraft(terminal, text, undefined, {
-        composer,
-        allowed: terminalSendEnabled,
-      });
-    } catch (error) {
-      if (error instanceof TerminalInputError) throw error;
-      // Enter may have gone in; a retry presses only while the box still holds the text.
-      throw new Error(m().desktop.terminal.unconfirmed(hostName(terminal.host)));
-    } finally {
-      forgetTerminal(terminal.process.sessionId);
-    }
-  });
+  // [Send suggestion] (`suggestion`): Tab while the box holds only that suggestion, then Enter
+  // only once it holds exactly `text` as typed.
+  ipcMain.handle(
+    'office:submit-draft',
+    async (e, id, text, options): Promise<DraftSubmitResult> => {
+      trusted(e);
+      if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+      const suggestion =
+        typeof options === 'object' &&
+        options !== null &&
+        (options as { suggestion?: unknown }).suggestion === true;
+      if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+      const known = await identity(id);
+      const composer = composerFor(known.provider);
+      if (!composer.capabilities(null).canSubmitDraft)
+        throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+      const terminal = await live(known, true);
+      if (!terminal) throw new Error(await noTerminal(known));
+      try {
+        return await submitTerminalDraft(terminal, text, undefined, {
+          composer,
+          allowed: terminalSendEnabled,
+          suggestion,
+        });
+      } catch (error) {
+        if (error instanceof TerminalInputError) throw error;
+        // Enter may have gone in; a retry presses only while the box still holds the text.
+        throw new Error(m().desktop.terminal.unconfirmed(hostName(terminal.host)));
+      } finally {
+        forgetTerminal(terminal.process.sessionId);
+      }
+    },
+  );
   // The renderer hands over an image's bytes; main checks them and keeps the file. Only an
   // opaque id goes back: a send names ids, never paths.
   ipcMain.handle('office:attach-image', async (e, bytes) => {

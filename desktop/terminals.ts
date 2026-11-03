@@ -505,6 +505,12 @@ export interface DraftSubmitOptions {
   composer?: ComposerAdapter;
   /** Asked again right before Enter (e.g. the send setting): false stops, nothing pressed. */
   allowed?: () => Promise<boolean>;
+  /**
+   * `expected` is (or, on a plain screen, may be) the agent's own suggestion: the adapter takes
+   * it into the box with its accept key only while it is all the box holds, and presses Enter
+   * only once the box holds exactly it. The same queue, checks and setting as [Send as is].
+   */
+  suggestion?: boolean;
 }
 
 /**
@@ -547,12 +553,19 @@ async function submitDraftNow(
   const composer = options.composer ?? claudeCodeComposer;
   const io = composerHost(host, deps);
   const can = composer.capabilities(io);
-  if (can.delivery !== 'terminal' || !can.canSubmitDraft || !composer.submitDraft)
+  const submit = options.suggestion
+    ? can.canSubmitSuggestion && composer.submitSuggestion?.bind(composer)
+    : composer.submitDraft?.bind(composer);
+  if (can.delivery !== 'terminal' || !can.canSubmitDraft)
     throw new TerminalInputError(t.unsupportedAgent(composer.agent));
+  if (!submit)
+    throw new TerminalInputError(
+      options.suggestion ? t.suggestionUnsupported : t.unsupportedAgent(composer.agent),
+    );
   let status: string | undefined;
   let outcome: Awaited<ReturnType<NonNullable<ComposerAdapter['submitDraft']>>>;
   try {
-    outcome = await composer.submitDraft(io, expected, async () => {
+    outcome = await submit(io, expected, async () => {
       // The record and the foreground last, as before a send's Enter; then the setting.
       const again = await current();
       status = again?.status;
@@ -561,8 +574,20 @@ async function submitDraftNow(
   } catch (error) {
     // Enter itself failed: the text is still in the box, as it was.
     if (error instanceof TerminalInputError)
-      throw new TerminalInputError(t.draftNotSubmitted(where));
+      throw new TerminalInputError(
+        options.suggestion ? t.suggestionNotSubmitted(where) : t.draftNotSubmitted(where),
+      );
     throw error;
+  }
+  // The accept key went in, then a check before Enter failed: what it took in stays there.
+  if (outcome.status !== 'submitted' && outcome.accepted) {
+    if (outcome.status === 'changed')
+      return {
+        status: 'changed',
+        message: t.suggestionHeld(where),
+        draft: draftView(outcome.state, composer.agent, can),
+      };
+    throw new TerminalInputError(t.suggestionHeld(where));
   }
   if (outcome.status === 'changed')
     return {
@@ -580,12 +605,16 @@ async function submitDraftNow(
       };
     throw new TerminalInputError(
       outcome.reason === 'partial'
-        ? t.draftNotWhole
+        ? options.suggestion
+          ? t.suggestionNotWhole
+          : t.draftNotWhole
         : outcome.reason === 'unreadable'
           ? t.unreadable(hostName(host))
           : outcome.reason === 'lost'
             ? t.draftStopped
-            : t.unsupportedAgent(composer.agent),
+            : options.suggestion
+              ? t.suggestionUnsupported
+              : t.unsupportedAgent(composer.agent),
     );
   }
   // What went, as typed, from the look right before Enter (never the preview's older one).
@@ -602,7 +631,13 @@ async function submitDraftNow(
     const state = await composer.inspect(io);
     taken = !(holdsText(state) && (state.rows ?? state.text) === expected);
   }
-  if (!taken) throw new TerminalInputError(t.draftNotTaken(where));
+  if (!taken)
+    throw new TerminalInputError(
+      // Text this screen cannot tell from the suggestion: Enter does not take a suggestion.
+      !options.suggestion && outcome.state.kind === 'unknown' && !can.canDetectSuggestion
+        ? t.draftNotTakenSuggestion(where)
+        : t.draftNotTaken(where),
+    );
   const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
   const message =
     after?.status === 'waiting'
@@ -718,6 +753,7 @@ const KEY_BYTES: Record<ComposerKey, string> = {
   'C-u': '\x15',
   l: 'l',
   BSpace: '\x7f',
+  Right: '\x1b[C',
 };
 
 /** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */

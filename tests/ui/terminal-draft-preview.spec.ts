@@ -16,32 +16,41 @@ async function card(
     hash?: string;
     /** The box wrapped it over rows: the text as typed cannot be told. */
     wrapped?: boolean;
+    /** Claude's own suggestion shown in the otherwise empty box (#338). */
+    suggestion?: string;
+    /** Orca: `box` may be the suggestion (it reads like typing); one line goes via the key. */
+    maybe?: boolean;
   } = {},
 ) {
   const snapshot = demoSnapshot();
   snapshot.preferences.privacy = !!opts.privacy;
   if (!opts.hash) await page.setViewportSize({ width: 480, height: 760 });
   await page.addInitScript(
-    ({ s, box, canSend, wrapped }) => {
+    ({ s, box, canSend, wrapped, suggestion, maybe }) => {
       const w = window as any;
+      w.maybe = maybe;
       w.fixture = s;
       w.box = box;
+      w.suggestion = suggestion;
       w.wrapped = wrapped;
       w.reads = 0;
       w.submits = [];
       w.sends = [];
       w.cardCalls = [];
       const view = () =>
-        w.box
-          ? {
-              kind: 'draft',
-              text: w.box,
-              agent: 'Claude',
-              submittable: !w.box.includes('[Pasted'),
-              // As typed, unless the box wrapped it where that cannot be told (main's rule).
-              ...(!w.wrapped && { logical: w.box }),
-            }
-          : { kind: 'empty' };
+        !w.box && w.suggestion
+          ? { kind: 'suggestion', text: w.suggestion, agent: 'Claude', submittable: true }
+          : w.box
+            ? {
+                kind: 'draft',
+                text: w.box,
+                agent: 'Claude',
+                submittable: !w.box.includes('[Pasted'),
+                // As typed, unless the box wrapped it where that cannot be told (main's rule).
+                ...(!w.wrapped && { logical: w.box }),
+                ...(w.maybe && { maybeSuggestion: true, acceptsSuggestion: true }),
+              }
+            : { kind: 'empty' };
       w.office = {
         snapshot: async () => structuredClone(w.fixture),
         detail: async (id: string) =>
@@ -63,7 +72,26 @@ async function card(
           w.reads++;
           return view();
         },
-        submitDraft: async (id: string, text: string) => {
+        submitDraft: async (id: string, text: string, options?: { suggestion?: boolean }) => {
+          // [Send suggestion]: main presses the accept key only while the box holds just that
+          // suggestion (or, Orca, exactly that one line), then Enter only once it holds exactly it.
+          if (options?.suggestion && w.maybe && w.box === text) {
+            w.submits.push([id, text, 'suggestion']);
+            w.box = '';
+            return { status: 'sent', message: 'Orca 터미널에 보냈어요', logical: text };
+          }
+          if (options?.suggestion) {
+            if (w.box || w.suggestion !== text)
+              return {
+                status: 'changed',
+                message:
+                  '그사이 입력창 글이 바뀌어 보내지 않았어요. 지금 들어 있는 글을 보여 드려요.',
+                draft: view(),
+              };
+            w.submits.push([id, text, 'suggestion']);
+            w.suggestion = '';
+            return { status: 'sent', message: 'tmux work:1.0에 보냈어요', logical: text };
+          }
           if (w.box !== text)
             return {
               status: 'changed',
@@ -105,7 +133,14 @@ async function card(
         },
       };
     },
-    { s: snapshot, box: opts.box ?? '', canSend: opts.canSend ?? true, wrapped: !!opts.wrapped },
+    {
+      s: snapshot,
+      box: opts.box ?? '',
+      canSend: opts.canSend ?? true,
+      wrapped: !!opts.wrapped,
+      suggestion: opts.suggestion ?? '',
+      maybe: !!opts.maybe,
+    },
   );
   await page.goto(opts.hash ?? '/#card');
   // The big office: its right column opens on a desk click.
@@ -319,4 +354,87 @@ test('The big office card shows the same preview from the same core', async ({ p
   await page.screenshot({ path: '.local/terminal-draft-preview-office.png' });
   await preview.getByRole('button', { name: '그대로 보내기' }).click();
   await expect(aside.locator('.message-pending')).toContainText('배포 전에 체인지로그도');
+});
+
+test("Claude's suggestion shows as its own, not as a draft, and goes with [Send suggestion]", async ({
+  page,
+}) => {
+  const aside = await card(page, { suggestion: '커밋해줘' });
+  const preview = aside.getByRole('region', { name: 'Claude 추천 글' });
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('.draft-preview-text')).toHaveText('커밋해줘');
+  await expect(preview).toContainText('터미널에서는 Tab으로 받는 글이에요');
+  // Never called the person's half-written text, never taken into the card.
+  await expect(aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' })).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: '그대로 보내기' })).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: '카드에서 고치기' })).toHaveCount(0);
+  await page.screenshot({ path: '.local/terminal-draft-suggestion.png' });
+  await preview.getByRole('button', { name: '추천 글 보내기' }).click();
+  await expect(preview).toHaveCount(0);
+  expect(await w(page, 'submits')).toEqual([['demo:0', '커밋해줘', 'suggestion']]);
+  expect(await w(page, 'sends')).toEqual([]);
+  // It waits as a sent bubble, like [Send as is].
+  const waiting = aside.locator('.message-pending');
+  await expect(waiting).toContainText('커밋해줘');
+  await expect(waiting).toContainText('대화 기록 확인 중');
+});
+
+test('A suggestion replaced by typing meanwhile is not sent: the reason and the draft show', async ({
+  page,
+}) => {
+  const aside = await card(page, { suggestion: '커밋해줘' });
+  const preview = aside.getByRole('region', { name: 'Claude 추천 글' });
+  await expect(preview).toBeVisible();
+  await page.evaluate(() => ((window as any).box = '커밋하지 마'));
+  await preview.getByRole('button', { name: '추천 글 보내기' }).click();
+  const draft = aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' });
+  await expect(draft.getByRole('alert')).toContainText('바뀌어 보내지 않았어요');
+  await expect(draft.locator('.draft-preview-text')).toHaveText('커밋하지 마');
+  expect(await w(page, 'submits')).toEqual([]);
+});
+
+test('A suggestion cut short on screen is shown, never sent from the card', async ({ page }) => {
+  const aside = await card(page, { suggestion: '전체 테스트 돌리고 실패한 것만…' });
+  await page.evaluate(() => {
+    const office = (window as any).office;
+    const read = office.composerDraft;
+    office.composerDraft = async () => ({ ...(await read()), submittable: false });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const preview = aside.getByRole('region', { name: 'Claude 추천 글' });
+  await expect(preview).toContainText('추천 글이 다 보이지 않아');
+  await expect(preview.getByRole('button', { name: '추천 글 보내기' })).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: '터미널로 이동' })).toBeVisible();
+});
+
+test('Orca text that may be a suggestion says Tab takes it in the terminal', async ({ page }) => {
+  const aside = await card(page, { box: '커밋해줘' });
+  await page.evaluate(() => {
+    const office = (window as any).office;
+    const read = office.composerDraft;
+    office.composerDraft = async () => ({
+      ...(await read()),
+      partial: true,
+      submittable: false,
+      maybeSuggestion: true,
+    });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const preview = aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' });
+  await expect(preview).toContainText('터미널에서 Tab으로 받는 Claude 추천 글일 수도 있어요');
+  await expect(preview.getByRole('button', { name: '그대로 보내기' })).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: '추천 글 보내기' })).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: '터미널로 이동' })).toBeVisible();
+});
+
+test('Orca: one line that may be the suggestion is sent either way through the accept key', async ({
+  page,
+}) => {
+  const aside = await card(page, { box: '커밋해줘', maybe: true });
+  const preview = aside.getByRole('region', { name: '터미널 입력창에 쓰다 만 글' });
+  await expect(preview).toContainText('추천 글이면 받아서, 직접 친 글이면 그대로 보내요');
+  await preview.getByRole('button', { name: '그대로 보내기' }).click();
+  await expect(preview).toHaveCount(0);
+  expect(await w(page, 'submits')).toEqual([['demo:0', '커밋해줘', 'suggestion']]);
+  await expect(aside.locator('.message-pending')).toContainText('커밋해줘');
 });

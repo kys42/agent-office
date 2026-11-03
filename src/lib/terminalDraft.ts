@@ -44,8 +44,11 @@ export function sameDraftView(a: ComposerDraftView | null, b: ComposerDraftView 
       a.agent === b.agent &&
       a.submittable === b.submittable &&
       !!a.partial === !!b.partial &&
-      !!a.maybeSuggestion === !!b.maybeSuggestion
+      !!a.maybeSuggestion === !!b.maybeSuggestion &&
+      !!a.acceptsSuggestion === !!b.acceptsSuggestion
     );
+  if (a.kind === 'suggestion' && b.kind === 'suggestion')
+    return a.text === b.text && a.agent === b.agent && a.submittable === b.submittable;
   if (a.kind === 'unknown' && b.kind === 'unknown') return a.reason === b.reason;
   return true;
 }
@@ -57,7 +60,8 @@ export function nextDraftDelay(
   view: ComposerDraftView,
 ): number {
   if (changed) return DRAFT_POLL.base;
-  const cap = DRAFT_POLL[view.kind === 'draft' ? 'draft' : view.kind];
+  // A suggestion rests like a draft: it stays until the box is typed into or a turn ends.
+  const cap = DRAFT_POLL[view.kind === 'draft' || view.kind === 'suggestion' ? 'draft' : view.kind];
   return Math.min(cap, Math.max(DRAFT_POLL.base, Math.round(previous * 1.5)));
 }
 

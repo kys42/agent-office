@@ -9,8 +9,11 @@ import type { Screen } from './screen.js';
  */
 
 /** Keys an adapter may press. Hosts translate them (tmux key names, raw bytes for Orca). */
-/** Deletion pairs, plus the probe: one 'l' typed and taken back (BSpace) to tell a suggestion. */
-export type ComposerKey = 'C-k' | 'C-u' | 'l' | 'BSpace';
+/**
+ * Deletion pairs, plus the probe: one 'l' typed and taken back (BSpace) to tell a suggestion.
+ * Right takes the agent's suggestion into an otherwise empty box ([Send suggestion] only).
+ */
+export type ComposerKey = 'C-k' | 'C-u' | 'l' | 'BSpace' | 'Right';
 
 /** The terminal a composer is drawn in: tmux or Orca, as seen by an adapter. */
 export interface ComposerHost {
@@ -29,6 +32,7 @@ export interface ComposerHost {
  * - `empty`: nothing, or a placeholder the agent shows in an empty box.
  * - `suggestion`: text the agent offers (drawn faint); typing replaces it. `inferred` when the
  *   host could not show styles and the text was recognised by surviving the deletion keys.
+ *   `whole`: told by its style and all of it shows (one row, not cut short with `…`).
  * - `draft`: text someone typed or pasted and has not submitted.
  * - `unknown`: text that cannot be told apart from a suggestion on this host (plain screens).
  *   For both, `whole`: all of the text is known (on screen, or reported apart in full). A box
@@ -46,7 +50,7 @@ export interface ComposerHost {
  */
 export type ComposerState =
   | { kind: 'empty' }
-  | { kind: 'suggestion'; text: string; inferred?: boolean }
+  | { kind: 'suggestion'; text: string; inferred?: boolean; whole?: boolean }
   | { kind: 'draft'; text: string; whole: boolean; width?: number; rows?: string; logical?: string }
   | {
       kind: 'unknown';
@@ -82,6 +86,12 @@ export interface ComposerCapabilities {
    * only Enter is pressed, nothing typed. Off for a queue and for agents with no known composer.
    */
   canSubmitDraft?: boolean;
+  /**
+   * The agent's own suggestion can be taken into the box and submitted from here
+   * (`submitSuggestion`): told apart by its style, or (a plain screen) text that may be one, taken
+   * by a key that leaves typed text as it is.
+   */
+  canSubmitSuggestion?: boolean;
 }
 
 /** Saves the composer's text (the clipboard) before anything of it is deleted. */
@@ -107,11 +117,17 @@ export type ClearResult =
  * look). Otherwise nothing was pressed: `changed` the box holds something else now (`state`); `partial` not all of its text
  * is known; `lost` the agent stopped being the one at the terminal; `closed` a dialog or menu
  * replaced the box; `unreadable` the screen could not be read; `unsupported` no such adapter.
+ * `accepted` (`submitSuggestion` only): the accept key already went in when it stopped, so the
+ * box may now hold the suggestion as typed text; nothing more was pressed.
  */
 export type DraftSubmitOutcome =
   | { status: 'submitted'; state: ComposerState }
-  | { status: 'changed'; state: ComposerState }
-  | { status: 'refused'; reason: 'partial' | 'lost' | 'closed' | 'unreadable' | 'unsupported' };
+  | { status: 'changed'; state: ComposerState; accepted?: boolean }
+  | {
+      status: 'refused';
+      reason: 'partial' | 'lost' | 'closed' | 'unreadable' | 'unsupported';
+      accepted?: boolean;
+    };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */
@@ -138,6 +154,18 @@ export interface ComposerAdapter {
    * exactly `expected`, all of it. Nothing is typed or deleted. Absent: not offered.
    */
   submitDraft?(
+    host: ComposerHost,
+    expected: string,
+    proceed: () => Promise<boolean>,
+  ): Promise<DraftSubmitOutcome>;
+  /**
+   * Submits the agent's own suggestion: only while the box holds just `expected` as the
+   * suggestion (told by its style, all of it, read twice) — or, on a plain screen, one line known
+   * whole that may be one — the agent's accept key takes it into the box; the box must then hold
+   * exactly `expected` before the submit key goes in (as `submitDraft`). Any mismatch stops
+   * there, nothing more pressed. Absent: not offered.
+   */
+  submitSuggestion?(
     host: ComposerHost,
     expected: string,
     proceed: () => Promise<boolean>,

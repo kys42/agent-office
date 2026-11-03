@@ -82,13 +82,19 @@ function screens(...shown: (Screen | null)[]) {
   return { host, pressed, submitted: () => submitted, reads: () => reads };
 }
 
-test('The preview shows typed text only: empty, placeholder and suggestion are no draft', () => {
+test('The preview shows typed text as a draft: empty, placeholder and suggestion are none', () => {
   const can = claudeCodeComposer.capabilities({ styled: true });
   const view = (raw: string) => draftView(classifyPrompt(tmux(raw)), 'Claude', can);
   assert.deepEqual(view(SCREENS.empty), { kind: 'empty' });
   assert.deepEqual(view(SCREENS.busyEmpty), { kind: 'empty' });
   assert.deepEqual(view(SCREENS.queuedHint), { kind: 'empty' });
-  assert.deepEqual(view(SCREENS.suggestion), { kind: 'empty' });
+  // The suggestion is shown as the agent's, not as a draft (#338).
+  assert.deepEqual(view(SCREENS.suggestion), {
+    kind: 'suggestion',
+    text: 'One more alternative, one short sentence, no tools.',
+    agent: 'Claude',
+    submittable: true,
+  });
   assert.deepEqual(view(SCREENS.typed), {
     kind: 'draft',
     text: 'hello draft',
@@ -142,6 +148,8 @@ test('The preview shows typed text only: empty, placeholder and suggestion are n
     submittable: true,
     logical: 'run the tests',
     maybeSuggestion: true,
+    // One line known whole: sent through the accept key (#338).
+    acceptsSuggestion: true,
   });
   // A paste placeholder (Claude Code's exact form) only a paste puts there: shown in part, and
   // never called a suggestion (#333). Look-alikes are not that form: the caveat stays.
@@ -397,4 +405,332 @@ test('A receipt for text read off a wrapped box settles on the recorded request'
     settleSends([{ ...sent, wrapped: undefined }], 's1', [user], new Set(), 3000).length,
     1,
   );
+});
+
+/**
+ * Claude Code's prompt suggestion (#338), as 2.1.316 draws it: faint after `❯ `, and with the
+ * terminal focused the cursor on its first character (`invert(t[0]) + dim(t.slice(1))`), cut short
+ * with `…` when it does not fit its one row.
+ */
+const SUGGESTED = {
+  /** Unfocused: all of it faint. */
+  faint: box('\x1b[39m❯\xa0\x1b[2m커밋해줘\x1b[0m'),
+  /** Focused: the cursor's cell (inverse, not faint) first, the rest faint. */
+  cursor: box('\x1b[39m❯\xa0\x1b[7m커\x1b[27m\x1b[2m밋해줘\x1b[0m'),
+  /** The terminal's own cursor: the first character drawn plain. */
+  plainFirst: box('\x1b[39m❯\xa0커\x1b[2m밋해줘\x1b[0m'),
+  /** Too long for its row: cut short. */
+  cut: box(
+    '\x1b[39m❯\xa0\x1b[7mR\x1b[27m\x1b[2mun the full test suite and then summarize every…\x1b[0m',
+  ),
+  /** Typed, the cursor at its start: plain all along. */
+  typedCursor: box('\x1b[39m❯\xa0\x1b[7m커\x1b[27m밋해줘'),
+  /** Two plain characters before faint ones: not the cursor's cell alone. */
+  typedTwo: box('\x1b[39m❯\xa0커밋\x1b[2m해줘\x1b[0m'),
+};
+
+test("A suggestion told by its style is shown as the agent's suggestion, never as a draft", () => {
+  const tmuxCan = claudeCodeComposer.capabilities({ styled: true });
+  assert.equal(tmuxCan.canSubmitSuggestion, true);
+  const view = (raw: string) => draftView(classifyPrompt(tmux(raw)), 'Claude', tmuxCan);
+  for (const raw of [SUGGESTED.faint, SUGGESTED.cursor, SUGGESTED.plainFirst]) {
+    assert.deepEqual(classifyPrompt(tmux(raw)), {
+      kind: 'suggestion',
+      text: '커밋해줘',
+      whole: true,
+    });
+    assert.deepEqual(view(raw), {
+      kind: 'suggestion',
+      text: '커밋해줘',
+      agent: 'Claude',
+      submittable: true,
+    });
+  }
+  // Cut short on screen: shown, never sent from here (Tab would take more than was seen).
+  assert.deepEqual(view(SUGGESTED.cut), {
+    kind: 'suggestion',
+    text: 'Run the full test suite and then summarize every…',
+    agent: 'Claude',
+    submittable: false,
+  });
+  // Typed text is never faint: the cursor on its first cell keeps it a draft.
+  assert.equal(classifyPrompt(tmux(SUGGESTED.typedCursor)).kind, 'draft');
+  assert.equal(classifyPrompt(tmux(SUGGESTED.typedTwo)).kind, 'draft');
+  // The example placeholder with the cursor on it is still an empty box.
+  assert.deepEqual(view(box('\x1b[39m❯\xa0\x1b[7mT\x1b[27m\x1b[2mry "fix lint errors"\x1b[0m')), {
+    kind: 'empty',
+  });
+  // One only inferred (no styles, it survived the deletion keys) is not shown as one.
+  assert.deepEqual(
+    draftView({ kind: 'suggestion', text: '커밋해줘', inferred: true }, 'Claude', tmuxCan),
+    { kind: 'empty' },
+  );
+  // Orca: its `draft` holds the suggestion exactly as typing (1.4.216 falls back to the raw
+  // characters after the cursor when none is undimmed): the caveat, and one line known whole is
+  // sent through the accept key (a suggestion is taken in, typed text left as it is).
+  const orcaCan = claudeCodeComposer.capabilities({ styled: false });
+  assert.equal(orcaCan.canSubmitSuggestion, true);
+  const orcaView = (composer: string, text = strip(box('❯'))) =>
+    draftView(classifyPrompt({ text, composer }), 'Claude', orcaCan);
+  assert.deepEqual(orcaView('커밋해줘'), {
+    kind: 'draft',
+    text: '커밋해줘',
+    agent: 'Claude',
+    submittable: true,
+    logical: '커밋해줘',
+    maybeSuggestion: true,
+    acceptsSuggestion: true,
+  });
+  // More than one line is never a suggestion: [Send as is] alone (Enter only), as before.
+  const lines = orcaView('첫 줄\n둘째 줄');
+  assert.equal(lines.kind === 'draft' && lines.submittable, true);
+  assert.equal(lines.kind === 'draft' && lines.acceptsSuggestion, undefined);
+  // tmux tells a draft from the suggestion: never sent through the accept key.
+  const typedView = draftView(classifyPrompt(tmux(SCREENS.typed)), 'Claude', tmuxCan);
+  assert.equal(typedView.kind === 'draft' && typedView.acceptsSuggestion, undefined);
+});
+
+test('A task list above the box no longer makes a short one-line box partial', () => {
+  const orcaCan = claudeCodeComposer.capabilities({ styled: false });
+  const tmuxCan = claudeCodeComposer.capabilities({ styled: true });
+  const TASKS_ABOVE = ['  ✔ 테스트 돌리기', '  ◼ 커밋하기', '  ☐ 푸시하기'];
+  const TASK_FOOT = '\x1b[39m  esc to interrupt · ctrl+t to hide tasks';
+  const withTasks = (...prompt: string[]) =>
+    [
+      ...TASKS_ABOVE,
+      '',
+      `\x1b[38;5;244m${RULE}`,
+      ...prompt,
+      `\x1b[38;5;244m${RULE}`,
+      '',
+      TASK_FOOT,
+      '',
+    ].join('\n');
+  // Orca reports the text apart and leaves the marker row only (its tail drops blank rows): the
+  // reported Orca case (#338) — "커밋해줘" under a task list read as not all visible.
+  const orca = draftView(
+    classifyPrompt({ text: strip(withTasks('❯')).replace(/\n\n/g, '\n'), composer: '커밋해줘' }),
+    'Claude',
+    orcaCan,
+  );
+  assert.equal(orca.kind === 'draft' && !orca.partial && orca.acceptsSuggestion, true);
+  // tmux: one or two rows between the rules is never a capped box (it shows 3 at least).
+  for (const rows of [['\x1b[39m❯\xa0hello draft'], ['\x1b[39m❯\xa0one', '  two']]) {
+    const shown = draftView(classifyPrompt(tmux(withTasks(...rows), 20)), 'Claude', tmuxCan);
+    assert.equal(shown.kind === 'draft' && !shown.partial && shown.submittable, true, rows[0]);
+  }
+  // Three rows or more beside a task list may be a capped box: still partial.
+  const three = draftView(
+    classifyPrompt(tmux(withTasks('\x1b[39m❯\xa0one', '  two', '  three'))),
+    'Claude',
+    tmuxCan,
+  );
+  assert.equal(three.kind === 'draft' && three.partial, true);
+  // Text that may need more rows than Orca surely shows stays partial with or without tasks.
+  const long = draftView(
+    classifyPrompt({
+      text: strip(withTasks('❯')).replace(/\n\n/g, '\n'),
+      composer: '가'.repeat(120),
+    }),
+    'Claude',
+    orcaCan,
+  );
+  assert.equal(long.kind === 'draft' && long.partial && long.maybeSuggestion, true);
+});
+
+/**
+ * Claude Code's prompt as far as [Send suggestion] goes (2.1.316): a suggestion shows (faint,
+ * the cursor on its first cell) while the box is empty; Right (like Tab) with the box empty takes
+ * all of it in as typed text; Right with text typed only moves the cursor (Tab there would run
+ * completion: recorded); Enter submits what is typed, and on an empty box submits nothing.
+ * `styled: false` reads it as Orca does: no styles, the text apart in `draft` either way.
+ */
+function promptSim(
+  suggestion: string,
+  opts: { styled?: boolean; typed?: string; onAccept?: (shown: string) => string } = {},
+) {
+  let typed = opts.typed ?? '';
+  let shown: string | null = suggestion;
+  const keys: string[][] = [];
+  const submitted: string[] = [];
+  const completions: string[] = [];
+  const render = (): Screen => {
+    if (opts.styled === false) {
+      const text = typed || shown || '';
+      return { text: strip(box('❯')), ...(text && { composer: text }) };
+    }
+    const raw = typed
+      ? box(`\x1b[39m❯\xa0${typed}`)
+      : shown
+        ? box(`\x1b[39m❯\xa0\x1b[7m${shown[0]}\x1b[27m\x1b[2m${shown.slice(1)}\x1b[0m`)
+        : box('\x1b[39m❯\xa0');
+    return tmux(raw);
+  };
+  const host: ComposerHost = {
+    styled: opts.styled !== false,
+    read: async () => render(),
+    wait: async () => {},
+    press: async (pressed) => {
+      keys.push([...pressed]);
+      for (const key of pressed as string[]) {
+        if (key === 'Tab' && typed) completions.push(typed);
+        if (key !== 'Right' && key !== 'Tab') continue;
+        if (!typed && shown) typed = opts.onAccept ? opts.onAccept(shown) : shown;
+      }
+    },
+    submit: async () => {
+      if (!typed) return;
+      submitted.push(typed);
+      typed = '';
+      shown = null;
+    },
+  };
+  return {
+    host,
+    keys,
+    submitted,
+    completions,
+    set: (next: { typed?: string; shown?: string | null }) => {
+      if (next.typed !== undefined) typed = next.typed;
+      if (next.shown !== undefined) shown = next.shown;
+    },
+  };
+}
+
+test('Send suggestion: Right while the box holds just it, then Enter once it holds exactly it', async () => {
+  const sim = promptSim('커밋해줘');
+  const result = await claudeCodeComposer.submitSuggestion!(sim.host, '커밋해줘', async () => true);
+  assert.equal(result.status, 'submitted');
+  assert.deepEqual(sim.keys, [['Right']], 'the accept key only; Enter is the submit key');
+  assert.deepEqual(sim.submitted, ['커밋해줘']);
+  assert.deepEqual(sim.completions, []);
+});
+
+test('Orca: one line that may be the suggestion goes whichever it is, exactly as previewed', async () => {
+  // The suggestion: Right takes it in, Enter sends it.
+  const suggested = promptSim('커밋해줘', { styled: false });
+  const a = await claudeCodeComposer.submitSuggestion!(
+    suggested.host,
+    '커밋해줘',
+    async () => true,
+  );
+  assert.equal(a.status, 'submitted');
+  assert.deepEqual(suggested.keys, [['Right']]);
+  assert.deepEqual(suggested.submitted, ['커밋해줘']);
+  // Typed text that reads the same: Right only moves the cursor, Enter sends it as is.
+  const typed = promptSim('다른 추천', { styled: false, typed: '커밋해줘' });
+  const b = await claudeCodeComposer.submitSuggestion!(typed.host, '커밋해줘', async () => true);
+  assert.equal(b.status, 'submitted');
+  assert.deepEqual(typed.keys, [['Right']]);
+  assert.deepEqual(typed.submitted, ['커밋해줘']);
+  assert.deepEqual(typed.completions, [], 'no Tab: no completion on typed text');
+  // Something else after the key (a suggestion that was cut, a cursor glyph): no Enter.
+  const other = promptSim('커밋해줘', { styled: false, onAccept: (s) => `${s} 하고 푸시` });
+  const c = await claudeCodeComposer.submitSuggestion!(other.host, '커밋해줘', async () => true);
+  assert.equal(c.status === 'changed' && c.accepted, true);
+  assert.deepEqual(other.submitted, []);
+  // Other text before the key, or more than one line: nothing pressed.
+  const moved = promptSim('커밋해줘', { styled: false, typed: '커밋해줘!' });
+  assert.equal(
+    (await claudeCodeComposer.submitSuggestion!(moved.host, '커밋해줘', async () => true)).status,
+    'changed',
+  );
+  assert.deepEqual(moved.keys, []);
+  const multi = promptSim('', { styled: false, typed: '한 줄\n두 줄' });
+  assert.deepEqual(
+    await claudeCodeComposer.submitSuggestion!(multi.host, '한 줄\n두 줄', async () => true),
+    { status: 'refused', reason: 'unsupported' },
+  );
+  assert.deepEqual(multi.keys, []);
+  // Not known whole: refused before any key.
+  const long = '가'.repeat(120);
+  const partial = promptSim('', { styled: false, typed: long });
+  assert.deepEqual(
+    await claudeCodeComposer.submitSuggestion!(partial.host, long, async () => true),
+    { status: 'refused', reason: 'partial' },
+  );
+  assert.deepEqual(partial.keys, []);
+});
+
+test('Send suggestion presses nothing more on any mismatch', async () => {
+  const send = (sim: ReturnType<typeof promptSim>, text = '커밋해줘', go = async () => true) =>
+    claudeCodeComposer.submitSuggestion!(sim.host, text, go);
+  // The key took in something else than was shown (a cursor glyph drawn over its first character,
+  // someone typing meanwhile): no Enter, and it says the key went in.
+  const other = promptSim('커밋해줘', { onAccept: (s) => `${s} 그리고 푸시` });
+  const moved = await send(other);
+  assert.equal(moved.status, 'changed');
+  assert.equal(moved.status === 'changed' && moved.accepted, true);
+  assert.deepEqual(other.keys, [['Right']]);
+  assert.deepEqual(other.submitted, []);
+
+  // The key took nothing in (another key mode): the suggestion stays, no Enter.
+  const stuck = promptSim('커밋해줘', { onAccept: () => '' });
+  const still = await send(stuck);
+  assert.equal(still.status === 'changed' && still.accepted, true);
+  assert.deepEqual(stuck.submitted, []);
+
+  // tmux: text typed in the box (a draft, told by its style): no key at all.
+  const typed = promptSim('커밋해줘', { typed: '커밋해줘' });
+  const draft = await send(typed);
+  assert.equal(draft.status, 'changed');
+  assert.ok(!(draft.status === 'changed' && draft.accepted));
+  assert.deepEqual(typed.keys, []);
+
+  // A different suggestion now, or none: no key.
+  for (const shown of ['푸시해줘', null]) {
+    const sim = promptSim('커밋해줘');
+    sim.set({ shown });
+    assert.equal((await send(sim)).status, 'changed');
+    assert.deepEqual(sim.keys, []);
+  }
+
+  // Typed between the two looks: the second one stops it before the key.
+  const racing = promptSim('커밋해줘');
+  let asked = 0;
+  const raced = await send(racing, '커밋해줘', async () => {
+    if (asked++ === 0) racing.set({ typed: 'ㅋ' });
+    return true;
+  });
+  assert.equal(raced.status, 'changed');
+  assert.deepEqual(racing.keys, []);
+
+  // Claude stopped being there before the key; or after it, before Enter.
+  const lost = promptSim('커밋해줘');
+  assert.deepEqual(await send(lost, '커밋해줘', async () => false), {
+    status: 'refused',
+    reason: 'lost',
+  });
+  assert.deepEqual(lost.keys, []);
+  const late = promptSim('커밋해줘');
+  let calls = 0;
+  assert.deepEqual(await send(late, '커밋해줘', async () => calls++ === 0), {
+    status: 'refused',
+    reason: 'lost',
+    accepted: true,
+  });
+  assert.deepEqual(late.keys, [['Right']]);
+  assert.deepEqual(late.submitted, []);
+
+  // Cut short on screen: refused before any key.
+  const cut = promptSim('Run the full test suite and then summarize every…');
+  assert.deepEqual(await send(cut, 'Run the full test suite and then summarize every…'), {
+    status: 'refused',
+    reason: 'partial',
+  });
+  assert.deepEqual(cut.keys, []);
+});
+
+test('A suggestion view rests like a draft and compares by its text', () => {
+  const s = { kind: 'suggestion', text: '커밋해줘', agent: 'Claude', submittable: true } as const;
+  assert.equal(sameDraftView(s, { ...s }), true);
+  assert.equal(sameDraftView(s, { ...s, text: '푸시해줘' }), false);
+  assert.equal(sameDraftView(s, { ...s, submittable: false }), false);
+  assert.equal(
+    sameDraftView(s, { kind: 'draft', text: '커밋해줘', agent: 'Claude', submittable: true }),
+    false,
+  );
+  let delay: number = DRAFT_POLL.base;
+  for (let i = 0; i < 10; i++) delay = nextDraftDelay(delay, false, s);
+  assert.equal(delay, DRAFT_POLL.draft);
 });

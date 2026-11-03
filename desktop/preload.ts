@@ -93,7 +93,13 @@ const api: OfficeAPI = {
   attachmentPreview: (id) => action('office:attachment-preview', id),
   inspectDraft: (id) => action('office:inspect-draft', id),
   composerDraft: (id) => action('office:composer-draft', id),
-  submitDraft: (id, text) => action('office:submit-draft', id, text),
+  submitDraft: (id, text, options) =>
+    action(
+      'office:submit-draft',
+      id,
+      text,
+      options?.suggestion === true ? { suggestion: true } : {},
+    ),
   terminalSend: (enable) => action('office:terminal-send', enable),
   prompt: (id) => action('office:prompt', id),
   answer: (id, choice) => action('office:answer', id, choice),
