@@ -402,7 +402,8 @@ export function Inspector({
   const launchSupport = useLaunchSupport();
   const canLaunch =
     !!launchSupport?.supported && !!api.launch && !demo && !s.remote && !resumeBlock(s);
-  const [launching, setLaunching] = useState(false);
+  // Which sheet is open from this card: continuing the conversation, or a fork of it.
+  const [launching, setLaunching] = useState<'resume' | 'fork' | null>(null);
   // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
   const sheetFallback = canLaunch && !codexApp && !live?.canFocus;
   const resumeLabel = codexApp
@@ -419,7 +420,7 @@ export function Inspector({
         return;
       }
       if (sheetFallback) {
-        if (!privacy) setLaunching(true);
+        if (!privacy) setLaunching('resume');
         return;
       }
       if (api.jump) {
@@ -1129,26 +1130,38 @@ export function Inspector({
                 {t.terminal.jumpTo(focusName(live))}
               </button>
             )}
-            {/* Already running where the main action goes: continuing it again is not offered,
-                a fork of it is. */}
-            {canLaunch && !sheetFallback && (
+            {/* Continuing in a terminal, unless the main action already does (it opens the sheet)
+                or the conversation runs where the main action goes (continuing it again only
+                says it is open). A fork is always offered: it never touches the original. */}
+            {canLaunch && !sheetFallback && !live?.canFocus && (
               <button
                 className="card-action"
                 data-solid
                 disabled={privacy}
-                onClick={() => setLaunching(true)}
+                onClick={() => setLaunching('resume')}
               >
-                {live?.canFocus ? <GitFork size={13} /> : <Terminal size={13} />}
-                {live?.canFocus ? t.launchSheet.cardFork : t.launchSheet.cardContinue}
+                <Terminal size={13} />
+                {t.launchSheet.cardContinue}
+              </button>
+            )}
+            {canLaunch && (
+              <button
+                className="card-action"
+                data-solid
+                disabled={privacy}
+                onClick={() => setLaunching('fork')}
+              >
+                <GitFork size={13} />
+                {t.launchSheet.cardFork}
               </button>
             )}
             {launching && canLaunch && (
               <LaunchSheet
-                key={s.id}
-                entry={{ from: 'card', session: s, kind: live?.canFocus ? 'fork' : 'resume' }}
+                key={s.id + launching}
+                entry={{ from: 'card', session: s, kind: launching }}
                 privacy={privacy}
                 notify={notify}
-                onClose={() => setLaunching(false)}
+                onClose={() => setLaunching(null)}
               />
             )}
             <CardShellButton session={s} privacy={privacy} demo={demo} notify={notify} />
