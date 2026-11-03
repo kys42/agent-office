@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile, realpath } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +17,8 @@ import { OfficeStore } from '../server/store.js';
 import { enrichWorkspaces } from '../server/workspaces.js';
 import { entryCost } from '../server/pricing.js';
 import { branchInfo } from '../src/shared/branch.js';
+import { benchKey } from '../src/shared/office.js';
+import { layoutOffice } from '../src/shared/office-layout.js';
 import { focusLevel } from '../src/shared/presentation.js';
 import { demoSnapshot } from '../src/lib/demo.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -480,6 +482,86 @@ test('Verified worktree follows actual Git branch while original cwd and recorde
       { ...s, workingLocation: { ...s.workingLocation, path: '/missing-office-fixture' } },
     ]);
     assert.equal(branchInfo(invalid).label, 'main');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+test('Edits inside its own worktree are no move: a colleague started there shares its long desk', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-same-worktree-'));
+  const repo = path.join(dir, 'repo'),
+    wt = path.join(dir, 'ocr'),
+    data = path.join(wt, 'data');
+  try {
+    execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+    execFileSync('git', [
+      '-C',
+      repo,
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.invalid',
+      'commit',
+      '--allow-empty',
+      '-qm',
+      'init',
+    ]);
+    execFileSync('git', ['-C', repo, 'worktree', 'add', '-qb', 'feature/ocr', wt]);
+    await mkdir(data);
+    const at = new Date(now).toISOString();
+    // A Claude conversation in the worktree that edited a file in one of its subfolders.
+    const edit = (id: string, cwd: string, file: string) => [
+      {
+        type: 'assistant',
+        uuid: `${id}-u`,
+        sessionId: id,
+        cwd,
+        gitBranch: 'feature/ocr',
+        timestamp: at,
+        message: {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id, name: 'Edit', input: { file_path: file } }],
+        },
+      },
+      {
+        type: 'user',
+        uuid: `${id}-r`,
+        sessionId: id,
+        cwd,
+        gitBranch: 'feature/ocr',
+        timestamp: at,
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }],
+        },
+      },
+    ];
+    const original = { ...parse(edit('orig', wt, path.join(data, 'notes.md'))), id: 'claude:orig' };
+    assert.equal(original.workingLocation?.path, data);
+    // The new session the launch sheet started from its card: same folder, nothing edited yet.
+    const fresh = {
+      ...parse([{ ...edit('fresh', wt, '')[1], message: { role: 'user', content: 'hi' } }]),
+      id: 'claude:fresh',
+    };
+    assert.equal(fresh.workingLocation, undefined);
+    const [a, b] = await enrichWorkspaces([original, fresh]);
+    assert.equal(a.workspace?.worktree, b.workspace?.worktree);
+    assert.equal(a.workspace?.locationSource, undefined);
+    assert.equal(branchInfo(a).label, 'feature/ocr');
+    assert.equal(benchKey(a), benchKey(b));
+    // Other colleagues of the zone in between (another branch) and the new one's lower seat
+    // token never split them: one zone, one long desk with both.
+    const other = { ...b, id: 'claude:other', branch: 'main', officeSeat: 1 };
+    const l = layoutOffice([{ ...a, officeSeat: 2 }, { ...b, officeSeat: 0 }, other]);
+    assert.equal(l.projects.length, 1);
+    const bench = l.projects[0].benches.find((x) => x.members.includes(a.id))!;
+    assert.deepEqual([...bench.members].sort(), [a.id, b.id].sort());
+    assert.equal(bench.shared, true);
+    // Work in another worktree still moves the desk (and shows that worktree's branch).
+    const [moved] = await enrichWorkspaces([
+      { ...original, cwd: repo, branch: 'main', workingLocation: { ...original.workingLocation! } },
+    ]);
+    assert.equal(moved.workspace?.locationSource?.path, data);
+    assert.equal(branchInfo(moved).label, 'feature/ocr · 작업');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
