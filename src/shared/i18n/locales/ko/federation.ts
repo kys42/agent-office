@@ -22,6 +22,8 @@ export const federation = {
   sendPermission: '채팅 권한 포함',
   readPermission: '조회 전용',
   rooms: '사무실',
+  allOffices: '전체 사무실',
+  allOfficesHint: '모든 컴퓨터 함께 보기',
   localOffice: '내 컴퓨터',
   thisComputer: '이 컴퓨터',
   remoteOffice: '원격 사무실',
