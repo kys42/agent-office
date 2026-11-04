@@ -2,6 +2,7 @@ import { MiniShellDemoRelease } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
+import { DeskAppearanceContext } from './components/DeskAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { PanelResizer } from './components/PanelResizer';
@@ -1249,7 +1250,9 @@ export default function App() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      {content}
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
+        {content}
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

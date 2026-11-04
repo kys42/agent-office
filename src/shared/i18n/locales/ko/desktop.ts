@@ -57,9 +57,16 @@ export const desktop: Messages['desktop'] = {
     codexUnconfirmed:
       'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
     noTarget: '지금 보낼 수 있는 Orca·tmux 터미널이나 Codex 세션을 찾지 못했어요.',
+    background: (command) =>
+      `백그라운드에서 도는 Claude 세션이라 보여 주는 터미널을 확인하지 못했어요. 터미널에서 ${command}로 연 뒤 보내 주세요.`,
+    parked: (job) =>
+      `이 대화는 백그라운드 세션${job ? ` ‘${job}’` : ''}으로 옮겨졌어요. 그 터미널에 치면 그쪽으로 가니, 그 세션 카드에서 보내 주세요.`,
     unconfirmed: (host) =>
       `${host}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
     orcaNoSwitch: 'Orca가 그 터미널로 이동하지 못했어요.',
+    orcaSlow:
+      'Orca가 제때 답하지 않았어요. 아직 화면에 띄우지 않은 탭일 수 있어요. Orca를 앞으로 가져온 뒤 다시 시도해주세요.',
+    orcaRefusedSwitch: (reason) => `Orca가 그 터미널로 이동하지 못했어요: ${reason}`,
     orcaFocused: 'Orca의 해당 터미널로 이동했어요',
     tmuxFocused: (label, app) => `${app}에서 tmux ${label} 패널로 이동했어요`,
     tmuxAttached: (label) => `터미널을 열어 tmux ${label}에 연결했어요`,
@@ -109,6 +116,22 @@ export const desktop: Messages['desktop'] = {
     imagesNotShown:
       '입력창에 이미지를 붙였지만 첨부된 걸 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
     imagesUnsupported: '이 대화에는 여기서 이미지를 보낼 수 없어요.',
+    draftMoved: '그사이 입력창 글이 바뀌어 보내지 않았어요. 지금 들어 있는 글을 보여 드려요.',
+    draftNotWhole: '입력창 글이 다 보이지 않아 여기서 보내지 않았어요. 터미널을 확인해 주세요.',
+    draftStopped: '에이전트 상태가 바뀌어 보내지 않았어요. 터미널을 확인해 주세요.',
+    draftNotSubmitted: (host) => `${host}에 Enter를 보내지 못했어요. 글은 입력창에 그대로 있어요.`,
+    draftNotTaken: (host) =>
+      `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. 터미널을 확인해 주세요.`,
+    draftNotTakenSuggestion: (host) =>
+      `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. Claude 추천 글이면 Enter로는 보내지지 않아요. 터미널에서 Tab으로 받은 뒤 보내 주세요.`,
+    suggestionUnsupported:
+      '이 글은 추천 글로 받아 보낼 수 없어요(한 줄 글만 돼요). 터미널에서 확인해 주세요.',
+    suggestionNotWhole:
+      '추천 글이 다 보이지 않아 여기서 보내지 않았어요. 터미널에서 Tab으로 받아 주세요.',
+    suggestionNotSubmitted: (host) =>
+      `${host}에 추천 글을 보내지 못했어요. 터미널을 확인해 주세요.`,
+    suggestionHeld: (host) =>
+      `${host}에서 추천 글 받기 키(→)를 눌렀지만 Enter 직전 입력창 확인이 맞지 않아 보내지 않았어요. 터미널을 확인해 주세요.`,
   },
   attachments: {
     notImage: 'PNG, JPEG, GIF, WebP 이미지만 첨부할 수 있어요.',

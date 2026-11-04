@@ -44,6 +44,7 @@ function remoteReferences(method: string, args: unknown[]): boolean {
       .filter((rule) => rule.match === 'session')
       .map((rule) => rule.value);
     references.push(...Object.keys(record(record(input.petAppearance).colleagues)));
+    references.push(...Object.keys(record(record(input.deskAppearance).colleagues)));
   }
   return references.some(isRemoteId);
 }

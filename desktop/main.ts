@@ -1,7 +1,25 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { readAppHealth } from './app-health.js';
 import { privacyPane } from '../src/shared/app-health.js';
-import { TmuxResume, summonSession } from './tmux-resume.js';
+import { TmuxResume, defaultResumeDeps } from './tmux-resume.js';
+import { LaunchCore, launchResult, type LaunchTarget } from './launch/core.js';
+import {
+  copyDestination,
+  orcaDestination,
+  terminalAppDestination,
+  tmuxDestination,
+  tmuxSession,
+} from './launch/destinations.js';
+import type { DestinationProbe } from './launch/pipeline.js';
+import {
+  launchIntentSchema,
+  launchRequestSchema,
+  type LaunchDestinationId,
+  type LaunchOptions,
+  type LaunchResult,
+  type LaunchSupport,
+} from '../src/shared/launch.js';
+import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
 import { ReaderWindows } from './reader-windows.js';
@@ -27,6 +45,7 @@ import {
   nativeTheme,
 } from 'electron';
 import { dropAppMenu, windowStyle } from './window-style.js';
+import { glassLevel } from '../src/shared/glass.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -49,6 +68,8 @@ import type {
   DockMode,
   JumpResult,
   SendResult,
+  ComposerDraftView,
+  DraftSubmitResult,
   Session,
   SessionIdentity,
   Snapshot,
@@ -74,10 +95,14 @@ import {
   focusTerminal,
   forgetTerminal,
   hostName,
+  claudeAttachCommand,
+  claudeNoTerminalReason,
   locateTerminal,
   lookupTerminal,
   sendToTerminal,
   inspectTerminalDraft,
+  previewTerminalDraft,
+  submitTerminalDraft,
   terminalTarget,
   TerminalInputError,
   type TerminalHost,
@@ -97,7 +122,7 @@ import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
 import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
-import { CardWindows } from './card-windows.js';
+import { CardWindows, type CardMaterial } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
@@ -154,6 +179,7 @@ else {
       watch,
       // A preview card stays while the person works in a terminal or reader window it opened.
       companion: () => !!shellWindows?.focused() || !!readerWindows?.focused(),
+      material: () => cardMaterial(delivery.latest),
     });
     app.on('before-quit', () => cards.dispose());
     shellWindows = new ShellWindows({
@@ -210,9 +236,32 @@ else {
       shellWindows.closeAll();
       readerWindows.closeAll();
     };
+    // Settings › Look › Glass: cards on the clearer glass while the person set their own level.
+    let material = cardMaterial(null);
+    const followGlass = (s: Snapshot) => {
+      const next = cardMaterial(s);
+      if (next === material) return;
+      material = next;
+      cards.setMaterial(next);
+    };
+    // Cards pinned when the app last ran come back as their colleagues appear: each snapshot
+    // tries the ones still missing (a peer office still connecting, a collector still reading)
+    // for a few minutes of restoring; after that the missing are taken as gone. Not while screen
+    // sharing hides the office's content, nor with the setting off (they wait for either).
+    let restoreUntil = 0;
+    const restorePinned = (s: Snapshot) => {
+      if (!cards.restoring()) return;
+      if (s.preferences?.restorePinnedCards === false || s.preferences?.privacy) return;
+      restoreUntil ||= Date.now() + 5 * 60_000;
+      const known = new Set(s.sessions.flatMap((x) => [x.id, ...(x.resident?.sessionIds ?? [])]));
+      cards.restore((id) => known.has(id));
+      if (Date.now() > restoreUntil) cards.giveUp();
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
       hidePopups(s);
+      followGlass(s);
+      restorePinned(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -221,6 +270,8 @@ else {
       if (delivery.update(patch, windows())) {
         followLanguage(delivery.latest!);
         hidePopups(delivery.latest!);
+        followGlass(delivery.latest!);
+        restorePinned(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
@@ -361,6 +412,9 @@ function secure(w: BrowserWindow) {
   });
 }
 /** The big office's smallest size, lowered only for a display smaller than this. */
+/** The card's glass: the clearer `popover` once the person chose a glass level. */
+const cardMaterial = (s: Snapshot | null): CardMaterial =>
+  glassLevel(s?.preferences) === null ? 'under-window' : 'popover';
 const MAIN_MIN = { width: 1050, height: 740 };
 function createMain() {
   main = new BrowserWindow({
@@ -721,6 +775,10 @@ function setupMiniShell() {
     trustedShell(e);
     if (what === 'target') return shellWindows.target(e.sender);
     if (what === 'close' || what === 'focus') return shellWindows.action(e.sender, what);
+    // Its own on-top toggle: only a terminal window reads or sets its own.
+    if (what === 'top') return shellWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return shellWindows.setOnTop(e.sender, what === 'top-on');
     if (what === 'close-all') {
       // The big office turning into the sample office lets go of every real shell.
       if (e.sender !== main?.webContents) throw new Error(m().desktop.untrustedWindow);
@@ -751,8 +809,9 @@ function setupMiniShell() {
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
     shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
-      // Only beside a window that floats (a preview card, the desk dock) does it float too: a
-      // pinned card, the big office or an ordinary terminal window give an ordinary window.
+      // Only beside a window that floats (a preview card, a card pinned on top, the desk dock, a
+      // popup set on top) does it float too: a plain pinned card, the big office or an ordinary
+      // terminal window give an ordinary window. Its own header toggle changes it later.
       float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
     });
   });
@@ -843,6 +902,10 @@ function setupReader() {
     const reader = readerWindows.owns(e.sender);
     if (what === 'target') return readerWindows.target(e.sender);
     if (what === 'close' || what === 'focus') return readerWindows.action(e.sender, what);
+    // Its own on-top toggle: only a reader window reads or sets its own.
+    if (what === 'top') return readerWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return readerWindows.setOnTop(e.sender, what === 'top-on');
     if (what === 'go') {
       if (!reader) throw new Error(m().desktop.untrustedWindow);
       const { id } = readerWindows.target(e.sender);
@@ -1074,6 +1137,8 @@ function setupIPC() {
       checkDuplicate(
         {
           agent: (f) => livenessFor(session.provider).lookup(session.nativeId, f),
+          // A launch of it that may still start (once Orca shows its tab) or started unseen.
+          pending: () => orcaLaunch.pending.state(session),
           orcaTab: async (f) => {
             const tab = await lookupOrcaTab(
               session,
@@ -1087,9 +1152,9 @@ function setupIPC() {
           },
           ownTmux: async () => {
             try {
-              return (await tmuxResume.status(session)).running
-                ? { kind: 'found', terminal: null }
-                : { kind: 'none' };
+              // Its panes too: a verified agent terminal in one of them runs it there.
+              const own = await tmuxResume.ownPanes(session);
+              return own ? { kind: 'found', terminal: own.at } : { kind: 'none' };
             } catch (error) {
               // No tmux installed: there is no own session.
               if ((error as Error).message === m().tmux.missing) return { kind: 'none' };
@@ -1099,116 +1164,234 @@ function setupIPC() {
         },
         fresh,
       );
+  /**
+   * New conversations a launch outside tmux named, by the id it chose for them (Claude
+   * `--session-id`): the name becomes their alias once the office sees them (the naming timer
+   * below). tmux summons carry their name on the session instead (`aliasFor`).
+   */
+  const launchedNames = new Map<string, { alias: string; until: number }>();
+  const shellDeps = {
+    platform: process.platform,
+    run: runCommand,
+    directory: defaultResumeDeps.directory,
+    binary: defaultResumeDeps.binary,
+    copy: (text: string) => clipboard.writeText(text),
+  };
+  /** Every launch of this app (#318): one core, one queue, one pending record. */
+  const launchCore = new LaunchCore({
+    destinations: {
+      orca: orcaDestination(orcaLaunch),
+      tmux: tmuxDestination(tmuxResume),
+      terminalApp: terminalAppDestination(shellDeps),
+      copy: copyDestination(shellDeps),
+    },
+    pending: orcaLaunch.pending,
+    conversationCheck: (target) => (target.from ? duplicateCheck(target.from) : undefined),
+    remembered: () => delivery.latest?.preferences?.launchDestination,
+    remember: async (destination) => {
+      if (delivery.latest?.preferences?.launchDestination !== destination)
+        await bridge.call('preferences', [{ launchDestination: destination }]);
+    },
+  });
+  /** The launch of a window's intent, resolved from saved sessions only. */
+  const launchTarget = async (raw: unknown): Promise<LaunchTarget> => {
+    const parsed = launchIntentSchema.safeParse(raw);
+    if (!parsed.success) throw new Error(m().desktop.badRequest);
+    const intent = parsed.data;
+    const id = intent.kind === 'new' ? intent.at : intent.session;
+    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
+    const s: Session = await bridge.call('detail', [id]);
+    const base = { cwd: s.cwd ?? '', skipPermissions: skipPermissions() };
+    if (intent.kind === 'new')
+      return {
+        ...base,
+        kind: 'new',
+        provider: intent.provider,
+        name: intent.name.normalize('NFC'),
+        initialMessage: intent.initialMessage,
+      };
+    if (intent.kind === 'resume')
+      return {
+        ...base,
+        kind: 'resume',
+        provider: s.provider,
+        nativeId: s.nativeId,
+        name: s.alias,
+        title: s.title,
+        from: s,
+      };
+    // A fork runs in its original's folder: the same project, the same context.
+    return {
+      ...base,
+      kind: 'fork',
+      provider: s.provider,
+      nativeId: s.nativeId,
+      name: intent.name.normalize('NFC'),
+      initialMessage: intent.initialMessage,
+      from: s,
+    };
+  };
   /** Native confirmations warn about an open tab or an unverifiable check. */
   const dialogType = (check: DuplicateCheck) =>
     check.state === 'none' ? ('question' as const) : ('warning' as const);
-  ipcMain.handle('office:tmux-resume', async (e, id, action) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const session: Session = await bridge.call('detail', [id]);
-    if (action === 'status') {
-      const [info, connections, duplicate] = await Promise.all([
-        tmuxResume.status(session),
-        projectConnections(session.cwd),
-        duplicateCheck(session)(false),
-      ]);
-      return { ...info, duplicate, connections: connections.filter((c) => c.id === session.id) };
+  /**
+   * The native confirmation of any launch: what starts (title, question and introduction per
+   * destination and intent), where, the command a shell types, and every warning (skipped
+   * permissions, a duplicate, other agents already in the project).
+   */
+  const launchConfirm =
+    (e: Electron.IpcMainInvokeEvent, target: LaunchTarget, destination: LaunchDestinationId) =>
+    async (probe: DestinationProbe, check: DuplicateCheck): Promise<boolean> => {
+      const t = m().tmux;
+      const l = m().launch;
+      const place = l.destination[destination];
+      const plan = (probe.detail ?? {}) as { info?: { name?: string; cwd?: string } };
+      // The wording the older sheets had for tmux and Orca; the others say it generally.
+      const words = (
+        {
+          'tmux:resume': [t.title, t.confirm, t.intro, t.caution, t.start],
+          'tmux:new': [t.summonTitle, t.summonConfirm, t.summonIntro, t.summonHint, t.summonStart],
+          'orca:resume': [t.orcaTitle, t.orcaConfirm, t.orcaIntro, t.caution, t.orcaStart],
+          'orca:new': [t.summonTitle, t.summonOrcaConfirm, t.summonOrcaIntro, '', t.summonOrca],
+        } as Record<string, string[] | undefined>
+      )[`${destination}:${target.kind}`] ?? [
+        l.title[target.kind],
+        l.confirm[target.kind](place),
+        l.intro[target.kind],
+        target.kind === 'resume' ? t.caution : '',
+        l.start(place),
+      ];
+      const [title, message, intro, hint, button] = words;
+      // tmux shows its reconnect command elsewhere; the others type `command` into a shell.
+      const typed = destination !== 'tmux' && probe.command;
+      const connections =
+        destination === 'tmux' && target.kind !== 'fork'
+          ? (await projectConnections(target.cwd)).filter(
+              (c) => target.kind === 'new' || c.id === target.from?.id,
+            )
+          : [];
+      const lines = [
+        intro,
+        [
+          ...(target.kind !== 'resume' ? [target.provider] : []),
+          ...(target.kind === 'fork' && target.from
+            ? [`${l.forkOf}: ${target.from.alias || target.from.title}`]
+            : []),
+          // tmux: its session name; elsewhere the new colleague's name.
+          ...(destination === 'tmux' && plan.info?.name
+            ? [`${t.name}: ${plan.info.name}`]
+            : target.kind !== 'resume' && target.name
+              ? [`${t.agentName}: ${target.name}`]
+              : []),
+          `${t.folder}: ${plan.info?.cwd ?? target.cwd}`,
+          ...(typed ? [`${t.orcaCommand}: ${typed}`] : []),
+        ].join('\n'),
+        hint,
+        skipNote(target.skipPermissions === true).trim(),
+        duplicateNote(check).trim(),
+        target.kind !== 'resume' && target.initialMessage?.trim()
+          ? `${t.initialMessage}:\n${target.initialMessage.slice(0, 500)}${target.initialMessage.length > 500 ? '…' : ''}`
+          : '',
+        connections.length
+          ? `${t.existingConfirm}\n${connections.map((c) => c.name + ' · ' + c.label).join('\n')}`
+          : '',
+      ];
+      const owner = BrowserWindow.fromWebContents(e.sender);
+      const options = {
+        type: dialogType(check),
+        title,
+        message,
+        detail: lines.filter(Boolean).join('\n\n'),
+        buttons: [t.cancel, button],
+        defaultId: 0,
+        cancelId: 0,
+      };
+      const endCardDialog = cards.dialog(e.sender);
+      try {
+        const result = owner
+          ? await dialog.showMessageBox(owner, options)
+          : await dialog.showMessageBox(options);
+        return result.response === 1;
+      } finally {
+        endCardDialog();
+      }
+    };
+  /** Starts through the core; a new conversation named outside tmux is named once it shows. */
+  const launch = async (
+    e: Electron.IpcMainInvokeEvent,
+    target: LaunchTarget,
+    destination: LaunchDestinationId,
+  ) => {
+    const outcome = await launchCore.start(target, destination, {
+      confirm: launchConfirm(e, target, destination),
+    });
+    if (
+      destination !== 'tmux' &&
+      outcome.sessionId &&
+      target.name &&
+      target.kind !== 'resume' &&
+      ['launched', 'uncertain', 'copied'].includes(outcome.state)
+    ) {
+      launchedNames.set(`${target.provider}:${outcome.sessionId}`, {
+        alias: target.name,
+        until: Date.now() + 24 * 3600_000,
+      });
+      if (launchedNames.size > 200) launchedNames.delete(launchedNames.keys().next().value!);
     }
-    if (action === 'open') return tmuxResume.open(session);
-    const skip = skipPermissions();
-    return tmuxResume.start(
-      { ...session, skipPermissions: skip },
-      async (info, check) => {
-        const connections = (await projectConnections(session.cwd)).filter(
-          (c) => c.id === session.id,
-        );
-        const owner = BrowserWindow.fromWebContents(e.sender);
-        const t = m().tmux;
-        const options = {
-          type: dialogType(check),
-          title: t.title,
-          message: t.confirm,
-          detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${skipNote(skip)}${duplicateNote(check)}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
-          buttons: [t.cancel, t.start],
-          defaultId: 0,
-          cancelId: 0,
-        };
-        const endCardDialog = cards.dialog(e.sender);
-        try {
-          const result = owner
-            ? await dialog.showMessageBox(owner, options)
-            : await dialog.showMessageBox(options);
-          return result.response === 1;
-        } finally {
-          endCardDialog();
-        }
-      },
-      undefined,
-      duplicateCheck(session),
-    );
-  });
-  setupMiniShell();
-  setupReader();
-  ipcMain.handle('office:orca-launch', async (e, id, action) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'focus'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const session: Session = await bridge.call('detail', [id]);
-    if (action === 'focus') {
-      // Only the conversation's own tab, matched again right now (never a jump's fallback).
+    return outcome;
+  };
+  /**
+   * A launch's own place brought to the front, nothing started (the launch sheet's "open in a
+   * terminal" and "go there"): tmux opens its running session (a resume's, or the new/fork
+   * slot of that name) in Terminal; Orca switches to a resume's own tab, matched again now
+   * (never a jump's fallback). A failure throws with its reason.
+   */
+  const openLaunch = async (
+    e: Electron.IpcMainInvokeEvent,
+    target: LaunchTarget,
+    destination: LaunchDestinationId,
+  ): Promise<LaunchResult> => {
+    if (destination === 'tmux') {
+      await tmuxResume.open(tmuxSession(target));
+      return { state: 'opened', destination, message: m().launch.tmuxOpened };
+    }
+    if (destination === 'orca' && target.kind === 'resume' && target.from) {
       try {
         const text = await focusOrcaTab(
-          session,
+          target.from,
           defaultTerminalDeps(),
           (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
         );
         cards.afterJump(e.sender);
-        return { available: true, message: text };
+        return { state: 'opened', destination, message: text };
       } catch (error) {
         if (error instanceof TerminalFocusError) throw new Error(error.message);
         throw new Error(m().desktop.terminal.jumpFailed('Orca'));
       }
     }
-    const skip = skipPermissions();
-    const saved = { ...session, skipPermissions: skip };
-    if (action === 'status') {
-      const [info, duplicate] = await Promise.all([
-        orcaLaunch.status(saved),
-        duplicateCheck(session)(false),
-      ]);
-      return { ...info, duplicate };
-    }
-    return orcaLaunch.start(
-      saved,
-      async (info, check) => {
-        const owner = BrowserWindow.fromWebContents(e.sender);
-        const t = m().tmux;
-        const options = {
-          type: dialogType(check),
-          title: t.orcaTitle,
-          message: t.orcaConfirm,
-          detail: `${t.orcaIntro}\n\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}\n\n${t.caution}${skipNote(skip)}${duplicateNote(check)}`,
-          buttons: [t.cancel, t.orcaStart],
-          defaultId: 0,
-          cancelId: 0,
-        };
-        const endCardDialog = cards.dialog(e.sender);
-        try {
-          const result = owner
-            ? await dialog.showMessageBox(owner, options)
-            : await dialog.showMessageBox(options);
-          return result.response === 1;
-        } finally {
-          endCardDialog();
-        }
-      },
-      undefined,
-      duplicateCheck(session),
-    );
+    throw new Error(m().desktop.badRequest);
+  };
+  ipcMain.handle('office:launch', async (e, raw: unknown): Promise<LaunchResult> => {
+    trusted(e);
+    const request = launchRequestSchema.safeParse(raw);
+    if (!request.success) throw new Error(m().desktop.badRequest);
+    const { destination, action } = request.data;
+    const target = await launchTarget(request.data.intent);
+    if (action === 'probe')
+      return { state: 'probed', destination, probe: await launchCore.probe(target, destination) };
+    if (action === 'open') return openLaunch(e, target, destination);
+    return launchResult(destination, await launch(e, target, destination));
   });
+  ipcMain.handle('office:launch-support', (e): LaunchSupport => {
+    trusted(e);
+    return launchCore.support();
+  });
+  ipcMain.handle('office:launch-options', async (e, raw: unknown): Promise<LaunchOptions> => {
+    trusted(e);
+    return launchCore.options(await launchTarget(raw));
+  });
+  setupMiniShell();
+  setupReader();
   ipcMain.handle('office:remote-launch', async (e, id, action, value) => {
     trusted(e);
     if (
@@ -1254,83 +1437,9 @@ function setupIPC() {
       authorize,
     );
   });
-  ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name, initialMessage) => {
+  ipcMain.handle('office:orca-reveal', async (e) => {
     trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (!['claude', 'codex'].includes(provider)) throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const original: Session = await bridge.call('detail', [id]);
-    if (typeof name !== 'string') throw new Error(m().desktop.badRequest);
-    const session = summonSession(original.cwd ?? '', provider, name, initialMessage);
-    if (action === 'status')
-      return {
-        ...(await tmuxResume.status(session)),
-        connections: await projectConnections(original.cwd),
-      };
-    if (action === 'open') return tmuxResume.open(session);
-    const skip = skipPermissions();
-    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
-      const connections = await projectConnections(original.cwd);
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.summonTitle,
-        message: t.summonConfirm,
-        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${skipNote(skip)}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
-        buttons: [t.cancel, t.summonStart],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const result = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
-  });
-  ipcMain.handle('office:orca-summon', async (e, id, action, provider, name, initialMessage) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (!['claude', 'codex'].includes(provider) || typeof name !== 'string')
-      throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const original: Session = await bridge.call('detail', [id]);
-    const skip = skipPermissions();
-    // The same new agent as a tmux summon (name and first message checked the same way), in a
-    // new Orca tab of the project's own registered folder; its name titles the tab.
-    const fresh = summonSession(original.cwd ?? '', provider, name, initialMessage);
-    const session = { ...fresh, alias: fresh.agentName, skipPermissions: skip };
-    if (action === 'status') return orcaLaunch.status(session);
-    const result = await orcaLaunch.start(session, async (info) => {
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.summonTitle,
-        message: t.summonOrcaConfirm,
-        detail: `${t.summonOrcaIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}${skipNote(skip)}`,
-        buttons: [t.cancel, t.summonOrca],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const answer = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return answer.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
-    return result.launched ? { ...result, message: m().tmux.summonOrcaLaunched } : result;
+    await orcaLaunch.reveal();
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();
@@ -1361,6 +1470,11 @@ function setupIPC() {
   };
   const live = (known: SessionIdentity, fresh = false) =>
     known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
+  /** Why `live` found no terminal, when the agent's records can tell (else the generic note). */
+  const noTerminal = async (known: SessionIdentity) =>
+    (known.provider === 'claude'
+      ? await claudeNoTerminalReason(known.nativeId).catch(() => null)
+      : null) ?? m().desktop.terminal.noTarget;
   const codex = (known: SessionIdentity, fresh = false) =>
     known.provider === 'codex'
       ? findCodexDestination(known.nativeId, known.sourcePath, { fresh })
@@ -1473,12 +1587,29 @@ function setupIPC() {
   // resume, jump and the duplicate-launch check find that session by the conversation's id.
   // The tag follows whichever conversation the pane runs now (a pane can switch back and forth),
   // so it is re-checked every round; `adopt` writes only when it changed.
+  // A launch elsewhere (Orca, Terminal, a copied command) knows its new conversation by the id
+  // it chose (`launchedNames`): that name is adopted the same way, once, when it shows up.
   let naming = false;
   const named = new Set<string>();
+  const nameLaunched = async () => {
+    const now = Date.now();
+    for (const [key, entry] of launchedNames) if (entry.until < now) launchedNames.delete(key);
+    if (!launchedNames.size) return;
+    const snapshot: Snapshot = await bridge.call('snapshot');
+    for (const s of snapshot.sessions) {
+      const key = `${s.provider}:${s.nativeId}`;
+      const entry = launchedNames.get(key);
+      if (!entry || s.remote) continue;
+      launchedNames.delete(key);
+      const current: Session = await bridge.call('detail', [s.id]);
+      if (!current.alias) await bridge.call('patch', [s.id, { alias: entry.alias }]);
+    }
+  };
   const nameTimer = setInterval(async () => {
     if (naming) return;
     naming = true;
     try {
+      await nameLaunched().catch(() => undefined);
       const folders = await tmuxResume.namedFolders();
       if (!folders.size) return;
       const snapshot: Snapshot = await bridge.call('snapshot');
@@ -1572,6 +1703,56 @@ function setupIPC() {
     const terminal = await live(known, true);
     return terminal ? inspectTerminalDraft(terminal, composer) : null;
   });
+  // What the session's terminal input box holds, for the card's preview: read-only, from the
+  // terminal verified as for a send, only while sending is on. Reads share a short cache in
+  // terminals.ts, so several windows polling the same card cost one screen read.
+  ipcMain.handle('office:composer-draft', async (e, id): Promise<ComposerDraftView> => {
+    trusted(e);
+    if (!(await terminalSendEnabled())) return { kind: 'unknown', reason: 'off' };
+    if (typeof id !== 'string' || isRemoteId(id)) return { kind: 'unknown', reason: 'unsupported' };
+    const known = await identity(id);
+    const composer = composerFor(known.provider);
+    // Each agent's adapter says whether its box is read and submitted from here at all.
+    if (!composer.capabilities(null).canSubmitDraft)
+      return { kind: 'unknown', reason: 'unsupported' };
+    const terminal = await live(known);
+    if (!terminal) return { kind: 'unknown', reason: 'no-terminal' };
+    return previewTerminalDraft(terminal, composer);
+  });
+  // [Send as is]: Enter only, after main read the box again and found exactly `text` there.
+  // [Send suggestion] (`suggestion`): Tab while the box holds only that suggestion, then Enter
+  // only once it holds exactly `text` as typed.
+  ipcMain.handle(
+    'office:submit-draft',
+    async (e, id, text, options): Promise<DraftSubmitResult> => {
+      trusted(e);
+      if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+      const suggestion =
+        typeof options === 'object' &&
+        options !== null &&
+        (options as { suggestion?: unknown }).suggestion === true;
+      if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+      const known = await identity(id);
+      const composer = composerFor(known.provider);
+      if (!composer.capabilities(null).canSubmitDraft)
+        throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+      const terminal = await live(known, true);
+      if (!terminal) throw new Error(await noTerminal(known));
+      try {
+        return await submitTerminalDraft(terminal, text, undefined, {
+          composer,
+          allowed: terminalSendEnabled,
+          suggestion,
+        });
+      } catch (error) {
+        if (error instanceof TerminalInputError) throw error;
+        // Enter may have gone in; a retry presses only while the box still holds the text.
+        throw new Error(m().desktop.terminal.unconfirmed(hostName(terminal.host)));
+      } finally {
+        forgetTerminal(terminal.process.sessionId);
+      }
+    },
+  );
   // The renderer hands over an image's bytes; main checks them and keeps the file. Only an
   // opaque id goes back: a send names ids, never paths.
   ipcMain.handle('office:attach-image', async (e, bytes) => {
@@ -1592,7 +1773,12 @@ function setupIPC() {
   const sendMessage = async (
     id: unknown,
     text: unknown,
-    options?: { replaceDraft?: string; allowPartialDraft?: boolean; images?: unknown },
+    options?: {
+      replaceDraft?: string;
+      allowPartialDraft?: boolean;
+      exactDraft?: boolean;
+      images?: unknown;
+    },
     authorized?: () => Promise<void>,
   ): Promise<SendResult> => {
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
@@ -1600,8 +1786,11 @@ function setupIPC() {
     const images = await attachments().resolveAll(options?.images);
     const replaceDraft: unknown = options?.replaceDraft;
     const allowPartialDraft: unknown = options?.allowPartialDraft;
+    const exactDraft: unknown = options?.exactDraft;
     if (
       (options != null && typeof options !== 'object') ||
+      (exactDraft !== undefined && typeof exactDraft !== 'boolean') ||
+      (exactDraft === true && replaceDraft === undefined) ||
       (allowPartialDraft !== undefined && typeof allowPartialDraft !== 'boolean') ||
       (allowPartialDraft === true && replaceDraft === undefined) ||
       (replaceDraft !== undefined &&
@@ -1653,12 +1842,13 @@ function setupIPC() {
         throw new Error(m().desktop.terminal.codexUnconfirmed);
       }
     const terminal = await live(known, true);
-    if (!terminal) throw new Error(m().desktop.terminal.noTarget);
+    if (!terminal) throw new Error(await noTerminal(known));
     try {
       return await sendToTerminal(terminal, text, undefined, {
         composer,
         replaceDraft,
         allowPartialDraft: allowPartialDraft === true,
+        exactDraft: exactDraft === true,
         beforeSend: authorized,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),
@@ -1774,10 +1964,9 @@ function setupIPC() {
     let target: PromptTarget | null = null;
     try {
       const which = settingFor(open.request.kind);
-      const setting = (await answerSettings())[which];
-      if (setting === 'off') throw new TerminalInputError(t.off);
-      if (setting === 'unset') {
-        // The first answer of a kind asks once; the choice stays in the desktop profile.
+      if ((await answerSettings())[which] !== 'on') {
+        // Not on yet (never asked, or turned off): this press asks natively, and agreeing turns
+        // the kind on (kept in the desktop profile). Declining sends nothing and changes nothing.
         if ((await changeSetting(e, which, true))[which] !== 'on')
           return { status: 'cancelled', message: '' };
         // The dialog may have changed while the confirmation was open: the same call, or nothing.
@@ -1886,6 +2075,10 @@ async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpRe
     await shell.openExternal(`codex://threads/${s.nativeId}`);
     return { action: 'opened', text: m().desktop.codexOpened };
   }
+  // A live background session is opened where it runs: `--resume` would start a second copy.
+  const attach =
+    s.provider === 'claude' ? await claudeAttachCommand(s.nativeId).catch(() => null) : null;
+  if (attach) return { action: 'copy', text: attach };
   return {
     action: 'copy',
     text:

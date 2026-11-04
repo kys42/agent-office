@@ -83,7 +83,16 @@ async function setup(
                   w.windowCalls.push(t === undefined ? [action] : [action, t]);
                   if (action === 'target')
                     return target ?? { id: s.sessions[0].id, cwd: '/projects/example/app' };
+                  if (action === 'top') return w.onTop ?? false;
+                  if (action === 'top-on' || action === 'top-off') {
+                    w.onTop = action === 'top-on';
+                    return w.onTop;
+                  }
                 },
+              },
+              onPopupOnTop: (cb: (on: boolean) => void) => {
+                w.onTopChanged = cb;
+                return () => {};
               },
             }
           : {}),
@@ -158,6 +167,32 @@ test('the terminal window fills itself with the shell; closing it only detaches'
   await page.screenshot({ path: '.local/mini-shell-window.png', animations: 'disabled' });
   await panel.getByRole('button', { name: '닫기 (계속 실행)' }).click();
   expect((await windowCalls(page)).at(-1)).toEqual(['close']);
+});
+
+test('the terminal window header toggles its own on-top state and hears changes from main', async ({
+  page,
+}) => {
+  await setup(page, { route: '/#shell' });
+  const panel = page.getByRole('region', { name: '미니 터미널' });
+  await expect(panel).toHaveAttribute('data-status', 'live');
+  const top = panel.locator('.on-top-toggle');
+  // It asks main once whether it floats (opened beside a floating card it would).
+  await expect.poll(() => windowCalls(page)).toContainEqual(['top']);
+  await expect(top).toHaveAttribute('aria-pressed', 'false');
+  await expect(top).toHaveAccessibleName('맨 위에 두기: 보통 창 → 맨 위');
+  await top.click();
+  await expect(top).toHaveAttribute('aria-pressed', 'true');
+  await expect(top).toHaveAccessibleName('맨 위에 두기: 맨 위 → 보통 창');
+  await expect(top).toHaveAttribute('title', /^맨 위 → 보통 창 · /);
+  await top.click();
+  await expect(top).toHaveAttribute('aria-pressed', 'false');
+  expect((await windowCalls(page)).filter(([a]: [string]) => a.startsWith('top-'))).toEqual([
+    ['top-on'],
+    ['top-off'],
+  ]);
+  // Floated again by a floating opener: main tells the window.
+  await page.evaluate(() => (window as any).onTopChanged(true));
+  await expect(top).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('another open shell opens in its own window; ending asks the desktop first', async ({

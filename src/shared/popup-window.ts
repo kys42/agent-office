@@ -79,10 +79,29 @@ export function popupWindowBounds(
 
 /**
  * Whether a popup floats over other apps: only beside a window that floats itself (a preview
- * card, the desk dock). The big office, a pinned card or an ordinary popup give an ordinary one.
+ * card, a card pinned on top, the desk dock, a popup set on top). The big office, a plain pinned
+ * card or an ordinary popup give an ordinary one. The person can then set it on top or back.
  */
 export function popupFloats(opener: { main: boolean; alwaysOnTop: boolean }) {
   return !opener.main && opener.alwaysOnTop;
+}
+
+/**
+ * How a window is layered: a floating window sits at the preview cards' level, on every Space and
+ * over full-screen apps; an ordinary one is a plain window other windows may cover. Quiet runs
+ * layer for real too: their windows are invisible and click-through (desktop/quiet.ts).
+ */
+export function floatLayer(float: boolean) {
+  return { alwaysOnTop: float, level: 'pop-up-menu' as const, allSpaces: float };
+}
+
+/**
+ * Whether a popup brought forward again floats: asked again from a window that floats (a preview
+ * card), it floats too so it is not hidden behind that window; otherwise it keeps what it has,
+ * the person's own on-top choice included.
+ */
+export function popupReopenFloats(current: boolean, opener: boolean) {
+  return current || opener;
 }
 
 /**

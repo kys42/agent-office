@@ -16,13 +16,8 @@ export const tmux = {
   summonIntro:
     'Name a new agent for this project. tmux keeps its terminal session running so you can reconnect and work directly whenever needed.',
   summonDescription: 'Set up a new colleague for this project.',
-  resumeDescription:
-    'Continue this conversation in a separate terminal. Reconnect whenever you need.',
   agentSettings: 'New colleague settings',
   agentType: 'Agent',
-  sessionDetails: 'Terminal session details',
-  guide: 'Managing a session with tmux',
-  summonDiscovery: 'The agent appears in the office after its first conversation is detected.',
   agentName: 'Agent name',
   invalidName: 'Use 1–40 letters, numbers, spaces, hyphens or underscores.',
   nameHint:
@@ -31,10 +26,7 @@ export const tmux = {
   messagePlaceholder: 'For example: Explore this project and suggest the next tasks',
   messageHint: 'Up to 4,000 characters · Sent once when a new session starts.',
   invalidMessage: 'Use at most 4,000 characters without control characters for the first message.',
-  summonRunning: 'tmux is running',
-  existingTitle: 'Already connected in this project',
   existingConfirm: 'There are connected agents in this project. Start another tmux session anyway?',
-  existingOpen: 'Open existing session',
   summonCheck: 'Check connections and name',
   summonDefault: 'New agent',
   summonConfirm: 'Start a new agent in this project?',
@@ -47,17 +39,11 @@ export const tmux = {
     'Continue this saved conversation in a separate terminal session. This does not create a new conversation.',
   name: 'tmux session',
   folder: 'Project folder',
-  command: 'Reconnect command',
-  ready: 'Ready to resume',
-  running: 'A tmux session is available',
-  hint: 'Close the terminal or press Ctrl+B, then D to detach. The agent keeps running while this computer is awake. After a restart or the agent exits, resume it here again.',
   skipPermissions:
     'Runs without permission prompts (Claude: --dangerously-skip-permissions, Codex: --dangerously-bypass-approvals-and-sandbox). Turn it off in Settings → Terminal and answers.',
   caution:
     'If this conversation is already running elsewhere, finish that run first to avoid working on it in two places.',
   start: 'Start in tmux',
-  open: 'Open in Terminal',
-  copy: 'Copy reconnect command',
   refresh: 'Check again',
   loading: 'Checking…',
   cancel: 'Cancel',
@@ -68,6 +54,9 @@ export const tmux = {
   unsupported: 'tmux resume supports local Claude and Codex sessions on macOS and Linux.',
   conflict: 'This tmux name belongs to another session. It was not changed.',
   ended: 'This tmux session has ended. Resume it again to reconnect.',
+  /** tmux started, but the agent exited right away (often an unfinished login or trust prompt). */
+  exitedAtStart:
+    'tmux started, but the agent exited right away. Run it once in a terminal to finish its login and folder trust, then try again.',
   openFailed: 'Could not open Terminal. Copy the reconnect command and run it in your terminal.',
   /** Resuming in a new Orca terminal tab instead of tmux. */
   orcaTitle: 'Resume in Orca',
@@ -76,19 +65,23 @@ export const tmux = {
   orcaIntro:
     'Opens a new terminal tab in Orca for this project folder and runs the command below in it. It does not start a new conversation.',
   orcaCommand: 'Command',
-  orcaHint: 'Orca is running: this conversation can also open in a new Orca tab.',
   orcaLaunched: 'Opened a new Orca tab for this conversation',
   /** Summoning a new agent in a new Orca tab instead of tmux. */
   summonOrca: 'Summon in a new Orca tab',
   summonOrcaConfirm: 'Start a new agent in a new Orca tab for this project?',
   summonOrcaIntro:
     'Opens a new terminal tab in Orca for this project folder and starts a new conversation with the command below.',
-  summonOrcaHint: 'Orca is running: the agent can also start in a new Orca tab instead of tmux.',
   summonOrcaLaunched: 'Started a new agent in a new Orca tab',
   orcaUnsupported: 'Orca resume supports local Claude and Codex sessions on macOS.',
-  orcaUnavailable: 'Orca is not running or not reachable. Open Orca and try again.',
-  orcaRefused: (reason: string) =>
-    `Orca did not open the tab${reason ? `: ${reason}` : '.'} The folder may not be an Orca workspace; you can start it in tmux instead.`,
+  /** Orca said why it made no tab; `workspace` when that reason is the folder itself. */
+  orcaRefused: (reason: string, workspace = false) =>
+    `Orca did not open the tab${reason ? `: ${reason}` : '.'}${workspace ? ' This folder is not an Orca workspace.' : ''} You can start it in tmux instead.`,
+  /** Orca made the tab but its start was not seen yet: never a failure, never a tmux hint. */
+  orcaUncertain:
+    "Orca made the tab but hasn't confirmed the start yet. It starts once you open Orca.",
+  orcaReveal: 'Open Orca',
+  orcaNotWorkspace:
+    'This folder is not in an Orca workspace on this Mac. Add the project in Orca first, or start it in tmux.',
   /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
   place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
   runningNotice: (place: string) =>
@@ -98,10 +91,6 @@ export const tmux = {
     'Its agent could not be confirmed running there. Starting it again may run the same conversation twice.',
   unknownNotice:
     'Could not confirm that this conversation is not open somewhere else. Check before starting it again.',
-  jumpToTerminal: 'Go to terminal',
-  jumpToTab: 'Go to that tab',
-  forceStart: 'Start in tmux anyway',
-  forceOrca: 'Open in a new Orca tab anyway',
   runningRefused: (place: string) =>
     `This conversation is already running in ${place}, so it was not started again. Use Go to terminal.`,
   changedRefused:
@@ -111,6 +100,4 @@ export const tmux = {
   unknownConfirm:
     'Could not confirm that this conversation is not open somewhere else. If it is, the same conversation will run twice.',
   tabGone: 'That Orca tab could not be found again. Check the status again.',
-  ownSessionNote:
-    'This is the tmux session Agent Office started for this conversation. After /new or /clear in it, it may now show another conversation.',
 };

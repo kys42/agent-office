@@ -24,7 +24,14 @@ export const prompts = {
     sent: 'Sent · waiting for the record to confirm',
     /** Choices that keep applying (always allow, auto mode…) or take words stay in the terminal. */
     more: 'Choices that keep applying (always allow, auto mode, accept edits) or that take words are made in the terminal.',
+    /** The screen shows the request, but none of its choices is a one-time one. */
+    noChoice: 'Its prompt has no one-time choice to make here right now. Answer in the terminal.',
     checking: 'Reading the terminal…',
+    /** Answering is not on yet: the first press asks once. */
+    consent: {
+      unset: 'Your first answer from here asks once whether to allow it.',
+      off: 'Answering is off in Settings: pressing a choice asks whether to turn it back on.',
+    },
   },
   /** Why the card cannot answer here (it still offers the terminal). */
   unavailable: {
@@ -37,7 +44,6 @@ export const prompts = {
     unreadable: 'Could not read its terminal screen.',
     'no-request': 'Nothing open to answer.',
     unverifiable: "This request can't be checked against the screen. Answer in the terminal.",
-    off: 'Answering is off in Settings. Turn it on there, or answer in the terminal.',
   },
   /** Desktop: results and refusals of an answer. */
   result: {
@@ -46,7 +52,6 @@ export const prompts = {
       `Sent to ${host}, but the record has not shown the answer yet. Check the terminal.`,
     unconfirmedScreen: (host: string) =>
       `Sent to ${host}, but its screen could not be read afterwards. Check the terminal.`,
-    off: 'Answering is off in Settings, so nothing was sent.',
     changed: "The prompt on screen isn't clearly this request, so nothing was sent.",
     stateChanged:
       'The prompt changed while answering and it stopped. Check the terminal before trying again.',
@@ -88,9 +93,9 @@ export const prompts = {
   settings: {
     questions: 'Answer questions & plans',
     questionsHint:
-      'Answer Claude Code questions and plan approvals from the work card by pressing the prompt keys in its Orca or tmux terminal. Off until you agree: the first answer (or turning it on here) asks once.',
+      'Answer Claude Code questions and plan approvals from the work card by pressing the prompt keys in its Orca or tmux terminal. Off until you agree: the first answer on a card (or turning it on here) asks once, even after you turned it off.',
     permissions: 'Answer permission prompts',
     permissionsHint:
-      'Allow once or deny Claude Code permission prompts from the work card the same way. Never automatic: only the button you press is sent, and choices that keep allowing stay in the terminal. Off until you agree.',
+      'Allow once or deny Claude Code permission prompts from the work card the same way. Never automatic: only the button you press is sent, and choices that keep allowing stay in the terminal. Off until you agree: the first answer on a card asks once.',
   },
 };

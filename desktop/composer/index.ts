@@ -5,7 +5,9 @@ import type { ComposerAdapter } from './types.js';
 export {
   claudeCodeComposer,
   classifyPrompt,
+  collapsedPaste,
   drawn,
+  placeholderIds,
   promptHolds,
   promptHoldsImages,
   afterImages,
@@ -14,6 +16,7 @@ export {
 } from './claude-code.js';
 export { parseStyledScreen, sameWrapped, type Screen } from './screen.js';
 export { containsLines, mergeBackup } from './backup.js';
+export { draftView } from './preview.js';
 export * from './types.js';
 
 /**

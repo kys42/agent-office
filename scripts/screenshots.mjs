@@ -90,7 +90,11 @@ try {
       return { x: x - 24, y: y - 24, width: right - x + 48, height: bottom - y + 36 };
     });
     await dock.screenshot({ path: `${dir}/desk-pet.png`, ...still, clip: pet });
-    await dock.locator('.desk-pet').click();
+    // The pet opens its colleague's card; its side button unfolds the desks.
+    await dock.locator('.dock-pet-anchor').hover();
+    await dock
+      .getByRole('button', { name: lang === 'ko' ? '책상 펼치기' : 'Unfold the desks' })
+      .click();
     await dock.waitForSelector('.desk-row [data-station-id]');
     await dock.locator('.desk-row').screenshot({ path: `${dir}/desk-row.png`, ...still });
     await dock.goto(`${base}/?demo&lang=${lang}#mini=floor`);

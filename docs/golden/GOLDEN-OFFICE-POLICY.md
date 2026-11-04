@@ -253,7 +253,7 @@ Claude Code / Codex / OpenClaw / 다음 공급자
   - 작업 흔적: 파일 수정(Claude Edit·Write·MultiEdit·NotebookEdit의 경로, Codex apply_patch), Git·PR 쓰기(`git commit|push|switch -c|checkout -b|merge|rebase|cherry-pick|revert|worktree add`, `gh pr create|merge`)
   - 둘러보려는 `cd`·`workdir`, 파일 read 경로, PR 링크, 진행 문장, 거부·실패한 호출로는 이동하지 않는다. 에이전트 설정 폴더(`~/.claude`·`~/.codex`·`~/.openclaw`)와 임시 폴더는 작업 흔적이 아니다(그 안에서 실행한 세션은 예외)(#19)
   - 셸 문법은 보수적으로 읽고, 확실하지 않으면 위치를 정하지 않는다(구현 정본: [사용량과 실행 위치](../development/USAGE-AND-WORKSPACE.md))
-- 기록 브랜치보다 최근 실행 worktree를 우선하는 예외는 `workspace.locationSource` 근거가 있을 때만 적용한다.
+- 기록 브랜치보다 최근 실행 worktree를 우선하는 예외는 `workspace.locationSource` 근거가 있을 때만 적용한다. 그 근거는 작업 흔적이 **실행한 worktree와 다른 worktree**에 있을 때만 붙는다. 실행한 worktree의 하위 폴더에서 파일을 고친 것은 이동이 아니다(같은 worktree에서 새로 띄운 동료와 긴 책상이 갈라지지 않게).
 - 새 요청은 서류 도착과 요청 발췌로 잠깐 강조한다. 가장 최근 요청을 선택하며 기존 읽음/접기 영수증을 존중한다. 초기 연결·과거 기록·늦게 수집된 오래된 요청은 새 도착처럼 재생하지 않는다.
 - 현재 요청 경계 이후 5분/15분/30분 경과 + 최근 실행 관측이 있을 때만 집중/몰입/불타는 중 연출([상태 정책서](STATUS-POLICY.md#집중-단계-작업-중-위에-얹는-장식)). 경과 시간은 벽시계 기준이고 지속 노동/생산성 판단이 아니다. 응답 완료·휴식·입력 대기·다음 요청에서 재평가한다. 모션 감소·개인정보 정책을 유지한다.
 

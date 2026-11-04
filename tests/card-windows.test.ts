@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readCardPosition, popupBounds } from '../src/shared/card-windows.js';
+import {
+  cardFloats,
+  cardPinAction,
+  nextCardPin,
+  readCardPin,
+  readCardPosition,
+  popupBounds,
+  type CardPin,
+} from '../src/shared/card-windows.js';
+import { floatLayer, popupFloats } from '../src/shared/popup-window.js';
 import { cardBounds, CARD_SIZE } from '../src/shared/dock-geometry.js';
 
 const area = { x: 0, y: 24, width: 1440, height: 876 };
@@ -58,4 +67,83 @@ test('New previews leave pinned headers reachable without changing the saved loc
   const third = popupBounds(anchor, area, CARD_SIZE, position, [...pinned, next]);
   assert.notDeepEqual(third, pinned[0]);
   assert.notDeepEqual(third, next);
+});
+
+test('The card pin button cycles off → pinned → on top → off, each with its own action', () => {
+  const seen: CardPin[] = [];
+  let pin: CardPin = 'off';
+  for (let i = 0; i < 4; i++) {
+    seen.push(pin);
+    pin = nextCardPin(pin);
+  }
+  assert.deepEqual(seen, ['off', 'pinned', 'top', 'off']);
+  assert.equal(cardPinAction('off'), 'pin-off');
+  assert.equal(cardPinAction('pinned'), 'pin-on');
+  assert.equal(cardPinAction('top'), 'pin-top');
+});
+
+test('Only a plain pinned card is an ordinary window; the preview and on-top pin float', () => {
+  assert.equal(cardFloats('off'), true);
+  assert.equal(cardFloats('pinned'), false);
+  assert.equal(cardFloats('top'), true);
+  // At the preview's level.
+  assert.deepEqual(floatLayer(cardFloats('top')), floatLayer(cardFloats('off')));
+  assert.equal(floatLayer(cardFloats('pinned')).alwaysOnTop, false);
+  // A popup opened from a card pinned on top floats beside it; from a plain pinned card it doesn't.
+  assert.equal(popupFloats({ main: false, alwaysOnTop: cardFloats('top') }), true);
+  assert.equal(popupFloats({ main: false, alwaysOnTop: cardFloats('pinned') }), false);
+});
+
+test('A card window state reads its pin, falling back to the older pinned flag', () => {
+  assert.equal(readCardPin({ pin: 'top', pinned: true }), 'top');
+  assert.equal(readCardPin({ pin: 'pinned', pinned: true }), 'pinned');
+  assert.equal(readCardPin({ pin: 'off', pinned: false }), 'off');
+  assert.equal(readCardPin({ pinned: true }), 'pinned');
+  assert.equal(readCardPin({ pinned: false }), 'off');
+  assert.equal(readCardPin({ pin: 'floating', pinned: false }), 'off');
+});
+
+test('pinned cards to reopen: only well-formed ones, once each, a few at most', async () => {
+  const { readPinnedCards, PINNED_CARDS_MAX } = await import('../src/shared/card-windows.js');
+  const card = (id: string, extra: Record<string, unknown> = {}) => ({
+    target: { id },
+    pin: 'pinned',
+    bounds: { x: 10.4, y: 20, width: 400, height: 500 },
+    ...extra,
+  });
+  assert.deepEqual(readPinnedCards({ v: 1, cards: [card('a', { pin: 'top' })] }), [
+    {
+      target: { id: 'a' },
+      pin: 'top',
+      bounds: { x: 10, y: 20, width: 400, height: 500 },
+    },
+  ]);
+  for (const bad of [null, {}, { v: 2, cards: [card('a')] }, { v: 1, cards: 'x' }])
+    assert.deepEqual(readPinnedCards(bad), []);
+  const mixed = readPinnedCards({
+    v: 1,
+    cards: [
+      card('a'),
+      card('a'),
+      card(''),
+      card('b', { pin: 'off' }),
+      card('c', { bounds: { x: 0, y: 0, width: -1, height: 10 } }),
+      card('d', { bounds: { x: Infinity, y: 0, width: 10, height: 10 } }),
+      {
+        target: { id: 'e', news: true },
+        pin: 'pinned',
+        bounds: { x: 0, y: 0, width: 300, height: 300 },
+      },
+    ],
+  });
+  // An older file's `news` flag (the removed news tab) is dropped: only whose card comes back.
+  assert.deepEqual(
+    mixed.map((c) => c.target),
+    [{ id: 'a' }, { id: 'e' }],
+  );
+  const many = readPinnedCards({
+    v: 1,
+    cards: Array.from({ length: 20 }, (_, i) => card(`s${i}`)),
+  });
+  assert.equal(many.length, PINNED_CARDS_MAX);
 });

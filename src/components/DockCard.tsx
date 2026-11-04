@@ -1,4 +1,5 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -8,6 +9,7 @@ import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
 import { cardReadSettings } from '../shared/card-reads';
+import { cardPinAction, readCardPin } from '../shared/card-windows';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
@@ -82,7 +84,9 @@ export function DockCard() {
       stop?.();
     };
   }, [notify, acceptTarget]);
-  const changeWindow = async (action: 'pin-on' | 'pin-off' | 'position-on' | 'position-off') => {
+  const changeWindow = async (
+    action: 'pin-on' | 'pin-top' | 'pin-off' | 'position-on' | 'position-off',
+  ) => {
     setWindowBusy(true);
     try {
       await api.card?.(action);
@@ -176,10 +180,10 @@ export function DockCard() {
           focus={bookmarkFocus}
           onFocused={() => setBookmarkFocus(null)}
           movable
-          cardPinned={windowState.pinned}
+          cardPin={readCardPin(windowState)}
           positionRemembered={windowState.positionRemembered}
           windowBusy={windowBusy}
-          onCardPin={(on) => void changeWindow(on ? 'pin-on' : 'pin-off')}
+          onCardPin={(next) => void changeWindow(cardPinAction(next))}
           onPositionRemember={(on) => void changeWindow(on ? 'position-on' : 'position-off')}
         />
       ) : (
@@ -200,7 +204,9 @@ export function DockCard() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      {content}
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
+        {content}
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

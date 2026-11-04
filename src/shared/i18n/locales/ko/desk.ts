@@ -39,6 +39,10 @@ export const desk: Messages['desk'] = {
     zoneHint:
       '지금 이 구역 동료를 한꺼번에 가려요. 각자 다음 대화가 오면 돌아오고, 나를 기다리는 동료는 남아요.',
   },
+  teammate: {
+    tag: '팀메이트',
+    hint: '다른 세션(리드)이 띄운 에이전트 팀 멤버예요. 리드가 사무실에 없어 따로 앉았어요.',
+  },
   helper: {
     name: '보조 동료',
     stackLabel: (count, calling) =>

@@ -88,7 +88,7 @@ export const guide = {
     },
     terminal: {
       title: 'Follow up from the office',
-      body: 'Resume older local Claude or Codex conversations with Resume in tmux on the work card. Confirm before starting, then use the session name and reconnect command or open it in Terminal. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
+      body: 'Continue or fork older local Claude or Codex conversations with Continue in a terminal on the work card: pick Orca, tmux, Terminal or a copied command, each saying why when it cannot. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
       where: 'Work card or bubble → reply · Settings → General',
       action: 'View reply settings',
     },

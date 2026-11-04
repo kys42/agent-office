@@ -1,4 +1,5 @@
 import { api } from './api';
+import { writeClipboard } from './clipboard';
 import { m } from '../shared/i18n';
 import type { JumpResult } from '../shared/types';
 import { reached } from './reached';
@@ -6,7 +7,7 @@ import { reached } from './reached';
 /** Copy text for the person and say so; a blocked clipboard is reported, not swallowed. */
 export async function copyText(text: string, notify: (message: string) => void) {
   try {
-    await navigator.clipboard.writeText(text);
+    await writeClipboard(text);
     notify(m().inspector.copied);
   } catch {
     notify(m().inspector.copyDenied);

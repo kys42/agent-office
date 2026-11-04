@@ -35,8 +35,8 @@ type Picked = AnswerChoice extends infer C
  * the plan to approve, or what a permission prompt is about. One component for the work card
  * and the popup card. Where the desktop app can see the same dialog on the session's terminal,
  * the options become buttons that press the dialog's own keys (the main process checks the
- * screen again and asks once before the first answer); otherwise it says why, and the card's
- * jump button takes the person to the terminal. Hidden-screen mode never renders this.
+ * screen again and, unless answering is on, asks natively first); otherwise it says why, and
+ * the card's jump button takes the person to the terminal. Hidden-screen mode never renders it.
  */
 export function RequestCard({
   session,
@@ -159,7 +159,17 @@ function RequestBody({
           }
         />
       )}
-      {ready?.more && <small className="request-status">{c.more}</small>}
+      {ready && request.kind !== 'question' && !ready.choices.length ? (
+        // The screen is this request, but nothing on it is a one-time choice (a plan too long to
+        // show withholds every approval): say so rather than leave the card without buttons.
+        <small className="request-status">{c.noChoice}</small>
+      ) : (
+        ready?.more && <small className="request-status">{c.more}</small>
+      )}
+      {/* Not on yet: the first press asks natively before anything is sent. */}
+      {ready?.consent && !sending && (
+        <small className="request-status">{c.consent[ready.consent]}</small>
+      )}
       {sending && (
         <small className="request-status" role="status">
           <Loader size={11} className="now-spin" />

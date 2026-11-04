@@ -51,8 +51,13 @@ export const inspector: Messages['inspector'] = {
     positionOn: '다음 팝업도 이 위치에서 열어요 · 누르면 위치 기억 해제',
     positionOff: '현재 위치에서 다음 팝업 열기',
     pinCard: '이 카드 고정',
-    pinOn: '다른 동료를 열어도 이 카드는 남아요 · 누르면 고정 해제',
-    pinOff: '이 동료의 카드를 별도 창으로 열어 두기',
+    pinStates: { off: '고정 안 함', pinned: '고정', top: '맨 위 고정' },
+    pinHints: {
+      off: '다른 곳을 누르면 닫혀요',
+      pinned: '열어 둬요 · 다른 창 뒤로 갈 수 있어요',
+      top: '열어 둬요 · 늘 다른 창 위에 있어요',
+    },
+    pinLabel: (now, next) => `이 카드 고정: ${now} → ${next}`,
   },
   tabs: {
     overview: '작업 정보',

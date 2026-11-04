@@ -1,6 +1,7 @@
 import type { SnapshotMessage } from './snapshot-patch';
 import { m, type Locale, type LocalePreference } from './i18n';
 import type { PetCustomization } from './pets';
+import type { DeskCustomization } from './desks';
 export type Provider = 'claude' | 'codex' | 'openclaw';
 /**
  * Office status. Observed (work/think/call/error/done) or derived from time since the last
@@ -67,6 +68,12 @@ export interface SessionRelation {
   agentPath?: string;
   role?: string;
   parentSessionKey?: string;
+  /**
+   * The agent team this session works in as a member (Claude Code agent teams): another
+   * session (its lead) started it and talks to it. Its title is its member name. With the
+   * lead found it is the lead's helper (`kind: 'subagent'`); without, a desk of its own.
+   */
+  team?: string;
 }
 export interface SessionActor {
   id: string;
@@ -417,6 +424,8 @@ export interface Preferences {
   /** UI and collector language. Missing means `auto` (system language, else English). */
   locale?: LocalePreference;
   petAppearance?: PetCustomization;
+  /** Desk tops, monitors, chairs and items: office → project → colleague (#305). */
+  deskAppearance?: DeskCustomization;
   /** Desktop OS notifications (#229). Missing: calls and errors only, silently. */
   notifications?: NotifyPreferences;
   // #228 — every one optional; a missing value keeps the behaviour from before it existed.
@@ -445,11 +454,67 @@ export interface Preferences {
    * Codex with `--dangerously-bypass-approvals-and-sandbox`. Missing: off.
    */
   tmuxSkipPermissions?: boolean;
+  /** Desktop: cards pinned when the app last ran open again where they were. Missing: on. */
+  restorePinnedCards?: boolean;
+  /**
+   * Desktop: where the person last started a session (#318): the launch sheet offers it first
+   * while it is available, else Orca, else tmux. Missing: never chosen.
+   */
+  launchDestination?: import('./launch').LaunchDestinationId;
   /** Size of reading text (#246) in every window. Missing: `normal`. */
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
   readingFont?: ReadingFont;
+  /**
+   * How see-through the work card popup and the big office's side columns are, in percent
+   * (0 solid … GLASS_MAX). Missing or null: each platform's own look from before.
+   */
+  windowGlass?: number | null;
+  /**
+   * What each screen shows (#324), mode by mode. Every key is optional: a missing one keeps the
+   * look from before it existed (see `viewPrefs`).
+   */
+  views?: ViewSettings;
 }
+/** The groups the desk pet's pill can count, in triage order. */
+export type PetTallyGroup = 'attention' | 'results' | 'working' | 'standby';
+/** When the desk pet shows its colleague's name: while it speaks (or is picked/hovered), always, never. */
+export type PetNameMode = 'speaking' | 'always' | 'never';
+/** The desk effects a desk scene can draw (row/floor, big office). */
+export interface DeskViewSettings {
+  /** The branch tag under each desk (office row and the big office; the floor has plates). */
+  branch?: boolean;
+  /** Papers stacking up on a busy desk. */
+  papers?: boolean;
+  /** The light over a desk at work. */
+  beacon?: boolean;
+  /** Sparks and heat around a colleague deep in work. */
+  focus?: boolean;
+}
+export interface ViewSettings {
+  pet?: {
+    /** The coloured numbers pill. Off: the single-label pill from before. */
+    tally?: boolean;
+    tallyGroups?: PetTallyGroup[];
+    name?: PetNameMode;
+    /** The slide and puff when the pet turns to someone else. */
+    turnEffect?: boolean;
+    /** Rubbing the pet pats it (and the pointer becomes a hand). */
+    petting?: boolean;
+  };
+  /** The office row and the floor desks. */
+  dock?: DeskViewSettings & {
+    /** A read final reply leaves its desk (a peek brings it back). */
+    hideRead?: boolean;
+  };
+  tiny?: {
+    /** Focus effects and paper piles on tiny desks. */
+    effects?: boolean;
+  };
+  /** The big office. */
+  office?: DeskViewSettings;
+}
+export type ViewMode = keyof ViewSettings;
 export type TextSize = 'small' | 'normal' | 'large' | 'larger';
 /** `system`: the app's stack from before (system font, then Pretendard). */
 export type ReadingFont = 'system' | 'pretendard' | 'mono';
@@ -580,11 +645,87 @@ export type SendResult =
       /** A failed send can offer this freshly read draft as an explicit recovery. */
       reason?: string;
     };
+/**
+ * What the agent's terminal input box holds right now, read by the desktop app from the verified
+ * terminal for the work card's preview (never stored). `draft`: text sitting there, not sent;
+ * `suggestion`: only the agent's own suggestion, told by its style; `empty`: nothing (or a
+ * suggestion where only inferred); `unknown`: not read, and why.
+ */
+export type ComposerDraftView =
+  | {
+      kind: 'draft';
+      /**
+       * The box's rows as drawn, indents kept (only its frame taken off): the box's own wrapping
+       * may show as line breaks. [Send as is] hands this very string back, and Enter goes only
+       * while the box still draws exactly it.
+       */
+      text: string;
+      /**
+       * The text as typed (its own line breaks and indents, not the box's wrapping), when that
+       * can be told for sure. Taking it into the card needs it; absent, the screen cannot say
+       * where a URL, path or word was merely wrapped.
+       */
+      logical?: string;
+      /** The agent whose box it is, e.g. "Claude". A brand, never translated. */
+      agent: string;
+      /** It can be submitted as it is from here: known whole, on an agent that allows it. */
+      submittable: boolean;
+      /** Not all of it is on screen (a box too short, a collapsed paste, an image). */
+      partial?: boolean;
+      /** The screen cannot tell it from the agent's own suggestion. */
+      maybeSuggestion?: boolean;
+      /**
+       * With `maybeSuggestion`: sent with `{ suggestion: true }` — the agent's accept key first
+       * (a suggestion is taken in, typed text stays as it is), then Enter only while the box holds
+       * exactly this text. One line known whole only.
+       */
+      acceptsSuggestion?: boolean;
+    }
+  | {
+      /**
+       * The agent's own suggestion (Claude Code's prompt suggestion, accepted with Tab), told
+       * apart from typing by its style: the box holds nothing typed. Never the person's draft.
+       */
+      kind: 'suggestion';
+      /** As drawn on its one row. [Send suggestion] hands it back to compare. */
+      text: string;
+      agent: string;
+      /** Taken in and submitted from here: all of it shows, on a host that tells it apart. */
+      submittable: boolean;
+    }
+  | { kind: 'empty' }
+  | { kind: 'unknown'; reason: ComposerDraftUnknown };
+/**
+ * Why the box was not read: sending is off, the agent's box is not read from here, no verified
+ * terminal, the agent is not taking input, a dialog or menu replaced the box, the screen could
+ * not be read, or a send is typing into it right now.
+ */
+export type ComposerDraftUnknown =
+  'off' | 'unsupported' | 'no-terminal' | 'not-ready' | 'closed' | 'unreadable' | 'sending';
+/**
+ * What submitting the box as it is did. `sent`: Enter went in while the box held exactly the
+ * previewed text. `changed`: it held something else, so nothing was pressed; `draft` is the
+ * fresh read to show instead, `message` why.
+ */
+export type DraftSubmitResult =
+  | {
+      status: 'sent';
+      message: string;
+      /** The text as typed, from the look right before Enter, when the screen could tell. */
+      logical?: string;
+    }
+  | { status: 'changed'; message: string; draft: ComposerDraftView };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */
   replaceDraft?: string;
   /** The person accepted losing content that the screen could not fully show or back up. */
   allowPartialDraft?: boolean;
+  /**
+   * `replaceDraft` is the box's rows as drawn (indents kept) when the person took them into the
+   * card to edit: replaced only while the box still draws exactly that — a change in spaces,
+   * line breaks or indents there is asked about (`changed`), never cleared silently.
+   */
+  exactDraft?: boolean;
   /** Ids from `attachImage`, in order. Desktop main resolves them to its own files. */
   images?: string[];
 }
@@ -595,6 +736,8 @@ export type ReplySender = (
   replaceDraft?: string,
   allowPartialDraft?: boolean,
   images?: string[],
+  /** See `SendOptions.exactDraft`. */
+  exactDraft?: boolean,
 ) => Promise<SendResult>;
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
@@ -629,9 +772,7 @@ export type PromptUnavailable =
   | 'unreadable'
   | 'no-request'
   /** The request cannot be checked against a screen (cut at rest, no call id, no transcript). */
-  | 'unverifiable'
-  /** The person turned answering this kind off in Settings. */
-  | 'off';
+  | 'unverifiable';
 /**
  * The dialog on the session's terminal, read by the desktop app and checked against the open
  * request it recorded. `ready` only when both say the same (same kind, same question and
@@ -658,6 +799,11 @@ export type PromptView =
        */
       tool?: string;
       subject?: PromptSubject;
+      /**
+       * Answering this kind is not on yet (never asked, or turned off): the first press asks
+       * natively before anything is sent, and turns it on when the person agrees.
+       */
+      consent?: 'unset' | 'off';
     }
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
 /** One question's answer: picked options (indices into the recorded options) or typed words. */
@@ -672,8 +818,8 @@ export interface AnswerResult {
   message: string;
 }
 /**
- * One answering setting: never asked yet (the first answer asks natively), turned on, or turned
- * off explicitly (no answer buttons until turned on in Settings).
+ * One answering setting: never asked yet, turned on, or turned off explicitly. Unless it is on,
+ * the card still offers the choices and the first press asks natively (agreeing turns it on).
  */
 export type AnswerSetting = 'unset' | 'on' | 'off';
 /** Desktop profile settings (never shared preferences): off until the person agrees. */
@@ -708,11 +854,16 @@ export interface CardTarget {
 }
 /** Native popup presentation state; independent of the colleague's office pin. */
 export interface CardWindowState {
+  /** Kept open (pinned, or pinned on top). */
   pinned: boolean;
+  /** Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, or pinned on top. */
+  pin?: import('./card-windows').CardPin;
   positionRemembered: boolean;
   /** Initial state handshake also recovers a target sent before the renderer subscribed. */
   target?: CardTarget | null;
 }
+/** A popup window's own on-top control: read it (`top`), or set it on top or back to ordinary. */
+export type PopupOnTopAction = 'top' | 'top-on' | 'top-off';
 /** `tiny-on`/`tiny-off`: the row and floor at helper-desk size (remembered by the main process). */
 export type DockAction =
   | DockMode
@@ -782,12 +933,20 @@ export interface OfficeAPI {
    * Desktop only: the bookmark reader's own window, one per bookmark. `open` opens it beside the
    * asking window (or brings it forward) with only the bookmark's id; in that window, `target`
    * reads which bookmark it shows, `focus`/`close` act on it and `go` shows the big office at
-   * the bookmarked message.
+   * the bookmarked message. `top` reads whether that window stays on top and `top-on`/`top-off`
+   * set it (`onPopupOnTop` hears each change).
    */
-  bookmarkWindow?: (
-    action: 'open' | 'target' | 'focus' | 'close' | 'go',
-    target?: { id: string },
-  ) => Promise<{ id: string } | void>;
+  bookmarkWindow?: {
+    (action: 'open', target: { id: string }): Promise<void>;
+    (action: 'target'): Promise<{ id: string }>;
+    (action: 'focus' | 'close' | 'go'): Promise<void>;
+    (action: PopupOnTopAction): Promise<boolean>;
+  };
+  /**
+   * Desktop popup windows (mini terminal, bookmark reader): whether this window stays on top,
+   * each time that changes (set by its own toggle, or floated again by a floating opener).
+   */
+  onPopupOnTop?: (callback: (on: boolean) => void) => () => void;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**
@@ -807,28 +966,21 @@ export interface OfficeAPI {
     action: 'status' | 'start',
     spec: import('./remote-launch').RemoteLaunchSpec,
   ) => Promise<import('./remote-launch').RemoteLaunchInfo>;
-  /** Local desktop only. Starting requires confirmation in the main process. */
-  tmuxSummon?: (
-    id: string,
-    action: 'status' | 'start' | 'open',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<TmuxResumeInfo>;
-  tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
+  /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
+  orcaReveal?: () => Promise<void>;
   /**
-   * Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab; `focus`
-   * switches to its existing Orca tab, re-verified afresh in main.
+   * Desktop only (#318): probe, start or open one launch (new, resume, fork) at one
+   * destination. Starting asks a native confirmation in the main process; a refusal is an
+   * answer, not an error (`state: 'refused'` with its reason). The launch sheet (#319) is its
+   * only window caller.
    */
-  orcaLaunch?: (id: string, action: 'status' | 'start' | 'focus') => Promise<OrcaLaunchInfo>;
-  /** Desktop (macOS) only: summon a new agent in a new Orca tab of this project's folder. */
-  orcaSummon?: (
-    id: string,
-    action: 'status' | 'start',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<OrcaLaunchInfo>;
+  launch?: (request: import('./launch').LaunchRequest) => Promise<import('./launch').LaunchResult>;
+  /** Desktop only: whether this platform can launch at all, and which destinations open. */
+  launchSupport?: () => Promise<import('./launch').LaunchSupport>;
+  /** Desktop only: every destination probed for an intent, with the one to offer first. */
+  launchOptions?: (
+    intent: import('./launch').LaunchIntent,
+  ) => Promise<import('./launch').LaunchOptions>;
   /** Desktop (macOS/Linux) only: the mini terminal, kept alive by tmux (see mini-shell.ts). */
   shell?: {
     command: <C extends import('./mini-shell').ShellCommand>(
@@ -850,11 +1002,13 @@ export interface OfficeAPI {
      * The mini terminal's own window, one per folder shell: `open` opens it beside the asking
      * window (or brings it forward); in that window, `target` reads what it shows, `focus` takes
      * the keyboard and `close` closes it (detaching). `close-all` is the big office's only.
+     * `top` reads whether that window stays on top and `top-on`/`top-off` set it.
      */
     window: {
       (action: 'open', target: import('./mini-shell').ShellTarget): Promise<void>;
       (action: 'target'): Promise<import('./mini-shell').ShellTarget>;
       (action: 'close' | 'focus' | 'close-all'): Promise<void>;
+      (action: PopupOnTopAction): Promise<boolean>;
     };
   };
 
@@ -876,6 +1030,24 @@ export interface OfficeAPI {
   attachmentPreview?: (id: string) => Promise<{ type: string; bytes: Uint8Array } | null>;
   /** Desktop only: reads the owned terminal's current draft without typing or submitting. */
   inspectDraft?: (id: string) => Promise<Extract<SendResult, { status: 'needs-confirm' }> | null>;
+  /**
+   * Desktop only, read-only: what the session's terminal input box holds now (briefly cached in
+   * main, so several windows share one screen read). Nothing is typed or pressed.
+   */
+  composerDraft?: (id: string) => Promise<ComposerDraftView>;
+  /**
+   * Desktop only: submits the box as it is (Enter, nothing typed), only while it still holds
+   * exactly `text` — main reads the screen again right before the key.
+   */
+  submitDraft?: (
+    id: string,
+    text: string,
+    /**
+     * `suggestion`: `text` is the agent's own suggestion — taken into the box (Tab) only while
+     * it is all the box holds, then submitted only if the box then holds exactly it.
+     */
+    options?: { suggestion?: boolean },
+  ) => Promise<DraftSubmitResult>;
   /**
    * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
    * profile, outside the preferences shared with the web preview; turning it back on asks for
@@ -911,6 +1083,7 @@ export interface OfficeAPI {
       | 'drag-end'
       | 'select'
       | 'pin-on'
+      | 'pin-top'
       | 'pin-off'
       | 'position-on'
       | 'position-off'
@@ -995,16 +1168,33 @@ export type LaunchPlace = 'orca' | 'tmux' | 'other';
 export type DuplicateCheck =
   | { state: 'none' }
   | { state: 'unknown' }
-  | { state: 'open'; where: LaunchPlace }
-  | { state: 'running'; where: LaunchPlace };
+  /**
+   * `pending`: a launch held for a while where it went: not confirmed yet (an Orca tab opening
+   * Orca starts; Terminal or tmux cut off, maybe running), or with `starting` just handed over
+   * (a Terminal window, an Orca tab) and the agent not seen running yet.
+   */
+  | { state: 'open'; where: LaunchPlace; pending?: true; starting?: true }
+  /**
+   * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
+   * this conversation (main matched the terminal it found to that session's panes). Without
+   * it the conversation may run elsewhere while the own pane shows another one.
+   */
+  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true };
 export interface OrcaLaunchInfo {
   available: boolean;
   /** Set by `status`: whether this conversation already runs or is open somewhere. */
   duplicate?: DuplicateCheck;
   /** The command typed into the new tab's shell (shown before confirming). */
   command?: string;
-  /** Set after `start`: false when the person cancelled. */
+  /** Set after `start`: false when the person cancelled, or when Orca did not confirm it. */
   launched?: boolean;
+  /**
+   * Set after `start`: Orca made the tab but its start was not seen yet. Not a failure: the tab
+   * starts once Orca shows it, and launching it again is cautioned for a while meanwhile.
+   */
+  uncertain?: boolean;
+  /** Set by `status` when the folder cannot take a new Orca tab: why (not a workspace, etc.). */
+  reason?: string;
   message?: string;
 }
 export interface TmuxResumeInfo {

@@ -241,6 +241,7 @@ test('local text and snapshots remain compatible with beta off or enabled withou
         ['readReplies', [remote, Date.now()]],
         ['preferences', [{ zoneRules: [{ match: 'session', value: remote, name: 'blocked' }] }]],
         ['preferences', [{ petAppearance: { colleagues: { [remote]: null } } }]],
+        ['preferences', [{ deskAppearance: { colleagues: { [remote]: null } } }]],
       ] as [string, unknown[]][]) {
         await assert.rejects(service.call(method, args), /read-only/);
       }

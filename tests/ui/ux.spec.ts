@@ -586,8 +586,7 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
 test('Esc in the desk row folds an unfolded bubble first; only an Esc with nothing open folds the dock', async ({
   page,
 }) => {
-  await page.goto('/?demo#mini');
-  await page.locator('.desk-pet').click();
+  await page.goto('/?demo#mini=row');
   const row = page.locator('.desk-row');
   await expect(row).toBeVisible();
   const bubble = row.locator('[data-station-id="demo:0"] .speech-bubble');

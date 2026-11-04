@@ -1,4 +1,5 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -209,7 +210,6 @@ export function DeskDock() {
           onReceipt={receipt}
           status={snapshot ? null : error ? t.dock.status.check : t.dock.status.connecting}
           onExpand={() => go(expanded)}
-          onFloor={() => go('floor')}
           onReply={send.sendReply}
           onRefresh={() => void refresh()}
           notify={notify}
@@ -255,7 +255,9 @@ export function DeskDock() {
 
   return (
     <PetAppearanceContext.Provider value={snapshot?.preferences.petAppearance}>
-      {content}
+      <DeskAppearanceContext.Provider value={snapshot?.preferences.deskAppearance}>
+        {content}
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

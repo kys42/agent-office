@@ -155,6 +155,30 @@ try {
   // The big office is not a reader: it cannot read a reader's target or "go" for it.
   await assert.rejects(page.evaluate(() => window.office.bookmarkWindow('target')));
   await assert.rejects(page.evaluate(() => window.office.bookmarkWindow('go')));
+  // Its own on-top toggle: opened from the big office it is an ordinary window; the header sets
+  // it on top and back. Only a reader sets its own.
+  await assert.rejects(page.evaluate(() => window.office.bookmarkWindow('top-on')));
+  const readerWindow = await app.browserWindow(reader);
+  const toggle = reader.locator('.reader-window-bar .on-top-toggle');
+  const pressed = (v) =>
+    reader.waitForFunction(
+      (v) =>
+        document
+          .querySelector('.reader-window-bar .on-top-toggle')
+          ?.getAttribute('aria-pressed') === v,
+      v,
+    );
+  await pressed('false');
+  assert.equal(await reader.evaluate(() => window.office.bookmarkWindow('top')), false);
+  await toggle.click();
+  await pressed('true');
+  assert.equal(await reader.evaluate(() => window.office.bookmarkWindow('top')), true);
+  assert.equal(await readerWindow.evaluate((w) => w.isAlwaysOnTop()), true);
+  // The other reader is left alone.
+  assert.equal(await second.evaluate(() => window.office.bookmarkWindow('top')), false);
+  await toggle.click();
+  await pressed('false');
+  assert.equal(await readerWindow.evaluate((w) => w.isAlwaysOnTop()), false);
   // Open in office: the big office selects that colleague.
   await reader
     .getByRole('button', { name: /^(Open original conversation|원문 대화로 이동)$/ })

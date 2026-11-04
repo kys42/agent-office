@@ -4,6 +4,7 @@ import { mobile } from './mobile';
 import { guide } from './guide';
 import { federation } from './federation';
 import { pets } from './pets';
+import { desks } from './desks';
 import { common } from './common';
 import { app } from './app';
 import { palette } from './palette';
@@ -25,7 +26,8 @@ import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
-import { summonExisting } from './summonExisting';
+import { launchSheet } from './launchSheet';
+import { launch } from './launch';
 
 /** English is the source catalog: every other language must match its shape. */
 export const en = {
@@ -55,8 +57,10 @@ export const en = {
   terminal,
   prompts,
   pets,
+  desks,
   guide,
-  summonExisting,
+  launchSheet,
+  launch,
 };
 
 export type Messages = typeof en;
