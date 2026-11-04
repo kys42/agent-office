@@ -21,6 +21,28 @@ export function claudeSubagentPath(sourcePath: string) {
   };
 }
 
+/** The lead's own member name in a Claude Code agent team. */
+const TEAM_LEAD = 'team-lead';
+/**
+ * A Claude Code agent-team member that runs as its own session (a pane teammate: tmux or
+ * iTerm2, started with --team-name/--agent-name): its transcript records carry `teamName` and
+ * `agentName` (Claude Code 2.1.316 writes both on every user/assistant record of a teammate,
+ * and neither on the lead's). The lead is not in the records; see claudeTeamLead.
+ * In-process teammates write sidechains under the lead's `subagents/` folder instead: those
+ * are subagents by path already.
+ */
+export function claudeTeammate(raw: RecordObject[]): { team: string; member: string } | null {
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const r = raw[i];
+    if (r?.isSidechain === true || !['user', 'assistant'].includes(r?.type)) continue;
+    const team = extractString(r.teamName);
+    const member = extractString(r.agentName);
+    if (!team || !member || team.length > 200 || member.length > 200) continue;
+    return member === TEAM_LEAD ? null : { team, member };
+  }
+  return null;
+}
+
 export function resolveIdentity(
   raw: RecordObject[],
   opt: {
@@ -41,6 +63,7 @@ export function resolveIdentity(
   const owner = asRecord(ownerRecord?.payload) ?? ownerRecord ?? {};
   const origin = opt.provider === 'codex' ? readCodexNonUserOrigin(owner) : null;
   const child = opt.provider === 'claude' ? claudeSubagentPath(opt.sourcePath) : null;
+  const teammate = opt.provider === 'claude' && !child ? claudeTeammate(raw) : null;
   const filenameId = path.basename(opt.sourcePath).match(/([0-9a-f-]{36})\.jsonl$/i)?.[1];
   const native =
     opt.nativeId ??
@@ -66,9 +89,12 @@ export function resolveIdentity(
       ? 'Claude subagents path'
       : origin
         ? 'native non-user origin (Orca)'
-        : 'native session',
+        : teammate
+          ? 'Claude agent team'
+          : 'native session',
     agentPath: origin?.parentage?.agentPath ?? undefined,
     role: origin?.parentage?.agentRole ?? origin?.kindLabel ?? origin?.kind ?? undefined,
+    ...(teammate ? { team: teammate.team } : {}),
   };
   const identity: NonNullable<Session['identity']> = {
     evidence: opt.nativeId
@@ -98,6 +124,8 @@ export function resolveIdentity(
     ownerRecord,
     relation,
     identity,
+    /** An agent-team member's name: its title unless the person named the session. */
+    member: teammate?.member,
     title:
       origin?.parentage?.agentNickname ??
       extractString(owner.title) ??

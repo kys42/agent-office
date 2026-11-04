@@ -5,6 +5,8 @@ import { taskStart } from './lifecycle';
 import { m } from './i18n';
 
 export const isHelper = (s: Session) => ['subagent', 'child'].includes(s.relation?.kind ?? '');
+/** An agent-team member (another session leads it): a helper once its lead is found. */
+export const isTeammate = (s: Session) => !!s.relation?.team;
 export const isBackground = (s: Session) =>
   ['scheduled', 'internal'].includes(s.origin?.kind ?? '');
 export const needsAttention = (s: Session) =>
@@ -83,9 +85,11 @@ export const sessionScopeLabel = (s: Session) => {
     ? t.scheduled
     : s.origin?.kind === 'internal'
       ? t.internal
-      : isHelper(s)
-        ? t.helper
-        : t.conversation;
+      : isTeammate(s)
+        ? t.teammate
+        : isHelper(s)
+          ? t.helper
+          : t.conversation;
 };
 
 /** Canonical sessions remain intact in the store/MCP. Only office occupancy is projected. */

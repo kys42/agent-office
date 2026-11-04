@@ -145,6 +145,70 @@ test('Three helpers keep their own desks', async ({ page }) => {
   await expect(page.locator('.helper-stack')).toHaveCount(0);
 });
 
+/**
+ * demo:0 leads an agent team: two teammates another session started sit at its desk as
+ * helpers, by their member names; one whose lead is not in the office keeps its own desk,
+ * tagged a teammate. Titles never show the `<teammate-message>` envelope.
+ */
+function teamFixture(): Snapshot {
+  const snapshot = fixture(0);
+  const host = snapshot.sessions.find((s) => s.id === 'demo:0')!;
+  const member = (id: string, title: string, lead: string | null, seat?: number) => ({
+    ...host,
+    id: `demo:${id}`,
+    nativeId: `demo-${id}`,
+    alias: '',
+    title,
+    status: 'work' as const,
+    updatedAt: Date.now() - 2000,
+    officeSeat: seat,
+    parentId: lead,
+    relation: {
+      kind: lead ? ('subagent' as const) : ('root' as const),
+      parentNativeId: lead,
+      source: 'Claude agent team',
+      team: 'session-demo0000',
+    },
+  });
+  snapshot.sessions.push(
+    member('mate-0', 'office-perf-scout', host.nativeId),
+    member('mate-1', 'doc-keeper', host.nativeId),
+    member('orphan', 'lonely-scout', null, 9),
+  );
+  return snapshot;
+}
+
+test('Teammates another session started sit at its desk; one without its lead is tagged', async ({
+  page,
+}) => {
+  await bridge(page, teamFixture());
+  await page.goto('/');
+  const desks = page.locator('.helper-desk[data-parent-id="demo:0"]');
+  await expect(desks).toHaveCount(2);
+  await expect(desks.locator('b')).toHaveText(['office-perf-scout', 'doc-keeper']);
+  await expect(desks.first()).toHaveAttribute('title', 'office-perf-scout · 팀메이트');
+  // Neither linked teammate has a desk of its own; the orphan does, with the tag.
+  await expect(page.locator('.desk-name', { hasText: 'office-perf-scout' })).toHaveCount(0);
+  const orphan = page.locator('.desk-name', { hasText: 'lonely-scout' });
+  await expect(orphan.locator('.desk-teammate')).toHaveText('팀메이트');
+  await expect(page.locator('.desk-name .desk-teammate')).toHaveCount(1);
+  await expect(page.getByText('<teammate-message')).toHaveCount(0);
+  await page.locator('.office-card').screenshot({ path: '.local/teammates-office.png' });
+  await desks.first().click();
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', /office-perf-scout/);
+});
+
+test('The row seats teammates as helpers of their lead too', async ({ page }) => {
+  const snapshot = teamFixture();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto('/#mini=row');
+  await page.reload();
+  const desks = page.locator('.desk-row .helper-desk[data-parent-id="demo:0"]');
+  await expect(desks).toHaveCount(2);
+  await expect(page.locator('.desk-row .desk-name .desk-teammate')).toHaveCount(1);
+  await page.locator('.desk-row').screenshot({ path: '.local/teammates-row.png' });
+});
+
 test('The row and floor stack helpers too, and the list opens the helper in the office', async ({
   page,
 }) => {
