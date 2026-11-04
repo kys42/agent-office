@@ -9,6 +9,7 @@ import {
   resolveCodexTitleThread,
 } from '../desktop/codex-focus.js';
 import { codexTarget } from '../desktop/codex-queue.js';
+import { codexLiveness } from '../desktop/launch-guard.js';
 import { focusTerminal, type TerminalDeps } from '../desktop/terminals.js';
 import { focusLine, focusName } from '../src/shared/terminal-target.js';
 
@@ -407,6 +408,27 @@ test('lookupCodexTerminal tells no screen from an ambiguous or unreadable one', 
     { title: 'zsh' },
     { failed: true },
   ])
+    assert.equal(await kind(options), 'unknown', JSON.stringify(options));
+});
+
+test('Codex liveness for a launch: any verified screen of the thread means running', async () => {
+  const kind = async (options: Parameters<typeof fixture>[0], fresh = true) =>
+    // The screens read are macOS terminals: pinned so a Linux CI runner proves absence the same way.
+    (
+      await codexLiveness.lookup(THREAD, fresh, {
+        ...fixture(options).deps,
+        platform: 'darwin',
+      } as never)
+    ).kind;
+  assert.equal(await kind({}), 'found');
+  // Two screens of the thread, or one plus an unreadable one: no single place to go to, but
+  // it certainly runs, so a launch must not start it again.
+  assert.equal(await kind({ duplicate: true }), 'found');
+  assert.equal(await kind({ duplicate: true }, false), 'found');
+  assert.equal(await kind({ duplicate: true, secondFailed: true }), 'found');
+  assert.equal(await kind({ title: `${OTHER} | task`, loaded: [OTHER] }), 'none');
+  // Nothing verified shows it, but something could: unknown, never none.
+  for (const options of [{ closed: true }, { reused: true }, { title: 'zsh' }, { failed: true }])
     assert.equal(await kind(options), 'unknown', JSON.stringify(options));
 });
 

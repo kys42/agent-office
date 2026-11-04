@@ -187,7 +187,11 @@ test('summoning starts a fresh CLI once and rediscovers it by project/provider',
     const launches = f.calls.filter((x) => x.args.includes('new-session'));
     assert.equal(launches.length, 1);
     const args = launches[0].args;
-    assert.equal(args[args.indexOf('/bin/' + provider) + 1], ';');
+    // Claude's new conversation gets its id up front (`--session-id`); Codex picks its own.
+    const at = args.indexOf('/bin/' + provider);
+    const own = provider === 'claude' ? 2 : 0;
+    if (own) assert.equal(args[at + 1], '--session-id');
+    assert.equal(args[at + 1 + own], ';');
     assert.ok(!args.includes('resume') && !args.includes('--resume'));
     assert.equal(
       (await new TmuxResume(f.deps).status(summonSession(session.cwd, provider))).running,
@@ -244,8 +248,8 @@ for (const provider of ['claude', 'codex'] as const)
     );
     await f.manager.start(fresh, async () => true);
     const args = f.calls.find((x) => x.args.includes('new-session'))!.args;
-    const at = args.indexOf('/bin/' + provider);
-    assert.deepEqual(args.slice(at + 1, at + 3), ['--', prompt.slice(0, -1) + '\\;']);
+    const at = args.indexOf('--', args.indexOf('/bin/' + provider));
+    assert.deepEqual(args.slice(at, at + 2), ['--', prompt.slice(0, -1) + '\\;']);
     await f.manager.start(summonSession(session.cwd, provider, 'Review', 'second'), async () => {
       throw new Error('Existing session must not restart or send another message');
     });
@@ -291,12 +295,62 @@ test('without permission prompts only when the person chose it: each agent its o
     );
     const summoned = fresh.calls.find((x) => x.args.includes('new-session'))!.args;
     const from = summoned.indexOf('/bin/' + provider);
-    assert.deepEqual(summoned.slice(from + 1, from + 4), [
+    const until = summoned.indexOf(';', from);
+    const agentArgs = summoned.slice(from + 1, until);
+    assert.deepEqual(
+      agentArgs.filter((_, i) => agentArgs[i - 1] !== '--session-id'),
       provider === 'claude'
-        ? '--dangerously-skip-permissions'
-        : '--dangerously-bypass-approvals-and-sandbox',
-      '--',
-      'hello\\;',
-    ]);
+        ? ['--dangerously-skip-permissions', '--session-id', '--', 'hello\\;']
+        : ['--dangerously-bypass-approvals-and-sandbox', '--', 'hello\\;'],
+    );
   }
+});
+test('an agent that exits right after tmux started it is told apart from tmux failing', async () => {
+  const { m } = await import('../src/shared/i18n/index.js');
+  // tmux created the session, but it is gone at once: the agent itself ended (login, trust).
+  const exited = fixture();
+  exited.deps.run = async (_file, args) => {
+    exited.calls.push({ file: _file, args });
+    return '';
+  };
+  await assert.rejects(
+    new TmuxResume(exited.deps).start(session, async () => true),
+    {
+      message: m().tmux.exitedAtStart,
+    },
+  );
+  // tmux itself refused the command: the install hint.
+  const broken = fixture();
+  broken.deps.run = async (_file, args) => {
+    if (args.includes('new-session')) throw new Error('tmux: unknown option');
+    return '';
+  };
+  await assert.rejects(
+    new TmuxResume(broken.deps).start(session, async () => true),
+    {
+      message: m().tmux.failed,
+    },
+  );
+  // Started and still running: no error at all.
+  const fine = fixture();
+  assert.equal((await fine.manager.start(session, async () => true)).running, true);
+});
+test("own panes: the running session's server socket and live panes, for matching a verified terminal", async () => {
+  const f = fixture();
+  assert.equal(await f.manager.ownPanes(session), null, 'not running: no own session');
+  await f.manager.start(session, async () => true);
+  const run = f.deps.run;
+  f.deps.run = async (file, args) =>
+    args.includes('#{socket_path}\t#{pane_id}\t#{pane_dead}')
+      ? '/tmp/tmux-501/test-office\t%1\t0\n/tmp/tmux-501/test-office\t%2\t1'
+      : run(file, args);
+  assert.deepEqual(await new TmuxResume(f.deps).ownPanes(session), {
+    at: { socket: '/tmp/tmux-501/test-office', panes: ['%1'] },
+  });
+  // Panes that cannot be listed: alive, but nothing to match a terminal to.
+  f.deps.run = async (file, args) => {
+    if (args.includes('#{socket_path}\t#{pane_id}\t#{pane_dead}')) throw new Error('no server');
+    return run(file, args);
+  };
+  assert.deepEqual(await new TmuxResume(f.deps).ownPanes(session), { at: null });
 });

@@ -344,6 +344,12 @@
 .message-user .message-text code {
   background: rgba(255, 255, 255, 0.2);
 }
+/* The app's soft-accent selection vanishes on the accent bubble: invert it there. */
+.message-user .message-bubble::selection,
+.message-user .message-bubble *::selection {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.9);
+}
 .conversation-message.category-reply .message-bubble {
   box-shadow:
     0 0 0 0.5px color-mix(in srgb, var(--st-done) 40%, transparent),
@@ -517,6 +523,13 @@
   }
 }
 @container bar (max-width: 720px) {
+  /* Still the accent pill, just the icon (its name stays on aria-label). */
+  .mini-button {
+    padding: 0 7px;
+  }
+  .mini-button span {
+    display: none;
+  }
   .zone-tabs button {
     padding: 0 8px;
   }
@@ -714,6 +727,66 @@ body.card-mode.is-mac .dock-card > .inspector-card {
 body.card-mode:not(.is-mac) .dock-card {
   background: color-mix(in srgb, var(--grouped) 90%, transparent);
   backdrop-filter: blur(28px) saturate(1.6);
+}
+/* Settings › Look › Glass: frosted glass in the manner of Liquid Glass. On macOS the card and
+   the big office sit on the system's blurring material; the slider sets how much colour lies
+   over it (less colour, more of the blurred desktop), and a light rim and sheen catch the edge.
+   A Windows window has no blurring material, so its card keeps its look. */
+:root {
+  --glass-sheen: rgba(255, 255, 255, 0.22);
+  --glass-rim: rgba(255, 255, 255, 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.28);
+  --glass-foot: rgba(0, 0, 0, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-sheen: rgba(255, 255, 255, 0.07);
+    --glass-rim: rgba(255, 255, 255, 0.16);
+    --glass-edge: rgba(255, 255, 255, 0.1);
+    --glass-foot: rgba(0, 0, 0, 0.25);
+  }
+}
+:root[data-glass] body.card-mode.is-mac .dock-card {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 38%),
+    color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-edge),
+    inset 0 -1px 0 var(--glass-foot);
+}
+/* The big office's side columns in the same glass (a Windows window is solid, so its columns
+   keep their colour). */
+:root[data-glass] body.is-mac:not(.card-mode) .sidebar {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 30%),
+    color-mix(in srgb, var(--sidebar) var(--glass-fill), transparent);
+  box-shadow: inset -1px 0 0 var(--glass-edge);
+}
+:root[data-glass]
+  body.is-mac:not(.card-mode)
+  :is(.roster, .app-body > .inspector, .app-body > .inspector-card) {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 30%),
+    color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  box-shadow: inset 1px 0 0 var(--glass-edge);
+}
+/* Behind the right column: the column's own space (and the office page around the stage)
+   lets the glass through too; the pixel stage itself stays solid. */
+:root[data-glass] body.is-mac:not(.card-mode) :is(.app-body, .main-content.view-office) {
+  background: transparent;
+}
+:root[data-glass] body.is-mac:not(.card-mode) .main-content.view-office .office-column {
+  background: var(--bg-0);
+}
+/* Narrow windows float the right column over the pixel office: there it stays solid, or the
+   scene would show through the words. */
+@media (max-width: 1100px) and (min-width: 861px) {
+  :root[data-glass]
+    body.is-mac:not(.card-mode)
+    :is(.app-body > .inspector, .app-body > .inspector-card) {
+    background: var(--grouped);
+  }
 }
 .dock-card > .inspector-card {
   display: flex;
@@ -1255,8 +1328,29 @@ body.card-mode:not(.is-mac) .dock-card {
   border-radius: 12px;
 }
 .terminal-send-chat .terminal-send-error,
-.terminal-send-chat .draft-confirm {
+.terminal-send-chat .draft-confirm,
+.terminal-send-chat .composer-images {
   grid-column: 1 / -1;
+}
+/* With the attach button: box, attach, send on one line. */
+.terminal-send.terminal-send-chat:has(.composer-attach) {
+  grid-template-columns: 1fr auto auto;
+  column-gap: 4px;
+}
+.terminal-send-chat .terminal-send-bar .composer-attach {
+  grid-row: 1;
+  grid-column: 2;
+  width: 32px;
+  height: 38px;
+  margin: 0;
+  border-radius: 12px;
+}
+.terminal-send-chat:has(.composer-attach) .terminal-send-bar .button {
+  grid-column: 3;
+}
+.terminal-send-chat .composer-images {
+  margin-top: 2px;
+  padding: 0 4px;
 }
 .inspector-card .persona-run-picker {
   flex: none;
@@ -1432,6 +1526,27 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 
 .inspector-card .card-head .icon-btn.is-on {
+  color: var(--accent);
+}
+/* Pinned on top: the filled pin in an accent ring, with a small up arrow. */
+.inspector-card .card-head .icon-btn.card-pin.is-top {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.pin-top-icon {
+  position: relative;
+  display: inline-flex;
+}
+.pin-top-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  padding: 0.5px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+}
+.mini-shell-btn.on-top-toggle.is-on {
   color: var(--accent);
 }
 

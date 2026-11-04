@@ -14,4 +14,10 @@ export const common: Messages['common'] = {
   language: {
     auto: '시스템 언어',
   },
+  onTop: {
+    name: '맨 위에 두기',
+    states: { off: '보통 창', on: '맨 위' },
+    hints: { off: '다른 창 뒤로 갈 수 있어요', on: '늘 다른 창 위에 있어요' },
+    label: (now, next) => `맨 위에 두기: ${now} → ${next}`,
+  },
 };

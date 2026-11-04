@@ -16,21 +16,23 @@ export const dock = {
   },
   pet: {
     aria: (label: string, count: number | null) =>
-      `Desk pet · ${label}${count ? ` (${count})` : ''} · click to unfold`,
+      `Desk pet · ${label}${count ? ` (${count})` : ''} · click to open the work card`,
     title: (total: number) =>
-      `Our Office · ${total} ${total === 1 ? 'teammate' : 'teammates'}\nClick to unfold your last look (desk row or floor desks), or drag to move it`,
+      `Our Office · ${total} ${total === 1 ? 'teammate' : 'teammates'}\nClick to open this teammate's work card, or drag to move it · the side button unfolds the desks`,
     unread: (n: number) => `${n} unread ${n === 1 ? 'update' : 'updates'} · `,
-    detailHint: 'Click to enlarge · work card in the side tools',
+    detailHint: 'Click to enlarge · click the pet for the work card',
     /** Stands in for the name in "Quick reply to …" when it is unknown. */
     someone: 'your teammate',
     openCard: 'Open work card',
     openCardTitle: "Open as popup · the speaking teammate's work card",
+    openCardOf: (name: string) => `Open ${name}'s work card`,
+    listOf: (group: string, n: number) => `${group} ${n} · show who`,
     expand: 'Expand office',
     expandTitle: 'Open the big office',
     refresh: 'Refresh',
     refreshTitle: 'Refresh · check the records again now',
-    floor: 'Unfold floor desks',
-    floorTitle: 'Floor desks · just desks along the bottom of your screen, zones marked by flags',
+    unfold: 'Unfold the desks',
+    unfoldTitle: 'Unfold the desks · in the look you used last (office row or floor desks)',
     previous: 'Previous teammate',
     previousTitle: 'Show the previous teammate · ←',
     next: 'Next teammate',

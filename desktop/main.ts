@@ -1,7 +1,34 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
-import { TmuxResume, summonSession } from './tmux-resume.js';
+import { TmuxResume, defaultResumeDeps } from './tmux-resume.js';
+import { LaunchCore, launchResult, type LaunchTarget } from './launch/core.js';
+import {
+  copyDestination,
+  orcaDestination,
+  terminalAppDestination,
+  tmuxDestination,
+  tmuxSession,
+} from './launch/destinations.js';
+import type { DestinationProbe } from './launch/pipeline.js';
+import {
+  launchIntentSchema,
+  launchRequestSchema,
+  type LaunchDestinationId,
+  type LaunchOptions,
+  type LaunchResult,
+  type LaunchSupport,
+} from '../src/shared/launch.js';
+import { runCommand } from '../server/adapters/claude-live.js';
+import { describeShell, MiniShells } from './mini-shell.js';
+import { ShellWindows } from './shell-windows.js';
+import { ReaderWindows } from './reader-windows.js';
+import { parseReaderTarget } from '../src/shared/bookmark-window.js';
+import { popupFloats } from '../src/shared/popup-window.js';
+import { parseShellWindowTarget } from '../src/shared/shell-window.js';
+import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
-import { findOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { TerminalFocusError } from './terminal-host.js';
+import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -15,7 +42,8 @@ import {
   clipboard,
   nativeTheme,
 } from 'electron';
-import { windowStyle } from './window-style.js';
+import { dropAppMenu, windowStyle } from './window-style.js';
+import { glassLevel } from '../src/shared/glass.js';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -26,6 +54,7 @@ import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
 import type {
+  Bookmark,
   AnswerResult,
   AnswerSetting,
   AnswerSettings,
@@ -37,9 +66,12 @@ import type {
   DockMode,
   JumpResult,
   SendResult,
+  ComposerDraftView,
+  DraftSubmitResult,
   Session,
   SessionIdentity,
   Snapshot,
+  DuplicateCheck,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
@@ -47,6 +79,7 @@ import { OPENABLE_FILE, fileLink, webLink } from '../src/shared/links.js';
 import {
   clampInto,
   dockHeight,
+  moveOntoArea,
   petBounds,
   petFeet,
   readDockPrefs,
@@ -60,24 +93,34 @@ import {
   focusTerminal,
   forgetTerminal,
   hostName,
+  claudeAttachCommand,
+  claudeNoTerminalReason,
   locateTerminal,
   lookupTerminal,
   sendToTerminal,
   inspectTerminalDraft,
+  previewTerminalDraft,
+  submitTerminalDraft,
   terminalTarget,
   TerminalInputError,
   type TerminalHost,
   type TerminalLookup,
 } from './terminals.js';
-import { codexDestinationTarget, findCodexDestination, sendToCodex } from './codex-send.js';
+import {
+  codexDestinationTarget,
+  codexRecordsRequest,
+  findCodexDestination,
+  sendToCodex,
+} from './codex-send.js';
 import { findCodexTerminal, lookupCodexTerminal } from './codex-focus.js';
 import { composerFor } from './composer/index.js';
+import { AttachmentError, AttachmentStore } from './attachments.js';
 import { promptsFor } from './prompts/index.js';
 import { answerRequest, decodeSetting, inspectPrompt } from './answers.js';
 import type { PromptTarget } from './prompts/types.js';
 import { openRequest } from '../src/shared/requests.js';
 import { SnapshotDelivery, type Viewer } from './delivery.js';
-import { CardWindows } from './card-windows.js';
+import { CardWindows, type CardMaterial } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
@@ -91,6 +134,8 @@ let main: BrowserWindow | null = null,
   bridge: ServiceBridge,
   quitting = false;
 let cards: CardWindows;
+let shellWindows: ShellWindows;
+let readerWindows: ReaderWindows;
 let notifier: Notifier;
 // The colleague card open in the big office, as its page reports it (notifications skip it).
 let mainSelected: string | null = null;
@@ -120,14 +165,37 @@ else {
     // Use the same art as the bundle even when macOS remembers an older Dock icon.
     if (process.platform === 'darwin') app.dock?.setIcon(path.join(root, 'dist', 'icon.png'));
     bridge = new ServiceBridge(path.join(__dirname, 'worker.cjs'));
+    // Attached images are kept a week (the Codex queue passes paths the agent may open later).
+    void attachments()
+      .cleanup()
+      .catch(() => undefined);
     cards = new CardWindows({
       index,
       preload: path.join(__dirname, 'preload.cjs'),
       dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
       secure,
       watch,
+      // A preview card stays while the person works in a terminal or reader window it opened.
+      companion: () => !!shellWindows?.focused() || !!readerWindows?.focused(),
+      material: () => cardMaterial(delivery.latest),
     });
     app.on('before-quit', () => cards.dispose());
+    shellWindows = new ShellWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      blurred: () => cards.recheck(),
+    });
+    // The bookmark reader's windows read the office like the other windows: snapshots too.
+    readerWindows = new ReaderWindows({
+      index,
+      preload: path.join(__dirname, 'preload.cjs'),
+      dir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+      secure,
+      blurred: () => cards.recheck(),
+      created: watch,
+    });
     notifier = new Notifier({
       // Quiet runs, and test runs that take the real focus (CI), record instead of showing.
       record: quiet || recordNotifications,
@@ -142,7 +210,8 @@ else {
         // A summary (no one colleague) opens the big office beside the dock, which stays.
         const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
         if (sessionId && docked) cards.reveal({ id: sessionId, news: false }, dock!.getBounds());
-        else showMain(sessionId, { keepDock: docked });
+        else
+          showMain(sessionId, { keepDock: docked, from: docked ? dock!.getBounds() : undefined });
       },
     });
     app.on('before-quit', () => notifier.dispose());
@@ -151,15 +220,46 @@ else {
       (globalThis as { __agentOfficeNotifications?: unknown }).__agentOfficeNotifications =
         notifier.recorded;
     const windows = () =>
-      [main, dock, settingsWindow, ...cards.windows()]
+      [main, dock, settingsWindow, ...cards.windows(), ...readerWindows.windows()]
         .filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
         .map(viewer);
     // Follow the language the collector actually resolved, so tray and windows always agree.
     const followLanguage = (s: Snapshot) => {
       if (s.locale ? setLocale(s.locale) : syncLocale(s.preferences?.locale)) buildTray();
     };
+    // Hiding the screen's content (화면 내용 숨기기) closes the popup windows: tmux keeps the
+    // shells, and a reader closes like the in-page one does.
+    const hidePopups = (s: Snapshot) => {
+      if (!s.preferences?.privacy) return;
+      shellWindows.closeAll();
+      readerWindows.closeAll();
+    };
+    // Settings › Look › Glass: cards on the clearer glass while the person set their own level.
+    let material = cardMaterial(null);
+    const followGlass = (s: Snapshot) => {
+      const next = cardMaterial(s);
+      if (next === material) return;
+      material = next;
+      cards.setMaterial(next);
+    };
+    // Cards pinned when the app last ran come back as their colleagues appear: each snapshot
+    // tries the ones still missing (a peer office still connecting, a collector still reading)
+    // for a few minutes of restoring; after that the missing are taken as gone. Not while screen
+    // sharing hides the office's content, nor with the setting off (they wait for either).
+    let restoreUntil = 0;
+    const restorePinned = (s: Snapshot) => {
+      if (!cards.restoring()) return;
+      if (s.preferences?.restorePinnedCards === false || s.preferences?.privacy) return;
+      restoreUntil ||= Date.now() + 5 * 60_000;
+      const known = new Set(s.sessions.flatMap((x) => [x.id, ...(x.resident?.sessionIds ?? [])]));
+      cards.restore((id) => known.has(id));
+      if (Date.now() > restoreUntil) cards.giveUp();
+    };
     const publish = (s: Snapshot) => {
       followLanguage(s);
+      hidePopups(s);
+      followGlass(s);
+      restorePinned(s);
       delivery.publish(s, windows());
       notifier.observe(s);
     };
@@ -167,6 +267,9 @@ else {
     bridge.on('patch', (patch: SnapshotPatch) => {
       if (delivery.update(patch, windows())) {
         followLanguage(delivery.latest!);
+        hidePopups(delivery.latest!);
+        followGlass(delivery.latest!);
+        restorePinned(delivery.latest!);
         notifier.observe(delivery.latest!);
       }
       // A change that does not start from what is held here (e.g. the collector restarted).
@@ -202,8 +305,10 @@ else {
     });
     // Displays, resolution or the macOS Dock changed: re-seat the pet/row inside a work area.
     const reseat = () => {
-      if (dock && !dock.isDestroyed() && !drag) dock.setBounds(dockBounds(dockMode));
+      if (dock && !dock.isDestroyed() && !drag) dock.setBounds(roomyBounds(dockMode));
       cards.reseat();
+      shellWindows.reseat();
+      readerWindows.reseat();
     };
     screen.on('display-removed', reseat);
     screen.on('display-metrics-changed', reseat);
@@ -300,12 +405,17 @@ function secure(w: BrowserWindow) {
     if (items.length) Menu.buildFromTemplate(items).popup({ window: w });
   });
 }
+/** The big office's smallest size, lowered only for a display smaller than this. */
+/** The card's glass: the clearer `popover` once the person chose a glass level. */
+const cardMaterial = (s: Snapshot | null): CardMaterial =>
+  glassLevel(s?.preferences) === null ? 'under-window' : 'popover';
+const MAIN_MIN = { width: 1050, height: 740 };
 function createMain() {
   main = new BrowserWindow({
     width: 1440,
     height: 970,
-    minWidth: 1050,
-    minHeight: 740,
+    minWidth: MAIN_MIN.width,
+    minHeight: MAIN_MIN.height,
     title: 'Agent Office',
     icon: path.join(root, 'dist', 'icon.png'),
     show: !quiet,
@@ -318,10 +428,7 @@ function createMain() {
       sandbox: true,
     },
   });
-  if (process.platform !== 'darwin') {
-    main.removeMenu();
-    main.setMenuBarVisibility(false);
-  }
+  dropAppMenu(main);
   secure(main);
   watch(main);
   if (quiet) main.showInactive();
@@ -335,16 +442,59 @@ function createMain() {
     }
   });
 }
-function showMain(id?: string, { keepDock = false } = {}) {
+/**
+ * Opened from another window (the desk pet, the row, a card), the big office comes to that
+ * window's display, never back to whichever monitor it was last on. Same size and relative
+ * spot (moveOntoArea); a maximized or full-screen office is that again on the new display.
+ */
+function bringMainOnto(origin: Rect) {
+  const window = main;
+  if (!window || window.isDestroyed()) return;
+  const to = screen.getDisplayMatching(origin);
+  const from = screen.getDisplayMatching(window.getBounds());
+  if (from.id === to.id) return;
+  const place = () => {
+    if (window.isDestroyed()) return;
+    const normal = window.getNormalBounds();
+    // A display smaller than the office's usual minimum (1050×740) lowers it, so the window fits.
+    window.setMinimumSize(
+      Math.min(MAIN_MIN.width, to.workArea.width),
+      Math.min(MAIN_MIN.height, to.workArea.height),
+    );
+    window.setBounds(moveOntoArea(normal, screen.getDisplayMatching(normal).workArea, to.workArea));
+  };
+  if (window.isFullScreen()) {
+    window.once('leave-full-screen', () => {
+      place();
+      if (!window.isDestroyed()) window.setFullScreen(true);
+    });
+    window.setFullScreen(false);
+  } else if (window.isMaximized()) {
+    window.unmaximize();
+    place();
+    window.maximize();
+  } else place();
+}
+function showMain(
+  id?: string,
+  {
+    keepDock = false,
+    from,
+    bookmark,
+  }: { keepDock?: boolean; from?: Rect; bookmark?: { eventId: string; at: number } } = {},
+) {
   if (!main || main.isDestroyed()) createMain();
   stopDrag(false);
   if (!keepDock && dock && !dock.isDestroyed()) dock.hide();
   const window = main!;
   if (window.isMinimized()) window.restore();
+  if (from) bringMainOnto(from);
   present(window);
   if (id) {
     const select = () => {
-      if (!window.isDestroyed()) window.webContents.send('office:select', id);
+      if (window.isDestroyed()) return;
+      if (bookmark) window.webContents.send('office:select', id, bookmark);
+      else window.webContents.send('office:select', id);
     };
     if (window.webContents.isLoadingMainFrame()) window.webContents.once('did-finish-load', select);
     else select();
@@ -452,11 +602,27 @@ function dockBounds(mode: DockMode): Rect {
   // The row (or the floor desks) opens along the bottom of whichever display the pet is on.
   return mode === 'pet' ? pet : rowBounds(area, dockHeight(mode === 'floor', dockTiny));
 }
+/** A dialog open in the row or floor (a tiny strip is too short for one): grow upward. */
+let dockRoom = false;
+const DOCK_ROOM_HEIGHT = 760;
+function roomyBounds(mode: DockMode): Rect {
+  const b = dockBounds(mode);
+  if (!dockRoom || mode === 'pet') return b;
+  const area = workAreaFor(b);
+  const height = Math.max(b.height, Math.min(DOCK_ROOM_HEIGHT, area.height));
+  // The desks stand on the window's bottom edge: keep it, take the room above.
+  return { ...b, y: b.y + b.height - height, height };
+}
+function setDockRoom(on: boolean) {
+  if (dockRoom === on) return;
+  dockRoom = on;
+  if (dock && !dock.isDestroyed() && dockMode !== 'pet') dock.setBounds(roomyBounds(dockMode));
+}
 function setDockMode(mode: DockMode) {
   stopDrag(false);
   dockMode = mode;
   if (!dock || dock.isDestroyed()) return;
-  dock.setBounds(dockBounds(mode));
+  dock.setBounds(roomyBounds(mode));
   // Start see-through; the renderer claims the mouse again over drawn things.
   dock.setIgnoreMouseEvents(true, { forward: true });
   dock.webContents.send('office:dock', mode, dockTiny);
@@ -504,12 +670,15 @@ function showDock(mode: DockMode = 'pet') {
     dock.setIgnoreMouseEvents(true, { forward: true });
     dock.on('closed', () => {
       stopDrag(false);
+      dockRoom = false;
       dock = null;
     });
     // The renderer follows the main process; tell it the mode it may have missed while loading.
-    dock.webContents.on('did-finish-load', () =>
-      dock?.webContents.send('office:dock', dockMode, dockTiny),
-    );
+    // A reloaded page has no dialog open: drop any room an earlier one asked for.
+    dock.webContents.on('did-finish-load', () => {
+      setDockRoom(false);
+      dock?.webContents.send('office:dock', dockMode, dockTiny);
+    });
     void dock.loadFile(index, {
       hash: mode === 'pet' ? 'mini' : `mini=${mode}${dockTiny ? '&tiny' : ''}`,
     });
@@ -546,7 +715,7 @@ function stopDrag(save: boolean) {
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
-function trusted(e: Electron.IpcMainInvokeEvent) {
+function trusted(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
   if (
     (![main?.webContents, dock?.webContents, settingsWindow?.webContents].includes(e.sender) &&
       !cards.owns(e.sender)) ||
@@ -554,19 +723,223 @@ function trusted(e: Electron.IpcMainInvokeEvent) {
   )
     throw new Error(m().desktop.untrustedWindow);
 }
+/** What a reader window may ask the service: the office it shows and the bookmark it reads. */
+const READER_CALLS = new Set(['snapshot', 'bookmarkById']);
+/**
+ * The bookmark reader's IPC (its window, the office's reads, copying and opening links) also
+ * trusts the reader windows; nothing else does.
+ */
+function trustedReader(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
+  if (readerWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
+  trusted(e);
+}
+/** The mini terminal's IPC also trusts its own windows (and nothing else does). */
+function trustedShell(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>) {
+  if (shellWindows.owns(e.sender) && e.senderFrame === e.sender.mainFrame) return;
+  trusted(e);
+}
+/**
+ * The mini terminal (docs/development/TERMINAL.md · Mini terminal). A window names a local
+ * session (its folder is read here, never taken from the window), an existing shell, or its own
+ * attachment; keystrokes reach only the PTY that window attached.
+ */
+function setupMiniShell() {
+  const shells = new MiniShells();
+  app.on('before-quit', () => shells.dispose());
+  if (!shells.supported) return;
+  const watched = new WeakSet<Electron.WebContents>();
+  const watch = (sender: Electron.WebContents) => {
+    if (watched.has(sender)) return;
+    watched.add(sender);
+    const id = sender.id;
+    // A closed or reloaded window leaves its clients behind: end them, keep the shells.
+    sender.once('destroyed', () => shells.detachOwner(id));
+    sender.on('did-start-loading', () => shells.detachOwner(id));
+  };
+  const sinkFor = (sender: Electron.WebContents) => ({
+    data: (ptyId: string, data: string) => {
+      if (!sender.isDestroyed()) sender.send('office:shell-data', ptyId, data);
+    },
+    exit: (ptyId: string) => {
+      if (!sender.isDestroyed()) sender.send('office:shell-exit', ptyId);
+    },
+  });
+  // A terminal window per folder shell, beside the window that asked for it (shell-windows.ts).
+  ipcMain.handle('office:shell-window', async (e, what: unknown, raw: unknown) => {
+    trustedShell(e);
+    if (what === 'target') return shellWindows.target(e.sender);
+    if (what === 'close' || what === 'focus') return shellWindows.action(e.sender, what);
+    // Its own on-top toggle: only a terminal window reads or sets its own.
+    if (what === 'top') return shellWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return shellWindows.setOnTop(e.sender, what === 'top-on');
+    if (what === 'close-all') {
+      // The big office turning into the sample office lets go of every real shell.
+      if (e.sender !== main?.webContents) throw new Error(m().desktop.untrustedWindow);
+      return shellWindows.closeAll();
+    }
+    if (what !== 'open') throw new Error(m().desktop.badRequest);
+    let target;
+    try {
+      target = parseShellWindowTarget(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().shell.hidden);
+    let key: string, cwd: string;
+    if (target.name) {
+      const found = (await shells.list()).find((s) => s.name === target.name);
+      if (!found) throw new Error(m().shell.gone);
+      ({ name: key, cwd } = found);
+    } else {
+      if (isRemoteId(target.id!)) throw new Error(m().federation.readOnly);
+      // The folder is read here, never taken from the window.
+      const session: Session = await bridge.call('detail', [target.id]);
+      if (!session?.cwd || session.remote) throw new Error(m().shell.folderMissing);
+      ({ name: key, cwd } = describeShell(session.cwd));
+    }
+    // Privacy may have come on while the folder was looked up: never open a window after it.
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().shell.hidden);
+    const from = BrowserWindow.fromWebContents(e.sender);
+    if (!from || from.isDestroyed()) return;
+    shellWindows.open(key, { ...target, cwd }, from.getBounds(), {
+      // Only beside a window that floats (a preview card, a card pinned on top, the desk dock, a
+      // popup set on top) does it float too: a plain pinned card, the big office or an ordinary
+      // terminal window give an ordinary window. Its own header toggle changes it later.
+      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+    });
+  });
+  ipcMain.handle('office:shell', async (e, raw) => {
+    trustedShell(e);
+    // A terminal never attaches while screen content is hidden.
+    const kind = (raw as { type?: unknown } | null)?.type;
+    if (delivery.latest?.preferences?.privacy && (kind === 'open' || kind === 'attach'))
+      throw new Error(m().shell.hidden);
+    let command;
+    try {
+      command = parseShellCommand(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    const owner = e.sender.id;
+    switch (command.type) {
+      case 'list':
+        return shells.list();
+      case 'open': {
+        if (isRemoteId(command.id)) throw new Error(m().federation.readOnly);
+        // Track the window and note its lifetime before the first await: a reload while the
+        // session is read makes this request stale, and it then opens nothing.
+        watch(e.sender);
+        const since = shells.epoch(owner);
+        const session: Session = await bridge.call('detail', [command.id]);
+        if (!session?.cwd || session.remote) throw new Error(m().shell.folderMissing);
+        return shells.open(
+          owner,
+          session.cwd,
+          command.cols,
+          command.rows,
+          sinkFor(e.sender),
+          since,
+        );
+      }
+      case 'attach':
+        watch(e.sender);
+        return shells.attach(owner, command.name, command.cols, command.rows, sinkFor(e.sender));
+      case 'resize':
+        return shells.resize(owner, command.ptyId, command.cols, command.rows);
+      case 'flow':
+        return shells.flow(owner, command.ptyId, command.paused);
+      case 'detach':
+        return shells.detach(owner, command.ptyId);
+      case 'kill':
+        return shells.kill(command.name, async (shell) => {
+          const t = m().shell;
+          const window = BrowserWindow.fromWebContents(e.sender);
+          const options = {
+            type: 'warning' as const,
+            title: t.killTitle,
+            message: t.killConfirm,
+            detail: `${t.folder}: ${shell.cwd}\n${t.name}: ${shell.name}\n\n${t.killDetail}`,
+            buttons: [t.cancel, t.killButton],
+            defaultId: 0,
+            cancelId: 0,
+          };
+          const end = cards.dialog(e.sender);
+          try {
+            const result = window
+              ? await dialog.showMessageBox(window, options)
+              : await dialog.showMessageBox(options);
+            return result.response === 1;
+          } finally {
+            end();
+          }
+        });
+    }
+  });
+  ipcMain.on('office:shell-input', (e, ptyId: unknown, data: unknown) => {
+    try {
+      trustedShell(e);
+    } catch {
+      return;
+    }
+    if (validShellInput(ptyId, data)) shells.write(e.sender.id, ptyId as string, data);
+  });
+}
+/**
+ * The bookmark reader's windows (docs/development/POPUP-CARDS.md · 옆에 뜨는 팝업 창): a window
+ * names only a bookmark id; the reader reads the bookmark itself through the office API, and
+ * "open in office" reads it again here, so the service decides what is there to show.
+ */
+function setupReader() {
+  ipcMain.handle('office:reader-window', async (e, what: unknown, raw: unknown) => {
+    trustedReader(e);
+    const reader = readerWindows.owns(e.sender);
+    if (what === 'target') return readerWindows.target(e.sender);
+    if (what === 'close' || what === 'focus') return readerWindows.action(e.sender, what);
+    // Its own on-top toggle: only a reader window reads or sets its own.
+    if (what === 'top') return readerWindows.onTop(e.sender);
+    if (what === 'top-on' || what === 'top-off')
+      return readerWindows.setOnTop(e.sender, what === 'top-on');
+    if (what === 'go') {
+      if (!reader) throw new Error(m().desktop.untrustedWindow);
+      const { id } = readerWindows.target(e.sender);
+      const b: Bookmark | null = await bridge.call('bookmarkById', [id]);
+      if (!b) throw new Error(m().memory.readerGoneTitle);
+      // Like the in-page reader's "open": the big office at that message, on this display.
+      showMain(b.sessionId, {
+        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+        bookmark: { eventId: b.eventId, at: b.at },
+      });
+      return;
+    }
+    if (what !== 'open') throw new Error(m().desktop.badRequest);
+    let target;
+    try {
+      target = parseReaderTarget(raw);
+    } catch {
+      throw new Error(m().desktop.badRequest);
+    }
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().memory.readerHidden);
+    const from = BrowserWindow.fromWebContents(e.sender);
+    if (!from || from.isDestroyed()) return;
+    readerWindows.open(target.id, target, from.getBounds(), {
+      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+    });
+  });
+}
 function setupIPC() {
   ipcMain.on('office:selected', (e, id: unknown) => {
     if (!main || e.sender !== main.webContents || e.senderFrame !== e.sender.mainFrame) return;
     mainSelected = typeof id === 'string' && id.length <= 400 ? id : null;
   });
   ipcMain.handle('office:open-artifact', async (e, url) => {
-    trusted(e);
+    trustedReader(e);
     const artifact = typeof url === 'string' ? parseArtifact(url) : null;
     if (!artifact) throw new Error(m().desktop.unsupportedLink);
     await shell.openExternal(artifact.url);
   });
   ipcMain.handle('office:open-link', async (e, url) => {
-    trusted(e);
+    trustedReader(e);
     const link = webLink(url);
     if (!link) throw new Error(m().desktop.webLinksOnly);
     await shell.openExternal(link);
@@ -575,7 +948,7 @@ function setupIPC() {
   // else (an app, a script, any folder — X.app is one) is only shown in its folder, never run.
   // Judged by the real path, so a link named like a document can't open what it points to.
   ipcMain.handle('office:open-file', async (e, raw) => {
-    trusted(e);
+    trustedReader(e);
     const named = fileLink(raw);
     if (!named) throw new Error(m().desktop.badRequest);
     const given = path.resolve(
@@ -590,18 +963,20 @@ function setupIPC() {
     return 'revealed';
   });
   ipcMain.handle('office:copy', (e, text) => {
-    trusted(e);
+    trustedReader(e);
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
     clipboard.writeText(text);
   });
   // Whether this page's window is on screen right now (the page also hears each change).
   ipcMain.handle('office:visible', (e) => {
-    trusted(e);
+    trustedReader(e);
     const w = BrowserWindow.fromWebContents(e.sender);
     return w ? onScreen(w) : true;
   });
   ipcMain.handle('office:call', async (e, method, args) => {
-    trusted(e);
+    if (readerWindows.owns(e.sender) && !READER_CALLS.has(method))
+      throw new Error(m().desktop.untrustedWindow);
+    trustedReader(e);
     if (
       typeof method !== 'string' ||
       ['federation', 'remote-send', 'remote-targets', 'remote-launch'].includes(method) ||
@@ -619,7 +994,12 @@ function setupIPC() {
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
     if (action === 'mini') showDock('pet');
-    else if (action === 'main') showMain(typeof id === 'string' ? id : undefined);
+    // From the pet, the row or a card: on that window's display (the big office's own
+    // window matches itself, so nothing moves).
+    else if (action === 'main')
+      showMain(typeof id === 'string' ? id : undefined, {
+        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+      });
     else if (action === 'hide') {
       if (e.sender === dock?.webContents) {
         stopDrag(false);
@@ -645,6 +1025,7 @@ function setupIPC() {
     else if (action === 'drag-end') stopDrag(true);
     else if (action === 'solid') dock.setIgnoreMouseEvents(false);
     else if (action === 'through') dock.setIgnoreMouseEvents(true, { forward: true });
+    else if (action === 'room-on' || action === 'room-off') setDockRoom(action === 'room-on');
     else throw new Error(m().desktop.badRequest);
   });
   ipcMain.handle('office:card-state', (e) => {
@@ -684,8 +1065,10 @@ function setupIPC() {
         : {}),
     };
     if (action !== 'open') {
+      // The card's spot before it closes: the big office opens on its display.
+      const from = BrowserWindow.fromWebContents(e.sender)?.getBounds();
       const expanded = await cards.action(e.sender, action, chosen);
-      if (expanded) showMain(expanded);
+      if (expanded) showMain(expanded, { from });
       return;
     }
     if (e.sender !== dock?.webContents) throw new Error(m().desktop.untrustedWindow);
@@ -721,64 +1104,183 @@ function setupIPC() {
   /** The person's choice in Settings, read when a launch starts. */
   const skipPermissions = () => delivery.latest?.preferences?.tmuxSkipPermissions === true;
   const skipNote = (on: boolean) => (on ? '\n\n' + m().tmux.skipPermissions : '');
-  ipcMain.handle('office:tmux-resume', async (e, id, action) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const session: Session = await bridge.call('detail', [id]);
-    if (action === 'status')
-      return {
-        ...(await tmuxResume.status(session)),
-        connections: (await projectConnections(session.cwd)).filter((c) => c.id === session.id),
-      };
-    if (action === 'open') return tmuxResume.open(session);
-    const skip = skipPermissions();
-    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
-      const connections = (await projectConnections(session.cwd)).filter(
-        (c) => c.id === session.id,
-      );
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.title,
-        message: t.confirm,
-        detail: `${t.intro}\n\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.caution}${skipNote(skip)}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
-        buttons: [t.cancel, t.start],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const result = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
-  });
   const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
-  ipcMain.handle('office:orca-launch', async (e, id, action) => {
-    trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start'].includes(action))
-      throw new Error(m().desktop.badRequest);
+  /**
+   * The duplicate-launch check for a saved conversation (desktop/launch-guard.ts): its agent
+   * process (per-agent liveness adapter), its Orca tab, and the app's own tmux session for it.
+   */
+  const duplicateCheck =
+    (session: Session) =>
+    (fresh: boolean): Promise<DuplicateCheck> =>
+      checkDuplicate(
+        {
+          agent: (f) => livenessFor(session.provider).lookup(session.nativeId, f),
+          // A launch of it that may still start (once Orca shows its tab) or started unseen.
+          pending: () => orcaLaunch.pending.state(session),
+          orcaTab: async (f) => {
+            const tab = await lookupOrcaTab(
+              session,
+              defaultTerminalDeps(),
+              f,
+              (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+            );
+            // Orca not installed or not running: none of its tabs runs anything right now.
+            if (tab.kind === 'unknown' && !(await orcaLaunch.reachable(f))) return { kind: 'none' };
+            return tab;
+          },
+          ownTmux: async () => {
+            try {
+              // Its panes too: a verified agent terminal in one of them runs it there.
+              const own = await tmuxResume.ownPanes(session);
+              return own ? { kind: 'found', terminal: own.at } : { kind: 'none' };
+            } catch (error) {
+              // No tmux installed: there is no own session.
+              if ((error as Error).message === m().tmux.missing) return { kind: 'none' };
+              throw error;
+            }
+          },
+        },
+        fresh,
+      );
+  /**
+   * New conversations a launch outside tmux named, by the id it chose for them (Claude
+   * `--session-id`): the name becomes their alias once the office sees them (the naming timer
+   * below). tmux summons carry their name on the session instead (`aliasFor`).
+   */
+  const launchedNames = new Map<string, { alias: string; until: number }>();
+  const shellDeps = {
+    platform: process.platform,
+    run: runCommand,
+    directory: defaultResumeDeps.directory,
+    binary: defaultResumeDeps.binary,
+    copy: (text: string) => clipboard.writeText(text),
+  };
+  /** Every launch of this app (#318): one core, one queue, one pending record. */
+  const launchCore = new LaunchCore({
+    destinations: {
+      orca: orcaDestination(orcaLaunch),
+      tmux: tmuxDestination(tmuxResume),
+      terminalApp: terminalAppDestination(shellDeps),
+      copy: copyDestination(shellDeps),
+    },
+    pending: orcaLaunch.pending,
+    conversationCheck: (target) => (target.from ? duplicateCheck(target.from) : undefined),
+    remembered: () => delivery.latest?.preferences?.launchDestination,
+    remember: async (destination) => {
+      if (delivery.latest?.preferences?.launchDestination !== destination)
+        await bridge.call('preferences', [{ launchDestination: destination }]);
+    },
+  });
+  /** The launch of a window's intent, resolved from saved sessions only. */
+  const launchTarget = async (raw: unknown): Promise<LaunchTarget> => {
+    const parsed = launchIntentSchema.safeParse(raw);
+    if (!parsed.success) throw new Error(m().desktop.badRequest);
+    const intent = parsed.data;
+    const id = intent.kind === 'new' ? intent.at : intent.session;
     if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const session: Session = await bridge.call('detail', [id]);
-    const skip = skipPermissions();
-    const saved = { ...session, skipPermissions: skip };
-    if (action === 'status') return orcaLaunch.status(saved);
-    return orcaLaunch.start(saved, async (info) => {
-      const owner = BrowserWindow.fromWebContents(e.sender);
+    const s: Session = await bridge.call('detail', [id]);
+    const base = { cwd: s.cwd ?? '', skipPermissions: skipPermissions() };
+    if (intent.kind === 'new')
+      return {
+        ...base,
+        kind: 'new',
+        provider: intent.provider,
+        name: intent.name.normalize('NFC'),
+        initialMessage: intent.initialMessage,
+      };
+    if (intent.kind === 'resume')
+      return {
+        ...base,
+        kind: 'resume',
+        provider: s.provider,
+        nativeId: s.nativeId,
+        name: s.alias,
+        title: s.title,
+        from: s,
+      };
+    // A fork runs in its original's folder: the same project, the same context.
+    return {
+      ...base,
+      kind: 'fork',
+      provider: s.provider,
+      nativeId: s.nativeId,
+      name: intent.name.normalize('NFC'),
+      initialMessage: intent.initialMessage,
+      from: s,
+    };
+  };
+  /** Native confirmations warn about an open tab or an unverifiable check. */
+  const dialogType = (check: DuplicateCheck) =>
+    check.state === 'none' ? ('question' as const) : ('warning' as const);
+  /**
+   * The native confirmation of any launch: what starts (title, question and introduction per
+   * destination and intent), where, the command a shell types, and every warning (skipped
+   * permissions, a duplicate, other agents already in the project).
+   */
+  const launchConfirm =
+    (e: Electron.IpcMainInvokeEvent, target: LaunchTarget, destination: LaunchDestinationId) =>
+    async (probe: DestinationProbe, check: DuplicateCheck): Promise<boolean> => {
       const t = m().tmux;
+      const l = m().launch;
+      const place = l.destination[destination];
+      const plan = (probe.detail ?? {}) as { info?: { name?: string; cwd?: string } };
+      // The wording the older sheets had for tmux and Orca; the others say it generally.
+      const words = (
+        {
+          'tmux:resume': [t.title, t.confirm, t.intro, t.caution, t.start],
+          'tmux:new': [t.summonTitle, t.summonConfirm, t.summonIntro, t.summonHint, t.summonStart],
+          'orca:resume': [t.orcaTitle, t.orcaConfirm, t.orcaIntro, t.caution, t.orcaStart],
+          'orca:new': [t.summonTitle, t.summonOrcaConfirm, t.summonOrcaIntro, '', t.summonOrca],
+        } as Record<string, string[] | undefined>
+      )[`${destination}:${target.kind}`] ?? [
+        l.title[target.kind],
+        l.confirm[target.kind](place),
+        l.intro[target.kind],
+        target.kind === 'resume' ? t.caution : '',
+        l.start(place),
+      ];
+      const [title, message, intro, hint, button] = words;
+      // tmux shows its reconnect command elsewhere; the others type `command` into a shell.
+      const typed = destination !== 'tmux' && probe.command;
+      const connections =
+        destination === 'tmux' && target.kind !== 'fork'
+          ? (await projectConnections(target.cwd)).filter(
+              (c) => target.kind === 'new' || c.id === target.from?.id,
+            )
+          : [];
+      const lines = [
+        intro,
+        [
+          ...(target.kind !== 'resume' ? [target.provider] : []),
+          ...(target.kind === 'fork' && target.from
+            ? [`${l.forkOf}: ${target.from.alias || target.from.title}`]
+            : []),
+          // tmux: its session name; elsewhere the new colleague's name.
+          ...(destination === 'tmux' && plan.info?.name
+            ? [`${t.name}: ${plan.info.name}`]
+            : target.kind !== 'resume' && target.name
+              ? [`${t.agentName}: ${target.name}`]
+              : []),
+          `${t.folder}: ${plan.info?.cwd ?? target.cwd}`,
+          ...(typed ? [`${t.orcaCommand}: ${typed}`] : []),
+        ].join('\n'),
+        hint,
+        skipNote(target.skipPermissions === true).trim(),
+        duplicateNote(check).trim(),
+        target.kind !== 'resume' && target.initialMessage?.trim()
+          ? `${t.initialMessage}:\n${target.initialMessage.slice(0, 500)}${target.initialMessage.length > 500 ? '…' : ''}`
+          : '',
+        connections.length
+          ? `${t.existingConfirm}\n${connections.map((c) => c.name + ' · ' + c.label).join('\n')}`
+          : '',
+      ];
+      const owner = BrowserWindow.fromWebContents(e.sender);
       const options = {
-        type: 'question' as const,
-        title: t.orcaTitle,
-        message: t.orcaConfirm,
-        detail: `${t.orcaIntro}\n\n${t.folder}: ${info.cwd}\n${t.orcaCommand}: ${info.command}\n\n${t.caution}${skipNote(skip)}`,
-        buttons: [t.cancel, t.orcaStart],
+        type: dialogType(check),
+        title,
+        message,
+        detail: lines.filter(Boolean).join('\n\n'),
+        buttons: [t.cancel, button],
         defaultId: 0,
         cancelId: 0,
       };
@@ -791,8 +1293,83 @@ function setupIPC() {
       } finally {
         endCardDialog();
       }
+    };
+  /** Starts through the core; a new conversation named outside tmux is named once it shows. */
+  const launch = async (
+    e: Electron.IpcMainInvokeEvent,
+    target: LaunchTarget,
+    destination: LaunchDestinationId,
+  ) => {
+    const outcome = await launchCore.start(target, destination, {
+      confirm: launchConfirm(e, target, destination),
     });
+    if (
+      destination !== 'tmux' &&
+      outcome.sessionId &&
+      target.name &&
+      target.kind !== 'resume' &&
+      ['launched', 'uncertain', 'copied'].includes(outcome.state)
+    ) {
+      launchedNames.set(`${target.provider}:${outcome.sessionId}`, {
+        alias: target.name,
+        until: Date.now() + 24 * 3600_000,
+      });
+      if (launchedNames.size > 200) launchedNames.delete(launchedNames.keys().next().value!);
+    }
+    return outcome;
+  };
+  /**
+   * A launch's own place brought to the front, nothing started (the launch sheet's "open in a
+   * terminal" and "go there"): tmux opens its running session (a resume's, or the new/fork
+   * slot of that name) in Terminal; Orca switches to a resume's own tab, matched again now
+   * (never a jump's fallback). A failure throws with its reason.
+   */
+  const openLaunch = async (
+    e: Electron.IpcMainInvokeEvent,
+    target: LaunchTarget,
+    destination: LaunchDestinationId,
+  ): Promise<LaunchResult> => {
+    if (destination === 'tmux') {
+      await tmuxResume.open(tmuxSession(target));
+      return { state: 'opened', destination, message: m().launch.tmuxOpened };
+    }
+    if (destination === 'orca' && target.kind === 'resume' && target.from) {
+      try {
+        const text = await focusOrcaTab(
+          target.from,
+          defaultTerminalDeps(),
+          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+        );
+        cards.afterJump(e.sender);
+        return { state: 'opened', destination, message: text };
+      } catch (error) {
+        if (error instanceof TerminalFocusError) throw new Error(error.message);
+        throw new Error(m().desktop.terminal.jumpFailed('Orca'));
+      }
+    }
+    throw new Error(m().desktop.badRequest);
+  };
+  ipcMain.handle('office:launch', async (e, raw: unknown): Promise<LaunchResult> => {
+    trusted(e);
+    const request = launchRequestSchema.safeParse(raw);
+    if (!request.success) throw new Error(m().desktop.badRequest);
+    const { destination, action } = request.data;
+    const target = await launchTarget(request.data.intent);
+    if (action === 'probe')
+      return { state: 'probed', destination, probe: await launchCore.probe(target, destination) };
+    if (action === 'open') return openLaunch(e, target, destination);
+    return launchResult(destination, await launch(e, target, destination));
   });
+  ipcMain.handle('office:launch-support', (e): LaunchSupport => {
+    trusted(e);
+    return launchCore.support();
+  });
+  ipcMain.handle('office:launch-options', async (e, raw: unknown): Promise<LaunchOptions> => {
+    trusted(e);
+    return launchCore.options(await launchTarget(raw));
+  });
+  setupMiniShell();
+  setupReader();
   ipcMain.handle('office:remote-launch', async (e, id, action, value) => {
     trusted(e);
     if (
@@ -838,45 +1415,9 @@ function setupIPC() {
       authorize,
     );
   });
-  ipcMain.handle('office:tmux-summon', async (e, id, action, provider, name, initialMessage) => {
+  ipcMain.handle('office:orca-reveal', async (e) => {
     trusted(e);
-    if (typeof id !== 'string' || id.length > 400 || !['status', 'start', 'open'].includes(action))
-      throw new Error(m().desktop.badRequest);
-    if (!['claude', 'codex'].includes(provider)) throw new Error(m().desktop.badRequest);
-    if (isRemoteId(id)) throw new Error(m().federation.readOnly);
-    const original: Session = await bridge.call('detail', [id]);
-    if (typeof name !== 'string') throw new Error(m().desktop.badRequest);
-    const session = summonSession(original.cwd ?? '', provider, name, initialMessage);
-    if (action === 'status')
-      return {
-        ...(await tmuxResume.status(session)),
-        connections: await projectConnections(original.cwd),
-      };
-    if (action === 'open') return tmuxResume.open(session);
-    const skip = skipPermissions();
-    return tmuxResume.start({ ...session, skipPermissions: skip }, async (info) => {
-      const connections = await projectConnections(original.cwd);
-      const owner = BrowserWindow.fromWebContents(e.sender);
-      const t = m().tmux;
-      const options = {
-        type: 'question' as const,
-        title: t.summonTitle,
-        message: t.summonConfirm,
-        detail: `${t.summonIntro}\n\n${provider}\n${t.name}: ${info.name}\n${t.folder}: ${info.cwd}\n\n${t.summonHint}${skipNote(skip)}${session.initialMessage ? '\n\n' + t.initialMessage + ':\n' + session.initialMessage.slice(0, 500) + (session.initialMessage.length > 500 ? '…' : '') : ''}${connections.length ? '\n\n' + t.existingConfirm + '\n' + connections.map((c) => c.name + ' · ' + c.label).join('\n') : ''}`,
-        buttons: [t.cancel, t.summonStart],
-        defaultId: 0,
-        cancelId: 0,
-      };
-      const endCardDialog = cards.dialog(e.sender);
-      try {
-        const result = owner
-          ? await dialog.showMessageBox(owner, options)
-          : await dialog.showMessageBox(options);
-        return result.response === 1;
-      } finally {
-        endCardDialog();
-      }
-    });
+    await orcaLaunch.reveal();
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();
@@ -907,6 +1448,11 @@ function setupIPC() {
   };
   const live = (known: SessionIdentity, fresh = false) =>
     known.provider === 'claude' ? locateTerminal(known.nativeId, { fresh }) : null;
+  /** Why `live` found no terminal, when the agent's records can tell (else the generic note). */
+  const noTerminal = async (known: SessionIdentity) =>
+    (known.provider === 'claude'
+      ? await claudeNoTerminalReason(known.nativeId).catch(() => null)
+      : null) ?? m().desktop.terminal.noTarget;
   const codex = (known: SessionIdentity, fresh = false) =>
     known.provider === 'codex'
       ? findCodexDestination(known.nativeId, known.sourcePath, { fresh })
@@ -1015,19 +1561,39 @@ function setupIPC() {
   };
   // Adopt a launch name only once, after an exact native-session -> owned tmux pane match.
   // It is stored as the normal personal alias; later manual edits (including clearing) win.
+  // The same match also tags the summoned tmux session with the conversation it runs, so its
+  // resume, jump and the duplicate-launch check find that session by the conversation's id.
+  // The tag follows whichever conversation the pane runs now (a pane can switch back and forth),
+  // so it is re-checked every round; `adopt` writes only when it changed.
+  // A launch elsewhere (Orca, Terminal, a copied command) knows its new conversation by the id
+  // it chose (`launchedNames`): that name is adopted the same way, once, when it shows up.
   let naming = false;
   const named = new Set<string>();
+  const nameLaunched = async () => {
+    const now = Date.now();
+    for (const [key, entry] of launchedNames) if (entry.until < now) launchedNames.delete(key);
+    if (!launchedNames.size) return;
+    const snapshot: Snapshot = await bridge.call('snapshot');
+    for (const s of snapshot.sessions) {
+      const key = `${s.provider}:${s.nativeId}`;
+      const entry = launchedNames.get(key);
+      if (!entry || s.remote) continue;
+      launchedNames.delete(key);
+      const current: Session = await bridge.call('detail', [s.id]);
+      if (!current.alias) await bridge.call('patch', [s.id, { alias: entry.alias }]);
+    }
+  };
   const nameTimer = setInterval(async () => {
     if (naming) return;
     naming = true;
     try {
+      await nameLaunched().catch(() => undefined);
       const folders = await tmuxResume.namedFolders();
       if (!folders.size) return;
       const snapshot: Snapshot = await bridge.call('snapshot');
       for (const s of snapshot.sessions.filter(
         (s) =>
           !s.remote &&
-          !named.has(s.id) &&
           s.cwd &&
           folders.has(path.resolve(s.cwd)) &&
           ['claude', 'codex'].includes(s.provider),
@@ -1037,6 +1603,10 @@ function setupIPC() {
             ? await locateTerminal(s.nativeId)
             : await findCodexTerminal(s.nativeId);
         if (!terminal || terminal.host.kind !== 'tmux') continue;
+        await tmuxResume
+          .adopt(terminal.host, s.provider as 'claude' | 'codex', s.nativeId)
+          .catch(() => false);
+        if (named.has(s.id)) continue;
         const alias = await tmuxResume.aliasFor(terminal.host, s.id).catch(() => null);
         if (!alias) continue;
         const current: Session = await bridge.call('detail', [s.id]);
@@ -1111,17 +1681,94 @@ function setupIPC() {
     const terminal = await live(known, true);
     return terminal ? inspectTerminalDraft(terminal, composer) : null;
   });
+  // What the session's terminal input box holds, for the card's preview: read-only, from the
+  // terminal verified as for a send, only while sending is on. Reads share a short cache in
+  // terminals.ts, so several windows polling the same card cost one screen read.
+  ipcMain.handle('office:composer-draft', async (e, id): Promise<ComposerDraftView> => {
+    trusted(e);
+    if (!(await terminalSendEnabled())) return { kind: 'unknown', reason: 'off' };
+    if (typeof id !== 'string' || isRemoteId(id)) return { kind: 'unknown', reason: 'unsupported' };
+    const known = await identity(id);
+    const composer = composerFor(known.provider);
+    // Each agent's adapter says whether its box is read and submitted from here at all.
+    if (!composer.capabilities(null).canSubmitDraft)
+      return { kind: 'unknown', reason: 'unsupported' };
+    const terminal = await live(known);
+    if (!terminal) return { kind: 'unknown', reason: 'no-terminal' };
+    return previewTerminalDraft(terminal, composer);
+  });
+  // [Send as is]: Enter only, after main read the box again and found exactly `text` there.
+  // [Send suggestion] (`suggestion`): Tab while the box holds only that suggestion, then Enter
+  // only once it holds exactly `text` as typed.
+  ipcMain.handle(
+    'office:submit-draft',
+    async (e, id, text, options): Promise<DraftSubmitResult> => {
+      trusted(e);
+      if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+      const suggestion =
+        typeof options === 'object' &&
+        options !== null &&
+        (options as { suggestion?: unknown }).suggestion === true;
+      if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
+      const known = await identity(id);
+      const composer = composerFor(known.provider);
+      if (!composer.capabilities(null).canSubmitDraft)
+        throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+      const terminal = await live(known, true);
+      if (!terminal) throw new Error(await noTerminal(known));
+      try {
+        return await submitTerminalDraft(terminal, text, undefined, {
+          composer,
+          allowed: terminalSendEnabled,
+          suggestion,
+        });
+      } catch (error) {
+        if (error instanceof TerminalInputError) throw error;
+        // Enter may have gone in; a retry presses only while the box still holds the text.
+        throw new Error(m().desktop.terminal.unconfirmed(hostName(terminal.host)));
+      } finally {
+        forgetTerminal(terminal.process.sessionId);
+      }
+    },
+  );
+  // The renderer hands over an image's bytes; main checks them and keeps the file. Only an
+  // opaque id goes back: a send names ids, never paths.
+  ipcMain.handle('office:attach-image', async (e, bytes) => {
+    trusted(e);
+    try {
+      return await attachments().save(bytes);
+    } catch (error) {
+      if (error instanceof AttachmentError) throw error;
+      throw new Error(m().desktop.badFile);
+    }
+  });
+  // A thumbnail again, for a composer window that was recreated: bytes of this store's own
+  // files only, by id. Never a path, never a file elsewhere.
+  ipcMain.handle('office:attachment-preview', async (e, id) => {
+    trusted(e);
+    return attachments().preview(id);
+  });
   const sendMessage = async (
     id: unknown,
     text: unknown,
-    options?: { replaceDraft?: string; allowPartialDraft?: boolean },
+    options?: {
+      replaceDraft?: string;
+      allowPartialDraft?: boolean;
+      exactDraft?: boolean;
+      images?: unknown;
+    },
     authorized?: () => Promise<void>,
   ): Promise<SendResult> => {
     if (typeof text !== 'string' || text.length > 20000) throw new Error(m().desktop.badRequest);
+    // Ids only, resolved to this app's own files; anything else refuses the send.
+    const images = await attachments().resolveAll(options?.images);
     const replaceDraft: unknown = options?.replaceDraft;
     const allowPartialDraft: unknown = options?.allowPartialDraft;
+    const exactDraft: unknown = options?.exactDraft;
     if (
       (options != null && typeof options !== 'object') ||
+      (exactDraft !== undefined && typeof exactDraft !== 'boolean') ||
+      (exactDraft === true && replaceDraft === undefined) ||
       (allowPartialDraft !== undefined && typeof allowPartialDraft !== 'boolean') ||
       (allowPartialDraft === true && replaceDraft === undefined) ||
       (replaceDraft !== undefined &&
@@ -1131,6 +1778,7 @@ function setupIPC() {
     if (!(await terminalSendEnabled())) throw new Error(m().desktop.terminal.enableFirst);
     await authorized?.();
     if (isRemoteId(id)) {
+      if (images.length) throw new Error(m().desktop.terminal.imagesUnsupported);
       if (replaceDraft !== undefined) throw new Error(m().federation.remoteDraft);
       return bridge.call('remote-send', [id, text, randomUUID()], async () => {
         await authorized?.();
@@ -1143,17 +1791,27 @@ function setupIPC() {
     const composer = composerFor(known.provider);
     const delivery = composer.capabilities(null).delivery;
     if (delivery === 'none') throw new Error(m().desktop.terminal.unsupportedAgent(composer.agent));
+    // Each adapter says whether images reach its agent at all (the Codex transports both do).
+    if (images.length && !composer.capabilities(null).images)
+      throw new Error(m().desktop.terminal.imagesUnsupported);
     const thread = delivery === 'queue' ? await codex(known, true) : null;
     if (delivery === 'queue' && !thread) throw new Error(m().desktop.terminal.noTarget);
     if (thread)
       try {
         return {
           status: 'sent',
-          message: await sendToCodex(thread, text, undefined, async () => {
-            await authorized?.();
-            if (!(await terminalSendEnabled()))
-              throw new TerminalInputError(m().desktop.terminal.enableFirst);
-          }),
+          message: await sendToCodex(
+            thread,
+            text,
+            undefined,
+            async () => {
+              await authorized?.();
+              if (!(await terminalSendEnabled()))
+                throw new TerminalInputError(m().desktop.terminal.enableFirst);
+            },
+            images,
+          ),
+          ...(!codexRecordsRequest(thread, text, images) && { unrecorded: true }),
         };
       } catch (error) {
         if (error instanceof TerminalInputError) throw error;
@@ -1162,16 +1820,18 @@ function setupIPC() {
         throw new Error(m().desktop.terminal.codexUnconfirmed);
       }
     const terminal = await live(known, true);
-    if (!terminal) throw new Error(m().desktop.terminal.noTarget);
+    if (!terminal) throw new Error(await noTerminal(known));
     try {
       return await sendToTerminal(terminal, text, undefined, {
         composer,
         replaceDraft,
         allowPartialDraft: allowPartialDraft === true,
+        exactDraft: exactDraft === true,
         beforeSend: authorized,
         // The main process writes the clipboard: no permission prompt, nothing in the renderer.
         backup: async (draft) => clipboard.writeText(draft),
         clipboardText: () => clipboard.readText(),
+        images,
       });
     } catch (error) {
       if (error instanceof TerminalInputError) throw error;
@@ -1282,10 +1942,9 @@ function setupIPC() {
     let target: PromptTarget | null = null;
     try {
       const which = settingFor(open.request.kind);
-      const setting = (await answerSettings())[which];
-      if (setting === 'off') throw new TerminalInputError(t.off);
-      if (setting === 'unset') {
-        // The first answer of a kind asks once; the choice stays in the desktop profile.
+      if ((await answerSettings())[which] !== 'on') {
+        // Not on yet (never asked, or turned off): this press asks natively, and agreeing turns
+        // the kind on (kept in the desktop profile). Declining sends nothing and changes nothing.
         if ((await changeSetting(e, which, true))[which] !== 'on')
           return { status: 'cancelled', message: '' };
         // The dialog may have changed while the confirmation was open: the same call, or nothing.
@@ -1335,6 +1994,10 @@ function desktopSettingsChanged() {
 }
 const shellQuote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
 const terminalSendFile = () => path.join(app.getPath('userData'), 'terminal-send.json');
+let attachmentStore: AttachmentStore | undefined;
+/** Images attached in the composer: `<userData>/attachments`, files this app wrote only. */
+const attachments = () =>
+  (attachmentStore ??= new AttachmentStore(path.join(app.getPath('userData'), 'attachments')));
 /**
  * On unless the person turned it off: no file means the default (on), and the file records
  * their choice. A file that can't be read counts as off. Turning it back on asks for
@@ -1390,6 +2053,10 @@ async function resume(s: Pick<Session, 'provider' | 'nativeId'>): Promise<JumpRe
     await shell.openExternal(`codex://threads/${s.nativeId}`);
     return { action: 'opened', text: m().desktop.codexOpened };
   }
+  // A live background session is opened where it runs: `--resume` would start a second copy.
+  const attach =
+    s.provider === 'claude' ? await claudeAttachCommand(s.nativeId).catch(() => null) : null;
+  if (attach) return { action: 'copy', text: attach };
   return {
     action: 'copy',
     text:

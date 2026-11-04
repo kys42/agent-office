@@ -550,6 +550,102 @@
   margin: -4px 0 12px;
   line-height: 1.5;
 }
+/* Images attached in a composer (card and bubble): thumbnails with a remove button each. */
+.composer-images {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.composer-image-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.composer-image {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-3);
+  box-shadow: inset 0 0 0 0.5px var(--line-3);
+  color: var(--text-3);
+}
+.composer-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer-image-hidden {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+.composer-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+}
+.composer-image-remove:hover,
+.composer-image-remove:focus-visible {
+  background: rgba(0, 0, 0, 0.85);
+}
+.composer-images-note,
+.composer-images-error {
+  font-size: calc(10.5px * var(--read-scale));
+  line-height: 1.4;
+  color: var(--text-4);
+}
+.composer-images-error {
+  color: var(--st-call);
+}
+.composer-attach {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-3);
+}
+.composer-attach:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-3);
+}
+.composer-attach:disabled {
+  opacity: 0.45;
+}
+.terminal-send-bar .composer-attach {
+  margin-left: auto;
+}
+.terminal-send-bar .composer-attach + .button {
+  margin-left: 0;
+}
+/* A sent message's images, while it waits for the record. */
+.message-pending-images {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+/* Dragging files over a composer. */
+.composer-drop {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 2px;
+}
 /* The agent's composer already holds text: shown before anything is typed (card and bubble). */
 .draft-confirm {
   display: grid;
@@ -603,6 +699,115 @@
   background: var(--accent);
 }
 .draft-confirm-bar button:disabled {
+  opacity: 0.5;
+}
+/* Text sitting in the colleague's terminal input box, typed there and not sent (work card). */
+.draft-preview {
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  border: 1px dashed var(--line-3);
+  font-family: var(--font-read);
+  font-size: calc(11.5px * var(--read-scale));
+  line-height: 1.45;
+  color: var(--text);
+}
+/* The agent's own suggestion (nobody typed it): marked apart from a draft, its text faint as in
+   the terminal. */
+.draft-preview.is-suggestion {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line-3));
+}
+.draft-preview.is-suggestion .draft-preview-head {
+  color: var(--accent);
+}
+.draft-preview.is-suggestion .draft-preview-text {
+  color: var(--text-2);
+}
+.draft-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-3);
+}
+.draft-preview-head strong {
+  font-size: calc(11px * var(--read-scale));
+  font-weight: 600;
+  color: var(--text-2);
+}
+.draft-preview-head small {
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: calc(10px * var(--read-scale));
+  color: var(--text-4);
+}
+.draft-preview small {
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.draft-preview-text {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.draft-preview-text.is-clamped {
+  /* Three rows, fading out: [Show all] opens the rest. */
+  max-height: calc(3 * 1.45em + 10px);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.draft-preview .draft-preview-more {
+  justify-self: start;
+  padding: 0 2px;
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--accent);
+  background: none;
+}
+.draft-preview-notice,
+.draft-preview small.draft-preview-notice {
+  color: var(--st-call);
+}
+.draft-preview-alone {
+  display: block;
+  padding: 0 4px;
+  font-size: calc(11px * var(--read-scale));
+}
+.draft-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.draft-preview-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+.draft-preview-bar .draft-preview-send {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.draft-preview-bar button:disabled {
   opacity: 0.5;
 }
 /* Dock windows (pet, row, floor) end right below the reply: the question opens above it,

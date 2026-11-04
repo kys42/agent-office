@@ -1,5 +1,7 @@
 export const conversation = {
   pending: 'Sent · awaiting the transcript',
+  /** Images that went with a sent message still waiting for the transcript. */
+  pendingImages: (n: number) => (n === 1 ? 'With 1 image' : `With ${n} images`),
   hideSent: 'Hide temporary sent message',
   hideSentHint:
     'Hide this local receipt only. The submitted message stays in the terminal or queue.',

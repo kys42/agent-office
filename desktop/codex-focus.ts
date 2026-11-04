@@ -3,7 +3,7 @@ import { defaultTerminalDeps, ownsTerminal } from './terminals.js';
 import {
   findHost,
   inspectProcess,
-  localOrcaEnv,
+  screenTitle,
   type TerminalHost,
   type TerminalLookup,
 } from './terminal-host.js';
@@ -63,30 +63,6 @@ export function codexScreens(table: string): { pids: number[]; oversized: boolea
   }
   // An unexpectedly large inventory is unknown, never silently pick the first few screens.
   return found.size <= 64 ? { pids: [...found], oversized: false } : { pids: [], oversized: true };
-}
-
-async function screenTitle(host: TerminalHost, deps: TerminalDeps): Promise<string | null> {
-  if (host.kind === 'tmux')
-    return (
-      await deps.run(deps.bin('tmux'), [
-        '-S',
-        host.socket,
-        'display-message',
-        '-p',
-        '-t',
-        host.pane,
-        '#{pane_title}',
-      ])
-    ).trim();
-  const result = JSON.parse(
-    await deps.run(deps.bin('orca'), ['terminal', 'show', `--terminal=${host.handle}`, '--json'], {
-      env: localOrcaEnv(),
-    }),
-  );
-  const t = result?.result?.terminal;
-  if (result.ok !== true || t?.handle !== host.handle || typeof t.title !== 'string')
-    throw new Error('Cannot verify current terminal title');
-  return t.connected === true && t.writable !== false && t.orphaned !== true ? t.title : null;
 }
 
 async function readScreen(
@@ -217,4 +193,31 @@ export async function lookupCodexTerminal(
   return current?.threadId === selected.threadId && current.procStart === selected.procStart
     ? { kind: 'found', terminal: current }
     : { kind: 'unknown' };
+}
+
+/**
+ * Whether the thread is on screen at all, for the duplicate-launch check: `found` when any
+ * screen, verified afresh, shows it, even when another screen also does or could not be read
+ * (that only stops `lookupCodexTerminal` from picking one to navigate to). `none` only when
+ * every interactive Codex screen was read and none shows it.
+ */
+export async function codexThreadOnScreen(
+  threadId: string,
+  options: { fresh?: boolean; deps?: TerminalDeps } = {},
+): Promise<TerminalLookup<CodexTerminal>> {
+  if (!THREAD.test(threadId)) return { kind: 'unknown' };
+  const deps = options.deps ?? defaultTerminalDeps();
+  const inventory = await screenInventory(deps, !!options.fresh);
+  const matches = inventory.screens.filter((s) => s.threadId === threadId.toLowerCase());
+  if (!matches.length)
+    return inventory.uncertain || inventory.hidden ? { kind: 'unknown' } : { kind: 'none' };
+  if (!options.fresh) return { kind: 'found', terminal: matches[0] };
+  // Re-check after the whole inventory settled: a screen may have switched threads meanwhile.
+  forget(deps, 'process-table');
+  for (const selected of matches) {
+    const current = await readScreen(selected.pid, deps, true).catch(() => null);
+    if (current?.threadId === selected.threadId && current.procStart === selected.procStart)
+      return { kind: 'found', terminal: current };
+  }
+  return { kind: 'unknown' };
 }

@@ -50,7 +50,10 @@ export function codexDestinationTarget(
   destination: CodexDestination | null,
   host?: TerminalHost,
 ): TerminalTarget {
-  if (destination?.transport !== 'desktop') return codexTarget(host, !!destination);
+  if (destination?.transport !== 'desktop') {
+    const target = codexTarget(host, !!destination);
+    return destination ? { ...target, images: codexImages(destination.transport) } : target;
+  }
   return {
     kind: 'codex',
     label: 'Codex Desktop',
@@ -59,19 +62,45 @@ export function codexDestinationTarget(
     canFocus: false,
     desktop: true,
     queues: false,
+    images: codexImages('desktop'),
   };
 }
+/**
+ * How images reach each Codex transport: Codex Desktop takes them as local image items; the CLI
+ * queue takes text only, so they go as file paths in it.
+ */
+export const codexImages = (transport: CodexDestination['transport']) =>
+  transport === 'desktop' ? ('attach' as const) : ('path' as const);
+/**
+ * Whether the session's record will show the send as a request. Codex records a message's text
+ * only (image items are not text), so images alone to Codex Desktop leave no request there; the
+ * queue gets their paths as text.
+ */
+export const codexRecordsRequest = (
+  destination: CodexDestination,
+  text: string,
+  images: readonly string[],
+) => !!text.trim() || (images.length > 0 && destination.transport !== 'desktop');
 export async function sendToCodex(
   destination: CodexDestination,
   text: unknown,
   deps = defaultTerminalDeps(),
   beforeSend: () => void | Promise<void> = () => {},
+  images: readonly string[] = [],
 ) {
   if (destination.transport === 'desktop')
-    return sendToCodexDesktop(deps.codexHome, destination.threadId, text, 15000, beforeSend);
+    return sendToCodexDesktop(
+      deps.codexHome,
+      destination.threadId,
+      text,
+      15000,
+      beforeSend,
+      undefined,
+      images,
+    );
   try {
     await beforeSend();
-    return await queueToCodex(destination, text, deps);
+    return await queueToCodex(destination, text, deps, images);
   } catch (error) {
     if (error instanceof TerminalInputError) throw error;
     throw new TerminalInputError(

@@ -38,6 +38,6 @@ Windows는 [Windows 지원 가이드](WINDOWS.md)의 독립 제목줄과 native 
 - 툴바에 버튼을 늘리면 1050px 창 + 오른쪽 패널 열림에서 겹치지 않는지 본다.
 - 검증: `tests/ui/native.spec.ts`(사이드바 공간·할 일·프로젝트, 툴바 슬롯, 시스템 모양), 기존 UI 테스트, `scripts/desktop-smoke.mjs`.
 
-## tmux 재개 · 새 에이전트 소환 시트
+## 실행 시트 (세션 시작)
 
-`TmuxResume.tsx`와 `styles/tmux.css`는 기존 `.button`/`.primary`, 시스템 글꼴, `--grouped`/`--field`/`--control*` 토큰을 사용한다. 제목과 하단 행동은 고정하고 본문만 스크롤한다. Claude/Codex는 세그먼트 선택, 연결된 동료와 세션 정보는 그룹 카드로 표현한다. 재접속 명령과 자세한 tmux 설명은 펼쳐 읽으며 복사 버튼은 별도로 둔다. 긴 안내를 입력칸 사이에 반복하지 않는다. 작은 카드·바닥 창에서도 주요 행동이 화면 안에 남아야 하며, 밝음/어두움의 재개·소환 캡처로 확인한다.
+`LaunchSheet.tsx`와 `styles/tmux.css`(터미널 시트 틀: `.tmux-resume` 프레임, `.summon-field`, `.summon-provider`)·`styles/launch-sheet.css`는 기존 `.button`/`.primary`, 시스템 글꼴, `--grouped`/`--field`/`--control*` 토큰을 사용한다. 제목과 하단 행동은 고정하고 본문만 스크롤한다. 단계는 번호(① 무엇을 ② 어디서 ③ 진행)로 나누고, 종류·에이전트는 세그먼트, 대화 목록은 그룹 카드의 행, 행선지는 기본 라디오 목록이다. 행선지의 가능 여부는 짧은 배지(사용 가능·실행 중·사용할 수 없음), 이유는 배지 대신 설명 아래 한 줄로 둔다. 긴 안내를 입력칸 사이에 반복하지 않는다. 380×480 카드 창에서도 하단 행동이 화면 안에 남아야 하며, 밝음/어두움 캡처(`tests/ui/launch-sheet.spec.ts`)로 확인한다.

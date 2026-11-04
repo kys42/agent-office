@@ -59,7 +59,7 @@ test('Nothing always on screen blurs or blends the moving office behind it', () 
 });
 
 test('Looping animations step on the office clock (#52)', async () => {
-  const { FRAME_MS } = await import('../src/lib/frame-clock.js');
+  const { FRAME_MS } = await import('../src/lib/office-tick.js');
   const ms = (t: string) => (t.endsWith('ms') ? parseFloat(t) : parseFloat(t) * 1000);
   const times = (value: string) => [...value.matchAll(/-?\d*\.?\d+m?s\b/g)].map((m) => m[0]);
   const off: string[] = [];
@@ -86,7 +86,7 @@ test('Looping animations step on the office clock (#52)', async () => {
 });
 
 test('Sprite speeds keep every one of the four frames on the office clock', async () => {
-  const { FRAME_MS } = await import('../src/lib/frame-clock.js');
+  const { FRAME_MS } = await import('../src/lib/office-tick.js');
   const tokens = css.find((c) => c.file === 'tokens.css')!.text;
   const speeds = [
     ...tokens.matchAll(/\n\.sprite[^{]*\{[^}]*?animation(?:-duration)?\s*:[^;]*?(\d*\.?\d+m?s)/g),

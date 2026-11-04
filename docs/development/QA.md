@@ -1,3 +1,11 @@
+# 실행 시트 · 2026-11-02 (Issue #319)
+
+- `refactor/launch-core`(#322) 위 `feat/launch-sheet`에서 구현했다. 예전 `TmuxResume`·`SummonExisting`과 IPC 래퍼(`office:tmux-resume`·`tmux-summon`·`orca-launch`·`orca-summon`)를 지우고 `office:launch`에 `open`을 더했다.
+- 단위 891개 통과: 새 `tests/launch-sheet.test.ts` 6개(의도 만들기·복제 이름·대화 목록·중복 판단·행선지 행·결과 화면) 포함. `launch-core.test.ts`의 요청 모양 검사에 `open`을 반영했다.
+- UI: `tests/ui/launch-sheet.spec.ts`가 `tmux-resume.spec.ts`·`summon-existing.spec.ts`를 대신한다. 세 의도, 행선지 가능 여부·이유, 지난번 선택 기본값, 복제 기본값(원래 대화가 있는 곳), 결과 상태(열림·확인 못 함 Orca/tmux·거절+이동·거절+다른 곳 제안·이미 실행 중·복사·취소), 카드 진입의 대화 선택, +의 대기·보관 동료와 사무실로 데려오기(실패 시 다시 데려오기), 화면 숨기기, 키보드, 오래된 폴더, 독 공간, 380×480 카드, 밝음/어두움 캡처를 본다. 화면 테스트는 다른 세션과 겹치지 않게 별도 vite 포트(5196, ko-KR)로 전체 437개를 돌려 436개 통과했고, 수집기가 필요한 `office.spec.ts`의 격리 수집기 1개는 기본 설정(5173·4318, `.local/ui-tests` 격리 폴더)으로 따로 통과했다.
+- 데스크톱 smoke는 조용한 모드(`scripts/quiet-smoke.mjs`)로만 돌렸고, 지운 preload API가 없는지와 원격 세션·`copy`의 `open` 거절을 확인한다. 실제 Orca·tmux·Terminal·에이전트 실행, 사용자 tmux 서버, 사용자 DB·대화 기록은 건드리지 않았다.
+- 수동 확인(실제 기기에서 남은 것): Orca 실행 중/꺼짐에서 행 이유, tmux 시작 직후 Terminal 열기, 확인 창 취소 뒤 양식 복귀, 대기 동료 이어가기 후 사무실 복귀, 실행 중인 대화의 [그곳으로 이동].
+
 # Codex 원격 owner 전송 · 2026-10-21
 
 - main `9dd9dc0` 기준 별도 `codex/office-remote-send` worktree에서 구현했다. 원래 checkout의 미커밋 문서는 수정하지 않았다.
@@ -601,6 +609,15 @@
 | Tailscale 미리보기 | HTTPS 4319 응답 200, 같은 origin의 RPC 및 3종 실제 세션 연결 확인 |
 
 세션 수는 2026-10-04 후속 핵심 UX 검증 관측값이며 실행 중 바뀔 수 있다. OpenClaw는 최근 120개 한도다. 패키지 시작부터 첫 수집 완료까지 이번 측정은 4.6초였다. 이후 변경분을 캐시하고 5초 간격으로 확인한다. 최초 UI에는 저장된 세션이 먼저 표시될 수 있다.
+
+## 조용한 실행 (`AGENT_OFFICE_QUIET=1`)
+
+데스크톱 스모크는 기본으로 조용한 실행이다(`scripts/quiet-smoke.mjs`). 사람이 일하는 옆에서 돌므로 앱 창이 **사람에게 보이거나 방해가 되면 안 된다**. `desktop/quiet.ts` `quietStart`가 한 곳에서 처리한다:
+
+- `browser-window-created`로 앱이 만드는 **모든 창**(큰 사무실·카드·팝업·설정·펫/책상 줄)을 만들자마자 투명(`setOpacity(0)`)·클릭 통과(`setIgnoreMouseEvents(true)`)로 만들고, 앱이 나중에 투명도·마우스 설정을 바꿔도 되돌리지 못하게 막는다. `show()`는 늘 `showInactive()`, `focus()`·`moveTop()`·`app.focus()`는 아무 일도 하지 않는다. macOS에서는 Dock·앱 전환기에도 나오지 않는다.
+- 그 밖은 실제와 같다: 창은 보이는 상태(`isVisible()`)·자리·크기를 갖고, 층(`setAlwaysOnTop`·레벨·모든 Space)도 실제로 바뀐다. 그래서 '맨 위 고정' 같은 층을 `isAlwaysOnTop()`으로 검사할 수 있고, 보이지 않고 클릭이 통과하는 창이라 맨 위에 떠도 사람의 작업을 가리지 않는다.
+- 페이지는 계속 그려지므로 `webContents.capturePage()`와 Playwright 스크린샷이 동작한다(`npm run test:desktop`이 투명도 0과 `capturePage`를 확인한다).
+- 조용한 실행이 검사하지 못하는 것은 OS 포커스(어느 창이 키보드를 가졌는지, `document.hasFocus()`)뿐이다. 그 단계는 화면이 비어 있을 때 `AGENT_OFFICE_FOCUS_TESTS=1`이나 CI에서만 돈다(`npm run test:cards` 전체가 그렇다).
 
 ## 화면 확인
 

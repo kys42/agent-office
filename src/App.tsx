@@ -1,6 +1,8 @@
+import { MiniShellDemoRelease } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
+import { DeskAppearanceContext } from './components/DeskAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { PanelResizer } from './components/PanelResizer';
@@ -228,10 +230,18 @@ export default function App() {
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
     () =>
-      api.onSelect?.((id) => {
+      api.onSelect?.((id, bookmark) => {
         setView('office');
         setEngaged(true);
         setSelected(id);
+        // From a reader window: the conversation at the bookmarked message.
+        if (bookmark)
+          setBookmarkFocus({
+            sessionId: id,
+            eventId: bookmark.eventId,
+            at: bookmark.at,
+            key: Date.now(),
+          });
       }),
     [],
   );
@@ -952,12 +962,13 @@ export default function App() {
                 {prefs?.privacy ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
               <button
-                className="icon-btn mini-button"
+                className="mini-button"
                 aria-label={t.app.header.mini}
                 title={t.app.header.miniTitle}
                 onClick={() => api.window('mini')}
               >
-                <PictureInPicture2 size={16} />
+                <PictureInPicture2 size={15} />
+                <span>{t.app.header.mini}</span>
               </button>
             </div>
           </header>
@@ -1272,6 +1283,7 @@ export default function App() {
           <p className="shortcut-note">{t.app.help.note}</p>
         </Modal>
       )}
+      <MiniShellDemoRelease demo={demo} />
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />
@@ -1290,15 +1302,17 @@ export default function App() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <NoticePagingContext.Provider
-        value={{
-          paged: model.noticesPaged,
-          stats: JSON.stringify(snapshot?.noticeStats ?? null),
-          readAll,
-        }}
-      >
-        {content}
-      </NoticePagingContext.Provider>
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
+        <NoticePagingContext.Provider
+          value={{
+            paged: model.noticesPaged,
+            stats: JSON.stringify(snapshot?.noticeStats ?? null),
+            readAll,
+          }}
+        >
+          {content}
+        </NoticePagingContext.Provider>
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

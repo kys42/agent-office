@@ -192,3 +192,25 @@ export function cardBounds(anchor: Rect, area: Rect, size = CARD_SIZE): Rect {
   const x = right + width <= inside.x + inside.width ? right : anchor.x - CARD_GAP - width;
   return clampInto({ x, y: anchor.y + anchor.height / 2 - height / 2, width, height }, inside);
 }
+
+/**
+ * The big office opened from a window on another display (the desk pet, the row, a card): the
+ * same size, at the same relative spot of the target work area (its share of the free room
+ * across and down, so a centred window stays centred and one flush to an edge stays there),
+ * kept whole inside it. Coordinates are DIPs, so scale factors need no maths here; a window
+ * bigger than the target area shrinks to fit it.
+ */
+export function moveOntoArea(b: Rect, from: Rect, to: Rect): Rect {
+  const width = Math.min(b.width, to.width);
+  const height = Math.min(b.height, to.height);
+  const share = (at: number, start: number, room: number) =>
+    room > 0 ? Math.min(1, Math.max(0, (at - start) / room)) : 0.5;
+  const fx = share(b.x, from.x, from.width - b.width);
+  const fy = share(b.y, from.y, from.height - b.height);
+  return {
+    width,
+    height,
+    x: Math.round(to.x + fx * (to.width - width)),
+    y: Math.round(to.y + fy * (to.height - height)),
+  };
+}

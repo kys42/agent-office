@@ -1,4 +1,4 @@
-import { ProjectSummon } from './ProjectSummon';
+import { ProjectSummon, type BringBack } from './ProjectSummon';
 import {
   useEffect,
   useMemo,
@@ -27,6 +27,8 @@ import {
 } from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
+import { useDeskAppearance } from './DeskAppearanceContext';
+import { deskLook } from '../shared/desks';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
@@ -47,6 +49,11 @@ import { jumpOrCopy } from '../lib/resume';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
+import { walksIn } from '../lib/commute';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
+import { DEFAULT_DESK_VIEW, type DeskView } from '../shared/view-prefs';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -78,7 +85,19 @@ export function Office({
   quotaOf,
   helperStackAt = HELPER_STACK_AT,
   demo = false,
+  bringBack,
+  show = DEFAULT_DESK_VIEW,
+  preview = false,
 }: {
+  /** What the person chose to see on the desks (#324). Missing: the look from before. */
+  show?: DeskView;
+  /**
+   * Drawn small in the settings (#324): the same room, without anything that reaches outside
+   * it — no app commands, keys or terminal lookups.
+   */
+  preview?: boolean;
+  /** Lets each project's "+" offer bringing back its lounge/archive colleagues. */
+  bringBack?: BringBack;
   demo?: boolean;
   sessions: Session[];
   notices: OfficeNotice[];
@@ -116,6 +135,10 @@ export function Office({
   helperStackAt?: number;
 }) {
   const { t, locale } = useI18n();
+  // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
+  const reactionOf = usePetReactions((id) => byId.has(id));
+  const petting = usePetting();
+  const desks = useDeskAppearance();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
@@ -156,7 +179,10 @@ export function Office({
     const el = holder.current!.parentElement!;
     let windowSize = '';
     const ro = new ResizeObserver(() => {
-      const box = el.getBoundingClientRect();
+      // A preview is drawn scaled (#324): its own, untransformed size is the room it has.
+      const box = preview
+        ? { width: el.offsetWidth, height: el.offsetHeight }
+        : el.getBoundingClientRect();
       const width = Math.floor(box.width),
         height = Math.floor(box.height);
       setViewport((v) => (v.width === width && v.height === height ? v : { width, height }));
@@ -222,7 +248,7 @@ export function Office({
     ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
     : [];
   const { targets: replyTargets, markSent } = useSendTargets(replyable.map(replyFor), {
-    enabled: quick,
+    enabled: quick && !preview,
     // Asks again when a record moves (a turn ended); no 4s polling across the whole floor.
     stamp: Math.max(0, ...replyable.map((s) => s.updatedAt)),
     pollBusy: false,
@@ -249,6 +275,7 @@ export function Office({
   };
   const focusZone = (key: string) => (focusKey === key ? fit() : setFocusKey(key));
   useEffect(() => {
+    if (preview) return;
     const command = (e: Event) => {
       const what = (e as CustomEvent<string>).detail;
       if (what === 'fit') fit();
@@ -314,7 +341,7 @@ export function Office({
   // Esc goes back to the whole room, one layer at a time like the app's own Esc: a field or
   // an open colleague closes first.
   useEffect(() => {
-    if (!focusKey) return;
+    if (!focusKey || preview) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || selected) return;
       if (
@@ -483,6 +510,7 @@ export function Office({
                       privacy={privacy}
                       notify={notify ?? (() => {})}
                       demo={demo}
+                      bringBack={bringBack}
                     />
                     {onVeilZone && veilIds.length > 0 && (
                       <VeilButton zone name={areaName} onVeil={() => onVeilZone(veilIds)} />
@@ -493,6 +521,7 @@ export function Office({
                       kind="desk"
                       key={`${bench.key}:${i}`}
                       shared={bench.shared}
+                      look={deskLook(desks, area.key)}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: bench.y, width: bench.width }}
                     />
@@ -502,6 +531,7 @@ export function Office({
                     const members = s.resident?.sessionIds ?? [s.id];
                     const active = members.includes(selected ?? '');
                     const pose = presentSession(s, clock);
+                    const joy = reactionOf(s.id);
                     // A just-arrived request plays on the desk and speaks first.
                     const speech = deskSpeech(s, notices, bubbleHours, clock);
                     const { unread, arrival, hop } = speech;
@@ -523,6 +553,7 @@ export function Office({
                     const branch = branchInfo(s);
                     const quota = quotaOf?.(s);
                     const dark = !!quota && dimsDesk(s, pose.working);
+                    const desk = deskLook(desks, area.key, s);
                     // Which edge a drop on this desk's half would mark, and the order it sends.
                     const plan = (e: DragEvent<HTMLElement>) => {
                       const box = e.currentTarget.getBoundingClientRect();
@@ -580,10 +611,10 @@ export function Office({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture kind="chair" look={desk} />
                         <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                         <button
-                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
                           aria-label={t.office.station(
@@ -609,10 +640,21 @@ export function Office({
                           onDragEnd={endDrag}
                           onClick={() => onSelect(s.id)}
                           onMouseEnter={() => onHover?.(s.id)}
-                          onMouseLeave={() => onHover?.(null)}
+                          onMouseMove={preview ? undefined : petting(s.id).onMouseMove}
+                          onMouseLeave={() => {
+                            onHover?.(null);
+                            if (!preview) petting(s.id).onMouseLeave?.();
+                          }}
                         >
-                          <FocusEffects level={focus} />
-                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {show.focus && <FocusEffects level={focus} />}
+                          {/* A pleased pet looks up from its work for a moment. */}
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={joy ? 'idle' : pose.mood}
+                            size={80}
+                          />
+                          {joy && <PetJoy key={joy.key} reaction={joy} />}
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
                         {onVeil && canVeil(s) && (
@@ -628,21 +670,23 @@ export function Office({
                             onPin={() => onPin(s)}
                           />
                         )}
-                        <Furniture kind="equipment" />
+                        <Furniture kind="equipment" look={desk} />
                         {quota && <QuotaBadge quota={quota} />}
-                        <PaperPile count={deskPapers(s, clock)} level={focus} />
+                        {show.papers && <PaperPile count={deskPapers(s, clock)} level={focus} />}
                         {arrival && (
                           <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
                         )}
-                        {pose.working && <WorkingBeacon level={focus} />}
-                        <button
-                          className={`desk-branch branch-${branch.kind}`}
-                          title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                          onClick={() => onSelect(s.id)}
-                        >
-                          <GitBranch size={9} />
-                          <span>{privacy ? t.desk.hidden : branch.label}</span>
-                        </button>
+                        {show.beacon && pose.working && <WorkingBeacon level={focus} />}
+                        {show.branch && (
+                          <button
+                            className={`desk-branch branch-${branch.kind}`}
+                            title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                            onClick={() => onSelect(s.id)}
+                          >
+                            <GitBranch size={9} />
+                            <span>{privacy ? t.desk.hidden : branch.label}</span>
+                          </button>
+                        )}
                         <button
                           className={`desk-name ${active ? 'selected' : ''}`}
                           onClick={() => onSelect(s.id)}
@@ -716,12 +760,13 @@ export function Office({
                             name={sessionName(byId.get(replying.id) ?? s)}
                             onClose={() => setReplying(null)}
                             onJump={api.jump ? () => void jumpTo(replying.id) : undefined}
-                            onSend={async (text, replaceDraft, allowPartialDraft) => {
+                            onSend={async (text, replaceDraft, allowPartialDraft, images) => {
                               const result = await onReply!(
                                 replying.id,
                                 text,
                                 replaceDraft,
                                 allowPartialDraft,
+                                images,
                               );
                               if (result.status === 'sent') markSent(replying.id);
                               return result;

@@ -36,6 +36,14 @@ const api: OfficeAPI = {
   unbookmark: (id) => call('unbookmark', id),
   unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
+  bookmarkById: (id) => call('bookmarkById', id),
+  bookmarkWindow: ((what: string, target?: unknown) =>
+    action('office:reader-window', what, target)) as OfficeAPI['bookmarkWindow'],
+  onPopupOnTop: (cb) => {
+    const f = (_: unknown, on: boolean) => cb(on === true);
+    ipcRenderer.on('office:popup-on-top', f);
+    return () => ipcRenderer.removeListener('office:popup-on-top', f);
+  },
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),
   subscribe: (callback) => {
@@ -53,29 +61,45 @@ const api: OfficeAPI = {
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
   ...(['darwin', 'linux'].includes(process.platform)
     ? {
-        tmuxSummon: (
-          id: string,
-          actionName: 'status' | 'start' | 'open',
-          provider: 'claude' | 'codex',
-          name: string,
-          initialMessage?: string,
-        ) => action('office:tmux-summon', id, actionName, provider, name, initialMessage),
-        tmuxResume: (id: string, actionName: 'status' | 'start' | 'open') =>
-          action('office:tmux-resume', id, actionName),
+        shell: {
+          command: (command: unknown) => action('office:shell', command),
+          input: (ptyId: string, data: string) =>
+            ipcRenderer.send('office:shell-input', ptyId, data),
+          onData: (cb: (ptyId: string, data: string) => void) => {
+            const f = (_: unknown, ptyId: string, data: string) => cb(ptyId, data);
+            ipcRenderer.on('office:shell-data', f);
+            return () => ipcRenderer.removeListener('office:shell-data', f);
+          },
+          onExit: (cb: (ptyId: string) => void) => {
+            const f = (_: unknown, ptyId: string) => cb(ptyId);
+            ipcRenderer.on('office:shell-exit', f);
+            return () => ipcRenderer.removeListener('office:shell-exit', f);
+          },
+          window: (what: string, target?: unknown) => action('office:shell-window', what, target),
+        } as OfficeAPI['shell'],
       }
     : {}),
-  // Orca is a macOS app: its launch is offered there only.
-  ...(process.platform === 'darwin'
-    ? {
-        orcaLaunch: (id: string, actionName: 'status' | 'start') =>
-          action('office:orca-launch', id, actionName),
-      }
-    : {}),
+  // Orca is a macOS app: bringing it to the front is offered there only.
+  ...(process.platform === 'darwin' ? { orcaReveal: () => action('office:orca-reveal') } : {}),
+  // Every destination says itself whether this platform has it (desktop/launch/).
+  launch: (request) => action('office:launch', request),
+  launchOptions: (intent) => action('office:launch-options', intent),
+  launchSupport: () => action('office:launch-support'),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),
   send: (id, text, options) => action('office:send', id, text, options),
+  attachImage: (bytes) => action('office:attach-image', bytes),
+  attachmentPreview: (id) => action('office:attachment-preview', id),
   inspectDraft: (id) => action('office:inspect-draft', id),
+  composerDraft: (id) => action('office:composer-draft', id),
+  submitDraft: (id, text, options) =>
+    action(
+      'office:submit-draft',
+      id,
+      text,
+      options?.suggestion === true ? { suggestion: true } : {},
+    ),
   terminalSend: (enable) => action('office:terminal-send', enable),
   prompt: (id) => action('office:prompt', id),
   answer: (id, choice) => action('office:answer', id, choice),
@@ -99,7 +123,8 @@ const api: OfficeAPI = {
   },
   exportFile: (name, content) => ipcRenderer.invoke('office:export', name, content),
   onSelect: (cb) => {
-    const f = (_: unknown, id: string) => cb(id);
+    const f = (_: unknown, id: string, bookmark?: { eventId: string; at: number }) =>
+      cb(id, bookmark);
     ipcRenderer.on('office:select', f);
     return () => ipcRenderer.removeListener('office:select', f);
   },

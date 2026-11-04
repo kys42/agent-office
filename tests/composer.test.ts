@@ -76,10 +76,16 @@ test('A styled capture reads as the plain capture, with faint characters marked'
 
 /** tmux reads the pane height with the screen: 40 rows (the box shows up to 15). */
 const tmux = (raw: string, height = 40): Screen => ({ ...parseStyledScreen(raw), height });
-/** A state without the box width (checked on its own below). */
+/** A state without the box width, its rows as drawn, nor the text as typed (checked apart). */
 const noWidth = <T>(state: T): T => {
-  if (!state || typeof state !== 'object' || !('width' in state)) return state;
-  const { width: _width, ...rest } = state as T & { width: unknown };
+  if (!state || typeof state !== 'object') return state;
+  if (!('width' in state || 'logical' in state || 'rows' in state)) return state;
+  const {
+    width: _width,
+    logical: _logical,
+    rows: _rows,
+    ...rest
+  } = state as T & { width: unknown; logical: unknown; rows: unknown };
   return rest as T;
 };
 const classify = (screen: Screen) => noWidth(classifyPrompt(screen));
@@ -90,6 +96,7 @@ test('On tmux, a faint suggestion is told apart from typed and pasted drafts', (
   assert.deepEqual(kind(FIXTURES.suggestion), {
     kind: 'suggestion',
     text: 'One more alternative, one short sentence, no tools.',
+    whole: true,
   });
   assert.deepEqual(kind(FIXTURES.typed), { kind: 'draft', text: 'hello draft', whole: true });
   assert.deepEqual(kind(FIXTURES.multi), {
@@ -298,6 +305,12 @@ function fakePrompt(
         col += typed.length;
       }
     },
+    // Enter submits the box: it empties (and shows the suggestion again, if any).
+    async submit() {
+      pressed.push(['Enter']);
+      lines = [[]];
+      [row, col] = [0, 0];
+    },
   };
   return { host, pressed, text };
 }
@@ -394,16 +407,26 @@ test('Placeholders, a small pane or the task list: never known whole', () => {
   );
   // Below height 12 the box's lower edge is cut off (measured): not counted whole either.
   assert.equal((classifyPrompt(tmux(FIXTURES.typed, 11)) as { whole: boolean }).whole, false);
-  // The task list (ctrl+t) was not measured: fail closed.
-  const tasks = [
-    '  ☐ Write the tests',
-    '  ◼ Fix the bug',
-    `\x1b[38;5;244m${RULE}`,
-    '\x1b[39m❯\xa0hello draft',
-    `\x1b[38;5;244m${RULE}`,
-    '  ⏸ manual mode on · ctrl+t to hide tasks',
-  ].join('\n');
-  assert.equal((classifyPrompt(tmux(tasks)) as { whole: boolean }).whole, false);
+  // The task list (ctrl+t) was not measured: fail closed once the box could be a capped one
+  // (3 rows or more). One or two rows between the rules are all there is (#338).
+  const tasks = (...rows: string[]) =>
+    [
+      '  ☐ Write the tests',
+      '  ◼ Fix the bug',
+      `\x1b[38;5;244m${RULE}`,
+      ...rows,
+      `\x1b[38;5;244m${RULE}`,
+      '  ⏸ manual mode on · ctrl+t to hide tasks',
+    ].join('\n');
+  assert.equal(
+    (classifyPrompt(tmux(tasks('\x1b[39m❯\xa0one', '  two', '  three'))) as { whole: boolean })
+      .whole,
+    false,
+  );
+  assert.equal(
+    (classifyPrompt(tmux(tasks('\x1b[39m❯\xa0hello draft'))) as { whole: boolean }).whole,
+    true,
+  );
 });
 
 test('Clearing stops at once when Claude is no longer the one at the terminal', async () => {
@@ -459,11 +482,23 @@ test('tmux: a suggestion not drawn all faint reads as a draft, and the probe cle
   // Reported: a Korean suggestion read as a draft ("Claude 입력창에 이 글이 있어요"), then
   // "Claude 입력창을 비우지 못해" — the keys never touch a suggestion, and tmux was never probed.
   const text = 'ㄱㄱ  머지하고  앱  띄워줘';
+  // A cursor cell drawn over the first character, the rest faint, is how 2.1.316 draws the
+  // suggestion in a focused terminal (`invert(t[0]) + dim(t.slice(1))`): told apart at once
+  // (#338), nothing to clear.
+  const cursor = fakePrompt({
+    suggestion: text,
+    drawSuggestion: (shown) => `\x1b[7m${shown[0]}\x1b[27m\x1b[2m${shown.slice(1)}\x1b[0m`,
+  });
+  assert.deepEqual(await claudeCodeComposer.inspect(cursor.host), {
+    kind: 'suggestion',
+    text,
+    whole: true,
+  });
   for (const paint of [
     // Grey by colour, not SGR 2.
     (shown: string) => `\x1b[38;5;246m${shown}\x1b[39m`,
-    // A cursor cell drawn inverse over the first character, the rest faint.
-    (shown: string) => `\x1b[7m${shown[0]}\x1b[27m\x1b[2m${shown.slice(1)}\x1b[0m`,
+    // Faint from its second character only on (two plain cells): no cursor cell alone.
+    (shown: string) => `${shown.slice(0, 2)}\x1b[2m${shown.slice(2)}\x1b[0m`,
   ]) {
     const prompt = fakePrompt({ suggestion: text, drawSuggestion: paint });
     const from = await claudeCodeComposer.inspect(prompt.host);
@@ -609,12 +644,20 @@ test('Each agent states what its composer supports', () => {
     canInspect: true,
     canDetectSuggestion: true,
     canClear: true,
+    images: 'attach',
+    canSubmitDraft: true,
+    // Only where the suggestion is told by its style (#338).
+    canSubmitSuggestion: true,
   });
   assert.deepEqual(claudeCodeComposer.capabilities({ styled: false }), {
     delivery: 'terminal',
     canInspect: true,
     canDetectSuggestion: false,
     canClear: true,
+    images: 'attach',
+    canSubmitDraft: true,
+    // Orca: only one line known whole that may be the suggestion, through the accept key.
+    canSubmitSuggestion: true,
   });
   // Codex takes follow-ups through its queue: there is no composer to check or clear.
   assert.equal(composerFor('codex'), codexQueueComposer);
@@ -623,6 +666,7 @@ test('Each agent states what its composer supports', () => {
     canInspect: false,
     canDetectSuggestion: false,
     canClear: false,
+    images: 'path',
   });
   assert.equal(composerFor('claude'), claudeCodeComposer);
   const openclaw = composerFor('openclaw');

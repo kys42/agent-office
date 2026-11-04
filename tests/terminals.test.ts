@@ -1,11 +1,17 @@
+import { claudeLiveness } from '../desktop/launch-guard.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
   cleanInput,
   claudeAbsent,
+  claudeAttachCommand,
+  claudeNoTerminalReason,
+  stillLive,
+  titleNames,
   findClaudeProcess,
   findHost,
   focusTerminal,
@@ -14,10 +20,13 @@ import {
   parseClaudeProcess,
   parseProcessEnv,
   promptHolds,
+  placeholderIds,
   readPrompt,
   ptyOwner,
   sendToTerminal,
   inspectTerminalDraft,
+  previewTerminalDraft,
+  submitTerminalDraft,
   terminalTarget,
   TerminalInputError,
   type LiveTerminal,
@@ -25,6 +34,7 @@ import {
   type TerminalDeps,
 } from '../desktop/terminals.js';
 import { OfficeService } from '../server/service.js';
+import { liveClaudeProcesses, titleKey } from '../server/adapters/claude-live.js';
 import type { SendResult } from '../src/shared/types.js';
 import { claudeCodeComposer, codexQueueComposer, composerFor } from '../desktop/composer/index.js';
 import { setLocale } from '../src/shared/i18n/index.js';
@@ -148,6 +158,8 @@ function fakeDeps(
     /** With `orcaDraft`: the rendered prompt line (measured: the suggestion is drawn there). */
     orcaTail?: (typed: string) => string;
     fail?: (file: string, args: string[]) => Error | undefined;
+    /** The title `orca terminal show` reports now (default: `orcaShow`'s). */
+    showTitle?: () => string;
   } = {},
 ) {
   const calls: { file: string; args: string[]; options?: RunOptions }[] = [];
@@ -200,6 +212,15 @@ function fakeDeps(
             },
           },
         });
+      }
+      if (file === '/bin/orca' && args[1] === 'show') {
+        const shown = options.orcaShow as { result?: { terminal?: Record<string, unknown> } };
+        const title = options.showTitle?.();
+        return JSON.stringify(
+          title === undefined
+            ? (shown ?? {})
+            : { ...shown, result: { terminal: { ...shown?.result?.terminal, title } } },
+        );
       }
       if (file === '/bin/orca' && args[1] === 'list') {
         const t = (options.orcaShow as { result?: { terminal?: unknown } })?.result?.terminal;
@@ -376,7 +397,7 @@ test('Orca is accepted only when Orca holds the pty, for a live writable termina
   // One list call covers every Orca terminal; no per-handle CLI call.
   assert.deepEqual(
     ok.calls.filter((c) => c.file === '/bin/orca').map((c) => c.args),
-    [['terminal', 'list', '--json']],
+    [['terminal', 'list', '--limit=10000', '--json']],
   );
   for (const over of [
     { connected: false },
@@ -414,6 +435,7 @@ test('Locating combines process and host; the renderer view never carries a hand
       canSend: true,
       canFocus: true,
       focus: { kind: 'orca', label: '✳ ao-send-test' },
+      images: 'attach',
     });
     assert.ok(!JSON.stringify(view).includes(HANDLE));
   });
@@ -589,7 +611,10 @@ test('The prompt must hold exactly the typed text, as drawn', () => {
     promptHolds(claudeScreen('가'.repeat(50) + '\n' + '가'.repeat(30)), '가'.repeat(80)),
     true,
   );
-  assert.equal(promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14)), true);
+  assert.equal(
+    promptHolds(claudeScreen('[Pasted text #1 +14 lines]'), 'long\n'.repeat(14), false, new Set()),
+    true,
+  );
   assert.equal(promptHolds(claudeScreen('good 👍'), 'good 👍️'), true);
   // A long text the composer shows only the end of.
   const long = Array.from({ length: 30 }, (_, i) => `line ${i} of a long reply`).join('\n');
@@ -599,6 +624,61 @@ test('The prompt must hold exactly the typed text, as drawn', () => {
   assert.equal(promptHolds(claudeScreen('hi hi'), 'hi'), false);
   assert.equal(promptHolds(claudeScreen('draft then mine'), 'mine'), false);
   assert.equal(promptHolds(agentsScreen('hi'), 'hi'), false);
+});
+
+test('A collapsed paste counts only as the one placeholder this very paste made', () => {
+  // Claude Code 2.1.316: K counts the line breaks (7 lines: +6), N comes from a counter that only
+  // grows, and one line over 800 characters shows no `+K lines`.
+  const seven = Array.from({ length: 7 }, (_, i) => `line ${i + 1} of the reply`).join('\n');
+  const none = new Set<number>();
+  const holds = (typed: string, text = seven, strict = false, before: Set<number> = none) =>
+    promptHolds(claudeScreen(typed), text, strict, before);
+  assert.ok(holds('[Pasted text #4 +6 lines]'));
+  // Also after a clearing that could only infer the box empty: alone in the box, it is all.
+  assert.ok(holds('[Pasted text #4 +6 lines]', seven, true));
+  assert.ok(holds('[Pasted text #2]', 'x'.repeat(801)));
+  // Wrapped by a narrow box, it is the same token.
+  assert.ok(holds('[Pasted text #4 +6\nlines]'));
+  // Without a look before the paste, never.
+  assert.equal(promptHolds(claudeScreen('[Pasted text #4 +6 lines]'), seven), false);
+  // A line count that is not the text's: another paste.
+  for (const k of [5, 7]) assert.ok(!holds(`[Pasted text #4 +${k} lines]`), `+${k}`);
+  assert.ok(!holds('[Pasted text #4]'), 'no +K for seven lines');
+  assert.ok(!holds('[Pasted text #4 +0 lines]', 'x'.repeat(1000)));
+  assert.ok(!holds('[Pasted text #2]', 'x'.repeat(800)), 'not over 800: never collapsed');
+  // An id already on screen before the paste is not this paste's.
+  assert.ok(!holds('[Pasted text #4 +6 lines]', seven, false, new Set([4])));
+  // Anything next to it: someone else's text, a second placeholder, a blank row.
+  assert.ok(!holds('draft [Pasted text #4 +6 lines]'));
+  assert.ok(!holds('[Pasted text #4 +6 lines] more'));
+  assert.ok(!holds('[Pasted text #3 +6 lines][Pasted text #4 +6 lines]'));
+  assert.ok(!holds('\n[Pasted text #4 +6 lines]'));
+  const trailing = claudeScreen('[Pasted text #4 +6 lines]').replace('lines]\n', 'lines]\n  \n');
+  assert.equal(promptHolds(trailing, seven, false, none), false);
+  // Orca reports the box apart: exactly the token, nothing around it.
+  const orca = (composer: string) => ({ text: claudeScreen(''), composer });
+  assert.ok(promptHolds(orca('[Pasted text #4 +6 lines]'), seven, true, none));
+  assert.ok(!promptHolds(orca('[Pasted text #4 +6 lines]\n'), seven, true, none));
+  assert.ok(!promptHolds(orca('hi [Pasted text #4 +6 lines]'), seven, true, none));
+  assert.ok(!holds('[Image #4]'));
+  assert.ok(!holds('[...Truncated text #4 +6 lines...]'));
+  assert.ok(!holds('[✦ Team setup guide #4 +6 lines]'));
+  // Not on a dialog.
+  assert.equal(promptHolds(agentsScreen('[Pasted text #4 +6 lines]'), seven, false, none), false);
+});
+
+test('Placeholder ids are read from the whole screen, wrapped or not', () => {
+  const screen = [
+    '❯ see [Pasted text #3 +6',
+    '  lines] and [Image #5]',
+    '⏺ [...Truncated text #8 +2 lines...]',
+    claudeScreen(''),
+  ].join('\n');
+  assert.deepEqual([...placeholderIds(screen)].sort(), [3, 5, 8]);
+  assert.deepEqual(
+    [...placeholderIds({ text: claudeScreen(''), composer: '[Pasted text #9]' })],
+    [9],
+  );
 });
 
 test('Orca types the text, looks again, then presses Enter on its own', async () => {
@@ -1035,6 +1115,11 @@ test('A collapsed paste or an image in the prompt is never cleared from here', a
     const { deps, calls } = fakeDeps('/x', options);
     const asked = await sendToTerminal(live, 'hi', deps, { backup: async () => {} });
     assert.equal(asked.status === 'needs-confirm' && asked.partial, true, live.host.kind);
+    // Only a paste or an attachment makes a placeholder: never called a suggestion, Orca too.
+    assert.equal(asked.status === 'needs-confirm' && asked.maybeSuggestion, undefined);
+    const shown = await inspectTerminalDraft(live, claudeCodeComposer, deps);
+    assert.equal(shown?.partial, true);
+    assert.equal(shown?.maybeSuggestion, undefined);
     assert.equal(
       (
         await sendToTerminal(live, 'hi', deps, {
@@ -1152,11 +1237,15 @@ test('An interrupted clearing confirmed again never backs up less than before', 
 });
 
 test('A verified empty prompt takes a long reply as Claude shows it; an inferred one does not', async () => {
-  /** Claude collapses a paste of 4 lines or more, or over 800 characters (measured). */
-  const collapse = (text: string) =>
-    text.split('\n').length >= 4 || text.length > 800
-      ? `[Pasted text #1 +${text.split('\n').length - 1} lines]`
-      : text;
+  /**
+   * Claude collapses a paste of 4 lines or more, or over 800 characters (measured); 2.1.316
+   * counts the line breaks, and shows no `+K lines` for one line.
+   */
+  const collapse = (text: string) => {
+    const breaks = text.split('\n').length - 1;
+    if (breaks < 3 && text.length <= 800) return text;
+    return breaks ? `[Pasted text #1 +${breaks} lines]` : '[Pasted text #1]';
+  };
   for (const reply of [
     Array.from({ length: 5 }, (_, i) => `step ${i + 1}: check it`).join('\n'),
     'x'.repeat(1000),
@@ -1180,6 +1269,74 @@ test('A verified empty prompt takes a long reply as Claude shows it; an inferred
     });
   // The inferred case (Orca, text the keys never touch after the draft went) refuses a long
   // reply shown in part: tested below with what it would hide.
+});
+
+test('Its own collapsed paste is submitted, even after an inferred suggestion; nothing else is', async () => {
+  // The reported case (#333): Orca, Claude's suggestion on the prompt line (told by the probe),
+  // then a 7-line reply that Claude shows as `[Pasted text #4 +6 lines]` only.
+  const reply = Array.from({ length: 7 }, (_, i) => `step ${i + 1}: check it`).join('\n');
+  // Sent: the probe told the suggestion, the box then held its own placeholder alone.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      orcaDraft: (typed) => (typed === reply ? '[Pasted text #4 +6 lines]' : typed || undefined),
+      orcaTail: (typed) => claudeScreen(typed ? '' : '결과 나오면 추천안대로 ㄱㄱ'),
+    });
+    const asked = await sendToTerminal(orcaLive(), reply, deps, { backup: async () => {} });
+    assert.equal(asked.status, 'needs-confirm');
+    const result = await sendToTerminal(orcaLive(), reply, deps, {
+      backup: async () => {},
+      replaceDraft: '결과 나오면 추천안대로 ㄱㄱ',
+    });
+    assert.equal(result.status, 'sent');
+    assert.ok(sent(calls));
+  });
+  // Refused, with no Enter: a line count that is not the reply's, an id seen before the paste,
+  // the placeholder next to leftover text, or two of them.
+  for (const [shown, earlier] of [
+    ['[Pasted text #4 +7 lines]', ''],
+    ['[Pasted text #4 +6 lines]', '⏺ Read [Pasted text #4 +6 lines] again'],
+    ['stale words here [Pasted text #4 +6 lines]', ''],
+    ['[Pasted text #3 +2 lines][Pasted text #4 +6 lines]', ''],
+  ] as const)
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir, {
+        orcaDraft: (typed) => (typed === reply ? shown : typed || undefined),
+        orcaTail: (typed) =>
+          [earlier, claudeScreen(typed ? '' : '결과 나오면 추천안대로 ㄱㄱ')]
+            .filter(Boolean)
+            .join('\n'),
+      });
+      await assert.rejects(
+        sendToTerminal(orcaLive(), reply, deps, {
+          backup: async () => {},
+          replaceDraft: '결과 나오면 추천안대로 ㄱㄱ',
+        }),
+        /넣은 글만 있는지 확인하지 못해 제출하지 않았어요/,
+        shown,
+      );
+      assert.ok(typedAny(calls));
+      assert.ok(!sent(calls), `no Enter: ${shown}`);
+    });
+});
+
+test('tmux: an empty box, then its own placeholder: submitted; an id on screen before: not', async () => {
+  const reply = Array.from({ length: 7 }, (_, i) => `line ${i + 1}`).join('\n');
+  for (const [earlier, ok] of [
+    ['', true],
+    ['⏺ You pasted [Pasted text #4 +6 lines] before.', false],
+  ] as const)
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const { deps, calls } = fakeDeps(dir, {
+        screen: (typed) =>
+          [earlier, claudeScreen(typed === reply ? '[Pasted text #4 +6 lines]' : typed)]
+            .filter(Boolean)
+            .join('\n'),
+      });
+      const result = sendToTerminal(tmuxLive(), reply, deps);
+      if (ok) assert.equal((await result).status, 'sent');
+      else await assert.rejects(result, /그사이|상태가 바뀌/);
+      assert.equal(sent(calls), ok);
+    });
 });
 
 test('Blank rows in the box are no empty prompt, and a box that may hide text is never cleared', async () => {
@@ -1647,6 +1804,33 @@ test('lookupTerminal: none only without a live Claude; an unverified terminal is
   });
 });
 
+test('Claude liveness adapter: any live process runs; none only after the absence check', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const found = fakeDeps(dir, { env: ORCA_ENV, orcaShow: orcaShow() });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, found.deps), {
+      kind: 'found',
+      terminal: { where: 'orca' },
+    });
+    // Running in another terminal app: still running, so a launch must not start it again.
+    const elsewhere = fakeDeps(dir, {
+      table: processTable('/Applications/iTerm.app/Contents/MacOS/iTerm2'),
+    });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, elsewhere.deps), {
+      kind: 'found',
+      terminal: { where: 'other' },
+    });
+    const gone = fakeDeps(dir, { alive: [] });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, gone.deps), { kind: 'none' });
+    const psFails = fakeDeps(dir, {
+      fail: (file, args) =>
+        file === '/bin/ps' && args.includes('lstart=') ? new Error('ps') : undefined,
+    });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, psFails.deps), {
+      kind: 'unknown',
+    });
+  });
+});
+
 test('claudeAbsent: "none" only after a successful absence check', async () => {
   await withSessions({ '4242.json': record(4242) }, async (dir) => {
     // A reused PID (another start time) or a gone process is absent.
@@ -2095,4 +2279,849 @@ test("Claude Code's default renderer never scrolls its box: a tall box on the ma
     assert.equal(asked.status === 'needs-confirm' && !!asked.partial, partial, alternate);
   }
   draft = '';
+});
+
+// Claude Code 2.1.312, measured: a window that moved its conversation to the background (← for
+// agents) records the job as `parkedJobId` and shows that job; the job is its own `bg` record,
+// run by Claude's daemon in a pty no terminal app owns. The window's own record is left stale.
+const WINDOW_SESSION = '9390c38e-a4eb-4202-a55a-46ecc4029fa8';
+const JOB = '89fe72dc';
+const JOB_SESSION = '89fe72dc-5783-416d-b904-7b00fcb87571';
+const JOB_NAME = 'PSP-POC OCR 위변조 탐지';
+const parkedWindow = (over: Record<string, unknown> = {}) =>
+  record(4242, {
+    sessionId: WINDOW_SESSION,
+    name: 'ocr-ef',
+    nameSource: 'derived',
+    status: 'busy',
+    parkedJobId: JOB,
+    ...over,
+  });
+const bgJob = (pid = 7777, over: Record<string, unknown> = {}) =>
+  record(pid, {
+    sessionId: JOB_SESSION,
+    kind: 'bg',
+    jobId: JOB,
+    name: JOB_NAME,
+    status: 'idle',
+    updatedAt: 2000,
+    ...over,
+  });
+const PARKED = { '4242.json': parkedWindow(), '7777.json': bgJob() };
+const jobShown = (title = `✳ ${JOB_NAME}`) => ({
+  env: ORCA_ENV,
+  orcaShow: orcaShow({ title }),
+  alive: [4242, 7777],
+});
+
+test('Background and parked records are read with their job, name and park', () => {
+  const job = parseClaudeProcess('7777.json', bgJob());
+  assert.equal(job?.kind, 'bg');
+  assert.equal(job?.jobId, JOB);
+  assert.equal(job?.name, JOB_NAME);
+  assert.equal(parseClaudeProcess('4242.json', parkedWindow())?.parkedJobId, JOB);
+  assert.equal(parseClaudeProcess('4242.json', record(4242))?.parkedJobId, undefined);
+  // A background record must name its job, and the job is its session id's prefix.
+  assert.equal(parseClaudeProcess('7777.json', bgJob(7777, { jobId: undefined })), null);
+  assert.equal(parseClaudeProcess('7777.json', bgJob(7777, { jobId: 'deadbeef' })), null);
+  assert.equal(parseClaudeProcess('7777.json', bgJob(7777, { jobId: '../x' })), null);
+});
+
+test('A background session shown by the window that parked it is located at that window', async () => {
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    assert.equal(live.process.pid, 7777);
+    assert.equal(live.window?.pid, 4242);
+    assert.deepEqual(live.host, { kind: 'orca', handle: HANDLE, title: `✳ ${JOB_NAME}` });
+    // The job's own state, not the window's stale `busy`.
+    const view = terminalTarget(live);
+    assert.equal(view.status, 'idle');
+    assert.equal(view.canSend, true);
+    assert.equal((await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind, 'found');
+    assert.equal(await claudeAttachCommand(JOB_SESSION, deps), 'claude attach 89fe72dc');
+  });
+});
+
+test("The parked window's own session is never a target: typing there reaches the job", async () => {
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    assert.equal(await locateTerminal(WINDOW_SESSION, { fresh: true, deps }), null);
+    // Its process is alive: unknown, so no Orca tab by title stands in either.
+    assert.equal((await lookupTerminal(WINDOW_SESSION, { fresh: true, deps })).kind, 'unknown');
+    assert.equal(await findClaudeProcess(WINDOW_SESSION, deps, true), null);
+    assert.equal(
+      (await findClaudeProcess(WINDOW_SESSION, deps, true, { parked: true }))?.pid,
+      4242,
+    );
+    assert.match((await claudeNoTerminalReason(WINDOW_SESSION, deps))!, /백그라운드 세션 ‘PSP-POC/);
+    assert.equal(await claudeAttachCommand(WINDOW_SESSION, deps), null);
+    // Still running for the duplicate-launch check: the window may return to it.
+    assert.deepEqual(await claudeLiveness.lookup(WINDOW_SESSION, true, deps), {
+      kind: 'found',
+      terminal: { where: 'other' },
+    });
+  });
+});
+
+test('A background session no window provably shows is unknown, with its attach command', async () => {
+  const cases: [string, Record<string, string>, Parameters<typeof fakeDeps>[1]][] = [
+    ['no window parked it', { '7777.json': bgJob() }, jobShown()],
+    ['the window shows another title', PARKED, jobShown('✳ ocr-ef')],
+    ['a longer name only starts the same', PARKED, jobShown(`✳ ${JOB_NAME} 2`)],
+    [
+      'two windows parked it',
+      { ...PARKED, '4343.json': parkedWindow({ pid: 4343, sessionId: 'aaaaaaaa-other' }) },
+      { ...jobShown(), alive: [4242, 4343, 7777] },
+    ],
+    [
+      'another live job has the same name',
+      {
+        ...PARKED,
+        '8888.json': bgJob(8888, {
+          sessionId: 'abcdef12-0000-4000-8000-000000000000',
+          jobId: 'abcdef12',
+        }),
+      },
+      { ...jobShown(), alive: [4242, 7777, 8888] },
+    ],
+    [
+      'the job has no name',
+      { ...PARKED, '7777.json': bgJob(7777, { name: undefined }) },
+      jobShown(),
+    ],
+    ['the parking window ended', PARKED, { ...jobShown(), alive: [7777] }],
+    [
+      'the parking window is a reused PID',
+      PARKED,
+      { ...jobShown(), lstart: { 4242: 'Wed Oct  7 09:00:00 2026' } },
+    ],
+  ];
+  for (const [name, files, options] of cases)
+    await withSessions(files, async (dir) => {
+      const { deps } = fakeDeps(dir, options);
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, name);
+      assert.equal(
+        (await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind,
+        'unknown',
+        name,
+      );
+      assert.equal(await claudeAttachCommand(JOB_SESSION, deps), 'claude attach 89fe72dc', name);
+      assert.match(
+        (await claudeNoTerminalReason(JOB_SESSION, deps))!,
+        /백그라운드.*claude attach 89fe72dc/,
+        name,
+      );
+      // It runs: a resume elsewhere would start a second copy.
+      assert.deepEqual(
+        await claudeLiveness.lookup(JOB_SESSION, true, deps),
+        { kind: 'found', terminal: { where: 'other' } },
+        name,
+      );
+    });
+});
+
+test("A send to a background session types into its window's terminal, checking the window", async () => {
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, jobShown());
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    assert.equal(await said(sendToTerminal(live, 'hello', deps)), 'Orca 터미널에 보냈어요');
+    // Ownership is the window's (the job's own pty has no terminal app); never the job's pid.
+    const owners = calls.filter((c) => c.args.includes('stat=,pgid=,tpgid='));
+    assert.ok(owners.length > 0);
+    assert.ok(owners.every((c) => c.args.at(-1) === '4242'));
+    // The title is read afresh before Enter.
+    assert.ok(calls.some((c) => c.file === '/bin/orca' && c.args[1] === 'show'));
+    assert.ok(calls.some((c) => c.args.includes('--enter')));
+  });
+});
+
+test('A background send stops when the window switched to another job before Enter', async () => {
+  await withSessions(PARKED, async (dir) => {
+    let shows = 0;
+    const { deps, calls } = fakeDeps(dir, {
+      ...jobShown(),
+      // In front while typing starts; another job by the time Enter would go.
+      showTitle: () => (shows++ < 2 ? `✳ ${JOB_NAME}` : '✳ other job'),
+    });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(calls.some((c) => c.args.some((arg) => arg.startsWith('--text='))));
+    assert.ok(!calls.some((c) => c.args.includes('--enter')));
+  });
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { ...jobShown(), showTitle: () => '✳ other job' });
+    // A fresh look reads the title itself; a polled one (Orca's list) still showed the job.
+    assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+    const live = await locateTerminal(JOB_SESSION, { deps: fakeDeps(dir, jobShown()).deps });
+    assert.ok(live);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(!calls.some((c) => c.args[1] === 'send'));
+  });
+});
+
+test("A parked window's stale status never makes its own session look busy or waiting", async () => {
+  await withSessions(
+    {
+      '4242.json': parkedWindow({ status: 'waiting' }),
+      '7777.json': bgJob(7777, { status: 'busy' }),
+    },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, jobShown());
+      const found = await liveClaudeProcesses(
+        deps,
+        new Set([WINDOW_SESSION, JOB_SESSION]),
+        new Set(['busy', 'waiting']),
+      );
+      assert.deepEqual([...found.keys()], [JOB_SESSION]);
+    },
+  );
+});
+
+test('A Claude title names a session only as a whole', () => {
+  assert.equal(titleNames(`✳ ${JOB_NAME}`, JOB_NAME), true);
+  assert.equal(titleNames(`⠂ ${JOB_NAME}`, JOB_NAME), true);
+  assert.equal(titleNames(JOB_NAME, JOB_NAME), true);
+  assert.equal(titleNames(`[ ! ] Action Required | ✳ ${JOB_NAME}`, JOB_NAME), true);
+  assert.equal(titleNames(`✳ ${JOB_NAME} 2`, JOB_NAME), false);
+  assert.equal(titleNames('✳ PSP-POC', JOB_NAME), false);
+  assert.equal(titleNames('', JOB_NAME), false);
+});
+
+test('A job of the same name started after locating stops the send before Enter', async () => {
+  const namesake = bgJob(8888, {
+    sessionId: 'abcdef12-0000-4000-8000-000000000000',
+    jobId: 'abcdef12',
+  });
+  // Present before typing: nothing is typed at all.
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await writeFile(path.join(dir, '8888.json'), namesake);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(!calls.some((c) => c.args[1] === 'send'));
+    // A prompt answer runs the same check.
+    assert.equal(await stillLive(live, deps, () => true), null);
+  });
+  // Started while the text went in (the agents view may switch to it under the same title).
+  await withSessions(PARKED, async (dir) => {
+    let shows = 0;
+    const { deps, calls } = fakeDeps(dir, {
+      ...jobShown(),
+      alive: [4242, 7777, 8888],
+      showTitle: () => {
+        // 0: the fresh lookup, 1: the check before typing; the next check is before Enter.
+        if (shows++ === 1) writeFileSync(path.join(dir, '8888.json'), namesake);
+        return `✳ ${JOB_NAME}`;
+      },
+    });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(calls.some((c) => c.args.some((arg) => arg.startsWith('--text='))));
+    assert.ok(!calls.some((c) => c.args.includes('--enter')));
+  });
+});
+
+test('A long job name matches the whole Orca title while polling; the display stays clipped', async () => {
+  const long = `${JOB_NAME} ${'긴 이름 '.repeat(30)}끝`;
+  await withSessions(
+    { '4242.json': parkedWindow(), '7777.json': bgJob(7777, { name: long }) },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, jobShown(`✳ ${long}`));
+      for (const fresh of [false, true]) {
+        const live = await locateTerminal(JOB_SESSION, { fresh, deps });
+        assert.ok(live, `fresh: ${fresh}`);
+        assert.equal(live.host.kind === 'orca' && live.host.title.length, 120);
+        assert.equal(terminalTarget(live).label.length, 120);
+      }
+      // A clipped title alone never names the job.
+      assert.equal(titleNames(`✳ ${long}`.slice(0, 120), long), false);
+    },
+  );
+});
+
+const OTHER_JOB = {
+  sessionId: 'abcdef12-0000-4000-8000-000000000000',
+  jobId: 'abcdef12',
+};
+
+test('Jobs whose names could draw the same title are namesakes, whichever has the glyph', async () => {
+  const pairs: [string, string | undefined][] = [
+    ['Build', '✳ Build'],
+    ['✳ Build', 'Build'],
+    ['Build', '[ ! ] Action Required | ✳ Build'],
+    ['Build', 'Build  '],
+    // A job with no name of its own could show any title.
+    ['Build', undefined],
+  ];
+  for (const [ours, theirs] of pairs)
+    await withSessions(
+      {
+        '4242.json': parkedWindow(),
+        '7777.json': bgJob(7777, { name: ours }),
+        '8888.json': bgJob(8888, { ...OTHER_JOB, name: theirs }),
+      },
+      async (dir) => {
+        const { deps } = fakeDeps(dir, { ...jobShown('✳ Build'), alive: [4242, 7777, 8888] });
+        const name = `${ours} / ${theirs}`;
+        assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, name);
+        assert.equal(
+          (await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind,
+          'unknown',
+          name,
+        );
+      },
+    );
+  // Distinct titles stay distinct.
+  await withSessions(
+    {
+      '4242.json': parkedWindow(),
+      '7777.json': bgJob(7777, { name: 'Build' }),
+      '8888.json': bgJob(8888, { ...OTHER_JOB, name: 'Build 2' }),
+    },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, { ...jobShown('✳ Build'), alive: [4242, 7777, 8888] });
+      assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+    },
+  );
+});
+
+test('A competing job or window whose process cannot be verified keeps the job unknown', async () => {
+  const lstartFails = (pid: number) => (file: string, args: string[]) =>
+    file === '/bin/ps' && args.includes('lstart=') && args.at(-1) === String(pid)
+      ? new Error('ps failed')
+      : undefined;
+  const namesake = { ...PARKED, '8888.json': bgJob(8888, OTHER_JOB) };
+  // Alive, start time unreadable: it may be live, so it may be the job on screen.
+  await withSessions(namesake, async (dir) => {
+    const { deps } = fakeDeps(dir, {
+      ...jobShown(),
+      alive: [4242, 7777, 8888],
+      fail: lstartFails(8888),
+    });
+    assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+    assert.equal((await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind, 'unknown');
+  });
+  // Proven gone (ended, or a recycled PID): no longer a namesake.
+  for (const options of [
+    { alive: [4242, 7777] },
+    { alive: [4242, 7777, 8888], lstart: { 8888: 'Wed Oct  7 09:00:00 2026' } },
+  ])
+    await withSessions(namesake, async (dir) => {
+      const { deps } = fakeDeps(dir, { ...jobShown(), ...options });
+      assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+    });
+  // A second parking window that cannot be verified may be the one showing it.
+  await withSessions(
+    { ...PARKED, '4343.json': parkedWindow({ pid: 4343, sessionId: 'aaaaaaaa-other' }) },
+    async (dir) => {
+      const { deps } = fakeDeps(dir, {
+        ...jobShown(),
+        alive: [4242, 4343, 7777],
+        fail: lstartFails(4343),
+      });
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+    },
+  );
+  // Found first, then a namesake turns unverifiable: the next check refuses.
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, {
+      ...jobShown(),
+      alive: [4242, 7777, 8888],
+      fail: lstartFails(8888),
+    });
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await writeFile(path.join(dir, '8888.json'), bgJob(8888, OTHER_JOB));
+    assert.equal(await stillLive(live, deps), null);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+  });
+});
+
+test('Titles and job names reduce alike', () => {
+  assert.equal(titleKey('✳ Build'), 'Build');
+  assert.equal(titleKey('[ ! ] Action Required | ⠂ Build'), 'Build');
+  assert.equal(titleKey('  Build   now '), 'Build now');
+  assert.equal(titleNames('✳ Build', '✳ Build'), true);
+  assert.equal(titleNames('✳ ✳ Build', 'Build'), true);
+  assert.equal(titleNames('✳ Build', '✳'), false);
+});
+
+test('A process record that cannot be read or parsed keeps a background job unknown', async () => {
+  // Unreadable (EACCES): it could be a second window or a job of the same name.
+  await withSessions({ ...PARKED, '8888.json': bgJob(8888, OTHER_JOB) }, async (dir) => {
+    await chmod(path.join(dir, '8888.json'), 0o000);
+    try {
+      const { deps } = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] });
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null);
+      assert.equal((await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind, 'unknown');
+      // The same through an injected reader, wherever the process runs.
+      const injected = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] }).deps;
+      injected.records = {
+        list: (d) => readdir(d),
+        read: async (file) => {
+          if (file.endsWith('8888.json'))
+            throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          return readFile(file, 'utf8');
+        },
+      };
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps: injected }), null);
+    } finally {
+      await chmod(path.join(dir, '8888.json'), 0o600);
+    }
+  });
+  // Malformed (mid-write, or a format this app does not know).
+  for (const text of [
+    '{"pid":8888,"sessionId":"abcdef12-',
+    bgJob(8888, { ...OTHER_JOB, kind: 'remote' }),
+  ])
+    await withSessions({ ...PARKED, '8888.json': text }, async (dir) => {
+      const { deps } = fakeDeps(dir, { ...jobShown(), alive: [4242, 7777, 8888] });
+      assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, text);
+      assert.equal(
+        (await lookupTerminal(JOB_SESSION, { fresh: true, deps })).kind,
+        'unknown',
+        text,
+      );
+    });
+  // Found first, then a record turns unreadable: the check before typing refuses.
+  await withSessions(PARKED, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, jobShown());
+    const live = await locateTerminal(JOB_SESSION, { fresh: true, deps });
+    assert.ok(live);
+    await writeFile(path.join(dir, '9999.json'), '{broken');
+    assert.equal(await stillLive(live, deps), null);
+    await assert.rejects(sendToTerminal(live, 'hello', deps), TerminalInputError);
+    assert.ok(!calls.some((c) => c.args[1] === 'send'));
+  });
+  // Files that are not process records (`<pid>.<hash>.key`, notes) do not count.
+  await withSessions({ ...PARKED, '4242.abc.key': 'x', 'notes.txt': '{' }, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    assert.ok(await locateTerminal(JOB_SESSION, { fresh: true, deps }));
+  });
+});
+
+/** A box holding `text` until Enter goes in (tmux `send-keys … Enter`, Orca `--enter`). */
+function draftBox(text: string, options: { taken?: boolean } = {}) {
+  let held = text;
+  return {
+    screen: () => claudeScreen(held),
+    fail: (_file: string, args: string[]) => {
+      const enter =
+        (args.includes('send-keys') && args.includes('Enter')) || args.includes('--enter');
+      if (enter && options.taken !== false) held = '';
+      return undefined;
+    },
+  };
+}
+const enters = (calls: { args: string[] }[]) =>
+  calls.filter(
+    (c) => (c.args.includes('send-keys') && c.args.includes('Enter')) || c.args.includes('--enter'),
+  ).length;
+const captures = (calls: { file: string; args: string[] }[]) =>
+  calls.filter((c) => c.args.includes('capture-pane') || c.args[1] === 'read').length;
+
+test('The card preview reads the box read-only, once for every window asking at once', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { screen: () => claudeScreen('half-written idea') });
+    const [a, b] = await Promise.all([
+      previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps),
+      previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps),
+    ]);
+    assert.deepEqual(a, {
+      kind: 'draft',
+      text: 'half-written idea',
+      agent: 'Claude',
+      submittable: true,
+      logical: 'half-written idea',
+    });
+    assert.deepEqual(b, a);
+    // A third ask right after shares it too: one screen read in all.
+    await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps);
+    assert.equal(captures(calls), 1);
+    assert.ok(!sent(calls) && !typedAny(calls) && !calls.some((c) => clears(c.args)));
+  });
+  // Not taking input (a permission prompt), or another process in front: not read at all.
+  const waiting = fakeDeps('/x', { screen: () => claudeScreen('mine') });
+  assert.deepEqual(
+    await previewTerminalDraft(tmuxLive('waiting'), claudeCodeComposer, waiting.deps),
+    { kind: 'unknown', reason: 'not-ready' },
+  );
+  const foreign = fakeDeps('/x', { fg: 'T 4242 4000', screen: () => claudeScreen('mine') });
+  assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, foreign.deps), {
+    kind: 'unknown',
+    reason: 'not-ready',
+  });
+  assert.equal(captures(waiting.calls) + captures(foreign.calls), 0);
+  // A queue (Codex) has no box to read here.
+  const queue = fakeDeps('/x');
+  assert.deepEqual(await previewTerminalDraft(tmuxLive(), codexQueueComposer, queue.deps), {
+    kind: 'unknown',
+    reason: 'unsupported',
+  });
+  // Orca: its reported `draft`, with the suggestion caveat.
+  const orca = fakeDeps('/x', { orcaDraft: () => 'from orca' });
+  assert.deepEqual(await previewTerminalDraft(orcaLive(), claudeCodeComposer, orca.deps), {
+    kind: 'draft',
+    text: 'from orca',
+    agent: 'Claude',
+    submittable: true,
+    logical: 'from orca',
+    maybeSuggestion: true,
+    acceptsSuggestion: true,
+  });
+});
+
+test('While a send types into the box, the preview says so instead of showing its text', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps } = fakeDeps(dir);
+    const sending = sendToTerminal(tmuxLive(), 'my reply', deps);
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'unknown',
+      reason: 'sending',
+    });
+    await sending;
+    // The send is over: the next look reads afresh (its cached answer was dropped).
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'empty',
+    });
+  });
+});
+
+test('Send as is: Enter only, after the box is seen holding exactly the previewed text', async () => {
+  for (const live of [tmuxLive(), orcaLive()])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const box = draftBox('half-written idea\nsecond line');
+      const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+      const result = await submitTerminalDraft(live, 'half-written idea\nsecond line', deps);
+      assert.deepEqual(result, {
+        status: 'sent',
+        message: live.host.kind === 'orca' ? 'Orca 터미널에 보냈어요' : 'tmux work:1.0에 보냈어요',
+        // As typed, from the look right before Enter: for the "sent" receipt.
+        logical: 'half-written idea\nsecond line',
+      });
+      assert.equal(enters(calls), 1);
+      // Nothing typed, deleted or pasted: the box's own text went.
+      assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
+    });
+});
+
+test('Edited in the card: replaced only while the box draws exactly the rows taken in', async () => {
+  const taken = 'steps:\n    - build';
+  /** The box holds `held` until the clearing keys empty it; then what the send pastes. */
+  const boxOf = (initial: string) => {
+    let held = initial;
+    return {
+      screen: (typed: string) => claudeScreen(held || typed),
+      fail: (_file: string, args: string[]) => {
+        if (clears(args)) held = '';
+        return undefined;
+      },
+    };
+  };
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Only an indent changed in the terminal since: asked (changed), nothing cleared or typed.
+    const box = boxOf('steps:\n  - build');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const backups: string[] = [];
+    const backup = async (text: string) => void backups.push(text);
+    const result = await sendToTerminal(tmuxLive(), 'steps:\n    - build\n    - test', deps, {
+      backup,
+      replaceDraft: taken,
+      exactDraft: true,
+    });
+    assert.equal(result.status, 'needs-confirm');
+    assert.equal(result.status === 'needs-confirm' && result.changed, true);
+    assert.ok(!calls.some((c) => clears(c.args)) && !typedAny(calls) && !sent(calls));
+    assert.deepEqual(backups, []);
+    // The older confirmation (no `exactDraft`) still goes by the drawn shape, as before.
+    const older = await sendToTerminal(tmuxLive(), 'hi', deps, {
+      backup,
+      replaceDraft: taken,
+    });
+    assert.equal(older.status, 'sent');
+  });
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Unchanged: backed up, cleared, and the card's text sent in its place.
+    const box = boxOf(taken);
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const backups: string[] = [];
+    const result = await sendToTerminal(tmuxLive(), 'steps:\n    - build\n    - test', deps, {
+      backup: async (text) => void backups.push(text),
+      replaceDraft: taken,
+      exactDraft: true,
+    });
+    assert.equal(result.status, 'sent');
+    assert.ok(calls.some((c) => clears(c.args)) && sent(calls));
+    assert.deepEqual(backups, ['steps:\n- build']);
+  });
+});
+
+test('Send as is presses nothing when only an indent changed after the preview', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Previewed with four spaces; the person took two out in the terminal meanwhile.
+    const box = draftBox('items:\n  - a');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), 'items:\n    - a', deps);
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /바뀌어 보내지 않았어요/);
+    assert.equal(
+      result.status === 'changed' && result.draft.kind === 'draft' && result.draft.text,
+      'items:\n  - a',
+    );
+    assert.equal(enters(calls), 0);
+  });
+});
+
+test('Send as is presses nothing when the box changed, closed, or Claude is not there', async () => {
+  // Edited in the terminal since the preview: no key; the fresh text comes back to show.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('half-written idea, edited');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), 'half-written idea', deps);
+    assert.equal(result.status, 'changed');
+    assert.deepEqual(result.status === 'changed' && result.draft, {
+      kind: 'draft',
+      text: 'half-written idea, edited',
+      agent: 'Claude',
+      submittable: true,
+      logical: 'half-written idea, edited',
+    });
+    assert.match(result.status === 'changed' ? result.message : '', /바뀌어 보내지 않았어요/);
+    assert.equal(enters(calls), 0);
+    assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
+  });
+  // A permission prompt replaced the box between the two looks: no Enter (it would pick Yes).
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, {
+      screen: (_typed, read) => (read === 0 ? claudeScreen('go on') : permissionScreen),
+    });
+    const result = await submitTerminalDraft(tmuxLive(), 'go on', deps);
+    assert.deepEqual(result.status === 'changed' && result.draft, {
+      kind: 'unknown',
+      reason: 'closed',
+    });
+    assert.equal(enters(calls), 0);
+  });
+  // Emptied meanwhile (sent from the terminal itself): nothing to send twice.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(orcaLive(), 'go on', deps);
+    assert.deepEqual(result.status === 'changed' && result.draft, { kind: 'empty' });
+    assert.equal(enters(calls), 0);
+  });
+  // Waiting on a dialog, a foreign foreground, sending turned off right before the key.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('go on');
+    const waiting = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive('waiting'), 'go on', waiting.deps),
+      TerminalInputError,
+    );
+    const foreign = fakeDeps(dir, { screen: box.screen, fail: box.fail, fg: 'T 4242 4000' });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), 'go on', foreign.deps),
+      TerminalInputError,
+    );
+    const off = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), 'go on', off.deps, { allowed: async () => false }),
+      /상태가 바뀌어 보내지 않았어요/,
+    );
+    assert.equal(enters(waiting.calls) + enters(foreign.calls) + enters(off.calls), 0);
+  });
+  // Not all of it on screen (a collapsed paste): never sent from the card.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('[Pasted text #1 +12 lines]');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), '[Pasted text #1 +12 lines]', deps),
+      /다 보이지 않아/,
+    );
+    assert.equal(enters(calls), 0);
+  });
+  // Codex's queue: refused before any read.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { screen: () => claudeScreen('go on') });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), 'go on', deps, { composer: codexQueueComposer }),
+      /Codex에는 여기서 보낼 수 없어요/,
+    );
+    assert.equal(captures(calls), 0);
+  });
+});
+
+test('Send as is says so when Enter left the text in the box, and never presses twice', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('go on', { taken: false });
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(submitTerminalDraft(tmuxLive(), 'go on', deps), /같은 글이 그대로예요/);
+    assert.equal(enters(calls), 1);
+  });
+});
+
+/**
+ * Claude Code 2.1.316 with its prompt suggestion shown (#338): faint after `❯ `, the cursor's
+ * cell first (tmux), or reported in Orca's `draft` like typing. Right (or Tab) with the box empty
+ * takes it in as typed text; Right with text typed only moves the cursor; Enter submits what is
+ * typed and nothing on an empty box. `typed`: text in the box from the start. `onAccept` changes
+ * what the key takes in (a mismatch).
+ */
+function suggestionBox(
+  suggestion: string,
+  options: { typed?: string; onAccept?: (shown: string) => string } = {},
+) {
+  let held = options.typed ?? '';
+  let shown: string | null = suggestion;
+  const submitted: string[] = [];
+  return {
+    submitted,
+    screen: () =>
+      held || !shown
+        ? claudeScreen(held)
+        : claudeScreen('').replace(
+            /^❯$/m,
+            `❯ \x1b[7m${shown[0]}\x1b[27m\x1b[2m${shown.slice(1)}\x1b[0m`,
+          ),
+    /** Orca's `draft`: whatever the box shows, the suggestion as typing. */
+    orcaDraft: () => held || shown || undefined,
+    fail: (_file: string, args: string[]) => {
+      if (!args.includes('send-keys') && args[1] !== 'send') return undefined;
+      const accept =
+        args.includes('Right') || args.includes('Tab') || args.includes('--text=\x1b[C');
+      const enter = args.includes('Enter') || args.includes('--enter');
+      if (accept && !held && shown) held = options.onAccept ? options.onAccept(shown) : shown;
+      if (enter && held) {
+        submitted.push(held);
+        held = '';
+        shown = null;
+      }
+      return undefined;
+    },
+  };
+}
+const accepts = (calls: { args: string[] }[]) =>
+  calls.filter((c) => c.args.includes('Right') || c.args.includes('--text=\x1b[C')).length;
+const tabs = (calls: { args: string[] }[]) =>
+  calls.filter((c) => c.args.includes('Tab') || c.args.includes('--text=\t')).length;
+
+test('Send suggestion: the accept key while the box holds only it, Enter once it holds exactly it', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    // The preview shows it as Claude's suggestion, not as a draft.
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'suggestion',
+      text: '커밋해줘',
+      agent: 'Claude',
+      submittable: true,
+    });
+    const result = await submitTerminalDraft(tmuxLive(), '커밋해줘', deps, { suggestion: true });
+    assert.deepEqual(result, {
+      status: 'sent',
+      message: 'tmux work:1.0에 보냈어요',
+      logical: '커밋해줘',
+    });
+    assert.equal(accepts(calls), 1);
+    assert.equal(tabs(calls), 0, 'never Tab: it runs completion on typed text');
+    assert.equal(enters(calls), 1);
+    assert.deepEqual(box.submitted, ['커밋해줘']);
+    // Nothing typed, pasted or deleted: only the accept key, then Enter.
+    assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
+  });
+});
+
+test('Orca: a one-line text that may be the suggestion is sent whichever it is', async () => {
+  // The reported case (#338): Orca reports the suggestion in `draft`, like typing.
+  for (const typed of [undefined, '커밋해줘'])
+    await withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const box = suggestionBox(typed ? '다른 추천' : '커밋해줘', { typed });
+      const { deps, calls } = fakeDeps(dir, { orcaDraft: box.orcaDraft, fail: box.fail });
+      const preview = await previewTerminalDraft(orcaLive(), claudeCodeComposer, deps);
+      assert.equal(preview.kind === 'draft' && preview.acceptsSuggestion, true);
+      const result = await submitTerminalDraft(orcaLive(), '커밋해줘', deps, { suggestion: true });
+      assert.equal(result.status, 'sent', typed ?? 'suggestion');
+      // The suggestion was taken in, or the typed text left as it was: exactly it went.
+      assert.deepEqual(box.submitted, ['커밋해줘']);
+      assert.equal(accepts(calls), 1);
+      assert.equal(tabs(calls), 0);
+      assert.equal(enters(calls), 1);
+    });
+  // Something else after the key: no Enter, said so.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘', { onAccept: (s) => `${s} 하고 푸시` });
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: box.orcaDraft, fail: box.fail });
+    const result = await submitTerminalDraft(orcaLive(), '커밋해줘', deps, { suggestion: true });
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /받기 키\(→\)를 눌렀지만/);
+    assert.equal(enters(calls), 0);
+    assert.deepEqual(box.submitted, []);
+  });
+});
+
+test('Send suggestion stops with nothing more pressed on a mismatch or a draft', async () => {
+  // The key took in other text than was shown: no Enter, said so, and the box shown again.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘', { onAccept: (s) => `${s} 하고 푸시` });
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), '커밋해줘', deps, { suggestion: true });
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', /Enter 직전 입력창 확인/);
+    assert.equal(
+      result.status === 'changed' && result.draft.kind === 'draft' && result.draft.text,
+      '커밋해줘 하고 푸시',
+    );
+    assert.equal(accepts(calls), 1);
+    assert.equal(enters(calls), 0);
+    assert.deepEqual(box.submitted, []);
+  });
+  // tmux: the box holds typed text (told by its style): no key at all.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = draftBox('커밋해줘');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    const result = await submitTerminalDraft(tmuxLive(), '커밋해줘', deps, { suggestion: true });
+    assert.equal(result.status, 'changed');
+    assert.equal(accepts(calls) + enters(calls), 0);
+  });
+  // Sending turned off right before the key: nothing pressed.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const box = suggestionBox('커밋해줘');
+    const { deps, calls } = fakeDeps(dir, { screen: box.screen, fail: box.fail });
+    await assert.rejects(
+      submitTerminalDraft(tmuxLive(), '커밋해줘', deps, {
+        suggestion: true,
+        allowed: async () => false,
+      }),
+      /상태가 바뀌어 보내지 않았어요/,
+    );
+    assert.equal(accepts(calls) + enters(calls), 0);
+  });
+  // More than one line is never a suggestion: refused before any key.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: () => '한 줄\n두 줄' });
+    await assert.rejects(
+      submitTerminalDraft(orcaLive(), '한 줄\n두 줄', deps, { suggestion: true }),
+      /한 줄 글만 돼요/,
+    );
+    assert.equal(accepts(calls) + enters(calls), 0);
+  });
+});
+
+test('Send as is on Orca text that stayed after Enter says it may be a suggestion', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    // Orca reports the suggestion in `draft` like typing; Enter alone submits nothing.
+    const { deps, calls } = fakeDeps(dir, { orcaDraft: () => '커밋해줘' });
+    await assert.rejects(
+      submitTerminalDraft(orcaLive(), '커밋해줘', deps),
+      /Claude 추천 글이면 Enter로는 보내지지 않아요/,
+    );
+    assert.equal(enters(calls), 1);
+    assert.equal(accepts(calls) + tabs(calls), 0);
+  });
 });

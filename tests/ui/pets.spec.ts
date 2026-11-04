@@ -22,10 +22,11 @@ test('Provider customization saves across reload and matches office, roster, lou
   await expect
     .poll(() =>
       dialog.locator('.pet-preview .sprite-window').evaluate((element) => {
-        // Remember the running loop: choosing an accessory must not restart it.
+        // Remember the loop: choosing an accessory must not restart it. The office tick holds
+        // it paused between frames and steps it (frame-clock.ts), so it is paused, not running.
         const loop = element.querySelector('.sprite')?.getAnimations()[0];
         (window as unknown as { sheetLoop?: Animation }).sheetLoop = loop;
-        return loop?.playState === 'running';
+        return loop?.playState === 'paused' && Number(loop.currentTime) > 0;
       }),
     )
     .toBe(true);

@@ -646,17 +646,17 @@
   position: absolute;
   inset: 0;
   border-radius: 3px 3px 0 0;
-  border-top: 3px solid #ffe2ab;
-  border-left: 3px solid #6e4a3a;
-  border-right: 3px solid #6e4a3a;
+  border-top: 3px solid var(--asset-rim, #ffe2ab);
+  border-left: 3px solid var(--asset-side, #6e4a3a);
+  border-right: 3px solid var(--asset-side, #6e4a3a);
   box-shadow: 0 6px 0 rgba(50, 30, 20, 0.22);
 }
-.dynamic-office .team-bench .bench-surface {
+:is(.dynamic-office, .desk-preview-scene) .team-bench .bench-surface {
   background: linear-gradient(
     var(--asset-top) 0 5px,
     var(--asset-wood) 5px 29px,
     var(--asset-edge) 29px 35px,
-    #6e4a3a 35px 40px,
+    var(--asset-side, #6e4a3a) 35px 40px,
     transparent 40px
   );
 }
@@ -667,7 +667,7 @@
   top: 37px;
   width: 8px;
   height: 14px;
-  background: #5e3f33;
+  background: var(--asset-leg, #5e3f33);
   border-bottom: 3px solid #3a2722;
 }
 .bench-surface::before {
@@ -758,6 +758,17 @@
   background: #3e4842;
   border-left: 4px solid #2c3530;
   border-right: 4px solid #2c3530;
+}
+/* A customized chair (desks.ts): one drawn layer in its box, set inline. */
+.office-chair.is-sprite {
+  background: center / 100% 100% no-repeat;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  image-rendering: pixelated;
+}
+.office-chair.is-sprite::after {
+  content: none;
 }
 .pet-shadow {
   position: absolute;
@@ -919,6 +930,12 @@
 .status-done .desk-screen {
   background: linear-gradient(135deg, #d6e9ff, #8fbff6);
 }
+.desk-monitor,
+.desk-item {
+  position: absolute;
+  background: center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
 .desk-keyboard {
   position: absolute;
   top: 149px;
@@ -976,13 +993,16 @@
   width: 2px;
   height: 8px;
   background: #8ff0bd;
+}
+/* One loop per desk: the first bar moves, the other two hold the meter's shape. */
+.working-beacon i:first-child {
   animation: work-meter 0.75s steps(3) infinite alternate;
 }
 .working-beacon i:nth-child(2) {
-  animation-delay: -0.375s;
+  transform: scaleY(0.68);
 }
 .working-beacon i:nth-child(3) {
-  animation-delay: -0.75s;
+  transform: scaleY(0.35);
   margin-right: 3px;
 }
 @keyframes work-meter {
@@ -1404,6 +1424,11 @@
   text-overflow: ellipsis;
   font-size: calc(10px * var(--read-scale));
   color: var(--text-4);
+}
+.quick-reply-bar .quick-reply-attach {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
 }
 .quick-reply-close,
 .quick-reply-send {

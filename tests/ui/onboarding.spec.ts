@@ -103,7 +103,7 @@ test('empty office explains connections and routes setup without a fake work car
     guide.getByRole('button', { name: '동료가 들어오면 사용할 수 있어요' }),
   ).toBeDisabled();
   await guide.getByRole('button', { name: '캐릭터 고르기' }).click();
-  await expect(page.locator('.pet-settings')).toBeVisible();
+  await expect(page.locator('.pet-settings[data-guide-section="appearance"]')).toBeVisible();
   await expect(page.locator('.office-guide')).toHaveCount(0);
 });
 

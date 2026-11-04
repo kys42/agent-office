@@ -28,6 +28,7 @@ import {
   readPillSpot,
   TINY_TOP,
   clampInto,
+  moveOntoArea,
   petBounds,
   petFeet,
   readPetSpot,
@@ -212,4 +213,66 @@ test('the pill stays whole inside the window, wherever its spot is', () => {
   assert.equal(pillLeft(0, 1000, 400), PILL_MARGIN, 'left edge');
   assert.equal(pillLeft(1, 1000, 400), 1000 - 400 - PILL_MARGIN, 'right edge');
   assert.equal(pillLeft(0.5, 300, 400), PILL_MARGIN, 'wider than the window: from the left');
+});
+
+test('the big office moves onto the display it was opened from, same size and relative spot', () => {
+  // A 2560×1440 external display (scale 1) beside a 1512×982 Retina laptop (scale 2): Electron
+  // hands both over in DIPs, so the maths is the same at any scale factor.
+  const laptop = { x: 0, y: 25, width: 1512, height: 919 };
+  const external = { x: 1512, y: -200, width: 2560, height: 1415 };
+  const centred = {
+    x: 1512 + (2560 - 1440) / 2,
+    y: -200 + (1415 - 970) / 2,
+    width: 1440,
+    height: 970,
+  };
+  // Centred on the external display: centred on the laptop too, shrunk to its work area.
+  assert.deepEqual(moveOntoArea(centred, external, laptop), {
+    x: 36,
+    y: 25,
+    width: 1440,
+    height: 919,
+  });
+  // Back the other way: the size it has now, centred again.
+  assert.deepEqual(moveOntoArea({ x: 36, y: 25, width: 1440, height: 919 }, laptop, external), {
+    x: 1512 + 560,
+    y: Math.round(-200 + (1415 - 919) / 2),
+    width: 1440,
+    height: 919,
+  });
+  // Flush to the top-left stays flush; flush to the bottom-right stays flush.
+  assert.deepEqual(moveOntoArea({ x: 1512, y: -200, width: 1200, height: 800 }, external, laptop), {
+    x: 0,
+    y: 25,
+    width: 1200,
+    height: 800,
+  });
+  assert.deepEqual(
+    moveOntoArea(
+      { x: 1512 + 2560 - 1200, y: -200 + 1415 - 800, width: 1200, height: 800 },
+      external,
+      laptop,
+    ),
+    { x: 1512 - 1200, y: 25 + 919 - 800, width: 1200, height: 800 },
+  );
+  // Always whole inside the target, even from a window hanging off its old display or bigger
+  // than the target area.
+  for (const b of [
+    { x: -900, y: -900, width: 1440, height: 970 },
+    { x: 5000, y: 3000, width: 3000, height: 2000 },
+  ]) {
+    const r = moveOntoArea(b, external, laptop);
+    assert.ok(r.x >= laptop.x && r.x + r.width <= laptop.x + laptop.width, JSON.stringify(r));
+    assert.ok(r.y >= laptop.y && r.y + r.height <= laptop.y + laptop.height, JSON.stringify(r));
+  }
+  // A display left of the primary (negative x) works the same.
+  assert.deepEqual(
+    moveOntoArea({ x: 36, y: 25, width: 1440, height: 919 }, laptop, {
+      x: -1920,
+      y: 0,
+      width: 1920,
+      height: 1080,
+    }),
+    { x: -1920 + 240, y: Math.round((1080 - 919) / 2), width: 1440, height: 919 },
+  );
 });

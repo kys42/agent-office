@@ -30,7 +30,7 @@ import {
   type ConversationFilter,
 } from '../shared/conversation';
 import { time, date } from '../lib/format';
-import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 import { useI18n } from '../lib/i18n';
 import { intlLocale } from '../shared/i18n';
 function Message({
@@ -95,8 +95,7 @@ function Message({
         <button
           aria-label={t.conversation.copyMessage}
           onClick={() =>
-            navigator.clipboard
-              .writeText(event.text)
+            writeClipboard(event.text)
               .then(() => notify(t.conversation.copied))
               .catch(() => notify(t.conversation.copyFailed))
           }
@@ -188,7 +187,7 @@ export function Conversation({
    * What the person just sent that the record does not show yet (a busy Claude reads queued
    * input only when it gets to it): drawn as their own bubbles, marked as waiting.
    */
-  sent?: { id: string; text: string; at: number }[];
+  sent?: { id: string; text: string; at: number; images?: number }[];
   /** Hides a temporary local receipt only; never cancels a submitted message. */
   onDismissSent?: (id: string) => void;
 }) {
@@ -703,7 +702,10 @@ export function Conversation({
             </div>
             <div className="message-bubble">
               <div className="message-text">
-                <p>{p.text}</p>
+                {p.text && <p>{p.text}</p>}
+                {!!p.images && (
+                  <p className="message-pending-images">{t.conversation.pendingImages(p.images)}</p>
+                )}
               </div>
             </div>
           </article>

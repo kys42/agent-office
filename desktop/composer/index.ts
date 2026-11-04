@@ -5,12 +5,18 @@ import type { ComposerAdapter } from './types.js';
 export {
   claudeCodeComposer,
   classifyPrompt,
+  collapsedPaste,
   drawn,
+  placeholderIds,
   promptHolds,
+  promptHoldsImages,
+  afterImages,
+  readImages,
   readPrompt,
 } from './claude-code.js';
 export { parseStyledScreen, sameWrapped, type Screen } from './screen.js';
 export { containsLines, mergeBackup } from './backup.js';
+export { draftView } from './preview.js';
 export * from './types.js';
 
 /**
@@ -25,6 +31,8 @@ export const codexQueueComposer: ComposerAdapter = {
     canInspect: false,
     canDetectSuggestion: false,
     canClear: false,
+    // The queue takes text only (`codex queue` refuses --image): paths go in the text.
+    images: 'path',
   }),
   inspect: async () => ({ kind: 'unsupported' }),
   clear: async () => ({ status: 'failed', state: { kind: 'unsupported' } }),

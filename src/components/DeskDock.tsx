@@ -1,4 +1,5 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -52,8 +53,18 @@ export function DeskDock() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const { model, snapshot, error, receipt, veil, pin, reorderSeats, refresh, refreshing } =
-    useOffice(demo, notify);
+  const {
+    model,
+    snapshot,
+    error,
+    receipt,
+    veil,
+    pin,
+    reorderSeats,
+    refresh,
+    refreshing,
+    returnToOffice,
+  } = useOffice(demo, notify);
   // Replies from unfolded bubbles; the setting may change in the big office, so re-read it
   // whenever the dock comes back into use.
   const send = useTerminalSend(demo, notify);
@@ -125,6 +136,25 @@ export function DeskDock() {
       }),
     [reload],
   );
+  // A dialog (summon, a folder shell's confirm…) needs more than the strip's height, a tiny
+  // one's above all: the window grows upward while one is open, the desks staying put.
+  useEffect(() => {
+    if (!api.dock || mode === 'pet') return;
+    let room = false;
+    const check = () => {
+      const open = !!document.querySelector('.modal-backdrop');
+      if (open === room) return;
+      room = open;
+      void api.dock!(open ? 'room-on' : 'room-off');
+    };
+    check();
+    const watch = new MutationObserver(check);
+    watch.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      watch.disconnect();
+      if (room) void api.dock!('room-off');
+    };
+  }, [mode]);
   useEffect(() => {
     document.body.classList.add('dock-mode');
     return () => document.body.classList.remove('dock-mode');
@@ -180,7 +210,6 @@ export function DeskDock() {
           onReceipt={receipt}
           status={snapshot ? null : error ? t.dock.status.check : t.dock.status.connecting}
           onExpand={() => go(expanded)}
-          onFloor={() => go('floor')}
           onReply={send.sendReply}
           onRefresh={() => void refresh()}
           notify={notify}
@@ -190,6 +219,7 @@ export function DeskDock() {
           demo={demo}
           onArrange={arrange}
           onReorder={(ids) => void reorderSeats(ids)}
+          onReturn={returnToOffice}
           variant={mode === 'floor' ? 'floor' : 'office'}
           tiny={tiny}
           onTiny={shrink}
@@ -225,7 +255,9 @@ export function DeskDock() {
 
   return (
     <PetAppearanceContext.Provider value={snapshot?.preferences.petAppearance}>
-      {content}
+      <DeskAppearanceContext.Provider value={snapshot?.preferences.deskAppearance}>
+        {content}
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

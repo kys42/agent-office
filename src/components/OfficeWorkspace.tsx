@@ -383,11 +383,13 @@ export function OfficeWorkspace({
             onVeilZone={(ids) => onVeil(ids, true)}
             quotaOf={(s) => model.view(s.id)?.quota}
             helperStackAt={model.display.helperStackAt}
+            show={model.display.views.office}
             onPin={onPin}
             onZoneDrop={onZoneDrop}
             onReorder={onReorder}
             onReply={onReply}
             notify={notify}
+            bringBack={{ zones: model.zones, onReturn }}
             footer={workspaceFooter}
           />
         ) : (

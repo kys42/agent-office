@@ -13,6 +13,7 @@ await build({
   platform: 'node',
   target: 'node24',
   format: 'cjs',
-  external: ['electron'],
+  // node-pty is native: loaded from node_modules (unpacked from the asar in the app).
+  external: ['electron', 'node-pty'],
   sourcemap: true,
 });

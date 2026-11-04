@@ -41,7 +41,7 @@ import {
   seatKey,
 } from '../src/shared/office.js';
 import { officeResidents, isBackground, isHelper } from '../src/shared/residents.js';
-import { helperUnfinishedMs } from '../src/shared/view-prefs.js';
+import { helperUnfinishedMs, mergeViews } from '../src/shared/view-prefs.js';
 import {
   localizeNotice,
   noticeCandidates,
@@ -70,6 +70,7 @@ import { snapshotEvents } from '../src/shared/speech.js';
 import { getLocale, m, messagesFor, type Locale } from '../src/shared/i18n/index.js';
 import { CANONICAL, canonicalProject, localizeSession } from '../src/shared/canonical.js';
 import { mergePetCustomization, normalizePetCustomization } from '../src/shared/pets.js';
+import { mergeDeskCustomization, normalizeDeskCustomization } from '../src/shared/desks.js';
 
 /** A session first seen this soon after its start is a live one, not history. */
 export const NEW_SESSION_MS = 2 * 60_000;
@@ -204,7 +205,12 @@ export class OfficeStore {
       const petAppearance = patch.petAppearance
         ? mergePetCustomization(prefs.petAppearance, patch.petAppearance)
         : prefs.petAppearance;
-      Object.assign(prefs, patch, { petAppearance });
+      const deskAppearance = patch.deskAppearance
+        ? mergeDeskCustomization(prefs.deskAppearance, patch.deskAppearance)
+        : prefs.deskAppearance;
+      const views = patch.views ? mergeViews(prefs.views, patch.views) : prefs.views;
+      Object.assign(prefs, patch, { petAppearance, deskAppearance, views });
+      if (!views) delete prefs.views;
       if (patch.excludedProjects)
         prefs.excludedProjects = [...new Set(patch.excludedProjects.map(canonicalProject))];
       if (!validOfficeSchedule(prefs)) throw new Error(m().server.prefs.scheduleOrder);
@@ -213,6 +219,8 @@ export class OfficeStore {
         .run(JSON.stringify(prefs));
     }
     if (prefs.petAppearance) prefs.petAppearance = normalizePetCustomization(prefs.petAppearance);
+    if (prefs.deskAppearance)
+      prefs.deskAppearance = normalizeDeskCustomization(prefs.deskAppearance);
     return prefs;
   }
   /**
@@ -1300,6 +1308,27 @@ export class OfficeStore {
     places: Map<string, Pick<Session, 'provider' | 'project'>>,
   ) {
     return this.visible(places.get(b.sessionId) ?? b.source, prefs);
+  }
+  /**
+   * One bookmark by its id, for a reader window: null when it was removed, or when the settings
+   * no longer show it (an excluded project, a tool turned off) — the same filter as the list.
+   */
+  bookmarkById(id: string): Bookmark | null {
+    let row: { data: string } | undefined;
+    try {
+      row = this.db.prepare('SELECT data FROM bookmarks WHERE id=?').get(id) as typeof row;
+    } catch (e) {
+      if (/no such table/.test(String(e))) return null;
+      throw e;
+    }
+    if (!row) return null;
+    let b: Bookmark;
+    try {
+      b = JSON.parse(row.data) as Bookmark;
+    } catch {
+      return null;
+    }
+    return this.bookmarkShown(b, this.preferences(), this.placesOf([b.sessionId])) ? b : null;
   }
   unbookmark(id: string) {
     if (!this.bookmarkRow('id=?', id)) return;

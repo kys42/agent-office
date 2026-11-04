@@ -1,8 +1,10 @@
 import { tmux } from './tmux';
+import { shell } from './shell';
 import { mobile } from './mobile';
 import { guide } from './guide';
 import { federation } from './federation';
 import { pets } from './pets';
+import { desks } from './desks';
 import type { Messages } from '../en';
 import { common } from './common';
 import { app } from './app';
@@ -26,9 +28,12 @@ import { dock } from './dock';
 import { desk } from './desk';
 import { terminal } from './terminal';
 import { prompts } from './prompts';
+import { launchSheet } from './launchSheet';
+import { launch } from './launch';
 
 export const ko: Messages = {
   tmux,
+  shell,
   mobile,
   federation,
   common,
@@ -54,5 +59,8 @@ export const ko: Messages = {
   terminal,
   prompts,
   pets,
+  desks,
   guide,
+  launchSheet,
+  launch,
 };

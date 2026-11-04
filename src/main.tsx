@@ -8,10 +8,14 @@ import App from './App';
 import { DeskDock } from './components/DeskDock';
 import { DockCard } from './components/DockCard';
 import { SettingsWindow } from './components/SettingsWindow';
+import { ShellWindow } from './components/ShellWindow';
+import { ReaderWindow } from './components/ReaderWindow';
 import { bootLocale, useI18n } from './lib/i18n';
 import { isWindows } from './lib/platform';
 import { startFrameClock } from './lib/frame-clock';
 import { bootReadingText } from './lib/useReadingText';
+import { bootGlass } from './lib/useGlass';
+import { bootPatCursor } from './lib/patCursor';
 import './styles/tokens.css';
 import './styles/shell.css';
 import './styles/office.css';
@@ -24,8 +28,12 @@ import './styles/veil.css';
 import './styles/speech.css';
 import './styles/effects.css';
 import './styles/pets.css';
+import './styles/desks.css';
+import './styles/views-settings.css';
 import './styles/guide.css';
 import './styles/tmux.css';
+import './styles/launch-sheet.css';
+import './styles/mini-shell.css';
 import './styles/native.css';
 import './styles/windows.css';
 import './styles/office-list.css';
@@ -52,16 +60,33 @@ function Crashed() {
 }
 bootLocale();
 bootReadingText();
+bootGlass();
+bootPatCursor();
 document.body.classList.toggle('is-windows', !!window.office && isWindows);
 // The office's own frame rate for every looping animation (see frame-clock.ts).
 startFrameClock();
-// Same office core, four presentations: the big office window, the floating desk pet, the
-// colleague card the pet opens at a desk, and the settings window.
+// Same office core, six presentations: the big office window, the floating desk pet, the
+// colleague card the pet opens at a desk, the settings window, and the popup windows beside
+// them (the mini terminal, the bookmark reader).
 const dock = location.hash.startsWith('#mini');
 const card = location.hash === '#card';
 const settings = /^#settings(=|$)/.test(location.hash);
+const shellWindow = location.hash === '#shell';
+const readerWindow = location.hash === '#reader';
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <Boundary>
-    {card ? <DockCard /> : settings ? <SettingsWindow /> : dock ? <DeskDock /> : <App />}
+    {card ? (
+      <DockCard />
+    ) : settings ? (
+      <SettingsWindow />
+    ) : shellWindow ? (
+      <ShellWindow />
+    ) : readerWindow ? (
+      <ReaderWindow />
+    ) : dock ? (
+      <DeskDock />
+    ) : (
+      <App />
+    )}
   </Boundary>,
 );
