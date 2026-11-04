@@ -72,7 +72,7 @@ export async function readOpenClawDatabases(
           const last = (tip.get(nativeId) as any)?.seq ?? 0;
           const watermark = rewrite?.get(nativeId);
           const revision = hash(
-            `office-v10:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
+            `office-v11:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
           );
           const key = `${file}:${nativeId}`;
           seen.add(key);
@@ -90,7 +90,12 @@ export async function readOpenClawDatabases(
           let broken = false;
           const records = uniq.flatMap((r) => {
             try {
-              return [JSON.parse(r.event_json)];
+              const record = JSON.parse(r.event_json);
+              // SQLite can retain JSON null/scalars (for example after an upstream rewrite).
+              // Match the JSONL boundary: skip only that row, not the whole conversation.
+              if (record && typeof record === 'object' && !Array.isArray(record)) return [record];
+              broken = true;
+              return [];
             } catch {
               broken = true;
               return [];

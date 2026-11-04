@@ -35,12 +35,14 @@ export function entryCost(entry: UsageEntry): number | null {
     ) / 1e6
   );
 }
-export function summarizeCost(entries: UsageEntry[]): SessionCost {
+export function summarizeCost(entries: Iterable<UsageEntry>): SessionCost {
   let usd = 0,
     priced = 0,
     unpriced = 0,
-    tokens = 0;
+    tokens = 0,
+    since: number | null = null;
   for (const e of entries) {
+    since = since === null ? e.at : Math.min(since, e.at);
     const amount = entryCost(e);
     if (amount === null) unpriced++;
     else {
@@ -54,7 +56,7 @@ export function summarizeCost(entries: UsageEntry[]): SessionCost {
     priced,
     unpriced,
     tokens,
-    since: entries.length ? Math.min(...entries.map((e) => e.at)) : null,
+    since,
     rateVersion: RATE_VERSION,
   };
 }

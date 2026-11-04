@@ -385,7 +385,11 @@ test('A cursor that left the stored window pages on by its time, excerpts includ
     // The window slid on: e0..e29 are gone, the card still holds e20 as its oldest.
     store.upsert([{ ...session('claude:long', evs.slice(30)), revision: 'slid' }], 'claude');
     const gone = store.detail('claude:long', { before: 'e20', beforeAt: evs[20].at });
-    assert.deepEqual([gone.events.length, gone.olderEvents], [0, false]);
+    assert.deepEqual([gone.events.length, gone.olderEvents], [2, false]);
+    assert.ok(
+      gone.events.every((e) => e.excerpt),
+      'retained excerpts now participate in bounded cursor paging',
+    );
     assert.deepEqual(
       (gone.notices ?? []).map((n) => n.eventId).sort(),
       ['n1', 'n2'],

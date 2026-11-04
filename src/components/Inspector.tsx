@@ -1,10 +1,12 @@
+import type { SessionDetail } from '../shared/types';
+import { LatestTask } from '../lib/latest-task';
 import { CardShellButton } from './MiniShell';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSupport } from '../lib/useLaunchSupport';
 import { resumeBlock } from '../shared/summon-existing';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
   X,
   Pin,
@@ -221,23 +223,29 @@ export function Inspector({
   }, [session]);
   // The few latest events the office carries, by content: a fresh snapshot with the same events
   // (a new array each time) must not read the conversation again.
-  const latestEvents = JSON.stringify(session.events);
+  const latestEvents = useMemo(() => JSON.stringify(session.events), [session.events]);
+  const detailRequests = useRef(new LatestTask<SessionDetail>());
+  const detailGeneration = useRef(0);
+  const [latestRequest, setLatestRequest] = useState(0);
   useEffect(() => {
     let valid = true;
+    const generation = ++detailGeneration.current;
     setLoadError('');
-    if (!demo)
-      api
-        .detail(session.id)
-        .then((page) => {
-          if (valid) setView((previous) => mergeNewest(previous, page));
-        })
-        .catch((e) => {
-          if (valid) setLoadError(e.message);
-        });
+    const task = !demo ? detailRequests.current.request(() => api.detail(session.id)) : null;
+    task?.promise
+      .then((page) => {
+        if (valid && page && generation === detailGeneration.current)
+          setView((previous) => mergeNewest(previous, page));
+      })
+      .catch((e) => {
+        if (valid) setLoadError(e.message);
+      });
     return () => {
       valid = false;
+      task?.cancel();
     };
   }, [
+    latestRequest,
     session.id,
     session.revision,
     latestEvents,
@@ -299,7 +307,7 @@ export function Inspector({
       .detail(session.id, { reach: focusHere.eventId, reachAt: focusHere.at })
       .then((page) => {
         if (!valid) return;
-        setView((previous) => mergeNewest(previous, page));
+        setView(mergeNewest(freshConversation(session), page));
         setReached(focusHere.key);
       })
       .catch((e) => {
@@ -741,6 +749,13 @@ export function Inspector({
             older={view.older}
             loadingOlder={loadingOlder}
             onOlder={loadOlder}
+            newer={view.newer}
+            onLatest={() => {
+              // Invalidate a response already in flight before React runs effect cleanup.
+              ++detailGeneration.current;
+              setView(freshConversation(session));
+              setLatestRequest((n) => n + 1);
+            }}
             notify={notify}
             compact
             hideProgress={!showProgress}

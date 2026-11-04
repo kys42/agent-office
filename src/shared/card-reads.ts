@@ -19,6 +19,7 @@ export function cardReadSettings(p?: Pick<Preferences, 'readOnOpen' | 'readDwell
 }
 /** A receipt that keeps failing is asked again on later snapshots, this many times in all. */
 export const CARD_READ_ATTEMPTS = 3;
+export const CARD_READ_BUDGET = 4096;
 
 const keyOf = (n: { id: string; version: string }) => `${n.id}\n${n.version}`;
 
@@ -47,19 +48,38 @@ export class CardReads {
   /** Remember every version of the colleague's runs that is read now. */
   observe(notices: OfficeNotice[], memberIds: Iterable<string>) {
     const ids = new Set(memberIds);
-    for (const n of notices) if (n.seenAt && ids.has(n.sessionId)) this.done.add(keyOf(n));
+    for (const n of notices) {
+      const key = keyOf(n);
+      if (!n.seenAt || !ids.has(n.sessionId) || this.done.has(key) || this.pending.has(key))
+        continue;
+      if (
+        this.attempts.has(key) ||
+        this.done.size + this.attempts.size + this.pending.size < CARD_READ_BUDGET
+      ) {
+        this.attempts.delete(key);
+        this.done.add(key);
+      }
+    }
   }
 
   /** The unread final replies this open may read now. */
   due(notices: OfficeNotice[], memberIds: Iterable<string>) {
-    return cardReadNotices(notices, memberIds).filter((n) => {
-      const key = keyOf(n);
-      return (
-        !this.done.has(key) &&
-        !this.pending.has(key) &&
-        (this.attempts.get(key) ?? 0) < CARD_READ_ATTEMPTS
+    // Once this open exhausts its receipt budget, leave further results unread until a new
+    // open/manual action. Never evict an intentional-unread guard and silently read it again.
+    if (this.done.size + this.attempts.size >= CARD_READ_BUDGET) return [];
+    return cardReadNotices(notices, memberIds)
+      .filter((n) => {
+        const key = keyOf(n);
+        return (
+          !this.done.has(key) &&
+          !this.pending.has(key) &&
+          (this.attempts.get(key) ?? 0) < CARD_READ_ATTEMPTS
+        );
+      })
+      .slice(
+        0,
+        Math.max(0, CARD_READ_BUDGET - this.done.size - this.attempts.size - this.pending.size),
       );
-    });
   }
 
   begin(list: { id: string; version: string }[]) {
@@ -71,6 +91,7 @@ export class CardReads {
       const key = keyOf(n);
       this.pending.delete(key);
       if (ok) {
+        this.attempts.delete(key);
         this.done.add(key);
         this.readNow.add(key);
       } else this.attempts.set(key, (this.attempts.get(key) ?? 0) + 1);
