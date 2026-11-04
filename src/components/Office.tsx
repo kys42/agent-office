@@ -460,8 +460,15 @@ export function Office({
                   data-zone-index={index}
                   onDragOver={(e) => {
                     if (!dragging) return;
-                    e.preventDefault();
                     e.stopPropagation();
+                    // The combined room shows remote projects, but only local ones accept desks.
+                    if (source?.remote) {
+                      e.dataTransfer.dropEffect = 'none';
+                      setDropKey(undefined);
+                      setInsert(null);
+                      return;
+                    }
+                    e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                     setDropKey(area.key);
                     setInsert(null);
@@ -470,6 +477,10 @@ export function Office({
                     if (!dragging) return;
                     e.preventDefault();
                     e.stopPropagation();
+                    if (source?.remote) {
+                      endDrag();
+                      return;
+                    }
                     drop(area.key);
                   }}
                   style={

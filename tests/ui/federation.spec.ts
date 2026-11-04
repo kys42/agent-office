@@ -197,6 +197,19 @@ test('All offices combines source projects and stays selected when opening a car
   for (const office of ['내 컴퓨터', 'MacBook Pro', 'Mac mini']) {
     await expect(page.locator('.source-list')).toContainText(`${office} · shared-project`);
   }
+  const localPet = page.locator('.office-pet[data-session-id="local-test"]');
+  const remoteArea = page
+    .locator('.project-area')
+    .filter({ hasText: 'MacBook Pro · shared-project' });
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await localPet.dispatchEvent('dragstart', { dataTransfer });
+  await expect(page.locator('.drag-hint')).toBeVisible();
+  await remoteArea.dispatchEvent('dragover', { dataTransfer });
+  await expect(remoteArea).not.toHaveClass(/drop-target/);
+  await remoteArea.dispatchEvent('drop', { dataTransfer });
+  await expect(page.locator('.zone-editor')).toHaveCount(0);
+  await expect(page.locator('.drag-hint')).toHaveCount(0);
+  await dataTransfer.dispose();
   await page.locator('.roster .session-row').filter({ hasText: '미니 동료' }).click();
   await expect(all).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.card-head h2')).toHaveAttribute('title', '미니 동료');
