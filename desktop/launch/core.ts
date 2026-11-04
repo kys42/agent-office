@@ -122,9 +122,14 @@ export function defaultDestination(
   );
 }
 
-/** Where the duplicate check says a conversation runs or is open, when that is a destination. */
+/**
+ * Where the duplicate check says a conversation runs or is open, when that is a destination. A
+ * tab resting in a sleeping Orca workspace is no place it is now: a fork is offered as usual.
+ */
 const placeOf = (check: DuplicateCheck): LaunchPlace | undefined =>
-  check.state === 'running' || check.state === 'open' ? check.where : undefined;
+  check.state === 'running' || (check.state === 'open' && !check.sleeping)
+    ? check.where
+    : undefined;
 
 export class LaunchCore {
   private queue: LaunchQueue;

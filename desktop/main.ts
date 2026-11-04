@@ -27,6 +27,7 @@ import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
+import { matchSleeping } from './orca-sleeping.js';
 import { TerminalFocusError } from './terminal-host.js';
 import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
 import {
@@ -1128,6 +1129,19 @@ function setupIPC() {
             if (tab.kind === 'unknown' && !(await orcaLaunch.reachable(f))) return { kind: 'none' };
             return tab;
           },
+          // Its tab in a sleeping Orca workspace (#342), matched by its last request, last
+          // answer or title. Orca not answering is no evidence.
+          orcaSleeping: async (f) => {
+            if (session.remote) return { kind: 'none' };
+            const workspaces = await orcaLaunch.workspaces(f);
+            return workspaces
+              ? matchSleeping(
+                  workspaces,
+                  session,
+                  (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+                )
+              : { kind: 'none' };
+          },
           ownTmux: async () => {
             try {
               // Its panes too: a verified agent terminal in one of them runs it there.
@@ -1418,6 +1432,20 @@ function setupIPC() {
   ipcMain.handle('office:orca-reveal', async (e) => {
     trusted(e);
     await orcaLaunch.reveal();
+  });
+  /**
+   * The card's main action (#342): whether this conversation's tab rests in a sleeping Orca
+   * workspace (the whole duplicate check says so), with that workspace's name. Read-only.
+   */
+  ipcMain.handle('office:orca-sleeping', async (e, id) => {
+    trusted(e);
+    if (typeof id !== 'string' || id.length > 400 || isRemoteId(id)) return null;
+    const s: Session | undefined = await bridge.call('detail', [id]).catch(() => undefined);
+    if (!s || s.remote) return null;
+    const check = await duplicateCheck(s)(false).catch(() => null);
+    return check?.state === 'open' && check.sleeping
+      ? { workspace: check.sleeping.workspace }
+      : null;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();
