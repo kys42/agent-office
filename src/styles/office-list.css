@@ -323,6 +323,55 @@
 .office-list-empty {
   min-height: 240px;
 }
+/* Lounge/archive lists: a bring-back action sits beside each row (a button can't nest in the row). */
+.office-list {
+  --office-list-action: 132px;
+}
+.office-list.with-action .office-list-columns {
+  padding-right: calc(18px + var(--office-list-action) + 12px);
+}
+.office-list-group li.with-action {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.office-list-group li.with-action .office-list-row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 0;
+}
+.office-list-action {
+  flex: none;
+  width: var(--office-list-action);
+  margin-right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.office-list-action > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.office-list-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.office-list-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .office-list-footer {
   display: flex;
   flex: none;
@@ -349,6 +398,12 @@
     gap: 10px;
     padding-inline: 12px;
   }
+  .office-list.with-action .office-list-columns {
+    padding-right: calc(12px + var(--office-list-action) + 10px);
+  }
+  .office-list-action {
+    margin-right: 10px;
+  }
   .office-list-columns > :last-child,
   .office-list-row > time {
     display: none;
@@ -356,6 +411,16 @@
 }
 @container (max-width: 460px) {
   .office-list-columns {
+    display: none;
+  }
+  /* The container can't restyle itself, so narrow the action on its scroller. */
+  .office-list-scroll {
+    --office-list-action: 34px;
+  }
+  .office-list-action {
+    padding: 0;
+  }
+  .office-list-action > span {
     display: none;
   }
   .office-list-row {

@@ -90,7 +90,8 @@ test('list filters, exact sidebar project, privacy, empty state and room navigat
   await expect(page.locator('.office-list')).not.toContainText('web-app');
   await expect(page.locator('.office-list')).not.toContainText('feat/tiny-office');
   await sidebar.getByRole('button', { name: /대기 라운지/ }).click();
-  await expect(page.locator('.office-list')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '대기 라운지 리스트' })).toBeVisible();
+  await expect(page.locator('.office-list')).not.toContainText('web-app');
   await page.getByRole('tab', { name: /^사무실/ }).click();
   await expect(page.locator('.office-list-row')).toHaveCount(6);
 });
@@ -301,5 +302,68 @@ test('helpers keep their role, parent, own news and calls; forks and persona run
   await page.setViewportSize({ width: 390, height: 844 });
   await child.scrollIntoViewIfNeeded();
   await expect(child.locator('.helper-kind')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('lounge and archive share the list view and bring colleagues back from a row', async ({
+  page,
+}) => {
+  await page.goto('/?demo&lang=ko');
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  const tab = (name: RegExp) => page.getByRole('tab', { name });
+  await tab(/^대기 라운지/).click();
+  const lounge = page.getByRole('region', { name: '대기 라운지 리스트' });
+  await expect(lounge).toBeVisible();
+  await expect(page.locator('.rest-lounge')).toHaveCount(0);
+  await expect(page.locator('.roster')).toHaveCount(0);
+  const waiting = await tab(/^대기 라운지/)
+    .locator('span')
+    .innerText();
+  await expect(lounge.locator('.office-list-row')).toHaveCount(Number(waiting));
+  await lounge.locator('.office-list-row').first().click();
+  await expect(page.locator('.card-head h2')).toBeVisible();
+  await page.getByRole('button', { name: '업무 카드 닫기' }).click();
+
+  await tab(/^보관 공간/).click();
+  const archive = page.getByRole('region', { name: '보관 공간 리스트' });
+  const archived = Number(
+    await tab(/^보관 공간/)
+      .locator('span')
+      .innerText(),
+  );
+  await expect(archive.locator('.office-list-row')).toHaveCount(archived);
+  await expect(archive.locator('.office-list-status').first()).toContainText(
+    /직접 보관함|오래된 기록/,
+  );
+  const office = Number(
+    await tab(/^사무실/)
+      .locator('span')
+      .innerText(),
+  );
+  const first = archive.locator('.office-list-row').first();
+  const id = await first.getAttribute('data-session-id');
+  await archive
+    .locator('.office-list-group li')
+    .first()
+    .getByRole('button', { name: /사무실로 데려오기/ })
+    .click();
+  // Bringing back keeps you in the room so several colleagues can come back in a row.
+  await expect(archive).toBeVisible();
+  await expect(archive.locator(`[data-session-id="${id}"]`)).toHaveCount(0);
+  await expect(tab(/^사무실/).locator('span')).toHaveText(String(office + 1));
+
+  // The choice is shared across rooms and switching back restores the drawn rooms.
+  await page.getByRole('button', { name: '그래픽', exact: true }).click();
+  await expect(page.locator('.archive-room')).toBeVisible();
+  await tab(/^대기 라운지/).click();
+  await expect(page.locator('.rest-lounge')).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await expect(page.locator('.office-list-action').first()).toBeVisible();
+  await page.screenshot({ path: '.local/lounge-list-narrow.png' });
+  await tab(/^보관 공간/).click();
+  // The only archived colleague came back, so the archive shows its own empty room.
+  await expect(page.locator('.office-list-empty')).toContainText('이 공간은 비어 있어요');
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });

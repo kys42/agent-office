@@ -4,7 +4,8 @@ export const office: Messages['office'] = {
   region: '픽셀 사무실',
   list: {
     label: '사무실 리스트',
-    viewLabel: '사무실 보기 방식',
+    viewLabel: '보기 방식',
+    roomLabel: { waiting: '대기 라운지 리스트', archive: '보관 공간 리스트' },
     views: { graphic: '그래픽', list: '리스트' },
     orderLabel: '사무실 리스트 정렬',
     byProject: '프로젝트별 묶기',

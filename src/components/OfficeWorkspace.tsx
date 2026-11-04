@@ -177,7 +177,7 @@ export function OfficeWorkspace({
       // Viewing the office works even when this viewer cannot remember preferences.
     }
   }, [key, zone, sort, officeView, listOrder]);
-  const listView = zone === 'office' && officeView === 'list';
+  const listView = officeView === 'list';
   const scope =
     project && zone === 'office'
       ? {
@@ -320,28 +320,28 @@ export function OfficeWorkspace({
     <div className={`office-layout ${listView ? 'is-list' : ''}`}>
       <div className="office-column">
         {toolbarSlot ? createPortal(stageToolbar, toolbarSlot) : stageToolbar}
-        {zone === 'office' && (
-          <div className="office-view-bar">
-            <span>{t.office.list.count(listView ? rows.length : office.length)}</span>
-            <div
-              className="zone-tabs office-view-switch"
-              role="group"
-              aria-label={t.office.list.viewLabel}
-            >
-              {(['graphic', 'list'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  aria-pressed={officeView === mode}
-                  className={officeView === mode ? 'active' : ''}
-                  onClick={() => setOfficeView(mode)}
-                >
-                  {mode === 'graphic' ? <Building2 size={14} /> : <List size={14} />}
-                  {t.office.list.views[mode]}
-                </button>
-              ))}
-            </div>
+        <div className="office-view-bar">
+          <span>
+            {t.office.list.count(listView || zone !== 'office' ? rows.length : office.length)}
+          </span>
+          <div
+            className="zone-tabs office-view-switch"
+            role="group"
+            aria-label={t.office.list.viewLabel}
+          >
+            {(['graphic', 'list'] as const).map((mode) => (
+              <button
+                key={mode}
+                aria-pressed={officeView === mode}
+                className={officeView === mode ? 'active' : ''}
+                onClick={() => setOfficeView(mode)}
+              >
+                {mode === 'graphic' ? <Building2 size={14} /> : <List size={14} />}
+                {t.office.list.views[mode]}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
         {listView ? (
           <>
             <OfficeList
@@ -357,8 +357,35 @@ export function OfficeWorkspace({
               order={listOrder}
               onOrder={setListOrder}
               scope={scope}
+              label={zone === 'office' ? undefined : t.office.list.roomLabel[zone]}
+              action={
+                zone === 'office'
+                  ? undefined
+                  : { label: t.office.archive.bringBack, onAct: onReturn }
+              }
+              note={
+                zone === 'archive'
+                  ? (s) => (s.archived ? t.office.archive.byYou : t.office.archive.aged)
+                  : undefined
+              }
+              empty={
+                zones[zone].length
+                  ? undefined
+                  : {
+                      icon:
+                        zone === 'waiting' ? (
+                          <Armchair size={28} />
+                        ) : zone === 'archive' ? (
+                          <Archive size={28} />
+                        ) : (
+                          <Building2 size={28} />
+                        ),
+                      title: zone === 'office' ? t.office.empty.title : t.office.emptyRoom.title,
+                      body: zone === 'office' ? t.office.empty.body : t.office.emptyRoom.body,
+                    }
+              }
             />
-            <div className="office-list-footer">{workspaceFooter}</div>
+            {zone === 'office' && <div className="office-list-footer">{workspaceFooter}</div>}
           </>
         ) : zone === 'office' ? (
           <Office

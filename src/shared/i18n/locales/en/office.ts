@@ -2,7 +2,8 @@ export const office = {
   region: 'Pixel office',
   list: {
     label: 'Office list',
-    viewLabel: 'Office view',
+    viewLabel: 'View',
+    roomLabel: { waiting: 'Lounge list', archive: 'Archive list' },
     views: { graphic: 'Graphic', list: 'List' },
     orderLabel: 'Office list order',
     byProject: 'Group by project',

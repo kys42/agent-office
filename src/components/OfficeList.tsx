@@ -1,5 +1,6 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import {
+  ArrowUpRight,
   BatteryWarning,
   CornerDownRight,
   EyeOff,
@@ -44,6 +45,10 @@ export function OfficeList({
   order,
   onOrder,
   scope,
+  label,
+  action,
+  note,
+  empty,
 }: {
   sessions: Session[];
   model: OfficeModel;
@@ -57,12 +62,22 @@ export function OfficeList({
   order: OfficeListOrder;
   onOrder: (value: OfficeListOrder) => void;
   scope?: { label: string; onClear: () => void };
+  /** Accessible name for the list; defaults to the office list. */
+  label?: string;
+  /** Per-row action beside the row (e.g. bring a lounge/archive colleague back to the office). */
+  action?: { label: string; onAct: (id: string) => void };
+  /** Replaces the status text for rooms where the mood is not the interesting part. */
+  note?: (s: Session) => string | undefined;
+  empty?: { icon: ReactNode; title: string; body?: string };
 }) {
   const { t } = useI18n();
   const copy = t.office.list;
   const groups = useMemo(() => officeListGroups(sessions, order), [sessions, order]);
   return (
-    <section className="office-list" aria-label={copy.label}>
+    <section
+      className={`office-list ${action ? 'with-action' : ''}`}
+      aria-label={label ?? copy.label}
+    >
       <div className="office-list-tools">
         <label className="office-list-search">
           <Search size={15} aria-hidden="true" />
@@ -140,8 +155,9 @@ export function OfficeList({
                 const callingHelpers = view?.helpers.filter((v) => v.needsPerson).length ?? 0;
                 const result = view?.group === 'results' ? view.unread[0] : undefined;
                 const elapsed = workingFor(s, model.now);
+                const noted = note?.(s);
                 return (
-                  <li key={s.id}>
+                  <li key={s.id} className={action ? 'with-action' : undefined}>
                     <button
                       className={`office-list-row ${helper ? 'is-helper' : ''} ${active ? 'selected' : ''}`}
                       data-session-id={s.id}
@@ -271,11 +287,13 @@ export function OfficeList({
                       </span>
                       <span className={`office-list-status status-${mood}`}>
                         <i />
-                        {elapsed !== null
-                          ? t.roster.workingFor(durationShort(elapsed))
-                          : result
-                            ? t.roster.newResults(unread, ago(result.at))
-                            : MOODS[mood].label}
+                        {noted
+                          ? noted
+                          : elapsed !== null
+                            ? t.roster.workingFor(durationShort(elapsed))
+                            : result
+                              ? t.roster.newResults(unread, ago(result.at))
+                              : MOODS[mood].label}
                         {helperNews > 0 && (
                           <small className="office-list-helper-news">
                             <CornerDownRight size={11} />
@@ -296,6 +314,17 @@ export function OfficeList({
                         {ago(s.updatedAt)}
                       </time>
                     </button>
+                    {action && (
+                      <button
+                        className="office-list-action"
+                        aria-label={`${action.label} · ${privacy ? PROVIDERS[s.provider].name : helper ? helperName(s) : sessionName(s)}`}
+                        title={action.label}
+                        onClick={() => action.onAct(s.id)}
+                      >
+                        <span>{action.label}</span>
+                        <ArrowUpRight size={13} aria-hidden="true" />
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -304,8 +333,9 @@ export function OfficeList({
         ))}
         {!sessions.length && (
           <div className="empty-state office-list-empty">
-            <List size={28} />
-            <h3>{t.roster.empty}</h3>
+            {empty?.icon ?? <List size={28} />}
+            <h3>{empty?.title ?? t.roster.empty}</h3>
+            {empty?.body && <p>{empty.body}</p>}
           </div>
         )}
       </div>
