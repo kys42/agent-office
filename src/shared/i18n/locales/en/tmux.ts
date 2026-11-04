@@ -99,5 +99,17 @@ export const tmux = {
     `Warning: this conversation is already open in ${place}. Starting it again can run the same conversation twice, and the two can overwrite each other’s work.`,
   unknownConfirm:
     'Could not confirm that this conversation is not open somewhere else. If it is, the same conversation will run twice.',
+  /** Its tab rests in a sleeping Orca workspace (#342): opening that workspace brings it back. */
+  sleepingNotice: (workspace: string) =>
+    `This conversation is open in a sleeping Orca workspace (${workspace}). Open that workspace in Orca and its tab comes back.`,
+  sleepingUnknownNotice: (workspace: string, agent: string, count: number) =>
+    `${count === 1 ? `A ${agent} tab rests` : `${count} ${agent} tabs rest`} in the sleeping Orca workspace (${workspace}). It may be this conversation.`,
+  sleepingConfirm: (workspace: string) =>
+    `Warning: this conversation is open in a sleeping Orca workspace (${workspace}). Opening that workspace in Orca brings its tab back. Starting it again can run the same conversation twice, and the two can overwrite each other’s work.`,
+  sleepingUnknownConfirm: (agent: string, count: number) =>
+    `${count === 1 ? `A ${agent} tab rests` : `${count} ${agent} tabs rest`} in this folder’s sleeping Orca workspace. If one is this conversation, the same conversation will run twice.`,
+  /** The card's main action brought Orca forward; the workspace is opened there by the person. */
+  sleepingRevealed: (workspace?: string) =>
+    `Opened Orca. Open the ${workspace ? `“${workspace}” ` : ''}workspace there and this conversation’s tab comes back.`,
   tabGone: 'That Orca tab could not be found again. Check the status again.',
 };

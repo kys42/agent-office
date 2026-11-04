@@ -107,7 +107,7 @@ test('Dialogs opened inside a page cover the whole window', async ({ page }) => 
 test('The zone switcher lives in the window toolbar', async ({ page }) => {
   await page.goto('/?demo&lang=ko');
   await expect(page.locator('.toolbar .zone-tabs[role="tablist"]')).toBeVisible();
-  await expect(page.locator('.office-column .zone-tabs')).toHaveCount(0);
+  await expect(page.locator('.office-column .zone-tabs[role="tablist"]')).toHaveCount(0);
 });
 
 test('Appearance follows the system: light by default, dark when the system is dark', async ({

@@ -2,6 +2,7 @@ import { findClaudeProcess } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck, LaunchPlace, Provider } from '../src/shared/types.js';
 import type { PendingState } from './pending-launch.js';
+import type { SleepingLookup } from './orca-sleeping.js';
 import { codexThreadOnScreen } from './codex-focus.js';
 import type { TerminalLookup } from './terminal-host.js';
 import { defaultTerminalDeps, lookupTerminal, type TerminalDeps } from './terminals.js';
@@ -102,6 +103,11 @@ export interface LaunchEvidence {
    * the agent is seen running (`running` beats it). `starting`: the destination took it.
    */
   pending?: boolean | LaunchPlace | PendingState;
+  /**
+   * Its tab in a sleeping Orca workspace (desktop/orca-sleeping.ts): not in `terminal list`,
+   * back once that workspace is opened. Left out: not looked for (a fork, Orca not answering).
+   */
+  orcaSleeping?: SleepingLookup;
 }
 
 /** The pure decision: running beats open beats unknown beats none. */
@@ -131,9 +137,17 @@ export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
       ...(held.starting && { starting: true as const }),
     };
   }
+  const sleeping = e.orcaSleeping;
+  if (sleeping?.kind === 'found')
+    return { state: 'open', where: 'orca', sleeping: { workspace: sleeping.workspace } };
   // A live own pane is not proof of this conversation: after Claude `/clear` or Codex `/new`
   // the same process shows another one. Only the agent adapter above can say it runs.
   if (e.ownTmux.kind === 'found') return { state: 'open', where: 'tmux' };
+  if (sleeping?.kind === 'unknown')
+    return {
+      state: 'unknown',
+      sleeping: { workspace: sleeping.workspace, count: sleeping.count, agent: sleeping.agent },
+    };
   if (e.agent.kind === 'unknown' || e.orcaTab.kind === 'unknown' || e.ownTmux.kind === 'unknown')
     return { state: 'unknown' };
   return { state: 'none' };
@@ -146,16 +160,22 @@ export interface DuplicateDeps {
   ownTmux: (fresh: boolean) => Promise<TerminalLookup<OwnTmuxPanes | null>>;
   /** Where a launch of it may still start, if anywhere (main-process memory, never throws). */
   pending?: () => boolean | LaunchPlace | PendingState | undefined;
+  /**
+   * Its tab in a sleeping Orca workspace. Unlike the others, a failure is no evidence (`none`):
+   * Orca not running or not answering never blocks or cautions a launch.
+   */
+  orcaSleeping?: (fresh: boolean) => Promise<SleepingLookup>;
 }
 
 export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promise<DuplicateCheck> {
   const unknown = { kind: 'unknown' } as const;
-  const [agent, orcaTab, ownTmux] = await Promise.all([
+  const [agent, orcaTab, ownTmux, orcaSleeping] = await Promise.all([
     deps.agent(fresh).catch(() => unknown),
     deps.orcaTab(fresh).catch(() => unknown),
     deps.ownTmux(fresh).catch(() => unknown),
+    deps.orcaSleeping?.(fresh).catch((): SleepingLookup => ({ kind: 'none' })),
   ]);
-  return decideDuplicate({ agent, orcaTab, ownTmux, pending: deps.pending?.() });
+  return decideDuplicate({ agent, orcaTab, ownTmux, orcaSleeping, pending: deps.pending?.() });
 }
 
 /**
@@ -216,7 +236,11 @@ export async function confirmLaunch(
 /** The warning added to a launcher's native confirmation ('' when nothing was found). */
 export function duplicateNote(check: DuplicateCheck): string {
   const t = m().tmux;
+  if (check.state === 'open' && check.sleeping)
+    return '\n\n' + t.sleepingConfirm(check.sleeping.workspace);
   if (check.state === 'open') return '\n\n' + t.openConfirm(placeName(check.where));
+  if (check.state === 'unknown' && check.sleeping)
+    return '\n\n' + t.sleepingUnknownConfirm(check.sleeping.agent, check.sleeping.count);
   if (check.state === 'unknown') return '\n\n' + t.unknownConfirm;
   return '';
 }

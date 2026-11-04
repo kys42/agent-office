@@ -993,6 +993,11 @@ export interface OfficeAPI {
   /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
   orcaReveal?: () => Promise<void>;
   /**
+   * Desktop (macOS) only (#342): the sleeping Orca workspace this conversation's tab rests in,
+   * when the duplicate check finds it there (null otherwise). Read-only.
+   */
+  orcaSleeping?: (id: string) => Promise<{ workspace: string } | null>;
+  /**
    * Desktop only (#318): probe, start or open one launch (new, resume, fork) at one
    * destination. Starting asks a native confirmation in the main process; a refusal is an
    * answer, not an error (`state: 'refused'` with its reason). The launch sheet (#319) is its
@@ -1191,13 +1196,26 @@ export type LaunchPlace = 'orca' | 'tmux' | 'other';
  */
 export type DuplicateCheck =
   | { state: 'none' }
-  | { state: 'unknown' }
+  /**
+   * `sleeping`: agents of its kind rest in the sleeping Orca workspace holding its folder
+   * (`workspace`, `count` of them, `agent` its product name), none of them surely this one: it
+   * may be one of them (#342).
+   */
+  | { state: 'unknown'; sleeping?: { workspace: string; count: number; agent: string } }
   /**
    * `pending`: a launch held for a while where it went: not confirmed yet (an Orca tab opening
    * Orca starts; Terminal or tmux cut off, maybe running), or with `starting` just handed over
    * (a Terminal window, an Orca tab) and the agent not seen running yet.
+   * `sleeping`: its tab rests in a sleeping Orca workspace (`workspace`): no terminal to switch
+   * to, but opening that workspace in Orca brings the tab back (#342).
    */
-  | { state: 'open'; where: LaunchPlace; pending?: true; starting?: true }
+  | {
+      state: 'open';
+      where: LaunchPlace;
+      pending?: true;
+      starting?: true;
+      sleeping?: { workspace: string };
+    }
   /**
    * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
    * this conversation (main matched the terminal it found to that session's panes). Without
