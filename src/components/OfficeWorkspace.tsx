@@ -73,7 +73,7 @@ export function OfficeWorkspace({
   onNews: (id: string) => void;
   selected: string | null;
   onSelect: (id: string) => void;
-  onReturn: (id: string) => void;
+  onReturn: (id: string) => unknown;
   onRefresh: () => void;
   onSettings: () => void;
   refreshing: boolean;

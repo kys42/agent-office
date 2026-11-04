@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   ArrowUpRight,
   BatteryWarning,
@@ -65,7 +65,7 @@ export function OfficeList({
   /** Accessible name for the list; defaults to the office list. */
   label?: string;
   /** Per-row action beside the row (e.g. bring a lounge/archive colleague back to the office). */
-  action?: { label: string; onAct: (id: string) => void };
+  action?: { label: string; onAct: (id: string) => unknown };
   /** Replaces the status text for rooms where the mood is not the interesting part. */
   note?: (s: Session) => string | undefined;
   empty?: { icon: ReactNode; title: string; body?: string };
@@ -73,6 +73,41 @@ export function OfficeList({
   const { t } = useI18n();
   const copy = t.office.list;
   const groups = useMemo(() => officeListGroups(sessions, order), [sessions, order]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Rows being brought back: ignore repeat presses until the move settles.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
+  const act = (id: string) => {
+    if (!action || busy.has(id)) return;
+    const buttons = [
+      ...(scrollRef.current?.querySelectorAll<HTMLButtonElement>('.office-list-action') ?? []),
+    ];
+    const at = buttons.findIndex((b) => b.dataset.sessionId === id);
+    const focused = at >= 0 && document.activeElement === buttons[at];
+    const neighbor = (buttons[at + 1] ?? buttons[at - 1])?.dataset.sessionId;
+    setBusy((b) => new Set(b).add(id));
+    void Promise.resolve(action.onAct(id))
+      .catch(() => undefined)
+      .finally(() => {
+        setBusy((b) => {
+          const next = new Set(b);
+          next.delete(id);
+          return next;
+        });
+        if (!focused) return;
+        // The row leaves the list; keep keyboard users on the next one so they can continue.
+        requestAnimationFrame(() => {
+          const root = scrollRef.current;
+          if (!root || root.querySelector(`[data-session-id="${CSS.escape(id)}"]`)) return;
+          const target = neighbor
+            ? root.querySelector<HTMLButtonElement>(
+                `.office-list-action[data-session-id="${CSS.escape(neighbor)}"]`,
+              )
+            : null;
+          (target ?? searchRef.current)?.focus();
+        });
+      });
+  };
   return (
     <section
       className={`office-list ${action ? 'with-action' : ''}`}
@@ -82,6 +117,7 @@ export function OfficeList({
         <label className="office-list-search">
           <Search size={15} aria-hidden="true" />
           <input
+            ref={searchRef}
             aria-label={t.roster.searchLabel}
             placeholder={t.roster.searchPlaceholder}
             value={query}
@@ -122,7 +158,7 @@ export function OfficeList({
           </button>
         </div>
       )}
-      <div className="office-list-scroll">
+      <div className="office-list-scroll" ref={scrollRef}>
         <div className="office-list-columns" aria-hidden="true">
           <span>{copy.teammate}</span>
           <span>{copy.project}</span>
@@ -317,9 +353,11 @@ export function OfficeList({
                     {action && (
                       <button
                         className="office-list-action"
+                        data-session-id={s.id}
+                        aria-disabled={busy.has(s.id) || undefined}
                         aria-label={`${action.label} · ${privacy ? PROVIDERS[s.provider].name : helper ? helperName(s) : sessionName(s)}`}
                         title={action.label}
-                        onClick={() => action.onAct(s.id)}
+                        onClick={() => act(s.id)}
                       >
                         <span>{action.label}</span>
                         <ArrowUpRight size={13} aria-hidden="true" />

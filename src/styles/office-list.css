@@ -340,6 +340,25 @@
   min-width: 0;
   border-bottom: 0;
 }
+/* Hover/selection paint the whole line, action cell included. */
+.office-list-group li.with-action:hover,
+.office-list-group li.with-action:hover .office-list-row {
+  background: var(--bg-3);
+}
+.office-list-group li.with-action:has(.office-list-row.selected),
+.office-list-group li.with-action .office-list-row.selected {
+  background: var(--accent-soft);
+}
+.office-list-group li.with-action:has(.office-list-row.selected) {
+  box-shadow: inset 3px 0 var(--accent);
+}
+.office-list-group li.with-action .office-list-row.selected {
+  box-shadow: none;
+}
+.office-list-action[aria-disabled='true'] {
+  opacity: 0.55;
+  cursor: progress;
+}
 .office-list-action {
   flex: none;
   width: var(--office-list-action);

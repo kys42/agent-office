@@ -342,15 +342,18 @@ test('lounge and archive share the list view and bring colleagues back from a ro
   );
   const first = archive.locator('.office-list-row').first();
   const id = await first.getAttribute('data-session-id');
-  await archive
+  const bringBack = archive
     .locator('.office-list-group li')
     .first()
-    .getByRole('button', { name: /사무실로 데려오기/ })
-    .click();
+    .getByRole('button', { name: /사무실로 데려오기/ });
+  await bringBack.focus();
+  await page.keyboard.press('Enter');
   // Bringing back keeps you in the room so several colleagues can come back in a row.
   await expect(archive).toBeVisible();
   await expect(archive.locator(`[data-session-id="${id}"]`)).toHaveCount(0);
   await expect(tab(/^사무실/).locator('span')).toHaveText(String(office + 1));
+  // Keyboard users stay on the list (no next row here, so the search field).
+  await expect(archive.getByLabel('동료 이름 검색')).toBeFocused();
 
   // The choice is shared across rooms and switching back restores the drawn rooms.
   await page.getByRole('button', { name: '그래픽', exact: true }).click();
