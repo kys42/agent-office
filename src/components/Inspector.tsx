@@ -1242,8 +1242,9 @@ export function Inspector({
                 );
                 if (result.status === 'sent') {
                   markSent(id);
-                  // Only what the record will show as a request waits for it there.
-                  if (!result.unrecorded) remember(id, text, startedAt, images?.length ?? 0);
+                  remember(id, text, startedAt, images?.length ?? 0, {
+                    unrecorded: result.unrecorded,
+                  });
                 }
                 return result;
               }}

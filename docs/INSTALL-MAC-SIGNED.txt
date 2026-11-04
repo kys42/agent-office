@@ -1,0 +1,23 @@
+Agent Office — Developer ID signed & Apple notarized
+
+Drag Agent Office.app to Applications, then open it from Applications.
+To update, quit the existing app from its tray menu before replacing it.
+Keep the same app location. Your existing profile and database are preserved.
+
+Connecting another computer may ask for Local Network access.
+Approve this only when you want to connect your offices. Signing identifies
+the app; it does not grant privacy permissions on your behalf.
+
+The app's release.json records its signing-time source and identity.
+The DMG JSON records completed notarization; Apple tickets are stapled to
+both the app and the DMG. Verify the supplied SHA256SUMS file.
+
+Back up your profile before an upgrade that changes the database schema.
+Restore the matching app and data backup if you need to roll back.
+
+설치: 앱을 Applications로 옮기고 실행하세요.
+업데이트: 트레이에서 기존 앱을 종료한 뒤 교체하세요. 설정과 DB는 유지됩니다.
+다른 PC 연결 시 로컬 네트워크 접근을 직접 허용해야 할 수 있습니다.
+정식 서명은 앱 신원을 확인하며 개인정보 접근 권한을 자동으로 부여하지 않습니다.
+
+https://github.com/kys42/agent-office

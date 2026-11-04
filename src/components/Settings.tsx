@@ -8,6 +8,7 @@ import { DESK_CHAIRS, DESK_ITEMS, DESK_MONITORS, DESK_TOPS, deskLook } from '../
 import { zoneLabel } from '../shared/zones';
 import { MobileSettings } from './MobileSettings';
 import { FederationSettings } from './FederationSettings';
+import { AppHealth } from './AppHealth';
 import { petLook, PET_CHARACTERS, PET_ACCESSORIES } from '../shared/pets';
 import {
   ShieldCheck,
@@ -1158,6 +1159,7 @@ export function Settings({
   );
   const connections = (
     <>
+      {!demo && <AppHealth active={category === 'connections'} notify={notify} />}
       <section className="settings-section" data-guide-section="connections" tabIndex={-1}>
         {isWindows && <p className="windows-support-note">{s.windowsSupport}</p>}
         <div className="section-title">

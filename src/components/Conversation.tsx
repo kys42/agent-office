@@ -187,7 +187,14 @@ export function Conversation({
    * What the person just sent that the record does not show yet (a busy Claude reads queued
    * input only when it gets to it): drawn as their own bubbles, marked as waiting.
    */
-  sent?: { id: string; text: string; at: number; images?: number }[];
+  sent?: {
+    id: string;
+    text: string;
+    at: number;
+    images?: number;
+    unrecorded?: boolean;
+    restored?: boolean;
+  }[];
   /** Hides a temporary local receipt only; never cancels a submitted message. */
   onDismissSent?: (id: string) => void;
 }) {
@@ -689,7 +696,7 @@ export function Conversation({
           >
             <div className="message-meta">
               <span>{t.conversation.you}</span>
-              <small>{t.conversation.pending}</small>
+              <small>{p.unrecorded ? t.conversation.sentUnrecorded : t.conversation.pending}</small>
               {onDismissSent && (
                 <button
                   aria-label={t.conversation.hideSent}
@@ -703,6 +710,7 @@ export function Conversation({
             <div className="message-bubble">
               <div className="message-text">
                 {p.text && <p>{p.text}</p>}
+                {p.restored && <p>{t.conversation.restoredSend}</p>}
                 {!!p.images && (
                   <p className="message-pending-images">{t.conversation.pendingImages(p.images)}</p>
                 )}

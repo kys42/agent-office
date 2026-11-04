@@ -1,6 +1,48 @@
 import type { Messages } from '../en';
 
 export const settings: Messages['settings'] = {
+  appHealth: {
+    title: '앱 정보와 권한',
+    loading: '설치된 앱을 확인하고 있어요…',
+    failed: '설치 정보를 읽지 못했어요.',
+    retry: '다시 확인',
+    signatures: {
+      'developer-id': '개발자 서명 확인됨',
+      'ad-hoc': '임시 미리보기 빌드',
+      unverified: '서명을 확인하지 못했어요',
+      development: '개발용 앱',
+      unavailable: '서명 확인 미지원',
+    },
+    signedHint:
+      '업데이트도 같은 개발자 신원을 유지해야 해요. 새 컴퓨터에서는 처음 권한을 허용해야 합니다.',
+    previewHint:
+      '계속 사용할 앱은 검증된 배포본을 설치해 주세요. 임시 빌드로 덮어쓰면 권한을 다시 물을 수 있어요.',
+    build: '빌드',
+    platform: '시스템',
+    team: '개발자 팀',
+    unknown: '기록 없음',
+    copy: '앱 정보 복사',
+    copied: '복사됨',
+    copyFailed: '앱 정보를 복사하지 못했어요.',
+    safeCopy: '버전·빌드·서명 정보만 복사해요. 대화, 파일 경로, 인증정보는 포함하지 않습니다.',
+    permissions: '쓰는 기능에 필요한 권한만',
+    permissionHint: 'macOS에서 권한을 각각 관리해요. 앱 서명이 권한을 자동으로 켜 주지는 않습니다.',
+    open: '설정 열기',
+    openFailed: '시스템 설정 → 개인정보 보호 및 보안에서 권한을 확인해 주세요.',
+    panes: {
+      files: {
+        title: '파일 및 폴더',
+        hint: '보호된 폴더나 외장 디스크의 세션 기록을 읽을 때 필요해요.',
+      },
+      network: { title: '로컬 네트워크', hint: '다른 컴퓨터의 Office에 연결할 때 필요해요.' },
+      accessibility: {
+        title: '손쉬운 사용',
+        hint: '지원 터미널로 이동하거나 입력할 때 사용해요. 세션을 읽기만 할 때는 필요하지 않아요.',
+      },
+    },
+    restartHint:
+      '권한 변경 후 macOS가 재시작을 안내하면 앱을 종료하고 다시 열어 주세요. 계속 묻는다면 권한을 초기화하기 전에 빌드와 개발자 신원을 비교해 주세요.',
+  },
   windowsSupport:
     'Windows 미리보기에서는 세션 조회·검색·메모·데스크 펫을 사용할 수 있어요. 이 컴퓨터의 터미널 이동·전송·질문 응답은 아직 지원하지 않아요. 원격 사무실은 해당 컴퓨터의 지원 기능과 권한을 따라요.',
   title: '연결과 설정',

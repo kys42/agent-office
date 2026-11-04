@@ -9,6 +9,8 @@ const action = (channel: string, ...args: unknown[]) =>
     throw new Error(e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
   });
 const api: OfficeAPI = {
+  appHealth: () => action('office:app-health'),
+  openPrivacy: (pane) => action('office:privacy-settings', pane),
   mobile: (command) => action('office:mobile', command),
   remoteLaunch: (id, phase, spec) => action('office:remote-launch', id, phase, spec),
   federation: (command) => action('office:federation', command),
@@ -46,10 +48,15 @@ const api: OfficeAPI = {
   },
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),
-  subscribe: (callback) => {
+  subscribe: (callback, _since, health) => {
     const f = (_: unknown, s: SnapshotMessage) => callback(s);
+    const h = (_: unknown, error: string | null) => health?.(error);
     ipcRenderer.on('office:snapshot', f);
-    return () => ipcRenderer.removeListener('office:snapshot', f);
+    ipcRenderer.on('office:health', h);
+    return () => {
+      ipcRenderer.removeListener('office:snapshot', f);
+      ipcRenderer.removeListener('office:health', h);
+    };
   },
   visible: () => ipcRenderer.invoke('office:visible'),
   onVisibility: (cb) => {
