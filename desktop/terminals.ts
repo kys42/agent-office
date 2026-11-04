@@ -6,6 +6,7 @@ import {
   hostName,
   TerminalFocusError,
   localOrcaEnv,
+  screenTitle,
 } from './terminal-host.js';
 import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
@@ -15,13 +16,20 @@ import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import type { SendResult, TerminalTarget } from '../src/shared/types.js';
+import type {
+  ComposerDraftView,
+  DraftSubmitResult,
+  SendResult,
+  TerminalTarget,
+} from '../src/shared/types.js';
 import { intlLocale, m } from '../src/shared/i18n/index.js';
 import {
   claudeCodeComposer,
+  draftView,
   drawn,
   holdsText,
   parseStyledScreen,
+  placeholderIds,
   promptHolds,
   promptHoldsImages,
   readImages,
@@ -36,8 +44,13 @@ import {
   type Screen,
 } from './composer/index.js';
 import {
+  findClaudeJob,
   findClaudeProcess,
   forget,
+  isParked,
+  namesakeJobs,
+  parkedWindows,
+  titleKey,
   parseClaudeProcess,
   processAlive,
   remember,
@@ -47,7 +60,7 @@ import {
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
 import type { PromptHost, PromptKey } from './prompts/types.js';
-export { promptHolds, promptHoldsImages, readPrompt } from './composer/index.js';
+export { placeholderIds, promptHolds, promptHoldsImages, readPrompt } from './composer/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
 // never reachable through OfficeService.call (shared with the web preview). Reading the
@@ -74,9 +87,19 @@ export interface TerminalDeps extends ClaudeLiveDeps {
 }
 
 export interface LiveTerminal {
+  /** The session's own process: an interactive window, or a background session. */
   process: ClaudeProcess;
   host: TerminalHost;
+  /**
+   * A background session only: the window that parked it and shows it now. Its terminal is the
+   * host, and it is the process that must own that terminal.
+   */
+  window?: ClaudeProcess;
 }
+
+/** The process in front of the terminal: the window showing a background session, or itself. */
+const screenPid = (live: Pick<LiveTerminal, 'process' | 'window'>) =>
+  (live.window ?? live.process).pid;
 
 const BINARIES = {
   orca: ['/usr/local/bin/orca', '/opt/homebrew/bin/orca'],
@@ -133,18 +156,106 @@ export function locateTerminal(
   return remember(deps, `locate:${sessionId}`, 1500, fresh, async () => {
     const proc = await findClaudeProcess(sessionId, deps, fresh);
     if (!proc) return null;
-    const key = `${proc.pid}:${proc.procStart}`;
+    // A background session has no terminal of its own: only a window that shows it has one.
+    const screen = proc.kind === 'bg' ? await jobWindow(proc, deps, fresh) : proc;
+    if (!screen) return null;
+    const key = `${screen.pid}:${screen.procStart}`;
     // Environment and pty owner are fixed for the process's life; a failed read is retried.
     const view = remember(deps, `view:${key}`, Infinity, false, () =>
-      inspectProcess(proc.pid, deps),
+      inspectProcess(screen.pid, deps),
     );
     if (!(await view).owner) forget(deps, `view:${key}`);
     // Host verification rarely changes; cheap polls reuse it, actions always re-check.
     const host = await remember(deps, `host:${key}`, 15_000, fresh, () =>
-      findHost(proc.pid, deps, view, fresh),
+      findHost(screen.pid, deps, view, fresh),
     );
-    return host ? { process: proc, host } : null;
+    if (!host) return null;
+    if (screen === proc) return { process: proc, host };
+    return (await showsJob(proc, host, deps, fresh))
+      ? { process: proc, host, window: screen }
+      : null;
   });
+}
+
+/**
+ * The one window that parked this background job (`parkedJobId`, see claude-live.ts). Claude
+ * routes a message for the window's session to that job the same way. Two windows, a job without
+ * a name, another live job of the same name, or any process record that could not be read or
+ * parsed (it may be either): no window can be proven to show it.
+ */
+async function jobWindow(
+  job: ClaudeProcess,
+  deps: TerminalDeps,
+  fresh: boolean,
+): Promise<ClaudeProcess | null> {
+  if (!job.name) return null;
+  // Every record must have been read and understood: one unreadable (permissions, I/O) or
+  // malformed (mid-write, a newer format) could be a competing window or job of the same name.
+  const inventory = await claudeRecordInventory(deps, fresh);
+  if (!inventory.complete || inventory.unparsed.length) return null;
+  // Fail closed: a window or namesake whose process cannot be verified may be the one in front.
+  const windows = await parkedWindows(job, deps, fresh);
+  if (windows?.length !== 1) return null;
+  const namesakes = await namesakeJobs(job, deps, fresh);
+  if (namesakes === null || namesakes.length) return null;
+  return windows[0];
+}
+
+/**
+ * The parked window's terminal shows the job now: its title is the job's name, as Claude draws
+ * it (`✳ name`, a spinner while working). The agents view can switch jobs, so the link alone
+ * does not prove which one is in front. `fresh` reads the title again, right before typing.
+ */
+async function showsJob(
+  job: ClaudeProcess,
+  host: TerminalHost,
+  deps: TerminalDeps,
+  fresh: boolean,
+): Promise<boolean> {
+  let title: string | null;
+  try {
+    // Orca's title came with the host check (as fresh as it); tmux's is read here.
+    // The whole title, never the one clipped for display.
+    title =
+      host.kind === 'orca' && !fresh
+        ? (host.fullTitle ?? host.title)
+        : await screenTitle(host, deps);
+  } catch {
+    return false;
+  }
+  return !!job.name && title !== null && titleNames(title, job.name);
+}
+
+/**
+ * Claude Code titles its terminal `<glyph> <name>` (✳ at rest, a spinner while working); Orca
+ * may put an attention marker in front. Both reduce alike (`titleKey`), the same reduction that
+ * tells namesake jobs apart, so a title can only ever match one job that passed that check.
+ */
+export function titleNames(title: string, name: string): boolean {
+  const key = titleKey(name);
+  return !!key && titleKey(title) === key;
+}
+
+/**
+ * The same session, process and screen as when it was located, its status accepted by `open`:
+ * the check before each key and before Enter. For a background session the window must still
+ * be the only one parking it, no other live job may share its name, and its terminal must still
+ * show it (title read afresh).
+ */
+export async function stillLive(
+  live: LiveTerminal,
+  deps: TerminalDeps,
+  open: (status: string) => boolean = acceptsInput,
+): Promise<ClaudeProcess | null> {
+  const now = await findClaudeProcess(live.process.sessionId, deps, true);
+  if (now?.pid !== live.process.pid || !open(now.status)) return null;
+  if (live.window) {
+    // Every rule of the lookup again, namesakes included: a job of the same name started since
+    // could be the one the agents view switched to, under the same title.
+    if ((await jobWindow(now, deps, true))?.pid !== live.window.pid) return null;
+    if (!(await showsJob(now, live.host, deps, true))) return null;
+  }
+  return (await ownsTerminal(screenPid(live), deps)) ? now : null;
 }
 
 /**
@@ -236,6 +347,36 @@ export async function claudeAbsent(
   return true;
 }
 
+/**
+ * Why a live Claude session has no terminal to type into, when its process records can say:
+ * a background session no window shows (or none provably), or a window that parked its own
+ * conversation in the background and now shows a job. Null otherwise.
+ */
+export async function claudeNoTerminalReason(
+  sessionId: string,
+  deps = defaultTerminalDeps(),
+): Promise<string | null> {
+  const t = m().desktop.terminal;
+  const proc = await findClaudeProcess(sessionId, deps, true, { parked: true });
+  if (!proc) return null;
+  if (proc.kind === 'bg' && proc.jobId) return t.background(attachCommand(proc.jobId));
+  if (!isParked(proc)) return null;
+  const job = proc.parkedJobId ? await findClaudeJob(proc.parkedJobId, deps, true) : null;
+  return t.parked(job?.name ?? proc.parkedJobId ?? '');
+}
+
+/** `claude attach <job>` for a live background session: what opens it in a terminal. */
+export async function claudeAttachCommand(
+  sessionId: string,
+  deps = defaultTerminalDeps(),
+): Promise<string | null> {
+  const proc = await findClaudeProcess(sessionId, deps, true);
+  return proc?.kind === 'bg' && proc.jobId ? attachCommand(proc.jobId) : null;
+}
+
+// Job ids are validated as 8 hex characters: nothing to quote.
+const attachCommand = (jobId: string) => `claude attach ${jobId}`;
+
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */
 export const forgetTerminal = (sessionId: string) =>
   forget(defaultTerminalDeps(), `locate:${sessionId}`);
@@ -298,8 +439,10 @@ export async function inspectTerminalDraft(
   composer: ComposerAdapter = claudeCodeComposer,
   deps = defaultTerminalDeps(),
 ): Promise<Extract<SendResult, { status: 'needs-confirm' }> | null> {
-  if (!acceptsInput(live.process.status) || !(await ownsTerminal(live.process.pid, deps)))
+  if (!acceptsInput(live.process.status) || !(await ownsTerminal(screenPid(live), deps)))
     return null;
+  // A background session's window may have switched to another job meanwhile.
+  if (live.window && !(await stillLive(live, deps))) return null;
   const io = composerHost(live.host, deps);
   const can = composer.capabilities(io);
   if (can.delivery !== 'terminal' || !can.canInspect) return null;
@@ -311,10 +454,200 @@ export async function inspectTerminalDraft(
     status: 'needs-confirm',
     agent: composer.agent,
     draft: state.text,
-    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...(state.kind === 'unknown' && !can.canDetectSuggestion && { maybeSuggestion: true }),
     ...(!can.canClear && { clearable: false }),
     ...(!state.whole && { partial: true }),
   };
+}
+
+/** How long one read of a box serves every window asking (polls from several cards). */
+const PREVIEW_TTL = 1500;
+const previewKey = (sessionId: string) => `draft-preview:${sessionId}`;
+
+/**
+ * What the composer holds, for the card's preview: read-only, from the terminal `live` verified
+ * (the same rules as sending), while the agent takes input and owns its terminal. No key, no
+ * clipboard, and no claim on the app's own leftover reply is touched: a look meant for showing
+ * must never change what the next send decides. Concurrent and repeated asks within a moment
+ * share one screen read; any send or submit on the session drops it.
+ */
+export function previewTerminalDraft(
+  live: LiveTerminal,
+  composer: ComposerAdapter = claudeCodeComposer,
+  deps = defaultTerminalDeps(),
+): Promise<ComposerDraftView> {
+  const key = live.process.sessionId;
+  const unknown = (reason: Extract<ComposerDraftView, { kind: 'unknown' }>['reason']) =>
+    ({ kind: 'unknown', reason }) as const;
+  return remember(
+    deps,
+    previewKey(key),
+    PREVIEW_TTL,
+    false,
+    async (): Promise<ComposerDraftView> => {
+      const io = composerHost(live.host, deps);
+      const can = composer.capabilities(io);
+      if (can.delivery !== 'terminal' || !can.canInspect) return unknown('unsupported');
+      // A send types into this very box: its text is not the person's draft.
+      if (sending.has(key)) return unknown('sending');
+      if (!acceptsInput(live.process.status) || !(await ownsTerminal(screenPid(live), deps)))
+        return unknown('not-ready');
+      // A background session's window may have switched to another job meanwhile.
+      if (live.window && !(await stillLive(live, deps))) return unknown('not-ready');
+      const state = await composer.inspect(io);
+      if (sending.has(key)) return unknown('sending');
+      return draftView(state, composer.agent, can);
+    },
+  ).catch(() => unknown('unreadable'));
+}
+
+export interface DraftSubmitOptions {
+  composer?: ComposerAdapter;
+  /** Asked again right before Enter (e.g. the send setting): false stops, nothing pressed. */
+  allowed?: () => Promise<boolean>;
+  /**
+   * `expected` is (or, on a plain screen, may be) the agent's own suggestion: the adapter takes
+   * it into the box with its accept key only while it is all the box holds, and presses Enter
+   * only once the box holds exactly it. The same queue, checks and setting as [Send as is].
+   */
+  suggestion?: boolean;
+}
+
+/**
+ * Submits the composer's text as it is — the card's [Send as is] for what sits in the box.
+ * Nothing is typed, deleted or copied: only Enter, and only while the box still holds exactly
+ * `expected` (what the preview showed), all of it, on the same Claude, open to input and in front
+ * of its terminal, checked as for a send right before the key. Anything else presses nothing:
+ * other text comes back as `changed` with a fresh read to show, a dialog or menu as `changed`
+ * too (the box is gone), the rest as a refusal. Since Enter goes only to a box that holds the
+ * text, a retry after an unclear outcome can never submit it twice.
+ */
+export function submitTerminalDraft(
+  live: LiveTerminal,
+  expected: unknown,
+  deps = defaultTerminalDeps(),
+  options: DraftSubmitOptions = {},
+): Promise<DraftSubmitResult> {
+  return oneAtATime(live.process.sessionId, deps, (waited) =>
+    submitDraftNow(live, expected, deps, waited, options),
+  );
+}
+
+async function submitDraftNow(
+  live: LiveTerminal,
+  expected: unknown,
+  deps: TerminalDeps,
+  waited: boolean,
+  options: DraftSubmitOptions,
+): Promise<DraftSubmitResult> {
+  const t = m().desktop.terminal;
+  if (typeof expected !== 'string' || !expected.trim() || expected.length > 20000)
+    throw new TerminalInputError(t.empty);
+  const current = () => stillLive(live, deps);
+  if (waited && !(await current())) throw new TerminalInputError(t.draftStopped);
+  if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
+  if (!(await ownsTerminal(screenPid(live), deps))) throw new TerminalInputError(t.notOwner);
+  if (live.window && !(await current())) throw new TerminalInputError(t.draftStopped);
+  const { host } = live;
+  const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
+  const composer = options.composer ?? claudeCodeComposer;
+  const io = composerHost(host, deps);
+  const can = composer.capabilities(io);
+  const submit = options.suggestion
+    ? can.canSubmitSuggestion && composer.submitSuggestion?.bind(composer)
+    : composer.submitDraft?.bind(composer);
+  if (can.delivery !== 'terminal' || !can.canSubmitDraft)
+    throw new TerminalInputError(t.unsupportedAgent(composer.agent));
+  if (!submit)
+    throw new TerminalInputError(
+      options.suggestion ? t.suggestionUnsupported : t.unsupportedAgent(composer.agent),
+    );
+  let status: string | undefined;
+  let outcome: Awaited<ReturnType<NonNullable<ComposerAdapter['submitDraft']>>>;
+  try {
+    outcome = await submit(io, expected, async () => {
+      // The record and the foreground last, as before a send's Enter; then the setting.
+      const again = await current();
+      status = again?.status;
+      return !!again && (await (options.allowed?.() ?? true));
+    });
+  } catch (error) {
+    // Enter itself failed: the text is still in the box, as it was.
+    if (error instanceof TerminalInputError)
+      throw new TerminalInputError(
+        options.suggestion ? t.suggestionNotSubmitted(where) : t.draftNotSubmitted(where),
+      );
+    throw error;
+  }
+  // The accept key went in, then a check before Enter failed: what it took in stays there.
+  if (outcome.status !== 'submitted' && outcome.accepted) {
+    if (outcome.status === 'changed')
+      return {
+        status: 'changed',
+        message: t.suggestionHeld(where),
+        draft: draftView(outcome.state, composer.agent, can),
+      };
+    throw new TerminalInputError(t.suggestionHeld(where));
+  }
+  if (outcome.status === 'changed')
+    return {
+      status: 'changed',
+      message: t.draftMoved,
+      draft: draftView(outcome.state, composer.agent, can),
+    };
+  if (outcome.status === 'refused') {
+    // A dialog or menu took the box's place: shown as such, like any other change.
+    if (outcome.reason === 'closed')
+      return {
+        status: 'changed',
+        message: t.notReady,
+        draft: { kind: 'unknown', reason: 'closed' },
+      };
+    throw new TerminalInputError(
+      outcome.reason === 'partial'
+        ? options.suggestion
+          ? t.suggestionNotWhole
+          : t.draftNotWhole
+        : outcome.reason === 'unreadable'
+          ? t.unreadable(hostName(host))
+          : outcome.reason === 'lost'
+            ? t.draftStopped
+            : options.suggestion
+              ? t.suggestionUnsupported
+              : t.unsupportedAgent(composer.agent),
+    );
+  }
+  // What went, as typed, from the look right before Enter (never the preview's older one).
+  const went = draftView(outcome.state, composer.agent, can);
+  const logical =
+    went.kind === 'draft' && went.logical !== undefined ? { logical: went.logical } : {};
+  // Whatever the app once typed there and left is gone with it.
+  typedMemory(deps).drop(live.process.sessionId);
+  // The box empties as Claude takes it (mid-turn too: queued above the box). Still holding
+  // exactly the text after a moment, it was not taken: said so, never pressed again.
+  let taken = false;
+  for (let tries = 0; !taken && tries < 3; tries++) {
+    await deps.wait(150);
+    const state = await composer.inspect(io);
+    taken = !(holdsText(state) && (state.rows ?? state.text) === expected);
+  }
+  if (!taken)
+    throw new TerminalInputError(
+      // Text this screen cannot tell from the suggestion: Enter does not take a suggestion.
+      !options.suggestion && outcome.state.kind === 'unknown' && !can.canDetectSuggestion
+        ? t.draftNotTakenSuggestion(where)
+        : t.draftNotTaken(where),
+    );
+  const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
+  const message =
+    after?.status === 'waiting'
+      ? t.sentThenPrompt(where)
+      : status === 'busy'
+        ? t.queued(where)
+        : host.kind === 'orca'
+          ? t.orcaSent
+          : t.tmuxSent(host.label);
+  return { status: 'sent', message, ...logical };
 }
 
 /**
@@ -420,6 +753,7 @@ const KEY_BYTES: Record<ComposerKey, string> = {
   'C-u': '\x15',
   l: 'l',
   BSpace: '\x7f',
+  Right: '\x1b[C',
 };
 
 /** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */
@@ -433,6 +767,9 @@ export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHo
       if (host.kind === 'orca')
         return orcaSend(host, [`--text=${keys.map((key) => KEY_BYTES[key]).join('')}`], deps);
       await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
+    },
+    submit: async () => {
+      await pressEnter(host, deps);
     },
   };
 }
@@ -546,6 +883,12 @@ export interface TerminalSendOptions {
   replaceDraft?: string;
   /** Explicit confirmation that hidden content may be lost. */
   allowPartialDraft?: boolean;
+  /**
+   * `replaceDraft` is the box's rows as drawn (`rows`, indents kept), taken into the card to
+   * edit: replaced only while the box still draws exactly that. Any other difference — even in
+   * spaces, line breaks or indents, which the drawn-shape comparison ignores — is asked about.
+   */
+  exactDraft?: boolean;
   /** Puts the composer's text on the clipboard before it is cleared. Without it nothing is. */
   backup?: (text: string) => void | Promise<void>;
   /** What the clipboard holds now: an earlier backup counts only while it is still there. */
@@ -583,21 +926,33 @@ export function sendToTerminal(
   deps = defaultTerminalDeps(),
   options: TerminalSendOptions = {},
 ): Promise<SendResult> {
-  // One send per session at a time: two surfaces sending at once would type into each other.
-  const key = live.process.sessionId;
+  return oneAtATime(live.process.sessionId, deps, (waited) =>
+    deliver(live, input, deps, waited, options),
+  );
+}
+
+/**
+ * One action on a session's box at a time (a send, submitting its text as it is): two surfaces
+ * acting at once would type into each other. `waited`: another one ran first. A preview read
+ * while one runs says so instead of showing the text being typed, and the next one reads afresh.
+ */
+function oneAtATime<T>(
+  key: string,
+  deps: TerminalDeps,
+  act: (waited: boolean) => Promise<T>,
+): Promise<T> {
   const before = sending.get(key);
-  const turn = (before ?? Promise.resolve())
-    .catch(() => undefined)
-    .then(() => deliver(live, input, deps, !!before, options));
+  const turn = (before ?? Promise.resolve()).catch(() => undefined).then(() => act(!!before));
   sending.set(key, turn);
   const done = () => {
     if (sending.get(key) === turn) sending.delete(key);
+    forget(deps, previewKey(key));
   };
   turn.then(done, done);
   return turn;
 }
 
-const sending = new Map<string, Promise<SendResult>>();
+const sending = new Map<string, Promise<unknown>>();
 
 /**
  * What clearing put on the clipboard, per session, until a send goes through: a clearing that
@@ -643,28 +998,41 @@ async function deliver(
   const text = cleanInput(input, { allowEmpty: images.length > 0 });
   const t = m().desktop.terminal;
   /** The same process, still on this session, open to input and in front of its terminal. */
-  const current = async () => {
-    const now = await findClaudeProcess(live.process.sessionId, deps, true);
-    return now?.pid === live.process.pid &&
-      acceptsInput(now.status) &&
-      (await ownsTerminal(now.pid, deps))
-      ? now
-      : null;
-  };
+  const current = () => stillLive(live, deps);
   // A leading `!` turns Claude's prompt into shell mode: the text would run as a command.
   if (text.startsWith('!')) throw new TerminalInputError(t.shellPrefix);
   // A send that waited its turn looks again: the one before may have ended or replaced the
   // session (`/clear`).
   if (waited && !(await current())) throw new TerminalInputError(t.stateChanged);
   if (!acceptsInput(live.process.status)) throw new TerminalInputError(t.notReady);
-  if (!(await ownsTerminal(live.process.pid, deps))) throw new TerminalInputError(t.notOwner);
+  if (!(await ownsTerminal(screenPid(live), deps))) throw new TerminalInputError(t.notOwner);
+  // A background session's window may have switched to another job meanwhile.
+  if (live.window && !(await current())) throw new TerminalInputError(t.stateChanged);
   const { host } = live;
   const key = live.process.sessionId;
   const memory = backupMemory(deps);
   const typed = typedMemory(deps);
   const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
   const composer = options.composer ?? claudeCodeComposer;
-  const io = composerHost(host, deps);
+  /**
+   * Placeholder ids on every screen read before the text goes in, up to the read that found the
+   * box empty: Claude Code collapses a long paste into `[Pasted text #N +K lines]`, and only an
+   * id new since then can be that paste's (`collapsedPaste`). With no screen read, none counts.
+   */
+  const seen = new Set<number>();
+  let looked = false;
+  const terminalIo = composerHost(host, deps);
+  const io: ComposerHost = {
+    ...terminalIo,
+    read: async () => {
+      const screen = await terminalIo.read();
+      if (screen) {
+        looked = true;
+        for (const id of placeholderIds(screen)) seen.add(id);
+      }
+      return screen;
+    },
+  };
   const can = composer.capabilities(io);
   // Typing into a terminal is only for agents whose composer can be read first.
   if (can.delivery !== 'terminal' || !can.canInspect)
@@ -696,11 +1064,17 @@ async function deliver(
     }
   }
   let saved = false;
-  const ask = (draft: string, whole: boolean, changed = false): SendResult => ({
+  // A draft the adapter told from a suggestion (a paste placeholder) is never called one.
+  const ask = (
+    draft: string,
+    whole: boolean,
+    changed = false,
+    maybeSuggestion = !can.canDetectSuggestion,
+  ): SendResult => ({
     status: 'needs-confirm',
     draft,
     agent: composer.agent,
-    ...(!can.canDetectSuggestion && { maybeSuggestion: true }),
+    ...(maybeSuggestion && { maybeSuggestion: true }),
     ...(changed && { changed: true }),
     ...((saved || base !== undefined) && { clipboard: true }),
     // A partial preview needs explicit acceptance of hidden-content loss.
@@ -708,9 +1082,15 @@ async function deliver(
   });
   const confirmed = options.replaceDraft;
   if (!own) {
-    if (confirmed === undefined) return ask(state.text, state.whole);
-    if (drawn(confirmed) !== drawn(state.text)) return ask(state.text, state.whole, true);
-    if (!state.whole && !options.allowPartialDraft) return ask(state.text, false);
+    const suggestion = state.kind === 'unknown' && !can.canDetectSuggestion;
+    if (confirmed === undefined) return ask(state.text, state.whole, false, suggestion);
+    if (drawn(confirmed) !== drawn(state.text))
+      return ask(state.text, state.whole, true, suggestion);
+    // Taken into the card to edit: exactly those rows, or the person is asked.
+    if (options.exactDraft && (state.rows ?? state.text) !== confirmed)
+      return ask(state.text, state.whole, true, suggestion);
+    if (!state.whole && !options.allowPartialDraft)
+      return ask(state.text, false, false, suggestion);
   }
   const backup = options.backup;
   try {
@@ -759,7 +1139,7 @@ async function deliver(
               : t.clearFailed(composer.agent),
       );
     // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
-    // prompt must hold exactly the text, never a collapsed or shortened view of it.
+    // prompt must hold exactly the text or its own placeholder alone, never the end of it.
     const inferred = result.state.kind === 'suggestion' && !!result.state.inferred;
     return await submit(true, inferred || !state.whole);
   } catch (error) {
@@ -778,13 +1158,15 @@ async function deliver(
 
   /**
    * Types the text and presses Enter once the prompt holds it: exactly, or (the prompt being
-   * verified empty) as the placeholder of a long paste or the end of a long text. `strict`
-   * after a clearing that could only infer the box was empty: the exact text only.
+   * verified empty) as the one placeholder its own paste collapsed into (a new id, its line
+   * count, nothing else: `collapsedPaste`) or the end of a long text. `strict` after a clearing
+   * that could only infer the box was empty: no end of a text, which may sit next to what the
+   * keys could not reach; the placeholder alone in the box still counts.
    */
   async function submit(cleared: boolean, strict = false): Promise<SendResult> {
     await options.beforeSend?.();
     if (images.length) await attachImages();
-    else
+    else {
       // Remembered once it may reach the pane: whatever happens next, the text may be in the
       // composer. A failure before that (tmux `load-buffer`) typed nothing, so nothing is the
       // app's: the same words typed by the person later are their draft.
@@ -796,11 +1178,14 @@ async function deliver(
         if (error instanceof OrcaRefusal) typed.drop(key);
         throw error;
       }
+    }
+    // Copied: reads after the paste must not add its own id.
+    const before = looked ? new Set(seen) : undefined;
     const holds = async () => {
       const screen = (await readScreen(host, deps)) ?? '';
       return images.length
-        ? promptHoldsImages(screen, text, images, strict)
-        : promptHolds(screen, text, strict);
+        ? promptHoldsImages(screen, text, images, strict, before)
+        : promptHolds(screen, text, strict, before);
     };
     // The prompt may take a moment to draw the text.
     let shown = false;
@@ -846,7 +1231,8 @@ async function deliver(
    * splits a paste at spaces before `/`). Only once the prompt holds exactly those, and nothing
    * else, does the text go in, as its own paste. What a send with images leaves behind is never
    * claimed as the app's own reply: the prompt shows placeholders, not the typed text, so a
-   * retry asks about it like any draft.
+   * retry asks about it like any draft. The images' own ids join those seen before the text's
+   * paste (see `submit`).
    */
   async function attachImages() {
     typed.drop(key);
@@ -854,7 +1240,7 @@ async function deliver(
     let attached: ReturnType<typeof readImages> = null;
     for (let tries = 0; attached?.rest !== '' && tries < IMAGE_TRIES; tries++) {
       await deps.wait(150);
-      const screen = await readScreen(host, deps);
+      const screen = await io.read();
       const shown = screen ? readPrompt(screen) : null;
       attached = shown === null ? null : readImages(shown, images);
     }

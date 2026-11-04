@@ -134,6 +134,17 @@ export function contentText(c: unknown): string {
 }
 /** Claude Code's note that the person stopped the turn (Esc), recorded in the user role. */
 const INTERRUPTED = /^\s*\[Request interrupted by user[^\]\n]*\]\s*$/i;
+/**
+ * The envelope Claude Code agent teams wrap a member's message in
+ * (`<teammate-message teammate_id="…" color="…" summary="…">…</teammate-message>`): the words
+ * stay, the markup goes. An opening tag cut off from its close (a truncated title) goes too.
+ */
+const TEAMMATE_OPEN = String.raw`<teammate-message(?:\s+[\w-]+="[^"]*")*\s*>`;
+const TEAMMATE_MESSAGE = new RegExp(
+  String.raw`${TEAMMATE_OPEN}([\s\S]*?)<\/teammate-message>`,
+  'gi',
+);
+const TEAMMATE_DANGLING = new RegExp(String.raw`^\s*${TEAMMATE_OPEN}\s*`, 'i');
 export function cleanPrompt(t: string): string {
   return (
     t
@@ -145,6 +156,8 @@ export function cleanPrompt(t: string): string {
       // Harness notes recorded in the user role are not the person's words.
       .replace(/<task-notification\b[^>]*>[\s\S]*?<\/task-notification>/gi, '')
       .replace(INTERRUPTED, '')
+      .replace(TEAMMATE_MESSAGE, (_, words: string) => words.trim())
+      .replace(TEAMMATE_DANGLING, '')
       .replace(
         /<external_codex_apps_open_page\b[^>]*>[\s\S]*?<\/external_codex_apps_open_page>/gi,
         '',
@@ -211,6 +224,14 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     parentId = relation.parentNativeId;
   let nativeTitle = !!cleanTitle(sourceTitle);
   let titleRank = nativeTitle ? 4 : 0;
+  // An agent-team member goes by its member name, over a generated title; a name the person
+  // gave the session (custom title) still wins.
+  const member = cleanTitle(resolved.member);
+  if (member && titleRank < 3.5) {
+    title = member;
+    titleRank = 3.5;
+    nativeTitle = true;
+  }
   let startedAt = opt.mtime,
     updatedAt = 0,
     status: Mood = 'idle',

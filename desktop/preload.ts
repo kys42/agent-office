@@ -39,7 +39,13 @@ const api: OfficeAPI = {
   unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
   bookmarkById: (id) => call('bookmarkById', id),
-  bookmarkWindow: (what, target) => action('office:reader-window', what, target),
+  bookmarkWindow: ((what: string, target?: unknown) =>
+    action('office:reader-window', what, target)) as OfficeAPI['bookmarkWindow'],
+  onPopupOnTop: (cb) => {
+    const f = (_: unknown, on: boolean) => cb(on === true);
+    ipcRenderer.on('office:popup-on-top', f);
+    return () => ipcRenderer.removeListener('office:popup-on-top', f);
+  },
   handoff: (id, r) => call('handoff', id, r),
   preferences: (p) => call('preferences', p),
   subscribe: (callback, _since, health) => {
@@ -62,15 +68,6 @@ const api: OfficeAPI = {
   reveal: (id) => ipcRenderer.invoke('office:reveal', id),
   ...(['darwin', 'linux'].includes(process.platform)
     ? {
-        tmuxSummon: (
-          id: string,
-          actionName: 'status' | 'start' | 'open',
-          provider: 'claude' | 'codex',
-          name: string,
-          initialMessage?: string,
-        ) => action('office:tmux-summon', id, actionName, provider, name, initialMessage),
-        tmuxResume: (id: string, actionName: 'status' | 'start' | 'open') =>
-          action('office:tmux-resume', id, actionName),
         shell: {
           command: (command: unknown) => action('office:shell', command),
           input: (ptyId: string, data: string) =>
@@ -89,20 +86,12 @@ const api: OfficeAPI = {
         } as OfficeAPI['shell'],
       }
     : {}),
-  // Orca is a macOS app: its launch is offered there only.
-  ...(process.platform === 'darwin'
-    ? {
-        orcaLaunch: (id: string, actionName: 'status' | 'start' | 'focus') =>
-          action('office:orca-launch', id, actionName),
-        orcaSummon: (
-          id: string,
-          actionName: 'status' | 'start',
-          provider: 'claude' | 'codex',
-          name: string,
-          initialMessage?: string,
-        ) => action('office:orca-summon', id, actionName, provider, name, initialMessage),
-      }
-    : {}),
+  // Orca is a macOS app: bringing it to the front is offered there only.
+  ...(process.platform === 'darwin' ? { orcaReveal: () => action('office:orca-reveal') } : {}),
+  // Every destination says itself whether this platform has it (desktop/launch/).
+  launch: (request) => action('office:launch', request),
+  launchOptions: (intent) => action('office:launch-options', intent),
+  launchSupport: () => action('office:launch-support'),
   resume: (id) => ipcRenderer.invoke('office:resume', id),
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),
@@ -110,6 +99,14 @@ const api: OfficeAPI = {
   attachImage: (bytes) => action('office:attach-image', bytes),
   attachmentPreview: (id) => action('office:attachment-preview', id),
   inspectDraft: (id) => action('office:inspect-draft', id),
+  composerDraft: (id) => action('office:composer-draft', id),
+  submitDraft: (id, text, options) =>
+    action(
+      'office:submit-draft',
+      id,
+      text,
+      options?.suggestion === true ? { suggestion: true } : {},
+    ),
   terminalSend: (enable) => action('office:terminal-send', enable),
   prompt: (id) => action('office:prompt', id),
   answer: (id, choice) => action('office:answer', id, choice),

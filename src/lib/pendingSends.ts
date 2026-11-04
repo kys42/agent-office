@@ -14,6 +14,11 @@ export type PendingSend = {
   /** Only a digest is persisted. Other windows/restarts show a text-free receipt. */
   fingerprint?: string;
   restored?: boolean;
+  /**
+   * The text as read off the terminal's input box (submitted there as it was): the box's own
+   * wrapping shows as line breaks, even inside words, so it is matched with all spacing ignored.
+   */
+  wrapped?: boolean;
 };
 type Recorded = { id: string; kind: string; text: string; at: number };
 
@@ -57,6 +62,7 @@ export function decodePending(value: unknown, now = Date.now()): PendingSend | n
     at: p.at,
     ...(p.images && { images: p.images }),
     ...(p.unrecorded === true && { unrecorded: true }),
+    ...(p.wrapped === true && { wrapped: true }),
   };
 }
 
@@ -145,9 +151,10 @@ export async function rememberSend(
   text: string,
   now = Date.now(),
   images = 0,
-  unrecorded = false,
+  options: { wrapped?: boolean; unrecorded?: boolean } = {},
 ) {
-  const fingerprint = await receiptHash(text);
+  // A wrapped send is matched with spacing ignored, so its digest is of the unspaced words.
+  const fingerprint = await receiptHash(options.wrapped ? unspaced(text) : text);
   pending = saved() ?? pending;
   publish([
     ...pending.slice(-(MAX_RECEIPTS - 1)),
@@ -158,7 +165,8 @@ export async function rememberSend(
       at: now,
       ...(fingerprint && { fingerprint }),
       ...(images > 0 && { images }),
-      ...(unrecorded && { unrecorded }),
+      ...(options.unrecorded && { unrecorded: true }),
+      ...(options.wrapped && { wrapped: true }),
     },
   ]);
 }
@@ -201,6 +209,18 @@ export function sameWithImages(recorded: string, text: string, images: number): 
   return record.startsWith(want) && after.test(record.slice(want.length));
 }
 
+/** Words with every space and line break taken out: a box's wrapping may split a word. */
+const unspaced = (text: string) => plain(text).replace(/\s+/g, '');
+
+/** `sameWithImages` for text read off a wrapped input box: spacing and line breaks ignored. */
+export function sameUnwrapped(recorded: string, text: string): boolean {
+  return same(unspaced(recorded), unspaced(text));
+}
+
+/** Whether a recorded request's text is this send (wrapped box text ignores spacing). */
+const sameSend = (p: PendingSend, recorded: string) =>
+  p.wrapped ? sameUnwrapped(recorded, p.text) : sameWithImages(recorded, p.text, p.images ?? 0);
+
 /**
  * Settles the session's sends against its recorded requests: each record clears one send at
  * most, and only a record from around or after the send. Old sends expire.
@@ -211,8 +231,7 @@ export function settleSends(
   events: Recorded[],
   taken: Set<string>,
   now = Date.now(),
-  matches = (p: PendingSend, e: Pick<Recorded, 'id' | 'text' | 'at'>) =>
-    sameWithImages(e.text, p.text, p.images ?? 0),
+  matches = (p: PendingSend, e: Pick<Recorded, 'id' | 'text' | 'at'>) => sameSend(p, e.text),
 ): PendingSend[] {
   const asked = events
     .filter((e) => e.kind === 'user' && !taken.has(`${sessionId}:${e.id}`))
@@ -268,9 +287,9 @@ export function settlePending(sessionId: string, events: Recorded[]) {
     const stored = saved();
     if (stored) publish(stored, false);
     if (!pending.some((p) => p.sessionId === sessionId)) return;
-    const images = new Set(
-      pending.filter((p) => p.restored && p.sessionId === sessionId).map((p) => p.images ?? 0),
-    );
+    const restored = pending.filter((p) => p.restored && p.sessionId === sessionId);
+    const images = new Set(restored.filter((p) => !p.wrapped).map((p) => p.images ?? 0));
+    const wrapped = restored.some((p) => p.wrapped);
     const fingerprints = new Map<string, (string | null)[]>();
     await Promise.all(
       events
@@ -284,14 +303,25 @@ export function settlePending(sessionId: string, events: Recorded[]) {
           ),
         ),
     );
+    if (wrapped)
+      await Promise.all(
+        events
+          .filter((e) => e.kind === 'user')
+          .map(async (e) =>
+            fingerprints.set(`${e.id}:wrapped`, [await receiptHash(unspaced(e.text))]),
+          ),
+      );
     // Storage may have changed while digesting. Re-read before reconciling/deleting receipts.
     const latest = saved();
     if (latest) publish(latest, false);
     const prior = new Set(used);
     const next = settleSends(pending, sessionId, events, used, Date.now(), (p, e) =>
       p.restored
-        ? !!p.fingerprint && !!fingerprints.get(`${e.id}:${p.images ?? 0}`)?.includes(p.fingerprint)
-        : sameWithImages(e.text, p.text, p.images ?? 0),
+        ? !!p.fingerprint &&
+          !!fingerprints
+            .get(p.wrapped ? `${e.id}:wrapped` : `${e.id}:${p.images ?? 0}`)
+            ?.includes(p.fingerprint)
+        : sameSend(p, e.text),
     );
     try {
       for (const id of used)

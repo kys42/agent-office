@@ -1,6 +1,11 @@
 import { durationLabel, officeSchedule } from '../shared/lifecycle';
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { ModePreview, usePreviewOffice } from './ModePreview';
+import { TRIAGE_LABELS } from '../shared/triage';
 import { PetCustomizer } from './PetCustomizer';
+import { DeskCustomizer, DeskPreview, type DeskZone } from './DeskCustomizer';
+import { DESK_CHAIRS, DESK_ITEMS, DESK_MONITORS, DESK_TOPS, deskLook } from '../shared/desks';
+import { zoneLabel } from '../shared/zones';
 import { MobileSettings } from './MobileSettings';
 import { FederationSettings } from './FederationSettings';
 import { AppHealth } from './AppHealth';
@@ -40,10 +45,30 @@ import {
   Clock,
   Type,
   CaseSensitive,
+  ChevronRight,
+  Files,
+  Flame,
+  GitBranch,
+  Hand,
+  Hash,
+  IdCard,
+  Lightbulb,
+  ListFilter,
+  MessageSquareOff,
+  WandSparkles,
   type LucideIcon,
+  Pin,
 } from 'lucide-react';
-import type { AnswerSettings, Preferences, Snapshot, Provider } from '../shared/types';
+import type {
+  AnswerSettings,
+  Preferences,
+  Snapshot,
+  Provider,
+  ViewMode,
+  ViewSettings,
+} from '../shared/types';
 import { PROVIDERS } from '../shared/types';
+import { GLASS_MAX, GLASS_STEP, glassLevel } from '../shared/glass';
 import { Sprite } from './Sprite';
 import { shortPath, ago } from '../lib/format';
 import { ZONE_MATCH_LABELS, isCustomZone, ruleZoneKey } from '../shared/zones';
@@ -58,7 +83,11 @@ import {
   DOCK_PILL_CHOICES,
   HELPER_RETAIN_CHOICES,
   HELPER_STACK_CHOICES,
+  PET_NAME_CHOICES,
+  PET_TALLY_GROUPS,
   READ_DWELL_CHOICES,
+  mergeViews,
+  resolveViews,
   viewPrefs,
 } from '../shared/view-prefs';
 import { READING_FONT_CHOICES, TEXT_SIZE_CHOICES, textPrefs } from '../shared/text-prefs';
@@ -110,6 +139,79 @@ function Toggle({
     </button>
   );
 }
+/** A switch row: icon, what it is and a line about it, the switch. */
+function SwitchRow({
+  icon: Icon,
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  icon: LucideIcon;
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <div className="setting-row">
+      <Icon size={18} />
+      <div>
+        <b>{label}</b>
+        <p>{hint}</p>
+      </div>
+      <Toggle checked={checked} label={label} onChange={onChange} />
+    </div>
+  );
+}
+/**
+ * One screen's card in 'What each screen shows' (#324): a clean first look — its line, the live
+ * preview and the main choices — and the finer ones folded under a native 'More'.
+ */
+function ViewCard({
+  mode,
+  anchor,
+  title,
+  hint,
+  more,
+  preview,
+  children,
+  details,
+}: {
+  mode: ViewMode;
+  /** A deep-link target kept from an older section (`data-guide-section`). */
+  anchor?: SettingsSection;
+  title: string;
+  hint: string;
+  more: string;
+  preview: ReactNode;
+  children: ReactNode;
+  details: ReactNode;
+}) {
+  return (
+    <article
+      className="view-card"
+      data-view-mode={mode}
+      data-guide-section={anchor}
+      tabIndex={anchor ? -1 : undefined}
+      aria-label={title}
+    >
+      <header>
+        <h3>{title}</h3>
+        <p>{hint}</p>
+      </header>
+      {preview}
+      {children}
+      <details className="view-card-more">
+        <summary aria-label={`${title} · ${more}`}>
+          <ChevronRight size={14} />
+          {more}
+        </summary>
+        {details}
+      </details>
+    </article>
+  );
+}
 /**
  * One settings surface, two frames: the big office's page (category list on the left) and the
  * settings window (tabs on top). Every control and deep link is the same in both.
@@ -159,6 +261,11 @@ export function Settings({
     if (await onPrefs({ [key]: Date.now() })) notify(done);
   };
   const [customizing, setCustomizing] = useState<Provider | null>(null);
+  const [decorating, setDecorating] = useState(false);
+  // #324: screen choices saved but not back yet, so quick clicks build on each other (a second
+  // click before the first comes back must not undo it).
+  const [viewsDraft, setViewsDraft] = useState<ViewSettings | undefined>();
+  useEffect(() => setViewsDraft(undefined), [snapshot.preferences.views]);
   const [category, setCategory] = useState<SettingsCategory>(() =>
     focusSection
       ? settingsCategory(focusSection.section)
@@ -166,6 +273,8 @@ export function Settings({
         ? lastPageCategory()
         : 'general',
   );
+  // One office for all four previews, built only while the Look tab is shown.
+  const previewOffice = usePreviewOffice(snapshot, category === 'appearance');
   // The page comes back to the category last open in this session.
   useEffect(() => {
     if (layout !== 'page') return;
@@ -226,6 +335,19 @@ export function Settings({
   const zones = [...new Set(zoneRules.map(ruleZoneKey))].sort(
     (a, b) => Number(isCustomZone(b)) - Number(isCustomZone(a)) || a.localeCompare(b),
   );
+  // Project zones with desks in the office, for a project's own desk look — and any project
+  // already dressed, even with nobody in it now, so its look can still be changed or reset.
+  const deskZones: DeskZone[] = [
+    ...new Map([
+      ...Object.keys(p.deskAppearance?.projects ?? {}).map(
+        (key) => [key, { key, name: key }] as const,
+      ),
+      ...snapshot.sessions
+        .filter((s) => s.zone === 'office' && !s.attachedTo && !s.remote)
+        .map((s) => [projectKey(s), { key: projectKey(s), name: zoneLabel(s) }] as const),
+    ]).values(),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  const desk = deskLook(p.deskAppearance);
   const members = (key: string) =>
     snapshot.sessions.filter(
       (s) => s.area && projectKey(s) === key && s.zone === 'office' && !s.attachedTo,
@@ -315,6 +437,25 @@ export function Settings({
               ))}
           </select>
         </div>
+        {/* Desktop: popup cards are the app's windows. */}
+        {isDesktop && (
+          <div className="setting-row">
+            <Pin size={18} />
+            <div>
+              <b>{s.reading.restorePinned}</b>
+              <p>{s.reading.restorePinnedHint}</p>
+            </div>
+            <Toggle
+              checked={snapshot.preferences?.restorePinnedCards !== false}
+              label={s.reading.restorePinned}
+              onChange={() =>
+                onPrefs({
+                  restorePinnedCards: snapshot.preferences?.restorePinnedCards === false,
+                })
+              }
+            />
+          </div>
+        )}
       </section>
       {isDesktop && !demo && (
         <section className="settings-section" data-guide-section="notifications" tabIndex={-1}>
@@ -409,6 +550,233 @@ export function Settings({
       </section>
     </>
   );
+  // #324: what each screen shows. Each card: a line, the live preview, the main choices, and
+  // the rest under 'More'. The dock's cards are the desktop app's (a browser has no dock).
+  const shows = viewsDraft ? resolveViews(viewsDraft) : view.views;
+  const v = s.views;
+  const setView = <M extends ViewMode>(mode: M, patch: NonNullable<ViewSettings[M]>) => {
+    const next = mergeViews(viewsDraft ?? snapshot.preferences.views, { [mode]: patch });
+    setViewsDraft(next);
+    void onPrefs({ views: { [mode]: next[mode] } });
+  };
+  const deskSwitch = (
+    mode: 'dock' | 'office',
+    key: 'branch' | 'papers' | 'beacon' | 'focus',
+    icon: LucideIcon,
+  ) => (
+    <SwitchRow
+      icon={icon}
+      label={v.desk[key]}
+      hint={v.desk[`${key}Hint`]}
+      checked={shows[mode][key]}
+      onChange={() => setView(mode, { [key]: !shows[mode][key] })}
+    />
+  );
+  const preview = (mode: ViewMode) =>
+    previewOffice && <ModePreview mode={mode} office={previewOffice} demo={demo} />;
+  const viewsSection = (
+    <section className="settings-section" data-guide-section="views" tabIndex={-1}>
+      <h2>{v.title}</h2>
+      <p>{v.hint}</p>
+      <div className="view-cards">
+        {isDesktop && (
+          <ViewCard
+            mode="pet"
+            title={v.modes.pet.title}
+            hint={v.modes.pet.hint}
+            more={v.more}
+            preview={preview('pet')}
+            details={
+              <>
+                <div className="setting-row text-choice-row">
+                  <ListFilter size={18} />
+                  <div>
+                    <b>{v.pet.groups}</b>
+                    <p>{v.pet.groupsHint}</p>
+                  </div>
+                  <div className="segmented view-groups" role="group" aria-label={v.pet.groups}>
+                    {PET_TALLY_GROUPS.map((group) => {
+                      const counted = shows.pet.tallyGroups.includes(group);
+                      return (
+                        <button
+                          type="button"
+                          key={group}
+                          aria-pressed={counted}
+                          // The pill counts at least one group: the last one stays on.
+                          disabled={
+                            !shows.pet.tally || (counted && shows.pet.tallyGroups.length === 1)
+                          }
+                          onClick={() =>
+                            setView('pet', {
+                              tallyGroups: counted
+                                ? shows.pet.tallyGroups.filter((g) => g !== group)
+                                : [...shows.pet.tallyGroups, group],
+                            })
+                          }
+                        >
+                          {TRIAGE_LABELS[group]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <SwitchRow
+                  icon={WandSparkles}
+                  label={v.pet.turnEffect}
+                  hint={v.pet.turnEffectHint}
+                  checked={shows.pet.turnEffect}
+                  onChange={() => setView('pet', { turnEffect: !shows.pet.turnEffect })}
+                />
+                <SwitchRow
+                  icon={Hand}
+                  label={v.pet.petting}
+                  hint={v.pet.pettingHint}
+                  checked={shows.pet.petting}
+                  onChange={() => setView('pet', { petting: !shows.pet.petting })}
+                />
+              </>
+            }
+          >
+            <SwitchRow
+              icon={Hash}
+              label={v.pet.tally}
+              hint={v.pet.tallyHint}
+              checked={shows.pet.tally}
+              onChange={() => setView('pet', { tally: !shows.pet.tally })}
+            />
+            <div className="setting-row text-choice-row">
+              <IdCard size={18} />
+              <div>
+                <b>{v.pet.name}</b>
+                <p>{v.pet.nameHint}</p>
+              </div>
+              <div className="segmented" role="group" aria-label={v.pet.name}>
+                {PET_NAME_CHOICES.map((choice) => (
+                  <button
+                    type="button"
+                    key={choice}
+                    aria-pressed={shows.pet.name === choice}
+                    onClick={() => setView('pet', { name: choice })}
+                  >
+                    {v.pet.names[choice]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </ViewCard>
+        )}
+        {isDesktop && (
+          // Keeps the old dock section's anchor: `#settings=dock` lands on the dock's controls.
+          <ViewCard
+            mode="dock"
+            anchor="dock"
+            title={v.modes.dock.title}
+            hint={v.modes.dock.hint}
+            more={v.more}
+            preview={preview('dock')}
+            details={
+              <>
+                {deskSwitch('dock', 'branch', GitBranch)}
+                {deskSwitch('dock', 'papers', Files)}
+                {deskSwitch('dock', 'beacon', Lightbulb)}
+                {deskSwitch('dock', 'focus', Flame)}
+                <div className="setting-row">
+                  <MoveHorizontal size={18} />
+                  <div>
+                    <b>{s.dock.pillReset}</b>
+                    <p>{s.dock.pillResetHint}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="setting-action"
+                    aria-label={s.dock.pillReset}
+                    onClick={() => void stampReset('dockPillResetAt', s.dock.pillResetDone)}
+                  >
+                    {s.dock.resetButton}
+                  </button>
+                </div>
+              </>
+            }
+          >
+            <div className="setting-row">
+              <PanelBottom size={18} />
+              <div>
+                <b>{s.dock.pill}</b>
+                <p>{s.dock.pillHint}</p>
+              </div>
+              <select
+                aria-label={s.dock.pill}
+                value={view.dockPill}
+                onChange={(e) => onPrefs({ dockPill: e.target.value as typeof view.dockPill })}
+              >
+                {DOCK_PILL_CHOICES.map((choice) => (
+                  <option key={choice} value={choice}>
+                    {s.dock.pillChoices[choice]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <SwitchRow
+              icon={MessageSquareOff}
+              label={v.desk.hideRead}
+              hint={v.desk.hideReadHint}
+              checked={shows.dock.hideRead}
+              onChange={() => setView('dock', { hideRead: !shows.dock.hideRead })}
+            />
+          </ViewCard>
+        )}
+        {isDesktop && (
+          <ViewCard
+            mode="tiny"
+            title={v.modes.tiny.title}
+            hint={v.modes.tiny.hint}
+            more={v.more}
+            preview={preview('tiny')}
+            details={
+              <SwitchRow
+                icon={Flame}
+                label={v.desk.effects}
+                hint={v.desk.effectsHint}
+                checked={shows.tiny.effects}
+                onChange={() => setView('tiny', { effects: !shows.tiny.effects })}
+              />
+            }
+          >
+            <SwitchRow
+              icon={Tag}
+              label={s.dock.tinyNames}
+              hint={s.dock.tinyNamesHint}
+              checked={view.tinyNames}
+              onChange={() => onPrefs({ tinyNames: !view.tinyNames })}
+            />
+            <SwitchRow
+              icon={CircleDot}
+              label={s.dock.tinyFinalDot}
+              hint={s.dock.tinyFinalDotHint}
+              checked={view.tinyFinalDot}
+              onChange={() => onPrefs({ tinyFinalDot: !view.tinyFinalDot })}
+            />
+          </ViewCard>
+        )}
+        <ViewCard
+          mode="office"
+          title={v.modes.office.title}
+          hint={v.modes.office.hint}
+          more={v.more}
+          preview={preview('office')}
+          details={
+            <>
+              {deskSwitch('office', 'papers', Files)}
+              {deskSwitch('office', 'beacon', Lightbulb)}
+              {deskSwitch('office', 'focus', Flame)}
+            </>
+          }
+        >
+          {deskSwitch('office', 'branch', GitBranch)}
+        </ViewCard>
+      </div>
+    </section>
+  );
   const appearance = (
     <>
       <section
@@ -450,6 +818,32 @@ export function Settings({
           })}
         </div>
       </section>
+      <section className="pet-settings settings-section" data-guide-section="desks" tabIndex={-1}>
+        <div className="section-title">
+          <div>
+            <span className="eyebrow">Desk corner</span>
+            <h2>{t.desks.settingsTitle}</h2>
+          </div>
+        </div>
+        <p>{t.desks.settingsHint}</p>
+        <button
+          className="desk-settings-card"
+          onClick={() => setDecorating(true)}
+          aria-label={t.desks.open}
+        >
+          <DeskPreview look={desk} scale={0.6} />
+          <div>
+            <b>
+              {DESK_TOPS[desk.top].name} · {DESK_MONITORS[desk.monitor].name}
+            </b>
+            <small>
+              {DESK_CHAIRS[desk.chair]} · {DESK_ITEMS[desk.itemLeft]} · {DESK_ITEMS[desk.itemRight]}
+            </small>
+          </div>
+          <Pencil size={15} />
+        </button>
+      </section>
+      {viewsSection}
       <section className="settings-section" data-guide-section="motion" tabIndex={-1}>
         <div className="setting-row">
           <Sparkles size={18} />
@@ -510,67 +904,13 @@ export function Settings({
           <p>{s.text.previewText}</p>
         </figure>
       </section>
-      {/* The floating dock is the desktop app's; a browser has no dock window to set up. */}
       {isDesktop && (
-        <section className="settings-section" data-guide-section="dock" tabIndex={-1}>
-          <h2>{s.dock.title}</h2>
-          <div className="setting-row">
-            <Tag size={18} />
-            <div>
-              <b>{s.dock.tinyNames}</b>
-              <p>{s.dock.tinyNamesHint}</p>
-            </div>
-            <Toggle
-              checked={view.tinyNames}
-              label={s.dock.tinyNames}
-              onChange={() => onPrefs({ tinyNames: !view.tinyNames })}
-            />
-          </div>
-          <div className="setting-row">
-            <CircleDot size={18} />
-            <div>
-              <b>{s.dock.tinyFinalDot}</b>
-              <p>{s.dock.tinyFinalDotHint}</p>
-            </div>
-            <Toggle
-              checked={view.tinyFinalDot}
-              label={s.dock.tinyFinalDot}
-              onChange={() => onPrefs({ tinyFinalDot: !view.tinyFinalDot })}
-            />
-          </div>
-          <div className="setting-row">
-            <PanelBottom size={18} />
-            <div>
-              <b>{s.dock.pill}</b>
-              <p>{s.dock.pillHint}</p>
-            </div>
-            <select
-              aria-label={s.dock.pill}
-              value={view.dockPill}
-              onChange={(e) => onPrefs({ dockPill: e.target.value as typeof view.dockPill })}
-            >
-              {DOCK_PILL_CHOICES.map((choice) => (
-                <option key={choice} value={choice}>
-                  {s.dock.pillChoices[choice]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="setting-row">
-            <MoveHorizontal size={18} />
-            <div>
-              <b>{s.dock.pillReset}</b>
-              <p>{s.dock.pillResetHint}</p>
-            </div>
-            <button
-              type="button"
-              className="setting-action"
-              aria-label={s.dock.pillReset}
-              onClick={() => void stampReset('dockPillResetAt', s.dock.pillResetDone)}
-            >
-              {s.dock.resetButton}
-            </button>
-          </div>
+        <section className="settings-section" data-guide-section="glass" tabIndex={-1}>
+          <h2>{s.glass.title}</h2>
+          <GlassSetting
+            level={glassLevel(p)}
+            onChange={(windowGlass) => onPrefs({ windowGlass })}
+          />
         </section>
       )}
       <section className="settings-section" data-guide-section="panels" tabIndex={-1}>
@@ -1013,6 +1353,103 @@ export function Settings({
           onClose={() => setCustomizing(null)}
         />
       )}
+      {decorating && (
+        <DeskCustomizer
+          zones={deskZones}
+          privacy={p.privacy}
+          onPrefs={onPrefs}
+          onClose={() => setDecorating(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * The glass slider: saves once the hand stops (a drag would otherwise write the preferences on
+ * every step); every window, this one too, follows the saved value. `null` is each platform's
+ * look from before.
+ */
+function GlassSetting({
+  level,
+  onChange,
+}: {
+  level: number | null;
+  onChange: (level: number | null) => void;
+}) {
+  const { t } = useI18n();
+  const s = t.settings.glass;
+  const id = useId();
+  const [draft, setDraft] = useState<number | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** A value still waiting for its save: leaving the page saves it rather than dropping it. */
+  const pending = useRef<number | null>(null);
+  const save = useRef(onChange);
+  save.current = onChange;
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      if (pending.current !== null) save.current(pending.current);
+    },
+    [],
+  );
+  // The draft holds until the saved value comes back, so the slider never jumps back meanwhile.
+  useEffect(() => {
+    if (draft !== null && level === draft && pending.current === null) setDraft(null);
+  }, [level, draft]);
+  const shown = draft ?? level;
+  const move = (value: number) => {
+    setDraft(value);
+    pending.current = value;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      pending.current = null;
+      onChange(value);
+    }, 250);
+  };
+  return (
+    <>
+      <div className="setting-row glass-row">
+        <Layers size={18} />
+        <div>
+          <b id={id}>{s.level}</b>
+          <p>{s.hint}</p>
+          <p>{s.platformHint}</p>
+        </div>
+        <div className="glass-control">
+          <input
+            type="range"
+            min={0}
+            max={GLASS_MAX}
+            step={GLASS_STEP}
+            value={shown ?? 10}
+            aria-labelledby={id}
+            aria-valuetext={shown === null ? s.off : s.value(shown)}
+            onChange={(e) => move(Number(e.target.value))}
+          />
+          <output aria-live="polite">{shown === null ? s.off : s.value(shown)}</output>
+        </div>
+      </div>
+      {level !== null && (
+        <div className="setting-row">
+          <div>
+            <b>{s.reset}</b>
+            <p>{s.resetHint}</p>
+          </div>
+          <button
+            type="button"
+            className="setting-action"
+            onClick={() => {
+              clearTimeout(timer.current);
+              pending.current = null;
+              setDraft(null);
+              onChange(null);
+            }}
+          >
+            {s.off}
+          </button>
+        </div>
+      )}
+    </>
   );
 }

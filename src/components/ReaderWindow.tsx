@@ -3,10 +3,12 @@ import { ArrowUpRight, BookmarkCheck, Copy, EyeOff, X } from 'lucide-react';
 import type { Bookmark } from '../shared/types';
 import { bookmarkName } from '../shared/bookmarks';
 import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 import { useOffice } from '../lib/useOffice';
 import { useI18n, useSharedLocale } from '../lib/i18n';
 import { isMac, isWindows } from '../lib/platform';
 import { BookmarkReading } from './BookmarkReader';
+import { OnTopButton, usePopupOnTop } from './WindowPin';
 
 /**
  * The bookmark reader's own window (`#reader`, desktop/reader-windows.ts): one saved
@@ -98,12 +100,13 @@ export function ReaderWindow() {
   const shown = !privacy && bookmark ? bookmark : null;
   const copy = () => {
     if (!shown) return;
-    void (api.copyText ?? ((s: string) => navigator.clipboard.writeText(s)))(shown.text)
+    void writeClipboard(shown.text)
       .then(() => notify(t.memory.copied))
       .catch(() => notify(t.memory.copyFailed));
   };
   const go = () => void api.bookmarkWindow?.('go').catch((e: Error) => notify(e.message));
   const close = () => void api.bookmarkWindow?.('close').catch(() => window.close());
+  const onTop = usePopupOnTop(api.bookmarkWindow);
   return (
     <div className="reader-window">
       <header className="reader-window-bar">
@@ -125,6 +128,14 @@ export function ReaderWindow() {
             >
               <Copy size={14} />
             </button>
+          )}
+          {onTop.available && (
+            <OnTopButton
+              className="icon-btn"
+              on={onTop.on}
+              busy={onTop.busy}
+              onToggle={() => void onTop.toggle().catch((e: Error) => notify(e.message))}
+            />
           )}
           <button className="icon-btn" aria-label={t.app.close} title={t.app.close} onClick={close}>
             <X size={16} />

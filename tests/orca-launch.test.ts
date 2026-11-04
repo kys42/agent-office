@@ -50,6 +50,56 @@ test('the skip-permissions setting adds each agent’s own flag (same as tmux)',
   );
 });
 
+test('a folder inside a worktree: the tab opens at the worktree, the agent starts in the folder', () => {
+  const root = "/Users/me/orca/workspaces/it's repo";
+  const cwd = `${root}/ocr app`;
+  const into = `'-C/Users/me/orca/workspaces/it'"'"'s repo/ocr app'`;
+  const sid = '0b8e2f43-9c1d-4f6a-8b3e-2d7c5a1e9f00';
+  const at = (s: object, env: NodeJS.ProcessEnv = {}, worktree = root) =>
+    orcaCreateArgs({ ...claude, cwd, ...s }, 'darwin', env, worktree);
+  // Resume: `env -u` pairs, then `-C<folder>`, then the agent; the tab at the worktree.
+  assert.deepEqual(at({}), [
+    'terminal',
+    'create',
+    `--worktree=path:${root}`,
+    '--title=기능 담당',
+    `--command=${CL}${into} 'claude' '--resume' '${claude.nativeId}'`,
+    '--focus',
+    '--json',
+  ]);
+  // A new Claude and a fork keep their words after it.
+  assert.equal(
+    command(at({ nativeId: 'new', fresh: true, sessionId: sid, initialMessage: "it's" })),
+    `${CL}${into} 'claude' '--session-id' '${sid}' '--' 'it'"'"'s'`,
+  );
+  assert.equal(
+    command(at({ fork: true, sessionId: sid, skipPermissions: true })),
+    `${CL}${into} 'claude' '--dangerously-skip-permissions' '--session-id' '${sid}' '--fork-session' '--resume' '${claude.nativeId}'`,
+  );
+  // Codex resume, fork and new.
+  assert.equal(command(at({ ...codex, cwd })), `${CX}${into} 'codex' 'resume' '${codex.nativeId}'`);
+  assert.equal(
+    command(at({ ...codex, cwd, fork: true })),
+    `${CX}${into} 'codex' 'fork' '${codex.nativeId}'`,
+  );
+  assert.equal(
+    command(at({ ...codex, cwd, nativeId: 'new', fresh: true })),
+    `${CX}${into} 'codex'`,
+  );
+  // An agent home set: `-C` is an option of `env`, so before the `NAME=value`.
+  assert.equal(
+    command(at({ executable: '/opt/bin/claude' }, { CLAUDE_CONFIG_DIR: '/h/c' })),
+    `'/usr/bin/env' ${into} 'CLAUDE_CONFIG_DIR=/h/c' '/opt/bin/claude' '--resume' '${claude.nativeId}'`,
+  );
+  // At the worktree's own folder nothing changes.
+  assert.deepEqual(at({ cwd: root }), orcaCreateArgs({ ...claude, cwd: root }));
+  assert.equal(command(at({ cwd: `${root}/` })).includes('-C'), false);
+  // A worktree that does not hold the folder (or only starts with the same name) is refused.
+  for (const other of ['/Users/me/orca/workspaces/it', `${cwd} 2`, `${root}/ocr`, 'relative'])
+    assert.throws(() => at({}, {}, other), other);
+  assert.throws(() => at({}, {}, `${root}\n`));
+});
+
 test('the tab title prefers the personal alias and drops control characters', () => {
   const title = (s: object) =>
     orcaCreateArgs({ ...claude, ...s })
@@ -75,18 +125,39 @@ test('anything that could change the shell command is refused, not escaped', () 
   assert.throws(() => orcaCreateArgs(claude, 'linux'));
 });
 
-function fixture(options: { status?: unknown; create?: () => string; dir?: boolean } = {}) {
-  const calls: { file: string; args: string[] }[] = [];
+/** A registered local workspace for the session's folder, as `orca worktree show` answers. */
+const workspaceOf = (cwd: string) =>
+  JSON.stringify({ ok: true, result: { worktree: { path: cwd, hostId: 'local' } } });
+
+function fixture(
+  options: {
+    status?: unknown;
+    create?: () => string;
+    dir?: boolean;
+    /** `terminal list` answers, one per call (the last one repeats). */
+    lists?: unknown[];
+    binary?: (name: string) => Promise<string>;
+  } = {},
+) {
+  const calls: { file: string; args: string[]; timeout?: number }[] = [];
+  const lists = [...(options.lists ?? [{ ok: true, result: { terminals: [] } }])];
   const deps: OrcaLaunchDeps = {
     platform: 'darwin',
     orca: () => '/bin/orca',
     directory: async () => options.dir ?? true,
-    run: async (file, args) => {
-      calls.push({ file, args });
+    binary: options.binary,
+    wait: async () => {},
+    run: async (file, args, runOptions) => {
+      calls.push({ file, args, timeout: runOptions?.timeout });
+      if (file === '/usr/bin/open') return '';
       if (args[0] === 'status')
         return JSON.stringify(
           options.status ?? { ok: true, result: { runtime: { reachable: true } } },
         );
+      if (args[0] === 'worktree' && args[1] === 'show')
+        return workspaceOf(args[2].slice('--worktree=path:'.length));
+      if (args[1] === 'list') return JSON.stringify(lists.length > 1 ? lists.shift() : lists[0]);
+      if (args[1] === 'switch') return JSON.stringify({ ok: true });
       if (args[1] === 'create')
         return options.create?.() ?? JSON.stringify({ ok: true, result: {} });
       throw new Error('unexpected');
@@ -146,6 +217,8 @@ test('cancelling the confirmation creates nothing; confirming creates one tab', 
   assert.equal(done.launched, true);
   assert.deepEqual(asked, {
     cwd: claude.cwd,
+    // Its own worktree: the tab opens in the conversation's folder itself.
+    root: claude.cwd,
     command: `${CL}'claude' '--resume' '${claude.nativeId}'`,
     name: '기능 담당',
   });
@@ -195,7 +268,7 @@ test('Agent Office’s agent home goes with the command, quoted; without one it 
   const home = "/Users/me/agent homes/it's claude";
   assert.equal(
     command(orcaCreateArgs(claude, 'darwin', { CLAUDE_CONFIG_DIR: home, CODEX_HOME: '/x' })),
-    `'/usr/bin/env' 'CLAUDE_CONFIG_DIR=/Users/me/agent homes/it'\\''s claude' 'claude' '--resume' '${claude.nativeId}'`,
+    `'/usr/bin/env' 'CLAUDE_CONFIG_DIR=/Users/me/agent homes/it'"'"'s claude' 'claude' '--resume' '${claude.nativeId}'`,
   );
   assert.equal(
     command(orcaCreateArgs(codex, 'darwin', { CODEX_HOME: '/opt/codex' })),
@@ -208,7 +281,7 @@ test('Agent Office’s agent home goes with the command, quoted; without one it 
   );
   assert.throws(() => orcaCreateArgs(claude, 'darwin', { CLAUDE_CONFIG_DIR: 'relative' }));
   assert.throws(() => orcaCreateArgs(claude, 'darwin', { CLAUDE_CONFIG_DIR: '/a\nb' }));
-  assert.equal(shellQuote("a'b"), `'a'\\''b'`);
+  assert.equal(shellQuote("a'b"), `'a'"'"'b'`);
   assert.throws(() => shellQuote(''));
 });
 
@@ -222,6 +295,8 @@ test('the launcher uses its own environment for the agent home', async () => {
     run: async (_file, args) => {
       if (args[0] === 'status')
         return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
+      if (args[0] === 'worktree') return workspaceOf(claude.cwd);
+      if (args[1] === 'list') return JSON.stringify({ ok: true, result: { terminals: [] } });
       created = args;
       return JSON.stringify({ ok: true, result: {} });
     },
@@ -240,6 +315,7 @@ test('Orca calls stay on this computer even when a remote Orca runtime is select
     env: { PATH: '/usr/bin', ORCA_ENVIRONMENT: 'remote-box', ORCA_PAIRING_CODE: 'secret' },
     run: async (_file, args, options) => {
       seen.push(options?.env);
+      if (args[0] === 'worktree') return workspaceOf(claude.cwd);
       return args[0] === 'status'
         ? JSON.stringify({ ok: true, result: { runtime: { reachable: true } } })
         : JSON.stringify({ ok: true, result: {} });
@@ -289,7 +365,10 @@ test('fresh Orca refuses missing, mismatched and remote workspaces before creati
     run: async (_file, args) => {
       if (args[0] === 'status')
         return JSON.stringify({ ok: true, result: { runtime: { reachable: true } } });
-      if (args[0] === 'worktree') return JSON.stringify({ ok: true, result: { worktree } });
+      if (args[0] === 'worktree' && args[1] === 'show')
+        return JSON.stringify({ ok: true, result: { worktree } });
+      if (args[0] === 'worktree') return JSON.stringify({ ok: true, result: { worktrees: [] } });
+      if (args[1] === 'list') return JSON.stringify({ ok: true, result: { terminals: [] } });
       creates++;
       return JSON.stringify({ ok: true });
     },

@@ -448,9 +448,27 @@ type Question = {
 };
 type Shown =
   | { kind: 'question'; questions: Question[] }
-  | { kind: 'plan'; plan: string }
+  | {
+      kind: 'plan';
+      plan: string;
+      /** The rows as drawn (2.1.296 by default). */
+      rows?: string[];
+      /** The fullscreen renderer's plan box: this many plan lines, the rest (and `╌`) cut. */
+      box?: number;
+    }
   | { kind: 'bash'; command: string };
 type Answer = Record<string, string> | 'rejected' | 'chat' | { choice: string };
+const PLAN_ROWS_296 = [
+  'Yes, and use auto mode',
+  'Yes, manually approve edits',
+  'Tell Claude what to change',
+];
+/** 2.1.316 without auto mode (its bundle's options builder): accept edits, manual, keep planning. */
+const PLAN_ROWS_316 = [
+  'Yes, auto-accept edits',
+  'Yes, manually approve edits',
+  'No, keep planning',
+];
 
 /** Terminal columns: Hangul, CJK and full-width forms take two. */
 const cols = (text: string) =>
@@ -525,22 +543,20 @@ class Claude {
     if (this.closed) return ['⏺ Done.', RULE, '❯ ', RULE, '  ⏸ manual mode on'].join('\n');
     const r = this.shown;
     if (r.kind === 'plan') {
-      const rows = [
-        'Yes, and use auto mode',
-        'Yes, manually approve edits',
-        'Tell Claude what to change',
-      ];
+      const rows = r.rows ?? PLAN_ROWS_296;
+      const body = r.plan
+        .trim()
+        .split('\n')
+        .map((l) => '   ' + l.replace(/`/g, ''));
       return [
         '  ' + '─'.repeat(116),
         '   Ready to code?',
         '',
         "   Here is Claude's plan:",
         '  ' + '╌'.repeat(116),
-        ...r.plan
-          .trim()
-          .split('\n')
-          .map((l) => '   ' + l.replace(/`/g, '')),
-        '  ' + '╌'.repeat(116),
+        ...(r.box !== undefined && body.length > r.box
+          ? body.slice(0, r.box)
+          : [...body, '  ' + '╌'.repeat(116)]),
         '  ' + '─'.repeat(116),
         '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
         '',
@@ -654,7 +670,8 @@ class Claude {
     const r = this.shown;
     if (this.closed) return;
     if (r.kind !== 'question' || this.review) {
-      const rows = r.kind === 'question' ? 2 : 3;
+      const rows =
+        r.kind === 'question' ? 2 : r.kind === 'plan' ? (r.rows ?? PLAN_ROWS_296).length : 3;
       if (name === 'Down') this.choice = Math.min(rows - 1, this.choice + 1);
       if (name === 'Up') this.choice = Math.max(0, this.choice - 1);
       if (name === 'Enter') {
@@ -1208,6 +1225,300 @@ test('A plan matches only when everything the dialog shows is the recorded plan'
   assert.equal(oneOf(screen, [planCallOf(plan)]), 'p');
   // Edited after the first 80 characters (ctrl+g): another plan, never approved from the card.
   assert.equal(oneOf(screen, [planCallOf(plan.replace('npm', 'yarn'))]), 'none');
+  // The whole box is on screen: a recorded plan that goes on past it is another plan.
+  assert.equal(oneOf(screen, [planCallOf(`${plan}\n3. Delete the tag`)]), 'none');
+});
+
+// ── Claude Code 2.1.316 plan dialogs ────────────────────────────────────────────────────────
+// Not captured: drawn from 2.1.316's bundle (the ExitPlanMode dialog and its options builder;
+// the fullscreen renderer sizes the plan's scroll box to the pane and shows its top). Markdown as
+// its renderer draws it: no `#`/`**`/backticks/code fences, `-` bullets, a link with its address.
+
+const PLAN_316 = {
+  plan: [
+    '# Launch core refactor',
+    '',
+    '## Context',
+    '',
+    'Every launch path (**new session**, resume, fork) goes through `desktop/launch/`. The Orca and tmux paths still differ in how they confirm a start.',
+    '',
+    '## Steps',
+    '',
+    '1. Move the confirm step into `pipeline.ts` and call it from every destination.',
+    '2. Keep the waiting record for 2 minutes when the start cannot be confirmed:',
+    '',
+    '   ```ts',
+    '   const WAIT_MS = 120_000;',
+    '   ```',
+    '',
+    '3. Update `tests/launch.test.ts` with the new order.',
+    '- Check the Orca tab with `orca terminal list` (see [Orca docs](https://example.com/orca-docs))',
+    '',
+    '| Destination | Confirmed by |',
+    '|---|---|',
+    "| Orca | the tab's handle |",
+    '| tmux | the session name |',
+    '',
+    '## Verification',
+    '',
+    '- `npm test`',
+    '- `npm run typecheck`',
+  ].join('\n'),
+  planFilePath: '/Users/someone.xyz/.claude/plans/launch-core-refactor-quiet-otter.md',
+};
+const plan316 = (name: string) => {
+  const d = parseDialog(plainScreen(name)) as Dialog;
+  assert.equal(d.kind, 'plan', name);
+  return d as Extract<Dialog, { kind: 'plan' }>;
+};
+
+test('2.1.316: a plan taller than the pane is read as far as it shows, and approvable', () => {
+  // Fullscreen: the box shows the plan's start; its bottom and closing ╌ are cut.
+  const start = plan316('p316-plan-start');
+  assert.equal(start.shows, 'start');
+  assert.equal(start.planFile, '~/.claude/plans/launch-core-refactor-quiet-otter.md');
+  assert.match(start.plan, /^Launch core refactor\n/);
+  assert.match(start.plan, /\| Orca {8}\| the tab's handle \|$/);
+  // 2.1.316's rows: only "manually approve edits"; accept edits and the text row stay there.
+  assert.deepEqual(claudeCodePrompts.choices(start), [
+    { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(start.rows.find((r) => r.number === 3)?.input, true);
+  assert.equal(claudeCodePrompts.hasMore(start), true);
+  const planOf = (input: Record<string, unknown>) => [call('p', 'ExitPlanMode', input)];
+  assert.equal(oneOf(start, planOf(PLAN_316)), 'p');
+  // The stored copy may hide secret-like words; the raw input is what the screen shows.
+  assert.equal(oneOf(start, planOf({ plan: PLAN_316.plan })), 'p');
+  // Anything shown that differs: another plan.
+  for (const edited of [
+    PLAN_316.plan.replace('2 minutes', '5 minutes'),
+    PLAN_316.plan.replace('const WAIT_MS', 'let WAIT_MS'),
+    PLAN_316.plan.replace("the tab's handle", 'the window title'),
+    `# Intro\n\n${PLAN_316.plan}`,
+  ])
+    assert.equal(oneOf(start, planOf({ ...PLAN_316, plan: edited })), 'none', edited);
+  assert.equal(
+    oneOf(start, planOf({ ...PLAN_316, planFilePath: '/x/.claude/plans/other.md' })),
+    'none',
+  );
+
+  // Main screen: the terminal scrolled, leaving the plan's end and the closing ╌; a narrow pane
+  // wrapped the footer before the plan file. "Clear context" is never offered.
+  const end = plan316('p316-plan-end');
+  assert.equal(end.shows, 'end');
+  assert.equal(end.planFile, '~/.claude/plans/launch-core-refactor-quiet-otter.md');
+  assert.deepEqual(claudeCodePrompts.choices(end), [
+    { number: 3, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(oneOf(end, planOf(PLAN_316)), 'p');
+  // Its end only counts with the plan file named on both sides.
+  assert.equal(oneOf(end, planOf({ plan: PLAN_316.plan })), 'none');
+  assert.equal(
+    oneOf(end, planOf({ ...PLAN_316, plan: `${PLAN_316.plan}\n- npm run build` })),
+    'none',
+  );
+});
+
+test('2.1.316: addresses in a plan count letter for letter, however the pane wraps them', () => {
+  const RELEASE = {
+    plan: [
+      '# Release',
+      '',
+      '1. Download from https://trusted.example/releases/v2.1.316/agent-office.dmg',
+      '2. Read the [release notes](https://trusted.example/notes/v2) first.',
+    ].join('\n'),
+    planFilePath: '/Users/someone.xyz/.claude/plans/release-v2.md',
+  };
+  const planOf = (input: Record<string, unknown>) => [call('p', 'ExitPlanMode', input)];
+  const withPlan = (plan: string) => planOf({ ...RELEASE, plan });
+  // A narrow pane: the address and the link (drawn `text (address)`) wrap mid-path.
+  const narrow = plan316('p316-plan-narrow');
+  assert.equal(narrow.shows, 'all');
+  assert.equal(narrow.planFile, '~/.claude/plans/release-v2.md');
+  assert.deepEqual(claudeCodePrompts.choices(narrow), [
+    { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(oneOf(narrow, planOf(RELEASE)), 'p');
+  // Another address, plain or behind the link, is another plan.
+  for (const other of [
+    RELEASE.plan.replace(
+      'https://trusted.example/releases/v2.1.316/agent-office.dmg',
+      'https://other.example/payload',
+    ),
+    RELEASE.plan.replace('trusted.example/releases', 'trusted.example.evil/releases'),
+    RELEASE.plan.replace('(https://trusted.example/notes/v2)', '(https://other.example/notes)'),
+    // The link's address is on screen: its text alone is not what it shows.
+    RELEASE.plan.replace('[release notes](https://trusted.example/notes/v2)', 'release notes'),
+  ])
+    assert.equal(oneOf(narrow, withPlan(other)), 'none', other);
+  // A plain address the screen shows another way: none (the safe side).
+  const screen = (from: string, to: string) =>
+    parseDialog({ text: plainScreen('p316-plan-narrow').text.replace(from, to) }) as Dialog;
+  const swapped = screen('https://trusted.example\n', 'https://other.example/payload\n');
+  assert.equal(oneOf(swapped, planOf(RELEASE)), 'none');
+  // A terminal that takes hyperlinks draws the link's text alone (the address hidden in it).
+  const linked = screen(
+    'release notes\n      (https://trusted.example/notes/v2)\n      first.',
+    'release notes first.',
+  );
+  assert.equal((linked as { plan: string }).plan.includes('notes/v2'), false);
+  assert.equal(oneOf(linked, planOf(RELEASE)), 'p');
+  assert.equal(
+    oneOf(linked, withPlan(RELEASE.plan.replace('release notes', 'release checklist'))),
+    'none',
+  );
+  // The plain address is still drawn there: changing it is another plan.
+  assert.equal(oneOf(linked, withPlan(RELEASE.plan.replace('v2.1.316', 'v2.1.317'))), 'none');
+});
+
+/** A whole 2.1.316 plan dialog around these drawn plan lines. */
+const planDialog = (lines: string[], file = 'cleanup.md') =>
+  parseDialog({
+    text: [
+      '  ' + '─'.repeat(116),
+      '   Ready to code?',
+      '',
+      "   Here is Claude's plan:",
+      '  ' + '╌'.repeat(116),
+      ...lines.map((line) => (line ? `   ${line}` : '')),
+      '  ' + '╌'.repeat(116),
+      '',
+      '  ' + '─'.repeat(116),
+      '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
+      '',
+      ...PLAN_ROWS_316.map((label, i) => `   ${i ? ' ' : '❯'} ${i + 1}. ${label}`),
+      '        shift+tab to approve with this feedback',
+      '',
+      `   ctrl+g to edit in VS Code · ~/.claude/plans/${file}`,
+    ].join('\n'),
+  }) as Dialog;
+
+test('2.1.316: every character of a plan counts, punctuation included; only spacing does not', () => {
+  const CLEANUP = {
+    plan: [
+      '## Cleanup',
+      '',
+      '1. Fetch https://trusted.example/path/release.tar.gz',
+      '2. Run `rm -rf build/tmp; npm ci, npm test`',
+      '   1. Check `value != null` before use',
+      '   2. Keep `a < b` in the guard',
+      '      - Nested *note*',
+      '3. Done',
+      '',
+      '> Careful: **only** the build folder.',
+    ].join('\n'),
+    planFilePath: '/Users/someone.xyz/.claude/plans/cleanup.md',
+  };
+  // As its renderer draws it: no `#`/backticks/`*`, nested ordered items lettered, the quote bar.
+  const screen = planDialog([
+    'Cleanup',
+    '',
+    '1. Fetch https://trusted.example/path/release.tar.gz',
+    '2. Run rm -rf build/tmp; npm ci, npm test',
+    '   a. Check value != null before use',
+    '   b. Keep a < b in the guard',
+    '      - Nested note',
+    '3. Done',
+    '',
+    '▎ Careful: only the build folder.',
+  ]);
+  const withPlan = (plan: string) => [call('p', 'ExitPlanMode', { ...CLEANUP, plan })];
+  assert.equal(oneOf(screen, withPlan(CLEANUP.plan)), 'p');
+  for (const [from, to] of [
+    ['trusted.example', 'trustedexample'],
+    ['!=', '=='],
+    ['a < b', 'a > b'],
+    ['build/tmp', 'build-tmp'],
+    ['path/release', 'path/../release'],
+    ['rm -rf', 'rm -f'],
+    ['build/tmp; npm ci, npm test', 'build/tmp, npm ci; npm test'],
+    ['**only**', 'ONLY'],
+  ])
+    assert.equal(oneOf(screen, withPlan(CLEANUP.plan.replace(from, to))), 'none', `${from}→${to}`);
+  // The same change seen on the screen instead: none either.
+  const drawnAs = (from: string, to: string) =>
+    planDialog((screen as { plan: string }).plan.replace(from, to).split('\n'), 'cleanup.md');
+  assert.equal(oneOf(drawnAs('!=', '=='), withPlan(CLEANUP.plan)), 'none');
+  assert.equal(oneOf(drawnAs('trusted.example', 'trustedexample'), withPlan(CLEANUP.plan)), 'none');
+  // Numbers a nested list would not draw (`1.` where it draws `a.`): none, never loosened.
+  assert.equal(oneOf(drawnAs('a. Check', '1. Check'), withPlan(CLEANUP.plan)), 'none');
+  // Wrapped anywhere, even mid-word: the same plan.
+  assert.equal(
+    oneOf(drawnAs('npm ci, npm test', 'npm ci, np\nm test'), withPlan(CLEANUP.plan)),
+    'p',
+  );
+});
+
+test('2.1.316: a code block label shows where the highlighter lacks it; unknown drawings never match', () => {
+  const plan = ['Draw it:', '', '```mermaid', 'graph TD; A-->B', '```', '', 'Then **ship**.'].join(
+    '\n',
+  );
+  const input = { plan, planFilePath: '/Users/someone.xyz/.claude/plans/cleanup.md' };
+  const calls = [call('p', 'ExitPlanMode', input)];
+  // A language the highlighter does not know: its label drawn above the code; or not.
+  const labelled = planDialog(['Draw it:', '', 'mermaid', 'graph TD; A-->B', '', 'Then ship.']);
+  const bare = planDialog(['Draw it:', '', 'graph TD; A-->B', '', 'Then ship.']);
+  assert.equal(oneOf(labelled, calls), 'p');
+  assert.equal(oneOf(bare, calls), 'p');
+  assert.equal(
+    oneOf(planDialog(['Draw it:', '', 'graph TD; A->B', '', 'Then ship.']), calls),
+    'none',
+  );
+  // A character reference is drawn as written by Claude Code's parser: not reproduced, none.
+  const amp = { ...input, plan: 'Run `make` &amp; check the log.' };
+  assert.equal(
+    oneOf(planDialog(['Run make &amp; check the log.']), [call('p', 'ExitPlanMode', amp)]),
+    'none',
+  );
+});
+
+test('2.1.316: a plan whose every Yes is withheld offers no button', () => {
+  const screen = [
+    '  ' + '─'.repeat(116),
+    '   Ready to code?',
+    '',
+    "   Here is Claude's plan:",
+    '  ' + '╌'.repeat(116),
+    '   (the plan is too large to be shown in full — approval is withheld; send feedback asking for a shorter plan, or press Esc)',
+    '  ' + '╌'.repeat(116),
+    '  ' + '─'.repeat(116),
+    '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
+    '',
+    '   ❯ 1. No, keep planning',
+  ].join('\n');
+  const d = parseDialog({ text: screen }) as Dialog;
+  assert.equal(d.kind, 'plan');
+  assert.deepEqual(claudeCodePrompts.choices(d), []);
+  assert.equal(oneOf(d, [call('p', 'ExitPlanMode', PLAN_316)]), 'none');
+});
+
+test('2.1.316: approving a plan cut by the pane presses Down to "manually approve", then Enter', async () => {
+  const plan = Array.from(
+    { length: 30 },
+    (_, i) => `${i + 1}. Step number ${i + 1} of the plan`,
+  ).join('\n');
+  const input = { plan, planFilePath: PLAN_INPUT.planFilePath };
+  const request: InputRequest = { kind: 'plan', plan, planFile: PLAN_INPUT.planFilePath };
+  const shown: Shown = { kind: 'plan', plan, rows: PLAN_ROWS_316, box: 12 };
+  const ok = await answer(request, shown, [{ id: 'toolu_q', name: 'ExitPlanMode', input }], {
+    number: 2,
+    label: 'Yes, manually approve edits',
+  });
+  assert.equal((ok.result as { status: string }).status, 'answered');
+  assert.deepEqual(ok.sim.answer, { choice: '2' });
+  assert.deepEqual(keysOf(ok.calls), ['Down', 'Enter']);
+  // Accept edits keeps applying, and "No, keep planning" takes words: never pressed from here.
+  for (const [number, label] of [
+    [1, 'Yes, auto-accept edits'],
+    [3, 'No, keep planning'],
+  ] as const) {
+    const refused = await answer(request, shown, [{ id: 'toolu_q', name: 'ExitPlanMode', input }], {
+      number,
+      label,
+    });
+    assert.match(failed(refused.result), /한 번짜리 선택지가 아니에요/);
+    assert.equal(refused.sim.keys.length, 0);
+  }
 });
 
 test('Settings stored by pre-release builds as booleans still read as on and off', () => {
@@ -1368,9 +1679,13 @@ test('The card is offered only one-shot choices, only for the exact call', async
       const view = await inspectPrompt(...args);
       return view.status === 'unavailable' ? view.reason : view.status;
     };
-    // Turned off: off. Never set: still offered.
-    assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'off'), 'off');
-    assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'unset'), 'ready');
+    // Not on (never set, or turned off): still offered, marked so the first press asks.
+    for (const setting of ['unset', 'off'] as const) {
+      const view = await inspectPrompt(claudeCodePrompts, asking(BASH), h.target, setting);
+      assert.equal(view.status, 'ready');
+      assert.equal(view.status === 'ready' && view.consent, setting);
+    }
+    assert.ok(ready.status === 'ready' && ready.consent === undefined);
     assert.equal(await reason(claudeCodePrompts, asking(BASH), null, 'on'), 'no-terminal');
     // A question cut at rest cannot be checked; Codex and others are shown, never answered.
     const cut = { ...QUESTION(COLOR_INPUT), truncated: true } as InputRequest;

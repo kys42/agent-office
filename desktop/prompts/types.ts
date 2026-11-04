@@ -82,6 +82,13 @@ export interface DialogRow {
   aside?: boolean;
 }
 
+/**
+ * How much of a plan the screen shows: the whole box, only its start (the bottom cut, as the
+ * fullscreen renderer does with a plan taller than the pane), or only its end (the top
+ * scrolled away on the main screen).
+ */
+export type PlanShows = 'all' | 'start' | 'end';
+
 export type Dialog =
   | {
       kind: 'question';
@@ -103,7 +110,14 @@ export type Dialog =
       answers: { question: string; answer: string }[];
       rows: DialogRow[];
     }
-  | { kind: 'plan'; plan: string; planFile?: string; rows: DialogRow[] }
+  | {
+      kind: 'plan';
+      /** The plan as far as it is on screen (see `shows`). */
+      plan: string;
+      shows: PlanShows;
+      planFile?: string;
+      rows: DialogRow[];
+    }
   | {
       kind: 'permission';
       /** The heading ("Bash command", "Create file", "Edit file", "Fetch"). */

@@ -12,7 +12,7 @@ import { m } from './i18n';
 import { liveLabels } from './labels';
 import { quotaExhaustion, type QuotaExhaustion } from './quota';
 import { layoutRow } from './office-layout';
-import { viewPrefs, type ViewPrefs } from './view-prefs';
+import { PET_TALLY_GROUPS, viewPrefs, type ViewPrefs } from './view-prefs';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -298,13 +298,24 @@ export function petSummary(model: OfficeModel) {
 
 /**
  * Who the pet can stand for, in the desk row's order (zones side by side): the colleagues the
- * scene draws, helpers left out.
+ * scene draws, helpers left out — and only those its pill counts (waiting, results, at work,
+ * standing by, or the groups the person chose to count, #324), so the arrows skip whoever rests.
+ * An office with nobody counted keeps everyone.
  */
-export function petChoices(model: OfficeModel): ResidentView[] {
-  return layoutRow(model.scene)
+export function petChoices(
+  model: OfficeModel,
+  groups: readonly TriageGroup[] = petCounted(model),
+): ResidentView[] {
+  const drawn = layoutRow(model.scene)
     .zones.flatMap((z) => z.stations.map((st) => model.view(st.id)))
     .filter((v): v is ResidentView => !!v && !v.veiled && !v.session.attachedTo);
+  const counted = drawn.filter((v) => v.group !== 'resting' && groups.includes(v.group));
+  return counted.length ? counted : drawn;
 }
+
+/** The groups the pet counts: the chosen ones on its numbers pill, every busy one without it. */
+export const petCounted = (model: OfficeModel): readonly TriageGroup[] =>
+  model.display.views.pet.tally ? model.display.views.pet.tallyGroups : PET_TALLY_GROUPS;
 
 /**
  * The colleague the pet shows: the one the person picked with its arrows, while that one is
