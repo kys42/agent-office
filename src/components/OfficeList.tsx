@@ -1,12 +1,14 @@
 import { useMemo, type CSSProperties } from 'react';
 import {
   BatteryWarning,
+  Building2,
   CornerDownRight,
   EyeOff,
   Folder,
   GitBranch,
   GitFork,
   Layers,
+  Laptop,
   List,
   Pin,
   Search,
@@ -28,6 +30,7 @@ import { messageExcerpt, sessionActivity } from '../shared/activity';
 import { ago, date, time } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { Sprite } from './Sprite';
+import { officeLabel } from '../shared/rooms';
 
 const projectStyle = (key: string) => ({ '--project-color': projectColor(key) }) as CSSProperties;
 
@@ -44,7 +47,9 @@ export function OfficeList({
   order,
   onOrder,
   scope,
+  showOffice = false,
 }: {
+  showOffice?: boolean;
   sessions: Session[];
   model: OfficeModel;
   privacy: boolean;
@@ -119,7 +124,13 @@ export function OfficeList({
             {order === 'project' && (
               <h3>
                 <Folder size={14} aria-hidden="true" />
-                <span>{privacy ? t.app.sidebar.hiddenProject : group.label}</span>
+                <span>
+                  {privacy
+                    ? t.app.sidebar.hiddenProject
+                    : showOffice
+                      ? `${officeLabel(group.sessions[0])} · ${group.label}`
+                      : group.label}
+                </span>
                 <small>{group.sessions.length}</small>
               </h3>
             )}
@@ -184,8 +195,19 @@ export function OfficeList({
                             )}
                             {unread > 0 && <em title={t.roster.unreadTitle(unread)}>{unread}</em>}
                           </strong>
-                          {(helper || fork || helpers > 0 || s.resident || view?.quota) && (
+                          {(showOffice ||
+                            helper ||
+                            fork ||
+                            helpers > 0 ||
+                            s.resident ||
+                            view?.quota) && (
                             <span className="office-list-relations">
+                              {showOffice && (
+                                <span className="office-list-kind office-list-origin">
+                                  {s.remote ? <Building2 size={11} /> : <Laptop size={11} />}
+                                  {officeLabel(s, privacy)}
+                                </span>
+                              )}
                               {helper && (
                                 <span className="office-list-kind helper-kind">
                                   <CornerDownRight size={11} />
@@ -264,9 +286,7 @@ export function OfficeList({
                               <span title={branch.detail}>{branch.label}</span>
                             </>
                           )}
-                          {s.remote && (
-                            <span>{privacy ? t.office.zones.office : s.remote.label}</span>
-                          )}
+                          {s.remote && !showOffice && <span>{officeLabel(s, privacy)}</span>}
                         </small>
                       </span>
                       <span className={`office-list-status status-${mood}`}>

@@ -46,6 +46,7 @@ import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
+import { officeLabel } from '../shared/rooms';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
@@ -78,7 +79,9 @@ export function Office({
   quotaOf,
   helperStackAt = HELPER_STACK_AT,
   demo = false,
+  showOffice = false,
 }: {
+  showOffice?: boolean;
   demo?: boolean;
   sessions: Session[];
   notices: OfficeNotice[];
@@ -413,7 +416,12 @@ export function Office({
             <i className="wall-plant plant-left" aria-hidden="true" />
             <i className="wall-plant plant-right" aria-hidden="true" />
             {layout.projects.map((area, index) => {
-              const areaName = privacy ? t.desk.project : area.name;
+              const source = byId.get(area.stations[0]?.id);
+              const areaName = privacy
+                ? t.desk.project
+                : showOffice && source
+                  ? `${officeLabel(source)} · ${area.name}`
+                  : area.name;
               const veilIds = zoneVeilIds?.(area.stations.map((s) => s.id)) ?? [];
               return (
                 <div
@@ -462,8 +470,8 @@ export function Office({
                         privacy
                           ? ''
                           : area.custom
-                            ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}\n`
-                            : `${area.name}\n`
+                            ? `${areaName} · ${t.desk.customZone(area.custom.join(', '))}\n`
+                            : `${areaName}\n`
                       }${t.office.zoom.zoneTitle}`}
                       onClick={() => focusZone(area.key)}
                     >

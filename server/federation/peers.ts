@@ -57,7 +57,8 @@ interface Held {
   timer?: ReturnType<typeof setTimeout>;
   controller?: AbortController;
 }
-export const linkedProjectKey = (name: string) => `federation-project:${wireId(name)}`;
+export const linkedProjectKey = (name: string, officeId: string) =>
+  `federation-project:${officeId}:${wireId(name)}`;
 export function importSession(
   s: WireSession,
   peer: PeerInput,
@@ -120,7 +121,7 @@ export function importSession(
     officeSeat: s.officeSeat,
     area: {
       key: linked
-        ? linkedProjectKey(linked)
+        ? linkedProjectKey(linked, peer.officeId)
         : `remote-project:${peer.officeId}:${wireId(s.project)}`,
       name: linked ?? s.project,
       ruleId: `remote:${peer.officeId}`,

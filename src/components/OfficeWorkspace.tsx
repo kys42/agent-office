@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { zoneLabel } from '../shared/zones';
+import { officeLabel } from '../shared/rooms';
 import {
   Archive,
   Armchair,
@@ -61,6 +62,7 @@ export function OfficeWorkspace({
   projectRequest,
   onProjectHandled,
   model,
+  showOffice = false,
   onVeil,
   onPin,
   onZoneDrop,
@@ -89,6 +91,7 @@ export function OfficeWorkspace({
   onProjectHandled?: () => void;
   /** Shared office core: projection and zones are derived once for every view. */
   model: OfficeModel;
+  showOffice?: boolean;
   /** Hide colleagues (all member runs) until their next conversation, or bring them back. */
   onVeil: (ids: string[], on: boolean) => void;
   /** Keep a colleague in the office however long it stays quiet (toggles `pinned`). */
@@ -345,6 +348,7 @@ export function OfficeWorkspace({
         {listView ? (
           <>
             <OfficeList
+              showOffice={showOffice}
               sessions={rows}
               model={model}
               privacy={prefs.privacy}
@@ -362,6 +366,7 @@ export function OfficeWorkspace({
           </>
         ) : zone === 'office' ? (
           <Office
+            showOffice={showOffice}
             sessions={model.scene}
             notices={snapshot.notices ?? []}
             bubbleHours={prefs.bubbleHours ?? 3}
@@ -394,6 +399,7 @@ export function OfficeWorkspace({
           <section className={`session-room room-${zone}`}>
             {zone === 'waiting' ? (
               <RestLounge
+                showOffice={showOffice}
                 sessions={rows}
                 privacy={prefs.privacy}
                 reducedMotion={prefs.reducedMotion}
@@ -419,7 +425,13 @@ export function OfficeWorkspace({
                         <div>
                           <span className="provider-label">{PROVIDERS[s.provider].name}</span>
                           <h3>{prefs.privacy ? t.office.archive.hiddenSession : sessionName(s)}</h3>
-                          <p>{prefs.privacy ? t.office.archive.hiddenProject : zoneLabel(s)}</p>
+                          <p>
+                            {prefs.privacy
+                              ? t.office.archive.hiddenProject
+                              : showOffice
+                                ? `${officeLabel(s)} · ${zoneLabel(s)}`
+                                : zoneLabel(s)}
+                          </p>
                           <small>
                             <Clock3 size={11} />
                             {t.office.archive.activity(ago(s.updatedAt), s.openCount || 0)}
@@ -449,6 +461,7 @@ export function OfficeWorkspace({
       </div>
       {!listView && (
         <Roster
+          showOffice={showOffice}
           zone={zone}
           sessions={rows}
           totalSessions={office}

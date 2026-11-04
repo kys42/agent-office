@@ -49,7 +49,7 @@ import { useAnswerSettings } from './lib/useAnswerSettings';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeRooms } from './components/OfficeRooms';
-import { LOCAL_ROOM, sessionRoom, roomModel } from './shared/rooms';
+import { ALL_ROOMS, LOCAL_ROOM, officeLabel, sessionRoom, roomModel } from './shared/rooms';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
 import { projectKey, sessionName } from './shared/office';
 import { projectColor } from './shared/office-layout';
@@ -209,7 +209,9 @@ export default function App() {
   const roomsEnabled = !demo && !!snapshot?.federation?.enabled;
   const activeRoom =
     roomsEnabled &&
-    (room === LOCAL_ROOM || snapshot?.federation?.peers.some((p) => p.officeId === room))
+    (room === ALL_ROOMS ||
+      room === LOCAL_ROOM ||
+      snapshot?.federation?.peers.some((p) => p.officeId === room))
       ? room
       : LOCAL_ROOM;
   const model = useMemo(
@@ -222,8 +224,8 @@ export default function App() {
   const chosenSession = snapshot?.sessions.find((s) => s.id === selected);
   const chosenRoom = chosenSession ? sessionRoom(chosenSession) : undefined;
   useEffect(() => {
-    if (chosenRoom && roomsEnabled) setRoom(chosenRoom);
-  }, [chosenRoom, roomsEnabled]);
+    if (chosenRoom && roomsEnabled && room !== ALL_ROOMS) setRoom(chosenRoom);
+  }, [chosenRoom, roomsEnabled, room]);
   // A bookmark being opened: its colleague's card, at its message.
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
@@ -348,7 +350,12 @@ export default function App() {
       .filter((s) => !s.attachedTo)
       .reduce((map, s) => {
         const key = projectKey(s);
-        const item = map.get(key) ?? { key, name: s.area?.name ?? s.project, count: 0 };
+        const name = s.area?.name ?? s.project;
+        const item = map.get(key) ?? {
+          key,
+          name: activeRoom === ALL_ROOMS ? `${officeLabel(s)} · ${name}` : name,
+          count: 0,
+        };
         item.count += 1;
         return map.set(key, item);
       }, new Map<string, { key: string; name: string; count: number }>())
@@ -883,11 +890,13 @@ export default function App() {
             <div className="toolbar-title">
               <h1>
                 {view === 'office' && roomsEnabled
-                  ? activeRoom === LOCAL_ROOM
-                    ? t.federation.localOffice
-                    : prefs?.privacy
-                      ? t.federation.remoteOffice
-                      : snapshot?.federation?.peers.find((p) => p.officeId === activeRoom)?.label
+                  ? activeRoom === ALL_ROOMS
+                    ? t.federation.allOffices
+                    : activeRoom === LOCAL_ROOM
+                      ? t.federation.localOffice
+                      : prefs?.privacy
+                        ? t.federation.remoteOffice
+                        : snapshot?.federation?.peers.find((p) => p.officeId === activeRoom)?.label
                   : view === 'office'
                     ? t.office.zones[officeZoneNow]
                     : t.app.tabs[view].title}
@@ -1044,6 +1053,7 @@ export default function App() {
               key={demo ? 'demo' : `live:${activeRoom}`}
               snapshot={snapshot}
               model={model}
+              showOffice={roomsEnabled && activeRoom === ALL_ROOMS}
               onVeil={(ids, on) => {
                 void veil(ids, on).then((saved) => {
                   if (saved) notify(on ? t.app.toast.hidden : t.app.toast.shown);
