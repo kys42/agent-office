@@ -94,9 +94,12 @@ function Chat({
   const [detail, setDetail] = useState<MobileDetail | null>(null);
   const [target, setTarget] = useState<{
     canSend: boolean;
+    canPrepare?: boolean;
     desktop: boolean;
     queues: boolean;
   } | null>(null);
+  const [targetState, setTargetState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const canSend = !!(target?.canSend || target?.canPrepare);
   const [tools, setTools] = useState(false);
   const draftKey = `mobile:draft:${agent.id}`,
     pendingKey = `mobile:pending:${agent.id}`;
@@ -120,35 +123,50 @@ function Chat({
   const remote = agent.officeId !== 'local';
   const read = useCallback(async () => {
     const version = ++readVersion.current;
-    try {
-      const [next, targets] = await Promise.all([
-        api<MobileDetail>('detail', { id: agent.id }),
-        api<Record<string, typeof target>>('targets', { ids: [agent.id] }),
-      ]);
-      if (!live.current || version !== readVersion.current) return;
-      setDetail((old) => {
-        // Remote detail is a bounded snapshot, not pageable history. A server may
-        // reduce sharing to excerpts at any refresh, so never retain old full text.
-        if (remote) return { ...next, older: false };
-        const head = next.events[0];
-        const joins = head ? (old?.events.findIndex((e) => e.id === head.id) ?? -1) : -1;
-        if (!old || !next.older || joins < 0) return next;
-        const events = [...old.events.slice(0, joins), ...next.events];
-        return {
-          ...next,
-          older: old.older || events.length > 1000,
-          events: events.slice(-1000),
-        };
-      });
-      setTarget(targets[agent.id] ?? null);
-      setError('');
-    } catch (e) {
-      if (!live.current || version !== readVersion.current) return;
-      if (remote) setDetail(null);
-      setError(e instanceof Error ? e.message : m().mobile.connectionFailed);
-      setTarget(null);
+    const current = () => live.current && version === readVersion.current;
+    const expired = (e: unknown) => {
       if (e instanceof ApiError && e.status === 401) onExpired();
-    }
+    };
+    await Promise.all([
+      (async () => {
+        try {
+          const next = await api<MobileDetail>('detail', { id: agent.id });
+          if (!current()) return;
+          setDetail((old) => {
+            // Remote sharing may shrink between polls; never retain old full text.
+            if (remote) return { ...next, older: false };
+            const head = next.events[0];
+            const joins = head ? (old?.events.findIndex((e) => e.id === head.id) ?? -1) : -1;
+            if (!old || !next.older || joins < 0) return next;
+            const events = [...old.events.slice(0, joins), ...next.events];
+            return {
+              ...next,
+              older: old.older || events.length > 1000,
+              events: events.slice(-1000),
+            };
+          });
+          setError('');
+        } catch (e) {
+          if (!current()) return;
+          if (remote) setDetail(null);
+          setError(e instanceof Error ? e.message : m().mobile.connectionFailed);
+          expired(e);
+        }
+      })(),
+      (async () => {
+        try {
+          const targets = await api<Record<string, typeof target>>('targets', { ids: [agent.id] });
+          if (!current()) return;
+          setTarget(targets[agent.id] ?? null);
+          setTargetState('ready');
+        } catch (e) {
+          if (!current()) return;
+          setTarget(null);
+          setTargetState('error');
+          expired(e);
+        }
+      })(),
+    ]);
   }, [agent.id, remote, onExpired]);
   useEffect(() => {
     live.current = true;
@@ -226,7 +244,7 @@ function Chat({
     } else if (live.current) setNotice(m().mobile.uncertain);
   };
   const send = async () => {
-    if (busy || pending || !draft.trim() || !enabled || !target?.canSend) return;
+    if (busy || pending || !draft.trim() || !enabled || !canSend) return;
     const input = { requestId: uuid(), text: draft };
     save(pendingKey, input);
     pendingRef.current = input;
@@ -259,13 +277,19 @@ function Chat({
     ? m().mobile.officeOffline
     : !enabled
       ? m().mobile.enableSend
-      : !target?.canSend
-        ? m().mobile.noTarget
-        : target.desktop
-          ? m().mobile.sendDesktop
-          : target.queues
-            ? m().mobile.sendQueue
-            : m().mobile.sendTerminal;
+      : targetState === 'loading'
+        ? m().mobile.checkingTarget
+        : targetState === 'error'
+          ? m().mobile.targetFailed
+          : !canSend
+            ? m().mobile.noTarget
+            : target?.canPrepare
+              ? m().federation.codexConnectHint
+              : target?.desktop
+                ? m().mobile.sendDesktop
+                : target?.queues
+                  ? m().mobile.sendQueue
+                  : m().mobile.sendTerminal;
   return (
     <section className="chat">
       <header className="chat-header">
@@ -379,10 +403,8 @@ function Chat({
           <button
             className="send-button"
             type="submit"
-            aria-label={m().mobile.send}
-            disabled={
-              busy || !!pending || !enabled || !target?.canSend || agent.stale || !draft.trim()
-            }
+            aria-label={target?.canPrepare ? m().federation.connectAndSend : m().mobile.send}
+            disabled={busy || !!pending || !enabled || !canSend || agent.stale || !draft.trim()}
           >
             <ArrowUp size={22} />
           </button>
