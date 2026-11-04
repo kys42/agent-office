@@ -1,5 +1,6 @@
 import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
+import { isTeammate } from '../shared/residents';
 import {
   useEffect,
   useEffectEvent,
@@ -784,6 +785,11 @@ export function DeskRow({
                                       : t.desk.working
                                     : MOODS[s.status].label}
                                 </span>
+                                {isTeammate(s) && (
+                                  <b className="desk-teammate" title={t.desk.teammate.hint}>
+                                    {t.desk.teammate.tag}
+                                  </b>
+                                )}
                                 {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
                               </small>
                             </button>

@@ -42,6 +42,10 @@ export const desk = {
     zoneHint:
       'Hides everyone here now. Each comes back on their next conversation; anyone waiting for you stays.',
   },
+  teammate: {
+    tag: 'Team agent',
+    hint: 'An agent-team member another session (its lead) started. Its lead is not in the office, so it has a desk of its own.',
+  },
   helper: {
     name: 'Helper',
     stackLabel: (count: number, calling: boolean) =>

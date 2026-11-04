@@ -156,6 +156,7 @@ export const shared: Messages['shared'] = {
     scheduled: '자동 실행',
     internal: '내부 보조',
     helper: '보조 작업',
+    teammate: '팀메이트',
     conversation: '대화',
   },
   runtime: {
