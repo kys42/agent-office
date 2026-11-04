@@ -1,6 +1,6 @@
-import { Building2, Laptop, Plus, WifiOff } from 'lucide-react';
+import { Building2, Laptop, Layers, Plus, WifiOff } from 'lucide-react';
 import type { Snapshot } from '../shared/types';
-import { LOCAL_ROOM, sessionRoom } from '../shared/rooms';
+import { ALL_ROOMS, LOCAL_ROOM, sessionRoom } from '../shared/rooms';
 import { useI18n } from '../lib/i18n';
 
 export function OfficeRooms({
@@ -21,6 +21,13 @@ export function OfficeRooms({
   for (const s of snapshot.sessions)
     counts.set(sessionRoom(s), (counts.get(sessionRoom(s)) ?? 0) + 1);
   const rooms = [
+    {
+      id: ALL_ROOMS,
+      name: f.allOffices,
+      local: false,
+      state: 'connected' as const,
+      tags: [] as string[],
+    },
     {
       id: LOCAL_ROOM,
       name: f.localOffice,
@@ -57,19 +64,31 @@ export function OfficeRooms({
             onClick={() => onSelect(room.id)}
           >
             <span className="office-room-icon">
-              {room.local ? <Laptop size={17} /> : <Building2 size={17} />}
+              {room.id === ALL_ROOMS ? (
+                <Layers size={17} />
+              ) : room.local ? (
+                <Laptop size={17} />
+              ) : (
+                <Building2 size={17} />
+              )}
             </span>
             <span className="office-room-copy">
               <strong>{room.name}</strong>
               <small>
-                <i className={`room-status ${room.state}`} />
-                {room.local ? f.thisComputer : f[room.state]}
+                {room.id !== ALL_ROOMS && <i className={`room-status ${room.state}`} />}
+                {room.id === ALL_ROOMS
+                  ? f.allOfficesHint
+                  : room.local
+                    ? f.thisComputer
+                    : f[room.state]}
                 {room.tags.length > 0 && (
                   <span className="office-room-tags"> · {room.tags.join(' · ')}</span>
                 )}
               </small>
             </span>
-            <span className="office-room-count">{counts.get(room.id) ?? 0}</span>
+            <span className="office-room-count">
+              {room.id === ALL_ROOMS ? snapshot.sessions.length : (counts.get(room.id) ?? 0)}
+            </span>
             {room.state === 'offline' && <WifiOff size={12} />}
           </button>
         ))}

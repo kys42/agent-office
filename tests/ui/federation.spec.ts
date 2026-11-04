@@ -3,19 +3,21 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { exportSession } from '../../server/federation/protocol';
 import { importSession } from '../../server/federation/peers';
+import { runtimeObservation } from '../../src/shared/runtime';
 
-async function fixture(page: Page, writable = true) {
+async function fixture(page: Page, writable = true, combined = false) {
   const snapshot = demoSnapshot();
   const local = snapshot.sessions.slice(0, 1).map((s) => ({
     ...s,
     id: 'local-test',
     alias: '로컬 동료',
-    project: 'local-project',
+    project: combined ? 'shared-project' : 'local-project',
     area: undefined,
     zone: 'office' as const,
     attachedTo: undefined,
     events: [],
-    status: 'ready' as const,
+    status: combined ? ('work' as const) : ('ready' as const),
+    ...(combined ? { runtime: runtimeObservation('work', Date.now(), 'fixture') } : {}),
     updatedAt: Date.now(),
   }));
   const peer = {
@@ -37,7 +39,7 @@ async function fixture(page: Page, writable = true) {
           nativeId: `remote-${i}`,
           alias: '',
           title: `원격 동료 ${i}`,
-          project,
+          project: combined ? 'shared-project' : project,
           workspace: undefined,
           officeSeat: i,
         },
@@ -49,6 +51,27 @@ async function fixture(page: Page, writable = true) {
     ),
   );
   snapshot.sessions = [...local, ...remote];
+  const second = { ...peer, officeId: '14e785ca-5d9a-4d61-8703-07234e00479e', label: 'Mac mini' };
+  if (combined) {
+    const mini = importSession(
+      exportSession(
+        {
+          ...local[0],
+          id: 'remote-0',
+          nativeId: 'remote-0',
+          alias: '',
+          title: '미니 동료',
+          workspace: undefined,
+        },
+        [],
+      ),
+      second,
+      Date.now(),
+      true,
+    );
+    remote.push(mini);
+    snapshot.sessions.push(mini);
+  }
   snapshot.notices = [];
   snapshot.noticeStats = { total: 0, unread: 0 } as any;
   const { token: _token, sendToken: _send, ...publicPeer } = peer;
@@ -65,6 +88,17 @@ async function fixture(page: Page, writable = true) {
       },
     ],
   };
+  if (combined) {
+    const { token: _token, sendToken: _sendToken, ...publicSecond } = second;
+    snapshot.federation.peers.push({
+      ...publicSecond,
+      canSend: writable,
+      state: 'offline',
+      count: 1,
+      receivedAt: Date.now(),
+      error: 'offline',
+    });
+  }
   await page.addInitScript((s) => {
     const w = window as any;
     w.sends = [];
@@ -97,7 +131,9 @@ async function fixture(page: Page, writable = true) {
               canSend: true,
               queues: true,
               canFocus: false,
-              ...(id.startsWith('remote-office:') ? { remoteOffice: 'MacBook Pro' } : {}),
+              ...(id.startsWith('remote-office:')
+                ? { remoteOffice: s.sessions.find((x) => x.id === id)?.remote?.label }
+                : {}),
             },
           ]),
         ),
@@ -143,6 +179,71 @@ test('office switcher scopes project zones and roster; remote chat names its des
   await expect(page.locator('.terminal-send-chat')).toHaveCount(0);
   await expect(page.locator('.source-list')).toContainText('local-project');
   await expect(page.locator('.office-pet').first()).toHaveAttribute('draggable', 'true');
+});
+
+test('All offices combines source projects and stays selected when opening a card', async ({
+  page,
+}) => {
+  const { remote } = await fixture(page, true, true);
+  const all = page.getByRole('tab', { name: '전체 사무실', exact: true });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.toolbar-title h1')).toHaveText('전체 사무실');
+  await expect(page.locator('.roster .session-row')).toHaveCount(4);
+  await expect(page.locator('.project-area')).toHaveCount(3);
+  await expect(
+    page.locator('.source-list button').filter({ hasText: '일하는 중' }).locator('em'),
+  ).toHaveText('3');
+  for (const office of ['내 컴퓨터', 'MacBook Pro', 'Mac mini']) {
+    await expect(page.locator('.source-list')).toContainText(`${office} · shared-project`);
+  }
+  const localPet = page.locator('.office-pet[data-session-id="local-test"]');
+  const remoteArea = page
+    .locator('.project-area')
+    .filter({ hasText: 'MacBook Pro · shared-project' });
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await localPet.dispatchEvent('dragstart', { dataTransfer });
+  await expect(page.locator('.drag-hint')).toBeVisible();
+  await remoteArea.dispatchEvent('dragover', { dataTransfer });
+  await expect(remoteArea).not.toHaveClass(/drop-target/);
+  await remoteArea.dispatchEvent('drop', { dataTransfer });
+  await expect(page.locator('.zone-editor')).toHaveCount(0);
+  await expect(page.locator('.drag-hint')).toHaveCount(0);
+  await dataTransfer.dispose();
+  await page.locator('.roster .session-row').filter({ hasText: '미니 동료' }).click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '미니 동료');
+  await page.getByRole('button', { name: '업무 카드 닫기' }).click();
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await page.getByLabel('사무실 리스트 정렬').selectOption('project');
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await expect(page.locator('.office-list-group h3')).toHaveCount(3);
+  await expect(page.locator('.office-list-origin')).toHaveCount(4);
+  await expect(page.locator('.office-list-offline')).toHaveCount(1);
+  await page.locator('.sidebar button[title="Mac mini · shared-project"]').click();
+  await expect(page.locator('.office-list-row')).toHaveCount(1);
+  await expect(page.locator('.office-list-row')).toHaveAttribute('data-session-id', remote[2].id);
+  await page.locator('.office-list-scope button').click();
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await page.locator('.office-list-row').filter({ hasText: '원격 동료 0' }).click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await page.reload();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await page.getByRole('button', { name: '업무 카드 닫기' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.office-list-origin').filter({ hasText: 'Mac mini' })).toBeVisible();
+  await expect(page.locator('.office-list-offline')).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.mockSnapshot.preferences.privacy = true;
+    w.emitSnapshot(structuredClone(w.mockSnapshot));
+  });
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await expect(page.locator('.office-list-origin').filter({ hasText: 'Mac mini' })).toHaveCount(0);
+  await expect(
+    page.locator('.office-list-group h3').filter({ hasText: 'shared-project' }),
+  ).toHaveCount(0);
 });
 
 test('read-only remote office retains projects without exposing a composer', async ({ page }) => {
