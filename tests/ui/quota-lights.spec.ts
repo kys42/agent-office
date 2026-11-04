@@ -90,6 +90,13 @@ test('A desk whose tool used up its limit goes dark, with a badge that explains 
   await expect(tip).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(tip).toBeHidden();
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await expect(
+    page.locator('.office-list-row[data-session-id="demo:5"] .quota-kind'),
+  ).toContainText('Claude 사용 한도 소진');
+  await expect(page.locator('.office-list-row[data-session-id="demo:1"] .quota-kind')).toHaveCount(
+    0,
+  );
 });
 
 test('In the light theme the explanation stays readable, and Esc puts it away', async ({

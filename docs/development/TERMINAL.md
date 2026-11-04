@@ -392,6 +392,18 @@ origin/owner 검증, 설정 상속, 잘못된 권한/프로토콜, 응답 유실
 
 create 직전에 `orca terminal list --worktree=path:<cwd> --limit=10000 --json`으로 핸들을 찍어 둔다. uncertain이면 `open -a Orca`로 앞으로 가져온 뒤(사람이 누른 `--focus` 실행이라 포커스를 가져와도 된다) 2초마다 15번(약 30초) 같은 목록을 다시 읽어, 직전에 없던 핸들 중 제목이 우리 `--title`과 같은 것을 이어받고 `terminal switch`한다. 직전 목록이 온전(`truncated` 아님)하지 않으면 이어받지 않는다(제목은 반복된다). 제목이 다른 새 핸들은 그 사이 사람이 연 탭일 수 있어 하나뿐이어도 이어받지 않고, 다른 worktree의 핸들도 보지 않는다. 원격(`background`) 실행은 찾지 않고 바로 uncertain으로 답한다(요청 마감이 있다). 끝내 못 찾으면 `{ launched: false, uncertain: true }`와 "Orca를 열면 시작돼요"를 돌려주고, 화면은 [Orca 열기](`office:orca-reveal` → `open -a Orca`)만 보인다(tmux 권유 없음). 이 실행은 `PendingLaunches`(main 메모리, 2분, 재개는 `<provider>:<대화 id>`, 소환은 `new:<provider>:<폴더>:<이름>`)에 남고, `launch-guard`의 `decideDuplicate`가 `pending`을 Orca 탭처럼 **열려 있음**으로 본다. PTY가 생기기 전 탭은 `terminal list`에 없고 에이전트 프로세스도 없어서, 이 기록이 없으면 tmux로 다시 띄우는 것을 막지 못한다. 나중에 같은 대상이 확인된 실행으로 열리면 '시작 중' 예약으로 바뀐다(아래 실행 코어).
 
+### 잠든 Orca 작업 공간의 탭 (#342)
+
+`desktop/orca-sleeping.ts`. Orca는 한동안 쓰지 않은 작업 공간을 재운다. 탭은 남지만(사람이 그 작업 공간을 열면 다시 살아난다) 터미널이 없어서 `orca terminal list`(`--include-visual-layouts` 포함)에 보이지 않고 핸들·ptyId도 없다. 그래서 이어가기의 중복 확인이 그 탭을 '없음'으로 보고 Orca 새 탭을 기본으로 권해, 같은 대화가 두 탭에서 동시에 돌았다. 잠든 탭을 깨우는 CLI는 없다(`terminal switch`는 살아 있는 핸들이 필요하다).
+
+- **읽기**: `orca worktree ps --json`(읽기 전용, `OrcaLaunch.workspaces`, 3초 기억, 4초 제한, 16MB). `result.worktrees[]`마다 `path`·`hostId`·`displayName`·`hasAttachedPty`·`liveTerminalCount`·`agents[]`가 있고, 에이전트 항목은 `agentType`·`paneKey`(`<tabId>:<leafId>`)·`parentPaneKey`·`prompt`(마지막 요청)·`lastAssistantMessage`·`displayName`·`taskTitle`을 준다. 세션 id는 없다. Orca가 없거나 꺼져 있거나 오류·시간 초과면 `null`이고 근거가 없는 것으로 본다(막지도 경고하지도 않는다).
+- **잠든 작업 공간**: `hasAttachedPty`가 `true`가 아니고 `liveTerminalCount`가 0인 로컬 작업 공간. `isActive`는 Orca 화면에 보이는 작업 공간일 뿐이라 쓰지 않는다(Orca 1.4.216 실측: `isActive: false`여도 터미널이 붙어 있으면 `terminal list`가 그 탭을 보여 준다). 대화 폴더를 품은 **가장 깊은** 로컬 작업 공간만 본다. 그 작업 공간에 터미널이 있으면 지금처럼 `terminal list`(Orca 탭 확인)에 맡긴다.
+- **맞추기** (`matchSleeping`): 그 작업 공간의 같은 종류 에이전트(`claude`/`codex`, 하위 에이전트 `parentPaneKey`는 빼고 `paneKey`로 중복 제거) 중에서 대화의 마지막 요청 ↔ `prompt`, 마지막 답 ↔ `lastAssistantMessage`(NFC·공백 정리·끝의 `…` 제거 뒤 같으면 12자 이상, 한쪽이 다른 쪽의 앞부분이면 24자 이상), 별칭·제목 ↔ `displayName`/`taskTitle`(4자 이상, `Claude Code` 같은 일반 이름 제외) 중 하나가 맞는 항목을 찾는다. 정확히 하나가 맞고, 그 항목이 같은 작업 공간의 **다른** 알려진 대화(같은 에이전트)에도 맞지 않을 때만 `found`. 같은 종류 에이전트가 있는데 맞는 것이 없거나 여럿이면 `unknown`(그 수), 없으면 `none`. 대화 내용은 비교에만 쓰고 기록·로그하지 않는다.
+- **중복 판단** (`decideDuplicate`): 실행 중 > Orca 탭 > 대기 기록 > **잠든 탭**(`{ state: 'open', where: 'orca', sleeping: { workspace } }`) > 자기 tmux > **잠든 탭 여럿·불명**(`{ state: 'unknown', sleeping: { workspace, count, agent } }`) > 그 밖의 unknown > 없음. 이어가기에서만 본다: 복제는 원래 대화의 대기 기록만 보고, 복제의 `origin`(원래 대화가 지금 있는 곳)도 잠든 탭은 세지 않는다.
+- **실행 시트**: 잠든 탭이면 "이 대화가 잠든 Orca 작업 공간(<이름>)에 열려 있어요. Orca에서 그 작업 공간을 열면 탭이 다시 살아나요."와 주 버튼 **[Orca 열기]**(`office:orca-reveal`, 누르면 시트를 닫고 같은 안내를 알림), 보조 버튼 [그래도 …에서 시작]. 그래도 띄우면 네이티브 확인 창이 잠든 작업 공간 이름과 두 번 돌 위험을 적는다(`sleepingConfirm`). 여럿·불명이면 "잠든 Orca 작업 공간(<이름>)에 쉬고 있는 Claude 탭이 N개 있어요. 이 대화일 수 있어요."(주의)와 확인 창 경고(`sleepingUnknownConfirm`).
+- **카드 주 버튼**: 이동할 터미널이 없을 때(시트로 대신하는 경우) 카드가 한 번 `office:orca-sleeping(id)`을 묻는다. main은 그 대화의 전체 중복 확인이 잠든 탭이라고 할 때만 작업 공간 이름을 준다. 그러면 주 버튼이 **Orca로 이동**이 되고, 누르면 Orca를 앞으로 가져오고 "Orca를 열었어요. '<이름>' 작업 공간을 열면 이 대화 탭이 다시 살아나요."를 알린다(화면 숨기기 중에는 이름 없이). 시트는 [터미널에서 이어가기] 버튼으로 그대로 열 수 있다.
+- 어디에도 키를 보내지 않고, `create`·`send`·`switch`도 하지 않는다.
+
 ## 실행 코어 (#318)
 
 세션을 띄우는 길은 모두 `desktop/launch/`를 지난다: [실행 시트](#실행-시트-319)(업무 카드와 프로젝트 **+**), 원격 사무실의 소환. 창 쪽 입구는 IPC `office:launch` 하나다. 화면은 무엇을(의도) 어디서(행선지) 할지만 말하고, 순서·검사·에이전트 인자는 코어가 정한다.
