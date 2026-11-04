@@ -19,7 +19,6 @@ export const dock: Messages['dock'] = {
       `데스크 펫 · ${label}${count ? ` ${count}명` : ''} · 눌러서 업무 카드 열기`,
     title: (total) =>
       `우리 사무실 · 동료 ${total}명\n누르면 이 동료의 업무 카드가 열리고, 끌어서 옮길 수 있어요 · 책상은 옆 버튼으로 펼쳐요`,
-    unread: (n) => `읽지 않은 소식 ${n}건 · `,
     detailHint: '누르면 크게 보여요 · 펫을 누르면 업무 카드',
     someone: '동료',
     openCard: '업무 카드 열기',

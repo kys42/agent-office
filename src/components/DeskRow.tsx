@@ -380,8 +380,8 @@ export function DeskRow({
     }
   };
   // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
-  const open = (id: string, anchor?: Element | null, news = false) =>
-    preview ? undefined : openColleague(id, { anchor, news });
+  const open = (id: string, anchor?: Element | null, conversation = false) =>
+    preview ? undefined : openColleague(id, { anchor, conversation });
   const desk = STATION_WIDTH * scale;
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * scale })),
@@ -790,7 +790,7 @@ export function DeskRow({
                                     {t.desk.teammate.tag}
                                   </b>
                                 )}
-                                {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
+                                {speech.unread > 0 && <em>{t.desk.unread}</em>}
                               </small>
                             </button>
                           </>
@@ -809,7 +809,7 @@ export function DeskRow({
                                 if (bubble && !privacy)
                                   onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
                               }}
-                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el)}
+                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el, true)}
                               onOpen={() => {
                                 // Opening a bubble reads it in place; the card is one hover away.
                                 if (bubble && !privacy && expanded !== s.id)

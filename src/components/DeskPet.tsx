@@ -253,7 +253,7 @@ export function DeskPet({
     if (view)
       void openColleague(bubble?.sessionId ?? view.session.id, {
         anchor: from.closest('.dock-pet-anchor'),
-        news: false,
+        conversation: !!bubble,
       });
     else onExpand();
   };
@@ -299,7 +299,7 @@ export function DeskPet({
               onPopup={(el) =>
                 void openColleague(replyId!, {
                   anchor: el.closest('.dock-pet-anchor'),
-                  news: false,
+                  conversation: true,
                 })
               }
               onOpen={() => {
@@ -331,10 +331,7 @@ export function DeskPet({
                         {who.project} · {branchInfo(view.session).label}
                       </span>
                     )}
-                    <span>
-                      {view.unread.length > 1 ? d.unread(view.unread.length) : ''}
-                      {d.detailHint}
-                    </span>
+                    <span>{d.detailHint}</span>
                   </>
                 )
               }
@@ -377,10 +374,10 @@ export function DeskPet({
               aria-label={d.openCard}
               title={d.openCardTitle}
               onClick={(e) =>
-                // Like every card opened from a desk: on its conversation, not its news.
+                // Like a desk's bubble: the card shows the conversation it speaks for.
                 void openColleague(bubble?.sessionId ?? view.session.id, {
                   anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                  news: false,
+                  conversation: !!bubble,
                 })
               }
             >
@@ -568,7 +565,6 @@ export function DeskPet({
                     onClick={(e) => {
                       void openColleague(v.session.id, {
                         anchor: e.currentTarget.closest('.dock-pet-anchor'),
-                        news: false,
                       });
                       // The pet turns to that colleague too, when it can stand for it.
                       if (choices.some((c) => c.session.id === v.session.id)) {

@@ -18,9 +18,6 @@ export const palette = {
     all: 'All shortcuts',
   },
   actions: {
-    inbox: 'Open Inbox',
-    inboxHint: (n: number) => `${n} ${n === 1 ? 'update' : 'updates'} to check`,
-    inboxKeywords: 'notifications alerts results replies news',
     office: 'Go to Office',
     lounge: 'Go to Lounge',
     loungeKeywords: 'waiting idle resting off duty',

@@ -123,7 +123,7 @@ async function bridge(page: Page, snapshot: Snapshot, card?: string) {
               cardState: async () => ({ pinned: false, positionRemembered: false }),
               onCardState: () => () => {},
               onCard: (cb: any) => {
-                setTimeout(() => cb({ id: card, news: false }), 50);
+                setTimeout(() => cb({ id: card }), 50);
                 return () => {};
               },
             }

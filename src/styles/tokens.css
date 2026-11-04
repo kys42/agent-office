@@ -167,9 +167,6 @@ body {
 }
 /* Reading text follows the chosen font (#246); code and pixel lettering keep their own. */
 .roster,
-.news-inbox,
-.news-feed,
-.news-list,
 .card-head,
 .card-menu-list,
 .card-progress-switch,

@@ -52,7 +52,7 @@ async function card(page: Page, count = 120, hidden = false) {
           return () => {};
         },
         onCard: (cb: any) => {
-          setTimeout(() => cb({ id: snapshot.sessions[0].id, news: false }), 20);
+          setTimeout(() => cb({ id: snapshot.sessions[0].id }), 20);
           return () => {};
         },
       };

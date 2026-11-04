@@ -234,7 +234,10 @@ export function OfficeList({
                             {view?.veiled && (
                               <EyeOff size={12} aria-label={t.office.veiled.summary} />
                             )}
-                            {unread > 0 && <em title={t.roster.unreadTitle(unread)}>{unread}</em>}
+                            {/* Only whether its latest result is unseen, never how many (#300). */}
+                            {unread > 0 && (
+                              <em className="unread-dot" title={t.roster.unreadTitle} />
+                            )}
                           </strong>
                           {(helper || fork || helpers > 0 || s.resident || view?.quota) && (
                             <span className="office-list-relations">
@@ -328,12 +331,12 @@ export function OfficeList({
                           : elapsed !== null
                             ? t.roster.workingFor(durationShort(elapsed))
                             : result
-                              ? t.roster.newResults(unread, ago(result.at))
+                              ? t.roster.newResult(ago(result.at))
                               : MOODS[mood].label}
                         {helperNews > 0 && (
                           <small className="office-list-helper-news">
                             <CornerDownRight size={11} />
-                            {copy.helperNews(helperNews)}
+                            {copy.helperNews}
                           </small>
                         )}
                         {s.remote?.stale && (

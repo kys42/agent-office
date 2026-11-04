@@ -20,7 +20,7 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
       visit: async () => structuredClone(s),
       terminals: async () => ({}),
       card: async (action: string, target: any) => {
-        w.cards.push({ action, id: target?.id, news: target?.news });
+        w.cards.push({ action, id: target?.id, ...target });
       },
       dock: async (action: string) => {
         w.docks.push(action);
@@ -58,8 +58,8 @@ test('the pet pill counts each group with a coloured dot, and a click pops up th
   // The card is the colleague the pet stands for: the one calling the person.
   const opened = await page.evaluate(() => (window as any).cards.at(-1).id);
   expect(s.sessions.find((x) => x.id === opened)?.status).toBe('call');
-  // On its conversation, as a desk's card opens — even while the pet speaks a notice.
-  expect(await page.evaluate(() => (window as any).cards.at(-1).news)).toBe(false);
+  // On its conversation, as a desk's card opens (there is no news tab to open on).
+  expect(await page.evaluate(() => 'news' in (window as any).cards.at(-1))).toBe(false);
   // No unfolding: the pet stays a pet.
   expect(await page.evaluate(() => (window as any).docks)).not.toContain('row');
   await expect(page.locator('.desk-pet')).toBeVisible();
@@ -81,7 +81,7 @@ test('a number lists who it counts (mouse or keys); a name opens that card and t
       visit: async () => structuredClone(s),
       terminals: async () => ({}),
       card: async (action: string, target: any) => {
-        w.cards.push({ action, id: target?.id, news: target?.news });
+        w.cards.push({ action, id: target?.id, ...target });
       },
       dock: async (action: string) => {
         w.docks.push(action);
@@ -108,7 +108,8 @@ test('a number lists who it counts (mouse or keys); a name opens that card and t
   await expect(list).toBeVisible();
   const name = (await first.locator('.pet-list-name').textContent())!;
   await first.click();
-  await expect.poll(() => page.evaluate(() => (window as any).cards.at(-1)?.news)).toBe(false);
+  await expect.poll(() => page.evaluate(() => (window as any).cards.at(-1)?.id)).toBeTruthy();
+  expect(await page.evaluate(() => 'news' in (window as any).cards.at(-1))).toBe(false);
   await expect(list).toHaveCount(0);
   await page.locator('.dock-pet-anchor').hover();
   await expect(page.locator('.dock-pet-name')).toHaveText(name);

@@ -21,7 +21,7 @@ export const office: Messages['office'] = {
     hiddenFork: '원본 대화에서 분기',
     helpers: (n) => `보조 ${n}명`,
     helpersCalling: (n) => `불러요 ${n}명`,
-    helperNews: (n) => `보조 소식 ${n}건`,
+    helperNews: '보조에게 새 결과',
     activeRuns: (active, total) => `진행 중 ${active}개 · 전체 실행 ${total}개`,
     count: (n) => `동료 ${n}명`,
   },

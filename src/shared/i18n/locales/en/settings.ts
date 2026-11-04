@@ -168,7 +168,7 @@ export const settings = {
       'When the app starts again, the work cards you pinned open where they were. Colleagues moved to the lounge or the archive open too; ones whose records are gone are skipped.',
     readOnOpen: 'Opening a card marks replies read',
     readOnOpenHint:
-      "A teammate's work card you keep open marks its final replies read. Off, they stay unread until you mark them.",
+      "A teammate's work card you keep open marks its final replies read. Off, they stay unread until you mark them, message the teammate or jump to its terminal.",
     dwell: 'Wait before marking read',
     dwellAria: 'Time a card stays open before marking read',
     now: 'Right away',
@@ -193,7 +193,7 @@ export const settings = {
     title: 'Text',
     size: 'Text size',
     sizeHint:
-      'Work cards (conversation, news, info), speech bubbles, the roster and inbox, the memory drawer and bookmarks, the command palette and settings. Tab names, desks, tiny desks, name plates and the dock window keep their size; dock bubbles grow up to Large to fit the window.',
+      'Work cards (conversation, info, notes), speech bubbles, the roster, the memory drawer and bookmarks, the command palette and settings. Tab names, desks, tiny desks, name plates and the dock window keep their size; dock bubbles grow up to Large to fit the window.',
     sizes: { small: 'Small', normal: 'Normal', large: 'Large', larger: 'Larger' },
     font: 'Font',
     fontHint:

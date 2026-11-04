@@ -45,19 +45,9 @@ test('The card routes calls to the original tool and lets results be read in pla
   await expect(card.locator('.card-status')).not.toHaveClass(/is-calling/);
   await expect(resume).not.toHaveClass(/primary/);
   await expect(card.locator('.card-calling-note')).toHaveCount(0);
-  // Opening the card reads the new result (Issue #221); the news tab can make it unread again.
-  const news = card.getByRole('tab', { name: /^소식/ });
-  await expect(page.locator('.inbox-button b')).toHaveText('0');
-  await expect(news).not.toHaveText(/1/);
+  // Opening the card reads the new result (Issue #221); the card has no news tab (#300).
   await expect(page.getByRole('button', { name: '확인할 결과 0', exact: true })).toBeDisabled();
-  await news.click();
-  await card.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
-  await card.getByRole('button', { name: '다시 미확인' }).click();
-  await expect(page.locator('.inbox-button b')).toHaveText('1');
-  // Marked unread on purpose, it stays unread while the card is open.
-  await page.waitForTimeout(300);
-  await expect(page.locator('.inbox-button b')).toHaveText('1');
-  await expect(card.getByRole('button', { name: '읽음으로 표시' })).toBeVisible();
+  await expect(card.getByRole('tab')).toHaveText(['대화', '작업 정보', '기억 메모']);
   // Reading is a receipt only — the colleague's desk and bubble stay.
   await expect(page.locator('.office-pet[data-session-id="demo:5"]')).toBeVisible();
 });
@@ -93,7 +83,7 @@ test('Keyboard triage walks the to-do order and marks results read', async ({ pa
   await page.keyboard.press('j');
   await expect(page.locator('.card-head h2')).toHaveAttribute('title', '모모');
   await page.keyboard.press('r');
-  await expect(page.locator('.inbox-button b')).toHaveText('0');
+  await expect(page.getByRole('button', { name: '확인할 결과 0', exact: true })).toBeDisabled();
   // Reading does not reshuffle the cursor mid-triage: K returns, J continues.
   await page.keyboard.press('k');
   await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
@@ -110,12 +100,32 @@ test('Keyboard triage walks the to-do order and marks results read', async ({ pa
   await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toHaveCount(0);
 });
 
-test('Panel tabs switch colleagues and news in one click', async ({ page }) => {
+test('The right panel is the colleagues alone; a result is a dot, and its bubble opens the conversation', async ({
+  page,
+}) => {
   await page.goto('/?demo');
-  await page.locator('.panel-tabs').getByRole('button', { name: /^소식/ }).click();
-  await expect(page.getByRole('complementary', { name: '소식함' })).toBeVisible();
-  await page.locator('.panel-tabs').getByRole('button', { name: '동료', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: '동료 목록' })).toBeVisible();
+  const roster = page.getByRole('complementary', { name: '동료 목록' });
+  await expect(roster).toBeVisible();
+  await expect(page.getByRole('complementary', { name: '소식함' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /소식함/ })).toHaveCount(0);
+  // Whether the latest result is unseen, never how many.
+  const row = roster.locator('.session-row').filter({ hasText: '모모' });
+  await expect(row.locator('.unread-dot')).toHaveCount(1);
+  await expect(row.locator('.unread-dot')).toHaveText('');
+  await expect(row).toContainText(/새 결과 · /);
+  const bubble = page.locator('.desk-station[data-station-id="demo:5"] .speech-bubble');
+  await bubble.click();
+  const card = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  await expect(card.locator('.card-head h2')).toHaveAttribute('title', '모모');
+  await expect(card.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
+  // Already open on another tab, the bubble still brings the conversation back.
+  await card.getByRole('tab', { name: '작업 정보' }).click();
+  await expect(card.getByRole('tab', { name: '작업 정보' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await bubble.click();
+  await expect(card.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('List hover spotlights a desk without moving any furniture', async ({ page }) => {

@@ -265,9 +265,9 @@ test('helpers keep their role, parent, own news and calls; forks and persona run
   await expect(child).toHaveClass(/is-helper/);
   await expect(child).toContainText('reviewer · 품질 검토');
   await expect(child.locator('.office-list-lineage')).toHaveText('메인 작업의 보조');
-  await expect(child.locator('.office-list-copy em')).toHaveText('1');
+  await expect(child.locator('.office-list-copy em.unread-dot')).toHaveCount(1);
   await expect(parent.locator('.helpers-calling')).toHaveText('메인 · 보조 1명 · 불러요 1명');
-  await expect(parent.locator('.office-list-helper-news')).toHaveText('보조 소식 1건');
+  await expect(parent.locator('.office-list-helper-news')).toHaveText('보조에게 새 결과');
   await expect(parent.locator('.office-list-copy em')).toHaveCount(0);
   await expect(page.locator('.office-list-row[data-session-id="helper:unknown"]')).toHaveClass(
     /is-helper/,

@@ -47,7 +47,7 @@ try {
 
     // The first demo teammate is busy, so the work card shows live progress.
     await page.locator('.office-pet[data-session-id="demo:0"]').click();
-    await page.locator('aside.inspector:not(.news-inbox)').waitFor();
+    await page.locator('aside.inspector').waitFor();
     await page.waitForFunction(() => {
       const el = document.querySelector('.inspector-scroll');
       return el && el.scrollHeight - el.scrollTop - el.clientHeight < 4;
@@ -55,12 +55,6 @@ try {
     await ready(page);
     await shot('detail', await panel('aside.inspector'));
     await page.keyboard.press('Escape');
-
-    await page.locator('.inbox-button').click();
-    await page.locator('aside.news-inbox').waitFor();
-    await ready(page);
-    await shot('inbox', await panel('aside.news-inbox'));
-    await page.locator('.inbox-button').click();
 
     await page.keyboard.press('ControlOrMeta+k');
     await page.locator('.palette').waitFor();

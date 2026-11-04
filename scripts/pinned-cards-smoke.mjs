@@ -50,8 +50,8 @@ let app;
 try {
   await mkdir(data, { recursive: true });
   await pinned([
-    { target: { id: 'claude:claude-test', news: false }, pin: 'top', bounds: at },
-    { target: { id: 'claude:gone', news: false }, pin: 'pinned', bounds: at },
+    { target: { id: 'claude:claude-test' }, pin: 'top', bounds: at },
+    { target: { id: 'claude:gone' }, pin: 'pinned', bounds: at },
   ]);
   app = await launch();
   await (await app.firstWindow()).waitForFunction(() => !!window.office);
@@ -76,7 +76,7 @@ try {
   // Turned off in settings, a pinned card is not brought back.
   await main.evaluate(() => window.office.preferences({ restorePinnedCards: false }));
   await app.close();
-  await pinned([{ target: { id: 'claude:claude-test', news: false }, pin: 'pinned', bounds: at }]);
+  await pinned([{ target: { id: 'claude:claude-test' }, pin: 'pinned', bounds: at }]);
   app = await launch();
   await (await app.firstWindow()).waitForFunction(() => !!window.office);
   await new Promise((r) => setTimeout(r, 3000));

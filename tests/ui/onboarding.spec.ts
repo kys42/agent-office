@@ -107,11 +107,10 @@ test('empty office explains connections and routes setup without a fake work car
   await expect(page.locator('.office-guide')).toHaveCount(0);
 });
 
-test('feature guide routes to inbox, memory, usage, activity and shortcuts', async ({ page }) => {
+test('feature guide routes to memory, usage, activity and shortcuts', async ({ page }) => {
   await page.goto('/?demo&lang=ko');
   const menu = page.getByRole('button', { name: '사무실 사용 가이드', exact: true });
   for (const [action, target] of [
-    ['소식함 열기', '.news-inbox'],
     ['기억 서랍 열기', '.memory-page'],
     ['사용량 보기', '.usage-dock'],
     ['활동 열기', '.activity-page'],

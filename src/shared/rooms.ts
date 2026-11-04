@@ -32,7 +32,6 @@ export function roomModel(all: OfficeModel, room: string): OfficeModel {
     hiddenSessionIds: all.hiddenSessionIds.filter((id) => ids.has(id)),
     notices: all.notices.filter((n) => ids.has(n.sessionId)),
     unread: room === LOCAL_ROOM ? all.unread : 0,
-    noticesPaged: room === LOCAL_ROOM && all.noticesPaged,
     counts,
     lead: desks.reduce<OfficeModel['lead']>(
       (best, v) =>

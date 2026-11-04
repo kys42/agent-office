@@ -30,7 +30,6 @@ const keyOf = (n: { id: string; version: string }) => `${n.id}\n${n.version}`;
  *   it opened) is never read by the card again: marked unread on purpose, it stays unread until
  *   the colleague is opened anew.
  * - A receipt in flight is not asked twice; one that failed is asked again later, a few times.
- * - What this open read stays listed in the card's news for the rest of the open.
  */
 export class CardReads {
   colleague: string;
@@ -38,8 +37,6 @@ export class CardReads {
   private done = new Set<string>();
   private pending = new Set<string>();
   private attempts = new Map<string, number>();
-  /** Versions this open read (kept visible in the card's news). */
-  readNow = new Set<string>();
 
   constructor(colleague: string) {
     this.colleague = colleague;
@@ -93,10 +90,7 @@ export class CardReads {
       if (ok) {
         this.attempts.delete(key);
         this.done.add(key);
-        this.readNow.add(key);
       } else this.attempts.set(key, (this.attempts.get(key) ?? 0) + 1);
     }
   }
 }
-
-export const cardReadKey = keyOf;

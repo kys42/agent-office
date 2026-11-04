@@ -9,7 +9,7 @@ test.describe('English system', () => {
   test('opens in English and switches to Korean from Settings', async ({ page }) => {
     await page.goto('/?demo');
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-    await expect(page.getByRole('button', { name: 'Open Inbox' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Teammate list' })).toBeVisible();
     await expect(page.getByRole('button', { name: /^Coco, / })).toBeVisible();
     await expect(page).toHaveTitle(/Agent Office/);
     expect(await visibleText(page)).not.toMatch(hangul);
@@ -48,7 +48,7 @@ test.describe('English system', () => {
     // Demo teammates follow the language without losing the saved preference.
     await page.getByRole('button', { name: '우리 사무실' }).click();
     await expect(page.getByRole('button', { name: /^코코, / })).toBeVisible();
-    await expect(page.getByRole('button', { name: '소식함 열기' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: '동료 목록' })).toBeVisible();
     await page.getByRole('button', { name: '연결과 설정' }).click();
     // The page comes back to the category last open (모습); language is under 일반.
     const tabs2 = page.getByRole('tablist', { name: '설정 분류' });
@@ -64,7 +64,7 @@ test.describe('English system', () => {
     await expect(page.getByRole('button', { name: /^코코, / })).toBeVisible();
   });
 
-  test('English work card, inbox and command palette', async ({ page }) => {
+  test('English work card, teammate list and command palette', async ({ page }) => {
     await page.goto('/?demo');
     await page.getByRole('button', { name: /^Coco, / }).click();
     const card = page.getByRole('complementary', { name: "Teammate's work card" });
@@ -72,11 +72,9 @@ test.describe('English system', () => {
     expect(await card.innerText()).not.toMatch(hangul);
     await page.keyboard.press('Escape');
 
-    await page.getByRole('button', { name: 'Open Inbox' }).click();
-    const inbox = page.getByRole('complementary', { name: 'Inbox' });
-    await expect(inbox).toBeVisible();
-    expect(await inbox.innerText()).not.toMatch(hangul);
-    await page.keyboard.press('Escape');
+    const roster = page.getByRole('complementary', { name: 'Teammate list' });
+    await expect(roster).toBeVisible();
+    expect(await roster.innerText()).not.toMatch(hangul);
 
     await page.keyboard.press('ControlOrMeta+k');
     const palette = page.getByRole('dialog');

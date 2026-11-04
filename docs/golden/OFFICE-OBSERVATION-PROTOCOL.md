@@ -107,7 +107,7 @@ Session {
 
 `OfficeEvent.phase`는 commentary/final/undefined다. 공통 `conversationKind`가 user→request, assistant+commentary→progress, assistant+final→reply, 단계 없는 assistant→message, 그 외→work로 분류한다. `message`는 최종 응답의 별칭이 아니다. 공급자 원본 completion/tool-use 증거는 어댑터가 phase로 변환한다.
 
-`OfficeNotice.phase`는 해당 공개 메시지의 근거를 보존한다. 새 notice kind `message`는 단계 없는 공개 응답이다. 기존 phase 없는 reply도 기본 소식함에서는 미검증 메시지다. `isFinalNotice`, `isAttentionNotice`, `isInboxNotice`, `unreadNoticeCount`가 모든 표시 표면과 noticeStats.unread의 공통 정책이다. noticeStats.total은 전체 조회 가능 기록을 세고, snapshot.notices에는 화면에 필요한 제한된 소식만 남는다. 지난 소식은 cursor 페이지로 조회한다. 폴링과 분류 보완은 읽음/접기를 초기화하지 않고 새 내용·새 최종 버전만 다시 미확인으로 만든다.
+`OfficeNotice.phase`는 해당 공개 메시지의 근거를 보존한다. 새 notice kind `message`는 단계 없는 공개 응답이다. 기존 phase 없는 reply도 중요 소식(점·수)에서는 미검증 메시지다. `isFinalNotice`, `isAttentionNotice`, `isInboxNotice`, `unreadNoticeCount`가 모든 표시 표면과 noticeStats.unread의 공통 정책이다. noticeStats.total은 전체 조회 가능 기록을 세고, snapshot.notices에는 화면에 필요한 제한된 소식만 남는다. 지난 소식은 대화 발췌로 cursor 페이지와 함께 조회한다. 폴링과 분류 보완은 읽음/접기를 초기화하지 않고 새 내용·새 최종 버전만 다시 미확인으로 만든다.
 
 대화의 현재 원본 수집 구간에서 빠진 공개 메시지는 해당 세션의 저장된 소식으로 보완할 수 있다. 이때 `OfficeEvent.excerpt=true`로 표시하고 화면에 **보관된 발췌 · 원문 일부**를 명시한다. 원본 이벤트가 있으면 항상 원본을 우선하며 이벤트 ID 또는 같은 종류/phase/본문·시각으로 중복을 막는다. 공개 발췌는 원문 전체인 것처럼 표현하지 않는다. 최종 응답 필터를 선택하면 마지막 해당 응답의 시작 부분으로 이동한다.
 
@@ -142,7 +142,7 @@ Session {
 ## 기록량과 화면 메모리 (#296)
 
 - 원본/읽음 receipt의 영속 보존과 화면 상주 범위를 분리한다. 메모리에서 내려놓았다는 이유로 읽음·접기·분류를 변경하지 않는다.
-- 대화와 소식함은 최근 페이지부터 연다. 오래된 기록을 계속 읽을 때 이미 지난 최신 페이지를 내려놓고, 명시적인 최신 복귀를 제공한다. 과거 페이지는 새 스트림 때문에 저절로 밀려나지 않는다.
+- 대화는 최근 페이지부터 연다. 오래된 기록을 계속 읽을 때 이미 지난 최신 페이지를 내려놓고, 명시적인 최신 복귀를 제공한다. 과거 페이지는 새 스트림 때문에 저절로 밀려나지 않는다.
 - 발췌로 남은 과거 메시지는 발췌임을 표시한다. timestamp가 같은 메시지도 안정적인 cursor로 구분한다. 북마크는 기록 전체를 메모리에 올리는 대신 대상 주변을 조회한다.
 - 요청이 처리 속도보다 빠르게 들어오면 오래된 재조회 대기를 최신 요청으로 교체한다. 저장 대기는 버리지 않고 checkpoint 실패 시 새 수용을 제한한다. 자동 읽음 기억 예산이 소진되면 추가 결과는 미확인으로 남긴다.
 - 구체적인 숫자·캐시 예산·검수 명령의 정본은 [상시 실행 경량화 설계](../development/PERFORMANCE-DESIGN.md)와 코드다.

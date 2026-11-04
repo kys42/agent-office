@@ -61,7 +61,7 @@ async function fixture(page: Page, text: string, mode = '#mini=row', privacy = f
         w.cardCalls.push(args);
       },
       onCard: (cb: (target: unknown) => void) => {
-        setTimeout(() => cb({ id: s.sessions[0].id, news: false }), 50);
+        setTimeout(() => cb({ id: s.sessions[0].id }), 50);
         return () => {};
       },
     };

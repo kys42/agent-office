@@ -164,7 +164,7 @@ async function memory(
         },
         onCard: (cb: any) => {
           w.cardListener = cb;
-          setTimeout(() => cb({ id: 'demo:0', news: false }), 20);
+          setTimeout(() => cb({ id: 'demo:0' }), 20);
           return () => {};
         },
         terminals: async () => ({}),

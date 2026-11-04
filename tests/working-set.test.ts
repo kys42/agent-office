@@ -10,7 +10,7 @@ import { BoundedCache } from '../server/bounded-cache.js';
 import { LatestTask } from '../src/lib/latest-task.js';
 import { demoSnapshot } from '../src/lib/demo.js';
 import type { OfficeNotice, Session } from '../src/shared/types.js';
-import { residentNotices, pageNotices, noticeOrder } from '../src/shared/notice-pages.js';
+import { residentNotices } from '../src/shared/notice-pages.js';
 import {
   freshConversation,
   mergeNewest,
@@ -104,26 +104,10 @@ test('Indexed live view and pages preserve counts, receipts, exclusions and back
     const view = store.noticeView();
     assert.deepEqual(view.notices, residentNotices(all));
     assert.deepEqual(view.noticeStats, { unread: unreadNoticeCount(all), total: all.length });
-    for (const filter of ['all', 'final', 'attention'] as const)
-      for (const includeRead of [true, false])
-        for (const includeBackground of [true, false]) {
-          const q = {
-            filter,
-            includeRead,
-            includeBackground,
-            limit: 13,
-            before: { at: now - 50, id: notice(50).id },
-          };
-          const expected = pageNotices(all, q);
-          const actual = store.noticePage(q);
-          actual.at = expected.at;
-          assert.deepEqual(actual, expected);
-        }
     const first = view.notices[0];
     store.noticeReceipt([first], 'read');
     assert.deepEqual(store.noticeView().notices, residentNotices(store.noticeList()));
-    store.noticeReadAll({ filter: 'all', includeBackground: true }, now);
-    assert.equal(store.noticePage({ filter: 'all' }).unread.all, 0);
+    assert.equal(store.noticeView().noticeStats.unread, unreadNoticeCount(store.noticeList()));
   }));
 test('Thousands of retained excerpts, including equal timestamps, are read exactly once by cursor', async () =>
   fixture((store) => {
@@ -225,7 +209,7 @@ test('Migration backfills derived metadata and a legacy writer keeps it current'
     assert.equal(store.noticeView().noticeStats.unread, 0);
     assert.equal(store.noticeView().notices[0].text, 'legacy changed');
     const ro = new OfficeStore(dir, true);
-    assert.equal(ro.noticePage({ filter: 'all', includeRead: true }).notices.length, 1);
+    assert.equal(ro.noticeView().noticeStats.total, 1);
     ro.close();
     other.prepare('DELETE FROM notices WHERE id=?').run(n.id);
     assert.equal(store.noticeView().noticeStats.total, 0);

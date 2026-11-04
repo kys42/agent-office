@@ -37,6 +37,7 @@ async function card(
       w.submits = [];
       w.sends = [];
       w.cardCalls = [];
+      w.replies = [];
       const view = () =>
         !w.box && w.suggestion
           ? { kind: 'suggestion', text: w.suggestion, agent: 'Claude', submittable: true }
@@ -60,6 +61,11 @@ async function card(
         artifacts: async () => [],
         subscribe: () => () => {},
         notices: async () => structuredClone(w.fixture),
+        // A message reaching the colleague reads its results, like opening its card (#300).
+        readReplies: async (id: string) => {
+          w.replies.push(id);
+          return structuredClone(w.fixture);
+        },
         terminalSend: async () => true,
         terminals: async (ids: string[]) =>
           Object.fromEntries(
@@ -128,7 +134,7 @@ async function card(
         cardState: async () => ({ pinned: false, positionRemembered: false }),
         onCardState: () => () => {},
         onCard: (cb: any) => {
-          setTimeout(() => cb({ id: 'demo:0', news: false }), 50);
+          setTimeout(() => cb({ id: 'demo:0' }), 50);
           return () => {};
         },
       };
@@ -184,6 +190,8 @@ test('Send as is submits exactly the shown text and waits as a sent bubble', asy
   ]);
   // Nothing was typed: no send of the card's own box.
   expect(await w(page, 'sends')).toEqual([]);
+  // Sent from the card like any message: that colleague's results are read (#300).
+  await expect.poll(() => w(page, 'replies')).toContain('demo:0');
   const waiting = aside.locator('.message-pending');
   await expect(waiting).toContainText('마이그레이션 먼저 하고');
   await expect(waiting).toContainText('대화 기록 확인 중');

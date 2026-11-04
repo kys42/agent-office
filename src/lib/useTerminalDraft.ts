@@ -3,6 +3,7 @@ import type { ComposerDraftView } from '../shared/types';
 import { api } from './api';
 import { DRAFT_POLL, nextDraftDelay, sameDraftView } from './terminalDraft';
 import { isPageShown, onPageVisibility } from './visibility';
+import { reached } from './reached';
 
 /**
  * What sits in a colleague's terminal input box, read by the desktop app while `active` (the
@@ -110,6 +111,8 @@ export function useTerminalDraft(
     try {
       const result = await api.submitDraft(id, text, suggestion ? { suggestion } : undefined);
       if (result.status === 'sent') {
+        // Sent from the card like any message: what it last said has been seen (#300).
+        reached(id);
         latest.current.notify(result.message);
         // As typed from main's last look before Enter: the preview's may be older.
         latest.current.onSubmitted(text, startedAt, result.logical);

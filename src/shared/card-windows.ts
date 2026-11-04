@@ -71,7 +71,8 @@ export function readCardPin(state: { pin?: unknown; pinned?: unknown }): CardPin
 
 /** A pinned card to bring back when the app starts again: whose, how pinned, and where. */
 export interface PinnedCard {
-  target: { id: string; news: boolean };
+  /** Whose card only: a bubble's or bookmark's one-time navigation is not brought back. */
+  target: { id: string };
   pin: Exclude<CardPin, 'off'>;
   bounds: Rect;
 }
@@ -105,7 +106,7 @@ export function readPinnedCards(raw: unknown): PinnedCard[] {
     )
       continue;
     cards.push({
-      target: { id, news: c.target.news === true },
+      target: { id },
       pin: c.pin,
       bounds: {
         x: Math.round(b.x),

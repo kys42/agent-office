@@ -26,7 +26,7 @@
 - 대화·소식 페이지 조회(3.2·3.3) 구현 ([#64](https://github.com/kys42/agent-office/issues/64)):
   - `detail(id, {before, limit=40})`은 최신 40개부터 cursor로 이전 페이지를 준다(`olderEvents`).
   - snapshot 소식은 살아 있는 화면에 필요한 것만 싣는다. `noticeStats`는 전체 기준으로 정확하다.
-  - 지난 소식은 `noticePage`로, 분류 전체 읽음은 `noticeReadAll`로 처리한다.
+  - 지난 소식은 대화 발췌로만 읽는다. 소식 목록 페이지(`noticePage`·`noticeReadAll`)는 소식 화면과 함께 없앴다(#300).
 - 증분 수집(3.4): JSONL append 증분 읽기·metadata 캐시([#45](https://github.com/kys42/agent-office/issues/45)), 일하는 동료만 1초 hot path와 hot 파일 감시 힌트([#77](https://github.com/kys42/agent-office/issues/77)). 디렉터리 watcher·SQLite `data_version`·Git 무효화는 아직이다.
 
 핵심은 **변경 없는 기록을 다시 처리하지 않고, 필요한 화면에 필요한 요약만 전달하는 것**이다. 캐릭터 수를 줄이거나 실시간 소식을 늦추는 방식을 첫 해결책으로 삼지 않는다. 기존 [골든 정책](../golden/GOLDEN-OFFICE-POLICY.md), [관측 규격](../golden/OFFICE-OBSERVATION-PROTOCOL.md), [수집 계약](SESSION-INGESTION.md)을 유지한다.
@@ -37,9 +37,8 @@
 
 | 보관 영역 | 현재 상한/조회 방식 | 내려놓은 뒤 |
 | --- | --- | --- |
-| 수집기의 소식 본문 | 최근 100개, 미확인 최종 1,000개, 열린 호출/도착 각각 1,000개, 동료별 최신 의미 있는 소식과 최대 32개 동시각 최신 항목 | 총계·필터·읽음은 전체 DB 기준, 이전 소식은 cursor 조회 |
+| 수집기의 소식 본문 | 최근 100개, 미확인 최종 1,000개, 열린 호출/도착 각각 1,000개, 동료별 최신 의미 있는 소식과 최대 32개 동시각 최신 항목 | 총계·읽음은 전체 DB 기준, 대화 발췌는 cursor 조회 |
 | 대화 카드 | 기본 40개/요청, 읽던 이벤트 최대 400개·관련 소식 최대 800개 | 오래된 쪽을 읽으면 최신 쪽을 내려놓고 ‘최신 대화로’로 복귀 |
-| 소식함 | 한 번에 최대 500개 | 이전 페이지를 읽으면 최신 쪽을 내려놓고 최신 복귀 버튼 제공 |
 | parser / OpenClaw cache | 직렬화 텍스트 추정치 48 MiB·4,000개 / 16 MiB·1,000개, LRU | 필요할 때 원본에서 재구성, 단일 과대 항목은 cache하지 않음 |
 | 압축 보조 parse cache | 16 MiB·4,000개, 정규화 결과만 보관. 개별 비압축 8 MiB 초과 항목 제외 | 원본 stamp가 같을 때만 복원. 순차 스캔의 cache 순환 축출/재파싱을 억제 |
 | 웹 patch 이력 | 64개와 텍스트 추정치 8 MiB 중 먼저 도달한 한도 | 오래된 version은 전체 **요약** snapshot으로 복구 |
@@ -48,11 +47,11 @@
 
 예산은 객체의 실제 RSS 상한을 뜻하지 않는다. 캐시 weight는 `JSON.stringify(value).length * 2 + 256`의 보수적 텍스트 추정치이며 한 pass의 원본 파싱, SQLite와 GPU/renderer 메모리는 별도다. hot 대기는 한 입력 batch만큼 예산을 넘을 수 있다. 원본 읽기 창/동시 처리 수의 기존 제한도 함께 적용된다.
 
-- 긴 대화의 Markdown은 동일 본문·동작이면 재파싱하지 않는다. 소식 목록의 작은 프로필은 정지 프레임으로 표시해 수백 개 과거 항목의 sprite 애니메이션 비용을 없앤다.
+- 긴 대화의 Markdown은 동일 본문·동작이면 재파싱하지 않는다.
 - 세션 cold cache는 행 하나씩 parse→요약한다. 모든 전체 transcript를 한 배열에 모으지 않는다.
 - 비용 ledger는 정렬된 iterator로 합산하고 staged 변경만 합친다. 비용 합산 결과·순서는 유지하지만 매우 긴 ledger의 **CPU 비용은 아직 선형**이다.
 - 과거 excerpt는 `(at, notice id)` cursor로 조회한다. 같은 시각에도 누락 없이 이어지고, 오래된 북마크는 해당 위치의 작은 페이지로 바로 간다. 원문 창 밖의 메시지는 여전히 **보관된 발췌**이며 없는 원문 전체를 복구했다고 표시하지 않는다.
-- `LatestTask`는 실행 중 요청 하나와 가장 최근 대기 요청 하나만 유지한다. 무효가 된 응답은 반영하지 않는다. 최신 복귀도 같은 detail 경로를 따른다. 소식함은 연속 스트림에도 굶지 않도록 400ms throttle하며, 내용이 안 바뀌면 재조회하지 않는다. 일시 실패는 새 스트림이 없어도 1초부터 최대 30초 backoff로 재시도한다. 최신 복귀 즉시 이전 요청의 generation을 무효화해 늦은 과거 페이지가 덮어쓰지 않게 한다.
+- `LatestTask`는 실행 중 요청 하나와 가장 최근 대기 요청 하나만 유지한다. 무효가 된 응답은 반영하지 않는다. 최신 복귀도 같은 detail 경로를 따른다. 최신 복귀 즉시 이전 요청의 generation을 무효화해 늦은 과거 페이지가 덮어쓰지 않게 한다.
 - 캐시에서 내려놓기와 사용자 읽음/접기는 별개다. 대기·보관·시간 기반 상태 및 실시간 진행 갱신 주기를 느리게 바꾸지 않는다.
 
 ### 재현과 측정 한계
@@ -63,7 +62,7 @@ node --expose-gc --import tsx scripts/memory-benchmark.ts 200000
 node --expose-gc --import tsx scripts/soak.ts 720 40
 ```
 
-모두 임시 provider home/DB를 만들고 종료 시 제거한다. `--expose-gc`는 검수용이며 제품에서 강제 GC하지 않는다. 비교 기준은 `9a05a23`(PR #291), Node 25.5.0/macOS arm64, 합성 세션 100개. 소식의 80%를 한 세션에 몰고 나머지를 나눈다. `memory-benchmark`는 초기화 뒤 snapshot 9회, 소식 50개, detail 1회, stage 1회의 같은 시퀀스를 측정한다. 결과 수치와 연속 수집 근거는 [QA](QA.md)에 기록한다.
+모두 임시 provider home/DB를 만들고 종료 시 제거한다. `--expose-gc`는 검수용이며 제품에서 강제 GC하지 않는다. 비교 기준은 `9a05a23`(PR #291), Node 25.5.0/macOS arm64, 합성 세션 100개. 소식의 80%를 한 세션에 몰고 나머지를 나눈다. `memory-benchmark`는 초기화 뒤 snapshot 9회, detail 1회, stage 1회의 같은 시퀀스를 측정한다(소식 50개 페이지 읽기는 #300에서 빠짐). 결과 수치와 연속 수집 근거는 [QA](QA.md)에 기록한다.
 
 역사량에 대한 heap 상주를 제한하는 개선이다. 전체 앱의 절대 RAM 보장, 디스크 사용량 제한, 무제한 동료 수 지원을 의미하지 않는다. 정확한 count SQL의 CPU는 기록량에 비례할 수 있고, 여러 창의 각 페이지 예산은 창 수에 비례한다. migration은 첫 실행에서 기록량만큼 작업한다. 향후 실제 프로파일에서 필요하면 SQL 집계 캐시와 usage 증분 합산을 별도 검증한다.
 
@@ -181,8 +180,8 @@ flowchart LR
 >   - 동료별 최신 소식(말풍선·peek), 최신 요청(인용), 최신 대화(숨김 해제 판단), 최신 미확인 결과(배지·할 일 분류. 상한을 넘어도 동료마다 하나는 실음)
 >   - 막 도착한 요청, 미해결 호출 전부
 >   - 미확인 최종 응답(최대 1,000건), 최근 100건
-> - **지난 소식**: 소식함·동료 소식 탭은 snapshot에 없는 소식이 있을 때만 `noticePage({before, limit, filter, includeRead, includeBackground, sessionIds})`로 읽는다. 순서는 `(at, id)` 내림차순이라 cursor가 건너뛰거나 중복되지 않는다. 각 페이지는 범위 안 미확인 수를 정확히 준다. 다시 읽기는 변경이 잦을 때 400ms 모아 한 번 하고, 스크롤한 깊이만큼 여러 페이지로 읽어 목록이 줄지 않는다. 다시 읽기에 추월된 이전 페이지 요청은 버리고 새 목록 끝에서 다시 요청한다. receipt 뒤에도 다시 읽어 inbox 밖 소식의 수도 맞춘다.
-> - **receipt와 전체 읽음**: receipt는 snapshot에 실렸는지와 무관하게 id+version으로 적용된다. "미확인 N건 읽음"은 페이지 모드에서 `noticeReadAll(query, asOf)`로 범위 전체를 읽음 처리한다. 마지막으로 페이지를 읽은 시각(`asOf`) 이후에 도착했거나 새 version으로 바뀐 소식은 건드리지 않는다.
+> - **지난 소식**: 소식 목록 화면은 없다(#300). snapshot에 없는 소식은 대화 카드가 대화 페이지와 함께 발췌로 읽는다. 순서는 `(at, id)` 내림차순이라 cursor가 건너뛰거나 중복되지 않는다.
+> - **receipt**: receipt는 snapshot에 실렸는지와 무관하게 id+version으로 적용된다.
 >
 > SQL 열 이관과 count 인덱스는 아직이며, count는 모든 행을 읽어 계산한다.
 

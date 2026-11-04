@@ -16,7 +16,7 @@ export const guide = {
     },
     attention: {
       title: 'Start with whoever needs you.',
-      body: 'The teammate list puts questions first, then new results, then ongoing work. Click a teammate for their work card; open the Inbox to catch up on final replies.',
+      body: 'The teammate list puts questions first, then new results, then ongoing work. Click a teammate for their work card; a dot marks a result you have not seen yet.',
       label: 'Catch up',
     },
     pet: {
@@ -56,12 +56,6 @@ export const guide = {
   needsColleague: 'Available when a teammate joins',
   liveOnly: 'Available in your live office',
   cards: {
-    inbox: {
-      title: 'Catch up on results',
-      body: 'Inbox keeps final replies and questions together. Mark results as read; acknowledge questions separately.',
-      where: 'Top bar → Inbox',
-      action: 'Open Inbox',
-    },
     pet: {
       title: 'A desk pet beside you',
       body: 'A tiny floating teammate unfolds into a desk row or floor desks. Read, copy and open links right from the bubbles.',
@@ -118,7 +112,7 @@ export const guide = {
     },
     keys: {
       title: 'Move without the mouse',
-      body: '⌘K finds teammates, records and commands. J/K moves through the queue, I opens Inbox, and ? shows all shortcuts.',
+      body: '⌘K finds teammates, records and commands. J/K moves through the queue, R marks results read, and ? shows all shortcuts.',
       where: '⌘K · footer → Shortcuts',
       action: 'See shortcuts',
     },

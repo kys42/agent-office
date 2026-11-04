@@ -19,7 +19,6 @@ export const dock = {
       `Desk pet · ${label}${count ? ` (${count})` : ''} · click to open the work card`,
     title: (total: number) =>
       `Our Office · ${total} ${total === 1 ? 'teammate' : 'teammates'}\nClick to open this teammate's work card, or drag to move it · the side button unfolds the desks`,
-    unread: (n: number) => `${n} unread ${n === 1 ? 'update' : 'updates'} · `,
     detailHint: 'Click to enlarge · click the pet for the work card',
     /** Stands in for the name in "Quick reply to …" when it is unknown. */
     someone: 'your teammate',

@@ -119,7 +119,7 @@ export class CardWindows {
     const open: PinnedCard[] = [...this.entries]
       .filter((e) => e.pinned && e.target && !e.window.isDestroyed())
       .map((e) => ({
-        target: { id: e.target!.id, news: e.target!.news },
+        target: { id: e.target!.id },
         pin: e.onTop ? 'top' : 'pinned',
         // Where it was saved until the person moves it: a card pulled onto the screen with a
         // display missing goes back there once the display returns.
@@ -161,7 +161,7 @@ export class CardWindows {
       e.onTop = card.pin === 'top';
       e.restored = true;
       e.savedBounds = card.bounds;
-      e.target = { id: card.target.id, news: card.target.news };
+      e.target = { id: card.target.id };
       this.layer(e.window, pinOf(e));
       opened++;
     }
@@ -291,7 +291,7 @@ export class CardWindows {
    */
   reveal(target: CardTarget, anchor: Rect) {
     const e = this.preview;
-    if (e?.window.isVisible() && e.target?.id === target.id && e.target.news === target.news) {
+    if (e?.window.isVisible() && e.target?.id === target.id) {
       this.cancelHide(e);
       e.askedAt = Date.now();
       this.revealEntry(e);
@@ -304,7 +304,7 @@ export class CardWindows {
     const pinned = [...this.entries].find((e) => e.pinned && e.target?.id === target.id);
     if (pinned) {
       this.cancelHide(pinned);
-      if (target.bookmark || pinned.target?.news !== target.news) {
+      if (target.bookmark || target.conversation) {
         pinned.target = target;
         this.revealEntry(pinned);
       } else {
@@ -315,8 +315,14 @@ export class CardWindows {
       return;
     }
     let e = this.preview;
-    if (e?.window.isVisible() && e.target?.id === target.id && e.target.news === target.news) {
-      this.hide(e);
+    if (e?.window.isVisible() && e.target?.id === target.id) {
+      // A bubble asks for the conversation: shown, not toggled away.
+      if (target.conversation) {
+        this.cancelHide(e);
+        e.target = target;
+        e.askedAt = Date.now();
+        this.revealEntry(e);
+      } else this.hide(e);
       return;
     }
     const size = this.size;

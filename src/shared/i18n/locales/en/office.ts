@@ -19,7 +19,7 @@ export const office = {
     hiddenFork: 'Forked from a conversation',
     helpers: (n: number) => `${n} ${n === 1 ? 'helper' : 'helpers'}`,
     helpersCalling: (n: number) => `${n} calling`,
-    helperNews: (n: number) => `${n} unread from helpers`,
+    helperNews: 'New result from a helper',
     activeRuns: (active: number, total: number) => `${active} active · ${total} runs`,
     count: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
   },

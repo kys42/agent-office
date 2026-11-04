@@ -84,12 +84,12 @@ async function setup(
           w.publish = cb;
           return () => {};
         },
-        card: async () => ({ id: s.sessions[0].id, news: false }),
+        card: async () => ({ id: s.sessions[0].id }),
         onCard: () => () => {},
         cardState: async () => ({
           pinned: false,
           positionRemembered: false,
-          target: { id: s.sessions[0].id, news: false },
+          target: { id: s.sessions[0].id },
         }),
         returnToOffice: async (id: string) => {
           w.returned.push(id);

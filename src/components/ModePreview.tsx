@@ -117,7 +117,7 @@ export function ModePreview({
               bubbleHours={model.bubbleHours}
               selected={null}
               onSelect={noop}
-              onNews={noop}
+              onConversation={noop}
               onReceipt={noop}
               reducedMotion={p.reducedMotion}
               privacy={p.privacy}

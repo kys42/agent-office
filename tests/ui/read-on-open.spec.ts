@@ -113,7 +113,8 @@ async function bridge(page: Page, snapshot: Snapshot, card?: string) {
               cardState: async () => ({ pinned: false, positionRemembered: false }),
               onCardState: () => () => {},
               onCard: (cb: any) => {
-                setTimeout(() => cb({ id: card, news: false }), 50);
+                w.showCard = cb;
+                setTimeout(() => cb({ id: card }), 50);
                 return () => {};
               },
             }
@@ -129,17 +130,17 @@ const receipts = (page: Page) =>
 test('Big office: opening a colleague reads its final reply; calls stay', async ({ page }) => {
   await bridge(page, office());
   await page.goto('/');
-  const badge = page.getByRole('button', { name: '소식함 열기' });
-  // Two finals and a call.
-  await expect(badge).toContainText('3');
-  const plate = page.locator('[data-station-id="run-0"] small em').filter({ hasText: '소식' });
+  // Two finals and a call (the window title counts them; no list shows them).
+  const unread = (n: number) => expect(page).toHaveTitle(`(${n}) Agent Office`);
+  await unread(3);
+  const plate = page.locator('[data-station-id="run-0"] small em').filter({ hasText: '새 결과' });
   await expect(plate).toBeVisible();
   expect(await receipts(page)).toEqual([]);
 
   await page.locator('.office-pet[data-session-id="run-0"]').click();
   await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toBeVisible();
   await expect.poll(() => receipts(page)).toEqual([['read', ['final-0']]]);
-  await expect(badge).toContainText('2');
+  await unread(2);
   await expect(plate).toHaveCount(0);
 
   // The calling colleague: only its final reply is read, the call stays.
@@ -150,7 +151,7 @@ test('Big office: opening a colleague reads its final reply; calls stay', async 
       ['read', ['final-0']],
       ['read', ['final-1']],
     ]);
-  await expect(badge).toContainText('1');
+  await unread(1);
   const left = await page.evaluate(() =>
     (window as any).fixture.notices.filter((n: any) => !n.seenAt).map((n: any) => n.id),
   );
@@ -173,7 +174,7 @@ test('Big office: opening a colleague reads its final reply; calls stay', async 
   });
   await expect.poll(() => receipts(page)).toHaveLength(3);
   expect((await receipts(page))[2]).toEqual(['read', ['final-1b']]);
-  await expect(badge).toContainText('1');
+  await unread(1);
   await page.waitForTimeout(300);
   expect(await receipts(page)).toHaveLength(3);
 });
@@ -286,7 +287,7 @@ test('Dwell: a card glanced at for less than 1.5 s reads nothing; one kept open 
 test('J/K: stepping quickly past results leaves them for later', async ({ page }) => {
   await bridge(page, office());
   await page.goto('/');
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('3');
+  await expect(page).toHaveTitle('(3) Agent Office');
   for (let i = 0; i < 4; i++) {
     await page.keyboard.press('j');
     await page.waitForTimeout(300);
@@ -296,7 +297,7 @@ test('J/K: stepping quickly past results leaves them for later', async ({ page }
   await expect(card(page)).toHaveCount(0);
   await page.waitForTimeout(1800);
   expect(await receipts(page)).toEqual([]);
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('3');
+  await expect(page).toHaveTitle('(3) Agent Office');
 });
 
 test('Restored card: reads nothing until the person touches the office', async ({ page }) => {
@@ -336,31 +337,22 @@ test('Marked unread on purpose, a reply stays unread while the card is open', as
   await page.goto('/');
   await pet(page, 0).click();
   await expect.poll(() => receipts(page)).toEqual([['read', ['final-0b']]]);
-  await card(page).getByRole('tab', { name: /^소식/ }).click();
-  await card(page).getByRole('checkbox', { name: '읽은 소식 포함' }).check();
-  // Both made unread: the one read before opening and the one the card read.
-  for (const id of ['final-0', 'final-0b']) {
-    const item = card(page)
-      .locator('li, article')
-      .filter({ hasText: `${id} 결과` })
-      .first();
-    await item.getByRole('button', { name: '다시 미확인' }).click();
-  }
-  await expect
-    .poll(() => receipts(page))
-    .toEqual([
-      ['read', ['final-0b']],
-      ['unread', ['final-0']],
-      ['unread', ['final-0b']],
-    ]);
+  // Both made unread elsewhere (the desk row's "keep it up"): the one read before opening and
+  // the one the card read.
+  await page.evaluate(() => {
+    const w = window as any;
+    for (const n of w.fixture.notices) if (n.sessionId === 'run-0') n.seenAt = null;
+    w.publish();
+  });
+  await expect(page).toHaveTitle('(4) Agent Office');
   await page.waitForTimeout(2200);
-  expect(await receipts(page)).toHaveLength(3);
+  expect(await receipts(page)).toHaveLength(1);
   // Opened anew, the colleague's replies are read again.
   await pet(page, 2).click();
   await pet(page, 0).click();
-  await expect.poll(() => receipts(page)).toHaveLength(4);
-  expect((await receipts(page))[3][0]).toBe('read');
-  expect([...(await receipts(page))[3][1]].sort()).toEqual(['final-0', 'final-0b']);
+  await expect.poll(() => receipts(page)).toHaveLength(2);
+  expect((await receipts(page))[1][0]).toBe('read');
+  expect([...(await receipts(page))[1][1]].sort()).toEqual(['final-0', 'final-0b']);
 });
 
 test('A failed receipt is sent again on the next snapshot', async ({ page }) => {
@@ -380,14 +372,83 @@ test('A failed receipt is sent again on the next snapshot', async ({ page }) => 
     ]);
 });
 
-test('The news tab still lists the reply this open read', async ({ page }) => {
-  await bridge(page, office());
+test('Sending a message or jumping to its terminal reads that colleague’s results (#300)', async ({
+  page,
+}) => {
+  const snapshot = office();
+  // Opening a card reads nothing here, so only the send and the jump read.
+  snapshot.preferences.readOnOpen = false;
+  await bridge(page, snapshot);
+  await page.addInitScript(() => {
+    const w = window as any;
+    Object.assign(w.office, {
+      terminalSend: async () => true,
+      terminals: async (ids: string[]) =>
+        Object.fromEntries(
+          ids.map((id) => [id, { kind: 'orca', status: 'idle', canSend: true, canFocus: true }]),
+        ),
+      jump: async () => ({ action: 'focused', text: '터미널로 이동했어요' }),
+      send: async () => ({ status: 'sent', message: '보냈어요' }),
+      // Like the collector: every unread final of the run by then, carried in the snapshot or not.
+      readReplies: async (id: string, asOf: number) => {
+        w.receipts.push(['replies', [id]]);
+        for (const n of [...w.fixture.notices, ...w.uncarried])
+          if (n.sessionId === id && !n.seenAt && n.phase === 'final' && n.receivedAt <= asOf)
+            n.seenAt = Date.now();
+        return structuredClone(w.fixture);
+      },
+    });
+    // An older unread reply of run-0 the bounded snapshot does not carry.
+    const first = w.fixture.notices[0];
+    w.uncarried = [
+      { ...first, id: 'old-final-0', eventId: 'old-final-0', at: first.at - 3600_000 },
+    ];
+  });
   await page.goto('/');
   await pet(page, 0).click();
-  await expect.poll(() => receipts(page)).toEqual([['read', ['final-0']]]);
-  const news = card(page).getByRole('tab', { name: /^소식/ });
-  await expect(news).not.toHaveText(/1/);
-  await news.click();
-  await expect(card(page).getByText('final-0 결과')).toBeVisible();
-  await expect(card(page).getByRole('button', { name: '다시 미확인' })).toBeVisible();
+  await expect(card(page)).toBeVisible();
+  await page.waitForTimeout(1800);
+  expect(await receipts(page)).toEqual([]);
+  const input = card(page).locator('.terminal-send-chat textarea');
+  await input.fill('고마워요');
+  await input.press('Enter');
+  await expect.poll(() => receipts(page)).toEqual([['replies', ['run-0']]]);
+  expect(await page.evaluate(() => !!(window as any).uncarried[0].seenAt)).toBe(true);
+  // The calling colleague: the jump reads its result, the call stays until it is handled.
+  await pet(page, 1).click();
+  await expect(card(page).locator('.card-head h2')).toHaveAttribute('title', '동료 1');
+  await card(page).locator('.card-actions').getByRole('button', { name: 'Orca로 이동' }).click();
+  await expect
+    .poll(() => receipts(page))
+    .toEqual([
+      ['replies', ['run-0']],
+      ['replies', ['run-1']],
+    ]);
+  await expect(page).toHaveTitle('(1) Agent Office');
+  const left = await page.evaluate(() =>
+    (window as any).fixture.notices.filter((n: any) => !n.seenAt).map((n: any) => n.id),
+  );
+  expect(left).toEqual(['call-1']);
+});
+
+test('Dock card: a bubble opening the open card shows the conversation again (#300)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 480, height: 760 });
+  await bridge(page, office(), 'run-1');
+  await page.goto('/#card');
+  await expect(card(page)).toBeVisible();
+  await card(page).getByRole('tab', { name: '작업 정보' }).click();
+  // The same colleague again without the bubble's intent leaves the tab alone.
+  await page.evaluate(() => (window as any).showCard({ id: 'run-1' }));
+  await page.waitForTimeout(200);
+  await expect(card(page).getByRole('tab', { name: '작업 정보' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await page.evaluate(() => (window as any).showCard({ id: 'run-1', conversation: true }));
+  await expect(card(page).getByRole('tab', { name: '대화' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
 });

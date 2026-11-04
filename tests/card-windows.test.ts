@@ -106,14 +106,14 @@ test('A card window state reads its pin, falling back to the older pinned flag',
 test('pinned cards to reopen: only well-formed ones, once each, a few at most', async () => {
   const { readPinnedCards, PINNED_CARDS_MAX } = await import('../src/shared/card-windows.js');
   const card = (id: string, extra: Record<string, unknown> = {}) => ({
-    target: { id, news: false },
+    target: { id },
     pin: 'pinned',
     bounds: { x: 10.4, y: 20, width: 400, height: 500 },
     ...extra,
   });
   assert.deepEqual(readPinnedCards({ v: 1, cards: [card('a', { pin: 'top' })] }), [
     {
-      target: { id: 'a', news: false },
+      target: { id: 'a' },
       pin: 'top',
       bounds: { x: 10, y: 20, width: 400, height: 500 },
     },
@@ -136,12 +136,10 @@ test('pinned cards to reopen: only well-formed ones, once each, a few at most', 
       },
     ],
   });
+  // An older file's `news` flag (the removed news tab) is dropped: only whose card comes back.
   assert.deepEqual(
-    mixed.map((c) => [c.target.id, c.target.news]),
-    [
-      ['a', false],
-      ['e', true],
-    ],
+    mixed.map((c) => c.target),
+    [{ id: 'a' }, { id: 'e' }],
   );
   const many = readPinnedCards({
     v: 1,

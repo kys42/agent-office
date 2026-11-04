@@ -271,6 +271,15 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
+/* Only whether the latest result is unseen, never how many (#300). */
+.office-list-copy em.unread-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
 .office-list-status {
   color: var(--text-2);
   font-size: calc(11px * var(--read-scale));
