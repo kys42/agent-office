@@ -3,6 +3,7 @@ import { ArrowUpRight, BookmarkCheck, Copy, LoaderCircle, PencilLine, Trash2 } f
 import type { Bookmark, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 import { ago, time, date } from '../lib/format';
 import { MessageMarkdown } from './MessageMarkdown';
 import { BookmarkReader } from './BookmarkReader';
@@ -133,7 +134,7 @@ function BookmarkCard({
             aria-label={t.memory.copy}
             title={t.memory.copy}
             onClick={() =>
-              void (api.copyText ?? ((s: string) => navigator.clipboard.writeText(s)))(b.text)
+              void writeClipboard(b.text)
                 .then(() => notify(t.memory.copied))
                 .catch(() => notify(t.memory.copyFailed))
             }

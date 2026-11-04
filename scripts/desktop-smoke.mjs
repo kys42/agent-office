@@ -214,32 +214,86 @@ try {
   await page.waitForSelector('.office-pet');
   await settings.screenshot({ path: '.local/native-settings.png' });
   await settingsWindow((w) => w.close());
-  // Unsupported platforms expose no process-launch capability.
-  const supportsTmux = ['darwin', 'linux'].includes(process.platform);
-  assert.equal(
-    await page.evaluate(() => typeof window.office.tmuxResume),
-    supportsTmux ? 'function' : 'undefined',
+  // What this platform can launch at all decides whether the launch sheet is offered (#319).
+  {
+    const support = await page.evaluate(() => window.office.launchSupport());
+    assert.equal(support.supported, process.platform !== 'win32');
+    assert.deepEqual(support.opens, process.platform === 'darwin' ? ['orca', 'tmux'] : []);
+  }
+  // The older launch channels are gone (#319): every launch goes through `office:launch`.
+  for (const name of ['tmuxResume', 'tmuxSummon', 'orcaLaunch', 'orcaSummon'])
+    assert.equal(await page.evaluate((n) => typeof window.office[n], name), 'undefined');
+  // A remote office's session is never launched here; `open` takes only a destination that has
+  // a place of its own (tmux, a resume's Orca tab).
+  await assert.rejects(
+    page.evaluate(() =>
+      window.office.launch({
+        intent: {
+          kind: 'new',
+          at: 'remote-office:test:claude:demo',
+          provider: 'claude',
+          name: 'smoke',
+        },
+        destination: 'tmux',
+        action: 'start',
+      }),
+    ),
   );
-  assert.equal(
-    await page.evaluate(() => typeof window.office.tmuxSummon),
-    supportsTmux ? 'function' : 'undefined',
+  await assert.rejects(
+    page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id },
+          destination: 'copy',
+          action: 'open',
+        }),
+      s.sessions[0].id,
+    ),
   );
-  if (supportsTmux) {
-    await assert.rejects(
-      page.evaluate(() =>
-        window.office.tmuxSummon('remote-office:test:claude:demo', 'start', 'claude'),
-      ),
+  // The launch core (#318): a strict request shape; an agent that cannot start is refused with
+  // its reason at every destination, before anything is probed or asked.
+  await assert.rejects(
+    page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id, cwd: '/etc' },
+          destination: 'tmux',
+          action: 'start',
+        }),
+      s.sessions[0].id,
+    ),
+  );
+  await assert.rejects(
+    page.evaluate(() =>
+      window.office.launch({
+        intent: { kind: 'resume', session: 'remote-office:test:claude:demo' },
+        destination: 'copy',
+        action: 'probe',
+      }),
+    ),
+  );
+  {
+    const openclaw = s.sessions.find((session) => session.provider === 'openclaw');
+    const options = await page.evaluate(
+      (id) => window.office.launchOptions({ kind: 'fork', session: id, name: 'fork' }),
+      openclaw.id,
     );
-    await assert.rejects(
-      page.evaluate((id) => window.office.tmuxSummon(id, 'start', 'invalid'), s.sessions[0].id),
+    assert.deepEqual(
+      options.destinations.map((d) => d.id),
+      ['orca', 'tmux', 'terminalApp', 'copy'],
     );
-    await assert.rejects(
-      page.evaluate(() => window.office.tmuxResume('remote-office:test:claude:demo', 'start')),
+    assert.ok(options.destinations.every((d) => !d.probe.available && d.probe.reason));
+    assert.equal(options.default, null);
+    const refused = await page.evaluate(
+      (id) =>
+        window.office.launch({
+          intent: { kind: 'resume', session: id },
+          destination: 'copy',
+          action: 'start',
+        }),
+      openclaw.id,
     );
-    const openclawSession = s.sessions.find((session) => session.provider === 'openclaw');
-    await assert.rejects(
-      page.evaluate((id) => window.office.tmuxResume(id, 'start'), openclawSession.id),
-    );
+    assert.equal(refused.state, 'refused');
   }
   const firstNotice = s.notices?.[0];
   assert.ok(firstNotice, 'Native collector emits normalized news');
@@ -358,7 +412,9 @@ try {
   await dock.waitForTimeout(400); // entrance fade
   await checkMacDock('desk pet');
   await dock.screenshot({ path: '.local/native-pet.png' });
-  await dock.getByRole('button', { name: /^데스크 펫 ·/ }).click();
+  // The pet opens its colleague's card; its side button unfolds the desks.
+  await dock.locator('.dock-pet-anchor').hover();
+  await dock.getByRole('button', { name: '책상 펼치기' }).click();
   await dock.waitForSelector('.desk-row [data-station-id]');
   assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();
@@ -621,7 +677,24 @@ try {
   await blurCard();
   await card.waitForTimeout(900);
   assert.equal(await cardShown(), true, 'a kept-open card stays when focus goes elsewhere');
+  const cardOnTop = () =>
+    app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((x) => x.webContents.getURL().endsWith('#card'))
+        .isAlwaysOnTop(),
+    );
+  assert.equal(await cardOnTop(), false, 'a plain pinned card is an ordinary window');
+  // The pin's third state: still kept open, now always on top (a quiet run's windows are
+  // invisible and click-through, so it floats for real there too).
+  await card.evaluate(() => window.office.card('pin-top'));
+  const topState = await card.evaluate(() => window.office.cardState());
+  assert.deepEqual([topState.pin, topState.pinned], ['top', true]);
+  await blurCard();
+  await card.waitForTimeout(900);
+  assert.equal(await cardShown(), true, 'a card pinned on top stays when focus goes elsewhere');
+  assert.equal(await cardOnTop(), true, 'pinned on top floats');
   await card.evaluate(() => window.office.card('pin-off'));
+  assert.equal((await card.evaluate(() => window.office.cardState())).pin, 'off');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
   await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
@@ -662,10 +735,30 @@ try {
       transparent: w.getBackgroundColor(),
       alwaysOnTop: w.isAlwaysOnTop(),
       visible: w.isVisible(),
+      opacity: w.getOpacity(),
       webPreferences: w.webContents.getLastWebPreferences(),
     })),
   );
   assert.ok(native.some((w) => w.alwaysOnTop && !w.visible));
+  if (!focusTests) {
+    // Quiet runs: every window is invisible to the person (desktop/quiet.ts), yet still renders.
+    // Linux has no window opacity; there quiet windows only never float (their layer is recorded).
+    assert.ok(
+      process.platform === 'linux' || native.every((w) => w.opacity === 0),
+      'quiet windows are fully transparent',
+    );
+    const captured = await app.evaluate(async ({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows().find((x) => x.isVisible());
+      const image = await w.webContents.capturePage();
+      const { width, height } = image.getSize();
+      // Any pixel that is not fully transparent: the page was drawn.
+      const bitmap = image.toBitmap();
+      let drawn = false;
+      for (let i = 3; i < bitmap.length && !drawn; i += 4) drawn = bitmap[i] > 0;
+      return { width, height, drawn };
+    });
+    assert.ok(captured.width > 0 && captured.height > 0 && captured.drawn, 'capturePage works');
+  }
   assert.equal(native.filter((w) => w.visible).length, 1);
   assert.ok(
     native.every(

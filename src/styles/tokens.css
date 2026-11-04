@@ -547,11 +547,12 @@ span.face {
 @media (prefers-reduced-motion: reduce) {
   .sprite,
   .bubble-halo,
+  .stat.is-live span i,
   :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
     animation: none !important;
   }
 }
-:is(.reduce-motion, .motion-paused) .bubble-halo,
+:is(.reduce-motion, .motion-paused) :is(.bubble-halo, .stat.is-live span i),
 :is(.reduce-motion, .motion-paused)
   :is(.live-badge i, .session-row .face > i, .hud-call-dot, .pet-shadow)::after {
   animation: none !important;

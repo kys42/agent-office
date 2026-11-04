@@ -1,7 +1,9 @@
 import type { SessionDetail } from '../shared/types';
 import { LatestTask } from '../lib/latest-task';
 import { CardShellButton } from './MiniShell';
-import { TmuxResume } from './TmuxResume';
+import { LaunchSheet } from './LaunchSheet';
+import { useLaunchSupport } from '../lib/useLaunchSupport';
+import { resumeBlock } from '../shared/summon-existing';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
@@ -10,6 +12,7 @@ import {
   Pin,
   Folder,
   GitBranch,
+  GitFork,
   Clock,
   Copy,
   ChevronLeft,
@@ -22,8 +25,9 @@ import {
   Maximize2,
   ListFilter,
   MapPin,
-  PinOff,
 } from 'lucide-react';
+import { CardPinIcon } from './WindowPin';
+import { nextCardPin, type CardPin } from '../shared/card-windows';
 import type {
   Session,
   SessionPatch,
@@ -34,6 +38,7 @@ import type {
   Preferences,
 } from '../shared/types';
 import { PetCustomizer } from './PetCustomizer';
+import { DeskCustomizer } from './DeskCustomizer';
 import { MOODS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -100,7 +105,7 @@ export function Inspector({
   focus,
   onFocused,
   movable = false,
-  cardPinned = false,
+  cardPin = 'off',
   onCardPin,
   positionRemembered = false,
   onPositionRemember,
@@ -156,9 +161,12 @@ export function Inspector({
    * the big office's right column. `movable`: it is the card window, moved by its header.
    */
   movable?: boolean;
-  /** Independent native window, separate from keeping a colleague in the office. */
-  cardPinned?: boolean;
-  onCardPin?: (on: boolean) => void;
+  /**
+   * Independent native window, separate from keeping a colleague in the office: the preview,
+   * pinned, or pinned on top. One button cycles them (`nextCardPin`) and asks for the next.
+   */
+  cardPin?: CardPin;
+  onCardPin?: (next: CardPin) => void;
   positionRemembered?: boolean;
   onPositionRemember?: (on: boolean) => void;
   windowBusy?: boolean;
@@ -192,6 +200,7 @@ export function Inspector({
   const [editing, setEditing] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
   const [petOpen, setPetOpen] = useState(false);
+  const [deskOpen, setDeskOpen] = useState(false);
   const [notes, setNotes] = useState(session.notes);
   const [notesDirty, setNotesDirty] = useState(false);
   const [packet, setPacket] = useState<Handoff | null>(null);
@@ -256,6 +265,7 @@ export function Inspector({
     setEditing(false);
     setZoneOpen(false);
     setPetOpen(false);
+    setDeskOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
@@ -395,15 +405,30 @@ export function Inspector({
   );
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;
+  // The launch sheet (#319) continues this conversation where it can start on this computer.
+  // Not where no destination can ever work on this platform (main decides, e.g. Windows).
+  const launchSupport = useLaunchSupport();
+  const canLaunch =
+    !!launchSupport?.supported && !!api.launch && !demo && !s.remote && !resumeBlock(s);
+  // Which sheet is open from this card: continuing the conversation, or a fork of it.
+  const [launching, setLaunching] = useState<'resume' | 'fork' | null>(null);
+  // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
+  const sheetFallback = canLaunch && !codexApp && !live?.canFocus;
   const resumeLabel = codexApp
     ? t.inspector.openInCodex
     : live?.canFocus
       ? t.terminal.jumpTo(focusName(live))
-      : t.inspector.copyResume;
+      : sheetFallback
+        ? t.launchSheet.cardContinue
+        : t.inspector.copyResume;
   const resume = async () => {
     try {
       if (codexApp) {
         notify(await api.resume(s.id));
+        return;
+      }
+      if (sheetFallback) {
+        if (!privacy) setLaunching('resume');
         return;
       }
       if (api.jump) {
@@ -591,6 +616,15 @@ export function Inspector({
           session={session}
           onPrefs={onPrefs}
           onClose={() => setPetOpen(false)}
+        />
+      )}
+      {deskOpen && (
+        <DeskCustomizer
+          key={session.id}
+          session={session}
+          privacy={privacy}
+          onPrefs={onPrefs}
+          onClose={() => setDeskOpen(false)}
         />
       )}
     </>
@@ -947,14 +981,20 @@ export function Inspector({
             )}
             {onCardPin && (
               <button
-                className={`icon-btn ${cardPinned ? 'is-on' : ''}`}
-                aria-label={t.inspector.card.pinCard}
-                aria-pressed={cardPinned}
-                data-tip={cardPinned ? t.inspector.card.pinOn : t.inspector.card.pinOff}
+                className={`icon-btn card-pin ${cardPin !== 'off' ? 'is-on' : ''} ${cardPin === 'top' ? 'is-top' : ''}`}
+                aria-label={t.inspector.card.pinLabel(
+                  t.inspector.card.pinStates[cardPin],
+                  t.inspector.card.pinStates[nextCardPin(cardPin)],
+                )}
+                aria-pressed={cardPin !== 'off'}
+                data-pin={cardPin}
+                data-tip={`${t.inspector.card.pinStates[cardPin]} → ${
+                  t.inspector.card.pinStates[nextCardPin(cardPin)]
+                } · ${t.inspector.card.pinHints[cardPin]}`}
                 disabled={windowBusy}
-                onClick={() => onCardPin(!cardPinned)}
+                onClick={() => onCardPin(nextCardPin(cardPin))}
               >
-                {cardPinned ? <PinOff size={15} /> : <Pin size={15} />}
+                <CardPinIcon pin={cardPin} />
               </button>
             )}
             {onExpand && (
@@ -982,6 +1022,7 @@ export function Inspector({
                       item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
                     {item(t.inspector.rename, () => setEditing(true), close)}
                     {item(t.pets.individualTitle, () => setPetOpen(true), close)}
+                    {!s.attachedTo && item(t.desks.menuItem, () => setDeskOpen(true), close)}
                     {!privacy &&
                       onZoneRules &&
                       item(t.inspector.zone, () => setZoneOpen(true), close)}
@@ -1088,7 +1129,7 @@ export function Inspector({
           <div className="card-actions">
             <button
               className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo || !!s.remote}
+              disabled={demo || !!s.remote || (sheetFallback && privacy)}
               onClick={resume}
             >
               <Terminal size={13} />
@@ -1104,8 +1145,39 @@ export function Inspector({
                 {t.terminal.jumpTo(focusName(live))}
               </button>
             )}
-            {api.tmuxResume && !demo && !s.remote && ['claude', 'codex'].includes(s.provider) && (
-              <TmuxResume key={s.id} id={s.id} privacy={privacy} notify={notify} />
+            {/* Continuing in a terminal, unless the main action already does (it opens the sheet)
+                or the conversation runs where the main action goes (continuing it again only
+                says it is open). A fork is always offered: it never touches the original. */}
+            {canLaunch && !sheetFallback && !live?.canFocus && (
+              <button
+                className="card-action"
+                data-solid
+                disabled={privacy}
+                onClick={() => setLaunching('resume')}
+              >
+                <Terminal size={13} />
+                {t.launchSheet.cardContinue}
+              </button>
+            )}
+            {canLaunch && (
+              <button
+                className="card-action"
+                data-solid
+                disabled={privacy}
+                onClick={() => setLaunching('fork')}
+              >
+                <GitFork size={13} />
+                {t.launchSheet.cardFork}
+              </button>
+            )}
+            {launching && canLaunch && (
+              <LaunchSheet
+                key={s.id + launching}
+                entry={{ from: 'card', session: s, kind: launching }}
+                privacy={privacy}
+                notify={notify}
+                onClose={() => setLaunching(null)}
+              />
             )}
             <CardShellButton session={s} privacy={privacy} demo={demo} notify={notify} />
             {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}
@@ -1127,7 +1199,25 @@ export function Inspector({
               enabled={terminalSend}
               privacy={privacy}
               onJump={!s.remote && api.jump ? () => void resume() : undefined}
-              onSend={async (text, replaceDraft, allowPartialDraft, images) => {
+              // What sits in its terminal input box: shown here and sent as is on request.
+              draftPreview={
+                !s.remote && !demo && api.composerDraft
+                  ? {
+                      id: s.id,
+                      notify,
+                      onSubmitted: (text, startedAt, logical) => {
+                        markSent(s.id);
+                        // A slash command runs; it is not recorded as a request to wait for.
+                        if ((logical ?? text).trimStart().startsWith('/')) return;
+                        // The text as typed when the screen could tell; else as read off the
+                        // box, whose wrapping may split words (matched loosely, see pendingSends).
+                        if (logical !== undefined) remember(s.id, logical, startedAt);
+                        else remember(s.id, text, startedAt, 0, { wrapped: true });
+                      },
+                    }
+                  : undefined
+              }
+              onSend={async (text, replaceDraft, allowPartialDraft, images, exactDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();
                 const result = await sendFollowUp(
@@ -1137,10 +1227,13 @@ export function Inspector({
                   notify,
                   allowPartialDraft,
                   images,
+                  exactDraft,
                 );
                 if (result.status === 'sent') {
                   markSent(id);
-                  remember(id, text, startedAt, images?.length ?? 0, result.unrecorded);
+                  remember(id, text, startedAt, images?.length ?? 0, {
+                    unrecorded: result.unrecorded,
+                  });
                 }
                 return result;
               }}

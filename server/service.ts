@@ -26,7 +26,7 @@ import { parseRecords, hash } from './adapters/normalize.js';
 import { codexMetadata, type CodexMeta } from './adapters/codex.js';
 import { readOpenClawDatabases } from './adapters/openclaw.js';
 import { artifactDetails } from './artifacts.js';
-import { claudeMetadata, claudeSubagentMetadata } from './adapters/claude.js';
+import { claudeMetadata, claudeSubagentMetadata, claudeTeammateLink } from './adapters/claude.js';
 import {
   applyLiveWait,
   defaultLiveDeps,
@@ -40,6 +40,9 @@ import {
 import { mergeSessions } from './adapters/merge.js';
 import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
+import { LAUNCH_DESTINATIONS } from '../src/shared/launch.js';
+import { PET_NAME_CHOICES, PET_TALLY_GROUPS } from '../src/shared/view-prefs.js';
+import type { PetNameMode, PetTallyGroup } from '../src/shared/types.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
 import {
   applyPatch,
@@ -66,6 +69,28 @@ import {
 import { CANONICAL, localizePreferences, localizeSession } from '../src/shared/canonical.js';
 import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
 import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
+import {
+  DESK_CHAIRS,
+  DESK_COLLEAGUE_CAP,
+  DESK_ITEMS,
+  DESK_MONITORS,
+  DESK_PROJECT_CAP,
+  type DeskChair,
+  type DeskItem,
+  type DeskMonitor,
+  type DeskTop,
+} from '../src/shared/desks.js';
+import { OFFICE_PALETTES } from '../src/shared/office-assets.js';
+const deskItem = z.enum(Object.keys(DESK_ITEMS) as [DeskItem, ...DeskItem[]]);
+const deskLayerSchema = z
+  .object({
+    top: z.enum(Object.keys(OFFICE_PALETTES) as [DeskTop, ...DeskTop[]]).optional(),
+    monitor: z.enum(Object.keys(DESK_MONITORS) as [DeskMonitor, ...DeskMonitor[]]).optional(),
+    chair: z.enum(Object.keys(DESK_CHAIRS) as [DeskChair, ...DeskChair[]]).optional(),
+    itemLeft: deskItem.optional(),
+    itemRight: deskItem.optional(),
+  })
+  .strict();
 const petLookSchema = z
   .object({
     character: z.enum(Object.keys(PET_CHARACTERS) as [PetCharacter, ...PetCharacter[]]),
@@ -91,6 +116,36 @@ const zoneRuleSchema = z
     value: z.string().trim().min(1).max(1000),
     repo: z.string().max(1000).optional(),
     target: z.string().max(1100).optional(),
+  })
+  .strict();
+const deskViewShape = {
+  branch: z.boolean().optional(),
+  papers: z.boolean().optional(),
+  beacon: z.boolean().optional(),
+  focus: z.boolean().optional(),
+};
+/** #324: what each screen shows; each mode and key optional, nothing else accepted. */
+const viewsSchema = z
+  .object({
+    pet: z
+      .object({
+        tally: z.boolean().optional(),
+        tallyGroups: z
+          .array(z.enum(PET_TALLY_GROUPS as [PetTallyGroup, ...PetTallyGroup[]]))
+          .max(PET_TALLY_GROUPS.length)
+          .optional(),
+        name: z.enum(PET_NAME_CHOICES as [PetNameMode, ...PetNameMode[]]).optional(),
+        turnEffect: z.boolean().optional(),
+        petting: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    dock: z
+      .object({ ...deskViewShape, hideRead: z.boolean().optional() })
+      .strict()
+      .optional(),
+    tiny: z.object({ effects: z.boolean().optional() }).strict().optional(),
+    office: z.object(deskViewShape).strict().optional(),
   })
   .strict();
 const prefsSchema = z
@@ -125,8 +180,12 @@ const prefsSchema = z
     helperStackAt: z.number().int().min(2).max(8).optional(),
     helperRetainMinutes: z.number().int().min(5).max(240).optional(),
     tmuxSkipPermissions: z.boolean().optional(),
+    restorePinnedCards: z.boolean().optional(),
+    launchDestination: z.enum(LAUNCH_DESTINATIONS).optional(),
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
+    windowGlass: z.number().int().min(0).max(70).nullable().optional(),
+    views: viewsSchema.optional(),
     petAppearance: z
       .object({
         version: z.literal(1),
@@ -140,6 +199,23 @@ const prefsSchema = z
         colleagues: z
           .record(z.string().min(1).max(500), petLookSchema.nullable())
           .refine((value) => Object.keys(value).length <= 3000, { error: () => m().pets.tooMany }),
+      })
+      .strict()
+      .optional(),
+    deskAppearance: z
+      .object({
+        version: z.literal(1),
+        office: deskLayerSchema.nullable().optional(),
+        projects: z
+          .record(z.string().min(1).max(500), deskLayerSchema.nullable())
+          .refine((value) => Object.keys(value).length <= DESK_PROJECT_CAP, {
+            error: () => m().desks.tooMany,
+          }),
+        colleagues: z
+          .record(z.string().min(1).max(500), deskLayerSchema.nullable())
+          .refine((value) => Object.keys(value).length <= DESK_COLLEAGUE_CAP, {
+            error: () => m().desks.tooMany,
+          }),
       })
       .strict()
       .optional(),
@@ -900,6 +976,9 @@ export class OfficeService extends EventEmitter {
             : undefined,
           revision: hash(`${s.revision}:${sidecar.title}:${sidecar.role}`),
         };
+      // An agent-team member sits with its lead, found again on every pass: the team config
+      // and the lead's transcript can appear after the member's.
+      if (s.relation?.team) s = await claudeTeammateLink(s, this.roots.claude);
     }
     return s;
   }

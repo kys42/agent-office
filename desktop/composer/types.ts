@@ -9,8 +9,11 @@ import type { Screen } from './screen.js';
  */
 
 /** Keys an adapter may press. Hosts translate them (tmux key names, raw bytes for Orca). */
-/** Deletion pairs, plus the probe: one 'l' typed and taken back (BSpace) to tell a suggestion. */
-export type ComposerKey = 'C-k' | 'C-u' | 'l' | 'BSpace';
+/**
+ * Deletion pairs, plus the probe: one 'l' typed and taken back (BSpace) to tell a suggestion.
+ * Right takes the agent's suggestion into an otherwise empty box ([Send suggestion] only).
+ */
+export type ComposerKey = 'C-k' | 'C-u' | 'l' | 'BSpace' | 'Right';
 
 /** The terminal a composer is drawn in: tmux or Orca, as seen by an adapter. */
 export interface ComposerHost {
@@ -19,6 +22,8 @@ export interface ComposerHost {
   /** The screen as shown now, or null when it cannot be read. */
   read(): Promise<Screen | null>;
   press(keys: readonly ComposerKey[]): Promise<void>;
+  /** The agent's submit key (Enter): tmux `send-keys Enter`, Orca's own `--enter`. */
+  submit(): Promise<void>;
   wait(ms: number): Promise<void>;
 }
 
@@ -27,21 +32,34 @@ export interface ComposerHost {
  * - `empty`: nothing, or a placeholder the agent shows in an empty box.
  * - `suggestion`: text the agent offers (drawn faint); typing replaces it. `inferred` when the
  *   host could not show styles and the text was recognised by surviving the deletion keys.
+ *   `whole`: told by its style and all of it shows (one row, not cut short with `…`).
  * - `draft`: text someone typed or pasted and has not submitted.
  * - `unknown`: text that cannot be told apart from a suggestion on this host (plain screens).
  *   For both, `whole`: all of the text is known (on screen, or reported apart in full). A box
  *   too short for its text shows only part of it; such a composer needs explicit permission to clear hidden content.
  *   `width`: the most cells a row of text in the box can take, when the box was read from the
  *   screen (an overestimate); absent when the host reports the text apart (Orca's `draft`).
+ *   `rows`: the box's rows as drawn with only its frame taken off, indents kept (`text` trims
+ *   each row): what [Send as is] compares, so an indent changed after the preview is a change.
+ *   `logical`: the text as typed — its own line breaks and indents, none of the box's wrapping —
+ *   when that can be told for sure: the host reports it apart (Orca's `draft`), or every row
+ *   break on screen falls where no wrap could have (see `typedLines`). Absent otherwise.
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
  */
 export type ComposerState =
   | { kind: 'empty' }
-  | { kind: 'suggestion'; text: string; inferred?: boolean }
-  | { kind: 'draft'; text: string; whole: boolean; width?: number }
-  | { kind: 'unknown'; text: string; whole: boolean; width?: number }
+  | { kind: 'suggestion'; text: string; inferred?: boolean; whole?: boolean }
+  | { kind: 'draft'; text: string; whole: boolean; width?: number; rows?: string; logical?: string }
+  | {
+      kind: 'unknown';
+      text: string;
+      whole: boolean;
+      width?: number;
+      rows?: string;
+      logical?: string;
+    }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
@@ -63,6 +81,17 @@ export interface ComposerCapabilities {
    * not at all, and a send with images is refused before anything is typed.
    */
   images?: ImageDelivery;
+  /**
+   * What sits in the composer can be shown as a preview and submitted as it is (`submitDraft`):
+   * only Enter is pressed, nothing typed. Off for a queue and for agents with no known composer.
+   */
+  canSubmitDraft?: boolean;
+  /**
+   * The agent's own suggestion can be taken into the box and submitted from here
+   * (`submitSuggestion`): told apart by its style, or (a plain screen) text that may be one, taken
+   * by a key that leaves typed text as it is.
+   */
+  canSubmitSuggestion?: boolean;
 }
 
 /** Saves the composer's text (the clipboard) before anything of it is deleted. */
@@ -81,6 +110,24 @@ export type ClearResult =
   | { status: 'cleared'; state: ComposerState }
   | { status: 'failed'; state: ComposerState; partial?: boolean; lost?: boolean }
   | { status: 'changed'; text: string; whole: boolean; hidden?: boolean };
+
+/**
+ * How submitting the composer's own text ended (`submitDraft`). `submitted`: Enter went in
+ * right after the box was seen holding exactly the expected text, all of it (`state`: that last
+ * look). Otherwise nothing was pressed: `changed` the box holds something else now (`state`); `partial` not all of its text
+ * is known; `lost` the agent stopped being the one at the terminal; `closed` a dialog or menu
+ * replaced the box; `unreadable` the screen could not be read; `unsupported` no such adapter.
+ * `accepted` (`submitSuggestion` only): the accept key already went in when it stopped, so the
+ * box may now hold the suggestion as typed text; nothing more was pressed.
+ */
+export type DraftSubmitOutcome =
+  | { status: 'submitted'; state: ComposerState }
+  | { status: 'changed'; state: ComposerState; accepted?: boolean }
+  | {
+      status: 'refused';
+      reason: 'partial' | 'lost' | 'closed' | 'unreadable' | 'unsupported';
+      accepted?: boolean;
+    };
 
 export interface ComposerAdapter {
   /** The agent's name as shown to the person ("Claude", "Codex"). A brand, never translated. */
@@ -101,6 +148,28 @@ export interface ComposerAdapter {
     proceed?: () => Promise<boolean>,
     options?: { allowPartial?: boolean },
   ): Promise<ClearResult>;
+  /**
+   * Submits what the composer holds, exactly as it is: the box is read, then (after `proceed`)
+   * read once more right before the key, and the submit key goes in only while both reads show
+   * exactly `expected`, all of it. Nothing is typed or deleted. Absent: not offered.
+   */
+  submitDraft?(
+    host: ComposerHost,
+    expected: string,
+    proceed: () => Promise<boolean>,
+  ): Promise<DraftSubmitOutcome>;
+  /**
+   * Submits the agent's own suggestion: only while the box holds just `expected` as the
+   * suggestion (told by its style, all of it, read twice) — or, on a plain screen, one line known
+   * whole that may be one — the agent's accept key takes it into the box; the box must then hold
+   * exactly `expected` before the submit key goes in (as `submitDraft`). Any mismatch stops
+   * there, nothing more pressed. Absent: not offered.
+   */
+  submitSuggestion?(
+    host: ComposerHost,
+    expected: string,
+    proceed: () => Promise<boolean>,
+  ): Promise<DraftSubmitOutcome>;
 }
 
 /** Ready to type into: typing replaces a suggestion, and the box is otherwise empty. */

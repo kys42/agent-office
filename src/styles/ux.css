@@ -701,6 +701,115 @@
 .draft-confirm-bar button:disabled {
   opacity: 0.5;
 }
+/* Text sitting in the colleague's terminal input box, typed there and not sent (work card). */
+.draft-preview {
+  display: grid;
+  gap: 5px;
+  padding: 7px 9px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  border: 1px dashed var(--line-3);
+  font-family: var(--font-read);
+  font-size: calc(11.5px * var(--read-scale));
+  line-height: 1.45;
+  color: var(--text);
+}
+/* The agent's own suggestion (nobody typed it): marked apart from a draft, its text faint as in
+   the terminal. */
+.draft-preview.is-suggestion {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line-3));
+}
+.draft-preview.is-suggestion .draft-preview-head {
+  color: var(--accent);
+}
+.draft-preview.is-suggestion .draft-preview-text {
+  color: var(--text-2);
+}
+.draft-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-3);
+}
+.draft-preview-head strong {
+  font-size: calc(11px * var(--read-scale));
+  font-weight: 600;
+  color: var(--text-2);
+}
+.draft-preview-head small {
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: calc(10px * var(--read-scale));
+  color: var(--text-4);
+}
+.draft-preview small {
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.draft-preview-text {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.draft-preview-text.is-clamped {
+  /* Three rows, fading out: [Show all] opens the rest. */
+  max-height: calc(3 * 1.45em + 10px);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.draft-preview .draft-preview-more {
+  justify-self: start;
+  padding: 0 2px;
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--accent);
+  background: none;
+}
+.draft-preview-notice,
+.draft-preview small.draft-preview-notice {
+  color: var(--st-call);
+}
+.draft-preview-alone {
+  display: block;
+  padding: 0 4px;
+  font-size: calc(11px * var(--read-scale));
+}
+.draft-preview-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.draft-preview-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-2);
+  background: var(--bg-3);
+}
+.draft-preview-bar .draft-preview-send {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+.draft-preview-bar button:disabled {
+  opacity: 0.5;
+}
 /* Dock windows (pet, row, floor) end right below the reply: the question opens above it,
    over the bubble, so [Clear & send] always stays inside the window. */
 .dock-mode .quick-reply .draft-confirm {

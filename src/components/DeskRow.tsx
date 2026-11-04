@@ -1,5 +1,6 @@
 import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
+import { isTeammate } from '../shared/residents';
 import {
   useEffect,
   useEffectEvent,
@@ -76,6 +77,8 @@ import { deskSpeech, hopping, shownSpeech, speechDot } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
+import { useDeskAppearance } from './DeskAppearanceContext';
+import { deskLook } from '../shared/desks';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
@@ -86,6 +89,9 @@ import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import { useI18n } from '../lib/i18n';
 import { walksIn } from '../lib/commute';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -123,6 +129,7 @@ export function DeskRow({
   onArrange,
   onReorder,
   onReturn,
+  preview = false,
 }: {
   /** The existing "bring back to the office": lets a project's "+" offer away colleagues. */
   onReturn?: (id: string) => unknown;
@@ -152,8 +159,17 @@ export function DeskRow({
   onArrange?: (active: boolean, point?: { x: number; y: number }) => void;
   /** Dragging a desk within its zone: the zone's station ids in the new order. */
   onReorder?: (ids: string[]) => void;
+  /**
+   * Drawn small in the settings (#324): the same desks, without anything that reaches outside
+   * them — no window keys, terminal lookups, saved spots or cards.
+   */
+  preview?: boolean;
 }) {
   const { t, locale } = useI18n();
+  // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
+  const reactionOf = usePetReactions((id) => model.view(id) !== undefined);
+  const petting = usePetting();
+  const desks = useDeskAppearance();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
   // Tiny has no bubbles to make room for: the scene starts just above the heads.
@@ -203,6 +219,16 @@ export function DeskRow({
   const veiledCount = model.veiled.length + model.veiledHelpers.length;
   const signature = layoutSignature(sessions);
   const { display } = model;
+  // What the person chose to see here (#324): the row and floor share one set, tiny its own.
+  const show = tiny
+    ? {
+        branch: false,
+        papers: display.views.tiny.effects,
+        focus: display.views.tiny.effects,
+        beacon: true,
+        hideRead: true,
+      }
+    : display.views.dock;
   const bringBack = onReturn ? { zones: model.zones, onReturn } : undefined;
   const baseLayout = useMemo(
     () =>
@@ -232,12 +258,13 @@ export function DeskRow({
     onSaveFailed: () => notify(t.dock.arrange.saveFailed),
     visibility: display.dockPill,
     resetAt: display.dockPillResetAt,
+    live: !preview,
   });
   const reorder = useDeskReorder({
     layout,
     track,
     // Tiny desks are click targets only: no reordering at that size.
-    enabled: !!onReorder && !privacy && !tiny,
+    enabled: !!onReorder && !privacy && !tiny && !preview,
     onArrange,
     onReorder: (ids) => onReorder?.(ids),
   });
@@ -318,6 +345,7 @@ export function DeskRow({
   // (children's effects run before their parent's, and the dock remounts the row whenever it
   // registers its own). Re-adding it per render would put it last and let Esc fold the dock.
   useEffect(() => {
+    if (preview) return;
     const key = (e: KeyboardEvent) => onKey(e);
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
@@ -339,7 +367,7 @@ export function DeskRow({
   const { targets, markSent } = useSendTargets(
     privacy ? [] : [...primary.map((s) => s.id), ...speaking],
     {
-      enabled: !privacy,
+      enabled: !privacy && !preview,
       stamp: Math.max(0, ...primary.map((s) => s.updatedAt)),
       pollBusy: false,
     },
@@ -353,7 +381,7 @@ export function DeskRow({
   };
   // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
   const open = (id: string, anchor?: Element | null, news = false) =>
-    openColleague(id, { anchor, news });
+    preview ? undefined : openColleague(id, { anchor, news });
   const desk = STATION_WIDTH * scale;
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * scale })),
@@ -543,6 +571,7 @@ export function DeskRow({
                       kind="desk"
                       key={`${bench.key}:${i}`}
                       shared={bench.shared}
+                      look={deskLook(desks, zone.key)}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: benchY, width: bench.width }}
                     />
@@ -551,8 +580,10 @@ export function DeskRow({
                     const s = byId.get(station.id)!;
                     const v = model.view(s.id)!;
                     const pose = v.pose;
+                    const joy = reactionOf(s.id);
                     const label = residentLabel(s, privacy);
                     const branch = branchInfo(s);
+                    const desk = deskLook(desks, zone.key, s);
                     // A just-arrived request plays on the desk and speaks first.
                     const speech = speeches.get(s.id)!;
                     const { arrival, hop } = speech;
@@ -573,7 +604,7 @@ export function DeskRow({
                           hover === s.id || expanded === s.id || replying?.station === s.id,
                           pointing,
                           // Like tiny's dot, a read reply leaves; the peek can keep it up again.
-                          { hideRead: true },
+                          { hideRead: show.hideRead },
                         );
                     const bubble = shown?.speech.bubble;
                     const focus = focusLevel(s, model.now);
@@ -605,10 +636,10 @@ export function DeskRow({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture kind="chair" look={desk} />
                         <div className="pet-shadow" />
                         <button
-                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''}`}
+                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
@@ -630,13 +661,20 @@ export function DeskRow({
                           }
                           {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
                           {...zoneGrab}
+                          {...(preview ? {} : petting(s.id))}
                           onClick={(e) => {
                             if (!reorder.consumeClick(e) && !placement.consumeClick(e)) open(s.id);
                           }}
                         >
                           {/* The same effects as the full size, shrunk with the scene. */}
-                          <FocusEffects level={focus} />
-                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {show.focus && <FocusEffects level={focus} />}
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={joy ? 'idle' : pose.mood}
+                            size={80}
+                          />
+                          {joy && <PetJoy key={joy.key} reaction={joy} />}
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
                         {dot && (
@@ -683,15 +721,17 @@ export function DeskRow({
                             onClick={() => void jump(s.id)}
                           />
                         )}
-                        <Furniture kind="equipment" />
+                        <Furniture kind="equipment" look={desk} />
                         {/* Tiny keeps every desk effect (scaled with the scene, z-ordered under
                             its dot and name); only the quota's words are too small to read. */}
                         {!tiny && v.quota && <QuotaBadge quota={v.quota} />}
-                        <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                        {show.papers && (
+                          <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                        )}
                         {arrival && (
                           <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
                         )}
-                        {pose.working && <WorkingBeacon level={focus} />}
+                        {show.beacon && pose.working && <WorkingBeacon level={focus} />}
                         {tiny ? null : floor ? (
                           // A name plate on the desk front instead of a card on the rug.
                           <button
@@ -715,15 +755,17 @@ export function DeskRow({
                           </button>
                         ) : (
                           <>
-                            <button
-                              className={`desk-branch branch-${branch.kind}`}
-                              data-solid
-                              title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                              onClick={() => open(s.id)}
-                            >
-                              <GitBranch size={9} />
-                              <span>{privacy ? t.desk.hidden : branch.label}</span>
-                            </button>
+                            {show.branch && (
+                              <button
+                                className={`desk-branch branch-${branch.kind}`}
+                                data-solid
+                                title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                                onClick={() => open(s.id)}
+                              >
+                                <GitBranch size={9} />
+                                <span>{privacy ? t.desk.hidden : branch.label}</span>
+                              </button>
+                            )}
                             <button
                               className="desk-name"
                               data-solid
@@ -743,6 +785,11 @@ export function DeskRow({
                                       : t.desk.working
                                     : MOODS[s.status].label}
                                 </span>
+                                {isTeammate(s) && (
+                                  <b className="desk-teammate" title={t.desk.teammate.hint}>
+                                    {t.desk.teammate.tag}
+                                  </b>
+                                )}
                                 {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
                               </small>
                             </button>

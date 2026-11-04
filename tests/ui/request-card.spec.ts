@@ -65,6 +65,8 @@ async function desktop(
     cancel?: boolean;
     /** How long an answer takes (ms). */
     slow?: number;
+    /** No Orca or tmux terminal has the session. */
+    noTerminal?: boolean;
   } = {},
 ) {
   const s = demoSnapshot();
@@ -110,7 +112,7 @@ async function desktop(
         }
       : options.view;
   await page.addInitScript(
-    ({ s, views, cancel, slow }) => {
+    ({ s, views, cancel, slow, noTerminal }) => {
       const w = window as any;
       w.step = 0;
       w.answers = [];
@@ -127,7 +129,7 @@ async function desktop(
         jump: async () => ({ action: 'focused', text: 'tmux work:1.0 패널을 선택했어요' }),
         terminals: async (ids: string[]) =>
           Object.fromEntries(
-            ids.map((id) => [
+            (noTerminal ? [] : ids).map((id) => [
               id,
               {
                 kind: 'tmux',
@@ -155,7 +157,13 @@ async function desktop(
         },
       };
     },
-    { s, views: options.views ?? [view], cancel: !!options.cancel, slow: options.slow ?? 0 },
+    {
+      s,
+      views: options.views ?? [view],
+      cancel: !!options.cancel,
+      slow: options.slow ?? 0,
+      noTerminal: !!options.noTerminal,
+    },
   );
   await page.goto('/');
 }
@@ -309,20 +317,80 @@ test('When the screen differs (or it is hidden), it says why and offers no butto
   ).toBeVisible();
 });
 
-test('Turned off in Settings: no buttons, the reason, and the jump', async ({ page }) => {
-  await desktop(page, QUESTION, {
+const planView = (extra: Partial<Extract<PromptView, { status: 'ready' }>> = {}) =>
+  ({
+    status: 'ready',
+    agent: 'Claude',
+    kind: 'plan',
+    eventId: 'toolu_q:tool0',
+    callId: 'toolu_q',
+    choices: CHOICES.plan,
+    more: true,
+    ...extra,
+  }) as PromptView;
+
+test('Turned off in Settings: the plan’s approval is still offered, and the press asks first', async ({
+  page,
+}) => {
+  // The desktop app shows the choices with the setting off; main asks natively on the press.
+  await desktop(page, PLAN, { view: planView({ consent: 'off' }), cancel: true });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('승인할 플랜');
+  await expect(card).toContainText('선택지를 누르면 다시 켤지 한 번 물어봐요');
+  const approve = card.getByRole('button', { name: /manually approve/ });
+  await approve.click();
+  // Declined in the native confirmation: nothing sent, the button stays.
+  expect(await answers(page)).toHaveLength(1);
+  await expect(approve).toBeEnabled();
+  await expect(page.locator('.toast')).toHaveCount(0);
+});
+
+test('Never asked yet: the card says the first answer asks once, then answers', async ({
+  page,
+}) => {
+  await desktop(page, PLAN, { view: planView({ consent: 'unset' }) });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('여기서 처음 답할 때 한 번 확인해요');
+  await card.getByRole('button', { name: /manually approve/ }).click();
+  await expect(page.locator('.toast')).toContainText('tmux work:1.0에서 답했어요');
+  expect((await answers(page))[0].choice).toMatchObject({ kind: 'plan', number: 2 });
+});
+
+test('A plan the card cannot answer always says why', async ({ page }) => {
+  // The screen is this plan, but no one-time choice is on it (every Yes withheld).
+  await desktop(page, PLAN, { view: planView({ choices: [], more: true }) });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('승인할 플랜');
+  await expect(card.locator('.request-choice')).toHaveCount(0);
+  await expect(card).toContainText('한 번짜리 선택지가 없어요');
+});
+
+test('A plan with no Orca or tmux terminal found says so', async ({ page }) => {
+  await desktop(page, PLAN, { noTerminal: true });
+  await openCoco(page);
+  const card = page.locator('.request-card');
+  await expect(card).toContainText('승인할 플랜');
+  await expect(card).toContainText('Orca·tmux 터미널을 찾지 못했어요');
+  await expect(card.locator('.request-choice')).toHaveCount(0);
+});
+
+test('A plan whose screen cannot be checked says why, with the jump', async ({ page }) => {
+  await desktop(page, PLAN, {
     view: {
       status: 'unavailable',
       agent: 'Claude',
-      reason: 'off',
-      message: '설정에서 답하기를 꺼 두었어요. 설정에서 켜거나 터미널에서 답해 주세요.',
+      reason: 'mismatch',
+      message: '화면의 질문이 이 요청인지 확실하지 않아요. 터미널에서 답해 주세요.',
     },
   });
   await openCoco(page);
   const card = page.locator('.request-card');
-  await expect(card).toContainText('Pick a color');
-  await expect(card).toContainText('설정에서 답하기를 꺼 두었어요');
-  await expect(card.getByRole('button', { name: /Blue/ })).toHaveCount(0);
+  await expect(card).toContainText('승인할 플랜');
+  await expect(card).toContainText('이 요청인지 확실하지 않아요');
+  await expect(card.locator('.request-choice')).toHaveCount(0);
   await expect(
     page.locator('.card-actions').getByRole('button', { name: 'tmux로 이동' }),
   ).toBeVisible();

@@ -69,15 +69,29 @@ export const orcaTabsFor = (provider: Provider): OrcaTabAdapter | null =>
   ADAPTERS[provider] ?? null;
 
 /**
+ * Whether a tab of the Orca worktree at `worktree` can hold a conversation run in `cwd`: the
+ * worktree's own folder, or a folder inside it (a monorepo package: Orca opens tabs only at a
+ * worktree's root, and the person `cd`s further in). Folder boundaries only: `/a/bc` is not
+ * inside `/a/b`.
+ */
+export function holdsFolder(worktree: string, cwd: string): boolean {
+  const root = path.resolve(worktree);
+  const folder = path.resolve(cwd);
+  return folder === root || folder.startsWith(root === path.sep ? root : root + path.sep);
+}
+
+/**
  * The one Orca tab in the conversation's folder whose title names it. Conservative on purpose:
- * same worktree path as the session cwd, a title the agent's adapter recognises, a tab that is
- * still attached (`orphaned` terminals have none to switch to), on this machine, and not
- * claimed by another agent. A disconnected (`connected: false`) tab still counts: it is the
- * restored or sleeping tab the person can return to. None or several: no fallback.
+ * a worktree that is the session cwd or holds it (a session in a subfolder), a title the
+ * agent's adapter recognises, a tab that is still attached (`orphaned` terminals have none to
+ * switch to), on this machine, and not claimed by another agent. A disconnected
+ * (`connected: false`) tab still counts: it is the restored or sleeping tab the person can
+ * return to. None or several (say a nested worktree's tab and its parent's): no fallback.
  *
  * The title must also name this conversation alone: when another known conversation of the
- * same agent in the same folder fits the same tab (an equal Claude title, a Codex id
- * abbreviation they share), the tab may be the other one's, so there is no fallback either.
+ * same agent whose folder the same worktree holds fits the same tab (an equal Claude title, a
+ * Codex id abbreviation they share), the tab may be the other one's, so there is no fallback
+ * either. A subfolder widens only where a tab may be, never what its title must say.
  */
 export function matchOrcaTab(
   terminals: Iterable<Record<string, unknown>>,
@@ -101,7 +115,7 @@ export function lookupOrcaTabIn(
 ): TerminalLookup<OrcaTab> {
   if (!adapter || !session.cwd || !path.isAbsolute(session.cwd)) return { kind: 'none' };
   const cwd = path.resolve(session.cwd);
-  const found: { tab: OrcaTab; title: string }[] = [];
+  const found: { tab: OrcaTab; title: string; worktree: string }[] = [];
   for (const t of terminals) {
     if (typeof t.handle !== 'string' || !/^term_[\w-]{1,80}$/.test(t.handle)) continue;
     if (t.orphaned === true || typeof t.tabId !== 'string' || !t.tabId) continue;
@@ -110,25 +124,26 @@ export function lookupOrcaTabIn(
     if (
       typeof t.worktreePath !== 'string' ||
       !path.isAbsolute(t.worktreePath) ||
-      path.resolve(t.worktreePath) !== cwd
+      !holdsFolder(t.worktreePath, cwd)
     )
       continue;
     if (typeof t.title !== 'string' || !adapter.names(t.title, session)) continue;
     found.push({
       tab: { kind: 'orca', handle: t.handle, title: t.title.slice(0, 120) },
       title: t.title,
+      worktree: t.worktreePath,
     });
   }
   if (!found.length) return { kind: 'none' };
   if (found.length > 1) return { kind: 'unknown' };
-  const { tab, title } = found[0];
+  const { tab, title, worktree } = found[0];
   for (const other of others)
     if (
       other.nativeId !== session.nativeId &&
       other.provider === session.provider &&
       other.cwd &&
       path.isAbsolute(other.cwd) &&
-      path.resolve(other.cwd) === cwd &&
+      holdsFolder(worktree, other.cwd) &&
       adapter.names(title, other)
     )
       return { kind: 'unknown' };

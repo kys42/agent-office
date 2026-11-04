@@ -1,6 +1,7 @@
 import { findClaudeProcess } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck, LaunchPlace, Provider } from '../src/shared/types.js';
+import type { PendingState } from './pending-launch.js';
 import { codexThreadOnScreen } from './codex-focus.js';
 import type { TerminalLookup } from './terminal-host.js';
 import { defaultTerminalDeps, lookupTerminal, type TerminalDeps } from './terminals.js';
@@ -11,8 +12,24 @@ import { defaultTerminalDeps, lookupTerminal, type TerminalDeps } from './termin
  * (`decideDuplicate`); how each agent proves it is alive lives in its liveness adapter.
  */
 
-/** The agent process of the conversation: `found` with where it runs. */
-export type Liveness = TerminalLookup<{ where: LaunchPlace }>;
+/** A tmux pane: its server's socket path and its pane id (`%N`). */
+export interface TmuxPaneRef {
+  socket: string;
+  pane: string;
+}
+/** The app's own tmux session of a conversation: its server socket and its live panes. */
+export interface OwnTmuxPanes {
+  socket: string;
+  panes: readonly string[];
+}
+/** The agent process of the conversation: `found` with where it runs (its pane in tmux). */
+export type Liveness = TerminalLookup<{ where: LaunchPlace; tmux?: TmuxPaneRef }>;
+
+/** Where a verified terminal is, for the duplicate check (its tmux pane when in tmux). */
+const placeOfHost = (host: { kind: 'orca' } | { kind: 'tmux'; socket: string; pane: string }) =>
+  host.kind === 'tmux'
+    ? { where: host.kind, tmux: { socket: host.socket, pane: host.pane } }
+    : { where: host.kind };
 
 /** How one agent tells whether its process for a conversation is alive. */
 export interface LivenessAdapter {
@@ -28,9 +45,13 @@ export const claudeLiveness: LivenessAdapter = {
   async lookup(nativeId, fresh, deps) {
     const terminal = await lookupTerminal(nativeId, { fresh, deps });
     if (terminal.kind === 'found')
-      return { kind: 'found', terminal: { where: terminal.terminal.host.kind } };
+      return { kind: 'found', terminal: placeOfHost(terminal.terminal.host) };
     if (terminal.kind === 'none') return terminal;
-    const process = await findClaudeProcess(nativeId, deps ?? defaultTerminalDeps(), fresh);
+    // A window that parked this conversation in the background still holds it, and a
+    // background session runs with no terminal: both are running, just nowhere to jump.
+    const process = await findClaudeProcess(nativeId, deps ?? defaultTerminalDeps(), fresh, {
+      parked: true,
+    });
     return process ? { kind: 'found', terminal: { where: 'other' } } : { kind: 'unknown' };
   },
 };
@@ -44,7 +65,7 @@ export const codexLiveness: LivenessAdapter = {
   async lookup(nativeId, fresh, deps) {
     const screen = await codexThreadOnScreen(nativeId, { fresh, deps });
     if (screen.kind === 'found')
-      return { kind: 'found', terminal: { where: screen.terminal.host.kind } };
+      return { kind: 'found', terminal: placeOfHost(screen.terminal.host) };
     // Only macOS terminals (`ttys…`) are read; elsewhere (Linux `pts/…`) a Codex screen could
     // exist unseen, so its absence is never proven there.
     if (
@@ -69,14 +90,47 @@ export interface LaunchEvidence {
   agent: Liveness;
   /** The conversation's Orca tab (`findOrcaTab` rules, `connected: false` tabs included). */
   orcaTab: TerminalLookup<unknown>;
-  /** The app's own tmux session for this conversation: `found` while its pane is alive. */
-  ownTmux: TerminalLookup<unknown>;
+  /**
+   * The app's own tmux session for this conversation: `found` while its pane is alive, with
+   * its panes when they could be listed (null: alive, panes unknown).
+   */
+  ownTmux: TerminalLookup<OwnTmuxPanes | null>;
+  /**
+   * A launch of it that may still start or started unseen (desktop/pending-launch.ts): Orca
+   * made the tab, or Terminal/tmux was cut off after taking the command, but no terminal or
+   * process shows it yet. It counts as open there (`true`: in Orca) until it expires, or until
+   * the agent is seen running (`running` beats it). `starting`: the destination took it.
+   */
+  pending?: boolean | LaunchPlace | PendingState;
 }
 
 /** The pure decision: running beats open beats unknown beats none. */
 export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
-  if (e.agent.kind === 'found') return { state: 'running', where: e.agent.terminal.where };
+  if (e.agent.kind === 'found') {
+    // Only a verified terminal that is one of the own session's live panes puts it there: a
+    // live own pane alone may show another conversation (after `/clear` or `/new`).
+    const at = e.agent.terminal.tmux;
+    const own = e.ownTmux.kind === 'found' ? e.ownTmux.terminal : null;
+    const inOwnTmux = !!at && !!own && at.socket === own.socket && own.panes.includes(at.pane);
+    return {
+      state: 'running',
+      where: e.agent.terminal.where,
+      ...(inOwnTmux && { inOwnTmux: true as const }),
+    };
+  }
   if (e.orcaTab.kind === 'found') return { state: 'open', where: 'orca' };
+  if (e.pending) {
+    const held: PendingState =
+      typeof e.pending === 'object'
+        ? e.pending
+        : { where: typeof e.pending === 'string' ? e.pending : 'orca' };
+    return {
+      state: 'open',
+      where: held.where,
+      pending: true,
+      ...(held.starting && { starting: true as const }),
+    };
+  }
   // A live own pane is not proof of this conversation: after Claude `/clear` or Codex `/new`
   // the same process shows another one. Only the agent adapter above can say it runs.
   if (e.ownTmux.kind === 'found') return { state: 'open', where: 'tmux' };
@@ -89,7 +143,9 @@ export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
 export interface DuplicateDeps {
   agent: (fresh: boolean) => Promise<Liveness>;
   orcaTab: (fresh: boolean) => Promise<TerminalLookup<unknown>>;
-  ownTmux: (fresh: boolean) => Promise<TerminalLookup<unknown>>;
+  ownTmux: (fresh: boolean) => Promise<TerminalLookup<OwnTmuxPanes | null>>;
+  /** Where a launch of it may still start, if anywhere (main-process memory, never throws). */
+  pending?: () => boolean | LaunchPlace | PendingState | undefined;
 }
 
 export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promise<DuplicateCheck> {
@@ -99,8 +155,22 @@ export async function checkDuplicate(deps: DuplicateDeps, fresh = false): Promis
     deps.orcaTab(fresh).catch(() => unknown),
     deps.ownTmux(fresh).catch(() => unknown),
   ]);
-  return decideDuplicate({ agent, orcaTab, ownTmux });
+  return decideDuplicate({ agent, orcaTab, ownTmux, pending: deps.pending?.() });
 }
+
+/**
+ * The check for a fresh summon or a fork, which has no conversation to look for yet: only a
+ * launch of the same one (agent, folder, name; a fork's original) that may still start.
+ */
+export const pendingCheck =
+  (pending: () => boolean | LaunchPlace | PendingState | undefined) =>
+  async (): Promise<DuplicateCheck> =>
+    decideDuplicate({
+      agent: { kind: 'none' },
+      orcaTab: { kind: 'none' },
+      ownTmux: { kind: 'none' },
+      pending: pending(),
+    });
 
 const SEVERITY: Record<DuplicateCheck['state'], number> = {
   none: 0,

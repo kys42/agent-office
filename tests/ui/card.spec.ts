@@ -157,7 +157,10 @@ async function card(
         card: async (what: string, target: any) => {
           w.cardCalls.push(what);
           if (what === 'select') w.cardListener?.(target);
-          if (what === 'pin-on' || what === 'pin-off') w.windowState.pinned = what === 'pin-on';
+          if (what === 'pin-on' || what === 'pin-top' || what === 'pin-off') {
+            w.windowState.pinned = what !== 'pin-off';
+            w.windowState.pin = what === 'pin-top' ? 'top' : what === 'pin-on' ? 'pinned' : 'off';
+          }
           if (what === 'position-on' || what === 'position-off')
             w.windowState.positionRemembered = what === 'position-on';
           w.windowStateListener?.({ ...w.windowState });
@@ -287,12 +290,12 @@ test('The card opens as a glass chat: header tools, recent work, tabs, actions a
   const head = aside.locator('.card-head');
   for (const name of [
     '위치 기억',
-    '이 카드 고정',
+    '이 카드 고정: 고정 안 함 → 고정',
     '큰 사무실에서 보기',
     '카드 메뉴',
     '업무 카드 닫기',
   ])
-    await expect(head.getByRole('button', { name })).toBeVisible();
+    await expect(head.getByRole('button', { name, exact: true })).toBeVisible();
   const actions = aside.locator('.card-actions');
   await expect(actions.getByRole('button')).toHaveText(['Orca로 이동']);
   // The header moves the card by the desktop following the cursor: no CSS drag region.
@@ -472,7 +475,7 @@ test('A colleague waiting for the person makes the terminal button the primary o
   // The independent window pin stays distinct from the office pin in the menu.
   await aside
     .locator('.card-head')
-    .getByRole('button', { name: '이 카드 고정', exact: true })
+    .getByRole('button', { name: /^이 카드 고정/ })
     .click();
 });
 
@@ -584,33 +587,43 @@ test('Pressing the text box asks for the keyboard (another app may still hold it
 test('Position memory and pinning this card are independent native actions', async ({ page }) => {
   const aside = await card(page);
   const position = aside.getByRole('button', { name: '위치 기억', exact: true });
-  const pin = aside.getByRole('button', { name: '이 카드 고정', exact: true });
+  const pin = aside.locator('.card-head .card-pin');
   await expect(position).toHaveAttribute('aria-pressed', 'false');
   await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await expect(pin).toHaveAccessibleName('이 카드 고정: 고정 안 함 → 고정');
   await position.click();
   await expect(position).toHaveAttribute('aria-pressed', 'true');
   await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  // One button, three states: off → pinned → pinned on top → off. Each says what comes next.
   await pin.click();
   await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await expect(pin).toHaveAttribute('data-pin', 'pinned');
+  await expect(pin).toHaveAccessibleName('이 카드 고정: 고정 → 맨 위 고정');
+  await expect(pin).toHaveAttribute('data-tip', /^고정 → 맨 위 고정 · /);
   await expect(position).toHaveAttribute('aria-pressed', 'true');
   await pin.click();
+  await expect(pin).toHaveAttribute('aria-pressed', 'true');
+  await expect(pin).toHaveAttribute('data-pin', 'top');
+  await expect(pin).toHaveClass(/is-top/);
+  await expect(pin.locator('.pin-top-badge')).toBeVisible();
+  await expect(pin).toHaveAccessibleName('이 카드 고정: 맨 위 고정 → 고정 안 함');
+  await pin.click();
   await expect(pin).toHaveAttribute('aria-pressed', 'false');
+  await expect(pin).toHaveAttribute('data-pin', 'off');
   await expect(position).toHaveAttribute('aria-pressed', 'true');
   await position.click();
   await expect(position).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => (window as any).cardCalls)).toEqual([
     'position-on',
     'pin-on',
+    'pin-top',
     'pin-off',
     'position-off',
   ]);
   // An independent window is an explicit choice; an old keep-open preference never pins it.
   await page.evaluate(() => localStorage.setItem('office:card-keep', 'on'));
   await page.reload();
-  await expect(page.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
+  await expect(page.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('Failed native window actions leave the displayed state unchanged and show the error', async ({

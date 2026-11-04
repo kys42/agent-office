@@ -10,6 +10,23 @@
 - 고정을 해제하면 그 카드를 일반 팝업으로 돌리고 기존 일반 팝업은 정리한다. 다른 고정 창은 유지한다. 미전송 글은 기존 실행별 로컬 초안 저장 계약을 따른다.
 - 재실행 때 위치·기본 크기는 복원하지만 고정 카드를 자동으로 다시 열지는 않는다. 이전 `office:card-keep`은 바깥 클릭 닫기만 막던 전역 상태여서 독립 창으로 자동 승격하지 않는다.
 
+### 핀 버튼 세 단계 (고정 · 맨 위 고정)
+
+핀 버튼 하나가 세 상태를 차례로 돈다: **고정 안 함 → 고정 → 맨 위 고정 → 고정 안 함**. 버튼을 따로 늘리지 않는다.
+
+| 상태 | 동작 | 아이콘 | IPC |
+| --- | --- | --- | --- |
+| 고정 안 함 (`off`) | 미리보기. 포커스가 떠나면 닫힌다. 다른 창 위에 뜬다 | 빈 핀 | `pin-off` |
+| 고정 (`pinned`) | 열어 둔다. 보통 창이라 다른 창 뒤로 갈 수 있다 | 채운 핀(강조색) | `pin-on` |
+| 맨 위 고정 (`top`) | 열어 둔다. 미리보기와 같은 층(`pop-up-menu`, 모든 Space·전체 화면 위)에 늘 떠 있다 | 채운 핀 + 강조색 테두리 + 작은 위 화살표 | `pin-top` |
+
+- 순수 규칙은 `src/shared/card-windows.ts`(`CardPin`, `nextCardPin`, `cardPinAction`, `cardFloats`, `readCardPin`), 층은 `src/shared/popup-window.ts` `floatLayer`. `desktop/card-windows.ts`는 그 결정을 창에 적용만 한다.
+- 버튼의 `aria-label`·툴팁은 지금 상태와 다음 클릭 결과를 함께 말한다(예: `이 카드 고정: 고정 → 맨 위 고정`). `aria-pressed`는 열어 둔 상태(고정·맨 위 고정)에서 참, 지금 상태는 `data-pin`에 둔다.
+- `office:card-state`는 예전 `pinned`(열어 둠 여부)를 그대로 두고 `pin`을 더한다. `pinned`만 있는 상태는 `readCardPin`이 `pinned`/`off`로 읽는다.
+- **수명**: 고르는 종류는 그 창이 살아 있는 동안만 유지한다. 순서는 늘 같고 '마지막에 고른 종류'를 기억하지 않는다. 고정 카드는 재실행 때 다시 열지 않으므로(위) 맨 위 고정도 저장·복원하지 않는다. 같은 동료를 다시 열면 기존 고정 창이 그 종류 그대로 앞으로 온다.
+- 맨 위 고정 카드에서 연 옆 팝업 창(미니 터미널·읽기)은 연 창이 떠 있으므로 함께 뜬다(`popupFloats`). 보통 고정 카드에서 열면 보통 창이다.
+- 조용한 실행(`AGENT_OFFICE_QUIET`)에서도 층은 실제로 바뀐다(`isAlwaysOnTop()`으로 검사). 그때 모든 창은 투명·클릭 통과라 사람 눈에 보이지 않고 포커스도 가져가지 않는다(`desktop/quiet.ts`).
+
 ## 창 수명과 IPC
 
 `desktop/card-windows.ts`가 일반 팝업 하나와 고정 창들을 관리한다. 카드마다 target, blur 타이머, 드래그, 크기, 네이티브 확인창 수를 따로 가진다. 닫힌 일반 팝업은 재사용하고 고정 창은 닫을 때 파괴하여 snapshot 구독·타이머를 정리한다. 모든 카드는 기존 수집기와 `SnapshotDelivery`를 공유한다.
@@ -20,26 +37,29 @@
 
 ## 검증
 
-- `tests/card-windows.test.ts`: 잘못된 위치, 책상 기준 배치, 저장 위치, 모니터 제거·작은 작업 영역, 고정 창 헤더를 남기는 배치.
-- `tests/ui/card.spec.ts`: 새 헤더/메뉴, 두 토글의 독립성, 오류 시 상태 유지, 초기 target 복원, 드래그·키보드·입력·개인정보.
-- `npm run test:cards`: 개인 데이터와 분리한 실제 Electron에서 여러 고정 창·재사용·blur·닫기·고정 해제·독립 초안·IPC sender·재실행 위치 복원·위치 기억 해제를 검사한다. 실제 OS 포커스를 다루므로 CI나 `AGENT_OFFICE_FOCUS_TESTS=1`에서만 돌고, 그 밖의 로컬 실행에서는 건너뛴다. `test:package`도 DMG에서 복사한 앱으로 같은 검사를 실행한다.
+- `tests/card-windows.test.ts`: 잘못된 위치, 책상 기준 배치, 저장 위치, 모니터 제거·작은 작업 영역, 고정 창 헤더를 남기는 배치, 핀 세 단계 순환·IPC 이름·뜨기 결정·예전 `pinned` 상태 읽기.
+- `tests/ui/card.spec.ts`: 새 헤더/메뉴, 두 토글의 독립성, 핀 세 단계(라벨·`data-pin`·맨 위 표시), 오류 시 상태 유지, 초기 target 복원, 드래그·키보드·입력·개인정보.
+- `npm run test:desktop`: 고정 → 맨 위 고정 → 해제 상태와 blur 뒤 유지, 맨 위 고정의 always-on-top, 조용한 실행에서 모든 창의 투명도 0과 `capturePage` 동작.
+- `npm run test:cards`: 개인 데이터와 분리한 실제 Electron에서 여러 고정 창·재사용·blur·닫기·맨 위 고정(다른 고정 창은 보통 창 유지)·고정 해제·독립 초안·IPC sender·재실행 위치 복원·위치 기억 해제를 검사한다. 실제 OS 포커스를 다루므로 CI나 `AGENT_OFFICE_FOCUS_TESTS=1`에서만 돌고, 그 밖의 로컬 실행에서는 건너뛴다. `test:package`도 DMG에서 복사한 앱으로 같은 검사를 실행한다.
 
 ## 옆에 뜨는 팝업 창 (미니 터미널·북마크 읽기, #283)
 
 업무 카드와 따로, 연 창 **옆에** 뜨는 작은 창의 공통 틀이다. 지금은 미니 터미널([터미널 연결](TERMINAL.md) · 미니 터미널)과 북마크 **저장한 대화 읽기** 두 종류가 쓴다. 새 종류는 틀을 고치지 않고 종류 설정 하나만 더한다.
 
-- **공통 규칙** (`src/shared/popup-window.ts`, 순수): 자리 `popupWindowBounds`(연 창 오른쪽에 위 맞춤 → 왼쪽 → 위·아래 → 화면을 채운 창이면 그 오른쪽 안쪽, 언제나 작업 영역 안, 같은 종류 창과 겹치면 대각선으로 32px씩 비켜 연다), 저장 크기 읽기 `readWindowSize`(종류별 최소·4000 이하), 뜨기 `popupFloats`(연 창이 큰 사무실이 아니고 그 창이 다른 창 위에 떠 있을 때만 — 미리보기 카드·책상 줄), 열기 결정 `popupOpenPlan`(같은 키 창이 있으면 앞으로, 없으면 새로, 최대 개수면 가장 오래된 창을 닫고).
+- **공통 규칙** (`src/shared/popup-window.ts`, 순수): 자리 `popupWindowBounds`(연 창 오른쪽에 위 맞춤 → 왼쪽 → 위·아래 → 화면을 채운 창이면 그 오른쪽 안쪽, 언제나 작업 영역 안, 같은 종류 창과 겹치면 대각선으로 32px씩 비켜 연다), 저장 크기 읽기 `readWindowSize`(종류별 최소·4000 이하), 뜨기 `popupFloats`(연 창이 큰 사무실이 아니고 그 창이 다른 창 위에 떠 있을 때만 — 미리보기 카드·맨 위 고정 카드·책상 줄·맨 위로 둔 팝업), 층 `floatLayer`(카드와 같은 `pop-up-menu`·모든 Space), 다시 열 때 `popupReopenFloats`(떠 있는 창이 다시 부르면 뜨고, 아니면 사람이 고른 상태 유지), 열기 결정 `popupOpenPlan`(같은 키 창이 있으면 앞으로, 없으면 새로, 최대 개수면 가장 오래된 창을 닫고).
 - **창 관리** (`desktop/popup-windows.ts` `PopupWindows<Target>`): 종류 설정 `PopupKind`(`hash` 경로, `sizeFile`, 기본·최소 크기, 최대 개수, 제목·배경 같은 창 옵션)를 받는다. 테두리 없음·최대화 없음·`secure()`·Windows/Linux 앱 메뉴 떼기(`dropAppMenu`), 키 하나에 창 하나, 크기를 바꾸면(300ms 뒤) 종류별 파일에 임시 파일→rename으로 저장, 조용한 실행(`AGENT_OFFICE_QUIET`)에서는 `showInactive`만 하고 포커스를 뺏지 않는다. 클릭으로 열면 로드 뒤 키보드를 가져간다. 모니터가 바뀌면 작업 영역 안으로 되돌린다(`reseat`). 창은 로드 뒤 `target`으로 자기가 보여 줄 대상을 묻고, 각 종류의 IPC는 `owns(sender)`로 **자기 종류의 창만** 신뢰한다.
+- **맨 위에 두기** (두 단계 토글, 머리줄): 보통 창 ↔ 맨 위. 처음 상태는 연 창을 따르고(`popupFloats`), 그다음은 창 머리줄의 토글로 바꾼다. 공통 API `setOnTop(sender, on)`·`onTop(sender)`이며 각 종류의 IPC(`office:shell-window`·`office:reader-window`의 `top`·`top-on`·`top-off`)로만 부른다. `require(sender)`라 **그 종류의 창이 자기 것만** 바꾸고, 큰 사무실·카드·다른 종류 창은 거부된다. 상태가 바뀔 때마다(떠 있는 창이 다시 불러 뜬 경우 포함) main이 그 창에 `office:popup-on-top`을 보내 토글이 따라간다(`onPopupOnTop`, `usePopupOnTop`). 포커스는 건드리지 않고, 조용한 실행에서는 상태만 바뀐다. 창이 살아 있는 동안만 유지하고 저장하지 않는다. 라벨·툴팁은 `맨 위에 두기: 보통 창 → 맨 위`처럼 지금 상태와 다음 클릭 결과를 말한다.
 - **미니 터미널** (`desktop/shell-windows.ts` `ShellWindows`): 키 = 폴더 셸(tmux 이름), 최대 6개, 640×400(최소 360×200), `shell-window-size.json`(예전 파일·형식 그대로), 테마와 무관하게 어두운 배경. 동작은 공통 틀로 옮기기 전과 같다.
 - **북마크 읽기** (`desktop/reader-windows.ts` `ReaderWindows`, `#reader` → `ReaderWindow.tsx`): 키 = 북마크 id, 최대 8개, 560×680(최소 360×320), `reader-window-size.json`, 앱 테마 배경.
   - 창에는 **북마크 id만** 넘긴다(URL·IPC에 본문 없음). 창은 `bookmarkById`로 서비스에서 직접 읽어 목록과 같은 표시 필터(제외 프로젝트·꺼진 도구)를 따른다. 해제됐거나 숨겨졌으면 '이 북마크를 더 이상 볼 수 없어요'를 보인다. 다른 창의 추가·메모·해제는 스냅샷의 북마크 stamp가 바뀔 때 다시 읽는다.
   - 창은 다른 창처럼 스냅샷을 받아(`useOffice`, 사용 한도는 읽지 않음) 동료 이름·원본 유무와 화면 숨기기를 안다. 언어는 큰 창을 따른다(`useSharedLocale`·저장한 언어).
-  - 머리줄: 이름 · **원문 대화로 이동**(원본이 보일 때) · 메시지 복사 · 닫기. 머리줄을 끌어 옮기고 Esc로도 닫는다. **원문 대화로 이동**은 main이 그 id로 북마크를 다시 읽어 큰 사무실을 이 창의 모니터에 열고 그 메시지에 맞춘다(`office:select`에 `eventId`·`at`). 읽기 창은 열어 둔다.
-  - 읽기 창이 받는 IPC: `office:reader-window`(`target`·`focus`·`close`·`go`), `office:call`의 `snapshot`·`bookmarkById`만, 복사·링크·파일 열기·화면 표시 여부. 그 밖(보내기·설정·북마크 쓰기 등)은 거부한다. 큰 사무실·카드는 `open`만 쓸 수 있다.
+  - 머리줄: 이름 · **원문 대화로 이동**(원본이 보일 때) · 메시지 복사 · 맨 위에 두기 · 닫기. 머리줄을 끌어 옮기고 Esc로도 닫는다. **원문 대화로 이동**은 main이 그 id로 북마크를 다시 읽어 큰 사무실을 이 창의 모니터에 열고 그 메시지에 맞춘다(`office:select`에 `eventId`·`at`). 읽기 창은 열어 둔다.
+  - 읽기 창이 받는 IPC: `office:reader-window`(`target`·`focus`·`close`·`go`·`top`·`top-on`·`top-off`), `office:call`의 `snapshot`·`bookmarkById`만, 복사·링크·파일 열기·화면 표시 여부. 그 밖(보내기·설정·북마크 쓰기 등)은 거부한다. 큰 사무실·카드는 `open`만 쓸 수 있다.
   - 화면 내용 숨기기를 켜면 main이 읽기 창을 모두 닫고 켜져 있는 동안 새로 열지 않는다(목록 안 상세가 닫히는 것과 같다). 창도 숨김 상태면 본문을 읽지 않고 가린 표시만 그린다.
   - 데스크톱 브리지가 없는 웹 미리보기와 데모는 예전처럼 목록 위 모달로 읽는다(`readerOpens`). 모달과 창은 같은 본문 컴포넌트(`BookmarkReading`)를 그린다.
 
 ### 검증
 
-- `tests/popup-window.test.ts`: 공통 자리·대각선 비킴·종류별 크기 읽기·뜨기 규칙·열기 결정, 읽기 창 대상(id만)·모달/창 결정. `tests/shell-window.test.ts`는 그대로 통과한다. `tests/bookmarks.test.ts`: `bookmarkById`의 삭제·숨김 처리.
-- `npm run build && npm run test:reader:desktop`: 임시 프로필·데이터로 앱을 조용히 띄워 북마크 → 읽기 창이 큰 창 옆에 뜸 → 같은 북마크는 창 하나 → 다른 북마크는 비켜 둘째 창 → 읽기 창의 IPC 제한 → 원문 대화로 이동 → 크기 기억 → 해제 시 빈 상태 → 화면 숨기기로 닫힘·열기 거부.
+- `tests/popup-window.test.ts`: 공통 자리·대각선 비킴·종류별 크기 읽기·뜨기 규칙·층·다시 열 때 맨 위 유지·열기 결정, 읽기 창 대상(id만)·모달/창 결정. `tests/shell-window.test.ts`는 그대로 통과한다. `tests/bookmarks.test.ts`: `bookmarkById`의 삭제·숨김 처리.
+- `tests/ui/mini-shell.spec.ts`: 터미널 창 머리줄의 맨 위에 두기 토글(라벨·`top-on`/`top-off`·main에서 온 변경 반영).
+- `npm run build && npm run test:reader:desktop`: 임시 프로필·데이터로 앱을 조용히 띄워 북마크 → 읽기 창이 큰 창 옆에 뜸 → 같은 북마크는 창 하나 → 다른 북마크는 비켜 둘째 창 → 읽기 창의 IPC 제한(큰 사무실의 `top-on` 거부 포함) → 맨 위에 두기 켜고 끄기(다른 읽기 창은 그대로) → 원문 대화로 이동 → 크기 기억 → 해제 시 빈 상태 → 화면 숨기기로 닫힘·열기 거부. `test:shell:desktop`도 터미널 창의 맨 위에 두기를 같은 식으로 검사한다.

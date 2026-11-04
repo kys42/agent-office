@@ -9,6 +9,7 @@ import type {
 import { inputRequest } from '../../server/adapters/requests.js';
 import { drawn, type Screen } from '../composer/screen.js';
 import { readPrompt } from '../composer/claude-code.js';
+import { drawnMarkdown } from './claude-markdown.js';
 import type {
   AnswerOutcome,
   Asked,
@@ -17,6 +18,7 @@ import type {
   DialogState,
   Identified,
   OpenCall,
+  PlanShows,
   PromptChoice,
   PromptHost,
   PromptKey,
@@ -50,6 +52,13 @@ import type {
  * last); a text row takes typing as soon as the marker is on it. Never pressed here: digits
  * (pick *and* submit in one key), Tab (amends a permission's Yes into a text row), Esc (cancels
  * the whole tool call), Ctrl+C/D. "Chat about this" and "Cancel" end the tool call: never used.
+ *
+ * The plan dialog of 2.1.316 (read from its bundle, ExitPlanMode's options builder): an optional
+ * "Yes, clear context (N% used) and …" row, then one of "Yes, and switch to BYPASS PERMISSIONS
+ * … for this session" / "Yes, and use auto mode" / "Yes, auto-accept edits", then always "Yes,
+ * manually approve edits", then "No, keep planning" (a text row; hint "shift+tab to approve with
+ * this feedback"). A plan too long to show withholds every Yes. Only "Yes, manually approve
+ * edits" is offered here: every other Yes keeps applying (a mode) or clears the context.
  */
 
 /** A numbered row: `❯ 1. Red`, `  2. Green`, ` ❯ 1. Yes`, `   ❯ 1. Yes, and use auto mode`. */
@@ -61,7 +70,8 @@ const SUBMIT = /^\s*(❯)?\s*(?:Submit|Next)$/;
 const CHECKBOX = /^\[([ ✔✓x])\]\s+(.*)$/;
 /** The question's own text row ("Type something." / "Type something"), before anything is typed. */
 const TYPE_HINT = /^Type something\.?$/;
-const PLAN_TEXT_ROW = /^Tell Claude what to change/i;
+/** The plan's text row: "Tell Claude what to change" (2.1.296), "No, keep planning" (2.1.316). */
+const PLAN_TEXT_ROW = /^(?:Tell Claude what to change|No, keep planning)/i;
 const PLAN_TEXT_HINT = /shift\+tab to approve with this feedback/i;
 const indent = (line: string) => line.length - line.trimStart().length;
 /** Lines of a question drawn with a left border (`│ `) read without it. */
@@ -179,6 +189,44 @@ function fenced(head: string[]): { before: string[]; text: string | null } {
   return { before: head.slice(0, open), text };
 }
 
+/**
+ * The plan as far as the screen shows it, from the lines above the question's rule. The plan
+ * sits in a `╌` box under "Here is Claude's plan:". A plan taller than the screen is cut: the
+ * fullscreen renderer (2.1.316: a scroll box sized to fit, at its top) shows its start and never
+ * the closing `╌`; the main-screen renderer scrolls the terminal, leaving only the end and the
+ * closing `╌`. With both edges gone nothing of the plan is read.
+ */
+function planOnScreen(above: string[]): { plan: string; shows: PlanShows } {
+  const from = above.findLastIndex((line) => /Here is Claude's plan:/.test(line));
+  const fences = above
+    .map((line, i) => (i > from && FENCE.test(line) ? i : -1))
+    .filter((i) => i >= 0);
+  const text = (start: number, end: number) =>
+    above
+      .slice(start, end)
+      .map((line) => line.trim())
+      .join('\n')
+      .trim();
+  if (from >= 0 && fences.length >= 2)
+    return { plan: text(fences[0] + 1, fences[1]), shows: 'all' };
+  if (from >= 0 && fences.length === 1)
+    return { plan: text(fences[0] + 1, above.length), shows: 'start' };
+  if (from < 0 && fences.length === 1) return { plan: text(0, fences[0]), shows: 'end' };
+  return { plan: '', shows: 'all' };
+}
+
+/**
+ * The plan file the footer names (`ctrl+g to edit in … · ~/.claude/plans/<name>.md`). A narrow
+ * pane wraps the footer, mid-path when it must: the path is read across its lines.
+ */
+function planFileIn(foot: string[]): string | undefined {
+  return foot
+    .join('\n')
+    .split(/\s·\s/)
+    .map((part) => part.replace(/\s+/g, ''))
+    .findLast((part) => /^\S+\.md$/.test(part));
+}
+
 /** What Claude Code's dialog on this screen asks, or why there is none. */
 export function parseDialog(screen: Screen | null): DialogState {
   if (!screen) return { kind: 'unreadable' };
@@ -236,26 +284,16 @@ export function parseDialog(screen: Screen | null): DialogState {
     };
   }
   if (
-    /ready to execute|Would you like to proceed\?/i.test(headText) &&
+    /ready\s+to\s+execute|Would\s+you\s+like\s+to\s+proceed\?/i.test(headText) &&
     (above.some((line) => /Here is Claude's plan:|Ready to code\?/.test(line)) ||
       /\.md\s*$/.test(footText))
   ) {
-    const from = above.findLastIndex((line) => /Here is Claude's plan:/.test(line));
-    const fences = above
-      .map((line, i) => (i > from && FENCE.test(line) ? i : -1))
-      .filter((i) => i >= 0);
-    const plan =
-      from >= 0 && fences.length >= 2
-        ? above
-            .slice(fences[0] + 1, fences[1])
-            .map((line) => line.trim())
-            .join('\n')
-            .trim()
-        : '';
-    const file = /(\S+\.md)\s*$/.exec(foot.at(-1) ?? '')?.[1];
+    const { plan, shows } = planOnScreen(above);
+    const file = planFileIn(foot);
     return {
       kind: 'plan',
       plan,
+      shows,
       ...(file ? { planFile: file } : {}),
       rows: rows.map((row) =>
         PLAN_TEXT_ROW.test(row.label) || PLAN_TEXT_HINT.test(row.description)
@@ -316,8 +354,6 @@ export function parseDialog(screen: Screen | null): DialogState {
 
 /** Spacing never decides a match; every other character (shell punctuation too) does. */
 const spaced = (text: string) => text.replace(/\s+/g, ' ').trim();
-/** Plans are drawn rendered: markdown marks and list bullets are not on screen. */
-const planText = (text: string) => drawn(text.replace(/[*_`#>|~•·-]/g, ''));
 
 /** The heading Claude Code draws for each tool it asks permission for (measured). */
 const TITLES: Record<string, string> = {
@@ -415,8 +451,42 @@ function questionMatches(
   return true;
 }
 
+/**
+ * The dialog shows this plan: the same plan file when both name one, and the plan itself.
+ * Everything the dialog shows must be the plan the call wrote, compared with its raw input (the
+ * stored copy hides secret-like words the screen still shows): all of it when the whole box is
+ * on screen, its start when the bottom is cut, its end when the top is cut (then the plan file
+ * must be named on both sides too). A plan edited in the meantime (ctrl+g) never matches.
+ * The plan is drawn as Claude Code renders its markdown (claude-markdown.ts); only spacing and
+ * line wrapping are left out of the comparison, every other character counts.
+ */
+function plans(
+  d: Extract<Dialog, { kind: 'plan' }>,
+  r: Extract<InputRequest, { kind: 'plan' }>,
+  call?: OpenCall,
+): boolean {
+  const raw = call?.input ?? {};
+  const file =
+    typeof raw.planFilePath === 'string' && raw.planFilePath.trim()
+      ? raw.planFilePath.trim()
+      : r.planFile;
+  if (file && d.planFile && path.basename(file) !== path.basename(d.planFile)) return false;
+  const shown = drawn(d.plan);
+  if (d.shows === 'end' && !(file && d.planFile)) return false;
+  return drawnMarkdown(typeof raw.plan === 'string' ? raw.plan : r.plan).some(
+    (want) =>
+      !!shown &&
+      shown.length >= Math.min(8, want.length) &&
+      (d.shows === 'start'
+        ? want.startsWith(shown)
+        : d.shows === 'end'
+          ? want.endsWith(shown)
+          : want === shown),
+  );
+}
+
 /** The dialog asks this request: a question (or its review) or this plan. */
-function asks(d: Dialog, r: InputRequest): boolean {
+function asks(d: Dialog, r: InputRequest, call?: OpenCall): boolean {
   if (r.kind === 'question') {
     if (d.kind === 'question') return questionMatches(d, r);
     if (d.kind === 'review')
@@ -426,22 +496,13 @@ function asks(d: Dialog, r: InputRequest): boolean {
       );
     return false;
   }
-  if (r.kind === 'plan') {
-    if (d.kind !== 'plan') return false;
-    // The plan file when both name one, and the plan itself: everything the dialog shows must
-    // be the start of the plan the record holds (a plan edited in the meantime never matches).
-    if (r.planFile && d.planFile && path.basename(r.planFile) !== path.basename(d.planFile))
-      return false;
-    const shown = planText(d.plan);
-    const want = planText(r.plan);
-    return shown.length >= Math.min(8, want.length) && shown.length > 0 && want.startsWith(shown);
-  }
+  if (r.kind === 'plan') return d.kind === 'plan' && plans(d, r, call);
   return false;
 }
 
 /** The dialog still asks what was identified (re-read before and after every key). */
 function stillAsks(d: Dialog, asked: Asked): boolean {
-  if (asked.request.kind !== 'permission') return asks(d, asked.request);
+  if (asked.request.kind !== 'permission') return asks(d, asked.request, asked.call);
   if (d.kind !== 'permission' || !asked.subject) return false;
   const subject = subjectOf(d);
   return (
@@ -468,7 +529,7 @@ function identify(d: Dialog, calls: readonly OpenCall[]): Identified {
       const request = inputRequest(call.tool, call.input);
       // A request a cap cut cannot be compared whole: never answered from here.
       if (!request || request.kind === 'permission' || request.truncated) continue;
-      if (asks(d, request)) found.push({ call, request });
+      if (asks(d, request, call)) found.push({ call, request });
     }
   if (found.length === 1) return { status: 'one', asked: found[0] };
   return { status: found.length ? 'many' : 'none' };

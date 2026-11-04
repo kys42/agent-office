@@ -115,8 +115,52 @@ export const settings: Messages['settings'] = {
     pillResetDone: '독 pill을 오른쪽 끝으로 되돌렸어요.',
     resetButton: '초기화',
   },
+  views: {
+    title: '화면별 표시',
+    hint: '화면마다 무엇을 그릴지 골라요. 그대로 두면 지금 모습이고, 더 고르려면 자세히를 펼쳐요.',
+    more: '자세히',
+    preview: (mode: string) => `${mode} 미리보기`,
+    demo: '동료가 오기 전까지는 예시 동료로 보여 줘요.',
+    modes: {
+      pet: { title: '데스크 펫', hint: '접어 둔 독의 작은 펫이에요.' },
+      dock: { title: '사무실 줄·바닥', hint: '화면 아래에 줄지어 선 책상이에요.' },
+      tiny: { title: '쪼꼬미', hint: '줄·바닥을 보조 책상 크기로 줄인 모습이에요.' },
+      office: { title: '큰 사무실', hint: '큰 창의 사무실 지도예요.' },
+    },
+    pet: {
+      tally: '숫자 알약',
+      tallyHint:
+        '기다리는 동료, 확인할 결과, 일하는 중, 대기 중을 숫자로 세요. 끄면 한 줄 요약만 보여요.',
+      groups: '셀 항목',
+      groupsHint: '알약에 셀 묶음이에요. 화살표도 이 동료들만 넘겨요.',
+      name: '이름표',
+      nameHint: '펫 아래 이름이 보이는 때예요.',
+      names: { speaking: '말할 때', always: '항상', never: '안 보임' },
+      turnEffect: '넘김 효과',
+      turnEffectHint: '다른 동료로 넘길 때 미끄러지며 퐁 하고 바뀌어요.',
+      petting: '쓰다듬기',
+      pettingHint: '펫을 문지르면 좋아해요. 끄면 손 모양 커서도 사라져요.',
+    },
+    desk: {
+      branch: '브랜치 이름표',
+      branchHint: '책상 아래에 git 브랜치를 붙여요.',
+      hideRead: '읽은 답변 말풍선 접기',
+      hideReadHint: '읽은 최종 응답은 말풍선을 내려요. 마우스를 올리면 다시 보여요.',
+      papers: '서류 더미',
+      papersHint: '일이 쌓이면 책상에 서류가 쌓여요.',
+      beacon: '작업 중 표시',
+      beaconHint: '일하는 책상 위에 불이 들어와요.',
+      focus: '집중 효과',
+      focusHint: '오래 몰두하면 불꽃과 열기가 피어올라요.',
+      effects: '책상 효과',
+      effectsHint: '쪼꼬미 책상에도 집중 효과와 서류 더미를 그려요.',
+    },
+  },
   reading: {
     title: '읽음 처리',
+    restorePinned: '고정한 카드 다시 열기',
+    restorePinnedHint:
+      '앱을 다시 켜면 고정해 둔 업무 카드가 있던 자리에 다시 떠요. 대기 라운지·보관으로 간 동료도 열리고, 기록이 사라진 동료는 건너뛰어요.',
     readOnOpen: '카드를 열면 최종 응답 읽음 처리',
     readOnOpenHint:
       '동료의 업무 카드를 열어 두면 그 동료의 최종 응답을 읽음으로 바꿔요. 끄면 직접 읽음 처리할 때까지 안 읽음으로 남아요.',
@@ -151,6 +195,17 @@ export const settings: Messages['settings'] = {
     preview: '미리 보기',
     previewText: '끝났어요. 로그인 흐름의 테스트 3개를 고쳤고 npm test가 통과해요.',
   },
+  glass: {
+    title: '창 유리',
+    level: '투명도',
+    hint: '업무 카드 팝업과 큰 사무실의 왼쪽 메뉴·오른쪽 칸을 반투명 유리처럼 보이게 해요. 높을수록 뒤의 흐린 화면이 더 비쳐요.',
+    platformHint:
+      '맥의 흐림 유리 재질 위에 색을 덜 칠하고 가장자리에 빛을 더해요. 윈도우는 흐림 재질이 없어 지금 모습 그대로예요.',
+    value: (n: number) => `${n}%`,
+    off: '기본',
+    reset: '기본 모습으로',
+    resetHint: '설정하기 전의 모습으로 돌아가요.',
+  },
   panels: {
     title: '패널 폭',
     reset: '패널 폭 초기화',
@@ -160,7 +215,7 @@ export const settings: Messages['settings'] = {
   terminalTitle: '터미널과 답하기',
   tmuxSkip: '권한 확인 없이 터미널에 띄우기',
   tmuxSkipHint:
-    'tmux로 재개·소환하거나 Orca 새 탭에서 재개할 때 Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
+    '세션 시작 창에서 새 세션·이어가기·복제를 띄울 때(Orca·tmux·터미널 앱·명령 복사) Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
   notifications: {
     title: '알림',
     finals: '최종 응답',
