@@ -40,17 +40,19 @@ test('Bubble words can be selected without opening it, and web links open in the
     ),
   );
 
-  // Dragging across the words selects them; that is reading, not opening.
+  // The fitted scene has a fractional transform. A glyph midpoint sits on Chromium's caret
+  // hit-test boundary at some scales; drag from inside its leading edge to the trailing edge
+  // of the last glyph, so the intended range is unambiguous. This still uses a real mouse drag.
   const [from, to] = await bubble.locator('.speech-text').evaluate((b) => {
     const node = [...b.childNodes].find((n) => n.nodeType === Node.TEXT_NODE)!;
-    const at = (i: number) => {
+    const at = (i: number, part: number) => {
       const range = document.createRange();
       range.setStart(node, i);
       range.setEnd(node, i + 1);
       const r = range.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      return { x: r.left + r.width * part, y: r.top + r.height / 2 };
     };
-    return [at(0), at(6)];
+    return [at(0, 0.25), at(6, 0.75)];
   });
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
