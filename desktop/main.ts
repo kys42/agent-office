@@ -1534,7 +1534,7 @@ function setupIPC() {
       : known.provider === 'codex'
         ? lookupCodexTerminal(known.nativeId, { fresh })
         : Promise.resolve({ kind: 'none' });
-  const sendTargets = async (ids: unknown) => {
+  const sendTargets = async (ids: unknown, focus = true) => {
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error(m().desktop.badRequest);
     const unique = [...new Set(ids as string[])];
@@ -1558,6 +1558,9 @@ function setupIPC() {
             const tab = lookup.kind === 'none' ? await orcaTab(sessions.get(id)) : null;
             return [id, tab ? orcaTabTarget(tab) : null] as const;
           }
+          // Mobile only needs the message transport; terminal screen discovery can take
+          // seconds and must not delay an already available Desktop/queue destination.
+          if (!focus) return [id, codexDestinationTarget(await codex(known))] as const;
           // A screen can be present even while the queue's loaded-thread lookup is unavailable.
           const [thread, screen] = await Promise.all([
             Promise.resolve(codex(known)).catch(() => null),
@@ -1898,7 +1901,7 @@ function setupIPC() {
   mobile = new MobileServer(app.getPath('userData'), path.join(root, 'dist'), {
     snapshot: () => bridge.call('snapshot'),
     detail: (id, page) => bridge.call('detail', [id, page]),
-    targets: sendTargets,
+    targets: (ids) => sendTargets(ids, false),
     send: (id, text, authorized) => sendMessage(id, text, undefined, authorized),
     sendEnabled: terminalSendEnabled,
   });

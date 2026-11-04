@@ -321,3 +321,61 @@ test('late response from an old chat cannot erase the next pending send', async 
   await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '접수 확인', exact: true })).toBeVisible();
 });
+
+test('slow target discovery shows checking while history loads, then permits sending', async ({
+  page,
+}) => {
+  await mock(page);
+  let targetRequest: import('@playwright/test').Route | undefined;
+  await page.route('**/mobile/api/targets', (route) => {
+    targetRequest = route;
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await expect(page.locator('.send-reason')).toHaveText('전송 대상을 확인하는 중…');
+  await page.getByLabel('메시지', { exact: true }).fill('합성 테스트 메시지');
+  await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
+  await expect.poll(() => !!targetRequest).toBe(true);
+  await targetRequest!.fulfill({
+    json: { [local.id]: { canSend: true, desktop: true, queues: false } },
+  });
+  await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeEnabled();
+});
+
+test('history failure does not discard a valid destination and preparable conversations send once', async ({
+  page,
+}) => {
+  const f = await mock(page);
+  await page.route('**/mobile/api/detail', (route) => route.fulfill({ status: 503, json: {} }));
+  await page.route('**/mobile/api/targets', (route) =>
+    route.fulfill({
+      json: { [local.id]: { canSend: false, canPrepare: true, desktop: true, queues: false } },
+    }),
+  );
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.send-reason')).toContainText('연결을 확인한 뒤 보냅니다');
+  await page.getByLabel('메시지', { exact: true }).fill('합성 테스트 메시지');
+  await page.getByRole('button', { name: '연결하고 보내기', exact: true }).click();
+  await expect(
+    page.getByText('전송이 접수됐습니다. 답변은 대화에 표시됩니다.', { exact: true }),
+  ).toBeVisible();
+  expect(f.sends).toHaveLength(1);
+  expect(f.sends[0].id).toBe(local.id);
+});
+
+test('failed destination lookup is distinguished from a confirmed missing destination', async ({
+  page,
+}) => {
+  await mock(page);
+  await page.route('**/mobile/api/targets', (route) => route.fulfill({ status: 503, json: {} }));
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.send-reason')).toHaveText(
+    '전송 대상 연결을 확인하지 못했습니다. 자동으로 다시 확인합니다.',
+  );
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await page.getByLabel('메시지', { exact: true }).fill('합성 테스트 메시지');
+  await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
+});
