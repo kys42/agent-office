@@ -7,6 +7,7 @@ import { PendingLaunches, type PendingLaunchTarget } from './pending-launch.js';
 import { defaultResumeDeps } from './tmux-resume.js';
 import { localOrcaEnv, ORCA_LIST_LIMIT, ORCA_LIST_BUFFER } from './terminal-host.js';
 import { agentLauncher, agentWords, chooseSessionId } from './launch/agents.js';
+import { parseWorktreePs, type OrcaPsWorkspace } from './orca-sleeping.js';
 import {
   launchQueue,
   runLaunch,
@@ -404,6 +405,26 @@ export class OrcaLaunch {
   }
   async reachable(fresh = false): Promise<boolean> {
     return (await this.runtime(fresh)) === 'ready';
+  }
+  /**
+   * Every local workspace with its agents (`orca worktree ps`), sleeping ones included, for the
+   * duplicate check of a resume (desktop/orca-sleeping.ts). Read-only, asked at most every 3 s;
+   * null when Orca is missing, stopped or did not answer in time (never a reason to block).
+   */
+  workspaces(fresh = false): Promise<OrcaPsWorkspace[] | null> {
+    return remember(this, 'orca-ps', 3000, fresh, async () => {
+      if (!path.isAbsolute(this.deps.orca())) return null;
+      try {
+        const answer = await this.deps.run(this.deps.orca(), ['worktree', 'ps', '--json'], {
+          timeout: 4000,
+          maxBuffer: ORCA_LIST_BUFFER,
+          env: localOrcaEnv(this.deps.env ?? process.env),
+        });
+        return parseWorktreePs(JSON.parse(answer));
+      } catch {
+        return null;
+      }
+    });
   }
   /** Brings Orca to the front, where it mounts the tab it shows (and so starts its command). */
   async reveal(): Promise<void> {
