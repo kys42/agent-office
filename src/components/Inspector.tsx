@@ -406,17 +406,43 @@ export function Inspector({
   const [launching, setLaunching] = useState<'resume' | 'fork' | null>(null);
   // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
   const sheetFallback = canLaunch && !codexApp && !live?.canFocus;
+  // Its tab rests in a sleeping Orca workspace (#342): no terminal to jump to, and starting it
+  // again would run it twice. The main action brings Orca forward, where opening that
+  // workspace brings the tab back (main's duplicate check decides, asked once per card).
+  const [sleeping, setSleeping] = useState<{ id: string; workspace: string } | null>(null);
+  const asksSleeping = sheetFallback && !!api.orcaSleeping && !!api.orcaReveal;
+  useEffect(() => {
+    if (!asksSleeping) return;
+    let current = true;
+    api.orcaSleeping!(s.id).then(
+      (found) => {
+        if (current) setSleeping(found ? { id: s.id, workspace: found.workspace } : null);
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [s.id, asksSleeping]);
+  const inOrca = asksSleeping && sleeping?.id === s.id ? sleeping : null;
   const resumeLabel = codexApp
     ? t.inspector.openInCodex
     : live?.canFocus
       ? t.terminal.jumpTo(focusName(live))
-      : sheetFallback
-        ? t.launchSheet.cardContinue
-        : t.inspector.copyResume;
+      : inOrca
+        ? t.terminal.jumpTo(t.tmux.place.orca)
+        : sheetFallback
+          ? t.launchSheet.cardContinue
+          : t.inspector.copyResume;
   const resume = async () => {
     try {
       if (codexApp) {
         notify(await api.resume(s.id));
+        return;
+      }
+      if (inOrca) {
+        await api.orcaReveal!();
+        notify(t.tmux.sleepingRevealed(privacy ? undefined : inOrca.workspace));
         return;
       }
       if (sheetFallback) {
@@ -1114,7 +1140,7 @@ export function Inspector({
           <div className="card-actions">
             <button
               className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo || !!s.remote || (sheetFallback && privacy)}
+              disabled={demo || !!s.remote || (sheetFallback && !inOrca && privacy)}
               onClick={resume}
             >
               <Terminal size={13} />
@@ -1133,7 +1159,7 @@ export function Inspector({
             {/* Continuing in a terminal, unless the main action already does (it opens the sheet)
                 or the conversation runs where the main action goes (continuing it again only
                 says it is open). A fork is always offered: it never touches the original. */}
-            {canLaunch && !sheetFallback && !live?.canFocus && (
+            {canLaunch && (!sheetFallback || !!inOrca) && !live?.canFocus && (
               <button
                 className="card-action"
                 data-solid

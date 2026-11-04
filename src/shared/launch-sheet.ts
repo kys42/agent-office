@@ -162,7 +162,10 @@ export interface DuplicateView {
   notice: string;
   tone: 'none' | 'caution' | 'running' | 'pending';
   go?: GoThere;
-  /** An unconfirmed Orca start: only bringing Orca to the front helps. */
+  /**
+   * Bringing Orca to the front is the way there: an unconfirmed Orca start (only that helps),
+   * or its tab resting in a sleeping workspace that Orca brings back once opened.
+   */
   reveal?: boolean;
   /** It is in the app's own tmux session: its attach command, to copy (works everywhere). */
   copy?: string;
@@ -202,7 +205,16 @@ export function duplicateView(
 ): DuplicateView {
   const t = m().tmux;
   if (!check || check.state === 'none') return { notice: '', tone: 'none', blocks: false };
-  if (check.state === 'unknown') return { notice: t.unknownNotice, tone: 'caution', blocks: false };
+  if (check.state === 'unknown') {
+    const sleeping = check.sleeping;
+    return {
+      notice: sleeping
+        ? t.sleepingUnknownNotice(sleeping.workspace, sleeping.agent, sleeping.count)
+        : t.unknownNotice,
+      tone: 'caution',
+      blocks: false,
+    };
+  }
   const place = t.place[check.where];
   const openTmux = opens.includes('tmux') ? ('tmux' as const) : undefined;
   if (check.state === 'running') {
@@ -226,6 +238,15 @@ export function duplicateView(
       tone: 'pending',
       reveal: check.where === 'orca',
       blocks: true,
+    };
+  // Its tab rests in a sleeping Orca workspace (#342): no tab to switch to, but opening that
+  // workspace in Orca brings it back. Starting anyway stays possible after the confirmation.
+  if (check.sleeping)
+    return {
+      notice: t.sleepingNotice(check.sleeping.workspace),
+      tone: 'caution',
+      reveal: true,
+      blocks: false,
     };
   // Open in the own tmux session (agent not verified): that session's way in, as it is.
   const copy = check.where === 'tmux' && own ? { copy: own } : {};
@@ -415,8 +436,12 @@ export const keepsDestinations = (view: ResultView | null) =>
 
 const placeName = (id: LaunchDestinationId) => m().launch.destination[id];
 
-/** The ways to where it already is: going there, and its own tmux session's attach command. */
+/**
+ * The ways to where it already is: bringing Orca to the front, going there, and its own tmux
+ * session's attach command.
+ */
 export const duplicateActions = (view: DuplicateView): ResultAction[] => [
+  ...(view.reveal ? [{ kind: 'reveal' } as const] : []),
   ...(view.go ? [{ kind: 'go', go: view.go } as const] : []),
   ...(view.copy ? [{ kind: 'copy-command', command: view.copy } as const] : []),
 ];

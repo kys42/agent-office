@@ -368,8 +368,17 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
   const act = (action: ResultAction) => {
     switch (action.kind) {
       case 'reveal':
-        return void run(async () => {
+        return void run(async (ticket) => {
           await api.orcaReveal?.();
+          // Its tab sleeps in an Orca workspace (#342): Orca is in front, the person opens
+          // that workspace there. Nothing more for the sheet to do.
+          const check = current?.duplicate;
+          if (draft.kind === 'resume' && check?.state === 'open' && check.sleeping)
+            await finish(
+              ticket,
+              { close: true, toast: m().tmux.sleepingRevealed(check.sleeping.workspace) },
+              false,
+            );
         });
       case 'go':
         return void goThere(action.go);

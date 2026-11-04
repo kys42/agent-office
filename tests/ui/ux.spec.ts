@@ -545,7 +545,11 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
   snapshot.notices = snapshot.notices!.filter((n) => n.sessionId !== s.id);
   await page.route('**/api/rpc', async (route) => {
     const { method, args } = route.request().postDataJSON();
-    if (method === 'preferences') Object.assign(snapshot.preferences, args[0]);
+    if (method === 'preferences') {
+      Object.assign(snapshot.preferences, args[0]);
+      // A saved choice returns asynchronously; the dependent choice below waits for its render.
+      if (args[0].readyMinutes === 60) await new Promise((resolve) => setTimeout(resolve, 150));
+    }
     await route.fulfill({ json: { result: snapshot } });
   });
   await page.goto('/');
@@ -564,6 +568,9 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
   );
   // Standing by must end before going home: shortening going home pulls it back.
   await ready.selectOption('60');
+  await expect(page.locator('.office-schedule-preview')).toHaveText(
+    '마지막 활동 → 60분 대기 · 4시간 후 퇴근 · 7일 후 보관',
+  );
   await page.getByLabel('퇴근까지 시간').selectOption('1');
   await expect(ready).toHaveValue('30');
   await expect(ready.locator('option[value="60"]')).toHaveJSProperty('disabled', true);

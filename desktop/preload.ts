@@ -87,7 +87,12 @@ const api: OfficeAPI = {
       }
     : {}),
   // Orca is a macOS app: bringing it to the front is offered there only.
-  ...(process.platform === 'darwin' ? { orcaReveal: () => action('office:orca-reveal') } : {}),
+  ...(process.platform === 'darwin'
+    ? {
+        orcaReveal: () => action('office:orca-reveal'),
+        orcaSleeping: (id: string) => action('office:orca-sleeping', id),
+      }
+    : {}),
   // Every destination says itself whether this platform has it (desktop/launch/).
   launch: (request) => action('office:launch', request),
   launchOptions: (intent) => action('office:launch-options', intent),
