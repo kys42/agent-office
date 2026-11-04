@@ -17,6 +17,7 @@ import {
   type TerminalTarget,
 } from '../shared/types';
 import { sessionName, projectKey, benchKey } from '../shared/office';
+import { isTeammate } from '../shared/residents';
 import { planDeskDrop } from '../shared/desk-order';
 import { isRemoteId } from '../shared/federation';
 import {
@@ -705,6 +706,11 @@ export function Office({
                                   : t.desk.working
                                 : MOODS[s.status].label}
                             </span>
+                            {isTeammate(s) && (
+                              <b className="desk-teammate" title={t.desk.teammate.hint}>
+                                {t.desk.teammate.tag}
+                              </b>
+                            )}
                             {unread > 0 && <em>{t.desk.unread(unread)}</em>}
                           </small>
                         </button>

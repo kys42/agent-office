@@ -68,6 +68,12 @@ export interface SessionRelation {
   agentPath?: string;
   role?: string;
   parentSessionKey?: string;
+  /**
+   * The agent team this session works in as a member (Claude Code agent teams): another
+   * session (its lead) started it and talks to it. Its title is its member name. With the
+   * lead found it is the lead's helper (`kind: 'subagent'`); without, a desk of its own.
+   */
+  team?: string;
 }
 export interface SessionActor {
   id: string;

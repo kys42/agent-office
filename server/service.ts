@@ -23,7 +23,7 @@ import { parseRecords, hash } from './adapters/normalize.js';
 import { codexMetadata, type CodexMeta } from './adapters/codex.js';
 import { readOpenClawDatabases } from './adapters/openclaw.js';
 import { artifactDetails } from './artifacts.js';
-import { claudeMetadata, claudeSubagentMetadata } from './adapters/claude.js';
+import { claudeMetadata, claudeSubagentMetadata, claudeTeammateLink } from './adapters/claude.js';
 import {
   applyLiveWait,
   defaultLiveDeps,
@@ -933,6 +933,9 @@ export class OfficeService extends EventEmitter {
             : undefined,
           revision: hash(`${s.revision}:${sidecar.title}:${sidecar.role}`),
         };
+      // An agent-team member sits with its lead, found again on every pass: the team config
+      // and the lead's transcript can appear after the member's.
+      if (s.relation?.team) s = await claudeTeammateLink(s, this.roots.claude);
     }
     return s;
   }

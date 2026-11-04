@@ -163,6 +163,7 @@ export const shared = {
     scheduled: 'Scheduled run',
     internal: 'Internal helper',
     helper: 'Helper task',
+    teammate: 'Agent-team member',
     conversation: 'Conversation',
   },
   runtime: {
