@@ -1035,6 +1035,11 @@ export interface OfficeAPI {
    * each time that changes (set by its own toggle, or floated again by a floating opener).
    */
   onPopupOnTop?: (callback: (on: boolean) => void) => () => void;
+  /**
+   * Desktop reader window: its output was asked to be previewed again while open (#350), so it
+   * reads the file again.
+   */
+  onReaderRefresh?: (callback: () => void) => () => void;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**

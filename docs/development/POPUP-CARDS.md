@@ -57,7 +57,7 @@
   - 읽기 창이 받는 IPC: `office:reader-window`(`target`·`focus`·`close`·`go`·`top`·`top-on`·`top-off`), `office:call`의 `snapshot`·`bookmarkById`만, 복사·링크·파일 열기·화면 표시 여부. 그 밖(보내기·설정·북마크 쓰기 등)은 거부한다. 큰 사무실·카드는 `open`만 쓸 수 있다.
   - 화면 내용 숨기기를 켜면 main이 읽기 창을 모두 닫고 켜져 있는 동안 새로 열지 않는다(목록 안 상세가 닫히는 것과 같다). 창도 숨김 상태면 본문을 읽지 않고 가린 표시만 그린다.
   - 데스크톱 브리지가 없는 웹 미리보기와 데모는 예전처럼 목록 위 모달로 읽는다(`readerOpens`). 모달과 창은 같은 본문 컴포넌트(`BookmarkReading`)를 그린다.
-  - **산출물 미리보기**(#350)도 같은 읽기 창이다. 대상은 `{ id, kind: 'output' }`, 키는 `output:<id>`(북마크 키와 겹치지 않음). 산출물 목록의 **미리보기**가 `office:output`의 `preview`로 열고(main이 기록된 md·html인지 실제 경로로 확인), 창은 `office:call`의 `outputPreview`로 그때 읽는다. md는 `MessageMarkdown`, html은 `sandbox=""` iframe + 문서 CSP. 머리줄은 이름 · 열기 · Finder에서 보기 · 경로 복사 · 맨 위에 두기 · 닫기이며 `go`는 거부한다. 창 안 하위 프레임은 `about:srcdoc` 밖으로 이동하지 못한다(`will-frame-navigate`).
+  - **산출물 미리보기**(#350)도 같은 읽기 창이다. 대상은 `{ id, kind: 'output' }`, 키는 `output:<id>`(북마크 키와 겹치지 않음). 산출물 목록의 **미리보기**가 `office:output`의 `preview`로 열고(main이 기록된 md·html인지 실제 경로로 확인), 창은 `office:call`의 `outputPreview`로 그때 읽는다. md는 `MessageMarkdown`, html은 `sandbox=""` iframe + 문서 CSP. 머리줄은 이름 · 열기 · Finder에서 보기 · 경로 복사 · 맨 위에 두기 · 닫기이며 `go`는 거부한다. 이미 열린 산출물을 다시 미리보기하면 창을 앞으로 가져오면서 `office:reader-refresh`를 보내 파일을 다시 읽는다(보이던 내용은 새 내용이 올 때까지 둔다). 창 안 하위 프레임은 `about:srcdoc` 밖으로 이동하지 못한다(`will-frame-navigate`).
 
 ### 검증
 

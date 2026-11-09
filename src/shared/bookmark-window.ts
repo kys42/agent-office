@@ -43,3 +43,10 @@ export const readerKey = (target: ReaderTarget) =>
 export function readerOpens({ windows, demo }: { windows: boolean; demo: boolean }) {
   return windows && !demo ? ('window' as const) : ('modal' as const);
 }
+
+/**
+ * Whether a reader window asked for again while open reads what it shows again: an output's
+ * file may have changed since (#350). A bookmark is a saved copy and re-reads on its own stamp.
+ */
+export const rereadsOnReopen = (opened: 'opened' | 'reopened', target: ReaderTarget) =>
+  opened === 'reopened' && target.kind === 'output';

@@ -414,7 +414,13 @@ async function reader(
           w.reads.push(id);
           // The service hides an output of an excluded project.
           if (w.hidden) return null;
+          // The file as it is now (a test may edit it).
+          if (w.edited) return { id, name: '분기 보고서.md', truncated: false, ...w.edited };
           return preview && { id, name: '분기 보고서.md', truncated: false, ...preview };
+        },
+        onReaderRefresh: (cb: () => void) => {
+          w.refresh = cb;
+          return () => {};
         },
         outputAction: async (what: string, id: string) => {
           w.actions.push([what, id]);
@@ -482,6 +488,21 @@ test('The reader reads nothing while screen content is hidden', async ({ page })
   await reader(page, { format: 'markdown', text: '# 비밀' }, true);
   await expect(page.getByText('화면 내용을 숨기는 동안에는 산출물을 읽지 않아요.')).toBeVisible();
   expect(await page.evaluate(() => (window as any).reads)).toEqual([]);
+});
+
+test('Previewing an open output again reads its edited file again', async ({ page }) => {
+  await reader(page, { format: 'markdown', text: '# 첫 판' });
+  const body = page.locator('.output-reader');
+  await expect(body.locator('h1')).toHaveText('첫 판');
+  // The file is edited, then Preview is pressed again: main tells the open window to reread.
+  await page.evaluate(() => {
+    const w = window as any;
+    w.edited = { format: 'markdown', text: '# 고친 판\n\n- 새 항목' };
+    w.refresh();
+  });
+  await expect(body.locator('h1')).toHaveText('고친 판');
+  await expect(body.locator('li')).toHaveText('새 항목');
+  expect(await page.evaluate(() => (window as any).reads)).toEqual(['o-report', 'o-report']);
 });
 
 test('A reader whose output is gone says so', async ({ page }) => {

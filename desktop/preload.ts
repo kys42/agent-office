@@ -43,6 +43,11 @@ const api: OfficeAPI = {
   outputPreview: (id) => call('outputPreview', id),
   bookmarkWindow: ((what: string, target?: unknown) =>
     action('office:reader-window', what, target)) as OfficeAPI['bookmarkWindow'],
+  onReaderRefresh: (cb) => {
+    const f = () => cb();
+    ipcRenderer.on('office:reader-refresh', f);
+    return () => ipcRenderer.removeListener('office:reader-refresh', f);
+  },
   onPopupOnTop: (cb) => {
     const f = (_: unknown, on: boolean) => cb(on === true);
     ipcRenderer.on('office:popup-on-top', f);

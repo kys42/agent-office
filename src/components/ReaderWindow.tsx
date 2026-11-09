@@ -251,9 +251,16 @@ function OutputReader({ id, snapshot, notify, error, setError }: ReaderProps & {
   const privacy = prefs?.privacy ?? false;
   const known = !!snapshot;
   const visibility = JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders]);
+  // Previewed again while open (main's `office:reader-refresh`): the file may have changed.
+  const [reread, setReread] = useState(0);
+  useEffect(() => api.onReaderRefresh?.(() => setReread((n) => n + 1)), []);
+  const readUnder = useRef('');
   useEffect(() => {
-    // Nothing read before stays on screen while it is checked again.
-    setPreview(undefined);
+    // Under other settings nothing read before stays on screen while it is checked again; read
+    // again on request, what is shown stays until the new content replaces it.
+    const under = JSON.stringify([id, known, privacy, visibility]);
+    if (under !== readUnder.current) setPreview(undefined);
+    readUnder.current = under;
     if (!known || privacy) return;
     let alive = true;
     if (!api.outputPreview) {
@@ -271,7 +278,7 @@ function OutputReader({ id, snapshot, notify, error, setError }: ReaderProps & {
     return () => {
       alive = false;
     };
-  }, [id, known, privacy, visibility]);
+  }, [id, known, privacy, visibility, reread]);
   const shown = !privacy && preview ? preview : null;
   useEffect(() => {
     document.title = shown ? `${t.outputs.readerTitle} · ${shown.name}` : t.outputs.readerTitle;

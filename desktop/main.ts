@@ -23,7 +23,12 @@ import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
 import { ReaderWindows } from './reader-windows.js';
-import { parseReaderTarget, readerKey } from '../src/shared/bookmark-window.js';
+import {
+  parseReaderTarget,
+  readerKey,
+  rereadsOnReopen,
+  type ReaderTarget,
+} from '../src/shared/bookmark-window.js';
 import { popupFloats } from '../src/shared/popup-window.js';
 import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
@@ -946,10 +951,19 @@ function setupReader() {
       );
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
-    readerWindows.open(readerKey(target), target, from.getBounds(), {
-      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
-    });
+    openReader(target, from);
   });
+}
+/**
+ * A reader window beside `from`. An output's reader that is already open is told to read the
+ * file again (`office:reader-refresh`): previewing it again shows what the file holds now.
+ */
+function openReader(target: ReaderTarget, from: BrowserWindow) {
+  const key = readerKey(target);
+  const done = readerWindows.open(key, target, from.getBounds(), {
+    float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+  });
+  if (rereadsOnReopen(done, target)) readerWindows.send(key, 'office:reader-refresh');
 }
 function setupIPC() {
   let health: ReturnType<typeof readAppHealth> | undefined;
@@ -1042,14 +1056,7 @@ function setupIPC() {
       if (!previewFormat(ext)) throw new Error(m().desktop.badRequest);
       const from = BrowserWindow.fromWebContents(e.sender);
       if (!from || from.isDestroyed()) return 'missing';
-      readerWindows.open(
-        readerKey({ id, kind: 'output' }),
-        { id, kind: 'output' },
-        from.getBounds(),
-        {
-          float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
-        },
-      );
+      openReader({ id, kind: 'output' }, from);
       return 'previewed';
     }
     if (OUTPUT_EXTENSIONS.has(ext) && !(await shell.openPath(file))) return 'opened';

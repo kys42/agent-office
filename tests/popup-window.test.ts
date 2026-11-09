@@ -12,6 +12,7 @@ import { shellWindowBounds, SHELL_WINDOW_SIZE } from '../src/shared/shell-window
 import {
   parseReaderTarget,
   readerKey,
+  rereadsOnReopen,
   READER_WINDOW_MIN,
   READER_WINDOW_SIZE,
   READER_WINDOW_SIZE_FILE,
@@ -113,6 +114,10 @@ test('a reader window is asked for by bookmark id only', () => {
   assert.throws(() => parseReaderTarget({ id: 'o-1', kind: 'file' }));
   assert.equal(readerKey({ id: 'x', kind: 'output' }), 'output:x');
   assert.equal(readerKey({ id: 'x' }), 'x');
+  // Previewing an open output again reads its file again; a first opening reads anyway.
+  assert.equal(rereadsOnReopen('reopened', { id: 'x', kind: 'output' }), true);
+  assert.equal(rereadsOnReopen('opened', { id: 'x', kind: 'output' }), false);
+  assert.equal(rereadsOnReopen('reopened', { id: 'x' }), false);
 });
 
 test('the desktop app reads a bookmark in a window; the web preview and the demo in the page', () => {
