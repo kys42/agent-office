@@ -86,6 +86,24 @@ export function outputOrder(a: SessionOutput, b: Pick<SessionOutput, 'createdAt'
   return b.createdAt - a.createdAt || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 }
 
+/**
+ * A list read again whose loaded rows reach past the refreshed first page (one read is bounded
+ * by `OUTPUT_PAGE_MAX`): the new first page, then the rows loaded after it that are older than
+ * its last row. Rows gone from the refreshed range go; the older tail stays as it was, so the
+ * list does not fold back and the scroll stays put. Null when the page covers the whole list.
+ */
+export function refreshed(
+  loaded: SessionOutput[],
+  head: SessionOutput[],
+  more: boolean,
+): SessionOutput[] | null {
+  const last = head.at(-1);
+  if (!more || !last || loaded.length <= head.length) return null;
+  const ids = new Set(head.map((o) => o.id));
+  const tail = loaded.filter((o) => !ids.has(o.id) && outputOrder(o, last) > 0);
+  return tail.length ? [...head, ...tail] : null;
+}
+
 /** Whether an output matches the words a list was narrowed by. */
 export function outputMatches(o: SessionOutput, text: string) {
   const words = text.toLowerCase().split(/\s+/).filter(Boolean);

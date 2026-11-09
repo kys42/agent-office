@@ -9,8 +9,8 @@ import { mentionedFiles, outputFile } from '../server/adapters/outputs.js';
 import { OfficeStore } from '../server/store.js';
 import { OutputLog, readPreview } from '../server/outputs.js';
 import { OfficeService } from '../server/service.js';
-import { claudeArtifactLink, groupOutputs } from '../src/shared/outputs.js';
-import type { OutputCandidate, Session } from '../src/shared/types.js';
+import { claudeArtifactLink, groupOutputs, refreshed } from '../src/shared/outputs.js';
+import type { OutputCandidate, Session, SessionOutput } from '../src/shared/types.js';
 
 const now = Date.parse('2026-11-09T00:00:00Z');
 const at = (offset: number) => new Date(now + offset).toISOString();
@@ -286,6 +286,157 @@ test('Codex apply_patch counts added files of patches that went in, not updates 
     ['/work/app/docs/plan.md', 'patch'],
     ['/work/app/out/chart.svg', 'patch'],
     ['/work/app/out/table.csv', 'patch'],
+  ]);
+});
+
+test('Code-mode literal patches count their added files only on a clear success report', () => {
+  const code = (body: string) =>
+    `const r = await tools.apply_patch(${JSON.stringify(body)});\ntext(r);`;
+  const s = parseRecords(
+    [
+      codex('session_meta', { id: 'codex-exec', cwd }, 0),
+      codex('turn_context', { cwd }, 1),
+      // Added and reported: counts (relative path as written, resolved from cwd).
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'e1',
+          input: code(
+            patch(
+              '*** Add File: docs/brief.md',
+              '+# Brief',
+              '*** Update File: src/a.ts',
+              '@@',
+              '-a',
+              '+b',
+            ),
+          ),
+        },
+        2,
+      ),
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call_output',
+          call_id: 'e1',
+          output: 'Success. Updated the following files:\nA docs/brief.md\nM src/a.ts\n',
+        },
+        3,
+      ),
+      // functions.exec with JSON arguments, the result naming the absolute path.
+      codex(
+        'response_item',
+        {
+          type: 'function_call',
+          name: 'functions.exec',
+          call_id: 'e2',
+          arguments: JSON.stringify({
+            code: code(patch('*** Add File: /work/app/out/data.csv', '+a,b')),
+          }),
+        },
+        4,
+      ),
+      codex(
+        'response_item',
+        {
+          type: 'function_call_output',
+          call_id: 'e2',
+          output: JSON.stringify({
+            output: 'Success. Updated the following files:\nA /work/app/out/data.csv',
+            metadata: { exit_code: 0 },
+          }),
+        },
+        5,
+      ),
+      // The script ran (exit 0) but says nothing of the patch: not counted.
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'e3',
+          input: code(patch('*** Add File: docs/quiet.md', '+x')),
+        },
+        6,
+      ),
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call_output',
+          call_id: 'e3',
+          output: JSON.stringify({ output: 'done', metadata: { exit_code: 0 } }),
+        },
+        7,
+      ),
+      // A failed patch: not counted.
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'e4',
+          input: code(patch('*** Add File: docs/failed.md', '+x')),
+        },
+        8,
+      ),
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call_output',
+          call_id: 'e4',
+          output: 'Error: apply_patch verification failed',
+        },
+        9,
+      ),
+      // Success for another file only: this one is not listed as added.
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'e5',
+          input: code(patch('*** Add File: docs/other.md', '+x')),
+        },
+        10,
+      ),
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call_output',
+          call_id: 'e5',
+          output: 'Success. Updated the following files:\nM docs/other.md',
+        },
+        11,
+      ),
+      // A patch built at run time, or under a condition: never read.
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call',
+          name: 'exec',
+          call_id: 'e6',
+          input:
+            'const p = "*** Add File: docs/dyn.md"; if (ok) await tools.apply_patch(`*** Begin Patch\\n*** Add File: docs/cond.md\\n+x\\n*** End Patch`); await tools.apply_patch(p);',
+        },
+        12,
+      ),
+      codex(
+        'response_item',
+        {
+          type: 'custom_tool_call_output',
+          call_id: 'e6',
+          output: 'Success. Updated the following files:\nA docs/cond.md\nA docs/dyn.md',
+        },
+        13,
+      ),
+    ],
+    codexOpts,
+  );
+  assert.deepEqual(keys(s), [
+    ['/work/app/docs/brief.md', 'patch'],
+    ['/work/app/out/data.csv', 'patch'],
   ]);
 });
 
@@ -687,4 +838,25 @@ test('Lists group by project, then teammate, newest first', () => {
       ],
     ],
   );
+});
+
+test('A list read again keeps its loaded tail past the refreshed first page', () => {
+  const row = (n: number) =>
+    ({ id: `o${String(n + 1).padStart(3, '0')}`, createdAt: 1000 - n }) as SessionOutput;
+  const loaded = Array.from({ length: 250 }, (_, i) => row(i));
+  // The first 200 read again: a new row on top, one inside the range gone.
+  const gone = loaded[5].id;
+  const head = [row(-1), ...loaded.slice(0, 200).filter((o) => o.id !== gone)];
+  const next = refreshed(loaded, head, true)!;
+  assert.equal(next.length, 250);
+  assert.equal(next[0].id, row(-1).id);
+  assert.ok(!next.some((o) => o.id === gone));
+  assert.deepEqual(
+    next.slice(200).map((o) => o.id),
+    loaded.slice(200).map((o) => o.id),
+  );
+  assert.equal(new Set(next.map((o) => o.id)).size, next.length);
+  // The page covers everything, or nothing was loaded past it: the page as it is.
+  assert.equal(refreshed(loaded, head, false), null);
+  assert.equal(refreshed(loaded.slice(0, 50), head.slice(0, 50), true), null);
 });

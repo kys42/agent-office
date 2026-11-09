@@ -214,6 +214,56 @@ test('Pages load more and search narrows the list', async ({ page }) => {
   await expect(page.getByText('이 단어가 들어간 산출물이 없어요.')).toBeVisible();
 });
 
+test('A new output past 200 loaded rows keeps the loaded tail and the scroll', async ({ page }) => {
+  await open(page, { count: 250 });
+  await page.getByRole('button', { name: '산출물', exact: true }).click();
+  const rows = page.locator('.output-row');
+  await expect(rows).toHaveCount(50);
+  for (const n of [100, 150, 200, 250, 255]) {
+    await page.getByRole('button', { name: '더 보기' }).click();
+    await expect(rows).toHaveCount(n);
+  }
+  await expect(page.getByRole('button', { name: '더 보기' })).toHaveCount(0);
+  // Down at the oldest rows.
+  const last = page.locator('[data-output-id="o-extra-249"]');
+  await last.scrollIntoViewIfNeeded();
+  const scroller = () =>
+    page.evaluate(() => {
+      let el = document.querySelector('.outputs-page') as HTMLElement | null;
+      while (el && el.scrollHeight <= el.clientHeight) el = el.parentElement;
+      return el?.scrollTop ?? window.scrollY;
+    });
+  const before = await scroller();
+  expect(before).toBeGreaterThan(1000);
+  const lastTop = (await last.boundingBox())!.y;
+  // Elsewhere: the first teammate records one more on top (groups keep their order), one of
+  // the first 200 is gone; the stamp moves.
+  await page.evaluate(() => {
+    const w = window as any;
+    const added = {
+      ...w.outputs.find((o: any) => o.id === 'o-report'),
+      id: 'o-new',
+      name: 'new.md',
+      ext: 'md',
+      createdAt: Date.now(),
+    };
+    w.outputs = [added, ...w.outputs.filter((o: any) => o.id !== 'o-extra-10')];
+    w.fixture.version++;
+    w.fixture.outputStamp = '2';
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(page.locator('[data-output-id="o-new"]')).toHaveCount(1);
+  await expect(page.locator('[data-output-id="o-extra-10"]')).toHaveCount(0);
+  // Everything loaded further down is still there, and nothing jumped.
+  await expect(rows).toHaveCount(255);
+  await expect(last).toBeVisible();
+  const refresh = (await page.evaluate(() => (window as any).queries)).at(-1);
+  expect(refresh.limit).toBe(200);
+  expect(refresh.before).toBeUndefined();
+  expect(await scroller()).toBe(before);
+  expect(Math.abs((await last.boundingBox())!.y - lastTop)).toBeLessThan(2);
+});
+
 test('Hidden screen content hides names, paths, teammates and every action', async ({ page }) => {
   await open(page, { privacy: true });
   await page.getByRole('button', { name: '산출물', exact: true }).click();

@@ -294,13 +294,13 @@
 - 동료가 **새로 만든** 문서·페이지·이미지를 모아 본다. 왼쪽 **기록**의 **기억 서랍** 바로 옆 **산출물** 탭(⌘K '산출물'). 수정만 한 파일과 코드는 넣지 않는다
 - 무엇이 산출물인가 (수집기, 에이전트 어댑터 `server/adapters/outputs.ts`)
   - **Claude** `Write`의 결과가 "File created successfully at:"(또는 `toolUseResult.type: create`)인 파일. "has been updated"는 원래 있던 파일이라 뺀다. 거절·실패했거나 결과가 없는 호출도 뺀다. 만든 뒤 고쳐도 산출물로 남는다
-  - **Codex** `apply_patch`의 `*** Add File:` 중 패치가 성공한 것(`Success. Updated the following files` / `exit_code 0`). `*** Update File:`은 뺀다. rollout에 `patch_apply_end`가 있으면 그 `add`도 읽는다
+  - **Codex** `apply_patch`의 `*** Add File:` 중 패치가 성공한 것(`Success. Updated the following files` / `exit_code 0`). `*** Update File:`은 뺀다. rollout에 `patch_apply_end`가 있으면 그 `add`도 읽는다. 코드 모드(`exec` 안의 `tools.apply_patch` 리터럴 패치)는 출력에 성공 줄과 그 파일의 `A <경로>`가 있을 때만 센다
   - **응답 속 경로**: 답에서 `open <절대경로>`(따옴표·`-a 앱` 지원)와 로컬 파일 Markdown 링크로 알려 준 파일. **대화 중에 생긴 파일**이어야 한다(파일 생성 시각이 대화 시작 2분 전 ~ 언급 2분 뒤 사이, stat 한 번). 아직 없는 파일은 세션이 그대로여도 15초에 한 번까지, 처음 언급 뒤 30분 동안 다시 본다(최대 500개). 대화 전부터 있던 파일은 기억해 다시 보지 않는다
   - **Claude Artifact 링크**(`claude.ai/…/artifact(s)/…`). `[제목](링크)`면 그 제목을 쓴다
   - 확장자 허용 목록: md, markdown, html, htm, pdf, csv, tsv, xlsx, docx, pptx, png, jpg, jpeg, gif, svg, webp, json(보고서·데이터. `package.json`·`tsconfig*.json` 같은 설정 파일은 뺀다). 숨김 폴더·`node_modules`·`.git`·`test-results`·`playwright-report`·`coverage`·`dist`·`build`·`.local` 안은 뺀다. 세션 폴더 안이면 그 아래 경로만 본다(숨김 worktree 폴더에서 일하는 세션도 산출물이 잡힌다). `~/.claude/plans` 같은 숨김 폴더 파일은 빠진다
 - 저장: 세션별로 경로·만든 시각·만든 동료(도구·프로젝트·제목)를 앱 DB `session_outputs`에 남긴다. 큰 기록의 앞/뒤 창만 읽어도 이미 찾은 산출물은 남는다. 최근 5000개까지
 - 화면
-  - **산출물 탭**: 프로젝트 → 동료로 묶고 최근 것부터. 항목마다 파일 이름·폴더·만든 방식(새로 만듦/패치로 추가/알려 준 파일/Claude Artifact)·시각·**지금도 있는지**(목록을 읽을 때 그 페이지의 파일만 stat). 행동은 **미리보기**(md·html), **열기**(기본 앱 / Artifact는 브라우저), **Finder에서 보기**, **경로 복사**. 없어진 파일은 '지금은 없어요'로 표시하고 열기·보기를 막는다. 검색·더 보기(50개씩)
+  - **산출물 탭**: 프로젝트 → 동료로 묶고 최근 것부터. 항목마다 파일 이름·폴더·만든 방식(새로 만듦/패치로 추가/알려 준 파일/Claude Artifact)·시각·**지금도 있는지**(목록을 읽을 때 그 페이지의 파일만 stat). 행동은 **미리보기**(md·html), **열기**(기본 앱 / Artifact는 브라우저), **Finder에서 보기**, **경로 복사**. 없어진 파일은 '지금은 없어요'로 표시하고 열기·보기를 막는다. 검색·더 보기(50개씩). 새 산출물이 기록돼 목록을 다시 읽을 때는 첫 페이지(최대 200개)만 새로 읽어 앞에 합치고, 그보다 아래로 더 불러 둔 항목과 스크롤은 그대로 둔다
   - **업무 카드 > 작업 정보**의 **이 동료가 만든 산출물**: 그 동료의 모든 실행의 최근 5개와 '산출물에서 n개 모두 보기'. 원격 사무실 동료에게는 보이지 않는다. 설정 > 모습 > 화면마다 보일 것 > 큰 사무실 '자세히'의 **업무 카드의 산출물**로 끌 수 있다(`cardOutputs`, 기본 켬)
   - **미리보기**는 누를 때만 읽는다(최대 1 MiB, 가린 뒤). 북마크와 같은 **옆에 뜨는 읽기 창**에 연다(산출물마다 창 하나). md는 대화와 같은 Markdown 렌더러(이미지·HTML 태그는 그리지 않음). html은 **스크립트를 막은 샌드박스 iframe**(`sandbox=""`, 문서 안 CSP `default-src 'none'`, 앱 CSP 상속, 프레임 이동 차단)으로 보인다. 스크립트까지 실행해 보려면 **열기**로 기본 브라우저에서 연다
 - 지킬 것

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SessionOutput } from '../shared/types';
-import { OUTPUT_PAGE, OUTPUT_PAGE_MAX } from '../shared/outputs';
+import { OUTPUT_PAGE, OUTPUT_PAGE_MAX, refreshed } from '../shared/outputs';
 import { api } from './api';
 
 /**
@@ -35,6 +35,8 @@ export function useOutputs({
   latest.current = list;
   // Which reading a page continues: a new query or a change elsewhere starts another.
   const generation = useRef(0);
+  /** The query the list holds (text, scope, page size). */
+  const listed = useRef<string | null>(null);
   const available = !demo && !!api.outputs;
   useEffect(() => {
     if (!available) {
@@ -44,20 +46,27 @@ export function useOutputs({
       return;
     }
     const reading = ++generation.current;
+    // The same list read again (an output was recorded, settings changed) keeps what was loaded
+    // further down; another query starts over.
+    const query = JSON.stringify([text, scope, limit]);
+    const again = listed.current === query;
     let active = true;
     setLoading(true);
     setError('');
     const timer = setTimeout(async () => {
       try {
-        // As many as were listed (up to a page's bound): what was loaded further down stays.
+        // As many as were listed, up to a page's bound.
         const page = await api.outputs!({
           text,
           sessionIds: scopedIds(),
-          limit: Math.min(Math.max(latest.current.length, limit), OUTPUT_PAGE_MAX),
+          limit: again ? Math.min(Math.max(latest.current.length, limit), OUTPUT_PAGE_MAX) : limit,
         });
         if (!active || reading !== generation.current) return;
-        setList(page.outputs);
-        setMore(page.more);
+        listed.current = query;
+        const merged = again ? refreshed(latest.current, page.outputs, page.more) : null;
+        setList(merged ?? page.outputs);
+        // A kept tail goes on where it ended.
+        if (!merged) setMore(page.more);
         setTotal(page.total);
       } catch (e) {
         if (active) setError((e as Error).message);

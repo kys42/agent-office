@@ -1,4 +1,5 @@
 import os from 'node:os';
+import { wrappedPatches } from './working-location.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { OutputCandidate } from '../../src/shared/types.js';
@@ -129,8 +130,37 @@ export function mentionedFiles(text: string): string[] {
 }
 
 interface Pending {
-  kind: 'write' | 'patch' | 'artifact';
+  kind: 'write' | 'patch' | 'wrapped' | 'artifact';
   files: string[];
+  /** Code mode: each file as the patch wrote it (the result lists it that way). */
+  written?: string[];
+}
+
+/** A tool output's text: the `output` of JSON `{output, metadata}`, else the text itself. */
+function outputText(text: string): string {
+  if (text.trimStart().startsWith('{'))
+    try {
+      const out = JSON.parse(text);
+      if (typeof out?.output === 'string') return out.output;
+    } catch {
+      /* plain text */
+    }
+  return text;
+}
+
+/** The script of a code-mode call: the code itself, or `{code}` / `{input}` JSON arguments. */
+function wrappedCode(raw: unknown): string | undefined {
+  if (typeof raw === 'object' && raw) raw = (raw as any).code ?? (raw as any).input;
+  if (typeof raw !== 'string') return;
+  if (raw.trimStart().startsWith('{'))
+    try {
+      const args = JSON.parse(raw);
+      const code = args?.code ?? args?.input ?? args?.source;
+      if (typeof code === 'string') return code;
+    } catch {
+      /* the code itself */
+    }
+  return raw;
 }
 
 /**
@@ -162,6 +192,24 @@ export class OutputTracker {
       if (files.length) this.pending.set(callId, { kind: 'patch', files });
       return;
     }
+    // Code mode (`exec` / `functions.exec`): literal patches given to `tools.apply_patch`, as
+    // `wrappedLocations` reads them. The script's own result is all there is, so each added
+    // file waits for that result to report it added (see `result`).
+    if (name === 'functions.exec' || name === 'exec') {
+      const code = wrappedCode(raw);
+      if (!code || !/tools\.apply_patch/.test(code)) return;
+      const files: string[] = [];
+      const written: string[] = [];
+      for (const patch of wrappedPatches(code))
+        for (const f of patchAdds(patch)) {
+          const key = outputFile(f, cwd);
+          if (key) {
+            files.push(key);
+            written.push(f);
+          }
+        }
+      if (files.length) this.pending.set(callId, { kind: 'wrapped', files, written });
+    }
     if (name === 'Artifact') this.pending.set(callId, { kind: 'artifact', files: [] });
   }
   /**
@@ -188,6 +236,16 @@ export class OutputTracker {
     } else if (call.kind === 'patch') {
       if (patchApplied(text))
         for (const key of call.files) this.add({ key, kind: 'file', at, via: 'patch' });
+    } else if (call.kind === 'wrapped') {
+      // Only a clear report counts: the patch tool's success line, and this very file listed
+      // as added (`A <path>`, as written or resolved). A script's exit code says nothing of it.
+      const report = outputText(text);
+      if (!/Success\. Updated the following files/.test(report)) return;
+      const added = new Set([...report.matchAll(/^\s*A (.+?)\s*$/gm)].map((m) => m[1]));
+      call.files.forEach((key, i) => {
+        if (added.has(key) || added.has(call.written![i]))
+          this.add({ key, kind: 'file', at, via: 'patch' });
+      });
     } else this.links(text, at);
   }
   /**
