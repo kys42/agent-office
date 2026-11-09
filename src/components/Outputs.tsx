@@ -189,18 +189,21 @@ export function OutputsPage({
   demo,
   privacy,
   stamp,
+  visibility,
   notify,
 }: {
   sessions: Session[];
   demo: boolean;
   privacy: boolean;
-  /** Changes whenever an output is recorded or the settings that hide some change. */
+  /** Changes whenever an output is recorded. */
   stamp: string;
+  /** The settings that decide which outputs are shown (excluded projects, tools). */
+  visibility: string;
   notify: (s: string) => void;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
-  const outputs = useOutputs({ text: query, stamp, demo });
+  const outputs = useOutputs({ text: query, stamp, visibility, demo });
   const groups = groupOutputs(outputs.list, sessions);
   const byId = new Map(sessions.map((s) => [s.id, s]));
   return (
@@ -318,6 +321,7 @@ export function SessionOutputs({
   demo,
   privacy,
   stamp,
+  visibility,
   notify,
   onAll,
 }: {
@@ -325,12 +329,14 @@ export function SessionOutputs({
   demo: boolean;
   privacy: boolean;
   stamp: string;
+  /** The settings that decide which outputs are shown (excluded projects, tools). */
+  visibility: string;
   notify: (s: string) => void;
   /** Open the Outputs page (absent where there is none, e.g. a card window). */
   onAll?: () => void;
 }) {
   const { t } = useI18n();
-  const outputs = useOutputs({ sessionIds, stamp, demo, limit: OUTPUT_CARD });
+  const outputs = useOutputs({ sessionIds, stamp, visibility, demo, limit: OUTPUT_CARD });
   if (!outputs.available) return null;
   return (
     <section className="info-group card-outputs" aria-label={t.outputs.cardTitle}>

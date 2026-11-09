@@ -111,6 +111,7 @@ export function Inspector({
   onPositionRemember,
   windowBusy = false,
   outputStamp = '',
+  outputVisibility = '',
   showOutputs = true,
   onOutputs,
 }: {
@@ -176,6 +177,8 @@ export function Inspector({
   windowBusy?: boolean;
   /** Changes whenever an output is recorded (#350): the card's outputs read again. */
   outputStamp?: string;
+  /** The settings that decide which outputs are shown: a change starts the list over. */
+  outputVisibility?: string;
   /** Settings: the Details tab lists this teammate's outputs (`cardOutputs`, default on). */
   showOutputs?: boolean;
   /** Open the Outputs page (the big office only). */
@@ -578,6 +581,7 @@ export function Inspector({
           demo={demo}
           privacy={privacy}
           stamp={outputStamp}
+          visibility={outputVisibility}
           notify={notify}
           onAll={onOutputs}
         />

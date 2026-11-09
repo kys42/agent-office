@@ -309,12 +309,10 @@ export default function App() {
     if (!demo) api.selected?.(currentId);
   }, [demo, currentId]);
   const prefs = snapshot?.preferences;
-  // Output lists read again when an output is recorded or the settings that hide some change.
-  const outputStamp = JSON.stringify([
-    snapshot?.outputStamp,
-    prefs?.excludedProjects,
-    prefs?.enabledProviders,
-  ]);
+  // Output lists read again when an output is recorded (keeping what was loaded further down),
+  // and start over when the settings that hide some change.
+  const outputStamp = snapshot?.outputStamp ?? '';
+  const outputVisibility = JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders]);
   // '패널 폭 초기화' in settings (maybe the settings window, another renderer): a stamp newer
   // than the last drag puts both columns back to their defaults.
   const widthsResetAt = prefs?.panelWidthsResetAt;
@@ -1100,6 +1098,7 @@ export default function App() {
               demo={demo}
               privacy={prefs?.privacy ?? false}
               stamp={outputStamp}
+              visibility={outputVisibility}
               notify={notify}
             />
           ) : view === 'settings' ? (
@@ -1168,6 +1167,7 @@ export default function App() {
             focus={bookmarkFocus}
             onFocused={() => setBookmarkFocus(null)}
             outputStamp={outputStamp}
+            outputVisibility={outputVisibility}
             showOutputs={prefs?.cardOutputs !== false}
             onOutputs={() => setView('outputs')}
           />

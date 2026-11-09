@@ -52,6 +52,8 @@ function fixture(count = 0) {
     },
     ...Array.from({ length: count }, (_, i) => out(`o-extra-${i}`, b, `extra-${i}.csv`, 60 + i)),
   ];
+  // The oldest extras (past the first 200 rows) belong to a project of their own.
+  for (const o of outputs.slice(5 + 220)) o.source = { ...o.source, project: 'old-archive' };
   return { snapshot, outputs };
 }
 
@@ -88,9 +90,16 @@ async function open(
         },
         outputs: async (q: any = {}) => {
           w.queries.push(q);
+          // A test may hold the answer back to look at the screen while it is read.
+          if (w.hold) await w.hold;
           const all = w.outputs
             .filter((o: any) => !q.sessionIds || q.sessionIds.includes(o.sessionId))
             .filter((o: any) => !q.text || `${o.name} ${o.path}`.includes(q.text))
+            // As the service: an excluded project's outputs are not listed.
+            .filter(
+              (o: any) =>
+                !(w.fixture.preferences.excludedProjects ?? []).includes(o.source.project),
+            )
             .sort((x: any, y: any) => y.createdAt - x.createdAt);
           const start = q.before ? all.findIndex((o: any) => o.id === q.before.id) + 1 : 0;
           const end = start + (q.limit ?? 50);
@@ -262,6 +271,46 @@ test('A new output past 200 loaded rows keeps the loaded tail and the scroll', a
   expect(refresh.before).toBeUndefined();
   expect(await scroller()).toBe(before);
   expect(Math.abs((await last.boundingBox())!.y - lastTop)).toBeLessThan(2);
+});
+
+test('Excluding a project past 200 loaded rows leaves none of its outputs on screen', async ({
+  page,
+}) => {
+  await open(page, { count: 250 });
+  await page.getByRole('button', { name: '산출물', exact: true }).click();
+  const rows = page.locator('.output-row');
+  for (const n of [100, 150, 200, 250, 255]) {
+    await page.getByRole('button', { name: '더 보기' }).click();
+    await expect(rows).toHaveCount(n);
+  }
+  // Only the loaded tail (past the first 200) is in that project.
+  const archived = page.locator('[data-output-id^="o-extra-2"]').filter({
+    has: page.locator('.output-name', { hasText: /^extra-2(2\d|3\d|4\d)\.csv$/ }),
+  });
+  await expect(archived).toHaveCount(30);
+  const asked = (await page.evaluate(() => (window as any).queries.length)) as number;
+  await page.evaluate(() => {
+    const w = window as any;
+    // The office's answer waits until the test lets it go.
+    w.hold = new Promise((go) => (w.release = go));
+    w.fixture.version++;
+    w.fixture.preferences.excludedProjects = ['old-archive'];
+    w.publish(structuredClone(w.fixture));
+  });
+  // The list is being read again under the new settings: not one row of the old list shows.
+  await expect
+    .poll(() => page.evaluate(() => (window as any).queries.length))
+    .toBeGreaterThan(asked);
+  await expect(archived).toHaveCount(0);
+  await expect(rows).toHaveCount(0);
+  await page.evaluate(() => (window as any).release());
+  await expect(page.locator('.results-header')).toContainText('225개의 산출물');
+  await expect(archived).toHaveCount(0);
+  // The list starts over at the first page: nothing unchecked is kept.
+  await expect(rows).toHaveCount(50);
+  const refresh = (await page.evaluate(() => (window as any).queries)).at(-1);
+  expect(refresh.limit).toBe(50);
+  expect(refresh.before).toBeUndefined();
 });
 
 test('Hidden screen content hides names, paths, teammates and every action', async ({ page }) => {

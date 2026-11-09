@@ -5,20 +5,24 @@ import { api } from './api';
 
 /**
  * The outputs list both views draw (the Outputs page, a work card's section): one page newest
- * first, narrowed by `text` and `sessionIds`, read again when `stamp` changes (a new output was
- * recorded, settings changed). Nothing is read in the demo, or where the office cannot list
- * outputs. `loadMore` appends the next page after the last one listed.
+ * first, narrowed by `text` and `sessionIds`. A new recorded output (`stamp`) reads the first
+ * page again and keeps what was loaded further down; a change of what the settings show
+ * (`visibility`: an excluded project, a tool turned off) starts over at the first page, since a
+ * loaded tail was never checked against it. Nothing is read in the demo, or where the office
+ * cannot list outputs. `loadMore` appends the next page after the last one listed.
  */
 export function useOutputs({
   text = '',
   sessionIds,
   stamp,
+  visibility = '',
   demo,
   limit = OUTPUT_PAGE,
 }: {
   text?: string;
   sessionIds?: string[];
   stamp: string;
+  visibility?: string;
   demo: boolean;
   limit?: number;
 }) {
@@ -37,6 +41,12 @@ export function useOutputs({
   const generation = useRef(0);
   /** The query the list holds (text, scope, page size). */
   const listed = useRef<string | null>(null);
+  /**
+   * The settings of what is shown the list was read under. Under other settings it is not shown
+   * at all, from the very render that has them, until the first page is read under them.
+   */
+  const [heldFor, setHeldFor] = useState(visibility);
+  const current = heldFor === visibility;
   const available = !demo && !!api.outputs;
   useEffect(() => {
     if (!available) {
@@ -46,9 +56,9 @@ export function useOutputs({
       return;
     }
     const reading = ++generation.current;
-    // The same list read again (an output was recorded, settings changed) keeps what was loaded
-    // further down; another query starts over.
-    const query = JSON.stringify([text, scope, limit]);
+    // The same list read again (an output was recorded) keeps what was loaded further down;
+    // another query, or other settings of what is shown, starts over.
+    const query = JSON.stringify([text, scope, limit, visibility]);
     const again = listed.current === query;
     let active = true;
     setLoading(true);
@@ -65,6 +75,7 @@ export function useOutputs({
         listed.current = query;
         const merged = again ? refreshed(latest.current, page.outputs, page.more) : null;
         setList(merged ?? page.outputs);
+        setHeldFor(visibility);
         // A kept tail goes on where it ended.
         if (!merged) setMore(page.more);
         setTotal(page.total);
@@ -78,10 +89,10 @@ export function useOutputs({
       active = false;
       clearTimeout(timer);
     };
-  }, [text, stamp, scope, available, limit]);
+  }, [text, stamp, visibility, scope, available, limit]);
   const loadMore = async () => {
     const last = list.at(-1);
-    if (!last || loadingMore || !api.outputs) return;
+    if (!current || !last || loadingMore || !api.outputs) return;
     const reading = generation.current;
     setLoadingMore(true);
     try {
@@ -100,5 +111,14 @@ export function useOutputs({
       setLoadingMore(false);
     }
   };
-  return { list, more, total, loading, loadingMore, error, loadMore, available };
+  return {
+    list: current ? list : [],
+    more: current && more,
+    total: current ? total : 0,
+    loading: loading || (!current && !error),
+    loadingMore,
+    error,
+    loadMore,
+    available,
+  };
 }
