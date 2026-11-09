@@ -159,17 +159,17 @@ export const NOTIFY_GRACE_MS = 30_000;
  * Whether notifications may start after the app opens. Until then every snapshot only primes
  * the seen set, so the backlog the first collection pass brings in (its notices look fresh: the
  * collector stamps `receivedAt` when it reads them) never bursts out. The signal is the
- * snapshot's own `lastSync`: the first full pass that finished after the app started. A
- * collector that never finishes one still starts notifying `NOTIFY_GRACE_MS` after the first
- * snapshot.
+ * snapshot's own `lastSync` (set only when a pass ends): the first full pass that finished after
+ * the app started. A collector that never finishes one still starts notifying `NOTIFY_GRACE_MS`
+ * after the first snapshot.
  */
 export const notifyReady = (
-  snapshot: Pick<Snapshot, 'syncing' | 'lastSync'>,
+  snapshot: Pick<Snapshot, 'lastSync'>,
   startedAt: number,
   firstAt: number,
   now: number,
 ) =>
-  (!snapshot.syncing && snapshot.lastSync !== null && snapshot.lastSync >= startedAt) ||
+  (snapshot.lastSync !== null && snapshot.lastSync >= startedAt) ||
   now - firstAt >= NOTIFY_GRACE_MS;
 
 /** Recently shown notifications, and the ones held back until the burst window ends. */

@@ -354,7 +354,6 @@ export class OfficeService extends EventEmitter {
   private quotaService = new QuotaService();
   store: OfficeStore;
   connectors: Connector[] = [];
-  syncing = false;
   lastSync: number | null = null;
   error: string | null = null;
   version = 0;
@@ -487,7 +486,6 @@ export class OfficeService extends EventEmitter {
         preferences: localizePreferences(this.store.preferences(), locale),
         bookmarked: this.store.bookmarkMarks(sessions.map((x) => x.id)),
         bookmarkStamp: this.store.bookmarkStamp(),
-        syncing: this.syncing,
         lastSync: this.lastSync,
         error: this.error,
         version: this.version,
@@ -657,7 +655,7 @@ export class OfficeService extends EventEmitter {
   }
   /**
    * The office as last published. Every client must hold exactly what a version was published
-   * as, since patches are made against that; a mid-collection read could differ (e.g. `syncing`).
+   * as, since patches are made against that; a mid-collection read could differ (e.g. `lastSync`).
    */
   private published(): Snapshot {
     return this.sent?.snapshot ?? this.emitSnapshot();
@@ -744,7 +742,6 @@ export class OfficeService extends EventEmitter {
       this.forgetHot();
       return this.emitSnapshot();
     }
-    this.syncing = true;
     this.error = null;
     for (const provider of ['claude', 'codex', 'openclaw'] as Provider[]) {
       if (this.stopped) break;
@@ -853,7 +850,6 @@ export class OfficeService extends EventEmitter {
       }
     }
     this.windows.sweep();
-    this.syncing = false;
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);
     this.rehot(Date.now(), prefs);
