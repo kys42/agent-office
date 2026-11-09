@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Request } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import type { SessionOutput } from '../../src/shared/types';
@@ -462,12 +462,24 @@ test('The reader window shows a markdown output with the conversation renderer',
 
 test('An HTML output is shown in a sandbox: no scripts, no network', async ({ page }) => {
   // Chromium reports a request the CSP stops as one that failed; none may reach the network.
-  const requests: string[] = [];
-  const blocked: string[] = [];
-  page.on('requestfinished', (r) => {
-    if (!r.url().startsWith('http://127.0.0.1:5208')) requests.push(r.url());
-  });
-  page.on('requestfailed', (r) => blocked.push(`${r.url()} ${r.failure()?.errorText}`));
+  // Only the preview's own requests count: those the sandboxed frame makes, and any to another
+  // origin. The app's own loading (a cold dev server serves hundreds of modules) does not.
+  const seen: { url: string; inFrame: boolean; failure?: string }[] = [];
+  const inFrame = (r: Request) => {
+    try {
+      return r.frame().parentFrame() !== null;
+    } catch {
+      return false;
+    }
+  };
+  page.on('requestfinished', (r) => seen.push({ url: r.url(), inFrame: inFrame(r) }));
+  page.on('requestfailed', (r) =>
+    seen.push({ url: r.url(), inFrame: inFrame(r), failure: r.failure()?.errorText ?? '?' }),
+  );
+  const preview = () => {
+    const app = new URL(page.url()).origin;
+    return seen.filter((r) => r.inFrame || !r.url.startsWith(app));
+  };
   await reader(page, {
     format: 'html',
     text: '<h1 style="color:#0a6ee0">랜딩</h1><img src="https://example.com/pixel.png"><script>parent.unsafe = 1; document.body.dataset.ran = "yes"</script>',
@@ -478,8 +490,10 @@ test('An HTML output is shown in a sandbox: no scripts, no network', async ({ pa
   await expect(inside.locator('h1')).toHaveText('랜딩');
   await expect(inside.locator('body')).not.toHaveAttribute('data-ran', 'yes');
   expect(await page.evaluate(() => (window as any).unsafe)).toBeUndefined();
-  expect(requests).toEqual([]);
-  expect(blocked).toEqual(['https://example.com/pixel.png csp']);
+  // The external image was asked for and stopped by the CSP; nothing else left the frame.
+  await expect
+    .poll(() => preview().map((r) => `${r.url} ${r.failure ?? 'loaded'}`))
+    .toEqual(['https://example.com/pixel.png csp']);
   await expect(page.getByText('이 미리보기에서는 스크립트와 네트워크를 막아요.')).toBeVisible();
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/outputs-reader-html.png` });
 });
