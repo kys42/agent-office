@@ -116,7 +116,7 @@ export function mentionedFiles(text: string): string[] {
       if (p.startsWith('/') || p.startsWith('~/')) out.push(p);
     }
   }
-  for (const m of text.matchAll(/\]\(\s*<?((?:\/|~\/|file:\/\/)[^)\s>]+)>?\s*\)/g)) {
+  for (const m of text.matchAll(/\]\(\s*<?((?:\/|~\/|file:\/\/|[A-Za-z]:[\\/])[^)\s>]+)>?\s*\)/g)) {
     let p = m[1];
     try {
       // fileURLToPath: drive letters and escapes as the platform names them (file:///C:/x → C:\x).

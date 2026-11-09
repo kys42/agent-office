@@ -440,6 +440,15 @@ test('Code-mode literal patches count their added files only on a clear success 
   ]);
 });
 
+test('Markdown links to Windows drive paths are mentions; relative ones and shares are not', () => {
+  assert.deepEqual(
+    mentionedFiles(
+      '[report](C:/work/reports/report.md) [b](C:\\work\\b.md) [rel](reports/x.md) [share](\\\\srv\\s\\y.md)',
+    ),
+    ['C:/work/reports/report.md', 'C:\\work\\b.md'],
+  );
+});
+
 test('Replies point to files with open and markdown links; Artifact links come with their title', () => {
   assert.deepEqual(
     mentionedFiles(
