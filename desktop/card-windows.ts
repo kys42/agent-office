@@ -21,6 +21,7 @@ import {
 } from '../src/shared/card-windows.js';
 import { floatLayer } from '../src/shared/popup-window.js';
 import { m } from '../src/shared/i18n/index.js';
+import { CardSizeMemory } from './card-size.js';
 import { quiet } from './quiet.js';
 import { dropAppMenu } from './window-style.js';
 
@@ -57,7 +58,7 @@ export class CardWindows {
   private entries = new Set<Entry>();
   private preview: Entry | null = null;
   private position: Point | null;
-  private size: { width: number; height: number };
+  private sizes: CardSizeMemory;
   private writes: Promise<unknown> = Promise.resolve();
   /** The app is quitting: its windows closing is not the person closing pinned cards. */
   private quitting = false;
@@ -87,7 +88,12 @@ export class CardWindows {
     },
   ) {
     this.position = readCardPosition(this.read('card-position.json'));
-    this.size = readCardSize(this.read('card-size.json')) ?? CARD_SIZE;
+    this.sizes = new CardSizeMemory(
+      readCardSize(this.read('card-size.json')) ?? CARD_SIZE,
+      (size) =>
+        void this.save('card-size.json', size).catch((error) => console.error('Card size:', error)),
+      process.platform,
+    );
   }
 
   private read(file: string): unknown {
@@ -325,7 +331,7 @@ export class CardWindows {
       } else this.hide(e);
       return;
     }
-    const size = this.size;
+    const size = this.sizes.size;
     const at = this.position ? { ...this.position, ...size } : anchor;
     const area = screen.getDisplayMatching(at).workArea;
     const bounds = popupBounds(
@@ -417,18 +423,9 @@ export class CardWindows {
     window.on('resize', () => {
       if (e.pinned) this.rememberSoon(e);
     });
-    window.on('resized', () => {
-      if (window.isDestroyed() || e.pinned) return;
-      const [width, height] = window.getSize();
-      this.size = {
-        width: width !== e.placed.width ? width : this.size.width,
-        height: height !== e.placed.height ? height : this.size.height,
-      };
-      void this.save('card-size.json', this.size).catch((error) =>
-        console.error('Card size:', error),
-      );
-      e.placed = { width, height };
-    });
+    // An ordinary card resized by the person: the next ones open at that size (on Linux too,
+    // where only `resize` exists).
+    this.sizes.watch(window, e);
     window.webContents.on('did-finish-load', () => this.revealEntry(e));
     void window.loadFile(this.options.index, { hash: 'card' });
     return e;
