@@ -171,6 +171,7 @@ const prefsSchema = z
       .strict()
       .optional(),
     tinyNames: z.boolean().optional(),
+    cardOutputs: z.boolean().optional(),
     tinyFinalDot: z.boolean().optional(),
     dockPill: z.enum(['always', 'subdued', 'hover']).optional(),
     dockPillResetAt: z.number().int().min(0).optional(),

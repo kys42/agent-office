@@ -495,6 +495,71 @@ test('A mentioned file counts only when it was born during the conversation', ()
     );
   }));
 
+test('A mentioned file that appears later is found without its session changing', () =>
+  withStore((s) => {
+    const births = new Map<string, number | null>([['/work/app/soon.md', null]]);
+    let stats = 0;
+    s.outputLog = new OutputLog(s.db, (f) => {
+      stats++;
+      return births.get(f) ?? null;
+    });
+    const session = made('one', 'app', [file('/work/app/soon.md', 60_000, 'mention')]);
+    s.upsert([session], 'codex');
+    assert.equal(s.outputs().total, 0);
+    assert.equal(s.outputLog.unresolvedCount(), 1);
+    // The same session again (unchanged: no parse, no record) — the waiting mention is retried.
+    births.set('/work/app/soon.md', now + 90_000);
+    const stamp = s.outputStamp();
+    s.upsert([session], 'codex');
+    assert.deepEqual(
+      s.outputs().outputs.map((o) => [o.name, o.createdAt]),
+      [['soon.md', now + 90_000]],
+    );
+    assert.notEqual(s.outputStamp(), stamp);
+    assert.equal(s.outputLog.unresolvedCount(), 0);
+    // Retries are rate-limited and end: at most every 15 s, for 30 minutes after first named.
+    const log = new OutputLog(s.db, (f) => {
+      stats++;
+      return births.get(f) ?? null;
+    });
+    births.set('/work/app/never.md', null);
+    log.record(made('two', 'app', [file('/work/app/never.md', 60_000, 'mention')]), now);
+    stats = 0;
+    assert.equal(log.retry(now), false);
+    assert.equal(log.retry(now + 1000), false);
+    assert.equal(stats, 1);
+    assert.equal(log.unresolvedCount(), 1);
+    log.retry(now + 31 * 60_000);
+    assert.equal(log.unresolvedCount(), 0);
+    assert.equal(stats, 1);
+  }));
+
+test('Outputs the hot path saw are recorded even when the record window moved on', () =>
+  withStore((s) => {
+    const first = made('one', 'app', []);
+    s.upsert([first], 'codex');
+    // The hot path parses a window that names a new file; stored rows never carry candidates.
+    s.stage([{ ...made('one', 'app', [file('/work/app/hot.md', 5)]), revision: 'hot-1' }], 'codex');
+    s.stage(
+      [{ ...made('one', 'app', [file('/work/app/hot2.md', 6)]), revision: 'hot-2' }],
+      'codex',
+    );
+    assert.equal(s.outputs().total, 0);
+    // By the full pass the window no longer has them: the staged candidates are recorded.
+    s.upsert([{ ...made('one', 'app', []), revision: 'full-3' }], 'codex');
+    assert.deepEqual(
+      s.outputs().outputs.map((o) => o.name),
+      ['hot2.md', 'hot.md'],
+    );
+    // Written on close too (persistStaged).
+    s.stage(
+      [{ ...made('one', 'app', [file('/work/app/closing.md', 7)]), revision: 'hot-4' }],
+      'codex',
+    );
+    s.persistStaged();
+    assert.ok(s.outputs().outputs.some((o) => o.name === 'closing.md'));
+  }));
+
 test('The office RPC validates queries, never hands out unrecorded paths and reads previews on demand', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'office-outputs-rpc-'));
   const service = new OfficeService(path.join(temp, 'data'), temp);

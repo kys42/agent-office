@@ -503,6 +503,8 @@ export interface Preferences {
   // #228 — every one optional; a missing value keeps the behaviour from before it existed.
   /** Tiny (쪼꼬미) desks carry a small name. Missing: on. */
   tinyNames?: boolean;
+  /** The work card's Details lists the teammate's outputs (#350). Missing: on. */
+  cardOutputs?: boolean;
   /** Tiny desks' dot also says "a final reply waits". Off: only calls and errors. Missing: on. */
   tinyFinalDot?: boolean;
   /** How the dock's pill shows at rest. Missing: `subdued`. */

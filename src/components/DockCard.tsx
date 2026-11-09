@@ -173,6 +173,7 @@ export function DockCard() {
             prefs?.excludedProjects,
             prefs?.enabledProviders,
           ])}
+          showOutputs={prefs?.cardOutputs !== false}
           outputStamp={JSON.stringify([
             snapshot?.outputStamp,
             prefs?.excludedProjects,

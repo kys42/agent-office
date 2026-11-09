@@ -3,6 +3,7 @@ import { open, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import type {
+  OutputCandidate,
   OutputPreview,
   OutputVia,
   Provider,
@@ -54,6 +55,18 @@ export const fileBirth: FileBirth = (file) => {
 const GRACE_MS = 2 * 60_000;
 /** Mentions found not to be outputs, remembered so a busy session isn't stat'ed again. */
 const REJECTED_MAX = 5000;
+/** Mentioned files not there yet: how many wait, how long, and how often they are asked again. */
+const UNRESOLVED_MAX = 500;
+const UNRESOLVED_TTL_MS = 30 * 60_000;
+const RETRY_MS = 15_000;
+/** What an output keeps of its session. */
+type OutputSession = Pick<Session, 'id' | 'provider' | 'project' | 'title' | 'alias' | 'startedAt'>;
+interface Unresolved {
+  session: OutputSession;
+  candidate: OutputCandidate;
+  /** Asked about until then (ms). */
+  until: number;
+}
 
 /** Whether a file is there now, as a list shows it. */
 export function fileExists(file: string): boolean {
@@ -86,6 +99,8 @@ export function shownOutput(o: StoredOutput, exists?: boolean): SessionOutput {
 /** Recorded outputs on the office's database (the store owns the connection and transactions). */
 export class OutputLog {
   private rejected = new Set<string>();
+  private unresolved = new Map<string, Unresolved>();
+  private retriedAt = -Infinity;
   constructor(
     private db: DatabaseSync,
     private birth: FileBirth = fileBirth,
@@ -95,42 +110,94 @@ export class OutputLog {
    * its tool counts as found; a mentioned one only when it was born during the conversation
    * (a file that is not there yet is asked about again next time). True when any was added.
    */
-  record(s: Session): boolean {
+  record(s: Session, now = Date.now()): boolean {
     const found = s.outputs ?? [];
     if (!found.length) return false;
-    const held = this.db.prepare('SELECT 1 FROM session_outputs WHERE session_id=? AND key=?');
-    const put = this.db.prepare('INSERT OR IGNORE INTO session_outputs VALUES (?,?,?,?,?)');
     let added = 0;
     for (const c of found) {
-      if (held.get(s.id, c.key)) continue;
-      let createdAt = c.at;
-      if (c.via === 'mention') {
-        const seen = `${s.id}\n${c.key}`;
-        if (this.rejected.has(seen)) continue;
-        const born = this.birth(c.key);
-        if (born === null) continue;
-        if (!Number.isFinite(born) || born < s.startedAt - GRACE_MS || born > c.at + GRACE_MS) {
-          if (this.rejected.size >= REJECTED_MAX) this.rejected.clear();
-          this.rejected.add(seen);
-          continue;
-        }
-        createdAt = Math.round(born);
-      }
-      const o: StoredOutput = {
-        id: hash(`${s.id}\n${c.key}`),
-        sessionId: s.id,
-        key: c.key,
-        kind: c.kind,
-        via: c.via,
-        createdAt,
-        ...(c.title ? { title: c.title } : {}),
-        source: { provider: s.provider, project: s.project, title: s.title, alias: s.alias },
-      };
-      added += Number(
-        put.run(o.id, o.sessionId, o.key, o.createdAt, JSON.stringify(o)).changes ?? 0,
-      );
+      const seen = `${s.id}\n${c.key}`;
+      const result = this.admit(s, c);
+      if (result === 'missing') {
+        // Not there yet: asked about again by `retry`, even if the session stays as it is.
+        const held = this.unresolved.get(seen);
+        this.unresolved.delete(seen);
+        if (this.unresolved.size >= UNRESOLVED_MAX)
+          this.unresolved.delete(this.unresolved.keys().next().value!);
+        this.unresolved.set(seen, {
+          session: {
+            id: s.id,
+            provider: s.provider,
+            project: s.project,
+            title: s.title,
+            alias: s.alias,
+            startedAt: s.startedAt,
+          },
+          candidate: c,
+          until: held?.until ?? now + UNRESOLVED_TTL_MS,
+        });
+      } else this.unresolved.delete(seen);
+      if (result === 'added') added++;
     }
-    if (!added) return false;
+    return added ? this.added() : false;
+  }
+  /**
+   * Mentioned files that were not there yet, asked about again (one stat each) at most every
+   * `RETRY_MS`, for `UNRESOLVED_TTL_MS` after they were first named: a collector pass calls this
+   * whether or not their sessions changed. True when any was added.
+   */
+  retry(now = Date.now()): boolean {
+    if (!this.unresolved.size || now - this.retriedAt < RETRY_MS) return false;
+    this.retriedAt = now;
+    let added = 0;
+    for (const [seen, u] of [...this.unresolved]) {
+      if (now > u.until) {
+        this.unresolved.delete(seen);
+        continue;
+      }
+      const result = this.admit(u.session, u.candidate);
+      if (result !== 'missing') this.unresolved.delete(seen);
+      if (result === 'added') added++;
+    }
+    return added ? this.added() : false;
+  }
+  /** Mentions waiting for their file (for tests and diagnostics). */
+  unresolvedCount(): number {
+    return this.unresolved.size;
+  }
+  /** Keeps one candidate of a session unless it is kept already, or is no output. */
+  private admit(s: OutputSession, c: OutputCandidate): 'added' | 'held' | 'missing' | 'rejected' {
+    const held = this.db.prepare('SELECT 1 FROM session_outputs WHERE session_id=? AND key=?');
+    if (held.get(s.id, c.key)) return 'held';
+    let createdAt = c.at;
+    if (c.via === 'mention') {
+      const seen = `${s.id}\n${c.key}`;
+      if (this.rejected.has(seen)) return 'rejected';
+      const born = this.birth(c.key);
+      if (born === null) return 'missing';
+      if (!Number.isFinite(born) || born < s.startedAt - GRACE_MS || born > c.at + GRACE_MS) {
+        if (this.rejected.size >= REJECTED_MAX) this.rejected.clear();
+        this.rejected.add(seen);
+        return 'rejected';
+      }
+      createdAt = Math.round(born);
+    }
+    const o: StoredOutput = {
+      id: hash(`${s.id}\n${c.key}`),
+      sessionId: s.id,
+      key: c.key,
+      kind: c.kind,
+      via: c.via,
+      createdAt,
+      ...(c.title ? { title: c.title } : {}),
+      source: { provider: s.provider, project: s.project, title: s.title, alias: s.alias },
+    };
+    const put = this.db.prepare('INSERT OR IGNORE INTO session_outputs VALUES (?,?,?,?,?)');
+    return put.run(o.id, o.sessionId, o.key, o.createdAt, JSON.stringify(o)).changes
+      ? 'added'
+      : 'held';
+  }
+  /** After outputs were added: only the newest are kept, and lists hear of it. */
+  private added(): true {
     // Only the newest are kept.
     this.db
       .prepare(

@@ -14,6 +14,8 @@ import { HELPER_UNFINISHED_MS } from './residents';
  */
 export interface ViewPrefs {
   tinyNames: boolean;
+  /** The work card lists the teammate's outputs (#350). */
+  cardOutputs: boolean;
   tinyFinalDot: boolean;
   dockPill: DockPillVisibility;
   dockPillResetAt: number | null;
@@ -115,6 +117,7 @@ const stamp = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) && n 
 export function viewPrefs(p?: Partial<Preferences> | null): ViewPrefs {
   return {
     tinyNames: p?.tinyNames !== false,
+    cardOutputs: p?.cardOutputs !== false,
     tinyFinalDot: p?.tinyFinalDot !== false,
     dockPill: DOCK_PILL_CHOICES.includes(p?.dockPill as DockPillVisibility)
       ? p!.dockPill!

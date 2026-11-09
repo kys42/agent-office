@@ -239,19 +239,22 @@ export function sandboxedHtml(html: string) {
 
 /**
  * One output read now: markdown with the conversation's renderer, HTML in a sandboxed frame. It
- * is read once the office says the screen content is not hidden, and again when it shows again.
+ * is read once the office says the screen content is not hidden, and again when it shows again
+ * or when the settings that decide which outputs are shown change (a project excluded, a tool
+ * turned off): what was shown goes at once, and the service decides whether it is still there.
  */
 function OutputReader({ id, snapshot, notify, error, setError }: ReaderProps & { id: string }) {
   const { t } = useI18n();
   /** undefined: still reading; null: not there (moved, deleted, or hidden by the settings). */
   const [preview, setPreview] = useState<OutputPreview | null | undefined>(undefined);
-  const privacy = snapshot?.preferences.privacy ?? false;
+  const prefs = snapshot?.preferences;
+  const privacy = prefs?.privacy ?? false;
   const known = !!snapshot;
+  const visibility = JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders]);
   useEffect(() => {
-    if (!known || privacy) {
-      setPreview(undefined);
-      return;
-    }
+    // Nothing read before stays on screen while it is checked again.
+    setPreview(undefined);
+    if (!known || privacy) return;
     let alive = true;
     if (!api.outputPreview) {
       setPreview(null);
@@ -268,7 +271,7 @@ function OutputReader({ id, snapshot, notify, error, setError }: ReaderProps & {
     return () => {
       alive = false;
     };
-  }, [id, known, privacy]);
+  }, [id, known, privacy, visibility]);
   const shown = !privacy && preview ? preview : null;
   useEffect(() => {
     document.title = shown ? `${t.outputs.readerTitle} · ${shown.name}` : t.outputs.readerTitle;

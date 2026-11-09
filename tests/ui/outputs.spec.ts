@@ -296,11 +296,15 @@ async function reader(
   await page.addInitScript(
     ({ snapshot, preview }) => {
       const w = window as any;
+      w.fixture = snapshot;
       w.reads = [];
       w.actions = [];
       w.office = {
-        snapshot: async () => structuredClone(snapshot),
-        subscribe: () => () => {},
+        snapshot: async () => structuredClone(w.fixture),
+        subscribe: (cb: any) => {
+          w.publish = cb;
+          return () => {};
+        },
         bookmarkWindow: async (what: string) =>
           what === 'target'
             ? { id: 'o-report', kind: 'output' }
@@ -309,6 +313,8 @@ async function reader(
               : undefined,
         outputPreview: async (id: string) => {
           w.reads.push(id);
+          // The service hides an output of an excluded project.
+          if (w.hidden) return null;
           return preview && { id, name: '분기 보고서.md', truncated: false, ...preview };
         },
         outputAction: async (what: string, id: string) => {
@@ -382,4 +388,64 @@ test('The reader reads nothing while screen content is hidden', async ({ page })
 test('A reader whose output is gone says so', async ({ page }) => {
   await reader(page, null);
   await expect(page.getByText('이 산출물을 읽을 수 없어요')).toBeVisible();
+});
+
+test('An open preview is checked again when settings hide its project, and hides with the screen', async ({
+  page,
+}) => {
+  await reader(page, { format: 'markdown', text: '# 분기 보고서' });
+  await expect(page.locator('.output-reader h1')).toHaveText('분기 보고서');
+  // A project is excluded (from another window): what was shown goes, the service is asked again.
+  await page.evaluate(() => {
+    const w = window as any;
+    w.hidden = true;
+    w.fixture.version++;
+    w.fixture.preferences.excludedProjects = [w.fixture.sessions[0].project];
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(page.getByText('이 산출물을 읽을 수 없어요')).toBeVisible();
+  await expect(page.locator('.output-reader h1')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).reads)).toEqual(['o-report', 'o-report']);
+  // Shown again, then the screen content is hidden: nothing of it stays.
+  await page.evaluate(() => {
+    const w = window as any;
+    w.hidden = false;
+    w.fixture.version++;
+    w.fixture.preferences.excludedProjects = [];
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(page.locator('.output-reader h1')).toHaveText('분기 보고서');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.version++;
+    w.fixture.preferences.privacy = true;
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(page.getByText('화면 내용을 숨기는 동안에는 산출물을 읽지 않아요.')).toBeVisible();
+  await expect(page.locator('.output-reader h1')).toHaveCount(0);
+});
+
+test('Settings can leave outputs off the work card', async ({ page }) => {
+  const { snapshot } = await open(page);
+  const a = snapshot.sessions[0];
+  await page.locator(`.office-pet[data-session-id="${a.id}"]`).click();
+  const card = page.locator('.inspector');
+  await card.getByRole('tab', { name: '작업 정보', exact: true }).click();
+  await expect(card.getByRole('region', { name: '이 동료가 만든 산출물' })).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.fixture.version++;
+    w.fixture.preferences.cardOutputs = false;
+    w.publish(structuredClone(w.fixture));
+  });
+  await expect(card.getByRole('region', { name: '이 동료가 만든 산출물' })).toHaveCount(0);
+  // The switch lives under the big office's 'More' in What each screen shows.
+  await page.getByRole('button', { name: '연결과 설정' }).click();
+  await page.getByRole('tablist', { name: '설정 분류' }).getByRole('tab', { name: '모습' }).click();
+  const views = page.locator('[data-guide-section="views"]');
+  await views.getByText('자세히').last().click();
+  await expect(views.getByRole('switch', { name: '업무 카드의 산출물' })).toHaveAttribute(
+    'aria-checked',
+    'false',
+  );
 });

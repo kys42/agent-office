@@ -1168,6 +1168,7 @@ export default function App() {
             focus={bookmarkFocus}
             onFocused={() => setBookmarkFocus(null)}
             outputStamp={outputStamp}
+            showOutputs={prefs?.cardOutputs !== false}
             onOutputs={() => setView('outputs')}
           />
         )}

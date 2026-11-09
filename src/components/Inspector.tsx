@@ -111,6 +111,7 @@ export function Inspector({
   onPositionRemember,
   windowBusy = false,
   outputStamp = '',
+  showOutputs = true,
   onOutputs,
 }: {
   session: Session;
@@ -175,6 +176,8 @@ export function Inspector({
   windowBusy?: boolean;
   /** Changes whenever an output is recorded (#350): the card's outputs read again. */
   outputStamp?: string;
+  /** Settings: the Details tab lists this teammate's outputs (`cardOutputs`, default on). */
+  showOutputs?: boolean;
   /** Open the Outputs page (the big office only). */
   onOutputs?: () => void;
 }) {
@@ -568,7 +571,7 @@ export function Inspector({
         )}
       </section>
       {/* A remote office's outputs stay there: this office never names its files. */}
-      {!s.remote && (
+      {!s.remote && showOutputs && (
         <SessionOutputs
           key={[...members].sort().join('|')}
           sessionIds={[...members]}

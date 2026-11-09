@@ -36,7 +36,8 @@ import {
   shownOutput,
   type StoredOutput,
 } from './outputs.js';
-import type { OutputPage, OutputQuery } from '../src/shared/types.js';
+import type { OutputCandidate, OutputPage, OutputQuery } from '../src/shared/types.js';
+import { mergeOutputs } from './adapters/outputs.js';
 import { OUTPUT_PAGE, OUTPUT_PAGE_MAX, outputMatches, outputOrder } from '../src/shared/outputs.js';
 import { deriveState } from '../src/shared/runtime.js';
 import {
@@ -140,6 +141,11 @@ interface Staged {
   disk?: Map<string, OfficeNotice>;
   diskCursor?: number | null;
   ledger: { entries: Map<string, UsageEntry>; dirty: Set<string>; dropped: boolean } | null;
+  /**
+   * Outputs the hot path's parses named (#350): `storedForm` drops them from the row, so they
+   * wait here and the next write records them, even when the record window moved on by then.
+   */
+  outputs?: OutputCandidate[];
 }
 export class OfficeStore {
   db: DatabaseSync;
@@ -253,6 +259,9 @@ export class OfficeStore {
     );
     this.db.exec('BEGIN');
     try {
+      // Mentioned files that were not there yet are asked about again (rate-limited), whether
+      // or not their sessions changed.
+      this.outputLog.retry();
       for (const [id, x] of staged) this.flushStaged(id, x);
       for (const s of sessions) {
         const prior = get.get(s.id) as { data: string } | undefined;
@@ -354,11 +363,16 @@ export class OfficeStore {
       this.ingestNotices(s, this.noticesStaged(s.id, x, s), standbyHours);
       const row = this.storedForm(s, base, this.ledgerStaged(s.id, x));
       Object.assign(x, { row, resident: { ...row, events: snapshotEvents(row) } });
+      if (s.outputs?.length) x.outputs = mergeOutputs([x.outputs, s.outputs]);
       this.staged.set(s.id, x);
     }
   }
-  /** Writes what the hot path staged for one session: notices, observations, cursor, usage. */
+  /**
+   * Writes what the hot path staged for one session: notices, observations, cursor, usage, and
+   * the outputs its parses named.
+   */
   private flushStaged(id: string, x: Staged) {
+    if (x.outputs?.length) this.outputLog.record({ ...x.row, outputs: x.outputs });
     const put = this.db.prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)');
     const drop = this.db.prepare('DELETE FROM notices WHERE id=?');
     for (const [nid, n] of x.notices)
