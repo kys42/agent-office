@@ -38,8 +38,16 @@ const api: OfficeAPI = {
   unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
   bookmarkById: (id) => call('bookmarkById', id),
+  outputs: (query) => call('outputs', query),
+  outputAction: (what, id) => action('office:output', what, id),
+  outputPreview: (id) => call('outputPreview', id),
   bookmarkWindow: ((what: string, target?: unknown) =>
     action('office:reader-window', what, target)) as OfficeAPI['bookmarkWindow'],
+  onReaderRefresh: (cb) => {
+    const f = () => cb();
+    ipcRenderer.on('office:reader-refresh', f);
+    return () => ipcRenderer.removeListener('office:reader-refresh', f);
+  },
   onPopupOnTop: (cb) => {
     const f = (_: unknown, on: boolean) => cb(on === true);
     ipcRenderer.on('office:popup-on-top', f);

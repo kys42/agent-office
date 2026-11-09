@@ -154,6 +154,8 @@ export const settings: Messages['settings'] = {
       focusHint: '오래 몰두하면 불꽃과 열기가 피어올라요.',
       effects: '책상 효과',
       effectsHint: '쪼꼬미 책상에도 집중 효과와 서류 더미를 그려요.',
+      cardOutputs: '업무 카드의 산출물',
+      cardOutputsHint: '업무 카드 작업 정보에 이 동료가 새로 만든 문서·페이지를 보여요.',
     },
   },
   reading: {

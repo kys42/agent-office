@@ -43,6 +43,8 @@ import { LAUNCH_DESTINATIONS } from '../src/shared/launch.js';
 import { PET_NAME_CHOICES, PET_TALLY_GROUPS } from '../src/shared/view-prefs.js';
 import type { PetNameMode, PetTallyGroup } from '../src/shared/types.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
+import { OUTPUT_PAGE_MAX } from '../src/shared/outputs.js';
+import { readPreview } from './outputs.js';
 import {
   applyPatch,
   composePatches,
@@ -169,6 +171,7 @@ const prefsSchema = z
       .strict()
       .optional(),
     tinyNames: z.boolean().optional(),
+    cardOutputs: z.boolean().optional(),
     tinyFinalDot: z.boolean().optional(),
     dockPill: z.enum(['always', 'subdued', 'hover']).optional(),
     dockPillResetAt: z.number().int().min(0).optional(),
@@ -242,6 +245,19 @@ const bookmarkQuerySchema = z
   })
   .strict();
 const noteSchema = z.string().max(BOOKMARK_NOTE);
+const outputQuerySchema = z
+  .object({
+    sessionIds: z.array(z.string().max(400)).max(500).optional(),
+    text: z.string().max(200).optional(),
+    before: z
+      .object({ createdAt: z.number(), id: z.string().max(100) })
+      .strict()
+      .nullable()
+      .optional(),
+    limit: z.number().int().min(1).max(OUTPUT_PAGE_MAX).optional(),
+  })
+  .strict();
+const outputIdSchema = z.string().min(1).max(100);
 /** A quiet office still reports that it checked, at this pace. */
 const HEALTH_MS = 60_000;
 /** Changes kept for pollers that fell behind; further back they get the whole office. */
@@ -486,6 +502,7 @@ export class OfficeService extends EventEmitter {
         preferences: localizePreferences(this.store.preferences(), locale),
         bookmarked: this.store.bookmarkMarks(sessions.map((x) => x.id)),
         bookmarkStamp: this.store.bookmarkStamp(),
+        outputStamp: this.store.outputStamp(),
         lastSync: this.lastSync,
         error: this.error,
         version: this.version,
@@ -866,7 +883,7 @@ export class OfficeService extends EventEmitter {
     file: SourceFile,
     metadata: Map<string, CodexMeta>,
   ): Promise<Session | null | 'error'> {
-    const stamp = `office-v11:${file.size}:${file.mtime}`;
+    const stamp = `office-v12:${file.size}:${file.mtime}`;
     let cached = this.cache.get(file.path);
     if (!cached) {
       const cold = this.coldCache.get(file.path);
@@ -1185,7 +1202,7 @@ export class OfficeService extends EventEmitter {
         files.push({ path: file, size: st.size, mtime: st.mtimeMs });
         if (
           (this.cache.get(file)?.stamp ?? this.coldCache.get(file)?.stamp) !==
-          `office-v11:${st.size}:${st.mtimeMs}`
+          `office-v12:${st.size}:${st.mtimeMs}`
         )
           moved = true;
       }
@@ -1339,6 +1356,17 @@ export class OfficeService extends EventEmitter {
         // Other windows' lists read the note again.
         this.emitSnapshot();
         return bookmark;
+      }
+      case 'outputs':
+        return this.store.outputs(outputQuerySchema.optional().parse(args[0] ?? undefined));
+      case 'outputTarget':
+        // The real path, for the desktop main process only (it never forwards this call from a
+        // page, and the HTTP preview refuses it): what it opens, shows or copies.
+        return this.store.outputTarget(outputIdSchema.parse(args[0]));
+      case 'outputPreview': {
+        // Read now, on the person's click: only a recorded markdown or HTML file.
+        const target = this.store.outputTarget(outputIdSchema.parse(args[0]));
+        return target ? readPreview(target) : null;
       }
       case 'handoff':
         return this.store.handoff(

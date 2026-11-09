@@ -12,6 +12,8 @@ const allowed = new Set([
   'http://127.0.0.1:4319',
   'http://localhost:4319',
 ]);
+/** Calls only the desktop's main process makes (they reach the files outputs name). */
+const DESKTOP_ONLY = new Set(['outputTarget', 'outputPreview']);
 // An explicit private preview origin, e.g. Tailscale Serve. No wildcard origins.
 const webOrigin = process.env.AGENT_OFFICE_WEB_ORIGIN;
 if (webOrigin) allowed.add(new URL(webOrigin).origin);
@@ -46,6 +48,8 @@ const server = http.createServer(async (req, res) => {
       if (body.length > 30000) throw new Error(m().server.rpc.tooLarge);
     }
     const { method, args } = JSON.parse(body);
+    // The web preview lists outputs (#350) but never reads a recorded file or its real path.
+    if (DESKTOP_ONLY.has(method)) throw new Error(m().server.rpc.unsupported);
     const result = await service.call(method, args);
     res.end(JSON.stringify({ result }));
   } catch (e) {

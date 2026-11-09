@@ -58,6 +58,7 @@ import {
   WandSparkles,
   type LucideIcon,
   Pin,
+  PackageOpen,
 } from 'lucide-react';
 import type {
   AnswerSettings,
@@ -769,6 +770,14 @@ export function Settings({
               {deskSwitch('office', 'papers', Files)}
               {deskSwitch('office', 'beacon', Lightbulb)}
               {deskSwitch('office', 'focus', Flame)}
+              {/* The work card (big office and popup cards alike) lists outputs (#350). */}
+              <SwitchRow
+                icon={PackageOpen}
+                label={v.desk.cardOutputs}
+                hint={v.desk.cardOutputsHint}
+                checked={view.cardOutputs}
+                onChange={() => onPrefs({ cardOutputs: !view.cardOutputs })}
+              />
             </>
           }
         >

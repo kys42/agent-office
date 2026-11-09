@@ -12,6 +12,7 @@ import { palette } from './palette';
 import { inspector } from './inspector';
 import { conversation } from './conversation';
 import { memory } from './memory';
+import { outputs } from './outputs';
 import { artifacts } from './artifacts';
 import { settings } from './settings';
 import { zoneEditor } from './zoneEditor';
@@ -41,6 +42,7 @@ export const ko: Messages = {
   inspector,
   conversation,
   memory,
+  outputs,
   artifacts,
   settings,
   zoneEditor,

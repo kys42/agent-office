@@ -1,4 +1,5 @@
 import { admissible, editLocation, toolLocation, wrappedLocations } from './working-location.js';
+import { OutputTracker } from './outputs.js';
 import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -307,6 +308,8 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   };
   // Each tool call's input, by event id: read once the pass knows which calls are still open.
   const inputs = new Map<string, unknown>();
+  // Files this record says the session made, and the Artifacts it linked (#350).
+  const outputs = new OutputTracker();
   const set = (s: Mood, why: string) => {
     status = s;
     reason = why;
@@ -343,17 +346,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     }
     if (r.type === 'summary' && !title) title = cleanTitle(r.summary);
     launch ??= cwd ?? undefined;
-    if (r.type === 'response_item' && ['function_call', 'custom_tool_call'].includes(p.type))
+    if (r.type === 'response_item' && ['function_call', 'custom_tool_call'].includes(p.type)) {
       locate(String(p.name ?? ''), p.arguments ?? p.input, at);
+      outputs.call(String(p.name ?? ''), p.arguments ?? p.input, cwd, p.call_id ?? undefined);
+    }
     if (Array.isArray(m.content))
       for (const b of m.content)
-        if (['tool_use', 'toolCall'].includes(b.type))
+        if (['tool_use', 'toolCall'].includes(b.type)) {
           locate(
             String(b.name ?? ''),
             b.input ?? b.arguments,
             at,
             b.type === 'tool_use' ? (b.id ?? undefined) : undefined,
           );
+          outputs.call(String(b.name ?? ''), b.input ?? b.arguments, cwd, b.id ?? undefined);
+        }
     if (r.type === 'token_usage_record') {
       const sample = p.usage;
       if (
@@ -451,10 +458,13 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         add(r, at, 'user', text);
         if (text) set('think', t.reason.afterUser);
       }
-      if (type === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel))
+      if (type === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel)) {
         add(r, at, 'assistant', String(p.message ?? ''), undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
+        outputs.say(String(p.message ?? ''), at, cwd);
+      }
+      if (type === 'patch_apply_end' && p.success === true) outputs.applied(p.changes, at, cwd);
     }
     if (r.type === 'response_item') {
       if (p.type === 'message' && ['user', 'assistant'].includes(p.role)) {
@@ -466,6 +476,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         add({ ...r, id: p.id ?? r.id }, at, p.role, text, undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
+        if (p.role === 'assistant') outputs.say(text, at, cwd);
         if (p.role === 'user' && text) set('think', t.reason.afterUser);
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
@@ -486,6 +497,12 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         );
       }
       if (['function_call_output', 'custom_tool_call_output'].includes(p.type)) {
+        outputs.result(
+          p.call_id ?? undefined,
+          typeof p.output === 'string' ? p.output : JSON.stringify(p.output ?? ''),
+          at,
+          false,
+        );
         add(
           { ...r, id: `${p.call_id ?? p.id}:result` },
           at,
@@ -546,6 +563,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
                   ? 'commentary'
                   : undefined),
           });
+        if (!['analysis', 'reasoning'].includes(m.phase ?? m.channel)) outputs.say(text, at, cwd);
         if (text) set('think', t.reason.recentReply);
         const u = m.usage;
         if (u) {
@@ -612,6 +630,13 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             const evidence = pending.get(b.tool_use_id);
             pending.delete(b.tool_use_id);
             if (evidence && !b.is_error) workingLocation = evidence;
+            outputs.result(
+              b.tool_use_id ?? undefined,
+              contentText(b.content) || String(b.content ?? ''),
+              at,
+              !!b.is_error,
+              r.toolUseResult && typeof r.toolUseResult === 'object' ? r.toolUseResult : undefined,
+            );
             add(
               { ...r, id: b.tool_use_id ?? r.uuid },
               at,
@@ -658,6 +683,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     ),
     12,
   );
+  const outputList = outputs.list();
   return {
     protocolVersion: 1,
     id: `${opt.provider}:${opt.agentName ? opt.agentName + ':' : ''}${nativeId}`,
@@ -708,6 +734,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     usage,
     events: events.slice(-180),
     artifacts,
+    ...(outputList.length ? { outputs: outputList } : {}),
     notes: '',
     revision: hash(
       `${nativeId}:${updatedAt}:${events.length}:${action}:${JSON.stringify([...usageEntries.values()])}:${JSON.stringify(workingLocation)}`,

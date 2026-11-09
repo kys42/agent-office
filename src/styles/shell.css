@@ -231,6 +231,9 @@ body.is-mac .sidebar-top .brand {
 .icon-memory {
   background: #ff9500;
 }
+.icon-outputs {
+  background: #34c759;
+}
 .icon-activity {
   background: #30b0c7;
 }

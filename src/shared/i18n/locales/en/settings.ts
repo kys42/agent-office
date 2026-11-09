@@ -158,6 +158,9 @@ export const settings = {
       focusHint: 'Sparks and heat around a teammate deep in work.',
       effects: 'Desk effects',
       effectsHint: 'Focus effects and paper piles on tiny desks too.',
+      cardOutputs: 'Outputs on the work card',
+      cardOutputsHint:
+        "The work card's Details lists the documents and pages this teammate created.",
     },
   },
   /** Reading final replies by opening a card (#228). */

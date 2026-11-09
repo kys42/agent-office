@@ -4,6 +4,7 @@ export const app = {
   tabs: {
     office: { title: 'Our Office', short: 'Office' },
     memory: { title: 'Memory Drawer', short: 'Memory' },
+    outputs: { title: 'Outputs', short: 'Outputs' },
     activity: { title: 'Activity', short: 'Activity' },
     settings: { title: 'Connections & Settings', short: 'Settings' },
   },

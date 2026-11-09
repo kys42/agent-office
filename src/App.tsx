@@ -40,6 +40,7 @@ import {
   HelpCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  PackageOpen,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import { isWindows, modifierKey, platformKeys } from './lib/platform';
@@ -58,6 +59,7 @@ import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
+import { OutputsPage } from './components/Outputs';
 import type { BookmarkFocus } from './shared/bookmarks';
 import { Settings, type SettingsSection } from './components/Settings';
 import { isAttentionNotice } from './shared/notices';
@@ -72,6 +74,7 @@ import { resetDue } from './shared/view-prefs';
 const tabs = [
   { id: 'office', icon: Home },
   { id: 'memory', icon: BookOpen },
+  { id: 'outputs', icon: PackageOpen },
   { id: 'activity', icon: Clock3 },
   { id: 'settings', icon: Settings2 },
 ] as const;
@@ -306,6 +309,10 @@ export default function App() {
     if (!demo) api.selected?.(currentId);
   }, [demo, currentId]);
   const prefs = snapshot?.preferences;
+  // Output lists read again when an output is recorded (keeping what was loaded further down),
+  // and start over when the settings that hide some change.
+  const outputStamp = snapshot?.outputStamp ?? '';
+  const outputVisibility = JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders]);
   // '패널 폭 초기화' in settings (maybe the settings window, another renderer): a stamp newer
   // than the last drag puts both columns back to their defaults.
   const widthsResetAt = prefs?.panelWidthsResetAt;
@@ -547,6 +554,14 @@ export default function App() {
       run: () => setView('memory'),
     },
     {
+      id: 'outputs',
+      label: t.palette.actions.outputs,
+      hint: t.palette.actions.outputsHint,
+      icon: <PackageOpen size={15} />,
+      keywords: t.palette.actions.outputsKeywords,
+      run: () => setView('outputs'),
+    },
+    {
       id: 'activity',
       label: t.palette.actions.activity,
       icon: <Clock3 size={15} />,
@@ -748,7 +763,7 @@ export default function App() {
           )}
           <div className="source-group">
             <h6>{t.app.sidebar.records}</h6>
-            {(['memory', 'activity'] as const).map((id) => {
+            {(['memory', 'outputs', 'activity'] as const).map((id) => {
               const tab = tabs.find((x) => x.id === id)!;
               return (
                 <button
@@ -1077,6 +1092,15 @@ export default function App() {
               onUnbookmark={unbookmark}
               notify={notify}
             />
+          ) : view === 'outputs' ? (
+            <OutputsPage
+              sessions={sessions}
+              demo={demo}
+              privacy={prefs?.privacy ?? false}
+              stamp={outputStamp}
+              visibility={outputVisibility}
+              notify={notify}
+            />
           ) : view === 'settings' ? (
             <Settings
               demo={demo}
@@ -1142,6 +1166,10 @@ export default function App() {
             }}
             focus={bookmarkFocus}
             onFocused={() => setBookmarkFocus(null)}
+            outputStamp={outputStamp}
+            outputVisibility={outputVisibility}
+            showOutputs={prefs?.cardOutputs !== false}
+            onOutputs={() => setView('outputs')}
           />
         )}
         {showUsage && (

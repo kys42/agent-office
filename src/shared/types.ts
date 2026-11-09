@@ -211,6 +211,76 @@ export type SessionDetail = Session & {
    */
   notices?: OfficeNotice[];
 };
+/**
+ * How a session made an output (#350): a file it created with its edit tool (Claude `Write` to
+ * a new file, Codex `apply_patch` `*** Add File:`), a file it pointed to (`open /path`, a
+ * markdown link) that came into being during the conversation, or a Claude Artifact link.
+ */
+export type OutputVia = 'write' | 'patch' | 'mention' | 'artifact';
+/**
+ * Adapter-only: an output the record names, before the collector checks and stores it. Removed
+ * at the persistence boundary (outputs live in their own table, kept across record windows).
+ */
+export interface OutputCandidate {
+  /** The absolute path, or the link: one output per session. */
+  key: string;
+  kind: 'file' | 'link';
+  at: number;
+  via: OutputVia;
+  /** A link's own name in the reply (`[title](url)`). */
+  title?: string;
+}
+/** A recorded output as the screens show it: redacted, with where and by whom it was made. */
+export interface SessionOutput {
+  id: string;
+  sessionId: string;
+  kind: 'file' | 'link';
+  via: OutputVia;
+  /** File name (redacted), or the link's title. */
+  name: string;
+  /** Folder (redacted); empty for a link. */
+  dir: string;
+  /** The whole path (redacted) or the link. */
+  path: string;
+  /** Lower-case extension without the dot ('' for a link). */
+  ext: string;
+  createdAt: number;
+  /** Whose output it was, as it was then (the screens prefer the colleague as shown now). */
+  source: {
+    provider: Provider;
+    project: string;
+    title: string;
+    alias: string;
+  };
+  /** Whether the file is there now (a stat when the page was read); absent for links. */
+  exists?: boolean;
+}
+/** Which outputs a list shows: newest first. */
+export interface OutputQuery {
+  /** Only these sessions' outputs; absent means all. */
+  sessionIds?: string[];
+  /** Words in the name, folder or whose it was. */
+  text?: string;
+  before?: { createdAt: number; id: string } | null;
+  limit?: number;
+}
+export interface OutputPage {
+  outputs: SessionOutput[];
+  more: boolean;
+  /** Every output matching the query, all pages. */
+  total: number;
+}
+/** An output read for the reader window, only when asked (never while listing). */
+export interface OutputPreview {
+  id: string;
+  name: string;
+  format: 'markdown' | 'html';
+  text: string;
+  /** Only the beginning of a large file. */
+  truncated: boolean;
+}
+/** What a desktop action on an output did. */
+export type OutputActionResult = 'opened' | 'revealed' | 'copied' | 'previewed' | 'missing';
 export interface Artifact {
   url: string;
   kind: 'pull' | 'issues';
@@ -355,6 +425,8 @@ export interface Session {
   workingLocation?: WorkingLocation;
   /** Adapter-only usage samples; removed at the persistence boundary. */
   usageEntries?: UsageEntry[];
+  /** Adapter-only outputs the record names (#350); removed at the persistence boundary. */
+  outputs?: OutputCandidate[];
   cost?: SessionCost;
   branch: string | null;
   gitCommit?: string | null;
@@ -431,6 +503,8 @@ export interface Preferences {
   // #228 — every one optional; a missing value keeps the behaviour from before it existed.
   /** Tiny (쪼꼬미) desks carry a small name. Missing: on. */
   tinyNames?: boolean;
+  /** The work card's Details lists the teammate's outputs (#350). Missing: on. */
+  cardOutputs?: boolean;
   /** Tiny desks' dot also says "a final reply waits". Off: only calls and errors. Missing: on. */
   tinyFinalDot?: boolean;
   /** How the dock's pill shows at rest. Missing: `subdued`. */
@@ -548,6 +622,8 @@ export interface Snapshot {
   bookmarked?: Record<string, string[]>;
   /** Changes whenever any bookmark is added, removed or edited: lists read again. */
   bookmarkStamp?: string;
+  /** Changes whenever an output is recorded (#350): output lists read again. */
+  outputStamp?: string;
   /**
    * The collector's resolved language: its sessions, notices and messages are written in it.
    * With the `auto` preference the UI follows it, so both sides always agree. Demo snapshots
@@ -928,6 +1004,19 @@ export interface OfficeAPI {
   bookmarkNote: (id: string, note: string) => Promise<Bookmark>;
   /** One bookmark by id; null when it was removed or the settings no longer show it. */
   bookmarkById: (id: string) => Promise<Bookmark | null>;
+  /** A page of the outputs sessions made (#350): paths only, nothing is read or opened. */
+  outputs?: (query?: OutputQuery) => Promise<OutputPage>;
+  /**
+   * Desktop only: act on one recorded output, by id (main looks the path up itself and never
+   * takes one from the page): open it in its app, show it in its folder, copy its path, or read
+   * it in a reader window (markdown, HTML).
+   */
+  outputAction?: (
+    action: 'open' | 'reveal' | 'copy' | 'preview',
+    id: string,
+  ) => Promise<OutputActionResult>;
+  /** Desktop reader window: the output's content, read now; null when it is not there. */
+  outputPreview?: (id: string) => Promise<OutputPreview | null>;
   /**
    * Desktop only: the bookmark reader's own window, one per bookmark. `open` opens it beside the
    * asking window (or brings it forward) with only the bookmark's id; in that window, `target`
@@ -936,8 +1025,8 @@ export interface OfficeAPI {
    * set it (`onPopupOnTop` hears each change).
    */
   bookmarkWindow?: {
-    (action: 'open', target: { id: string }): Promise<void>;
-    (action: 'target'): Promise<{ id: string }>;
+    (action: 'open', target: import('./bookmark-window').ReaderTarget): Promise<void>;
+    (action: 'target'): Promise<import('./bookmark-window').ReaderTarget>;
     (action: 'focus' | 'close' | 'go'): Promise<void>;
     (action: PopupOnTopAction): Promise<boolean>;
   };
@@ -946,6 +1035,11 @@ export interface OfficeAPI {
    * each time that changes (set by its own toggle, or floated again by a floating opener).
    */
   onPopupOnTop?: (callback: (on: boolean) => void) => () => void;
+  /**
+   * Desktop reader window: its output was asked to be previewed again while open (#350), so it
+   * reads the file again.
+   */
+  onReaderRefresh?: (callback: () => void) => () => void;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**

@@ -85,6 +85,7 @@ const notice = (patch: Partial<OfficeNotice>): OfficeNotice => ({
 test('missing view preferences are the behaviour from before', () => {
   assert.deepEqual(viewPrefs(undefined), {
     tinyNames: true,
+    cardOutputs: true,
     tinyFinalDot: true,
     dockPill: 'subdued',
     dockPillResetAt: null,
@@ -96,6 +97,7 @@ test('missing view preferences are the behaviour from before', () => {
   });
   const set = viewPrefs({
     tinyNames: false,
+    cardOutputs: false,
     tinyFinalDot: false,
     dockPill: 'hover',
     dockPillResetAt: 5,
@@ -104,6 +106,7 @@ test('missing view preferences are the behaviour from before', () => {
     helperRetainMinutes: 10,
   });
   assert.equal(set.tinyNames, false);
+  assert.equal(set.cardOutputs, false);
   assert.equal(set.tinyFinalDot, false);
   assert.equal(set.dockPill, 'hover');
   assert.equal(set.dockPillResetAt, 5);

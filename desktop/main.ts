@@ -23,7 +23,12 @@ import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
 import { ReaderWindows } from './reader-windows.js';
-import { parseReaderTarget } from '../src/shared/bookmark-window.js';
+import {
+  parseReaderTarget,
+  readerKey,
+  rereadsOnReopen,
+  type ReaderTarget,
+} from '../src/shared/bookmark-window.js';
 import { popupFloats } from '../src/shared/popup-window.js';
 import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
@@ -79,6 +84,13 @@ import type {
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
 import { OPENABLE_FILE, fileLink, webLink } from '../src/shared/links.js';
+import {
+  OUTPUT_EXTENSIONS,
+  claudeArtifactLink,
+  extensionOf,
+  previewFormat,
+} from '../src/shared/outputs.js';
+import type { StoredOutput } from '../server/outputs.js';
 import {
   clampInto,
   dockHeight,
@@ -386,6 +398,11 @@ function secure(w: BrowserWindow) {
     return { action: 'deny' };
   });
   w.webContents.on('will-navigate', (e) => e.preventDefault());
+  // The only frames inside a page are an HTML output's sandboxed preview (#350): it shows its
+  // own document and never goes anywhere else.
+  w.webContents.on('will-frame-navigate', (e) => {
+    if (!e.isMainFrame && e.url !== 'about:srcdoc') e.preventDefault();
+  });
   w.webContents.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
   // Electron has no right-click menu of its own: copy what is selected, and handle links.
   // Built on each click, so the labels follow the current language.
@@ -731,7 +748,7 @@ function trusted(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>)
     throw new Error(m().desktop.untrustedWindow);
 }
 /** What a reader window may ask the service: the office it shows and the bookmark it reads. */
-const READER_CALLS = new Set(['snapshot', 'bookmarkById']);
+const READER_CALLS = new Set(['snapshot', 'bookmarkById', 'outputPreview']);
 /**
  * The bookmark reader's IPC (its window, the office's reads, copying and opening links) also
  * trusts the reader windows; nothing else does.
@@ -909,7 +926,9 @@ function setupReader() {
       return readerWindows.setOnTop(e.sender, what === 'top-on');
     if (what === 'go') {
       if (!reader) throw new Error(m().desktop.untrustedWindow);
-      const { id } = readerWindows.target(e.sender);
+      const { id, kind } = readerWindows.target(e.sender);
+      // An output's reader has nowhere in the office to go.
+      if (kind === 'output') throw new Error(m().desktop.badRequest);
       const b: Bookmark | null = await bridge.call('bookmarkById', [id]);
       if (!b) throw new Error(m().memory.readerGoneTitle);
       // Like the in-page reader's "open": the big office at that message, on this display.
@@ -926,13 +945,25 @@ function setupReader() {
     } catch {
       throw new Error(m().desktop.badRequest);
     }
-    if (delivery.latest?.preferences?.privacy) throw new Error(m().memory.readerHidden);
+    if (delivery.latest?.preferences?.privacy)
+      throw new Error(
+        target.kind === 'output' ? m().outputs.previewHidden : m().memory.readerHidden,
+      );
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
-    readerWindows.open(target.id, target, from.getBounds(), {
-      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
-    });
+    openReader(target, from);
   });
+}
+/**
+ * A reader window beside `from`. An output's reader that is already open is told to read the
+ * file again (`office:reader-refresh`): previewing it again shows what the file holds now.
+ */
+function openReader(target: ReaderTarget, from: BrowserWindow) {
+  const key = readerKey(target);
+  const done = readerWindows.open(key, target, from.getBounds(), {
+    float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+  });
+  if (rereadsOnReopen(done, target)) readerWindows.send(key, 'office:reader-refresh');
 }
 function setupIPC() {
   let health: ReturnType<typeof readAppHealth> | undefined;
@@ -986,6 +1017,52 @@ function setupIPC() {
     shell.showItemInFolder(file);
     return 'revealed';
   });
+  // An output a session made (#350), by its recorded id only: main reads the real path from the
+  // collector (never from the page) and acts on that. Opening runs nothing: a file opens in its
+  // app only when it really is a document kind (judged by where it really is), a link only when
+  // it is a Claude Artifact. Reading it is the reader window's (markdown, HTML in a sandbox).
+  ipcMain.handle('office:output', async (e, what: unknown, id: unknown) => {
+    trustedReader(e);
+    if (
+      !['open', 'reveal', 'copy', 'preview'].includes(what as string) ||
+      typeof id !== 'string' ||
+      !id.length ||
+      id.length > 100
+    )
+      throw new Error(m().desktop.badRequest);
+    // Nothing of an output is opened or copied while the screen content is hidden.
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().outputs.hiddenAction);
+    const o: StoredOutput | null = await bridge.call('outputTarget', [id]);
+    if (!o) throw new Error(m().outputs.gone);
+    if (what === 'copy') {
+      clipboard.writeText(o.key);
+      return 'copied';
+    }
+    if (o.kind === 'link') {
+      const link = claudeArtifactLink(o.key);
+      if (!link || what !== 'open') throw new Error(m().desktop.badRequest);
+      await shell.openExternal(link);
+      return 'opened';
+    }
+    const file = await realpath(o.key).catch(() => null);
+    const found = file ? await stat(file).catch(() => null) : null;
+    if (!file || !found?.isFile()) return 'missing';
+    if (what === 'reveal') {
+      shell.showItemInFolder(file);
+      return 'revealed';
+    }
+    const ext = extensionOf(file);
+    if (what === 'preview') {
+      if (!previewFormat(ext)) throw new Error(m().desktop.badRequest);
+      const from = BrowserWindow.fromWebContents(e.sender);
+      if (!from || from.isDestroyed()) return 'missing';
+      openReader({ id, kind: 'output' }, from);
+      return 'previewed';
+    }
+    if (OUTPUT_EXTENSIONS.has(ext) && !(await shell.openPath(file))) return 'opened';
+    shell.showItemInFolder(file);
+    return 'revealed';
+  });
   ipcMain.handle('office:copy', (e, text) => {
     trustedReader(e);
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
@@ -1003,7 +1080,14 @@ function setupIPC() {
     trustedReader(e);
     if (
       typeof method !== 'string' ||
-      ['federation', 'remote-send', 'remote-targets', 'remote-launch'].includes(method) ||
+      [
+        'federation',
+        'remote-send',
+        'remote-targets',
+        'remote-launch',
+        // An output's real path stays in main (#350): pages get the redacted list only.
+        'outputTarget',
+      ].includes(method) ||
       !Array.isArray(args) ||
       args.length > 3
     )
