@@ -59,6 +59,7 @@ import {
 } from '../shared/conversation-pages';
 import { ArtifactCards } from './ArtifactCards';
 import { SessionOutputs } from './Outputs';
+import { useOutputs } from '../lib/useOutputs';
 import { sessionName, parentSession } from '../shared/office';
 import { nowState } from '../shared/now-state';
 import { CardMenu } from './CardMenu';
@@ -179,7 +180,7 @@ export function Inspector({
   outputStamp?: string;
   /** The settings that decide which outputs are shown: a change starts the list over. */
   outputVisibility?: string;
-  /** Settings: the Details tab lists this teammate's outputs (`cardOutputs`, default on). */
+  /** Settings: the card has an Outputs tab listing this teammate's outputs (`cardOutputs`, default on). */
   showOutputs?: boolean;
   /** Open the Outputs page (the big office only). */
   onOutputs?: () => void;
@@ -202,7 +203,7 @@ export function Inspector({
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, [session.id]);
-  const [tab, setTab] = useState<'overview' | 'history' | 'notes'>('history');
+  const [tab, setTab] = useState<'overview' | 'history' | 'notes' | 'outputs'>('history');
   useEffect(() => {
     if (tab !== 'history') {
       const scroller = panelRef.current?.querySelector('.inspector-scroll');
@@ -406,6 +407,19 @@ export function Inspector({
   }, [view.session.events, view.session.id, notices, view.notices, sentAll]);
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
+  // The Outputs tab (#350): read with the card so its tab carries the count. A remote office's
+  // outputs stay there (this office never names its files); the setting can leave the tab out.
+  const outputsOn = !!showOutputs && !s.remote && !demo && !!api.outputs;
+  const outputs = useOutputs({
+    sessionIds: [...members],
+    stamp: outputStamp,
+    visibility: outputVisibility,
+    demo,
+    enabled: outputsOn,
+  });
+  useEffect(() => {
+    if (!outputsOn && tab === 'outputs') setTab('history');
+  }, [outputsOn, tab]);
   // Opening the card reads the colleague's final replies (not while privacy hides them).
   // A restored card waits for the person to touch the office first (`readOnOpen`).
   useReadOnOpen(
@@ -573,19 +587,6 @@ export function Inspector({
           </div>
         )}
       </section>
-      {/* A remote office's outputs stay there: this office never names its files. */}
-      {!s.remote && showOutputs && (
-        <SessionOutputs
-          key={[...members].sort().join('|')}
-          sessionIds={[...members]}
-          demo={demo}
-          privacy={privacy}
-          stamp={outputStamp}
-          visibility={outputVisibility}
-          notify={notify}
-          onAll={onOutputs}
-        />
-      )}
       {children.length > 0 && (
         <section className="info-group">
           <h3>{t.inspector.linkedRuns(children.length)}</h3>
@@ -722,8 +723,9 @@ export function Inspector({
   const tabBar = (
     <>
       <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
-        {(['history', 'overview', 'notes'] as const)
+        {(['history', 'overview', 'notes', 'outputs'] as const)
           .filter((key) => !s.remote || key === 'history' || key === 'overview')
+          .filter((key) => key !== 'outputs' || outputsOn)
           .map((key) => (
             <button
               key={key}
@@ -735,6 +737,9 @@ export function Inspector({
               {t.inspector.tabs[key]}
               {key === 'notes' &&
                 (s.notes || [...members].some((id) => bookmarkMarks?.[id]?.length)) && <i />}
+              {key === 'outputs' && outputs.total > 0 && (
+                <span className="tab-count">{outputs.total}</span>
+              )}
             </button>
           ))}
       </div>
@@ -753,7 +758,15 @@ export function Inspector({
           </div>
         ) : tab === 'overview' ? (
           cardOverview
-        ) : tab === 'history' ? (
+        ) : tab === 'outputs' && outputsOn ? (
+          <SessionOutputs
+            outputs={outputs}
+            demo={demo}
+            privacy={privacy}
+            notify={notify}
+            onAll={onOutputs}
+          />
+        ) : tab === 'history' || tab === 'outputs' ? (
           <Conversation
             key={s.id}
             session={s}

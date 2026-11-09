@@ -49,7 +49,7 @@ export const outputs: Messages['outputs'] = {
   note: '기록에 나온 경로만 써요. 파일 내용은 미리보기를 누를 때만 읽어요.',
   cardTitle: '이 동료가 만든 산출물',
   cardEmpty: '아직 새로 만든 산출물이 없어요.',
-  cardAll: (n) => `산출물에서 ${n}개 모두 보기`,
+  cardAll: '산출물 페이지에서 보기',
   readerTitle: '산출물 미리보기',
   readerOpening: '산출물을 여는 중…',
   readerGoneTitle: '이 산출물을 읽을 수 없어요',

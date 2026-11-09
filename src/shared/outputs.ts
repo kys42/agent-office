@@ -43,8 +43,6 @@ export const CONFIG_JSON =
   /^(?:package(?:-lock)?|tsconfig(?:\.[\w-]+)?|jsconfig|composer|deno|vercel|turbo|lerna|nx|renovate|\.?eslintrc|\.?prettierrc|\.?babelrc)\.json$/i;
 export const OUTPUT_PAGE = 50;
 export const OUTPUT_PAGE_MAX = 200;
-/** Rows a work card shows before "see all". */
-export const OUTPUT_CARD = 5;
 /** Outputs kept in all (the oldest go first). */
 export const OUTPUT_KEEP = 5000;
 /** A preview reads at most this much of a file. */

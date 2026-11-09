@@ -656,8 +656,21 @@ body.reader-mode {
   width: 26px;
   height: 26px;
 }
-.info-row.card-outputs-all > span {
+.info-row.card-outputs-all > span,
+.info-row.card-outputs-more > span {
   color: var(--accent);
+}
+/* The work card's Outputs tab carries how many there are. */
+.inspector-tabs .tab-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  color: var(--text-3);
+  background: var(--bg-4);
 }
 /* The reader window's output: markdown as in conversations, HTML in its sandboxed frame. */
 .output-reader {

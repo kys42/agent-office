@@ -47,7 +47,7 @@ export const outputs = {
   note: 'Only paths named in session records are used. A file is read only when you preview it.',
   cardTitle: 'Outputs from this teammate',
   cardEmpty: 'Nothing newly created yet.',
-  cardAll: (n: number) => `See all ${n} in Outputs`,
+  cardAll: 'View on the Outputs page',
   readerTitle: 'Output preview',
   readerOpening: 'Opening the output…',
   readerGoneTitle: 'This output cannot be read',
