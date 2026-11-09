@@ -144,6 +144,38 @@ test('the store waits out another instance holding the database at startup', asy
   }
 });
 
+test('the unused search index is no longer written, and what an older build wrote is cleared (#91)', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-search-index-'));
+  const count = (store: OfficeStore) =>
+    (store.db.prepare('SELECT count(*) AS n FROM session_search').get() as { n: number }).n;
+  try {
+    let store = new OfficeStore(dir);
+    const s = { ...demoSnapshot().sessions[0], provider: 'claude' as const };
+    store.upsert([s], 'claude');
+    assert.equal(count(store), 0);
+    assert.equal(store.search(s.title).length, 1, 'search reads the sessions themselves');
+    // An older build (version 4) indexed every write: its rows go on the next start, once.
+    store.db.exec(
+      "INSERT INTO session_search(id,title,body) VALUES ('old','old','old'); PRAGMA user_version=4",
+    );
+    store.close();
+    store = new OfficeStore(dir);
+    assert.equal(count(store), 0);
+    assert.equal(
+      (store.db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+      5,
+    );
+    // The empty table stays for an older build still running on the same data.
+    store.db.exec("INSERT INTO session_search(id,title,body) VALUES ('old','old','old')");
+    store.close();
+    store = new OfficeStore(dir);
+    assert.equal(count(store), 1, 'cleared only once per older build');
+    store.close();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a stopped collector starts again on the next call', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-bridge-'));
   try {

@@ -92,7 +92,7 @@ export const DEFAULT_PREFS: Preferences = {
   bubbleHours: 3,
   readyMinutes: 30,
 };
-const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(session_id,event_id)); CREATE INDEX IF NOT EXISTS bookmarks_created ON bookmarks(created_at); PRAGMA user_version=4;`;
+const SCHEMA = `PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, provider TEXT NOT NULL, project TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS personal(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE VIRTUAL TABLE IF NOT EXISTS session_search USING fts5(id UNINDEXED,title,body,tokenize='unicode61'); CREATE TABLE IF NOT EXISTS notices(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notices_session ON notices(session_id,at); CREATE TABLE IF NOT EXISTS notice_cursors(session_id TEXT PRIMARY KEY, at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS notice_observed(session_id TEXT NOT NULL,event_id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(session_id,event_id)); CREATE TABLE IF NOT EXISTS usage_ledger(session_id TEXT NOT NULL, entry_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(session_id,entry_id)); CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, session_id TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(session_id,event_id)); CREATE INDEX IF NOT EXISTS bookmarks_created ON bookmarks(created_at); PRAGMA user_version=5;`;
 /** A notice read more than 30 days ago is no longer listed. */
 const fresh = (n: OfficeNotice) => !n.seenAt || Date.now() - n.seenAt < 30 * 86400_000;
 const isBusy = (e: unknown) =>
@@ -181,9 +181,16 @@ export class OfficeStore {
     if (!readOnly) {
       // Another Agent Office on the same data (a second window, a dev server) can hold the write
       // lock for a while. Wait it out at startup instead of leaving the collector dead.
+      let version: number | undefined;
       for (let attempt = 0; ; attempt++) {
         try {
+          version ??= (this.db.prepare('PRAGMA user_version').get() as { user_version: number })
+            .user_version;
           this.db.exec(SCHEMA);
+          // Nothing reads `session_search` (#91; search matches the sessions themselves): its
+          // rows go, once after a build that wrote them (those set version 4). The empty table
+          // stays, so an older build still running on the same data keeps writing instead of failing.
+          if (version < 5) this.db.exec('DELETE FROM session_search');
           break;
         } catch (e) {
           if (!isBusy(e) || attempt >= 8) throw e;
@@ -250,8 +257,6 @@ export class OfficeStore {
   upsert(sessions: Session[], provider: Provider, partial = false) {
     const put = this.db.prepare('INSERT OR REPLACE INTO sessions VALUES (?,?,?,?,?)');
     const get = this.db.prepare('SELECT data FROM sessions WHERE id=?');
-    const remove = this.db.prepare('DELETE FROM session_search WHERE id=?');
-    const index = this.db.prepare('INSERT INTO session_search(id,title,body) VALUES (?,?,?)');
     const standbyHours = this.preferences().standbyHours ?? DEFAULT_PREFS.standbyHours!;
     const ids = new Set(sessions.map((s) => s.id));
     const staged = [...this.staged].filter(([id, x]) =>
@@ -292,12 +297,6 @@ export class OfficeStore {
         this.cached?.delete(s.id);
         const row = this.storedForm(s, base, this.ledgerOnDisk(s.id));
         put.run(s.id, provider, row.project, s.updatedAt, JSON.stringify(row));
-        remove.run(s.id);
-        index.run(
-          s.id,
-          s.title,
-          [s.project, s.cwd, s.model, ...s.events.map((e) => e.text)].filter(Boolean).join('\n'),
-        );
       }
       const present = new Set(sessions.map((s) => s.id));
       for (const row of (partial
@@ -307,7 +306,6 @@ export class OfficeStore {
       }[]) {
         if (!present.has(row.id)) {
           this.db.prepare('DELETE FROM sessions WHERE id=?').run(row.id);
-          remove.run(row.id);
           this.cached?.delete(row.id);
           this.ingested.delete(row.id);
         }
@@ -686,7 +684,10 @@ export class OfficeStore {
     this.db
       .prepare('INSERT OR REPLACE INTO notices VALUES(?,?,?,?)')
       .run(n.id, n.sessionId, n.at, JSON.stringify(n));
-    if (!staged) return;
+    if (staged) this.restageNotice(n, staged);
+  }
+  /** The staged copy of a notice whose change is on disk. */
+  private restageNotice(n: OfficeNotice, staged: Staged) {
     if (staged.notices.has(n.id)) staged.notices.set(n.id, n);
     else staged.disk?.set(n.id, n);
   }
@@ -834,13 +835,23 @@ export class OfficeStore {
       noticeStats: { unread: counts.inbox, total: counts.total },
     };
   }
+  /**
+   * All receipts or none (#90): every notice is looked up and checked first (a hidden session
+   * throws before anything is written), then the rows go to disk in one transaction, and the
+   * staged copies change only once it is committed.
+   */
   noticeReceipt(receipts: NoticeReceipt[], action: 'read' | 'dismiss' | 'unread' | 'view') {
+    const changes: { n: OfficeNotice; staged?: Staged }[] = [];
+    const checked = new Set<string>();
     for (const receipt of receipts) {
       // A notice the hot path showed may not be written yet: its receipt goes with it.
       const found = this.noticeById(receipt.id);
       if (!found) continue;
       const n = found.n;
-      this.get(n.sessionId); // same exclusion policy as detail/search/MCP
+      if (!checked.has(n.sessionId)) {
+        this.get(n.sessionId); // same exclusion policy as detail/search/MCP
+        checked.add(n.sessionId);
+      }
       if (n.version !== receipt.version) continue;
       const next = {
         ...n,
@@ -852,8 +863,18 @@ export class OfficeStore {
               ? { seenAt: null }
               : { dismissedAt: Date.now() }),
       };
-      this.writeNotice(next, found.staged);
+      changes.push({ n: next, staged: found.staged });
     }
+    if (!changes.length) return;
+    this.db.exec('BEGIN');
+    try {
+      for (const { n } of changes) this.writeNotice(n);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    for (const { n, staged } of changes) if (staged) this.restageNotice(n, staged);
   }
   /**
    * The person reached a colleague's run outside its card (sent it a message, jumped to its
@@ -917,11 +938,14 @@ export class OfficeStore {
       prefs.standbyHours,
       prefs.readyMinutes,
     );
+    // The adapter derives with the default hours (#15). When these settings derive nothing, its
+    // reason is stale: the observed one it kept in `runtime` stands instead.
+    const stale = !state.reason && s.statusEvidence === 'derived' && !!s.runtime;
     return {
       ...applyZone(session, prefs.zoneRules),
       status: state.status,
-      statusReason: state.reason ?? s.statusReason,
-      statusEvidence: state.reason ? 'derived' : s.statusEvidence,
+      statusReason: state.reason ?? (stale ? s.runtime!.reason : s.statusReason),
+      statusEvidence: state.reason ? 'derived' : stale ? 'observed' : s.statusEvidence,
       zone: officeZone(session, prefs),
     };
   }

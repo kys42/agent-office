@@ -606,7 +606,6 @@ export interface Snapshot {
   sessions: Session[];
   connectors: Connector[];
   preferences: Preferences;
-  syncing: boolean;
   lastSync: number | null;
   error: string | null;
   version: number;
