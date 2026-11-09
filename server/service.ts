@@ -1016,6 +1016,12 @@ export class OfficeService extends EventEmitter {
   }
   /** Which known sessions take the hot path now, at most `hot.max`, the most recently active first. */
   private rehot(now: number, prefs: Preferences) {
+    // Stopped: nothing is hot again. A hot pass in flight at stop() reaches here after its
+    // awaits and would otherwise refill the set `halt` just cleared (#103).
+    if (this.stopped) {
+      this.hotSet.clear();
+      return;
+    }
     const hot = [...this.known.values()]
       .filter((k) => {
         if (!prefs.enabledProviders.includes(k.provider)) return false;
