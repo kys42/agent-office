@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import type { Session, SessionOutput } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
-import { OUTPUT_CARD, groupOutputs, previewFormat } from '../shared/outputs';
+import { groupOutputs, previewFormat } from '../shared/outputs';
 import { projectColor } from '../shared/office-layout';
 import { api } from '../lib/api';
 import { writeClipboard } from '../lib/clipboard';
@@ -313,50 +313,60 @@ export function OutputsPage({
 }
 
 /**
- * A work card's "Outputs from this teammate" (작업 정보): the newest few of its runs' outputs,
- * and a way to all of them on the Outputs page. Nothing shows for a remote office's teammate.
+ * A work card's Outputs tab (산출물): every output of its runs, newest first, a page at a time,
+ * and in the big office a way to the Outputs page. The card reads the list (`useOutputs`) so its
+ * tab can carry the count; nothing is read for a remote office's teammate.
  */
 export function SessionOutputs({
-  sessionIds,
+  outputs,
   demo,
   privacy,
-  stamp,
-  visibility,
   notify,
   onAll,
 }: {
-  sessionIds: string[];
+  outputs: ReturnType<typeof useOutputs>;
   demo: boolean;
   privacy: boolean;
-  stamp: string;
-  /** The settings that decide which outputs are shown (excluded projects, tools). */
-  visibility: string;
   notify: (s: string) => void;
   /** Open the Outputs page (absent where there is none, e.g. a card window). */
   onAll?: () => void;
 }) {
   const { t } = useI18n();
-  const outputs = useOutputs({ sessionIds, stamp, visibility, demo, limit: OUTPUT_CARD });
-  if (!outputs.available) return null;
   return (
     <section className="info-group card-outputs" aria-label={t.outputs.cardTitle}>
       <h3>
         {t.outputs.cardTitle}
-        {outputs.total > 0 && <span className="card-outputs-count">{outputs.total}</span>}
+        {outputs.loading && !outputs.list.length ? (
+          <LoaderCircle size={12} className="spin" />
+        ) : (
+          outputs.total > 0 && <span className="card-outputs-count">{outputs.total}</span>
+        )}
       </h3>
       {outputs.error && <div className="inline-error">{outputs.error}</div>}
       {outputs.list.length ? (
         <ul className="output-list">
-          {outputs.list.slice(0, OUTPUT_CARD).map((o) => (
+          {outputs.list.map((o) => (
             <OutputRow key={o.id} output={o} privacy={privacy} demo={demo} notify={notify} />
           ))}
         </ul>
       ) : (
-        !outputs.loading && <p className="info-note">{t.outputs.cardEmpty}</p>
+        !outputs.loading && !outputs.error && <p className="info-note">{t.outputs.cardEmpty}</p>
       )}
-      {outputs.total > OUTPUT_CARD && onAll && (
+      {outputs.more && (
+        <button
+          className="info-row info-link card-outputs-more"
+          disabled={outputs.loadingMore}
+          onClick={() => void outputs.loadMore()}
+        >
+          <span>
+            {outputs.loadingMore && <LoaderCircle size={12} className="spin" />}
+            {t.outputs.more}
+          </span>
+        </button>
+      )}
+      {onAll && outputs.total > 0 && (
         <button className="info-row info-link card-outputs-all" onClick={onAll}>
-          <span>{t.outputs.cardAll(outputs.total)}</span>
+          <span>{t.outputs.cardAll}</span>
         </button>
       )}
     </section>

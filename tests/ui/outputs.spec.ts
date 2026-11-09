@@ -65,12 +65,29 @@ async function open(
     web?: boolean;
     english?: boolean;
     count?: number;
+    /** The third teammate comes from a remote office. */
+    remote?: boolean;
+    /** Open the pop-up card window (`#card`) for this teammate (by index) instead. */
+    card?: number;
   } = {},
 ) {
   const { snapshot, outputs } = fixture(opts.count);
   snapshot.preferences.privacy = !!opts.privacy;
+  if (opts.remote)
+    snapshot.sessions[2].remote = {
+      officeId: 'peer',
+      sessionId: snapshot.sessions[2].nativeId,
+      label: 'MacBook Pro',
+      tags: [],
+      receivedAt: Date.now(),
+      stale: false,
+      conversation: true,
+      send: false,
+    };
+  const cardId = opts.card === undefined ? null : snapshot.sessions[opts.card].id;
+  if (cardId) await page.setViewportSize({ width: 380, height: 640 });
   await page.addInitScript(
-    ({ snapshot, outputs, web }) => {
+    ({ snapshot, outputs, web, cardId }) => {
       const w = window as any;
       w.fixture = snapshot;
       w.outputs = outputs;
@@ -120,12 +137,24 @@ async function open(
             }),
         copyText: async () => {},
         terminals: async () => ({}),
+        ...(cardId
+          ? {
+              // The pop-up card window, opened on one teammate.
+              card: async () => {},
+              cardState: async () => ({ pinned: false, positionRemembered: false }),
+              onCardState: () => () => {},
+              onCard: (cb: any) => {
+                setTimeout(() => cb({ id: cardId }), 50);
+                return () => {};
+              },
+            }
+          : {}),
       };
       localStorage.setItem('office:onboarding:v1:live', 'seen');
     },
-    { snapshot, outputs: opts.empty ? [] : outputs, web: !!opts.web },
+    { snapshot, outputs: opts.empty ? [] : outputs, web: !!opts.web, cardId },
   );
-  await page.goto(`/?lang=${opts.english ? 'en' : 'ko'}`);
+  await page.goto(`/?lang=${opts.english ? 'en' : 'ko'}${cardId ? '#card' : ''}`);
   return { snapshot, outputs };
 }
 
@@ -363,25 +392,105 @@ test('English copy', async ({ page }) => {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/outputs-page-en.png`, fullPage: true });
 });
 
-test("The work card's Details shows this teammate's outputs and leads to all of them", async ({
+test("The work card's Outputs tab lists this teammate's outputs, a page at a time", async ({
   page,
 }) => {
-  const { snapshot } = await open(page, { count: 6 });
+  const { snapshot } = await open(page, { count: 56 });
   const b = snapshot.sessions[1];
   await page.locator(`.office-pet[data-session-id="${b.id}"]`).click();
   const card = page.locator('.inspector');
   await expect(card).toBeVisible();
-  await card.getByRole('tab', { name: '작업 정보', exact: true }).click();
+  const tabs = card.getByRole('tablist');
+  // Its own tab after the notes, with the count before it is opened.
+  await expect(tabs.getByRole('tab')).toHaveText(['대화', '작업 정보', '기억 메모', '산출물57']);
+  const tab = tabs.getByRole('tab', { name: /^산출물/ });
+  await expect(tab.locator('.tab-count')).toHaveText('57');
+  // Details no longer carries the list.
+  await tabs.getByRole('tab', { name: '작업 정보', exact: true }).click();
+  await expect(card.getByRole('region', { name: '이 동료가 만든 산출물' })).toHaveCount(0);
+  // Reached from the keyboard like the other tabs.
+  await tab.focus();
+  await page.keyboard.press('Enter');
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
   const section = card.getByRole('region', { name: '이 동료가 만든 산출물' });
   await expect(section).toBeVisible();
-  await expect(section.locator('.card-outputs-count')).toHaveText('7');
-  await expect(section.locator('.output-row')).toHaveCount(5);
+  await expect(section.locator('.card-outputs-count')).toHaveText('57');
+  // A full page, then the rest on request.
+  await expect(section.locator('.output-row')).toHaveCount(50);
   await expect(section.locator('.output-name').first()).toHaveText('chart.png');
   const query = (await page.evaluate(() => (window as any).queries)).find((q: any) => q.sessionIds);
   expect(query.sessionIds).toContain(b.id);
-  if (SHOTS) await card.screenshot({ path: `${SHOTS}/outputs-card-ko.png` });
-  await section.getByRole('button', { name: '산출물에서 7개 모두 보기' }).click();
+  if (SHOTS) await card.screenshot({ path: `${SHOTS}/outputs-card-tab-ko.png` });
+  await section.getByRole('button', { name: '더 보기' }).click();
+  await expect(section.locator('.output-row')).toHaveCount(57);
+  await expect(section.getByRole('button', { name: '더 보기' })).toHaveCount(0);
+  await section.getByRole('button', { name: '산출물 페이지에서 보기' }).click();
   await expect(page.locator('.outputs-page')).toBeVisible();
+});
+
+test('The pop-up card window has the Outputs tab too', async ({ page }) => {
+  await open(page, { card: 0 });
+  const aside = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  await expect(aside).toBeVisible();
+  const tabs = aside.getByRole('tablist');
+  await expect(tabs.getByRole('tab')).toHaveText(['대화', '작업 정보', '기억 메모', '산출물3']);
+  const tab = tabs.getByRole('tab', { name: /^산출물/ });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  const section = aside.getByRole('region', { name: '이 동료가 만든 산출물' });
+  await expect(section.locator('.output-name')).toHaveText([
+    '분기 보고서.md',
+    'landing.html',
+    'old-notes.md',
+  ]);
+  // No Outputs page in a card window.
+  await expect(section.getByRole('button', { name: '산출물 페이지에서 보기' })).toHaveCount(0);
+  // The narrow card: every tab inside the strip, and no row wider than the card.
+  const width = page.viewportSize()!.width;
+  for (const box of await tabs
+    .getByRole('tab')
+    .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().right)))
+    expect(box).toBeLessThanOrEqual(width);
+  const scroller = aside.locator('.inspector-scroll');
+  expect(await scroller.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  await section.getByRole('button', { name: '미리보기 · 분기 보고서.md' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).actions))
+    .toEqual([['preview', 'o-report']]);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/outputs-card-popup-ko.png` });
+});
+
+test('Hidden screen content keeps names and actions out of the Outputs tab', async ({ page }) => {
+  await open(page, { card: 0, privacy: true });
+  const aside = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  const tab = aside.getByRole('tab', { name: /^산출물/ });
+  await tab.click();
+  await expect(aside.locator('.privacy-placeholder')).toBeVisible();
+  await expect(aside.locator('.output-row')).toHaveCount(0);
+  await expect(aside.getByText('분기 보고서.md')).toHaveCount(0);
+});
+
+test("A remote office's teammate has no Outputs tab", async ({ page }) => {
+  const { snapshot } = await open(page, { remote: true });
+  const c = snapshot.sessions[2];
+  await page.locator(`.office-pet[data-session-id="${c.id}"]`).click();
+  const card = page.locator('.inspector');
+  await expect(card.getByRole('tab', { name: '대화', exact: true })).toBeVisible();
+  await expect(card.getByRole('tab', { name: /^산출물/ })).toHaveCount(0);
+  // Its outputs are never asked for.
+  const queries = await page.evaluate(() => (window as any).queries);
+  expect(queries.filter((q: any) => q.sessionIds?.includes(c.id))).toEqual([]);
+});
+
+test('English tab label', async ({ page }) => {
+  const { snapshot } = await open(page, { english: true });
+  await page.locator(`.office-pet[data-session-id="${snapshot.sessions[0].id}"]`).click();
+  const tabs = page.locator('.inspector').getByRole('tablist');
+  await expect(tabs.getByRole('tab')).toHaveText(['Chat', 'Details', 'Notes', 'Outputs3']);
+  await tabs.getByRole('tab', { name: /^Outputs/ }).click();
+  await expect(
+    page.locator('.inspector').getByRole('button', { name: 'View on the Outputs page' }),
+  ).toBeVisible();
 });
 
 /** The reader window (`#reader`) given one output to read. */
@@ -559,12 +668,12 @@ test('An open preview is checked again when settings hide its project, and hides
   await expect(page.locator('.output-reader h1')).toHaveCount(0);
 });
 
-test('Settings can leave outputs off the work card', async ({ page }) => {
+test('Settings can leave the Outputs tab off the work card', async ({ page }) => {
   const { snapshot } = await open(page);
   const a = snapshot.sessions[0];
   await page.locator(`.office-pet[data-session-id="${a.id}"]`).click();
   const card = page.locator('.inspector');
-  await card.getByRole('tab', { name: '작업 정보', exact: true }).click();
+  await card.getByRole('tab', { name: /^산출물/ }).click();
   await expect(card.getByRole('region', { name: '이 동료가 만든 산출물' })).toBeVisible();
   await page.evaluate(() => {
     const w = window as any;
@@ -572,7 +681,13 @@ test('Settings can leave outputs off the work card', async ({ page }) => {
     w.fixture.preferences.cardOutputs = false;
     w.publish(structuredClone(w.fixture));
   });
+  // The tab goes, and the card falls back to the chat.
+  await expect(card.getByRole('tab', { name: /^산출물/ })).toHaveCount(0);
   await expect(card.getByRole('region', { name: '이 동료가 만든 산출물' })).toHaveCount(0);
+  await expect(card.getByRole('tab', { name: '대화', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   // The switch lives under the big office's 'More' in What each screen shows.
   await page.getByRole('button', { name: '연결과 설정' }).click();
   await page.getByRole('tablist', { name: '설정 분류' }).getByRole('tab', { name: '모습' }).click();

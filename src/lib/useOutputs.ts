@@ -18,6 +18,7 @@ export function useOutputs({
   visibility = '',
   demo,
   limit = OUTPUT_PAGE,
+  enabled = true,
 }: {
   text?: string;
   sessionIds?: string[];
@@ -25,6 +26,8 @@ export function useOutputs({
   visibility?: string;
   demo: boolean;
   limit?: number;
+  /** False reads nothing (a work card whose outputs are switched off, or a remote teammate). */
+  enabled?: boolean;
 }) {
   // Stable across snapshots that allocate the same member ids again.
   const scope = JSON.stringify(sessionIds ? [...new Set(sessionIds)].sort() : null);
@@ -42,12 +45,14 @@ export function useOutputs({
   /** The query the list holds (text, scope, page size). */
   const listed = useRef<string | null>(null);
   /**
-   * The settings of what is shown the list was read under. Under other settings it is not shown
-   * at all, from the very render that has them, until the first page is read under them.
+   * The settings of what is shown, and whose outputs, the list was read under. Under other
+   * settings, or for another teammate (a work card that switched colleagues), it is not shown at
+   * all, from the very render that has them, until the first page is read under them.
    */
-  const [heldFor, setHeldFor] = useState(visibility);
-  const current = heldFor === visibility;
-  const available = !demo && !!api.outputs;
+  const held = JSON.stringify([visibility, scope]);
+  const [heldFor, setHeldFor] = useState(held);
+  const current = heldFor === held;
+  const available = enabled && !demo && !!api.outputs;
   useEffect(() => {
     if (!available) {
       setList([]);
@@ -75,7 +80,7 @@ export function useOutputs({
         listed.current = query;
         const merged = again ? refreshed(latest.current, page.outputs, page.more) : null;
         setList(merged ?? page.outputs);
-        setHeldFor(visibility);
+        setHeldFor(held);
         // A kept tail goes on where it ended.
         if (!merged) setMore(page.more);
         setTotal(page.total);

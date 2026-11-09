@@ -63,6 +63,7 @@ export const inspector = {
     overview: 'Details',
     history: 'Chat',
     notes: 'Notes',
+    outputs: 'Outputs',
   },
   linkedRuns: (n: number) => `Linked helpers and forks · ${n}`,
   fork: 'Fork',
