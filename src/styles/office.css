@@ -542,14 +542,6 @@
 .project-area:has(.speech-request-bubble, .speech-bubble.is-expanded) {
   z-index: 2;
 }
-/* The request bubble (shown while a desk is pointed at) rises over its zone's sign. The sign
-   stays on top of it, so it can still be clicked (and pointing at it lets the desk go, so the
-   bubble steps away) instead of the bubble holding the pointer forever (#105). An unfolded
-   bubble or an open reply is being read: it keeps the headroom. */
-.project-area:has(.speech-request-bubble):not(:has(.speech-bubble.is-expanded, .quick-reply))
-  > .project-floor-mark {
-  z-index: 7;
-}
 /* An open reply (and the question about the prompt under it) stays above every other area,
    including one lifted by its request or unfolded bubble. */
 .project-area:has(.quick-reply) {
