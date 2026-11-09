@@ -173,6 +173,11 @@ export function DockCard() {
             prefs?.excludedProjects,
             prefs?.enabledProviders,
           ])}
+          outputStamp={JSON.stringify([
+            snapshot?.outputStamp,
+            prefs?.excludedProjects,
+            prefs?.enabledProviders,
+          ])}
           onUnbookmark={unbookmark}
           onOpenBookmark={(b) =>
             select({ id: b.sessionId, bookmark: { eventId: b.eventId, at: b.at } })

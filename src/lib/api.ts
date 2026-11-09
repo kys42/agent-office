@@ -51,6 +51,8 @@ export const api: OfficeAPI = window.office ?? {
   unbookmarkMessage: (sessionId, eventId) => rpc('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => rpc('bookmarkNote', id, note),
   bookmarkById: (id) => rpc('bookmarkById', id),
+  // Listed only: the web preview never opens or reads an output (#350).
+  outputs: (query) => rpc('outputs', query),
   handoff: (id, r) => rpc('handoff', id, r),
   preferences: (p) => rpc('preferences', p),
   subscribe: (cb, since, health) => {

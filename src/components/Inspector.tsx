@@ -58,6 +58,7 @@ import {
   prependPage,
 } from '../shared/conversation-pages';
 import { ArtifactCards } from './ArtifactCards';
+import { SessionOutputs } from './Outputs';
 import { sessionName, parentSession } from '../shared/office';
 import { nowState } from '../shared/now-state';
 import { CardMenu } from './CardMenu';
@@ -109,6 +110,8 @@ export function Inspector({
   positionRemembered = false,
   onPositionRemember,
   windowBusy = false,
+  outputStamp = '',
+  onOutputs,
 }: {
   session: Session;
   sessions: Session[];
@@ -170,6 +173,10 @@ export function Inspector({
   positionRemembered?: boolean;
   onPositionRemember?: (on: boolean) => void;
   windowBusy?: boolean;
+  /** Changes whenever an output is recorded (#350): the card's outputs read again. */
+  outputStamp?: string;
+  /** Open the Outputs page (the big office only). */
+  onOutputs?: () => void;
 }) {
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
@@ -560,6 +567,18 @@ export function Inspector({
           </div>
         )}
       </section>
+      {/* A remote office's outputs stay there: this office never names its files. */}
+      {!s.remote && (
+        <SessionOutputs
+          key={[...members].sort().join('|')}
+          sessionIds={[...members]}
+          demo={demo}
+          privacy={privacy}
+          stamp={outputStamp}
+          notify={notify}
+          onAll={onOutputs}
+        />
+      )}
       {children.length > 0 && (
         <section className="info-group">
           <h3>{t.inspector.linkedRuns(children.length)}</h3>

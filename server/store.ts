@@ -29,6 +29,15 @@ import type {
   UsageEntry,
 } from '../src/shared/types.js';
 import { redact } from './adapters/normalize.js';
+import {
+  OUTPUTS_SCHEMA,
+  OutputLog,
+  fileExists,
+  shownOutput,
+  type StoredOutput,
+} from './outputs.js';
+import type { OutputPage, OutputQuery } from '../src/shared/types.js';
+import { OUTPUT_PAGE, OUTPUT_PAGE_MAX, outputMatches, outputOrder } from '../src/shared/outputs.js';
 import { deriveState } from '../src/shared/runtime.js';
 import {
   allocateSeats,
@@ -156,6 +165,8 @@ export class OfficeStore {
    * by every query of this store, written by the next `upsert` of that provider (or on close).
    */
   private staged = new Map<string, Staged>();
+  /** The outputs sessions made (#350), kept across record windows. */
+  outputLog: OutputLog;
   constructor(dir = defaultDataDir(), readOnly = false) {
     if (!readOnly) mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, 'office.sqlite');
@@ -179,10 +190,13 @@ export class OfficeStore {
         this.db.exec(
           'ALTER TABLE bookmarks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0; UPDATE bookmarks SET updated_at=created_at',
         );
+      // Outputs (#350): a table of their own, added to databases of earlier builds as they open.
+      this.db.exec(OUTPUTS_SCHEMA);
       chmodSync(file, 0o600);
       this.cached = new Map();
     } else this.db.exec('PRAGMA query_only=ON');
     this.indexedNotices = prepareNoticeIndex(this.db, readOnly);
+    this.outputLog = new OutputLog(this.db);
   }
   close() {
     // What the hot path showed is written before the store goes (best effort: the next run
@@ -264,6 +278,7 @@ export class OfficeStore {
           continue;
         this.ingestNotices(s, this.noticesOnDisk(s.id, s), standbyHours);
         this.ingested.set(s.id, seen);
+        this.outputLog.record(s);
         if (previous?.revision === s.revision && !legacyPlace) continue;
         this.cached?.delete(s.id);
         const row = this.storedForm(s, base, this.ledgerOnDisk(s.id));
@@ -398,7 +413,7 @@ export class OfficeStore {
       if (!prev || entry.output >= prev.output)
         ledger.put({ ...entry, model: entry.model ?? prev?.model ?? null });
     }
-    const { usageEntries: _transient, ...stored } = s;
+    const { usageEntries: _transient, outputs: _outputs, ...stored } = s;
     // A partial tail may miss the evidence; keep the last one — but never an old cd-based guess.
     const retainLocation =
       !s.workingLocation &&
@@ -1537,6 +1552,51 @@ export class OfficeStore {
       .prepare("SELECT value FROM settings WHERE key='bookmarks_revision'")
       .get() as { value: string } | undefined;
     return row?.value ?? '0';
+  }
+  /** Whether the settings show this output: by its colleague as stored now, or as recorded. */
+  private outputShown(
+    o: StoredOutput,
+    prefs: Preferences,
+    places: Map<string, Pick<Session, 'provider' | 'project'>>,
+  ) {
+    return this.visible(places.get(o.sessionId) ?? o.source, prefs);
+  }
+  /**
+   * A page of the outputs sessions made (#350) whose tool and project the settings show, newest
+   * first, redacted. Only the files on this page are stat'ed (are they still there?).
+   */
+  outputs(query: OutputQuery = {}): OutputPage {
+    const prefs = this.preferences();
+    const places = this.placesOf(query.sessionIds);
+    const all = this.outputLog
+      .all(query.sessionIds)
+      .filter((o) => this.outputShown(o, prefs, places))
+      .map((o) => ({ o, shown: shownOutput(o) }))
+      .filter(({ shown }) => outputMatches(shown, query.text ?? ''));
+    const before = query.before;
+    const start = before ? all.findIndex(({ shown }) => outputOrder(shown, before) > 0) : 0;
+    const from = start < 0 ? all.length : start;
+    const limit = Math.max(1, Math.min(query.limit ?? OUTPUT_PAGE, OUTPUT_PAGE_MAX));
+    return {
+      outputs: all
+        .slice(from, from + limit)
+        .map(({ o }) => shownOutput(o, o.kind === 'file' ? fileExists(o.key) : undefined)),
+      more: from + limit < all.length,
+      total: all.length,
+    };
+  }
+  /**
+   * The recorded output itself (its real path or link), for the desktop's own actions only; null
+   * when there is none, or the settings no longer show it. Never sent to a page.
+   */
+  outputTarget(id: string): StoredOutput | null {
+    const o = this.outputLog.byId(id);
+    if (!o) return null;
+    return this.outputShown(o, this.preferences(), this.placesOf([o.sessionId])) ? o : null;
+  }
+  /** Changes whenever an output is recorded, so lists read again. */
+  outputStamp(): string {
+    return this.outputLog.stamp();
   }
   /**
    * Handoff Markdown in `locale`, from one read of the session. Errors use the active language,

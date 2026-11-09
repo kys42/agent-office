@@ -38,6 +38,9 @@ const api: OfficeAPI = {
   unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
   bookmarkById: (id) => call('bookmarkById', id),
+  outputs: (query) => call('outputs', query),
+  outputAction: (what, id) => action('office:output', what, id),
+  outputPreview: (id) => call('outputPreview', id),
   bookmarkWindow: ((what: string, target?: unknown) =>
     action('office:reader-window', what, target)) as OfficeAPI['bookmarkWindow'],
   onPopupOnTop: (cb) => {

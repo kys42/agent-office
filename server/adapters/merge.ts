@@ -4,6 +4,7 @@ import { hash } from './normalize.js';
 import { summarizeActivity } from '../../src/shared/activity.js';
 import { CANONICAL } from '../../src/shared/canonical.js';
 import { lastMentions } from '../../src/shared/links.js';
+import { mergeOutputs } from './outputs.js';
 
 // Platform-independent: multiple transport fragments may describe one native conversation.
 export function mergeSessions(input: Session[]): Session[] {
@@ -70,6 +71,10 @@ export function mergeSessions(input: Session[]): Session[] {
           group.flatMap((s) => s.artifacts),
           12,
         ),
+        // Each fragment's outputs (#350): the store keeps them across windows anyway.
+        ...(group.some((s) => s.outputs?.length)
+          ? { outputs: mergeOutputs(group.map((s) => s.outputs)) }
+          : {}),
         activity,
         action: activity.text,
         revision: hash(group.map((s) => s.revision).join(':')),

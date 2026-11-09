@@ -6,6 +6,7 @@ export const app: Messages['app'] = {
   tabs: {
     office: { title: '우리 사무실', short: '사무실' },
     memory: { title: '기억 서랍', short: '기억' },
+    outputs: { title: '산출물', short: '산출물' },
     activity: { title: '활동 기록', short: '활동' },
     settings: { title: '연결과 설정', short: '설정' },
   },

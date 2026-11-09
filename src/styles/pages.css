@@ -456,6 +456,233 @@ body.reader-mode {
   color: var(--accent);
 }
 
+/* ───────────────────────── Outputs (#350) ───────────────────────── */
+.outputs-web-note {
+  margin: -2px 2px 10px;
+  font-size: calc(11.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.output-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.output-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.output-project {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  font-size: calc(13px * var(--read-scale));
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.output-project .source-dot {
+  margin-left: 0;
+}
+.output-colleague {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+}
+.output-colleague > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px 6px;
+  font-size: calc(12px * var(--read-scale));
+  font-weight: 650;
+  color: var(--text-2);
+}
+.output-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.output-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px 8px 14px;
+  border-top: 0.5px solid var(--line);
+}
+.output-colleague > h3 + .output-list > .output-row:first-child,
+.card-outputs h3 + .output-list > .output-row:first-child {
+  border-top: 0;
+}
+.output-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.output-link .output-icon {
+  color: #af52de;
+  background: color-mix(in srgb, #af52de 12%, transparent);
+}
+.output-row.is-missing .output-icon {
+  color: var(--text-4);
+  background: var(--bg-3);
+}
+.output-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.output-name {
+  overflow: hidden;
+  font-size: calc(13px * var(--read-scale));
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+}
+.output-row.is-missing .output-name {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--text-4);
+}
+.output-meta {
+  min-width: 0;
+  display: flex;
+}
+.output-dir {
+  overflow: hidden;
+  font-size: calc(11px * var(--read-scale));
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+  background: none;
+}
+.output-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: calc(10.5px * var(--read-scale));
+  color: var(--text-4);
+}
+.output-facts time {
+  font-family: var(--font-read-num);
+}
+.output-via {
+  padding: 0 6px;
+  border-radius: 5px;
+  line-height: 16px;
+  color: var(--text-3);
+  background: var(--bg-3);
+}
+.output-missing {
+  padding: 0 6px;
+  border-radius: 5px;
+  line-height: 16px;
+  color: var(--st-error, #ff3b30);
+  background: color-mix(in srgb, var(--st-error, #ff3b30) 12%, transparent);
+}
+.output-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.output-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: calc(11.5px * var(--read-scale));
+  color: var(--text-2);
+}
+.output-actions button.icon-only {
+  width: 26px;
+  padding: 0;
+  justify-content: center;
+  color: var(--text-3);
+}
+.output-actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-4);
+}
+.output-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* A narrow column (the card, a phone): words go, the icons stay; their names stay for AT. */
+@container (max-width: 520px) {
+  .output-actions button:not(.icon-only) {
+    width: 26px;
+    padding: 0;
+    justify-content: center;
+  }
+  .output-actions button:not(.icon-only) span {
+    display: none;
+  }
+}
+.outputs-page .output-colleague,
+.card-outputs {
+  container-type: inline-size;
+}
+.card-outputs h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.card-outputs-count {
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: calc(10px * var(--read-scale));
+  line-height: 16px;
+  color: var(--text-3);
+  background: var(--bg-4);
+}
+.card-outputs .output-row {
+  padding: 7px 8px 7px 12px;
+}
+.card-outputs .output-icon {
+  width: 26px;
+  height: 26px;
+}
+.info-row.card-outputs-all > span {
+  color: var(--accent);
+}
+/* The reader window's output: markdown as in conversations, HTML in its sandboxed frame. */
+.output-reader {
+  gap: 8px;
+  padding-bottom: 12px;
+  overflow: auto;
+}
+.output-reader-note {
+  margin: 0;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-3);
+}
+.output-markdown {
+  min-width: 0;
+  padding: 2px 4px 16px;
+}
+.output-html {
+  flex: 1;
+  min-height: 240px;
+  width: 100%;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
 /* ───────────────────────── Activity ───────────────────────── */
 .activity-summary {
   display: grid;

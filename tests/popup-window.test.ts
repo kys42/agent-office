@@ -11,6 +11,7 @@ import {
 import { shellWindowBounds, SHELL_WINDOW_SIZE } from '../src/shared/shell-window.js';
 import {
   parseReaderTarget,
+  readerKey,
   READER_WINDOW_MIN,
   READER_WINDOW_SIZE,
   READER_WINDOW_SIZE_FILE,
@@ -103,6 +104,15 @@ test('a reader window is asked for by bookmark id only', () => {
   assert.deepEqual(parseReaderTarget({ id: 'b-1', text: 'secret' }), { id: 'b-1' });
   for (const bad of [null, [], 'b-1', {}, { id: '' }, { id: 5 }, { id: 'x'.repeat(101) }])
     assert.throws(() => parseReaderTarget(bad));
+  // An output's reader (#350): its kind is kept, never a path; its window key is its own.
+  assert.deepEqual(parseReaderTarget({ id: 'o-1', kind: 'output', path: '/etc/passwd' }), {
+    id: 'o-1',
+    kind: 'output',
+  });
+  assert.deepEqual(parseReaderTarget({ id: 'b-1', kind: 'bookmark' }), { id: 'b-1' });
+  assert.throws(() => parseReaderTarget({ id: 'o-1', kind: 'file' }));
+  assert.equal(readerKey({ id: 'x', kind: 'output' }), 'output:x');
+  assert.equal(readerKey({ id: 'x' }), 'x');
 });
 
 test('the desktop app reads a bookmark in a window; the web preview and the demo in the page', () => {

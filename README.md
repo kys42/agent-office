@@ -122,6 +122,7 @@ When you want the whole picture, open the full office: every project on its own 
 | 📌 **Pin** | Keep a desk in the office no matter how long it's been quiet. |
 | 🔎 **Search across tools** | One keyword search over Claude Code, Codex and OpenClaw history. |
 | 🔖 **Message bookmarks** | Bookmark an important message in a conversation; Memory and the teammate’s Notes tab collect them with context and short annotations; open the conversation right at the saved message, or read the saved conversation in its own window beside the office while you work. |
+| 📦 **Outputs** | Documents, pages and images a teammate newly created (md, html, pdf, csv, images…) and Claude Artifact links gather in the **Outputs** tab beside Memory, by project and teammate. Files that were only edited, and code, are left out. Preview markdown in a reader window and HTML in a script-free sandbox, open in the default app, show in Finder or copy the path. The work card’s Details lists the teammate’s outputs too. |
 | ↔ **Place your teams** | Drag a project sign or floor flag to move its desks together across the row. Positions are remembered; reset from the dock toolbar. |
 | 🤝 **Handoff Markdown** | Bundle a session's notes, evidence and linked results into a Markdown handoff — preview, copy or save. |
 | 📊 **Usage & cost** | Subscription limits for Claude and Codex on demand, plus per-session tokens and API-equivalent cost. |
