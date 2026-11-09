@@ -1,5 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { OutputCandidate } from '../../src/shared/types.js';
 import {
   ARTIFACT_LINKS,
@@ -117,7 +118,8 @@ export function mentionedFiles(text: string): string[] {
   for (const m of text.matchAll(/\]\(\s*<?((?:\/|~\/|file:\/\/)[^)\s>]+)>?\s*\)/g)) {
     let p = m[1];
     try {
-      p = p.startsWith('file://') ? decodeURIComponent(new URL(p).pathname) : decodeURI(p);
+      // fileURLToPath: drive letters and escapes as the platform names them (file:///C:/x → C:\x).
+      p = p.startsWith('file://') ? fileURLToPath(p) : decodeURI(p);
     } catch {
       continue;
     }
