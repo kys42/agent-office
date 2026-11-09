@@ -127,26 +127,13 @@ test('A final reply notifies once, even when its text completes after a partial 
 test('Startup: snapshots only prime until a collection pass finishes after the app started', () => {
   const started = now - 10_000;
   // The office read from disk before the first pass: not ready.
-  assert.equal(notifyReady({ syncing: true, lastSync: null }, started, now - 9000, now), false);
-  // A pass from before the app started (a collector already running) does not count.
-  assert.equal(
-    notifyReady({ syncing: false, lastSync: started - 1 }, started, now - 9000, now),
-    false,
-  );
-  // Still syncing: the pass is not over.
-  assert.equal(
-    notifyReady({ syncing: true, lastSync: started + 1 }, started, now - 9000, now),
-    false,
-  );
-  assert.equal(
-    notifyReady({ syncing: false, lastSync: started + 1 }, started, now - 9000, now),
-    true,
-  );
+  assert.equal(notifyReady({ lastSync: null }, started, now - 9000, now), false);
+  // A pass from before the app started (a collector already running) does not count, even in a
+  // snapshot sent while the next pass is under way (`lastSync` moves only when a pass ends).
+  assert.equal(notifyReady({ lastSync: started - 1 }, started, now - 9000, now), false);
+  assert.equal(notifyReady({ lastSync: started + 1 }, started, now - 9000, now), true);
   // A collector that never finishes a pass: notifications start after the grace period.
-  assert.equal(
-    notifyReady({ syncing: true, lastSync: null }, started, now - NOTIFY_GRACE_MS, now),
-    true,
-  );
+  assert.equal(notifyReady({ lastSync: null }, started, now - NOTIFY_GRACE_MS, now), true);
 });
 
 test('Old, read, put away, background, remote and unknown news never notifies', () => {
