@@ -1063,7 +1063,7 @@ export function DeskRow({
         />
         <DockPlus controls={plus} size={icon} edge={pillRef} onOpenCard={openFromList} />
         <DockPeek peek={peek} size={icon} />
-        {/* Settings as its own button here (the 보기 menu leaves it out): the pill has room. */}
+        {/* Settings as its own button here (the View menu leaves it out): the pill has room. */}
         {hasSettings && (
           <button
             className="icon-btn"
