@@ -35,7 +35,6 @@ export const dock = {
   },
   /** The 보기 (view) menu of the pill and the pet: the dock's looks and where else to go. */
   view: {
-    button: 'View',
     label: 'Change view',
     tip: 'Change view · pet, row, floor, tiny',
     menu: 'Dock view',
