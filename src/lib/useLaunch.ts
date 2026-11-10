@@ -13,6 +13,7 @@ import {
   forkDefaultName,
   broughtUp,
   resultView,
+  sleepingRevealedToast,
   type ConversationChoice,
   type GoThere,
   type LaunchDraft,
@@ -370,15 +371,10 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
       case 'reveal':
         return void run(async (ticket) => {
           await api.orcaReveal?.();
-          // Its tab sleeps in an Orca workspace (#342): Orca is in front, the person opens
-          // that workspace there. Nothing more for the sheet to do.
-          const check = current?.duplicate;
-          if (draft.kind === 'resume' && check?.state === 'open' && check.sleeping)
-            await finish(
-              ticket,
-              { close: true, toast: m().tmux.sleepingRevealed(check.sleeping.workspace) },
-              false,
-            );
+          // Its tab sleeps, or may, in an Orca workspace (#342): Orca is in front, the person
+          // opens that workspace there. Nothing more for the sheet to do.
+          const toast = draft.kind === 'resume' ? sleepingRevealedToast(current?.duplicate) : '';
+          if (toast) await finish(ticket, { close: true, toast }, false);
         });
       case 'go':
         return void goThere(action.go);

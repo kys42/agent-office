@@ -206,14 +206,16 @@ export function duplicateView(
   const t = m().tmux;
   if (!check || check.state === 'none') return { notice: '', tone: 'none', blocks: false };
   if (check.state === 'unknown') {
-    const sleeping = check.sleeping;
-    return {
-      notice: sleeping
-        ? t.sleepingUnknownNotice(sleeping.workspace, sleeping.agent, sleeping.count)
-        : t.unknownNotice,
-      tone: 'caution',
-      blocks: false,
-    };
+    // Its folder lies in a sleeping Orca workspace (#342): its tab may come back there, so
+    // opening that workspace comes first; starting anyway stays possible after the confirmation.
+    if (check.sleeping)
+      return {
+        notice: t.sleepingUnknownNotice(check.sleeping.workspace),
+        tone: 'caution',
+        reveal: true,
+        blocks: false,
+      };
+    return { notice: t.unknownNotice, tone: 'caution', blocks: false };
   }
   const place = t.place[check.where];
   const openTmux = opens.includes('tmux') ? ('tmux' as const) : undefined;
@@ -265,6 +267,20 @@ export function duplicateView(
     ...copy,
     blocks: false,
   };
+}
+
+/**
+ * What to say once Orca was brought forward for a conversation whose tab sleeps there (`sure`:
+ * its tab was matched there) or may (its folder lies in that sleeping workspace), '' when the
+ * check names no sleeping workspace. No `workspace`: its name is kept private.
+ */
+export function sleepingRevealed(sure: boolean, workspace?: string): string {
+  const t = m().tmux;
+  return sure ? t.sleepingRevealed(workspace) : t.sleepingMaybeRevealed(workspace);
+}
+export function sleepingRevealedToast(check: DuplicateCheck | undefined): string {
+  if ((check?.state !== 'open' && check?.state !== 'unknown') || !check.sleeping) return '';
+  return sleepingRevealed(check.state === 'open', check.sleeping.workspace);
 }
 
 /** One row of "where". */

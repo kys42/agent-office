@@ -36,7 +36,7 @@ import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
 import { matchSleeping } from './orca-sleeping.js';
 import { TerminalFocusError } from './terminal-host.js';
-import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
+import { checkDuplicate, duplicateNote, livenessFor, sleepingWorkspace } from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -1540,8 +1540,9 @@ function setupIPC() {
     await orcaLaunch.reveal();
   });
   /**
-   * The card's main action (#342): whether this conversation's tab rests in a sleeping Orca
-   * workspace (the whole duplicate check says so), with that workspace's name. Read-only.
+   * The card's main action (#342): whether this conversation's tab rests, or may rest, in a
+   * sleeping Orca workspace (the whole duplicate check says so), with that workspace's name.
+   * Read-only.
    */
   ipcMain.handle('office:orca-sleeping', async (e, id) => {
     trusted(e);
@@ -1549,9 +1550,7 @@ function setupIPC() {
     const s: Session | undefined = await bridge.call('detail', [id]).catch(() => undefined);
     if (!s || s.remote) return null;
     const check = await duplicateCheck(s)(false).catch(() => null);
-    return check?.state === 'open' && check.sleeping
-      ? { workspace: check.sleeping.workspace }
-      : null;
+    return check ? sleepingWorkspace(check) : null;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();

@@ -93,13 +93,15 @@ export const tmux: Messages['tmux'] = {
     '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 이미 열려 있다면 같은 대화가 두 번 돌아가요.',
   sleepingNotice: (workspace) =>
     `이 대화가 잠든 Orca 작업 공간(${workspace})에 열려 있어요. Orca에서 그 작업 공간을 열면 탭이 다시 살아나요.`,
-  sleepingUnknownNotice: (workspace, agent, count) =>
-    `잠든 Orca 작업 공간(${workspace})에 쉬고 있는 ${agent} 탭이 ${count}개 있어요. 이 대화일 수 있어요.`,
+  sleepingUnknownNotice: (workspace) =>
+    `이 대화가 잠든 Orca 작업 공간(${workspace})에 남아 있을 수 있어요. 먼저 그 작업 공간을 열어 확인하세요.`,
   sleepingConfirm: (workspace) =>
     `주의: 이 대화가 잠든 Orca 작업 공간(${workspace})에 열려 있어요. Orca에서 그 작업 공간을 열면 탭이 다시 살아나요. 새로 띄우면 같은 대화가 두 곳에서 동시에 돌아가 서로의 작업을 덮어쓸 수 있어요.`,
-  sleepingUnknownConfirm: (agent, count) =>
-    `이 폴더의 잠든 Orca 작업 공간에 쉬고 있는 ${agent} 탭이 ${count}개 있어요. 그중 하나가 이 대화라면 같은 대화가 두 번 돌아가요.`,
+  sleepingUnknownConfirm: (workspace) =>
+    `주의: 이 대화가 잠든 Orca 작업 공간(${workspace})에 남아 있을 수 있어요. 그 작업 공간을 열면 탭이 다시 살아나, 여기서 새로 띄운 것과 같은 대화가 두 번 돌아갈 수 있어요. 먼저 그 작업 공간을 열어 확인하세요.`,
   sleepingRevealed: (workspace) =>
     `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열면 이 대화 탭이 다시 살아나요.`,
+  sleepingMaybeRevealed: (workspace) =>
+    `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열어 이 대화가 있는지 확인하세요.`,
   tabGone: '그 Orca 탭을 다시 찾지 못했어요. 상태를 다시 확인해주세요.',
 };
