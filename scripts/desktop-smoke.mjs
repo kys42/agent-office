@@ -477,6 +477,37 @@ try {
   assert.equal(await dock.locator('.speech-bubble').count(), 0, 'tiny has no bubbles');
   assert.deepEqual(await savedTiny(true), { v: 1, tiny: true });
   await dock.screenshot({ path: '.local/native-row-tiny.png' });
+  // The tiny pill counts like the pet: a number lists who, above the strip — the window grows
+  // upward for it (room) and gives the room back once it closes.
+  const number = dock.locator('.dock-pill .tally-pill > button').first();
+  if (await number.count()) {
+    await number.focus();
+    await dock.keyboard.press('Enter');
+    const list = dock.locator('.tally-list');
+    await list.waitFor();
+    await dock.waitForFunction(() => {
+      const el = document.querySelector('.tally-list');
+      return !!el && getComputedStyle(el).visibility === 'visible';
+    });
+    const grown = await dockBounds();
+    assert.ok(grown.height > tiny.height + 150, 'the tiny strip grows upward for the list');
+    assert.equal(grown.y + grown.height, tiny.y + tiny.height, 'it keeps its bottom edge');
+    await dock.waitForTimeout(250); // the list's short rise
+    const box = await list.boundingBox();
+    const pillBox = await dock.locator('.dock-pill').boundingBox();
+    assert.ok(box && pillBox && box.y >= 0, 'the whole list is inside the window');
+    assert.ok(
+      box.y + box.height <= pillBox.y + 3,
+      `the list stands above the pill (${JSON.stringify({ box, pillBox })})`,
+    );
+    await dock.screenshot({ path: '.local/native-tiny-tally.png' });
+    await dock.keyboard.press('Escape');
+    await list.waitFor({ state: 'detached' });
+    await dock.waitForFunction(() => document.querySelector('.desk-row.is-tiny'));
+    for (let i = 0; i < 40 && (await dockBounds()).height !== tiny.height; i++)
+      await dock.waitForTimeout(50);
+    assert.equal((await dockBounds()).height, tiny.height, 'the room goes back as the list closes');
+  }
   await chooseView('쪼꼬미');
   await dock.waitForFunction(() => !document.querySelector('.desk-row.is-tiny'));
   assert.equal((await dockBounds()).height, row.height, 'full size comes back');
