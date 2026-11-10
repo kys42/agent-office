@@ -168,6 +168,33 @@ export function cleanPrompt(t: string): string {
       .trim()
   );
 }
+/**
+ * Claude Code's records of what ran in the CLI itself, never sent to the model: a local slash
+ * command (`/usage`, `/cost`, `/model`, `/compact` …), whose record starts with `<command-name>`,
+ * and its output, the caveat before it, and a `!` shell command with its output (2.1.322 `kO`,
+ * `I4`). A command that expands into a prompt for the model (a custom command, a skill) starts
+ * with `<command-message>` instead and stays a request. `line` is what the conversation shows
+ * for the command; output and caveat show nothing.
+ */
+export function localCommand(text: string): { line?: string } | undefined {
+  const t = text.trimStart();
+  const tag = (name: string) =>
+    new RegExp(String.raw`<${name}>([\s\S]*?)</${name}>`).exec(t)?.[1]?.trim() ?? '';
+  const clip = (s: string) => {
+    const one = s.replace(/\s+/g, ' ').trim();
+    return one.length > 120 ? one.slice(0, 119).trimEnd() + '…' : one;
+  };
+  if (t.startsWith('<command-name>')) {
+    const name = tag('command-name').replace(/^\/+/, '');
+    return name ? { line: clip(`/${name} ${tag('command-args')}`) } : {};
+  }
+  if (t.startsWith('<bash-input>')) {
+    const command = tag('bash-input');
+    return command ? { line: clip(`!${command}`) } : {};
+  }
+  if (/^<(?:local-command-(?:stdout|stderr|caveat)|bash-(?:stdout|stderr))>/.test(t)) return {};
+  return undefined;
+}
 export function cleanTitle(value: unknown): string {
   const text = cleanPrompt(String(value ?? ''));
   // A DB title can be a truncated prefix without its closing context tag.
@@ -313,6 +340,16 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   const set = (s: Mood, why: string) => {
     status = s;
     reason = why;
+  };
+  /**
+   * A command run in Claude Code itself (`localCommand`): a small line in the conversation that
+   * is no request and no activity. Status and the last activity time stay as they were, so an
+   * idle colleague does not wake as if it answered.
+   */
+  const localLine = (r: Obj, at: number, line: string) => {
+    const kept = updatedAt;
+    add(r, at, 'lifecycle', t.event.localCommand(line), undefined, ':command');
+    updatedAt = kept;
   };
   for (const { r, at } of records) {
     const p = r.payload ?? {};
@@ -533,10 +570,19 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         set('think', t.reason.afterUser);
       }
     }
+    // Newer Claude Code writes some local commands and their output as system records.
+    if (r.type === 'system' && r.subtype === 'local_command' && typeof r.content === 'string') {
+      const line = localCommand(r.content)?.line;
+      if (line) localLine(r, at, line);
+    }
     if (['assistant', 'user', 'message'].includes(r.type) && m.role) {
       const role = m.role;
       const text = role === 'user' ? cleanPrompt(contentText(m.content)) : contentText(m.content);
-      if (role === 'user' && !r.isMeta && text) {
+      const local = r.type === 'user' && role === 'user' ? localCommand(text) : undefined;
+      if (local?.line && !r.isMeta) localLine(r, at, local.line);
+      // Neither a local command nor a compaction summary (written by the model, not the person)
+      // is a request: no turn opens, nothing waits for an answer.
+      else if (!local && role === 'user' && !r.isMeta && !r.isCompactSummary && text) {
         if (!title) title = text.slice(0, 140);
         add(r, at, 'user', text);
         set('think', t.reason.afterUser);

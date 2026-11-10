@@ -94,6 +94,7 @@ export const server: Messages['server'] = {
     toolRun: (tool) => `${tool} 실행`,
     toolResult: (tool) => `${tool} 결과`,
     tool: '도구',
+    localCommand: (command) => `${command} 실행`,
   },
   session: {
     unknownWorkspace: '작업 공간 미확인',

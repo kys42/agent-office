@@ -424,7 +424,7 @@ test('Compressed overflow avoids sequential-scan reparsing and respects stamps, 
     await read({ ...files[0], size: 101 });
     assert.equal(reads, 4, 'changed source invalidates compressed stamp');
     service.coldCache.set(files[1].path, {
-      stamp: `office-v12:100:${now}`,
+      stamp: `office-v13:100:${now}`,
       provider: 'codex',
       data: Buffer.from('broken'),
     });
