@@ -72,7 +72,7 @@ export async function readOpenClawDatabases(
           const last = (tip.get(nativeId) as any)?.seq ?? 0;
           const watermark = rewrite?.get(nativeId);
           const revision = hash(
-            `office-v12:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
+            `office-v13:${n.updated_at}:${last}:${JSON.stringify(watermark ?? null)}:${n.status}:${n.label}:${n.display_name}:${n.archived_at}:${parentIds.get(n.parent_session_key)}:${n.session_key}:${n.created_via}:${n.created_actor_type}`,
           );
           const key = `${file}:${nativeId}`;
           seen.add(key);

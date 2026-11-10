@@ -121,11 +121,20 @@ export const localizePreferences = (p: Preferences, locale: Locale = getLocale()
   ],
 });
 
+/** A local command's line (`/usage 실행`): the command as recorded, the wording localized. */
+function localCommandLine(text: string, locale: Locale): string | undefined {
+  const [head, tail] = canonical().server.event.localCommand('\u0000').split('\u0000');
+  if (text.length <= head.length + tail.length || !text.startsWith(head) || !text.endsWith(tail))
+    return undefined;
+  const command = text.slice(head.length, text.length - tail.length);
+  return messagesFor(locale).server.event.localCommand(localizeText(command, locale));
+}
 function localizeEvent(e: OfficeEvent, locale: Locale): OfficeEvent {
   const from = canonical().server.event;
   const to = messagesFor(locale).server.event;
   let text: string | undefined;
-  if (e.kind === 'lifecycle') text = book(locale).lifecycle(e.text);
+  if (e.kind === 'lifecycle')
+    text = book(locale).lifecycle(e.text) ?? localCommandLine(e.text, locale);
   else if (e.kind === 'tool' && e.tool != null && e.text === from.toolRun(e.tool))
     text = to.toolRun(e.tool);
   else if (e.kind === 'result' && e.text === from.toolResult(e.tool ?? from.tool))

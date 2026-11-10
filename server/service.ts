@@ -883,7 +883,7 @@ export class OfficeService extends EventEmitter {
     file: SourceFile,
     metadata: Map<string, CodexMeta>,
   ): Promise<Session | null | 'error'> {
-    const stamp = `office-v12:${file.size}:${file.mtime}`;
+    const stamp = `office-v13:${file.size}:${file.mtime}`;
     let cached = this.cache.get(file.path);
     if (!cached) {
       const cold = this.coldCache.get(file.path);
@@ -1202,7 +1202,7 @@ export class OfficeService extends EventEmitter {
         files.push({ path: file, size: st.size, mtime: st.mtimeMs });
         if (
           (this.cache.get(file)?.stamp ?? this.coldCache.get(file)?.stamp) !==
-          `office-v12:${st.size}:${st.mtimeMs}`
+          `office-v13:${st.size}:${st.mtimeMs}`
         )
           moved = true;
       }

@@ -219,3 +219,16 @@ hot overlay에는 현재 입력 window에서 확인하는 관측 버전과 실�
 - **파서 의미 변경**: 파싱 캐시 stamp를 `office-v11` → `office-v12`로 올렸다(서비스 JSONL·hot path·OpenClaw DB 캐시). 업그레이드 후 첫 수집에서 모든 기록을 한 번 다시 파싱해 산출물 후보를 채운다.
 
 검증은 `tests/outputs.test.ts`(Write 생성/수정/거절/결과 없음, `toolUseResult`, 허용 확장자·설정 JSON·제외 폴더·숨김 worktree, apply_patch 추가/수정/실패·`patch_apply_end`, `open`·Markdown 링크·Artifact 제목, 조각 병합, 저장 페이지·`before`·검색·설정 숨김·stamp, redact, 언급의 생성 시각 판정과 거절 기억, RPC zod 거절·미기록 id·미리보기 읽기와 경계·심볼릭 링크)와 `tests/ui/outputs.spec.ts`(탭 위치·묶음·행동·페이지·검색·화면 숨기기·빈 상태·웹 미리보기·영어·카드 구역·읽기 창 md/html 샌드박스)다.
+
+## Claude 로컬 명령 (#359, office-v13)
+
+`/usage`·`/cost`·`/model`처럼 Claude Code 안에서 돌고 모델에게 가지 않는 명령도 transcript에 user 역할로 남는다. 예전에는 이를 사람의 요청으로 읽어 상태가 '생각 중'(응답 준비)이 되고, 마크업이 든 '내 요청' 소식이 생겼다.
+
+- **기록 모양**(Claude Code 2.1.322 번들의 `kO`·`I4`·`R_`·`gTe`에서 확인, 실제 기록은 읽지 않음): 로컬 명령은 `<command-name>/usage</command-name><command-message>…<command-args>…`로 **시작**하는 user 레코드다. 그 출력은 예전 버전은 `<local-command-stdout>`/`<local-command-stderr>` user 레코드, 새 버전은 `type: system`, `subtype: local_command`, `content: "<local-command-stdout>…"` 레코드다. 창으로 뜨는 명령은 명령 줄도 같은 system 레코드로 남는다. 그 앞의 `<local-command-caveat>`는 `isMeta`다. `!` 셸 명령은 `<bash-input>` + `<bash-stdout>`/`<bash-stderr>`다.
+- **모델이 일하는 명령은 다르다**: 사용자 정의 명령·스킬은 `<command-message>…</command-message><command-name>/review</command-name>`처럼 `<command-message>`로 시작하고, 펼친 프롬프트가 `isMeta` user 레코드로 이어진다. 이것은 지금처럼 요청이다(상태 '생각 중').
+- **정규화(`localCommand`, `parseRecords`)**: 로컬 명령은 요청을 열지 않는다. user 이벤트·제목·요청 소식을 만들지 않고, 상태·이유·마지막 활동 시각(`updatedAt`)·작업 시작(턴 경계)을 바꾸지 않는다. 대화에는 `lifecycle` 이벤트(턴 경계 필드 없음) 한 줄 `/usage 실행`(영어 `Ran /usage`, 읽을 때 번역)만 남고, 다른 lifecycle처럼 작업 기록 묶음에 접힌다. 출력·caveat는 보이지 않는다. 명령 줄은 공백을 접고 120자로 자르며 `redact`를 거친다.
+- **`/compact`**: 요약 작업은 기록되기 전에 끝난다. `compact_boundary`, `isCompactSummary` 요약(모델이 쓴 글이라 요청이 아님), caveat, `/compact` 명령, 출력이 한꺼번에 남으므로 상태는 그대로이고 `/compact 실행` 한 줄이 남는다. 자동 압축 뒤 이어지는 답은 지금처럼 답으로 상태를 정한다.
+- **한계**: 바쁠 때 대기열(`queued_command`)에 들어간 `/명령` 글은 명령인지 알 수 없어 지금처럼 요청으로 본다. 출력 뒤에 모델을 부르는 로컬 명령(번들의 `query` 결과)은 답이 기록될 때부터 '생각 중'이 된다.
+- **파서 의미 변경**: 파싱 캐시 stamp를 `office-v12` → `office-v13`으로 올렸다(서비스 JSONL·hot path·OpenClaw DB 캐시).
+
+검증은 `tests/local-commands.test.ts`(`/usage` 예전·새 모양, `/cost`·`/model` 뒤 쉬는 상태 유지와 영어 줄, 로컬 명령만 있는 세션, 뒤이은 진짜 요청, 턴 중간의 명령, 프롬프트로 펼쳐지는 명령, `/compact`·압축 요약, `!` 셸 명령)다.
