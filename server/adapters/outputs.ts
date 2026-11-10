@@ -165,7 +165,8 @@ function wrappedCode(raw: unknown): string | undefined {
 
 /**
  * Collects the outputs one parse of a record names. `call` takes each tool call (with where it
- * ran), `result` its outcome, `say` each reply; `list` gives the candidates, newest last.
+ * ran), `result` its outcome, `say` each reply; `list` gives the candidates, newest last. Each
+ * finding keeps the id of the conversation event it came from, when there is one (#358).
  */
 export class OutputTracker {
   private found = new Map<string, OutputCandidate>();
@@ -173,7 +174,12 @@ export class OutputTracker {
   private add(c: OutputCandidate) {
     const held = this.found.get(c.key);
     // A file the session made with its tool is that, whatever it said about it later.
-    if (held && (c.via === 'mention' || held.via !== 'mention')) return;
+    if (held && (c.via === 'mention' || held.via !== 'mention')) {
+      // The same finding told again from an event (Codex's `patch_apply_end` before its call's
+      // result): the chat can place it there (#358).
+      if (!held.eventId && c.eventId && held.via === c.via) held.eventId = c.eventId;
+      return;
+    }
     this.found.set(c.key, c);
     if (this.found.size > MAX_CANDIDATES) this.found.delete(this.found.keys().next().value!);
   }
@@ -223,19 +229,21 @@ export class OutputTracker {
     at: number,
     failed: boolean,
     detail?: { type?: unknown; filePath?: unknown },
+    eventId?: string,
   ) {
     const call = callId ? this.pending.get(callId) : undefined;
     if (!call) return;
     this.pending.delete(callId!);
     if (failed) return;
+    const from = eventId ? { eventId } : {};
     if (call.kind === 'write') {
       const created =
         /^\s*File created successfully at:/.test(text) ||
         (detail?.type === 'create' && !/has been updated/.test(text));
-      if (created) this.add({ key: call.files[0], kind: 'file', at, via: 'write' });
+      if (created) this.add({ key: call.files[0], kind: 'file', at, via: 'write', ...from });
     } else if (call.kind === 'patch') {
       if (patchApplied(text))
-        for (const key of call.files) this.add({ key, kind: 'file', at, via: 'patch' });
+        for (const key of call.files) this.add({ key, kind: 'file', at, via: 'patch', ...from });
     } else if (call.kind === 'wrapped') {
       // Only a clear report counts: the patch tool's success line, and this very file listed
       // as added (`A <path>`, as written or resolved). A script's exit code says nothing of it.
@@ -244,36 +252,44 @@ export class OutputTracker {
       const added = new Set([...report.matchAll(/^\s*A (.+?)\s*$/gm)].map((m) => m[1]));
       call.files.forEach((key, i) => {
         if (added.has(key) || added.has(call.written![i]))
-          this.add({ key, kind: 'file', at, via: 'patch' });
+          this.add({ key, kind: 'file', at, via: 'patch', ...from });
       });
-    } else this.links(text, at);
+    } else this.links(text, at, eventId);
   }
   /**
    * Codex's own report of an applied patch (`patch_apply_end`, when the rollout keeps it): the
    * files it added.
    */
-  applied(changes: unknown, at: number, cwd: string | null | undefined) {
+  applied(changes: unknown, at: number, cwd: string | null | undefined, eventId?: string) {
     if (!changes || typeof changes !== 'object') return;
     for (const [file, change] of Object.entries(changes as Record<string, any>)) {
       if (!change || typeof change !== 'object') continue;
       if (change.type !== 'add' && !('add' in change)) continue;
       const key = outputFile(file, cwd);
-      if (key) this.add({ key, kind: 'file', at, via: 'patch' });
+      if (key) this.add({ key, kind: 'file', at, via: 'patch', ...(eventId ? { eventId } : {}) });
     }
   }
   /** A reply: the files it points to (checked later) and the Artifacts it links. */
-  say(text: string, at: number, cwd: string | null | undefined) {
+  say(text: string, at: number, cwd: string | null | undefined, eventId?: string) {
     if (!text) return;
+    const from = eventId ? { eventId } : {};
     for (const raw of mentionedFiles(text)) {
       const key = outputFile(raw, cwd);
-      if (key) this.add({ key, kind: 'file', at, via: 'mention' });
+      if (key) this.add({ key, kind: 'file', at, via: 'mention', ...from });
     }
-    this.links(text, at);
+    this.links(text, at, eventId);
   }
-  private links(text: string, at: number) {
+  private links(text: string, at: number, eventId?: string) {
     for (const m of text.matchAll(ARTIFACT_LINKS)) {
       const title = m[1]?.trim();
-      this.add({ key: m[2], kind: 'link', at, via: 'artifact', ...(title ? { title } : {}) });
+      this.add({
+        key: m[2],
+        kind: 'link',
+        at,
+        via: 'artifact',
+        ...(title ? { title } : {}),
+        ...(eventId ? { eventId } : {}),
+      });
     }
   }
   list(): OutputCandidate[] {
@@ -292,7 +308,16 @@ export function mergeOutputs(lists: (OutputCandidate[] | undefined)[]): OutputCa
       (held.via === 'mention' && c.via !== 'mention') ||
       (held.via === c.via && c.at < held.at)
     )
-      out.set(c.key, c);
+      // The earlier telling, still placed where the later one says when it says nothing (#358).
+      out.set(
+        c.key,
+        held && held.via === c.via && !c.eventId && held.eventId
+          ? { ...c, eventId: held.eventId }
+          : c,
+      );
+    // The same finding, told from an event the first telling lacked (#358).
+    else if (!held.eventId && c.eventId && held.via === c.via)
+      out.set(c.key, { ...held, eventId: c.eventId });
   }
   return [...out.values()].sort((a, b) => a.at - b.at).slice(-MAX_CANDIDATES);
 }

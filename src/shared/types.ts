@@ -229,6 +229,11 @@ export interface OutputCandidate {
   via: OutputVia;
   /** A link's own name in the reply (`[title](url)`). */
   title?: string;
+  /**
+   * The conversation event that produced it (#358): the tool result that reported the file
+   * made, or the reply that named it. Absent when the record had no such event.
+   */
+  eventId?: string;
 }
 /** A recorded output as the screens show it: redacted, with where and by whom it was made. */
 export interface SessionOutput {
@@ -245,6 +250,12 @@ export interface SessionOutput {
   /** Lower-case extension without the dot ('' for a link). */
   ext: string;
   createdAt: number;
+  /**
+   * Where in the conversation it came from (#358): the producing event's id and time. Outputs
+   * recorded before that keep neither; the chat then places them by `createdAt`.
+   */
+  eventId?: string;
+  eventAt?: number;
   /** Whose output it was, as it was then (the screens prefer the colleague as shown now). */
   source: {
     provider: Provider;
@@ -505,6 +516,8 @@ export interface Preferences {
   tinyNames?: boolean;
   /** The work card's Details lists the teammate's outputs (#350). Missing: on. */
   cardOutputs?: boolean;
+  /** The card's chat shows a chip row of outputs under the message that made them (#358). Missing: on. */
+  chatOutputs?: boolean;
   /** Tiny desks' dot also says "a final reply waits". Off: only calls and errors. Missing: on. */
   tinyFinalDot?: boolean;
   /** How the dock's pill shows at rest. Missing: `subdued`. */

@@ -156,6 +156,9 @@ export const settings: Messages['settings'] = {
       effectsHint: '쪼꼬미 책상에도 집중 효과와 서류 더미를 그려요.',
       cardOutputs: '업무 카드의 산출물',
       cardOutputsHint: '업무 카드에 산출물 탭을 두고 이 동료가 새로 만든 문서·페이지를 보여요.',
+      chatOutputs: '대화 속 산출물',
+      chatOutputsHint:
+        '대화에서 파일을 만든 메시지 아래에 작은 칩을 둬요. 누르면 미리보기나 기본 앱으로 열려요.',
     },
   },
   reading: {

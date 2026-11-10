@@ -61,6 +61,7 @@ import {
 import { ArtifactCards } from './ArtifactCards';
 import { SessionOutputs } from './Outputs';
 import { useOutputs } from '../lib/useOutputs';
+import { OUTPUT_PAGE_MAX } from '../shared/outputs';
 import { sessionName, parentSession } from '../shared/office';
 import { nowState } from '../shared/now-state';
 import { CardMenu } from './CardMenu';
@@ -115,6 +116,7 @@ export function Inspector({
   outputStamp = '',
   outputVisibility = '',
   showOutputs = true,
+  showChatOutputs = true,
   onOutputs,
 }: {
   session: Session;
@@ -183,6 +185,8 @@ export function Inspector({
   outputVisibility?: string;
   /** Settings: the card has an Outputs tab listing this teammate's outputs (`cardOutputs`, default on). */
   showOutputs?: boolean;
+  /** Settings: the chat shows outputs as chips under the message that made them (`chatOutputs`, #358). */
+  showChatOutputs?: boolean;
   /** Open the Outputs page (the big office only). */
   onOutputs?: () => void;
 }) {
@@ -421,6 +425,17 @@ export function Inspector({
   useEffect(() => {
     if (!outputsOn && tab === 'outputs') setTab('history');
   }, [outputsOn, tab]);
+  // The chat's chips (#358): this run's outputs, as many as one read gives, placed by the
+  // conversation under the message that made them. Like the tab, never a remote office's.
+  const chatOutputsOn = !!showChatOutputs && !s.remote && !demo && !!api.outputs;
+  const chatOutputs = useOutputs({
+    sessionIds: [s.id],
+    stamp: outputStamp,
+    visibility: outputVisibility,
+    demo,
+    limit: OUTPUT_PAGE_MAX,
+    enabled: chatOutputsOn,
+  });
   // Opening the card reads the colleague's final replies (not while privacy hides them).
   // A restored card waits for the person to touch the office first (`readOnOpen`).
   useReadOnOpen(
@@ -802,6 +817,9 @@ export function Inspector({
             onBookmark={demo ? undefined : mark}
             focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
             onFocused={onFocused}
+            outputs={chatOutputsOn ? chatOutputs.list : undefined}
+            privacy={privacy}
+            demo={demo}
           />
         ) : (
           <div className="inspector-memory">

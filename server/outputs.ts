@@ -37,6 +37,12 @@ export interface StoredOutput {
   createdAt: number;
   /** A link's own name in the reply. */
   title?: string;
+  /**
+   * The conversation event it came from and that event's time (#358), kept in the row's JSON:
+   * rows from before have neither, and gain them the next time a parse names that event.
+   */
+  eventId?: string;
+  eventAt?: number;
   source: { provider: Provider; project: string; title: string; alias: string };
 }
 
@@ -91,6 +97,8 @@ export function shownOutput(o: StoredOutput, exists?: boolean): SessionOutput {
     path: shown,
     ext: file ? extensionOf(o.key) : '',
     createdAt: o.createdAt,
+    ...(o.eventId ? { eventId: o.eventId } : {}),
+    ...(o.eventAt !== undefined ? { eventAt: o.eventAt } : {}),
     source: o.source,
     ...(file && exists !== undefined ? { exists } : {}),
   };
@@ -166,8 +174,22 @@ export class OutputLog {
   }
   /** Keeps one candidate of a session unless it is kept already, or is no output. */
   private admit(s: OutputSession, c: OutputCandidate): 'added' | 'held' | 'missing' | 'rejected' {
-    const held = this.db.prepare('SELECT 1 FROM session_outputs WHERE session_id=? AND key=?');
-    if (held.get(s.id, c.key)) return 'held';
+    const held = this.db
+      .prepare(
+        "SELECT id, json_extract(data,'$.eventId') AS eventId FROM session_outputs WHERE session_id=? AND key=?",
+      )
+      .get(s.id, c.key) as { id: string; eventId: string | null } | undefined;
+    if (held) {
+      // Kept before outputs knew their event (#358): where it came from, once a parse says
+      // (lists read again to place it).
+      if (held.eventId || !c.eventId) return 'held';
+      this.db
+        .prepare(
+          "UPDATE session_outputs SET data=json_set(data,'$.eventId',?,'$.eventAt',?) WHERE id=?",
+        )
+        .run(c.eventId, c.at, held.id);
+      return 'added';
+    }
     let createdAt = c.at;
     if (c.via === 'mention') {
       const seen = `${s.id}\n${c.key}`;
@@ -189,6 +211,9 @@ export class OutputLog {
       via: c.via,
       createdAt,
       ...(c.title ? { title: c.title } : {}),
+      // A mention's time is its reply's, not the file's birth: the chat places it there.
+      ...(c.eventId ? { eventId: c.eventId } : {}),
+      eventAt: c.at,
       source: { provider: s.provider, project: s.project, title: s.title, alias: s.alias },
     };
     const put = this.db.prepare('INSERT OR IGNORE INTO session_outputs VALUES (?,?,?,?,?)');
