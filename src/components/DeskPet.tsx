@@ -51,6 +51,7 @@ export function DeskPet({
   view: viewMenu,
   plus,
   peek,
+  side = 'right',
   notify,
   preview = false,
 }: {
@@ -71,6 +72,8 @@ export function DeskPet({
   plus?: DockPlusControls;
   /** 잠깐 숨기기: the pet and its bubble step aside; the pill and the tools stay. */
   peek?: DockPeekControls;
+  /** Which edge of the window the pet stands at (the window holds room on the other side). */
+  side?: 'left' | 'right';
   /**
    * Drawn small in the settings (#324): the same pet, without anything that reaches outside it —
    * no window keys, terminal lookups, dock window calls or cards.
@@ -156,6 +159,17 @@ export function DeskPet({
     setUnfolded(null);
     setReplyFor(null);
   }, [peeking]);
+  // Someone newly needs the person (a call, a request just arrived): the pet's own signals (its
+  // `!`, the landing papers) would go unseen while it hides, so it comes back.
+  const waiting = status ? 0 : model.counts.attention;
+  const arrived = status ? null : (pet.arrival?.id ?? null);
+  const seen = useRef({ waiting, arrived });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { waiting, arrived };
+    if (peeking && (waiting > before.waiting || (arrived && arrived !== before.arrived)))
+      peek?.off();
+  }, [waiting, arrived]);
   const expanded = !!key && unfolded === key;
   const replying = !!key && replyFor === key;
   // Pointing at the pet shows what its colleague says — or the last thing it said, as a desk
@@ -246,7 +260,7 @@ export function DeskPet({
     if (!preview) void api.dock?.('drag-end');
   };
   return (
-    <div className="desk-pet-stage" style={PET_SIZE}>
+    <div className={`desk-pet-stage ${side === 'left' ? 'stand-left' : ''}`} style={PET_SIZE}>
       <div
         className={`dock-pet-anchor ${listed || popped ? 'is-listing' : ''} ${peeking ? 'is-peeking' : ''}`}
         // Only what is drawn counts: the window's see-through edges let the pointer pass by.
@@ -385,7 +399,11 @@ export function DeskPet({
               void openColleague(sessionId, { anchor: from.closest('.dock-pet-anchor') })
             }
           />
-          <DockPeek peek={peek} size={12} />
+          <DockPeek
+            peek={peek}
+            size={12}
+            blocked={replying ? t.dock.peek.blockedReply : undefined}
+          />
           <button
             className="icon-btn"
             aria-label={d.hide}

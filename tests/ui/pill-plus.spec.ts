@@ -17,10 +17,22 @@ async function setup(
     height = 760,
     privacy = false,
     launch = true,
-  }: { width?: number; height?: number; privacy?: boolean; launch?: boolean } = {},
+    pillShown,
+    reply = false,
+  }: {
+    width?: number;
+    height?: number;
+    privacy?: boolean;
+    launch?: boolean;
+    /** The pill's visibility preference (`hover`: hidden until the pointer nears it). */
+    pillShown?: 'hover';
+    /** Terminals that take a reply (the row's bubbles offer one). */
+    reply?: boolean;
+  } = {},
 ) {
   const s = demoSnapshot();
   s.preferences.privacy = privacy;
+  if (pillShown) (s.preferences as any).dockPill = pillShown;
   // Two more away colleagues: one more in the lounge, one archived by the person.
   s.sessions.push(
     {
@@ -42,7 +54,7 @@ async function setup(
   await page.setViewportSize({ width, height });
   const mode = new URLSearchParams(hash.replace(/^#/, '')).get('mini') ?? 'pet';
   await page.addInitScript(
-    ({ s, mode, launch }) => {
+    ({ s, mode, launch, reply }) => {
       const w = window as any;
       w.fixture = s;
       w.calls = [];
@@ -57,7 +69,10 @@ async function setup(
         visit: async () => structuredClone(w.fixture),
         artifacts: async () => [],
         terminals: async () => ({}),
-        subscribe: () => () => {},
+        subscribe: (fn: (s: unknown) => void) => {
+          w.publish = () => fn(structuredClone(w.fixture));
+          return () => {};
+        },
         card: async (action: string, target: any) => w.cards.push([action, target.id]),
         window: async (action: string) => w.calls.push(`window:${action}`),
         settings: {
@@ -72,6 +87,19 @@ async function setup(
           return structuredClone(w.fixture);
         },
       };
+      if (reply)
+        Object.assign(w.office, {
+          terminalSend: async () => true,
+          notices: async () => structuredClone(w.fixture),
+          send: async () => ({ status: 'sent', message: '보냈어요' }),
+          terminals: async (ids: string[]) =>
+            Object.fromEntries(
+              ids.map((id) => [
+                id,
+                { kind: 'tmux', label: 'tmux', status: 'idle', canSend: true, canFocus: true },
+              ]),
+            ),
+        });
       if (launch)
         Object.assign(w.office, {
           launchSupport: async () => ({ supported: true, opens: ['orca', 'tmux'] }),
@@ -99,12 +127,16 @@ async function setup(
         } else return;
         w.mode?.(state.mode, state.tiny);
       };
+      w.office.onDockSide = (cb: any) => {
+        w.side = cb;
+        return () => {};
+      };
       w.office.onDock = (cb: any) => {
         w.mode = cb;
         return () => {};
       };
     },
-    { s, mode, launch },
+    { s, mode, launch, reply },
   );
   await page.goto(`/?lang=ko${hash}`);
 }
@@ -150,6 +182,8 @@ test('＋ opens above the pill with 새로 부르기 and 데려오기; picking a
   await expect(plus).toHaveAttribute('aria-expanded', 'true');
   expect(await calls(page)).toContain('room-on');
   // Above the pill, touching it, inside the window.
+  // Past its short rise.
+  await page.waitForTimeout(200);
   const p = await box(pill(page));
   const m = await box(pop);
   expect(m.y + m.height).toBeLessThanOrEqual(p.y + 3);
@@ -326,6 +360,15 @@ test('Only one popover at a time: ＋, 보기 and a number’s list close each o
   await page.keyboard.press('Escape');
   await expect(viewMenu(page)).toHaveCount(0);
   expect(await roomHeld(page)).toBe(false);
+  // The focus moving onto another popover's button without opening it still closes a list
+  // (and gives its room back): it waits only for that button's own press.
+  await number.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.tally-list')).toBeVisible();
+  await viewButton(pill(page)).focus();
+  await expect(page.locator('.tally-list')).toHaveCount(0);
+  await expect(viewMenu(page)).toHaveCount(0);
+  await expect.poll(() => roomHeld(page)).toBe(false);
 });
 
 test('보기 opens on hover after a moment, stays on the way into the menu, closes after leaving', async ({
@@ -421,13 +464,69 @@ test('👁 잠깐 숨기기 hides the desks (click-through), keeps the pill, and
   });
   // The numbers still say who waits.
   await expect(pill(page).locator('.tally-pill > button').first()).toBeVisible();
-  // It holds across a look change in this window.
-  await page.evaluate(() => (window as any).mode('floor', false));
-  await expect(page.locator('.desk-row.desk-floor')).toHaveClass(/is-peeking/);
   await back.click();
   await expect(page.locator('.desk-row')).not.toHaveClass(/is-peeking/);
   await expect(page.locator('.desk-row [data-station-id]').first()).toBeVisible();
   await expect(pill(page).getByRole('button', { name: '잠깐 숨기기', exact: true })).toBeVisible();
+  // It is for this look only: changing the look (floor, tiny, folding to the pet) ends it.
+  await pill(page).getByRole('button', { name: '잠깐 숨기기', exact: true }).click();
+  await expect(page.locator('.desk-row')).toHaveClass(/is-peeking/);
+  await page.evaluate(() => (window as any).mode('floor', false));
+  await expect(page.locator('.desk-row.desk-floor')).not.toHaveClass(/is-peeking/);
+  await expect(page.locator('.desk-row [data-station-id]').first()).toBeVisible();
+  await pill(page).getByRole('button', { name: '잠깐 숨기기', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.desk-pet')).toBeVisible();
+});
+
+test('While peeking, a pill set to show on hover stays shown and solid: never nothing on screen', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row', { pillShown: 'hover' });
+  await expect(page.locator('.row-zone').first()).toBeVisible();
+  await page.mouse.move(200, 200);
+  // Hidden until the pointer nears it, as the person chose.
+  await expect(pill(page)).toHaveCSS('opacity', '0');
+  const peek = pill(page).getByRole('button', { name: '잠깐 숨기기', exact: true });
+  await peek.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.desk-row')).toHaveClass(/is-peeking/);
+  // Away from it, it still shows and takes the mouse (it is all there is).
+  await page.locator('body').click({ position: { x: 200, y: 200 } });
+  await page.mouse.move(200, 200);
+  await expect(pill(page)).toHaveCSS('opacity', '0.95');
+  await expect(pill(page)).toHaveAttribute('data-solid', '');
+  await expect(pill(page)).toHaveCSS('pointer-events', 'auto');
+  await pill(page).getByRole('button', { name: '다시 보기', exact: true }).click();
+  await page.mouse.move(200, 200);
+  await expect(pill(page)).toHaveCSS('opacity', '0');
+});
+
+test('👁 waits while a reply is being written in the row (its draft would go with the desk)', async ({
+  page,
+}) => {
+  await setup(page, '#mini=row', { reply: true });
+  // The colleague with a final answer: its bubble takes a reply.
+  const bubble = page.locator('.desk-row [data-station-id="demo:5"] .speech-bubble').first();
+  await expect(bubble).toBeVisible();
+  await bubble.hover();
+  await bubble.locator('.bubble-reply').click();
+  const form = page.locator('.quick-reply');
+  await expect(form).toBeVisible();
+  await form.locator('textarea').fill('아직 보내지 않은 답');
+  const peek = pill(page).getByRole('button', { name: '잠깐 숨기기', exact: true });
+  await expect(peek).toHaveAttribute('aria-disabled', 'true');
+  await peek.hover();
+  await expect(page.locator('.dock-tip')).toHaveText('답장을 쓰는 중에는 숨길 수 없어요');
+  await peek.click({ force: true });
+  await expect(page.locator('.desk-row')).not.toHaveClass(/is-peeking/);
+  await expect(form.locator('textarea')).toHaveValue('아직 보내지 않은 답');
+  // Closed, it hides again.
+  await form.locator('.quick-reply-close').click();
+  await expect(form).toHaveCount(0);
+  await expect(peek).not.toHaveAttribute('aria-disabled', 'true');
+  await peek.click();
+  await expect(page.locator('.desk-row')).toHaveClass(/is-peeking/);
 });
 
 test('⚙ in the pill opens settings; 보기 there no longer lists it', async ({ page }) => {
@@ -486,6 +585,31 @@ test('The pet: [보기] [＋] [👁] [✕]; ＋ opens above its tools; 👁 hide
   await page.screenshot({ path: '.local/pet-peek.png' });
   await tools.getByRole('button', { name: '다시 보기' }).click();
   await expect(page.locator('.desk-pet')).toBeVisible();
+  // Someone newly needs the person while it hides: the pet comes back with its `!`.
+  await tools.getByRole('button', { name: '잠깐 숨기기' }).click();
+  await expect(page.locator('.desk-pet')).toBeHidden();
+  await page.evaluate(() => {
+    const w = window as any;
+    const s = w.fixture.sessions.find((x: any) => x.zone === 'office' && x.status !== 'call');
+    s.status = 'call';
+    s.updatedAt = Date.now();
+    w.publish();
+  });
+  await expect(page.locator('.desk-pet')).toBeVisible();
+  await expect(tools.getByRole('button', { name: '잠깐 숨기기' })).toBeAttached();
+  // Near the screen's left side the window holds its room to the right: the pet is drawn at
+  // the window's left edge (where it stands on screen), and ＋ still fits beside it.
+  await page.evaluate(() => (window as any).side('left'));
+  const stage = await box(page.locator('.desk-pet-stage'));
+  expect(stage.x).toBe(0);
+  await page.locator('.dock-pet-anchor').hover();
+  await plusButton(tools).click();
+  await page.waitForTimeout(200);
+  const right = await box(pop);
+  expect(right.x).toBeGreaterThanOrEqual(0);
+  expect(right.x + right.width).toBeLessThanOrEqual(PET_ROOM_WIDTH);
+  await page.screenshot({ path: '.local/pet-plus-left-edge.png' });
+  await page.keyboard.press('Escape');
 });
 
 test('Tiny keeps the compact pill with every button, no overflow at 390px', async ({ page }) => {

@@ -34,6 +34,11 @@ body.dock-mode {
   place-items: end center;
   user-select: none;
 }
+/* Near the screen's left side the window holds its room to the right of the pet instead. */
+.desk-pet-stage.stand-left {
+  right: auto;
+  left: 0;
+}
 .dock-pet-anchor {
   position: relative;
   width: 116px;
@@ -779,9 +784,9 @@ body.dock-mode {
 }
 /* `hover`: hidden and click-through until useDockPill sees the (forwarded) pointer near it —
    CSS :hover cannot fire on it in the click-through dock window. Keyboard focus shows it. */
-.dock-pill.pill-hover:not(.is-revealed):not(.is-dragging):not(:has(:focus-visible)):not(
-    :has([aria-expanded='true'])
-  ) {
+.dock-pill.pill-hover:not(.is-revealed):not(.is-dragging):not(.is-peek-kept):not(
+    :has(:focus-visible)
+  ):not(:has([aria-expanded='true'])) {
   opacity: 0;
   pointer-events: none;
 }
@@ -1630,6 +1635,16 @@ body:has(.reduce-motion) .dock-view-menu {
 .dock-pet-anchor.is-peeking .dock-pet-tools {
   opacity: 1;
   pointer-events: auto;
+}
+/* While hidden for a moment the pill is all there is: shown and solid whatever its visibility. */
+.dock-pill.is-peek-kept {
+  opacity: 0.95;
+  pointer-events: auto;
+  background: var(--pill-bg-strong);
+}
+.dock-peek-button[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 .dock-peek-button.is-on {
   color: var(--accent-2);

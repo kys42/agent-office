@@ -1253,6 +1253,8 @@ export interface OfficeAPI {
   dock?: (action: DockAction) => Promise<void>;
   /** `tiny` comes along from the desktop main process (undefined: unchanged). */
   onDock?: (callback: (mode: DockMode, tiny?: boolean) => void) => () => void;
+  /** Desktop only: which edge of its window (grown for room) the pet stands at. */
+  onDockSide?: (callback: (side: 'left' | 'right') => void) => () => void;
   /**
    * Desktop only: the dock's look (pet, row, floor; tiny), for the big office's button that
    * goes back to it, and each time it changes. Raw: read it with `readDockLook`.

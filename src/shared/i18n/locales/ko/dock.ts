@@ -83,6 +83,7 @@ export const dock: Messages['dock'] = {
     show: '다시 보기',
     hideTip: '잠깐 숨기기 · 책상과 펫을 치우고 알약만 남겨요\n(이름 가리기는 화면 내용 숨기기)',
     showTip: '다시 보기 · 책상과 펫을 다시 꺼내요',
+    blockedReply: '답장을 쓰는 중에는 숨길 수 없어요',
   },
   tips: {
     hide: '숨기기 · 트레이에서 다시 열어요',

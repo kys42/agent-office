@@ -89,6 +89,7 @@ export const dock = {
     hideTip:
       'Hide for a moment · desks and pet step aside, the pill stays\n(Hide screen content is the privacy switch)',
     showTip: 'Show again · bring the desks and pet back',
+    blockedReply: "Can't hide while a reply is being written",
   },
   /** Short hover/focus labels for the dock's icon buttons (drawn by the app). */
   tips: {

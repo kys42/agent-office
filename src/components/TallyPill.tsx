@@ -13,7 +13,7 @@ import { TRIAGE_LABELS } from '../shared/triage';
 import { MOODS, type PetTallyGroup } from '../shared/types';
 import { residentLabel, tallyCounts, tallyMembers, type OfficeModel } from '../shared/office-model';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
-import { dockPopovers, isPopoverTrigger } from '../lib/dockPopovers';
+import { dockPopovers, isPopoverTrigger, pointerPressed } from '../lib/dockPopovers';
 import { useI18n } from '../lib/i18n';
 import { Sprite } from './Sprite';
 
@@ -257,9 +257,18 @@ export function TallyPill({
       className={`tally-anchor ${floating ? 'is-dock' : ''} ${compact ? 'is-compact' : ''}`}
       onBlur={(e) => {
         const to = e.relatedTarget as Node | null;
-        // Onto another popover's button: that one closes the list as it opens.
-        if (isPopoverTrigger(to)) return;
-        if (!e.currentTarget.contains(to) && !listEl.current?.contains(to)) put(null);
+        const inside = (n: Node | null) =>
+          !!wrap.current?.contains(n) || !!listEl.current?.contains(n);
+        if (inside(to)) return;
+        if (!isPopoverTrigger(to)) return put(null);
+        // Onto another popover's button: that one closes the list as it opens (after taking the
+        // room). Once its press is over, a list still open (it opened nothing) closes after all.
+        const recheck = () =>
+          setTimeout(() => {
+            if (listedRef.current && !inside(document.activeElement)) putRef.current(null);
+          }, 0);
+        if (pointerPressed()) window.addEventListener('pointerup', recheck, { once: true });
+        else recheck();
       }}
       onKeyDown={(e) => {
         if (!listed) return;

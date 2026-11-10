@@ -73,6 +73,9 @@ export function DeskDock() {
   const [mode, setMode] = useState<DockMode>(initialMode);
   const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
   const [tiny, setTiny] = useState(initialTiny);
+  // Which edge of its window the pet stands at (the main process grows the window the other way).
+  const [petSide, setPetSide] = useState<'left' | 'right'>('right');
+  useEffect(() => api.onDockSide?.(setPetSide), []);
   const keepTiny = (on: boolean) => {
     setTiny(on);
     // The desktop main process remembers tiny (dock.json); only a browser preview keeps it here.
@@ -178,10 +181,15 @@ export function DeskDock() {
     settings: !!api.settings,
     room: (on) => room('menu', on),
   };
-  // 잠깐 숨기기: the desks and the pet step aside, the pill stays. This window's choice only (it
-  // holds across looks; a restart shows everything again).
+  // 잠깐 숨기기: the desks and the pet step aside, the pill stays. For this look only: changing
+  // the look (an Esc folding to the pet too) shows everything again, as does a restart.
   const [peeking, setPeeking] = useState(false);
-  const peek: DockPeekControls = { on: peeking, toggle: () => setPeeking((on) => !on) };
+  useEffect(() => setPeeking(false), [mode, tiny]);
+  const peek: DockPeekControls = {
+    on: peeking,
+    toggle: () => setPeeking((on) => !on),
+    off: () => setPeeking(false),
+  };
   // The ＋ popover: a new session in a project (the launch sheet), or a colleague brought back
   // from the lounge or the archive with the big office's own call.
   const plus: DockPlusControls = {
@@ -251,6 +259,7 @@ export function DeskDock() {
           view={view}
           plus={plus}
           peek={peek}
+          side={petSide}
           notify={notify}
         />
       ) : (

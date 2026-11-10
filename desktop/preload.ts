@@ -169,5 +169,10 @@ const api: OfficeAPI = {
     ipcRenderer.on('office:dock', f);
     return () => ipcRenderer.removeListener('office:dock', f);
   },
+  onDockSide: (cb) => {
+    const f = (_: unknown, side: 'left' | 'right') => cb(side === 'left' ? 'left' : 'right');
+    ipcRenderer.on('office:dock-side', f);
+    return () => ipcRenderer.removeListener('office:dock-side', f);
+  },
 };
 contextBridge.exposeInMainWorld('office', api);

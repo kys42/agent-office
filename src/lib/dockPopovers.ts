@@ -18,6 +18,15 @@ export const POPOVER_TRIGGER = 'data-popover-trigger';
 export const isPopoverTrigger = (at: EventTarget | null) =>
   at instanceof Element && !!at.closest(`[${POPOVER_TRIGGER}]`);
 
+/** A pointer is pressed now (a focus moving on it lands before the press's click). */
+let pressed = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', () => (pressed = true), true);
+  for (const end of ['pointerup', 'pointercancel'] as const)
+    window.addEventListener(end, () => (pressed = false), true);
+}
+export const pointerPressed = () => pressed;
+
 export const dockPopovers = {
   opened(id: string, close: () => void) {
     open.set(id, close);

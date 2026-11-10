@@ -982,9 +982,10 @@ export function DeskRow({
           as small icons. */}
       <div
         ref={pillRef}
-        className={`dock-pill pill-${display.dockPill} ${pill.dragging ? 'is-dragging' : ''} ${pill.autoHide && pill.revealed ? 'is-revealed' : ''}`}
-        // Hidden (`hover` visibility) it lets clicks through: only a revealed pill is solid.
-        data-solid={pill.revealed ? '' : undefined}
+        className={`dock-pill pill-${display.dockPill} ${pill.dragging ? 'is-dragging' : ''} ${pill.autoHide && pill.revealed ? 'is-revealed' : ''} ${peeking ? 'is-peek-kept' : ''}`}
+        // Hidden (`hover` visibility) it lets clicks through: only a revealed pill is solid —
+        // except while the desks are hidden for a moment (then it is all there is to see).
+        data-solid={pill.revealed || peeking ? '' : undefined}
         role="group"
         aria-label={t.desk.row.pill}
         style={{ left: pill.left }}
@@ -1062,7 +1063,11 @@ export function DeskRow({
           edge={pillRef}
         />
         <DockPlus controls={plus} size={icon} edge={pillRef} onOpenCard={openFromList} />
-        <DockPeek peek={peek} size={icon} />
+        <DockPeek
+          peek={peek}
+          size={icon}
+          blocked={replying ? t.dock.peek.blockedReply : undefined}
+        />
         {/* Settings as its own button here (the View menu leaves it out): the pill has room. */}
         {hasSettings && (
           <button

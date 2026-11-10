@@ -138,11 +138,12 @@ export function petBounds(feet: Point | null | undefined, area: Rect, size = PET
 export const DOCK_ROOM_HEIGHT = 760;
 export const PET_ROOM_HEIGHT = 560;
 /**
- * The pet's window also grows to the left while it holds room: its ＋ popover (about 360px)
- * and a dialog (the launch sheet) need more than the pet's 300px. The pet stands at the
- * window's right edge (dock.css · .desk-pet-stage), so it does not move on screen.
+ * The pet's window also grows sideways while it holds room: its ＋ popover (about 360px) and a
+ * dialog (the launch sheet) need more than the pet's 300px. See `petRoomRect`.
  */
 export const PET_ROOM_WIDTH = 560;
+/** Which edge of its window the pet stands at (`.desk-pet-stage`): grown the other way. */
+export type PetSide = 'left' | 'right';
 /**
  * A dock window grown upward to `height` (and leftward to `width`) for an open dialog or menu:
  * the same bottom and right edges, taking only the room up to the work area's top and left
@@ -154,11 +155,30 @@ export function roomyRect(b: Rect, area: Rect, height: number, width = b.width):
   return { x: b.x + b.width - w, y: b.y + b.height - h, width: w, height: h };
 }
 /**
- * The pet's own box inside its window, which may hold room above and to the left: the pet's
- * size at the bottom-right corner (where .desk-pet-stage draws it).
+ * The pet's window grown for room: upward like any dock window, and sideways to `width` —
+ * to the left (the pet standing at the window's right edge) when there is room there, else to
+ * the right (the pet at the left edge), whichever side has more when neither has enough. The
+ * pet keeps its spot on screen; `side` tells the page where to draw it.
  */
-export const petStand = (b: Rect, size = PET_SIZE): Rect => ({
-  x: b.x + b.width - size.width,
+export function petRoomRect(
+  b: Rect,
+  area: Rect,
+  height: number,
+  width: number,
+): { rect: Rect; side: PetSide } {
+  const up = roomyRect(b, area, height);
+  const leftward = b.x + b.width - area.x;
+  const rightward = area.x + area.width - b.x;
+  const side: PetSide = leftward >= width || leftward >= rightward ? 'right' : 'left';
+  const w = Math.max(b.width, Math.min(width, side === 'right' ? leftward : rightward));
+  return { rect: { ...up, x: side === 'right' ? b.x + b.width - w : b.x, width: w }, side };
+}
+/**
+ * The pet's own box inside its window, which may hold room above and to one side: the pet's
+ * size at the bottom corner of `side` (where .desk-pet-stage draws it).
+ */
+export const petStand = (b: Rect, side: PetSide = 'right', size = PET_SIZE): Rect => ({
+  x: side === 'right' ? b.x + b.width - size.width : b.x,
   y: b.y + b.height - size.height,
   ...size,
 });
