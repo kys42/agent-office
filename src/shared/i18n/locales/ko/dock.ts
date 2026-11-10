@@ -45,6 +45,7 @@ export const dock: Messages['dock'] = {
     floorHint: '프로젝트별 바닥에 책상',
     tiny: '쪼꼬미',
     tinyHint: '줄·바닥을 작게',
+    roster: '동료 목록',
     main: '큰 사무실 열기',
     settings: '설정',
     looks: {

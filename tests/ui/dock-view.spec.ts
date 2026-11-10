@@ -117,6 +117,8 @@ test('보기 opens above the pill with each look explained and the current one c
   await expect(viewItem(page, '쪼꼬미')).toHaveAccessibleDescription('줄·바닥을 작게');
   await expect(viewItem(page, '큰 사무실 열기')).toBeVisible();
   await expect(viewItem(page, '설정')).toBeVisible();
+  // The colleague list waits for its window (a later change): nothing offers it yet.
+  await expect(menu.getByRole('menuitem', { name: '동료 목록' })).toHaveCount(0);
   // The current look has the focus, and the keys walk the entries.
   await expect(viewItem(page, '책상 줄')).toBeFocused();
   await page.keyboard.press('ArrowDown');

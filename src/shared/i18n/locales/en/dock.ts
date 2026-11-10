@@ -47,6 +47,7 @@ export const dock = {
     floorHint: 'Desks on the floor, by project',
     tiny: 'Tiny',
     tinyHint: 'Shrink the row or floor',
+    roster: 'Teammate list',
     main: 'Open the big office',
     settings: 'Settings',
     /** The look the big office's button goes back to. */

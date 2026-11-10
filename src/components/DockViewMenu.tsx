@@ -9,7 +9,17 @@ import {
   type KeyboardEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Building2, Check, Expand, Flag, Minimize2, PawPrint, Rows3, Settings } from 'lucide-react';
+import {
+  Building2,
+  Check,
+  Expand,
+  Flag,
+  Minimize2,
+  PawPrint,
+  Rows3,
+  Settings,
+  Users,
+} from 'lucide-react';
 import { useI18n } from '../lib/i18n';
 import { dockViewChecked, type DockLook, type DockViewChoice } from '../shared/dock-look';
 import type { DockMode } from '../shared/types';
@@ -21,6 +31,11 @@ export interface DockViewControls {
   onPick: (choice: DockViewPick) => void;
   /** Whether there is a settings window to open (the desktop app only). */
   settings: boolean;
+  /**
+   * Opens the list of colleagues (lounge and archive included) as its own window. Only when
+   * given does the menu offer it, above the big office.
+   */
+  onRoster?: () => void;
   /**
    * Room for the menu: the desktop dock window grows upward while it is open (the pet's and a
    * tiny strip's window are too short for it). Resolves once the window has grown.
@@ -258,6 +273,26 @@ export function DockViewMenu({
             {looks.map((l) => item(l.id, 'menuitemradio', l.icon, l.name, l.hint))}
             {item('tiny', 'menuitemcheckbox', Minimize2, v.tiny, v.tinyHint)}
             <div className="dock-view-sep" role="separator" />
+            {controls?.onRoster && (
+              <button
+                type="button"
+                role="menuitem"
+                tabIndex={-1}
+                className="dock-view-item is-plain"
+                onClick={() => {
+                  const open = latest.current?.onRoster;
+                  close(true);
+                  open?.();
+                }}
+              >
+                <span className="dock-view-icon" aria-hidden="true">
+                  <Users size={14} />
+                </span>
+                <span className="dock-view-words">
+                  <b>{v.roster}</b>
+                </span>
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
