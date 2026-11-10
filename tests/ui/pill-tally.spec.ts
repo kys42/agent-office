@@ -287,3 +287,20 @@ test('the pet pill and its list, for the record', async ({ page }) => {
   await expect(page.locator('.dock-pet-list')).toBeVisible();
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/tally-pet-list.png' });
 });
+
+test('the pet pill walks the same keys: Tab into the names, Shift+Tab back to the number', async ({
+  page,
+}) => {
+  await setup(page, '#mini');
+  const working = page.getByRole('button', { name: /^일하는 중 4명/ });
+  await working.focus();
+  await page.keyboard.press('Enter');
+  const names = page.locator('.dock-pet-list').getByRole('button');
+  await expect(names.first()).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(names.first()).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(working).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.dock-pet-list')).toHaveCount(0);
+});

@@ -224,7 +224,9 @@ export function TallyPill({
       }}
       onKeyDown={(e) => {
         if (!listed) return;
-        const number = wrap.current?.querySelector<HTMLElement>(`.tally-${listed}`);
+        const number = wrap.current?.querySelector<HTMLElement>(
+          `.tally-pill > button.tally-${listed}`,
+        );
         if (e.key === 'Tab' && number) {
           // The list is not next to its number in the page (above it, or floating): Tab goes
           // from the open number into the names and back; past the last name the list closes.
