@@ -61,6 +61,7 @@ import { MobileServer } from '../server/mobile/server.js';
 import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
+import type { DockLook } from '../src/shared/dock-look.js';
 import type {
   Bookmark,
   AnswerResult,
@@ -93,12 +94,15 @@ import {
 import type { StoredOutput } from '../server/outputs.js';
 import {
   clampInto,
+  DOCK_ROOM_HEIGHT,
   dockHeight,
   moveOntoArea,
+  PET_ROOM_HEIGHT,
   petBounds,
   petFeet,
   readDockPrefs,
   readPetSpot,
+  roomyRect,
   rowBounds,
   type Point,
   type Rect,
@@ -461,8 +465,9 @@ function createMain() {
     if (!quitting) {
       e.preventDefault();
       main?.hide();
-      // Someone who keeps the pet gets it back when the big office goes away.
-      if (petEnabled) showDock('pet');
+      // Someone who keeps the dock gets it back, in the look they left it in, when the big
+      // office goes away.
+      if (petEnabled) showDock(dockMode);
     }
   });
 }
@@ -626,25 +631,32 @@ function dockBounds(mode: DockMode): Rect {
   // The row (or the floor desks) opens along the bottom of whichever display the pet is on.
   return mode === 'pet' ? pet : rowBounds(area, dockHeight(mode === 'floor', dockTiny));
 }
-/** A dialog open in the row or floor (a tiny strip is too short for one): grow upward. */
+/**
+ * A dialog open in the row or floor (a tiny strip is too short for one), or the 보기 menu over
+ * any look (the pet's window has no room above its tools for it): grow upward.
+ */
 let dockRoom = false;
-const DOCK_ROOM_HEIGHT = 760;
 function roomyBounds(mode: DockMode): Rect {
   const b = dockBounds(mode);
-  if (!dockRoom || mode === 'pet') return b;
-  const area = workAreaFor(b);
-  const height = Math.max(b.height, Math.min(DOCK_ROOM_HEIGHT, area.height));
-  // The desks stand on the window's bottom edge: keep it, take the room above.
-  return { ...b, y: b.y + b.height - height, height };
+  if (!dockRoom) return b;
+  // The desks and the pet stand on the window's bottom edge: keep it, take the room above.
+  return roomyRect(b, workAreaFor(b), mode === 'pet' ? PET_ROOM_HEIGHT : DOCK_ROOM_HEIGHT);
 }
 function setDockRoom(on: boolean) {
   if (dockRoom === on) return;
   dockRoom = on;
-  if (dock && !dock.isDestroyed() && dockMode !== 'pet') dock.setBounds(roomyBounds(dockMode));
+  // A pet being dragged keeps following the cursor; its drop re-seats it.
+  if (dock && !dock.isDestroyed() && !drag) dock.setBounds(roomyBounds(dockMode));
 }
+/** The big office's dock button names the look it goes back to: tell it each change. */
+function tellDockLook() {
+  if (main && !main.isDestroyed()) main.webContents.send('office:dock-look', dockLook());
+}
+const dockLook = (): DockLook => ({ mode: dockMode, tiny: dockTiny });
 function setDockMode(mode: DockMode) {
   stopDrag(false);
   dockMode = mode;
+  tellDockLook();
   if (!dock || dock.isDestroyed()) return;
   dock.setBounds(roomyBounds(mode));
   // Start see-through; the renderer claims the mouse again over drawn things.
@@ -655,6 +667,7 @@ function setDockTiny(tiny: boolean) {
   if (dockTiny === tiny) return;
   dockTiny = tiny;
   void saveDockTiny();
+  tellDockLook();
   // The pet keeps its size; the row or floor resizes and re-renders at once.
   if (dockMode === 'pet') return;
   // Shrinking: let the renderer draw tiny before the window shrinks, so the full-size row
@@ -666,6 +679,7 @@ function showDock(mode: DockMode = 'pet') {
   petEnabled = true;
   if (!dock || dock.isDestroyed()) {
     dockMode = mode;
+    tellDockLook();
     dock = new BrowserWindow({
       ...dockBounds(mode),
       show: false,
@@ -733,9 +747,12 @@ function stopDrag(save: boolean) {
   const fixed = clampInto(b, workAreaFor(b));
   if (fixed.x !== b.x || fixed.y !== b.y) dock.setBounds(fixed);
   const feet = petFeet(fixed);
-  if (petSpot?.x === feet.x && petSpot?.y === feet.y) return;
-  petSpot = feet;
-  void savePetSpot();
+  if (petSpot?.x !== feet.x || petSpot?.y !== feet.y) {
+    petSpot = feet;
+    void savePetSpot();
+  }
+  // Room asked for mid-drag (the 보기 menu) waited for the drop: take it now, above the new spot.
+  if (dockRoom) dock.setBounds(roomyBounds(dockMode));
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
@@ -1101,7 +1118,8 @@ function setupIPC() {
   });
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
-    if (action === 'mini') showDock('pet');
+    // Back to the look the person left the dock in (the tray still names one outright).
+    if (action === 'mini') showDock(dockMode);
     // From the pet, the row or a card: on that window's display (the big office's own
     // window matches itself, so nothing moves).
     else if (action === 'main')
@@ -1123,6 +1141,10 @@ function setupIPC() {
     trusted(e);
     if (section !== null && !isSettingsSection(section)) throw new Error(m().desktop.badRequest);
     showSettings(section);
+  });
+  ipcMain.handle('office:dock-look', (e) => {
+    trusted(e);
+    return dockLook();
   });
   ipcMain.handle('office:dock', (e, action: DockAction) => {
     trusted(e);

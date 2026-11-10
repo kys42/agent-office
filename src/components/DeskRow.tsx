@@ -12,24 +12,17 @@ import {
   type MouseEvent,
 } from 'react';
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Building2,
-  Expand,
   EyeOff,
-  Flag,
   GripVertical,
   GitBranch,
-  Maximize2,
-  Minimize2,
   Pin,
-  RotateCw,
-  Settings,
   Undo2,
   Terminal,
   X,
 } from 'lucide-react';
+import { DockViewMenu, type DockViewControls } from './DockViewMenu';
 import { useRowPlacement } from '../lib/useRowPlacement';
 import { useDockPill } from '../lib/useDockPill';
 import { useDeskReorder } from '../lib/useDeskReorder';
@@ -111,7 +104,7 @@ const HELPER_TABLE_FOOT = 46;
 export function DeskRow({
   variant = 'office',
   tiny = false,
-  onTiny,
+  view: viewMenu,
   model,
   status,
   privacy,
@@ -119,12 +112,8 @@ export function DeskRow({
   onReceipt,
   onVeil,
   onPin,
-  onCollapse,
-  onSwitch,
   onReply,
   notify,
-  onRefresh,
-  refreshing = false,
   demo = false,
   onArrange,
   onReorder,
@@ -136,8 +125,8 @@ export function DeskRow({
   variant?: 'office' | 'floor';
   /** Helper-desk size, status only. */
   tiny?: boolean;
-  /** Switch between tiny and the normal size. */
-  onTiny?: (on: boolean) => void;
+  /** The 보기 menu (looks, tiny, the big office, settings); absent in the settings preview. */
+  view?: DockViewControls;
   model: OfficeModel;
   status: string | null;
   privacy: boolean;
@@ -145,16 +134,10 @@ export function DeskRow({
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
   onVeil: (ids: string[], on: boolean) => void;
   onPin: (s: Session) => void;
-  onCollapse: () => void;
-  /** Switch between the office row and the floor desks. */
-  onSwitch: () => void;
   /** Desktop, with Send to terminal on: an unfolded bubble whose session can take a follow-up offers a reply. */
   onReply?: ReplySender;
   /** Short results and failures, shown by the dock. */
   notify: (message: string) => void;
-  /** Look at the session records again now (and restart a stopped collector). */
-  onRefresh: () => void;
-  refreshing?: boolean;
   demo?: boolean;
   onArrange?: (active: boolean, point?: { x: number; y: number }) => void;
   /** Dragging a desk within its zone: the zone's station ids in the new order. */
@@ -307,20 +290,6 @@ export function DeskRow({
     setReplying(null);
     setExpanded(null);
   }, [tiny]);
-  // The size toggle hides the button that was pressed: focus moves to its counterpart once the
-  // new size is drawn (the desktop answers through the main process, a frame or more later).
-  const toggled = useRef(false);
-  const tinyButton = useRef<HTMLButtonElement>(null);
-  const normalButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!toggled.current) return;
-    toggled.current = false;
-    (tiny ? normalButton : tinyButton).current?.focus();
-  }, [tiny]);
-  const toggleTiny = (on: boolean) => {
-    toggled.current = true;
-    onTiny?.(on);
-  };
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented) return;
     const field =
@@ -950,7 +919,7 @@ export function DeskRow({
           className={`desk-row-arrow arrow-left ${calling(hiddenLeft) ? 'has-call' : ''}`}
           data-solid
           aria-label={t.desk.row.left(hiddenLeft.length)}
-          title={t.desk.row.leftTitle}
+          data-tip={t.desk.row.leftTitle}
           onClick={() => page(-1)}
         >
           <ChevronLeft size={22} strokeWidth={2.4} />
@@ -962,7 +931,7 @@ export function DeskRow({
           className={`desk-row-arrow arrow-right ${calling(hiddenRight) ? 'has-call' : ''}`}
           data-solid
           aria-label={t.desk.row.right(hiddenRight.length)}
-          title={t.desk.row.rightTitle}
+          data-tip={t.desk.row.rightTitle}
           onClick={() => page(1)}
         >
           <ChevronRight size={22} strokeWidth={2.4} />
@@ -972,8 +941,9 @@ export function DeskRow({
       {/* The dock's controls: a pill floating over the bottom of the desks (the desks still
           stand on the screen's edge), subdued until hovered (or solid, or hidden until the
           pointer nears it — the person's choice) and slid anywhere along it so it can be
-          parked in an empty spot. Tiny keeps the main ones as small icons: how many,
-          back to normal, the office, fold to the pet, settings and hide. */}
+          parked in an empty spot. It holds what is here (how many, who is hidden) and two
+          doors: View (the looks, tiny, the big office, settings) and hide. Tiny keeps them all
+          as small icons. */}
       <div
         ref={pillRef}
         className={`dock-pill pill-${display.dockPill} ${pill.dragging ? 'is-dragging' : ''} ${pill.autoHide && pill.revealed ? 'is-revealed' : ''}`}
@@ -991,7 +961,7 @@ export function DeskRow({
           aria-label={t.desk.row.pillMove}
           aria-describedby={pillHintId}
           aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
-          title={t.desk.row.pillHint}
+          data-tip={t.dock.tips.grip}
           onKeyDown={pill.onGripKeyDown}
         >
           <GripVertical size={tiny ? 10 : 12} />
@@ -1003,7 +973,7 @@ export function DeskRow({
           <button
             className="icon-btn"
             aria-label={t.dock.arrange.reset}
-            title={t.dock.arrange.reset}
+            data-tip={t.dock.arrange.reset}
             onClick={placement.reset}
           >
             <Undo2 size={14} />
@@ -1026,91 +996,22 @@ export function DeskRow({
               <em>{t.desk.row.waiting(model.counts.attention)}</em>
             ))}
         </span>
-        {!tiny && (
-          <>
-            {veiledCount > 0 && (
-              <button
-                className="desk-row-veiled"
-                title={t.desk.row.veiledTitle(veiledCount)}
-                onClick={() => onVeil(model.hiddenSessionIds, false)}
-              >
-                <EyeOff size={11} />
-                {t.desk.row.veiled(veiledCount)}
-              </button>
-            )}
-            <i className="dock-pill-sep" aria-hidden="true" />
-            <button
-              className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
-              aria-label={t.desk.row.refresh}
-              title={t.desk.row.refreshTitle}
-              disabled={refreshing}
-              onClick={onRefresh}
-            >
-              <RotateCw size={14} />
-            </button>
-            <button
-              className="icon-btn"
-              aria-label={floor ? t.desk.row.toRow : t.desk.row.toFloor}
-              title={floor ? t.desk.row.toRowTitle : t.desk.row.toFloorTitle}
-              onClick={onSwitch}
-            >
-              {floor ? <Building2 size={14} /> : <Flag size={14} />}
-            </button>
-            {onTiny && (
-              <button
-                ref={tinyButton}
-                className="icon-btn"
-                aria-label={t.desk.row.tiny}
-                title={t.desk.row.tinyTitle}
-                onClick={() => toggleTiny(true)}
-              >
-                <Minimize2 size={14} />
-              </button>
-            )}
-          </>
-        )}
-        {tiny && onTiny && (
+        {!tiny && veiledCount > 0 && (
           <button
-            ref={normalButton}
-            className="icon-btn"
-            aria-label={t.desk.row.normal}
-            title={t.desk.row.normalTitle}
-            onClick={() => toggleTiny(false)}
+            className="desk-row-veiled"
+            data-tip={t.desk.row.veiledTitle(veiledCount)}
+            onClick={() => onVeil(model.hiddenSessionIds, false)}
           >
-            <Maximize2 size={12} />
+            <EyeOff size={11} />
+            {t.desk.row.veiled(veiledCount)}
           </button>
         )}
-        <button
-          className="icon-btn"
-          aria-label={t.desk.row.expand}
-          title={t.desk.row.expandTitle}
-          onClick={() => api.window('main')}
-        >
-          <Expand size={icon} />
-        </button>
-        <button
-          className="icon-btn"
-          aria-label={t.desk.row.collapse}
-          title={t.desk.row.collapseTitle}
-          onClick={onCollapse}
-        >
-          <ChevronDown size={tiny ? 14 : 16} />
-        </button>
-        {/* Only the desktop has a settings window; a browser preview has nowhere to open it. */}
-        {api.settings && (
-          <button
-            className="icon-btn"
-            aria-label={t.desk.row.settings}
-            title={t.desk.row.settingsTitle}
-            onClick={() => void api.settings?.open()}
-          >
-            <Settings size={icon} />
-          </button>
-        )}
+        <i className="dock-pill-sep" aria-hidden="true" />
+        <DockViewMenu controls={viewMenu} size={icon} />
         <button
           className="icon-btn"
           aria-label={t.desk.row.hide}
-          title={t.desk.row.hideTitle}
+          data-tip={t.dock.tips.hide}
           onClick={() => api.window('hide')}
         >
           <X size={icon} />

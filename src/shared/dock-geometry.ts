@@ -132,6 +132,21 @@ export function petBounds(feet: Point | null | undefined, area: Rect, size = PET
 }
 
 /**
+ * While a dialog (row, floor) or the 보기 menu (any look) is open, the dock window grows upward
+ * to these heights: the desks and the pet keep their bottom edge, so nothing on screen moves.
+ */
+export const DOCK_ROOM_HEIGHT = 760;
+export const PET_ROOM_HEIGHT = 560;
+/**
+ * A dock window grown upward to `height` for an open dialog or menu: the same bottom edge and
+ * width, taking only the room up to the work area's top (never pushed down instead).
+ */
+export function roomyRect(b: Rect, area: Rect, height: number): Rect {
+  const h = Math.max(b.height, Math.min(height, b.y + b.height - area.y));
+  return { ...b, y: b.y + b.height - h, height: h };
+}
+
+/**
  * Read `desk-pet.json`: v2 stores the standing spot; the first format stored the top-left
  * of the original 132×148 window, converted here so upgrades keep the pet in place.
  */

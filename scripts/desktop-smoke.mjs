@@ -412,9 +412,26 @@ try {
   await dock.waitForTimeout(400); // entrance fade
   await checkMacDock('desk pet');
   await dock.screenshot({ path: '.local/native-pet.png' });
-  // The pet opens its colleague's card; its side button unfolds the desks.
+  /** The dock's one 보기 (view) menu: open it and pick a look or a place to go. */
+  const chooseView = async (name, { dom = false } = {}) => {
+    const button = dock.getByRole('button', { name: '보기 바꾸기', exact: true });
+    // Right after the window changes size a real hover can miss the pet's tools (Windows):
+    // `dom` presses the button itself, as the old side buttons were pressed here.
+    if (dom) await button.evaluate((b) => b.click());
+    else await button.click();
+    const menu = dock.getByRole('menu', { name: '데스크 보기' });
+    await menu.waitFor();
+    const role = /^(데스크 펫|책상 줄|바닥)$/.test(name)
+      ? 'menuitemradio'
+      : name === '쪼꼬미'
+        ? 'menuitemcheckbox'
+        : 'menuitem';
+    await menu.getByRole(role, { name, exact: true }).click();
+    await menu.waitFor({ state: 'detached' });
+  };
+  // The pet's 보기 menu unfolds the desks.
   await dock.locator('.dock-pet-anchor').hover();
-  await dock.getByRole('button', { name: '책상 펼치기' }).click();
+  await chooseView('책상 줄');
   await dock.waitForSelector('.desk-row [data-station-id]');
   assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();
@@ -452,7 +469,7 @@ try {
     }
     return JSON.parse(await readFile(dockFile, 'utf8'));
   };
-  await dock.getByRole('button', { name: '작게 보기', exact: true }).click();
+  await chooseView('쪼꼬미');
   await dock.waitForSelector('.desk-row.is-tiny');
   const tiny = await dockBounds();
   assert.ok(tiny.height < 120 && tiny.height < row.height / 3, 'tiny row is a short strip');
@@ -460,7 +477,7 @@ try {
   assert.equal(await dock.locator('.speech-bubble').count(), 0, 'tiny has no bubbles');
   assert.deepEqual(await savedTiny(true), { v: 1, tiny: true });
   await dock.screenshot({ path: '.local/native-row-tiny.png' });
-  await dock.getByRole('button', { name: '크게 보기', exact: true }).click();
+  await chooseView('쪼꼬미');
   await dock.waitForFunction(() => !document.querySelector('.desk-row.is-tiny'));
   assert.equal((await dockBounds()).height, row.height, 'full size comes back');
   assert.deepEqual(await savedTiny(false), { v: 1, tiny: false });
@@ -695,7 +712,7 @@ try {
   assert.equal((await card.evaluate(() => window.office.cardState())).pin, 'off');
   await card.evaluate(() => window.office.card('close'));
   // The floor version: same width and bottom edge, a shorter strip.
-  await dock.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await chooseView('바닥');
   await dock.waitForSelector('.desk-row.desk-floor');
   await dock.waitForFunction(
     (expected) =>
@@ -711,13 +728,13 @@ try {
   await dock.waitForTimeout(400);
   await checkMacDock('floor desks');
   await dock.screenshot({ path: '.local/native-floor.png' });
-  await dock.getByRole('button', { name: '책상 줄 접기' }).click();
+  await chooseView('데스크 펫');
   await dock.waitForSelector('.desk-pet');
   const back = await dockBounds();
   assert.deepEqual([back.x, back.y, back.width], [pet.x, pet.y, pet.width], 'pet returns home');
   // The pet's tools appear (and take clicks) only while the pet is pointed at.
   await dock.locator('.dock-pet-anchor').hover();
-  await dock.getByRole('button', { name: '사무실 펼치기' }).evaluate((button) => button.click());
+  await chooseView('큰 사무실 열기', { dom: true });
   await expect
     .poll(() =>
       app.evaluate(({ BrowserWindow }) =>

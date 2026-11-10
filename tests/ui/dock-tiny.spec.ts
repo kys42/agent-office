@@ -2,6 +2,7 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { TINY_HEIGHT, TINY_SCALE } from '../../src/shared/dock-geometry';
+import { chooseView, viewButton, viewItem } from './dock-view';
 
 /**
  * Three colleagues: run-0 has an unread final reply, run-1 is calling the person, run-2 is
@@ -199,7 +200,7 @@ for (const mode of ['row', 'floor'] as const) {
     await expect(page.locator('.speech-bubble').first()).toBeVisible();
     const full = (await pet(page, 0).boundingBox())!.height;
 
-    await page.getByRole('button', { name: '작게 보기' }).click();
+    await chooseView(page, '쪼꼬미');
     expect(await calls(page)).toContain('tiny-on');
     const row = page.locator('.desk-row');
     await expect(row).toHaveClass(/is-tiny/);
@@ -239,7 +240,7 @@ for (const mode of ['row', 'floor'] as const) {
     await pet(page, 0).click();
     await expect.poll(() => page.evaluate(() => (window as any).opens)).toEqual(['run-0']);
 
-    await page.getByRole('button', { name: '크게 보기' }).click();
+    await chooseView(page, '쪼꼬미');
     expect(await calls(page)).toContain('tiny-off');
     await expect(row).not.toHaveClass(/is-tiny/);
     await expect(page.locator('.speech-bubble').first()).toBeVisible();
@@ -269,12 +270,12 @@ test('Tiny in privacy shows no names on hover', async ({ page }) => {
 
 test('Browser preview: tiny switches locally and stays after reload', async ({ page }) => {
   await setup(page, '#mini=row', { bridge: false });
-  await page.getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
   await page.reload();
   await expect(page.locator('.row-zone')).toHaveCount(2);
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
-  await page.getByRole('button', { name: '크게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
   await page.reload();
   await expect(page.locator('.row-zone')).toHaveCount(2);
@@ -306,28 +307,39 @@ test('Tiny helper stack opens the front helper directly, no unreadable list', as
   await expect(page.locator('.helper-stack-list')).toHaveCount(0);
 
   // Full size keeps the roster list.
-  await page.getByRole('button', { name: '크게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
   await desk.click();
   await expect(stack.getByRole('list', { name: '보조 동료 명단' })).toBeVisible();
   // A list left open folds away in tiny and does not come back with the full size.
-  await page.getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.helper-stack-list')).toHaveCount(0);
-  await page.getByRole('button', { name: '크게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
   await expect(page.locator('.helper-stack-list')).toHaveCount(0);
 });
 
-test('Focus follows the size toggle, and tiny desks say their dot', async ({ page }) => {
+test('Focus comes back to 보기 after the size toggle, and tiny desks say their dot', async ({
+  page,
+}) => {
   await setup(page, '#mini=row');
-  await page.getByRole('button', { name: '작게 보기' }).click();
-  await expect(page.getByRole('button', { name: '크게 보기' })).toBeFocused();
+  await chooseView(page, '쪼꼬미');
+  await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
+  await expect(viewButton(page)).toBeFocused();
   await expect(pet(page, 0)).toHaveAttribute('aria-label', /동료 0.*, 새 답장$/);
   await expect(pet(page, 1)).toHaveAttribute('aria-label', /동료 1.*, 호출$/);
   await expect(pet(page, 2)).toHaveAttribute('aria-label', /동료 2[^,]*$/);
   await expect(page.locator('.dock-pill .desk-row-summary em')).toContainText('기다리는 동료 1명');
-  await page.getByRole('button', { name: '크게 보기' }).click();
-  await expect(page.getByRole('button', { name: '작게 보기' })).toBeFocused();
+  // By keyboard too: the menu opens on the current entries, tiny checked.
+  await page.keyboard.press('Enter');
+  await expect(viewItem(page, '쪼꼬미')).toHaveAttribute('aria-checked', 'true');
+  await expect(viewItem(page, '책상 줄')).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await expect(viewItem(page, '쪼꼬미')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
+  await expect(viewButton(page)).toBeFocused();
 });
 
 test('An open reply or unfolded bubble closes in tiny; Esc there folds to the pet', async ({
@@ -339,7 +351,7 @@ test('An open reply or unfolded bubble closes in tiny; Esc there folds to the pe
   await bubble.locator('.bubble-reply').click();
   const input = page.getByRole('textbox', { name: '답장 내용' });
   await input.fill('쓰다 만 답장');
-  await page.getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
   await expect(page.locator('.quick-reply')).toHaveCount(0);
   // Nothing hidden is left to fold: the first Esc folds the dock, as in the full size.
@@ -352,9 +364,9 @@ test('Back from tiny, a bubble unfolded before does not reopen', async ({ page }
   const bubble = page.locator('[data-station-id="run-0"] .speech-bubble');
   await bubble.click();
   await expect(bubble).toHaveClass(/is-expanded/);
-  await page.getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
-  await page.getByRole('button', { name: '크게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
   await expect(page.locator('.speech-bubble.is-expanded')).toHaveCount(0);
   // Esc folds the dock straight away (nothing open to fold first).
@@ -561,21 +573,18 @@ test('Reduced motion holds the tiny effects still, like the full size', async ({
   expect(glows).toEqual([]);
 });
 
-test('The tiny pill carries settings, the office and folding to the pet', async ({ page }) => {
+test('The tiny pill carries the 보기 menu: settings, the office and folding to the pet', async ({
+  page,
+}) => {
   await setup(page, '#mini=row');
   const pill = page.locator('.dock-pill');
-  await pill.getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미', pill);
   const row = await settled(page);
-  // The same buttons as the full pill, as small icons.
-  for (const name of ['크게 보기', '사무실 펼치기', '책상 줄 접기', '설정', '데스크 펫 숨기기']) {
+  // The same two doors as the full pill, drawn small.
+  for (const name of ['보기 바꾸기', '데스크 펫 숨기기']) {
     const b = (await pill.getByRole('button', { name, exact: true }).boundingBox())!;
-    expect(b.width).toBeLessThanOrEqual(22.5);
     expect(b.height).toBeLessThanOrEqual(22.5);
   }
-  await expect(pill.getByRole('button', { name: '설정', exact: true })).toHaveAttribute(
-    'title',
-    '설정 창 열기',
-  );
   const p = (await pill.boundingBox())!;
   expect(p.height).toBeLessThan(30);
   expect(p.width).toBeLessThan(200);
@@ -594,12 +603,12 @@ test('The tiny pill carries settings, the office and folding to the pet', async 
     clip: { x: 1440 - 420, y: row.y, width: 420, height: row.height },
   });
 
-  // Each calls what the full pill's button does.
-  await pill.getByRole('button', { name: '설정', exact: true }).click();
+  // Each calls what the full pill's menu does.
+  await chooseView(page, '설정', pill);
   await expect.poll(() => page.evaluate(() => (window as any).settingsOpened)).toEqual([null]);
-  await pill.getByRole('button', { name: '사무실 펼치기', exact: true }).click();
+  await chooseView(page, '큰 사무실 열기', pill);
   await expect.poll(() => calls(page)).toContain('window:main');
-  await pill.getByRole('button', { name: '책상 줄 접기', exact: true }).click();
+  await chooseView(page, '데스크 펫', pill);
   await expect.poll(() => calls(page)).toContain('pet');
 });
 
@@ -607,8 +616,9 @@ test('A browser preview has no settings in the tiny pill either', async ({ page 
   await setup(page, '#mini=row&tiny', { bridge: false });
   await settled(page);
   const pill = page.locator('.dock-pill');
-  await expect(pill.getByRole('button', { name: '사무실 펼치기', exact: true })).toBeVisible();
-  await expect(pill.getByRole('button', { name: '설정', exact: true })).toHaveCount(0);
+  await viewButton(pill).click();
+  await expect(viewItem(page, '큰 사무실 열기')).toBeVisible();
+  await expect(viewItem(page, '설정')).toHaveCount(0);
 });
 
 const zoneKey = (page: Page, i: number) => page.locator('.tiny-zone-key').nth(i);
@@ -697,7 +707,7 @@ test('Dragging a tiny desk moves its whole zone, remembers it and shares it with
   await expect.poll(() => zoneLeft(page, 0)).toBeCloseTo(moved, 0);
   // The full size reads the same saved spots (shares of its narrower room, so a crowded
   // neighbour may nudge it), and leaves them as they were.
-  await page.getByRole('button', { name: '크게 보기' }).click();
+  await chooseView(page, '쪼꼬미');
   await expect(page.locator('.desk-row')).not.toHaveClass(/is-tiny/);
   await expect(page.locator('.row-zone-handle')).toHaveCount(2);
   const shared = await zoneSpot(page, 0);

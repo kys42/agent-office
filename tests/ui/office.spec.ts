@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import { chooseView } from './dock-view';
 
 test('Public progress leads office, roster and inspector while tool names stay secondary', async ({
   page,
@@ -189,9 +190,9 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   const desks = page.locator('.desk-row [data-station-id]');
   await expect(desks).toHaveCount(0);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });
-  // The pet itself opens its colleague's card; the desks unfold from the button beside it.
+  // The pet itself opens its colleague's card; the desks unfold from the 보기 menu beside it.
   await page.locator('.dock-pet-anchor').hover();
-  await page.getByRole('button', { name: '책상 펼치기' }).click();
+  await chooseView(page, '책상 줄', page.locator('.dock-pet-tools'));
   await expect(desks).toHaveCount(6);
   const tops = await desks.evaluateAll((els) =>
     els.map((e) => Math.round(e.getBoundingClientRect().top)),
@@ -216,10 +217,10 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await expect(desks).toHaveCount(0);
   const unfold = async () => {
     await page.locator('.dock-pet-anchor').hover();
-    await page.getByRole('button', { name: '책상 펼치기' }).click();
+    await chooseView(page, '책상 줄', page.locator('.dock-pet-tools'));
   };
   await unfold();
-  await page.getByRole('button', { name: '책상 줄 접기' }).click();
+  await chooseView(page, '데스크 펫', page.locator('.dock-pill'));
   await expect(pet).toBeVisible();
   await unfold();
   await page.locator('.desk-row .office-pet').nth(1).click();
@@ -229,7 +230,7 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await page.goto('/?demo#mini=row');
   await page.reload();
   await expect(desks).toHaveCount(6);
-  await page.getByRole('button', { name: '사무실 펼치기' }).click();
+  await chooseView(page, '큰 사무실 열기', page.locator('.dock-pill'));
   await expect(page.locator('.office-map')).toBeVisible();
 });
 test('A crowded desk row keeps the desk size and pages with side arrows', async ({ page }) => {
@@ -310,15 +311,15 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await desk.hover();
   await desk.getByRole('button', { name: /가리기$/ }).click();
   await expect(strip.locator('[data-station-id]')).toHaveCount(5);
-  // Switch looks; the unfold button reopens the last one used.
-  await page.getByRole('button', { name: '사무실 줄로 보기' }).click();
+  // Switch looks from 보기; tiny from the pet unfolds the last one used, small.
+  await chooseView(page, '책상 줄', page.locator('.dock-pill'));
   await expect(page.locator('.desk-row:not(.desk-floor) .row-zone-floor').first()).toBeVisible();
-  await page.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await chooseView(page, '바닥', page.locator('.dock-pill'));
   await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
   await page.keyboard.press('Escape');
   await page.locator('.dock-pet-anchor').hover();
-  await page.getByRole('button', { name: '책상 펼치기' }).click();
-  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+  await chooseView(page, '쪼꼬미', page.locator('.dock-pet-tools'));
+  await expect(page.locator('.desk-row.desk-floor.is-tiny')).toBeVisible();
 });
 
 test('Floor desks: helpers stand on the floor and screen sharing hides zone and desk names', async ({

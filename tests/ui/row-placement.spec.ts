@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import { chooseView } from './dock-view';
 
 async function setup(
   page: Page,
@@ -202,7 +203,7 @@ test('Keyboard placement shares positions between row and floor and does not pag
   await expect
     .poll(() => zone.evaluate((el) => el.getBoundingClientRect().right))
     .toBeCloseTo(1440 - 48, 0);
-  await page.getByRole('button', { name: '바닥 책상으로 보기', exact: true }).click();
+  await chooseView(page, '바닥', page.locator('.dock-pill'));
   await expect(page.locator('.zone-flag-cloth')).toBeVisible();
   await expect
     .poll(() => zone.evaluate((el) => el.getBoundingClientRect().right))

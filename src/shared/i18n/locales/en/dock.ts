@@ -18,7 +18,7 @@ export const dock = {
     aria: (label: string, count: number | null) =>
       `Desk pet · ${label}${count ? ` (${count})` : ''} · click to open the work card`,
     title: (total: number) =>
-      `Our Office · ${total} ${total === 1 ? 'teammate' : 'teammates'}\nClick to open this teammate's work card, or drag to move it · the side button unfolds the desks`,
+      `Our Office · ${total} ${total === 1 ? 'teammate' : 'teammates'}\nClick to open this teammate's work card, or drag to move it · View switches to the desks`,
     detailHint: 'Click to enlarge · click the pet for the work card',
     /** Stands in for the name in "Quick reply to …" when it is unknown. */
     someone: 'your teammate',
@@ -26,19 +26,43 @@ export const dock = {
     openCardTitle: "Open as popup · the speaking teammate's work card",
     openCardOf: (name: string) => `Open ${name}'s work card`,
     listOf: (group: string, n: number) => `${group} ${n} · show who`,
-    expand: 'Expand office',
-    expandTitle: 'Open the big office',
-    refresh: 'Refresh',
-    refreshTitle: 'Refresh · check the records again now',
-    unfold: 'Unfold the desks',
-    unfoldTitle: 'Unfold the desks · in the look you used last (office row or floor desks)',
     previous: 'Previous teammate',
     previousTitle: 'Show the previous teammate · ←',
     next: 'Next teammate',
     nextTitle: 'Show the next teammate · →',
     place: (at: number, total: number) => `${at}/${total}`,
     hide: 'Hide desk pet',
-    hideTitle: 'Hide · bring it back from the tray icon',
+  },
+  /** The 보기 (view) menu of the pill and the pet: the dock's looks and where else to go. */
+  view: {
+    button: 'View',
+    label: 'Change view',
+    tip: 'Change view · pet, row, floor, tiny',
+    menu: 'Dock view',
+    pet: 'Desk pet',
+    petHint: 'Just one pet on your desktop',
+    row: 'Desk row',
+    rowHint: "Teammates' desks in one line",
+    floor: 'Floor',
+    floorHint: 'Desks on the floor, by project',
+    tiny: 'Tiny',
+    tinyHint: 'Shrink the row or floor',
+    roster: 'Teammate list',
+    main: 'Open the big office',
+    settings: 'Settings',
+    /** The look the big office's button goes back to. */
+    looks: {
+      pet: 'Desk pet',
+      row: 'Desk row',
+      floor: 'Floor',
+      tinyRow: 'Tiny row',
+      tinyFloor: 'Tiny floor',
+    },
+  },
+  /** Short hover/focus labels for the dock's icon buttons (drawn by the app). */
+  tips: {
+    hide: 'Hide · bring it back from the tray',
+    grip: 'Drag to move',
   },
   card: {
     missing: "Couldn't find this teammate",
