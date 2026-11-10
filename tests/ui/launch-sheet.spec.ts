@@ -502,27 +502,75 @@ test('its tab resting in a sleeping Orca workspace: Open Orca first, starting on
     .toEqual(['start']);
 });
 
-test('several tabs of its kind resting in a sleeping Orca workspace are a caution', async ({
+test('its folder in a sleeping Orca workspace, no tab surely it: Open Orca first, anywhere', async ({
   page,
 }) => {
   await setup(page, '/#card', { width: 760, height: 900 });
+  // Orca lists no tab there (or tabs without text): it may still bring this one back.
   await set(page, {
-    duplicate: {
-      resume: { state: 'unknown', sleeping: { workspace: 'app', count: 2, agent: 'Claude' } },
-    },
+    duplicate: { resume: { state: 'unknown', sleeping: { workspace: 'app' } } },
   });
   const modal = await openCard(page);
   await expect(
     modal.getByText(
-      '잠든 Orca 작업 공간(app)에 쉬고 있는 Claude 탭이 2개 있어요. 이 대화일 수 있어요.',
+      '이 대화가 잠든 Orca 작업 공간(app)에 남아 있을 수 있어요. 먼저 그 작업 공간을 열어 확인하세요.',
     ),
   ).toBeVisible();
   await expect(modal.locator('.launch-notice')).toHaveClass(/is-caution/);
-  await expect(modal.locator('.launch-actions .primary')).toHaveText('Orca에서 시작');
+  await expect(modal.locator('.launch-actions .primary')).toHaveText('Orca 열기');
+  // Every destination is only "anyway": a tab coming back in Orca runs it twice wherever.
+  for (const [radio, place] of [
+    ['tmux', 'tmux'],
+    ['터미널 앱', '터미널 앱'],
+    ['Orca', 'Orca'],
+  ]) {
+    await destination(modal, radio).check();
+    await expect(modal.getByRole('button', { name: `그래도 ${place}에서 시작` })).toBeVisible();
+    await expect(modal.locator('.launch-actions .primary')).toHaveText('Orca 열기');
+  }
+  await page.screenshot({
+    path: '.local/launch-sheet-sleeping-maybe-light.png',
+    animations: 'disabled',
+  });
+  await modal.getByRole('button', { name: 'Orca 열기' }).click();
+  await expect.poll(() => read(page, 'revealed')).toBe(1);
+  await expect(modal).toHaveCount(0);
+  await expect(page.getByText("'app' 작업 공간을 열어 이 대화가 있는지 확인하세요")).toBeVisible();
+  expect(await read(page, 'launches')).toEqual([]);
+  // Starting anyway goes to main, whose native confirmation warns about it (a tmux start is
+  // then opened in a terminal, as always).
+  const again = await openCard(page);
+  await destination(again, 'tmux').check();
+  await again.getByRole('button', { name: '그래도 tmux에서 시작' }).click();
+  await expect
+    .poll(async () => (await read(page, 'launches')).map((l: any) => [l.action, l.destination]))
+    .toContainEqual(['start', 'tmux']);
+  const starts = (await read(page, 'launches')).filter((l: any) => l.action === 'start');
+  expect(starts.map((l: any) => [l.intent.kind, l.destination])).toEqual([['resume', 'tmux']]);
+});
+
+test("the card's main action brings Orca forward when its folder may sleep there", async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 380, height: 480 }, { sleeping: { workspace: 'app' } });
+  const actions = page.locator('.card-actions');
+  await actions.getByRole('button', { name: 'Orca로 이동' }).click();
+  await expect.poll(() => read(page, 'revealed')).toBe(1);
+  await expect(page.getByText("'app' 작업 공간을 열어 이 대화가 있는지 확인하세요")).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '세션 시작' })).toHaveCount(0);
+  expect(await read(page, 'launches')).toEqual([]);
+  // The sheet stays one click away for starting anyway.
+  await actions.getByRole('button', { name: '터미널에서 이어가기' }).click();
+  await expect(page.getByRole('dialog', { name: '세션 시작' })).toBeVisible();
 });
 
 test("the card's main action brings Orca forward when its tab sleeps there", async ({ page }) => {
-  await setup(page, '/#card', { width: 380, height: 480 }, { sleeping: { workspace: 'app' } });
+  await setup(
+    page,
+    '/#card',
+    { width: 380, height: 480 },
+    { sleeping: { workspace: 'app', sure: true } },
+  );
   const actions = page.locator('.card-actions');
   await actions.getByRole('button', { name: 'Orca로 이동' }).click();
   await expect.poll(() => read(page, 'revealed')).toBe(1);

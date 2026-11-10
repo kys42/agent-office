@@ -143,10 +143,15 @@ export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
   // A live own pane is not proof of this conversation: after Claude `/clear` or Codex `/new`
   // the same process shows another one. Only the agent adapter above can say it runs.
   if (e.ownTmux.kind === 'found') return { state: 'open', where: 'tmux' };
+  // Its folder lies in a sleeping Orca workspace, no tab there surely this one: Orca may
+  // bring it back there, whatever the other parts could not verify.
   if (sleeping?.kind === 'unknown')
     return {
       state: 'unknown',
-      sleeping: { workspace: sleeping.workspace, count: sleeping.count, agent: sleeping.agent },
+      sleeping: {
+        workspace: sleeping.workspace,
+        ...(sleeping.count !== undefined && { count: sleeping.count }),
+      },
     };
   if (e.agent.kind === 'unknown' || e.orcaTab.kind === 'unknown' || e.ownTmux.kind === 'unknown')
     return { state: 'unknown' };
@@ -233,6 +238,20 @@ export async function confirmLaunch(
   return true;
 }
 
+/**
+ * The sleeping Orca workspace a conversation's main action leads to (#342): where its tab
+ * rests (`sure`), or where it may come back since its folder lies there. Null when the check
+ * names none, or puts it anywhere else first (running, a live tab, a start held, its own tmux).
+ */
+export function sleepingWorkspace(
+  check: DuplicateCheck,
+): { workspace: string; sure?: true } | null {
+  if (check.state === 'open' && check.sleeping)
+    return { workspace: check.sleeping.workspace, sure: true };
+  if (check.state === 'unknown' && check.sleeping) return { workspace: check.sleeping.workspace };
+  return null;
+}
+
 /** The warning added to a launcher's native confirmation ('' when nothing was found). */
 export function duplicateNote(check: DuplicateCheck): string {
   const t = m().tmux;
@@ -240,7 +259,7 @@ export function duplicateNote(check: DuplicateCheck): string {
     return '\n\n' + t.sleepingConfirm(check.sleeping.workspace);
   if (check.state === 'open') return '\n\n' + t.openConfirm(placeName(check.where));
   if (check.state === 'unknown' && check.sleeping)
-    return '\n\n' + t.sleepingUnknownConfirm(check.sleeping.agent, check.sleeping.count);
+    return '\n\n' + t.sleepingUnknownConfirm(check.sleeping.workspace);
   if (check.state === 'unknown') return '\n\n' + t.unknownConfirm;
   return '';
 }

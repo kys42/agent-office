@@ -4,6 +4,7 @@ import { CardShellButton } from './MiniShell';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSupport } from '../lib/useLaunchSupport';
 import { resumeBlock } from '../shared/summon-existing';
+import { sleepingRevealed } from '../shared/launch-sheet';
 import { focusName } from '../shared/terminal-target';
 import { branchInfo } from '../shared/branch';
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
@@ -441,17 +442,25 @@ export function Inspector({
   const [launching, setLaunching] = useState<'resume' | 'fork' | null>(null);
   // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
   const sheetFallback = canLaunch && !codexApp && !live?.canFocus;
-  // Its tab rests in a sleeping Orca workspace (#342): no terminal to jump to, and starting it
-  // again would run it twice. The main action brings Orca forward, where opening that
-  // workspace brings the tab back (main's duplicate check decides, asked once per card).
-  const [sleeping, setSleeping] = useState<{ id: string; workspace: string } | null>(null);
+  // Its tab rests, or may rest, in a sleeping Orca workspace (#342): no terminal to jump to,
+  // and starting it again could run it twice. The main action brings Orca forward, where
+  // opening that workspace brings the tab back (main's duplicate check decides, asked once per
+  // card; `sure`: its tab was matched there, else its folder only lies in that workspace).
+  const [sleeping, setSleeping] = useState<{
+    id: string;
+    workspace: string;
+    sure: boolean;
+  } | null>(null);
   const asksSleeping = sheetFallback && !!api.orcaSleeping && !!api.orcaReveal;
   useEffect(() => {
     if (!asksSleeping) return;
     let current = true;
     api.orcaSleeping!(s.id).then(
       (found) => {
-        if (current) setSleeping(found ? { id: s.id, workspace: found.workspace } : null);
+        if (current)
+          setSleeping(
+            found ? { id: s.id, workspace: found.workspace, sure: found.sure === true } : null,
+          );
       },
       () => undefined,
     );
@@ -477,7 +486,7 @@ export function Inspector({
       }
       if (inOrca) {
         await api.orcaReveal!();
-        notify(t.tmux.sleepingRevealed(privacy ? undefined : inOrca.workspace));
+        notify(sleepingRevealed(inOrca.sure, privacy ? undefined : inOrca.workspace));
         return;
       }
       if (sheetFallback) {
