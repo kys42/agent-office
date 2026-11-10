@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import {
   Building2,
   Check,
+  ChevronDown,
   Expand,
   Flag,
   Minimize2,
@@ -26,7 +27,12 @@ import { isPageHidden, onPageVisibility } from '../lib/visibility';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
 import { dockPopovers, isPopoverTrigger } from '../lib/dockPopovers';
 import { stillPointing } from '../lib/stillPointing';
-import { dockViewChecked, type DockLook, type DockViewChoice } from '../shared/dock-look';
+import {
+  dockLookName,
+  dockViewChecked,
+  type DockLook,
+  type DockViewChoice,
+} from '../shared/dock-look';
 import type { DockMode } from '../shared/types';
 
 export type DockViewPick = DockViewChoice | 'main' | 'settings';
@@ -295,6 +301,13 @@ export function DockViewMenu({
     e.preventDefault();
   };
   const look = controls?.look;
+  const LookIcon = !look
+    ? Rows3
+    : look.mode === 'floor'
+      ? Flag
+      : look.mode === 'row'
+        ? Building2
+        : PawPrint;
   const looks: { id: DockMode; icon: typeof PawPrint; name: string; hint: string }[] = [
     { id: 'pet', icon: PawPrint, name: v.pet, hint: v.petHint },
     { id: 'row', icon: Building2, name: v.row, hint: v.rowHint },
@@ -338,12 +351,13 @@ export function DockViewMenu({
       <button
         ref={button}
         type="button"
-        className={`icon-btn dock-view-button ${label ? 'has-label' : ''} ${open ? 'is-open' : ''}`}
+        className={`icon-btn dock-view-button ${label ? 'has-caret' : 'caret-corner'} ${open ? 'is-open' : ''}`}
         aria-label={v.label}
+        aria-description={look ? v.looks[dockLookName(look)] : undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        data-tip={v.tip}
+        data-tip={look ? `${v.looks[dockLookName(look)]} · ${v.tip}` : v.tip}
         data-popover-trigger
         onMouseEnter={() => {
           disarm();
@@ -373,8 +387,19 @@ export function DockViewMenu({
             ?.focus();
         }}
       >
-        <Rows3 size={size} />
-        {label && <span>{v.button}</span>}
+        {/* The look it is now (the menu's own icon for it), and a caret: pressing changes it. */}
+        <span className="dock-view-current" aria-hidden="true">
+          <LookIcon size={size} />
+          {look?.tiny && look.mode !== 'pet' && (
+            <Minimize2 className="dock-view-tiny-mark" size={8} strokeWidth={3} />
+          )}
+        </span>
+        <ChevronDown
+          className="dock-view-caret"
+          size={label ? 10 : 8}
+          strokeWidth={2.6}
+          aria-hidden="true"
+        />
       </button>
       {open &&
         createPortal(

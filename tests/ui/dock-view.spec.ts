@@ -89,7 +89,11 @@ test('보기 opens above the pill with each look explained and the current one c
   await setup(page, '#mini=row');
   await expect(page.locator('.row-zone')).toHaveCount(2);
   const button = viewButton(pill(page));
-  await expect(button).toHaveText('보기');
+  // No words: the icon of the look it is now (책상 줄 → the office icon) and a caret.
+  await expect(button).toHaveText('');
+  await expect(button.locator('.dock-view-current svg')).toHaveClass(/lucide-building/);
+  await expect(button.locator('.dock-view-caret')).toBeVisible();
+  await expect(button).toHaveAttribute('data-tip', /^책상 줄 · /);
   await expect(button).toHaveAttribute('aria-haspopup', 'menu');
   await button.click();
   const menu = viewMenu(page);
@@ -286,4 +290,31 @@ test('The pet tools explain themselves with drawn tips too', async ({ page }) =>
   expect(t.x).toBeGreaterThanOrEqual(0);
   expect(t.x + t.width).toBeLessThanOrEqual(PET_SIZE.width);
   expect(t.y).toBeGreaterThanOrEqual(0);
+});
+
+test('the view button draws the current look (row, tiny row, floor, pet), for the record', async ({
+  page,
+}) => {
+  for (const [hash, file, icon] of [
+    ['#mini=row', 'row', /lucide-building/],
+    ['#mini=row&tiny', 'tiny', /lucide-building/],
+    ['#mini=floor', 'floor', /lucide-flag/],
+  ] as const) {
+    // Only the hash changes between looks: start from a blank page so each one loads anew.
+    await page.goto('about:blank');
+    await setup(page, hash);
+    const button = viewButton(pill(page));
+    await expect(button.locator('.dock-view-current svg').first()).toHaveClass(icon);
+    const b = (await pill(page).boundingBox())!;
+    await page.screenshot({
+      path: `.local/view-icon-${file}.png`,
+      clip: { x: b.x - 8, y: b.y - 8, width: b.width + 16, height: b.height + 16 },
+    });
+  }
+  await page.goto('about:blank');
+  await setup(page, '#mini');
+  await page.locator('.dock-pet-anchor').hover();
+  const pet = viewButton(page);
+  await expect(pet.locator('.dock-view-current svg').first()).toHaveClass(/lucide-paw-print/);
+  await page.locator('.desk-pet-stage').screenshot({ path: '.local/view-icon-pet.png' });
 });

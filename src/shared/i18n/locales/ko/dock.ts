@@ -33,7 +33,6 @@ export const dock: Messages['dock'] = {
     hide: '데스크 펫 숨기기',
   },
   view: {
-    button: '보기',
     label: '보기 바꾸기',
     tip: '보기 바꾸기 · 펫, 줄, 바닥, 쪼꼬미',
     menu: '데스크 보기',

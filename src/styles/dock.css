@@ -1484,22 +1484,40 @@ body.card-mode {
 /* ───────── 보기 (view) menu and the dock's tooltips ─────────
    Both are drawn in the page (body), outside the pill and the pet, so nothing clips them; the
    dock grows its window upward while the menu is open (DeskDock · room). Dark like the pill. */
-.dock-pill .dock-view-button.has-label {
+.dock-pill .dock-view-button.has-caret {
   display: inline-flex;
   align-items: center;
   width: auto;
-  white-space: nowrap;
-  gap: 4px;
-  padding: 0 9px 0 7px;
-  font-size: 11.5px;
-  font-weight: 600;
+  gap: 1px;
+  padding: 0 4px 0 6px;
   color: var(--text);
 }
-.desk-row.is-tiny .dock-pill .dock-view-button.has-label {
-  width: auto;
-  gap: 3px;
-  padding: 0 7px 0 5px;
-  font-size: 10px;
+.dock-view-current {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+/* 쪼꼬미: a small shrink mark on the look's icon. */
+.dock-view-tiny-mark {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  padding: 1px;
+  border-radius: 3px;
+  background: var(--pill-bg-strong, #232325);
+  color: var(--accent);
+}
+.dock-view-caret {
+  opacity: 0.7;
+}
+/* The pet's narrow column: the caret sits in the button's corner instead of beside the icon. */
+.dock-view-button.caret-corner {
+  position: relative;
+}
+.dock-view-button.caret-corner .dock-view-caret {
+  position: absolute;
+  right: 0;
+  bottom: 0;
 }
 .dock-view-button.is-open {
   color: var(--text);
