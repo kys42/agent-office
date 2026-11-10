@@ -332,6 +332,14 @@ export interface OfficeEvent {
 export interface RequestOption {
   label: string;
   description?: string;
+  /**
+   * Claude Code AskUserQuestion `preview`: a mockup or snippet shown beside the options. A
+   * single-select question with one draws a side-by-side layout (no text row; notes instead).
+   * Shown only (never compared), so a cap here never marks the request `truncated`;
+   * `previewCut` says it was cut or left out.
+   */
+  preview?: string;
+  previewCut?: true;
 }
 export interface RequestQuestion {
   /** A short chip-like title (AskUserQuestion `header`). */
@@ -860,7 +868,9 @@ export type PromptUnavailable =
   | 'unreadable'
   | 'no-request'
   /** The request cannot be checked against a screen (cut at rest, no call id, no transcript). */
-  | 'unverifiable';
+  | 'unverifiable'
+  /** A dialog is open, drawn in a way the app cannot read (a new layout): nothing is pressed. */
+  | 'unknown';
 /**
  * The dialog on the session's terminal, read by the desktop app and checked against the open
  * request it recorded. `ready` only when both say the same (same kind, same question and
@@ -882,6 +892,17 @@ export type PromptView =
       /** Questions: per question, whether typed words can be sent (never for multi-select). */
       other?: boolean[];
       /**
+       * Questions: per question, why typed words cannot be sent from here (null where they can):
+       * `preview` the dialog takes notes instead, typed in the terminal; `multi` a multi-select
+       * question; `none` the dialog has no text row.
+       */
+      noText?: (PromptNoText | null)[];
+      /**
+       * Questions: the dialog offers "Chat about this": leave the questions unanswered and tell
+       * the agent you want to talk about them first (it asks what; the reply goes in the chat).
+       */
+      chat?: true;
+      /**
        * Permission prompts: the tool of the call the screen shows (the record may mark another
        * call of the same batch) and what the screen says it does. The card shows these.
        */
@@ -894,11 +915,17 @@ export type PromptView =
       consent?: 'unset' | 'off';
     }
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
+/** Why a question takes no typed answer from the card (PromptView.noText). */
+export type PromptNoText = 'preview' | 'multi' | 'none';
 /** One question's answer: picked options (indices into the recorded options) or typed words. */
 export type QuestionAnswer = { options: number[] } | { other: string };
-/** `callId`: the open call the card was shown (PromptView.callId); nothing else is answered. */
+/**
+ * `callId`: the open call the card was shown (PromptView.callId); nothing else is answered.
+ * `chat`: no answers, the dialog's "Chat about this" instead (PromptView.chat).
+ */
 export type AnswerChoice =
   | { kind: 'question'; eventId: string; callId: string; answers: QuestionAnswer[] }
+  | { kind: 'question'; eventId: string; callId: string; chat: true }
   | { kind: 'plan' | 'permission'; eventId: string; callId: string; number: number; label: string };
 export interface AnswerResult {
   /** `cancelled`: the person declined the first-use confirmation; nothing was sent. */
