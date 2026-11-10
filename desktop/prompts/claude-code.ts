@@ -5,9 +5,10 @@ import type {
   InputRequest,
   PromptSubject,
   QuestionAnswer,
+  RequestQuestion,
 } from '../../src/shared/types.js';
 import { inputRequest } from '../../server/adapters/requests.js';
-import { drawn, type Screen } from '../composer/screen.js';
+import { cells, drawn, type Screen } from '../composer/screen.js';
 import { readPrompt } from '../composer/claude-code.js';
 import { drawnMarkdown } from './claude-markdown.js';
 import type {
@@ -22,6 +23,7 @@ import type {
   PromptChoice,
   PromptHost,
   PromptKey,
+  NoText,
 } from './types.js';
 
 /*
@@ -51,14 +53,48 @@ import type {
  * → moves to the next tab (the review after the
  * last); a text row takes typing as soon as the marker is on it. Never pressed here: digits
  * (pick *and* submit in one key), Tab (amends a permission's Yes into a text row), Esc (cancels
- * the whole tool call), Ctrl+C/D. "Chat about this" and "Cancel" end the tool call: never used.
+ * the whole tool call), Ctrl+C/D. "Cancel" ends the tool call: never used. "Chat about this"
+ * ends it too, and is chosen only when the person asks for exactly that (`chat`, see below).
  *
  * The plan dialog of 2.1.316 (read from its bundle, ExitPlanMode's options builder): an optional
  * "Yes, clear context (N% used) and …" row, then one of "Yes, and switch to BYPASS PERMISSIONS
  * … for this session" / "Yes, and use auto mode" / "Yes, auto-accept edits", then always "Yes,
  * manually approve edits", then "No, keep planning" (a text row; hint "shift+tab to approve with
  * this feedback"). A plan too long to show withholds every Yes. Only "Yes, manually approve
- * edits" is offered here: every other Yes keeps applying (a mode) or clears the context.
+ * edits" is offered here: every other Yes keeps applying (a mode) or clears the context. *
+ * The preview layout of 2.1.322 (read from its bundle, AskUserQuestion's `uZ`): a single-select
+ * question whose options carry `preview` (never a multi-select one) is drawn side by side, the
+ * options in a column 30 cells wide, a 4-cell gap, then the preview box (`┌─┐ │ … │ └─┘`, cut
+ * with `…` and `├─── ✂ ─── N lines hidden ─┤`) with `Notes:` under it. No description, no
+ * "Type something." row: `n` types notes instead (sent with the answer). "Chat about this" sits
+ * below the inner rule without a number:
+ *
+ *   ───────────────────────────────────────
+ *   ←  ☐ Where  ☐ How  ☐ Branch  ✔ Submit  →
+ *
+ *   Where should the demo go?
+ *
+ *   ❯ 1. Add a page to the       ┌────────────┐
+ *       catalog (Recommended)    │ preview    │
+ *     2. Standalone demo         └────────────┘
+ *
+ *                                Notes: press n to add notes
+ *
+ *   ───────────────────────────────────────
+ *     Chat about this
+ *
+ *   Enter to select · ↑/↓ to navigate · n to add notes · Tab to switch questions · Esc to cancel
+ *
+ * Its keys: ↑/↓ move (↓ from the last option onto "Chat about this", ↑ back; no wrapping), Enter
+ * picks the option (the next question, the review after the last, or straight to Claude for a
+ * lone question), `n` opens the notes (every key then types), digits only move, Tab/→ and ←
+ * switch questions (Tabs keybinding: tab, shift+tab, right, left). "Chat about this" (both
+ * layouts) answers the call with a refusal whose feedback tells Claude "The user wants to clarify
+ * these questions" with the answers and notes so far: the dialog closes and Claude asks what to
+ * clarify; it takes no words itself. A tab chip shows `☒` once its question has an answer.
+ *
+ * Claude Code may also draw a plugin pane at the right of the screen, behind a `│` divider in
+ * one column on every row: it is cut off before anything is read (`withoutSidePane`).
  */
 
 /** A numbered row: `❯ 1. Red`, `  2. Green`, ` ❯ 1. Yes`, `   ❯ 1. Yes, and use auto mode`. */
@@ -227,14 +263,193 @@ function planFileIn(foot: string[]): string | undefined {
     .findLast((part) => /^\S+\.md$/.test(part));
 }
 
+/** The question's tab bar (`←  ☐ A  ☒ B  ✔ Submit  →`, or a lone chip) and its text, from the head. */
+function readHead(head: string[]): { tabs: { label: string; done: boolean }[]; question: string } {
+  const bar = head.findIndex((line) => /^\s*←\s/.test(line) || /^\s*[☐☒]\s/.test(line));
+  const tabs =
+    bar < 0
+      ? []
+      : head[bar]
+          .replace(/^\s*←/, '')
+          .replace(/→\s*$/, '')
+          .split(/\s{2,}/)
+          .map((chip) => /^([☐☒])\s+(.+)$/.exec(chip.trim()))
+          .filter((chip): chip is RegExpExecArray => !!chip)
+          .map((chip) => ({ label: chip[2].trim(), done: chip[1] === '☒' }));
+  const question = head
+    .slice(bar + 1)
+    .map(unborder)
+    .join('\n')
+    .trim();
+  return { tabs, question };
+}
+
+/** The text before `width` cells, and the rest. */
+function cutAt(line: string, width: number): [string, string] {
+  let used = 0;
+  let i = 0;
+  for (const char of line) {
+    const w = cells(char);
+    if (used + w > width) break;
+    used += w;
+    i += char.length;
+  }
+  return [line.slice(0, i), line.slice(i)];
+}
+
+/** Where every `│` of a line is drawn, in cells. */
+function barsOf(line: string): number[] {
+  const at: number[] = [];
+  let col = 0;
+  for (const char of line) {
+    if (char === '│') at.push(col);
+    col += cells(char);
+  }
+  return at;
+}
+
+/** A plugin pane never sits closer to the left than this. */
+const PANE_MIN = 40;
+/**
+ * A `│` drawn left of where it is: a character the terminal draws two cells wide that `cells`
+ * counts as one (emoji such as ✅) shifts the rest of its line this far at most.
+ */
+const PANE_SLACK = 3;
+
+/**
+ * The screen without the plugin pane Claude Code may draw at its right (measured on 2.1.322 in
+ * Orca: a `│` divider in one column on every row, another box to its right). The divider is the
+ * column where most rows draw a `│`, at least PANE_MIN cells in; it must be on nearly every
+ * non-blank row, the last ones included. Each row is cut at its own `│` in that column (or up to
+ * PANE_SLACK cells left of it). A screen without such a column is returned as it is.
+ */
+export function withoutSidePane(lines: string[]): string[] {
+  const bars = lines.map(barsOf);
+  const count = new Map<number, number>();
+  for (const at of bars)
+    for (const col of new Set(at)) if (col >= PANE_MIN) count.set(col, (count.get(col) ?? 0) + 1);
+  let divider = -1;
+  for (const [col, n] of count) if (n > (count.get(divider) ?? 0)) divider = col;
+  if (divider < 0) return lines;
+  const filled = lines.map((line, i) => (line.trim() ? i : -1)).filter((i) => i >= 0);
+  const near = (i: number) =>
+    bars[i].filter((col) => col <= divider && col >= divider - PANE_SLACK).at(-1);
+  const on = filled.filter((i) => near(i) !== undefined);
+  if (filled.length < 5 || on.length < filled.length * 0.8) return lines;
+  if (!filled.slice(-3).every((i) => near(i) !== undefined)) return lines;
+  return lines.map((line, i) => {
+    const col = near(i);
+    return col === undefined ? line : cutAt(line, col)[0].trimEnd();
+  });
+}
+
+/** The preview layout's notes line; its words stay at the column the preview box starts in. */
+const NOTES = /^(\s+)Notes:(?:\s+(.*))?$/;
+const NOTES_HINT = 'press n to add notes';
+/** "Chat about this" without a number (preview layout), the marker on it when focused. */
+const CHAT_PLAIN = /^\s*(❯)?\s*Chat about this$/;
+/** An option row in the left column: the marker cell, ` N.`, ` label`. */
+const PREVIEW_ROW = /^(❯| ) (\d{1,2})\. (.*)$/;
+/** A row's right side: nothing, or the preview box (its corners, sides or the cut line). */
+const BOX_SIDE = /^\s*(?:[┌│└├].*)?$/;
+
+/**
+ * A question drawn in the preview layout (see the comment at the top), or null when the screen
+ * is not one. Only the left column is read (the preview is the agent's own and never compared),
+ * a label wrapped in that column joined again. `unknown` when it looks like one but does not read
+ * cleanly (something other than the box beside the options, a broken number sequence).
+ */
+function previewDialog(lines: string[], height?: number): DialogState | null {
+  const chat = lines.findLastIndex((line) => CHAT_PLAIN.test(line));
+  if (chat < 0) return null;
+  const footer = lines
+    .slice(chat + 1)
+    .join(' ')
+    .replace(/\s+/g, ' ');
+  if (!/Enter to select/.test(footer) || !/add notes/.test(footer)) return null;
+  const rule = lines.findLastIndex((line, i) => i < chat && !!line.trim());
+  if (rule < 0 || !RULE.test(lines[rule])) return null;
+  const notesAt = lines.findLastIndex((line, i) => i < rule && NOTES.test(line));
+  if (notesAt < 0) return { kind: 'unknown' };
+  const n = NOTES.exec(lines[notesAt])!;
+  const column = n[1].length;
+  // The notes may wrap under themselves, at their own column.
+  const rest = lines.slice(notesAt + 1, rule).filter((line) => line.trim());
+  if (rest.some((line) => indent(line) < column)) return { kind: 'unknown' };
+  const noteText = [n[2] ?? '', ...rest.map((line) => line.trim())].join(' ').trim();
+  const notes = noteText === NOTES_HINT ? '' : noteText;
+  const top = lines.findLastIndex((line, i) => i < notesAt && /^─{8,}/.test(line));
+  if (top < 0 || column < 10) return { kind: 'unknown' };
+  const width = column - 4;
+  // The options start on the row the preview box opens on.
+  const start = lines.findIndex(
+    (line, i) => i > top && i < notesAt && cutAt(line, width)[1].trimStart().startsWith('┌'),
+  );
+  if (start < 0) return { kind: 'unknown' };
+  const rows: DialogRow[] = [];
+  let prev = '';
+  for (let i = start; i < notesAt; i++) {
+    const [left, right] = cutAt(lines[i], width);
+    if (!BOX_SIDE.test(right)) return { kind: 'unknown' };
+    const text = left.trimEnd();
+    const m = PREVIEW_ROW.exec(text);
+    if (m) {
+      rows.push({
+        number: Number(m[2]),
+        label: m[3].trim(),
+        description: '',
+        cursor: m[1] === '❯',
+      });
+    } else if (text.trim()) {
+      const row = rows.at(-1);
+      if (!row || indent(text) < 4) return { kind: 'unknown' };
+      // Cut mid-word at the column's edge: no space was taken out there.
+      row.label += (cells(prev) >= width - 1 ? '' : ' ') + text.trim();
+    }
+    prev = text;
+  }
+  if (!rows.length || rows.some((row, i) => row.number !== i + 1)) return { kind: 'unknown' };
+  for (const row of rows) {
+    // An option answered before (the dialog went back to it) carries a tick after its label.
+    if (/\s✔$/.test(row.label)) {
+      row.label = row.label.replace(/\s✔$/, '').trim();
+      row.picked = true;
+    }
+  }
+  const head = lines.slice(top + 1, start).filter((line) => line.trim());
+  const { tabs, question } = readHead(head);
+  if (!question) return { kind: 'unknown' };
+  rows.push({
+    number: rows.length + 1,
+    label: 'Chat about this',
+    description: '',
+    cursor: !!CHAT_PLAIN.exec(lines[chat])![1],
+    aside: true,
+  });
+  return {
+    kind: 'question',
+    tabs,
+    question,
+    multi: false,
+    rows,
+    layout: 'preview',
+    notes,
+    ...(height ? { height } : {}),
+  };
+}
+
 /** What Claude Code's dialog on this screen asks, or why there is none. */
 export function parseDialog(screen: Screen | null): DialogState {
   if (!screen) return { kind: 'unreadable' };
   if (!screen.text.trim()) return { kind: 'closed' };
+  // A plugin pane beside the TUI is cut off first: its divider would hide the prompt's rules.
+  const lines = withoutSidePane(screen.text.split('\n').map((line) => line.trimEnd()));
   // The main prompt open at the bottom: no dialog, whatever the output above shows.
-  if (readPrompt(screen) !== null) return { kind: 'closed' };
-  const lines = screen.text.split('\n').map((line) => line.trimEnd());
+  if (readPrompt(screen) !== null || readPrompt({ ...screen, text: lines.join('\n') }) !== null)
+    return { kind: 'closed' };
   while (lines.length && !lines.at(-1)!.trim()) lines.pop();
+  const preview = previewDialog(lines, screen.height);
+  if (preview) return preview;
   const block = rowBlock(lines);
   if (!block) return { kind: 'closed' };
   const top = lines.findLastIndex((line, i) => i < block.start && RULE.test(line));
@@ -319,22 +534,7 @@ export function parseDialog(screen: Screen | null): DialogState {
     };
   }
   if (/Enter to select/i.test(footText)) {
-    const bar = head.findIndex((line) => /^\s*←\s/.test(line) || /^\s*[☐☒]\s/.test(line));
-    const tabs =
-      bar < 0
-        ? []
-        : head[bar]
-            .replace(/^\s*←/, '')
-            .replace(/→\s*$/, '')
-            .split(/\s{2,}/)
-            .map((chip) => /^([☐☒])\s+(.+)$/.exec(chip.trim()))
-            .filter((chip): chip is RegExpExecArray => !!chip)
-            .map((chip) => ({ label: chip[2].trim(), done: chip[1] === '☒' }));
-    const question = head
-      .slice(bar + 1)
-      .map(unborder)
-      .join('\n')
-      .trim();
+    const { tabs, question } = readHead(head);
     // The question's text row is the last one above the inner rule.
     const lastAnswer = rows.findLastIndex((row) => !row.aside);
     return {
@@ -423,6 +623,23 @@ function shownQuestion(
   return r.questions.findIndex((q) => plain(q.question) === plain(d.question));
 }
 
+/**
+ * Claude Code draws a question side by side with its previews when it is single-select and an
+ * option has one (2.1.322's `ayt`). A preview the record left out (`previewCut`) still counts.
+ */
+export const previewLayout = (q: RequestQuestion) =>
+  !q.multiSelect && q.options.some((o) => o.preview !== undefined || !!o.previewCut);
+
+/**
+ * A tab chip shows this header: the same, or its start cut with `…` where the bar is too narrow
+ * for every header (2.1.322's tab bar truncates each to its share of the width).
+ */
+function tabShows(label: string, header: string): boolean {
+  if (plain(label) === plain(header)) return true;
+  const cut = label.endsWith('…') ? plain(label.slice(0, -1)) : '';
+  return cut.length > 0 && plain(header).startsWith(cut);
+}
+
 function questionMatches(
   d: Extract<Dialog, { kind: 'question' }>,
   r: Extract<InputRequest, { kind: 'question' }>,
@@ -431,6 +648,8 @@ function questionMatches(
   if (index < 0) return false;
   const q = r.questions[index];
   if (d.multi !== q.multiSelect) return false;
+  // The layout follows the question: previews side by side, or the plain list.
+  if ((d.layout === 'preview') !== previewLayout(q)) return false;
   const options = d.rows.filter((row) => !row.aside && !row.input);
   if (options.length !== q.options.length) return false;
   if (
@@ -443,7 +662,7 @@ function questionMatches(
     if (d.tabs.length !== r.questions.length) return false;
     if (
       !d.tabs.every(
-        (tab, i) => !r.questions[i].header || plain(tab.label) === plain(r.questions[i].header!),
+        (tab, i) => !r.questions[i].header || tabShows(tab.label, r.questions[i].header!),
       )
     )
       return false;
@@ -575,11 +794,19 @@ function stops(d: Dialog): (number | 'submit')[] {
   const aside = d.rows.filter((row) => row.aside).map((row) => row.number);
   return [...main, ...(d.kind === 'question' && d.submit ? ['submit' as const] : []), ...aside];
 }
+/**
+ * Where the marker is. On "Chat about this" the preview layout keeps drawing the option's marker
+ * too (the option stays selected underneath): the aside row's marker wins.
+ */
 function cursorAt(d: Dialog): number | 'submit' | undefined {
   if (d.kind === 'question' && d.submit?.cursor) return 'submit';
-  return d.rows.find((row) => row.cursor)?.number;
+  return (d.rows.find((row) => row.cursor && row.aside) ?? d.rows.find((row) => row.cursor))
+    ?.number;
 }
 const row = (d: Dialog, n: number) => d.rows.find((r) => r.number === n && !r.aside);
+
+/** The dialog's "Chat about this" row (numbered in the list layout, unnumbered beside previews). */
+const CHAT_ROW = /^Chat about this$/;
 
 class Refusal extends Error {
   constructor(readonly reason: Extract<AnswerOutcome, { status: 'refused' }>['reason']) {
@@ -713,30 +940,37 @@ async function answerQuestions(
     const labels = q.options.map((o) => plain(o.label));
     if (new Set(labels).size !== labels.length) throw new Refusal('ambiguous');
   }
+  // Notes typed beside a preview go to Claude with the answer: never sent unseen from here, and
+  // never typed from here either (the card says to add them in the terminal).
+  const noNotes = (d: Extract<Dialog, { kind: 'question' }>) =>
+    d.layout !== 'preview' || d.notes === '';
   const isQuestion =
     (index: number) =>
     (d: Dialog): d is Extract<Dialog, { kind: 'question' }> =>
-      d.kind === 'question' && shownQuestion(d, r) === index;
+      d.kind === 'question' && shownQuestion(d, r) === index && noNotes(d);
   // Answered here from the start only: a dialog already partly answered in the terminal is left
   // to the terminal (its picks are not this choice).
   const d = await s.read();
-  if (
-    d.kind !== 'question' ||
-    shownQuestion(d, r) !== 0 ||
-    d.tabs.some((tab) => tab.done) ||
-    d.rows.some((row) => row.checked) ||
-    !d.rows.some((row) => row.input && TYPE_HINT.test(row.label))
-  )
+  if (d.kind === 'question' && !noNotes(d)) throw new Refusal('notes');
+  if (d.kind !== 'question' || shownQuestion(d, r) !== 0 || !untouched(d))
     throw new Refusal('partial');
   // The review must fit the pane, or answers could scroll out of sight before it is checked.
   const reviewed = qs.length > 1 || qs[0].multiSelect;
   if (reviewed && d.height !== undefined && d.height < REVIEW_ROWS + 2 * qs.length)
     throw new Refusal('ambiguous');
+  // Notes on any preview question go along with the answers: all must be empty before a pick.
+  await noNotesElsewhere(s, r, 0);
   for (let qi = 0; qi < qs.length; qi++) {
     const q = qs[qi];
     const answer = answers[qi];
     const here = isQuestion(qi);
-    let shown = await s.expect(here);
+    // Arrived at this question with every one before it marked answered on its tab (`☒`).
+    let shown = await s.expect((next): next is Extract<Dialog, { kind: 'question' }> => {
+      // Notes typed here meanwhile would go along: never submitted unseen.
+      if (next.kind === 'question' && shownQuestion(next, r) === qi && !noNotes(next))
+        throw new Refusal('notes');
+      return here(next) && (!next.tabs.length || next.tabs.slice(0, qi).every((tab) => tab.done));
+    });
     const lone = qs.length === 1 && !q.multiSelect;
     if ('other' in answer) {
       const text = oneLine(answer.other);
@@ -823,6 +1057,95 @@ async function answerQuestions(
   await s.commit((d2) => fits(d2) && cursorAt(d2) === submit[0].number);
 }
 
+/** Nothing chosen in the dialog yet: no tab answered, no row ticked, no words in its text row or notes. */
+function untouched(d: Extract<Dialog, { kind: 'question' }>): boolean {
+  if (d.tabs.some((tab) => tab.done) || d.rows.some((row) => row.checked || row.picked))
+    return false;
+  if (d.layout === 'preview') return d.notes === '';
+  return d.rows.some((row) => row.input && TYPE_HINT.test(row.label));
+}
+
+/** Nothing chosen on this question (its notes aside: read on their own). */
+function blank(d: Dialog, r: Extract<InputRequest, { kind: 'question' }>, index: number) {
+  return (
+    d.kind === 'question' &&
+    shownQuestion(d, r) === index &&
+    !d.tabs.some((tab) => tab.done) &&
+    !d.rows.some((row) => row.checked || row.picked) &&
+    (d.layout === 'preview' || d.rows.some((row) => row.input && TYPE_HINT.test(row.label)))
+  );
+}
+
+/**
+ * Notes typed on another preview question of the form (the person went there, typed, came back)
+ * go to Claude with the answers and with "Chat about this" alike, yet only the shown question's
+ * notes are on screen. So before anything is chosen, every other preview question is visited with
+ * the tab keys (← →, moving only: never a pick), its `Notes:` line read, and the form brought back
+ * to the question it started on, untouched. Any notes: back to the start, then refused (`notes`).
+ * A tab that does not show what was expected stops there (`unverified`). The marker first goes to
+ * the first option: the tab keys are off on "Chat about this" and in a text row, and switching
+ * tabs puts the marker back on the first option anyway (2.1.322 resets it per question).
+ */
+async function noNotesElsewhere(
+  s: Flow,
+  r: Extract<InputRequest, { kind: 'question' }>,
+  from: number,
+): Promise<void> {
+  const others = r.questions.flatMap((q, i) => (i !== from && previewLayout(q) ? [i] : []));
+  if (!others.length) return;
+  const low = Math.min(from, ...others);
+  const high = Math.max(from, ...others);
+  const path: number[] = [];
+  for (let i = from - 1; i >= low; i--) path.push(i);
+  for (let i = low + 1; i <= high; i++) path.push(i);
+  for (let i = high - 1; i >= from; i--) path.push(i);
+  await s.goTo(1, (d) => blank(d, r, from));
+  let at = from;
+  let noted = false;
+  const step = async (to: number) => {
+    await s.press([to < at ? 'Left' : 'Right']);
+    const d = await s.expect((next) => blank(next, r, to));
+    at = to;
+    if (d.kind === 'question' && d.layout === 'preview' && d.notes) noted = true;
+  };
+  for (const to of path) {
+    if (noted) break;
+    await step(to);
+  }
+  while (at !== from) await step(at > from ? at - 1 : at + 1);
+  if (noted) throw new Refusal('notes');
+  // Back where it started: the same question, nothing chosen, its notes still empty.
+  await s.expect(
+    (d) => blank(d, r, from) && d.kind === 'question' && (d.layout !== 'preview' || d.notes === ''),
+  );
+}
+
+/**
+ * "Chat about this": the marker onto that row one arrow at a time, then Enter alone. Claude Code
+ * then refuses the call with "The user wants to clarify these questions" and the answers so far
+ * (none here: only an untouched dialog with every question's notes empty is left this way), and Claude asks what to clarify. The
+ * row takes no words; the reply goes in the chat afterwards.
+ */
+async function answerChat(s: Flow, r: Extract<InputRequest, { kind: 'question' }>) {
+  const d = await s.read();
+  if (d.kind !== 'question') throw new Refusal('bad-choice');
+  const chat = d.rows.filter((row) => row.aside && CHAT_ROW.test(row.label));
+  if (chat.length !== 1) throw new Refusal('bad-choice');
+  if (d.layout === 'preview' && d.notes) throw new Refusal('notes');
+  if (!untouched(d)) throw new Refusal('partial');
+  const index = shownQuestion(d, r);
+  // The refusal Claude gets carries every question's notes: the other tabs' must be empty too.
+  await noNotesElsewhere(s, r, index);
+  const target = chat[0].number;
+  const same = (next: Dialog) =>
+    next.kind === 'question' &&
+    shownQuestion(next, r) === index &&
+    untouched(next) &&
+    next.rows.some((row) => row.number === target && row.aside && CHAT_ROW.test(row.label));
+  await s.goTo(target, same);
+  await s.commit((next) => same(next) && cursorAt(next) === target);
+}
+
 async function answerChoice(
   s: Flow,
   choice: Extract<PromptChoice, { kind: 'plan' | 'permission' }>,
@@ -840,6 +1163,26 @@ async function answerChoice(
   await s.commit((next) => same(next) && cursorAt(next) === choice.number);
 }
 
+/**
+ * Per question, why typed words cannot go in from here: multi-select (never typed from the app),
+ * the preview layout (notes instead of a text row: typed in the terminal), or no text row on the
+ * list the screen shows. Questions not on screen are read from the request.
+ */
+function noText(d: Dialog, request: InputRequest): (NoText | null)[] {
+  if (request.kind !== 'question') return [];
+  return request.questions.map((q) => {
+    if (q.multiSelect) return 'multi';
+    if (previewLayout(q)) return 'preview';
+    if (
+      d.kind === 'question' &&
+      d.layout !== 'preview' &&
+      !d.rows.some((r2) => r2.input && !r2.aside && TYPE_HINT.test(r2.label))
+    )
+      return 'none';
+    return null;
+  });
+}
+
 /** Claude Code's dialogs without a live session: parsing, identifying and keys. */
 export const claudeCodeDialogs = {
   agent: 'Claude',
@@ -848,14 +1191,10 @@ export const claudeCodeDialogs = {
   choices,
   hasMore,
   takesText: (d: Dialog, request: InputRequest): boolean[] =>
-    request.kind !== 'question'
-      ? []
-      : request.questions.map(
-          (q) =>
-            !q.multiSelect &&
-            d.kind === 'question' &&
-            d.rows.some((r2) => r2.input && !r2.aside && TYPE_HINT.test(r2.label)),
-        ),
+    noText(d, request).map((why) => why === null),
+  noText,
+  chats: (d: Dialog) =>
+    d.kind === 'question' && d.rows.some((row) => row.aside && CHAT_ROW.test(row.label)),
   async answer(
     host: PromptHost,
     asked: Asked,
@@ -864,6 +1203,11 @@ export const claudeCodeDialogs = {
   ): Promise<AnswerOutcome> {
     const s = new Flow(host, asked, proceed);
     try {
+      if (choice.kind === 'chat') {
+        if (asked.request.kind !== 'question') throw new Refusal('bad-choice');
+        await answerChat(s, asked.request);
+        return { status: 'submitted' };
+      }
       if (choice.kind !== asked.request.kind) throw new Refusal('bad-choice');
       if (choice.kind === 'question' && asked.request.kind === 'question')
         await answerQuestions(s, asked.request, choice.answers);

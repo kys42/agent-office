@@ -960,6 +960,37 @@ button.request-option:hover:not(:disabled) {
   overflow-wrap: anywhere;
   user-select: text;
 }
+.request-preview {
+  margin: 2px 0 0 8px;
+}
+.request-preview .now-more {
+  margin: 0;
+}
+.request-preview-body {
+  margin: 4px 0 0;
+  max-height: calc(260px * var(--read-scale));
+  overflow: auto;
+  padding: 5px 7px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2);
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--read-scale));
+  line-height: 1.35;
+  white-space: pre;
+  user-select: text;
+}
+.request-chat {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.request-chat .button {
+  height: auto;
+  min-height: 26px;
+  gap: 5px;
+  font-size: 12px;
+}
 .request-plan-body {
   max-height: calc(72px * var(--read-scale));
   overflow: hidden;

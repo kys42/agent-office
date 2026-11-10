@@ -159,6 +159,7 @@ function localizeRequest(r: InputRequest, locale: Locale): InputRequest {
         ...o,
         label: l(o.label),
         ...(o.description ? { description: l(o.description) } : {}),
+        ...(o.preview ? { preview: l(o.preview) } : {}),
       })),
     })),
   };

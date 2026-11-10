@@ -87,7 +87,7 @@ export const desktop = {
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
     /** A permission prompt, plan approval, menu or `!` shell mode on screen would take the text. */
     notReady:
-      "It isn't taking input right now (a permission prompt, plan approval, menu or shell mode may be open). Check the terminal.",
+      "It isn't taking input right now (a question, permission prompt, plan approval, menu or shell mode may be open). For questions, answer on the card above or use 'Answer by chatting instead'; otherwise check the terminal.",
     draft: 'There is already text in the prompt. Check the terminal before sending.',
     /** Copying the composer's text to the clipboard failed, so it was left alone. */
     backupFailed:

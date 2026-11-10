@@ -192,6 +192,49 @@ test('Requests are redacted and capped at rest', () => {
   );
 });
 
+test('Option previews are kept as drawn for the card, capped apart: never a truncated request', () => {
+  const secret = `sk-proj-${'a1B2'.repeat(8)}`;
+  const mock = '┌ 목록 ┐\n│ 항목 │\n└──────┘';
+  const r = inputRequest('AskUserQuestion', {
+    questions: [
+      {
+        question: 'Where?',
+        options: [
+          { label: 'Catalog', preview: mock + '\r\n  ' },
+          { label: 'Standalone', preview: `key ${secret}\n${'x'.repeat(6000)}` },
+          { label: 'Empty', preview: '   ' },
+        ],
+      },
+    ],
+  });
+  assert.ok(r && r.kind === 'question');
+  const [catalog, alone, empty] = r.questions[0].options;
+  // Line breaks and indents stay (it is a drawing); only trailing space goes.
+  assert.equal(catalog.preview, mock);
+  assert.equal(catalog.previewCut, undefined);
+  assert.ok(alone.preview && !alone.preview.includes(secret));
+  assert.equal(alone.preview!.length, REQUEST_LIMITS.preview);
+  assert.equal(alone.previewCut, true);
+  assert.equal(empty.preview, undefined);
+  // The question itself is whole: still answerable from the app.
+  assert.equal(r.truncated, undefined);
+  // All previews of one request share one budget.
+  const many = inputRequest('AskUserQuestion', {
+    questions: Array.from({ length: 4 }, (_, i) => ({
+      question: `Q${i}`,
+      options: Array.from({ length: 4 }, (_, j) => ({ label: `o${j}`, preview: 'y'.repeat(3000) })),
+    })),
+  });
+  assert.ok(many && many.kind === 'question');
+  const kept = many.questions
+    .flatMap((q) => q.options)
+    .reduce((n, o) => n + (o.preview?.length ?? 0), 0);
+  assert.equal(kept, REQUEST_LIMITS.previews);
+  assert.equal(many.questions[3].options[3].preview, undefined);
+  assert.equal(many.questions[3].options[3].previewCut, true);
+  assert.equal(many.truncated, undefined);
+});
+
 const SECRETISH = [
   'export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG',
   'GITHUB_TOKEN=abc123 npm publish',

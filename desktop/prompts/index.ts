@@ -3,7 +3,13 @@ import { claudeCodeDialogs } from './claude-code.js';
 import { findClaudeTarget } from './claude-target.js';
 import type { PromptAdapter } from './types.js';
 
-export { claudeCodeDialogs, parseDialog, subjectOf, callShows } from './claude-code.js';
+export {
+  claudeCodeDialogs,
+  parseDialog,
+  subjectOf,
+  callShows,
+  withoutSidePane,
+} from './claude-code.js';
 export { claudeTarget, openCallsIn, resultIn, type ClaudeTargetDeps } from './claude-target.js';
 export * from './types.js';
 

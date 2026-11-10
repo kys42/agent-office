@@ -4,6 +4,7 @@ import {
   ClipboardList,
   Loader,
   MessageCircleQuestion,
+  MessagesSquare,
   ShieldQuestion,
   Square,
 } from 'lucide-react';
@@ -11,8 +12,10 @@ import type {
   AnswerChoice,
   DialogChoice,
   InputRequest,
+  PromptNoText,
   PromptSubject,
   QuestionAnswer,
+  RequestOption,
   Session,
   TerminalTarget,
 } from '../shared/types';
@@ -136,6 +139,8 @@ function RequestBody({
           eventId={eventId}
           ready={!!ready}
           other={ready?.other ?? []}
+          noText={ready?.noText ?? []}
+          chat={!!ready?.chat}
           sending={sending}
           onAnswer={send}
         />
@@ -186,6 +191,8 @@ function Questions({
   eventId,
   ready,
   other,
+  noText,
+  chat,
   sending,
   onAnswer,
 }: {
@@ -194,6 +201,10 @@ function Questions({
   ready: boolean;
   /** Per question: typed words can be sent (never for multi-select). */
   other: boolean[];
+  /** Per question: why typed words cannot be sent from here (said under the question). */
+  noText: (PromptNoText | null)[];
+  /** The dialog offers "Chat about this": leave the questions and talk instead. */
+  chat: boolean;
   sending: boolean;
   onAnswer: (choice: Picked) => Promise<void>;
 }) {
@@ -276,10 +287,15 @@ function Questions({
                     ) : (
                       <div className="request-option static">{body}</div>
                     )}
+                    <Preview option={o} />
                   </li>
                 );
               })}
             </ul>
+          )}
+          {/* Said only where it could otherwise be answered here: what stays in the terminal. */}
+          {ready && !other[qi] && noText[qi] && (
+            <small className="request-status request-no-text">{c.noText[noText[qi]!]}</small>
           )}
           {ready && other[qi] && !q.multiSelect && (
             <div className="request-other">
@@ -331,7 +347,50 @@ function Questions({
           </button>
         </div>
       )}
+      {ready && chat && (
+        <div className="request-chat">
+          <button
+            type="button"
+            className="button subtle"
+            disabled={sending}
+            onClick={() => void onAnswer({ kind: 'question', eventId, chat: true })}
+          >
+            <MessagesSquare size={13} aria-hidden />
+            {c.chat}
+          </button>
+          <small className="request-status">{c.chatHint}</small>
+        </div>
+      )}
     </>
+  );
+}
+
+/**
+ * An option's preview (a mockup or snippet the agent attached), folded under the option: shown
+ * as written, in a fixed-width font, since it is often a drawing.
+ */
+function Preview({ option }: { option: RequestOption }) {
+  const { t } = useI18n();
+  const c = t.prompts.card;
+  const [open, setOpen] = useState(false);
+  if (!option.preview) return null;
+  return (
+    <div className="request-preview">
+      <button
+        type="button"
+        className="now-more"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        {open ? c.hidePreview : c.showPreview}
+      </button>
+      {open && (
+        <>
+          <pre className="request-preview-body">{option.preview}</pre>
+          {option.previewCut && <small className="request-status">{c.previewCut}</small>}
+        </>
+      )}
+    </div>
   );
 }
 
