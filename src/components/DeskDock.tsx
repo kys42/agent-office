@@ -240,6 +240,7 @@ export function DeskDock() {
           onArrange={arrange}
           onReorder={(ids) => void reorderSeats(ids)}
           onReturn={returnToOffice}
+          room={(on) => room('tally', on)}
           variant={mode === 'floor' ? 'floor' : 'office'}
           tiny={tiny}
           view={view}

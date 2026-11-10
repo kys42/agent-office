@@ -131,8 +131,9 @@ export const settings: Messages['settings'] = {
       tally: '숫자 알약',
       tallyHint:
         '기다리는 동료, 확인할 결과, 일하는 중, 대기 중을 숫자로 세요. 끄면 한 줄 요약만 보여요.',
-      groups: '셀 항목',
-      groupsHint: '알약에 셀 묶음이에요. 화살표도 이 동료들만 넘겨요.',
+      groups: '셀 항목 (모든 알약)',
+      groupsHint:
+        '숫자 알약이 셀 묶음이에요. 펫·줄·바닥·쪼꼬미 알약이 함께 쓰고, 펫 화살표도 이 동료들만 넘겨요.',
       name: '이름표',
       nameHint: '펫 아래 이름이 보이는 때예요.',
       names: { speaking: '말할 때', always: '항상', never: '안 보임' },
@@ -144,6 +145,11 @@ export const settings: Messages['settings'] = {
     desk: {
       branch: '브랜치 이름표',
       branchHint: '책상 아래에 git 브랜치를 붙여요.',
+      tally: '숫자 알약',
+      tallyHint:
+        '펫처럼 묶음별로 색 점과 숫자를 보여요. 숫자에 마우스를 올리면 누구인지 나와요. 끄면 "N명 · 기다려요 N" 요약이에요. 셀 항목은 데스크 펫의 자세히에서 골라요.',
+      tinyTallyHint:
+        '펫처럼 묶음별로 색 점과 숫자를 작게 보여요. 숫자에 마우스를 올리면 누구인지 나와요. 끄면 인원 숫자만 보여요.',
       hideRead: '읽은 답변 말풍선 접기',
       hideReadHint: '읽은 최종 응답은 말풍선을 내려요. 마우스를 올리면 다시 보여요.',
       papers: '서류 더미',
