@@ -253,7 +253,8 @@ test('The dock draws its own tooltips: above the button, inside the window', asy
   await page.mouse.move(200, 200);
   await expect(tip).toHaveCount(0);
   // Keyboard focus shows it at once; an open menu has none.
-  await page.getByRole('button', { name: '도구 막대 옮기기' }).focus();
+  // (From the last of the pill's numbers: the grip, the numbers, then 보기.)
+  await pill(page).locator('.tally-pill > button').last().focus();
   await page.keyboard.press('Tab');
   await expect(button).toBeFocused();
   await expect(tip).toHaveText(/보기 바꾸기/);

@@ -135,8 +135,9 @@ export const settings = {
     pet: {
       tally: 'Numbers pill',
       tallyHint: 'Counts who waits, has results, works or stands by. Off, one short summary.',
-      groups: 'What it counts',
-      groupsHint: 'The groups on the pill. The arrows step through these teammates only.',
+      groups: 'What it counts (every pill)',
+      groupsHint:
+        'The groups the numbers pills count, shared by the pet, row, floor and tiny pills. The pet arrows step through these teammates only.',
       name: 'Name tag',
       nameHint: 'When the name shows under the pet.',
       names: { speaking: 'When speaking', always: 'Always', never: 'Never' },
@@ -148,6 +149,11 @@ export const settings = {
     desk: {
       branch: 'Branch tags',
       branchHint: 'The git branch under each desk.',
+      tally: 'Numbers pill',
+      tallyHint:
+        'A coloured dot and a number per group, like the pet; hover a number to see who. Off, the "N teammates · N waiting" summary. Pick the groups under the desk pet\'s More.',
+      tinyTallyHint:
+        "The pet's coloured numbers, small; hover a number to see who. Off, just the headcount.",
       hideRead: 'Fold read replies',
       hideReadHint: 'A final reply you read leaves its bubble; hovering brings it back.',
       papers: 'Paper piles',

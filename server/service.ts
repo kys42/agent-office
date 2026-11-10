@@ -142,10 +142,17 @@ const viewsSchema = z
       .strict()
       .optional(),
     dock: z
-      .object({ ...deskViewShape, hideRead: z.boolean().optional() })
+      .object({
+        ...deskViewShape,
+        hideRead: z.boolean().optional(),
+        tally: z.boolean().optional(),
+      })
       .strict()
       .optional(),
-    tiny: z.object({ effects: z.boolean().optional() }).strict().optional(),
+    tiny: z
+      .object({ effects: z.boolean().optional(), tally: z.boolean().optional() })
+      .strict()
+      .optional(),
     office: z.object(deskViewShape).strict().optional(),
   })
   .strict();

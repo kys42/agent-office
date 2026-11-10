@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { DockViewMenu, type DockViewControls } from './DockViewMenu';
+import { TallyPill } from './TallyPill';
 import { useRowPlacement } from '../lib/useRowPlacement';
 import { useDockPill } from '../lib/useDockPill';
 import { useDeskReorder } from '../lib/useDeskReorder';
@@ -65,7 +66,7 @@ import {
   TINY_SCALE,
   TINY_TOP,
 } from '../shared/dock-geometry';
-import { residentLabel, zoneVeilIds, type OfficeModel } from '../shared/office-model';
+import { residentLabel, tallyCounts, zoneVeilIds, type OfficeModel } from '../shared/office-model';
 import { deskSpeech, hopping, shownSpeech, speechDot } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
@@ -118,6 +119,7 @@ export function DeskRow({
   onArrange,
   onReorder,
   onReturn,
+  room,
   preview = false,
 }: {
   /** The existing "bring back to the office": lets a project's "+" offer away colleagues. */
@@ -142,6 +144,11 @@ export function DeskRow({
   onArrange?: (active: boolean, point?: { x: number; y: number }) => void;
   /** Dragging a desk within its zone: the zone's station ids in the new order. */
   onReorder?: (ids: string[]) => void;
+  /**
+   * Room above the strip (the desktop dock): the window grows upward while the pill's list of
+   * who a number counts is open — a tiny strip is far shorter than the list.
+   */
+  room?: (on: boolean) => Promise<void>;
   /**
    * Drawn small in the settings (#324): the same desks, without anything that reaches outside
    * them — no window keys, terminal lookups, saved spots or cards.
@@ -355,6 +362,20 @@ export function DeskRow({
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * scale })),
   );
+  // The pill counts like the pet (#324): the same groups, colours and list, unless switched off
+  // for this look; the old "N명 · 기다려요 N" summary otherwise (and until the office is known).
+  const tallyGroups = display.views.pet.tallyGroups;
+  const tallied =
+    !status &&
+    (tiny ? display.views.tiny.tally : display.views.dock.tally) &&
+    tallyCounts(model, tallyGroups).length > 0;
+  // A name in that list opens the card as its desk does: at the desk, when it is in view.
+  const openFromList = (id: string, from: Element) => {
+    const desk = document.querySelector(`.desk-row [data-session-id="${CSS.escape(id)}"]`);
+    const r = desk?.getBoundingClientRect();
+    const seen = !!r && r.width > 0 && r.right > 0 && r.left < window.innerWidth;
+    void open(id, seen ? desk : from);
+  };
   const hiddenLeft = stations.filter((st) => st.x + desk / 2 < view.left);
   const hiddenRight = stations.filter((st) => st.x + desk / 2 > view.left + view.width);
   // The tiny pill draws the same buttons with smaller icons.
@@ -979,23 +1000,36 @@ export function DeskRow({
             <Undo2 size={14} />
           </button>
         )}
-        <span
-          className="desk-row-summary"
-          title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
-        >
-          <span className="live-dot" />
-          {tiny ? model.seats.length : t.desk.row.seats(model.seats.length)}
-          {model.counts.attention > 0 &&
-            (tiny ? (
-              // A bare number on screen; assistive tech hears who it counts.
-              <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
-                <span aria-hidden="true">{model.counts.attention}</span>
-                <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
-              </em>
-            ) : (
-              <em>{t.desk.row.waiting(model.counts.attention)}</em>
-            ))}
-        </span>
+        {tallied ? (
+          <TallyPill
+            variant="dock"
+            compact={tiny}
+            model={model}
+            groups={tallyGroups}
+            privacy={privacy}
+            room={preview ? undefined : room}
+            edge={pillRef}
+            onOpen={openFromList}
+          />
+        ) : (
+          <span
+            className="desk-row-summary"
+            title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
+          >
+            <span className="live-dot" />
+            {tiny ? model.seats.length : t.desk.row.seats(model.seats.length)}
+            {model.counts.attention > 0 &&
+              (tiny ? (
+                // A bare number on screen; assistive tech hears who it counts.
+                <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
+                  <span aria-hidden="true">{model.counts.attention}</span>
+                  <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
+                </em>
+              ) : (
+                <em>{t.desk.row.waiting(model.counts.attention)}</em>
+              ))}
+          </span>
+        )}
         {!tiny && veiledCount > 0 && (
           <button
             className="desk-row-veiled"

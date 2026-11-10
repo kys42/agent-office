@@ -216,7 +216,12 @@ body.dock-mode {
   background: var(--st-work);
   box-shadow: 0 0 0 3px rgba(95, 214, 155, 0.16);
 }
-/* The pill in numbers: a dot and a count per group, nothing for an empty one. */
+/* The pill in numbers: a dot and a count per group, nothing for an empty one. The same
+   numbers (.tally-pill) and list (.tally-list) sit in the row's, floor's and tiny's pill. */
+.tally-anchor {
+  display: flex;
+  align-items: center;
+}
 .dock-pet-tally {
   gap: 8px;
   padding: 0 9px;
@@ -227,16 +232,22 @@ body.dock-mode {
 .dock-pet-pill.dock-pet-tally i {
   box-shadow: none;
 }
-.dock-pet-tally .tally-attention i {
+.tally-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-idle);
+}
+.tally-pill .tally-attention i {
   background: var(--st-call);
 }
-.dock-pet-tally .tally-results i {
+.tally-pill .tally-results i {
   background: var(--accent);
 }
-.dock-pet-tally .tally-working i {
+.tally-pill .tally-working i {
   background: var(--st-work);
 }
-.dock-pet-tally .tally-standby i {
+.tally-pill .tally-standby i {
   background: #7fc4d9;
 }
 /* Hovering a number lists who it counts, right above the pill; a name opens that card. */
@@ -255,10 +266,10 @@ body.dock-mode {
   color: inherit;
   cursor: pointer;
 }
-.dock-pet-pillbar > .dock-pet-pill {
+.dock-pet-pillbar .dock-pet-pill {
   margin-top: 0;
 }
-.dock-pet-tally > button {
+.tally-pill > button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -267,7 +278,7 @@ body.dock-mode {
   border-radius: 99px;
   background: none;
 }
-.dock-pet-tally > button:is(:hover, :focus-visible, .is-listed) {
+.tally-pill > button:is(:hover, :focus-visible, .is-listed) {
   background: var(--bg-5);
 }
 .dock-pet-list {
@@ -276,10 +287,12 @@ body.dock-mode {
   /* Touching the pill, so the pointer never crosses see-through space on its way up. */
   bottom: calc(100% - 2px);
   z-index: 6;
-  width: 196px;
   max-height: 188px;
-  overflow-y: auto;
   transform: translateX(-50%);
+}
+.tally-list {
+  width: 196px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -297,7 +310,21 @@ body.dock-mode {
     transform: translate(-50%, 4px);
   }
 }
-.dock-pet-list > b {
+/* The dock pill's list floats in the page above the pill (TallyPill places it, after the
+   window grew upward): no centring transform, its own rise. */
+.tally-list.is-floating {
+  position: fixed;
+  z-index: 40;
+  max-height: 188px;
+  animation-name: tally-list-in;
+}
+@keyframes tally-list-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.tally-list > b {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -306,25 +333,25 @@ body.dock-mode {
   font-weight: 650;
   color: var(--text-2);
 }
-.dock-pet-list > b i {
+.tally-list > b i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--st-idle);
 }
-.dock-pet-list.tally-attention > b i {
+.tally-list.tally-attention > b i {
   background: var(--st-call);
 }
-.dock-pet-list.tally-results > b i {
+.tally-list.tally-results > b i {
   background: var(--accent);
 }
-.dock-pet-list.tally-working > b i {
+.tally-list.tally-working > b i {
   background: var(--st-work);
 }
-.dock-pet-list.tally-standby > b i {
+.tally-list.tally-standby > b i {
   background: #7fc4d9;
 }
-.dock-pet-list button {
+.tally-list button {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
@@ -335,15 +362,15 @@ body.dock-mode {
   text-align: left;
   color: var(--text);
 }
-.dock-pet-list button:is(:hover, :focus-visible) {
+.tally-list button:is(:hover, :focus-visible) {
   background: var(--bg-4);
 }
-.dock-pet-list .pet-list-name {
+.tally-list .tally-list-name {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.dock-pet-list button small {
+.tally-list button small {
   font-size: 10px;
   color: var(--text-3);
 }
@@ -421,11 +448,11 @@ body.dock-mode {
   }
 }
 .reduce-motion
-  :is(.dock-pet-body.enter-next, .dock-pet-body.enter-prev, .pet-swap-puff i, .dock-pet-list) {
+  :is(.dock-pet-body.enter-next, .dock-pet-body.enter-prev, .pet-swap-puff i, .tally-list) {
   animation: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  :is(.dock-pet-body.enter-next, .dock-pet-body.enter-prev, .pet-swap-puff i, .dock-pet-list) {
+  :is(.dock-pet-body.enter-next, .dock-pet-body.enter-prev, .pet-swap-puff i, .tally-list) {
     animation: none;
   }
 }
@@ -812,6 +839,32 @@ body.dock-mode {
   font-style: normal;
   color: var(--st-call);
 }
+/* The pet's numbers, inside the dock's own pill (no second pill around them). */
+.tally-anchor.is-dock {
+  margin: 0 6px;
+}
+.tally-anchor.is-dock .tally-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.tally-anchor.is-dock .tally-pill > button {
+  padding: 2px 4px;
+  margin: 0 -4px;
+  gap: 5px;
+}
+.tally-anchor.is-dock .tally-pill > button:is(:hover, :focus-visible, .is-listed) {
+  color: var(--text);
+}
+.tally-anchor.is-dock .tally-pill i {
+  width: 7px;
+  height: 7px;
+}
 
 /* ───────── Floor desks (variant of the row) ─────────
    No rugs or name cards: the desk legs stand on the window's bottom edge (the work area's
@@ -1018,6 +1071,23 @@ body.dock-mode {
 }
 .desk-row.is-tiny .desk-row-summary em::before {
   content: '· ';
+}
+/* Tiny: the same numbers, smaller. */
+.tally-anchor.is-dock.is-compact {
+  margin: 0 3px 0 2px;
+}
+.tally-anchor.is-dock.is-compact .tally-pill {
+  gap: 6px;
+  font-size: 10px;
+}
+.tally-anchor.is-dock.is-compact .tally-pill > button {
+  gap: 3px;
+  padding: 1px 3px;
+  margin: 0 -3px;
+}
+.tally-anchor.is-dock.is-compact .tally-pill i {
+  width: 5px;
+  height: 5px;
 }
 .desk-row.is-tiny .desk-row-arrow {
   bottom: 10px;

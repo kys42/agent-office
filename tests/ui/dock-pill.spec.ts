@@ -124,8 +124,11 @@ test("The tool pill floats over the desks' feet, which still stand on the bottom
     await expect(pill(page).getByRole('button', { name, exact: true })).toBeVisible();
   for (const name of ['새로고침', '바닥 책상으로 보기', '작게 보기', '사무실 펼치기', '설정'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toHaveCount(0);
-  await expect(pill(page).locator('.desk-row-summary')).toContainText('3명');
-  await expect(pill(page).locator('.desk-row-summary em')).toContainText('기다려요 1');
+  // The pet's numbers: one calls (the two others rest, uncounted), naming its group.
+  await expect(pill(page).locator('.tally-pill > button')).toHaveText(['1']);
+  await expect(
+    pill(page).getByRole('button', { name: '나를 기다려요 1명 · 누구인지 보기' }),
+  ).toHaveClass(/tally-attention/);
   // Only the pill takes the mouse: the empty strip beside it lets clicks through.
   const through = await page.evaluate(
     ([x, y]) => !document.elementFromPoint(x, y)?.closest('[data-solid]'),
@@ -297,8 +300,8 @@ test('The grip moves the pill from the keyboard; double-click brings it back hom
   await page.keyboard.press('Shift+ArrowLeft');
   await expect.poll(() => fromRight(page)).toBeGreaterThan(100);
 
-  // Double-click the pill's body (its summary): home again, and nothing remembered.
-  await pill(page).locator('.desk-row-summary').dblclick();
+  // Double-click the pill's grip: home again, and nothing remembered.
+  await grip(page).dblclick();
   await expect.poll(() => fromRight(page)).toBe(PILL_MARGIN);
   expect(await saved(page)).toBeNull();
 });
@@ -316,11 +319,13 @@ test('Tiny keeps a compact pill at the same spot', async ({ page }) => {
   expect(b.y + b.height).toBeLessThanOrEqual(HEIGHT);
   expect(HEIGHT - (b.y + b.height)).toBeLessThanOrEqual(8);
   expect(Math.abs(b.x + b.width / 2 - spot * WIDTH)).toBeLessThanOrEqual(2);
-  // The summary and the same two doors (plus its grip), drawn smaller.
+  // The numbers and the same two doors (plus its grip), drawn smaller.
   for (const name of ['보기 바꾸기', '데스크 펫 숨기기'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toBeVisible();
-  await expect(pill(page).locator('.desk-row-summary')).toContainText('3');
-  await expect(pill(page).locator('.desk-row-summary em')).toContainText('기다리는 동료 1명');
+  await expect(pill(page).locator('.tally-anchor.is-compact .tally-pill > button')).toHaveText([
+    '1',
+  ]);
+  await expect(pill(page).getByRole('button', { name: /^나를 기다려요 1명/ })).toBeVisible();
   expect(await sceneGap(page)).toBe(0);
   await page.locator('.desk-row').screenshot({ path: '.local/dock-pill-tiny.png' });
   // The tiny pill drags the same way.
@@ -428,6 +433,6 @@ test('Tiny starts with the pill at the right end, off the desks and their dots',
   await grip(page).click();
   await page.keyboard.press('Home');
   await expect.poll(async () => (await box(page)).x).toBe(PILL_MARGIN);
-  await pill(page).locator('.desk-row-summary').dblclick();
+  await grip(page).dblclick();
   await expect.poll(() => fromRight(page)).toBe(PILL_MARGIN);
 });

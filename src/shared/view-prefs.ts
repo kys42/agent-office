@@ -45,8 +45,9 @@ export interface ResolvedViews {
     turnEffect: boolean;
     petting: boolean;
   };
-  dock: DeskView & { hideRead: boolean };
-  tiny: { effects: boolean };
+  /** `tally`: the pill's numbers (the pet's, counting `pet.tallyGroups`); off, the old summary. */
+  dock: DeskView & { hideRead: boolean; tally: boolean };
+  tiny: { effects: boolean; tally: boolean };
   office: DeskView;
 }
 
@@ -90,8 +91,8 @@ export function resolveViews(v?: ViewSettings | null): ResolvedViews {
       turnEffect: on(v?.pet?.turnEffect),
       petting: on(v?.pet?.petting),
     },
-    dock: { ...deskView(v?.dock), hideRead: on(v?.dock?.hideRead) },
-    tiny: { effects: on(v?.tiny?.effects) },
+    dock: { ...deskView(v?.dock), hideRead: on(v?.dock?.hideRead), tally: on(v?.dock?.tally) },
+    tiny: { effects: on(v?.tiny?.effects), tally: on(v?.tiny?.tally) },
     office: deskView(v?.office),
   };
 }

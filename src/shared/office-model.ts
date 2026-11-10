@@ -1,4 +1,11 @@
-import type { OfficeNotice, OfficeZone, ProviderQuota, Session, Snapshot } from './types';
+import type {
+  OfficeNotice,
+  OfficeZone,
+  PetTallyGroup,
+  ProviderQuota,
+  Session,
+  Snapshot,
+} from './types';
 import { officeResidents } from './residents';
 import { officeZone, sessionName } from './office';
 import { presentSession } from './presentation';
@@ -308,6 +315,28 @@ export function petChoices(
     .filter((v): v is ResidentView => !!v && !v.veiled && !v.session.attachedTo);
   const counted = drawn.filter((v) => v.group !== 'resting' && groups.includes(v.group));
   return counted.length ? counted : drawn;
+}
+
+/** One number of a tally pill: a counted group and how many it holds. */
+export type TallyCount = { group: PetTallyGroup; count: number };
+
+/**
+ * The numbers pill (the pet's, and the row's, floor's and tiny's): a dot and a number per
+ * chosen group, in triage order, an empty group left out. Nobody in any chosen group: they all
+ * show at 0, rather than a pill naming a group the person left out.
+ */
+export function tallyCounts(model: OfficeModel, groups: readonly PetTallyGroup[]): TallyCount[] {
+  const picked = PET_TALLY_GROUPS.filter((group) => groups.includes(group));
+  const busy = picked.filter((group) => model.counts[group] > 0);
+  return (busy.length ? busy : picked).map((group) => ({ group, count: model.counts[group] }));
+}
+
+/** Who a number counts: every desk shown in that group, helpers too (as `model.counts`). */
+export function tallyMembers(model: OfficeModel, group: PetTallyGroup): ResidentView[] {
+  return model.seats
+    .filter((v) => !v.veiled)
+    .flatMap((v) => [v, ...v.helpers.filter((h) => !h.veiled)])
+    .filter((v) => v.group === group);
 }
 
 /** The groups the pet counts: the chosen ones on its numbers pill, every busy one without it. */
