@@ -571,7 +571,7 @@ export interface Preferences {
    */
   views?: ViewSettings;
 }
-/** The groups the desk pet's pill can count, in triage order. */
+/** The groups a numbers pill (the pet's, the row's, tiny's) can count, in triage order. */
 export type PetTallyGroup = 'attention' | 'results' | 'working' | 'standby';
 /** When the desk pet shows its colleague's name: while it speaks (or is picked/hovered), always, never. */
 export type PetNameMode = 'speaking' | 'always' | 'never';
@@ -601,10 +601,14 @@ export interface ViewSettings {
   dock?: DeskViewSettings & {
     /** A read final reply leaves its desk (a peek brings it back). */
     hideRead?: boolean;
+    /** The pill counts by group like the pet (the pet's `tallyGroups`). Off: "N명 · 기다려요 N". */
+    tally?: boolean;
   };
   tiny?: {
     /** Focus effects and paper piles on tiny desks. */
     effects?: boolean;
+    /** The tiny pill counts by group like the pet. Off: the bare number from before. */
+    tally?: boolean;
   };
   /** The big office. */
   office?: DeskViewSettings;
