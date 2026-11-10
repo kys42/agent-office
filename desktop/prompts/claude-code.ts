@@ -958,15 +958,19 @@ async function answerQuestions(
   const reviewed = qs.length > 1 || qs[0].multiSelect;
   if (reviewed && d.height !== undefined && d.height < REVIEW_ROWS + 2 * qs.length)
     throw new Refusal('ambiguous');
+  // Notes on any preview question go along with the answers: all must be empty before a pick.
+  await noNotesElsewhere(s, r, 0);
   for (let qi = 0; qi < qs.length; qi++) {
     const q = qs[qi];
     const answer = answers[qi];
     const here = isQuestion(qi);
     // Arrived at this question with every one before it marked answered on its tab (`☒`).
-    let shown = await s.expect(
-      (next): next is Extract<Dialog, { kind: 'question' }> =>
-        here(next) && (!next.tabs.length || next.tabs.slice(0, qi).every((tab) => tab.done)),
-    );
+    let shown = await s.expect((next): next is Extract<Dialog, { kind: 'question' }> => {
+      // Notes typed here meanwhile would go along: never submitted unseen.
+      if (next.kind === 'question' && shownQuestion(next, r) === qi && !noNotes(next))
+        throw new Refusal('notes');
+      return here(next) && (!next.tabs.length || next.tabs.slice(0, qi).every((tab) => tab.done));
+    });
     const lone = qs.length === 1 && !q.multiSelect;
     if ('other' in answer) {
       const text = oneLine(answer.other);
@@ -1061,10 +1065,65 @@ function untouched(d: Extract<Dialog, { kind: 'question' }>): boolean {
   return d.rows.some((row) => row.input && TYPE_HINT.test(row.label));
 }
 
+/** Nothing chosen on this question (its notes aside: read on their own). */
+function blank(d: Dialog, r: Extract<InputRequest, { kind: 'question' }>, index: number) {
+  return (
+    d.kind === 'question' &&
+    shownQuestion(d, r) === index &&
+    !d.tabs.some((tab) => tab.done) &&
+    !d.rows.some((row) => row.checked || row.picked) &&
+    (d.layout === 'preview' || d.rows.some((row) => row.input && TYPE_HINT.test(row.label)))
+  );
+}
+
+/**
+ * Notes typed on another preview question of the form (the person went there, typed, came back)
+ * go to Claude with the answers and with "Chat about this" alike, yet only the shown question's
+ * notes are on screen. So before anything is chosen, every other preview question is visited with
+ * the tab keys (← →, moving only: never a pick), its `Notes:` line read, and the form brought back
+ * to the question it started on, untouched. Any notes: back to the start, then refused (`notes`).
+ * A tab that does not show what was expected stops there (`unverified`). The marker first goes to
+ * the first option: the tab keys are off on "Chat about this" and in a text row, and switching
+ * tabs puts the marker back on the first option anyway (2.1.322 resets it per question).
+ */
+async function noNotesElsewhere(
+  s: Flow,
+  r: Extract<InputRequest, { kind: 'question' }>,
+  from: number,
+): Promise<void> {
+  const others = r.questions.flatMap((q, i) => (i !== from && previewLayout(q) ? [i] : []));
+  if (!others.length) return;
+  const low = Math.min(from, ...others);
+  const high = Math.max(from, ...others);
+  const path: number[] = [];
+  for (let i = from - 1; i >= low; i--) path.push(i);
+  for (let i = low + 1; i <= high; i++) path.push(i);
+  for (let i = high - 1; i >= from; i--) path.push(i);
+  await s.goTo(1, (d) => blank(d, r, from));
+  let at = from;
+  let noted = false;
+  const step = async (to: number) => {
+    await s.press([to < at ? 'Left' : 'Right']);
+    const d = await s.expect((next) => blank(next, r, to));
+    at = to;
+    if (d.kind === 'question' && d.layout === 'preview' && d.notes) noted = true;
+  };
+  for (const to of path) {
+    if (noted) break;
+    await step(to);
+  }
+  while (at !== from) await step(at > from ? at - 1 : at + 1);
+  if (noted) throw new Refusal('notes');
+  // Back where it started: the same question, nothing chosen, its notes still empty.
+  await s.expect(
+    (d) => blank(d, r, from) && d.kind === 'question' && (d.layout !== 'preview' || d.notes === ''),
+  );
+}
+
 /**
  * "Chat about this": the marker onto that row one arrow at a time, then Enter alone. Claude Code
  * then refuses the call with "The user wants to clarify these questions" and the answers so far
- * (none here: only an untouched dialog is left this way), and Claude asks what to clarify. The
+ * (none here: only an untouched dialog with every question's notes empty is left this way), and Claude asks what to clarify. The
  * row takes no words; the reply goes in the chat afterwards.
  */
 async function answerChat(s: Flow, r: Extract<InputRequest, { kind: 'question' }>) {
@@ -1075,6 +1134,8 @@ async function answerChat(s: Flow, r: Extract<InputRequest, { kind: 'question' }
   if (d.layout === 'preview' && d.notes) throw new Refusal('notes');
   if (!untouched(d)) throw new Refusal('partial');
   const index = shownQuestion(d, r);
+  // The refusal Claude gets carries every question's notes: the other tabs' must be empty too.
+  await noNotesElsewhere(s, r, index);
   const target = chat[0].number;
   const same = (next: Dialog) =>
     next.kind === 'question' &&

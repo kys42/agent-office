@@ -778,6 +778,7 @@ export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHo
 const PROMPT_BYTES: Record<PromptKey, string> = {
   Up: '\x1b[A',
   Down: '\x1b[B',
+  Left: '\x1b[D',
   Right: '\x1b[C',
   Enter: '\r',
   Space: ' ',

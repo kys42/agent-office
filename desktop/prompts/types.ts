@@ -20,8 +20,9 @@ import type { Screen } from '../composer/screen.js';
  * Keys an adapter may press. Hosts translate them (tmux key names, raw bytes for Orca). Never
  * Esc, Tab, digits or control keys: each of those does something else in some dialog (cancel,
  * amend, pick-and-submit), measured on Claude Code 2.1.296 (docs/development/TERMINAL.md).
+ * `Left` only moves between a question form's tabs (2.1.322 Tabs keybinding: tabs:previous).
  */
-export type PromptKey = 'Up' | 'Down' | 'Right' | 'Enter' | 'Space';
+export type PromptKey = 'Up' | 'Down' | 'Left' | 'Right' | 'Enter' | 'Space';
 
 /** The terminal a dialog is drawn in: tmux or Orca, as an adapter sees it. */
 export interface PromptHost {

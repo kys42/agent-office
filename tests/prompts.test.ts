@@ -543,6 +543,10 @@ class Claude {
     this.picked = qs.map(() => null);
     this.notes = qs.map(() => '');
   }
+  /** The question the form shows (its tab). */
+  get current() {
+    return this.q;
+  }
   get closed() {
     return this.answer !== null;
   }
@@ -742,12 +746,21 @@ class Claude {
           .join(', ')
       : (this.picked[i] ?? '');
   }
+  /** ← (tabs:previous): the question before, nothing chosen. */
+  private previous() {
+    if (this.q === 0) return;
+    this.q--;
+    this.cursor[this.q] = 0;
+  }
   private next() {
     this.chatFocus = false;
     const qs = this.questions();
     if (qs.length === 1 && !qs[0].multiSelect && !this.reviewSingle) return this.submit();
-    if (this.q < qs.length - 1) this.q++;
-    else {
+    if (this.q < qs.length - 1) {
+      this.q++;
+      // A question shown again starts with the marker on its first option (2.1.322 remounts it).
+      this.cursor[this.q] = 0;
+    } else {
       this.review = true;
       this.choice = 0;
     }
@@ -789,6 +802,7 @@ class Claude {
         else if (c > 0) this.cursor[this.q]--;
       }
       if (name === 'Right' && !this.chatFocus) this.next();
+      if (name === 'Left' && !this.chatFocus) this.previous();
       if (name === 'Enter') {
         if (this.chatFocus) this.answer = 'chat';
         else {
@@ -805,6 +819,7 @@ class Claude {
       if (name === 'Space' && q.multiSelect && c < n)
         this.checked[this.q][c] = !this.checked[this.q][c];
       if (name === 'Right') this.next();
+      if (name === 'Left') this.previous();
       if (name === 'Enter') {
         if (c === this.stops() - 1) this.answer = 'chat';
         else if (q.multiSelect) {
@@ -908,6 +923,7 @@ async function harness(sim: Claude, options: Harness = {}) {
             '\x1b[A': 'Up',
             '\x1b[B': 'Down',
             '\x1b[C': 'Right',
+            '\x1b[D': 'Left',
             ' ': 'Space',
           };
           if (text.startsWith('\x1b[200~')) sim.type(text.slice(6, -6));
@@ -1839,7 +1855,7 @@ test('The shared service (also the web preview RPC) can neither inspect nor answ
 });
 
 test('Adapter keys never include digits, Tab, Esc or control keys', () => {
-  const allowed: PromptKey[] = ['Up', 'Down', 'Right', 'Enter', 'Space'];
+  const allowed: PromptKey[] = ['Up', 'Down', 'Left', 'Right', 'Enter', 'Space'];
   const source = readFileSync(
     path.join(import.meta.dirname, '..', 'desktop', 'prompts', 'claude-code.ts'),
     'utf8',
@@ -1849,6 +1865,10 @@ test('Adapter keys never include digits, Tab, Esc or control keys', () => {
       assert.ok(allowed.includes(name.slice(1, -1) as PromptKey), name);
   // Arrows go one at a time.
   assert.ok(!/press\(\[[^\]]*,/.test(source));
+  // ← only switches a form's tabs, in the notes check.
+  const lefts = [...source.matchAll(/press\(\[[^\]]*'Left'/g)];
+  assert.equal(lefts.length, 1);
+  assert.match(source, /press\(\[to < at \? 'Left' : 'Right'\]\)/);
 });
 
 test('A long question wrapping in the review is still read, checked and submitted', async () => {
@@ -2418,4 +2438,112 @@ test('a preview dialog left above an open composer beside a plugin pane reads as
     .map((line, i) => `${padCols(line, 120)}│${i % 3 ? '' : ' 패널 예시 │'}`)
     .join('\n');
   assert.equal(parseDialog({ text: pane }).kind, 'closed');
+});
+
+/** A form whose first and last questions have previews (notes can sit on either). */
+const TWO_PREVIEWS = {
+  questions: [
+    PREVIEW_INPUT.questions[0],
+    PREVIEW_INPUT.questions[1],
+    {
+      ...PREVIEW_INPUT.questions[2],
+      options: [
+        { label: '지금 저장소', preview: '현재' },
+        { label: '새 저장소', preview: '새로' },
+      ],
+    },
+  ],
+};
+const TWO_SHOWN = shownQuestions(TWO_PREVIEWS as { questions: Question[] });
+
+test('Notes on another preview tab: visited with ← → only, then back, before chat or answers', async () => {
+  // All empty: → → to the last preview, ← ← back, then on to "Chat about this".
+  const clean = await answer(QUESTION(TWO_PREVIEWS), TWO_SHOWN, [ask(TWO_PREVIEWS)], {
+    chat: true,
+  });
+  assert.equal(clean.sim.answer, 'chat');
+  assert.deepEqual(clean.sim.keys, ['Right', 'Right', 'Left', 'Left', 'Down', 'Down', 'Enter']);
+  // Notes typed on the third question, then the person came back: refused, form back on the first.
+  const noted = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      s.notes[2] = '새 저장소는 비공개로';
+    },
+  );
+  assert.match(failed(noted.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.equal(noted.sim.answer, null);
+  assert.deepEqual(noted.sim.keys, ['Right', 'Right', 'Left', 'Left']);
+  assert.equal(noted.sim.current, 0);
+  // Answers too (they carry every preview question's notes): refused before any pick.
+  const answers = { answers: [{ options: [1] }, { options: [0] }, { options: [0] }] };
+  const before = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    answers,
+    (s) => {
+      s.notes[2] = '비공개';
+    },
+  );
+  assert.match(failed(before.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.deepEqual(before.sim.keys, ['Right', 'Right', 'Left', 'Left']);
+  assert.equal(before.sim.current, 0);
+  assert.equal(before.sim.answer, null);
+  const ok = await answer(QUESTION(TWO_PREVIEWS), TWO_SHOWN, [ask(TWO_PREVIEWS)], answers);
+  assert.equal((ok.result as { status: string }).status, 'answered');
+  assert.deepEqual(ok.sim.answer, {
+    [TWO_PREVIEWS.questions[0].question]: '별도 폴더에 단독 예시',
+    '어떤 순서로 진행할까요? (여러 개)': '먼저 뼈대',
+    '어느 저장소에 둘까요?': '지금 저장소',
+  });
+  assert.deepEqual(ok.sim.keys.slice(0, 4), ['Right', 'Right', 'Left', 'Left']);
+});
+
+test('The notes check returns to the tab it started on, and stops when a tab is not as expected', async () => {
+  // Chat from the second question (the person moved there in the terminal): ← to the first,
+  // → → to the last, ← back to the second; the chat row is chosen there.
+  const middle = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      s.key('Right');
+      s.keys = [];
+    },
+  );
+  assert.equal(middle.sim.answer, 'chat');
+  assert.deepEqual(middle.sim.keys.slice(0, 4), ['Left', 'Right', 'Right', 'Left']);
+  // Notes on the first question, seen on the way: back on the second, then refused.
+  const first = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      s.key('Right');
+      s.keys = [];
+      s.notes[0] = '목록 안';
+    },
+  );
+  assert.match(failed(first.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.deepEqual(first.sim.keys, ['Left', 'Right']);
+  assert.equal(first.sim.current, 1);
+  // A tab key that does not switch (the dialog ignores it): stopped, nothing chosen.
+  const stuck = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      const key = s.key.bind(s);
+      s.key = (name: string) => (name === 'Right' ? void s.keys.push(name) : key(name));
+    },
+  );
+  assert.match(failed(stuck.result), /제대로 반영되지 않아/);
+  assert.equal(stuck.sim.answer, null);
+  assert.deepEqual(stuck.sim.keys, ['Right']);
 });
