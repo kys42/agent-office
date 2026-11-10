@@ -442,9 +442,11 @@ function previewDialog(lines: string[], height?: number): DialogState | null {
 export function parseDialog(screen: Screen | null): DialogState {
   if (!screen) return { kind: 'unreadable' };
   if (!screen.text.trim()) return { kind: 'closed' };
-  // The main prompt open at the bottom: no dialog, whatever the output above shows.
-  if (readPrompt(screen) !== null) return { kind: 'closed' };
+  // A plugin pane beside the TUI is cut off first: its divider would hide the prompt's rules.
   const lines = withoutSidePane(screen.text.split('\n').map((line) => line.trimEnd()));
+  // The main prompt open at the bottom: no dialog, whatever the output above shows.
+  if (readPrompt(screen) !== null || readPrompt({ ...screen, text: lines.join('\n') }) !== null)
+    return { kind: 'closed' };
   while (lines.length && !lines.at(-1)!.trim()) lines.pop();
   const preview = previewDialog(lines, screen.height);
   if (preview) return preview;

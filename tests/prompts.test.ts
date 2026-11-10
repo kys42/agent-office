@@ -2405,3 +2405,17 @@ test('The card hears why a question takes no typed answer, and that it can chat 
     await h.done();
   }
 });
+
+test('a preview dialog left above an open composer beside a plugin pane reads as closed', () => {
+  const old = readFileSync(path.join(FIXTURES, 'q322-preview-single.plain.txt'), 'utf8').trimEnd();
+  const rule = '─'.repeat(100);
+  const plain = [old, '', '⏺ 고마워요.', rule, '❯ ', rule, '  ⏸ manual mode on'].join('\n');
+  assert.equal(parseDialog({ text: plain }).kind, 'closed');
+  // The same screen with Claude Code's plugin pane drawn behind a divider at column 120: the
+  // prompt's rules now end in the pane, yet the open composer still wins over the old dialog.
+  const pane = plain
+    .split('\n')
+    .map((line, i) => `${padCols(line, 120)}│${i % 3 ? '' : ' 패널 예시 │'}`)
+    .join('\n');
+  assert.equal(parseDialog({ text: pane }).kind, 'closed');
+});
