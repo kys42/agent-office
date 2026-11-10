@@ -1,15 +1,7 @@
 import { focusLine } from '../shared/terminal-target';
 import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Expand,
-  Flag,
-  PanelRightOpen,
-  RotateCw,
-  Terminal,
-  X,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, PanelRightOpen, Terminal, X } from 'lucide-react';
+import { DockViewMenu, type DockViewControls } from './DockViewMenu';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
@@ -56,7 +48,7 @@ export function DeskPet({
   onReceipt,
   onExpand,
   onReply,
-  onRefresh,
+  view: viewMenu,
   notify,
   preview = false,
 }: {
@@ -71,8 +63,8 @@ export function DeskPet({
   onReply?: ReplySender;
   /** Says what a jump to the terminal did (or the resume command it copied). */
   notify?: (message: string) => void;
-  /** Look at the session records again now (and restart a stopped collector). */
-  onRefresh: () => void;
+  /** The 보기 menu (looks, tiny, the big office, settings); absent in the settings preview. */
+  view?: DockViewControls;
   /**
    * Drawn small in the settings (#324): the same pet, without anything that reaches outside it —
    * no window keys, terminal lookups, dock window calls or cards.
@@ -372,7 +364,7 @@ export function DeskPet({
             <button
               className="icon-btn"
               aria-label={d.openCard}
-              title={d.openCardTitle}
+              data-tip={d.openCardTitle}
               onClick={(e) =>
                 // Like a desk's bubble: the card shows the conversation it speaks for.
                 void openColleague(bubble?.sessionId ?? view.session.id, {
@@ -387,7 +379,7 @@ export function DeskPet({
               <button
                 className="icon-btn"
                 aria-label={t.terminal.jumpToTerminal(who?.name ?? d.someone)}
-                title={t.terminal.jumpHint(focusLine(deskTarget, privacy))}
+                data-tip={t.terminal.jumpHint(focusLine(deskTarget, privacy))}
                 onClick={() => jump(view.session.id)}
               >
                 <Terminal size={12} />
@@ -395,35 +387,14 @@ export function DeskPet({
             )}
           </div>
         )}
+        {/* Two doors, as on the row's pill: 보기 (the looks, tiny, the big office, settings) and
+            hide. They stay up while the menu is open (dock.css). */}
         <div className="dock-pet-tools" data-solid>
-          <button
-            className="icon-btn"
-            aria-label={d.expand}
-            title={d.expandTitle}
-            onClick={() => api.window('main')}
-          >
-            <Expand size={12} />
-          </button>
-          <button
-            className="icon-btn"
-            aria-label={d.refresh}
-            title={d.refreshTitle}
-            onClick={onRefresh}
-          >
-            <RotateCw size={12} />
-          </button>
-          <button
-            className="icon-btn"
-            aria-label={d.unfold}
-            title={d.unfoldTitle}
-            onClick={onExpand}
-          >
-            <Flag size={12} />
-          </button>
+          <DockViewMenu controls={viewMenu} label={false} size={12} />
           <button
             className="icon-btn"
             aria-label={d.hide}
-            title={d.hideTitle}
+            data-tip={t.dock.tips.hide}
             onClick={() => api.window('hide')}
           >
             <X size={12} />
@@ -435,7 +406,7 @@ export function DeskPet({
             <button
               className="dock-pet-step is-prev"
               aria-label={d.previous}
-              title={d.previousTitle}
+              data-tip={d.previousTitle}
               onClick={() => step(-1)}
             >
               <ChevronLeft size={14} strokeWidth={2.6} />
@@ -443,7 +414,7 @@ export function DeskPet({
             <button
               className="dock-pet-step is-next"
               aria-label={d.next}
-              title={d.nextTitle}
+              data-tip={d.nextTitle}
               onClick={() => step(1)}
             >
               <ChevronRight size={14} strokeWidth={2.6} />

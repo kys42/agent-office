@@ -158,6 +158,12 @@ const api: OfficeAPI = {
     },
   },
   dock: (action) => ipcRenderer.invoke('office:dock', action),
+  dockLook: () => ipcRenderer.invoke('office:dock-look'),
+  onDockLook: (cb) => {
+    const f = (_: unknown, look: unknown) => cb(look);
+    ipcRenderer.on('office:dock-look', f);
+    return () => ipcRenderer.removeListener('office:dock-look', f);
+  },
   onDock: (cb) => {
     const f = (_: unknown, mode: DockMode, tiny?: boolean) => cb(mode, tiny);
     ipcRenderer.on('office:dock', f);

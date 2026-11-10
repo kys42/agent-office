@@ -8,6 +8,9 @@ import { useTerminalSend } from '../lib/useTerminalSend';
 import type { DockMode } from '../shared/types';
 import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
+import { DockTips } from './DockTips';
+import type { DockViewControls, DockViewPick } from './DockViewMenu';
+import { dockViewStep } from '../shared/dock-look';
 import { useI18n } from '../lib/i18n';
 
 // `#mini=row`, `#mini=floor&tiny`: the look the main process opened the window with.
@@ -53,18 +56,10 @@ export function DeskDock() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const {
-    model,
-    snapshot,
-    error,
-    receipt,
-    veil,
-    pin,
-    reorderSeats,
-    refresh,
-    refreshing,
-    returnToOffice,
-  } = useOffice(demo, notify);
+  const { model, snapshot, error, receipt, veil, pin, reorderSeats, returnToOffice } = useOffice(
+    demo,
+    notify,
+  );
   // Replies from unfolded bubbles; the setting may change in the big office, so re-read it
   // whenever the dock comes back into use.
   const send = useTerminalSend(demo, notify);
@@ -136,25 +131,50 @@ export function DeskDock() {
       }),
     [reload],
   );
+  // Room above the desks or the pet: the window grows upward while a dialog or the 보기 menu
+  // is open, and shrinks back once neither is. Each holder claims it by name.
+  const roomHolders = useRef(new Set<string>());
+  const room = useCallback(async (holder: string, on: boolean) => {
+    const held = roomHolders.current;
+    const before = held.size > 0;
+    if (on) held.add(holder);
+    else held.delete(holder);
+    if (api.dock && before !== held.size > 0) await api.dock(on ? 'room-on' : 'room-off');
+  }, []);
   // A dialog (summon, a folder shell's confirm…) needs more than the strip's height, a tiny
   // one's above all: the window grows upward while one is open, the desks staying put.
   useEffect(() => {
     if (!api.dock || mode === 'pet') return;
-    let room = false;
+    let open = false;
     const check = () => {
-      const open = !!document.querySelector('.modal-backdrop');
-      if (open === room) return;
-      room = open;
-      void api.dock!(open ? 'room-on' : 'room-off');
+      const now = !!document.querySelector('.modal-backdrop');
+      if (now === open) return;
+      open = now;
+      void room('dialog', now);
     };
     check();
     const watch = new MutationObserver(check);
     watch.observe(document.body, { childList: true, subtree: true });
     return () => {
       watch.disconnect();
-      if (room) void api.dock!('room-off');
+      if (open) void room('dialog', false);
     };
-  }, [mode]);
+  }, [mode, room]);
+  // The 보기 menu: a look keeps the tiny setting, the tiny toggle from the pet unfolds the
+  // last unfolded look small. Size first, so the new look opens at its own height.
+  const pickView = (choice: DockViewPick) => {
+    if (choice === 'main') return void api.window('main');
+    if (choice === 'settings') return void api.settings?.open();
+    const next = dockViewStep({ mode, tiny }, choice, expanded);
+    if (next.tiny !== undefined) shrink(next.tiny);
+    if (next.mode) go(next.mode);
+  };
+  const view: DockViewControls = {
+    look: { mode, tiny },
+    onPick: pickView,
+    settings: !!api.settings,
+    room: (on) => room('menu', on),
+  };
   useEffect(() => {
     document.body.classList.add('dock-mode');
     return () => document.body.classList.remove('dock-mode');
@@ -211,7 +231,7 @@ export function DeskDock() {
           status={snapshot ? null : error ? t.dock.status.check : t.dock.status.connecting}
           onExpand={() => go(expanded)}
           onReply={send.sendReply}
-          onRefresh={() => void refresh()}
+          view={view}
           notify={notify}
         />
       ) : (
@@ -222,7 +242,7 @@ export function DeskDock() {
           onReturn={returnToOffice}
           variant={mode === 'floor' ? 'floor' : 'office'}
           tiny={tiny}
-          onTiny={shrink}
+          view={view}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}
@@ -238,13 +258,10 @@ export function DeskDock() {
               .catch((e) => notify((e as Error).message))
           }
           notify={notify}
-          onRefresh={() => void refresh()}
-          refreshing={refreshing}
-          onCollapse={() => go('pet')}
-          onSwitch={() => go(mode === 'floor' ? 'row' : 'floor')}
           onReply={send.sendReply}
         />
       )}
+      <DockTips />
       {toast && (
         <div className="dock-toast" role="status">
           {toast}

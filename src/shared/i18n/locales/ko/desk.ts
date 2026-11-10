@@ -73,8 +73,6 @@ export const desk: Messages['desk'] = {
   },
   row: {
     reorderHint: '같은 구역 안에서는 끌어서 순서를 바꿀 수 있어요',
-    refresh: '새로고침',
-    refreshTitle: '새로고침 · 지금 기록을 다시 확인해요 (멈춘 수집기도 다시 시작)',
     openCard: (name) => `${name} 업무 카드 열기`,
     cardTitle: '팝업으로 보기',
     empty: '동료들의 기록을 기다리고 있어요.',
@@ -92,26 +90,11 @@ export const desk: Messages['desk'] = {
     pillMove: '도구 막대 옮기기',
     pillHint:
       '끌어서 좌우로 옮기기 · ← → (Shift: 크게) · Home/End: 양 끝 · 두 번 클릭: 오른쪽 끝으로',
-    settings: '설정',
-    settingsTitle: '설정 창 열기',
-    toRow: '사무실 줄로 보기',
-    toFloor: '바닥 책상으로 보기',
-    toRowTitle: '사무실 줄로 · 구역 바닥과 이름표',
-    toFloorTitle: '바닥 책상으로 · 화면 맨 아래에 책상만, 구역은 깃발',
-    expand: '사무실 펼치기',
-    expandTitle: '큰 사무실 열기',
-    collapse: '책상 줄 접기',
-    collapseTitle: '펫으로 접기 · Esc',
-    tiny: '작게 보기',
-    tinyTitle: '작게 보기 · 말풍선과 깃발 없이 상태만',
-    normal: '크게 보기',
-    normalTitle: '크게 보기 · 말풍선과 이름표를 다시 보여요',
     tinyDesk: (work, dot) =>
       dot
         ? `${work}, ${dot === 'attention' ? '호출' : dot === 'error' ? '오류' : '새 답장'}`
         : work,
     tinyWaiting: (n) => `기다리는 동료 ${n}명`,
     hide: '데스크 펫 숨기기',
-    hideTitle: '숨기기 · 트레이에서 다시 열 수 있어요',
   },
 };

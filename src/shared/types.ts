@@ -948,7 +948,7 @@ export type DockAction =
   | 'drag-end'
   | 'solid'
   | 'through'
-  /** A dialog is open in the row or floor: room above the desks for it, and back. */
+  /** A dialog (row, floor) or the 보기 menu (any look) is open: room above for it, and back. */
   | 'room-on'
   | 'room-off';
 export interface OfficeAPI {
@@ -1207,6 +1207,12 @@ export interface OfficeAPI {
   dock?: (action: DockAction) => Promise<void>;
   /** `tiny` comes along from the desktop main process (undefined: unchanged). */
   onDock?: (callback: (mode: DockMode, tiny?: boolean) => void) => () => void;
+  /**
+   * Desktop only: the dock's look (pet, row, floor; tiny), for the big office's button that
+   * goes back to it, and each time it changes. Raw: read it with `readDockLook`.
+   */
+  dockLook?: () => Promise<unknown>;
+  onDockLook?: (callback: (look: unknown) => void) => () => void;
   /**
    * Desktop only: the settings window (`#settings`), which stays open when it loses focus.
    * `open` shows it at a section; the window hears later opens through `onOpen`.
