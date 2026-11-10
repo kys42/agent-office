@@ -1,7 +1,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
-import { PET_ROOM_HEIGHT, PET_ROOM_WIDTH } from '../../src/shared/dock-geometry';
+import { PET_ROOM_HEIGHT, PET_ROOM_WIDTH, TINY_HEIGHT } from '../../src/shared/dock-geometry';
 import { viewButton, viewMenu } from './dock-view';
 
 /**
@@ -492,3 +492,35 @@ test('Tiny keeps the compact pill with every button, no overflow at 390px', asyn
     clip: { x: 0, y: m.y - 16, width: 390, height: 760 - (m.y - 16) },
   });
 });
+
+for (const theme of ['light', 'dark'] as const)
+  test(`the tiny strip's ＋ opens above it once the window has grown (${theme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: theme });
+    // The tiny strip's own height, as the dock window is; the room grows it upward (here the
+    // test grows the page, and the popover keeps standing on the pill).
+    await setup(page, '#mini=row&tiny', { height: TINY_HEIGHT });
+    await page.evaluate(() => (window as any).mode('row', true));
+    await expect(page.locator('.desk-row.is-tiny')).toBeVisible();
+    await plusButton(pill(page)).click();
+    await expect.poll(() => roomHeld(page)).toBe(true);
+    await page.setViewportSize({ width: 1440, height: TINY_HEIGHT + 560 });
+    const pop = plusPopover(page);
+    for (const tab of ['새로 부르기', '데려오기'] as const) {
+      await pop.getByRole('tab', { name: new RegExp(tab) }).click();
+      await page.waitForTimeout(200);
+      const m = await box(pop);
+      const p = await box(pill(page));
+      expect(m.y).toBeGreaterThanOrEqual(0);
+      expect(m.y + m.height).toBeLessThanOrEqual(p.y + 3);
+      expect(m.y + m.height).toBeGreaterThanOrEqual(p.y - 1);
+      await page.screenshot({
+        path: `.local/pill-plus-tiny-${tab === '새로 부르기' ? 'summon' : 'bring'}-${theme}.png`,
+        clip: { x: 1440 - 480, y: m.y - 16, width: 480, height: p.y + p.height - m.y + 28 },
+      });
+    }
+    await page.keyboard.press('Escape');
+    await expect(pop).toHaveCount(0);
+    await expect.poll(() => roomHeld(page)).toBe(false);
+  });
