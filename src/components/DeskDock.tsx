@@ -142,9 +142,10 @@ export function DeskDock() {
     if (api.dock && before !== held.size > 0) await api.dock(on ? 'room-on' : 'room-off');
   }, []);
   // A dialog (summon, a folder shell's confirm…) needs more than the strip's height, a tiny
-  // one's above all: the window grows upward while one is open, the desks staying put.
+  // one's above all: the window grows upward while one is open, the desks staying put. The
+  // pet's window grows up and to the left (its ＋ opens the launch sheet too).
   useEffect(() => {
-    if (!api.dock || mode === 'pet') return;
+    if (!api.dock) return;
     let open = false;
     const check = () => {
       const now = !!document.querySelector('.modal-backdrop');

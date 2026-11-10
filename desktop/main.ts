@@ -98,6 +98,8 @@ import {
   dockHeight,
   moveOntoArea,
   PET_ROOM_HEIGHT,
+  PET_ROOM_WIDTH,
+  petStand,
   petBounds,
   petFeet,
   readDockPrefs,
@@ -640,7 +642,10 @@ function roomyBounds(mode: DockMode): Rect {
   const b = dockBounds(mode);
   if (!dockRoom) return b;
   // The desks and the pet stand on the window's bottom edge: keep it, take the room above.
-  return roomyRect(b, workAreaFor(b), mode === 'pet' ? PET_ROOM_HEIGHT : DOCK_ROOM_HEIGHT);
+  const area = workAreaFor(b);
+  return mode === 'pet'
+    ? roomyRect(b, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH)
+    : roomyRect(b, area, DOCK_ROOM_HEIGHT);
 }
 function setDockRoom(on: boolean) {
   if (dockRoom === on) return;
@@ -743,16 +748,16 @@ function stopDrag(save: boolean) {
   clearInterval(drag);
   drag = null;
   if (!save || !dock || dock.isDestroyed() || dockMode !== 'pet') return;
-  const b = dock.getBounds();
-  const fixed = clampInto(b, workAreaFor(b));
-  if (fixed.x !== b.x || fixed.y !== b.y) dock.setBounds(fixed);
-  const feet = petFeet(fixed);
+  // The window may hold room (above and left of the pet) or have just given it back mid-drag:
+  // judge the pet's own box, then size the window around the new spot.
+  const b = petStand(dock.getBounds());
+  const feet = petFeet(clampInto(b, workAreaFor(b)));
   if (petSpot?.x !== feet.x || petSpot?.y !== feet.y) {
     petSpot = feet;
     void savePetSpot();
   }
-  // Room asked for mid-drag (the 보기 menu) waited for the drop: take it now, above the new spot.
-  if (dockRoom) dock.setBounds(roomyBounds(dockMode));
+  // Room asked for (or given back) mid-drag waited for the drop: take it now, at the new spot.
+  dock.setBounds(roomyBounds(dockMode));
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;

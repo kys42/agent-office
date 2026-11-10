@@ -138,13 +138,30 @@ export function petBounds(feet: Point | null | undefined, area: Rect, size = PET
 export const DOCK_ROOM_HEIGHT = 760;
 export const PET_ROOM_HEIGHT = 560;
 /**
- * A dock window grown upward to `height` for an open dialog or menu: the same bottom edge and
- * width, taking only the room up to the work area's top (never pushed down instead).
+ * The pet's window also grows to the left while it holds room: its ＋ popover (about 360px)
+ * and a dialog (the launch sheet) need more than the pet's 300px. The pet stands at the
+ * window's right edge (dock.css · .desk-pet-stage), so it does not move on screen.
  */
-export function roomyRect(b: Rect, area: Rect, height: number): Rect {
+export const PET_ROOM_WIDTH = 560;
+/**
+ * A dock window grown upward to `height` (and leftward to `width`) for an open dialog or menu:
+ * the same bottom and right edges, taking only the room up to the work area's top and left
+ * side (never pushed down or right instead).
+ */
+export function roomyRect(b: Rect, area: Rect, height: number, width = b.width): Rect {
   const h = Math.max(b.height, Math.min(height, b.y + b.height - area.y));
-  return { ...b, y: b.y + b.height - h, height: h };
+  const w = Math.max(b.width, Math.min(width, b.x + b.width - area.x));
+  return { x: b.x + b.width - w, y: b.y + b.height - h, width: w, height: h };
 }
+/**
+ * The pet's own box inside its window, which may hold room above and to the left: the pet's
+ * size at the bottom-right corner (where .desk-pet-stage draws it).
+ */
+export const petStand = (b: Rect, size = PET_SIZE): Rect => ({
+  x: b.x + b.width - size.width,
+  y: b.y + b.height - size.height,
+  ...size,
+});
 
 /**
  * Read `desk-pet.json`: v2 stores the standing spot; the first format stored the top-left
