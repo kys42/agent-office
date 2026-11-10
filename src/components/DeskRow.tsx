@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { DockViewMenu, type DockViewControls } from './DockViewMenu';
+import { DockPlus, type DockPlusControls } from './DockPlus';
 import { TallyPill } from './TallyPill';
 import { useRowPlacement } from '../lib/useRowPlacement';
 import { useDockPill } from '../lib/useDockPill';
@@ -106,6 +107,7 @@ export function DeskRow({
   variant = 'office',
   tiny = false,
   view: viewMenu,
+  plus,
   model,
   status,
   privacy,
@@ -129,6 +131,8 @@ export function DeskRow({
   tiny?: boolean;
   /** The 보기 menu (looks, tiny, the big office, settings); absent in the settings preview. */
   view?: DockViewControls;
+  /** The ＋ popover (start new, bring back); absent in the settings preview. */
+  plus?: DockPlusControls;
   model: OfficeModel;
   status: string | null;
   privacy: boolean;
@@ -1042,6 +1046,7 @@ export function DeskRow({
         )}
         <i className="dock-pill-sep" aria-hidden="true" />
         <DockViewMenu controls={viewMenu} size={icon} />
+        <DockPlus controls={plus} size={icon} edge={pillRef} onOpenCard={openFromList} />
         <button
           className="icon-btn"
           aria-label={t.desk.row.hide}

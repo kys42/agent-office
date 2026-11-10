@@ -10,6 +10,7 @@ import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
 import { DockTips } from './DockTips';
 import type { DockViewControls, DockViewPick } from './DockViewMenu';
+import type { DockPlusControls } from './DockPlus';
 import { dockViewStep } from '../shared/dock-look';
 import { useI18n } from '../lib/i18n';
 
@@ -176,6 +177,16 @@ export function DeskDock() {
     settings: !!api.settings,
     room: (on) => room('menu', on),
   };
+  // The ＋ popover: a new session in a project (the launch sheet), or a colleague brought back
+  // from the lounge or the archive with the big office's own call.
+  const plus: DockPlusControls = {
+    model,
+    privacy,
+    demo,
+    notify,
+    onReturn: returnToOffice,
+    room: (on) => room('plus', on),
+  };
   useEffect(() => {
     document.body.classList.add('dock-mode');
     return () => document.body.classList.remove('dock-mode');
@@ -233,6 +244,7 @@ export function DeskDock() {
           onExpand={() => go(expanded)}
           onReply={send.sendReply}
           view={view}
+          plus={plus}
           notify={notify}
         />
       ) : (
@@ -245,6 +257,7 @@ export function DeskDock() {
           variant={mode === 'floor' ? 'floor' : 'office'}
           tiny={tiny}
           view={view}
+          plus={plus}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}

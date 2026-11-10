@@ -2,6 +2,7 @@ import { focusLine } from '../shared/terminal-target';
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, PanelRightOpen, Terminal, X } from 'lucide-react';
 import { DockViewMenu, type DockViewControls } from './DockViewMenu';
+import { DockPlus, type DockPlusControls } from './DockPlus';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
@@ -47,6 +48,7 @@ export function DeskPet({
   onExpand,
   onReply,
   view: viewMenu,
+  plus,
   notify,
   preview = false,
 }: {
@@ -63,6 +65,8 @@ export function DeskPet({
   notify?: (message: string) => void;
   /** The 보기 menu (looks, tiny, the big office, settings); absent in the settings preview. */
   view?: DockViewControls;
+  /** The ＋ popover (start new, bring back); absent in the settings preview. */
+  plus?: DockPlusControls;
   /**
    * Drawn small in the settings (#324): the same pet, without anything that reaches outside it —
    * no window keys, terminal lookups, dock window calls or cards.
@@ -98,6 +102,9 @@ export function DeskPet({
   }, [spoke]);
   // Hovering a number in the pill lists who it counts (TallyPill); the bubble steps aside.
   const [listed, setListed] = useState(false);
+  // The ＋ popover stands over the bubble's place: it steps aside the same way.
+  const [popped, setPopped] = useState(false);
+  const tools = useRef<HTMLDivElement>(null);
   // Laid out once per change of who is drawn (not per pointer move), as the row does.
   const counted = show.tally ? show.tallyGroups.join() : '';
   const all = useMemo(() => petChoices(model), [model.scene, show.tally, counted]);
@@ -144,7 +151,7 @@ export function DeskPet({
   // does; otherwise it speaks only what just arrived.
   // An unfolded or replying bubble (a peek too) stays without the pointer, as on a desk.
   // A list open from the pill takes the view: no peeking bubble behind it.
-  const pointing = (hover || expanded || replying) && !closed && !listed;
+  const pointing = (hover || expanded || replying) && !closed && !listed && !popped;
   const reveal = pointing || expanded || replying;
   const speech =
     view && said
@@ -230,7 +237,7 @@ export function DeskPet({
   return (
     <div className="desk-pet-stage" style={PET_SIZE}>
       <div
-        className={`dock-pet-anchor ${listed ? 'is-listing' : ''}`}
+        className={`dock-pet-anchor ${listed || popped ? 'is-listing' : ''}`}
         // Only what is drawn counts: the window's see-through edges let the pointer pass by.
         onMouseOver={(e) => {
           if (e.target instanceof Element && e.target.closest('[data-solid]')) setHover(true);
@@ -356,8 +363,17 @@ export function DeskPet({
         )}
         {/* Two doors, as on the row's pill: View (the looks, tiny, the big office, settings) and
             hide. They stay up while the menu is open (dock.css). */}
-        <div className="dock-pet-tools" data-solid>
+        <div className="dock-pet-tools" data-solid ref={tools}>
           <DockViewMenu controls={viewMenu} label={false} size={12} />
+          <DockPlus
+            controls={plus}
+            size={12}
+            edge={tools}
+            onOpenChange={setPopped}
+            onOpenCard={(sessionId, from) =>
+              void openColleague(sessionId, { anchor: from.closest('.dock-pet-anchor') })
+            }
+          />
           <button
             className="icon-btn"
             aria-label={d.hide}

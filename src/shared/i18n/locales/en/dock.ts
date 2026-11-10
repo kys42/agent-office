@@ -59,10 +59,42 @@ export const dock = {
       tinyFloor: 'Tiny floor',
     },
   },
+  /** The ＋ popover: start a new session in a project, or bring a teammate back from away. */
+  plus: {
+    label: 'Call a teammate',
+    tip: 'Call a teammate · start new, or bring back from the lounge or archive',
+    dialog: 'Call a teammate',
+    tabs: { summon: 'Start new', bring: 'Bring back' },
+    summonHint: 'Pick a project to open the session sheet.',
+    summonNone: 'No project to start a session in yet.',
+    summonUnavailable: "Starting sessions isn't available here.",
+    summonPrivate: "Can't start sessions while screen content is hidden.",
+    summonIn: (name: string) => `Start a new session in ${name}`,
+    people: (n: number) => `${n} ${n === 1 ? 'teammate' : 'teammates'}`,
+    away: 'away',
+    rooms: 'Where from',
+    room: { waiting: 'Lounge', archive: 'Archive' },
+    roomCount: (room: string, n: number) => `${room} ${n}`,
+    search: 'Search teammates',
+    emptyRoom: { waiting: 'The lounge is empty.', archive: 'The archive is empty.' },
+    noMatch: 'No teammate matches.',
+    bring: 'Bring',
+    bringOf: (name: string) => `Bring back to the office · ${name}`,
+    bringTip: 'Bring back to the office',
+  },
+  /** 잠깐 숨기기: the desks and the pet step aside for a moment (not privacy's hiding of names). */
+  peek: {
+    hide: 'Hide for a moment',
+    show: 'Show again',
+    hideTip:
+      'Hide for a moment · desks and pet step aside, the pill stays\n(Hide screen content is the privacy switch)',
+    showTip: 'Show again · bring the desks and pet back',
+  },
   /** Short hover/focus labels for the dock's icon buttons (drawn by the app). */
   tips: {
     hide: 'Hide · bring it back from the tray',
     grip: 'Drag to move',
+    settings: 'Settings · display, notifications, connections',
   },
   card: {
     missing: "Couldn't find this teammate",
