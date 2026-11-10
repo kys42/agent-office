@@ -942,7 +942,7 @@ export function DeskRow({
           stand on the screen's edge), subdued until hovered (or solid, or hidden until the
           pointer nears it — the person's choice) and slid anywhere along it so it can be
           parked in an empty spot. It holds what is here (how many, who is hidden) and two
-          doors: 보기 (the looks, tiny, the big office, settings) and hide. Tiny keeps them all
+          doors: View (the looks, tiny, the big office, settings) and hide. Tiny keeps them all
           as small icons. */}
       <div
         ref={pillRef}

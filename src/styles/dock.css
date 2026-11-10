@@ -1410,7 +1410,10 @@ body.card-mode {
    Both are drawn in the page (body), outside the pill and the pet, so nothing clips them; the
    dock grows its window upward while the menu is open (DeskDock · room). Dark like the pill. */
 .dock-pill .dock-view-button.has-label {
+  display: inline-flex;
+  align-items: center;
   width: auto;
+  white-space: nowrap;
   gap: 4px;
   padding: 0 9px 0 7px;
   font-size: 11.5px;
@@ -1418,6 +1421,7 @@ body.card-mode {
   color: var(--text);
 }
 .desk-row.is-tiny .dock-pill .dock-view-button.has-label {
+  width: auto;
   gap: 3px;
   padding: 0 7px 0 5px;
   font-size: 10px;

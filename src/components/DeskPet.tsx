@@ -387,7 +387,7 @@ export function DeskPet({
             )}
           </div>
         )}
-        {/* Two doors, as on the row's pill: 보기 (the looks, tiny, the big office, settings) and
+        {/* Two doors, as on the row's pill: View (the looks, tiny, the big office, settings) and
             hide. They stay up while the menu is open (dock.css). */}
         <div className="dock-pet-tools" data-solid>
           <DockViewMenu controls={viewMenu} label={false} size={12} />

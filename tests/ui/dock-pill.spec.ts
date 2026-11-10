@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { FLOOR_HEIGHT, PILL_MARGIN, ROW_HEIGHT, TINY_HEIGHT } from '../../src/shared/dock-geometry';
+import { chooseView, viewButton, viewItem, viewMenu } from './dock-view';
 
 const WIDTH = 1440;
 const HEIGHT = 720;
@@ -117,17 +118,12 @@ test("The tool pill floats over the desks' feet, which still stand on the bottom
   // ~8px above the bottom edge, over the scene, at the right end (home) the first time.
   expect(Math.abs(HEIGHT - (b.y + b.height) - 8)).toBeLessThanOrEqual(1.5);
   expect(await fromRight(page)).toBe(PILL_MARGIN);
-  // Every row control lives in the pill (no lounge), with the waiting summary.
-  for (const name of [
-    '새로고침',
-    '바닥 책상으로 보기',
-    '작게 보기',
-    '사무실 펼치기',
-    '책상 줄 접기',
-    '설정',
-    '데스크 펫 숨기기',
-  ])
+  // Every row control lives in the pill (no lounge), with the waiting summary: the 보기 menu
+  // and hide are its only doors (looks, tiny, the big office and settings are in the menu).
+  for (const name of ['보기 바꾸기', '데스크 펫 숨기기'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toBeVisible();
+  for (const name of ['새로고침', '바닥 책상으로 보기', '작게 보기', '사무실 펼치기', '설정'])
+    await expect(pill(page).getByRole('button', { name, exact: true })).toHaveCount(0);
   await expect(pill(page).locator('.desk-row-summary')).toContainText('3명');
   await expect(pill(page).locator('.desk-row-summary em')).toContainText('기다려요 1');
   // Only the pill takes the mouse: the empty strip beside it lets clicks through.
@@ -138,7 +134,7 @@ test("The tool pill floats over the desks' feet, which still stand on the bottom
   expect(through).toBe(true);
   await page.locator('.desk-row').screenshot({ path: '.local/dock-pill-row.png' });
 
-  await pill(page).getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await chooseView(page, '바닥', pill(page));
   await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
   await expect
     .poll(async () => {
@@ -154,7 +150,10 @@ test("The tool pill floats over the desks' feet, which still stand on the bottom
     .evaluateAll((els) => Math.max(...els.map((e) => e.getBoundingClientRect().bottom)));
   expect(HEIGHT - legs).toBeLessThanOrEqual(8);
   expect(legs).toBeGreaterThan(floor.y);
-  await expect(pill(page).getByRole('button', { name: '사무실 줄로 보기' })).toBeVisible();
+  await viewButton(pill(page)).click();
+  await expect(viewItem(page, '바닥')).toHaveAttribute('aria-checked', 'true');
+  await expect(viewItem(page, '책상 줄')).toHaveAttribute('aria-checked', 'false');
+  await page.keyboard.press('Escape');
   await page.locator('.desk-row').screenshot({ path: '.local/dock-pill-floor.png' });
 });
 
@@ -163,14 +162,15 @@ test('Settings opens the settings window; a browser preview has none to open', a
   context,
 }) => {
   await setup(page, '#mini=row');
-  await pill(page).getByRole('button', { name: '설정', exact: true }).click();
+  await chooseView(page, '설정', pill(page));
   await expect.poll(() => page.evaluate(() => (window as any).settingsOpened)).toEqual([null]);
 
   // A fresh page: init scripts stay with the page they were added to.
   const preview = await context.newPage();
   await setup(preview, '#mini=row', { bridge: false });
-  await expect(pill(preview).getByRole('button', { name: '새로고침' })).toBeVisible();
-  await expect(pill(preview).getByRole('button', { name: '설정', exact: true })).toHaveCount(0);
+  await viewButton(pill(preview)).click();
+  await expect(viewItem(preview, '큰 사무실 열기')).toBeVisible();
+  await expect(viewItem(preview, '설정')).toHaveCount(0);
 });
 
 test('Dragging moves the pill, keeps the window solid, and stays after reload', async ({
@@ -214,9 +214,10 @@ test('A click on a pill button is a click, not a drag', async ({ page }) => {
   await setup(page, '#mini=row');
   const before = await centre(page);
   expect(before).toBeGreaterThan(0);
-  await pill(page).getByRole('button', { name: '새로고침' }).click();
+  await viewButton(pill(page)).click();
+  await expect(viewMenu(page)).toBeVisible();
   expect(Math.abs((await centre(page)) - before)).toBeLessThanOrEqual(1);
-  await pill(page).getByRole('button', { name: '책상 줄 접기' }).click();
+  await viewItem(page, '데스크 펫').click();
   await expect.poll(() => page.evaluate(() => (window as any).calls)).toContain('pet');
   expect(await saved(page)).toBeNull();
 });
@@ -230,7 +231,7 @@ test('A double-click on a pill button does not bring the pill back to the middle
   await page.keyboard.press('Shift+ArrowLeft');
   const spot = (await saved(page)).x;
   const at = await centre(page);
-  await pill(page).getByRole('button', { name: '새로고침' }).dblclick();
+  await viewButton(pill(page)).dblclick();
   expect((await saved(page)).x).toBe(spot);
   expect(Math.abs((await centre(page)) - at)).toBeLessThanOrEqual(1);
 });
@@ -308,21 +309,18 @@ test('Tiny keeps a compact pill at the same spot', async ({ page }) => {
   await page.keyboard.press('Shift+ArrowLeft');
   await page.keyboard.press('Shift+ArrowLeft');
   const spot = (await saved(page)).x;
-  await pill(page).getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미', pill(page));
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
   const b = await box(page);
   expect(b.height).toBeLessThan(30);
   expect(b.y + b.height).toBeLessThanOrEqual(HEIGHT);
   expect(HEIGHT - (b.y + b.height)).toBeLessThanOrEqual(8);
   expect(Math.abs(b.x + b.width / 2 - spot * WIDTH)).toBeLessThanOrEqual(2);
-  // The summary and the main buttons (plus its grip); refresh and the look switch wait for
-  // the full size.
-  for (const name of ['크게 보기', '사무실 펼치기', '책상 줄 접기', '설정', '데스크 펫 숨기기'])
+  // The summary and the same two doors (plus its grip), drawn smaller.
+  for (const name of ['보기 바꾸기', '데스크 펫 숨기기'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toBeVisible();
   await expect(pill(page).locator('.desk-row-summary')).toContainText('3');
   await expect(pill(page).locator('.desk-row-summary em')).toContainText('기다리는 동료 1명');
-  for (const name of ['새로고침', '바닥 책상으로 보기', '작게 보기'])
-    await expect(pill(page).getByRole('button', { name, exact: true })).toHaveCount(0);
   expect(await sceneGap(page)).toBe(0);
   await page.locator('.desk-row').screenshot({ path: '.local/dock-pill-tiny.png' });
   // The tiny pill drags the same way.
@@ -407,7 +405,7 @@ test('Tiny starts with the pill at the right end, off the desks and their dots',
   page,
 }) => {
   await setup(page, '#mini=row');
-  await pill(page).getByRole('button', { name: '작게 보기' }).click();
+  await chooseView(page, '쪼꼬미', pill(page));
   await expect(page.locator('.desk-row')).toHaveClass(/is-tiny/);
   expect(Math.round((await page.locator('.desk-row').boundingBox())!.height)).toBe(TINY_HEIGHT);
   await expect.poll(() => fromRight(page)).toBe(PILL_MARGIN);

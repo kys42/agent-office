@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import { viewButton, viewItem } from './dock-view';
 
 // The desk pet's pill counts the office by colour (waiting, results, working, standing by), and
 // clicking the pet opens its colleague's card as every desk does; the flag unfolds the desks.
@@ -141,6 +142,7 @@ test('an open list never covers the pet tools: the desks still unfold from there
   await working.click();
   await expect(page.locator('.dock-pet-list')).toBeVisible();
   await page.locator('.dock-pet-anchor').hover();
-  await page.getByRole('button', { name: '책상 펼치기' }).click({ timeout: 3000 });
+  await viewButton(page.locator('.dock-pet-tools')).click({ timeout: 3000 });
+  await viewItem(page, '책상 줄').click();
   await expect(page.locator('.desk-row [data-station-id]').first()).toBeVisible();
 });
