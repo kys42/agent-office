@@ -222,13 +222,33 @@ export function TallyPill({
         if (!e.currentTarget.contains(to) && !listEl.current?.contains(to)) put(null);
       }}
       onKeyDown={(e) => {
-        if (e.key !== 'Escape' || !listed) return;
+        if (!listed) return;
+        const number = wrap.current?.querySelector<HTMLElement>(`.tally-${listed}`);
+        if (e.key === 'Tab' && number) {
+          // The list is not next to its number in the page (above it, or floating): Tab goes
+          // from the open number into the names and back; past the last name the list closes.
+          const names = [...(listEl.current?.querySelectorAll<HTMLElement>('button') ?? [])];
+          const at = document.activeElement;
+          const to =
+            !e.shiftKey && at === number
+              ? names[0]
+              : e.shiftKey && at === names[0]
+                ? number
+                : !e.shiftKey && at === names.at(-1)
+                  ? number
+                  : undefined;
+          if (!to) return;
+          e.preventDefault();
+          if (at === names.at(-1) && !e.shiftKey) put(null);
+          to.focus();
+          return;
+        }
+        if (e.key !== 'Escape') return;
         // Close the list first; the dock folds only on an Esc with nothing open.
         e.preventDefault();
         e.stopPropagation();
-        const back = wrap.current?.querySelector<HTMLElement>(`.tally-${listed}`);
         put(null);
-        back?.focus();
+        number?.focus();
       }}
     >
       {floating ? list && createPortal(list, document.body) : list}

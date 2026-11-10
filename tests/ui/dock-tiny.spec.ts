@@ -329,7 +329,9 @@ test('Focus comes back to 보기 after the size toggle, and tiny desks say their
   await expect(pet(page, 0)).toHaveAttribute('aria-label', /동료 0.*, 새 답장$/);
   await expect(pet(page, 1)).toHaveAttribute('aria-label', /동료 1.*, 호출$/);
   await expect(pet(page, 2)).toHaveAttribute('aria-label', /동료 2[^,]*$/);
-  await expect(page.locator('.dock-pill .desk-row-summary em')).toContainText('기다리는 동료 1명');
+  await expect(page.locator('.dock-pill .tally-attention')).toHaveAccessibleName(
+    '나를 기다려요 1명 · 누구인지 보기',
+  );
   // By keyboard too: the menu opens on the current entries, tiny checked.
   await page.keyboard.press('Enter');
   await expect(viewItem(page, '쪼꼬미')).toHaveAttribute('aria-checked', 'true');

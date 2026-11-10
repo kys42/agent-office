@@ -231,25 +231,46 @@ test('a choice saves, and the preview follows it at once', async ({ page }) => {
   await tiny.getByText('자세히', { exact: true }).click();
   await tiny.getByRole('switch', { name: '책상 효과' }).click();
 
+  // The row's and tiny's pills count like the pet, the pet's groups included (one choice for
+  // every pill: '일하는 중' was just left out); off, the old summary comes back.
+  const dockBox = preview(page, '사무실 줄·바닥');
+  await expect(dockBox.locator('.dock-pill .tally-attention')).toHaveCount(1);
+  await expect(dockBox.locator('.dock-pill .tally-working')).toHaveCount(0);
+  await dock.getByRole('switch', { name: '숫자 알약' }).click();
+  await expect(dockBox.locator('.dock-pill .tally-pill')).toHaveCount(0);
+  await expect(dockBox.locator('.desk-row-summary')).toContainText('3명');
+  const tinyBox = preview(page, '쪼꼬미');
+  await expect(tinyBox.locator('.dock-pill .tally-attention')).toHaveCount(1);
+  await tiny.getByRole('switch', { name: '숫자 알약' }).click();
+  await expect(tinyBox.locator('.dock-pill .tally-pill')).toHaveCount(0);
+  await expect(tinyBox.locator('.desk-row-summary')).toContainText('3');
+
   // Each click saved its card's whole choice, so what is stored is everything just picked.
-  expect(await saved(page)).toHaveLength(8);
+  expect(await saved(page)).toHaveLength(10);
   expect(await page.evaluate(() => (window as any).fixture.preferences.views)).toEqual({
     office: { branch: false },
-    dock: { branch: false },
+    dock: { branch: false, tally: false },
     pet: {
       tally: true,
       tallyGroups: ['attention', 'results', 'standby'],
       name: 'always',
       petting: false,
     },
-    tiny: { effects: false },
+    tiny: { effects: false, tally: false },
   });
 });
 
 const chosen: ViewSettings = {
   pet: { tally: false, name: 'never', petting: false, turnEffect: false },
-  dock: { branch: false, papers: false, beacon: false, focus: false, hideRead: false },
-  tiny: { effects: false },
+  dock: {
+    branch: false,
+    papers: false,
+    beacon: false,
+    focus: false,
+    hideRead: false,
+    tally: false,
+  },
+  tiny: { effects: false, tally: false },
   office: { branch: false, papers: false, beacon: false, focus: false },
 };
 
@@ -261,6 +282,7 @@ test('the real dock and big office follow the saved choices; unset they look as 
   await page.goto('/?lang=ko#mini=row');
   await expect(page.locator('.desk-row .desk-branch')).toHaveCount(3);
   await expect(page.locator('.desk-row .working-beacon').first()).toBeAttached();
+  await expect(page.locator('.dock-pill .tally-pill')).toHaveCount(1);
   await page.goto('/?lang=ko&pet#mini');
   await expect(page.locator('.dock-pet-tally')).toHaveCount(1);
   await expect(page.locator('.desk-pet.no-petting')).toHaveCount(0);
@@ -276,6 +298,8 @@ test('the real dock and big office drop what was turned off', async ({ page }) =
   await expect(page.locator('.desk-row .working-beacon')).toHaveCount(0);
   await expect(page.locator('.desk-row .paper-pile')).toHaveCount(0);
   await expect(page.locator('.desk-row .focus-fx')).toHaveCount(0);
+  await expect(page.locator('.dock-pill .tally-pill')).toHaveCount(0);
+  await expect(page.locator('.dock-pill .desk-row-summary')).toContainText('3명');
   await page.goto('/?lang=ko&pet#mini');
   await expect(page.locator('.desk-pet')).toBeVisible();
   await expect(page.locator('.dock-pet-tally')).toHaveCount(0);
@@ -373,6 +397,24 @@ test('quick clicks on the counted groups build on each other; the last group sta
     .toEqual(['working']);
   // The pill must count something: the last group cannot be turned off.
   await expect(groups.getByRole('button', { name: '일하는 중' })).toBeDisabled();
+  // One choice for every numbers pill: with the pet's off, the row's still counts by it.
+  await pet.getByRole('switch', { name: '숫자 알약' }).click();
+  await expect(groups.getByRole('button', { name: '확인할 결과' })).toBeEnabled();
+  await expect(pet.getByText('펫·줄·바닥·쪼꼬미 알약이 함께 쓰고')).toBeVisible();
+  await pet.screenshot({ path: '.local/tally-settings-pet-groups.png' });
+});
+
+test('the row and tiny cards carry the numbers pill switch, on by default', async ({ page }) => {
+  await bridge(page, office());
+  await openLook(page);
+  for (const name of ['사무실 줄·바닥', '쪼꼬미']) {
+    const sw = card(page, name).getByRole('switch', { name: '숫자 알약' });
+    await expect(sw).toBeVisible();
+    await expect(sw).toHaveAttribute('aria-checked', 'true');
+    await expect(preview(page, name).locator('.dock-pill .tally-pill')).toHaveCount(1);
+  }
+  await card(page, '사무실 줄·바닥').screenshot({ path: '.local/tally-settings-dock.png' });
+  await card(page, '쪼꼬미').screenshot({ path: '.local/tally-settings-tiny.png' });
 });
 
 test('counting only a group the pet is not showing still lets the arrows reach it', async ({
