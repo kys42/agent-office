@@ -68,6 +68,8 @@ import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
 import { useI18n } from './lib/i18n';
+import { useDockLook } from './lib/useDockLook';
+import { dockLookName } from './shared/dock-look';
 import { cardReadSettings } from './shared/card-reads';
 import { resetDue } from './shared/view-prefs';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
@@ -80,6 +82,8 @@ const tabs = [
 ] as const;
 export default function App() {
   const { locale, t } = useI18n();
+  // The dock button names the look the dock goes back to (pet, desk row, floor, tiny).
+  const dockLabel = t.dock.view.looks[dockLookName(useDockLook())];
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [guide, setGuide] = useState<'tour' | 'features' | null>(() =>
     new URLSearchParams(location.search).has('onboarding') || (!demo && !hasSeenOnboarding(false))
@@ -936,12 +940,12 @@ export default function App() {
               </button>
               <button
                 className="mini-button"
-                aria-label={t.app.header.mini}
-                title={t.app.header.miniTitle}
+                aria-label={dockLabel}
+                title={t.app.header.miniTitle(dockLabel)}
                 onClick={() => api.window('mini')}
               >
                 <PictureInPicture2 size={15} />
-                <span>{t.app.header.mini}</span>
+                <span>{dockLabel}</span>
               </button>
             </div>
           </header>

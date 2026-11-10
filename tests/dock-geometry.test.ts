@@ -33,6 +33,9 @@ import {
   petFeet,
   readPetSpot,
   rowBounds,
+  DOCK_ROOM_HEIGHT,
+  PET_ROOM_HEIGHT,
+  roomyRect,
 } from '../src/shared/dock-geometry.js';
 import { DESK_FOOT, FLOOR_TOP, ROW_TOP } from '../src/shared/office-layout.js';
 
@@ -275,4 +278,25 @@ test('the big office moves onto the display it was opened from, same size and re
     }),
     { x: -1920 + 240, y: Math.round((1080 - 919) / 2), width: 1440, height: 919 },
   );
+});
+
+test('room for a dialog or the 보기 menu grows the window upward, the feet staying put', () => {
+  // The row: the whole work area's bottom, as tall as the room (never above the area's top).
+  const row = rowBounds(area);
+  const tall = roomyRect(row, area, DOCK_ROOM_HEIGHT);
+  assert.equal(tall.y + tall.height, row.y + row.height);
+  assert.equal(tall.height, Math.min(DOCK_ROOM_HEIGHT, area.height));
+  assert.deepEqual([tall.x, tall.width], [row.x, row.width]);
+  // The pet: same width and bottom-centre (petFeet), so the pet does not move on screen.
+  const pet = petBounds({ x: 700, y: 800 }, area);
+  const roomy = roomyRect(pet, area, PET_ROOM_HEIGHT);
+  assert.deepEqual(petFeet(roomy), petFeet(pet));
+  assert.equal(roomy.height, PET_ROOM_HEIGHT);
+  // A pet near the top of the screen takes only the room there is, never pushed down.
+  const high = petBounds({ x: 700, y: area.y + PET_SIZE.height + 40 }, area);
+  const near = roomyRect(high, area, PET_ROOM_HEIGHT);
+  assert.equal(near.y, area.y);
+  assert.deepEqual(petFeet(near), petFeet(high));
+  // Never smaller than the window itself.
+  assert.deepEqual(roomyRect(high, { ...area, y: high.y + 10 }, PET_ROOM_HEIGHT), high);
 });
