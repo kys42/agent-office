@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
 import {
   ArrowUpRight,
   BatteryWarning,
@@ -29,6 +29,7 @@ import { messageExcerpt, sessionActivity } from '../shared/activity';
 import { ago, date, time } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { Sprite } from './Sprite';
+import { useBringBack } from '../lib/useBringBack';
 
 const projectStyle = (key: string) => ({ '--project-color': projectColor(key) }) as CSSProperties;
 
@@ -75,39 +76,8 @@ export function OfficeList({
   const groups = useMemo(() => officeListGroups(sessions, order), [sessions, order]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  // Rows being brought back: ignore repeat presses until the move settles.
-  const [busy, setBusy] = useState<ReadonlySet<string>>(() => new Set());
-  const act = (id: string) => {
-    if (!action || busy.has(id)) return;
-    const buttons = [
-      ...(scrollRef.current?.querySelectorAll<HTMLButtonElement>('.office-list-action') ?? []),
-    ];
-    const at = buttons.findIndex((b) => b.dataset.sessionId === id);
-    const focused = at >= 0 && document.activeElement === buttons[at];
-    const neighbor = (buttons[at + 1] ?? buttons[at - 1])?.dataset.sessionId;
-    setBusy((b) => new Set(b).add(id));
-    void Promise.resolve(action.onAct(id))
-      .catch(() => undefined)
-      .finally(() => {
-        setBusy((b) => {
-          const next = new Set(b);
-          next.delete(id);
-          return next;
-        });
-        if (!focused) return;
-        // The row leaves the list; keep keyboard users on the next one so they can continue.
-        requestAnimationFrame(() => {
-          const root = scrollRef.current;
-          if (!root || root.querySelector(`[data-session-id="${CSS.escape(id)}"]`)) return;
-          const target = neighbor
-            ? root.querySelector<HTMLButtonElement>(
-                `.office-list-action[data-session-id="${CSS.escape(neighbor)}"]`,
-              )
-            : null;
-          (target ?? searchRef.current)?.focus();
-        });
-      });
-  };
+  // Rows being brought back: repeat presses wait, and the focus moves on with the list.
+  const { busy, act } = useBringBack(action?.onAct, scrollRef, searchRef);
   return (
     <section
       className={`office-list ${action ? 'with-action' : ''}`}
@@ -357,6 +327,7 @@ export function OfficeList({
                       <button
                         className="office-list-action"
                         data-session-id={s.id}
+                        data-bring-id={s.id}
                         aria-disabled={busy.has(s.id) || undefined}
                         aria-label={`${action.label} · ${privacy ? PROVIDERS[s.provider].name : helper ? helperName(s) : sessionName(s)}`}
                         title={action.label}

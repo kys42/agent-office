@@ -617,7 +617,8 @@ test('The pet shows the request bubble only while hovered, inside its window', a
   expect(box.x + box.width).toBeLessThanOrEqual(stage.x + stage.width);
   expect(box.y + box.height).toBeLessThanOrEqual(stage.y + stage.height);
   // Moving slowly down from the bubble onto the column keeps the hover (a bridge spans the gap).
-  const first = tools.getByRole('button').first();
+  // (Onto hide, the last: resting on 보기 at the top would open its menu.)
+  const first = tools.getByRole('button').last();
   const answer = (await speech.locator('.speech-bubble').boundingBox())!;
   const target = (await first.boundingBox())!;
   const x = target.x + target.width / 2;

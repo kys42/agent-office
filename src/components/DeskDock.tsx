@@ -10,6 +10,8 @@ import { DeskPet } from './DeskPet';
 import { DeskRow } from './DeskRow';
 import { DockTips } from './DockTips';
 import type { DockViewControls, DockViewPick } from './DockViewMenu';
+import type { DockPlusControls } from './DockPlus';
+import type { DockPeekControls } from './DockPeek';
 import { dockViewStep } from '../shared/dock-look';
 import { useI18n } from '../lib/i18n';
 
@@ -71,6 +73,9 @@ export function DeskDock() {
   const [mode, setMode] = useState<DockMode>(initialMode);
   const [expanded, setExpanded] = useState<Expanded>(lastExpanded);
   const [tiny, setTiny] = useState(initialTiny);
+  // Which edge of its window the pet stands at (the main process grows the window the other way).
+  const [petSide, setPetSide] = useState<'left' | 'right'>('right');
+  useEffect(() => api.onDockSide?.(setPetSide), []);
   const keepTiny = (on: boolean) => {
     setTiny(on);
     // The desktop main process remembers tiny (dock.json); only a browser preview keeps it here.
@@ -142,9 +147,10 @@ export function DeskDock() {
     if (api.dock && before !== held.size > 0) await api.dock(on ? 'room-on' : 'room-off');
   }, []);
   // A dialog (summon, a folder shell's confirm…) needs more than the strip's height, a tiny
-  // one's above all: the window grows upward while one is open, the desks staying put.
+  // one's above all: the window grows upward while one is open, the desks staying put. The
+  // pet's window grows up and to the left (its ＋ opens the launch sheet too).
   useEffect(() => {
-    if (!api.dock || mode === 'pet') return;
+    if (!api.dock) return;
     let open = false;
     const check = () => {
       const now = !!document.querySelector('.modal-backdrop');
@@ -174,6 +180,25 @@ export function DeskDock() {
     onPick: pickView,
     settings: !!api.settings,
     room: (on) => room('menu', on),
+  };
+  // 잠깐 숨기기: the desks and the pet step aside, the pill stays. For this look only: changing
+  // the look (an Esc folding to the pet too) shows everything again, as does a restart.
+  const [peeking, setPeeking] = useState(false);
+  useEffect(() => setPeeking(false), [mode, tiny]);
+  const peek: DockPeekControls = {
+    on: peeking,
+    toggle: () => setPeeking((on) => !on),
+    off: () => setPeeking(false),
+  };
+  // The ＋ popover: a new session in a project (the launch sheet), or a colleague brought back
+  // from the lounge or the archive with the big office's own call.
+  const plus: DockPlusControls = {
+    model,
+    privacy,
+    demo,
+    notify,
+    onReturn: returnToOffice,
+    room: (on) => room('plus', on),
   };
   useEffect(() => {
     document.body.classList.add('dock-mode');
@@ -232,6 +257,9 @@ export function DeskDock() {
           onExpand={() => go(expanded)}
           onReply={send.sendReply}
           view={view}
+          plus={plus}
+          peek={peek}
+          side={petSide}
           notify={notify}
         />
       ) : (
@@ -244,6 +272,8 @@ export function DeskDock() {
           variant={mode === 'floor' ? 'floor' : 'office'}
           tiny={tiny}
           view={view}
+          plus={plus}
+          peek={peek}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}

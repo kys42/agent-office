@@ -35,6 +35,9 @@ import {
   rowBounds,
   DOCK_ROOM_HEIGHT,
   PET_ROOM_HEIGHT,
+  PET_ROOM_WIDTH,
+  petRoomRect,
+  petStand,
   roomyRect,
 } from '../src/shared/dock-geometry.js';
 import { DESK_FOOT, FLOOR_TOP, ROW_TOP } from '../src/shared/office-layout.js';
@@ -299,4 +302,42 @@ test('room for a dialog or the 보기 menu grows the window upward, the feet sta
   assert.deepEqual(petFeet(near), petFeet(high));
   // Never smaller than the window itself.
   assert.deepEqual(roomyRect(high, { ...area, y: high.y + 10 }, PET_ROOM_HEIGHT), high);
+});
+
+test("the pet's room grows left, or right near the left side; the pet keeps its spot", () => {
+  const pet = petBounds({ x: 700, y: 800 }, area);
+  const { rect: wide, side } = petRoomRect(pet, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.equal(side, 'right', 'room on the left: the pet stands at the right edge');
+  assert.equal(wide.width, PET_ROOM_WIDTH);
+  assert.equal(wide.height, PET_ROOM_HEIGHT);
+  assert.equal(wide.x + wide.width, pet.x + pet.width, 'the right edge stays');
+  assert.equal(wide.y + wide.height, pet.y + pet.height, 'the bottom edge stays');
+  assert.deepEqual(petStand(wide, side), pet);
+  assert.deepEqual(petFeet(petStand(wide, side)), petFeet(pet));
+  // Near the left side: it grows to the right instead, the pet at the window's left edge.
+  const left = petBounds({ x: area.x + PET_SIZE.width / 2 + 40, y: 800 }, area);
+  const near = petRoomRect(left, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.equal(near.side, 'left');
+  assert.equal(near.rect.x, left.x, 'the left edge stays');
+  assert.equal(near.rect.width, PET_ROOM_WIDTH, 'the full room, to the right');
+  assert.deepEqual(petStand(near.rect, near.side), left);
+  // Near the top-left corner: up as far as the top allows, right for the width.
+  const corner = petBounds(
+    { x: area.x + PET_SIZE.width / 2, y: area.y + PET_SIZE.height + 20 },
+    area,
+  );
+  const tight = petRoomRect(corner, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.equal(tight.side, 'left');
+  assert.equal(tight.rect.y, area.y);
+  assert.equal(tight.rect.width, PET_ROOM_WIDTH);
+  assert.deepEqual(petStand(tight.rect, tight.side), corner);
+  // A display narrower than the room on both sides: the side with more, never pushed.
+  const narrow = { x: 0, y: 0, width: 500, height: 900 };
+  const mid = petBounds({ x: 230, y: 800 }, narrow);
+  const squeezed = petRoomRect(mid, narrow, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.ok(squeezed.rect.x >= narrow.x && squeezed.rect.x + squeezed.rect.width <= narrow.width);
+  assert.deepEqual(petStand(squeezed.rect, squeezed.side), mid);
+  // At the pet's own size either side is the window itself.
+  assert.deepEqual(petStand(pet, 'left'), pet);
+  assert.deepEqual(petStand(pet, 'right'), pet);
 });

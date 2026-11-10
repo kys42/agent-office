@@ -575,21 +575,21 @@ test('Reduced motion holds the tiny effects still, like the full size', async ({
   expect(glows).toEqual([]);
 });
 
-test('The tiny pill carries the 보기 menu: settings, the office and folding to the pet', async ({
+test('The tiny pill carries 보기, ＋, 잠깐 숨기기 and settings: the office and folding to the pet', async ({
   page,
 }) => {
   await setup(page, '#mini=row');
   const pill = page.locator('.dock-pill');
   await chooseView(page, '쪼꼬미', pill);
   const row = await settled(page);
-  // The same two doors as the full pill, drawn small.
-  for (const name of ['보기 바꾸기', '데스크 펫 숨기기']) {
+  // The same doors as the full pill, drawn small.
+  for (const name of ['보기 바꾸기', '동료 부르기', '잠깐 숨기기', '설정', '데스크 펫 숨기기']) {
     const b = (await pill.getByRole('button', { name, exact: true }).boundingBox())!;
     expect(b.height).toBeLessThanOrEqual(22.5);
   }
   const p = (await pill.boundingBox())!;
   expect(p.height).toBeLessThan(30);
-  expect(p.width).toBeLessThan(200);
+  expect(p.width).toBeLessThan(280);
   // At home (the right end) it covers none of the desks or their names.
   for (const i of [0, 1, 2])
     for (const sel of [
@@ -605,8 +605,8 @@ test('The tiny pill carries the 보기 menu: settings, the office and folding to
     clip: { x: 1440 - 420, y: row.y, width: 420, height: row.height },
   });
 
-  // Each calls what the full pill's menu does.
-  await chooseView(page, '설정', pill);
+  // Each calls what the full pill's does.
+  await pill.getByRole('button', { name: '설정', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as any).settingsOpened)).toEqual([null]);
   await chooseView(page, '큰 사무실 열기', pill);
   await expect.poll(() => calls(page)).toContain('window:main');
@@ -618,6 +618,7 @@ test('A browser preview has no settings in the tiny pill either', async ({ page 
   await setup(page, '#mini=row&tiny', { bridge: false });
   await settled(page);
   const pill = page.locator('.dock-pill');
+  await expect(pill.getByRole('button', { name: '설정', exact: true })).toHaveCount(0);
   await viewButton(pill).click();
   await expect(viewItem(page, '큰 사무실 열기')).toBeVisible();
   await expect(viewItem(page, '설정')).toHaveCount(0);

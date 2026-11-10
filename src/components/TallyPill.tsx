@@ -13,6 +13,7 @@ import { TRIAGE_LABELS } from '../shared/triage';
 import { MOODS, type PetTallyGroup } from '../shared/types';
 import { residentLabel, tallyCounts, tallyMembers, type OfficeModel } from '../shared/office-model';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
+import { dockPopovers, isPopoverTrigger, pointerPressed } from '../lib/dockPopovers';
 import { useI18n } from '../lib/i18n';
 import { Sprite } from './Sprite';
 
@@ -119,7 +120,11 @@ export function TallyPill({
           });
       }
     }
+    // Its turn among the dock's popovers (the 보기 menu, the ＋): after its room's claim, so the
+    // one it closes gives the room back without a shrink in between.
+    if (group && !listed) dockPopovers.opened(listId, () => putRef.current(null));
     if (!group) {
+      dockPopovers.closed(listId);
       // The room goes before anything the closing click does next (the IPC keeps this order).
       release();
       setReady(true);
@@ -134,6 +139,8 @@ export function TallyPill({
   putRef.current = put;
   const soon = (group: PetTallyGroup) => {
     clearTimeout(timer.current);
+    // A hover never opens a list over another open popover (a click still does).
+    if (dockPopovers.busy(listId)) return;
     timer.current = setTimeout(() => putRef.current(group), LIST_DELAY);
   };
   const later = () => {
@@ -143,6 +150,7 @@ export function TallyPill({
   useEffect(
     () => () => {
       clearTimeout(timer.current);
+      dockPopovers.closed(listId);
       release();
       if (listedRef.current) latest.current.onListed?.(false);
     },
@@ -174,6 +182,20 @@ export function TallyPill({
   useEffect(() => {
     if (listed && members.length === 0) putRef.current(null);
   }, [listed, members.length]);
+  // A list opened by hover leaves focus elsewhere: Esc still closes it (and only it). With
+  // focus on the pill or in the list, the pill's own key handler does that.
+  useEffect(() => {
+    if (!listed) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const at = document.activeElement;
+      if (wrap.current?.contains(at) || listEl.current?.contains(at)) return;
+      e.preventDefault();
+      putRef.current(null);
+    };
+    window.addEventListener('keydown', esc, true);
+    return () => window.removeEventListener('keydown', esc, true);
+  }, [listed]);
   useLayoutEffect(() => {
     if (floating && shown && ready) measure();
   }, [floating, shown, ready, listed, members.length, measure]);
@@ -235,7 +257,18 @@ export function TallyPill({
       className={`tally-anchor ${floating ? 'is-dock' : ''} ${compact ? 'is-compact' : ''}`}
       onBlur={(e) => {
         const to = e.relatedTarget as Node | null;
-        if (!e.currentTarget.contains(to) && !listEl.current?.contains(to)) put(null);
+        const inside = (n: Node | null) =>
+          !!wrap.current?.contains(n) || !!listEl.current?.contains(n);
+        if (inside(to)) return;
+        if (!isPopoverTrigger(to)) return put(null);
+        // Onto another popover's button: that one closes the list as it opens (after taking the
+        // room). Once its press is over, a list still open (it opened nothing) closes after all.
+        const recheck = () =>
+          setTimeout(() => {
+            if (listedRef.current && !inside(document.activeElement)) putRef.current(null);
+          }, 0);
+        if (pointerPressed()) window.addEventListener('pointerup', recheck, { once: true });
+        else recheck();
       }}
       onKeyDown={(e) => {
         if (!listed) return;
@@ -284,6 +317,7 @@ export function TallyPill({
             aria-label={d.listOf(TRIAGE_LABELS[g.group], g.count)}
             aria-expanded={listed === g.group}
             aria-controls={listed === g.group && shown ? listId : undefined}
+            data-popover-trigger
             onMouseEnter={() => (listed ? put(g.group) : soon(g.group))}
             onMouseLeave={later}
             // Opens (a hover may already have): Esc, leaving or another number closes it.

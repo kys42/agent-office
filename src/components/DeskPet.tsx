@@ -2,6 +2,8 @@ import { focusLine } from '../shared/terminal-target';
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, PanelRightOpen, Terminal, X } from 'lucide-react';
 import { DockViewMenu, type DockViewControls } from './DockViewMenu';
+import { DockPlus, type DockPlusControls } from './DockPlus';
+import { DockPeek, type DockPeekControls } from './DockPeek';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { openColleague } from '../lib/dockCard';
@@ -47,6 +49,9 @@ export function DeskPet({
   onExpand,
   onReply,
   view: viewMenu,
+  plus,
+  peek,
+  side = 'right',
   notify,
   preview = false,
 }: {
@@ -63,6 +68,12 @@ export function DeskPet({
   notify?: (message: string) => void;
   /** The 보기 menu (looks, tiny, the big office, settings); absent in the settings preview. */
   view?: DockViewControls;
+  /** The ＋ popover (start new, bring back); absent in the settings preview. */
+  plus?: DockPlusControls;
+  /** 잠깐 숨기기: the pet and its bubble step aside; the pill and the tools stay. */
+  peek?: DockPeekControls;
+  /** Which edge of the window the pet stands at (the window holds room on the other side). */
+  side?: 'left' | 'right';
   /**
    * Drawn small in the settings (#324): the same pet, without anything that reaches outside it —
    * no window keys, terminal lookups, dock window calls or cards.
@@ -98,6 +109,9 @@ export function DeskPet({
   }, [spoke]);
   // Hovering a number in the pill lists who it counts (TallyPill); the bubble steps aside.
   const [listed, setListed] = useState(false);
+  // The ＋ popover stands over the bubble's place: it steps aside the same way.
+  const [popped, setPopped] = useState(false);
+  const tools = useRef<HTMLDivElement>(null);
   // Laid out once per change of who is drawn (not per pointer move), as the row does.
   const counted = show.tally ? show.tallyGroups.join() : '';
   const all = useMemo(() => petChoices(model), [model.scene, show.tally, counted]);
@@ -138,13 +152,31 @@ export function DeskPet({
   const key = said ? `${id}:${said.bubble?.id ?? ''}` : null;
   const [unfolded, setUnfolded] = useState<string | null>(null);
   const [replyFor, setReplyFor] = useState<string | null>(null);
+  // Hidden for a moment (peek): an unseen bubble keeps nothing unfolded or a reply open.
+  const peeking = !!peek?.on;
+  useEffect(() => {
+    if (!peeking) return;
+    setUnfolded(null);
+    setReplyFor(null);
+  }, [peeking]);
+  // Someone newly needs the person (a call, a request just arrived): the pet's own signals (its
+  // `!`, the landing papers) would go unseen while it hides, so it comes back.
+  const waiting = status ? 0 : model.counts.attention;
+  const arrived = status ? null : (pet.arrival?.id ?? null);
+  const seen = useRef({ waiting, arrived });
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { waiting, arrived };
+    if (peeking && (waiting > before.waiting || (arrived && arrived !== before.arrived)))
+      peek?.off();
+  }, [waiting, arrived]);
   const expanded = !!key && unfolded === key;
   const replying = !!key && replyFor === key;
   // Pointing at the pet shows what its colleague says — or the last thing it said, as a desk
   // does; otherwise it speaks only what just arrived.
   // An unfolded or replying bubble (a peek too) stays without the pointer, as on a desk.
   // A list open from the pill takes the view: no peeking bubble behind it.
-  const pointing = (hover || expanded || replying) && !closed && !listed;
+  const pointing = (hover || expanded || replying) && !closed && !listed && !popped;
   const reveal = pointing || expanded || replying;
   const speech =
     view && said
@@ -228,9 +260,9 @@ export function DeskPet({
     if (!preview) void api.dock?.('drag-end');
   };
   return (
-    <div className="desk-pet-stage" style={PET_SIZE}>
+    <div className={`desk-pet-stage ${side === 'left' ? 'stand-left' : ''}`} style={PET_SIZE}>
       <div
-        className={`dock-pet-anchor ${listed ? 'is-listing' : ''}`}
+        className={`dock-pet-anchor ${listed || popped ? 'is-listing' : ''} ${peeking ? 'is-peeking' : ''}`}
         // Only what is drawn counts: the window's see-through edges let the pointer pass by.
         onMouseOver={(e) => {
           if (e.target instanceof Element && e.target.closest('[data-solid]')) setHover(true);
@@ -356,8 +388,22 @@ export function DeskPet({
         )}
         {/* Two doors, as on the row's pill: View (the looks, tiny, the big office, settings) and
             hide. They stay up while the menu is open (dock.css). */}
-        <div className="dock-pet-tools" data-solid>
-          <DockViewMenu controls={viewMenu} label={false} size={12} />
+        <div className="dock-pet-tools" data-solid ref={tools}>
+          <DockViewMenu controls={viewMenu} label={false} size={12} edge={tools} />
+          <DockPlus
+            controls={plus}
+            size={12}
+            edge={tools}
+            onOpenChange={setPopped}
+            onOpenCard={(sessionId, from) =>
+              void openColleague(sessionId, { anchor: from.closest('.dock-pet-anchor') })
+            }
+          />
+          <DockPeek
+            peek={peek}
+            size={12}
+            blocked={replying ? t.dock.peek.blockedReply : undefined}
+          />
           <button
             className="icon-btn"
             aria-label={d.hide}

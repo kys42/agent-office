@@ -429,9 +429,34 @@ try {
     await menu.getByRole(role, { name, exact: true }).click();
     await menu.waitFor({ state: 'detached' });
   };
+  // The pet's ＋: its window grows up and to the left (the pet keeps its spot), and back.
+  await dock.locator('.dock-pet-anchor').hover();
+  await dock
+    .locator('.dock-pet-tools')
+    .getByRole('button', { name: '동료 부르기', exact: true })
+    .evaluate((b) => b.click());
+  const petPlus = dock.getByRole('dialog', { name: '동료 부르기' });
+  await petPlus.waitFor();
+  for (let i = 0; i < 40 && (await dockBounds()).width === pet.width; i++)
+    await dock.waitForTimeout(50);
+  const petRoomy = await dockBounds();
+  assert.ok(petRoomy.width > pet.width && petRoomy.height > pet.height, 'the pet window grows');
+  assert.equal(petRoomy.x + petRoomy.width, pet.x + pet.width, 'it keeps its right edge');
+  assert.equal(petRoomy.y + petRoomy.height, pet.y + pet.height, 'it keeps its bottom edge');
+  await dock.waitForTimeout(200);
+  await dock.screenshot({ path: '.local/native-pet-plus.png' });
+  await dock.keyboard.press('Escape');
+  await petPlus.waitFor({ state: 'detached' });
+  for (let i = 0; i < 40 && (await dockBounds()).width !== pet.width; i++)
+    await dock.waitForTimeout(50);
+  assert.deepEqual(
+    (({ x, y, width, height }) => ({ x, y, width, height }))(await dockBounds()),
+    (({ x, y, width, height }) => ({ x, y, width, height }))(pet),
+    'the pet window gives the room back',
+  );
   // The pet's 보기 menu unfolds the desks.
   await dock.locator('.dock-pet-anchor').hover();
-  await chooseView('책상 줄');
+  await chooseView('책상 줄', { dom: true });
   await dock.waitForSelector('.desk-row [data-station-id]');
   assert.equal(await dock.locator('.desk-row [data-station-id]').count(), 3);
   const row = await dockBounds();
@@ -441,6 +466,65 @@ try {
   await dock.waitForTimeout(400);
   await checkMacDock('desk row');
   await dock.screenshot({ path: '.local/native-row.png' });
+  const rowPill = dock.locator('.dock-pill');
+  const backTo = async (height, what) => {
+    for (let i = 0; i < 40 && (await dockBounds()).height !== height; i++)
+      await dock.waitForTimeout(50);
+    assert.equal((await dockBounds()).height, height, what);
+  };
+  // The pill's ＋: a popover above it, the window grown upward while it is open.
+  await rowPill.getByRole('button', { name: '동료 부르기', exact: true }).click();
+  const plusPop = dock.getByRole('dialog', { name: '동료 부르기' });
+  await plusPop.waitFor();
+  await dock.waitForFunction(
+    () => getComputedStyle(document.querySelector('.dock-plus')).visibility === 'visible',
+  );
+  const roomy = await dockBounds();
+  assert.ok(roomy.height > row.height + 200, 'the row grows upward for ＋');
+  assert.equal(roomy.y + roomy.height, row.y + row.height, 'it keeps its bottom edge');
+  // 새로 부르기 hands over to the launch sheet: its own room takes over, no shrink in between.
+  const project = plusPop.getByRole('button', { name: /에서 새로 부르기$/ }).first();
+  if (await project.count()) {
+    await project.click();
+    const sheet = dock.getByRole('dialog', { name: '세션 시작' });
+    await sheet.waitFor();
+    await dock.waitForTimeout(150);
+    assert.equal((await dockBounds()).height, roomy.height, 'the sheet keeps the room');
+    await dock.screenshot({ path: '.local/native-row-plus-sheet.png' });
+    await dock.keyboard.press('Escape');
+    await sheet.waitFor({ state: 'detached' });
+    await backTo(row.height, 'the room goes back as the sheet closes');
+    await rowPill.getByRole('button', { name: '동료 부르기', exact: true }).click();
+    await plusPop.waitFor();
+  }
+  await plusPop.getByRole('tab', { name: /데려오기/ }).click();
+  await dock.waitForTimeout(150);
+  await dock.screenshot({ path: '.local/native-row-plus.png' });
+  await dock.keyboard.press('Escape');
+  await plusPop.waitFor({ state: 'detached' });
+  await backTo(row.height, 'the room goes back as ＋ closes');
+  // 보기 opens on hover. The window grows under the pointer: the page re-judges hover at the
+  // pointer's old spot (now off the button), yet the menu stays — the pointer never moved.
+  const viewMenu = dock.getByRole('menu', { name: '데스크 보기' });
+  await rowPill.getByRole('button', { name: '보기 바꾸기', exact: true }).hover();
+  await viewMenu.waitFor();
+  for (let i = 0; i < 40 && (await dockBounds()).height === row.height; i++)
+    await dock.waitForTimeout(50);
+  assert.ok((await dockBounds()).height > row.height, 'the row grows for the hover-opened menu');
+  await dock.waitForTimeout(700);
+  assert.ok(await viewMenu.isVisible(), 'a still pointer keeps the hover-opened menu');
+  // Leaving it for the see-through top closes it after a short grace, and gives the room back.
+  await dock.mouse.move(12, 12);
+  await viewMenu.waitFor({ state: 'detached' });
+  await backTo(row.height, 'the room goes back as the hover menu closes');
+  // 👁 잠깐 숨기기: the desks step aside (click-through), the pill stays; then they come back.
+  await rowPill.getByRole('button', { name: '잠깐 숨기기', exact: true }).click();
+  await dock.waitForSelector('.desk-row.is-peeking');
+  await dock.waitForTimeout(300);
+  assert.ok(!(await dock.locator('.desk-row [data-station-id]').first().isVisible()));
+  await dock.screenshot({ path: '.local/native-row-peek.png' });
+  await rowPill.getByRole('button', { name: '다시 보기', exact: true }).click();
+  await dock.waitForSelector('.desk-row:not(.is-peeking) [data-station-id]');
   // Synthetic providers share one project. Its sign moves their benches together.
   const rowZone = dock.locator('.row-zone').first();
   const originalX = await rowZone.evaluate((el) => parseFloat(el.style.left));

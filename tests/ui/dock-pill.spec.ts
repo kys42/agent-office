@@ -118,11 +118,11 @@ test("The tool pill floats over the desks' feet, which still stand on the bottom
   // ~8px above the bottom edge, over the scene, at the right end (home) the first time.
   expect(Math.abs(HEIGHT - (b.y + b.height) - 8)).toBeLessThanOrEqual(1.5);
   expect(await fromRight(page)).toBe(PILL_MARGIN);
-  // Every row control lives in the pill (no lounge), with the waiting summary: the 보기 menu
-  // and hide are its only doors (looks, tiny, the big office and settings are in the menu).
-  for (const name of ['보기 바꾸기', '데스크 펫 숨기기'])
+  // Every row control lives in the pill (no lounge), with the waiting summary: 보기 (looks, tiny,
+  // the big office), ＋, 잠깐 숨기기, settings (a window to open here) and hide.
+  for (const name of ['보기 바꾸기', '동료 부르기', '잠깐 숨기기', '설정', '데스크 펫 숨기기'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toBeVisible();
-  for (const name of ['새로고침', '바닥 책상으로 보기', '작게 보기', '사무실 펼치기', '설정'])
+  for (const name of ['새로고침', '바닥 책상으로 보기', '작게 보기', '사무실 펼치기'])
     await expect(pill(page).getByRole('button', { name, exact: true })).toHaveCount(0);
   // The pet's numbers: one calls (the two others rest, uncounted), naming its group.
   await expect(pill(page).locator('.tally-pill > button')).toHaveText(['1']);
@@ -165,12 +165,16 @@ test('Settings opens the settings window; a browser preview has none to open', a
   context,
 }) => {
   await setup(page, '#mini=row');
-  await chooseView(page, '설정', pill(page));
+  // Its own button in the pill (no longer in the 보기 menu there).
+  await pill(page).getByRole('button', { name: '설정', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as any).settingsOpened)).toEqual([null]);
+  await viewButton(pill(page)).click();
+  await expect(viewItem(page, '설정')).toHaveCount(0);
 
   // A fresh page: init scripts stay with the page they were added to.
   const preview = await context.newPage();
   await setup(preview, '#mini=row', { bridge: false });
+  await expect(pill(preview).getByRole('button', { name: '설정', exact: true })).toHaveCount(0);
   await viewButton(pill(preview)).click();
   await expect(viewItem(preview, '큰 사무실 열기')).toBeVisible();
   await expect(viewItem(preview, '설정')).toHaveCount(0);

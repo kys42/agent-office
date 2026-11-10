@@ -98,6 +98,10 @@ import {
   dockHeight,
   moveOntoArea,
   PET_ROOM_HEIGHT,
+  PET_ROOM_WIDTH,
+  petRoomRect,
+  petStand,
+  type PetSide,
   petBounds,
   petFeet,
   readDockPrefs,
@@ -228,9 +232,8 @@ else {
         // toggled closed if already open); otherwise the big office opens at that colleague.
         // A summary (no one colleague) opens the big office beside the dock, which stays.
         const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
-        if (sessionId && docked) cards.reveal({ id: sessionId }, dock!.getBounds());
-        else
-          showMain(sessionId, { keepDock: docked, from: docked ? dock!.getBounds() : undefined });
+        if (sessionId && docked) cards.reveal({ id: sessionId }, placeOf(dock!));
+        else showMain(sessionId, { keepDock: docked, from: docked ? placeOf(dock!) : undefined });
       },
     });
     app.on('before-quit', () => notifier.dispose());
@@ -636,11 +639,29 @@ function dockBounds(mode: DockMode): Rect {
  * any look (the pet's window has no room above its tools for it): grow upward.
  */
 let dockRoom = false;
+/** Which edge of the (grown) pet window the pet stands at. */
+let petSide: PetSide = 'right';
 function roomyBounds(mode: DockMode): Rect {
   const b = dockBounds(mode);
   if (!dockRoom) return b;
   // The desks and the pet stand on the window's bottom edge: keep it, take the room above.
-  return roomyRect(b, workAreaFor(b), mode === 'pet' ? PET_ROOM_HEIGHT : DOCK_ROOM_HEIGHT);
+  const area = workAreaFor(b);
+  if (mode !== 'pet') return roomyRect(b, area, DOCK_ROOM_HEIGHT);
+  const { rect, side } = petRoomRect(b, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  // Told before the window grows: at the pet's own width either side draws it the same.
+  if (side !== petSide) {
+    petSide = side;
+    if (dock && !dock.isDestroyed()) dock.webContents.send('office:dock-side', side);
+  }
+  return rect;
+}
+/**
+ * Where a window is, for what opens beside it (a card, the big office on its display): the pet
+ * itself, not the room its window may hold around it.
+ */
+function placeOf(w: BrowserWindow): Rect {
+  const b = w.getBounds();
+  return w === dock && dockMode === 'pet' ? petStand(b, petSide) : b;
 }
 function setDockRoom(on: boolean) {
   if (dockRoom === on) return;
@@ -715,6 +736,7 @@ function showDock(mode: DockMode = 'pet') {
     // A reloaded page has no dialog open: drop any room an earlier one asked for.
     dock.webContents.on('did-finish-load', () => {
       setDockRoom(false);
+      dock?.webContents.send('office:dock-side', petSide);
       dock?.webContents.send('office:dock', dockMode, dockTiny);
     });
     void dock.loadFile(index, {
@@ -743,16 +765,16 @@ function stopDrag(save: boolean) {
   clearInterval(drag);
   drag = null;
   if (!save || !dock || dock.isDestroyed() || dockMode !== 'pet') return;
-  const b = dock.getBounds();
-  const fixed = clampInto(b, workAreaFor(b));
-  if (fixed.x !== b.x || fixed.y !== b.y) dock.setBounds(fixed);
-  const feet = petFeet(fixed);
+  // The window may hold room (above and left of the pet) or have just given it back mid-drag:
+  // judge the pet's own box, then size the window around the new spot.
+  const b = petStand(dock.getBounds(), petSide);
+  const feet = petFeet(clampInto(b, workAreaFor(b)));
   if (petSpot?.x !== feet.x || petSpot?.y !== feet.y) {
     petSpot = feet;
     void savePetSpot();
   }
-  // Room asked for mid-drag (the 보기 menu) waited for the drop: take it now, above the new spot.
-  if (dockRoom) dock.setBounds(roomyBounds(dockMode));
+  // Room asked for (or given back) mid-drag waited for the drop: take it now, at the new spot.
+  dock.setBounds(roomyBounds(dockMode));
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
@@ -949,8 +971,9 @@ function setupReader() {
       const b: Bookmark | null = await bridge.call('bookmarkById', [id]);
       if (!b) throw new Error(m().memory.readerGoneTitle);
       // Like the in-page reader's "open": the big office at that message, on this display.
+      const from = BrowserWindow.fromWebContents(e.sender);
       showMain(b.sessionId, {
-        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+        from: from ? placeOf(from) : undefined,
         bookmark: { eventId: b.eventId, at: b.at },
       });
       return;
@@ -1124,7 +1147,7 @@ function setupIPC() {
     // window matches itself, so nothing moves).
     else if (action === 'main')
       showMain(typeof id === 'string' ? id : undefined, {
-        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+        from: ((w) => (w ? placeOf(w) : undefined))(BrowserWindow.fromWebContents(e.sender)),
       });
     else if (action === 'hide') {
       if (e.sender === dock?.webContents) {
