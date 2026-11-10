@@ -371,6 +371,23 @@ test('보기 opens on hover after a moment, stays on the way into the menu, clos
   await expect(viewMenu(page)).toBeVisible();
   await button.click();
   await expect(viewMenu(page)).toHaveCount(0);
+  // Esc closes a hover-opened menu (focus is elsewhere) and does not fold the dock to the pet.
+  await page.mouse.move(200, 200);
+  await page.waitForTimeout(300);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await expect(viewMenu(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(viewMenu(page)).toHaveCount(0);
+  await expect(page.locator('.desk-row')).toBeVisible();
+  expect(await calls(page)).not.toContain('pet');
+  // The same for a number's list opened by hover.
+  await page.mouse.move(200, 200);
+  const number = pill(page).locator('.tally-pill > button').first();
+  await number.hover();
+  await expect(page.locator('.tally-list')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.tally-list')).toHaveCount(0);
+  await expect(page.locator('.desk-row')).toBeVisible();
 });
 
 test('👁 잠깐 숨기기 hides the desks (click-through), keeps the pill, and brings them back', async ({

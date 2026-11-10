@@ -182,6 +182,20 @@ export function TallyPill({
   useEffect(() => {
     if (listed && members.length === 0) putRef.current(null);
   }, [listed, members.length]);
+  // A list opened by hover leaves focus elsewhere: Esc still closes it (and only it). With
+  // focus on the pill or in the list, the pill's own key handler does that.
+  useEffect(() => {
+    if (!listed) return;
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      const at = document.activeElement;
+      if (wrap.current?.contains(at) || listEl.current?.contains(at)) return;
+      e.preventDefault();
+      putRef.current(null);
+    };
+    window.addEventListener('keydown', esc, true);
+    return () => window.removeEventListener('keydown', esc, true);
+  }, [listed]);
   useLayoutEffect(() => {
     if (floating && shown && ready) measure();
   }, [floating, shown, ready, listed, members.length, measure]);

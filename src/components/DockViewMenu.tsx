@@ -252,13 +252,23 @@ export function DockViewMenu({
     const hidden = () => {
       if (isPageHidden()) close(false);
     };
+    // Opened by hover, focus stays where it was: Esc must still close the menu (and only that,
+    // never folding the dock). Inside the menu its own keys handle it.
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (menu.current?.contains(document.activeElement)) return;
+      e.preventDefault();
+      close(false);
+    };
     document.addEventListener('pointerdown', down, true);
+    window.addEventListener('keydown', esc, true);
     window.addEventListener('blur', away);
     window.addEventListener('resize', measure);
     const stopVisibility = onPageVisibility(hidden);
     return () => {
       stopVisibility();
       document.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('keydown', esc, true);
       window.removeEventListener('blur', away);
       window.removeEventListener('resize', measure);
     };
