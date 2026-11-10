@@ -180,8 +180,9 @@ export function localCommand(text: string): { line?: string } | undefined {
   const t = text.trimStart();
   const tag = (name: string) =>
     new RegExp(String.raw`<${name}>([\s\S]*?)</${name}>`).exec(t)?.[1]?.trim() ?? '';
+  // Redact the whole command first: clipping could cut a secret short of what redact matches.
   const clip = (s: string) => {
-    const one = s.replace(/\s+/g, ' ').trim();
+    const one = redact(s, 100_000).replace(/\s+/g, ' ').trim();
     return one.length > 120 ? one.slice(0, 119).trimEnd() + '…' : one;
   };
   if (t.startsWith('<command-name>')) {

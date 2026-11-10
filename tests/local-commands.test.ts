@@ -283,3 +283,12 @@ test('A ! shell command is local too', () => {
   assert.equal(requests(s).length, 1);
   assert.deepEqual(lines(s), ['!git status 실행']);
 });
+
+test('a long local command is redacted before it is clipped, so no secret leaks past the cut', () => {
+  const secret = 'sk-' + 'a'.repeat(48);
+  const line = localCommand(
+    `<bash-input>curl -H "Authorization: Bearer ${'x'.repeat(90)}" ${secret}</bash-input>`,
+  )!.line!;
+  assert.ok(!line.includes('sk-aaaa'), line);
+  assert.ok(line.length <= 120);
+});
