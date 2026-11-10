@@ -97,7 +97,8 @@ export function TallyPill({
     if (group === listed) return;
     if (group && !listed) {
       const grow = latest.current.room;
-      if (grow && !holding.current) {
+      // A number at 0 (nobody in any counted group) has no list to make room for.
+      if (grow && !holding.current && tallyMembers(model, group).length > 0) {
         holding.current = true;
         const token = ++opening.current;
         setReady(false);
