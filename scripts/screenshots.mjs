@@ -90,10 +90,13 @@ try {
       return { x: x - 24, y: y - 24, width: right - x + 48, height: bottom - y + 36 };
     });
     await dock.screenshot({ path: `${dir}/desk-pet.png`, ...still, clip: pet });
-    // The pet opens its colleague's card; its side button unfolds the desks.
+    // The pet's 보기 menu unfolds the desks.
     await dock.locator('.dock-pet-anchor').hover();
     await dock
-      .getByRole('button', { name: lang === 'ko' ? '책상 펼치기' : 'Unfold the desks' })
+      .getByRole('button', { name: lang === 'ko' ? '보기 바꾸기' : 'Change view', exact: true })
+      .click();
+    await dock
+      .getByRole('menuitemradio', { name: lang === 'ko' ? '책상 줄' : 'Desk row', exact: true })
       .click();
     await dock.waitForSelector('.desk-row [data-station-id]');
     await dock.locator('.desk-row').screenshot({ path: `${dir}/desk-row.png`, ...still });
