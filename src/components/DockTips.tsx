@@ -34,7 +34,9 @@ export function DockTips() {
       current = el;
       timer = setTimeout(() => {
         const text = el.dataset.tip;
-        if (current === el && el.isConnected && text) setTip({ text, el });
+        // A menu the hover opened meanwhile (보기) says it all too.
+        if (current !== el || !el.isConnected || !text) return;
+        if (el.getAttribute('aria-expanded') !== 'true') setTip({ text, el });
       }, delay);
     };
     const over = (e: MouseEvent) => {

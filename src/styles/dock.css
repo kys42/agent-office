@@ -1610,6 +1610,41 @@ body:has(.reduce-motion) .dock-view-menu {
   margin: 4px 6px;
   background: rgba(255, 255, 255, 0.1);
 }
+/* ───────── 잠깐 숨기기 (peek) ─────────
+   The desks (bubbles, signs and flags with them) or the pet fade out and let the pointer through
+   to the desktop; the pill (and the pet's numbers and tools) stay. Visibility follows the fade,
+   so nothing hidden keeps the focus or the mouse (the row's track is also inert). */
+.desk-row-track,
+.dock-pet-anchor > :not(.dock-pet-tools, .dock-pet-pillbar) {
+  transition:
+    opacity 0.18s var(--ease-out),
+    visibility 0.18s;
+}
+.desk-row.is-peeking .desk-row-track,
+.dock-pet-anchor.is-peeking > :not(.dock-pet-tools, .dock-pet-pillbar) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+/* The pet is gone, so its hover cannot bring the tools up: they stay while it hides. */
+.dock-pet-anchor.is-peeking .dock-pet-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dock-peek-button.is-on {
+  color: var(--accent-2);
+  background: var(--accent-soft);
+}
+.reduce-motion :is(.desk-row-track, .dock-pet-anchor > *) {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .desk-row-track,
+  .dock-pet-anchor > * {
+    transition: none;
+  }
+}
+
 /* ───────── ＋ popover (새로 부르기 · 데려오기) ─────────
    Like the 보기 menu: in the page, above the pill or the pet's tools (standing on their top edge),
    after the window grew for it. Two tabs; the list scrolls inside, never the whole popover. */

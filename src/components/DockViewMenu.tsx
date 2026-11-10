@@ -7,6 +7,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type RefObject,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -23,6 +24,7 @@ import {
 import { useI18n } from '../lib/i18n';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
+import { dockPopovers, isPopoverTrigger } from '../lib/dockPopovers';
 import { dockViewChecked, type DockLook, type DockViewChoice } from '../shared/dock-look';
 import type { DockMode } from '../shared/types';
 
@@ -48,6 +50,10 @@ export interface DockViewControls {
 /** Gap between the button and the menu, and the menu's least distance to the window's edges. */
 const GAP = 6;
 const MARGIN = 6;
+/** Resting on 보기 this long opens the menu (a pointer only passing over it does not). */
+const HOVER_DELAY = 200;
+/** Leaving the button and the menu closes a hover-opened menu after this grace. */
+const HOVER_GRACE = 250;
 
 type Place = { side: 'above' | 'below'; style: CSSProperties };
 
@@ -60,11 +66,17 @@ export function DockViewMenu({
   controls,
   label = true,
   size = 14,
+  edge,
 }: {
   controls?: DockViewControls;
   /** Show the word next to the icon (the pill); the pet's narrow column shows the icon only. */
   label?: boolean;
   size?: number;
+  /**
+   * The element whose top edge the menu stands on (the pill, the pet's tools), touching it so
+   * the pointer goes up into the menu without crossing see-through space.
+   */
+  edge?: RefObject<HTMLElement | null>;
 }) {
   const { t } = useI18n();
   const v = t.dock.view;
@@ -79,6 +91,10 @@ export function DockViewMenu({
   // Each opening's room request; one closed meanwhile never shows when its room arrives.
   const opening = useRef(0);
   const holding = useRef(false);
+  // How it opened: a hover-opened menu closes once the pointer leaves it and the button; a
+  // click or a key keeps it until a choice, Esc or a press elsewhere.
+  const by = useRef<'hover' | 'click'>('click');
+  const hoverTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const release = useCallback(() => {
     if (!holding.current) return;
     holding.current = false;
@@ -87,6 +103,8 @@ export function DockViewMenu({
   const close = useCallback(
     (refocus: boolean) => {
       opening.current++;
+      clearTimeout(hoverTimer.current);
+      dockPopovers.closed(id);
       // The room goes before whatever the choice does next (the IPC keeps this order), so a
       // new look never opens at the menu's height.
       release();
@@ -98,19 +116,51 @@ export function DockViewMenu({
       // it is gone, so the see-through area there doesn't keep swallowing them.
       requestAnimationFrame(() => window.dispatchEvent(new Event(DOCK_RECLAIM)));
     },
-    [release],
+    [id, release],
   );
-  useEffect(() => release, [release]);
-  const show = async () => {
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(
+    () => () => {
+      clearTimeout(hoverTimer.current);
+      dockPopovers.closed(id);
+      release();
+    },
+    [id, release],
+  );
+  const show = async (how: 'hover' | 'click') => {
     const c = latest.current;
     if (!c) return;
+    clearTimeout(hoverTimer.current);
+    by.current = how;
     const token = ++opening.current;
     setOpen(true);
-    if (c.room) {
+    // The room's claim is taken at once; a popover this one closes then gives its own back
+    // without the window shrinking in between.
+    let grown: Promise<void> | undefined;
+    if (c.room && !holding.current) {
       holding.current = true;
-      await c.room(true).catch(() => {});
+      grown = c.room(true);
     }
+    dockPopovers.opened(id, () => closeRef.current(false));
+    await grown?.catch(() => {});
     if (opening.current === token) setReady(true);
+  };
+  // Hover: a short stay opens it (unless another popover is up); leaving both the button and
+  // the menu closes a hover-opened one after a grace — still pointed at (the window grew under
+  // a still pointer), it stays.
+  const hoverIn = () => {
+    clearTimeout(hoverTimer.current);
+    if (open || !latest.current || dockPopovers.busy(id)) return;
+    hoverTimer.current = setTimeout(() => void show('hover'), HOVER_DELAY);
+  };
+  const hoverOut = () => {
+    clearTimeout(hoverTimer.current);
+    if (!open || by.current !== 'hover') return;
+    hoverTimer.current = setTimeout(() => {
+      if (button.current?.matches(':hover') || menu.current?.matches(':hover')) return;
+      closeRef.current(false);
+    }, HOVER_GRACE);
   };
   const measure = useCallback(() => {
     const b = button.current?.getBoundingClientRect();
@@ -120,7 +170,10 @@ export function DockViewMenu({
     const width = m.offsetWidth;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const above = b.top - GAP - MARGIN;
+    // Standing on the edge (2px into it) when there is one, else a little above the button.
+    const top = edge?.current?.getBoundingClientRect().top;
+    const roof = top === undefined ? b.top - GAP : top + 2;
+    const above = roof - MARGIN;
     const below = vh - b.bottom - GAP - MARGIN;
     const up = height <= above || above >= below;
     const left = Math.round(
@@ -135,21 +188,22 @@ export function DockViewMenu({
       up
         ? {
             side: 'above',
-            style: { left, bottom: Math.round(vh - b.top + GAP), maxHeight: Math.max(0, above) },
+            style: { left, bottom: Math.round(vh - roof), maxHeight: Math.max(0, above) },
           }
         : {
             side: 'below',
             style: { left, top: Math.round(b.bottom + GAP), maxHeight: Math.max(0, below) },
           },
     );
-  }, []);
+  }, [edge]);
   useLayoutEffect(() => {
     if (open && ready) measure();
   }, [open, ready, measure]);
-  // Placed: focus the current look (or the first entry), as a menu does.
+  // Placed: focus the current look (or the first entry), as a menu does — not when a hover
+  // opened it (the focus may be in a reply being written).
   const placed = !!place;
   useEffect(() => {
-    if (!placed) return;
+    if (!placed || by.current === 'hover') return;
     const m = menu.current;
     const first =
       m?.querySelector<HTMLElement>('[aria-checked="true"]') ??
@@ -163,6 +217,7 @@ export function DockViewMenu({
     const down = (e: PointerEvent) => {
       const at = e.target as Node | null;
       if (at && (menu.current?.contains(at) || button.current?.contains(at))) return;
+      if (isPopoverTrigger(at)) return;
       close(false);
     };
     const away = () => close(false);
@@ -252,11 +307,28 @@ export function DockViewMenu({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         data-tip={v.tip}
-        onClick={() => (open ? close(false) : void show())}
+        data-popover-trigger
+        onMouseEnter={hoverIn}
+        onMouseLeave={hoverOut}
+        onClick={() => {
+          if (!open) return void show('click');
+          // A hover-opened menu stays on a click (it does not toggle shut under the pointer).
+          if (by.current === 'hover') {
+            by.current = 'click';
+            clearTimeout(hoverTimer.current);
+            return;
+          }
+          close(false);
+        }}
         onKeyDown={(e) => {
-          if (open || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+          if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
           e.preventDefault();
-          void show();
+          if (!open) return void show('click');
+          // Into a menu the pointer opened.
+          by.current = 'click';
+          menu.current
+            ?.querySelector<HTMLElement>('[aria-checked="true"], [role^="menuitem"]')
+            ?.focus();
         }}
       >
         <Rows3 size={size} />
@@ -275,6 +347,8 @@ export function DockViewMenu({
             // Drawn hidden until placed (after the window's room arrives), then where it fits.
             style={place?.style ?? { visibility: 'hidden', left: 0, top: 0 }}
             onKeyDown={onMenuKey}
+            onMouseEnter={() => clearTimeout(hoverTimer.current)}
+            onMouseLeave={hoverOut}
           >
             {looks.map((l) => item(l.id, 'menuitemradio', l.icon, l.name, l.hint))}
             {item('tiny', 'menuitemcheckbox', Minimize2, v.tiny, v.tinyHint)}

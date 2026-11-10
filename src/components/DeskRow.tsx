@@ -18,12 +18,14 @@ import {
   GripVertical,
   GitBranch,
   Pin,
+  Settings,
   Undo2,
   Terminal,
   X,
 } from 'lucide-react';
 import { DockViewMenu, type DockViewControls } from './DockViewMenu';
 import { DockPlus, type DockPlusControls } from './DockPlus';
+import { DockPeek, type DockPeekControls } from './DockPeek';
 import { TallyPill } from './TallyPill';
 import { useRowPlacement } from '../lib/useRowPlacement';
 import { useDockPill } from '../lib/useDockPill';
@@ -108,6 +110,7 @@ export function DeskRow({
   tiny = false,
   view: viewMenu,
   plus,
+  peek,
   model,
   status,
   privacy,
@@ -133,6 +136,8 @@ export function DeskRow({
   view?: DockViewControls;
   /** The ＋ popover (start new, bring back); absent in the settings preview. */
   plus?: DockPlusControls;
+  /** 잠깐 숨기기: the desks step aside, the pill stays. */
+  peek?: DockPeekControls;
   model: OfficeModel;
   status: string | null;
   privacy: boolean;
@@ -296,11 +301,13 @@ export function DeskRow({
   // Tiny draws no bubbles or replies: drop what was open, so a hidden reply or unfolded bubble
   // never eats the first Esc there (it folds the dock to the pet, as in the full size) and
   // never reappears unexpectedly on the way back.
+  // Hidden for a moment (peek) likewise: nothing unseen keeps a reply or an unfolded bubble.
+  const peeking = !!peek?.on;
   useEffect(() => {
-    if (!tiny) return;
+    if (!tiny && !peeking) return;
     setReplying(null);
     setExpanded(null);
-  }, [tiny]);
+  }, [tiny, peeking]);
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented) return;
     const field =
@@ -384,17 +391,21 @@ export function DeskRow({
   const hiddenRight = stations.filter((st) => st.x + desk / 2 > view.left + view.width);
   // The tiny pill draws the same buttons with smaller icons.
   const icon = tiny ? 12 : 14;
+  // Desktop only (a settings window); the settings preview draws it when there is one too.
+  const hasSettings = viewMenu ? viewMenu.settings : !!api.settings;
   const calling = (list: typeof stations) =>
     list.some((st) => model.view(st.id)?.group === 'attention');
   return (
     <div
       ref={rootRef}
-      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''} ${tiny && placement.dragging ? 'is-zone-grabbing' : ''}`}
+      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''} ${tiny && placement.dragging ? 'is-zone-grabbing' : ''} ${peeking ? 'is-peeking' : ''}`}
       style={{ height: dockHeight(floor, tiny) }}
     >
       <div
         className={`desk-row-track ${hiddenLeft.length ? 'fade-left' : ''} ${hiddenRight.length ? 'fade-right' : ''}`}
         ref={track}
+        // Hidden for a moment: out of the way of the pointer and the keys too.
+        inert={peeking}
       >
         <div
           className="desk-row-lane"
@@ -939,7 +950,7 @@ export function DeskRow({
           </div>
         )}
       </div>
-      {hiddenLeft.length > 0 && (
+      {hiddenLeft.length > 0 && !peeking && (
         <button
           className={`desk-row-arrow arrow-left ${calling(hiddenLeft) ? 'has-call' : ''}`}
           data-solid
@@ -951,7 +962,7 @@ export function DeskRow({
           <b>{hiddenLeft.length}</b>
         </button>
       )}
-      {hiddenRight.length > 0 && (
+      {hiddenRight.length > 0 && !peeking && (
         <button
           className={`desk-row-arrow arrow-right ${calling(hiddenRight) ? 'has-call' : ''}`}
           data-solid
@@ -1045,8 +1056,24 @@ export function DeskRow({
           </button>
         )}
         <i className="dock-pill-sep" aria-hidden="true" />
-        <DockViewMenu controls={viewMenu} size={icon} />
+        <DockViewMenu
+          controls={viewMenu && { ...viewMenu, settings: false }}
+          size={icon}
+          edge={pillRef}
+        />
         <DockPlus controls={plus} size={icon} edge={pillRef} onOpenCard={openFromList} />
+        <DockPeek peek={peek} size={icon} />
+        {/* Settings as its own button here (the 보기 menu leaves it out): the pill has room. */}
+        {hasSettings && (
+          <button
+            className="icon-btn"
+            aria-label={t.dock.view.settings}
+            data-tip={t.dock.tips.settings}
+            onClick={() => (viewMenu ? viewMenu.onPick('settings') : undefined)}
+          >
+            <Settings size={icon} />
+          </button>
+        )}
         <button
           className="icon-btn"
           aria-label={t.desk.row.hide}

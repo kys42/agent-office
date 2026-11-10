@@ -11,6 +11,7 @@ import { DeskRow } from './DeskRow';
 import { DockTips } from './DockTips';
 import type { DockViewControls, DockViewPick } from './DockViewMenu';
 import type { DockPlusControls } from './DockPlus';
+import type { DockPeekControls } from './DockPeek';
 import { dockViewStep } from '../shared/dock-look';
 import { useI18n } from '../lib/i18n';
 
@@ -177,6 +178,10 @@ export function DeskDock() {
     settings: !!api.settings,
     room: (on) => room('menu', on),
   };
+  // 잠깐 숨기기: the desks and the pet step aside, the pill stays. This window's choice only (it
+  // holds across looks; a restart shows everything again).
+  const [peeking, setPeeking] = useState(false);
+  const peek: DockPeekControls = { on: peeking, toggle: () => setPeeking((on) => !on) };
   // The ＋ popover: a new session in a project (the launch sheet), or a colleague brought back
   // from the lounge or the archive with the big office's own call.
   const plus: DockPlusControls = {
@@ -245,6 +250,7 @@ export function DeskDock() {
           onReply={send.sendReply}
           view={view}
           plus={plus}
+          peek={peek}
           notify={notify}
         />
       ) : (
@@ -258,6 +264,7 @@ export function DeskDock() {
           tiny={tiny}
           view={view}
           plus={plus}
+          peek={peek}
           model={model}
           status={snapshot ? null : error ? t.dock.status.error(error) : t.dock.status.opening}
           privacy={privacy}

@@ -9,6 +9,15 @@
  */
 const open = new Map<string, () => void>();
 
+/**
+ * Marks a button that opens a dock popover. A press on one is not "a press elsewhere" for the
+ * open popover: the new one closes it as it opens (after claiming the room), so the window does
+ * not shrink and grow again in between.
+ */
+export const POPOVER_TRIGGER = 'data-popover-trigger';
+export const isPopoverTrigger = (at: EventTarget | null) =>
+  at instanceof Element && !!at.closest(`[${POPOVER_TRIGGER}]`);
+
 export const dockPopovers = {
   opened(id: string, close: () => void) {
     open.set(id, close);

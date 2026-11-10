@@ -13,6 +13,7 @@ import { TRIAGE_LABELS } from '../shared/triage';
 import { MOODS, type PetTallyGroup } from '../shared/types';
 import { residentLabel, tallyCounts, tallyMembers, type OfficeModel } from '../shared/office-model';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
+import { dockPopovers, isPopoverTrigger } from '../lib/dockPopovers';
 import { useI18n } from '../lib/i18n';
 import { Sprite } from './Sprite';
 
@@ -119,7 +120,11 @@ export function TallyPill({
           });
       }
     }
+    // Its turn among the dock's popovers (the 보기 menu, the ＋): after its room's claim, so the
+    // one it closes gives the room back without a shrink in between.
+    if (group && !listed) dockPopovers.opened(listId, () => putRef.current(null));
     if (!group) {
+      dockPopovers.closed(listId);
       // The room goes before anything the closing click does next (the IPC keeps this order).
       release();
       setReady(true);
@@ -134,6 +139,8 @@ export function TallyPill({
   putRef.current = put;
   const soon = (group: PetTallyGroup) => {
     clearTimeout(timer.current);
+    // A hover never opens a list over another open popover (a click still does).
+    if (dockPopovers.busy(listId)) return;
     timer.current = setTimeout(() => putRef.current(group), LIST_DELAY);
   };
   const later = () => {
@@ -143,6 +150,7 @@ export function TallyPill({
   useEffect(
     () => () => {
       clearTimeout(timer.current);
+      dockPopovers.closed(listId);
       release();
       if (listedRef.current) latest.current.onListed?.(false);
     },
@@ -235,6 +243,8 @@ export function TallyPill({
       className={`tally-anchor ${floating ? 'is-dock' : ''} ${compact ? 'is-compact' : ''}`}
       onBlur={(e) => {
         const to = e.relatedTarget as Node | null;
+        // Onto another popover's button: that one closes the list as it opens.
+        if (isPopoverTrigger(to)) return;
         if (!e.currentTarget.contains(to) && !listEl.current?.contains(to)) put(null);
       }}
       onKeyDown={(e) => {
@@ -284,6 +294,7 @@ export function TallyPill({
             aria-label={d.listOf(TRIAGE_LABELS[g.group], g.count)}
             aria-expanded={listed === g.group}
             aria-controls={listed === g.group && shown ? listId : undefined}
+            data-popover-trigger
             onMouseEnter={() => (listed ? put(g.group) : soon(g.group))}
             onMouseLeave={later}
             // Opens (a hover may already have): Esc, leaving or another number closes it.

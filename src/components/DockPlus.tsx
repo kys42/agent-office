@@ -17,7 +17,7 @@ import { ago } from '../lib/format';
 import { useI18n } from '../lib/i18n';
 import { useLaunchSupport } from '../lib/useLaunchSupport';
 import { useBringBack } from '../lib/useBringBack';
-import { dockPopovers } from '../lib/dockPopovers';
+import { dockPopovers, isPopoverTrigger } from '../lib/dockPopovers';
 import { DOCK_RECLAIM } from '../lib/useDockPill';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
 import type { LaunchEntry } from '../lib/useLaunch';
@@ -187,6 +187,7 @@ export function DockPlus({
     const down = (e: PointerEvent) => {
       const at = e.target as Node | null;
       if (at && (pop.current?.contains(at) || button.current?.contains(at))) return;
+      if (isPopoverTrigger(at)) return;
       close(false);
     };
     const away = () => close(false);
@@ -417,6 +418,7 @@ export function DockPlus({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         data-tip={p.tip}
+        data-popover-trigger
         onClick={() => (open ? close(false) : void show())}
       >
         <Plus size={size} />
