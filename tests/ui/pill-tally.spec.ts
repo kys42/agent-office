@@ -137,7 +137,7 @@ test('hovering a number lists who it counts above the pill, once the window has 
   await landed(page);
   const l = (await list(page).boundingBox())!;
   const p = (await pill(page).boundingBox())!;
-  expect(l.y + l.height).toBeLessThanOrEqual(p.y + 3);
+  expect(l.y + l.height).toBeLessThanOrEqual(p.y + 4);
   expect(l.y + l.height).toBeGreaterThanOrEqual(p.y - 1);
   expect(l.y).toBeGreaterThanOrEqual(0);
   expect(l.x).toBeGreaterThanOrEqual(0);
@@ -226,7 +226,8 @@ for (const theme of ['light', 'dark'] as const)
     await landed(page);
     const l = (await list(page).boundingBox())!;
     const p = (await pill(page).boundingBox())!;
-    expect(l.y + l.height).toBeLessThanOrEqual(p.y + 3);
+    // It overlaps the pill by 2px on purpose (no see-through gap); sub-pixels may add one.
+    expect(l.y + l.height).toBeLessThanOrEqual(p.y + 4);
     expect(l.y).toBeGreaterThanOrEqual(0);
     // Nothing of it clipped: the whole list shows without scrolling.
     expect(await list(page).evaluate((el) => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
@@ -301,6 +302,14 @@ test('the pet pill walks the same keys: Tab into the names, Shift+Tab back to th
   await expect(names.first()).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(working).toBeFocused();
-  await page.keyboard.press('Escape');
+  // Shift+Tab walks on backwards past the numbers (never looping into the names), and
+  // leaving the pill closes the list.
+  for (let i = 0; i < 6; i++) {
+    await page.keyboard.press('Shift+Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('.dock-pet-list'))).toBe(
+      false,
+    );
+    if (!(await page.evaluate(() => !!document.activeElement?.closest('.tally-anchor')))) break;
+  }
   await expect(page.locator('.dock-pet-list')).toHaveCount(0);
 });

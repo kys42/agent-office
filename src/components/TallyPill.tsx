@@ -102,10 +102,20 @@ export function TallyPill({
         holding.current = true;
         const token = ++opening.current;
         setReady(false);
+        const before = window.innerHeight;
         void grow(true)
           .catch(() => {})
           .then(() => {
-            if (opening.current === token) setReady(true);
+            if (opening.current !== token) return;
+            // The answer can beat the window's resize here: measure once the room is there.
+            if (window.innerHeight !== before) return setReady(true);
+            const done = () => {
+              window.removeEventListener('resize', done);
+              clearTimeout(fallback);
+              if (opening.current === token) setReady(true);
+            };
+            window.addEventListener('resize', done);
+            const fallback = setTimeout(done, 250);
           });
       }
     }
@@ -159,6 +169,11 @@ export function TallyPill({
     setPlace({ left, bottom, maxHeight: Math.max(0, base.top - MARGIN + 2) });
   }, [edge]);
   const shown = !!listed && members.length > 0;
+  // Everyone it listed moved on (or it was opened at 0): close it, so the room it holds, the
+  // number's expanded state and a list popping back later without a pointer all go with it.
+  useEffect(() => {
+    if (listed && members.length === 0) putRef.current(null);
+  }, [listed, members.length]);
   useLayoutEffect(() => {
     if (floating && shown && ready) measure();
   }, [floating, shown, ready, listed, members.length, measure]);
@@ -254,7 +269,7 @@ export function TallyPill({
         number?.focus();
       }}
     >
-      {floating ? list && createPortal(list, document.body) : list}
+      {floating && list && createPortal(list, document.body)}
       <div
         className={`tally-pill ${floating ? '' : 'dock-pet-pill dock-pet-tally'}`}
         role="group"
@@ -279,6 +294,9 @@ export function TallyPill({
           </button>
         ))}
       </div>
+      {/* After the numbers (it is drawn above them): Shift+Tab from a number leaves the pill
+          instead of landing in the names, and the blur closes the list. */}
+      {!floating && list}
     </div>
   );
 }
