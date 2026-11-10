@@ -307,3 +307,28 @@ test('disabling a server still works after its interface disappears', async (t) 
     false,
   );
 });
+
+test('mobile exposes connect-and-send destinations and gates both capabilities when disabled', async (t) => {
+  const f = await fixture(t);
+  await f.on();
+  await f.login();
+  const id = f.s.sessions[0].id;
+  f.backend.targets = async () => ({
+    [id]: {
+      kind: 'codex',
+      label: '',
+      status: 'desktop',
+      desktop: true,
+      canSend: false,
+      canPrepare: true,
+      canFocus: false,
+    },
+  });
+  const available = await (await f.post('targets', { ids: [id] })).json();
+  assert.equal(available[id].canSend, false);
+  assert.equal(available[id].canPrepare, true);
+  f.setEnabled(false);
+  const disabled = await (await f.post('targets', { ids: [id] })).json();
+  assert.equal(disabled[id].canSend, false);
+  assert.equal(disabled[id].canPrepare, false);
+});

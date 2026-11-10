@@ -18,6 +18,8 @@ export const mobile = {
   officeOffline: 'This office is disconnected.',
   enableSend: 'Enable message sending in the desktop settings.',
   noTarget: 'No available destination. Open this conversation in the original app.',
+  checkingTarget: 'Checking the send destination…',
+  targetFailed: 'Could not check the send destination. Retrying automatically.',
   sendDesktop: 'Send to Codex Desktop',
   sendQueue: 'Send to the Codex queue',
   sendTerminal: 'Send to the open terminal',

@@ -19,6 +19,8 @@ export const mobile = {
   officeOffline: '이 사무실의 연결이 끊겼습니다.',
   enableSend: '컴퓨터의 설정에서 메시지 보내기를 켜주세요.',
   noTarget: '지금 전송 가능한 대상이 없습니다. 원래 앱에서 대화를 열어주세요.',
+  checkingTarget: '전송 대상을 확인하는 중…',
+  targetFailed: '전송 대상 연결을 확인하지 못했습니다. 자동으로 다시 확인합니다.',
   sendDesktop: 'Codex Desktop으로 보내기',
   sendQueue: 'Codex 대기열로 보내기',
   sendTerminal: '열린 터미널로 보내기',
