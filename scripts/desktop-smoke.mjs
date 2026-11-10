@@ -413,8 +413,12 @@ try {
   await checkMacDock('desk pet');
   await dock.screenshot({ path: '.local/native-pet.png' });
   /** The dock's one 보기 (view) menu: open it and pick a look or a place to go. */
-  const chooseView = async (name) => {
-    await dock.getByRole('button', { name: '보기 바꾸기', exact: true }).click();
+  const chooseView = async (name, { dom = false } = {}) => {
+    const button = dock.getByRole('button', { name: '보기 바꾸기', exact: true });
+    // Right after the window changes size a real hover can miss the pet's tools (Windows):
+    // `dom` presses the button itself, as the old side buttons were pressed here.
+    if (dom) await button.evaluate((b) => b.click());
+    else await button.click();
     const menu = dock.getByRole('menu', { name: '데스크 보기' });
     await menu.waitFor();
     const role = /^(데스크 펫|책상 줄|바닥)$/.test(name)
@@ -730,7 +734,7 @@ try {
   assert.deepEqual([back.x, back.y, back.width], [pet.x, pet.y, pet.width], 'pet returns home');
   // The pet's tools appear (and take clicks) only while the pet is pointed at.
   await dock.locator('.dock-pet-anchor').hover();
-  await chooseView('큰 사무실 열기');
+  await chooseView('큰 사무실 열기', { dom: true });
   await expect
     .poll(() =>
       app.evaluate(({ BrowserWindow }) =>
