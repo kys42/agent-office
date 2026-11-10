@@ -47,6 +47,7 @@ export const outputs: Messages['outputs'] = {
   webOnly: '웹 미리보기에서는 경로만 보여요. 열기는 데스크탑 앱에서 해요.',
   more: '더 보기',
   note: '기록에 나온 경로만 써요. 파일 내용은 미리보기를 누를 때만 읽어요.',
+  chipsLabel: '새로 만든 산출물',
   cardTitle: '이 동료가 만든 산출물',
   cardEmpty: '아직 새로 만든 산출물이 없어요.',
   cardAll: '산출물 페이지에서 보기',

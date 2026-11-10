@@ -73,10 +73,10 @@ export function parseWorktreePs(answer: unknown): OrcaPsWorkspace[] | null {
   return rows;
 }
 
-/** What Orca calls each agent (`agentType`), and its product name. Others are never matched. */
-const ORCA_AGENTS: Partial<Record<Provider, { type: string; label: string }>> = {
-  claude: { type: 'claude', label: 'Claude' },
-  codex: { type: 'codex', label: 'Codex' },
+/** What Orca calls each agent (`agentType`). Others are never looked for. */
+const ORCA_AGENTS: Partial<Record<Provider, string>> = {
+  claude: 'claude',
+  codex: 'codex',
 };
 
 /** What a saved conversation can be recognised by: its last request, last answer and titles. */
@@ -145,13 +145,17 @@ export function cluesMatch(agent: OrcaPsAgent, clues: ConversationClues): boolea
  * The conversation in a sleeping Orca workspace:
  * - `found`: exactly one of the workspace's agents of its kind matches it, and that agent
  *   matches no other known conversation of the workspace.
- * - `unknown`: agents of its kind sleep there but none or several match (`count` of them).
- * - `none`: its folder is in no sleeping local workspace, or none of its kind sleeps there. A
+ * - `unknown`: its folder lies in a sleeping workspace, but no agent there surely is it: none
+ *   or several match, or `worktree ps` lists none of its kind (`count`: how many of its kind
+ *   it lists, left out when none). A sleeping workspace often lists its tabs without request or
+ *   answer, or none at all though it holds tabs Orca starts again once the workspace is opened:
+ *   starting the conversation anywhere else could then run it twice (#342 follow-up).
+ * - `none`: its folder is in no sleeping local workspace, or Orca has no tab of its agent. A
  *   workspace with terminals is left to `terminal list` (the Orca tab check).
  */
 export type SleepingLookup =
   | { kind: 'found'; workspace: string }
-  | { kind: 'unknown'; workspace: string; count: number; agent: string }
+  | { kind: 'unknown'; workspace: string; count?: number }
   | { kind: 'none' };
 
 export function matchSleeping(
@@ -167,14 +171,13 @@ export function matchSleeping(
   for (const w of workspaces)
     if (holdsFolder(w.path, cwd) && (!home || w.path.length > home.path.length)) home = w;
   if (!home?.sleeping) return { kind: 'none' };
-  const agents = home.agents.filter((a) => a.agentType === kind.type);
-  if (!agents.length) return { kind: 'none' };
-  const unknown = {
+  const agents = home.agents.filter((a) => a.agentType === kind);
+  const unknown: SleepingLookup = {
     kind: 'unknown',
     workspace: home.name,
-    count: agents.length,
-    agent: kind.label,
-  } as const;
+    ...(agents.length > 0 && { count: agents.length }),
+  };
+  if (!agents.length) return unknown;
   const clues = conversationClues(session);
   const matched = agents.filter((a) => cluesMatch(a, clues));
   if (matched.length !== 1) return unknown;

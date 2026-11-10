@@ -29,8 +29,7 @@ import { useI18n } from '../lib/i18n';
 import { useOutputs } from '../lib/useOutputs';
 
 /** What kind of output a row shows, by its extension. */
-function OutputIcon({ output: o }: { output: SessionOutput }) {
-  const size = 16;
+function OutputIcon({ output: o, size = 16 }: { output: SessionOutput; size?: number }) {
   if (o.kind === 'link') return <Sparkles size={size} />;
   if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(o.ext))
     return <FileImage size={size} />;
@@ -40,6 +39,31 @@ function OutputIcon({ output: o }: { output: SessionOutput }) {
   if (o.ext === 'json') return <FileBraces size={size} />;
   if (o.ext === 'pdf' || o.ext === 'docx') return <FileType size={size} />;
   return <FileText size={size} />;
+}
+
+/**
+ * The desktop's actions on one output, named by its id only (the main process looks the path
+ * up), with their outcome told as a toast. One at a time.
+ */
+function useOutputAction(o: SessionOutput, notify: (s: string) => void) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const run = async (what: 'open' | 'reveal' | 'copy' | 'preview') => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const done = await api.outputAction!(what, o.id);
+      if (done === 'missing') notify(t.outputs.missingToast);
+      else if (done === 'copied')
+        notify(o.kind === 'link' ? t.outputs.linkCopied : t.outputs.copied);
+      else if (done === 'revealed' && what === 'open') notify(t.outputs.revealed);
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, run };
 }
 
 /**
@@ -64,25 +88,10 @@ export function OutputRow({
   notify: (s: string) => void;
 }) {
   const { t } = useI18n();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useOutputAction(o, notify);
   const actions = !privacy && !demo && !!api.outputAction;
   const missing = o.kind === 'file' && o.exists === false;
   const preview = o.kind === 'file' && !!previewFormat(o.ext);
-  const run = async (what: 'open' | 'reveal' | 'copy' | 'preview') => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const done = await api.outputAction!(what, o.id);
-      if (done === 'missing') notify(t.outputs.missingToast);
-      else if (done === 'copied')
-        notify(o.kind === 'link' ? t.outputs.linkCopied : t.outputs.copied);
-      else if (done === 'revealed' && what === 'open') notify(t.outputs.revealed);
-    } catch (e) {
-      notify((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
   const copyShown = () =>
     void writeClipboard(o.path)
       .then(() => notify(o.kind === 'link' ? t.outputs.linkCopied : t.outputs.copied))
@@ -370,5 +379,112 @@ export function SessionOutputs({
         </button>
       )}
     </section>
+  );
+}
+
+/**
+ * One output as a chip in the chat (#358): its icon and name. A click reads a markdown or HTML
+ * file beside the office and opens anything else (a link in the browser); showing it in its
+ * folder and copying its path sit beside the name. Hidden screen content hides the name and
+ * every action; the web preview and the demo show the name only.
+ */
+function OutputChip({
+  output: o,
+  privacy,
+  demo,
+  notify,
+}: {
+  output: SessionOutput;
+  privacy: boolean;
+  demo: boolean;
+  notify: (s: string) => void;
+}) {
+  const { t } = useI18n();
+  const { busy, run } = useOutputAction(o, notify);
+  const actions = !privacy && !demo && !!api.outputAction;
+  const missing = o.kind === 'file' && o.exists === false;
+  const preview = o.kind === 'file' && !!previewFormat(o.ext);
+  const name = privacy ? t.outputs.hiddenName : o.name;
+  const main = preview
+    ? { label: t.outputs.preview, title: t.outputs.previewTitle }
+    : o.kind === 'link'
+      ? { label: t.outputs.openLink, title: t.outputs.openLink }
+      : { label: t.outputs.open, title: t.outputs.openTitle };
+  const reveal = isMac ? t.outputs.revealMac : t.outputs.revealOther;
+  const copy = o.kind === 'link' ? t.outputs.copyLink : t.outputs.copyPath;
+  const face = (
+    <>
+      <OutputIcon output={o} size={13} />
+      <span className="output-chip-name">{name}</span>
+    </>
+  );
+  return (
+    <li
+      className={`output-chip output-${o.kind}${missing ? ' is-missing' : ''}`}
+      data-output-id={o.id}
+    >
+      {actions ? (
+        <>
+          <button
+            className="output-chip-main"
+            aria-label={`${main.label} · ${name}`}
+            title={missing ? t.outputs.missing : `${main.title} · ${o.path}`}
+            disabled={busy || missing}
+            onClick={() => void run(preview ? 'preview' : 'open')}
+          >
+            {face}
+          </button>
+          {/* Above the chip on hover or focus: the row never reflows under the pointer. */}
+          <span className="output-chip-sides">
+            {o.kind === 'file' && (
+              <button
+                className="output-chip-side"
+                aria-label={`${reveal} · ${name}`}
+                title={reveal}
+                disabled={busy || missing}
+                onClick={() => void run('reveal')}
+              >
+                <FolderOpen size={12} />
+              </button>
+            )}
+            <button
+              className="output-chip-side"
+              aria-label={`${copy} · ${name}`}
+              title={copy}
+              disabled={busy}
+              onClick={() => void run('copy')}
+            >
+              <Copy size={12} />
+            </button>
+          </span>
+        </>
+      ) : (
+        <span className="output-chip-main" title={privacy ? undefined : o.path}>
+          {face}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/** The chip row under a message of the chat: the outputs it made, in the order they came. */
+export function OutputChips({
+  outputs,
+  privacy,
+  demo,
+  notify,
+}: {
+  outputs: SessionOutput[];
+  privacy: boolean;
+  demo: boolean;
+  notify: (s: string) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <ul className="output-chips" aria-label={t.outputs.chipsLabel}>
+      {outputs.map((o) => (
+        <OutputChip key={o.id} output={o} privacy={privacy} demo={demo} notify={notify} />
+      ))}
+    </ul>
   );
 }

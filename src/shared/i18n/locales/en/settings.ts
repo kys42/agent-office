@@ -161,6 +161,9 @@ export const settings = {
       cardOutputs: 'Outputs on the work card',
       cardOutputsHint:
         'The work card gets an Outputs tab listing the documents and pages this teammate created.',
+      chatOutputs: 'Outputs in the chat',
+      chatOutputsHint:
+        'A small chip under the message that made a file. Click to preview it or open it in its app.',
     },
   },
   /** Reading final replies by opening a card (#228). */

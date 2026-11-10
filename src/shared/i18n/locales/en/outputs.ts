@@ -45,6 +45,7 @@ export const outputs = {
   webOnly: 'The web preview only lists paths. Open outputs in the desktop app.',
   more: 'Show more',
   note: 'Only paths named in session records are used. A file is read only when you preview it.',
+  chipsLabel: 'New outputs',
   cardTitle: 'Outputs from this teammate',
   cardEmpty: 'Nothing newly created yet.',
   cardAll: 'View on the Outputs page',

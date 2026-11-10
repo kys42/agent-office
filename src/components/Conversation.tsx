@@ -19,7 +19,9 @@ import {
   Bookmark,
   BookmarkCheck,
 } from 'lucide-react';
-import type { OfficeEvent, OfficeNotice, Session } from '../shared/types';
+import type { OfficeEvent, OfficeNotice, Session, SessionOutput } from '../shared/types';
+import { CHIPS_AT_END, placeOutputChips } from '../shared/outputs';
+import { OutputChips } from './Outputs';
 import { isRemoteId } from '../shared/federation';
 import { clipMarkdown } from '../shared/activity';
 import { PROVIDERS } from '../shared/types';
@@ -160,6 +162,9 @@ export function Conversation({
   filtersOpen,
   sent = [],
   onDismissSent,
+  outputs,
+  privacy = false,
+  demo = false,
 }: {
   session: Session;
   notices: OfficeNotice[];
@@ -201,6 +206,13 @@ export function Conversation({
   }[];
   /** Hides a temporary local receipt only; never cancels a submitted message. */
   onDismissSent?: (id: string) => void;
+  /**
+   * This conversation's outputs (#358), drawn as a chip row under the message that made them
+   * (`placeOutputChips`); absent where the chat shows none.
+   */
+  outputs?: SessionOutput[];
+  privacy?: boolean;
+  demo?: boolean;
 }) {
   const { t } = useI18n();
   const root = useRef<HTMLDivElement>(null);
@@ -252,6 +264,20 @@ export function Conversation({
     return out;
   }, [events, filter, tools, hideProgress]);
   const shown = useMemo(() => groups.slice(-count), [groups, count]);
+  // Under the reply that made them; not among only the requests or progress notes.
+  const chips = useMemo(
+    () =>
+      outputs?.length && (filter === 'all' || filter === 'reply')
+        ? placeOutputChips(events, groups, outputs, { older, newer })
+        : new Map<string, SessionOutput[]>(),
+    [events, groups, outputs, filter, older, newer],
+  );
+  const chipRow = (key: string) => {
+    const row = chips.get(key);
+    return row?.length ? (
+      <OutputChips outputs={row} privacy={privacy} demo={demo} notify={notify} />
+    ) : null;
+  };
   // In the card's chat a run from the same side and kind reads as one, like a messenger: only
   // its first message says who and when. A long pause, or a new day, gets a time line between.
   const runs = useMemo(() => {
@@ -688,8 +714,10 @@ export function Conversation({
               {...markOf(g.events[0])}
             />
           )}
+          {chipRow(g.id)}
         </Fragment>
       ))}
+      {chipRow(CHIPS_AT_END)}
       {!groups.length && (
         <div className="empty-small">
           <MessageSquare size={26} />

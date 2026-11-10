@@ -1173,6 +1173,7 @@ export default function App() {
             outputStamp={outputStamp}
             outputVisibility={outputVisibility}
             showOutputs={prefs?.cardOutputs !== false}
+            showChatOutputs={prefs?.chatOutputs !== false}
             onOutputs={() => setView('outputs')}
           />
         )}
