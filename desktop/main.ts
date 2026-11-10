@@ -747,9 +747,12 @@ function stopDrag(save: boolean) {
   const fixed = clampInto(b, workAreaFor(b));
   if (fixed.x !== b.x || fixed.y !== b.y) dock.setBounds(fixed);
   const feet = petFeet(fixed);
-  if (petSpot?.x === feet.x && petSpot?.y === feet.y) return;
-  petSpot = feet;
-  void savePetSpot();
+  if (petSpot?.x !== feet.x || petSpot?.y !== feet.y) {
+    petSpot = feet;
+    void savePetSpot();
+  }
+  // Room asked for mid-drag (the 보기 menu) waited for the drop: take it now, above the new spot.
+  if (dockRoom) dock.setBounds(roomyBounds(dockMode));
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;

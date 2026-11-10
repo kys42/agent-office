@@ -21,6 +21,8 @@ import {
   Users,
 } from 'lucide-react';
 import { useI18n } from '../lib/i18n';
+import { isPageHidden, onPageVisibility } from '../lib/visibility';
+import { DOCK_RECLAIM } from '../lib/useDockPill';
 import { dockViewChecked, type DockLook, type DockViewChoice } from '../shared/dock-look';
 import type { DockMode } from '../shared/types';
 
@@ -92,6 +94,9 @@ export function DockViewMenu({
       setReady(false);
       setPlace(null);
       if (refocus) button.current?.focus();
+      // The menu's spot may sit under a still pointer: let the window judge clicks again once
+      // it is gone, so the see-through area there doesn't keep swallowing them.
+      requestAnimationFrame(() => window.dispatchEvent(new Event(DOCK_RECLAIM)));
     },
     [release],
   );
@@ -161,18 +166,19 @@ export function DockViewMenu({
       close(false);
     };
     const away = () => close(false);
+    // A hidden Electron window may still say `document.hidden === false`: use the app's signal.
     const hidden = () => {
-      if (document.visibilityState === 'hidden') close(false);
+      if (isPageHidden()) close(false);
     };
     document.addEventListener('pointerdown', down, true);
     window.addEventListener('blur', away);
     window.addEventListener('resize', measure);
-    document.addEventListener('visibilitychange', hidden);
+    const stopVisibility = onPageVisibility(hidden);
     return () => {
+      stopVisibility();
       document.removeEventListener('pointerdown', down, true);
       window.removeEventListener('blur', away);
       window.removeEventListener('resize', measure);
-      document.removeEventListener('visibilitychange', hidden);
     };
   }, [open, close, measure]);
   const pick = (choice: DockViewPick) => {
