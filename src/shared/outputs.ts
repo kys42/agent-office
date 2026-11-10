@@ -1,4 +1,4 @@
-import type { OutputPreview, Session, SessionOutput } from './types';
+import type { OfficeEvent, OutputPreview, Session, SessionOutput } from './types';
 
 // Outputs a session made (#350): documents and other results, collected from its record only.
 // The adapters say which files a session created (server/adapters/outputs.ts); this module holds
@@ -142,4 +142,68 @@ export function groupOutputs(list: SessionOutput[], sessions: Session[]): Output
       outputs,
     })),
   }));
+}
+
+/** Where `placeOutputChips` puts outputs that wait for the reply of a turn still running. */
+export const CHIPS_AT_END = '';
+
+/**
+ * Where the chat shows each output (#358): the visible message (or work group) under which its
+ * chip row goes, by group id. `events` is the whole loaded conversation in order, `groups` what
+ * the chat shows of it (a group lists its events). An output sits under the event that produced
+ * it; that event hidden (a tool call with the work log folded, a progress note left out), under
+ * the next visible reply of the same turn; with none yet in the last turn, at the end
+ * (`CHIPS_AT_END`); else under the nearest visible message before it. An output whose event is
+ * not loaded is placed by its time, unless that time falls on a page not read yet (`older`,
+ * `newer`). Each row is ordered by time.
+ */
+export function placeOutputChips<
+  O extends Pick<SessionOutput, 'id' | 'eventId' | 'eventAt' | 'createdAt'>,
+>(
+  events: readonly Pick<OfficeEvent, 'id' | 'legacyId' | 'kind' | 'at'>[],
+  groups: readonly { id: string; events: readonly Pick<OfficeEvent, 'id'>[] }[],
+  outputs: readonly O[],
+  range: { older?: boolean; newer?: boolean } = {},
+): Map<string, O[]> {
+  const placed = new Map<string, O[]>();
+  if (!events.length || !outputs.length) return placed;
+  const index = new Map<string, number>();
+  events.forEach((e, i) => {
+    if (!index.has(e.id)) index.set(e.id, i);
+    if (e.legacyId && !index.has(e.legacyId)) index.set(e.legacyId, i);
+  });
+  const shownIn = new Map<string, string>();
+  for (const g of groups) for (const e of g.events) shownIn.set(e.id, g.id);
+  const group = (i: number) => shownIn.get(events[i].id);
+  const when = (o: O) => o.eventAt ?? o.createdAt;
+  const first = events[0].at;
+  const last = events.at(-1)!.at;
+  const anchor = (from: number): string | undefined => {
+    if (group(from)) return group(from);
+    let j = from + 1;
+    for (; j < events.length && events[j].kind !== 'user'; j++)
+      if (events[j].kind === 'assistant' && group(j)) return group(j);
+    // The last turn, still without a visible reply: at the end, until one comes.
+    if (j === events.length && !range.newer) return CHIPS_AT_END;
+    for (let k = from - 1; k >= 0; k--) if (group(k)) return group(k);
+    for (let k = from + 1; k < events.length; k++) if (group(k)) return group(k);
+  };
+  for (const o of outputs) {
+    let at = o.eventId === undefined ? undefined : index.get(o.eventId);
+    if (at === undefined) {
+      const t = when(o);
+      // On a page not read yet: it comes with that page.
+      if ((range.older && t < first) || (range.newer && t > last)) continue;
+      at = 0;
+      for (let i = 0; i < events.length && events[i].at <= t; i++) at = i;
+    }
+    const key = anchor(at);
+    if (key === undefined) continue;
+    const row = placed.get(key) ?? [];
+    if (!row.some((x) => x.id === o.id)) row.push(o);
+    placed.set(key, row);
+  }
+  for (const row of placed.values())
+    row.sort((a, b) => when(a) - when(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return placed;
 }

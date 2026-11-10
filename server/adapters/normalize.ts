@@ -459,10 +459,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         if (text) set('think', t.reason.afterUser);
       }
       if (type === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel)) {
-        add(r, at, 'assistant', String(p.message ?? ''), undefined, '', {
+        const e = add(r, at, 'assistant', String(p.message ?? ''), undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
-        outputs.say(String(p.message ?? ''), at, cwd);
+        outputs.say(String(p.message ?? ''), at, cwd, e?.id);
       }
       if (type === 'patch_apply_end' && p.success === true) outputs.applied(p.changes, at, cwd);
     }
@@ -473,10 +473,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         const text =
           p.role === 'user' ? cleanPrompt(contentText(p.content)) : contentText(p.content);
         if (p.role === 'user' && !title && text) title = text.slice(0, 140);
-        add({ ...r, id: p.id ?? r.id }, at, p.role, text, undefined, '', {
+        const e = add({ ...r, id: p.id ?? r.id }, at, p.role, text, undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
-        if (p.role === 'assistant') outputs.say(text, at, cwd);
+        if (p.role === 'assistant') outputs.say(text, at, cwd, e?.id);
         if (p.role === 'user' && text) set('think', t.reason.afterUser);
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
@@ -497,13 +497,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         );
       }
       if (['function_call_output', 'custom_tool_call_output'].includes(p.type)) {
-        outputs.result(
-          p.call_id ?? undefined,
-          typeof p.output === 'string' ? p.output : JSON.stringify(p.output ?? ''),
-          at,
-          false,
-        );
-        add(
+        const e = add(
           { ...r, id: `${p.call_id ?? p.id}:result` },
           at,
           'result',
@@ -514,6 +508,15 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           undefined,
           '',
           call(p.call_id),
+        );
+        // After its event: an output it reports is placed there in the chat (#358).
+        outputs.result(
+          p.call_id ?? undefined,
+          typeof p.output === 'string' ? p.output : JSON.stringify(p.output ?? ''),
+          at,
+          false,
+          undefined,
+          e?.id,
         );
         set('work', t.reason.toolResultWaiting);
       }
@@ -551,19 +554,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       if (role === 'user' && INTERRUPTED.test(contentText(m.content))) aborted();
       if (role === 'assistant') {
         model = m.model ?? model;
+        const said = !['analysis', 'reasoning'].includes(m.phase ?? m.channel)
+          ? add(r, at, 'assistant', text, undefined, ':text', {
+              phase:
+                publicPhase(m.phase ?? m.channel) ??
+                (['end_turn', 'stop'].includes(m.stop_reason ?? m.stopReason)
+                  ? 'final'
+                  : ['tool_use', 'toolUse'].includes(m.stop_reason ?? m.stopReason) ||
+                      (Array.isArray(m.content) &&
+                        m.content.some((b: Obj) => ['tool_use', 'toolCall'].includes(b.type)))
+                    ? 'commentary'
+                    : undefined),
+            })
+          : undefined;
         if (!['analysis', 'reasoning'].includes(m.phase ?? m.channel))
-          add(r, at, 'assistant', text, undefined, ':text', {
-            phase:
-              publicPhase(m.phase ?? m.channel) ??
-              (['end_turn', 'stop'].includes(m.stop_reason ?? m.stopReason)
-                ? 'final'
-                : ['tool_use', 'toolUse'].includes(m.stop_reason ?? m.stopReason) ||
-                    (Array.isArray(m.content) &&
-                      m.content.some((b: Obj) => ['tool_use', 'toolCall'].includes(b.type)))
-                  ? 'commentary'
-                  : undefined),
-          });
-        if (!['analysis', 'reasoning'].includes(m.phase ?? m.channel)) outputs.say(text, at, cwd);
+          outputs.say(text, at, cwd, said?.id);
         if (text) set('think', t.reason.recentReply);
         const u = m.usage;
         if (u) {
@@ -630,14 +635,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             const evidence = pending.get(b.tool_use_id);
             pending.delete(b.tool_use_id);
             if (evidence && !b.is_error) workingLocation = evidence;
-            outputs.result(
-              b.tool_use_id ?? undefined,
-              contentText(b.content) || String(b.content ?? ''),
-              at,
-              !!b.is_error,
-              r.toolUseResult && typeof r.toolUseResult === 'object' ? r.toolUseResult : undefined,
-            );
-            add(
+            const e = add(
               { ...r, id: b.tool_use_id ?? r.uuid },
               at,
               'result',
@@ -645,6 +643,15 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               undefined,
               ':result',
               call(b.tool_use_id),
+            );
+            // After its event: an output it reports is placed there in the chat (#358).
+            outputs.result(
+              b.tool_use_id ?? undefined,
+              contentText(b.content) || String(b.content ?? ''),
+              at,
+              !!b.is_error,
+              r.toolUseResult && typeof r.toolUseResult === 'object' ? r.toolUseResult : undefined,
+              e?.id,
             );
             // A subagent stopped mid-tool records the interruption as the tool's error result.
             if (b.is_error && INTERRUPTED.test(contentText(b.content) || String(b.content ?? '')))

@@ -86,6 +86,7 @@ test('missing view preferences are the behaviour from before', () => {
   assert.deepEqual(viewPrefs(undefined), {
     tinyNames: true,
     cardOutputs: true,
+    chatOutputs: true,
     tinyFinalDot: true,
     dockPill: 'subdued',
     dockPillResetAt: null,
@@ -98,6 +99,7 @@ test('missing view preferences are the behaviour from before', () => {
   const set = viewPrefs({
     tinyNames: false,
     cardOutputs: false,
+    chatOutputs: false,
     tinyFinalDot: false,
     dockPill: 'hover',
     dockPillResetAt: 5,
@@ -107,6 +109,7 @@ test('missing view preferences are the behaviour from before', () => {
   });
   assert.equal(set.tinyNames, false);
   assert.equal(set.cardOutputs, false);
+  assert.equal(set.chatOutputs, false);
   assert.equal(set.tinyFinalDot, false);
   assert.equal(set.dockPill, 'hover');
   assert.equal(set.dockPillResetAt, 5);

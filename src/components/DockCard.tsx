@@ -174,6 +174,7 @@ export function DockCard() {
             prefs?.enabledProviders,
           ])}
           showOutputs={prefs?.cardOutputs !== false}
+          showChatOutputs={prefs?.chatOutputs !== false}
           outputStamp={snapshot?.outputStamp ?? ''}
           outputVisibility={JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders])}
           onUnbookmark={unbookmark}

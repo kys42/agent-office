@@ -59,6 +59,7 @@ import {
   type LucideIcon,
   Pin,
   PackageOpen,
+  FileText,
 } from 'lucide-react';
 import type {
   AnswerSettings,
@@ -777,6 +778,14 @@ export function Settings({
                 hint={v.desk.cardOutputsHint}
                 checked={view.cardOutputs}
                 onChange={() => onPrefs({ cardOutputs: !view.cardOutputs })}
+              />
+              {/* The card's chat puts outputs under the message that made them (#358). */}
+              <SwitchRow
+                icon={FileText}
+                label={v.desk.chatOutputs}
+                hint={v.desk.chatOutputsHint}
+                checked={view.chatOutputs}
+                onChange={() => onPrefs({ chatOutputs: !view.chatOutputs })}
               />
             </>
           }

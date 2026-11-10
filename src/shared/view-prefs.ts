@@ -16,6 +16,8 @@ export interface ViewPrefs {
   tinyNames: boolean;
   /** The work card lists the teammate's outputs (#350). */
   cardOutputs: boolean;
+  /** The card's chat shows outputs as chips under the message that made them (#358). */
+  chatOutputs: boolean;
   tinyFinalDot: boolean;
   dockPill: DockPillVisibility;
   dockPillResetAt: number | null;
@@ -118,6 +120,7 @@ export function viewPrefs(p?: Partial<Preferences> | null): ViewPrefs {
   return {
     tinyNames: p?.tinyNames !== false,
     cardOutputs: p?.cardOutputs !== false,
+    chatOutputs: p?.chatOutputs !== false,
     tinyFinalDot: p?.tinyFinalDot !== false,
     dockPill: DOCK_PILL_CHOICES.includes(p?.dockPill as DockPillVisibility)
       ? p!.dockPill!
