@@ -135,7 +135,7 @@ test('＋ opens above the pill with 새로 부르기 and 데려오기; picking a
     .locator(':scope > button')
     .evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
   expect(names).toEqual([
-    '데스크 펫 옮기기',
+    '도구 막대 옮기기',
     '보기 바꾸기',
     '동료 부르기',
     '잠깐 숨기기',
@@ -442,6 +442,8 @@ test('The pet: [보기] [＋] [👁] [✕]; ＋ opens above its tools; 👁 hide
   await plusButton(tools).click();
   const pop = plusPopover(page);
   await expect(pop).toBeVisible();
+  // Past its short rise.
+  await page.waitForTimeout(200);
   const m = await box(pop);
   const t = await box(tools);
   expect(m.y + m.height).toBeLessThanOrEqual(t.y + 3);

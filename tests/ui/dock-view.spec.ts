@@ -97,14 +97,15 @@ test('보기 opens above the pill with each look explained and the current one c
   await expect(button).toHaveAttribute('aria-expanded', 'true');
   await expect(menu).toHaveAttribute('data-side', 'above');
   await expect(menu).toHaveAttribute('data-solid');
-  // Above the button, whole inside the window.
+  // Above the button, standing on the pill (so the pointer goes up into it), inside the window.
   const b = await box(button);
   const m = await box(menu);
-  expect(m.y + m.height).toBeLessThanOrEqual(b.y);
+  expect(m.y + m.height).toBeLessThanOrEqual(b.y + 1);
+  expect(m.y + m.height).toBeGreaterThanOrEqual((await box(pill(page))).y);
   expect(m.y).toBeGreaterThanOrEqual(0);
   expect(m.x).toBeGreaterThanOrEqual(0);
   expect(m.x + m.width).toBeLessThanOrEqual(1440);
-  // The looks, then tiny, the big office and settings; each look says what it is.
+  // The looks, then tiny, the big office; each look says what it is.
   const looks = menu.getByRole('menuitemradio');
   await expect(looks).toHaveText([
     /데스크 펫\s*바탕화면에 펫 하나만/,
@@ -116,7 +117,8 @@ test('보기 opens above the pill with each look explained and the current one c
   await expect(viewItem(page, '쪼꼬미')).toHaveAttribute('aria-checked', 'false');
   await expect(viewItem(page, '쪼꼬미')).toHaveAccessibleDescription('줄·바닥을 작게');
   await expect(viewItem(page, '큰 사무실 열기')).toBeVisible();
-  await expect(viewItem(page, '설정')).toBeVisible();
+  // Settings has its own button in the pill.
+  await expect(viewItem(page, '설정')).toHaveCount(0);
   // The colleague list waits for its window (a later change): nothing offers it yet.
   await expect(menu.getByRole('menuitem', { name: '동료 목록' })).toHaveCount(0);
   // The current look has the focus, and the keys walk the entries.
@@ -124,7 +126,7 @@ test('보기 opens above the pill with each look explained and the current one c
   await page.keyboard.press('ArrowDown');
   await expect(viewItem(page, '바닥')).toBeFocused();
   await page.keyboard.press('End');
-  await expect(viewItem(page, '설정')).toBeFocused();
+  await expect(viewItem(page, '큰 사무실 열기')).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(viewItem(page, '데스크 펫')).toBeFocused();
   await page.mouse.move(m.x + 10, m.y + 10);
@@ -200,7 +202,8 @@ test('The desk pet has the same 보기 menu, above its tools, with room asked fo
   await expect(page.locator('.desk-pet')).toBeVisible();
   const tools = page.locator('.dock-pet-tools');
   await page.locator('.dock-pet-anchor').hover();
-  await expect(tools.getByRole('button')).toHaveCount(2);
+  // 보기, ＋, 잠깐 숨기기 and hide (settings stays in its 보기 menu: the column is narrow).
+  await expect(tools.getByRole('button')).toHaveCount(4);
   for (const name of ['새로고침', '책상 펼치기', '사무실 펼치기'])
     await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
   await viewButton(tools).click();
@@ -211,7 +214,8 @@ test('The desk pet has the same 보기 menu, above its tools, with room asked fo
   await expect(viewItem(page, '쪼꼬미')).toHaveAttribute('aria-checked', 'false');
   const m = await box(menu);
   const b = await box(viewButton(tools));
-  expect(m.y + m.height).toBeLessThanOrEqual(b.y);
+  // Standing on the tools' top edge.
+  expect(m.y + m.height).toBeLessThanOrEqual(b.y + 1);
   expect(m.x).toBeGreaterThanOrEqual(0);
   expect(m.x + m.width).toBeLessThanOrEqual(PET_SIZE.width);
   // The tools stay up while the pointer is on the menu.
@@ -235,12 +239,19 @@ test('The dock draws its own tooltips: above the button, inside the window', asy
     'title',
     /.*/,
   );
+  // 보기 opens on hover (its menu says it all: no tip over it); ＋ beside it has its tip.
   await button.hover();
+  await expect(viewMenu(page)).toBeVisible();
   const tip = page.locator('.dock-tip');
+  await page.waitForTimeout(400);
+  await expect(tip).toHaveCount(0);
+  const plus = pill(page).getByRole('button', { name: '동료 부르기' });
+  await plus.hover();
+  await expect(viewMenu(page)).toHaveCount(0);
   await expect(tip).toBeVisible();
-  await expect(tip).toHaveText('보기 바꾸기 · 펫, 줄, 바닥, 쪼꼬미');
+  await expect(tip).toHaveText('동료 부르기 · 새로 부르기, 라운지·보관에서 데려오기');
   const t = await box(tip);
-  const b = await box(button);
+  const b = await box(plus);
   expect(t.y + t.height).toBeLessThanOrEqual(b.y);
   expect(t.x + t.width).toBeLessThanOrEqual(1440);
   await page.screenshot({
