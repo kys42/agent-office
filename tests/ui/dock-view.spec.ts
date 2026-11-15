@@ -101,6 +101,8 @@ test('보기 opens above the pill with each look explained and the current one c
   await expect(button).toHaveAttribute('aria-expanded', 'true');
   await expect(menu).toHaveAttribute('data-side', 'above');
   await expect(menu).toHaveAttribute('data-solid');
+  // Geometry is the settled menu. Visibility can become true during its 4px entrance.
+  await menu.evaluate((element) => Promise.all(element.getAnimations().map((a) => a.finished)));
   // Above the button, standing on the pill (so the pointer goes up into it), inside the window.
   const b = await box(button);
   const m = await box(menu);
@@ -216,6 +218,7 @@ test('The desk pet has the same 보기 menu, above its tools, with room asked fo
   expect(await calls(page)).toContain('room-on');
   await expect(viewItem(page, '데스크 펫')).toHaveAttribute('aria-checked', 'true');
   await expect(viewItem(page, '쪼꼬미')).toHaveAttribute('aria-checked', 'false');
+  await menu.evaluate((element) => Promise.all(element.getAnimations().map((a) => a.finished)));
   const m = await box(menu);
   const b = await box(viewButton(tools));
   // Standing on the tools' top edge.

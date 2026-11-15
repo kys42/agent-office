@@ -1,0 +1,21 @@
+{
+  "content_id": "agent-office-20261116-x-intro-v1",
+  "version": 1,
+  "campaign_id": "agent-office-small-office-202611",
+  "account_id": "agent-office-owner-draft",
+  "platform": "x",
+  "objective": "실제 제품 사용 장면 이해",
+  "text": "AI한테 일을 맡겼는데, 이번엔 내가 터미널 순찰 중.\n\nAgent Office는 Claude Code·Codex·OpenClaw의 실제 세션을 바탕화면의 작은 동료로 보여줘요.\n\n일하는 친구, 나를 기다리는 친구, 방금 답변을 마친 친구.\n책상을 누르면 대화까지.\n\n내 AI 팀에도 사무실을 만들어봤습니다. 🪑",
+  "media": [],
+  "status": "draft",
+  "claim_evidence": [
+    {
+      "claim": "멀티 공급자 실제 세션과 데스크 펫·카드",
+      "source": "README.ko.md; docs/golden/FEATURE-POLICY.md; docs/marketing/2026-11/claims.md"
+    }
+  ],
+  "disclosures": [
+    "제품 소유자 계정 초안. 실제 게시 계정 미지정."
+  ],
+  "published": false
+}

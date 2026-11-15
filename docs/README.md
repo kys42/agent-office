@@ -1,5 +1,7 @@
 # Agent Office 문서 지도
 
+최신 검토: [2026-11 프로덕션 리뷰](development/PRODUCTION-REVIEW-2026-11.md) · [SNS·블로그·홍보 이미지 초안](marketing/2026-11/README.md).
+
 Windows 지원 범위·빌드·플랫폼별 미지원과 검수: [Windows 안내](development/WINDOWS.md).
 
 처음 이어받을 때는 **프로젝트 맥락 → 골든 정책 → 세션 분석 → 공통 규격 → 코드** 순서로 읽는다. 문서는 현재 지켜야 할 계약, 구현 방법, 조사 근거를 나눠 보관한다.

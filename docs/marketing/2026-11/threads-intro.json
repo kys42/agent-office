@@ -1,0 +1,21 @@
+{
+  "content_id": "agent-office-20261116-threads-intro-v1",
+  "version": 1,
+  "campaign_id": "agent-office-small-office-202611",
+  "account_id": "agent-office-owner-draft",
+  "platform": "threads",
+  "objective": "실제 제품 사용 장면 이해",
+  "text": "에이전트를 여러 개 켜두면 이상한 일이 생겨요.\n코드는 AI가 쓰는데, “누가 끝났지?”는 내가 계속 확인하게 됩니다.\n\n그래서 Agent Office를 만들고 있어요.\n\nClaude Code·Codex·OpenClaw 세션에 작은 책상을 하나씩 줍니다. 같은 프로젝트 친구들은 모여 앉고, 질문이 있는 친구는 손을 들어요. 누르면 내 요청·진행·최종 응답을 업무 카드에서 볼 수 있고요.\n\n전체 사무실이 필요 없을 때는 화면 구석의 데스크 펫으로 작게 두면 됩니다.\n\n귀여운 책상에서 시작했지만, 진짜 하고 싶었던 건 “지금 내가 봐야 할 일”을 찾기 쉽게 만드는 거였어요.",
+  "media": [],
+  "status": "draft",
+  "claim_evidence": [
+    {
+      "claim": "멀티 공급자 실제 세션과 데스크 펫·카드",
+      "source": "README.ko.md; docs/golden/FEATURE-POLICY.md; docs/marketing/2026-11/claims.md"
+    }
+  ],
+  "disclosures": [
+    "제품 소유자 계정 초안. 실제 게시 계정 미지정."
+  ],
+  "published": false
+}

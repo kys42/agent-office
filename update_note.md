@@ -1,3 +1,11 @@
+## 2026-11-16 — 프로덕션 재검토 1회차·홍보 초안
+
+- 최신 main `38ac516`을 외장 SSD 별도 worktree에 가져왔다. 기존 저장소/프로필을 보존했다.
+- 모바일 상태의 늦은 응답 덮어쓰기, 가시 스냅샷 조회 순서, 설정 초기 실패의 조용한 숨김을 보완했다. 상태 새로고침·실행 여부·접속 복구 안내·복사 피드백을 추가했다.
+- dependency audit 5→0, 전체 단위1061 통과/1 skip, typecheck/build/MCP/mobile native 성공. UI573/575 통과 뒤 메뉴 등장 모션 도중 측정 2건을 보정해 해당 파일7개 통과. 최종 전체 재검증은 후속이다.
+- SNS/블로그 초안, AI 생성 일러스트2장과 합성 UI4장, HTML/PNG 홍보 카드4종을 `docs/marketing/2026-11`에 준비했다. 공개 게시하지 않았다.
+- 새 3회 리뷰 중 1회차이며 2·3회차와 최종 PR/CI 검토는 남아 있다. 기록: `docs/development/PRODUCTION-REVIEW-2026-11.md`.
+
 ## 2026-11-02 — 책상 꾸미기, 펫 기쁨 모션·쓰다듬기, 펫 모드 인원 표시, 창 유리, Orca 소환, 출근 모션, 읽은 말풍선 접기
 
 - [PR #310](https://github.com/kys42/agent-office/pull/310) 책상 꾸미기([#305](https://github.com/kys42/agent-office/issues/305)): 펫처럼 책상도 꾸밀 수 있어요.

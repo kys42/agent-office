@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "e7b178aa3743108892cc5f23500b9daaea36cdbe",
+  "capturedAt": "2026-11-15T18:05:30.426Z",
+  "data": "built-in synthetic demo; no user sessions",
+  "viewport": {
+    "width": 1440,
+    "height": 970
+  },
+  "deviceScaleFactor": 1.5,
+  "files": [
+    "office-demo.png",
+    "team-demo.png",
+    "conversation-demo.png",
+    "desk-row-demo.png"
+  ]
+}
