@@ -68,6 +68,47 @@ async function changed(manager: PeerManager, action: () => void) {
   await promise;
 }
 
+test('nameplate colors survive legacy config, re-import and restart without entering the wire', () => {
+  const dir = temp();
+  const a = peer(),
+    b = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [a, b] }));
+  const manager = new PeerManager(dir, async () => {
+    throw new Error('offline');
+  });
+  try {
+    assert.deepEqual(
+      manager.state().peers.map((p) => p.color),
+      ['sky', 'lilac'],
+    );
+    const update = {
+      action: 'update',
+      officeId: b.officeId,
+      label: b.label,
+      tags: b.tags,
+      projects: b.projects,
+    };
+    assert.throws(() => manager.command({ ...update, color: '#untrusted' }));
+    manager.command({ ...update, color: 'mint' });
+    manager.command({ action: 'add', peer: { ...b, endpoint: 'https://localhost:9876/' } });
+    const restored = new PeerManager(dir);
+    const configured = restored.state().peers.find((p) => p.officeId === b.officeId)!;
+    assert.equal(configured.color, 'mint');
+    const wire = packet(b).sessions[0];
+    const session = importSession(wire, { ...b, color: configured.color }, Date.now(), false);
+    assert.equal(session.remote?.color, 'mint');
+    assert.notEqual(
+      session.revision,
+      importSession(wire, { ...b, color: 'sky' }, Date.now(), false).revision,
+    );
+    assert.ok(!('color' in wire));
+    restored.close();
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('export allowlist removes private fields and opaque keys isolate parents and actors', () => {
   const root = fixture();
   const child = {

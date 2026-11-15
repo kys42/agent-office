@@ -112,6 +112,26 @@ async function fixture(page: Page, writable = true) {
   return { snapshot, remote };
 }
 
+test('remote office settings save a named color preset', async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.federation = async (cmd: any) => {
+      if (cmd.action === 'update') {
+        w.colorUpdate = cmd;
+        w.mockSnapshot.federation.peers[0].color = cmd.color;
+      }
+      return structuredClone(w.mockSnapshot.federation);
+    };
+  });
+  await page.getByRole('button', { name: '사무실 연결 관리' }).click();
+  const card = page.locator('.federation-settings form');
+  await card.getByRole('radio', { name: '민트' }).check();
+  await card.getByRole('button', { name: '저장' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).colorUpdate?.color)).toBe('mint');
+  await expect(card.getByRole('radio', { name: '민트' })).toBeChecked();
+});
+
 test('office switcher scopes project zones and roster; remote chat names its destination', async ({
   page,
 }) => {
