@@ -241,13 +241,6 @@ function Chat({
     olderRequest.current = controller;
     setOlderBusy(true);
     atBottom.current = false;
-    const top = scroller.current?.scrollTop ?? 0,
-      height = scroller.current?.scrollHeight ?? 0;
-    const anchorTop = [
-      ...(scroller.current?.querySelectorAll<HTMLElement>('[data-event-id]') ?? []),
-    ]
-      .find((element) => element.dataset.eventId === first.id)
-      ?.getBoundingClientRect().top;
     try {
       const next = await api<MobileDetail>(
         'detail',
@@ -260,6 +253,13 @@ function Chat({
       if (!live.current || version !== historyVersion.current || controller.signal.aborted) return;
       const old = detailRef.current;
       if (!old?.events.some((e) => e.id === first.id)) return;
+      // The raw pagination cursor may be a hidden tool event. Keep the first rendered
+      // message in place, measured now so scrolling while the request was pending wins.
+      const visible = scroller.current?.querySelector<HTMLElement>('[data-event-id]');
+      const anchorId = visible?.dataset.eventId;
+      const anchorTop = visible?.getBoundingClientRect().top;
+      const top = scroller.current?.scrollTop ?? 0,
+        height = scroller.current?.scrollHeight ?? 0;
       const combined = olderMobilePage(old, next);
       if (combined.newer) {
         readVersion.current++;
@@ -268,15 +268,19 @@ function Chat({
       acceptDetail(combined);
       setError('');
       requestAnimationFrame(() => {
+        if (!live.current || version !== historyVersion.current || controller.signal.aborted)
+          return;
         if (scroller.current) {
           // Once newer records are evicted, total height cannot measure prepended height.
           const anchor = [
             ...scroller.current.querySelectorAll<HTMLElement>('[data-event-id]'),
-          ].find((element) => element.dataset.eventId === first.id);
+          ].find((element) => element.dataset.eventId === anchorId);
           scroller.current.scrollTop =
-            combined.newer && anchor && anchorTop !== undefined
+            anchor && anchorTop !== undefined
               ? scroller.current.scrollTop + anchor.getBoundingClientRect().top - anchorTop
-              : top + scroller.current.scrollHeight - height;
+              : anchorId
+                ? top + scroller.current.scrollHeight - height
+                : 0;
         }
       });
     } catch {

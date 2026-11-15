@@ -158,7 +158,7 @@ test('mobile can read beyond 1,000 records in a bounded window and jump back to 
         events: Array.from({ length: end - start }, (_, i) => ({
           id: String(start + i),
           at: start + i,
-          kind: 'user',
+          kind: i === 0 ? 'tool' : 'user',
           text: `합성 기록 ${start + i}`,
         })),
       },
@@ -166,18 +166,21 @@ test('mobile can read beyond 1,000 records in a bounded window and jump back to 
   });
   await login(page);
   await page.locator('.agent').filter({ hasText: local.name }).click();
-  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1160');
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1161');
   for (let start = 1120; start >= 0; start -= 40) {
     // At the first eviction, prepending and dropping both change the total height.
-    // The previously visible message must keep its screen position, not jump by a page.
-    const anchor = page.locator(`[data-event-id="${start + 40}"]`);
+    // Each page starts with a hidden tool event: anchor the visible message, not that cursor.
+    const anchor = page.locator(`[data-event-id="${start + 41}"]`);
     if (start === 760)
       await page.locator('.messages').evaluate((el) => {
         el.scrollTop = 0;
       });
     const anchorTop = start === 760 ? (await anchor.boundingBox())!.y : null;
     await page.getByRole('button', { name: '이전 대화 보기', exact: true }).click();
-    await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', String(start));
+    await expect(page.locator('.message').first()).toHaveAttribute(
+      'data-event-id',
+      String(start + 1),
+    );
     expect(await page.locator('.message').count()).toBeLessThanOrEqual(400);
     if (anchorTop !== null)
       await expect
@@ -190,10 +193,10 @@ test('mobile can read beyond 1,000 records in a bounded window and jump back to 
   const before = latestReads;
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   // Historical pages stay put across a scheduled refresh; destination checks remain active.
-  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '0');
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1');
   await page.getByRole('button', { name: '최신 대화로 돌아가기' }).click();
-  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1160');
-  await expect(page.locator('.message')).toHaveCount(40);
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1161');
+  await expect(page.locator('.message')).toHaveCount(39);
   expect(latestReads).toBe(before + 1);
   await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toHaveCount(0);
   await page.screenshot({ path: '.local/mobile-history-latest.png' });
