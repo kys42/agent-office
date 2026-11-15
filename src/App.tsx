@@ -1,3 +1,4 @@
+import { ReleaseNotice } from './components/ReleaseNotice';
 import { MiniShellDemoRelease } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
@@ -949,6 +950,7 @@ export default function App() {
               </button>
             </div>
           </header>
+          {!demo && isDesktop && <ReleaseNotice />}
           {demo && (
             <div className="demo-banner">
               <Sparkles size={14} />

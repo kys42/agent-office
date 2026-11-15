@@ -155,6 +155,8 @@ open "release/Agent Office-darwin-arm64/Agent Office.app"
 
 Create an installer with `npm run package:dmg`, then verify the app installed from it with `npm run test:package`. The DMG includes an Applications shortcut and installation instructions. Manual preview builds produce arm64 / Intel artifacts through [macOS DMG Preview](.github/workflows/macos-dmg.yml). Version tags use [macOS Signed Release](.github/workflows/macos-signed.yml) with configured signing credentials; see the [release guide](docs/development/MACOS-RELEASE.md).
 
+On startup, the packaged desktop app checks GitHub for a newer stable release. The banner opens the release page, or you can skip that version. Installation is manual.
+
 Just want to look around? Run only the UI with **synthetic demo data** (no collector):
 
 ```bash

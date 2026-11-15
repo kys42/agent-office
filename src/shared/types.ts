@@ -996,6 +996,7 @@ export type DockAction =
   | 'room-on'
   | 'room-off';
 export interface OfficeAPI {
+  startupRelease?: () => Promise<{ version: string; url: string } | null>;
   appHealth?: () => Promise<import('./app-health').AppHealth>;
   openPrivacy?: (pane: import('./app-health').PrivacyPane) => Promise<void>;
   mobile?: (
