@@ -144,6 +144,30 @@ test('a custom profile access code survives restart and authenticates exactly', 
   assert.equal((await f.post('login', { accessCode: 'example42!' })).status, 401);
   assert.equal((await f.post('login', { accessCode: 'Example42!' })).status, 200);
 });
+test('mobile state checks visibility after a pending send-capability lookup', async (t) => {
+  const f = await fixture(t);
+  await f.on();
+  await f.login();
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => (entered = resolve));
+  const waiting = new Promise<void>((resolve) => (release = resolve));
+  f.backend.sendEnabled = async () => {
+    entered();
+    await waiting;
+    return true;
+  };
+  const response = f.post('state');
+  await started;
+  f.s.preferences.privacy = true;
+  release();
+  const result = await response;
+  assert.equal(result.status, 200);
+  const snapshot = await result.json();
+  assert.equal(snapshot.privacy, true);
+  assert.equal(snapshot.sendEnabled, false);
+  assert.deepEqual(snapshot.agents, []);
+});
 test('authentication, Host, Origin and route allowlist protect every private API', async (t) => {
   const f = await fixture(t);
   await f.on();

@@ -31,12 +31,14 @@ class ApiError extends Error {
     );
   }
 }
-async function api<T>(route: string, value: unknown = {}): Promise<T> {
+async function api<T>(route: string, value: unknown = {}, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`/mobile/api/${route}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Agent-Office-Mobile': '1' },
     body: JSON.stringify(value),
-    signal: AbortSignal.timeout(60000),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(60000)])
+      : AbortSignal.timeout(60000),
   });
   if (!res.ok) throw new ApiError(res.status);
   return res.json();
@@ -402,10 +404,13 @@ function App() {
     [office, setOffice] = useState(''),
     [project, setProject] = useState(''),
     [status, setStatus] = useState('all');
+  const refreshVersion = useRef(0),
+    refreshRequest = useRef<AbortController | null>(null);
   const authGeneration = useRef(0),
     loggingOut = useRef(false);
   const expired = useCallback(() => {
     authGeneration.current++;
+    refreshRequest.current?.abort();
     setAuthenticated(false);
     setSnapshot(null);
     setSelected(null);
@@ -413,15 +418,30 @@ function App() {
   const refresh = useCallback(async () => {
     if (loggingOut.current) return;
     const generation = authGeneration.current;
+    const version = ++refreshVersion.current;
+    refreshRequest.current?.abort();
+    const controller = new AbortController();
+    refreshRequest.current = controller;
     try {
-      const s = await api<MobileSnapshot>('state');
-      if (generation !== authGeneration.current || loggingOut.current) return;
+      const s = await api<MobileSnapshot>('state', {}, controller.signal);
+      if (
+        version !== refreshVersion.current ||
+        generation !== authGeneration.current ||
+        loggingOut.current
+      )
+        return;
       setSnapshot(s);
       setAuthenticated(true);
       setError('');
       if (s.privacy) setSelected(null);
     } catch (e) {
-      if (generation !== authGeneration.current || loggingOut.current) return;
+      if (
+        controller.signal.aborted ||
+        version !== refreshVersion.current ||
+        generation !== authGeneration.current ||
+        loggingOut.current
+      )
+        return;
       if (e instanceof ApiError && e.status === 401) expired();
       else {
         setError(m().mobile.disconnected);
@@ -441,12 +461,16 @@ function App() {
     const t = setInterval(poll, 5000);
     document.addEventListener('visibilitychange', poll);
     return () => {
+      refreshVersion.current++;
+      refreshRequest.current?.abort();
       clearInterval(t);
       document.removeEventListener('visibilitychange', poll);
     };
   }, [refresh]);
   const login = async () => {
+    if (loginBusy) return;
     authGeneration.current++;
+    refreshRequest.current?.abort();
     setLoginBusy(true);
     try {
       await api('login', { accessCode: code.trim() });
@@ -551,6 +575,7 @@ function App() {
               onClick={async () => {
                 loggingOut.current = true;
                 authGeneration.current++;
+                refreshRequest.current?.abort();
                 try {
                   await api('logout');
                   try {

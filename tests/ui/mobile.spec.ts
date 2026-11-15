@@ -99,6 +99,47 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('a late roster refresh cannot restore colleagues after a newer privacy response', async ({
+  page,
+}) => {
+  await mock(page);
+  await login(page);
+  let first: import('@playwright/test').Route | undefined;
+  let calls = 0;
+  await page.route('**/mobile/api/state', async (route) => {
+    if (++calls === 1) {
+      first = route;
+      return;
+    }
+    return route.fulfill({
+      json: {
+        agents: [],
+        privacy: true,
+        sendEnabled: false,
+        at: Date.now(),
+        lastSync: Date.now(),
+      },
+    });
+  });
+  await page.getByRole('button', { name: '새로고침', exact: true }).click();
+  await expect.poll(() => !!first).toBe(true);
+  await page.getByRole('button', { name: '새로고침', exact: true }).click();
+  await expect(page.getByText('컴퓨터에서 개인정보 가림을 해제하면')).toBeVisible();
+  // Aborted network delivery must also be ignored if a transport races with abort.
+  await first!
+    .fulfill({
+      json: {
+        agents: [local],
+        privacy: false,
+        sendEnabled: true,
+        at: Date.now() - 1000,
+        lastSync: Date.now(),
+      },
+    })
+    .catch(() => {});
+  await expect(page.locator('.agent')).toHaveCount(0);
+  await expect(page.getByText('컴퓨터에서 개인정보 가림을 해제하면')).toBeVisible();
+});
 test('a late older page cannot bridge a gap after the latest page resets', async ({ page }) => {
   await mock(page);
   let advanced = false;
