@@ -533,6 +533,9 @@ try {
       ],
       { timeout: 10000 },
     );
+    // CDP delivers the renderer event even when the transparent native window forwards
+    // mouse input. The OS cursor now agrees, so a resize cannot replay a different position.
+    await dock.mouse.move(x, y);
   };
   await dock.waitForFunction((height) => window.innerHeight === height, row.height);
   const viewButtonBox = await rowPill

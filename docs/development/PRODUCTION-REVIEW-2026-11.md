@@ -49,7 +49,29 @@
 
 ## 3회차 · 운영·회귀와 독립 리뷰
 
-미착수. 변경 전체, production build·MCP·격리 native smoke·보안 감사·배포 문서의 일치 여부를 검증한다.
+개선 후 최종 플랫폼 CI 검증 중.
+
+- 발견/개선: 작은 모바일 보조 텍스트와 안내의 낮은 대비를 확인했다. 보조 글자를 12px 이상으로 맞추고, 명암이 충분한 기존 토큰·키보드 포커스를 사용한다. 상태는 읽을 수 있는 글자와 구분되는 색 점을 함께 쓴다. 390px 영어 라이트/다크에서 주요 설명·시간·전송 안내·placeholder·로그인 버튼의 실제 계산 대비가 4.5:1 이상인 것을 확인했다.
+- 발견/개선: 서명 workflow에 일반 CI의 dependency 감사 게이트가 없었다. 서명 전에 `npm audit --audit-level=high`를 동일하게 실행한다.
+- CI Linux: 외부 printf를 인자 관측기로 쓰던 테스트는 플랫폼별 처리가 달랐다. 실제 `/bin/sh` 해석 후 Node argv로 따옴표·개행·명령 치환 문자열 보존을 검증한다. 테스트를 삭제하거나 인자 보존 요구를 낮추지 않았다.
+- CI Windows: CDP hover가 OS 커서를 옮기지 않아 native resize 후 실제 커서가 다른 곳에서 다시 감지되는 증거를 확보했다. 검수에서 DIP→물리 좌표로 OS 커서를 맞춘 뒤 renderer 이벤트도 전달한다. 최종 Windows 실행으로 검증하며, 단순 재시도로 성공을 주장하지 않는다.
+- 검증: 전체 단위 1,064개 통과·1개 skip(추가 공증 실패 테스트는 별도 5개 모두 통과), 전체 UI 578개 통과 후 모바일 추가 수정 13개 통과. build·typecheck·format·MCP·격리 Electron 데스크톱/모바일 검수 통과, npm audit 0개. 실제 3개 공급자 합성 세션·IPC 격리·설정 저장·펫/책상 줄/바닥·중복 전송 방지·권한 회수 검수 포함. macOS quiet 실행은 OS 포커스를 검증하지 않는다.
+- 공증 운영 발견: 2026-11-16 로컬 Developer ID 신원은 있으나 Apple history API가 계약 미동의·만료 403을 반환했다. 재동의 여부를 사용자에게 확인 요청했으며 공증 업로드를 하지 않았다. preflight는 30초 상한을 두고, 원래 execFile 예외의 인증 인자/개인 파일 경로를 다시 노출하지 않는 해결 안내로 변경했다. 계약·401·timeout·일반 실패 회귀를 추가했다.
+- 정식 배포는 계약 확인 후 같은 팀 프로필로 preflight → clean commit signed DMG → 설치 검수 순서로 진행해야 한다. 현재 PR 수정이 설치된 서명 앱에 적용됐다고 표시하지 않는다.
+
+### 핵심 흐름의 현재 검토 범위
+
+| 영역 | 직접 근거와 판단 |
+| --- | --- |
+| 초기 연결·비어 있음·복구 | onboarding, production-health, mobile-settings UI; 재시도·실행 중/연결 가능 구분 |
+| 사무실·상태·프로젝트/브랜치·부모/보조 관계 | office, desk-row, helper, zone, resident, bubble 전체 UI 회귀와 native 3-provider fixture |
+| 대화·전송·사용자 초안·북마크 | card, conversation-scroll, reader, composer, terminal-preview 회귀; mobile auth/dispatch·권한회수 native |
+| 접근성·언어·좁은 창 | i18n, text-settings, UX, dock-view 회귀; 변경 모바일 390px 라이트/다크 대비 및 화면 검사 |
+| 외부/원격 경계 | federation·ingestion·MCP 단위/통합 회귀; 인증·Host·Origin·가림·최종 전송 재검증. 실제 다른 물리 기기 승인은 별도 |
+| 서명·출시 | 서명 정책/receipt 검증·CI 게이트 및 Apple 실제 preflight. 현재 Apple 계약 403은 미해결 출시 조건 |
+| 대량 기록 | 400개 기록 창·4,000개 탐색·50,000건 collector benchmark. 720회/150세션 합성 반복 검증 결과 대기 |
+
+새로운 특정 성능 배수·메모리 고정값·모든 기기 지원을 보장하지 않는다. `.local/`의 로그/합성 화면은 개인 검수 산출물이며, 이 문서와 PR에 결과·한계를 요약한다.
 
 ## 홍보 산출물
 

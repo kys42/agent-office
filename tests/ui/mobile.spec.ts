@@ -449,3 +449,72 @@ test('late response from an old chat cannot erase the next pending send', async 
   await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '접수 확인', exact: true })).toBeVisible();
 });
+
+test('mobile reading labels and controls remain legible in light and dark English layouts', async ({
+  browser,
+}) => {
+  for (const colorScheme of ['light', 'dark'] as const) {
+    const context = await browser.newContext({
+      locale: 'en-US',
+      colorScheme,
+      viewport: { width: 390, height: 844 },
+    });
+    const page = await context.newPage();
+    try {
+      await mock(page);
+      const readable = async (selector: string, pseudo?: string) => {
+        const values = await page
+          .locator(selector)
+          .first()
+          .evaluate((el, pseudo) => {
+            const rgb = (value: string) => value.match(/[\d.]+/g)!.map(Number);
+            const style = getComputedStyle(el, pseudo);
+            const foreground = rgb(style.color);
+            const layers: number[][] = [];
+            for (let node: Element | null = el; node; node = node.parentElement)
+              layers.unshift(rgb(getComputedStyle(node).backgroundColor));
+            let background = [255, 255, 255];
+            for (const layer of layers) {
+              const alpha = layer[3] ?? 1;
+              background = background.map((v, i) => layer[i] * alpha + v * (1 - alpha));
+            }
+            const luminance = (color: number[]) =>
+              color
+                .slice(0, 3)
+                .map((v) => {
+                  const n = v / 255;
+                  return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+                })
+                .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+            const a = luminance(foreground),
+              b = luminance(background);
+            return {
+              ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+              size: parseFloat(style.fontSize),
+            };
+          }, pseudo);
+        expect(values.ratio, `${colorScheme} ${selector} contrast`).toBeGreaterThanOrEqual(4.5);
+        expect(values.size, `${selector} text size`).toBeGreaterThanOrEqual(12);
+      };
+      await page.goto('/mobile.html');
+      await page.locator('#code').fill('synthetic-code');
+      await readable('.login small');
+      await readable('.primary');
+      await page.locator('.primary').click();
+      await expect(page.locator('.agent')).toHaveCount(2);
+      await readable('.agent-project');
+      await readable('.state');
+      await page.locator('.agent').filter({ hasText: local.name }).click();
+      await expect(page.locator('.message')).not.toHaveCount(0);
+      await readable('.message-meta');
+      await readable('.send-reason');
+      await readable('textarea', '::placeholder');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+      await page.screenshot({ path: `.local/mobile-readable-${colorScheme}.png` });
+    } finally {
+      await context.close();
+    }
+  }
+});

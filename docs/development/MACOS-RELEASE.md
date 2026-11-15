@@ -114,6 +114,10 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 
 공증 프로필은 `xcrun notarytool store-credentials agent-office`의 대화형 입력 또는 승인된 API 키 파일로 등록한다. Apple ID 방식은 앱 전용 암호를 사용한다. CI는 위 팀 API 키 방식으로 통일한다. 개인 API 키(issuer 없는 방식)는 현재 CI 스크립트 범위 밖이다.
 
+### 공증 사전 점검 실패
+
+`release:mac -- preflight`는 업로드 없이 Apple history API 접근을 30초 안에 확인한다. 403 계약 오류는 소유자가 **해당 서명 팀**의 Apple Developer / App Store Connect Agreements를 확인한 뒤 재실행한다. 이미 동의했다면 다른 팀의 계약을 본 것은 아닌지 확인한다. 401은 팀 API 키 또는 keychain profile을 확인한다. 네트워크 timeout은 연결을 복구한 뒤 같은 preflight를 다시 실행한다. 이 단계 실패에는 제출 ID가 없으므로 resume이나 무조건 재제출로 해결하지 않는다. 실패 로그에 원래 인증 인자와 개인 키 경로를 복사하지 않는다.
+
 ### 유지보수와 복구
 
 - 인증서/Apple Developer 멤버십 만료 전에 갱신하고 새 P12로 실제 서명·공증·설치를 검증한다. 기존 인증서가 단순 갱신 대상이라면 즉시 revoke하지 않는다. 이미 배포한 앱의 타임스탬프와 권한 연속성도 확인한다.

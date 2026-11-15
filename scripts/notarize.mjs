@@ -27,6 +27,37 @@ export function notaryCredentials(env = process.env) {
   );
 }
 
+/** Read-only release probe. Never expose execFile's credential argv in a thrown error. */
+export function verifyNotaryAccess(env = process.env, run = execFileSync) {
+  const credentials = notaryCredentials(env);
+  try {
+    run('xcrun', ['notarytool', 'history', ...credentials, '--output-format', 'json'], {
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    const diagnostic = String(error.stderr ?? '');
+    if (/403/.test(diagnostic) && /agreement/i.test(diagnostic))
+      throw new Error(
+        'Apple notarization is blocked by a required or expired agreement (403). The account owner must check Apple Developer / App Store Connect Agreements for the signing team, then rerun preflight. No artifact was submitted.',
+      );
+    if (/401/.test(diagnostic))
+      throw new Error(
+        'Apple notarization authentication failed (401). Check the configured team API key or keychain profile, then rerun preflight. No artifact was submitted.',
+      );
+    if (error.code === 'ETIMEDOUT')
+      throw new Error(
+        'Apple notarization preflight timed out. Check the network and retry. No artifact was submitted.',
+      );
+    throw new Error(
+      'Apple notarization preflight failed. Check network access, Xcode command-line tools and the configured signing profile. No artifact was submitted.',
+    );
+  }
+}
+
 const receiptDirectory = () => path.resolve('.local/notary');
 const artifactKey = (artifact) => {
   const resolved = path.join(
