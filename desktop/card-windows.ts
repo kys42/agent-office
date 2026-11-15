@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, type WebContents } from 'electron';
+import { BrowserWindow, screen, type WebContents } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
@@ -35,7 +35,6 @@ interface Entry {
   /** A pinned card that also stays on top (`CardPin` `top`). */
   onTop: boolean;
   shownAt: number;
-  askedAt: number;
   dialogs: number;
   placed: { width: number; height: number };
   openingBounds?: Rect;
@@ -252,10 +251,11 @@ export class CardWindows {
     if (e.hide) clearTimeout(e.hide);
     e.hide = undefined;
   }
-  private focus(e: Entry, steal = true) {
+  private focus(e: Entry) {
     if (e.window.isDestroyed()) return;
     if (quiet) return;
-    if (steal && process.platform === 'darwin') app.focus({ steal: true });
+    // A macOS panel can take keyboard focus on the current Space. Activating the app
+    // here can take the user to the Space containing its main window.
     e.window.focus();
     e.window.webContents.focus();
   }
@@ -267,7 +267,7 @@ export class CardWindows {
     e.shownAt = Date.now();
     if (quiet || e.restored) e.window.showInactive();
     else e.window.show();
-    if (!e.restored) this.focus(e, Date.now() - e.askedAt < 2000);
+    if (!e.restored) this.focus(e);
     e.restored = false;
     // macOS can reposition a hidden panel while activating it.
     // Place an ordinary popup after activation; pinned cards keep their own position.
@@ -299,7 +299,6 @@ export class CardWindows {
     const e = this.preview;
     if (e?.window.isVisible() && e.target?.id === target.id) {
       this.cancelHide(e);
-      e.askedAt = Date.now();
       this.revealEntry(e);
       return;
     }
@@ -326,7 +325,6 @@ export class CardWindows {
       if (target.conversation) {
         this.cancelHide(e);
         e.target = target;
-        e.askedAt = Date.now();
         this.revealEntry(e);
       } else this.hide(e);
       return;
@@ -351,7 +349,6 @@ export class CardWindows {
     e.placed = { width: bounds.width, height: bounds.height };
     e.openingBounds = bounds;
     e.target = target;
-    e.askedAt = Date.now();
     if (!e.window.webContents.isLoadingMainFrame()) this.revealEntry(e);
   }
 
@@ -391,7 +388,6 @@ export class CardWindows {
       pinned: false,
       onTop: false,
       shownAt: 0,
-      askedAt: Date.now(),
       dialogs: 0,
       placed: bounds,
     };
@@ -579,7 +575,7 @@ export class CardWindows {
     this.cancelHide(e);
     return () => {
       e.dialogs--;
-      if (!e.window.isDestroyed()) this.focus(e, false);
+      if (!e.window.isDestroyed()) this.focus(e);
     };
   }
   reseat() {

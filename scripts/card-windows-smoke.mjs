@@ -113,8 +113,23 @@ try {
   const visible = async (p) => (await app.browserWindow(p)).evaluate((w) => w.isVisible());
   const bounds = async (p) => (await app.browserWindow(p)).evaluate((w) => w.getBounds());
   const cardsCount = () => app.windows().filter((p) => p.url().endsWith('#card')).length;
+  // Opening a panel and clicking into its fields must never activate the whole Mac app.
+  if (process.platform === 'darwin') {
+    await app.evaluate(({ app }) => {
+      globalThis.cardAppFocusCalls = 0;
+      const focus = app.focus.bind(app);
+      app.focus = (...args) => {
+        globalThis.cardAppFocusCalls++;
+        return focus(...args);
+      };
+    });
+  }
   const a = await newCard('codex:codex-test');
   const aw = await app.browserWindow(a);
+  if (process.platform === 'darwin') {
+    assert.equal(await aw.evaluate((window) => window.isVisibleOnAllWorkspaces()), true);
+    assert.equal(await app.evaluate(() => globalThis.cardAppFocusCalls), 0);
+  }
   const desired = await app.evaluate(({ screen }) => {
     const area = screen.getPrimaryDisplay().workArea;
     return { x: area.x + 40, y: area.y + 40, width: 500, height: Math.min(640, area.height - 40) };
