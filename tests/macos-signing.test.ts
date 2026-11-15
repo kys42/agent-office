@@ -165,7 +165,7 @@ test('notarization preflight fails with actionable guidance without leaking cred
     ['HTTP 401 unauthorized', '', /authentication failed/],
     ['', 'ETIMEDOUT', /timed out/],
     ['unknown failure', '', /preflight failed/],
-  ]) {
+  ] as const) {
     assert.throws(
       () =>
         notary.verifyNotaryAccess(env, (_file: string, _args: string[], options: any) => {
