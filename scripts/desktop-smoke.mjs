@@ -506,12 +506,42 @@ try {
   // 보기 opens on hover. The window grows under the pointer: the page re-judges hover at the
   // pointer's old spot (now off the button), yet the menu stays — the pointer never moved.
   const viewMenu = dock.getByRole('menu', { name: '데스크 보기' });
+  await dock.evaluate(() => {
+    window.__hoverEvidence = [];
+    window.__hoverTrace = (e) => {
+      window.__hoverEvidence.push({
+        type: e.type,
+        x: e.clientX,
+        y: e.clientY,
+        sx: e.screenX,
+        sy: e.screenY,
+        wx: window.screenX,
+        wy: window.screenY,
+        target: e.target?.className,
+        active: document.hasFocus(),
+        h: window.innerHeight,
+      });
+      window.__hoverEvidence = window.__hoverEvidence.slice(-30);
+    };
+    for (const event of ['mousemove', 'mouseleave', 'blur', 'resize'])
+      window.addEventListener(event, window.__hoverTrace, true);
+  });
   await rowPill.getByRole('button', { name: '보기 바꾸기', exact: true }).hover();
   await viewMenu.waitFor();
   for (let i = 0; i < 40 && (await dockBounds()).height === row.height; i++)
     await dock.waitForTimeout(50);
   assert.ok((await dockBounds()).height > row.height, 'the row grows for the hover-opened menu');
   await dock.waitForTimeout(700);
+  if (!(await viewMenu.isVisible())) {
+    console.error('hover evidence', await dock.evaluate(() => window.__hoverEvidence));
+    await dock.screenshot({ path: '.local/native-hover-failure.png' });
+  }
+  await dock.evaluate(() => {
+    for (const event of ['mousemove', 'mouseleave', 'blur', 'resize'])
+      window.removeEventListener(event, window.__hoverTrace, true);
+    delete window.__hoverTrace;
+    delete window.__hoverEvidence;
+  });
   assert.ok(await viewMenu.isVisible(), 'a still pointer keeps the hover-opened menu');
   // Leaving it for the see-through top closes it after a short grace, and gives the room back.
   await dock.mouse.move(12, 12);

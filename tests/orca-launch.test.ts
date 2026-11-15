@@ -348,12 +348,12 @@ test('fresh remote Orca uses a background tab and preserves a literal multiline 
   assert.ok(!args.includes('--focus'));
   const cmd = command(args);
   assert.ok(!cmd.includes('--resume'));
-  // Replace only the trusted executable token with printf, then let a real shell parse its argv.
-  const output = execFileSync('/bin/sh', [
-    '-c',
-    cmd.replace("'claude'", "'/usr/bin/printf' '%s\\0'"),
-  ]);
-  assert.deepEqual(output.toString().split('\0'), ['--', prompt, '']);
+  // Use Node's argv contract instead of platform-dependent printf option parsing.
+  // A real shell still parses the command, including all adversarial prompt characters.
+  assert.ok(cmd.includes(" '--' "));
+  const capture = `${shellQuote(process.execPath)} '-e' 'process.stdout.write(JSON.stringify(process.argv.slice(1)))'`;
+  const output = execFileSync('/bin/sh', ['-c', cmd.replace("'claude'", capture)]);
+  assert.deepEqual(JSON.parse(output.toString()), [prompt]);
 });
 
 test('fresh Orca refuses missing, mismatched and remote workspaces before creating', async () => {

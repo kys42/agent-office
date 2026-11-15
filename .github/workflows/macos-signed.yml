@@ -41,6 +41,7 @@ jobs:
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm audit --audit-level=high
       - run: npm run format:check
       - run: npm test
       - run: npm run build
