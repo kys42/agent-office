@@ -160,3 +160,57 @@ test('entering the demo cancels a queued live resync and ignores stale connectio
   await page.evaluate(() => (window as any).health('stale error'));
   await expect(page.locator('.error-banner')).toHaveCount(0);
 });
+
+test('desktop roster status, project names and conversation times remain readable in both themes', async ({
+  page,
+}) => {
+  const readable = async (selector: string) => {
+    const ratio = await page
+      .locator(selector)
+      .first()
+      .evaluate((el) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const rgba = (css: string) => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = css;
+          ctx.fillRect(0, 0, 1, 1);
+          return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+        };
+        const layers: number[][] = [];
+        for (let node: Element | null = el; node; node = node.parentElement)
+          layers.unshift(rgba(getComputedStyle(node).backgroundColor));
+        let bg = [255, 255, 255];
+        for (const layer of layers)
+          bg = bg.map((v, i) => (layer[i] * layer[3]) / 255 + v * (1 - layer[3] / 255));
+        const lum = (c: number[]) =>
+          c
+            .slice(0, 3)
+            .map((v) => {
+              const n = v / 255;
+              return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+            })
+            .reduce((n, v, i) => n + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const fg = lum(rgba(getComputedStyle(el).color)),
+          back = lum(bg);
+        return (Math.max(fg, back) + 0.05) / (Math.min(fg, back) + 0.05);
+      });
+    expect(ratio, selector).toBeGreaterThanOrEqual(4.5);
+  };
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/?demo&lang=ko');
+    await expect(page.locator('.session-copy').first()).toBeVisible();
+    await readable('.session-meta');
+    await readable('.session-copy small');
+    await page.screenshot({ path: `.local/roster-readable-${colorScheme}.png` });
+    await page.getByRole('button', { name: '코코, 일하는 중', exact: true }).click();
+    await expect(page.locator('.message-meta time').first()).toBeVisible();
+    await page
+      .locator('.inspector')
+      .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    await readable('.message-meta time');
+    await page.screenshot({ path: `.local/desktop-readable-${colorScheme}.png` });
+  }
+});
