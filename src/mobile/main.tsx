@@ -14,6 +14,11 @@ import {
 } from 'lucide-react';
 import type { MobileAgent, MobileDetail, MobileReceipt, MobileSnapshot } from '../shared/mobile';
 import { conversationEvents, conversationKind } from '../shared/conversation';
+import {
+  newestMobilePage,
+  olderMobilePage,
+  type MobileConversation,
+} from '../shared/mobile-conversation';
 import { MOODS } from '../shared/types';
 import { m, setLocale, resolveLocale, getLocale } from '../shared/i18n';
 import '../styles/tokens.css';
@@ -93,7 +98,12 @@ function Chat({
   onBack: () => void;
   onExpired: () => void;
 }) {
-  const [detail, setDetail] = useState<MobileDetail | null>(null);
+  const [detail, setDetail] = useState<MobileConversation | null>(null);
+  const detailRef = useRef<MobileConversation | null>(null);
+  const acceptDetail = useCallback((value: MobileConversation | null) => {
+    detailRef.current = value;
+    setDetail(value);
+  }, []);
   const [target, setTarget] = useState<{
     canSend: boolean;
     desktop: boolean;
@@ -110,6 +120,8 @@ function Chat({
     [olderBusy, setOlderBusy] = useState(false);
   const [notice, setNotice] = useState(''),
     [error, setError] = useState('');
+  const [targetError, setTargetError] = useState('');
+  const [latestBusy, setLatestBusy] = useState(false);
   const live = useRef(true),
     scroller = useRef<HTMLDivElement>(null),
     atBottom = useRef(true),
@@ -119,39 +131,79 @@ function Chat({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const readVersion = useRef(0);
+  const historyVersion = useRef(0);
+  const readRequest = useRef<AbortController | null>(null);
+  const olderRequest = useRef<AbortController | null>(null);
   const remote = agent.officeId !== 'local';
-  const read = useCallback(async () => {
-    const version = ++readVersion.current;
-    try {
-      const [next, targets] = await Promise.all([
-        api<MobileDetail>('detail', { id: agent.id }),
-        api<Record<string, typeof target>>('targets', { ids: [agent.id] }),
-      ]);
-      if (!live.current || version !== readVersion.current) return;
-      setDetail((old) => {
-        // Remote detail is a bounded snapshot, not pageable history. A server may
-        // reduce sharing to excerpts at any refresh, so never retain old full text.
-        if (remote) return { ...next, older: false };
-        const head = next.events[0];
-        const joins = head ? (old?.events.findIndex((e) => e.id === head.id) ?? -1) : -1;
-        if (!old || !next.older || joins < 0) return next;
-        const events = [...old.events.slice(0, joins), ...next.events];
-        return {
-          ...next,
-          older: old.older || events.length > 1000,
-          events: events.slice(-1000),
-        };
-      });
-      setTarget(targets[agent.id] ?? null);
-      setError('');
-    } catch (e) {
-      if (!live.current || version !== readVersion.current) return;
-      if (remote) setDetail(null);
-      setError(e instanceof Error ? e.message : m().mobile.connectionFailed);
-      setTarget(null);
-      if (e instanceof ApiError && e.status === 401) onExpired();
-    }
-  }, [agent.id, remote, onExpired]);
+  const read = useCallback(
+    async (reset = false) => {
+      const version = ++readVersion.current;
+      readRequest.current?.abort();
+      const controller = new AbortController();
+      readRequest.current = controller;
+      let visibilityDenied = false;
+      const current = () =>
+        live.current &&
+        !visibilityDenied &&
+        !controller.signal.aborted &&
+        version === readVersion.current;
+      if (reset) {
+        historyVersion.current++;
+        olderRequest.current?.abort();
+        setOlderBusy(false);
+      }
+      // Destination discovery may take seconds. A readable chat does not depend on a writable terminal.
+      const conversation =
+        !detailRef.current?.newer || reset
+          ? (async () => {
+              try {
+                const next = await api<MobileDetail>('detail', { id: agent.id }, controller.signal);
+                if (!current()) return;
+                acceptDetail(newestMobilePage(reset ? null : detailRef.current, next, remote));
+                if (reset) {
+                  initial.current = true;
+                  atBottom.current = true;
+                }
+                setError('');
+              } catch (e) {
+                if (!current()) return;
+                if (remote || (e instanceof ApiError && [401, 403].includes(e.status)))
+                  acceptDetail(null);
+                if (e instanceof ApiError && [401, 403].includes(e.status)) {
+                  visibilityDenied = true;
+                  setTarget(null);
+                }
+                setError(m().mobile.chatFailed);
+                if (e instanceof ApiError && e.status === 401) onExpired();
+              }
+            })()
+          : Promise.resolve();
+      const destination = (async () => {
+        try {
+          const targets = await api<Record<string, typeof target>>(
+            'targets',
+            { ids: [agent.id] },
+            controller.signal,
+          );
+          if (!current()) return;
+          setTarget(targets[agent.id] ?? null);
+          setTargetError('');
+        } catch (e) {
+          if (!current()) return;
+          setTarget(null);
+          setTargetError(m().mobile.targetFailed);
+          if (e instanceof ApiError && [401, 403].includes(e.status)) {
+            visibilityDenied = true;
+            acceptDetail(null);
+            setError(m().mobile.chatFailed);
+            if (e.status === 401) onExpired();
+          }
+        }
+      })();
+      await Promise.all([conversation, destination]);
+    },
+    [agent.id, remote, onExpired, acceptDetail],
+  );
   useEffect(() => {
     live.current = true;
     let running = false;
@@ -167,6 +219,9 @@ function Chat({
     return () => {
       live.current = false;
       readVersion.current++;
+      historyVersion.current++;
+      readRequest.current?.abort();
+      olderRequest.current?.abort();
       clearInterval(timer);
       document.removeEventListener('visibilitychange', poll);
     };
@@ -178,32 +233,66 @@ function Chat({
     }
   }, [detail]);
   const older = async () => {
-    const first = detail?.events[0];
+    const first = detailRef.current?.events[0];
     if (!first || olderBusy || remote) return;
+    const version = historyVersion.current;
+    const controller = new AbortController();
+    olderRequest.current?.abort();
+    olderRequest.current = controller;
     setOlderBusy(true);
     atBottom.current = false;
     const top = scroller.current?.scrollTop ?? 0,
       height = scroller.current?.scrollHeight ?? 0;
+    const anchorTop = [
+      ...(scroller.current?.querySelectorAll<HTMLElement>('[data-event-id]') ?? []),
+    ]
+      .find((element) => element.dataset.eventId === first.id)
+      ?.getBoundingClientRect().top;
     try {
-      const next = await api<MobileDetail>('detail', {
-        id: agent.id,
-        before: { id: first.id, at: first.at },
-      });
-      if (!live.current) return;
-      setDetail((old) => {
-        // A latest-page reset may have happened while this older page was loading.
-        if (!old?.events.some((e) => e.id === first.id)) return old;
-        const events = new Map([...next.events, ...(old?.events ?? [])].map((e) => [e.id, e]));
-        return { ...next, events: [...events.values()] };
-      });
+      const next = await api<MobileDetail>(
+        'detail',
+        {
+          id: agent.id,
+          before: { id: first.id, at: first.at },
+        },
+        controller.signal,
+      );
+      if (!live.current || version !== historyVersion.current || controller.signal.aborted) return;
+      const old = detailRef.current;
+      if (!old?.events.some((e) => e.id === first.id)) return;
+      const combined = olderMobilePage(old, next);
+      if (combined.newer) {
+        readVersion.current++;
+        readRequest.current?.abort();
+      }
+      acceptDetail(combined);
+      setError('');
       requestAnimationFrame(() => {
-        if (scroller.current)
-          scroller.current.scrollTop = top + scroller.current.scrollHeight - height;
+        if (scroller.current) {
+          // Once newer records are evicted, total height cannot measure prepended height.
+          const anchor = [
+            ...scroller.current.querySelectorAll<HTMLElement>('[data-event-id]'),
+          ].find((element) => element.dataset.eventId === first.id);
+          scroller.current.scrollTop =
+            combined.newer && anchor && anchorTop !== undefined
+              ? scroller.current.scrollTop + anchor.getBoundingClientRect().top - anchorTop
+              : top + scroller.current.scrollHeight - height;
+        }
       });
     } catch {
-      setError(m().mobile.olderFailed);
+      if (live.current && version === historyVersion.current && !controller.signal.aborted)
+        setError(m().mobile.olderFailed);
     } finally {
-      if (live.current) setOlderBusy(false);
+      if (live.current && olderRequest.current === controller) setOlderBusy(false);
+    }
+  };
+  const latest = async () => {
+    if (latestBusy) return;
+    setLatestBusy(true);
+    try {
+      await read(true);
+    } finally {
+      if (live.current) setLatestBusy(false);
     }
   };
   const settle = (receipt: MobileReceipt, input: { requestId: string; text: string }) => {
@@ -261,13 +350,15 @@ function Chat({
     ? m().mobile.officeOffline
     : !enabled
       ? m().mobile.enableSend
-      : !target?.canSend
-        ? m().mobile.noTarget
-        : target.desktop
-          ? m().mobile.sendDesktop
-          : target.queues
-            ? m().mobile.sendQueue
-            : m().mobile.sendTerminal;
+      : targetError
+        ? targetError
+        : !target?.canSend
+          ? m().mobile.noTarget
+          : target.desktop
+            ? m().mobile.sendDesktop
+            : target.queues
+              ? m().mobile.sendQueue
+              : m().mobile.sendTerminal;
   return (
     <section className="chat">
       <header className="chat-header">
@@ -292,7 +383,18 @@ function Chat({
       {error && (
         <p className="banner" role="alert">
           {error}
+          <button disabled={latestBusy} onClick={() => void latest()}>
+            {m().mobile.retry}
+          </button>
         </p>
+      )}
+      {detail?.newer && (
+        <div className="history-banner">
+          <span>{m().mobile.browsingHistory}</span>
+          <button disabled={latestBusy} onClick={() => void latest()}>
+            {latestBusy ? m().mobile.loading : m().mobile.latest}
+          </button>
+        </div>
       )}
       <div
         className="messages"
@@ -303,22 +405,18 @@ function Chat({
         }}
       >
         {detail?.older && (
-          <button
-            className="older"
-            disabled={olderBusy || detail.events.length >= 1000}
-            onClick={() => void older()}
-          >
-            {olderBusy
-              ? m().mobile.loading
-              : detail.events.length >= 1000
-                ? m().mobile.pageLimit
-                : m().mobile.older}
+          <button className="older" disabled={olderBusy || latestBusy} onClick={() => void older()}>
+            {olderBusy ? m().mobile.loading : m().mobile.older}
           </button>
         )}
         {!detail && !error && <p className="empty">{m().mobile.loadingChat}</p>}
         {detail && !events.length && <p className="empty">{m().mobile.emptyChat}</p>}
         {events.map((e) => (
-          <article className={`message ${e.kind === 'user' ? 'mine' : ''}`} key={e.id}>
+          <article
+            className={`message ${e.kind === 'user' ? 'mine' : ''}`}
+            key={e.id}
+            data-event-id={e.id}
+          >
             <div className="message-meta">
               {labels[conversationKind(e)]} · {time(e.at)}
               {e.excerpt && m().mobile.excerpt}

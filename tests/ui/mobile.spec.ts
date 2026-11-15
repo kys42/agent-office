@@ -99,6 +99,93 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('conversation renders before slow destination discovery and remains readable on lookup failure', async ({
+  page,
+}) => {
+  await mock(page);
+  let destination: import('@playwright/test').Route | undefined;
+  await page.route('**/mobile/api/targets', (route) => {
+    destination = route;
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await expect.poll(() => !!destination).toBe(true);
+  await destination!.fulfill({ status: 503, json: {} });
+  await expect(page.getByText('전송 대상을 확인하지 못했어요.', { exact: false })).toBeVisible();
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
+});
+
+test('denied visibility cannot be undone by a late successful conversation response', async ({
+  page,
+}) => {
+  await mock(page);
+  let conversation: import('@playwright/test').Route | undefined;
+  await page.route('**/mobile/api/detail', (route) => {
+    conversation = route;
+  });
+  await page.route('**/mobile/api/targets', (route) => route.fulfill({ status: 403, json: {} }));
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.chat [role="alert"]')).toBeVisible();
+  await expect.poll(() => !!conversation).toBe(true);
+  await conversation!.fulfill({
+    json: {
+      id: local.id,
+      older: false,
+      events: [{ id: 'private', kind: 'user', at: 1, text: '이미 가린 대화의 늦은 응답' }],
+    },
+  });
+  await expect(page.getByText('이미 가린 대화의 늦은 응답')).toHaveCount(0);
+});
+
+test('mobile can read beyond 1,000 records in a bounded window and jump back to live', async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await mock(page);
+  let latestReads = 0;
+  await page.route('**/mobile/api/detail', async (route) => {
+    const { before } = route.request().postDataJSON();
+    if (!before) latestReads++;
+    const end = before ? Number(before.id) : 1200;
+    const start = Math.max(0, end - 40);
+    return route.fulfill({
+      json: {
+        id: local.id,
+        older: start > 0,
+        events: Array.from({ length: end - start }, (_, i) => ({
+          id: String(start + i),
+          at: start + i,
+          kind: 'user',
+          text: `합성 기록 ${start + i}`,
+        })),
+      },
+    });
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1160');
+  for (let start = 1120; start >= 0; start -= 40) {
+    await page.getByRole('button', { name: '이전 대화 보기', exact: true }).click();
+    await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', String(start));
+    expect(await page.locator('.message').count()).toBeLessThanOrEqual(400);
+  }
+  await expect(page.getByRole('button', { name: '이전 대화 보기', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toBeVisible();
+  const before = latestReads;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  // Historical pages stay put across a scheduled refresh; destination checks remain active.
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '0');
+  await page.getByRole('button', { name: '최신 대화로 돌아가기' }).click();
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1160');
+  await expect(page.locator('.message')).toHaveCount(40);
+  expect(latestReads).toBe(before + 1);
+  await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toHaveCount(0);
+  await page.screenshot({ path: '.local/mobile-history-latest.png' });
+});
+
 test('a late roster refresh cannot restore colleagues after a newer privacy response', async ({
   page,
 }) => {

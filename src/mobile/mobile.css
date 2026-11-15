@@ -73,6 +73,23 @@ h2 {
 .header-actions {
   display: flex;
 }
+.history-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: none;
+  padding: 10px 16px;
+  background: var(--bg-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.history-banner button,
+.banner button {
+  padding: 8px 12px;
+  flex: none;
+}
 .mobile-app {
   height: 100dvh;
   display: grid;

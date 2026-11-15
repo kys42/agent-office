@@ -42,7 +42,11 @@ export const mobile = {
   sendTerminal: 'Send to the open terminal',
   back: 'Back to agents',
   loading: 'Loading…',
-  pageLimit: 'Showing up to 1,000 recent events',
+  browsingHistory: 'Reading earlier messages · live updates paused here',
+  latest: 'Back to latest messages',
+  chatFailed: 'Could not refresh this conversation. Check the connection and try again.',
+  targetFailed:
+    'Could not check where to send. Your conversation is still readable; we will try again.',
   older: 'Earlier messages',
   loadingChat: 'Loading conversation…',
   emptyChat: 'No messages to show.',
