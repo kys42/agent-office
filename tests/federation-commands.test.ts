@@ -971,3 +971,42 @@ for (const cwd of ['/original/repo/api', '/original/repo/web', '/old/project'])
       await f.close();
     }
   });
+
+test('waking uses only the shared saved Codex identity and directory, once and without a turn', async () => {
+  const starts: string[] = [];
+  const f = await setup(true, 'interactive', 1, {
+    status: async () => ({ desktop: true, tmux: false, orca: false }),
+    start: async (cwd, spec, verify, session) => {
+      verify();
+      assert.equal(spec.resume, true);
+      assert.equal(cwd, f.session.cwd);
+      starts.push(session!.nativeId);
+      return 'started';
+    },
+  });
+  const spec = { resume: true, provider: 'codex', host: 'desktop' };
+  const call = (route: string, body: unknown) =>
+    peerRequest(f.peer, '/office/v1/commands/' + route, undefined, { body });
+  try {
+    await assert.rejects(call('launch-status', { id: f.id, spec }));
+    f.config.allowLaunch = true;
+    f.save();
+    for (const patch of [
+      { nativeId: randomUUID() },
+      { initialMessage: 'hello' },
+      { cwd: '/tmp' },
+      { provider: 'claude' },
+    ]) {
+      await assert.rejects(call('launch-status', { id: f.id, spec: { ...spec, ...patch } }));
+    }
+    const info = launchInfoSchema.parse(await call('launch-status', { id: f.id, spec }));
+    assert.deepEqual(starts, []);
+    const command = { id: f.id, spec, epoch: info.epoch, plan: info.plan, requestId: randomUUID() };
+    assert.equal(launchInfoSchema.parse(await call('launch', command)).status, 'started');
+    assert.equal(launchInfoSchema.parse(await call('launch', command)).status, 'started');
+    assert.deepEqual(starts, [f.session.nativeId]);
+    assert.deepEqual(f.sent, []);
+  } finally {
+    await f.close();
+  }
+});

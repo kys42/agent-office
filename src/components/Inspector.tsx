@@ -1,5 +1,6 @@
 import type { SessionDetail } from '../shared/types';
 import { LatestTask } from '../lib/latest-task';
+import { RemoteWake } from './RemoteWake';
 import { CardShellButton } from './MiniShell';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSupport } from '../lib/useLaunchSupport';
@@ -1205,14 +1206,27 @@ export function Inspector({
             </div>
           )}
           <div className="card-actions">
-            <button
-              className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo || !!s.remote || (sheetFallback && !inOrca && privacy)}
-              onClick={resume}
-            >
-              <Terminal size={13} />
-              {resumeLabel}
-            </button>
+            {s.remote ? (
+              locatable &&
+              terminalSend &&
+              !privacy &&
+              api.remoteLaunch &&
+              s.provider === 'codex' &&
+              ['root', 'fork'].includes(s.relation?.kind ?? 'root') &&
+              ['unknown', 'interactive'].includes(s.origin?.kind ?? 'unknown') &&
+              (!live?.canSend || live.codexRemote) && (
+                <RemoteWake key={s.id} id={s.id} notify={notify} refresh={refreshTargets} />
+              )
+            ) : (
+              <button
+                className={`card-action ${calling ? 'primary' : ''}`}
+                disabled={demo || !!s.remote || (sheetFallback && !inOrca && privacy)}
+                onClick={resume}
+              >
+                <Terminal size={13} />
+                {resumeLabel}
+              </button>
+            )}
             {codexApp && live?.canFocus && (
               <button
                 className="card-action"

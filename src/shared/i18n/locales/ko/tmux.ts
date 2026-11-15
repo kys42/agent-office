@@ -1,5 +1,10 @@
 import type { Messages } from '../en';
 export const tmux: Messages['tmux'] = {
+  wake: '원격에서 이어 열기',
+  wakeConfirm: '원격 컴퓨터에서 이 Codex 대화를 다시 열까요? 메시지는 보내지 않아요.',
+  wakeMissing: '같은 대화를 열 방법이 없어요. 원격 앱·CLI와 실행 중인 대화를 확인해 주세요.',
+  wakeUncertain: '원격 전송 대상을 아직 확인하지 못했어요. 잠시 뒤 전송 대상을 다시 확인해 주세요.',
+  wakeReady: '원격 전송 준비가 됐어요. 작성한 내용을 확인하고 보내세요.',
   remoteTitle: '원격 사무실에 새 에이전트 소환',
   remoteConfirm: '이 원격 컴퓨터에서 새 에이전트를 시작할까요?',
   remoteStart: '원격에서 소환하기',
