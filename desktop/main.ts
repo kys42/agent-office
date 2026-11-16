@@ -12,6 +12,7 @@ import {
 } from './launch/destinations.js';
 import type { DestinationProbe } from './launch/pipeline.js';
 import {
+  hostPlaceName,
   launchIntentSchema,
   launchRequestSchema,
   type LaunchDestinationId,
@@ -36,7 +37,14 @@ import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
 import { matchSleeping } from './orca-sleeping.js';
 import { TerminalFocusError } from './terminal-host.js';
-import { checkDuplicate, duplicateNote, livenessFor, sleepingWorkspace } from './launch-guard.js';
+import { reachHost } from './host-app.js';
+import {
+  checkDuplicate,
+  duplicateNote,
+  livenessFor,
+  runningPlace,
+  sleepingWorkspace,
+} from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -1811,7 +1819,25 @@ function setupIPC() {
     const screen = await screenOf(known, true);
     const tab = screen.kind === 'none' ? await orcaTab(latestSession(known.id), true) : null;
     const terminal = screen.kind === 'found' ? screen.terminal : tab ? { host: tab } : null;
-    if (!terminal) return resume(known);
+    if (!terminal) {
+      // Its process lives but no terminal of it was verified (#376): go where it runs (the app
+      // read from its process), never hand out a resume command that would start a second copy.
+      const place =
+        screen.kind === 'unknown' ? await runningPlace(known.provider, known.nativeId) : null;
+      if (!place) return resume(known);
+      try {
+        const result = await reachHost(
+          place,
+          defaultTerminalDeps(),
+          async () => (await orcaTab(latestSession(known.id), true)) ?? null,
+        );
+        if (result.action === 'focused') cards.afterJump(e.sender);
+        return result;
+      } catch (error) {
+        if (error instanceof TerminalFocusError) throw new TerminalInputError(error.message);
+        throw new Error(m().desktop.terminal.jumpFailed(hostPlaceName(place.host)));
+      }
+    }
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.

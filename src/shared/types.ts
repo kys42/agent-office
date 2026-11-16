@@ -1313,6 +1313,38 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
 /** Where a conversation already runs, or is open, as checked right before a launch. */
 export type LaunchPlace = 'orca' | 'tmux' | 'other';
 /**
+ * The app whose terminal holds a running agent, read from its process's parents when no tab
+ * or pane could be verified (#376). `swarm`: Claude's own tmux server for teammates
+ * (`claude-swarm-<pid>`); `background`: a Claude background session, in a pty of Claude's own
+ * daemon; `app`: another macOS app, named by its bundle; `unknown`: none found (ssh, a
+ * daemonized server).
+ */
+export type HostApp =
+  | 'orca'
+  | 'terminal'
+  | 'iterm'
+  | 'ghostty'
+  | 'cmux'
+  | 'vscode'
+  | 'warp'
+  | 'tmux'
+  | 'swarm'
+  | 'background'
+  | 'app'
+  | 'unknown';
+/** Where a running agent is when its terminal tab could not be verified (#376). */
+export interface RunningHost {
+  app: HostApp;
+  /** `app`: the macOS app's own name. */
+  name?: string;
+  /** Moved to the background (← for agents): Claude's agents view in that app shows it. */
+  parked?: true;
+  /** The main process can bring that place forward (its tab, its pane, or at least the app). */
+  canGo?: true;
+  /** A background session no window shows: the command that attaches a terminal to it. */
+  attach?: string;
+}
+/**
  * The duplicate-launch check shared by the tmux and Orca launchers. `running`: the agent
  * process for this conversation is alive (never launched again). `open`: a tab or tmux session
  * of the conversation exists but the agent is not verified running (launch only after a
@@ -1345,8 +1377,10 @@ export type DuplicateCheck =
    * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
    * this conversation (main matched the terminal it found to that session's panes). Without
    * it the conversation may run elsewhere while the own pane shows another one.
+   * `host`: its process lives but no terminal tab of it was verified: the app it runs in, read
+   * from its process (#376). Left out when its terminal was verified (`where` is that terminal).
    */
-  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true };
+  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true; host?: RunningHost };
 export interface OrcaLaunchInfo {
   available: boolean;
   /** Set by `status`: whether this conversation already runs or is open somewhere. */

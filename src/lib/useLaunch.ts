@@ -384,6 +384,9 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
         return void run(() => copyText(action.command, hooksRef.current.notify));
       case 'suggest':
         return void start(action.destination);
+      case 'fork':
+        // What runs elsewhere cannot be continued here: a new conversation branched off it.
+        return setKind('fork');
     }
   };
   const returnAgain = () =>
