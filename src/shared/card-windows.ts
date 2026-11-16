@@ -39,37 +39,83 @@ export function popupBounds(
 }
 
 /**
- * A card window's pin, cycled by its one pin button: `off` is the replaceable preview (it closes
- * once focus leaves), `pinned` keeps it open as an ordinary window other windows may cover, and
- * `top` keeps it open and always on top.
+ * A card window's pin. The pin button cycles the first three: `off` is the replaceable preview (it
+ * closes once focus leaves), `pinned` keeps it open as an ordinary window other windows may cover,
+ * and `top` keeps it open and always on top. `window` is the card taken out into an app window of
+ * its own (its own button, 창으로 띄우기): kept open like `pinned`, and a real window of the system
+ * besides — titled with the colleague's name, in Mission Control and ⌘` window cycling, staying on
+ * the desktop (Space) it was opened on and moved to another like any app window.
  */
-export type CardPin = 'off' | 'pinned' | 'top';
+export type CardPin = 'off' | 'pinned' | 'top' | 'window';
 
-/** The pin button's fixed cycle: off → pinned → on top → off. */
+/** The card IPC actions that put a card window in each pin (`cardPinAction`, `cardPinOfAction`). */
+const PIN_ACTIONS = {
+  off: 'pin-off',
+  pinned: 'pin-on',
+  top: 'pin-top',
+  window: 'pin-window',
+} as const satisfies Record<CardPin, string>;
+export type CardPinAction = (typeof PIN_ACTIONS)[CardPin];
+
+/**
+ * The pin button's fixed cycle: off → pinned → on top → off. A card in its own window shows no pin
+ * button; were it asked, it goes back in as a pinned card (`cardWindowToggle`).
+ */
 export function nextCardPin(pin: CardPin): CardPin {
-  return pin === 'off' ? 'pinned' : pin === 'pinned' ? 'top' : 'off';
+  return pin === 'off' ? 'pinned' : pin === 'pinned' ? 'top' : pin === 'top' ? 'off' : 'pinned';
+}
+
+/**
+ * The 창으로 띄우기 button: a card goes out into its own window, and one in its own window comes
+ * back in as a pinned card (kept open where it was, not the preview that closes on the next click
+ * elsewhere).
+ */
+export function cardWindowToggle(pin: CardPin): CardPin {
+  return pin === 'window' ? 'pinned' : 'window';
+}
+
+/**
+ * Whether a card in `pin` is an app window of its own rather than a card panel. macOS fixes a
+ * panel (`type: 'panel'`) when it is made, so a card crossing this line moves to a new window.
+ */
+export function cardOwnWindow(pin: CardPin) {
+  return pin === 'window';
 }
 
 /** The card IPC action that puts a card window in `pin`. */
-export function cardPinAction(pin: CardPin): 'pin-off' | 'pin-on' | 'pin-top' {
-  return pin === 'off' ? 'pin-off' : pin === 'pinned' ? 'pin-on' : 'pin-top';
+export function cardPinAction(pin: CardPin): CardPinAction {
+  return PIN_ACTIONS[pin];
+}
+
+/** The pin a card IPC action asks for, or null when it is not a pin action. */
+export function cardPinOfAction(action: unknown): CardPin | null {
+  for (const pin of Object.keys(PIN_ACTIONS) as CardPin[])
+    if (PIN_ACTIONS[pin] === action) return pin;
+  return null;
 }
 
 /**
  * Whether a card window floats over other apps: the preview does (it goes away as soon as they
- * take focus) and so does a card pinned on top. A plain pinned card is an ordinary window.
+ * take focus) and so does a card pinned on top. A plain pinned card and a card in its own window
+ * are ordinary windows.
  */
 export function cardFloats(pin: CardPin) {
-  return pin !== 'pinned';
+  return pin === 'off' || pin === 'top';
 }
+
+const PINS: readonly unknown[] = Object.keys(PIN_ACTIONS);
 
 /** A card's pin from its window state; a state without one is read from `pinned`. */
 export function readCardPin(state: { pin?: unknown; pinned?: unknown }): CardPin {
-  if (state.pin === 'off' || state.pin === 'pinned' || state.pin === 'top') return state.pin;
+  if (PINS.includes(state.pin)) return state.pin as CardPin;
   return state.pinned === true ? 'pinned' : 'off';
 }
 
-/** A pinned card to bring back when the app starts again: whose, how pinned, and where. */
+/**
+ * A pinned card to bring back when the app starts again: whose, how pinned (a card in its own
+ * window too), and where. Which desktop (Space) it was on is not brought back: Electron cannot put
+ * a window on a given Space, so it opens on the current one.
+ */
 export interface PinnedCard {
   /** Whose card only: a bubble's or bookmark's one-time navigation is not brought back. */
   target: { id: string };
@@ -82,7 +128,11 @@ export const PINNED_CARDS_MAX = 8;
 const finite = (n: unknown, limit = 100_000): n is number =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= limit;
 
-/** Read `pinned-cards.json`: anything malformed is dropped, never trusted. */
+/**
+ * Read `pinned-cards.json`: anything malformed is dropped, never trusted. Files written before
+ * cards had their own window read the same (still `v: 1`); an older app reading a newer file drops
+ * only the cards in their own window.
+ */
 export function readPinnedCards(raw: unknown): PinnedCard[] {
   const file = raw as { v?: unknown; cards?: unknown } | null;
   if (file?.v !== 1 || !Array.isArray(file.cards)) return [];
@@ -94,7 +144,7 @@ export function readPinnedCards(raw: unknown): PinnedCard[] {
       typeof id !== 'string' ||
       !id.length ||
       id.length > 400 ||
-      (c.pin !== 'pinned' && c.pin !== 'top') ||
+      (c.pin !== 'pinned' && c.pin !== 'top' && c.pin !== 'window') ||
       !b ||
       !finite(b.x) ||
       !finite(b.y) ||

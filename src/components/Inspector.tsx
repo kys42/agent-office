@@ -26,9 +26,15 @@ import {
   Maximize2,
   ListFilter,
   MapPin,
+  AppWindow,
 } from 'lucide-react';
 import { CardPinIcon } from './WindowPin';
-import { nextCardPin, type CardPin } from '../shared/card-windows';
+import {
+  cardOwnWindow,
+  cardWindowToggle,
+  nextCardPin,
+  type CardPin,
+} from '../shared/card-windows';
 import type {
   Session,
   SessionPatch,
@@ -172,7 +178,9 @@ export function Inspector({
   movable?: boolean;
   /**
    * Independent native window, separate from keeping a colleague in the office: the preview,
-   * pinned, or pinned on top. One button cycles them (`nextCardPin`) and asks for the next.
+   * pinned, or pinned on top. One button cycles them (`nextCardPin`) and asks for the next. A
+   * second button takes the card out into an app window of its own and back in as a pinned card
+   * (`cardWindowToggle`); there the pin and position buttons are not shown.
    */
   cardPin?: CardPin;
   onCardPin?: (next: CardPin) => void;
@@ -1043,7 +1051,7 @@ export function Inspector({
                 </button>
               </>
             )}
-            {onPositionRemember && (
+            {onPositionRemember && !cardOwnWindow(cardPin) && (
               <button
                 className={`icon-btn ${positionRemembered ? 'is-on' : ''}`}
                 aria-label={t.inspector.card.rememberPosition}
@@ -1057,7 +1065,7 @@ export function Inspector({
                 <MapPin size={15} />
               </button>
             )}
-            {onCardPin && (
+            {onCardPin && !cardOwnWindow(cardPin) && (
               <button
                 className={`icon-btn card-pin ${cardPin !== 'off' ? 'is-on' : ''} ${cardPin === 'top' ? 'is-top' : ''}`}
                 aria-label={t.inspector.card.pinLabel(
@@ -1073,6 +1081,23 @@ export function Inspector({
                 onClick={() => onCardPin(nextCardPin(cardPin))}
               >
                 <CardPinIcon pin={cardPin} />
+              </button>
+            )}
+            {onCardPin && (
+              <button
+                className={`icon-btn card-own-window ${cardOwnWindow(cardPin) ? 'is-on' : ''}`}
+                aria-label={t.inspector.card.windowLabel(
+                  t.inspector.card.pinStates[cardPin],
+                  t.inspector.card.pinStates[cardWindowToggle(cardPin)],
+                )}
+                aria-pressed={cardOwnWindow(cardPin)}
+                data-tip={`${t.inspector.card.pinStates[cardPin]} → ${
+                  t.inspector.card.pinStates[cardWindowToggle(cardPin)]
+                } · ${t.inspector.card.pinHints[cardWindowToggle(cardPin)]}`}
+                disabled={windowBusy}
+                onClick={() => onCardPin(cardWindowToggle(cardPin))}
+              >
+                <AppWindow size={15} />
               </button>
             )}
             {onExpand && (

@@ -2,15 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cardFloats,
+  cardOwnWindow,
   cardPinAction,
+  cardPinOfAction,
+  cardWindowToggle,
   nextCardPin,
   readCardPin,
   readCardPosition,
+  readPinnedCards,
   popupBounds,
   type CardPin,
+  type PinnedCard,
 } from '../src/shared/card-windows.js';
 import { floatLayer, popupFloats } from '../src/shared/popup-window.js';
 import { cardBounds, CARD_SIZE } from '../src/shared/dock-geometry.js';
+import { cardWindowStyle, CARD_TRAFFIC_LIGHTS } from '../desktop/window-style.js';
 
 const area = { x: 0, y: 24, width: 1440, height: 876 };
 const anchor = { x: 1100, y: 850, width: 120, height: 40 };
@@ -146,4 +152,91 @@ test('pinned cards to reopen: only well-formed ones, once each, a few at most', 
     cards: Array.from({ length: 20 }, (_, i) => card(`s${i}`)),
   });
   assert.equal(many.length, PINNED_CARDS_MAX);
+});
+
+test('창으로 띄우기 takes any card out into its own window and back in as a pinned card', () => {
+  const pins: CardPin[] = ['off', 'pinned', 'top', 'window'];
+  assert.deepEqual(pins.map(cardWindowToggle), ['window', 'window', 'window', 'pinned']);
+  assert.deepEqual(pins.map(cardOwnWindow), [false, false, false, true]);
+  // The pin button's cycle is unchanged, and never leads into a window of its own.
+  assert.deepEqual(['off', 'pinned', 'top'].map((p) => nextCardPin(p as CardPin)), [
+    'pinned',
+    'top',
+    'off',
+  ]);
+  assert.equal(nextCardPin('window'), 'pinned');
+  // Each pin has its own IPC action, read back to the same pin; other actions are not pins.
+  assert.equal(cardPinAction('window'), 'pin-window');
+  for (const pin of pins) assert.equal(cardPinOfAction(cardPinAction(pin)), pin);
+  for (const action of ['close', 'select', 'pin', 'window', 'pin-window ', undefined, 1])
+    assert.equal(cardPinOfAction(action), null);
+});
+
+test('A card in its own window is an ordinary window on its own desktop, never floating', () => {
+  assert.equal(cardFloats('window'), false);
+  assert.deepEqual(floatLayer(cardFloats('window')), floatLayer(cardFloats('pinned')));
+  assert.equal(floatLayer(cardFloats('window')).alwaysOnTop, false);
+  assert.equal(floatLayer(cardFloats('window')).allSpaces, false);
+  // A popup opened from it (mini terminal, reader) is an ordinary window too.
+  assert.equal(popupFloats({ main: false, alwaysOnTop: cardFloats('window') }), false);
+  assert.equal(readCardPin({ pin: 'window', pinned: true }), 'window');
+});
+
+test('A card in its own window is a real app window; card panels keep their frame', () => {
+  for (const platform of ['darwin', 'win32', 'linux'] as const) {
+    const own = cardWindowStyle(platform, true, 'under-window', false);
+    // Not a panel, not kept out of the taskbar / Mission Control, a frame the system draws.
+    assert.equal(own.type, undefined, platform);
+    assert.notEqual(own.skipTaskbar, true, platform);
+    assert.notEqual(own.frame, false, platform);
+    assert.notEqual(own.transparent, true, platform);
+    assert.notEqual(own.alwaysOnTop, true, platform);
+    const panel = cardWindowStyle(platform, false, 'under-window', false);
+    assert.equal(panel.frame, false, platform);
+    assert.equal(panel.transparent, true, platform);
+    assert.equal(panel.skipTaskbar, true, platform);
+    assert.equal(panel.maximizable, false, platform);
+  }
+  // macOS: the card's glass and the traffic lights over its header; the panel stays a panel.
+  const mac = cardWindowStyle('darwin', true, 'popover', true);
+  assert.equal(mac.titleBarStyle, 'hiddenInset');
+  assert.deepEqual(mac.trafficLightPosition, CARD_TRAFFIC_LIGHTS);
+  assert.equal(mac.vibrancy, 'popover');
+  assert.equal(cardWindowStyle('darwin', false, 'popover', true).type, 'panel');
+  assert.equal(cardWindowStyle('darwin', false, 'popover', true).vibrancy, 'popover');
+  assert.equal(cardWindowStyle('win32', false, 'popover', true).type, undefined);
+  // Windows/Linux: the system's own frame on the theme's background.
+  assert.notEqual(
+    cardWindowStyle('win32', true, 'under-window', true).backgroundColor,
+    cardWindowStyle('win32', true, 'under-window', false).backgroundColor,
+  );
+  assert.equal(cardWindowStyle('linux', true, 'under-window', false).titleBarStyle, undefined);
+});
+
+test('Cards in their own window are written down and read back; older files still read', () => {
+  const at = { x: 40, y: 60, width: 420, height: 560 };
+  const cards: PinnedCard[] = [
+    { target: { id: 'a' }, pin: 'window', bounds: at },
+    { target: { id: 'b' }, pin: 'pinned', bounds: at },
+    { target: { id: 'c' }, pin: 'top', bounds: at },
+  ];
+  // As written by rememberPinned: through JSON and back unchanged.
+  assert.deepEqual(readPinnedCards(JSON.parse(JSON.stringify({ v: 1, cards }))), cards);
+  // A file from before cards had their own window reads as it did.
+  assert.deepEqual(
+    readPinnedCards({
+      v: 1,
+      cards: [
+        { target: { id: 'b' }, pin: 'pinned', bounds: at },
+        { target: { id: 'c' }, pin: 'top', bounds: at },
+      ],
+    }),
+    cards.slice(1),
+  );
+  // Still one card per colleague: a second entry for the same one is dropped.
+  assert.deepEqual(
+    readPinnedCards({ v: 1, cards: [cards[0], { ...cards[1], target: { id: 'a' } }] }),
+    [cards[0]],
+  );
+  assert.deepEqual(readPinnedCards({ v: 1, cards: [{ ...cards[0], pin: 'windowed' }] }), []);
 });

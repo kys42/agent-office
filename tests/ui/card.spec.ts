@@ -157,9 +157,15 @@ async function card(
         card: async (what: string, target: any) => {
           w.cardCalls.push(what);
           if (what === 'select') w.cardListener?.(target);
-          if (what === 'pin-on' || what === 'pin-top' || what === 'pin-off') {
+          const pins: Record<string, string> = {
+            'pin-off': 'off',
+            'pin-on': 'pinned',
+            'pin-top': 'top',
+            'pin-window': 'window',
+          };
+          if (pins[what]) {
             w.windowState.pinned = what !== 'pin-off';
-            w.windowState.pin = what === 'pin-top' ? 'top' : what === 'pin-on' ? 'pinned' : 'off';
+            w.windowState.pin = pins[what];
           }
           if (what === 'position-on' || what === 'position-off')
             w.windowState.positionRemembered = what === 'position-on';
@@ -624,6 +630,44 @@ test('Position memory and pinning this card are independent native actions', asy
   await page.evaluate(() => localStorage.setItem('office:card-keep', 'on'));
   await page.reload();
   await expect(page.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('창으로 띄우기 takes the card out into its own window, titled with its name, and back in', async ({
+  page,
+}) => {
+  const aside = await card(page);
+  const own = aside.locator('.card-head .card-own-window');
+  const pin = aside.locator('.card-head .card-pin');
+  await expect(own).toHaveAttribute('aria-pressed', 'false');
+  await expect(own).toHaveAccessibleName('창으로 띄우기: 고정 안 함 → 창으로 띄움');
+  await expect(own).toHaveAttribute('data-tip', /^고정 안 함 → 창으로 띄움 · 보통 앱 창/);
+  // Next to the pin button.
+  await expect(aside.locator('.card-head .card-pin + .card-own-window')).toHaveCount(1);
+  // The window's title is whose card it is (Mission Control, the Window menu).
+  const name = await aside.locator('.card-head h2').getAttribute('title');
+  expect(name).toBeTruthy();
+  await expect(page).toHaveTitle(name!);
+  await own.click();
+  await expect(own).toHaveAttribute('aria-pressed', 'true');
+  await expect(own).toHaveAccessibleName('창으로 띄우기: 창으로 띄움 → 고정');
+  await expect(page.locator('body')).toHaveClass(/\bcard-window\b/);
+  // A window of its own: no pin cycle, no popup position, nothing on top.
+  await expect(pin).toHaveCount(0);
+  await expect(aside.getByRole('button', { name: '위치 기억', exact: true })).toHaveCount(0);
+  // The system draws its frame: the card fills it edge to edge.
+  await expect(page.locator('.dock-card')).toHaveCSS('border-radius', '0px');
+  await expect(page).toHaveTitle(name!);
+  // Back in: a pinned card, kept open where it was.
+  await own.click();
+  await expect(own).toHaveAttribute('aria-pressed', 'false');
+  await expect(pin).toHaveAttribute('data-pin', 'pinned');
+  await expect(page.locator('body')).not.toHaveClass(/\bcard-window\b/);
+  expect(await page.evaluate(() => (window as any).cardCalls)).toEqual(['pin-window', 'pin-on']);
+});
+
+test('Sharing the screen hides the name from the window title too', async ({ page }) => {
+  await card(page, { privacy: true });
+  await expect(page).toHaveTitle('내용을 숨긴 동료');
 });
 
 test('Failed native window actions leave the displayed state unchanged and show the error', async ({

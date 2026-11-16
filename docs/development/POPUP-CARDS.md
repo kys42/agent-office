@@ -27,6 +27,21 @@
 - 맨 위 고정 카드에서 연 옆 팝업 창(미니 터미널·읽기)은 연 창이 떠 있으므로 함께 뜬다(`popupFloats`). 보통 고정 카드에서 열면 보통 창이다.
 - 조용한 실행(`AGENT_OFFICE_QUIET`)에서도 층은 실제로 바뀐다(`isAlwaysOnTop()`으로 검사). 그때 모든 창은 투명·클릭 통과라 사람 눈에 보이지 않고 포커스도 가져가지 않는다(`desktop/quiet.ts`).
 
+### 창으로 띄우기 (#374)
+
+핀 버튼 옆의 **창으로 띄우기** 버튼은 그 동료의 카드를 앱의 **보통 창**으로 뗀다. 특정 데스크탑(Space)에서만 쓰는 대화를 그 데스크탑에 두고 쓰기 위한 것이다. 핀 버튼의 세 단계와 따로, `CardPin`의 네 번째 상태 `window`로 둔다.
+
+| 상태 | 동작 | 버튼 | IPC |
+| --- | --- | --- | --- |
+| 창으로 띄움 (`window`) | 열어 둔다. panel이 아닌 보통 창: 항상 위 아님, 모든 데스크탑 아님, 작업 표시줄·Mission Control·창 전환(⌘\`)에 보임. 포커스를 잃어도 닫히지 않는다 | 창 아이콘(눌림) | `pin-window` |
+
+- **들고 나기**: 어느 상태에서든 누르면 `window`, 창에서 다시 누르면 **고정**(`pinned`) 카드로 돌아온다(`cardWindowToggle`). 미리보기로 돌리면 다음 클릭에 닫혀 버리므로 고정으로 둔다. 창에서는 핀 버튼·위치 기억 버튼을 숨긴다(맨 위·다음 팝업 위치는 보통 창에 맞지 않는다). 창의 닫기·Esc·신호등 닫기는 고정 카드 닫기와 같다(다시 열지 않음).
+- **새 창으로 옮김**: macOS `type: 'panel'`은 만든 뒤 바꿀 수 없으므로 panel ↔ 창을 오갈 때는 같은 자리·같은 동료로 새 BrowserWindow를 만들고, 새 창이 보인 뒤 옛 창을 치운다(`transfer`, 화면에 빈틈이 없게). 미리보기에서 뗀 경우 미리보기 창은 숨겨서 재사용한다. 미전송 글은 실행별 로컬 초안이라 따라온다. 같은 카드 종류 안(고정 ↔ 맨 위 고정 ↔ 미리보기)은 예전처럼 창을 그대로 두고 층만 바꾼다.
+- **창 모양** (`desktop/window-style.ts` `cardWindowStyle`): macOS는 카드 유리(같은 `vibrancy`)를 그대로 쓰는 `titleBarStyle: 'hiddenInset'` 창이다. 신호등은 카드 머리줄 왼쪽에 그리고(`CARD_TRAFFIC_LIGHTS`, 머리줄 왼쪽 여백 84px), 머리줄은 CSS 드래그 영역이라 시스템이 직접 옮긴다(화면 가장자리로 끌어 다른 데스크탑으로, 최대화·전체 화면도 보통 창처럼). panel의 커서 따라가기 드래그(`drag-start`)는 이 창에서 쓰지 않는다. Windows/Linux는 운영체제 틀이 있는 보통 창이다. 카드는 창을 꽉 채우고(모서리·테두리는 시스템이), 창 제목은 동료 이름(화면 숨기기 중에는 '내용을 숨긴 동료')이라 Mission Control·윈도우 메뉴에서 구분된다.
+- **복원**: 고정 카드처럼 `pinned-cards.json`에 `pin: 'window'`로 적고 재실행 때 그 자리·크기에 창으로 다시 연다(포커스는 가져가지 않음). 파일 형식은 `v: 1` 그대로이고 예전 파일은 그대로 읽힌다. 예전 앱이 새 파일을 읽으면 창 카드만 빠진다.
+- **한계**: Electron 공개 API로는 창을 특정 Space에 되돌려 놓을 수 없어, 재실행 뒤에는 **지금 보고 있는 데스크탑**에 열린다. 실행 중에는 macOS가 창을 그 데스크탑에 둔다(다른 데스크탑에서 같은 동료를 열면 macOS 설정에 따라 그 창이 있는 데스크탑으로 넘어간다).
+- 순수 규칙은 `src/shared/card-windows.ts`(`cardWindowToggle`, `cardOwnWindow`, `cardPinAction`/`cardPinOfAction`, `cardFloats('window') === false`, `readPinnedCards`). `desktop/card-windows.ts`는 모든 핀 동작을 `repin` 하나로 적용하고, panel ↔ 창 경계를 넘을 때만 `transfer`한다.
+
 ## 창 수명과 IPC
 
 `desktop/card-windows.ts`가 일반 팝업 하나와 고정 창들을 관리한다. 카드마다 target, blur 타이머, 드래그, 크기, 네이티브 확인창 수를 따로 가진다. 닫힌 일반 팝업은 재사용하고 고정 창은 닫을 때 파괴하여 snapshot 구독·타이머를 정리한다. 모든 카드는 기존 수집기와 `SnapshotDelivery`를 공유한다.
@@ -40,6 +55,8 @@
 - `tests/card-windows.test.ts`: 잘못된 위치, 책상 기준 배치, 저장 위치, 모니터 제거·작은 작업 영역, 고정 창 헤더를 남기는 배치, 핀 세 단계 순환·IPC 이름·뜨기 결정·예전 `pinned` 상태 읽기.
 - `tests/ui/card.spec.ts`: 새 헤더/메뉴, 두 토글의 독립성, 핀 세 단계(라벨·`data-pin`·맨 위 표시), 오류 시 상태 유지, 초기 target 복원, 드래그·키보드·입력·개인정보.
 - `npm run test:desktop`: 고정 → 맨 위 고정 → 해제 상태와 blur 뒤 유지, 맨 위 고정의 always-on-top, 조용한 실행에서 모든 창의 투명도 0과 `capturePage` 동작.
+- `tests/card-windows.test.ts`(#374): 창으로 띄우기 토글·IPC 왕복·뜨지 않는 층, `cardWindowStyle`(창은 panel·`skipTaskbar`·frameless 아님, 카드는 그대로), `window` 카드 저장·읽기와 예전 파일 호환. `tests/ui/card.spec.ts`: 버튼 위치·라벨·`pin-window`/`pin-on`, 창에서 핀·위치 기억 숨김, 창 제목(화면 숨기기 포함).
+- `npm run test:pinned`: 맨 위 고정 카드 → 창으로 띄우기(새 창이 같은 자리, 항상 위·모든 데스크탑 아님, 최대화·전체 화면 가능, 제목 = 동료 이름, `pin: 'window'` 저장) → 재실행 때 창으로 복원 → 고정 카드로 돌아오기.
 - `npm run test:cards`: 개인 데이터와 분리한 실제 Electron에서 여러 고정 창·재사용·blur·닫기·맨 위 고정(다른 고정 창은 보통 창 유지)·고정 해제·독립 초안·IPC sender·재실행 위치 복원·위치 기억 해제를 검사한다. 실제 OS 포커스를 다루므로 CI나 `AGENT_OFFICE_FOCUS_TESTS=1`에서만 돌고, 그 밖의 로컬 실행에서는 건너뛴다. `test:package`도 DMG에서 복사한 앱으로 같은 검사를 실행한다.
 
 ## 옆에 뜨는 팝업 창 (미니 터미널·북마크 읽기, #283)

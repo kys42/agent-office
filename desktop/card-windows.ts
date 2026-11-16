@@ -1,4 +1,4 @@
-import { app, BrowserWindow, screen, type WebContents } from 'electron';
+import { app, BrowserWindow, nativeTheme, screen, type WebContents } from 'electron';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { mkdir, writeFile, rename } from 'node:fs/promises';
@@ -13,6 +13,8 @@ import {
 } from '../src/shared/dock-geometry.js';
 import {
   cardFloats,
+  cardOwnWindow,
+  cardPinOfAction,
   popupBounds,
   readCardPosition,
   readPinnedCards,
@@ -23,17 +25,20 @@ import { floatLayer } from '../src/shared/popup-window.js';
 import { m } from '../src/shared/i18n/index.js';
 import { CardSizeMemory } from './card-size.js';
 import { quiet } from './quiet.js';
-import { dropAppMenu } from './window-style.js';
+import { cardWindowStyle, dropAppMenu, type CardMaterial } from './window-style.js';
 
-export type CardMaterial = 'under-window' | 'popover';
+export type { CardMaterial };
 
 interface Entry {
   window: BrowserWindow;
   target: CardTarget | null;
+  /**
+   * How it is kept (`CardPin`): the replaceable preview, pinned, pinned on top, or in its own app
+   * window. Its own window or a card panel is fixed when the window is made (`cardOwnWindow`).
+   */
+  pin: CardPin;
   /** Kept open: not the replaceable preview. */
-  pinned: boolean;
-  /** A pinned card that also stays on top (`CardPin` `top`). */
-  onTop: boolean;
+  readonly pinned: boolean;
   shownAt: number;
   askedAt: number;
   dialogs: number;
@@ -45,14 +50,15 @@ interface Entry {
   savedBounds?: Rect;
   hide?: ReturnType<typeof setTimeout>;
   drag?: ReturnType<typeof setInterval>;
+  /** The card's window before it moved to this one (`transfer`): it goes once this one shows. */
+  replaces?: Entry;
 }
-
-const pinOf = (e: Entry): CardPin => (!e.pinned ? 'off' : e.onTop ? 'top' : 'pinned');
 
 /**
  * One replaceable preview, plus independent, explicitly pinned colleague windows (each pinned as
- * an ordinary window or on top). Pinned cards are written down as they change, and come back
- * where they were when the app starts again (`restore`).
+ * an ordinary window, on top, or taken out into an app window of its own). Pinned cards are
+ * written down as they change, and come back where they were when the app starts again
+ * (`restore`).
  */
 export class CardWindows {
   private entries = new Set<Entry>();
@@ -122,15 +128,19 @@ export class CardWindows {
     // Pins from the last run not brought back yet (setting off, screen sharing, a colleague still
     // missing) are kept, never overwritten by this run's.
     this.pending ??= readPinnedCards(this.read('pinned-cards.json'));
-    const open: PinnedCard[] = [...this.entries]
-      .filter((e) => e.pinned && e.target && !e.window.isDestroyed())
-      .map((e) => ({
-        target: { id: e.target!.id },
-        pin: e.onTop ? 'top' : 'pinned',
-        // Where it was saved until the person moves it: a card pulled onto the screen with a
-        // display missing goes back there once the display returns.
-        bounds: e.savedBounds ?? e.window.getBounds(),
-      }));
+    const open: PinnedCard[] = [...this.entries].flatMap((e) =>
+      e.pin === 'off' || !e.target || e.window.isDestroyed()
+        ? []
+        : [
+            {
+              target: { id: e.target.id },
+              pin: e.pin,
+              // Where it was saved until the person moves it: a card pulled onto the screen with
+              // a display missing goes back there once the display returns.
+              bounds: e.savedBounds ?? e.window.getBounds(),
+            },
+          ],
+    );
     // Cards still waiting for their colleague stay written down too.
     const waiting = (this.pending ?? []).filter(
       (c) => !open.some((o) => o.target.id === c.target.id),
@@ -159,16 +169,13 @@ export class CardWindows {
       }
       const area = screen.getDisplayMatching(card.bounds).workArea;
       const bounds = clampInto(card.bounds, area);
-      const preview = this.preview;
-      const e = this.create(bounds);
-      // A restored card is pinned from the start, never the replaceable preview.
-      this.preview = preview;
-      e.pinned = true;
-      e.onTop = card.pin === 'top';
+      // A restored card is pinned from the start (in its own window again when it was), never the
+      // replaceable preview. One in its own window opens on the current desktop: Electron cannot
+      // put a window back on the Space it was on.
+      const e = this.create(bounds, card.pin);
       e.restored = true;
       e.savedBounds = card.bounds;
       e.target = { id: card.target.id };
-      this.layer(e.window, pinOf(e));
       opened++;
     }
     if (opened) this.rememberPinned();
@@ -223,7 +230,7 @@ export class CardWindows {
     const at = e.window.getBounds();
     return {
       pinned: e.pinned,
-      pin: pinOf(e),
+      pin: e.pin,
       target: e.target,
       positionRemembered:
         !!this.position && (!e.pinned || (at.x === this.position.x && at.y === this.position.y)),
@@ -236,8 +243,9 @@ export class CardWindows {
   }
   /**
    * The preview floats over other apps (it closes as soon as they take focus), and so does a card
-   * pinned on top; a plain pinned card is an ordinary window (`cardFloats`). A quiet run layers
-   * for real: its windows are invisible and click-through (desktop/quiet.ts).
+   * pinned on top; a plain pinned card and a card in its own window are ordinary windows
+   * (`cardFloats`), the latter on the one desktop it is on. A quiet run layers for real: its
+   * windows are invisible and click-through (desktop/quiet.ts).
    */
   private layer(window: BrowserWindow, pin: CardPin) {
     if (window.isDestroyed()) return;
@@ -255,6 +263,8 @@ export class CardWindows {
   private focus(e: Entry, steal = true) {
     if (e.window.isDestroyed()) return;
     if (quiet) return;
+    // A card in its own window may be minimized to the Dock or taskbar: brought back first.
+    if (e.window.isMinimized()) e.window.restore();
     if (steal && process.platform === 'darwin') app.focus({ steal: true });
     e.window.focus();
     e.window.webContents.focus();
@@ -274,6 +284,14 @@ export class CardWindows {
     if (e.openingBounds) {
       e.window.setBounds(e.openingBounds);
       e.openingBounds = undefined;
+    }
+    // The card moved here from another window: that one goes now this one shows, never leaving a
+    // gap on screen while this one loaded.
+    if (e.replaces) {
+      const old = e.replaces;
+      e.replaces = undefined;
+      this.hide(old);
+      this.rememberPinned();
     }
   }
   private hide(e: Entry) {
@@ -355,26 +373,23 @@ export class CardWindows {
     if (!e.window.webContents.isLoadingMainFrame()) this.revealEntry(e);
   }
 
-  private create(bounds: Rect) {
+  /**
+   * A card window for `pin`: the replaceable preview (`off`, the default), a pinned card, or a
+   * card in its own app window. Its frame follows (`cardWindowStyle`), and is fixed from here on.
+   */
+  private create(bounds: Rect, pin: CardPin = 'off') {
     const window = new BrowserWindow({
       ...bounds,
       show: false,
       resizable: true,
       minWidth: CARD_MIN.width,
       minHeight: CARD_MIN.height,
-      maximizable: false,
-      frame: false,
-      transparent: true,
-      fullscreenable: false,
-      skipTaskbar: true,
-      ...(process.platform === 'darwin'
-        ? {
-            vibrancy: this.options.material?.() ?? 'under-window',
-            visualEffectState: 'active' as const,
-            roundedCorners: true,
-            type: 'panel' as const,
-          }
-        : {}),
+      ...cardWindowStyle(
+        process.platform,
+        cardOwnWindow(pin),
+        this.options.material?.() ?? 'under-window',
+        nativeTheme.shouldUseDarkColors,
+      ),
       webPreferences: {
         preload: this.options.preload,
         contextIsolation: true,
@@ -388,19 +403,21 @@ export class CardWindows {
     const e: Entry = {
       window,
       target: null,
-      pinned: false,
-      onTop: false,
+      pin,
+      get pinned() {
+        return this.pin !== 'off';
+      },
       shownAt: 0,
       askedAt: Date.now(),
       dialogs: 0,
       placed: bounds,
     };
     this.entries.add(e);
-    this.preview = e;
+    if (pin === 'off') this.preview = e;
     this.options.secure(window);
     this.options.watch(window);
     // The preview floats (in a quiet run too, where every window is invisible and click-through).
-    this.layer(window, 'off');
+    this.layer(window, pin);
     window.on('blur', () => this.blurred(e));
     window.on('closed', () => {
       this.cancelHide(e);
@@ -429,6 +446,29 @@ export class CardWindows {
     window.webContents.on('did-finish-load', () => this.revealEntry(e));
     void window.loadFile(this.options.index, { hash: 'card' });
     return e;
+  }
+
+  /**
+   * Moves a card across the line between a card panel and its own app window (`cardOwnWindow`):
+   * macOS fixes a panel when it is made, so the card opens again in a new window of the other
+   * kind, where it was and on that colleague, and the old window goes once the new one shows.
+   * Unsent text follows: drafts are kept per run, not per window.
+   */
+  private transfer(e: Entry, pin: CardPin) {
+    if (!e.target) throw new Error(m().desktop.badRequest);
+    // Back to the preview: the one preview there is makes room, as for `pin-off`.
+    if (pin === 'off' && this.preview && this.preview !== e) {
+      const old = this.preview;
+      this.hide(old);
+      old.window.destroy();
+    }
+    this.cancelHide(e);
+    this.stopDrag(e);
+    // Where it is now; a restored card's saved spot (a display still missing) stays written down.
+    const next = this.create(e.window.getBounds(), pin);
+    next.savedBounds = e.savedBounds;
+    next.target = { id: e.target.id };
+    next.replaces = e;
   }
 
   /** A preview card goes away once the person works elsewhere (not in its terminal window). */
@@ -463,6 +503,8 @@ export class CardWindows {
   }
   private startDrag(e: Entry) {
     this.stopDrag(e);
+    // A card in its own window moves natively by its header (a drag region), across desktops too.
+    if (cardOwnWindow(e.pin)) return;
     const cursor = screen.getCursorScreenPoint();
     const [x, y] = e.window.getPosition();
     const offset = { x: cursor.x - x, y: cursor.y - y };
@@ -508,43 +550,8 @@ export class CardWindows {
     }
     if (action === 'position-on' || action === 'position-off')
       return this.remember(e, action === 'position-on');
-    if (action === 'pin-on' || action === 'pin-top') {
-      if (!e.target) throw new Error(m().desktop.badRequest);
-      const other = [...this.entries].find(
-        (w) => w !== e && w.pinned && w.target?.id === e.target!.id,
-      );
-      if (other) {
-        this.hide(e);
-        this.focus(other);
-        return;
-      }
-      e.pinned = true;
-      e.onTop = action === 'pin-top';
-      // A pin keeps the card open: an ordinary window other apps may cover, or one that stays on
-      // top when the person chose that. Neither moves the focus.
-      this.layer(e.window, pinOf(e));
-      this.cancelHide(e);
-      if (this.preview === e) this.preview = null;
-      this.states();
-      this.rememberPinned();
-      return;
-    }
-    if (action === 'pin-off') {
-      if (!e.pinned) return;
-      // Return this card to the replaceable preview. Leave every other pinned card alone.
-      if (this.preview && this.preview !== e) {
-        const old = this.preview;
-        this.hide(old);
-        old.window.destroy();
-      }
-      e.pinned = false;
-      e.onTop = false;
-      this.layer(e.window, 'off');
-      this.preview = e;
-      this.states();
-      this.rememberPinned();
-      return;
-    }
+    const pin = cardPinOfAction(action);
+    if (pin) return this.repin(e, pin);
     if (action === 'select' && target) {
       const other = [...this.entries].find(
         (w) => w !== e && w.pinned && w.target?.id === target.id,
@@ -569,6 +576,39 @@ export class CardWindows {
       return target.id;
     }
     throw new Error(m().desktop.badRequest);
+  }
+
+  /** Puts a card in `pin`, in a new window when it crosses into or out of its own window. */
+  private repin(e: Entry, pin: CardPin) {
+    if (pin === e.pin) return;
+    if (pin !== 'off') {
+      if (!e.target) throw new Error(m().desktop.badRequest);
+      const other = [...this.entries].find(
+        (w) => w !== e && w.pinned && w.target?.id === e.target!.id,
+      );
+      if (other) {
+        this.hide(e);
+        this.focus(other);
+        return;
+      }
+    }
+    if (cardOwnWindow(pin) !== cardOwnWindow(e.pin)) return this.transfer(e, pin);
+    if (pin === 'off') {
+      // Return this card to the replaceable preview. Leave every other pinned card alone.
+      if (this.preview && this.preview !== e) {
+        const old = this.preview;
+        this.hide(old);
+        old.window.destroy();
+      }
+      this.preview = e;
+    } else if (this.preview === e) this.preview = null;
+    e.pin = pin;
+    // A pin keeps the card open: an ordinary window other apps may cover, or one that stays on
+    // top when the person chose that. Neither moves the focus.
+    this.layer(e.window, pin);
+    if (pin !== 'off') this.cancelHide(e);
+    this.states();
+    this.rememberPinned();
   }
 
   /** Native sheets suspend only their owning card's blur handler. */

@@ -1454,6 +1454,28 @@ body.card-mode:not(.is-mac) .dock-card {
 .inspector-card .card-head .icon-btn.is-on {
   color: var(--accent);
 }
+/* A card in its own app window (창으로 띄우기): the system draws its frame and corners, so the card
+   fills it edge to edge. Its header moves the window natively — a drag region, so the window can
+   be carried to another desktop like any app window — and on macOS leaves room for the traffic
+   lights drawn over it (desktop/window-style.ts `CARD_TRAFFIC_LIGHTS`). */
+body.card-mode.card-window .dock-card {
+  border: 0;
+  border-radius: 0;
+}
+body.card-mode.card-window:not(.is-mac) .dock-card {
+  background: var(--grouped);
+  backdrop-filter: none;
+}
+body.card-window .inspector-card .card-head {
+  cursor: auto;
+  -webkit-app-region: drag;
+}
+body.card-window .inspector-card .card-head :is(button, input, form, a, .card-menu, .card-avatar) {
+  -webkit-app-region: no-drag;
+}
+body.card-window.is-mac .inspector-card .card-head {
+  padding-left: 84px;
+}
 /* Pinned on top: the filled pin in an accent ring, with a small up arrow. */
 .inspector-card .card-head .icon-btn.card-pin.is-top {
   background: var(--accent-soft);
