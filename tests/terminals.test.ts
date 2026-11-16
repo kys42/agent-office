@@ -1,4 +1,5 @@
 import { claudeLiveness } from '../desktop/launch-guard.js';
+import { reachHost } from '../desktop/host-app.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, readFile, readdir, writeFile, rm } from 'node:fs/promises';
@@ -2515,6 +2516,32 @@ test('A background session no window provably shows is unknown, with its attach 
           name,
         );
     });
+});
+
+test('A job whose parking window has no way there (ssh, no known app) keeps its attach command', async () => {
+  const attach = 'claude attach 89fe72dc';
+  const attachPlace = {
+    where: 'other',
+    host: { app: 'background', attach },
+    way: { kind: 'attach', command: attach },
+  };
+  // The window that parked the job runs under sshd: no terminal app, no Orca or tmux env.
+  const underSsh = { alive: [4242, 7777], table: processTable('/usr/sbin/sshd') };
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, underSsh);
+    Object.assign(deps, { platform: 'darwin' });
+    // The job's own session, and the window's own (held while the job runs): both attach.
+    for (const session of [JOB_SESSION, WINDOW_SESSION]) {
+      const live = await claudeLiveness.lookup(session, true, deps);
+      assert.deepEqual(live, { kind: 'found', terminal: attachPlace }, session);
+      // Going there copies the command instead of failing with no way.
+      assert.deepEqual(
+        await reachHost(attachPlace as Parameters<typeof reachHost>[0], deps),
+        { action: 'copy', text: attach },
+        session,
+      );
+    }
+  });
 });
 
 test("A send to a background session types into its window's terminal, checking the window", async () => {

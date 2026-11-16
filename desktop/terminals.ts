@@ -418,8 +418,9 @@ export async function claudeHolder(
 /**
  * Where the holder of a session runs when its terminal could not be verified (#376), and the
  * way there: a window that parked it, at that window's own terminal (verified as any) or app;
- * a background session at the one window that parked it, else its attach command; any other
- * window at the app read from its process (desktop/host-app.ts).
+ * a background session at the one window that parked it; any other window at the app read
+ * from its process (desktop/host-app.ts). A background job with no window to go to (none, or
+ * one under ssh or in no known app) keeps its attach command.
  */
 export async function claudePlace(
   holder: ClaudeHolder,
@@ -427,19 +428,27 @@ export async function claudePlace(
   fresh = false,
 ): Promise<HostPlace> {
   const proc = holder.process;
-  if (holder.parked) return windowPlace(proc, deps, fresh);
+  // A parked window holds it only while its job runs (`parkedHold`): that job can be attached.
+  if (holder.parked) return orAttach(await windowPlace(proc, deps, fresh), proc.parkedJobId);
   if (proc.kind === 'bg') {
     const windows = await parkedWindows(proc, deps, fresh).catch(() => null);
-    if (windows?.length === 1) return windowPlace(windows[0], deps, fresh);
-    return proc.jobId
-      ? {
-          where: 'other',
-          host: { app: 'background', attach: attachCommand(proc.jobId) },
-          way: { kind: 'attach', command: attachCommand(proc.jobId) },
-        }
-      : { where: 'other', host: { app: 'background' }, way: { kind: 'none' } };
+    const place = windows?.length === 1 ? await windowPlace(windows[0], deps, fresh) : null;
+    return orAttach(place, proc.jobId);
   }
   return hostOf(proc, deps);
+}
+
+/** A place there is a way to, else the background job's attach command (when it names one). */
+function orAttach(place: HostPlace | null, jobId: string | undefined): HostPlace {
+  if (place && place.way.kind !== 'none') return place;
+  if (!jobId || !JOB_ID.test(jobId))
+    return place ?? { where: 'other', host: { app: 'background' }, way: { kind: 'none' } };
+  const command = attachCommand(jobId);
+  return {
+    where: 'other',
+    host: { app: 'background', attach: command },
+    way: { kind: 'attach', command },
+  };
 }
 
 /** A window that parked a conversation: its own terminal when verified, else its app. */
