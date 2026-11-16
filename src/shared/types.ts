@@ -973,9 +973,12 @@ export interface CardTarget {
 }
 /** Native popup presentation state; independent of the colleague's office pin. */
 export interface CardWindowState {
-  /** Kept open (pinned, or pinned on top). */
+  /** Kept open (pinned, pinned on top, or in its own window). */
   pinned: boolean;
-  /** Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, or pinned on top. */
+  /**
+   * Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, pinned on top, or in
+   * its own app window.
+   */
   pin?: import('./card-windows').CardPin;
   positionRemembered: boolean;
   /** Initial state handshake also recovers a target sent before the renderer subscribed. */
@@ -1226,9 +1229,7 @@ export interface OfficeAPI {
       | 'drag-start'
       | 'drag-end'
       | 'select'
-      | 'pin-on'
-      | 'pin-top'
-      | 'pin-off'
+      | import('./card-windows').CardPinAction
       | 'position-on'
       | 'position-off'
       | 'focus',
