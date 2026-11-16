@@ -348,11 +348,10 @@ test('fresh remote Orca uses a background tab and preserves a literal multiline 
   assert.ok(!args.includes('--focus'));
   const cmd = command(args);
   assert.ok(!cmd.includes('--resume'));
-  // Replace only the trusted executable token with printf, then let a real shell parse its argv.
-  const output = execFileSync('/bin/sh', [
-    '-c',
-    cmd.replace("'claude'", "'/usr/bin/printf' '%s\\0'"),
-  ]);
+  // Replace only the trusted executable token with an argv printer, then let a real shell parse
+  // its argv. Node, not printf: some printf builds (uutils on newer Ubuntu) swallow a `--` operand.
+  const printArgs = `'${process.execPath}' '-e' 'process.stdout.write(process.argv.slice(2).map((a) => a + "\\0").join(""))' 'argv'`;
+  const output = execFileSync('/bin/sh', ['-c', cmd.replace("'claude'", printArgs)]);
   assert.deepEqual(output.toString().split('\0'), ['--', prompt, '']);
 });
 
