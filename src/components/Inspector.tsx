@@ -54,6 +54,14 @@ import { dismissSend, rememberSend, settlePending, usePendingSends } from '../li
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Bookmarks } from './Bookmarks';
 import { Conversation } from './Conversation';
+import { BubbleShareBar } from './BubbleShareBar';
+import {
+  handTargets,
+  takesReplies,
+  type BubbleRange,
+  type SharedBubble,
+} from '../shared/bubble-share';
+import { replyDraftKey } from '../lib/useComposerDraft';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import {
   freshConversation,
@@ -81,6 +89,7 @@ import type { ReceiptHandler } from '../lib/useOffice';
 export function Inspector({
   session,
   sessions,
+  colleagues = [],
   notices,
   memberIds,
   resident,
@@ -124,6 +133,8 @@ export function Inspector({
 }: {
   session: Session;
   sessions: Session[];
+  /** The office's colleagues (its residents): who picked bubbles can be handed to (#377). */
+  colleagues?: Session[];
   notices: OfficeNotice[];
   /** All runs of the colleague in the room, so its state (asking, a result) matches the roster. */
   memberIds?: string[];
@@ -312,10 +323,7 @@ export function Inspector({
   }, [session.alias, editing]);
   // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
   // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
-  const locatable =
-    !demo &&
-    (!session.remote || (session.remote.send && !session.remote.stale)) &&
-    (session.provider === 'claude' || session.provider === 'codex');
+  const locatable = takesReplies(session, demo);
   const { targets, markSent, refreshTargets } = useSendTargets(locatable ? [session.id] : [], {
     enabled: locatable,
     stamp: session.updatedAt,
@@ -357,6 +365,13 @@ export function Inspector({
       void onBookmark!(s.id, eventId, on)
         .then(() => notify(on ? t.conversation.bookmarked : t.conversation.unbookmarked))
         .catch((e) => notify((e as Error).message)));
+  // Picking bubbles to copy or hand on (#377): the bar takes the chat box's place meanwhile.
+  // Another colleague, another tab or hiding the screen stops it.
+  const [range, setRange] = useState<BubbleRange | null>(null);
+  const [picked, setPicked] = useState<SharedBubble[]>([]);
+  useEffect(() => setRange(null), [session.id, tab, privacy]);
+  const selection = useMemo(() => ({ range, onRange: setRange, onPicked: setPicked }), [range]);
+  const stopPicking = useCallback(() => setRange(null), []);
   const [loadingOlder, setLoadingOlder] = useState(false);
   /** The page before the oldest loaded event (the card keeps it until it closes or switches). */
   const loadOlder = async () => {
@@ -833,6 +848,7 @@ export function Inspector({
             outputs={chatOutputsOn ? chatOutputs.list : undefined}
             privacy={privacy}
             demo={demo}
+            selection={selection}
           />
         ) : (
           <div className="inspector-memory">
@@ -967,6 +983,8 @@ export function Inspector({
     </button>
   );
   const calling = state === 'attention';
+  // Who picked bubbles can go to: another office colleague whose card has a chat box.
+  const shareTargets = range ? handTargets(colleagues, [...members, s.id], demo) : [];
   return (
     <>
       <aside
@@ -1234,7 +1252,31 @@ export function Inspector({
           )}
         </div>
         {scrollArea}
-        <div className="card-composer">
+        {/* While bubbles are picked, their bar stands where the chat box is; the box stays as it
+            was underneath (a draft, a send under way) and is back once picking stops. */}
+        <div className={`card-composer${range ? ' is-picking' : ''}`}>
+          {range && (
+            <BubbleShareBar
+              bubbles={picked}
+              waiting={range.start === range.end}
+              from={sessionName(s)}
+              targets={shareTargets}
+              handBlock={
+                // A browser has no chat boxes; the desktop app, once typing is turned on.
+                !api.send
+                  ? t.conversation.share.noTargets
+                  : !terminalSend
+                    ? t.conversation.share.handOff
+                    : !shareTargets.length
+                      ? t.conversation.share.noTargets
+                      : ''
+              }
+              demo={demo}
+              notify={notify}
+              onHanded={onSelect}
+              onDone={stopPicking}
+            />
+          )}
           {/* What a calling colleague asks, answerable here where the desktop app sees it. */}
           {calling && !privacy && !s.remote && (
             <div className="card-request">
@@ -1304,7 +1346,7 @@ export function Inspector({
           {locatable && api.send ? (
             <TerminalSend
               key={s.id}
-              draftKey={`${demo ? 'demo' : 'live'}:${s.id}`}
+              draftKey={replyDraftKey(s.id, demo)}
               chat
               target={live}
               onRefresh={refreshTargets}

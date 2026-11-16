@@ -161,6 +161,7 @@ export function DockCard() {
           key={`${session.id}:${opened}`}
           session={session}
           sessions={sessions}
+          colleagues={model.residents}
           notices={snapshot?.notices ?? []}
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
           resident={model.ownerOf(session.id)}
