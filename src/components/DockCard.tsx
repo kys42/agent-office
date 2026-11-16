@@ -10,6 +10,7 @@ import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
 import { cardReadSettings } from '../shared/card-reads';
 import {
+  cardHandAction,
   cardOwnWindow,
   cardPinAction,
   readCardPin,
@@ -167,6 +168,10 @@ export function DockCard() {
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
           onSelect={(id) => select({ id })}
+          // Bubbles handed on: a kept card stays on its conversation (`cardHandAction`).
+          onHandTo={(id) =>
+            void api.card?.(cardHandAction(cardPin), { id }).catch((e) => notify(e.message))
+          }
           showConversation={conversation}
           onClose={close}
           onExpand={() => void api.card?.('expand', { id: session.id })}

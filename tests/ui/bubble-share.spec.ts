@@ -3,6 +3,7 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { sessionName } from '../../src/shared/office';
 import type { OfficeEvent, Snapshot } from '../../src/shared/types';
+import type { CardPin } from '../../src/shared/card-windows';
 
 // Picking a run of chat bubbles to copy at once or hand to another colleague (#377), in the
 // dock card window and in the big office's column (the same card).
@@ -32,9 +33,14 @@ function office(long = false): Snapshot {
   return snapshot;
 }
 
-async function mock(page: Page, snapshot: Snapshot, drafts: Record<string, string> = {}) {
+async function mock(
+  page: Page,
+  snapshot: Snapshot,
+  drafts: Record<string, string> = {},
+  pin: CardPin = 'off',
+) {
   await page.addInitScript(
-    ({ snapshot, drafts }) => {
+    ({ snapshot, drafts, pin }) => {
       const w = window as any;
       w.sends = [];
       w.copies = [];
@@ -60,6 +66,8 @@ async function mock(page: Page, snapshot: Snapshot, drafts: Record<string, strin
           setTimeout(() => w.showCard('demo:0'), 20);
           return () => {};
         },
+        // How this card window is kept (the preview unless a test pins it).
+        cardState: async () => ({ pinned: pin !== 'off', pin, positionRemembered: false }),
         // Main switches the card window to the chosen colleague.
         card: async (action: string, target?: { id: string }) => {
           w.cardCalls.push([action, target?.id ?? null]);
@@ -72,7 +80,7 @@ async function mock(page: Page, snapshot: Snapshot, drafts: Record<string, strin
         },
       };
     },
-    { snapshot, drafts },
+    { snapshot, drafts, pin },
   );
 }
 
@@ -81,9 +89,14 @@ const field = (page: Page) => page.locator('.terminal-send-chat textarea');
 const bubble = (page: Page, id: string) => page.locator(`[data-event-id="${id}"]`);
 const bar = (page: Page) => page.getByRole('toolbar', { name: '고른 말풍선' });
 
-async function openCard(page: Page, snapshot: Snapshot, drafts?: Record<string, string>) {
+async function openCard(
+  page: Page,
+  snapshot: Snapshot,
+  drafts?: Record<string, string>,
+  pin?: CardPin,
+) {
   await page.setViewportSize({ width: 480, height: 820 });
-  await mock(page, snapshot, drafts);
+  await mock(page, snapshot, drafts, pin);
   await page.goto('/#card');
   await expect(field(page)).toBeVisible();
   await expect(bubble(page, 'm5')).toBeVisible();
@@ -202,6 +215,37 @@ test('handing the run to a colleague opens its card with a draft after what it a
   await page.evaluate(() => (window as any).showCard('demo:0'));
   await expect(field(page)).toHaveValue('원래 동료에게 쓰던 글');
 });
+
+for (const pin of ['pinned', 'window'] as const)
+  test(`a ${pin} card hands on without turning to the other colleague`, async ({ page }) => {
+    const snapshot = office();
+    const from = sessionName(snapshot.sessions[0]);
+    const to = snapshot.sessions[1];
+    await openCard(page, snapshot, {}, pin);
+    await field(page).fill('고정 카드에서 쓰던 글');
+    await startAt(page, 'm5');
+    await bar(page).getByRole('button', { name: '동료에게 보내기' }).click();
+    await page
+      .getByRole('menu', { name: '보낼 동료 고르기' })
+      .getByRole('menuitem', { name: new RegExp(sessionName(to)) })
+      .click();
+    // Main is asked to show that colleague beside this card (its own kept card, else the
+    // preview); this window is never switched.
+    await expect
+      .poll(() => page.evaluate(() => (window as any).cardCalls))
+      .toEqual([['reveal', to.id]]);
+    await expect(page.locator('.card-head h2')).toContainText(from);
+    await expect(bar(page)).toHaveCount(0);
+    await expect(field(page)).toHaveValue('고정 카드에서 쓰던 글');
+    // The draft waits in that colleague's chat box, wherever its card opens.
+    expect(await page.evaluate((key) => localStorage.getItem(key), draftKey(to.id))).toBe(
+      [
+        `${from} 대화에서 가져옴`,
+        `${from}:\n끝났어요. **표**도 정리했어요.\n\n| a | b |\n| - | - |`,
+      ].join('\n\n'),
+    );
+    expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
+  });
 
 test('a run too long for the chat box can still be copied, not handed on', async ({ page }) => {
   await openCard(page, office(true));

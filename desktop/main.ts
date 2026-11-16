@@ -1188,7 +1188,7 @@ function setupIPC() {
   ipcMain.handle('office:card', async (e, action, target, anchor) => {
     trusted(e);
     if (typeof action !== 'string') throw new Error(m().desktop.badRequest);
-    if (action === 'open' || action === 'select' || action === 'expand') {
+    if (action === 'open' || action === 'select' || action === 'reveal' || action === 'expand') {
       if (
         !target ||
         typeof target.id !== 'string' ||

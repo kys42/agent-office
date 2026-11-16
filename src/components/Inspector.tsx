@@ -95,6 +95,7 @@ export function Inspector({
   resident,
   onReceipt,
   onSelect,
+  onHandTo,
   showConversation,
   readOnOpen = true,
   reading,
@@ -145,6 +146,11 @@ export function Inspector({
   resident?: Session;
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
+  /**
+   * Shows the colleague picked bubbles were just handed to (#377); `onSelect` where absent. The
+   * card window keeps a pinned card on its own conversation and opens that colleague beside it.
+   */
+  onHandTo?: (id: string) => void;
   /** Changes each time a bubble opens this card: it shows the conversation again. */
   showConversation?: number;
   /** False while a card restored on startup waits for the person to touch the office. */
@@ -1273,7 +1279,7 @@ export function Inspector({
               }
               demo={demo}
               notify={notify}
-              onHanded={onSelect}
+              onHanded={onHandTo ?? onSelect}
               onDone={stopPicking}
             />
           )}
