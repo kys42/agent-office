@@ -13,6 +13,7 @@ import {
 } from '../src/shared/dock-geometry.js';
 import {
   cardFloats,
+  cardLeftBehind,
   cardOwnWindow,
   cardPinOfAction,
   popupBounds,
@@ -50,8 +51,11 @@ interface Entry {
   savedBounds?: Rect;
   hide?: ReturnType<typeof setTimeout>;
   drag?: ReturnType<typeof setInterval>;
-  /** The card's window before it moved to this one (`transfer`): it goes once this one shows. */
-  replaces?: Entry;
+  /**
+   * The card's window before it moved to this one (`transfer`) and whose card moved: it goes once
+   * this one shows (`cardLeftBehind`).
+   */
+  replaces?: { entry: Entry; id: string };
 }
 
 /**
@@ -288,9 +292,15 @@ export class CardWindows {
     // The card moved here from another window: that one goes now this one shows, never leaving a
     // gap on screen while this one loaded.
     if (e.replaces) {
-      const old = e.replaces;
+      const { entry: old, id } = e.replaces;
       e.replaces = undefined;
-      this.hide(old);
+      const plan = cardLeftBehind(
+        { pinned: old.pinned, id: old.target?.id ?? null },
+        id,
+        !!this.preview,
+      );
+      if (plan.preview && !old.window.isDestroyed()) this.preview = old;
+      if (plan.close) this.hide(old);
       this.rememberPinned();
     }
   }
@@ -300,7 +310,9 @@ export class CardWindows {
     e.target = null;
     if (e.window.isDestroyed()) return;
     e.window.webContents.send('office:card', null);
-    if (e.pinned) e.window.destroy();
+    // Only the one preview is kept, hidden, for reuse: a pinned card closes for good, and so does
+    // an ordinary card left behind by a move (`cardLeftBehind`).
+    if (e.pinned || e !== this.preview) e.window.destroy();
     else e.window.hide();
   }
   /** A terminal jump puts away only an ordinary preview, never a pinned card. */
@@ -464,11 +476,14 @@ export class CardWindows {
     }
     this.cancelHide(e);
     this.stopDrag(e);
+    // Out of the preview's reuse while the new window loads: a colleague opened meanwhile gets a
+    // preview of its own, never this window the move is about to put away.
+    if (this.preview === e) this.preview = null;
     // Where it is now; a restored card's saved spot (a display still missing) stays written down.
     const next = this.create(e.window.getBounds(), pin);
     next.savedBounds = e.savedBounds;
     next.target = { id: e.target.id };
-    next.replaces = e;
+    next.replaces = { entry: e, id: e.target.id };
   }
 
   /** A preview card goes away once the person works elsewhere (not in its terminal window). */

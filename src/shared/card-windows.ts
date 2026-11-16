@@ -82,6 +82,22 @@ export function cardOwnWindow(pin: CardPin) {
   return pin === 'window';
 }
 
+/**
+ * A card moved to a new window across `cardOwnWindow`: what becomes of its old window once the new
+ * one shows. While the new one loads the old window is out of the preview's reuse (another
+ * colleague opened meanwhile gets a preview of its own), so it still shows the colleague that
+ * moved unless the person took it elsewhere from inside it: then it stays. An ordinary card left
+ * behind is the preview again when no other preview opened meanwhile (kept for reuse); otherwise
+ * it is let go for good.
+ */
+export function cardLeftBehind(
+  old: { pinned: boolean; id: string | null },
+  moved: string,
+  previewOpen: boolean,
+) {
+  return { close: old.id === moved, preview: !old.pinned && !previewOpen };
+}
+
 /** The card IPC action that puts a card window in `pin`. */
 export function cardPinAction(pin: CardPin): CardPinAction {
   return PIN_ACTIONS[pin];

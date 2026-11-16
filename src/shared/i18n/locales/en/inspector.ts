@@ -64,7 +64,8 @@ export const inspector = {
       off: 'Closes when you click elsewhere',
       pinned: 'Stays open · other windows can cover it',
       top: 'Stays open · always above other windows',
-      window: 'An ordinary app window · in Mission Control and window switching, stays on this desktop',
+      window:
+        'An ordinary app window · in Mission Control and window switching, stays on this desktop',
     },
     pinLabel: (now: string, next: string) => `Pin this card: ${now} → ${next}`,
     windowLabel: (now: string, next: string) => `Open as window: ${now} → ${next}`,

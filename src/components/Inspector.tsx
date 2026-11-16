@@ -29,12 +29,9 @@ import {
   AppWindow,
 } from 'lucide-react';
 import { CardPinIcon } from './WindowPin';
-import {
-  cardOwnWindow,
-  cardWindowToggle,
-  nextCardPin,
-  type CardPin,
-} from '../shared/card-windows';
+import { cardOwnWindow, cardWindowToggle, nextCardPin, type CardPin } from '../shared/card-windows';
+import type { CardTab } from '../shared/card-handoff';
+import { leaveCard, pickUpCard } from '../lib/cardHandoff';
 import type {
   Session,
   SessionPatch,
@@ -216,7 +213,10 @@ export function Inspector({
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, [session.id]);
-  const [tab, setTab] = useState<'overview' | 'history' | 'notes' | 'outputs'>('history');
+  // A card that moved here from another window (into or out of its own window) picks up the tab
+  // and the memo notes not saved that it left (`changeCardPin`), once.
+  const [moved] = useState(() => (movable ? pickUpCard(session.id) : null));
+  const [tab, setTab] = useState<CardTab>(moved?.tab ?? 'history');
   useEffect(() => {
     if (tab !== 'history') {
       const scroller = panelRef.current?.querySelector('.inspector-scroll');
@@ -228,8 +228,8 @@ export function Inspector({
   const [zoneOpen, setZoneOpen] = useState(false);
   const [petOpen, setPetOpen] = useState(false);
   const [deskOpen, setDeskOpen] = useState(false);
-  const [notes, setNotes] = useState(session.notes);
-  const [notesDirty, setNotesDirty] = useState(false);
+  const [notes, setNotes] = useState(moved?.notes ?? session.notes);
+  const [notesDirty, setNotesDirty] = useState(moved?.notes !== undefined);
   const [packet, setPacket] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -285,7 +285,12 @@ export function Inspector({
     session.area?.name,
     demo,
   ]);
+  // Another colleague in the same card (the big office's column) starts over; the first one is
+  // already as it should be (`moved` included).
+  const startedOn = useRef(session.id);
   useEffect(() => {
+    if (startedOn.current === session.id) return;
+    startedOn.current = session.id;
     setAlias(session.alias);
     setNotes(session.notes);
     setNotesDirty(false);
@@ -937,6 +942,13 @@ export function Inspector({
       )}
     </>
   );
+  // Moving to a new window (into or out of its own window), the card leaves its tab and unsaved
+  // notes for that window: this one goes once it shows.
+  const changeCardPin = (next: CardPin) => {
+    if (cardOwnWindow(next) !== cardOwnWindow(cardPin))
+      leaveCard({ id: session.id, tab, ...(notesDirty ? { notes } : {}) });
+    onCardPin?.(next);
+  };
   const endMove = () => {
     if (!moving.current) return;
     moving.current = false;
@@ -1078,7 +1090,7 @@ export function Inspector({
                   t.inspector.card.pinStates[nextCardPin(cardPin)]
                 } · ${t.inspector.card.pinHints[cardPin]}`}
                 disabled={windowBusy}
-                onClick={() => onCardPin(nextCardPin(cardPin))}
+                onClick={() => changeCardPin(nextCardPin(cardPin))}
               >
                 <CardPinIcon pin={cardPin} />
               </button>
@@ -1095,7 +1107,7 @@ export function Inspector({
                   t.inspector.card.pinStates[cardWindowToggle(cardPin)]
                 } · ${t.inspector.card.pinHints[cardWindowToggle(cardPin)]}`}
                 disabled={windowBusy}
-                onClick={() => onCardPin(cardWindowToggle(cardPin))}
+                onClick={() => changeCardPin(cardWindowToggle(cardPin))}
               >
                 <AppWindow size={15} />
               </button>
