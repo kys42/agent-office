@@ -1,5 +1,6 @@
 import { m } from './i18n';
 import {
+  hostPlaceName,
   LAUNCH_DESTINATIONS,
   launchMessageSchema,
   launchNameSchema,
@@ -12,7 +13,7 @@ import {
 } from './launch';
 import { isBackground, isHelper } from './residents';
 import { awayColleagues, resumeBlock, type AwayZone, type ResumeBlock } from './summon-existing';
-import type { DuplicateCheck, LaunchPlace, OfficeZone, Session } from './types';
+import type { DuplicateCheck, LaunchPlace, OfficeZone, RunningHost, Session } from './types';
 
 /**
  * The launch sheet's view model (#319), pure: what to start (new, resume, fork), where (the
@@ -167,8 +168,16 @@ export interface DuplicateView {
    * or its tab resting in a sleeping workspace that Orca brings back once opened.
    */
   reveal?: boolean;
-  /** It is in the app's own tmux session: its attach command, to copy (works everywhere). */
+  /**
+   * Its attach command, to copy: the app's own tmux session (works everywhere), or a Claude
+   * background session no window shows.
+   */
   copy?: string;
+  /**
+   * It runs where no tab of it was verified (#376): forking it into a new session is offered
+   * right here, first when there is no way there at all.
+   */
+  fork?: boolean;
   /**
    * Nothing new may be started from here: it already runs (go there instead), or a start
    * of it was not confirmed (never suggest another place: it may start twice).
@@ -220,6 +229,7 @@ export function duplicateView(
   const place = t.place[check.where];
   const openTmux = opens.includes('tmux') ? ('tmux' as const) : undefined;
   if (check.state === 'running') {
+    if (check.host) return unverifiedRunning(check.host);
     // Main verified it runs in the own session's pane: open that session (or copy its attach
     // command). Otherwise the verified terminal it was found in is jumped to: a live own pane
     // may show another conversation (after `/clear` or `/new`).
@@ -266,6 +276,32 @@ export function duplicateView(
     ...(go && { go }),
     ...copy,
     blocks: false,
+  };
+}
+
+/**
+ * Running where no terminal tab of it was verified (#376), at the app read from its process:
+ * going there is a jump that main resolves again (its tab or pane, else the app); a background
+ * session no window shows has its attach command; with no way there at all, only a fork is left.
+ * A fork is always offered: what runs there cannot be continued from here.
+ */
+function unverifiedRunning(host: RunningHost): DuplicateView {
+  const t = m().tmux;
+  const place = hostPlaceName(host);
+  const notice = host.parked
+    ? t.parkedNotice(place)
+    : host.attach
+      ? t.backgroundNotice
+      : host.canGo
+        ? t.runningHostNotice(place)
+        : t.runningNowhereNotice(place);
+  return {
+    notice,
+    tone: 'running',
+    ...(host.canGo && { go: 'jump' as const }),
+    ...(host.attach && { copy: host.attach }),
+    fork: true,
+    blocks: true,
   };
 }
 
@@ -353,7 +389,9 @@ export type ResultAction =
   | { kind: 'go'; go: GoThere }
   | { kind: 'open-terminal' }
   | { kind: 'copy-command'; command: string }
-  | { kind: 'suggest'; destination: LaunchDestinationId };
+  | { kind: 'suggest'; destination: LaunchDestinationId }
+  /** Continue it as a new conversation instead: the sheet switches to a fork of it. */
+  | { kind: 'fork' };
 
 export type ResultView =
   /** Done: close the sheet and say so. */
@@ -453,13 +491,14 @@ export const keepsDestinations = (view: ResultView | null) =>
 const placeName = (id: LaunchDestinationId) => m().launch.destination[id];
 
 /**
- * The ways to where it already is: bringing Orca to the front, going there, and its own tmux
- * session's attach command.
+ * The ways to where it already is: bringing Orca to the front, going there, and its attach
+ * command; then, where offered, forking it into a new session (first when nothing else is).
  */
 export const duplicateActions = (view: DuplicateView): ResultAction[] => [
   ...(view.reveal ? [{ kind: 'reveal' } as const] : []),
   ...(view.go ? [{ kind: 'go', go: view.go } as const] : []),
   ...(view.copy ? [{ kind: 'copy-command', command: view.copy } as const] : []),
+  ...(view.fork ? [{ kind: 'fork' } as const] : []),
 ];
 
 /**

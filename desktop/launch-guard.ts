@@ -1,11 +1,18 @@
-import { findClaudeProcess } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
-import type { DuplicateCheck, LaunchPlace, Provider } from '../src/shared/types.js';
+import { runningPlaceName } from '../src/shared/launch.js';
+import type { DuplicateCheck, LaunchPlace, Provider, RunningHost } from '../src/shared/types.js';
+import type { HostPlace, HostWay } from './host-app.js';
 import type { PendingState } from './pending-launch.js';
 import type { SleepingLookup } from './orca-sleeping.js';
 import { codexThreadOnScreen } from './codex-focus.js';
 import type { TerminalLookup } from './terminal-host.js';
-import { defaultTerminalDeps, lookupTerminal, type TerminalDeps } from './terminals.js';
+import {
+  claudeHolder,
+  claudePlace,
+  defaultTerminalDeps,
+  lookupTerminal,
+  type TerminalDeps,
+} from './terminals.js';
 
 /**
  * The deep check both launchers (tmux resume, a new Orca tab) run before resuming a saved
@@ -23,8 +30,17 @@ export interface OwnTmuxPanes {
   socket: string;
   panes: readonly string[];
 }
-/** The agent process of the conversation: `found` with where it runs (its pane in tmux). */
-export type Liveness = TerminalLookup<{ where: LaunchPlace; tmux?: TmuxPaneRef }>;
+/**
+ * The agent process of the conversation: `found` with where it runs (its pane in tmux). `host`
+ * and `way`: its process lives but no terminal of it was verified (#376): the app read from
+ * that process, and how the main process brings it forward (`way` never leaves main).
+ */
+export type Liveness = TerminalLookup<{
+  where: LaunchPlace;
+  tmux?: TmuxPaneRef;
+  host?: RunningHost;
+  way?: HostWay;
+}>;
 
 /** Where a verified terminal is, for the duplicate check (its tmux pane when in tmux). */
 const placeOfHost = (host: { kind: 'orca' } | { kind: 'tmux'; socket: string; pane: string }) =>
@@ -38,22 +54,22 @@ export interface LivenessAdapter {
 }
 
 /**
- * Claude: a verified live terminal (`lookupTerminal`), else any live process record of the
- * session (another terminal app, an unverified tmux pane): it runs, just not somewhere to jump.
- * `none` only after the absence check read every record.
+ * Claude: a verified live terminal (`lookupTerminal`), else the live process holding the
+ * session without one (another terminal app, an unverified Orca tab or tmux pane, a background
+ * session, a window that parked it while the job it parked runs): it runs there, at the app read
+ * from that process (#376). `none` only after the absence check read every record; a window
+ * whose parked job ended holds nothing.
  */
 export const claudeLiveness: LivenessAdapter = {
   async lookup(nativeId, fresh, deps) {
-    const terminal = await lookupTerminal(nativeId, { fresh, deps });
+    const d = deps ?? defaultTerminalDeps();
+    const terminal = await lookupTerminal(nativeId, { fresh, deps: d });
     if (terminal.kind === 'found')
       return { kind: 'found', terminal: placeOfHost(terminal.terminal.host) };
     if (terminal.kind === 'none') return terminal;
-    // A window that parked this conversation in the background still holds it, and a
-    // background session runs with no terminal: both are running, just nowhere to jump.
-    const process = await findClaudeProcess(nativeId, deps ?? defaultTerminalDeps(), fresh, {
-      parked: true,
-    });
-    return process ? { kind: 'found', terminal: { where: 'other' } } : { kind: 'unknown' };
+    const holder = await claudeHolder(nativeId, d, fresh);
+    if (holder.kind !== 'found') return { kind: 'unknown' };
+    return { kind: 'found', terminal: await claudePlace(holder.terminal, d, fresh) };
   },
 };
 
@@ -85,6 +101,24 @@ const ADAPTERS: Partial<Record<Provider, LivenessAdapter>> = {
 /** An agent without an adapter can never be shown absent. */
 export const livenessFor = (provider: Provider): LivenessAdapter =>
   ADAPTERS[provider] ?? { lookup: async () => ({ kind: 'unknown' }) };
+
+/**
+ * Where a conversation runs when its agent's process lives but no terminal of it was verified
+ * (#376), with the way there, for a jump: whatever its agent's liveness adapter found. Null when
+ * it does not run, runs in a verified terminal (a jump goes there as usual), or cannot be told.
+ */
+export async function runningPlace(
+  provider: Provider,
+  nativeId: string,
+  deps?: TerminalDeps,
+): Promise<HostPlace | null> {
+  const live = await livenessFor(provider)
+    .lookup(nativeId, true, deps)
+    .catch(() => null);
+  if (live?.kind !== 'found' || !live.terminal.host || !live.terminal.way) return null;
+  const { where, host, way } = live.terminal;
+  return { where, host, way };
+}
 
 /** Everything the check looks at, each part already split into found / none / unknown. */
 export interface LaunchEvidence {
@@ -118,10 +152,13 @@ export function decideDuplicate(e: LaunchEvidence): DuplicateCheck {
     const at = e.agent.terminal.tmux;
     const own = e.ownTmux.kind === 'found' ? e.ownTmux.terminal : null;
     const inOwnTmux = !!at && !!own && at.socket === own.socket && own.panes.includes(at.pane);
+    // Only what a window may know: the way there stays in main.
+    const host = e.agent.terminal.host;
     return {
       state: 'running',
       where: e.agent.terminal.where,
       ...(inOwnTmux && { inOwnTmux: true as const }),
+      ...(host && { host }),
     };
   }
   if (e.orcaTab.kind === 'found') return { state: 'open', where: 'orca' };
@@ -211,7 +248,7 @@ export class DuplicateLaunchError extends Error {
   constructor(readonly check: DuplicateCheck) {
     super(
       check.state === 'running'
-        ? m().tmux.runningRefused(placeName(check.where))
+        ? m().tmux.runningRefused(runningPlaceName(check))
         : m().tmux.changedRefused,
     );
   }

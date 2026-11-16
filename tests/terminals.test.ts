@@ -1811,13 +1811,26 @@ test('Claude liveness adapter: any live process runs; none only after the absenc
       kind: 'found',
       terminal: { where: 'orca' },
     });
-    // Running in another terminal app: still running, so a launch must not start it again.
+    // Running in another terminal app: still running, so a launch must not start it again. The
+    // app is read from its process (#376): iTerm2, whose tab on its tty can be selected.
     const elsewhere = fakeDeps(dir, {
       table: processTable('/Applications/iTerm.app/Contents/MacOS/iTerm2'),
     });
+    Object.assign(elsewhere.deps, { platform: 'darwin' });
     assert.deepEqual(await claudeLiveness.lookup(SESSION, true, elsewhere.deps), {
       kind: 'found',
-      terminal: { where: 'other' },
+      terminal: {
+        where: 'other',
+        host: { app: 'iterm', canGo: true },
+        way: { kind: 'app', bundle: '/Applications/iTerm.app', name: 'iTerm', tty: '/dev/ttys012' },
+      },
+    });
+    // Nothing tells where (no app among its parents): running all the same, with no way there.
+    const nowhere = fakeDeps(dir, { table: processTable('/usr/sbin/sshd') });
+    Object.assign(nowhere.deps, { platform: 'darwin' });
+    assert.deepEqual(await claudeLiveness.lookup(SESSION, true, nowhere.deps), {
+      kind: 'found',
+      terminal: { where: 'other', host: { app: 'unknown' }, way: { kind: 'none' } },
     });
     const gone = fakeDeps(dir, { alive: [] });
     assert.deepEqual(await claudeLiveness.lookup(SESSION, true, gone.deps), { kind: 'none' });
@@ -2357,23 +2370,88 @@ test("The parked window's own session is never a target: typing there reaches th
     );
     assert.match((await claudeNoTerminalReason(WINDOW_SESSION, deps))!, /백그라운드 세션 ‘PSP-POC/);
     assert.equal(await claudeAttachCommand(WINDOW_SESSION, deps), null);
-    // Still running for the duplicate-launch check: the window may return to it.
+    // Still running for the duplicate-launch check while the job it parked runs: the window's
+    // agents view returns to it. Where: that window's own (verified) Orca tab (#376).
     assert.deepEqual(await claudeLiveness.lookup(WINDOW_SESSION, true, deps), {
       kind: 'found',
-      terminal: { where: 'other' },
+      terminal: {
+        where: 'orca',
+        host: { app: 'orca', parked: true, canGo: true },
+        way: {
+          kind: 'terminal',
+          host: { kind: 'orca', handle: HANDLE, title: `✳ ${JOB_NAME}` },
+        },
+      },
     });
   });
 });
 
-test('A background session no window provably shows is unknown, with its attach command', async () => {
+test('A window whose parked job ended holds nothing: its record is left stale (#376)', async () => {
+  // The job (7777) is gone, the window (4242) lives on in the agents view or elsewhere.
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, { ...jobShown(), alive: [4242] });
+    assert.equal(await claudeAbsent(WINDOW_SESSION, deps, true), true);
+    assert.equal((await lookupTerminal(WINDOW_SESSION, { fresh: true, deps })).kind, 'none');
+    assert.deepEqual(await claudeLiveness.lookup(WINDOW_SESSION, true, deps), { kind: 'none' });
+    assert.equal(await claudeNoTerminalReason(WINDOW_SESSION, deps), null);
+  });
+  // Its job record is gone too (the daemon removed it): the same.
+  await withSessions({ '4242.json': parkedWindow() }, async (dir) => {
+    const { deps } = fakeDeps(dir, jobShown());
+    assert.deepEqual(await claudeLiveness.lookup(WINDOW_SESSION, true, deps), { kind: 'none' });
+  });
+  // A PID reused by another process is not the job.
+  await withSessions(PARKED, async (dir) => {
+    const { deps } = fakeDeps(dir, { ...jobShown(), lstart: { 7777: 'Wed Oct  7 09:00:00 2026' } });
+    assert.deepEqual(await claudeLiveness.lookup(WINDOW_SESSION, true, deps), { kind: 'none' });
+  });
+});
+
+test('Whether a parked window still holds its session is unknown while its job cannot be told', async () => {
   const cases: [string, Record<string, string>, Parameters<typeof fakeDeps>[1]][] = [
-    ['no window parked it', { '7777.json': bgJob() }, jobShown()],
-    ['the window shows another title', PARKED, jobShown('✳ ocr-ef')],
-    ['a longer name only starts the same', PARKED, jobShown(`✳ ${JOB_NAME} 2`)],
+    // Any value parks the window; only a well-formed one names the job to look for.
+    ['the park names no job', { '4242.json': parkedWindow({ parkedJobId: 42 }) }, jobShown()],
+    [
+      'a record mentioning the job cannot be parsed',
+      { '4242.json': parkedWindow(), '7777.json': `{"jobId":"${JOB}",` },
+      jobShown(),
+    ],
+    [
+      "the job's start time cannot be read",
+      PARKED,
+      {
+        ...jobShown(),
+        fail: (file, args) =>
+          file === '/bin/ps' && args.includes('lstart=') && args.at(-1) === '7777'
+            ? new Error('ps')
+            : undefined,
+      },
+    ],
+  ];
+  for (const [name, files, options] of cases)
+    await withSessions(files, async (dir) => {
+      const { deps } = fakeDeps(dir, options);
+      assert.equal(await claudeAbsent(WINDOW_SESSION, deps, true), false, name);
+      assert.deepEqual(
+        await claudeLiveness.lookup(WINDOW_SESSION, true, deps),
+        { kind: 'unknown' },
+        name,
+      );
+    });
+});
+
+test('A background session no window provably shows is unknown, with its attach command', async () => {
+  // `parked`: the one window that parked it is where to go (its agents view opens it), though
+  // its screen could not be proven to show it; else only its attach command (#376).
+  const cases: [string, Record<string, string>, Parameters<typeof fakeDeps>[1], boolean][] = [
+    ['no window parked it', { '7777.json': bgJob() }, jobShown(), false],
+    ['the window shows another title', PARKED, jobShown('✳ ocr-ef'), true],
+    ['a longer name only starts the same', PARKED, jobShown(`✳ ${JOB_NAME} 2`), true],
     [
       'two windows parked it',
       { ...PARKED, '4343.json': parkedWindow({ pid: 4343, sessionId: 'aaaaaaaa-other' }) },
       { ...jobShown(), alive: [4242, 4343, 7777] },
+      false,
     ],
     [
       'another live job has the same name',
@@ -2385,20 +2463,23 @@ test('A background session no window provably shows is unknown, with its attach 
         }),
       },
       { ...jobShown(), alive: [4242, 7777, 8888] },
+      true,
     ],
     [
       'the job has no name',
       { ...PARKED, '7777.json': bgJob(7777, { name: undefined }) },
       jobShown(),
+      true,
     ],
-    ['the parking window ended', PARKED, { ...jobShown(), alive: [7777] }],
+    ['the parking window ended', PARKED, { ...jobShown(), alive: [7777] }, false],
     [
       'the parking window is a reused PID',
       PARKED,
       { ...jobShown(), lstart: { 4242: 'Wed Oct  7 09:00:00 2026' } },
+      false,
     ],
   ];
-  for (const [name, files, options] of cases)
+  for (const [name, files, options, parked] of cases)
     await withSessions(files, async (dir) => {
       const { deps } = fakeDeps(dir, options);
       assert.equal(await locateTerminal(JOB_SESSION, { fresh: true, deps }), null, name);
@@ -2414,11 +2495,25 @@ test('A background session no window provably shows is unknown, with its attach 
         name,
       );
       // It runs: a resume elsewhere would start a second copy.
-      assert.deepEqual(
-        await claudeLiveness.lookup(JOB_SESSION, true, deps),
-        { kind: 'found', terminal: { where: 'other' } },
-        name,
-      );
+      const live = await claudeLiveness.lookup(JOB_SESSION, true, deps);
+      assert.equal(live.kind, 'found', name);
+      const place = live.kind === 'found' ? live.terminal : null;
+      if (parked)
+        assert.deepEqual(
+          [place?.where, place?.host, place?.way?.kind],
+          ['orca', { app: 'orca', parked: true, canGo: true }, 'terminal'],
+          name,
+        );
+      else
+        assert.deepEqual(
+          place,
+          {
+            where: 'other',
+            host: { app: 'background', attach: 'claude attach 89fe72dc' },
+            way: { kind: 'attach', command: 'claude attach 89fe72dc' },
+          },
+          name,
+        );
     });
 });
 

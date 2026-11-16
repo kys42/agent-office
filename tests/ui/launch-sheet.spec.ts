@@ -353,6 +353,42 @@ test('the card opens the sheet on its conversation; going there jumps to its ter
   expect(await read(page, 'jumps')).toEqual(['demo:0']);
 });
 
+test('running where no tab was confirmed: going to its app first, or a fork right there (#376)', async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 760, height: 900 });
+  const host = { app: 'iterm', canGo: true };
+  await set(page, { duplicate: { resume: { state: 'running', where: 'other', host } } });
+  const modal = await openCard(page);
+  await expect(modal.locator('.launch-notice')).toContainText('iTerm2에서 실행 중');
+  const actions = modal.locator('.launch-actions-main button');
+  await expect(actions).toHaveText(['그곳으로 이동', '복제해서 새로']);
+  await expect(actions.first()).toHaveClass(/primary/);
+  await modal.locator('.launch-actions').getByRole('button', { name: '그곳으로 이동' }).click();
+  await expect(modal).toHaveCount(0);
+  expect(await read(page, 'jumps')).toEqual(['demo:0']);
+});
+
+test('running where nothing can take you there: a fork, never a dead end (#376)', async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 760, height: 900 });
+  await set(page, {
+    duplicate: { resume: { state: 'running', where: 'other', host: { app: 'unknown' } } },
+  });
+  const modal = await openCard(page);
+  await expect(modal.locator('.launch-notice')).toContainText('바로 갈 수 없어요');
+  const actions = modal.locator('.launch-actions-main button');
+  await expect(actions).toHaveText(['복제해서 새로']);
+  await expect(actions.first()).toHaveClass(/primary/);
+  await actions.first().click();
+  // The sheet turns into a fork of it: a name, a first message and where to start it.
+  await expect(kind(modal, '복제해서 새로')).toHaveAttribute('aria-pressed', 'true');
+  await expect(modal.getByRole('heading', { name: '어디서' })).toBeVisible();
+  await expect(modal.locator('.launch-notice')).toHaveCount(0);
+  expect(await read(page, 'jumps')).toEqual([]);
+});
+
 test("the card's main action jumps when there is a terminal, and opens the sheet when not", async ({
   page,
 }) => {
