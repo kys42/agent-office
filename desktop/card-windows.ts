@@ -585,6 +585,12 @@ export class CardWindows {
       if (e.pinned) this.rememberPinned();
       return;
     }
+    if (action === 'reveal' && target) {
+      // A kept card handed bubbles to another colleague (#377): it stays as it is, and that
+      // colleague comes forward in its own kept card, else in the preview opened beside it.
+      this.reveal(target, e.window.getBounds());
+      return;
+    }
     if (action === 'expand' && target) {
       if (e.target?.id !== target.id) throw new Error(m().desktop.badRequest);
       if (!e.pinned) this.hide(e);

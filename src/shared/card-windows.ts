@@ -111,6 +111,16 @@ export function cardPinOfAction(action: unknown): CardPin | null {
 }
 
 /**
+ * How a card shows the colleague it just handed bubbles to (#377). The replaceable preview turns
+ * to that colleague (`select`); a kept card — pinned, on top, or in its own window — stays on the
+ * conversation the person kept there, and the colleague comes forward beside it (`reveal`: its
+ * own kept card, else the preview).
+ */
+export function cardHandAction(pin: CardPin): 'select' | 'reveal' {
+  return pin === 'off' ? 'select' : 'reveal';
+}
+
+/**
  * Whether a card window floats over other apps: the preview does (it goes away as soon as they
  * take focus) and so does a card pinned on top. A plain pinned card and a card in its own window
  * are ordinary windows.

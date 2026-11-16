@@ -1229,6 +1229,8 @@ export interface OfficeAPI {
       | 'drag-start'
       | 'drag-end'
       | 'select'
+      /** From a kept card: show another colleague beside it, leaving it as it is (#377). */
+      | 'reveal'
       | import('./card-windows').CardPinAction
       | 'position-on'
       | 'position-off'

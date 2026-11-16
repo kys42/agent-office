@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cardFloats,
+  cardHandAction,
   cardLeftBehind,
   cardOwnWindow,
   cardPinAction,
@@ -27,6 +28,12 @@ import {
 
 const area = { x: 0, y: 24, width: 1440, height: 876 };
 const anchor = { x: 1100, y: 850, width: 120, height: 40 };
+
+test('Handing bubbles on turns only the preview; a kept card stays on its conversation', () => {
+  assert.equal(cardHandAction('off'), 'select');
+  for (const pin of ['pinned', 'top', 'window'] satisfies CardPin[])
+    assert.equal(cardHandAction(pin), 'reveal');
+});
 
 test('Position memory requires explicit enablement and finite screen coordinates', () => {
   assert.deepEqual(readCardPosition({ enabled: true, x: -900.2, y: 35.8 }), { x: -900, y: 36 });
