@@ -534,8 +534,9 @@ export function Inspector({
         return;
       }
       if (inOrca) {
-        await api.orcaReveal!();
-        notify(sleepingRevealed(inOrca.sure, privacy ? undefined : inOrca.workspace));
+        // main wakes that workspace and shows its tab when it can (#380).
+        const how = await api.orcaReveal!(s.id);
+        notify(sleepingRevealed(inOrca.sure, privacy ? undefined : inOrca.workspace, how));
         return;
       }
       if (sheetFallback) {

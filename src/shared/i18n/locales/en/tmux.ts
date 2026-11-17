@@ -145,5 +145,16 @@ export const tmux = {
   /** The same, where the conversation may or may not be in that workspace. */
   sleepingMaybeRevealed: (workspace?: string) =>
     `Opened Orca. Open the ${workspace ? `“${workspace}” ` : ''}workspace there to check whether this conversation is in it.`,
+  /** The card's main action woke the sleeping workspace and switched to this conversation's tab (#380). */
+  sleepingTabShown: (workspace?: string) =>
+    workspace
+      ? `Went to this conversation’s tab in the “${workspace}” workspace in Orca.`
+      : 'Went to this conversation’s tab in Orca.',
+  /** It woke the workspace where this conversation’s tab sleeps; the tab was not seen back yet. */
+  sleepingWoken: (workspace?: string) =>
+    `Opened ${workspace ? `the “${workspace}” workspace` : 'its workspace'} in Orca. This conversation’s tab comes back there shortly.`,
+  /** It woke the workspace this conversation may be in. */
+  sleepingMaybeWoken: (workspace?: string) =>
+    `Opened ${workspace ? `the “${workspace}” workspace` : 'that workspace'} in Orca. Check whether this conversation is in it.`,
   tabGone: 'That Orca tab could not be found again. Check the status again.',
 };

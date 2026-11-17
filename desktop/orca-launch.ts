@@ -2,7 +2,12 @@ import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import { remember, runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
-import type { DuplicateCheck, OrcaLaunchInfo, Session } from '../src/shared/types.js';
+import type {
+  DuplicateCheck,
+  OrcaLaunchInfo,
+  OrcaRevealResult,
+  Session,
+} from '../src/shared/types.js';
 import { PendingLaunches, type PendingLaunchTarget } from './pending-launch.js';
 import { defaultResumeDeps } from './tmux-resume.js';
 import { localOrcaEnv, ORCA_LIST_LIMIT, ORCA_LIST_BUFFER } from './terminal-host.js';
@@ -69,6 +74,12 @@ const CREATE_TIMEOUT = 35_000;
 /** After an unconfirmed start, look for its terminal every 2 s for about 30 s. */
 const ADOPT_EVERY = 2000;
 export const ADOPT_LOOKS = 15;
+/** The plain tab that wakes a sleeping workspace (#380), closed again at once. */
+const WAKE_TITLE = 'Agent Office';
+/** Once awake, look for the conversation's own tab every 0.6 s for about 3 s (its agent restarts). */
+const WAKE_EVERY = 600;
+const WAKE_LOOKS = 5;
+const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
 /** Words the shell reads literally even unquoted; anything else is refused, not escaped. */
@@ -321,6 +332,9 @@ interface OrcaTerminalRow {
   handle: string;
   title?: unknown;
   worktreePath?: unknown;
+  /** Its tab and pane: `worktree ps` names an agent's tab as `<tabId>:<leafId>` (paneKey). */
+  tabId?: unknown;
+  leafId?: unknown;
 }
 
 /**
@@ -426,10 +440,85 @@ export class OrcaLaunch {
       }
     });
   }
-  /** Brings Orca to the front, where it mounts the tab it shows (and so starts its command). */
-  async reveal(): Promise<void> {
-    if (this.deps.platform !== 'darwin') return;
+  /**
+   * Brings Orca to the front, where it mounts the tab it shows (and so starts its command).
+   * `target` (#380): the sleeping workspace a conversation's tab rests in, as main found it
+   * (desktop/orca-sleeping.ts), and the matched agent's `paneKey` when there is one; it is then
+   * woken and shown (`wake`). Never throws: whatever fails leaves Orca in front, as before.
+   */
+  async reveal(target?: { path: string; paneKey?: string }): Promise<OrcaRevealResult> {
+    if (this.deps.platform !== 'darwin') return 'front';
+    // First, also when waking: a window behind others mounts a new tab late (see `create`),
+    // and the wake's tab must mount to answer with its handle.
     await this.deps.run('/usr/bin/open', ['-a', 'Orca'], { timeout: 5000 }).catch(() => '');
+    if (!target) return 'front';
+    return this.wake(target).catch((): OrcaRevealResult => 'front');
+  }
+  /**
+   * No Orca command opens a workspace, but a new tab with `--focus` shows its workspace and
+   * wakes it (Orca starts its sleeping agent tabs again). So a plain tab (no `--command`, a
+   * fixed title) is made there and closed at once by the handle Orca answered: never another
+   * terminal, and nothing without a handle. Then the conversation's own tab, the terminal whose
+   * `<tabId>:<leafId>` is the matched `paneKey`, is looked for while its agent starts again and
+   * switched to. `front`: the workspace was not shown (Orca missing, refused, cut off).
+   */
+  private async wake(target: { path: string; paneKey?: string }): Promise<OrcaRevealResult> {
+    if (!path.isAbsolute(this.deps.orca())) return 'front';
+    if (!path.isAbsolute(target.path) || CONTROL.test(target.path)) return 'front';
+    const folder = path.resolve(target.path);
+    const made = await this.json(
+      [
+        'terminal',
+        'create',
+        `--worktree=path:${folder}`,
+        `--title=${WAKE_TITLE}`,
+        '--focus',
+        '--json',
+      ],
+      CREATE_TIMEOUT,
+    );
+    if (made?.ok !== true) return 'front';
+    const handle = (made.result as { terminal?: { handle?: unknown } } | undefined)?.terminal
+      ?.handle;
+    if (typeof handle === 'string' && handle)
+      // A tab left open by a failed close is the person's to close: the workspace still shows.
+      await this.json(['terminal', 'close', `--terminal=${handle}`, '--tab', '--json'], 8000).catch(
+        () => null,
+      );
+    const tab = target.paneKey ? await this.tabOf(folder, target.paneKey) : undefined;
+    if (!tab) return 'workspace';
+    let out: string;
+    try {
+      out = await this.deps.run(
+        this.deps.orca(),
+        ['terminal', 'switch', `--terminal=${tab}`, '--json'],
+        { timeout: 8000, env: localOrcaEnv(this.deps.env ?? process.env) },
+      );
+    } catch {
+      return 'workspace';
+    }
+    try {
+      const answer = JSON.parse(out);
+      if (answer?.ok === false || answer?.result?.focus?.navigated === false) return 'workspace';
+    } catch {
+      /* An older Orca without JSON focus details still switched. */
+    }
+    return 'tab';
+  }
+  /** The terminal of the workspace's tab `paneKey` (`<tabId>:<leafId>`), once it is back. */
+  private async tabOf(folder: string, paneKey: string): Promise<string | undefined> {
+    const wait = this.deps.wait ?? pause;
+    for (let look = 0; look < WAKE_LOOKS; look++) {
+      await wait(WAKE_EVERY);
+      const row = (await this.terminals(folder)).rows.find(
+        (t) =>
+          typeof t.tabId === 'string' &&
+          typeof t.leafId === 'string' &&
+          `${t.tabId}:${t.leafId}` === paneKey,
+      );
+      if (row) return row.handle;
+    }
+    return undefined;
   }
   /**
    * The agent CLI resolved as for tmux. Orca still recognizes an interactive agent by the file
@@ -490,7 +579,7 @@ export class OrcaLaunch {
     // A terminal missing from a cut-short earlier list is not new: titles repeat (reopening the
     // same conversation), so nothing is adopted without a whole baseline.
     if (!before.complete) return undefined;
-    const wait = this.deps.wait ?? ((ms) => new Promise<void>((done) => setTimeout(done, ms)));
+    const wait = this.deps.wait ?? pause;
     for (let look = 0; look < ADOPT_LOOKS; look++) {
       await wait(ADOPT_EVERY);
       const titled = (await this.terminals(info.root)).rows.find(

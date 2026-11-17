@@ -394,3 +394,188 @@ test('fresh Orca refuses missing, mismatched and remote workspaces before creati
   assert.equal((await launcher.start(s, async () => true)).launched, true);
   assert.equal(creates, 1);
 });
+
+/**
+ * "Go to Orca" for a conversation whose tab sleeps in an Orca workspace (#380). Every Orca
+ * answer here is synthetic: nothing runs Orca or reaches a terminal.
+ */
+const WS = '/Users/me/orca/workspaces/app';
+const terminal = (handle: string, tabId: string, leafId: string, over: object = {}) => ({
+  handle,
+  tabId,
+  leafId,
+  title: 'claude',
+  worktreePath: WS,
+  connected: true,
+  ...over,
+});
+const listed = (...terminals: unknown[]) => ({ ok: true, result: { terminals } });
+
+function waking(
+  options: {
+    platform?: string;
+    orca?: string;
+    /** The `terminal create` answer, or a failure. */
+    create?: () => string;
+    /** `terminal list` answers, one per call (the last one repeats). */
+    lists?: unknown[];
+    close?: () => string;
+    switched?: () => string;
+  } = {},
+) {
+  const calls: { file: string; args: string[]; env?: NodeJS.ProcessEnv; timeout?: number }[] = [];
+  const waits: number[] = [];
+  const lists = [...(options.lists ?? [listed()])];
+  const launcher = new OrcaLaunch({
+    platform: options.platform ?? 'darwin',
+    orca: () => options.orca ?? '/bin/orca',
+    directory: async () => true,
+    env: { PATH: '/usr/bin', ORCA_ENVIRONMENT: 'remote-box' },
+    wait: async (ms) => {
+      waits.push(ms);
+    },
+    run: async (file, args, runOptions) => {
+      calls.push({ file, args, env: runOptions?.env, timeout: runOptions?.timeout });
+      if (file === '/usr/bin/open') return '';
+      if (args[1] === 'create')
+        return (
+          options.create?.() ??
+          JSON.stringify({ ok: true, result: { terminal: { handle: 'term-wake' } } })
+        );
+      if (args[1] === 'close') return options.close?.() ?? JSON.stringify({ ok: true });
+      if (args[1] === 'list') return JSON.stringify(lists.length > 1 ? lists.shift() : lists[0]);
+      if (args[1] === 'switch')
+        return (
+          options.switched?.() ??
+          JSON.stringify({ ok: true, result: { focus: { navigated: true } } })
+        );
+      throw new Error('unexpected');
+    },
+  });
+  const steps = () => calls.map((c) => (c.file === '/usr/bin/open' ? 'open' : c.args[1]));
+  return { calls, waits, launcher, steps };
+}
+
+test('waking a sleeping workspace: a plain tab made and closed by its handle, then its tab', async () => {
+  const f = waking({
+    lists: [
+      // Not back yet, then back next to another tab of the workspace.
+      listed(),
+      listed(terminal('term-other', 'tab-9', 'leaf-1'), terminal('term-it', 'tab-1', 'leaf-1')),
+    ],
+  });
+  assert.equal(await f.launcher.reveal({ path: WS, paneKey: 'tab-1:leaf-1' }), 'tab');
+  // Orca in front first, so it mounts the new tab at once and answers with its handle.
+  assert.deepEqual(f.steps(), ['open', 'create', 'close', 'list', 'list', 'switch']);
+  assert.deepEqual(f.calls[0], {
+    file: '/usr/bin/open',
+    args: ['-a', 'Orca'],
+    env: undefined,
+    timeout: 5000,
+  });
+  // A plain tab with a fixed title: never a command typed into it.
+  assert.deepEqual(f.calls[1].args, [
+    'terminal',
+    'create',
+    `--worktree=path:${WS}`,
+    '--title=Agent Office',
+    '--focus',
+    '--json',
+  ]);
+  assert.ok(f.calls.every((c) => !c.args.some((a) => a.startsWith('--command'))));
+  // Exactly the tab Orca just made, by its handle.
+  assert.deepEqual(f.calls[2].args, [
+    'terminal',
+    'close',
+    '--terminal=term-wake',
+    '--tab',
+    '--json',
+  ]);
+  assert.deepEqual(f.calls[3].args.slice(0, 3), ['terminal', 'list', `--worktree=path:${WS}`]);
+  // The tab whose `<tabId>:<leafId>` is the matched paneKey, not another one.
+  assert.deepEqual(f.calls[5].args, ['terminal', 'switch', '--terminal=term-it', '--json']);
+  assert.deepEqual(f.waits, [600, 600]);
+  // Orca calls stay on this computer.
+  for (const c of f.calls.filter((c) => c.file === '/bin/orca')) {
+    assert.equal(c.env?.ORCA_ENVIRONMENT, undefined);
+    assert.equal(c.env?.PATH, '/usr/bin');
+  }
+});
+
+test('waking that fails before the workspace shows leaves only Orca in front', async () => {
+  const refusals = [
+    () => {
+      throw Object.assign(new Error('exit 1'), { stdout: '{"ok":false}' });
+    },
+    () => JSON.stringify({ ok: false, error: { code: 'worktree_not_found' } }),
+    () => 'not json',
+  ];
+  for (const create of refusals) {
+    const f = waking({ create });
+    assert.equal(await f.launcher.reveal({ path: WS, paneKey: 'tab-1:leaf-1' }), 'front');
+    assert.deepEqual(f.steps(), ['open', 'create']);
+  }
+  // No Orca CLI, or a folder that is not one: nothing but Orca in front.
+  const missing = waking({ orca: 'orca' });
+  assert.equal(await missing.launcher.reveal({ path: WS }), 'front');
+  assert.deepEqual(missing.steps(), ['open']);
+  for (const folder of ['relative/app', `${WS}\nx`]) {
+    const f = waking();
+    assert.equal(await f.launcher.reveal({ path: folder }), 'front');
+    assert.deepEqual(f.steps(), ['open']);
+  }
+});
+
+test('no handle in the answer: nothing is closed; the workspace still shows', async () => {
+  const f = waking({ create: () => JSON.stringify({ ok: true, result: {} }) });
+  assert.equal(await f.launcher.reveal({ path: WS }), 'workspace');
+  assert.deepEqual(f.steps(), ['open', 'create']);
+  // A failed close leaves that tab to the person; its own tab is still looked for.
+  const g = waking({
+    close: () => {
+      throw new Error('gone');
+    },
+    lists: [listed(terminal('term-it', 'tab-1', 'leaf-1'))],
+  });
+  assert.equal(await g.launcher.reveal({ path: WS, paneKey: 'tab-1:leaf-1' }), 'tab');
+  assert.deepEqual(g.steps(), ['open', 'create', 'close', 'list', 'switch']);
+});
+
+test('its tab never coming back, or only elsewhere: the workspace shows, nothing switched', async () => {
+  const f = waking({
+    lists: [
+      listed(
+        // The same tab and pane ids in another workspace, and a near miss here.
+        terminal('term-elsewhere', 'tab-1', 'leaf-1', { worktreePath: '/Users/me/other' }),
+        terminal('term-near', 'tab-1', 'leaf-2'),
+      ),
+    ],
+  });
+  assert.equal(await f.launcher.reveal({ path: WS, paneKey: 'tab-1:leaf-1' }), 'workspace');
+  assert.deepEqual(f.steps(), ['open', 'create', 'close', 'list', 'list', 'list', 'list', 'list']);
+  assert.deepEqual(f.waits, [600, 600, 600, 600, 600]);
+  // Not matched to one tab (`unknown`): the workspace only, no tab looked for.
+  const g = waking();
+  assert.equal(await g.launcher.reveal({ path: WS }), 'workspace');
+  assert.deepEqual(g.steps(), ['open', 'create', 'close']);
+  // Orca refusing the switch, or not navigating: still only the workspace.
+  for (const switched of [
+    () => JSON.stringify({ ok: true, result: { focus: { navigated: false } } }),
+    () => {
+      throw new Error('exit 1');
+    },
+  ]) {
+    const h = waking({ switched, lists: [listed(terminal('term-it', 'tab-1', 'leaf-1'))] });
+    assert.equal(await h.launcher.reveal({ path: WS, paneKey: 'tab-1:leaf-1' }), 'workspace');
+  }
+});
+
+test('without a target, or off macOS, "Go to Orca" is what it was', async () => {
+  const f = waking();
+  assert.equal(await f.launcher.reveal(), 'front');
+  assert.deepEqual(f.steps(), ['open']);
+  const linux = waking({ platform: 'linux' });
+  assert.equal(await linux.launcher.reveal({ path: WS, paneKey: 'tab-1:leaf-1' }), 'front');
+  assert.equal(await linux.launcher.reveal(), 'front');
+  assert.deepEqual(linux.calls, []);
+});

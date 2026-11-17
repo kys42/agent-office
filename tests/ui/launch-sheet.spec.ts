@@ -128,8 +128,11 @@ async function setup(
           if (next.after) Object.assign(w, next.after);
           return { destination: request.destination, ...next, after: undefined };
         },
-        orcaReveal: async () => {
+        orcaReveal: async (id?: string) => {
           w.revealed++;
+          (w.revealedIds ??= []).push(id ?? null);
+          // What main did (#380); left out, the older "Orca is in front" answer.
+          return w.revealAs;
         },
         orcaSleeping: async () => w.sleeping ?? null,
         dock: async (action: string) => {
@@ -615,6 +618,24 @@ test("the card's main action brings Orca forward when its tab sleeps there", asy
   await expect(page.getByRole('dialog', { name: '세션 시작' })).toHaveCount(0);
   expect(await read(page, 'launches')).toEqual([]);
   await expect(actions.getByRole('button', { name: '터미널에서 이어가기' })).toHaveCount(1);
+});
+
+test("the card's main action wakes the sleeping workspace and shows its tab", async ({ page }) => {
+  await setup(
+    page,
+    '/#card',
+    { width: 380, height: 480 },
+    { sleeping: { workspace: 'app', sure: true }, revealAs: 'tab' },
+  );
+  const actions = page.locator('.card-actions');
+  await actions.getByRole('button', { name: 'Orca로 이동' }).click();
+  // The conversation's id only: main finds its workspace itself.
+  await expect.poll(() => read(page, 'revealedIds')).toEqual([expect.any(String)]);
+  await expect(
+    page.getByText("Orca에서 'app' 작업 공간의 이 대화 탭으로 이동했어요"),
+  ).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '세션 시작' })).toHaveCount(0);
+  expect(await read(page, 'launches')).toEqual([]);
 });
 
 test('a refusal because it runs meanwhile offers going there', async ({ page }) => {

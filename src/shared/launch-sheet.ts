@@ -13,7 +13,14 @@ import {
 } from './launch';
 import { isBackground, isHelper } from './residents';
 import { awayColleagues, resumeBlock, type AwayZone, type ResumeBlock } from './summon-existing';
-import type { DuplicateCheck, LaunchPlace, OfficeZone, RunningHost, Session } from './types';
+import type {
+  DuplicateCheck,
+  LaunchPlace,
+  OfficeZone,
+  OrcaRevealResult,
+  RunningHost,
+  Session,
+} from './types';
 
 /**
  * The launch sheet's view model (#319), pure: what to start (new, resume, fork), where (the
@@ -306,17 +313,29 @@ function unverifiedRunning(host: RunningHost): DuplicateView {
 }
 
 /**
- * What to say once Orca was brought forward for a conversation whose tab sleeps there (`sure`:
- * its tab was matched there) or may (its folder lies in that sleeping workspace), '' when the
- * check names no sleeping workspace. No `workspace`: its name is kept private.
+ * What to say once "Go to Orca" ran for a conversation whose tab sleeps there (`sure`: its tab
+ * was matched there) or may (its folder lies in that sleeping workspace), '' when the check
+ * names no sleeping workspace. `how`: what main did (#380): its tab shown, the workspace woken,
+ * or only Orca in front (also when not told: the person opens that workspace there). No
+ * `workspace`: its name is kept private.
  */
-export function sleepingRevealed(sure: boolean, workspace?: string): string {
+export function sleepingRevealed(
+  sure: boolean,
+  workspace?: string,
+  how?: OrcaRevealResult,
+): string {
   const t = m().tmux;
+  if (how === 'tab') return t.sleepingTabShown(workspace);
+  if (how === 'workspace')
+    return sure ? t.sleepingWoken(workspace) : t.sleepingMaybeWoken(workspace);
   return sure ? t.sleepingRevealed(workspace) : t.sleepingMaybeRevealed(workspace);
 }
-export function sleepingRevealedToast(check: DuplicateCheck | undefined): string {
+export function sleepingRevealedToast(
+  check: DuplicateCheck | undefined,
+  how?: OrcaRevealResult,
+): string {
   if ((check?.state !== 'open' && check?.state !== 'unknown') || !check.sleeping) return '';
-  return sleepingRevealed(check.state === 'open', check.sleeping.workspace);
+  return sleepingRevealed(check.state === 'open', check.sleeping.workspace, how);
 }
 
 /** One row of "where". */

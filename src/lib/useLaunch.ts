@@ -370,10 +370,14 @@ export function useLaunch(entry: LaunchEntry, hooks: LaunchHooks) {
     switch (action.kind) {
       case 'reveal':
         return void run(async (ticket) => {
-          await api.orcaReveal?.();
-          // Its tab sleeps, or may, in an Orca workspace (#342): Orca is in front, the person
-          // opens that workspace there. Nothing more for the sheet to do.
-          const toast = draft.kind === 'resume' ? sleepingRevealedToast(current?.duplicate) : '';
+          // A resume names its conversation: main wakes the Orca workspace its tab sleeps, or
+          // may, in and shows that tab when it can (#380). Else Orca only comes to the front.
+          const resumed = draft.kind === 'resume' ? conversation?.session.id : undefined;
+          const how = await api.orcaReveal?.(resumed);
+          // Its tab sleeps, or may, in an Orca workspace (#342): Orca is in front with that
+          // workspace, or the person opens it there. Nothing more for the sheet to do.
+          const toast =
+            draft.kind === 'resume' ? sleepingRevealedToast(current?.duplicate, how) : '';
           if (toast) await finish(ticket, { close: true, toast }, false);
         });
       case 'go':
