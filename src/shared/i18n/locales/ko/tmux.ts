@@ -125,5 +125,11 @@ export const tmux: Messages['tmux'] = {
     `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열면 이 대화 탭이 다시 살아나요.`,
   sleepingMaybeRevealed: (workspace) =>
     `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열어 이 대화가 있는지 확인하세요.`,
+  sleepingTabShown: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' 작업 공간의 ` : ''}이 대화 탭으로 이동했어요.`,
+  sleepingWoken: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' ` : '그 '}작업 공간을 열었어요. 이 대화 탭도 곧 다시 살아나요.`,
+  sleepingMaybeWoken: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' ` : '그 '}작업 공간을 열었어요. 이 대화가 있는지 확인하세요.`,
   tabGone: '그 Orca 탭을 다시 찾지 못했어요. 상태를 다시 확인해주세요.',
 };

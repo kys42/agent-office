@@ -35,7 +35,7 @@ import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
-import { matchSleeping } from './orca-sleeping.js';
+import { matchSleeping, type SleepingLookup } from './orca-sleeping.js';
 import { TerminalFocusError } from './terminal-host.js';
 import { reachHost } from './host-app.js';
 import {
@@ -89,6 +89,7 @@ import type {
   SessionIdentity,
   Snapshot,
   DuplicateCheck,
+  OrcaRevealResult,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
@@ -1266,6 +1267,21 @@ function setupIPC() {
   const skipNote = (on: boolean) => (on ? '\n\n' + m().tmux.skipPermissions : '');
   const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
   /**
+   * Its tab in a sleeping Orca workspace (#342), matched by its last request, last answer or
+   * title against the office's other local conversations. Orca not answering is no evidence.
+   */
+  const sleepingIn = async (session: Session, fresh: boolean): Promise<SleepingLookup> => {
+    if (session.remote) return { kind: 'none' };
+    const workspaces = await orcaLaunch.workspaces(fresh);
+    return workspaces
+      ? matchSleeping(
+          workspaces,
+          session,
+          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+        )
+      : { kind: 'none' };
+  };
+  /**
    * The duplicate-launch check for a saved conversation (desktop/launch-guard.ts): its agent
    * process (per-agent liveness adapter), its Orca tab, and the app's own tmux session for it.
    */
@@ -1288,19 +1304,7 @@ function setupIPC() {
             if (tab.kind === 'unknown' && !(await orcaLaunch.reachable(f))) return { kind: 'none' };
             return tab;
           },
-          // Its tab in a sleeping Orca workspace (#342), matched by its last request, last
-          // answer or title. Orca not answering is no evidence.
-          orcaSleeping: async (f) => {
-            if (session.remote) return { kind: 'none' };
-            const workspaces = await orcaLaunch.workspaces(f);
-            return workspaces
-              ? matchSleeping(
-                  workspaces,
-                  session,
-                  (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
-                )
-              : { kind: 'none' };
-          },
+          orcaSleeping: (f) => sleepingIn(session, f),
           ownTmux: async () => {
             try {
               // Its panes too: a verified agent terminal in one of them runs it there.
@@ -1588,9 +1592,23 @@ function setupIPC() {
       authorize,
     );
   });
-  ipcMain.handle('office:orca-reveal', async (e) => {
+  /**
+   * Brings Orca to the front. With a conversation's id (#380) whose tab sleeps, or may, in an
+   * Orca workspace, that workspace is woken and shown, and its tab switched to when matched.
+   * main finds the workspace again, fresh: a window names the conversation, never a folder.
+   */
+  ipcMain.handle('office:orca-reveal', async (e, id?: unknown): Promise<OrcaRevealResult> => {
     trusted(e);
-    await orcaLaunch.reveal();
+    if (typeof id !== 'string' || id.length > 400 || isRemoteId(id)) return orcaLaunch.reveal();
+    const s: Session | undefined = await bridge.call('detail', [id]).catch(() => undefined);
+    const found: SleepingLookup = s
+      ? await sleepingIn(s, true).catch((): SleepingLookup => ({ kind: 'none' }))
+      : { kind: 'none' };
+    if (found.kind === 'none') return orcaLaunch.reveal();
+    return orcaLaunch.reveal({
+      path: found.path,
+      ...(found.kind === 'found' && { paneKey: found.paneKey }),
+    });
   });
   /**
    * The card's main action (#342): whether this conversation's tab rests, or may rest, in a

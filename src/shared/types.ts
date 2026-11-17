@@ -1106,8 +1106,12 @@ export interface OfficeAPI {
     action: 'status' | 'start',
     spec: import('./remote-launch').RemoteLaunchSpec,
   ) => Promise<import('./remote-launch').RemoteLaunchInfo>;
-  /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
-  orcaReveal?: () => Promise<void>;
+  /**
+   * Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed
+   * starts. With a conversation's id whose tab sleeps, or may, in an Orca workspace (#380), main
+   * wakes that workspace and switches to its tab when matched; main finds the workspace itself.
+   */
+  orcaReveal?: (id?: string) => Promise<OrcaRevealResult>;
   /**
    * Desktop (macOS) only (#342): the sleeping Orca workspace this conversation's tab rests in,
    * or may rest in, as the duplicate check says (null otherwise). `sure`: its tab was matched
@@ -1383,6 +1387,12 @@ export type DuplicateCheck =
    * from its process (#376). Left out when its terminal was verified (`where` is that terminal).
    */
   | { state: 'running'; where: LaunchPlace; inOwnTmux?: true; host?: RunningHost };
+/**
+ * What "Go to Orca" did (#380): `tab` woke the conversation's sleeping workspace and switched to
+ * its own tab; `workspace` woke that workspace (its tab not matched, or not back yet); `front`
+ * only brought Orca to the front, as before (no sleeping workspace, or waking it failed).
+ */
+export type OrcaRevealResult = 'tab' | 'workspace' | 'front';
 export interface OrcaLaunchInfo {
   available: boolean;
   /** Set by `status`: whether this conversation already runs or is open somewhere. */
