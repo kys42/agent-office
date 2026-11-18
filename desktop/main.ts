@@ -1582,10 +1582,12 @@ function setupIPC() {
     const owner = BrowserWindow.fromWebContents(e.sender);
     const options = {
       type: 'question' as const,
-      title: t.summonTitle,
-      message: t.remoteConfirm,
-      detail: `${info.office} · ${spec.host} · ${spec.provider}\n${t.folder}: ${info.cwd}\n${t.agentName}: ${spec.name}\n\n${t.remoteHint}\n\n${spec.initialMessage}`,
-      buttons: [t.cancel, t.remoteStart],
+      title: spec.resume ? t.wake : t.summonTitle,
+      message: spec.resume ? t.wakeConfirm : t.remoteConfirm,
+      detail: spec.resume
+        ? `${info.office} · ${spec.host} · Codex\n${delivery.latest?.sessions.find((s) => s.id === id)?.title ?? info.project}\n${info.cwd}`
+        : `${info.office} · ${spec.host} · ${spec.provider}\n${t.folder}: ${info.cwd}\n${t.agentName}: ${spec.name}\n\n${t.remoteHint}\n\n${spec.initialMessage}`,
+      buttons: [t.cancel, spec.resume ? t.wake : t.remoteStart],
       defaultId: 0,
       cancelId: 0,
     };

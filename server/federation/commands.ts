@@ -8,6 +8,7 @@ import type { OfficeStore } from '../store.js';
 import { idSchema, wireId, type ExportConfig } from './protocol.js';
 import { nativePeerSender, type PeerSender } from './sender.js';
 import { launchSpecSchema } from '../../src/shared/remote-launch.js';
+import { resumeDirectory } from './wake.js';
 import { launchDirectory, nativePeerLauncher, type PeerLauncher } from './launcher.js';
 import { TargetProbes } from './target-probes.js';
 
@@ -132,7 +133,7 @@ export class PeerCommands {
           const s = this.session(req, command.id);
           let cwd: string;
           try {
-            cwd = launchDirectory(s);
+            cwd = command.spec.resume ? resumeDirectory(s) : launchDirectory(s);
           } catch {
             throw new CommandError(404);
           }
@@ -140,14 +141,23 @@ export class PeerCommands {
             c,
             s,
             cwd,
-            plan: wireId(JSON.stringify([this.epoch, c, s.id, cwd, command.spec])),
+            plan: wireId(
+              JSON.stringify([
+                this.epoch,
+                c,
+                s.id,
+                ...(command.spec.resume ? [s.nativeId, s.sourcePath] : []),
+                cwd,
+                command.spec,
+              ]),
+            ),
           };
         };
         const first = resolve();
         const verify = () => {
           if (this.closing || resolve().plan !== first.plan) throw new CommandError(409);
         };
-        const hosts = await this.launcher.status(first.cwd, command.spec);
+        const hosts = await this.launcher.status(first.cwd, command.spec, first.s);
         verify();
         const info = {
           officeId: first.c.officeId,
@@ -180,8 +190,10 @@ export class PeerCommands {
           reply(200, { ...info, requestId: start.requestId, status: old.result ?? 'uncertain' });
           return;
         }
-        const key =
-          'launch:' + wireId(JSON.stringify([first.cwd, command.spec.provider, command.spec.name]));
+        const key = command.spec.resume
+          ? 'resume:' + first.s.id
+          : 'launch:' +
+            wireId(JSON.stringify([first.cwd, command.spec.provider, command.spec.name]));
         if (
           start.epoch !== this.epoch ||
           start.plan !== first.plan ||
@@ -196,7 +208,7 @@ export class PeerCommands {
         let status = 'uncertain';
         const operation = (async () => {
           try {
-            status = await this.launcher.start(first.cwd, command.spec, verify);
+            status = await this.launcher.start(first.cwd, command.spec, verify, first.s);
           } catch {
             /* An unacknowledged launch must never be replayed. */
           } finally {
