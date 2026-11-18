@@ -9,7 +9,14 @@ import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
 import { cardReadSettings } from '../shared/card-reads';
-import { cardPinAction, readCardPin } from '../shared/card-windows';
+import {
+  cardHandAction,
+  cardOwnWindow,
+  cardPinAction,
+  readCardPin,
+  type CardPinAction,
+} from '../shared/card-windows';
+import { sessionName } from '../shared/office';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
@@ -84,9 +91,7 @@ export function DockCard() {
       stop?.();
     };
   }, [notify, acceptTarget]);
-  const changeWindow = async (
-    action: 'pin-on' | 'pin-top' | 'pin-off' | 'position-on' | 'position-off',
-  ) => {
+  const changeWindow = async (action: CardPinAction | 'position-on' | 'position-off') => {
     setWindowBusy(true);
     try {
       await api.card?.(action);
@@ -130,6 +135,23 @@ export function DockCard() {
   const sessions = snapshot?.sessions ?? [];
   const session = target ? sessions.find((s) => s.id === target.id) : undefined;
   const prefs = snapshot?.preferences;
+  const cardPin = readCardPin(windowState);
+  const ownWindow = cardOwnWindow(cardPin);
+  // In its own app window the card fills the system's frame and its header moves the window.
+  useEffect(() => {
+    document.body.classList.toggle('card-window', ownWindow);
+  }, [ownWindow]);
+  // The window's title is whose card it is (Mission Control, the Window menu, the taskbar);
+  // hidden like the card's name while the screen is shared.
+  const title = session
+    ? prefs?.privacy
+      ? t.inspector.hiddenTeammate
+      : sessionName(session)
+    : null;
+  const appTitle = useRef(document.title);
+  useEffect(() => {
+    document.title = title ?? appTitle.current;
+  }, [title]);
   const close = () => void api.card?.('close');
   const content = (
     <div className="dock-card">
@@ -140,11 +162,16 @@ export function DockCard() {
           key={`${session.id}:${opened}`}
           session={session}
           sessions={sessions}
+          colleagues={model.residents}
           notices={snapshot?.notices ?? []}
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
           onSelect={(id) => select({ id })}
+          // Bubbles handed on: a kept card stays on its conversation (`cardHandAction`).
+          onHandTo={(id) =>
+            void api.card?.(cardHandAction(cardPin), { id }).catch((e) => notify(e.message))
+          }
           showConversation={conversation}
           onClose={close}
           onExpand={() => void api.card?.('expand', { id: session.id })}
@@ -184,7 +211,7 @@ export function DockCard() {
           focus={bookmarkFocus}
           onFocused={() => setBookmarkFocus(null)}
           movable
-          cardPin={readCardPin(windowState)}
+          cardPin={cardPin}
           positionRemembered={windowState.positionRemembered}
           windowBusy={windowBusy}
           onCardPin={(next) => void changeWindow(cardPinAction(next))}

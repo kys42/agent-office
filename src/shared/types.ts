@@ -973,9 +973,12 @@ export interface CardTarget {
 }
 /** Native popup presentation state; independent of the colleague's office pin. */
 export interface CardWindowState {
-  /** Kept open (pinned, or pinned on top). */
+  /** Kept open (pinned, pinned on top, or in its own window). */
   pinned: boolean;
-  /** Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, or pinned on top. */
+  /**
+   * Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, pinned on top, or in
+   * its own app window.
+   */
   pin?: import('./card-windows').CardPin;
   positionRemembered: boolean;
   /** Initial state handshake also recovers a target sent before the renderer subscribed. */
@@ -1104,8 +1107,12 @@ export interface OfficeAPI {
     action: 'status' | 'start',
     spec: import('./remote-launch').RemoteLaunchSpec,
   ) => Promise<import('./remote-launch').RemoteLaunchInfo>;
-  /** Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed starts. */
-  orcaReveal?: () => Promise<void>;
+  /**
+   * Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed
+   * starts. With a conversation's id whose tab sleeps, or may, in an Orca workspace (#380), main
+   * wakes that workspace and switches to its tab when matched; main finds the workspace itself.
+   */
+  orcaReveal?: (id?: string) => Promise<OrcaRevealResult>;
   /**
    * Desktop (macOS) only (#342): the sleeping Orca workspace this conversation's tab rests in,
    * or may rest in, as the duplicate check says (null otherwise). `sure`: its tab was matched
@@ -1227,9 +1234,9 @@ export interface OfficeAPI {
       | 'drag-start'
       | 'drag-end'
       | 'select'
-      | 'pin-on'
-      | 'pin-top'
-      | 'pin-off'
+      /** From a kept card: show another colleague beside it, leaving it as it is (#377). */
+      | 'reveal'
+      | import('./card-windows').CardPinAction
       | 'position-on'
       | 'position-off'
       | 'focus',
@@ -1313,6 +1320,38 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
 /** Where a conversation already runs, or is open, as checked right before a launch. */
 export type LaunchPlace = 'orca' | 'tmux' | 'other';
 /**
+ * The app whose terminal holds a running agent, read from its process's parents when no tab
+ * or pane could be verified (#376). `swarm`: Claude's own tmux server for teammates
+ * (`claude-swarm-<pid>`); `background`: a Claude background session, in a pty of Claude's own
+ * daemon; `app`: another macOS app, named by its bundle; `unknown`: none found (ssh, a
+ * daemonized server).
+ */
+export type HostApp =
+  | 'orca'
+  | 'terminal'
+  | 'iterm'
+  | 'ghostty'
+  | 'cmux'
+  | 'vscode'
+  | 'warp'
+  | 'tmux'
+  | 'swarm'
+  | 'background'
+  | 'app'
+  | 'unknown';
+/** Where a running agent is when its terminal tab could not be verified (#376). */
+export interface RunningHost {
+  app: HostApp;
+  /** `app`: the macOS app's own name. */
+  name?: string;
+  /** Moved to the background (← for agents): Claude's agents view in that app shows it. */
+  parked?: true;
+  /** The main process can bring that place forward (its tab, its pane, or at least the app). */
+  canGo?: true;
+  /** A background session no window shows: the command that attaches a terminal to it. */
+  attach?: string;
+}
+/**
  * The duplicate-launch check shared by the tmux and Orca launchers. `running`: the agent
  * process for this conversation is alive (never launched again). `open`: a tab or tmux session
  * of the conversation exists but the agent is not verified running (launch only after a
@@ -1345,8 +1384,16 @@ export type DuplicateCheck =
    * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
    * this conversation (main matched the terminal it found to that session's panes). Without
    * it the conversation may run elsewhere while the own pane shows another one.
+   * `host`: its process lives but no terminal tab of it was verified: the app it runs in, read
+   * from its process (#376). Left out when its terminal was verified (`where` is that terminal).
    */
-  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true };
+  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true; host?: RunningHost };
+/**
+ * What "Go to Orca" did (#380): `tab` woke the conversation's sleeping workspace and switched to
+ * its own tab; `workspace` woke that workspace (its tab not matched, or not back yet); `front`
+ * only brought Orca to the front, as before (no sleeping workspace, or waking it failed).
+ */
+export type OrcaRevealResult = 'tab' | 'workspace' | 'front';
 export interface OrcaLaunchInfo {
   available: boolean;
   /** Set by `status`: whether this conversation already runs or is open somewhere. */

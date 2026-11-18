@@ -97,7 +97,7 @@ const api: OfficeAPI = {
   // Orca is a macOS app: bringing it to the front is offered there only.
   ...(process.platform === 'darwin'
     ? {
-        orcaReveal: () => action('office:orca-reveal'),
+        orcaReveal: (id?: string) => action('office:orca-reveal', id),
         orcaSleeping: (id: string) => action('office:orca-sleeping', id),
       }
     : {}),

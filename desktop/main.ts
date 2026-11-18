@@ -12,6 +12,7 @@ import {
 } from './launch/destinations.js';
 import type { DestinationProbe } from './launch/pipeline.js';
 import {
+  hostPlaceName,
   launchIntentSchema,
   launchRequestSchema,
   type LaunchDestinationId,
@@ -34,9 +35,16 @@ import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
-import { matchSleeping } from './orca-sleeping.js';
+import { matchSleeping, type SleepingLookup } from './orca-sleeping.js';
 import { TerminalFocusError } from './terminal-host.js';
-import { checkDuplicate, duplicateNote, livenessFor, sleepingWorkspace } from './launch-guard.js';
+import { reachHost } from './host-app.js';
+import {
+  checkDuplicate,
+  duplicateNote,
+  livenessFor,
+  runningPlace,
+  sleepingWorkspace,
+} from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -81,6 +89,7 @@ import type {
   SessionIdentity,
   Snapshot,
   DuplicateCheck,
+  OrcaRevealResult,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
@@ -1196,7 +1205,7 @@ function setupIPC() {
   ipcMain.handle('office:card', async (e, action, target, anchor) => {
     trusted(e);
     if (typeof action !== 'string') throw new Error(m().desktop.badRequest);
-    if (action === 'open' || action === 'select' || action === 'expand') {
+    if (action === 'open' || action === 'select' || action === 'reveal' || action === 'expand') {
       if (
         !target ||
         typeof target.id !== 'string' ||
@@ -1266,6 +1275,21 @@ function setupIPC() {
   const skipNote = (on: boolean) => (on ? '\n\n' + m().tmux.skipPermissions : '');
   const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
   /**
+   * Its tab in a sleeping Orca workspace (#342), matched by its last request, last answer or
+   * title against the office's other local conversations. Orca not answering is no evidence.
+   */
+  const sleepingIn = async (session: Session, fresh: boolean): Promise<SleepingLookup> => {
+    if (session.remote) return { kind: 'none' };
+    const workspaces = await orcaLaunch.workspaces(fresh);
+    return workspaces
+      ? matchSleeping(
+          workspaces,
+          session,
+          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+        )
+      : { kind: 'none' };
+  };
+  /**
    * The duplicate-launch check for a saved conversation (desktop/launch-guard.ts): its agent
    * process (per-agent liveness adapter), its Orca tab, and the app's own tmux session for it.
    */
@@ -1288,19 +1312,7 @@ function setupIPC() {
             if (tab.kind === 'unknown' && !(await orcaLaunch.reachable(f))) return { kind: 'none' };
             return tab;
           },
-          // Its tab in a sleeping Orca workspace (#342), matched by its last request, last
-          // answer or title. Orca not answering is no evidence.
-          orcaSleeping: async (f) => {
-            if (session.remote) return { kind: 'none' };
-            const workspaces = await orcaLaunch.workspaces(f);
-            return workspaces
-              ? matchSleeping(
-                  workspaces,
-                  session,
-                  (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
-                )
-              : { kind: 'none' };
-          },
+          orcaSleeping: (f) => sleepingIn(session, f),
           ownTmux: async () => {
             try {
               // Its panes too: a verified agent terminal in one of them runs it there.
@@ -1588,9 +1600,23 @@ function setupIPC() {
       authorize,
     );
   });
-  ipcMain.handle('office:orca-reveal', async (e) => {
+  /**
+   * Brings Orca to the front. With a conversation's id (#380) whose tab sleeps, or may, in an
+   * Orca workspace, that workspace is woken and shown, and its tab switched to when matched.
+   * main finds the workspace again, fresh: a window names the conversation, never a folder.
+   */
+  ipcMain.handle('office:orca-reveal', async (e, id?: unknown): Promise<OrcaRevealResult> => {
     trusted(e);
-    await orcaLaunch.reveal();
+    if (typeof id !== 'string' || id.length > 400 || isRemoteId(id)) return orcaLaunch.reveal();
+    const s: Session | undefined = await bridge.call('detail', [id]).catch(() => undefined);
+    const found: SleepingLookup = s
+      ? await sleepingIn(s, true).catch((): SleepingLookup => ({ kind: 'none' }))
+      : { kind: 'none' };
+    if (found.kind === 'none') return orcaLaunch.reveal();
+    return orcaLaunch.reveal({
+      path: found.path,
+      ...(found.kind === 'found' && { paneKey: found.paneKey }),
+    });
   });
   /**
    * The card's main action (#342): whether this conversation's tab rests, or may rest, in a
@@ -1819,7 +1845,25 @@ function setupIPC() {
     const screen = await screenOf(known, true);
     const tab = screen.kind === 'none' ? await orcaTab(latestSession(known.id), true) : null;
     const terminal = screen.kind === 'found' ? screen.terminal : tab ? { host: tab } : null;
-    if (!terminal) return resume(known);
+    if (!terminal) {
+      // Its process lives but no terminal of it was verified (#376): go where it runs (the app
+      // read from its process), never hand out a resume command that would start a second copy.
+      const place =
+        screen.kind === 'unknown' ? await runningPlace(known.provider, known.nativeId) : null;
+      if (!place) return resume(known);
+      try {
+        const result = await reachHost(
+          place,
+          defaultTerminalDeps(),
+          async () => (await orcaTab(latestSession(known.id), true)) ?? null,
+        );
+        if (result.action === 'focused') cards.afterJump(e.sender);
+        return result;
+      } catch (error) {
+        if (error instanceof TerminalFocusError) throw new TerminalInputError(error.message);
+        throw new Error(m().desktop.terminal.jumpFailed(hostPlaceName(place.host)));
+      }
+    }
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.
