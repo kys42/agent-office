@@ -83,6 +83,17 @@ export function cardOwnWindow(pin: CardPin) {
 }
 
 /**
+ * macOS: whether bringing a card forward also activates the whole app (`app.focus({ steal })`).
+ * Only a card in its own window does: an ordinary app window takes the keys only while its app is
+ * active. A card panel (`type: 'panel'`, non-activating, on every Space while it floats) takes
+ * the keyboard as itself; activating the app there would also switch macOS to the Space holding
+ * the big office window, away from the desk the card was opened from.
+ */
+export function cardActivatesApp(pin: CardPin) {
+  return cardOwnWindow(pin);
+}
+
+/**
  * A card moved to a new window across `cardOwnWindow`: what becomes of its old window once the new
  * one shows. While the new one loads the old window is out of the preview's reuse (another
  * colleague opened meanwhile gets a preview of its own), so it still shows the colleague that
