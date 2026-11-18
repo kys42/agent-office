@@ -147,6 +147,8 @@ function fakeDeps(
     paneHeight?: number;
     /** `#{pane_in_mode}`: 1 while the tmux pane is scrolled back. */
     paneMode?: string;
+    /** `#{cursor_x} #{cursor_y}` for what the prompt holds (absent: not reported). */
+    paneCursor?: (typed: string) => [number, number];
     /** `source` of `orca terminal read --screen`. */
     orcaSource?: string;
     /** Fails `orca terminal send --enter` only. */
@@ -188,7 +190,9 @@ function fakeDeps(
         if (args.includes('stat=,pgid=,tpgid=')) return `${options.fg ?? 'S+ 4242 4242'}\n`;
       }
       if (file === '/bin/tmux' && args.some((a) => a.startsWith('#{pane_in_mode}')))
-        return `${options.paneMode ?? '0'} ${options.paneHeight ?? 40}\n`;
+        return `${options.paneMode ?? '0'} ${options.paneHeight ?? 40}${
+          options.paneCursor ? ` 1 1 ${options.paneCursor(typed).join(' ')}` : ''
+        }\n`;
       if (file === '/bin/tmux' && args.includes('display-message')) return options.tmuxShow ?? '';
       if (file === '/bin/tmux' && args.includes('load-buffer')) loaded = runOptions?.input ?? '';
       if (file === '/bin/tmux' && args.includes('paste-buffer')) typed += loaded;
@@ -746,7 +750,7 @@ test('tmux loads text through stdin, pastes it bracketed, re-checks, then submit
       '-p',
       '-t',
       '%3',
-      '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen}',
+      '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen} #{cursor_x} #{cursor_y}',
     ];
     const capture = ['-S', SOCKET, 'capture-pane', '-p', '-e', '-t', '%3'];
     assert.equal(tmux.length, 9);
@@ -3245,5 +3249,131 @@ test('Send as is on Orca text that stayed after Enter says it may be a suggestio
     );
     assert.equal(enters(calls), 1);
     assert.equal(accepts(calls) + tabs(calls), 0);
+  });
+});
+
+/**
+ * The 80×22 pane of issue #393, as text: a plugin band above the prompt leaves the box's top rule
+ * and `❯` row as the pane's last rows (21 is the last), its lower rule and footer not drawn. An
+ * empty box shows `empty` (default: Claude's suggestion, faint); the observed one showed nothing.
+ */
+const cutPane = (typed: string, empty = '\x1b[2mRun the tests next\x1b[0m') => {
+  const rows = [
+    ...Array.from({ length: 11 }, (_, i) => (i % 3 ? `  output line ${i}` : '')),
+    `╭${'─'.repeat(79)}`,
+    '│  Open questions 0/4 0: fold (0 on an empty prompt · clear /pin-clear)',
+    '│',
+    '│ [ ] 1. Merge the first step now?',
+    '│ [ ] 2. Start the second step right away?',
+    '│ [ ] 3. Darken the faint text colour everywhere?',
+    '│ [ ] 4. Ship the Android app?',
+    `╰${'─'.repeat(79)}`,
+    '',
+    '─'.repeat(80),
+    `❯ ${typed || empty}`.trimEnd(),
+  ];
+  return `${rows.join('\n')}\n`;
+};
+/** tmux reports that pane's height, and the caret right after what the box holds. */
+const cutDeps = (dir: string, over: Parameters<typeof fakeDeps>[1] = {}) =>
+  fakeDeps(dir, {
+    screen: (typed) => cutPane(typed),
+    paneHeight: 22,
+    paneCursor: (typed) => [2 + typed.length, 21],
+    ...over,
+  });
+const CUT_MESSAGE = /터미널 창이 작아 입력창 아래가 잘려서 보내지 않았어요/;
+
+test('A box cut off by a short pane takes a short line at rest, checked on its one row (#393)', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = cutDeps(dir);
+    const result = await sendToTerminal(tmuxLive(), '다음 단계로 가 주세요', deps);
+    assert.deepEqual(result, { status: 'sent', message: 'tmux work:1.0에 보냈어요' });
+    assert.equal(calls.filter((c) => c.args.includes('paste-buffer')).length, 1);
+    assert.equal(enters(calls), 1);
+    // Nothing deleted: the box was empty.
+    assert.ok(!calls.some((c) => clears(c.args)));
+  });
+});
+
+test('A cut box refuses, with nothing typed, what it cannot show or what may open a list', async () => {
+  const refused = async (
+    live: LiveTerminal,
+    text: string,
+    over: Parameters<typeof fakeDeps>[1] = {},
+    options = {},
+  ) =>
+    withSessions({ '4242.json': record(4242) }, async (dir) => {
+      const { deps, calls } = cutDeps(dir, over);
+      await assert.rejects(sendToTerminal(live, text, deps, options), CUT_MESSAGE, text);
+      assert.ok(!typedAny(calls) && !sent(calls) && !calls.some((c) => clears(c.args)), text);
+    });
+  // The observed screen: a blank row, which may hide the rest of a draft below the edge.
+  await refused(tmuxLive(), 'a short reply', { screen: () => cutPane('', '') });
+  // Mid-turn a footer out of sight may say Enter interrupts the turn.
+  await refused(tmuxLive('busy'), 'a short reply');
+  // Typed, it would read as a dialog's numbered choice and could never be checked.
+  await refused(tmuxLive(), '1. Continue');
+  // A command or file list would open below the box, out of sight, and take Enter.
+  await refused(tmuxLive(), '/rename a new title');
+  await refused(tmuxLive(), 'see @src/app.ts');
+  // More than the one row that shows.
+  await refused(tmuxLive(), 'x'.repeat(75));
+  await refused(tmuxLive(), 'first line\nsecond line');
+  await refused(tmuxLive(), 'with an image', {}, { images: ['/tmp/agent-office/a.png'] });
+  // A draft on the row: its rest may be out of sight; never shown as one, never cleared.
+  await refused(
+    tmuxLive(),
+    'a short reply',
+    { screen: () => cutPane('half-written idea') },
+    {
+      backup: async () => {},
+    },
+  );
+  // The caret is not right after the marker (here: down in rows out of sight).
+  await refused(tmuxLive(), 'a short reply', { paneCursor: () => [5, 21] });
+  // Orca reports no pane height: the screen's edge is not proven.
+  await refused(orcaLive(), 'a short reply');
+});
+
+test('A cut box: Enter waits for the line on its row, and for Claude still at rest', async () => {
+  // Claude started a turn while the line went in: typed, never submitted.
+  await withSessions({ '4242.json': record(4242, { status: 'busy' }) }, async (dir) => {
+    const { deps, calls } = cutDeps(dir);
+    await assert.rejects(
+      sendToTerminal(tmuxLive(), 'a short reply', deps),
+      /그사이 상태가 바뀌어 제출하지 않았어요/,
+    );
+    assert.ok(typedAny(calls));
+    assert.equal(enters(calls), 0);
+  });
+  // The row never shows the line (drawn elsewhere, or not at all): no Enter.
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = cutDeps(dir, { screen: () => cutPane('') });
+    await assert.rejects(sendToTerminal(tmuxLive(), 'a short reply', deps), TerminalInputError);
+    assert.equal(enters(calls), 0);
+  });
+});
+
+test('A cut box is shown as such, and Send as is never presses Enter on it', async () => {
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps } = cutDeps(dir, { screen: () => cutPane('go on') });
+    assert.deepEqual(await previewTerminalDraft(tmuxLive(), claudeCodeComposer, deps), {
+      kind: 'unknown',
+      reason: 'cut',
+    });
+    assert.equal(await inspectTerminalDraft(tmuxLive(), claudeCodeComposer, deps), null);
+  });
+  await withSessions({ '4242.json': record(4242) }, async (dir) => {
+    const { deps, calls } = cutDeps(dir, { screen: () => cutPane('go on') });
+    const result = await submitTerminalDraft(tmuxLive(), 'go on', deps);
+    assert.equal(result.status, 'changed');
+    assert.match(result.status === 'changed' ? result.message : '', CUT_MESSAGE);
+    assert.deepEqual(result.status === 'changed' && result.draft, {
+      kind: 'unknown',
+      reason: 'cut',
+    });
+    assert.equal(enters(calls), 0);
+    assert.ok(!typedAny(calls) && !calls.some((c) => clears(c.args)));
   });
 });

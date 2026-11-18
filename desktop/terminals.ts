@@ -25,6 +25,7 @@ import type {
 import { intlLocale, m } from '../src/shared/i18n/index.js';
 import {
   claudeCodeComposer,
+  cutPromptHolds,
   draftView,
   drawn,
   holdsText,
@@ -728,12 +729,13 @@ async function submitDraftNow(
       draft: draftView(outcome.state, composer.agent, can),
     };
   if (outcome.status === 'refused') {
-    // A dialog or menu took the box's place: shown as such, like any other change.
-    if (outcome.reason === 'closed')
+    // A dialog or menu took the box's place, or a pane too short cut it off: shown as such, like
+    // any other change.
+    if (outcome.reason === 'closed' || outcome.reason === 'cut')
       return {
         status: 'changed',
-        message: t.notReady,
-        draft: { kind: 'unknown', reason: 'closed' },
+        message: outcome.reason === 'cut' ? t.promptCut : t.notReady,
+        draft: { kind: 'unknown', reason: outcome.reason },
       };
     throw new TerminalInputError(
       outcome.reason === 'partial'
@@ -844,9 +846,9 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
         '-p',
         '-t',
         host.pane,
-        '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen}',
+        '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen} #{cursor_x} #{cursor_y}',
       ]);
-      const [mode, height, alternate, allowed] = state.trim().split(' ');
+      const [mode, height, alternate, allowed, x, y] = state.trim().split(' ');
       if (mode !== '0') return { text: '' };
       const screen = parseStyledScreen(
         await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
@@ -860,6 +862,10 @@ async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Scree
         ...(/^\d+$/.test(height ?? '') && { height: Number(height) }),
         ...(allowed === '1' &&
           (alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
+        // Where the focused input's caret is: a box cut off by a short pane is typed into only
+        // with it right there (see `cut` in composer/types.ts).
+        ...(/^\d+$/.test(x ?? '') &&
+          /^\d+$/.test(y ?? '') && { cursor: { x: Number(x), y: Number(y) } }),
       };
     }
     const out = await deps.run(
@@ -1177,6 +1183,15 @@ async function deliver(
   // The reply an earlier send typed and could not submit, still shown exactly as typed.
   const reply = claimOwn(typed, key, state);
   if (state.kind === 'unreadable') throw new TerminalInputError(t.unreadable(hostName(host)));
+  if (state.kind === 'cut') {
+    // A pane too short for the whole box: below its one row, the rest of the box, its footer and
+    // any list are out of sight. Only a short line that opens nothing there (the adapter's
+    // `typesIntoCut`) goes in, with no images, and only at rest: mid-turn a footer out of sight
+    // may say Enter does something else. Enter then waits for exactly that line on that row.
+    if (images.length || live.process.status !== 'idle' || !composer.typesIntoCut?.(state, text))
+      throw new TerminalInputError(t.promptCut);
+    return submit(false, true, true);
+  }
   if (!holdsText(state)) {
     if (!readyToType(state)) throw new TerminalInputError(t.notReady);
     return submit(false);
@@ -1267,9 +1282,11 @@ async function deliver(
           ? t.notWhole
           : result.lost
             ? t.clearStopped
-            : result.state.kind === 'unknown'
-              ? t.clearFailedSuggestion(composer.agent)
-              : t.clearFailed(composer.agent),
+            : result.state.kind === 'cut'
+              ? t.promptCut
+              : result.state.kind === 'unknown'
+                ? t.clearFailedSuggestion(composer.agent)
+                : t.clearFailed(composer.agent),
       );
     // Typing replaces a suggestion. One only inferred (a plain screen) proves less: then the
     // prompt must hold exactly the text or its own placeholder alone, never the end of it.
@@ -1294,9 +1311,11 @@ async function deliver(
    * verified empty) as the one placeholder its own paste collapsed into (a new id, its line
    * count, nothing else: `collapsedPaste`) or the end of a long text. `strict` after a clearing
    * that could only infer the box was empty: no end of a text, which may sit next to what the
-   * keys could not reach; the placeholder alone in the box still counts.
+   * keys could not reach; the placeholder alone in the box still counts. `cut`: typed into a box
+   * cut off by a short pane: exactly the text on its one row (`cutPromptHolds`), or on a box
+   * shown whole again, and still at rest right before Enter.
    */
-  async function submit(cleared: boolean, strict = false): Promise<SendResult> {
+  async function submit(cleared: boolean, strict = false, cut = false): Promise<SendResult> {
     await options.beforeSend?.();
     if (images.length) await attachImages();
     else {
@@ -1316,6 +1335,7 @@ async function deliver(
     const before = looked ? new Set(seen) : undefined;
     const holds = async () => {
       const screen = (await readScreen(host, deps)) ?? '';
+      if (cut) return cutPromptHolds(screen, text) || promptHolds(screen, text, true);
       return images.length
         ? promptHoldsImages(screen, text, images, strict, before)
         : promptHolds(screen, text, strict, before);
@@ -1330,7 +1350,7 @@ async function deliver(
     // The record and the foreground last, right before Enter: a pause (ctrl+z) during the
     // retries leaves Claude's last frame on screen over a shell.
     const again = await current();
-    if (!again) throw new TerminalInputError(t.stateChanged);
+    if (!again || (cut && again.status !== 'idle')) throw new TerminalInputError(t.stateChanged);
     // And the screen once more: a dialog may have opened during those checks.
     if (!(await holds())) throw new TerminalInputError(t.stateChanged);
     try {

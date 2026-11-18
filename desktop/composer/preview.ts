@@ -26,11 +26,9 @@ export function draftView(
     return {
       kind: 'unknown',
       reason:
-        state.kind === 'closed'
-          ? 'closed'
-          : state.kind === 'unreadable'
-            ? 'unreadable'
-            : 'unsupported',
+        state.kind === 'closed' || state.kind === 'cut' || state.kind === 'unreadable'
+          ? state.kind
+          : 'unsupported',
     };
   }
   if (!state.text.trim()) return { kind: 'empty' };
