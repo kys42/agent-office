@@ -1,3 +1,4 @@
+import { OFFICE_SWATCH } from '../shared/federation';
 import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
 import { isTeammate } from '../shared/residents';
@@ -587,6 +588,8 @@ export function DeskRow({
                     const pose = v.pose;
                     const joy = reactionOf(s.id);
                     const label = residentLabel(s, privacy);
+                    const remote = tiny && !privacy ? s.remote : undefined;
+                    const tinyTitle = remote ? `${label.name} · ${remote.label}` : label.name;
                     const branch = branchInfo(s);
                     const desk = deskLook(desks, zone.key, s);
                     // A just-arrived request plays on the desk and speaks first.
@@ -651,15 +654,15 @@ export function DeskRow({
                           // Tiny's dot is drawn only: its meaning goes into the name (call, reply, error).
                           aria-label={
                             tiny
-                              ? t.desk.row.tinyDesk(t.desk.openWork(label.name), dot?.tone)
+                              ? t.desk.row.tinyDesk(t.desk.openWork(tinyTitle), dot?.tone)
                               : t.desk.openWork(label.name)
                           }
-                          // Tiny has no name plates: the name on hover instead (never in privacy).
+                          // The tooltip identifies the office even when tiny nameplates are hidden.
                           title={
                             tiny
                               ? privacy
                                 ? undefined
-                                : label.name
+                                : tinyTitle
                               : onReorder && !privacy && !s.remote
                                 ? `${label.detail}\n${t.desk.row.reorderHint}`
                                 : label.detail
@@ -697,12 +700,20 @@ export function DeskRow({
                             className="tiny-name"
                             data-solid
                             aria-hidden="true"
-                            title={privacy ? undefined : label.name}
+                            title={privacy ? undefined : tinyTitle}
                             style={{ top: TINY_NAME_TOP, height: TINY_NAME_ROOM }}
                             {...zoneGrab}
                             onClick={opener(s.id)}
                           >
-                            <span>
+                            <span
+                              style={
+                                remote?.color
+                                  ? {
+                                      borderInlineStart: `calc(3px / var(--tiny-scale)) solid ${OFFICE_SWATCH[remote.color]}`,
+                                    }
+                                  : undefined
+                              }
+                            >
                               {privacy ? (PROVIDERS[s.provider]?.short ?? label.name) : label.name}
                             </span>
                           </span>

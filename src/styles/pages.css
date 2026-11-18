@@ -1552,6 +1552,50 @@ body.is-windows .settings-window-bar {
   width: 100%;
   box-sizing: border-box;
 }
+.office-color-presets {
+  display: flex;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 0;
+  border: 0;
+}
+.office-color-presets legend {
+  margin-bottom: 5px;
+}
+.federation-settings .office-color-presets label {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  cursor: pointer;
+}
+.office-color-presets input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+.office-color-presets span {
+  pointer-events: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+.office-color-presets input:checked + span::after {
+  display: grid;
+  place-items: center;
+  content: '✓';
+  color: #242733;
+  font-weight: 700;
+  line-height: 20px;
+}
+.office-color-presets input:focus-visible + span {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
 .federation-settings code {
   overflow-wrap: anywhere;
 }

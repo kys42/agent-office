@@ -1,7 +1,19 @@
+export const OFFICE_COLORS = ['sky', 'lilac', 'mint', 'peach', 'rose', 'gold'] as const;
+export type OfficeColor = (typeof OFFICE_COLORS)[number];
+export const OFFICE_SWATCH: Record<OfficeColor, string> = {
+  sky: '#85cafa',
+  lilac: '#c6a6f5',
+  mint: '#7cd9bf',
+  peach: '#ffac7b',
+  rose: '#f691b6',
+  gold: '#e9cd69',
+};
+
 /** Beta metadata is separate from local collection/preferences. */
 export interface RemoteSource {
   officeId: string;
   sessionId: string;
+  color?: OfficeColor;
   label: string;
   tags: string[];
   receivedAt: number;
@@ -17,6 +29,7 @@ export interface PeerInput {
   sendToken?: string;
   /** Optional local host override; absent means exact-identity automatic routing. Never imported. */
   codexHostId?: string;
+  color?: OfficeColor;
   label: string;
   tags: string[];
   /** Explicit remote project name -> local project name. View only. */
@@ -40,6 +53,7 @@ export type FederationCommand =
   | { action: 'add'; peer: PeerInput }
   | {
       action: 'update';
+      color?: OfficeColor;
       codexHostId?: string;
       officeId: string;
       label: string;

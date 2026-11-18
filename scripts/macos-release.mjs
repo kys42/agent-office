@@ -3,7 +3,7 @@ import { existsSync, readFileSync, realpathSync, statSync, statfsSync } from 'no
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { signingConfig } from './macos-signing.mjs';
-import { notaryCredentials } from './notarize.mjs';
+import { verifyNotaryAccess } from './notarize.mjs';
 
 // Accept the existing TaskDeck/banryeojusik non-secret Apple profile schema.
 // Keep keys in their original private location; do not copy them into this repo.
@@ -70,11 +70,7 @@ if (env.APPLE_API_KEY_PATH && !env.AGENT_OFFICE_NOTARY_PROFILE) {
 }
 if (mode !== 'app') {
   // Read-only authentication probe: fail before building/uploading on expired agreements.
-  execFileSync(
-    'xcrun',
-    ['notarytool', 'history', ...notaryCredentials(env), '--output-format', 'json'],
-    { stdio: ['ignore', 'ignore', 'inherit'], env },
-  );
+  verifyNotaryAccess(env);
   console.log('Developer ID and Apple notarization access verified.');
 }
 if (mode !== 'preflight') {
