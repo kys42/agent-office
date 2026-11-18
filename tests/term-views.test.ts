@@ -233,3 +233,42 @@ test('a view whose connection drops (the daemon stopped) is told; its own end is
   pty.exit(0);
   await t.host.shutdown();
 });
+
+test('a view is destroyed, not ended, when it goes: a paused one never keeps the daemon waiting', async () => {
+  const t = fakeTermHost({ exitRetentionMs: 60_000 });
+  const pty = await session(t, 'ao-6');
+  const calls: string[] = [];
+  const views = new TermViews({
+    async connect() {
+      const [server, client] = connectionPair();
+      t.host.handleConnection(server);
+      const end = Object.assign(client, {
+        pause: () => void calls.push('pause'),
+        resume: () => void calls.push('resume'),
+      });
+      const destroy = end.destroy.bind(end);
+      end.destroy = () => (calls.push('destroy'), destroy());
+      const c = new TermHostClient(end);
+      await c.hello(FAKE_TOKEN);
+      return c;
+    },
+  });
+  const a = await views.attach(
+    1,
+    'ao-6',
+    { cols: 80, rows: 24 },
+    {
+      data() {},
+      resync() {},
+      exit() {},
+      lost() {},
+    },
+  );
+  views.flow(1, a.viewId, true);
+  views.detach(1, a.viewId);
+  await sleep(10);
+  assert.deepEqual(calls, ['pause', 'destroy']);
+  assert.equal(t.host.sessions.get('ao-6')!.attachments.size, 0);
+  pty.exit(0);
+  await t.host.shutdown();
+});

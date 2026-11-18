@@ -65,7 +65,7 @@ export class TermViews {
     const viewId = (this.deps.newId ?? randomUUID)();
     const stale = () => this.epoch(owner) !== since;
     if (stale()) {
-      client.close();
+      client.destroy();
       throw new Error(m().shell.gone);
     }
     client.onOutput((id, data) => id === session && sink.data(viewId, data));
@@ -87,14 +87,14 @@ export class TermViews {
     try {
       result = await client.attach(session, { scrollback: TERM_VIEW_SCROLLBACK });
     } catch (error) {
-      client.close();
+      client.destroy();
       throw error;
     }
     const restore = restoreSequence(result);
     const answer = { viewId, restore, cols: result.cols, rows: result.rows };
     if (result.exit || stale()) {
       // Ended already (its last screen is shown), or the window left meanwhile.
-      client.close();
+      client.destroy();
       if (stale()) throw new Error(m().shell.gone);
       return { ...answer, exited: { code: result.exit!.code, signal: result.exit!.signal } };
     }
@@ -149,7 +149,9 @@ export class TermViews {
     if (!view) return;
     this.views.delete(viewId);
     // Closing the connection detaches it in the daemon.
-    view.client.close();
+    // Destroyed, not ended: a paused view leaves unread output that a graceful end would wait
+    // on, keeping the daemon's side open (and attached) for good.
+    view.client.destroy();
   }
 
   /** Quitting the app: every view ends, every session keeps running. */

@@ -1028,6 +1028,8 @@ function setupBuiltinViews(builtin: TermBuiltin) {
     if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
     const stats = await builtin.session(session).catch(() => null);
     if (!stats) throw new TerminalFocusError(m().shell.gone);
+    // Hidden while it was looked up: its title and folder never show after that.
+    if (delivery.latest?.preferences?.privacy) throw new TerminalFocusError(m().shell.term.hidden);
     const from = BrowserWindow.getFocusedWindow() ?? main;
     const anchor =
       from && !from.isDestroyed() ? from.getBounds() : screen.getPrimaryDisplay().workArea;

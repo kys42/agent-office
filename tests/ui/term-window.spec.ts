@@ -15,13 +15,15 @@ interface Options {
   resyncEarly?: boolean;
   /** The window hides right after the answer, while its first screen is parsed. */
   hideDuringRestore?: boolean;
+  /** Before the attach answer: more output than the view lets queue undrawn. */
+  floodEarly?: boolean;
 }
 
 async function setup(page: Page, options: Options = {}) {
   const s = demoSnapshot();
   await page.setViewportSize({ width: 640, height: 400 });
   await page.addInitScript(
-    ({ s, VIEW, VIEW2, exited, exitEarly, resyncEarly, hideDuringRestore }) => {
+    ({ s, VIEW, VIEW2, exited, exitEarly, resyncEarly, hideDuringRestore, floodEarly }) => {
       const w = window as any;
       w.commands = [];
       w.inputs = [];
@@ -63,6 +65,7 @@ async function setup(page: Page, options: Options = {}) {
                 w.emit('\r\nfinal-output');
                 w.exit();
               } else if (resyncEarly) w.resync('\x1b[Hearly-fresh-screen', 80, 20);
+              else if (floodEarly) w.emit('flood '.repeat(60_000));
               else if (!exited) setTimeout(() => w.emit('\r\nlive-after-attach'), 0);
               if (hideDuringRestore) setTimeout(() => w.setHidden(true), 0);
               return {
@@ -109,6 +112,7 @@ async function setup(page: Page, options: Options = {}) {
       exitEarly: !!options.exitEarly,
       resyncEarly: !!options.resyncEarly,
       hideDuringRestore: !!options.hideDuringRestore,
+      floodEarly: !!options.floodEarly,
     },
   );
   await page.goto('/#term');
@@ -245,4 +249,13 @@ test('hidden while its first screen is parsed, it lets go instead of going live'
   await expect
     .poll(async () => (await commands(page)).filter((c: any) => c.type === 'attach').length)
     .toBe(2);
+});
+
+test('output that floods in before the attach answer still pauses this view', async ({ page }) => {
+  await setup(page, { floodEarly: true });
+  await expect
+    .poll(async () =>
+      (await commands(page)).some((c: any) => c.type === 'flow' && c.paused && c.viewId === VIEW),
+    )
+    .toBe(true);
 });

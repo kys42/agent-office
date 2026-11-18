@@ -193,6 +193,11 @@ export default function TermPanel({ target }: { target: TermTarget }) {
         if (!alive || !visible()) return leave();
         sent = wanted;
         size();
+        // Live before what came meanwhile is replayed, so flow control reaches this view; an
+        // earlier view's pause, still counted, is said to this one too.
+        viewId = a.viewId;
+        if (flow.isPaused)
+          void term.command({ type: 'flow', viewId, paused: true }).catch(() => {});
         // What came meanwhile, in order: the last output before an exit is still drawn.
         for (const event of early.get(a.viewId) ?? []) {
           if (event.kind === 'data') draw(event.data);
@@ -200,7 +205,6 @@ export default function TermPanel({ target }: { target: TermTarget }) {
           else if (event.kind === 'exit') return finish();
           else return lose();
         }
-        viewId = a.viewId;
         setStatus('live');
         refit();
         xterm.focus();
