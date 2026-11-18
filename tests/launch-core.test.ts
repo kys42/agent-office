@@ -24,7 +24,7 @@ import {
   tmuxSession,
 } from '../desktop/launch/destinations.js';
 import { PendingLaunches } from '../desktop/pending-launch.js';
-import { OrcaLaunch } from '../desktop/orca-launch.js';
+import { OrcaLaunch, shellCommand } from '../desktop/orca-launch.js';
 import { TmuxResume, type ResumeDeps } from '../desktop/tmux-resume.js';
 import { holdsFolder, matchOrcaTab } from '../desktop/orca-tabs.js';
 import { orcaSwitchFailure } from '../desktop/terminal-host.js';
@@ -419,6 +419,61 @@ test('agent words: each agent × new, resume and fork', () => {
   assert.throws(() => words({ kind: 'new', provider: 'claude', initialMessage: 'a\x07' }));
 });
 
+test('agent words per destination: Claude keeps teammates in its own tmux pane, nowhere else', () => {
+  const sid = '11111111-2222-4333-8444-555555555555';
+  const at = (
+    destination: Parameters<typeof agentWords>[0]['destination'],
+    version: string | undefined,
+    l: Omit<Parameters<typeof agentWords>[0], 'destination' | 'version'>,
+  ) => agentWords({ ...l, destination, version }).args;
+  const inPane = ['--teammate-mode', 'in-process'];
+  // tmux: new, resume and fork, after the permission flag and before the agent's own words.
+  assert.deepEqual(at('tmux', '2.1.327', { kind: 'new', provider: 'claude', sessionId: sid }), [
+    ...inPane,
+    '--session-id',
+    sid,
+  ]);
+  assert.deepEqual(
+    at('tmux', '2.1.327', {
+      kind: 'resume',
+      provider: 'claude',
+      nativeId: ID,
+      skipPermissions: true,
+    }),
+    ['--dangerously-skip-permissions', ...inPane, '--resume', ID],
+  );
+  assert.deepEqual(
+    at('tmux', '2.1.16', { kind: 'fork', provider: 'claude', nativeId: ID, sessionId: sid }),
+    [...inPane, '--session-id', sid, '--fork-session', '--resume', ID],
+  );
+  // Every word stays a plain shell word, should a destination ever type it in a shell.
+  assert.ok(inPane.every((w) => /^[A-Za-z0-9_@%+=:,./-]+$/.test(w)));
+  // A CLI older than the option, or of unknown version, would refuse it and not start at all.
+  for (const version of ['2.1.15', '2.0.77', undefined, '', 'latest'])
+    assert.deepEqual(at('tmux', version, { kind: 'resume', provider: 'claude', nativeId: ID }), [
+      '--resume',
+      ID,
+    ]);
+  // Orca, Terminal.app and a copied command (and no destination at all) keep the person's
+  // `teammateMode`.
+  for (const destination of ['orca', 'terminalApp', 'copy', undefined] as const)
+    assert.deepEqual(
+      at(destination, '2.1.327', { kind: 'resume', provider: 'claude', nativeId: ID }),
+      ['--resume', ID],
+    );
+  // Codex has no such option anywhere.
+  for (const kind of ['new', 'resume', 'fork'] as const)
+    assert.ok(
+      !at('tmux', '2.1.327', { kind, provider: 'codex', nativeId: ID }).some((w) =>
+        w.startsWith('--teammate'),
+      ),
+    );
+  assert.deepEqual(at('tmux', '9.9.9', { kind: 'resume', provider: 'codex', nativeId: ID }), [
+    'resume',
+    ID,
+  ]);
+});
+
 test('every destination types the same agent words: tmux argv, Orca tab, Terminal, copy', async () => {
   const sid = '11111111-2222-4333-8444-555555555555';
   const target: LaunchTarget = { ...fork, sessionId: sid, initialMessage: "it's; ok\n둘째 줄" };
@@ -435,8 +490,13 @@ test('every destination types the same agent words: tmux argv, Orca tab, Termina
   const tab = orcaSession(target);
   assert.equal(tab.fork, true);
   assert.equal(tab.alias, '갈래');
+  // The person's own `teammateMode` holds in an Orca tab, Terminal and a copied command.
   const typed = `'/usr/bin/env' '-u' 'CLAUDE_CONFIG_DIR' 'claude' '--session-id' '${sid}' '--fork-session' '--resume' '${ID}' '--' 'it'"'"'s; ok\n둘째 줄'`;
   assert.equal(folderCommand(target, {}), `cd '${CWD}' && ${typed}`);
+  assert.equal(
+    shellCommand({ ...tab, executable: '/opt/bin/claude' }, {}),
+    typed.replace("'claude'", "'/opt/bin/claude'"),
+  );
   // A folder with a quote stays one shell word.
   assert.equal(
     folderCommand({ ...resume, cwd: "/a b/it's" }, {}, '/opt/bin/claude'),
@@ -475,6 +535,7 @@ function fakeTmux() {
     platform: 'darwin',
     server: 'aotest-launch-core',
     binary: async (name) => '/bin/' + name,
+    version: async () => '2.1.327',
     directory: async () => true,
     run: async (_file, args) => {
       if (args.includes('list-sessions')) return rows;
@@ -497,7 +558,10 @@ test('a tmux fork takes the named slot, starts with its own id and is tagged wit
   assert.equal(outcome.state, 'launched');
   const args = f.launches[0];
   const at = args.indexOf('/bin/claude');
-  assert.deepEqual(args.slice(at + 1, at + 6), [
+  // Its teammates stay in this pane (`--teammate-mode in-process`), not split windows.
+  assert.deepEqual(args.slice(at + 1, at + 8), [
+    '--teammate-mode',
+    'in-process',
     '--session-id',
     outcome.sessionId,
     '--fork-session',

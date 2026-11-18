@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TmuxResume, summonSession, type ResumeDeps } from '../desktop/tmux-resume.js';
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { TmuxResume, cliVersion, summonSession, type ResumeDeps } from '../desktop/tmux-resume.js';
 const session = {
   provider: 'claude' as const,
   nativeId: '12345678-abcd',
@@ -13,6 +16,8 @@ function fixture() {
     platform: 'darwin',
     server: 'test-office',
     binary: async (name) => '/bin/' + name,
+    // A CLI that knows `--teammate-mode` (Claude Code 2.1.16 and later).
+    version: async () => '2.1.327',
     directory: async () => true,
     run: async (file, args) => {
       calls.push({ file, args });
@@ -58,8 +63,14 @@ test('concurrent starts ask once, reuse one owned session, pass literal cwd and 
   const launches = f.calls.filter((x) => x.args.includes('new-session'));
   assert.equal(launches.length, 1);
   assert.equal(launches[0].args[launches[0].args.indexOf('-c') + 1], session.cwd);
-  assert.ok(launches[0].args.includes('--resume'));
-  assert.ok(launches[0].args.includes(session.nativeId));
+  const at = launches[0].args.indexOf('/bin/claude');
+  assert.deepEqual(launches[0].args.slice(at + 1, at + 6), [
+    '--teammate-mode',
+    'in-process',
+    '--resume',
+    session.nativeId,
+    ';',
+  ]);
   assert.match(results[0].command, /attach-session -t '=office-claude-/);
   await f.manager.open(session);
   assert.equal(f.calls.at(-1)?.file, '/usr/bin/osascript');
@@ -70,7 +81,7 @@ test('Codex resumes an explicit existing conversation without a prompt or bypass
   await f.manager.start({ ...session, provider: 'codex' }, async () => true);
   const args = f.calls.find((x) => x.args.includes('new-session'))!.args;
   const at = args.indexOf('/bin/codex');
-  assert.deepEqual(args.slice(at + 1, at + 3), ['resume', session.nativeId]);
+  assert.deepEqual(args.slice(at + 1, at + 4), ['resume', session.nativeId, ';']);
   // Detached but roomy: an 80×24 default would scroll Claude's prompt box at 7 rows.
   const created = args.indexOf('new-session');
   assert.deepEqual(args.slice(created, created + 6), [
@@ -189,8 +200,13 @@ test('summoning starts a fresh CLI once and rediscovers it by project/provider',
     const args = launches[0].args;
     // Claude's new conversation gets its id up front (`--session-id`); Codex picks its own.
     const at = args.indexOf('/bin/' + provider);
-    const own = provider === 'claude' ? 2 : 0;
-    if (own) assert.equal(args[at + 1], '--session-id');
+    const own = provider === 'claude' ? 4 : 0;
+    if (own)
+      assert.deepEqual(args.slice(at + 1, at + 4), [
+        '--teammate-mode',
+        'in-process',
+        '--session-id',
+      ]);
     assert.equal(args[at + 1 + own], ';');
     assert.ok(!args.includes('resume') && !args.includes('--resume'));
     assert.equal(
@@ -283,9 +299,15 @@ test('without permission prompts only when the person chose it: each agent its o
     const args = on.calls.find((x) => x.args.includes('new-session'))!.args;
     const at = args.indexOf('/bin/' + provider);
     assert.deepEqual(
-      args.slice(at + 1, at + 4),
+      args.slice(at + 1, args.indexOf(';', at)),
       provider === 'claude'
-        ? ['--dangerously-skip-permissions', '--resume', session.nativeId]
+        ? [
+            '--dangerously-skip-permissions',
+            '--teammate-mode',
+            'in-process',
+            '--resume',
+            session.nativeId,
+          ]
         : ['resume', '--dangerously-bypass-approvals-and-sandbox', session.nativeId],
     );
     const fresh = fixture();
@@ -300,7 +322,14 @@ test('without permission prompts only when the person chose it: each agent its o
     assert.deepEqual(
       agentArgs.filter((_, i) => agentArgs[i - 1] !== '--session-id'),
       provider === 'claude'
-        ? ['--dangerously-skip-permissions', '--session-id', '--', 'hello\\;']
+        ? [
+            '--dangerously-skip-permissions',
+            '--teammate-mode',
+            'in-process',
+            '--session-id',
+            '--',
+            'hello\\;',
+          ]
         : ['--dangerously-bypass-approvals-and-sandbox', '--', 'hello\\;'],
     );
   }
@@ -353,4 +382,86 @@ test("own panes: the running session's server socket and live panes, for matchin
     return run(file, args);
   };
   assert.deepEqual(await new TmuxResume(f.deps).ownPanes(session), { at: null });
+});
+
+test('teammates stay in the pane only for a Claude CLI known to take the option; otherwise it starts as before', async () => {
+  const claudeArgs = async (version: ResumeDeps['version']) => {
+    const f = fixture();
+    f.deps.version = version;
+    await f.manager.start(session, async () => true);
+    const args = f.calls.find((x) => x.args.includes('new-session'))!.args;
+    const at = args.indexOf('/bin/claude');
+    return args.slice(at + 1, args.indexOf(';', at));
+  };
+  const asked: string[] = [];
+  assert.deepEqual(await claudeArgs(async (binary) => (asked.push(binary), '2.1.16')), [
+    '--teammate-mode',
+    'in-process',
+    '--resume',
+    session.nativeId,
+  ]);
+  // Asked of the very CLI tmux runs.
+  assert.deepEqual(asked, ['/bin/claude']);
+  // Too old (it would stop at "unknown option"), unknown, unreadable or not asked: left out.
+  for (const version of [
+    async () => '2.1.15',
+    async () => undefined,
+    async () => {
+      throw new Error('unreadable');
+    },
+    undefined,
+  ])
+    assert.deepEqual(await claudeArgs(version), ['--resume', session.nativeId]);
+});
+
+test('a CLI version is read from where it is installed, never by running it', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'aotest-cli-version-'));
+  try {
+    const file = async (at: string, text = '#!/bin/sh\n') => {
+      await mkdir(path.dirname(at), { recursive: true });
+      await writeFile(at, text);
+      await chmod(at, 0o755);
+      return at;
+    };
+    const link = async (target: string, at: string) => {
+      await mkdir(path.dirname(at), { recursive: true });
+      await symlink(target, at);
+      return at;
+    };
+    // The native installer: `~/.local/bin/claude` → `~/.local/share/claude/versions/<version>`.
+    const native = await file(path.join(root, 'share/claude/versions/2.1.327'));
+    assert.equal(await cliVersion(await link(native, path.join(root, 'bin/claude'))), '2.1.327');
+    // Homebrew: `…/Caskroom/claude-code/<version>/claude`.
+    const cask = await file(path.join(root, 'Caskroom/claude-code/2.1.16/claude'));
+    assert.equal(await cliVersion(await link(cask, path.join(root, 'brew/claude'))), '2.1.16');
+    // npm: the package whose `bin` is the linked file.
+    const pkg = path.join(root, 'lib/node_modules/@anthropic-ai/claude-code');
+    await writeFile(
+      path.join(await file(path.join(pkg, 'cli.js')).then(path.dirname), 'package.json'),
+      JSON.stringify({
+        name: '@anthropic-ai/claude-code',
+        version: '2.1.15',
+        bin: { claude: 'cli.js' },
+      }),
+    );
+    assert.equal(
+      await cliVersion(await link(path.join(pkg, 'cli.js'), path.join(root, 'npm/claude'))),
+      '2.1.15',
+    );
+    // A package.json that does not name the file (a wrapper script in a project), a broken
+    // one, a script without any, and a missing file: unknown.
+    const wrapper = await file(path.join(root, 'project/bin/claude'));
+    await writeFile(
+      path.join(root, 'project/package.json'),
+      JSON.stringify({ version: '9.9.9', bin: { other: 'bin/other' } }),
+    );
+    assert.equal(await cliVersion(wrapper), undefined);
+    const broken = await file(path.join(root, 'broken/claude'));
+    await writeFile(path.join(root, 'broken/package.json'), '{');
+    assert.equal(await cliVersion(broken), undefined);
+    assert.equal(await cliVersion(await file(path.join(root, 'plain/claude'))), undefined);
+    assert.equal(await cliVersion(path.join(root, 'missing/claude')), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

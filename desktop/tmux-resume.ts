@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { access, stat } from 'node:fs/promises';
+import { access, readFile, realpath, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { valid } from 'semver';
 import { runCommand } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import { tmuxArg, type TerminalHost } from './terminal-host.js';
@@ -49,11 +50,12 @@ const kindOf = (s: Pick<SavedSession, 'fresh' | 'fork'>) =>
   s.fork ? ('fork' as const) : s.fresh ? ('new' as const) : ('resume' as const);
 /**
  * The agent's arguments for this session, as tmux gets them (desktop/launch/agents.ts decides
- * them). tmux treats a trailing semicolon as a command separator even in a separate argv: it is
- * escaped for tmux only; execvp still receives the original literal prompt.
+ * them, with the options the agent takes in tmux only for a CLI of `version`). tmux treats a
+ * trailing semicolon as a command separator even in a separate argv: it is escaped for tmux
+ * only; execvp still receives the original literal prompt.
  */
-export function launchArgs(s: SavedSession): string[] {
-  const words = agentWords({ ...s, kind: kindOf(s) });
+export function launchArgs(s: SavedSession, version?: string): string[] {
+  const words = agentWords({ ...s, kind: kindOf(s), destination: 'tmux', version });
   return [...words.args, ...(words.message !== undefined ? ['--', tmuxArg(words.message)] : [])];
 }
 /** What a tmux session runs (`@agent_office_native`): `<provider>:<conversation id>`. */
@@ -85,9 +87,38 @@ export function summonSession(
     initialMessage: initialMessage.trim() ? initialMessage : undefined,
   };
 }
+/**
+ * An agent CLI's version from where it is installed, never by running it: the file the command
+ * links to is named after it (the native installer's `…/versions/<version>`) or sits in a folder
+ * that is (Homebrew's `…/<version>/<cli>`), else the npm package whose `bin` it is says it.
+ * Undefined when none does (a wrapper script, a version manager's shim).
+ */
+export async function cliVersion(binary: string): Promise<string | undefined> {
+  const file = await realpath(binary).catch(() => '');
+  if (!file) return undefined;
+  for (const name of [path.basename(file), path.basename(path.dirname(file))]) {
+    const version = valid(name);
+    if (version) return version;
+  }
+  for (let dir = path.dirname(file), up = 0; up < 3; dir = path.dirname(dir), up++) {
+    const pkg: { bin?: unknown; version?: unknown } | null = await readFile(
+      path.join(dir, 'package.json'),
+      'utf8',
+    )
+      .then(JSON.parse)
+      .catch(() => null);
+    if (!pkg || typeof pkg !== 'object') continue;
+    const bins = typeof pkg.bin === 'string' ? [pkg.bin] : Object.values(pkg.bin ?? {});
+    const ours = bins.some((bin) => typeof bin === 'string' && path.resolve(dir, bin) === file);
+    return ours && typeof pkg.version === 'string' ? (valid(pkg.version) ?? undefined) : undefined;
+  }
+  return undefined;
+}
 export interface ResumeDeps {
   run: typeof runCommand;
   binary: (name: string) => Promise<string>;
+  /** The agent CLI's version (`cliVersion`); left out, or unknown, it gets no version-bound option. */
+  version?: (binary: string) => Promise<string | undefined>;
   directory: (cwd: string) => Promise<boolean>;
   platform: string;
   server: string;
@@ -114,6 +145,7 @@ export const defaultResumeDeps: ResumeDeps = {
     }
     throw new Error(m().tmux.missing);
   },
+  version: cliVersion,
   directory: async (cwd) => (await stat(cwd).catch(() => null))?.isDirectory() ?? false,
   platform: process.platform,
   server: 'agent-office',
@@ -335,7 +367,8 @@ export class TmuxResume {
     const sessionId = inSlot(s)
       ? (s.sessionId ?? chooseSessionId({ kind: kindOf(s), provider: s.provider }))
       : undefined;
-    const args = launchArgs({ ...s, sessionId });
+    const version = await this.deps.version?.(binary).catch(() => undefined);
+    const args = launchArgs({ ...s, sessionId }, version);
     const native = inSlot(s)
       ? sessionId
         ? nativeTag(s.provider, sessionId)
