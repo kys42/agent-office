@@ -6,6 +6,7 @@ export const app: Messages['app'] = {
   tabs: {
     office: { title: '우리 사무실', short: '사무실' },
     memory: { title: '기억 서랍', short: '기억' },
+    outputs: { title: '산출물', short: '산출물' },
     activity: { title: '활동 기록', short: '활동' },
     settings: { title: '연결과 설정', short: '설정' },
   },
@@ -37,8 +38,8 @@ export const app: Messages['app'] = {
     showContent: '내용 다시 보기',
     hideContent: '화면 내용 숨기기',
     hideContentTitle: '화면 내용 숨기기 · 화면 공유할 때',
-    mini: '데스크 펫',
-    miniTitle: '데스크 펫 · 바탕화면에 작게 띄우고 누르면 책상 줄로 펼쳐져요',
+    miniTitle: (look) =>
+      `바탕화면 데스크로 돌아가기 · 두고 온 모양: ${look} · 모양은 보기 버튼에서 바꿔요`,
   },
   demoBanner: {
     text: '구경하는 사무실 · 모든 기록은 예시 데이터예요',

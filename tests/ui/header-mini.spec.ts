@@ -58,3 +58,39 @@ test('a narrow toolbar keeps the desk pet button as an icon pill with its name',
   expect(box.x + box.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
   await page.locator('.toolbar').screenshot({ path: '.local/header-mini-narrow.png' });
 });
+
+test('the dock button names the look it goes back to, as the desktop reports it', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const w = window as any;
+    // The desktop main process: the dock was left as the tiny row. `open` installs the office
+    // bridge in a later init script; these two join it as it lands.
+    let office: any;
+    Object.defineProperty(w, 'office', {
+      configurable: true,
+      get: () => office,
+      set: (v) => {
+        office = v;
+        v.dockLook = async () => ({ mode: 'row', tiny: true });
+        v.onDockLook = (cb: (look: unknown) => void) => {
+          w.tellLook = cb;
+          return () => {};
+        };
+      },
+    });
+  });
+  await open(page);
+  const button = page.locator('.mini-button');
+  await expect(button).toHaveAccessibleName('쪼꼬미 줄');
+  await expect(button).toContainText('쪼꼬미 줄');
+  await expect(button).toHaveAttribute(
+    'title',
+    /바탕화면 데스크로 돌아가기 · 두고 온 모양: 쪼꼬미 줄/,
+  );
+  // A later change (the dock switched while the office was away) renames it.
+  await page.evaluate(() => (window as any).tellLook({ mode: 'floor', tiny: false }));
+  await expect(button).toHaveAccessibleName('바닥');
+  await page.evaluate(() => (window as any).tellLook({ mode: 'pet', tiny: true }));
+  await expect(button).toHaveAccessibleName('데스크 펫');
+});

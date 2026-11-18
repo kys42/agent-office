@@ -202,6 +202,74 @@ test('the duplicate check: running only goes there, an unconfirmed start only wa
   assert.equal(ownTmuxCommand(options()), undefined, 'not running: no own session');
 });
 
+test('running where no tab was verified: go to its app, attach, or fork, never a dead end (#376)', () => {
+  const t = m().tmux;
+  // Found in an app it can be brought forward in: go there (main finds it again), or fork.
+  const iterm = duplicateView({
+    state: 'running',
+    where: 'other',
+    host: { app: 'iterm', canGo: true },
+  });
+  assert.equal(iterm.blocks, true);
+  assert.equal(iterm.tone, 'running');
+  assert.equal(iterm.notice, t.runningHostNotice('iTerm2'));
+  assert.deepEqual(duplicateActions(iterm), [{ kind: 'go', go: 'jump' }, { kind: 'fork' }]);
+  // Orca, its tab not verified: the same, named Orca; another app by its own name.
+  assert.equal(
+    duplicateView({ state: 'running', where: 'orca', host: { app: 'orca', canGo: true } }).notice,
+    t.runningHostNotice('Orca'),
+  );
+  assert.match(
+    duplicateView({
+      state: 'running',
+      where: 'other',
+      host: { app: 'app', name: 'WezTerm', canGo: true },
+    }).notice,
+    /WezTerm/,
+  );
+  // Nowhere it can go (no app among its parents, a tmux pane it cannot name): fork first.
+  for (const host of [{ app: 'unknown' }, { app: 'tmux' }] as const) {
+    const view = duplicateView({ state: 'running', where: 'other', host });
+    assert.equal(view.blocks, true);
+    assert.equal(view.go, undefined);
+    assert.equal(view.notice, t.runningNowhereNotice(m().tmux.hostPlace[host.app]));
+    assert.deepEqual(duplicateActions(view), [{ kind: 'fork' }]);
+  }
+  // Moved to the background from a window in Orca: that window, where its agents view opens it.
+  const parked = duplicateView({
+    state: 'running',
+    where: 'orca',
+    host: { app: 'orca', parked: true, canGo: true },
+  });
+  assert.equal(parked.notice, t.parkedNotice('Orca'));
+  assert.deepEqual(duplicateActions(parked), [{ kind: 'go', go: 'jump' }, { kind: 'fork' }]);
+  // A background session no window shows: its attach command.
+  const attach = 'claude attach 89fe72dc';
+  const background = duplicateView({
+    state: 'running',
+    where: 'other',
+    host: { app: 'background', attach },
+  });
+  assert.equal(background.notice, t.backgroundNotice);
+  assert.deepEqual(duplicateActions(background), [
+    { kind: 'copy-command', command: attach },
+    { kind: 'fork' },
+  ]);
+  // A refusal of the start says the same.
+  const refused = resultView({
+    state: 'refused',
+    destination: 'orca',
+    reason: 'runs',
+    duplicate: { state: 'running', where: 'other', host: { app: 'unknown' } },
+  });
+  assert.deepEqual(refused && !refused.close && refused.actions, [{ kind: 'fork' }]);
+  assert.equal(keepsDestinations(refused), false);
+  // A verified terminal is unchanged: jump there, no fork offered beside it.
+  assert.deepEqual(duplicateActions(duplicateView({ state: 'running', where: 'orca' })), [
+    { kind: 'go', go: 'jump' },
+  ]);
+});
+
 test('destinations show availability and the reason; the pick wins while it is available', () => {
   const rows = destinationRows(options({ remembered: 'terminalApp' }));
   assert.deepEqual(

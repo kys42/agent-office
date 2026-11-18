@@ -354,6 +354,23 @@ export function toolLocation(
 }
 // Inspect syntax only; never evaluate log text. Dynamic expressions are unknown.
 export function wrappedLocations(code: unknown, at: number, cwd?: string): WorkingLocation[] {
+  return walkWrapped(code, at, cwd);
+}
+/**
+ * The literal patches code mode passes to `tools.apply_patch` (the same calls `wrappedLocations`
+ * follows: never inside a function, a condition or a loop, never built at run time).
+ */
+export function wrappedPatches(code: unknown): string[] {
+  const patches: string[] = [];
+  walkWrapped(code, 0, undefined, patches);
+  return patches;
+}
+function walkWrapped(
+  code: unknown,
+  at: number,
+  cwd: string | undefined,
+  patches?: string[],
+): WorkingLocation[] {
   if (typeof code !== 'string' || code.length > 200_000) return [];
   const out: WorkingLocation[] = [];
   try {
@@ -395,6 +412,7 @@ export function wrappedLocations(code: unknown, at: number, cwd?: string): Worki
             : arg?.type === 'TemplateLiteral' && !arg.expressions.length
               ? arg.quasis[0]?.value.cooked
               : undefined;
+        if (patch) patches?.push(patch);
         const value = patch ? editLocation('apply_patch', patch, cwd, at) : undefined;
         if (value) out.push(value);
       }

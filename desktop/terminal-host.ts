@@ -87,8 +87,8 @@ export function ptyOwner(table: string, pid: number): { tty: string; command: st
   return null;
 }
 
-const isTmux = (command: string) => /(?:^|\/)tmux(?::|\s|$)/.test(command);
-const isOrca = (command: string) => command.includes('/Orca.app/Contents/');
+export const isTmux = (command: string) => /(?:^|\/)tmux(?::|\s|$)/.test(command);
+export const isOrca = (command: string) => command.includes('/Orca.app/Contents/');
 
 export interface ProcessView {
   env: ProcessEnv;
@@ -497,4 +497,17 @@ const TTY_SCRIPTS: Record<string, string> = {
 async function showTtyTab(script: string, tty: string, deps: TerminalHostDeps): Promise<boolean> {
   const out = await deps.run('/usr/bin/osascript', ['-e', script, tty]).catch(() => '');
   return out.trim() === 'ok';
+}
+
+/**
+ * Selects the tab of `app` (a bundle's own name: `Terminal`, `iTerm`) that shows `tty` and brings
+ * its window forward. False for any other app, or when no tab shows it.
+ */
+export async function focusTtyTab(
+  app: string,
+  tty: string,
+  deps: TerminalHostDeps,
+): Promise<boolean> {
+  const script = Object.hasOwn(TTY_SCRIPTS, app) ? TTY_SCRIPTS[app] : undefined;
+  return !!script && /^\/dev\/ttys?\d+$/.test(tty) && showTtyTab(script, tty, deps);
 }

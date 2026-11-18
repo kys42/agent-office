@@ -12,6 +12,7 @@ import {
 } from './launch/destinations.js';
 import type { DestinationProbe } from './launch/pipeline.js';
 import {
+  hostPlaceName,
   launchIntentSchema,
   launchRequestSchema,
   type LaunchDestinationId,
@@ -23,15 +24,27 @@ import { runCommand } from '../server/adapters/claude-live.js';
 import { describeShell, MiniShells } from './mini-shell.js';
 import { ShellWindows } from './shell-windows.js';
 import { ReaderWindows } from './reader-windows.js';
-import { parseReaderTarget } from '../src/shared/bookmark-window.js';
+import {
+  parseReaderTarget,
+  readerKey,
+  rereadsOnReopen,
+  type ReaderTarget,
+} from '../src/shared/bookmark-window.js';
 import { popupFloats } from '../src/shared/popup-window.js';
 import { parseShellWindowTarget } from '../src/shared/shell-window.js';
 import { parseShellCommand, validShellInput } from '../src/shared/mini-shell.js';
 import { OrcaLaunch } from './orca-launch.js';
 import { findOrcaTab, focusOrcaTab, lookupOrcaTab, orcaTabTarget } from './orca-tabs.js';
-import { matchSleeping } from './orca-sleeping.js';
+import { matchSleeping, type SleepingLookup } from './orca-sleeping.js';
 import { TerminalFocusError } from './terminal-host.js';
-import { checkDuplicate, duplicateNote, livenessFor } from './launch-guard.js';
+import { reachHost } from './host-app.js';
+import {
+  checkDuplicate,
+  duplicateNote,
+  livenessFor,
+  runningPlace,
+  sleepingWorkspace,
+} from './launch-guard.js';
 import {
   app,
   BrowserWindow,
@@ -56,6 +69,7 @@ import { MobileServer } from '../server/mobile/server.js';
 import { ServiceBridge } from '../server/bridge.js';
 import { isRemoteId } from '../src/shared/federation.js';
 import { syncLocale } from '../server/locale.js';
+import type { DockLook } from '../src/shared/dock-look.js';
 import type {
   Bookmark,
   AnswerResult,
@@ -75,18 +89,33 @@ import type {
   SessionIdentity,
   Snapshot,
   DuplicateCheck,
+  OrcaRevealResult,
 } from '../src/shared/types.js';
 import { parseArtifact } from '../src/shared/office.js';
 import { m, setLocale } from '../src/shared/i18n/index.js';
 import { OPENABLE_FILE, fileLink, webLink } from '../src/shared/links.js';
 import {
+  OUTPUT_EXTENSIONS,
+  claudeArtifactLink,
+  extensionOf,
+  previewFormat,
+} from '../src/shared/outputs.js';
+import type { StoredOutput } from '../server/outputs.js';
+import {
   clampInto,
+  DOCK_ROOM_HEIGHT,
   dockHeight,
   moveOntoArea,
+  PET_ROOM_HEIGHT,
+  PET_ROOM_WIDTH,
+  petRoomRect,
+  petStand,
+  type PetSide,
   petBounds,
   petFeet,
   readDockPrefs,
   readPetSpot,
+  roomyRect,
   rowBounds,
   type Point,
   type Rect,
@@ -212,9 +241,8 @@ else {
         // toggled closed if already open); otherwise the big office opens at that colleague.
         // A summary (no one colleague) opens the big office beside the dock, which stays.
         const docked = !!dock && !dock.isDestroyed() && dock.isVisible();
-        if (sessionId && docked) cards.reveal({ id: sessionId }, dock!.getBounds());
-        else
-          showMain(sessionId, { keepDock: docked, from: docked ? dock!.getBounds() : undefined });
+        if (sessionId && docked) cards.reveal({ id: sessionId }, placeOf(dock!));
+        else showMain(sessionId, { keepDock: docked, from: docked ? placeOf(dock!) : undefined });
       },
     });
     app.on('before-quit', () => notifier.dispose());
@@ -386,6 +414,11 @@ function secure(w: BrowserWindow) {
     return { action: 'deny' };
   });
   w.webContents.on('will-navigate', (e) => e.preventDefault());
+  // The only frames inside a page are an HTML output's sandboxed preview (#350): it shows its
+  // own document and never goes anywhere else.
+  w.webContents.on('will-frame-navigate', (e) => {
+    if (!e.isMainFrame && e.url !== 'about:srcdoc') e.preventDefault();
+  });
   w.webContents.session.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
   // Electron has no right-click menu of its own: copy what is selected, and handle links.
   // Built on each click, so the labels follow the current language.
@@ -444,8 +477,9 @@ function createMain() {
     if (!quitting) {
       e.preventDefault();
       main?.hide();
-      // Someone who keeps the pet gets it back when the big office goes away.
-      if (petEnabled) showDock('pet');
+      // Someone who keeps the dock gets it back, in the look they left it in, when the big
+      // office goes away.
+      if (petEnabled) showDock(dockMode);
     }
   });
 }
@@ -609,25 +643,50 @@ function dockBounds(mode: DockMode): Rect {
   // The row (or the floor desks) opens along the bottom of whichever display the pet is on.
   return mode === 'pet' ? pet : rowBounds(area, dockHeight(mode === 'floor', dockTiny));
 }
-/** A dialog open in the row or floor (a tiny strip is too short for one): grow upward. */
+/**
+ * A dialog open in the row or floor (a tiny strip is too short for one), or the 보기 menu over
+ * any look (the pet's window has no room above its tools for it): grow upward.
+ */
 let dockRoom = false;
-const DOCK_ROOM_HEIGHT = 760;
+/** Which edge of the (grown) pet window the pet stands at. */
+let petSide: PetSide = 'right';
 function roomyBounds(mode: DockMode): Rect {
   const b = dockBounds(mode);
-  if (!dockRoom || mode === 'pet') return b;
+  if (!dockRoom) return b;
+  // The desks and the pet stand on the window's bottom edge: keep it, take the room above.
   const area = workAreaFor(b);
-  const height = Math.max(b.height, Math.min(DOCK_ROOM_HEIGHT, area.height));
-  // The desks stand on the window's bottom edge: keep it, take the room above.
-  return { ...b, y: b.y + b.height - height, height };
+  if (mode !== 'pet') return roomyRect(b, area, DOCK_ROOM_HEIGHT);
+  const { rect, side } = petRoomRect(b, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  // Told before the window grows: at the pet's own width either side draws it the same.
+  if (side !== petSide) {
+    petSide = side;
+    if (dock && !dock.isDestroyed()) dock.webContents.send('office:dock-side', side);
+  }
+  return rect;
+}
+/**
+ * Where a window is, for what opens beside it (a card, the big office on its display): the pet
+ * itself, not the room its window may hold around it.
+ */
+function placeOf(w: BrowserWindow): Rect {
+  const b = w.getBounds();
+  return w === dock && dockMode === 'pet' ? petStand(b, petSide) : b;
 }
 function setDockRoom(on: boolean) {
   if (dockRoom === on) return;
   dockRoom = on;
-  if (dock && !dock.isDestroyed() && dockMode !== 'pet') dock.setBounds(roomyBounds(dockMode));
+  // A pet being dragged keeps following the cursor; its drop re-seats it.
+  if (dock && !dock.isDestroyed() && !drag) dock.setBounds(roomyBounds(dockMode));
 }
+/** The big office's dock button names the look it goes back to: tell it each change. */
+function tellDockLook() {
+  if (main && !main.isDestroyed()) main.webContents.send('office:dock-look', dockLook());
+}
+const dockLook = (): DockLook => ({ mode: dockMode, tiny: dockTiny });
 function setDockMode(mode: DockMode) {
   stopDrag(false);
   dockMode = mode;
+  tellDockLook();
   if (!dock || dock.isDestroyed()) return;
   dock.setBounds(roomyBounds(mode));
   // Start see-through; the renderer claims the mouse again over drawn things.
@@ -638,6 +697,7 @@ function setDockTiny(tiny: boolean) {
   if (dockTiny === tiny) return;
   dockTiny = tiny;
   void saveDockTiny();
+  tellDockLook();
   // The pet keeps its size; the row or floor resizes and re-renders at once.
   if (dockMode === 'pet') return;
   // Shrinking: let the renderer draw tiny before the window shrinks, so the full-size row
@@ -649,6 +709,7 @@ function showDock(mode: DockMode = 'pet') {
   petEnabled = true;
   if (!dock || dock.isDestroyed()) {
     dockMode = mode;
+    tellDockLook();
     dock = new BrowserWindow({
       ...dockBounds(mode),
       show: false,
@@ -684,6 +745,7 @@ function showDock(mode: DockMode = 'pet') {
     // A reloaded page has no dialog open: drop any room an earlier one asked for.
     dock.webContents.on('did-finish-load', () => {
       setDockRoom(false);
+      dock?.webContents.send('office:dock-side', petSide);
       dock?.webContents.send('office:dock', dockMode, dockTiny);
     });
     void dock.loadFile(index, {
@@ -712,13 +774,16 @@ function stopDrag(save: boolean) {
   clearInterval(drag);
   drag = null;
   if (!save || !dock || dock.isDestroyed() || dockMode !== 'pet') return;
-  const b = dock.getBounds();
-  const fixed = clampInto(b, workAreaFor(b));
-  if (fixed.x !== b.x || fixed.y !== b.y) dock.setBounds(fixed);
-  const feet = petFeet(fixed);
-  if (petSpot?.x === feet.x && petSpot?.y === feet.y) return;
-  petSpot = feet;
-  void savePetSpot();
+  // The window may hold room (above and left of the pet) or have just given it back mid-drag:
+  // judge the pet's own box, then size the window around the new spot.
+  const b = petStand(dock.getBounds(), petSide);
+  const feet = petFeet(clampInto(b, workAreaFor(b)));
+  if (petSpot?.x !== feet.x || petSpot?.y !== feet.y) {
+    petSpot = feet;
+    void savePetSpot();
+  }
+  // Room asked for (or given back) mid-drag waited for the drop: take it now, at the new spot.
+  dock.setBounds(roomyBounds(dockMode));
 }
 const finite = (n: unknown, max = 100_000) =>
   typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= max;
@@ -731,7 +796,7 @@ function trusted(e: Pick<Electron.IpcMainInvokeEvent, 'sender' | 'senderFrame'>)
     throw new Error(m().desktop.untrustedWindow);
 }
 /** What a reader window may ask the service: the office it shows and the bookmark it reads. */
-const READER_CALLS = new Set(['snapshot', 'bookmarkById']);
+const READER_CALLS = new Set(['snapshot', 'bookmarkById', 'outputPreview']);
 /**
  * The bookmark reader's IPC (its window, the office's reads, copying and opening links) also
  * trusts the reader windows; nothing else does.
@@ -909,12 +974,15 @@ function setupReader() {
       return readerWindows.setOnTop(e.sender, what === 'top-on');
     if (what === 'go') {
       if (!reader) throw new Error(m().desktop.untrustedWindow);
-      const { id } = readerWindows.target(e.sender);
+      const { id, kind } = readerWindows.target(e.sender);
+      // An output's reader has nowhere in the office to go.
+      if (kind === 'output') throw new Error(m().desktop.badRequest);
       const b: Bookmark | null = await bridge.call('bookmarkById', [id]);
       if (!b) throw new Error(m().memory.readerGoneTitle);
       // Like the in-page reader's "open": the big office at that message, on this display.
+      const from = BrowserWindow.fromWebContents(e.sender);
       showMain(b.sessionId, {
-        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+        from: from ? placeOf(from) : undefined,
         bookmark: { eventId: b.eventId, at: b.at },
       });
       return;
@@ -926,13 +994,25 @@ function setupReader() {
     } catch {
       throw new Error(m().desktop.badRequest);
     }
-    if (delivery.latest?.preferences?.privacy) throw new Error(m().memory.readerHidden);
+    if (delivery.latest?.preferences?.privacy)
+      throw new Error(
+        target.kind === 'output' ? m().outputs.previewHidden : m().memory.readerHidden,
+      );
     const from = BrowserWindow.fromWebContents(e.sender);
     if (!from || from.isDestroyed()) return;
-    readerWindows.open(target.id, target, from.getBounds(), {
-      float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
-    });
+    openReader(target, from);
   });
+}
+/**
+ * A reader window beside `from`. An output's reader that is already open is told to read the
+ * file again (`office:reader-refresh`): previewing it again shows what the file holds now.
+ */
+function openReader(target: ReaderTarget, from: BrowserWindow) {
+  const key = readerKey(target);
+  const done = readerWindows.open(key, target, from.getBounds(), {
+    float: popupFloats({ main: from === main, alwaysOnTop: from.isAlwaysOnTop() }),
+  });
+  if (rereadsOnReopen(done, target)) readerWindows.send(key, 'office:reader-refresh');
 }
 function setupIPC() {
   let health: ReturnType<typeof readAppHealth> | undefined;
@@ -986,6 +1066,52 @@ function setupIPC() {
     shell.showItemInFolder(file);
     return 'revealed';
   });
+  // An output a session made (#350), by its recorded id only: main reads the real path from the
+  // collector (never from the page) and acts on that. Opening runs nothing: a file opens in its
+  // app only when it really is a document kind (judged by where it really is), a link only when
+  // it is a Claude Artifact. Reading it is the reader window's (markdown, HTML in a sandbox).
+  ipcMain.handle('office:output', async (e, what: unknown, id: unknown) => {
+    trustedReader(e);
+    if (
+      !['open', 'reveal', 'copy', 'preview'].includes(what as string) ||
+      typeof id !== 'string' ||
+      !id.length ||
+      id.length > 100
+    )
+      throw new Error(m().desktop.badRequest);
+    // Nothing of an output is opened or copied while the screen content is hidden.
+    if (delivery.latest?.preferences?.privacy) throw new Error(m().outputs.hiddenAction);
+    const o: StoredOutput | null = await bridge.call('outputTarget', [id]);
+    if (!o) throw new Error(m().outputs.gone);
+    if (what === 'copy') {
+      clipboard.writeText(o.key);
+      return 'copied';
+    }
+    if (o.kind === 'link') {
+      const link = claudeArtifactLink(o.key);
+      if (!link || what !== 'open') throw new Error(m().desktop.badRequest);
+      await shell.openExternal(link);
+      return 'opened';
+    }
+    const file = await realpath(o.key).catch(() => null);
+    const found = file ? await stat(file).catch(() => null) : null;
+    if (!file || !found?.isFile()) return 'missing';
+    if (what === 'reveal') {
+      shell.showItemInFolder(file);
+      return 'revealed';
+    }
+    const ext = extensionOf(file);
+    if (what === 'preview') {
+      if (!previewFormat(ext)) throw new Error(m().desktop.badRequest);
+      const from = BrowserWindow.fromWebContents(e.sender);
+      if (!from || from.isDestroyed()) return 'missing';
+      openReader({ id, kind: 'output' }, from);
+      return 'previewed';
+    }
+    if (OUTPUT_EXTENSIONS.has(ext) && !(await shell.openPath(file))) return 'opened';
+    shell.showItemInFolder(file);
+    return 'revealed';
+  });
   ipcMain.handle('office:copy', (e, text) => {
     trustedReader(e);
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
@@ -1003,7 +1129,14 @@ function setupIPC() {
     trustedReader(e);
     if (
       typeof method !== 'string' ||
-      ['federation', 'remote-send', 'remote-targets', 'remote-launch'].includes(method) ||
+      [
+        'federation',
+        'remote-send',
+        'remote-targets',
+        'remote-launch',
+        // An output's real path stays in main (#350): pages get the redacted list only.
+        'outputTarget',
+      ].includes(method) ||
       !Array.isArray(args) ||
       args.length > 3
     )
@@ -1017,12 +1150,13 @@ function setupIPC() {
   });
   ipcMain.handle('office:window', (e, action, id) => {
     trusted(e);
-    if (action === 'mini') showDock('pet');
+    // Back to the look the person left the dock in (the tray still names one outright).
+    if (action === 'mini') showDock(dockMode);
     // From the pet, the row or a card: on that window's display (the big office's own
     // window matches itself, so nothing moves).
     else if (action === 'main')
       showMain(typeof id === 'string' ? id : undefined, {
-        from: BrowserWindow.fromWebContents(e.sender)?.getBounds(),
+        from: ((w) => (w ? placeOf(w) : undefined))(BrowserWindow.fromWebContents(e.sender)),
       });
     else if (action === 'hide') {
       if (e.sender === dock?.webContents) {
@@ -1039,6 +1173,10 @@ function setupIPC() {
     trusted(e);
     if (section !== null && !isSettingsSection(section)) throw new Error(m().desktop.badRequest);
     showSettings(section);
+  });
+  ipcMain.handle('office:dock-look', (e) => {
+    trusted(e);
+    return dockLook();
   });
   ipcMain.handle('office:dock', (e, action: DockAction) => {
     trusted(e);
@@ -1059,7 +1197,7 @@ function setupIPC() {
   ipcMain.handle('office:card', async (e, action, target, anchor) => {
     trusted(e);
     if (typeof action !== 'string') throw new Error(m().desktop.badRequest);
-    if (action === 'open' || action === 'select' || action === 'expand') {
+    if (action === 'open' || action === 'select' || action === 'reveal' || action === 'expand') {
       if (
         !target ||
         typeof target.id !== 'string' ||
@@ -1129,6 +1267,21 @@ function setupIPC() {
   const skipNote = (on: boolean) => (on ? '\n\n' + m().tmux.skipPermissions : '');
   const orcaLaunch = new OrcaLaunch(() => defaultTerminalDeps().bin('orca'));
   /**
+   * Its tab in a sleeping Orca workspace (#342), matched by its last request, last answer or
+   * title against the office's other local conversations. Orca not answering is no evidence.
+   */
+  const sleepingIn = async (session: Session, fresh: boolean): Promise<SleepingLookup> => {
+    if (session.remote) return { kind: 'none' };
+    const workspaces = await orcaLaunch.workspaces(fresh);
+    return workspaces
+      ? matchSleeping(
+          workspaces,
+          session,
+          (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
+        )
+      : { kind: 'none' };
+  };
+  /**
    * The duplicate-launch check for a saved conversation (desktop/launch-guard.ts): its agent
    * process (per-agent liveness adapter), its Orca tab, and the app's own tmux session for it.
    */
@@ -1151,19 +1304,7 @@ function setupIPC() {
             if (tab.kind === 'unknown' && !(await orcaLaunch.reachable(f))) return { kind: 'none' };
             return tab;
           },
-          // Its tab in a sleeping Orca workspace (#342), matched by its last request, last
-          // answer or title. Orca not answering is no evidence.
-          orcaSleeping: async (f) => {
-            if (session.remote) return { kind: 'none' };
-            const workspaces = await orcaLaunch.workspaces(f);
-            return workspaces
-              ? matchSleeping(
-                  workspaces,
-                  session,
-                  (delivery.latest?.sessions ?? []).filter((other) => !other.remote),
-                )
-              : { kind: 'none' };
-          },
+          orcaSleeping: (f) => sleepingIn(session, f),
           ownTmux: async () => {
             try {
               // Its panes too: a verified agent terminal in one of them runs it there.
@@ -1451,13 +1592,28 @@ function setupIPC() {
       authorize,
     );
   });
-  ipcMain.handle('office:orca-reveal', async (e) => {
+  /**
+   * Brings Orca to the front. With a conversation's id (#380) whose tab sleeps, or may, in an
+   * Orca workspace, that workspace is woken and shown, and its tab switched to when matched.
+   * main finds the workspace again, fresh: a window names the conversation, never a folder.
+   */
+  ipcMain.handle('office:orca-reveal', async (e, id?: unknown): Promise<OrcaRevealResult> => {
     trusted(e);
-    await orcaLaunch.reveal();
+    if (typeof id !== 'string' || id.length > 400 || isRemoteId(id)) return orcaLaunch.reveal();
+    const s: Session | undefined = await bridge.call('detail', [id]).catch(() => undefined);
+    const found: SleepingLookup = s
+      ? await sleepingIn(s, true).catch((): SleepingLookup => ({ kind: 'none' }))
+      : { kind: 'none' };
+    if (found.kind === 'none') return orcaLaunch.reveal();
+    return orcaLaunch.reveal({
+      path: found.path,
+      ...(found.kind === 'found' && { paneKey: found.paneKey }),
+    });
   });
   /**
-   * The card's main action (#342): whether this conversation's tab rests in a sleeping Orca
-   * workspace (the whole duplicate check says so), with that workspace's name. Read-only.
+   * The card's main action (#342): whether this conversation's tab rests, or may rest, in a
+   * sleeping Orca workspace (the whole duplicate check says so), with that workspace's name.
+   * Read-only.
    */
   ipcMain.handle('office:orca-sleeping', async (e, id) => {
     trusted(e);
@@ -1465,9 +1621,7 @@ function setupIPC() {
     const s: Session | undefined = await bridge.call('detail', [id]).catch(() => undefined);
     if (!s || s.remote) return null;
     const check = await duplicateCheck(s)(false).catch(() => null);
-    return check?.state === 'open' && check.sleeping
-      ? { workspace: check.sleeping.workspace }
-      : null;
+    return check ? sleepingWorkspace(check) : null;
   });
   // Live terminals are desktop-only: OfficeService.call is shared with the web preview.
   const identities = new Map<string, SessionIdentity>();
@@ -1686,7 +1840,25 @@ function setupIPC() {
     const screen = await screenOf(known, true);
     const tab = screen.kind === 'none' ? await orcaTab(latestSession(known.id), true) : null;
     const terminal = screen.kind === 'found' ? screen.terminal : tab ? { host: tab } : null;
-    if (!terminal) return resume(known);
+    if (!terminal) {
+      // Its process lives but no terminal of it was verified (#376): go where it runs (the app
+      // read from its process), never hand out a resume command that would start a second copy.
+      const place =
+        screen.kind === 'unknown' ? await runningPlace(known.provider, known.nativeId) : null;
+      if (!place) return resume(known);
+      try {
+        const result = await reachHost(
+          place,
+          defaultTerminalDeps(),
+          async () => (await orcaTab(latestSession(known.id), true)) ?? null,
+        );
+        if (result.action === 'focused') cards.afterJump(e.sender);
+        return result;
+      } catch (error) {
+        if (error instanceof TerminalFocusError) throw new TerminalInputError(error.message);
+        throw new Error(m().desktop.terminal.jumpFailed(hostPlaceName(place.host)));
+      }
+    }
     try {
       const text = await focusTerminal(terminal);
       // From the dock card, the terminal is where the person goes next.

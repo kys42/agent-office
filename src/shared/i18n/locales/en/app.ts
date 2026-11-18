@@ -4,6 +4,7 @@ export const app = {
   tabs: {
     office: { title: 'Our Office', short: 'Office' },
     memory: { title: 'Memory Drawer', short: 'Memory' },
+    outputs: { title: 'Outputs', short: 'Outputs' },
     activity: { title: 'Activity', short: 'Activity' },
     settings: { title: 'Connections & Settings', short: 'Settings' },
   },
@@ -35,8 +36,9 @@ export const app = {
     showContent: 'Show content',
     hideContent: 'Hide screen content',
     hideContentTitle: 'Hide screen content · for screen sharing',
-    mini: 'Desk pet',
-    miniTitle: 'Desk pet · floats small on your desktop and unfolds into a desk row when clicked',
+    /** The dock button names the look it goes back to (dock.view.looks). */
+    miniTitle: (look: string) =>
+      `Back to the desktop dock · ${look}, as you left it · switch looks from its View button`,
   },
   demoBanner: {
     text: 'Demo office · everything here is sample data',

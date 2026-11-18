@@ -3,6 +3,7 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { PILL_MARGIN } from '../../src/shared/dock-geometry';
 import type { OfficeNotice, Preferences, Snapshot } from '../../src/shared/types';
+import { viewButton, viewMenu } from './dock-view';
 
 // #228: more settings — the dock (tiny names, tiny dots, pill visibility and reset), reading on
 // open, helper desks, and resetting the big office's panel widths.
@@ -410,7 +411,7 @@ test('pill visibility hover: a click right as the pill comes up lands on it', as
   await page.mouse.move(200, 200);
   await expect.poll(() => opacity(page)).toBe(0);
   await expect.poll(() => page.evaluate(() => (window as any).dockCalls.at(-1))).toBe('through');
-  const floor = page.getByRole('button', { name: '바닥 책상으로 보기' });
+  const floor = viewButton(page.locator('.dock-pill'));
   const b = (await floor.boundingBox())!;
   // Straight onto the hidden button: that one move was judged see-through (the pill still let
   // clicks through), so once the pill is up the dock must take the mouse with no further move.
@@ -420,9 +421,11 @@ test('pill visibility hover: a click right as the pill comes up lands on it', as
   // Clicked without moving again: in the app the window now holds the click for the pill.
   await page.mouse.down();
   await page.mouse.up();
-  await expect.poll(() => page.evaluate(() => (window as any).dockCalls)).toContain('floor');
+  await expect(viewMenu(page)).toBeVisible();
+  // The menu asks for room above the pill once the click landed on the (solid) pill.
+  await expect.poll(() => page.evaluate(() => (window as any).dockCalls)).toContain('room-on');
   const calls: string[] = await page.evaluate(() => (window as any).dockCalls);
-  const last = calls.lastIndexOf('floor');
+  const last = calls.lastIndexOf('room-on');
   expect(calls.slice(0, last).at(-1)).toBe('solid');
 });
 

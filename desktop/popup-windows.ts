@@ -165,16 +165,17 @@ export class PopupWindows<Target> {
 
   /**
    * Opens the window for `key` beside `anchor`, or brings its window forward when it is already
-   * open (it stays where the person left it).
+   * open (it stays where the person left it). `'reopened'` tells the caller it was already
+   * there, so what it shows may need reading again (an output's file changed meanwhile).
    */
-  open(key: string, target: Target, anchor: Rect, { float = false } = {}) {
+  open(key: string, target: Target, anchor: Rect, { float = false } = {}): 'opened' | 'reopened' {
     const plan = popupOpenPlan(this.live(), key, this.kind.max);
     if ('focus' in plan) {
       const open = plan.focus;
       this.setFloat(open, popupReopenFloats(open.float, float));
       open.steal = true;
       if (open.ready) this.present(open);
-      return;
+      return 'reopened';
     }
     const area = screen.getDisplayMatching(anchor).workArea;
     const bounds = popupWindowBounds(
@@ -186,6 +187,7 @@ export class PopupWindows<Target> {
     // Too many at once: the oldest one goes.
     plan.evict?.window.close();
     this.create(key, target, bounds, float);
+    return 'opened';
   }
 
   private create(key: string, target: Target, bounds: Rect, float: boolean) {
@@ -248,6 +250,11 @@ export class PopupWindows<Target> {
     void window.loadFile(this.options.index, { hash: this.kind.hash });
   }
 
+  /** Tells the open window of `key` something (e.g. to read what it shows again). */
+  send(key: string, channel: string, ...args: unknown[]) {
+    const e = this.live().find((x) => x.key === key);
+    if (e && !e.window.webContents.isDestroyed()) e.window.webContents.send(channel, ...args);
+  }
   action(sender: WebContents, action: 'close' | 'focus') {
     const e = this.require(sender);
     if (action === 'close') e.window.close();

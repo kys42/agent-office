@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   checkDuplicate,
   confirmLaunch,
@@ -7,9 +10,11 @@ import {
   duplicateNote,
   livenessFor,
   pendingCheck,
+  runningPlace,
   DuplicateLaunchError,
   type LaunchEvidence,
 } from '../desktop/launch-guard.js';
+import type { TerminalDeps } from '../desktop/terminals.js';
 import { PendingLaunches, pendingLaunchKey } from '../desktop/pending-launch.js';
 import { OrcaLaunch, type OrcaLaunchDeps } from '../desktop/orca-launch.js';
 import { TmuxResume, type ResumeDeps } from '../desktop/tmux-resume.js';
@@ -117,6 +122,82 @@ test('a part of the check that fails counts as unknown, never as none', async ()
 
 test('an agent without a liveness adapter is never shown absent', async () => {
   assert.deepEqual(await livenessFor('cursor' as never).lookup('x', true), unknown);
+  assert.equal(await runningPlace('cursor' as never, 'x'), null);
+});
+
+test('running where no tab was verified: the check names the app, never the way there (#376)', () => {
+  const host = { app: 'iterm', canGo: true } as const;
+  const agent = {
+    kind: 'found',
+    terminal: {
+      where: 'other',
+      host,
+      way: { kind: 'app', bundle: '/Applications/iTerm.app', name: 'iTerm', tty: '/dev/ttys1' },
+    },
+  } as const;
+  const check = decideDuplicate(evidence({ agent, orcaTab: { kind: 'found', terminal: {} } }));
+  assert.deepEqual(check, { state: 'running', where: 'other', host });
+  assert.equal(new DuplicateLaunchError(check).message, m().tmux.runningRefused('iTerm2'));
+  // Another app by its own name; a verified place by its place name.
+  assert.equal(
+    new DuplicateLaunchError({
+      state: 'running',
+      where: 'other',
+      host: { app: 'app', name: 'WezTerm' },
+    }).message,
+    m().tmux.runningRefused('WezTerm'),
+  );
+  assert.equal(
+    new DuplicateLaunchError({ state: 'running', where: 'orca' }).message,
+    m().tmux.runningRefused('Orca'),
+  );
+});
+
+test('runningPlace: where its adapter finds it running unverified, for a jump; else nothing', async () => {
+  const session = '6dfc48fb-f723-4025-aab6-eaa73f743e5b';
+  const start = 'Tue Oct  6 13:05:12 2026';
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-guard-'));
+  try {
+    await writeFile(
+      path.join(dir, '4242.json'),
+      JSON.stringify({ pid: 4242, sessionId: session, procStart: start, status: 'idle' }),
+    );
+    const deps = (owner: string, alive = [4242]) =>
+      ({
+        sessionsDir: dir,
+        codexHome: '/nonexistent',
+        platform: 'darwin',
+        alive: (pid: number) => alive.includes(pid),
+        bin: (name: string) => `/bin/${name}`,
+        wait: async () => {},
+        run: async (file: string, args: string[]) => {
+          if (file !== '/bin/ps') return '';
+          if (args.includes('lstart=')) return start;
+          if (args.includes('-axo'))
+            return [
+              `4242 4000 ttys012 claude`,
+              `4000 3146 ttys012 -zsh`,
+              `3146 1 ?? ${owner}`,
+            ].join('\n');
+          return 'claude\n';
+        },
+      }) as unknown as TerminalDeps;
+    const ghostty = '/Applications/Ghostty.app/Contents/MacOS/ghostty';
+    assert.deepEqual(await runningPlace('claude', session, deps(ghostty)), {
+      where: 'other',
+      host: { app: 'ghostty', canGo: true },
+      way: {
+        kind: 'app',
+        bundle: '/Applications/Ghostty.app',
+        name: 'Ghostty',
+        tty: '/dev/ttys012',
+      },
+    });
+    // Not running: nothing to go to (a jump hands out its resume command as before).
+    assert.equal(await runningPlace('claude', session, deps(ghostty, [])), null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('the confirmation warns about an open tab and an unverifiable check', () => {

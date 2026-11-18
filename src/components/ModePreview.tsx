@@ -107,7 +107,6 @@ export function ModePreview({
               privacy={p.privacy}
               onReceipt={noop}
               onExpand={noop}
-              onRefresh={noop}
               preview
             />
           ) : mode === 'office' ? (
@@ -138,10 +137,7 @@ export function ModePreview({
               onReceipt={noop}
               onVeil={noop}
               onPin={noop}
-              onCollapse={noop}
-              onSwitch={noop}
               notify={noop}
-              onRefresh={noop}
               demo={demo || sampled}
               preview
             />

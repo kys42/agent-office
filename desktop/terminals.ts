@@ -48,8 +48,11 @@ import {
   findClaudeProcess,
   forget,
   isParked,
+  JOB_ID,
   namesakeJobs,
+  parkedHolders,
   parkedWindows,
+  processIdentity,
   titleKey,
   parseClaudeProcess,
   processAlive,
@@ -60,6 +63,7 @@ import {
   type ClaudeProcess,
 } from '../server/adapters/claude-live.js';
 import type { PromptHost, PromptKey } from './prompts/types.js';
+import { hostOf, isSwarmSocket, type HostPlace } from './host-app.js';
 export { placeholderIds, promptHolds, promptHoldsImages, readPrompt } from './composer/index.js';
 
 // Desktop-only: these helpers can focus and type into a live terminal, so they are
@@ -342,9 +346,137 @@ export async function claudeAbsent(
       if (deps.alive(record.pid)) return false;
       continue;
     }
-    if (!started.trim() || spaces(started) === spaces(record.procStart)) return false;
+    if (!started.trim()) return false;
+    // A reused PID is another process.
+    if (spaces(started) !== spaces(record.procStart)) continue;
+    // A window that parked its conversation holds it only while the job it parked runs: once
+    // that job ended its record is left stale (#376).
+    if (isParked(record) && (await parkedHold(record, deps, fresh, inventory)) === 'gone') continue;
+    return false;
   }
   return true;
+}
+
+/**
+ * Whether a window that parked its conversation (`parkedJobId`, ← for agents) still holds it:
+ * `live` while the job it parked runs (its agents view returns to it), `gone` once every record
+ * was read and none is that job's live process (the window's own record is left stale, #376),
+ * `unknown` when the park names no well-formed job, or a record could not be read or verified.
+ */
+export async function parkedHold(
+  window: ClaudeProcess,
+  deps: TerminalDeps,
+  fresh = false,
+  /** The records already read for this check, when the caller has them. */
+  read?: Awaited<ReturnType<typeof claudeRecordInventory>>,
+): Promise<'live' | 'gone' | 'unknown'> {
+  const job = window.parkedJobId;
+  if (!job || !JOB_ID.test(job)) return 'unknown';
+  const inventory = read ?? (await claudeRecordInventory(deps, fresh));
+  // A record that could not be read or understood may be that job's.
+  if (!inventory.complete || inventory.unparsed.some((text) => text.includes(job)))
+    return 'unknown';
+  let unsure = false;
+  for (const record of inventory.records) {
+    if (record.kind !== 'bg' || record.jobId !== job) continue;
+    const identity = await processIdentity(record, deps, fresh);
+    if (identity === 'live') return 'live';
+    if (identity === 'unknown') unsure = true;
+  }
+  return unsure ? 'unknown' : 'gone';
+}
+
+/** The process holding a session, and whether it is a window that parked it. */
+export interface ClaudeHolder {
+  process: ClaudeProcess;
+  parked?: true;
+}
+
+/**
+ * The live process holding a session whose terminal could not be verified (#376): its own
+ * window or background session, else a window that parked it while the job it parked runs
+ * (`parkedHold`). `none`: no live record holds it; `unknown`: one could not be verified.
+ */
+export async function claudeHolder(
+  sessionId: string,
+  deps: TerminalDeps,
+  fresh = false,
+): Promise<TerminalLookup<ClaudeHolder>> {
+  const own = await findClaudeProcess(sessionId, deps, fresh);
+  if (own) return { kind: 'found', terminal: { process: own } };
+  const windows = await parkedHolders(sessionId, deps, fresh);
+  if (!windows) return { kind: 'unknown' };
+  let unsure = false;
+  for (const window of windows) {
+    const hold = await parkedHold(window, deps, fresh);
+    if (hold === 'live') return { kind: 'found', terminal: { process: window, parked: true } };
+    if (hold === 'unknown') unsure = true;
+  }
+  return unsure ? { kind: 'unknown' } : { kind: 'none' };
+}
+
+/**
+ * Where the holder of a session runs when its terminal could not be verified (#376), and the
+ * way there: a window that parked it, at that window's own terminal (verified as any) or app;
+ * a background session at the one window that parked it; any other window at the app read
+ * from its process (desktop/host-app.ts). A background job with no window to go to (none, or
+ * one under ssh or in no known app) keeps its attach command.
+ */
+export async function claudePlace(
+  holder: ClaudeHolder,
+  deps: TerminalDeps,
+  fresh = false,
+): Promise<HostPlace> {
+  const proc = holder.process;
+  // A parked window holds it only while its job runs (`parkedHold`): that job can be attached.
+  if (holder.parked) return orAttach(await windowPlace(proc, deps, fresh), proc.parkedJobId);
+  if (proc.kind === 'bg') {
+    const windows = await parkedWindows(proc, deps, fresh).catch(() => null);
+    const place = windows?.length === 1 ? await windowPlace(windows[0], deps, fresh) : null;
+    return orAttach(place, proc.jobId);
+  }
+  return hostOf(proc, deps);
+}
+
+/** A place there is a way to, else the background job's attach command (when it names one). */
+function orAttach(place: HostPlace | null, jobId: string | undefined): HostPlace {
+  if (place && place.way.kind !== 'none') return place;
+  if (!jobId || !JOB_ID.test(jobId))
+    return place ?? { where: 'other', host: { app: 'background' }, way: { kind: 'none' } };
+  const command = attachCommand(jobId);
+  return {
+    where: 'other',
+    host: { app: 'background', attach: command },
+    way: { kind: 'attach', command },
+  };
+}
+
+/** A window that parked a conversation: its own terminal when verified, else its app. */
+async function windowPlace(
+  window: ClaudeProcess,
+  deps: TerminalDeps,
+  fresh: boolean,
+): Promise<HostPlace> {
+  const key = `${window.pid}:${window.procStart}`;
+  const view = remember(deps, `view:${key}`, Infinity, false, () =>
+    inspectProcess(window.pid, deps),
+  );
+  if (!(await view).owner) forget(deps, `view:${key}`);
+  const host = await remember(deps, `host:${key}`, 15_000, fresh, () =>
+    findHost(window.pid, deps, view, fresh),
+  ).catch(() => null);
+  if (host)
+    return {
+      where: host.kind,
+      host: {
+        app: host.kind === 'orca' ? 'orca' : isSwarmSocket(host.socket) ? 'swarm' : 'tmux',
+        parked: true,
+        canGo: true,
+      },
+      way: { kind: 'terminal', host },
+    };
+  const place = await hostOf(window, deps);
+  return { ...place, host: { ...place.host, parked: true } };
 }
 
 /**
@@ -360,7 +492,7 @@ export async function claudeNoTerminalReason(
   const proc = await findClaudeProcess(sessionId, deps, true, { parked: true });
   if (!proc) return null;
   if (proc.kind === 'bg' && proc.jobId) return t.background(attachCommand(proc.jobId));
-  if (!isParked(proc)) return null;
+  if (!isParked(proc) || (await parkedHold(proc, deps, true)) === 'gone') return null;
   const job = proc.parkedJobId ? await findClaudeJob(proc.parkedJobId, deps, true) : null;
   return t.parked(job?.name ?? proc.parkedJobId ?? '');
 }
@@ -778,6 +910,7 @@ export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHo
 const PROMPT_BYTES: Record<PromptKey, string> = {
   Up: '\x1b[A',
   Down: '\x1b[B',
+  Left: '\x1b[D',
   Right: '\x1b[C',
   Enter: '\r',
   Space: ' ',

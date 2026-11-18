@@ -85,6 +85,8 @@ const notice = (patch: Partial<OfficeNotice>): OfficeNotice => ({
 test('missing view preferences are the behaviour from before', () => {
   assert.deepEqual(viewPrefs(undefined), {
     tinyNames: true,
+    cardOutputs: true,
+    chatOutputs: true,
     tinyFinalDot: true,
     dockPill: 'subdued',
     dockPillResetAt: null,
@@ -96,6 +98,8 @@ test('missing view preferences are the behaviour from before', () => {
   });
   const set = viewPrefs({
     tinyNames: false,
+    cardOutputs: false,
+    chatOutputs: false,
     tinyFinalDot: false,
     dockPill: 'hover',
     dockPillResetAt: 5,
@@ -104,6 +108,8 @@ test('missing view preferences are the behaviour from before', () => {
     helperRetainMinutes: 10,
   });
   assert.equal(set.tinyNames, false);
+  assert.equal(set.cardOutputs, false);
+  assert.equal(set.chatOutputs, false);
   assert.equal(set.tinyFinalDot, false);
   assert.equal(set.dockPill, 'hover');
   assert.equal(set.dockPillResetAt, 5);
@@ -302,8 +308,9 @@ test('missing screen choices are the look from before', () => {
       turnEffect: true,
       petting: true,
     },
-    dock: { ...desk, hideRead: true },
-    tiny: { effects: true },
+    // The row's, floor's and tiny's pills count like the pet by default too.
+    dock: { ...desk, hideRead: true, tally: true },
+    tiny: { effects: true, tally: true },
     office: desk,
   };
   assert.deepEqual(resolveViews(undefined), defaults);
@@ -314,7 +321,7 @@ test('missing screen choices are the look from before', () => {
 test('screen choices resolve per mode; nonsense falls back to the default', () => {
   const v = resolveViews({
     pet: { tally: false, tallyGroups: ['working', 'attention'], name: 'always', petting: false },
-    dock: { branch: false, hideRead: false },
+    dock: { branch: false, hideRead: false, tally: false },
     tiny: { effects: false },
     office: { papers: false, beacon: false },
   });
@@ -330,8 +337,14 @@ test('screen choices resolve per mode; nonsense falls back to the default', () =
     beacon: true,
     focus: true,
     hideRead: false,
+    tally: false,
   });
-  assert.deepEqual(v.tiny, { effects: false });
+  assert.deepEqual(v.tiny, { effects: false, tally: true });
+  assert.equal(resolveViews({ tiny: { tally: false } }).tiny.tally, false);
+  // A tally switched off on one screen leaves the others (and the pet) counting.
+  const off = resolveViews({ dock: { tally: false } });
+  assert.equal(off.tiny.tally, true);
+  assert.equal(off.pet.tally, true);
   assert.deepEqual(v.office, { branch: true, papers: false, beacon: false, focus: true });
   // Unknown groups and names from an old or hand-edited store.
   assert.deepEqual(tallyGroups(['results', 'nope', 'results']), ['results']);
@@ -350,6 +363,14 @@ test('saving one screen choice keeps the others', () => {
   });
   assert.deepEqual(mergeViews(undefined, { tiny: { effects: false } }), {
     tiny: { effects: false },
+  });
+  // The pill's numbers switch keeps the other choices of its screen.
+  assert.deepEqual(mergeViews({ tiny: { effects: false } }, { tiny: { tally: false } }), {
+    tiny: { effects: false, tally: false },
+  });
+  assert.deepEqual(mergeViews(next, { dock: { tally: false } }).dock, {
+    papers: false,
+    tally: false,
   });
   // The base is never changed in place.
   assert.deepEqual(base.pet, { tally: false, name: 'never' });

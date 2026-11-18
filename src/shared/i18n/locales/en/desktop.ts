@@ -69,6 +69,14 @@ export const desktop = {
       "Orca didn't answer in time. Bring Orca to the front (its tab may not be shown yet) and try again.",
     orcaRefusedSwitch: (reason: string) => `Orca couldn't switch to that terminal: ${reason}`,
     orcaFocused: 'Switched to the terminal in Orca',
+    /** A running conversation's app brought forward; its window is not known (#376). */
+    appRaised: (app: string) => `Brought ${app} forward. Find this conversation's window there.`,
+    appTabFocused: (app: string) => `Switched to its tab in ${app}`,
+    /** After going to a window that moved the conversation to the background. */
+    parkedHint: "It is in Claude's agents view there: press Enter to open it again.",
+    /** A running conversation whose place cannot be brought forward from here. */
+    noWay:
+      "This conversation is running somewhere this app can't bring forward. Find its window yourself, or fork it to continue in a new session.",
     tmuxFocused: (label: string, app: string) => `Switched to tmux pane ${label} in ${app}`,
     /** No client was attached, so a new Terminal window was opened attached to the session. */
     tmuxAttached: (label: string) => `Opened Terminal attached to tmux ${label}`,
@@ -87,7 +95,7 @@ export const desktop = {
     notOwner: "Claude isn't at the terminal right now (paused, for example). Check the terminal.",
     /** A permission prompt, plan approval, menu or `!` shell mode on screen would take the text. */
     notReady:
-      "It isn't taking input right now (a permission prompt, plan approval, menu or shell mode may be open). Check the terminal.",
+      "It isn't taking input right now (a question, permission prompt, plan approval, menu or shell mode may be open). For questions, answer on the card above or use 'Answer by chatting instead'; otherwise check the terminal.",
     draft: 'There is already text in the prompt. Check the terminal before sending.',
     /** Copying the composer's text to the clipboard failed, so it was left alone. */
     backupFailed:

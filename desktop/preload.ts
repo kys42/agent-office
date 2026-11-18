@@ -38,8 +38,16 @@ const api: OfficeAPI = {
   unbookmarkMessage: (sessionId, eventId) => call('unbookmarkMessage', sessionId, eventId),
   bookmarkNote: (id, note) => call('bookmarkNote', id, note),
   bookmarkById: (id) => call('bookmarkById', id),
+  outputs: (query) => call('outputs', query),
+  outputAction: (what, id) => action('office:output', what, id),
+  outputPreview: (id) => call('outputPreview', id),
   bookmarkWindow: ((what: string, target?: unknown) =>
     action('office:reader-window', what, target)) as OfficeAPI['bookmarkWindow'],
+  onReaderRefresh: (cb) => {
+    const f = () => cb();
+    ipcRenderer.on('office:reader-refresh', f);
+    return () => ipcRenderer.removeListener('office:reader-refresh', f);
+  },
   onPopupOnTop: (cb) => {
     const f = (_: unknown, on: boolean) => cb(on === true);
     ipcRenderer.on('office:popup-on-top', f);
@@ -88,7 +96,7 @@ const api: OfficeAPI = {
   // Orca is a macOS app: bringing it to the front is offered there only.
   ...(process.platform === 'darwin'
     ? {
-        orcaReveal: () => action('office:orca-reveal'),
+        orcaReveal: (id?: string) => action('office:orca-reveal', id),
         orcaSleeping: (id: string) => action('office:orca-sleeping', id),
       }
     : {}),
@@ -150,10 +158,21 @@ const api: OfficeAPI = {
     },
   },
   dock: (action) => ipcRenderer.invoke('office:dock', action),
+  dockLook: () => ipcRenderer.invoke('office:dock-look'),
+  onDockLook: (cb) => {
+    const f = (_: unknown, look: unknown) => cb(look);
+    ipcRenderer.on('office:dock-look', f);
+    return () => ipcRenderer.removeListener('office:dock-look', f);
+  },
   onDock: (cb) => {
     const f = (_: unknown, mode: DockMode, tiny?: boolean) => cb(mode, tiny);
     ipcRenderer.on('office:dock', f);
     return () => ipcRenderer.removeListener('office:dock', f);
+  },
+  onDockSide: (cb) => {
+    const f = (_: unknown, side: 'left' | 'right') => cb(side === 'left' ? 'left' : 'right');
+    ipcRenderer.on('office:dock-side', f);
+    return () => ipcRenderer.removeListener('office:dock-side', f);
   },
 };
 contextBridge.exposeInMainWorld('office', api);
