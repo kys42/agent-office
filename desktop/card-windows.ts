@@ -12,6 +12,7 @@ import {
   type Rect,
 } from '../src/shared/dock-geometry.js';
 import {
+  cardActivatesApp,
   cardFloats,
   cardLeftBehind,
   cardOwnWindow,
@@ -264,12 +265,19 @@ export class CardWindows {
     if (e.hide) clearTimeout(e.hide);
     e.hide = undefined;
   }
+  /**
+   * Gives the card the keyboard. `steal` (asked just now, not a late load or a closed sheet) lets
+   * a card in its own window activate the app first; a card panel never does (`cardActivatesApp`):
+   * it is made key as itself, so another app in front loses the keys without macOS leaving this
+   * Space for the big office's.
+   */
   private focus(e: Entry, steal = true) {
     if (e.window.isDestroyed()) return;
     if (quiet) return;
     // A card in its own window may be minimized to the Dock or taskbar: brought back first.
     if (e.window.isMinimized()) e.window.restore();
-    if (steal && process.platform === 'darwin') app.focus({ steal: true });
+    if (steal && process.platform === 'darwin' && cardActivatesApp(e.pin))
+      app.focus({ steal: true });
     e.window.focus();
     e.window.webContents.focus();
   }

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  cardActivatesApp,
   cardFloats,
   cardHandAction,
   cardLeftBehind,
@@ -100,6 +101,19 @@ test('The card pin button cycles off → pinned → on top → off, each with it
   assert.equal(cardPinAction('off'), 'pin-off');
   assert.equal(cardPinAction('pinned'), 'pin-on');
   assert.equal(cardPinAction('top'), 'pin-top');
+});
+
+test('Only a card in its own window activates the app; a card panel keeps the current Space', () => {
+  for (const pin of ['off', 'pinned', 'top'] as const) {
+    assert.equal(cardActivatesApp(pin), false, pin);
+    // Those are the macOS panels: made non-activating when created.
+    assert.equal(cardWindowStyle('darwin', cardOwnWindow(pin), 'popover', false).type, 'panel');
+  }
+  assert.equal(cardActivatesApp('window'), true);
+  assert.equal(
+    cardWindowStyle('darwin', cardOwnWindow('window'), 'popover', false).type,
+    undefined,
+  );
 });
 
 test('Only a plain pinned card is an ordinary window; the preview and on-top pin float', () => {

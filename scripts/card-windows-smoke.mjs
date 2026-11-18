@@ -113,8 +113,28 @@ try {
   const visible = async (p) => (await app.browserWindow(p)).evaluate((w) => w.isVisible());
   const bounds = async (p) => (await app.browserWindow(p)).evaluate((w) => w.getBounds());
   const cardsCount = () => app.windows().filter((p) => p.url().endsWith('#card')).length;
+  // macOS: a card panel (preview, pinned, on top) takes the keyboard as itself. Opening one from the
+  // desk, or pressing into its text box (`card('focus')`), never activates the whole app, which
+  // would switch to the Space of the big office window. Only a card in its own window does
+  // (`cardActivatesApp`); that is not opened here.
+  if (process.platform === 'darwin')
+    await app.evaluate(({ app }) => {
+      globalThis.cardAppFocusCalls = 0;
+      const focus = app.focus.bind(app);
+      app.focus = (...args) => {
+        globalThis.cardAppFocusCalls++;
+        return focus(...args);
+      };
+    });
+  const panelsNeverActivate = async (where) => {
+    if (process.platform !== 'darwin') return;
+    assert.equal(await app.evaluate(() => globalThis.cardAppFocusCalls), 0, where);
+  };
   const a = await newCard('codex:codex-test');
   const aw = await app.browserWindow(a);
+  if (process.platform === 'darwin')
+    assert.equal(await aw.evaluate((w) => w.isVisibleOnAllWorkspaces()), true);
+  await panelsNeverActivate('opening the preview card and focusing its text box');
   const desired = await app.evaluate(({ screen }) => {
     const area = screen.getPrimaryDisplay().workArea;
     return { x: area.x + 40, y: area.y + 40, width: 500, height: Math.min(640, area.height - 40) };
@@ -233,6 +253,7 @@ try {
   await aw.evaluate((w) => w.focus());
   await b.waitForTimeout(700);
   assert.equal(await visible(b), true, 'a card pinned on top stays when focus leaves');
+  await panelsNeverActivate('pinned and on-top card panels');
   assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'other pins stay ordinary');
   await b.bringToFront();
   // …and the cycle's last step returns it to the preview.
