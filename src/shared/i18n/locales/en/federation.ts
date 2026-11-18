@@ -1,4 +1,19 @@
 export const federation = {
+  tinyColor: 'Tiny nameplate color',
+  colors: { sky: 'Sky', lilac: 'Lilac', mint: 'Mint', peach: 'Peach', rose: 'Rose', gold: 'Gold' },
+  codexConnection: 'Codex remote connection on this computer',
+  codexConnectionOff: 'Find automatically',
+  codexConnectionHint:
+    'The conversation ID identifies its Codex connection automatically. Choose a connection only to override it.',
+  codexRemoteRoute: 'Codex remote connection on this computer',
+  codexRemoteUnavailable:
+    'Open this remote conversation in Codex, then check again. Also check the connection mapping and send permission.',
+  connectAndSend: 'Connect and send',
+  codexConnectHint:
+    'Sending opens this conversation in Codex, checks its connection, then sends once.',
+  codexConnectFailed:
+    'The Codex conversation could not connect. No message was sent. Check the Codex remote connection and try again.',
+  checkTarget: 'Check send target again',
   sendReady: 'Chat available',
   sendUnavailable: 'Remote target or send permission is unavailable.',
   sent: 'Sent to the remote office.',
@@ -10,6 +25,8 @@ export const federation = {
   sendPermission: 'Chat credential included',
   readPermission: 'Read only',
   rooms: 'Offices',
+  allOffices: 'All offices',
+  allOfficesHint: 'All computers together',
   localOffice: 'My computer',
   thisComputer: 'This computer',
   remoteOffice: 'Remote office',
@@ -30,6 +47,7 @@ export const federation = {
   empty: 'No connected offices.',
   connected: 'Connected',
   connecting: 'Connecting',
+  reconnecting: 'Reconnecting',
   offline: 'Offline',
   rejected: 'Access rejected',
   disabled: 'Beta is off. No remote connections are running.',

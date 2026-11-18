@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import { OFFICE_COLORS, OFFICE_SWATCH, type OfficeColor } from '../shared/federation';
 import type { FederationCommand, FederationState, PeerInput } from '../shared/federation';
 
 export function FederationSettings({ snapshot }: { snapshot?: FederationState }) {
@@ -83,7 +84,14 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
           {!state.peers.length && <p>{f.empty}</p>}
           {state.peers.map((peer) => (
             <form
-              key={JSON.stringify([peer.officeId, peer.label, peer.tags, peer.projects])}
+              key={JSON.stringify([
+                peer.officeId,
+                peer.label,
+                peer.tags,
+                peer.projects,
+                peer.codexHostId,
+                peer.color,
+              ])}
               className="connector-card"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -99,6 +107,7 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
                     });
                   void command({
                     action: 'update',
+                    color: data.get('color') as OfficeColor,
                     officeId: peer.officeId,
                     label: String(data.get('label')),
                     tags: String(data.get('tags'))
@@ -106,6 +115,7 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
                       .map((s) => s.trim())
                       .filter(Boolean),
                     projects: Object.fromEntries(entries),
+                    codexHostId: String(data.get('codexHostId') || '') || undefined,
                   });
                 } catch {
                   setError(f.invalid);
@@ -124,6 +134,22 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
                 {f.label}
                 <input name="label" defaultValue={peer.label} maxLength={80} required />
               </label>
+              <fieldset className="office-color-presets">
+                <legend>{f.tinyColor}</legend>
+                {OFFICE_COLORS.map((color) => (
+                  <label key={color} title={f.colors[color]}>
+                    <input
+                      type="radio"
+                      name="color"
+                      value={color}
+                      defaultChecked={color === (peer.color ?? OFFICE_COLORS[0])}
+                      aria-label={f.colors[color]}
+                      disabled={busy}
+                    />
+                    <span style={{ backgroundColor: OFFICE_SWATCH[color] }} aria-hidden="true" />
+                  </label>
+                ))}
+              </fieldset>
               <label>
                 {f.tags}
                 <input name="tags" defaultValue={peer.tags.join(', ')} />
@@ -138,6 +164,24 @@ export function FederationSettings({ snapshot }: { snapshot?: FederationState })
                     .join('\n')}
                 />
               </label>
+              <label>
+                {f.codexConnection}
+                <select name="codexHostId" defaultValue={peer.codexHostId ?? ''} disabled={busy}>
+                  <option value="">{f.codexConnectionOff}</option>
+                  {peer.codexHostId &&
+                    !state.codexHosts?.some((h) => h.id === peer.codexHostId) && (
+                      <option value={peer.codexHostId}>
+                        {peer.codexHostId} · {f.offline}
+                      </option>
+                    )}
+                  {state.codexHosts?.map((host) => (
+                    <option key={host.id} value={host.id}>
+                      {host.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p>{f.codexConnectionHint}</p>
               <div className="setting-row">
                 <button disabled={busy} type="submit">
                   {f.save}

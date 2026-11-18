@@ -17,6 +17,7 @@ import {
   MessageSquare,
   PanelRightOpen,
   PenLine,
+  Pin,
   Reply,
   TriangleAlert,
   User,
@@ -28,11 +29,12 @@ import { sessionName } from '../shared/office';
 import { noticeExposure } from '../shared/notices';
 import { toolLabel } from '../shared/activity';
 import { TONE_LABELS, type BubbleTone, type StationSpeech } from '../shared/speech';
+import { useReadingTextRevision } from '../lib/useReadingText';
 import { ago } from '../lib/format';
 import { BubbleMarkdown } from './BubbleMarkdown';
 import { useI18n } from '../lib/i18n';
-import { LinkifiedText } from './WebLink';
-import { api } from '../lib/api';
+import { FilesHere, LinkifiedText } from './WebLink';
+import { writeClipboard } from '../lib/clipboard';
 
 /** A non-empty text selection inside this element (the person is selecting, not clicking). */
 function selectionWithin(el: HTMLElement) {
@@ -76,6 +78,7 @@ export function SpeechBubble({
   onExpandedChange,
   onViewed,
   quote = false,
+  onKeep,
 }: {
   session: Session;
   speech: StationSpeech;
@@ -98,6 +101,8 @@ export function SpeechBubble({
   onViewed?: () => void;
   /** While pointed at: the person's request as its own bubble right above, to recall what was asked. */
   quote?: boolean;
+  /** A peek of a read reply: keep it up again (marks it unread, for "later"). */
+  onKeep?: () => void;
 }) {
   const { t } = useI18n();
   const { bubble, activity, text, label, markdown, tone } = speech;
@@ -140,6 +145,8 @@ export function SpeechBubble({
     };
   }, [open]);
   const [long, setLong] = useState(false);
+  // A new reading size or font reflows the text inside a box that may keep its height.
+  const reflow = useReadingTextRevision();
   // The request bubble scrolls: a fade says there's more until its end is reached.
   const asked = useRef<HTMLParagraphElement>(null);
   const [more, setMore] = useState(false);
@@ -147,7 +154,7 @@ export function SpeechBubble({
     const el = asked.current;
     setMore(!!el && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
   };
-  useLayoutEffect(measure, [request?.id, speech.requestText, privacy]);
+  useLayoutEffect(measure, [request?.id, speech.requestText, privacy, reflow]);
   // Shown later (the pet reveals it on hover) or resized: measure again.
   useEffect(() => {
     const el = asked.current;
@@ -171,7 +178,7 @@ export function SpeechBubble({
     const watch = new ResizeObserver(measureBody);
     watch.observe(el);
     return () => watch.disconnect();
-  }, [text, markdown, open, privacy, request?.id]);
+  }, [text, markdown, open, privacy, request?.id, reflow]);
   const exposure = bubble ? noticeExposure(bubble) : null;
   return (
     <div
@@ -241,7 +248,9 @@ export function SpeechBubble({
             {privacy ? (
               MOODS[s.status].label
             ) : markdown ? (
-              <BubbleMarkdown text={markdown} />
+              <FilesHere.Provider value={!s.remote}>
+                <BubbleMarkdown text={markdown} />
+              </FilesHere.Provider>
             ) : (
               <LinkifiedText text={text} />
             )}
@@ -257,7 +266,7 @@ export function SpeechBubble({
           onClick={(e) => {
             e.stopPropagation();
             const words = markdown ?? text;
-            void (api.copyText ?? ((value: string) => navigator.clipboard.writeText(value)))(words)
+            void writeClipboard(words)
               .then(() => {
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
@@ -317,6 +326,19 @@ export function SpeechBubble({
           }}
         >
           <Reply size={11} strokeWidth={2.6} />
+        </button>
+      )}
+      {onKeep && (
+        <button
+          className="bubble-dismiss bubble-keep"
+          aria-label={t.desk.bubble.keep(privacy ? undefined : sessionName(s))}
+          title={t.desk.bubble.keepTitle}
+          onClick={(e) => {
+            e.stopPropagation();
+            onKeep();
+          }}
+        >
+          <Pin size={10} strokeWidth={2.6} />
         </button>
       )}
       {bubble && !peek && (

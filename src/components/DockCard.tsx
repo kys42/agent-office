@@ -1,4 +1,5 @@
 import { PetAppearanceContext } from './PetAppearanceContext';
+import { DeskAppearanceContext } from './DeskAppearanceContext';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useOffice } from '../lib/useOffice';
@@ -7,7 +8,15 @@ import type { CardTarget, CardWindowState, ZoneRule } from '../shared/types';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import { Inspector } from './Inspector';
 import { useI18n } from '../lib/i18n';
-import { NoticePagingContext } from '../lib/notice-paging';
+import { cardReadSettings } from '../shared/card-reads';
+import {
+  cardHandAction,
+  cardOwnWindow,
+  cardPinAction,
+  readCardPin,
+  type CardPinAction,
+} from '../shared/card-windows';
+import { sessionName } from '../shared/office';
 
 /**
  * The dock card window: a colleague's card opened at a desk or bubble of the desk pet / row.
@@ -24,18 +33,8 @@ export function DockCard() {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(''), 3600);
   }, []);
-  const {
-    snapshot,
-    model,
-    setPrefs,
-    patch,
-    pin,
-    receipt,
-    readAll,
-    returnToOffice,
-    bookmark,
-    unbookmark,
-  } = useOffice(false, notify);
+  const { snapshot, model, setPrefs, patch, pin, receipt, returnToOffice, bookmark, unbookmark } =
+    useOffice(false, notify);
   const send = useTerminalSend(false, notify);
   const [target, setTarget] = useState<CardTarget | null>(null);
   const targetRef = useRef<CardTarget | null>(null);
@@ -43,6 +42,7 @@ export function DockCard() {
   const focusSerial = useRef(0);
   const receivedTarget = useRef(false);
   const [opened, setOpened] = useState(0);
+  const [conversation, setConversation] = useState(0);
   const { reload } = send;
   const acceptTarget = useCallback(
     (next: CardTarget | null) => {
@@ -62,7 +62,8 @@ export function DockCard() {
       );
       if (!next) return;
       // A bookmark in the same card preserves notes and the pages already read.
-      if (previous?.id !== next.id || previous.news !== next.news) setOpened((n) => n + 1);
+      if (previous?.id !== next.id) setOpened((n) => n + 1);
+      if (next.conversation) setConversation((n) => n + 1);
       reload();
     },
     [reload],
@@ -90,7 +91,7 @@ export function DockCard() {
       stop?.();
     };
   }, [notify, acceptTarget]);
-  const changeWindow = async (action: 'pin-on' | 'pin-off' | 'position-on' | 'position-off') => {
+  const changeWindow = async (action: CardPinAction | 'position-on' | 'position-off') => {
     setWindowBusy(true);
     try {
       await api.card?.(action);
@@ -134,24 +135,46 @@ export function DockCard() {
   const sessions = snapshot?.sessions ?? [];
   const session = target ? sessions.find((s) => s.id === target.id) : undefined;
   const prefs = snapshot?.preferences;
+  const cardPin = readCardPin(windowState);
+  const ownWindow = cardOwnWindow(cardPin);
+  // In its own app window the card fills the system's frame and its header moves the window.
+  useEffect(() => {
+    document.body.classList.toggle('card-window', ownWindow);
+  }, [ownWindow]);
+  // The window's title is whose card it is (Mission Control, the Window menu, the taskbar);
+  // hidden like the card's name while the screen is shared.
+  const title = session
+    ? prefs?.privacy
+      ? t.inspector.hiddenTeammate
+      : sessionName(session)
+    : null;
+  const appTitle = useRef(document.title);
+  useEffect(() => {
+    document.title = title ?? appTitle.current;
+  }, [title]);
   const close = () => void api.card?.('close');
   const content = (
     <div className="dock-card">
       {session && target ? (
         <Inspector
           onPrefs={setPrefs}
-          // A fresh card per open: a desk opens on the conversation even after a bubble chose news.
+          // A fresh card per colleague: it opens on the conversation.
           key={`${session.id}:${opened}`}
           session={session}
           sessions={sessions}
+          colleagues={model.residents}
           notices={snapshot?.notices ?? []}
           memberIds={model.ownerOf(session.id)?.resident?.sessionIds ?? [session.id]}
           resident={model.ownerOf(session.id)}
           onReceipt={receipt}
-          onSelect={(id) => select({ id, news: false })}
-          showNews={target.news ? `${session.id}:${opened}` : null}
+          onSelect={(id) => select({ id })}
+          // Bubbles handed on: a kept card stays on its conversation (`cardHandAction`).
+          onHandTo={(id) =>
+            void api.card?.(cardHandAction(cardPin), { id }).catch((e) => notify(e.message))
+          }
+          showConversation={conversation}
           onClose={close}
-          onExpand={() => void api.card?.('expand', { id: session.id, news: false })}
+          onExpand={() => void api.card?.('expand', { id: session.id })}
           onPatch={patch}
           onPin={(s) =>
             void pin(s)
@@ -162,6 +185,7 @@ export function DockCard() {
           notify={notify}
           demo={false}
           privacy={prefs?.privacy ?? false}
+          reading={cardReadSettings(prefs)}
           zoneRules={prefs?.zoneRules ?? []}
           onZoneRules={async (zoneRules: ZoneRule[]) => {
             if (await setPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
@@ -176,17 +200,21 @@ export function DockCard() {
             prefs?.excludedProjects,
             prefs?.enabledProviders,
           ])}
+          showOutputs={prefs?.cardOutputs !== false}
+          showChatOutputs={prefs?.chatOutputs !== false}
+          outputStamp={snapshot?.outputStamp ?? ''}
+          outputVisibility={JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders])}
           onUnbookmark={unbookmark}
           onOpenBookmark={(b) =>
-            select({ id: b.sessionId, news: false, bookmark: { eventId: b.eventId, at: b.at } })
+            select({ id: b.sessionId, bookmark: { eventId: b.eventId, at: b.at } })
           }
           focus={bookmarkFocus}
           onFocused={() => setBookmarkFocus(null)}
           movable
-          cardPinned={windowState.pinned}
+          cardPin={cardPin}
           positionRemembered={windowState.positionRemembered}
           windowBusy={windowBusy}
-          onCardPin={(on) => void changeWindow(on ? 'pin-on' : 'pin-off')}
+          onCardPin={(next) => void changeWindow(cardPinAction(next))}
           onPositionRemember={(on) => void changeWindow(on ? 'position-on' : 'position-off')}
         />
       ) : (
@@ -207,15 +235,9 @@ export function DockCard() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <NoticePagingContext.Provider
-        value={{
-          paged: model.noticesPaged,
-          stats: JSON.stringify(snapshot?.noticeStats ?? null),
-          readAll,
-        }}
-      >
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
         {content}
-      </NoticePagingContext.Provider>
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

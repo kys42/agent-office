@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import { chooseView } from './dock-view';
 
 async function setup(
   page: Page,
@@ -141,6 +142,24 @@ for (const mode of ['row', 'floor'] as const) {
     await page.mouse.up();
     await expect.poll(() => left(zone)).toBeCloseTo(before, 0);
   });
+  test(`After a ${mode} sign drag the next desk and helper clicks still open their cards`, async ({
+    page,
+  }) => {
+    await setup(page, mode);
+    const zone = page.locator('.row-zone').first();
+    const before = await left(zone);
+    await drag(page, handle(page, mode), 160);
+    await expect.poll(() => left(zone)).toBeGreaterThan(before + 100);
+    await expect(zone).not.toHaveClass(/is-arranging/);
+    const opens = () => page.evaluate(() => (window as any).opens as string[]);
+    expect(await opens()).toEqual([]);
+    // Only a tiny desk grab swallows its own release click; a sign drag leaves the next alone.
+    await page.locator('.office-pet[data-session-id="run-0"]').click();
+    await expect.poll(opens).toEqual(['run-0']);
+    await drag(page, handle(page, mode), -60);
+    await page.locator('.helper-desk[data-session-id="helper"]').click();
+    await expect.poll(opens).toEqual(['run-0', 'helper']);
+  });
 }
 
 test('A group retains its shared bench and helper when dragged past another group', async ({
@@ -184,7 +203,7 @@ test('Keyboard placement shares positions between row and floor and does not pag
   await expect
     .poll(() => zone.evaluate((el) => el.getBoundingClientRect().right))
     .toBeCloseTo(1440 - 48, 0);
-  await page.getByRole('button', { name: '바닥 책상으로 보기', exact: true }).click();
+  await chooseView(page, '바닥', page.locator('.dock-pill'));
   await expect(page.locator('.zone-flag-cloth')).toBeVisible();
   await expect
     .poll(() => zone.evaluate((el) => el.getBoundingClientRect().right))

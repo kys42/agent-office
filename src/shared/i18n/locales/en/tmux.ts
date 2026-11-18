@@ -1,0 +1,166 @@
+export const tmux = {
+  wake: 'Resume remotely',
+  wakeConfirm: 'Reopen this Codex conversation on the remote computer? No message will be sent.',
+  wakeMissing:
+    'No verified destination can reopen this conversation. Check the remote app, CLI and running sessions.',
+  wakeUncertain: 'The remote send target is still unconfirmed. Check the target again in a moment.',
+  wakeReady: 'Remote sending is ready. Review your draft and send it.',
+  remoteTitle: 'Summon in this remote office',
+  remoteConfirm: 'Start a new agent on this remote computer?',
+  remoteStart: 'Start remotely',
+  remoteHost: 'Terminal on the remote computer',
+  remoteHint:
+    'Runs at the selected remote project’s worktree root. Orca requires that folder to be a registered workspace. It appears after its first conversation is collected. Complete CLI login or trust prompts on that computer.',
+  remoteUnavailable:
+    'Cannot launch here. Check the remote exporter version, launch permission, shared project and installed CLI/terminal.',
+  remoteUncertain:
+    'The launch result is uncertain. Check the remote terminal before starting another session.',
+  remoteStarted: 'The remote session has started. Waiting for its first conversation.',
+  remoteExisting: 'This named tmux session is already running.',
+  remoteMissing: 'Unavailable on this computer',
+  summonTitle: 'Summon a new agent',
+  summonIntro:
+    'Name a new agent for this project. tmux keeps its terminal session running so you can reconnect and work directly whenever needed.',
+  summonDescription: 'Set up a new colleague for this project.',
+  agentSettings: 'New colleague settings',
+  agentType: 'Agent',
+  agentName: 'Agent name',
+  invalidName: 'Use 1–40 letters, numbers, spaces, hyphens or underscores.',
+  nameHint:
+    'Used in the office and tmux. The office name appears after the first conversation is detected.',
+  initialMessage: 'First message (optional)',
+  messagePlaceholder: 'For example: Explore this project and suggest the next tasks',
+  messageHint: 'Up to 4,000 characters · Sent once when a new session starts.',
+  invalidMessage: 'Use at most 4,000 characters without control characters for the first message.',
+  existingConfirm: 'There are connected agents in this project. Start another tmux session anyway?',
+  summonCheck: 'Check connections and name',
+  summonDefault: 'New agent',
+  summonConfirm: 'Start a new agent in this project?',
+  summonStart: 'Summon in tmux',
+  summonReady: 'Ready for a new conversation',
+  summonHint:
+    'The agent appears in the office after its first conversation is detected. If it is missing, open the terminal, complete any login or project trust prompts, and send the first message. Close it or press Ctrl+B, then D to detach. Reconnect here while the agent is running. After it exits, summoning starts a new conversation; use the conversation card to resume its history.',
+  title: 'Resume in tmux',
+  intro:
+    'Continue this saved conversation in a separate terminal session. This does not create a new conversation.',
+  name: 'tmux session',
+  folder: 'Project folder',
+  skipPermissions:
+    'Runs without permission prompts (Claude: --dangerously-skip-permissions, Codex: --dangerously-bypass-approvals-and-sandbox). Turn it off in Settings → Terminal and answers.',
+  caution:
+    'If this conversation is already running elsewhere, finish that run first to avoid working on it in two places.',
+  start: 'Start in tmux',
+  refresh: 'Check again',
+  loading: 'Checking…',
+  cancel: 'Cancel',
+  confirm: 'Resume this conversation in a separate tmux session?',
+  failed: 'Could not start tmux. Check that tmux and the agent CLI are installed and try again.',
+  missing: 'Install tmux and this agent’s CLI, then try again.',
+  folderMissing: 'The original project folder is unavailable. Restore it before resuming.',
+  unsupported: 'tmux resume supports local Claude and Codex sessions on macOS and Linux.',
+  conflict: 'This tmux name belongs to another session. It was not changed.',
+  ended: 'This tmux session has ended. Resume it again to reconnect.',
+  /** tmux started, but the agent exited right away (often an unfinished login or trust prompt). */
+  exitedAtStart:
+    'tmux started, but the agent exited right away. Run it once in a terminal to finish its login and folder trust, then try again.',
+  openFailed: 'Could not open Terminal. Copy the reconnect command and run it in your terminal.',
+  /** Resuming in a new Orca terminal tab instead of tmux. */
+  orcaTitle: 'Resume in Orca',
+  orcaStart: 'Open in a new Orca tab',
+  orcaConfirm: 'Resume this conversation in a new Orca terminal tab?',
+  orcaIntro:
+    'Opens a new terminal tab in Orca for this project folder and runs the command below in it. It does not start a new conversation.',
+  orcaCommand: 'Command',
+  orcaLaunched: 'Opened a new Orca tab for this conversation',
+  /** Summoning a new agent in a new Orca tab instead of tmux. */
+  summonOrca: 'Summon in a new Orca tab',
+  summonOrcaConfirm: 'Start a new agent in a new Orca tab for this project?',
+  summonOrcaIntro:
+    'Opens a new terminal tab in Orca for this project folder and starts a new conversation with the command below.',
+  summonOrcaLaunched: 'Started a new agent in a new Orca tab',
+  orcaUnsupported: 'Orca resume supports local Claude and Codex sessions on macOS.',
+  /** Orca said why it made no tab; `workspace` when that reason is the folder itself. */
+  orcaRefused: (reason: string, workspace = false) =>
+    `Orca did not open the tab${reason ? `: ${reason}` : '.'}${workspace ? ' This folder is not an Orca workspace.' : ''} You can start it in tmux instead.`,
+  /** Orca made the tab but its start was not seen yet: never a failure, never a tmux hint. */
+  orcaUncertain:
+    "Orca made the tab but hasn't confirmed the start yet. It starts once you open Orca.",
+  orcaReveal: 'Open Orca',
+  orcaNotWorkspace:
+    'This folder is not in an Orca workspace on this Mac. Add the project in Orca first, or start it in tmux.',
+  /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
+  place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
+  /** The app a running conversation was found in when no tab of it was verified (#376). */
+  hostPlace: {
+    orca: 'Orca',
+    terminal: 'Terminal',
+    iterm: 'iTerm2',
+    ghostty: 'Ghostty',
+    cmux: 'cmux',
+    vscode: 'VS Code',
+    warp: 'Warp',
+    tmux: 'tmux',
+    swarm: 'a Claude teammate tmux',
+    background: 'a Claude background session',
+    app: 'another app',
+    unknown: 'another terminal',
+  },
+  runningNotice: (place: string) =>
+    `This conversation is already running in ${place}. Go to it instead of starting it again.`,
+  /** Its process runs there, but which tab or window was not verified. */
+  runningHostNotice: (place: string) =>
+    `This conversation is already running in ${place}, though its exact tab could not be confirmed. Go there instead of starting it again, or fork it to continue in a new session.`,
+  /** Moved to the background (← for agents) from a window in `place`. */
+  parkedNotice: (place: string) =>
+    `This conversation was moved to the background from a window in ${place} and is still running there. Open it again from Claude's agents view in that window, or fork it to continue in a new session.`,
+  /** A background session no window shows. */
+  backgroundNotice:
+    'This conversation is running as a Claude background session. Copy its attach command to open it in a terminal, or fork it to continue in a new session.',
+  /** Running, but nowhere this app can bring forward. */
+  runningNowhereNotice: (place: string) =>
+    `This conversation is already running in ${place}, but this app can't take you there. Find that window yourself, or fork it to continue in a new session.`,
+  openNotice: (place: string) => `This conversation is already open in ${place}.`,
+  openHint:
+    'Its agent could not be confirmed running there. Starting it again may run the same conversation twice.',
+  unknownNotice:
+    'Could not confirm that this conversation is not open somewhere else. Check before starting it again.',
+  runningRefused: (place: string) =>
+    `This conversation is already running in ${place}, so it was not started again. Use Go to terminal.`,
+  changedRefused:
+    'This conversation opened somewhere else while you were confirming, so it was not started. Check its status again.',
+  openConfirm: (place: string) =>
+    `Warning: this conversation is already open in ${place}. Starting it again can run the same conversation twice, and the two can overwrite each other’s work.`,
+  unknownConfirm:
+    'Could not confirm that this conversation is not open somewhere else. If it is, the same conversation will run twice.',
+  /** Its tab rests in a sleeping Orca workspace (#342): opening that workspace brings it back. */
+  sleepingNotice: (workspace: string) =>
+    `This conversation is open in a sleeping Orca workspace (${workspace}). Open that workspace in Orca and its tab comes back.`,
+  /**
+   * Its folder lies in a sleeping Orca workspace and no tab there is surely it (#342): Orca may
+   * bring its tab back there, so that workspace is opened first.
+   */
+  sleepingUnknownNotice: (workspace: string) =>
+    `This conversation may still be in a sleeping Orca workspace (${workspace}). Open that workspace first to check.`,
+  sleepingConfirm: (workspace: string) =>
+    `Warning: this conversation is open in a sleeping Orca workspace (${workspace}). Opening that workspace in Orca brings its tab back. Starting it again can run the same conversation twice, and the two can overwrite each other’s work.`,
+  sleepingUnknownConfirm: (workspace: string) =>
+    `Warning: this conversation may still be in a sleeping Orca workspace (${workspace}). Opening that workspace brings its tabs back, and the same conversation could then run twice. Open that workspace first to check.`,
+  /** The card's main action brought Orca forward; the workspace is opened there by the person. */
+  sleepingRevealed: (workspace?: string) =>
+    `Opened Orca. Open the ${workspace ? `“${workspace}” ` : ''}workspace there and this conversation’s tab comes back.`,
+  /** The same, where the conversation may or may not be in that workspace. */
+  sleepingMaybeRevealed: (workspace?: string) =>
+    `Opened Orca. Open the ${workspace ? `“${workspace}” ` : ''}workspace there to check whether this conversation is in it.`,
+  /** The card's main action woke the sleeping workspace and switched to this conversation's tab (#380). */
+  sleepingTabShown: (workspace?: string) =>
+    workspace
+      ? `Went to this conversation’s tab in the “${workspace}” workspace in Orca.`
+      : 'Went to this conversation’s tab in Orca.',
+  /** It woke the workspace where this conversation’s tab sleeps; the tab was not seen back yet. */
+  sleepingWoken: (workspace?: string) =>
+    `Opened ${workspace ? `the “${workspace}” workspace` : 'its workspace'} in Orca. This conversation’s tab comes back there shortly.`,
+  /** It woke the workspace this conversation may be in. */
+  sleepingMaybeWoken: (workspace?: string) =>
+    `Opened ${workspace ? `the “${workspace}” workspace` : 'that workspace'} in Orca. Check whether this conversation is in it.`,
+  tabGone: 'That Orca tab could not be found again. Check the status again.',
+};

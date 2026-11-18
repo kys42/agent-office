@@ -2,6 +2,7 @@ import type { OfficeEvent, OfficeNotice, Session } from './types';
 import {
   bubbleNotice,
   isFinalNotice,
+  isInboxNotice,
   NOTICE_LABELS,
   noticeLabel,
   unreadNoticeCount,
@@ -222,10 +223,15 @@ export function stationSpeech(
 }
 export type StationSpeech = ReturnType<typeof stationSpeech>;
 
+/** A final reply the person has read (its card was open long enough): done, like a closed one. */
+export const readReply = (speech: Pick<StationSpeech, 'bubble' | 'tone'>) =>
+  speech.tone === 'reply' && !!speech.bubble?.seenAt && isFinalNotice(speech.bubble);
+
 /**
  * The bubble a desk shows: its current one (live progress too when `revealed`), or — while the
  * cursor is on the desk (`pointing`) — the last thing it said, even if that bubble was closed
- * or has expired.
+ * or has expired. With `hideRead` (the dock row, like tiny's dot), a read final reply leaves
+ * too and comes back only as that peek, which offers to keep it up again (`keep`).
  */
 export function shownSpeech(
   s: Session,
@@ -235,7 +241,10 @@ export function shownSpeech(
   speech: StationSpeech,
   revealed: boolean,
   pointing = revealed,
-): { speech: StationSpeech; peek: boolean } | undefined {
+  { hideRead = false }: { hideRead?: boolean } = {},
+): { speech: StationSpeech; peek: boolean; keep?: boolean } | undefined {
+  if (hideRead && readReply(speech))
+    return pointing ? { speech, peek: true, keep: true } : undefined;
   if (speech.shows(revealed)) return { speech, peek: false };
   if (!pointing || !speech.peek) return;
   const last = stationSpeech(s, notices, bubbleHours, now, speech.peek);
@@ -253,6 +262,32 @@ export const needsPerson = (s: Session, speech: Pick<StationSpeech, 'bubble'>) =
   s.status === 'error' ||
   speech.bubble?.kind === 'attention' ||
   speech.bubble?.kind === 'error';
+
+/**
+ * The tiny row's contentless bubble: a call or error keeps it while the desk waits for the
+ * person (read or not); otherwise the desk's latest unread final reply shows it until read —
+ * even after that reply left the bubble (expired past `bubbleHours`, or replaced by a later
+ * progress note), like a helper's news mark. `id` changes with each new notice so the dot pops
+ * again.
+ */
+export function speechDot(
+  s: Session,
+  speech: Pick<StationSpeech, 'bubble' | 'tone' | 'news'>,
+  /** `finals: false` (the `tinyFinalDot` preference off): only calls and errors get a dot. */
+  { finals = true }: { finals?: boolean } = {},
+): { tone: 'attention' | 'error' | 'reply'; id: string } | undefined {
+  const b = speech.bubble;
+  const id = b?.id ?? s.id;
+  if (speech.tone === 'attention' && (b || s.status === 'call')) return { tone: 'attention', id };
+  if (speech.tone === 'error' && (b || s.status === 'error')) return { tone: 'error', id };
+  if (!finals) return;
+  let reply: OfficeNotice | undefined;
+  for (const n of speech.news)
+    if (!n.seenAt && isInboxNotice(n) && isFinalNotice(n))
+      if (!reply || n.at > reply.at || (n.at === reply.at && n.receivedAt > reply.receivedAt))
+        reply = n;
+  if (reply) return { tone: 'reply', id: reply.id };
+}
 
 /**
  * What a desk says right now: a just-arrived request speaks first — the person's own words —

@@ -3,19 +3,26 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { exportSession } from '../../server/federation/protocol';
 import { importSession } from '../../server/federation/peers';
+import { runtimeObservation } from '../../src/shared/runtime';
 
-async function fixture(page: Page, writable = true) {
+async function fixture(
+  page: Page,
+  writable = true,
+  combined = false,
+  provider = demoSnapshot().sessions[0].provider,
+) {
   const snapshot = demoSnapshot();
   const local = snapshot.sessions.slice(0, 1).map((s) => ({
     ...s,
     id: 'local-test',
     alias: '로컬 동료',
-    project: 'local-project',
+    project: combined ? 'shared-project' : 'local-project',
     area: undefined,
     zone: 'office' as const,
     attachedTo: undefined,
     events: [],
-    status: 'ready' as const,
+    status: combined ? ('work' as const) : ('ready' as const),
+    ...(combined ? { runtime: runtimeObservation('work', Date.now(), 'fixture') } : {}),
     updatedAt: Date.now(),
   }));
   const peer = {
@@ -33,11 +40,12 @@ async function fixture(page: Page, writable = true) {
       exportSession(
         {
           ...local[0],
+          provider,
           id: `remote-${i}`,
           nativeId: `remote-${i}`,
           alias: '',
           title: `원격 동료 ${i}`,
-          project,
+          project: combined ? 'shared-project' : project,
           workspace: undefined,
           officeSeat: i,
         },
@@ -49,6 +57,27 @@ async function fixture(page: Page, writable = true) {
     ),
   );
   snapshot.sessions = [...local, ...remote];
+  const second = { ...peer, officeId: '14e785ca-5d9a-4d61-8703-07234e00479e', label: 'Mac mini' };
+  if (combined) {
+    const mini = importSession(
+      exportSession(
+        {
+          ...local[0],
+          id: 'remote-0',
+          nativeId: 'remote-0',
+          alias: '',
+          title: '미니 동료',
+          workspace: undefined,
+        },
+        [],
+      ),
+      second,
+      Date.now(),
+      true,
+    );
+    remote.push(mini);
+    snapshot.sessions.push(mini);
+  }
   snapshot.notices = [];
   snapshot.noticeStats = { total: 0, unread: 0 } as any;
   const { token: _token, sendToken: _send, ...publicPeer } = peer;
@@ -65,6 +94,17 @@ async function fixture(page: Page, writable = true) {
       },
     ],
   };
+  if (combined) {
+    const { token: _token, sendToken: _sendToken, ...publicSecond } = second;
+    snapshot.federation.peers.push({
+      ...publicSecond,
+      canSend: writable,
+      state: 'offline',
+      count: 1,
+      receivedAt: Date.now(),
+      error: 'offline',
+    });
+  }
   await page.addInitScript((s) => {
     const w = window as any;
     w.sends = [];
@@ -97,7 +137,9 @@ async function fixture(page: Page, writable = true) {
               canSend: true,
               queues: true,
               canFocus: false,
-              ...(id.startsWith('remote-office:') ? { remoteOffice: 'MacBook Pro' } : {}),
+              ...(id.startsWith('remote-office:')
+                ? { remoteOffice: s.sessions.find((x) => x.id === id)?.remote?.label }
+                : {}),
             },
           ]),
         ),
@@ -111,6 +153,26 @@ async function fixture(page: Page, writable = true) {
   await page.goto('/');
   return { snapshot, remote };
 }
+
+test('remote office settings save a named color preset', async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.federation = async (cmd: any) => {
+      if (cmd.action === 'update') {
+        w.colorUpdate = cmd;
+        w.mockSnapshot.federation.peers[0].color = cmd.color;
+      }
+      return structuredClone(w.mockSnapshot.federation);
+    };
+  });
+  await page.getByRole('button', { name: '사무실 연결 관리' }).click();
+  const card = page.locator('.federation-settings form');
+  await card.getByRole('radio', { name: '민트' }).check();
+  await card.getByRole('button', { name: '저장' }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).colorUpdate?.color)).toBe('mint');
+  await expect(card.getByRole('radio', { name: '민트' })).toBeChecked();
+});
 
 test('office switcher scopes project zones and roster; remote chat names its destination', async ({
   page,
@@ -145,6 +207,71 @@ test('office switcher scopes project zones and roster; remote chat names its des
   await expect(page.locator('.office-pet').first()).toHaveAttribute('draggable', 'true');
 });
 
+test('All offices combines source projects and stays selected when opening a card', async ({
+  page,
+}) => {
+  const { remote } = await fixture(page, true, true);
+  const all = page.getByRole('tab', { name: '전체 사무실', exact: true });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.toolbar-title h1')).toHaveText('전체 사무실');
+  await expect(page.locator('.roster .session-row')).toHaveCount(4);
+  await expect(page.locator('.project-area')).toHaveCount(3);
+  await expect(
+    page.locator('.source-list button').filter({ hasText: '일하는 중' }).locator('em'),
+  ).toHaveText('3');
+  for (const office of ['내 컴퓨터', 'MacBook Pro', 'Mac mini']) {
+    await expect(page.locator('.source-list')).toContainText(`${office} · shared-project`);
+  }
+  const localPet = page.locator('.office-pet[data-session-id="local-test"]');
+  const remoteArea = page
+    .locator('.project-area')
+    .filter({ hasText: 'MacBook Pro · shared-project' });
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  await localPet.dispatchEvent('dragstart', { dataTransfer });
+  await expect(page.locator('.drag-hint')).toBeVisible();
+  await remoteArea.dispatchEvent('dragover', { dataTransfer });
+  await expect(remoteArea).not.toHaveClass(/drop-target/);
+  await remoteArea.dispatchEvent('drop', { dataTransfer });
+  await expect(page.locator('.zone-editor')).toHaveCount(0);
+  await expect(page.locator('.drag-hint')).toHaveCount(0);
+  await dataTransfer.dispose();
+  await page.locator('.roster .session-row').filter({ hasText: '미니 동료' }).click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.card-head h2')).toHaveAttribute('title', '미니 동료');
+  await page.getByRole('button', { name: '업무 카드 닫기' }).click();
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await page.getByLabel('사무실 리스트 정렬').selectOption('project');
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await expect(page.locator('.office-list-group h3')).toHaveCount(3);
+  await expect(page.locator('.office-list-origin')).toHaveCount(4);
+  await expect(page.locator('.office-list-offline')).toHaveCount(1);
+  await page.locator('.sidebar button[title="Mac mini · shared-project"]').click();
+  await expect(page.locator('.office-list-row')).toHaveCount(1);
+  await expect(page.locator('.office-list-row')).toHaveAttribute('data-session-id', remote[2].id);
+  await page.locator('.office-list-scope button').click();
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await page.locator('.office-list-row').filter({ hasText: '원격 동료 0' }).click();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await page.reload();
+  await expect(all).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await page.getByRole('button', { name: '업무 카드 닫기' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator('.office-list-origin').filter({ hasText: 'Mac mini' })).toBeVisible();
+  await expect(page.locator('.office-list-offline')).toBeVisible();
+  await page.evaluate(() => {
+    const w = window as any;
+    w.mockSnapshot.preferences.privacy = true;
+    w.emitSnapshot(structuredClone(w.mockSnapshot));
+  });
+  await expect(page.locator('.office-list-row')).toHaveCount(4);
+  await expect(page.locator('.office-list-origin').filter({ hasText: 'Mac mini' })).toHaveCount(0);
+  await expect(
+    page.locator('.office-list-group h3').filter({ hasText: 'shared-project' }),
+  ).toHaveCount(0);
+});
+
 test('read-only remote office retains projects without exposing a composer', async ({ page }) => {
   await fixture(page, false);
   await page
@@ -154,4 +281,181 @@ test('read-only remote office retains projects without exposing a composer', asy
   await page.locator('.roster .session-row').first().click();
   await expect(page.locator('.remote-source')).toContainText('읽기 전용');
   await expect(page.locator('.terminal-send-chat')).toHaveCount(0);
+});
+
+test('remote Codex route names this computer and offers a read-only target refresh', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.targetChecks = 0;
+    w.office.terminals = async (ids: string[]) => {
+      w.targetChecks++;
+      return Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'codex',
+            desktop: true,
+            codexRemote: true,
+            label: '',
+            status: 'desktop',
+            canSend: false,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+    };
+  });
+  await page
+    .getByRole('tablist', { name: '사무실', exact: true })
+    .getByRole('tab', { name: /MacBook Pro/ })
+    .click();
+  await page.locator('.roster .session-row').first().click();
+  const composer = page.locator('.terminal-send-chat');
+  await expect(composer).toContainText('이 컴퓨터의 Codex 원격 연결');
+  await expect(composer.locator('.terminal-send-bar small')).toBeVisible();
+  await expect(composer).toContainText('Codex에서 해당 원격 대화를 열고 다시 확인하세요');
+  await composer.locator('textarea').fill('keep my draft');
+  const before = await page.evaluate(() => (window as any).targetChecks);
+  await composer.getByRole('button', { name: '전송 대상 다시 확인' }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).targetChecks))
+    .toBeGreaterThan(before);
+  await expect(composer.locator('textarea')).toHaveValue('keep my draft');
+  expect(await page.evaluate(() => (window as any).sends.length)).toBe(0);
+  await page.evaluate(() => {
+    (window as any).office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'tmux',
+            label: '',
+            status: 'unavailable',
+            canSend: false,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+  });
+  await composer.getByRole('button', { name: '전송 대상 다시 확인' }).click();
+  await expect(composer).not.toContainText('Codex에서 해당 원격 대화');
+});
+
+test('unloaded remote Codex offers connect and send, preserving drafts on connection failure', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'codex',
+            desktop: true,
+            codexRemote: true,
+            label: '',
+            status: 'desktop',
+            canSend: false,
+            canPrepare: true,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+    w.office.send = async () => {
+      throw Error('연결하지 못해 메시지를 보내지 않았습니다.');
+    };
+  });
+  await page
+    .getByRole('tablist', { name: '사무실', exact: true })
+    .getByRole('tab', { name: /MacBook Pro/ })
+    .click();
+  await page.locator('.roster .session-row').first().click();
+  const composer = page.locator('.terminal-send-chat');
+  await expect(composer).toContainText('Codex에서 이 대화를 열고');
+  await composer.locator('textarea').fill('연결 후 한 번만');
+  await composer.getByRole('button', { name: '연결하고 보내기', exact: true }).click();
+  await expect(composer.getByRole('alert')).toContainText('보내지 않았습니다');
+  await expect(composer.locator('textarea')).toHaveValue('연결 후 한 번만');
+  expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.office.send = async (id: string, text: string) => {
+      w.sends.push({ id, text });
+      return { status: 'sent', message: '완료' };
+    };
+  });
+  await composer.getByRole('button', { name: '연결하고 보내기', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as any).sends.length)).toBe(1);
+  await expect(composer.locator('textarea')).toHaveValue('');
+});
+
+test('remote wake checks the selected office and preserves the draft on cancel and start', async ({
+  page,
+}) => {
+  const { remote } = await fixture(page, true, false, 'codex');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.wakes = [];
+    w.ready = false;
+    w.accept = false;
+    w.office.remoteLaunch = async (id: string, phase: string, spec: unknown) => {
+      w.wakes.push({ id, phase, spec });
+      if (phase === 'start' && w.accept) w.ready = true;
+      return {
+        hosts: { desktop: true, tmux: false, orca: false },
+        status: phase === 'status' ? 'ready' : w.ready ? 'started' : 'cancelled',
+      };
+    };
+    w.office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'codex',
+            status: w.ready ? 'desktop' : 'unavailable',
+            canSend: w.ready,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+  });
+  await page.getByRole('tab', { name: /MacBook Pro/ }).click();
+  await page.locator('.roster .session-row').first().click();
+  const draft = page.locator('.terminal-send-chat textarea');
+  await draft.fill('남겨 둔 초안');
+  expect(await page.evaluate(() => (window as any).wakes)).toEqual([]);
+  await page.getByRole('button', { name: '원격에서 이어 열기', exact: true }).click();
+  const open = page.getByRole('button', { name: 'Codex Desktop · 원격에서 이어 열기' });
+  await open.click();
+  await expect(draft).toHaveValue('남겨 둔 초안');
+  await page.evaluate(() => {
+    (window as any).accept = true;
+  });
+  await open.click();
+  await expect(
+    page
+      .locator('.terminal-send-chat button[type="submit"], .terminal-send-chat button')
+      .filter({ hasText: '보내기' })
+      .first(),
+  ).toBeEnabled();
+  await expect(draft).toHaveValue('남겨 둔 초안');
+  const calls = await page.evaluate(() => (window as any).wakes);
+  expect(calls.map((x: any) => x.phase)).toEqual(['status', 'start', 'start']);
+  expect(remote.map((x) => x.id)).toContain(calls[0].id);
+  for (const x of calls)
+    expect(x).toEqual({
+      id: calls[0].id,
+      phase: x.phase,
+      spec: { resume: true, provider: 'codex', host: 'desktop' },
+    });
+  expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
 });

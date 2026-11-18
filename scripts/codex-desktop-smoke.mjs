@@ -5,6 +5,7 @@ import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { quietEnv } from './quiet-smoke.mjs';
 const temp = await mkdtemp(path.join(os.tmpdir(), 'ao-desktop-send-'));
 const home = path.join(temp, 'codex');
 const thread = '11111111-2222-3333-4444-555555555555';
@@ -77,6 +78,7 @@ try {
     args: ['.', `--user-data-dir=${path.join(temp, 'profile')}`],
     env: {
       ...process.env,
+      ...quietEnv,
       AGENT_OFFICE_DATA_DIR: path.join(temp, 'data'),
       CODEX_HOME: home,
       CLAUDE_CONFIG_DIR: path.join(temp, 'claude'),

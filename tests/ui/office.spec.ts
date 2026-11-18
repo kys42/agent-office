@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import { chooseView } from './dock-view';
 
 test('Public progress leads office, roster and inspector while tool names stay secondary', async ({
   page,
@@ -115,7 +116,7 @@ test('Office, editable alias, notes, handoff and keyboard dismissal', async ({ p
   const panel = page.getByRole('complementary', { name: '동료의 업무 카드' });
   await expect(panel).toBeVisible();
   await panel.getByRole('button', { name: '카드 메뉴' }).click();
-  await panel.getByRole('menuitem', { name: '이름 바꾸기' }).click();
+  await panel.getByRole('menuitem', { name: '사무실 별명 바꾸기' }).click();
   await page.getByLabel('새 별명').fill('우리 코코');
   await page.getByRole('button', { name: '별명 저장' }).click();
   await expect(panel.getByRole('heading', { name: '우리 코코' })).toBeVisible();
@@ -128,6 +129,17 @@ test('Office, editable alias, notes, handoff and keyboard dismissal', async ({ p
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog', { name: '다음 동료에게 건네는 기록' })).toBeHidden();
   expect(errors).toEqual([]);
+});
+test('The desk has no popup tool button: clicking the desk character opens the card', async ({
+  page,
+}) => {
+  await page.goto('/?demo');
+  const pet = page.locator('.office-pet').first();
+  await pet.hover();
+  await expect(page.getByRole('button', { name: /업무 카드 열기/ })).toHaveCount(0);
+  await expect(page.locator('.card-button')).toHaveCount(0);
+  await pet.click();
+  await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toBeVisible();
 });
 test('Memory search, provider filters and privacy mask contents', async ({ page }) => {
   await page.goto('/?demo');
@@ -149,8 +161,10 @@ test('Settings can pause collection and reduce motion without mutating real sett
     'aria-checked',
     'true',
   );
+  await page.getByRole('tab', { name: '모습' }).click();
   await page.getByRole('switch', { name: '움직임 줄이기' }).click();
   await expect(page.locator('.app')).toHaveClass(/reduce-motion/);
+  await page.getByRole('tab', { name: '연결' }).click();
   await expect(page.locator('.connector-card')).toHaveCount(3);
 });
 test('Desktop viewport fits the room and narrow viewport does not overflow', async ({ page }) => {
@@ -171,11 +185,14 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await page.getByRole('button', { name: '데스크 펫', exact: true }).click();
   const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
   await expect(pet).toBeVisible();
-  await expect(pet).toContainText('기다려요');
+  // The pill counts the office: someone waits for the person.
+  await expect(page.locator('.dock-pet-tally .tally-attention')).toBeVisible();
   const desks = page.locator('.desk-row [data-station-id]');
   await expect(desks).toHaveCount(0);
   await page.locator('.desk-pet-stage').screenshot({ path: '.local/desk-pet.png' });
-  await pet.click();
+  // The pet itself opens its colleague's card; the desks unfold from the 보기 menu beside it.
+  await page.locator('.dock-pet-anchor').hover();
+  await chooseView(page, '책상 줄', page.locator('.dock-pet-tools'));
   await expect(desks).toHaveCount(6);
   const tops = await desks.evaluateAll((els) =>
     els.map((e) => Math.round(e.getBoundingClientRect().top)),
@@ -194,14 +211,18 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await expect(page.locator('.desk-row .row-zone-mark').first()).toHaveAttribute('data-solid');
   await expect(page.locator('.desk-row .shared-bench').first()).toBeVisible();
   await expect(page.locator('.desk-row .speech-bubble').first()).toBeVisible();
-  await expect(page.locator('.desk-row .desk-name em').first()).toContainText('소식');
+  await expect(page.locator('.desk-row .desk-name em').first()).toHaveText('새 결과');
   await page.locator('.desk-row').screenshot({ path: '.local/desk-row.png' });
   await page.keyboard.press('Escape');
   await expect(desks).toHaveCount(0);
-  await pet.click();
-  await page.getByRole('button', { name: '책상 줄 접기' }).click();
+  const unfold = async () => {
+    await page.locator('.dock-pet-anchor').hover();
+    await chooseView(page, '책상 줄', page.locator('.dock-pet-tools'));
+  };
+  await unfold();
+  await chooseView(page, '데스크 펫', page.locator('.dock-pill'));
   await expect(pet).toBeVisible();
-  await pet.click();
+  await unfold();
   await page.locator('.desk-row .office-pet').nth(1).click();
   await expect(page.locator('.office-map')).toBeVisible();
   await expect(page.locator('.inspector')).toBeVisible();
@@ -209,7 +230,7 @@ test('Desk pet unfolds into a one-line office with zones, benches and bubbles', 
   await page.goto('/?demo#mini=row');
   await page.reload();
   await expect(desks).toHaveCount(6);
-  await page.getByRole('button', { name: '사무실 펼치기' }).click();
+  await chooseView(page, '큰 사무실 열기', page.locator('.dock-pill'));
   await expect(page.locator('.office-map')).toBeVisible();
 });
 test('A crowded desk row keeps the desk size and pages with side arrows', async ({ page }) => {
@@ -227,18 +248,21 @@ test('A crowded desk row keeps the desk size and pages with side arrows', async 
   await expect(prev).toBeVisible();
   await page.keyboard.press('ArrowLeft');
   await expect(prev).toHaveCount(0);
-  // The tools band sits above the bubbles.
-  const tools = (await page.locator('.desk-row-tools').boundingBox())!;
-  const bubbleTop = Math.min(
+  // The tool pill floats at the bottom edge, below every bubble.
+  const tools = (await page.locator('.dock-pill').boundingBox())!;
+  expect(tools.y + tools.height).toBeGreaterThanOrEqual(600 - 12);
+  const bubbleBottom = Math.max(
     ...(await page
       .locator('.desk-row .speech-bubble')
-      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top))),
+      .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom))),
   );
-  expect(tools.y + tools.height).toBeLessThanOrEqual(bubbleTop);
-  // …also when a long bubble is unfolded.
+  expect(bubbleBottom).toBeLessThanOrEqual(tools.y);
+  // …also when a long bubble is unfolded (and it is not clipped at the top).
   const long = page.locator('.desk-row .speech-bubble').first();
   await long.getByRole('button', { name: '말풍선 전체 보기' }).click();
-  expect((await long.boundingBox())!.y).toBeGreaterThanOrEqual(tools.y + tools.height);
+  const unfolded = (await long.boundingBox())!;
+  expect(unfolded.y + unfolded.height).toBeLessThanOrEqual(tools.y);
+  expect(unfolded.y).toBeGreaterThanOrEqual((await page.locator('.desk-row').boundingBox())!.y);
 });
 test('Floor desks stand on the bottom edge with flags for zones, switchable from the row', async ({
   page,
@@ -254,19 +278,20 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await expect(strip.locator('.zone-flag')).toHaveCount(zones);
   await expect(strip.locator('.zone-flag').first()).toContainText('agent-office');
   await expect(strip.locator('.floor-plate').first()).toContainText('코코');
-  // Desk legs reach the window's bottom edge.
+  // Desk legs reach the window's bottom edge; the pill floats over their feet.
   await expect
     .poll(async () => {
       const bench = (await strip.locator('.team-bench').first().boundingBox())!;
       return Math.round(970 - (bench.y + bench.height));
     })
     .toBeLessThanOrEqual(8);
-  const tools = (await strip.locator('.desk-row-tools').boundingBox())!;
-  const tops = await strip
+  const tools = (await strip.locator('.dock-pill').boundingBox())!;
+  expect(tools.y + tools.height).toBeGreaterThanOrEqual(970 - 12);
+  const bottoms = await strip
     .locator('.speech-bubble')
-    .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
-  expect(tops.length).toBeGreaterThan(0);
-  expect(tools.y + tools.height).toBeLessThanOrEqual(Math.min(...tops));
+    .evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom));
+  expect(bottoms.length).toBeGreaterThan(0);
+  expect(Math.max(...bottoms)).toBeLessThanOrEqual(tools.y);
   // Only the flag itself takes the mouse: below its cloth, clicks reach the desktop.
   const below = await strip
     .locator('.zone-flag')
@@ -286,19 +311,15 @@ test('Floor desks stand on the bottom edge with flags for zones, switchable from
   await desk.hover();
   await desk.getByRole('button', { name: /가리기$/ }).click();
   await expect(strip.locator('[data-station-id]')).toHaveCount(5);
-  // Switch looks; the pet reopens the last one used.
-  await page.getByRole('button', { name: '사무실 줄로 보기' }).click();
+  // Switch looks from 보기; tiny from the pet unfolds the last one used, small.
+  await chooseView(page, '책상 줄', page.locator('.dock-pill'));
   await expect(page.locator('.desk-row:not(.desk-floor) .row-zone-floor').first()).toBeVisible();
-  await page.getByRole('button', { name: '바닥 책상으로 보기' }).click();
+  await chooseView(page, '바닥', page.locator('.dock-pill'));
   await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
   await page.keyboard.press('Escape');
-  const pet = page.getByRole('button', { name: /^데스크 펫 ·/ });
-  await pet.click();
-  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
-  await page.getByRole('button', { name: '책상 줄 접기' }).click();
   await page.locator('.dock-pet-anchor').hover();
-  await page.getByRole('button', { name: '바닥 책상 펼치기' }).click();
-  await expect(page.locator('.desk-row.desk-floor')).toBeVisible();
+  await chooseView(page, '쪼꼬미', page.locator('.dock-pet-tools'));
+  await expect(page.locator('.desk-row.desk-floor.is-tiny')).toBeVisible();
 });
 
 test('Floor desks: helpers stand on the floor and screen sharing hides zone and desk names', async ({
@@ -453,31 +474,27 @@ test('Dock preserves room interaction and stays out of the office bounds', async
   expect(narrowDock!.y).toBeGreaterThan(narrowOffice!.y + narrowOffice!.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
-test('Progress bubbles do not inflate the inbox; final read receipts preserve the bubble', async ({
+test('Progress bubbles do not count as unread; reading a result preserves the bubble', async ({
   page,
 }) => {
   await page.goto('/?demo');
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('1');
+  await expect(page).toHaveTitle('(1) Agent Office');
   await page.getByRole('button', { name: '코코 말풍선 접기', exact: true }).locator('..').hover();
   await page.getByRole('button', { name: '코코 말풍선 접기', exact: true }).click();
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('1');
-  await page.getByRole('button', { name: '소식함 열기' }).click();
-  const inbox = page.getByRole('complementary', { name: '소식함' });
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await expect(inbox.locator('.news-item')).toContainText('모모');
-  await inbox.getByRole('button', { name: '읽음으로 표시', exact: true }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(0);
+  await expect(page).toHaveTitle('(1) Agent Office');
+  const results = page.locator('.group-results');
+  await expect(results.locator('.session-row')).toContainText('모모');
+  await results.getByRole('button', { name: '모두 읽음' }).click();
+  await expect(page).toHaveTitle('Agent Office · 우리 사무실');
+  await expect(page.locator('.group-results')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '모모 말풍선 접기', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: '소식함 열기' })).toContainText('0');
-  await inbox.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await inbox.getByRole('button', { name: /전체 기록/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(6);
 });
 test('Same branch shares a table and true children use accessible small desks', async ({
   page,
 }) => {
   const fixture = demoSnapshot();
+  // A helper of 코코, the first at the shared table: its small desk joins right beside 코코, so
+  // the table goes on after it in two pieces, both still the shared table of that branch.
   fixture.sessions[2] = {
     ...fixture.sessions[2],
     provider: 'claude',
@@ -496,7 +513,7 @@ test('Same branch shares a table and true children use accessible small desks', 
     };
   }, fixture);
   await page.goto('/');
-  await expect(page.locator('.shared-bench')).toHaveCount(1);
+  await expect(page.locator('.shared-bench')).toHaveCount(2);
   await expect(page.locator('.office-pet')).toHaveCount(5);
   await expect(page.locator('.helper-desk')).toHaveCount(1);
   await page.locator('.helper-desk').click();
@@ -793,88 +810,4 @@ test('Conversation filters public phases, hides tools by default and preserves e
   await page.screenshot({ path: '.local/conversation-categories.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-});
-
-test('Inbox defaults to finals, retains attention, and batch read only affects the selected category', async ({
-  page,
-}) => {
-  const fixture = demoSnapshot();
-  const base = fixture.notices![0];
-  fixture.notices = [
-    ...Array.from({ length: 20 }, (_, i) => ({
-      ...base,
-      id: `progress-${i}`,
-      kind: 'progress' as const,
-      phase: 'commentary' as const,
-    })),
-    {
-      ...base,
-      id: 'important-final',
-      kind: 'reply',
-      phase: 'final',
-      text: '기능 구현과 검증을 마쳤습니다.',
-    },
-    {
-      ...base,
-      id: 'important-attention',
-      kind: 'attention',
-      phase: undefined,
-      text: '원래 앱에서 답변해 주세요.',
-    },
-    {
-      ...base,
-      id: 'resolved-attention',
-      kind: 'attention',
-      phase: undefined,
-      resolvedAt: Date.now(),
-    },
-    {
-      ...base,
-      id: 'legacy-unknown',
-      kind: 'reply',
-      phase: undefined,
-      text: '완료 여부를 구분할 수 없는 이전 응답',
-    },
-  ];
-  await page.addInitScript((s) => {
-    const w = window as any;
-    w.fixture = s;
-    w.office = {
-      snapshot: async () => structuredClone(w.fixture),
-      subscribe: () => () => {},
-      notices: async (receipts: any[], action: string) => {
-        for (const n of w.fixture.notices)
-          if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
-            if (action === 'read') n.seenAt = Date.now();
-            else if (action === 'unread') n.seenAt = null;
-            else n.dismissedAt = Date.now();
-          }
-        return structuredClone(w.fixture);
-      },
-    };
-  }, fixture);
-  await page.goto('/');
-  const badge = page.getByRole('button', { name: '소식함 열기' });
-  await expect(badge).toContainText('2');
-  await badge.click();
-  const inbox = page.getByRole('complementary', { name: '소식함' });
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await expect(inbox.locator('.news-item')).toContainText('기능 구현과 검증을 마쳤습니다.');
-  await expect(
-    inbox.getByRole('button', { name: /답변이나 확인을 기다리는 소식 1건/ }),
-  ).toBeVisible();
-  await inbox.getByRole('button', { name: '미확인 1건 읽음', exact: true }).click();
-  await expect(badge).toContainText('1');
-  await expect(inbox.locator('.news-item')).toHaveCount(0);
-  await inbox.getByRole('button', { name: /답변이나 확인을 기다리는 소식 1건/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await inbox.getByRole('button', { name: '미확인 1건 읽음', exact: true }).click();
-  await expect(badge).toContainText('0');
-  await inbox.getByRole('button', { name: /전체 기록/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(22);
-  await inbox.getByRole('checkbox', { name: '읽은 소식 포함' }).check();
-  await expect(inbox.locator('.news-item')).toHaveCount(24);
-  await inbox.getByRole('button', { name: /최종 응답/ }).click();
-  await expect(inbox.locator('.news-item')).toHaveCount(1);
-  await page.screenshot({ path: '.local/inbox-final-responses.png', fullPage: true });
 });

@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { ProjectSummon, type BringBack } from './ProjectSummon';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DragEvent,
+  type ReactNode,
+} from 'react';
 import { Pin, GitBranch, Plus, Minus, Maximize2, Armchair, Moon, Sun } from 'lucide-react';
 import {
   MOODS,
@@ -7,10 +16,20 @@ import {
   type ReplySender,
   type TerminalTarget,
 } from '../shared/types';
-import { sessionName, projectKey } from '../shared/office';
-import { layoutOffice, layoutSignature, projectColor } from '../shared/office-layout';
+import { sessionName, projectKey, benchKey } from '../shared/office';
+import { isTeammate } from '../shared/residents';
+import { planDeskDrop } from '../shared/desk-order';
+import { isRemoteId } from '../shared/federation';
+import {
+  HELPER_STACK_AT,
+  layoutOffice,
+  layoutSignature,
+  projectColor,
+} from '../shared/office-layout';
 import { branchInfo } from '../shared/branch';
 import { Furniture } from './Furniture';
+import { useDeskAppearance } from './DeskAppearanceContext';
+import { deskLook } from '../shared/desks';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
@@ -23,14 +42,20 @@ import { useWakeAt } from '../lib/useWakeAt';
 import { isInboxNotice } from '../shared/notices';
 import { presentSession, focusLevel, deskPapers, POSTURE_LABELS } from '../shared/presentation';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
-import type { ReceiptHandler } from './News';
+import type { ReceiptHandler } from '../lib/useOffice';
 import { useSendTargets } from '../lib/useSendTargets';
 import { QuickReply } from './QuickReply';
 import { api } from '../lib/api';
 import { jumpOrCopy } from '../lib/resume';
 import { targetLine } from './TerminalSend';
 import { useI18n } from '../lib/i18n';
+import { officeLabel } from '../shared/rooms';
 import { isPageHidden, onPageVisibility } from '../lib/visibility';
+import { walksIn } from '../lib/commute';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
+import { DEFAULT_DESK_VIEW, type DeskView } from '../shared/view-prefs';
 /** Decorative only: the room follows the local clock, never session state. */
 function dayPhase(at: number) {
   const h = new Date(at).getHours();
@@ -42,7 +67,7 @@ export function Office({
   bubbleHours,
   selected,
   onSelect,
-  onNews,
+  onConversation,
   onReceipt,
   reducedMotion,
   privacy,
@@ -56,16 +81,35 @@ export function Office({
   onVeilZone,
   onPin,
   onZoneDrop,
+  onReorder,
   onReply,
   notify,
   quotaOf,
+  helperStackAt = HELPER_STACK_AT,
+  demo = false,
+  showOffice = false,
+  bringBack,
+  show = DEFAULT_DESK_VIEW,
+  preview = false,
 }: {
+  showOffice?: boolean;
+  /** What the person chose to see on the desks (#324). Missing: the look from before. */
+  show?: DeskView;
+  /**
+   * Drawn small in the settings (#324): the same room, without anything that reaches outside
+   * it — no app commands, keys or terminal lookups.
+   */
+  preview?: boolean;
+  /** Lets each project's "+" offer bringing back its lounge/archive colleagues. */
+  bringBack?: BringBack;
+  demo?: boolean;
   sessions: Session[];
   notices: OfficeNotice[];
   bubbleHours: number;
   selected: string | null;
   onSelect: (id: string) => void;
-  onNews: (id: string) => void;
+  /** A bubble opens its colleague's card on the conversation, whatever tab it was on. */
+  onConversation: (id: string) => void;
   onReceipt: ReceiptHandler;
   reducedMotion: boolean;
   privacy: boolean;
@@ -84,14 +128,22 @@ export function Office({
   onPin?: (s: Session) => void;
   /** Dropping a desk on a zone (or `null` for empty floor) asks where it should go. */
   onZoneDrop?: (sessionId: string, zoneKey: string | null) => void;
+  /** Dropping a desk on another desk of its own zone: the zone's station ids in the new order. */
+  onReorder?: (ids: string[]) => void;
   /** Desktop, with Send to terminal on: a bubble whose session can take a follow-up gets a quick reply. */
   onReply?: ReplySender;
   /** Says what a jump to the terminal did (or the resume command it copied). */
   notify?: (message: string) => void;
   /** The usage limit this colleague's tool has used up, if any (desk lights go out). */
   quotaOf?: (s: Session) => QuotaExhaustion | undefined;
+  /** From this many helpers on one colleague they share one stacked desk (preference). */
+  helperStackAt?: number;
 }) {
   const { t, locale } = useI18n();
+  // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
+  const reactionOf = usePetReactions((id) => byId.has(id));
+  const petting = usePetting();
+  const desks = useDeskAppearance();
   const holder = useRef<HTMLDivElement>(null);
   const [viewport, setViewport] = useState({ width: 960, height: 600 });
   const [aspect, setAspect] = useState(1.6);
@@ -107,10 +159,18 @@ export function Office({
   const [dropKey, setDropKey] = useState<string | null | undefined>(undefined);
   const draggable = !!onZoneDrop && !privacy;
   const dragFrom = dragging ? sessions.find((s) => s.id === dragging) : undefined;
+  // Over a desk of the dragged desk's own zone: which edge it would go in at.
+  const [insert, setInsert] = useState<{ id: string; side: 'before' | 'after' } | null>(null);
   const endDrag = () => {
     setDragging(null);
     setDropKey(undefined);
+    setInsert(null);
   };
+  // The dragged desk left the office mid-drag (hidden, gone, a persona's run changed): its
+  // dragend never comes, so end the drag here rather than leave the hint up.
+  useEffect(() => {
+    if (dragging && !dragFrom) endDrag();
+  }, [dragging, dragFrom]);
   const drop = (zoneKey: string | null) => {
     const from = dragFrom;
     endDrag();
@@ -124,7 +184,10 @@ export function Office({
     const el = holder.current!.parentElement!;
     let windowSize = '';
     const ro = new ResizeObserver(() => {
-      const box = el.getBoundingClientRect();
+      // A preview is drawn scaled (#324): its own, untransformed size is the room it has.
+      const box = preview
+        ? { width: el.offsetWidth, height: el.offsetHeight }
+        : el.getBoundingClientRect();
       const width = Math.floor(box.width),
         height = Math.floor(box.height);
       setViewport((v) => (v.width === width && v.height === height ? v : { width, height }));
@@ -154,7 +217,10 @@ export function Office({
   }, []);
   useWakeAt(arrivalEnds(notices), () => setClock(Date.now()));
   const signature = layoutSignature(sessions);
-  const layout = useMemo(() => layoutOffice(sessions, aspect), [signature, aspect, locale]);
+  const layout = useMemo(
+    () => layoutOffice(sessions, aspect, helperStackAt),
+    [signature, aspect, locale, helperStackAt],
+  );
   const focused = focusKey ? layout.projects.find((p) => p.key === focusKey) : undefined;
   const fitScale = Math.max(
     0.01,
@@ -187,7 +253,7 @@ export function Office({
     ? sessions.filter((s) => !s.attachedTo && (s.provider === 'claude' || s.provider === 'codex'))
     : [];
   const { targets: replyTargets, markSent } = useSendTargets(replyable.map(replyFor), {
-    enabled: quick,
+    enabled: quick && !preview,
     // Asks again when a record moves (a turn ended); no 4s polling across the whole floor.
     stamp: Math.max(0, ...replyable.map((s) => s.updatedAt)),
     pollBusy: false,
@@ -214,6 +280,7 @@ export function Office({
   };
   const focusZone = (key: string) => (focusKey === key ? fit() : setFocusKey(key));
   useEffect(() => {
+    if (preview) return;
     const command = (e: Event) => {
       const what = (e as CustomEvent<string>).detail;
       if (what === 'fit') fit();
@@ -279,7 +346,7 @@ export function Office({
   // Esc goes back to the whole room, one layer at a time like the app's own Esc: a field or
   // an open colleague closes first.
   useEffect(() => {
-    if (!focusKey) return;
+    if (!focusKey || preview) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.isComposing || e.defaultPrevented || selected) return;
       if (
@@ -326,6 +393,7 @@ export function Office({
               e.preventDefault();
               e.dataTransfer.dropEffect = 'move';
               setDropKey(null);
+              setInsert(null);
             }}
             onDrop={(e) => {
               if (!dragging) return;
@@ -377,7 +445,12 @@ export function Office({
             <i className="wall-plant plant-left" aria-hidden="true" />
             <i className="wall-plant plant-right" aria-hidden="true" />
             {layout.projects.map((area, index) => {
-              const areaName = privacy ? t.desk.project : area.name;
+              const source = byId.get(area.stations[0]?.id);
+              const areaName = privacy
+                ? t.desk.project
+                : showOffice && source
+                  ? `${officeLabel(source)} · ${area.name}`
+                  : area.name;
               const veilIds = zoneVeilIds?.(area.stations.map((s) => s.id)) ?? [];
               return (
                 <div
@@ -387,15 +460,27 @@ export function Office({
                   data-zone-index={index}
                   onDragOver={(e) => {
                     if (!dragging) return;
-                    e.preventDefault();
                     e.stopPropagation();
+                    // The combined room shows remote projects, but only local ones accept desks.
+                    if (source?.remote) {
+                      e.dataTransfer.dropEffect = 'none';
+                      setDropKey(undefined);
+                      setInsert(null);
+                      return;
+                    }
+                    e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                     setDropKey(area.key);
+                    setInsert(null);
                   }}
                   onDrop={(e) => {
                     if (!dragging) return;
                     e.preventDefault();
                     e.stopPropagation();
+                    if (source?.remote) {
+                      endDrag();
+                      return;
+                    }
                     drop(area.key);
                   }}
                   style={
@@ -425,8 +510,8 @@ export function Office({
                         privacy
                           ? ''
                           : area.custom
-                            ? `${area.name} · ${t.desk.customZone(area.custom.join(', '))}\n`
-                            : `${area.name}\n`
+                            ? `${areaName} · ${t.desk.customZone(area.custom.join(', '))}\n`
+                            : `${areaName}\n`
                       }${t.office.zoom.zoneTitle}`}
                       onClick={() => focusZone(area.key)}
                     >
@@ -439,6 +524,15 @@ export function Office({
                         )}
                       </small>
                     </button>
+                    <ProjectSummon
+                      sessions={sessions.filter((s) =>
+                        area.stations.some((station) => station.id === s.id),
+                      )}
+                      privacy={privacy}
+                      notify={notify ?? (() => {})}
+                      demo={demo}
+                      bringBack={bringBack}
+                    />
                     {onVeilZone && veilIds.length > 0 && (
                       <VeilButton zone name={areaName} onVeil={() => onVeilZone(veilIds)} />
                     )}
@@ -447,7 +541,8 @@ export function Office({
                     <Furniture
                       kind="desk"
                       key={`${bench.key}:${i}`}
-                      shared={bench.members.length > 1}
+                      shared={bench.shared}
+                      look={deskLook(desks, area.key)}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: bench.y, width: bench.width }}
                     />
@@ -457,6 +552,7 @@ export function Office({
                     const members = s.resident?.sessionIds ?? [s.id];
                     const active = members.includes(selected ?? '');
                     const pose = presentSession(s, clock);
+                    const joy = reactionOf(s.id);
                     // A just-arrived request plays on the desk and speaks first.
                     const speech = deskSpeech(s, notices, bubbleHours, clock);
                     const { unread, arrival, hop } = speech;
@@ -473,18 +569,61 @@ export function Office({
                     const bubble = shown?.speech.bubble;
                     const replyId = bubble?.sessionId ?? s.id;
                     const replyTarget = quick ? replyTargets[replyId] : null;
-                    const canReply = !!replyTarget?.canSend;
+                    const canReply = !!(replyTarget?.canSend || replyTarget?.canPrepare);
                     const focus = focusLevel(s, clock);
                     const branch = branchInfo(s);
                     const quota = quotaOf?.(s);
                     const dark = !!quota && dimsDesk(s, pose.working);
+                    const desk = deskLook(desks, area.key, s);
+                    // Which edge a drop on this desk's half would mark, and the order it sends.
+                    const plan = (e: DragEvent<HTMLElement>) => {
+                      const box = e.currentTarget.getBoundingClientRect();
+                      const side = e.clientX < box.left + box.width / 2 ? 'before' : 'after';
+                      return planDeskDrop(
+                        area.stations.map(({ id }) => {
+                          const x = byId.get(id)!;
+                          return { id, bench: benchKey(x), remote: !!x.remote || isRemoteId(id) };
+                        }),
+                        dragFrom!.id,
+                        s.id,
+                        side,
+                      );
+                    };
+                    // A remote desk is no target: the drop falls to its zone (nothing changes).
+                    const target =
+                      !!dragFrom &&
+                      projectKey(dragFrom) === area.key &&
+                      !s.remote &&
+                      !isRemoteId(s.id);
                     return (
                       <div
-                        className={`desk-station status-${s.status} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
+                        className={`desk-station status-${s.status} ${insert?.id === s.id ? `drop-${insert.side}` : ''} ${active ? 'selected-station' : ''} ${pose.working ? 'station-working' : 'station-resting'} ${spotlight === s.id ? 'is-spotlight' : spotlight ? 'is-dimmed' : ''} focus-level-${focus} ${dark ? 'lights-out' : ''}`}
                         data-working={pose.working}
                         key={s.id}
                         data-station-id={s.id}
                         style={{ transform: `translate(${station.x}px, ${station.y}px)` }}
+                        // Within its own zone a desk goes in before or after the desk it is
+                        // dropped on; other zones' desks leave the drop to their zone.
+                        onDragOver={(e) => {
+                          if (!target) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          setDropKey(area.key);
+                          // No marker where the order would stay as it is (its own bench, the
+                          // edge it already sits at).
+                          const at = plan(e)?.marker ?? null;
+                          setInsert((i) => (i?.id === at?.id && i?.side === at?.side ? i : at));
+                        }}
+                        onDrop={(e) => {
+                          if (!target) return;
+                          e.preventDefault();
+                          e.stopPropagation();
+                          // Where it is let go decides.
+                          const next = plan(e);
+                          endDrag();
+                          if (next && onReorder) onReorder(next.ids);
+                        }}
                         // The whole desk (bubble included) is what the person points at.
                         onMouseEnter={() => setHover(s.id)}
                         onMouseLeave={() => {
@@ -493,10 +632,10 @@ export function Office({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture kind="chair" look={desk} />
                         <div className={`pet-shadow ${active ? 'selected' : ''}`} />
                         <button
-                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          className={`office-pet ${active ? 'chosen' : ''} pose-${!active && !hop ? pose.posture : 'still'} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
                           aria-label={t.office.station(
@@ -522,10 +661,21 @@ export function Office({
                           onDragEnd={endDrag}
                           onClick={() => onSelect(s.id)}
                           onMouseEnter={() => onHover?.(s.id)}
-                          onMouseLeave={() => onHover?.(null)}
+                          onMouseMove={preview ? undefined : petting(s.id).onMouseMove}
+                          onMouseLeave={() => {
+                            onHover?.(null);
+                            if (!preview) petting(s.id).onMouseLeave?.();
+                          }}
                         >
-                          <FocusEffects level={focus} />
-                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {show.focus && <FocusEffects level={focus} />}
+                          {/* A pleased pet looks up from its work for a moment. */}
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={joy ? 'idle' : pose.mood}
+                            size={80}
+                          />
+                          {joy && <PetJoy key={joy.key} reaction={joy} />}
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
                         {onVeil && canVeil(s) && (
@@ -541,21 +691,23 @@ export function Office({
                             onPin={() => onPin(s)}
                           />
                         )}
-                        <Furniture kind="equipment" />
+                        <Furniture kind="equipment" look={desk} />
                         {quota && <QuotaBadge quota={quota} />}
-                        <PaperPile count={deskPapers(s, clock)} level={focus} />
+                        {show.papers && <PaperPile count={deskPapers(s, clock)} level={focus} />}
                         {arrival && (
                           <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
                         )}
-                        {pose.working && <WorkingBeacon level={focus} />}
-                        <button
-                          className={`desk-branch branch-${branch.kind}`}
-                          title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                          onClick={() => onSelect(s.id)}
-                        >
-                          <GitBranch size={9} />
-                          <span>{privacy ? t.desk.hidden : branch.label}</span>
-                        </button>
+                        {show.beacon && pose.working && <WorkingBeacon level={focus} />}
+                        {show.branch && (
+                          <button
+                            className={`desk-branch branch-${branch.kind}`}
+                            title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                            onClick={() => onSelect(s.id)}
+                          >
+                            <GitBranch size={9} />
+                            <span>{privacy ? t.desk.hidden : branch.label}</span>
+                          </button>
+                        )}
                         <button
                           className={`desk-name ${active ? 'selected' : ''}`}
                           onClick={() => onSelect(s.id)}
@@ -574,7 +726,12 @@ export function Office({
                                   : t.desk.working
                                 : MOODS[s.status].label}
                             </span>
-                            {unread > 0 && <em>{t.desk.unread(unread)}</em>}
+                            {isTeammate(s) && (
+                              <b className="desk-teammate" title={t.desk.teammate.hint}>
+                                {t.desk.teammate.tag}
+                              </b>
+                            )}
+                            {unread > 0 && <em>{t.desk.unread}</em>}
                           </small>
                         </button>
                         {shown && (
@@ -588,12 +745,11 @@ export function Office({
                               if (bubble && !privacy)
                                 onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
                             }}
+                            // The bubble opens its colleague's card on the conversation.
                             onOpen={() => {
-                              if (bubble) {
-                                if (!privacy)
-                                  onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
-                                onNews(bubble.sessionId);
-                              } else onSelect(s.id);
+                              if (bubble && !privacy)
+                                onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
+                              onConversation(bubble?.sessionId ?? s.id);
                             }}
                             onDismiss={() => {
                               setClosed(s.id);
@@ -629,8 +785,14 @@ export function Office({
                             name={sessionName(byId.get(replying.id) ?? s)}
                             onClose={() => setReplying(null)}
                             onJump={api.jump ? () => void jumpTo(replying.id) : undefined}
-                            onSend={async (text, replaceDraft) => {
-                              const result = await onReply!(replying.id, text, replaceDraft);
+                            onSend={async (text, replaceDraft, allowPartialDraft, images) => {
+                              const result = await onReply!(
+                                replying.id,
+                                text,
+                                replaceDraft,
+                                allowPartialDraft,
+                                images,
+                              );
                               if (result.status === 'sent') markSent(replying.id);
                               return result;
                             }}
@@ -705,7 +867,9 @@ export function Office({
             ? t.office.drop.newZone
             : dropKey && dragFrom && dropKey !== projectKey(dragFrom)
               ? t.office.drop.moveTo(layout.projects.find((p) => p.key === dropKey)?.name)
-              : t.office.drop.elsewhere}
+              : insert
+                ? t.office.drop.reorder
+                : t.office.drop.elsewhere}
         </div>
       )}
       <div className="stage-hud hud-bottom-left office-card-bottom">

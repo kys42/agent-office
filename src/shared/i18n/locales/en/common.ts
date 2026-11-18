@@ -12,4 +12,11 @@ export const common = {
   language: {
     auto: 'System language',
   },
+  /** A popup window's own on-top toggle (mini terminal, bookmark reader). */
+  onTop: {
+    name: 'Keep on top',
+    states: { off: 'Normal window', on: 'On top' },
+    hints: { off: 'Other windows can cover it', on: 'Always above other windows' },
+    label: (now: string, next: string) => `Keep on top: ${now} → ${next}`,
+  },
 };

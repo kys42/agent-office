@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import type { OfficeService } from '../service.js';
 import type { Snapshot } from '../../src/shared/types.js';
 import { isRemoteId } from '../../src/shared/federation.js';
@@ -32,11 +33,11 @@ const list = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 function remoteReferences(method: string, args: unknown[]): boolean {
   const input = record(args[0]);
   let references: unknown[] = [];
-  if (['veil', 'pin', 'identities'].includes(method)) references = list(args[0]);
-  if (['bookmarks', 'noticePage', 'noticeReadAll'].includes(method))
-    references = list(input.sessionIds);
+  if (['veil', 'pin', 'reorderSeats', 'identities'].includes(method)) references = list(args[0]);
+  if (method === 'bookmarks' || method === 'outputs') references = list(input.sessionIds);
   if (method === 'notices') references = list(args[0]).map((item) => record(item).id);
-  if (['unbookmark', 'bookmarkNote'].includes(method)) references = [args[0]];
+  if (['unbookmark', 'bookmarkNote', 'bookmarkById', 'readReplies'].includes(method))
+    references = [args[0]];
   if (['bookmark', 'unbookmarkMessage'].includes(method)) references = [args[1]];
   if (method === 'preferences') {
     references = list(input.zoneRules)
@@ -44,6 +45,7 @@ function remoteReferences(method: string, args: unknown[]): boolean {
       .filter((rule) => rule.match === 'session')
       .map((rule) => rule.value);
     references.push(...Object.keys(record(record(input.petAppearance).colleagues)));
+    references.push(...Object.keys(record(record(input.deskAppearance).colleagues)));
   }
   return references.some(isRemoteId);
 }
@@ -122,6 +124,41 @@ export class FederatedService extends EventEmitter {
     authorized?: () => Promise<void>,
   ): Promise<unknown> {
     if (method === 'federation') return this.peers.command(args[0]);
+    if (method === 'veil' && remoteReferences(method, args)) {
+      const ids = z.array(z.string().max(400)).max(500).parse(args[0]);
+      const on = z.boolean().parse(args[1]);
+      if (!this.peers.enabled) throw Error('Remote Office is read-only in this beta');
+      const remote = ids.filter(isRemoteId);
+      const available = new Set(this.peers.sessions().map((s) => s.id));
+      if (remote.some((id) => !available.has(id))) throw Error('Remote session unavailable');
+      const local = (await this.local.call('snapshot')) as Snapshot;
+      const visible = new Set(this.compose(local).sessions.map((s) => s.id));
+      if (ids.some((id) => !visible.has(id))) throw Error('Session unavailable');
+      this.peers.checkVeil(remote, on);
+      const localIds = ids.filter((id) => !isRemoteId(id));
+      this.localSnapshot = localIds.length
+        ? ((await this.local.call('veil', [localIds, on])) as Snapshot)
+        : local;
+      this.peers.veil(remote, on);
+      return this.publish();
+    }
+    if (method === 'remote-launch') {
+      const [id, spec, start] = args;
+      if (!isRemoteId(id)) throw Error('Remote session unavailable');
+      const verify = async () => {
+        const local = (await this.local.call('snapshot')) as Snapshot;
+        if (!this.compose(local).sessions.some((s) => s.id === id))
+          throw Error('Remote session unavailable');
+        await authorized?.();
+      };
+      await verify();
+      return this.peers.launchSession(
+        id as string,
+        spec,
+        start as Parameters<PeerManager['launchSession']>[2],
+        verify,
+      );
+    }
     if (method === 'remote-targets') {
       const ids = args[0];
       if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => !isRemoteId(id)))
@@ -139,7 +176,12 @@ export class FederatedService extends EventEmitter {
         if (method === 'remote-send') {
           if (typeof args[1] !== 'string' || args[1].length > 20000 || typeof args[2] !== 'string')
             throw new Error('Invalid send');
-          return this.peers.send(id, args[1], args[2], authorized);
+          return this.peers.send(id, args[1], args[2], async () => {
+            const latest = (await this.local.call('snapshot')) as Snapshot;
+            if (!this.compose(latest).sessions.some((s) => s.id === id))
+              throw Error('Remote session unavailable');
+            await authorized?.();
+          });
         }
         return this.peers.detail(id);
       }
@@ -150,6 +192,9 @@ export class FederatedService extends EventEmitter {
     // Remote references still cannot reach local writes, even after the beta is disabled.
     if (remoteReferences(method, args)) {
       if (method === 'bookmarks') return { bookmarks: [], more: false, total: 0 };
+      // A remote office's outputs stay there (#350): this office never names its files.
+      if (method === 'outputs') return { outputs: [], more: false, total: 0 };
+      if (method === 'bookmarkById') return null;
       throw new Error('Remote Office is read-only in this beta');
     }
     const result = await this.local.call(method, args);

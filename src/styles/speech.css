@@ -44,8 +44,8 @@
 .desk-station:has(.speech-bubble.is-expanded) {
   z-index: 7;
 }
-/* The desk row's headroom ends at the tools band: bubble bottom 206px from the window top
-   (44 band + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
+/* The desk row's headroom ends at the window top: bubble bottom 206px below it
+   (44 ROW_TOP_ROOM + 104 ROW_TOP + 58), header and padding ≈ 46px → text up to 112px. */
 .desk-row .speech-bubble.is-expanded .speech-text {
   max-height: 112px;
 }
@@ -56,7 +56,7 @@
   margin-top: 5px;
   padding-top: 5px;
   border-top: 1px dashed rgba(42, 33, 40, 0.25);
-  font-size: 10px;
+  font-size: calc(10px * var(--bubble-scale));
   line-height: 1.35;
   color: #5b4d55;
 }
@@ -293,7 +293,20 @@
   height: 3px;
   border-radius: 50%;
   background: currentColor;
-  animation: bubble-typing 1.25s ease-in-out infinite;
+  opacity: 0.55;
+}
+/*
+ * Only the bubble being looked at types (the chosen desk's, an unfolded or pointed-at one); the
+ * rest show still dots, so a busy office is not a dozen loops for the same hint.
+ */
+:is(.selected-station .speech-bubble, .speech-bubble:is(.is-expanded, :hover, :focus-within))
+  .bubble-typing
+  i {
+  /* Longhands, so the staggered delays below still apply. */
+  animation-name: bubble-typing;
+  animation-duration: 1.25s;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
 }
 .bubble-typing i:nth-child(2) {
   animation-delay: 0.125s;
@@ -488,6 +501,22 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* A file on this computer: a document icon before its label; the path shows on hover. */
+.file-link svg {
+  display: inline-block;
+  margin-right: 2px;
+  vertical-align: -1px;
+}
+.file-link.is-missing {
+  opacity: 0.6;
+  text-decoration-style: dashed;
+}
+/* In a browser the file can't open: its path stays beside the label, as written. */
+.file-link.is-text code {
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
+}
 
 /* While pointed at: the person's own request as its own bubble right above (what was asked).
    Same width as the bubble below, the person's dark style with a tail; long requests scroll
@@ -549,18 +578,18 @@
   user-select: text;
   -webkit-user-select: text;
   cursor: text;
-  /* Whole lines only (11px × 1.4): office 3, row 4, pet 2. */
-  max-height: 46px;
+  /* Whole lines only, at any reading size: office 3, row 4, pet 2. */
+  max-height: calc(3 * 1lh);
   overflow-y: auto;
   overscroll-behavior: contain;
-  font-size: 11px;
+  font-size: calc(11px * var(--bubble-scale));
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 /* The row has more headroom: its bubbles share it (answer 3 lines, request up to ~4.5). */
 .desk-row .speech-request-text {
-  max-height: 62px;
+  max-height: calc(4 * 1lh);
 }
 .speech-request-bubble.has-more .speech-request-text {
   mask-image: linear-gradient(#000 65%, transparent);

@@ -1,4 +1,25 @@
 export const federation = {
+  tinyColor: '쪼꼬미 이름표 색',
+  colors: {
+    sky: '하늘색',
+    lilac: '연보라',
+    mint: '민트',
+    peach: '살구색',
+    rose: '장미색',
+    gold: '금색',
+  },
+  codexConnection: '이 컴퓨터의 Codex 원격 연결',
+  codexConnectionOff: '자동으로 찾기',
+  codexConnectionHint:
+    '대화 ID로 같은 컴퓨터의 Codex 연결을 자동으로 찾습니다. 필요한 경우에만 연결을 직접 지정하세요.',
+  codexRemoteRoute: '이 컴퓨터의 Codex 원격 연결',
+  codexRemoteUnavailable:
+    'Codex에서 해당 원격 대화를 열고 다시 확인하세요. 연결 설정과 전송 권한도 확인해 주세요.',
+  connectAndSend: '연결하고 보내기',
+  codexConnectHint: '보내기를 누르면 Codex에서 이 대화를 열고 연결을 확인한 뒤 보냅니다.',
+  codexConnectFailed:
+    'Codex 대화를 연결하지 못해 메시지를 보내지 않았습니다. Codex 원격 연결을 확인한 뒤 다시 시도해 주세요.',
+  checkTarget: '전송 대상 다시 확인',
   sendReady: '채팅 전송 가능',
   sendUnavailable: '원격 전송 대상 또는 권한을 확인할 수 없습니다.',
   sent: '원격 사무실에 보냈습니다.',
@@ -10,6 +31,8 @@ export const federation = {
   sendPermission: '채팅 권한 포함',
   readPermission: '조회 전용',
   rooms: '사무실',
+  allOffices: '전체 사무실',
+  allOfficesHint: '모든 컴퓨터 함께 보기',
   localOffice: '내 컴퓨터',
   thisComputer: '이 컴퓨터',
   remoteOffice: '원격 사무실',
@@ -30,6 +53,7 @@ export const federation = {
   empty: '연결된 사무실이 없습니다.',
   connected: '연결됨',
   connecting: '연결 중',
+  reconnecting: '다시 연결 중',
   offline: '연결 끊김',
   rejected: '접근 거부',
   disabled: '베타가 꺼져 있습니다. 원격 연결을 실행하지 않습니다.',

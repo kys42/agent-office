@@ -121,7 +121,11 @@ try {
   await page.waitForTimeout(1400);
   const pet = dock.locator('.desk-pet');
   await glide(pet);
-  await pet.click();
+  // The pet opens its colleague's card; its side button unfolds the desks.
+  await dock.locator('.dock-pet-anchor').hover();
+  const unfold = dock.locator('.dock-pet-tools button').nth(2);
+  await glide(unfold);
+  await unfold.click();
   await dock.locator('.desk-row [data-station-id]').first().waitFor();
   await page.waitForTimeout(2200);
   // Unfold the first bubble in place to read the whole update.

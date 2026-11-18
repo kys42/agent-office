@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { demoSnapshot } from '../src/lib/demo.js';
 import { awayDigest, triage, triageGroup, unreadInbox, workingFor } from '../src/shared/triage.js';
+import { cardReadNotices } from '../src/shared/notices.js';
 import type { OfficeNotice, Session } from '../src/shared/types.js';
 const now = Date.now();
 const make = (id: string, patch: Partial<Session> = {}): Session => ({
@@ -122,4 +123,34 @@ test('away digest is frozen at the moment of return; later news is not "while aw
   const later = notice('late', { receivedAt: back + 60 * 60_000 });
   assert.equal(awayDigest([later], from - 60 * 60_000, back).results, 0);
   assert.equal(awayDigest([later], from - 60 * 60_000).results, 1);
+});
+
+test('opening a card reads only the colleague’s unread final replies, never calls or errors', () => {
+  const list = [
+    notice('a', { id: 'a::final' }),
+    notice('a2', { id: 'a2::final' }),
+    notice('a', { id: 'a::read', seenAt: now }),
+    notice('a', { id: 'a::call', kind: 'attention', phase: undefined }),
+    notice('a', { id: 'a::error', kind: 'error', phase: undefined }),
+    notice('a', { id: 'a::progress', phase: 'commentary' }),
+    notice('a', { id: 'a::helper', background: true }),
+    notice('b', { id: 'b::final' }),
+    notice('remote-office:o:a', { id: 'remote-office:o:a::final' }),
+  ];
+  assert.deepEqual(
+    cardReadNotices(list, ['a', 'a2', 'remote-office:o:a']).map((n) => n.id),
+    ['a::final', 'a2::final'],
+  );
+  // Read, the colleague keeps only what still needs the person.
+  const due = cardReadNotices(list, ['a', 'a2']);
+  const read = list.map((n) => (due.includes(n) ? { ...n, seenAt: now } : n));
+  const s = make('a', {
+    resident: { key: 'actor:x', sessionIds: ['a', 'a2'] } as Session['resident'],
+  });
+  assert.deepEqual(
+    unreadInbox(s, read)
+      .map((n) => n.id)
+      .sort(),
+    ['a::call', 'a::error'],
+  );
 });

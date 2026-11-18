@@ -1,0 +1,206 @@
+/* Terminal sheets follow the same quiet surfaces and controls as Settings. */
+.modal-backdrop:has(.tmux-resume) {
+  padding: 12px;
+  pointer-events: auto;
+}
+.modal:has(> .tmux-resume) {
+  width: min(480px, 100%);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  background: var(--grouped);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+.modal:has(> .tmux-resume) > header {
+  flex: none;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.tmux-resume {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.tmux-resume > * {
+  flex-shrink: 0;
+}
+.tmux-resume p,
+.tmux-resume dl,
+.tmux-resume h3 {
+  margin: 0;
+}
+.tmux-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-2);
+}
+.tmux-intro-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  color: var(--text-2);
+}
+.summon-form {
+  display: grid;
+  gap: 16px;
+}
+.summon-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.summon-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.summon-field > small {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.summon-field :is(input, select, textarea) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 34px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0.5px solid var(--control-line);
+  border-radius: var(--r-md);
+  background-color: var(--field);
+  color: var(--text);
+  box-shadow: var(--control-shadow);
+  font: inherit;
+  line-height: 1.5;
+}
+.summon-field select {
+  padding-right: 28px;
+}
+.summon-field textarea {
+  resize: vertical;
+  min-height: 82px;
+  max-height: 160px;
+}
+.summon-field textarea::placeholder {
+  color: var(--text-3);
+}
+.summon-field :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--line-3);
+  outline-offset: 2px;
+}
+.summon-field :is(input, select, textarea):disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.summon-provider {
+  display: flex;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--bg-4);
+  gap: 3px;
+}
+.summon-provider button {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  height: 29px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.summon-provider button[aria-pressed='true'] {
+  background: var(--control);
+  box-shadow: var(--control-shadow);
+  color: var(--text);
+}
+.summon-provider button:disabled {
+  opacity: 0.55;
+}
+.tmux-caution,
+.tmux-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tmux-resume svg {
+  flex: none;
+}
+.tmux-caution > svg,
+.tmux-error > svg {
+  margin-top: 3px;
+}
+.tmux-caution {
+  color: var(--text-3);
+}
+.tmux-error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--st-call) 20%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--st-call) 7%, var(--bg-1));
+  color: var(--st-call);
+}
+.tmux-resume-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line-2);
+  background: var(--bg-1);
+}
+.tmux-resume-actions .button {
+  flex: none;
+  min-height: 30px;
+}
+.tmux-resume-actions .button.primary {
+  margin-left: auto;
+}
+.tmux-resume-actions .button.subtle {
+  padding: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+@media (max-width: 400px) {
+  .tmux-resume {
+    padding: 16px;
+  }
+  .modal:has(> .tmux-resume) > header {
+    padding: 12px 16px;
+  }
+  .tmux-resume-actions {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+  .tmux-resume-actions .button {
+    padding-right: 9px;
+    padding-left: 9px;
+    font-size: 12px;
+  }
+}

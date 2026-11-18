@@ -3,6 +3,7 @@ import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { TerminalTarget } from '../src/shared/types.js';
 import { m } from '../src/shared/i18n/index.js';
+import { withImagePaths } from '../src/shared/attachments.js';
 import { focusTarget, type TerminalHost } from './terminal-host.js';
 import {
   cleanInput,
@@ -46,7 +47,10 @@ export interface CodexOriginScan {
 }
 
 /** The rollout's `session_meta`: who started the session. Null when the file cannot be read. */
-export async function scanCodexOrigin(file: string): Promise<CodexOriginScan | null> {
+export async function scanCodexOrigin(
+  file: string,
+  expectedId?: string,
+): Promise<CodexOriginScan | null> {
   const handle = await open(file, 'r').catch(() => null);
   if (!handle) return null;
   try {
@@ -73,6 +77,7 @@ export async function scanCodexOrigin(file: string): Promise<CodexOriginScan | n
         }
         if (d?.type !== 'session_meta') continue;
         const p = d.payload ?? {};
+        if (expectedId && p.id !== expectedId) return { origin: null, final: true };
         const source = p.source;
         return {
           origin: {
@@ -204,12 +209,17 @@ export function codexTarget(host?: TerminalHost | null, canSend = true): Termina
   };
 }
 
+/**
+ * `images`: absolute paths main saved. `codex queue` takes text only (it refuses `--image`), so
+ * they go as paths after the message, one per line, for Codex to open itself.
+ */
 export async function queueToCodex(
   thread: CodexThread,
   input: unknown,
   deps = defaultTerminalDeps(),
+  images: readonly string[] = [],
 ): Promise<string> {
-  const text = cleanInput(input);
+  const text = withImagePaths(cleanInput(input, { allowEmpty: images.length > 0 }), images);
   // `--flag=value` keeps a message that starts with `-` from being read as an option.
   const out = await deps.run(
     deps.bin('codex'),

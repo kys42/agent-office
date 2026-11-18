@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-29",
+  "environment": "macOS arm64, Node 25.5.0; synthetic collector process only",
+  "baselineRevision": "9a05a2359d6928fceb18f0c3ba0882fe68df4385",
+  "scope": "100 sessions; 80% notices in one session; no real user data; GC measurement-only; RSS is not a heap budget",
+  "before50000": {
+    "count": 50000,
+    "before": {
+      "heapMiB": 15.95,
+      "rssMiB": 125.83
+    },
+    "after": {
+      "heapMiB": 89.83,
+      "rssMiB": 975.59
+    },
+    "staged": {
+      "heapMiB": 201.8,
+      "rssMiB": 978.55
+    },
+    "firstMs": 594.606417,
+    "steadyMs": 566.204854125,
+    "pageMs": 592.8860839999998,
+    "detailMs": 349.72741600000063,
+    "stageMs": 364.2453750000004,
+    "cpuMs": 6558.958,
+    "snapshotNotices": 1047,
+    "snapshotBytes": 1934285,
+    "pageNotices": 50,
+    "detailNotices": 40100,
+    "stats": {
+      "unread": 26667,
+      "total": 50000
+    }
+  },
+  "after50000": {
+    "count": 50000,
+    "before": {
+      "heapMiB": 16.07,
+      "rssMiB": 129.17
+    },
+    "after": {
+      "heapMiB": 21.85,
+      "rssMiB": 169.53
+    },
+    "staged": {
+      "heapMiB": 21.99,
+      "rssMiB": 169.55
+    },
+    "firstMs": 79.3600419999998,
+    "steadyMs": 52.00373962500004,
+    "pageMs": 24.876291000000037,
+    "detailMs": 0.862583000000086,
+    "stageMs": 0.46079199999985576,
+    "cpuMs": 575.865,
+    "snapshotNotices": 1047,
+    "snapshotBytes": 1934285,
+    "pageNotices": 50,
+    "detailNotices": 39,
+    "stats": {
+      "unread": 26667,
+      "total": 50000
+    }
+  },
+  "after200000": {
+    "count": 200000,
+    "before": {
+      "heapMiB": 16.1,
+      "rssMiB": 132.64
+    },
+    "after": {
+      "heapMiB": 21.88,
+      "rssMiB": 170.75
+    },
+    "staged": {
+      "heapMiB": 22.03,
+      "rssMiB": 170.77
+    },
+    "firstMs": 480.39737499999865,
+    "steadyMs": 177.54718224999988,
+    "pageMs": 102.51970799999981,
+    "detailMs": 0.9879160000000411,
+    "stageMs": 0.79083300000093,
+    "cpuMs": 1796.007,
+    "snapshotNotices": 1047,
+    "snapshotBytes": 1937428,
+    "pageNotices": 50,
+    "detailNotices": 39,
+    "stats": {
+      "unread": 106667,
+      "total": 200000
+    }
+  },
+  "soak": {
+    "cycles": 720,
+    "sessions": 40,
+    "warmHeapMiB": 76.5,
+    "finalHeapMiB": 79.2,
+    "growthPercent": 3.5,
+    "note": "Accelerated replay of 720 five-second passes; hot-tier fit. Completed before cold tier addition."
+  },
+  "overflowSoak": {
+    "cycles": 24,
+    "sessions": 80,
+    "warmHeapMiB": 78.6,
+    "finalHeapMiB": 79.3,
+    "growthPercent": 0.9,
+    "coldCacheMiB": 0.6,
+    "note": "Final v8 serialized cold tier, hot working set exceeds 48MiB weighted cache budget."
+  }
+}

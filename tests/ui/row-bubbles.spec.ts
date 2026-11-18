@@ -1,8 +1,15 @@
 import { test, expect, type Page } from '@playwright/test';
 import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
+import type { Snapshot } from '../../src/shared/types';
 
-async function fixture(page: Page, mode = '#mini=row', call = false, motion = false) {
+async function fixture(
+  page: Page,
+  mode = '#mini=row',
+  call = false,
+  motion = false,
+  connect = false,
+) {
   const s = demoSnapshot();
   const colleague = s.sessions[0];
   const now = Date.now();
@@ -40,44 +47,66 @@ async function fixture(page: Page, mode = '#mini=row', call = false, motion = fa
       version: 'v1',
     },
   ];
-  await page.addInitScript((s) => {
-    const w = window as any;
-    w.fixture = s;
-    w.receipts = [];
-    w.sends = [];
-    w.office = {
-      snapshot: async () => structuredClone(s),
-      subscribe: (fn: (s: unknown) => void) => {
-        w.publish = () => fn(structuredClone(s));
-        return () => {};
-      },
-      detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
-      artifacts: async () => [],
-      visit: async () => structuredClone(s),
-      terminalSend: async () => true,
-      terminals: async (ids: string[]) =>
-        Object.fromEntries(
-          ids.map((id) => [
-            id,
-            { kind: 'tmux', label: 'work:1.0', status: 'idle', canSend: true, canFocus: true },
-          ]),
-        ),
-      notices: async (receipts: { id: string; version: string }[], action: string) => {
-        w.receipts.push({ receipts, action });
-        for (const n of s.notices ?? [])
-          if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
-            if (action === 'view') n.viewedAt ??= Date.now();
-            if (action === 'read') n.seenAt = Date.now();
-            if (action === 'dismiss') n.dismissedAt = Date.now();
-          }
-        return structuredClone(s);
-      },
-      send: async (id: string, text: string) => {
-        w.sends.push({ id, text });
-        return { status: 'sent', message: '보냈어요' };
-      },
-    };
-  }, s);
+  await page.addInitScript(
+    ({ s, connect }) => {
+      const w = window as any;
+      w.fixture = s;
+      w.receipts = [];
+      w.sends = [];
+      w.office = {
+        snapshot: async () => structuredClone(s),
+        subscribe: (fn: (s: unknown) => void) => {
+          w.publish = () => fn(structuredClone(s));
+          return () => {};
+        },
+        detail: async (id: string) => structuredClone(s.sessions.find((x) => x.id === id)),
+        artifacts: async () => [],
+        visit: async () => structuredClone(s),
+        terminalSend: async () => true,
+        terminals: async (ids: string[]) =>
+          Object.fromEntries(
+            ids.map((id) => [
+              id,
+              connect
+                ? {
+                    kind: 'codex',
+                    desktop: true,
+                    codexRemote: true,
+                    remoteOffice: 'MacBook Pro',
+                    label: '',
+                    status: 'desktop',
+                    canSend: false,
+                    canPrepare: true,
+                    canFocus: false,
+                  }
+                : {
+                    kind: 'tmux',
+                    label: 'work:1.0',
+                    status: 'idle',
+                    canSend: true,
+                    canFocus: true,
+                  },
+            ]),
+          ),
+        notices: async (receipts: { id: string; version: string }[], action: string) => {
+          w.receipts.push({ receipts, action });
+          for (const n of s.notices ?? [])
+            if (receipts.some((r) => r.id === n.id && r.version === n.version)) {
+              if (action === 'view') n.viewedAt ??= Date.now();
+              if (action === 'read') n.seenAt = Date.now();
+              if (action === 'unread') n.seenAt = null;
+              if (action === 'dismiss') n.dismissedAt = Date.now();
+            }
+          return structuredClone(s);
+        },
+        send: async (id: string, text: string) => {
+          w.sends.push({ id, text });
+          return { status: 'sent', message: '보냈어요' };
+        },
+      };
+    },
+    { s, connect },
+  );
   await page.goto(`/?lang=ko${mode}`);
   await expect(page.locator('.speech-bubble').first()).toBeVisible();
   return page.locator('.speech-bubble').first();
@@ -176,6 +205,33 @@ for (const mode of ['#mini=row', '#mini=floor', '']) {
   });
 }
 
+for (const mode of ['#mini=floor', '#mini=row']) {
+  test(`a read reply leaves the dock; pointing peeks it and the pin keeps it up ${mode}`, async ({
+    page,
+  }) => {
+    await fixture(page, mode);
+    // Read elsewhere (its card stayed open): the bubble goes, as tiny's dot does.
+    await page.evaluate(() => {
+      const w = window as any;
+      w.fixture.notices[0].seenAt = Date.now();
+      w.publish();
+    });
+    await expect(page.locator('.speech-bubble')).toHaveCount(0);
+    await page.locator('.row-station .office-pet').first().hover();
+    const peek = page.locator('.speech-bubble.is-peek');
+    await expect(peek).toBeVisible();
+    await expect(peek.locator('.bubble-dismiss:not(.bubble-keep)')).toHaveCount(0);
+    await peek.getByRole('button', { name: /말풍선 다시 띄워 두기/ }).click();
+    const receipts = await page.evaluate(() => (window as any).receipts);
+    expect(receipts.at(-1).action).toBe('unread');
+    await page.mouse.move(0, 0);
+    const kept = page.locator('.speech-bubble').first();
+    await expect(kept).toBeVisible();
+    await expect(kept).not.toHaveClass(/is-peek/);
+    await expect(kept).toHaveClass(/unread/);
+  });
+}
+
 test('a viewed question stays unresolved but stops pulsing', async ({ page }) => {
   const bubble = await fixture(page, '#mini=row', true);
   await bubble.locator('.speech-open').click();
@@ -206,5 +262,110 @@ for (const mode of ['#mini', '']) {
     await page.keyboard.press('Escape');
     await expect(form).toHaveCount(0);
     expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
+  });
+}
+
+/** demo:0 answered a long request with a long final answer: both bubbles at their tallest. */
+function tallest(): Snapshot {
+  const snapshot = demoSnapshot();
+  const now = Date.now();
+  snapshot.sessions.find((x) => x.id === 'demo:0')!.events = [];
+  const base = snapshot.notices![0];
+  snapshot.notices = [
+    {
+      ...base,
+      id: 'asked',
+      sessionId: 'demo:0',
+      eventId: 'asked',
+      kind: 'request',
+      phase: undefined,
+      text: '로그인 화면 여백을 다듬어 줘. 버튼 색은 브랜드 컬러로 바꾸고, 바뀐 화면은 스크린샷으로 남겨 줘. '.repeat(
+        6,
+      ),
+      at: now - 5 * 60_000,
+      receivedAt: now - 5 * 60_000,
+      version: 'v1',
+      seenAt: null,
+      viewedAt: null,
+      dismissedAt: null,
+      resolvedAt: null,
+      bootstrap: false,
+    },
+    {
+      ...base,
+      id: 'answer',
+      sessionId: 'demo:0',
+      eventId: 'answer',
+      kind: 'reply',
+      phase: 'final',
+      text: '여백을 8px로 맞췄어요. 버튼 색도 브랜드 컬러로 바꾸고, 바뀐 화면은 스크린샷으로 남겼어요. '.repeat(
+        8,
+      ),
+      at: now - 60_000,
+      receivedAt: now - 60_000,
+      version: 'v1',
+      seenAt: null,
+      viewedAt: null,
+      dismissedAt: null,
+      resolvedAt: null,
+      bootstrap: false,
+    },
+  ];
+  return snapshot;
+}
+
+async function measureRequest(page: Page, mode: string) {
+  const snapshot = tallest();
+  await page.route('**/api/rpc', (route) => route.fulfill({ json: { result: snapshot } }));
+  await page.goto(`/${mode}`);
+  await page.reload();
+  const desk = page.locator('.desk-row [data-station-id="demo:0"]');
+  await expect(desk.locator('.speech-bubble')).toBeVisible();
+  await desk.locator('.office-pet').hover();
+  const request = desk.locator('.speech-request-bubble');
+  await expect(request).toBeVisible();
+  return request.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    // The dock window is exactly the row (the browser preview pins it to the bottom).
+    const win = el.closest('.desk-row')!.getBoundingClientRect();
+    const track = el.closest('.desk-row-track')!.getBoundingClientRect();
+    const header = el.querySelector('small')!.getBoundingClientRect();
+    // The header's middle shows the request (not cut away by the track's clip).
+    const hit = document.elementFromPoint(header.x + 4, header.y + header.height / 2);
+    return {
+      top: Math.round(r.top - win.top),
+      trackTop: Math.round(track.top - win.top),
+      headerHit: !!hit && el.contains(hit),
+    };
+  });
+}
+
+for (const mode of ['#mini=row', '#mini=floor']) {
+  test(`the stacked request bubble keeps its header inside the dock window ${mode}`, async ({
+    page,
+  }) => {
+    const m = await measureRequest(page, mode);
+    await page.locator('.desk-row').screenshot({ path: `.local/headroom-${mode.slice(6)}.png` });
+    // Inside the window and not cut by the desks' track (it hides vertical overflow).
+    expect(m.top).toBeGreaterThanOrEqual(0);
+    expect(m.top).toBeGreaterThanOrEqual(m.trackTop);
+    expect(m.headerHit).toBe(true);
+  });
+}
+
+for (const mode of ['', '#mini=row', '#mini=pet']) {
+  test(`connection preparation is disclosed in quick reply ${mode || 'office'}`, async ({
+    page,
+  }) => {
+    const bubble = await fixture(page, mode, false, false, true);
+    await bubble.hover();
+    await bubble.locator('.bubble-reply').click();
+    const form = page.locator('.quick-reply');
+    await expect(form).toContainText('Codex에서 이 대화를 열고');
+    const button = form.getByRole('button', { name: '연결하고 보내기', exact: true });
+    await expect(button).toBeDisabled();
+    await form.locator('textarea').fill('합성 연결 답장');
+    await button.click();
+    await expect.poll(() => page.evaluate(() => (window as any).sends.length)).toBe(1);
   });
 }

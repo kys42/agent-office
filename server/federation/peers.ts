@@ -1,9 +1,10 @@
+import { launchInfoSchema, launchSpecSchema } from '../../src/shared/remote-launch.js';
 import { EventEmitter } from 'node:events';
 import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { FederationState, PeerInput } from '../../src/shared/federation.js';
-import { parseRemoteId, remoteId } from '../../src/shared/federation.js';
+import { OFFICE_COLORS, parseRemoteId, remoteId } from '../../src/shared/federation.js';
 import type { Session, SessionDetail, TerminalTarget, SendResult } from '../../src/shared/types.js';
 import {
   peerSchema,
@@ -17,14 +18,42 @@ import { targetResponseSchema, sendResponseSchema } from './command-protocol.js'
 import { m } from '../../src/shared/i18n/index.js';
 import { peerRequest, PeerError } from './transport.js';
 
-const configSchema = z.object({ enabled: z.boolean(), peers: z.array(peerSchema).max(5) }).strict();
+import type { CodexRelay } from '../../desktop/codex-remote.js';
+import { RelayJournal } from './relay-journal.js';
+import { noticeCandidates } from '../../src/shared/notices.js';
+import { isVeiled } from '../../src/shared/veil.js';
+import { needsAttention, officeResidents } from '../../src/shared/residents.js';
+const hostSchema = z
+  .string()
+  .regex(/^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/)
+  .optional();
+const colorSchema = z.enum(OFFICE_COLORS).optional();
+const localPeerSchema = peerSchema.extend({ codexHostId: hostSchema, color: colorSchema });
+// Assign distinct defaults to old connection files without asking for a migration.
+function assignColors(peers: PeerInput[]) {
+  const used = new Set(peers.map((p) => p.color));
+  for (const p of peers)
+    if (!p.color) {
+      p.color = OFFICE_COLORS.find((color) => !used.has(color)) ?? OFFICE_COLORS[0];
+      used.add(p.color);
+    }
+}
+const configSchema = z
+  .object({ enabled: z.boolean(), peers: z.array(localPeerSchema).max(5) })
+  .strict();
+const hiddenSchema = z
+  .record(
+    z.string().regex(/^remote-office:[0-9a-f-]{36}:[0-9a-f]{64}$/),
+    z.number().finite().nonnegative(),
+  )
+  .refine((value) => Object.keys(value).length <= 10000);
 const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('state') }).strict(),
   z.object({ action: z.literal('enable'), enabled: z.boolean() }).strict(),
   z.object({ action: z.literal('add'), peer: peerSchema }).strict(),
   peerSchema
     .pick({ officeId: true, label: true, tags: true, projects: true })
-    .extend({ action: z.literal('update') })
+    .extend({ action: z.literal('update'), codexHostId: hostSchema, color: colorSchema })
     .strict(),
   z.object({ action: z.literal('remove'), officeId: z.uuid() }).strict(),
 ]);
@@ -38,7 +67,8 @@ interface Held {
   timer?: ReturnType<typeof setTimeout>;
   controller?: AbortController;
 }
-export const linkedProjectKey = (name: string) => `federation-project:${wireId(name)}`;
+export const linkedProjectKey = (name: string, officeId: string) =>
+  `federation-project:${officeId}:${wireId(name)}`;
 export function importSession(
   s: WireSession,
   peer: PeerInput,
@@ -96,18 +126,19 @@ export function importSession(
     events: s.events.map((e) => ({ ...e, id: id(e.id), sourceRef: '' })),
     usage: s.usage,
     artifacts: [],
-    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
+    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.color, peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
     zone: s.zone,
     officeSeat: s.officeSeat,
     area: {
       key: linked
-        ? linkedProjectKey(linked)
+        ? linkedProjectKey(linked, peer.officeId)
         : `remote-project:${peer.officeId}:${wireId(s.project)}`,
       name: linked ?? s.project,
       ruleId: `remote:${peer.officeId}`,
       match: 'session',
     },
     remote: {
+      color: peer.color,
       officeId: peer.officeId,
       sessionId: s.id,
       label: peer.label,
@@ -120,7 +151,7 @@ export function importSession(
   };
 }
 
-/** Only peer configuration is persisted. Remote contents stay in bounded process memory. */
+/** Only configuration and local hiding times persist. Remote contents stay in memory. */
 export class PeerManager extends EventEmitter {
   private config: z.infer<typeof configSchema> = { enabled: false, peers: [] };
   private held = new Map<string, Held>();
@@ -128,9 +159,14 @@ export class PeerManager extends EventEmitter {
   private details = new Set<AbortController>();
   private closed = false;
   configError: string | null = null;
+  private activeSends = new Set<string>();
+  private hidden: Record<string, number> = {};
+  private hiddenError = false;
+  private visibilityError: string | null = null;
   constructor(
     private dir: string,
     private request = peerRequest,
+    private relay?: CodexRelay,
   ) {
     super();
     try {
@@ -139,10 +175,18 @@ export class PeerManager extends EventEmitter {
       );
       if (new Set(this.config.peers.map((p) => p.officeId)).size !== this.config.peers.length)
         throw new Error('duplicate');
+      assignColors(this.config.peers);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
         this.configError = 'Invalid beta peer configuration; connections disabled';
       this.config = { enabled: false, peers: [] };
+    }
+    try {
+      this.hidden = hiddenSchema.parse(
+        JSON.parse(readFileSync(path.join(dir, 'hidden.json'), 'utf8')),
+      );
+    } catch (e) {
+      this.hiddenError = (e as NodeJS.ErrnoException).code !== 'ENOENT';
     }
   }
   get enabled() {
@@ -155,7 +199,10 @@ export class PeerManager extends EventEmitter {
   state(): FederationState {
     return {
       enabled: this.enabled,
-      error: this.configError,
+      error:
+        this.configError ??
+        (this.hiddenError ? 'Invalid local remote visibility state' : this.visibilityError),
+      codexHosts: this.relay?.hosts() ?? [],
       peers: this.config.peers.map(({ token: _token, sendToken, ...peer }) => {
         const h = this.held.get(peer.officeId);
         return {
@@ -172,6 +219,14 @@ export class PeerManager extends EventEmitter {
   command(raw: unknown): FederationState {
     const command = commandSchema.parse(raw);
     if (command.action === 'state') return this.state();
+    if (
+      command.action === 'update' &&
+      command.codexHostId &&
+      command.codexHostId !==
+        this.config.peers.find((p) => p.officeId === command.officeId)?.codexHostId &&
+      !this.relay?.hosts().some((h) => h.id === command.codexHostId)
+    )
+      throw Error('Unknown local Codex connection');
     const next = structuredClone(this.config);
     if (command.action === 'enable') next.enabled = command.enabled;
     if (command.action === 'remove')
@@ -179,22 +234,40 @@ export class PeerManager extends EventEmitter {
     if (command.action === 'update')
       next.peers = next.peers.map((p) =>
         p.officeId === command.officeId
-          ? { ...p, label: command.label, tags: command.tags, projects: command.projects }
+          ? {
+              ...p,
+              label: command.label,
+              tags: command.tags,
+              projects: command.projects,
+              color: command.color ?? p.color,
+              codexHostId: command.codexHostId,
+            }
           : p,
       );
     if (command.action === 'add') {
       if (!next.enabled) throw new Error('Enable the beta before adding a peer');
       next.peers = [
         ...next.peers.filter((p) => p.officeId !== command.peer.officeId),
-        command.peer,
+        {
+          ...command.peer,
+          color: next.peers.find((p) => p.officeId === command.peer.officeId)?.color,
+        },
       ];
     }
+    assignColors(next.peers);
     configSchema.parse(next);
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const tmp = path.join(this.dir, 'peers.json.tmp');
     writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
     renameSync(tmp, path.join(this.dir, 'peers.json'));
-    this.cancel();
+    // Display edits can reuse live snapshots. Only a routing/config change invalidates requests.
+    const previous =
+      command.action === 'update'
+        ? this.config.peers.find((p) => p.officeId === command.officeId)
+        : undefined;
+    const displayOnly =
+      command.action === 'update' && previous && previous.codexHostId === command.codexHostId;
+    if (!displayOnly) this.cancel();
     this.config = next;
     this.configError = null;
     this.emit('change');
@@ -259,7 +332,17 @@ export class PeerManager extends EventEmitter {
         if (!current()) return;
         h.failures++;
         const denied = e instanceof PeerError && [401, 403, 404].includes(e.code);
-        h.state = denied ? 'rejected' : 'offline';
+        const transient =
+          e instanceof PeerError && [0, 408, 429, 500, 502, 503, 504].includes(e.code);
+        h.state = denied
+          ? 'rejected'
+          : transient &&
+              h.snapshot &&
+              h.receivedAt &&
+              h.failures <= 2 &&
+              Date.now() - h.receivedAt < 45000
+            ? 'reconnecting'
+            : 'offline';
         h.error = e instanceof PeerError ? e.message : 'Connection or protocol validation failed';
         // Fail closed on invalid responses too; never keep displaying a revoked scope.
         if (
@@ -271,6 +354,7 @@ export class PeerManager extends EventEmitter {
         if (h.receivedAt && Date.now() - h.receivedAt > 86400_000) h.snapshot = undefined;
       }
       if (!current()) return;
+      this.revealConversations();
       this.emit('change');
       const delay = h.failures ? Math.min(60000, 5000 * 2 ** Math.min(h.failures - 1, 4)) : 5000;
       h.timer = setTimeout(() => void poll(), delay);
@@ -285,13 +369,107 @@ export class PeerManager extends EventEmitter {
       if (!h?.snapshot || !h.receivedAt) return [];
       const stale =
         h.state !== 'connected' || h.snapshot.paused || Date.now() - h.receivedAt > 15000;
-      return h.snapshot.sessions.map((s) =>
-        importSession(s, p, h.receivedAt!, stale, h.snapshot!.conversation),
-      );
+      return h.snapshot.sessions.map((s) => {
+        const session = importSession(s, p, h.receivedAt!, stale, h.snapshot!.conversation);
+        return { ...session, hiddenAt: this.hidden[session.id] ?? null };
+      });
     });
+  }
+  /** Preflight before a mixed request writes any local colleagues. Rechecked on commit. */
+  checkVeil(ids: string[], on: boolean) {
+    const visible = new Map(this.sessions().map((s) => [s.id, s]));
+    if (!this.enabled || ids.some((id) => !visible.has(id)))
+      throw Error('Remote session unavailable');
+    if (this.hiddenError) throw Error('Invalid local remote visibility state');
+    const offices = new Set(this.config.peers.map((p) => p.officeId));
+    const next = Object.fromEntries(
+      Object.entries(this.hidden).filter(([id]) => offices.has(parseRemoteId(id).officeId)),
+    );
+    const now = Date.now();
+    for (const id of ids) {
+      if (on) next[id] = this.hideTime(visible.get(id)!, now);
+      else delete next[id];
+    }
+    hiddenSchema.parse(next);
+    return next;
+  }
+  /**
+   * The hiding time on the peer's clock: its last answer's `sampledAt` moved on by the time
+   * since, and never before anything this viewer was already shown. It is compared with the
+   * peer's own event times, so a skewed clock must neither undo a hide on an already-seen reply
+   * nor swallow a new conversation.
+   */
+  private hideTime(s: Session, now: number) {
+    const h = this.held.get(parseRemoteId(s.id).officeId);
+    const clock = h?.snapshot && h.receivedAt ? h.snapshot.sampledAt + (now - h.receivedAt) : now;
+    return Math.max(0, clock, s.activity?.at ?? 0, ...s.events.map((e) => e.at));
+  }
+  private saveHidden(next: Record<string, number>) {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const file = path.join(this.dir, 'hidden.json');
+    writeFileSync(`${file}.tmp`, JSON.stringify(next), { mode: 0o600 });
+    renameSync(`${file}.tmp`, file);
+    this.hidden = next;
+    this.visibilityError = null;
+  }
+  /** This viewer's hide/restore only: no peer request, remote content or local session write. */
+  veil(ids: string[], on: boolean) {
+    this.saveHidden(this.checkVeil(ids, on));
+    this.emit('change');
+  }
+  private revealConversations() {
+    const next = { ...this.hidden };
+    let changed = false;
+    const sessions = this.sessions();
+    const byId = new Map(sessions.map((s) => [s.id, s]));
+    for (const resident of officeResidents(sessions).sessions) {
+      const members = (resident.resident?.sessionIds ?? [resident.id]).map((id) => byId.get(id)!);
+      if (!members.some((s) => next[s.id])) continue;
+      // Remote snapshots carry public events, not the source office's notice receipts.
+      // Retire the marker once a conversation is observed: bounded events may later disappear.
+      if (
+        members.some(needsAttention) ||
+        !isVeiled(
+          members,
+          members.flatMap((s) => noticeCandidates(s)),
+        )
+      ) {
+        for (const s of members) delete next[s.id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    try {
+      this.saveHidden(next);
+    } catch {
+      // A viewer disk error must not turn a healthy peer into a rejected connection or re-hide
+      // an observed conversation in this run. Report that restart persistence could not save.
+      this.hidden = next;
+      this.visibilityError = 'Could not save local remote visibility state';
+    }
   }
   linkedProjects() {
     return new Set(this.enabled ? this.config.peers.flatMap((p) => Object.values(p.projects)) : []);
+  }
+  private routedTargets = new WeakMap<
+    TerminalTarget,
+    { host: string; thread: string; identity?: string }
+  >();
+  /** Metadata routes remain authoritative; authenticated identities can probe configured hosts. */
+  private relayCandidates(peer: PeerInput, opaqueId: string, identity?: string) {
+    if (!this.relay) return [];
+    const hosts = [
+      ...new Set(peer.codexHostId ? [peer.codexHostId] : this.relay.hosts().map((h) => h.id)),
+    ];
+    const known = hosts.flatMap((host) => {
+      const thread = this.relay!.resolve(host, opaqueId);
+      return thread ? [{ host, thread, preparable: true }] : [];
+    });
+    if (known.length) return known.length === 1 ? known : [];
+    if (!identity || wireId(`codex:${identity}`) !== opaqueId) return [];
+    return hosts
+      .filter((host) => this.relay!.acceptsIdentity?.(host, opaqueId, identity))
+      .map((host) => ({ host, thread: identity, preparable: false }));
   }
   async targets(ids: string[]): Promise<Record<string, TerminalTarget | null>> {
     const result: Record<string, TerminalTarget | null> = Object.fromEntries(
@@ -299,9 +477,11 @@ export class PeerManager extends EventEmitter {
     );
     if (!this.enabled) return result;
     const generation = this.generation;
+    const batches: Array<() => Promise<void>> = [];
     for (const peer of this.config.peers) {
       const held = this.held.get(peer.officeId);
       if (!peer.sendToken || held?.state !== 'connected' || held.snapshot?.paused) continue;
+      const sendToken = peer.sendToken;
       const selected = ids
         .map((id) => ({ id, ref: parseRemoteId(id) }))
         .filter(
@@ -310,40 +490,183 @@ export class PeerManager extends EventEmitter {
         );
       for (let i = 0; i < selected.length; i += 20) {
         const batch = selected.slice(i, i + 20);
-        const controller = new AbortController();
-        this.details.add(controller);
-        try {
-          const response = targetResponseSchema.parse(
-            await this.request(
-              { ...peer, token: peer.sendToken },
-              '/office/v1/commands/targets',
-              controller.signal,
-              { body: { ids: batch.map((x) => x.ref.id) }, timeoutMs: 15000 },
-            ),
-          );
-          if (generation !== this.generation || response.officeId !== peer.officeId) continue;
-          held.commandEpoch = response.epoch;
-          for (const { id, ref } of batch) {
-            const target = response.targets[ref.id];
-            if (target)
-              result[id] = {
-                ...target,
-                desktop: target.kind === 'codex' && target.status === 'desktop',
-                label: '',
-                canFocus: false,
-                remoteOffice: peer.label,
-              };
+        batches.push(async () => {
+          if (this.closed || generation !== this.generation) return;
+          const controller = new AbortController();
+          this.details.add(controller);
+          try {
+            const response = targetResponseSchema.parse(
+              await this.request(
+                { ...peer, token: sendToken },
+                '/office/v1/commands/targets',
+                controller.signal,
+                {
+                  body: { ids: batch.map((x) => x.ref.id) },
+                  timeoutMs: 15000,
+                  codexIdentities: true,
+                },
+              ),
+            );
+            if (generation !== this.generation || response.officeId !== peer.officeId) return;
+            held.commandEpoch = response.epoch;
+            await Promise.all(
+              batch.map(async ({ id, ref }) => {
+                const target = response.targets[ref.id];
+                if (target)
+                  result[id] = {
+                    ...target,
+                    desktop: target.kind === 'codex' && target.status === 'desktop',
+                    label: '',
+                    canFocus: false,
+                    remoteOffice: peer.label,
+                  };
+                if (!target?.canSend && this.relay && Object.hasOwn(response.targets, ref.id)) {
+                  const session = held.snapshot?.sessions.find((s) => s.id === ref.id);
+                  if (
+                    session?.provider !== 'codex' ||
+                    !['root', 'fork'].includes(session.relation) ||
+                    !['interactive', 'unknown'].includes(session.origin)
+                  )
+                    return;
+                  const identity = response.codexThreads?.[ref.id];
+                  const candidates = this.relayCandidates(peer, ref.id, identity);
+                  const checked = await Promise.all(
+                    candidates.map(async (route) => ({
+                      ...route,
+                      state: this.relay!.inspect
+                        ? await this.relay!.inspect(route.host, route.thread)
+                        : (await this.relay!.available(route.host, route.thread))
+                          ? 'ready'
+                          : 'unavailable',
+                    })),
+                  );
+                  const ready = checked.filter((r) => r.state === 'ready');
+                  // Never infer a host for an unloaded thread, or choose between two live owners.
+                  const route =
+                    ready.length === 1
+                      ? ready[0]
+                      : ready.length === 0 && checked.length === 1 && checked[0].preparable
+                        ? checked[0]
+                        : null;
+                  if (!route) return;
+                  const { state } = route;
+                  const available = state === 'ready';
+                  const latest = this.relayCandidates(peer, ref.id, identity);
+                  if (
+                    generation !== this.generation ||
+                    held.state !== 'connected' ||
+                    held.snapshot?.paused ||
+                    !latest.some((r) => r.host === route.host && r.thread === route.thread)
+                  )
+                    return;
+                  result[id] = {
+                    kind: 'codex',
+                    desktop: true,
+                    status: 'desktop',
+                    label: '',
+                    canFocus: false,
+                    canSend: available,
+                    canPrepare: route.preparable && state === 'missing' && !!this.relay.prepare,
+                    remoteOffice: peer.label,
+                    codexRemote: true,
+                  };
+                  this.routedTargets.set(result[id]!, { ...route, identity });
+                }
+              }),
+            );
+          } catch {
+            held.commandEpoch = undefined;
+          } finally {
+            this.details.delete(controller);
           }
-        } catch {
-          held.commandEpoch = undefined;
-        } finally {
-          this.details.delete(controller);
-        }
+        });
       }
     }
+    // Owner discovery can take ten seconds. Do not serialize batches or offices behind it.
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(5, batches.length) }, async () => {
+        while (next < batches.length) await batches[next++]();
+      }),
+    );
+    if (this.closed || generation !== this.generation)
+      return Object.fromEntries(ids.map((id) => [id, null]));
     return result;
   }
+  async launchSession(
+    id: string,
+    specValue: unknown,
+    start?: { epoch: string; plan: string; requestId: string },
+    authorized?: () => Promise<void>,
+  ) {
+    const ref = parseRemoteId(id);
+    const spec = launchSpecSchema.parse(specValue);
+    const peer = this.config.peers.find((p) => p.officeId === ref.officeId);
+    const generation = this.generation;
+    const validate = () => {
+      const held = this.held.get(ref.officeId);
+      if (
+        this.closed ||
+        !this.enabled ||
+        generation !== this.generation ||
+        !peer?.sendToken ||
+        held?.state !== 'connected' ||
+        held.snapshot?.paused ||
+        !held.snapshot?.sessions.some((s) => s.id === ref.id)
+      )
+        throw Error(m().federation.sendUnavailable);
+    };
+    validate();
+    if (start)
+      z.object({ epoch: z.uuid(), plan: z.string().regex(/^[a-f0-9]{64}$/), requestId: z.uuid() })
+        .strict()
+        .parse(start);
+    await authorized?.();
+    validate();
+    const controller = new AbortController();
+    this.details.add(controller);
+    try {
+      const response = launchInfoSchema.parse(
+        await this.request(
+          { ...peer!, token: peer!.sendToken! },
+          '/office/v1/commands/' + (start ? 'launch' : 'launch-status'),
+          controller.signal,
+          { body: { id: ref.id, spec, ...start }, timeoutMs: 45000 },
+        ),
+      );
+      if (response.officeId !== ref.officeId || (start && response.requestId !== start.requestId))
+        throw Error('Office identity mismatch');
+      validate();
+      return { ...response, office: peer!.label };
+    } catch {
+      throw Error(start ? m().tmux.remoteUncertain : m().tmux.remoteUnavailable);
+    } finally {
+      this.details.delete(controller);
+    }
+  }
   async send(
+    id: string,
+    text: string,
+    requestId: string,
+    authorized?: () => Promise<void>,
+  ): Promise<SendResult> {
+    z.uuid().parse(requestId);
+    if (!text.trim() || text.length > 20000) throw Error('Invalid send');
+    if (this.activeSends.has(id)) throw Error(m().federation.sendUncertain);
+    const journal = new RelayJournal(this.dir);
+    const previous = journal.claim(requestId, id, text);
+    if (previous === 'sent') return { status: 'sent', message: m().federation.sent };
+    if (previous === 'uncertain') throw Error(m().federation.sendUncertain);
+    this.activeSends.add(id);
+    try {
+      const result = await this.dispatch(id, text, requestId, authorized);
+      journal.sent(requestId);
+      return result;
+    } finally {
+      this.activeSends.delete(id);
+    }
+  }
+  private async dispatch(
     id: string,
     text: string,
     requestId: string,
@@ -363,8 +686,55 @@ export class PeerManager extends EventEmitter {
     const generation = this.generation;
     const target = (await this.targets([id]))[id];
     await authorized?.();
-    if (generation !== this.generation || !target?.canSend || !held.commandEpoch)
+    if (
+      generation !== this.generation ||
+      !(target?.canSend || target?.canPrepare) ||
+      !held.commandEpoch
+    )
       throw new Error(m().federation.sendUnavailable);
+    if (target.codexRemote) {
+      const route = this.routedTargets.get(target);
+      if (
+        !route ||
+        !this.relay ||
+        !this.relayCandidates(peer, ref.id, route.identity).some(
+          (r) => r.host === route.host && r.thread === route.thread,
+        )
+      )
+        throw Error(m().federation.sendUnavailable);
+      const { host, thread } = route;
+      const recheck = async (ready: boolean) => {
+        // Re-authorize against the exporter and keep exactly the route selected for this send.
+        const fresh = (await this.targets([id]))[id];
+        await authorized?.();
+        const current = fresh ? this.routedTargets.get(fresh) : undefined;
+        if (
+          this.closed ||
+          generation !== this.generation ||
+          !fresh?.codexRemote ||
+          !(ready ? fresh.canSend : fresh.canSend || fresh.canPrepare) ||
+          held.state !== 'connected' ||
+          held.snapshot?.paused ||
+          current?.host !== host ||
+          current.thread !== thread ||
+          !this.relayCandidates(peer, ref.id, current.identity).some(
+            (r) => r.host === host && r.thread === thread,
+          )
+        )
+          throw Error(m().federation.sendUnavailable);
+      };
+      if (!target.canSend) {
+        if (!this.relay.prepare) throw Error(m().federation.sendUnavailable);
+        try {
+          await this.relay.prepare(host, thread, () => recheck(false));
+        } catch {
+          throw Error(m().federation.codexConnectFailed);
+        }
+      }
+      await recheck(true);
+      await this.relay.send(host, thread, text, () => recheck(true));
+      return { status: 'sent', message: m().federation.sent };
+    }
     const controller = new AbortController();
     this.details.add(controller);
     try {

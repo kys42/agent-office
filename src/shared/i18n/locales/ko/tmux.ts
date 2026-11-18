@@ -1,0 +1,140 @@
+import type { Messages } from '../en';
+export const tmux: Messages['tmux'] = {
+  wake: '원격에서 이어 열기',
+  wakeConfirm: '원격 컴퓨터에서 이 Codex 대화를 다시 열까요? 메시지는 보내지 않아요.',
+  wakeMissing: '같은 대화를 열 방법이 없어요. 원격 앱·CLI와 실행 중인 대화를 확인해 주세요.',
+  wakeUncertain: '원격 전송 대상을 아직 확인하지 못했어요. 잠시 뒤 전송 대상을 다시 확인해 주세요.',
+  wakeReady: '원격 전송 준비가 됐어요. 작성한 내용을 확인하고 보내세요.',
+  remoteTitle: '원격 사무실에 새 에이전트 소환',
+  remoteConfirm: '이 원격 컴퓨터에서 새 에이전트를 시작할까요?',
+  remoteStart: '원격에서 소환하기',
+  remoteHost: '원격 컴퓨터의 터미널',
+  remoteHint:
+    '선택한 원격 프로젝트의 작업 폴더 루트에서 실행돼요. Orca는 해당 폴더가 작업공간에 등록돼 있어야 해요. 첫 대화가 수집되면 동료가 나타나요. CLI 로그인·신뢰 확인은 해당 컴퓨터에서 완료해주세요.',
+  remoteUnavailable:
+    '원격 실행을 확인할 수 없어요. 원격 연결 서비스 버전·새 세션 생성 권한·공유 프로젝트·CLI와 터미널 설치를 확인해주세요.',
+  remoteUncertain: '실행 결과를 확인하지 못했어요. 다시 소환하기 전에 원격 터미널을 확인해주세요.',
+  remoteStarted: '원격 세션이 시작됐어요. 첫 대화가 감지되면 동료가 나타나요.',
+  remoteExisting: '같은 이름의 tmux 세션이 이미 실행 중이에요.',
+  remoteMissing: '이 컴퓨터에서 사용할 수 없음',
+  summonTitle: '새 에이전트 소환',
+  summonIntro:
+    '이 프로젝트에 새 에이전트를 소환해요. tmux로 터미널 세션을 유지하므로 필요할 때 직접 들어가 작업하고 언제든 다시 연결할 수 있어요.',
+  summonDescription: '프로젝트에 함께할 새 동료를 설정하세요.',
+  agentSettings: '새 동료 설정',
+  agentType: '에이전트',
+  agentName: '에이전트 이름',
+  invalidName: '이름은 글자·숫자·공백·하이픈·밑줄로 1~40자 입력해주세요.',
+  nameHint: '오피스와 tmux에서 사용할 이름이에요. 첫 대화가 감지되면 오피스에 반영돼요.',
+  initialMessage: '첫 메시지 (선택)',
+  messagePlaceholder: '예: 이 프로젝트를 살펴보고 해야 할 일을 정리해줘',
+  messageHint: '최대 4,000자 · 새 세션을 시작할 때 한 번만 보내요.',
+  invalidMessage: '첫 메시지는 제어 문자 없이 4,000자 이내로 입력해주세요.',
+  existingConfirm: '이 프로젝트에 연결된 에이전트가 있어요. 별도의 tmux 세션을 새로 띄울까요?',
+  summonCheck: '연결과 이름 확인',
+  summonDefault: '새 동료',
+  summonConfirm: '이 프로젝트에 새 에이전트를 소환할까요?',
+  summonStart: 'tmux에 소환하기',
+  summonReady: '새 대화를 시작할 준비가 됐어요',
+  summonHint:
+    '오피스에는 첫 대화 기록이 감지되면 자동으로 나타나요. 아직 안 보이면 터미널을 열어 로그인·프로젝트 신뢰 확인을 마치고 첫 메시지를 보내세요. 창을 닫거나 Ctrl+B 다음 D를 누르면 화면에서만 나와요. 실행 중에는 여기서 다시 접속할 수 있어요. 종료 후 소환하면 새 대화가 시작돼요. 이전 대화는 해당 카드에서 재개하세요.',
+  title: 'tmux로 재개',
+  intro: '저장된 이 대화를 별도 터미널에서 이어갑니다. 새 대화를 만드는 동작은 아니에요.',
+  name: 'tmux 이름',
+  folder: '프로젝트 폴더',
+  skipPermissions:
+    '권한 확인 없이 실행해요(Claude: --dangerously-skip-permissions, Codex: --dangerously-bypass-approvals-and-sandbox). 설정 → 터미널과 답하기에서 끌 수 있어요.',
+  caution:
+    '이 대화가 다른 곳에서 작업 중이라면 먼저 그 작업을 마쳐주세요. 같은 대화를 두 곳에서 동시에 진행할 수 있어요.',
+  start: 'tmux로 따로 띄우기',
+  refresh: '다시 확인',
+  loading: '확인 중…',
+  cancel: '취소',
+  confirm: '이 대화를 tmux로 따로 띄울까요?',
+  failed: 'tmux를 시작하지 못했어요. tmux와 에이전트 CLI 설치 상태를 확인한 뒤 다시 시도해주세요.',
+  missing: 'tmux와 해당 에이전트 CLI를 설치한 뒤 다시 시도해주세요.',
+  folderMissing: '원래 프로젝트 폴더를 찾을 수 없어요. 폴더를 복구한 뒤 재개해주세요.',
+  unsupported: 'macOS·Linux의 로컬 Claude·Codex 세션에서 tmux 재개를 지원해요.',
+  conflict: '같은 tmux 이름을 다른 세션이 사용 중이에요. 기존 세션은 변경하지 않았어요.',
+  ended: '이 tmux는 종료됐어요. 다시 재개한 뒤 접속해주세요.',
+  exitedAtStart:
+    'tmux는 시작했지만 에이전트가 바로 종료됐어요. 터미널에서 한 번 직접 실행해 로그인·폴더 신뢰 확인을 마친 뒤 다시 시도해주세요.',
+  openFailed: '터미널을 열지 못했어요. 재접속 명령을 복사해 터미널에서 실행해주세요.',
+  orcaTitle: 'Orca로 재개',
+  orcaStart: 'Orca에서 새로 띄우기',
+  orcaConfirm: '이 대화를 Orca 새 터미널 탭에서 이어갈까요?',
+  orcaIntro:
+    '이 프로젝트 폴더로 Orca에 새 터미널 탭을 열고 아래 명령을 실행해요. 새 대화를 만드는 동작은 아니에요.',
+  orcaCommand: '실행 명령',
+  orcaLaunched: 'Orca 새 탭에서 이 대화를 열었어요',
+  /** Summoning a new agent in a new Orca tab instead of tmux. */
+  summonOrca: 'Orca 새 탭에 소환하기',
+  summonOrcaConfirm: '이 프로젝트의 Orca 새 탭에 새 에이전트를 띄울까요?',
+  summonOrcaIntro:
+    '이 프로젝트 폴더로 Orca에 새 터미널 탭을 열고 아래 명령으로 새 대화를 시작해요.',
+  summonOrcaLaunched: 'Orca 새 탭에 새 에이전트를 띄웠어요',
+  orcaUnsupported: 'macOS의 로컬 Claude·Codex 세션에서 Orca 재개를 지원해요.',
+  orcaRefused: (reason, workspace = false) =>
+    `Orca가 탭을 열지 않았어요${reason ? `: ${reason}` : '.'}${workspace ? ' 이 폴더는 Orca 작업 공간이 아니에요.' : ''} tmux로 따로 띄워보세요.`,
+  orcaUncertain: 'Orca에 탭을 만들었지만 시작을 아직 확인하지 못했어요. Orca를 열면 시작돼요.',
+  orcaReveal: 'Orca 열기',
+  orcaNotWorkspace:
+    '이 폴더는 이 Mac의 Orca 작업 공간 안에 있지 않아요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
+  place: { orca: 'Orca', tmux: 'tmux', other: '다른 터미널' },
+  hostPlace: {
+    orca: 'Orca',
+    terminal: '터미널(Terminal)',
+    iterm: 'iTerm2',
+    ghostty: 'Ghostty',
+    cmux: 'cmux',
+    vscode: 'VS Code',
+    warp: 'Warp',
+    tmux: 'tmux',
+    swarm: 'Claude 팀원 tmux',
+    background: 'Claude 백그라운드 세션',
+    app: '다른 앱',
+    unknown: '다른 터미널',
+  },
+  runningNotice: (place) =>
+    `이 대화는 이미 ${place}에서 실행 중이에요. 새로 띄우지 말고 그쪽으로 이동하세요.`,
+  runningHostNotice: (place) =>
+    `이 대화는 이미 ${place}에서 실행 중이에요. 정확히 어느 탭인지는 확인하지 못했어요. 새로 띄우지 말고 그쪽으로 이동하거나, 복제해서 새로 이어가세요.`,
+  parkedNotice: (place) =>
+    `이 대화는 ${place}의 창에서 백그라운드로 넘겨져(← for agents) 아직 실행 중이에요. 그 창의 Claude 에이전트 보기에서 다시 열거나, 복제해서 새로 이어가세요.`,
+  backgroundNotice:
+    '이 대화는 Claude 백그라운드 세션으로 실행 중이에요. 재접속 명령을 복사해 터미널에서 열거나, 복제해서 새로 이어가세요.',
+  runningNowhereNotice: (place) =>
+    `이 대화는 이미 ${place}에서 실행 중이지만 여기서 그곳으로 바로 갈 수 없어요. 그 창을 직접 찾아 이동하거나, 복제해서 새로 이어가세요.`,
+  openNotice: (place) => `${place}에 이 대화가 이미 열려 있어요.`,
+  openHint:
+    '그 안에서 에이전트가 실행 중인지는 확인하지 못했어요. 새로 띄우면 같은 대화가 두 개 돌 수 있어요.',
+  unknownNotice:
+    '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 띄우기 전에 확인해주세요.',
+  runningRefused: (place) =>
+    `이 대화가 이미 ${place}에서 실행 중이라 새로 띄우지 않았어요. 터미널로 이동해주세요.`,
+  changedRefused:
+    '확인하는 사이 이 대화가 다른 곳에 열려서 띄우지 않았어요. 상태를 다시 확인해주세요.',
+  openConfirm: (place) =>
+    `주의: ${place}에 이 대화가 이미 열려 있어요. 새로 띄우면 같은 대화가 두 곳에서 동시에 돌아가 서로의 작업을 덮어쓸 수 있어요.`,
+  unknownConfirm:
+    '이 대화가 다른 곳에 열려 있지 않은지 확인하지 못했어요. 이미 열려 있다면 같은 대화가 두 번 돌아가요.',
+  sleepingNotice: (workspace) =>
+    `이 대화가 잠든 Orca 작업 공간(${workspace})에 열려 있어요. Orca에서 그 작업 공간을 열면 탭이 다시 살아나요.`,
+  sleepingUnknownNotice: (workspace) =>
+    `이 대화가 잠든 Orca 작업 공간(${workspace})에 남아 있을 수 있어요. 먼저 그 작업 공간을 열어 확인하세요.`,
+  sleepingConfirm: (workspace) =>
+    `주의: 이 대화가 잠든 Orca 작업 공간(${workspace})에 열려 있어요. Orca에서 그 작업 공간을 열면 탭이 다시 살아나요. 새로 띄우면 같은 대화가 두 곳에서 동시에 돌아가 서로의 작업을 덮어쓸 수 있어요.`,
+  sleepingUnknownConfirm: (workspace) =>
+    `주의: 이 대화가 잠든 Orca 작업 공간(${workspace})에 남아 있을 수 있어요. 그 작업 공간을 열면 탭이 다시 살아나, 여기서 새로 띄운 것과 같은 대화가 두 번 돌아갈 수 있어요. 먼저 그 작업 공간을 열어 확인하세요.`,
+  sleepingRevealed: (workspace) =>
+    `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열면 이 대화 탭이 다시 살아나요.`,
+  sleepingMaybeRevealed: (workspace) =>
+    `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열어 이 대화가 있는지 확인하세요.`,
+  sleepingTabShown: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' 작업 공간의 ` : ''}이 대화 탭으로 이동했어요.`,
+  sleepingWoken: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' ` : '그 '}작업 공간을 열었어요. 이 대화 탭도 곧 다시 살아나요.`,
+  sleepingMaybeWoken: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' ` : '그 '}작업 공간을 열었어요. 이 대화가 있는지 확인하세요.`,
+  tabGone: '그 Orca 탭을 다시 찾지 못했어요. 상태를 다시 확인해주세요.',
+};

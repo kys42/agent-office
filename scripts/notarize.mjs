@@ -1,0 +1,243 @@
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { realpathSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { sha256 } from './release-utils.mjs';
+
+export function notaryCredentials(env = process.env) {
+  if (env.AGENT_OFFICE_NOTARY_PROFILE)
+    return [
+      '--keychain-profile',
+      env.AGENT_OFFICE_NOTARY_PROFILE,
+      ...(env.AGENT_OFFICE_SIGN_KEYCHAIN ? ['--keychain', env.AGENT_OFFICE_SIGN_KEYCHAIN] : []),
+    ];
+  if (env.APPLE_API_KEY_PATH && env.APPLE_API_KEY && env.APPLE_API_ISSUER)
+    return [
+      '--key',
+      env.APPLE_API_KEY_PATH,
+      '--key-id',
+      env.APPLE_API_KEY,
+      '--issuer',
+      env.APPLE_API_ISSUER,
+    ];
+  throw new Error(
+    'Signed DMG requires a notarytool keychain profile or existing Apple Team API profile.',
+  );
+}
+
+const CREDENTIAL_FLAGS =
+  /(--(?:key|key-id|issuer|keychain-profile|keychain|apple-id|password|team-id)|-p)(=|\s+)("[^"]*"|'[^']*'|\S+)/g;
+
+/**
+ * notarytool's own words help with failures we do not recognise, but they can echo the
+ * request. Keep the message, never the credentials: drop configured secret values, anything
+ * after a credential flag, absolute paths and UUID-shaped ids, then bound the length.
+ */
+export function sanitizeNotaryDiagnostic(text, env = process.env) {
+  let out = String(text ?? '')
+    .replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ');
+  const secrets = [
+    env.APPLE_API_KEY_PATH,
+    env.APPLE_API_KEY_PATH && path.basename(env.APPLE_API_KEY_PATH),
+    env.APPLE_API_KEY,
+    env.APPLE_API_ISSUER,
+    env.AGENT_OFFICE_NOTARY_PROFILE,
+    env.AGENT_OFFICE_SIGN_KEYCHAIN,
+    env.AGENT_OFFICE_TEAM_ID,
+    env.AGENT_OFFICE_SIGN_IDENTITY,
+    env.AGENT_OFFICE_APPLE_PROFILE,
+  ]
+    .filter((value) => typeof value === 'string' && value.trim().length >= 3)
+    .sort((a, b) => b.length - a.length);
+  for (const secret of secrets) out = out.split(secret).join('[redacted]');
+  out = out
+    .replace(CREDENTIAL_FLAGS, '$1 [redacted]')
+    .replace(/(?:~|\/(?:Users|home|private|var|tmp|Volumes|opt))\/[^\s'",;)]*/g, '[path]')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '[id]')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return out.length > 500 ? `${out.slice(0, 500)}…` : out;
+}
+
+/** Read-only release probe. Never expose execFile's credential argv in a thrown error. */
+export function verifyNotaryAccess(env = process.env, run = execFileSync) {
+  const credentials = notaryCredentials(env);
+  try {
+    run('xcrun', ['notarytool', 'history', ...credentials, '--output-format', 'json'], {
+      env,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 30000,
+      maxBuffer: 1024 * 1024,
+    });
+  } catch (error) {
+    const diagnostic = String(error.stderr ?? '');
+    if (/403/.test(diagnostic) && /agreement/i.test(diagnostic))
+      throw new Error(
+        'Apple notarization is blocked by a required or expired agreement (403). The account owner must check Apple Developer / App Store Connect Agreements for the signing team, then rerun preflight. No artifact was submitted.',
+      );
+    if (/401/.test(diagnostic))
+      throw new Error(
+        'Apple notarization authentication failed (401). Check the configured team API key or keychain profile, then rerun preflight. No artifact was submitted.',
+      );
+    if (error.code === 'ETIMEDOUT')
+      throw new Error(
+        'Apple notarization preflight timed out. Check the network and retry. No artifact was submitted.',
+      );
+    // Unrecognised: show what notarytool said (sanitised), or at least the spawn error code.
+    const detail =
+      sanitizeNotaryDiagnostic(diagnostic || error.stdout, env) ||
+      (typeof error.code === 'string' && /^[A-Z][A-Z0-9_]*$/.test(error.code) ? error.code : '');
+    throw new Error(
+      `Apple notarization preflight failed${detail ? ` (notarytool: ${detail})` : ''}. Check network access, Xcode command-line tools and the configured signing profile. No artifact was submitted.`,
+    );
+  }
+}
+
+const receiptDirectory = () => path.resolve('.local/notary');
+const artifactKey = (artifact) => {
+  const resolved = path.join(
+    realpathSync(path.dirname(path.resolve(artifact))),
+    path.basename(artifact),
+  );
+  const relative = path.relative(process.cwd(), resolved);
+  if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+    throw new Error('Notarization artifact must be inside the release checkout.');
+  return relative;
+};
+const receiptPath = (artifact, context) =>
+  path.join(
+    receiptDirectory(),
+    createHash('sha256')
+      .update(`${artifactKey(artifact)}:${context}`)
+      .digest('hex') + '.json',
+  );
+async function readReceipt(file) {
+  try {
+    return JSON.parse(await readFile(file, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+async function saveReceipt(file, receipt) {
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await writeFile(file + '.tmp', JSON.stringify(receipt, null, 2) + '\n', { mode: 0o600 });
+  await rename(file + '.tmp', file);
+}
+async function fingerprint(artifact, isApp) {
+  if (!isApp) return sha256(artifact);
+  // Stapling does not modify sealed app resources or its main executable.
+  return createHash('sha256')
+    .update(await sha256(path.join(artifact, 'Contents/_CodeSignature/CodeResources')))
+    .update(await sha256(path.join(artifact, 'Contents/MacOS/Agent Office')))
+    .digest('hex');
+}
+export async function assertNoPendingNotarization() {
+  const files = await readdir(receiptDirectory()).catch((error) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  for (const name of files.filter((name) => name.endsWith('.json'))) {
+    const receipt = await readReceipt(path.join(receiptDirectory(), name));
+    if (!receipt.stapled)
+      throw new Error(
+        `Unfinished notarization receipt ${name}. Resume the existing build; do not overwrite it.`,
+      );
+  }
+}
+export async function canResumeDmg(artifact, context) {
+  const receipt = await readReceipt(receiptPath(artifact, context));
+  if (!receipt) return false;
+  const digest = await sha256(artifact);
+  if (![receipt.submittedFingerprint, receipt.stapledFingerprint].includes(digest))
+    throw new Error(
+      'Saved DMG receipt does not match artifact bytes. Preserve it and investigate.',
+    );
+  return true;
+}
+
+export async function notarizeArtifact(artifact, isApp = false, context = '', run = execFileSync) {
+  const credentials = notaryCredentials();
+  const file = receiptPath(artifact, context);
+  const digest = await fingerprint(artifact, isApp);
+  let receipt = await readReceipt(file);
+  if (receipt && ['Invalid', 'Rejected'].includes(receipt.status))
+    throw new Error(
+      `Notarization ${receipt.status}: inspect log for ${receipt.id}, preserve this receipt, then fix and build a new artifact.`,
+    );
+  if (receipt && ![receipt.submittedFingerprint, receipt.stapledFingerprint].includes(digest))
+    throw new Error('Notarization receipt provenance mismatch. Do not resubmit blindly.');
+  if (receipt && !receipt.id)
+    throw new Error(
+      `Submission outcome unknown: reconcile Apple history and receipt ${file} before retrying.`,
+    );
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'office-notary-'));
+  try {
+    if (!receipt) {
+      let submission = artifact;
+      if (isApp) {
+        submission = path.join(temporary, 'Agent-Office.zip');
+        run('ditto', ['-c', '-k', '--keepParent', artifact, submission], { stdio: 'inherit' });
+      }
+      receipt = {
+        artifact: artifactKey(artifact),
+        context,
+        submittedFingerprint: digest,
+        submittedAt: new Date().toISOString(),
+        status: 'Submitting',
+        id: null,
+        stapled: false,
+      };
+      await saveReceipt(file, receipt);
+      const submitted = JSON.parse(
+        run(
+          'xcrun',
+          ['notarytool', 'submit', submission, ...credentials, '--output-format', 'json'],
+          { encoding: 'utf8', timeout: 20 * 60 * 1000 },
+        ),
+      );
+      if (!submitted.id)
+        throw new Error('Missing submission ID. Reconcile Apple history before retrying.');
+      receipt.id = submitted.id;
+      receipt.status = 'Submitted';
+      await saveReceipt(file, receipt);
+    }
+    if (receipt.status !== 'Accepted') {
+      // ID is already durable if wait times out or this process is interrupted.
+      const result = JSON.parse(
+        run(
+          'xcrun',
+          [
+            'notarytool',
+            'wait',
+            receipt.id,
+            ...credentials,
+            '--timeout',
+            '20m',
+            '--output-format',
+            'json',
+          ],
+          { encoding: 'utf8', timeout: 21 * 60 * 1000 },
+        ),
+      );
+      receipt.status = result.status ?? 'Unknown';
+      await saveReceipt(file, receipt);
+      if (result.status !== 'Accepted')
+        throw new Error(
+          `Apple notarization ${receipt.status}; submission ${receipt.id}. Inspect with notarytool log.`,
+        );
+    }
+    if (!receipt.stapled) run('xcrun', ['stapler', 'staple', artifact], { stdio: 'inherit' });
+    run('xcrun', ['stapler', 'validate', artifact], { stdio: 'inherit' });
+    receipt.stapled = true;
+    receipt.stapledFingerprint = await fingerprint(artifact, isApp);
+    await saveReceipt(file, receipt);
+    return receipt.id;
+  } finally {
+    await rm(temporary, { recursive: true, force: true });
+  }
+}

@@ -1,13 +1,30 @@
+import type { SessionDetail } from '../shared/types';
+import { LatestTask } from '../lib/latest-task';
+import { RemoteWake } from './RemoteWake';
+import { CardShellButton } from './MiniShell';
+import { LaunchSheet } from './LaunchSheet';
+import { useLaunchSupport } from '../lib/useLaunchSupport';
+import { resumeBlock } from '../shared/summon-existing';
+import { sleepingRevealed } from '../shared/launch-sheet';
 import { focusName } from '../shared/terminal-target';
+import {
+  checkSessionTitle,
+  renameBlock,
+  sessionRenameFor,
+  SESSION_TITLE_MAX,
+  titleProblemMessage,
+} from '../shared/session-rename';
 import { branchInfo } from '../shared/branch';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
   X,
   Pin,
   Folder,
   GitBranch,
+  GitFork,
   Clock,
   Copy,
+  ChevronLeft,
   PackageOpen,
   Check,
   ArrowRight,
@@ -17,8 +34,12 @@ import {
   Maximize2,
   ListFilter,
   MapPin,
-  PinOff,
+  AppWindow,
 } from 'lucide-react';
+import { CardPinIcon } from './WindowPin';
+import { cardOwnWindow, cardWindowToggle, nextCardPin, type CardPin } from '../shared/card-windows';
+import type { CardTab } from '../shared/card-handoff';
+import { leaveCard, pickUpCard } from '../lib/cardHandoff';
 import type {
   Session,
   SessionPatch,
@@ -29,6 +50,7 @@ import type {
   Preferences,
 } from '../shared/types';
 import { PetCustomizer } from './PetCustomizer';
+import { DeskCustomizer } from './DeskCustomizer';
 import { MOODS } from '../shared/types';
 import { sessionScopeLabel } from '../shared/residents';
 import { Sprite } from './Sprite';
@@ -40,6 +62,14 @@ import { dismissSend, rememberSend, settlePending, usePendingSends } from '../li
 import { copyText, jumpOrCopy } from '../lib/resume';
 import { Bookmarks } from './Bookmarks';
 import { Conversation } from './Conversation';
+import { BubbleShareBar } from './BubbleShareBar';
+import {
+  handTargets,
+  takesReplies,
+  type BubbleRange,
+  type SharedBubble,
+} from '../shared/bubble-share';
+import { replyDraftKey } from '../lib/useComposerDraft';
 import type { BookmarkFocus } from '../shared/bookmarks';
 import {
   freshConversation,
@@ -48,11 +78,12 @@ import {
   prependPage,
 } from '../shared/conversation-pages';
 import { ArtifactCards } from './ArtifactCards';
+import { SessionOutputs } from './Outputs';
+import { useOutputs } from '../lib/useOutputs';
+import { OUTPUT_PAGE_MAX } from '../shared/outputs';
 import { sessionName, parentSession } from '../shared/office';
 import { nowState } from '../shared/now-state';
-import { unreadNoticeCount } from '../shared/notices';
 import { CardMenu } from './CardMenu';
-import { NewsFeed, type ReceiptHandler } from './News';
 import { presentSession, PHASE_LABELS } from '../shared/presentation';
 import { zoneLabel } from '../shared/zones';
 import { ZoneEditor } from './ZoneEditor';
@@ -61,15 +92,21 @@ import { RequestCard } from './RequestCard';
 import { openRequest } from '../shared/requests';
 import { useSendTargets } from '../lib/useSendTargets';
 import { useI18n } from '../lib/i18n';
+import { useReadOnOpen } from '../lib/useReadOnOpen';
+import type { ReceiptHandler } from '../lib/useOffice';
 export function Inspector({
   session,
   sessions,
+  colleagues = [],
   notices,
   memberIds,
   resident,
   onReceipt,
   onSelect,
-  showNews,
+  onHandTo,
+  showConversation,
+  readOnOpen = true,
+  reading,
   onClose,
   onPatch,
   onPin,
@@ -81,6 +118,7 @@ export function Inspector({
   onZoneRules,
   terminalSend = false,
   onExpand,
+  onBack,
   onPrefs,
   bookmarked,
   onBookmark,
@@ -91,14 +129,21 @@ export function Inspector({
   focus,
   onFocused,
   movable = false,
-  cardPinned = false,
+  cardPin = 'off',
   onCardPin,
   positionRemembered = false,
   onPositionRemember,
   windowBusy = false,
+  outputStamp = '',
+  outputVisibility = '',
+  showOutputs = true,
+  showChatOutputs = true,
+  onOutputs,
 }: {
   session: Session;
   sessions: Session[];
+  /** The office's colleagues (its residents): who picked bubbles can be handed to (#377). */
+  colleagues?: Session[];
   notices: OfficeNotice[];
   /** All runs of the colleague in the room, so its state (asking, a result) matches the roster. */
   memberIds?: string[];
@@ -109,7 +154,17 @@ export function Inspector({
   resident?: Session;
   onReceipt: ReceiptHandler;
   onSelect: (id: string) => void;
-  showNews?: string | null;
+  /**
+   * Shows the colleague picked bubbles were just handed to (#377); `onSelect` where absent. The
+   * card window keeps a pinned card on its own conversation and opens that colleague beside it.
+   */
+  onHandTo?: (id: string) => void;
+  /** Changes each time a bubble opens this card: it shows the conversation again. */
+  showConversation?: number;
+  /** False while a card restored on startup waits for the person to touch the office. */
+  readOnOpen?: boolean;
+  /** The person's reading preferences (cardReadSettings): off, or after how long. */
+  reading?: { enabled: boolean; dwellMs: number };
   onClose: () => void;
   onReturn: (id: string) => void;
   onPatch: (id: string, p: SessionPatch) => Promise<void>;
@@ -123,6 +178,8 @@ export function Inspector({
   terminalSend?: boolean;
   /** Shown in the dock card: open this colleague in the big office. */
   onExpand?: () => void;
+  /** The big office's column: back to the list the card took the place of. */
+  onBack?: () => void;
   onPrefs: (patch: Partial<Preferences>) => Promise<boolean>;
   /** This colleague's bookmarked messages; `onBookmark` (absent in the demo) toggles one. */
   bookmarked?: string[];
@@ -141,12 +198,27 @@ export function Inspector({
    * the big office's right column. `movable`: it is the card window, moved by its header.
    */
   movable?: boolean;
-  /** Independent native window, separate from keeping a colleague in the office. */
-  cardPinned?: boolean;
-  onCardPin?: (on: boolean) => void;
+  /**
+   * Independent native window, separate from keeping a colleague in the office: the preview,
+   * pinned, or pinned on top. One button cycles them (`nextCardPin`) and asks for the next. A
+   * second button takes the card out into an app window of its own and back in as a pinned card
+   * (`cardWindowToggle`); there the pin and position buttons are not shown.
+   */
+  cardPin?: CardPin;
+  onCardPin?: (next: CardPin) => void;
   positionRemembered?: boolean;
   onPositionRemember?: (on: boolean) => void;
   windowBusy?: boolean;
+  /** Changes whenever an output is recorded (#350): the card's outputs read again. */
+  outputStamp?: string;
+  /** The settings that decide which outputs are shown: a change starts the list over. */
+  outputVisibility?: string;
+  /** Settings: the card has an Outputs tab listing this teammate's outputs (`cardOutputs`, default on). */
+  showOutputs?: boolean;
+  /** Settings: the chat shows outputs as chips under the message that made them (`chatOutputs`, #358). */
+  showChatOutputs?: boolean;
+  /** Open the Outputs page (the big office only). */
+  onOutputs?: () => void;
 }) {
   const { t } = useI18n();
   // The pages of the conversation read so far, with the office's live view of the colleague.
@@ -166,7 +238,10 @@ export function Inspector({
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, [session.id]);
-  const [tab, setTab] = useState<'overview' | 'history' | 'notes' | 'news'>('history');
+  // A card that moved here from another window (into or out of its own window) picks up the tab
+  // and the memo notes not saved that it left (`changeCardPin`), once.
+  const [moved] = useState(() => (movable ? pickUpCard(session.id) : null));
+  const [tab, setTab] = useState<CardTab>(moved?.tab ?? 'history');
   useEffect(() => {
     if (tab !== 'history') {
       const scroller = panelRef.current?.querySelector('.inspector-scroll');
@@ -175,10 +250,15 @@ export function Inspector({
   }, [tab, session.id]);
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
+  // The agent's own session title (#384), typed into its terminal: apart from the office nickname.
+  const [retitling, setRetitling] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [retitleBusy, setRetitleBusy] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
   const [petOpen, setPetOpen] = useState(false);
-  const [notes, setNotes] = useState(session.notes);
-  const [notesDirty, setNotesDirty] = useState(false);
+  const [deskOpen, setDeskOpen] = useState(false);
+  const [notes, setNotes] = useState(moved?.notes ?? session.notes);
+  const [notesDirty, setNotesDirty] = useState(moved?.notes !== undefined);
   const [packet, setPacket] = useState<Handoff | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -199,23 +279,29 @@ export function Inspector({
   }, [session]);
   // The few latest events the office carries, by content: a fresh snapshot with the same events
   // (a new array each time) must not read the conversation again.
-  const latestEvents = JSON.stringify(session.events);
+  const latestEvents = useMemo(() => JSON.stringify(session.events), [session.events]);
+  const detailRequests = useRef(new LatestTask<SessionDetail>());
+  const detailGeneration = useRef(0);
+  const [latestRequest, setLatestRequest] = useState(0);
   useEffect(() => {
     let valid = true;
+    const generation = ++detailGeneration.current;
     setLoadError('');
-    if (!demo)
-      api
-        .detail(session.id)
-        .then((page) => {
-          if (valid) setView((previous) => mergeNewest(previous, page));
-        })
-        .catch((e) => {
-          if (valid) setLoadError(e.message);
-        });
+    const task = !demo ? detailRequests.current.request(() => api.detail(session.id)) : null;
+    task?.promise
+      .then((page) => {
+        if (valid && page && generation === detailGeneration.current)
+          setView((previous) => mergeNewest(previous, page));
+      })
+      .catch((e) => {
+        if (valid) setLoadError(e.message);
+      });
     return () => {
       valid = false;
+      task?.cancel();
     };
   }, [
+    latestRequest,
     session.id,
     session.revision,
     latestEvents,
@@ -228,36 +314,54 @@ export function Inspector({
     session.area?.name,
     demo,
   ]);
+  // Another colleague in the same card (the big office's column) starts over; the first one is
+  // already as it should be (`moved` included).
+  const startedOn = useRef(session.id);
   useEffect(() => {
+    if (startedOn.current === session.id) return;
+    startedOn.current = session.id;
     setAlias(session.alias);
     setNotes(session.notes);
     setNotesDirty(false);
     setEditing(false);
+    setRetitling(false);
     setZoneOpen(false);
     setPetOpen(false);
+    setDeskOpen(false);
     setTab('history');
     setPacket(null);
   }, [session.id]);
   useEffect(() => {
-    if (showNews) setTab('news');
-  }, [showNews]);
+    if (showConversation) setTab('history');
+  }, [showConversation]);
   useEffect(() => {
     if (!notesDirty) setNotes(session.notes);
   }, [session.notes, notesDirty]);
   useEffect(() => {
     if (!editing) setAlias(session.alias);
   }, [session.alias, editing]);
+  // The form shows the session's title: hiding the screen closes it.
+  useEffect(() => {
+    if (privacy) setRetitling(false);
+  }, [privacy]);
   // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
   // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
-  const locatable =
-    !demo &&
-    (!session.remote || (session.remote.send && !session.remote.stale)) &&
-    (session.provider === 'claude' || session.provider === 'codex');
-  const { targets, markSent } = useSendTargets(locatable ? [session.id] : [], {
+  const locatable = takesReplies(session, demo);
+  const { targets, markSent, refreshTargets } = useSendTargets(locatable ? [session.id] : [], {
     enabled: locatable,
     stamp: session.updatedAt,
   });
   const live = targets[session.id] ?? null;
+  // Renaming the session itself: the desktop app only, never the demo; the menu says why it is off.
+  const retitleShown = !!api.renameSession && !demo;
+  const retitleBlock = retitleShown
+    ? renameBlock({
+        command: sessionRenameFor(session.provider),
+        target: live,
+        sendOn: terminalSend,
+        privacy,
+      })
+    : null;
   const closePacket = useCallback(() => setPacket(null), []);
   // What was just sent, until the record shows it (a busy Claude reads queued input later).
   // Kept per session outside this panel, so reopening the card or switching back still shows it.
@@ -276,7 +380,7 @@ export function Inspector({
       .detail(session.id, { reach: focusHere.eventId, reachAt: focusHere.at })
       .then((page) => {
         if (!valid) return;
-        setView((previous) => mergeNewest(previous, page));
+        setView(mergeNewest(freshConversation(session), page));
         setReached(focusHere.key);
       })
       .catch((e) => {
@@ -294,6 +398,13 @@ export function Inspector({
       void onBookmark!(s.id, eventId, on)
         .then(() => notify(on ? t.conversation.bookmarked : t.conversation.unbookmarked))
         .catch((e) => notify((e as Error).message)));
+  // Picking bubbles to copy or hand on (#377): the bar takes the chat box's place meanwhile.
+  // Another colleague, another tab or hiding the screen stops it.
+  const [range, setRange] = useState<BubbleRange | null>(null);
+  const [picked, setPicked] = useState<SharedBubble[]>([]);
+  useEffect(() => setRange(null), [session.id, tab, privacy]);
+  const selection = useMemo(() => ({ range, onRange: setRange, onPicked: setPicked }), [range]);
+  const stopPicking = useCallback(() => setRange(null), []);
   const [loadingOlder, setLoadingOlder] = useState(false);
   /** The page before the oldest loaded event (the card keeps it until it closes or switches). */
   const loadOlder = async () => {
@@ -316,6 +427,33 @@ export function Inspector({
       notify(t.inspector.saved);
     } catch (e) {
       notify((e as Error).message);
+    }
+  };
+  const openRetitle = () => {
+    setEditing(false);
+    setTitleDraft(s.title ?? '');
+    setRetitling(true);
+  };
+  const sendTitle = async () => {
+    const checked = checkSessionTitle(titleDraft);
+    if (!checked.ok) return notify(titleProblemMessage(checked.problem));
+    setRetitleBusy(true);
+    try {
+      const result = await api.renameSession!(s.id, checked.title);
+      // A draft in the agent's box is refused in main, never replaced; said the same way here.
+      if (result.status !== 'sent') return notify(t.desktop.terminal.draft);
+      setRetitling(false);
+      // The agent records the title; the office shows it once that record is read. A nickname
+      // (or a persona's name) keeps standing in front of it on the card.
+      notify(
+        s.resident?.name || s.alias
+          ? t.inspector.sessionTitle.sentNicknamed
+          : t.inspector.sessionTitle.sent,
+      );
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setRetitleBusy(false);
     }
   };
   const handoff = async () => {
@@ -362,17 +500,101 @@ export function Inspector({
   }, [view.session.events, view.session.id, notices, view.notices, sentAll]);
   const members = new Set(memberIds ?? [s.id]);
   const colleagueNews = notices.filter((n) => members.has(n.sessionId) || n.sessionId === s.id);
+  // The Outputs tab (#350): read with the card so its tab carries the count. A remote office's
+  // outputs stay there (this office never names its files); the setting can leave the tab out.
+  const outputsOn = !!showOutputs && !s.remote && !demo && !!api.outputs;
+  const outputs = useOutputs({
+    sessionIds: [...members],
+    stamp: outputStamp,
+    visibility: outputVisibility,
+    demo,
+    enabled: outputsOn,
+  });
+  useEffect(() => {
+    if (!outputsOn && tab === 'outputs') setTab('history');
+  }, [outputsOn, tab]);
+  // The chat's chips (#358): this run's outputs, as many as one read gives, placed by the
+  // conversation under the message that made them. Like the tab, never a remote office's.
+  const chatOutputsOn = !!showChatOutputs && !s.remote && !demo && !!api.outputs;
+  const chatOutputs = useOutputs({
+    sessionIds: [s.id],
+    stamp: outputStamp,
+    visibility: outputVisibility,
+    demo,
+    limit: OUTPUT_PAGE_MAX,
+    enabled: chatOutputsOn,
+  });
+  // Opening the card reads the colleague's final replies (not while privacy hides them).
+  // A restored card waits for the person to touch the office first (`readOnOpen`).
+  useReadOnOpen(
+    session.id,
+    notices,
+    memberIds ?? [session.id],
+    onReceipt,
+    !privacy && readOnOpen && (reading?.enabled ?? true),
+    reading?.dwellMs,
+  );
   const state = nowState(s, colleagueNews);
   const codexApp = s.provider === 'codex' && isDesktop;
+  // The launch sheet (#319) continues this conversation where it can start on this computer.
+  // Not where no destination can ever work on this platform (main decides, e.g. Windows).
+  const launchSupport = useLaunchSupport();
+  const canLaunch =
+    !!launchSupport?.supported && !!api.launch && !demo && !s.remote && !resumeBlock(s);
+  // Which sheet is open from this card: continuing the conversation, or a fork of it.
+  const [launching, setLaunching] = useState<'resume' | 'fork' | null>(null);
+  // Nothing to go to: the main action opens the sheet instead of copying (copying stays there).
+  const sheetFallback = canLaunch && !codexApp && !live?.canFocus;
+  // Its tab rests, or may rest, in a sleeping Orca workspace (#342): no terminal to jump to,
+  // and starting it again could run it twice. The main action brings Orca forward, where
+  // opening that workspace brings the tab back (main's duplicate check decides, asked once per
+  // card; `sure`: its tab was matched there, else its folder only lies in that workspace).
+  const [sleeping, setSleeping] = useState<{
+    id: string;
+    workspace: string;
+    sure: boolean;
+  } | null>(null);
+  const asksSleeping = sheetFallback && !!api.orcaSleeping && !!api.orcaReveal;
+  useEffect(() => {
+    if (!asksSleeping) return;
+    let current = true;
+    api.orcaSleeping!(s.id).then(
+      (found) => {
+        if (current)
+          setSleeping(
+            found ? { id: s.id, workspace: found.workspace, sure: found.sure === true } : null,
+          );
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [s.id, asksSleeping]);
+  const inOrca = asksSleeping && sleeping?.id === s.id ? sleeping : null;
   const resumeLabel = codexApp
     ? t.inspector.openInCodex
     : live?.canFocus
       ? t.terminal.jumpTo(focusName(live))
-      : t.inspector.copyResume;
+      : inOrca
+        ? t.terminal.jumpTo(t.tmux.place.orca)
+        : sheetFallback
+          ? t.launchSheet.cardContinue
+          : t.inspector.copyResume;
   const resume = async () => {
     try {
       if (codexApp) {
         notify(await api.resume(s.id));
+        return;
+      }
+      if (inOrca) {
+        // main wakes that workspace and shows its tab when it can (#380).
+        const how = await api.orcaReveal!(s.id);
+        notify(sleepingRevealed(inOrca.sure, privacy ? undefined : inOrca.workspace, how));
+        return;
+      }
+      if (sheetFallback) {
+        if (!privacy) setLaunching('resume');
         return;
       }
       if (api.jump) {
@@ -562,6 +784,15 @@ export function Inspector({
           onClose={() => setPetOpen(false)}
         />
       )}
+      {deskOpen && (
+        <DeskCustomizer
+          key={session.id}
+          session={session}
+          privacy={privacy}
+          onPrefs={onPrefs}
+          onClose={() => setDeskOpen(false)}
+        />
+      )}
     </>
   );
   const zoneEditor = (
@@ -605,8 +836,9 @@ export function Inspector({
   const tabBar = (
     <>
       <div className="inspector-tabs" role="tablist" aria-label={t.inspector.tabsLabel}>
-        {(['history', 'news', 'overview', 'notes'] as const)
+        {(['history', 'overview', 'notes', 'outputs'] as const)
           .filter((key) => !s.remote || key === 'history' || key === 'overview')
+          .filter((key) => key !== 'outputs' || outputsOn)
           .map((key) => (
             <button
               key={key}
@@ -615,11 +847,12 @@ export function Inspector({
               className={tab === key ? 'active' : ''}
               onClick={() => setTab(key)}
             >
-              {key === 'news'
-                ? t.inspector.tabs.news(unreadNoticeCount(news))
-                : t.inspector.tabs[key]}
+              {t.inspector.tabs[key]}
               {key === 'notes' &&
                 (s.notes || [...members].some((id) => bookmarkMarks?.[id]?.length)) && <i />}
+              {key === 'outputs' && outputs.total > 0 && (
+                <span className="tab-count">{outputs.total}</span>
+              )}
             </button>
           ))}
       </div>
@@ -627,7 +860,7 @@ export function Inspector({
   );
   const scrollArea = (
     <>
-      <div className={`inspector-scroll ${tab === 'news' ? 'news-tab-scroll' : ''}`}>
+      <div className="inspector-scroll">
         {loadError && <div className="inline-error">{loadError}</div>}
 
         {privacy ? (
@@ -636,20 +869,17 @@ export function Inspector({
             <h3>{t.inspector.privacy.title}</h3>
             <p>{t.inspector.privacy.body}</p>
           </div>
-        ) : tab === 'news' ? (
-          <NewsFeed
-            key={s.id + (showNews ?? '')}
-            includeBackground
-            initialFilter={showNews ? 'all' : 'final'}
-            notices={news}
-            sessionIds={[s.id]}
-            sessions={sessions}
-            privacy={privacy}
-            onReceipt={onReceipt}
-          />
         ) : tab === 'overview' ? (
           cardOverview
-        ) : tab === 'history' ? (
+        ) : tab === 'outputs' && outputsOn ? (
+          <SessionOutputs
+            outputs={outputs}
+            demo={demo}
+            privacy={privacy}
+            notify={notify}
+            onAll={onOutputs}
+          />
+        ) : tab === 'history' || tab === 'outputs' ? (
           <Conversation
             key={s.id}
             session={s}
@@ -657,6 +887,13 @@ export function Inspector({
             older={view.older}
             loadingOlder={loadingOlder}
             onOlder={loadOlder}
+            newer={view.newer}
+            onLatest={() => {
+              // Invalidate a response already in flight before React runs effect cleanup.
+              ++detailGeneration.current;
+              setView(freshConversation(session));
+              setLatestRequest((n) => n + 1);
+            }}
             notify={notify}
             compact
             hideProgress={!showProgress}
@@ -669,6 +906,10 @@ export function Inspector({
             onBookmark={demo ? undefined : mark}
             focus={focusHere && { ...focusHere, ready: reached === focusHere.key }}
             onFocused={onFocused}
+            outputs={chatOutputsOn ? chatOutputs.list : undefined}
+            privacy={privacy}
+            demo={demo}
+            selection={selection}
           />
         ) : (
           <div className="inspector-memory">
@@ -778,24 +1019,42 @@ export function Inspector({
       )}
     </>
   );
+  // Moving to a new window (into or out of its own window), the card leaves its tab and unsaved
+  // notes for that window: this one goes once it shows.
+  const changeCardPin = (next: CardPin) => {
+    if (cardOwnWindow(next) !== cardOwnWindow(cardPin))
+      leaveCard({ id: session.id, tab, ...(notesDirty ? { notes } : {}) });
+    onCardPin?.(next);
+  };
   const endMove = () => {
     if (!moving.current) return;
     moving.current = false;
     void api.card?.('drag-end');
   };
-  const item = (label: string, run: () => void, close: () => void, disabled = false) => (
+  /** `note`: why the item is off, shown under it (an item that is simply off has none). */
+  const item = (
+    label: string,
+    run: () => void,
+    close: () => void,
+    disabled = false,
+    note?: string,
+  ) => (
     <button
       role="menuitem"
       disabled={disabled}
+      className={note ? 'has-note' : undefined}
       onClick={() => {
         close();
         run();
       }}
     >
-      {label}
+      {note ? <span className="card-menu-label">{label}</span> : label}
+      {note && <small className="card-menu-note">{note}</small>}
     </button>
   );
   const calling = state === 'attention';
+  // Who picked bubbles can go to: another office colleague whose card has a chat box.
+  const shareTargets = range ? handTargets(colleagues, [...members, s.id], demo) : [];
   return (
     <>
       <aside
@@ -819,11 +1078,64 @@ export function Inspector({
           onPointerCancel={endMove}
           onLostPointerCapture={endMove}
         >
+          {onBack && (
+            <button
+              className="icon-btn card-back"
+              aria-label={t.inspector.backToList}
+              title={t.inspector.backToList}
+              onClick={onBack}
+            >
+              <ChevronLeft size={17} />
+            </button>
+          )}
           <div className={`card-avatar face-${s.provider} status-${s.status}`}>
             <Sprite session={s} provider={s.provider} mood={s.status} size={36} />
           </div>
           <div className="card-title">
-            {editing ? (
+            {retitling ? (
+              <form
+                className="name-editor"
+                title={t.inspector.sessionTitle.hint}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!retitleBusy) void sendTitle();
+                }}
+              >
+                <label className="sr-only" htmlFor="session-title">
+                  {t.inspector.sessionTitle.label}
+                </label>
+                <input
+                  autoFocus
+                  id="session-title"
+                  value={titleDraft}
+                  maxLength={SESSION_TITLE_MAX}
+                  disabled={retitleBusy}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && !e.nativeEvent.isComposing) setRetitling(false);
+                  }}
+                  placeholder={t.inspector.sessionTitle.placeholder}
+                />
+                <button
+                  className="icon-btn"
+                  type="submit"
+                  disabled={retitleBusy}
+                  aria-label={t.inspector.sessionTitle.send}
+                >
+                  <Check size={15} />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  disabled={retitleBusy}
+                  aria-label={t.inspector.sessionTitle.cancel}
+                  onClick={() => setRetitling(false)}
+                >
+                  <X size={15} />
+                </button>
+              </form>
+            ) : editing ? (
               <form
                 className="name-editor"
                 onSubmit={async (e) => {
@@ -882,7 +1194,7 @@ export function Inspector({
                 </button>
               </>
             )}
-            {onPositionRemember && (
+            {onPositionRemember && !cardOwnWindow(cardPin) && (
               <button
                 className={`icon-btn ${positionRemembered ? 'is-on' : ''}`}
                 aria-label={t.inspector.card.rememberPosition}
@@ -896,16 +1208,39 @@ export function Inspector({
                 <MapPin size={15} />
               </button>
             )}
+            {onCardPin && !cardOwnWindow(cardPin) && (
+              <button
+                className={`icon-btn card-pin ${cardPin !== 'off' ? 'is-on' : ''} ${cardPin === 'top' ? 'is-top' : ''}`}
+                aria-label={t.inspector.card.pinLabel(
+                  t.inspector.card.pinStates[cardPin],
+                  t.inspector.card.pinStates[nextCardPin(cardPin)],
+                )}
+                aria-pressed={cardPin !== 'off'}
+                data-pin={cardPin}
+                data-tip={`${t.inspector.card.pinStates[cardPin]} → ${
+                  t.inspector.card.pinStates[nextCardPin(cardPin)]
+                } · ${t.inspector.card.pinHints[cardPin]}`}
+                disabled={windowBusy}
+                onClick={() => changeCardPin(nextCardPin(cardPin))}
+              >
+                <CardPinIcon pin={cardPin} />
+              </button>
+            )}
             {onCardPin && (
               <button
-                className={`icon-btn ${cardPinned ? 'is-on' : ''}`}
-                aria-label={t.inspector.card.pinCard}
-                aria-pressed={cardPinned}
-                data-tip={cardPinned ? t.inspector.card.pinOn : t.inspector.card.pinOff}
+                className={`icon-btn card-own-window ${cardOwnWindow(cardPin) ? 'is-on' : ''}`}
+                aria-label={t.inspector.card.windowLabel(
+                  t.inspector.card.pinStates[cardPin],
+                  t.inspector.card.pinStates[cardWindowToggle(cardPin)],
+                )}
+                aria-pressed={cardOwnWindow(cardPin)}
+                data-tip={`${t.inspector.card.pinStates[cardPin]} → ${
+                  t.inspector.card.pinStates[cardWindowToggle(cardPin)]
+                } · ${t.inspector.card.pinHints[cardWindowToggle(cardPin)]}`}
                 disabled={windowBusy}
-                onClick={() => onCardPin(!cardPinned)}
+                onClick={() => changeCardPin(cardWindowToggle(cardPin))}
               >
-                {cardPinned ? <PinOff size={15} /> : <Pin size={15} />}
+                <AppWindow size={15} />
               </button>
             )}
             {onExpand && (
@@ -931,8 +1266,24 @@ export function Inspector({
                     {s.zone &&
                       s.zone !== 'office' &&
                       item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
-                    {item(t.inspector.rename, () => setEditing(true), close)}
+                    {item(
+                      t.inspector.rename,
+                      () => {
+                        setRetitling(false);
+                        setEditing(true);
+                      },
+                      close,
+                    )}
+                    {retitleShown &&
+                      item(
+                        t.inspector.sessionTitle.menu,
+                        openRetitle,
+                        close,
+                        !!retitleBlock,
+                        retitleBlock ? t.inspector.sessionTitle.blocks[retitleBlock] : undefined,
+                      )}
                     {item(t.pets.individualTitle, () => setPetOpen(true), close)}
+                    {!s.attachedTo && item(t.desks.menuItem, () => setDeskOpen(true), close)}
                     {!privacy &&
                       onZoneRules &&
                       item(t.inspector.zone, () => setZoneOpen(true), close)}
@@ -1029,7 +1380,31 @@ export function Inspector({
           )}
         </div>
         {scrollArea}
-        <div className="card-composer">
+        {/* While bubbles are picked, their bar stands where the chat box is; the box stays as it
+            was underneath (a draft, a send under way) and is back once picking stops. */}
+        <div className={`card-composer${range ? ' is-picking' : ''}`}>
+          {range && (
+            <BubbleShareBar
+              bubbles={picked}
+              waiting={range.start === range.end}
+              from={sessionName(s)}
+              targets={shareTargets}
+              handBlock={
+                // A browser has no chat boxes; the desktop app, once typing is turned on.
+                !api.send
+                  ? t.conversation.share.noTargets
+                  : !terminalSend
+                    ? t.conversation.share.handOff
+                    : !shareTargets.length
+                      ? t.conversation.share.noTargets
+                      : ''
+              }
+              demo={demo}
+              notify={notify}
+              onHanded={onHandTo ?? onSelect}
+              onDone={stopPicking}
+            />
+          )}
           {/* What a calling colleague asks, answerable here where the desktop app sees it. */}
           {calling && !privacy && !s.remote && (
             <div className="card-request">
@@ -1037,14 +1412,28 @@ export function Inspector({
             </div>
           )}
           <div className="card-actions">
-            <button
-              className={`card-action ${calling ? 'primary' : ''}`}
-              disabled={demo || !!s.remote}
-              onClick={resume}
-            >
-              <Terminal size={13} />
-              {resumeLabel}
-            </button>
+            {/* A remote Codex chat that cannot be reached can be woken on the office that exported
+                it; any other remote colleague keeps the disabled resume button (no local launch). */}
+            {s.remote &&
+            locatable &&
+            terminalSend &&
+            !privacy &&
+            api.remoteLaunch &&
+            s.provider === 'codex' &&
+            ['root', 'fork'].includes(s.relation?.kind ?? 'root') &&
+            ['unknown', 'interactive'].includes(s.origin?.kind ?? 'unknown') &&
+            (!live?.canSend || live.codexRemote) ? (
+              <RemoteWake key={s.id} id={s.id} notify={notify} refresh={refreshTargets} />
+            ) : (
+              <button
+                className={`card-action ${calling ? 'primary' : ''}`}
+                disabled={demo || !!s.remote || (sheetFallback && !inOrca && privacy)}
+                onClick={resume}
+              >
+                <Terminal size={13} />
+                {resumeLabel}
+              </button>
+            )}
             {codexApp && live?.canFocus && (
               <button
                 className="card-action"
@@ -1055,6 +1444,41 @@ export function Inspector({
                 {t.terminal.jumpTo(focusName(live))}
               </button>
             )}
+            {/* Continuing in a terminal, unless the main action already does (it opens the sheet)
+                or the conversation runs where the main action goes (continuing it again only
+                says it is open). A fork is always offered: it never touches the original. */}
+            {canLaunch && (!sheetFallback || !!inOrca) && !live?.canFocus && (
+              <button
+                className="card-action"
+                data-solid
+                disabled={privacy}
+                onClick={() => setLaunching('resume')}
+              >
+                <Terminal size={13} />
+                {t.launchSheet.cardContinue}
+              </button>
+            )}
+            {canLaunch && (
+              <button
+                className="card-action"
+                data-solid
+                disabled={privacy}
+                onClick={() => setLaunching('fork')}
+              >
+                <GitFork size={13} />
+                {t.launchSheet.cardFork}
+              </button>
+            )}
+            {launching && canLaunch && (
+              <LaunchSheet
+                key={s.id + launching}
+                entry={{ from: 'card', session: s, kind: launching }}
+                privacy={privacy}
+                notify={notify}
+                onClose={() => setLaunching(null)}
+              />
+            )}
+            <CardShellButton session={s} privacy={privacy} demo={demo} notify={notify} />
             {/* Nothing to answer here (no question, plan or prompt read): it happens where it runs. */}
             {calling && !openRequest(s) && (
               <span className="card-calling-note">{t.inspector.card.callingNote}</span>
@@ -1064,22 +1488,51 @@ export function Inspector({
           {locatable && api.send ? (
             <TerminalSend
               key={s.id}
-              draftKey={`${demo ? 'demo' : 'live'}:${s.id}`}
+              draftKey={replyDraftKey(s.id, demo)}
               chat
               target={live}
+              onRefresh={refreshTargets}
               remoteOffice={
                 s.remote ? (privacy ? t.federation.remoteOffice : s.remote.label) : undefined
               }
               enabled={terminalSend}
               privacy={privacy}
               onJump={!s.remote && api.jump ? () => void resume() : undefined}
-              onSend={async (text, replaceDraft) => {
+              // What sits in its terminal input box: shown here and sent as is on request.
+              draftPreview={
+                !s.remote && !demo && api.composerDraft
+                  ? {
+                      id: s.id,
+                      notify,
+                      onSubmitted: (text, startedAt, logical) => {
+                        markSent(s.id);
+                        // A slash command runs; it is not recorded as a request to wait for.
+                        if ((logical ?? text).trimStart().startsWith('/')) return;
+                        // The text as typed when the screen could tell; else as read off the
+                        // box, whose wrapping may split words (matched loosely, see pendingSends).
+                        if (logical !== undefined) remember(s.id, logical, startedAt);
+                        else remember(s.id, text, startedAt, 0, { wrapped: true });
+                      },
+                    }
+                  : undefined
+              }
+              onSend={async (text, replaceDraft, allowPartialDraft, images, exactDraft) => {
                 const id = s.id;
                 const startedAt = Date.now();
-                const result = await sendFollowUp(id, text, replaceDraft, notify);
+                const result = await sendFollowUp(
+                  id,
+                  text,
+                  replaceDraft,
+                  notify,
+                  allowPartialDraft,
+                  images,
+                  exactDraft,
+                );
                 if (result.status === 'sent') {
                   markSent(id);
-                  remember(id, text, startedAt);
+                  remember(id, text, startedAt, images?.length ?? 0, {
+                    unrecorded: result.unrecorded,
+                  });
                 }
                 return result;
               }}

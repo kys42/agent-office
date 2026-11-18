@@ -29,7 +29,7 @@ export function Modal({
       if (e.key === 'Tab') {
         const focusable = [
           ...el.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), input, textarea, select, a[href], [tabindex="0"]',
+            'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], summary, [tabindex="0"]',
           ),
         ];
         const first = focusable[0],
@@ -44,14 +44,24 @@ export function Modal({
       }
     };
     el.addEventListener('keydown', key);
+    // A focused control that turns disabled or goes away drops focus to the page, sometimes
+    // after any effect could hand it back: Escape there still closes the dialog on screen.
+    const stray = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      close.current();
+    };
+    document.addEventListener('keydown', stray);
     return () => {
       el.removeEventListener('keydown', key);
+      document.removeEventListener('keydown', stray);
       previous?.focus();
     };
   }, []);
   return (
     <div
       className="modal-backdrop"
+      data-solid
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -16,7 +16,7 @@ export const guide = {
     },
     attention: {
       title: 'Start with whoever needs you.',
-      body: 'The teammate list puts questions first, then new results, then ongoing work. Click a teammate for their work card; open the Inbox to catch up on final replies.',
+      body: 'The teammate list puts questions first, then new results, then ongoing work. Click a teammate for their work card; a dot marks a result you have not seen yet.',
       label: 'Catch up',
     },
     pet: {
@@ -56,12 +56,6 @@ export const guide = {
   needsColleague: 'Available when a teammate joins',
   liveOnly: 'Available in your live office',
   cards: {
-    inbox: {
-      title: 'Catch up on results',
-      body: 'Inbox keeps final replies and questions together. Mark results as read; acknowledge questions separately.',
-      where: 'Top bar → Inbox',
-      action: 'Open Inbox',
-    },
     pet: {
       title: 'A desk pet beside you',
       body: 'A tiny floating teammate unfolds into a desk row or floor desks. Read, copy and open links right from the bubbles.',
@@ -77,7 +71,7 @@ export const guide = {
     appearance: {
       title: 'Make your teammates yours',
       body: 'Choose from eight characters, six colors and accessories. Set defaults per tool, or customize one teammate on their card.',
-      where: 'Settings → Little colleagues',
+      where: 'Settings → Appearance → Little colleagues',
       action: 'Choose characters',
     },
     memory: {
@@ -94,8 +88,8 @@ export const guide = {
     },
     terminal: {
       title: 'Follow up from the office',
-      body: 'Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
-      where: 'Work card or bubble → reply · Settings',
+      body: 'Continue or fork older local Claude or Codex conversations with Continue in a terminal on the work card: pick Orca, tmux, Terminal or a copied command, each saying why when it cannot. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
+      where: 'Work card or bubble → reply · Settings → General',
       action: 'View reply settings',
     },
     activity: {
@@ -113,12 +107,12 @@ export const guide = {
     privacy: {
       title: 'Share your screen comfortably',
       body: 'Hide screen content from the top bar. Settings lets you exclude projects, pause collection, reduce motion and change language.',
-      where: 'Top bar → eye icon · Settings',
+      where: 'Top bar → eye icon · Settings → General',
       action: 'Open Settings',
     },
     keys: {
       title: 'Move without the mouse',
-      body: '⌘K finds teammates, records and commands. J/K moves through the queue, I opens Inbox, and ? shows all shortcuts.',
+      body: '⌘K finds teammates, records and commands. J/K moves through the queue, R marks results read, and ? shows all shortcuts.',
       where: '⌘K · footer → Shortcuts',
       action: 'See shortcuts',
     },

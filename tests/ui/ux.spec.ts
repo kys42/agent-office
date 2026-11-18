@@ -45,13 +45,9 @@ test('The card routes calls to the original tool and lets results be read in pla
   await expect(card.locator('.card-status')).not.toHaveClass(/is-calling/);
   await expect(resume).not.toHaveClass(/primary/);
   await expect(card.locator('.card-calling-note')).toHaveCount(0);
-  // The new result is read in place, from the card's news tab.
-  const news = card.getByRole('tab', { name: /^소식/ });
-  await expect(news).toHaveText(/소식 1/);
-  await news.click();
-  await card.getByRole('button', { name: '읽음으로 표시' }).click();
-  await expect(page.locator('.inbox-button b')).toHaveText('0');
-  await expect(news).not.toHaveText(/1/);
+  // Opening the card reads the new result (Issue #221); the card has no news tab (#300).
+  await expect(page.getByRole('button', { name: '확인할 결과 0', exact: true })).toBeDisabled();
+  await expect(card.getByRole('tab')).toHaveText(['대화', '작업 정보', '기억 메모']);
   // Reading is a receipt only — the colleague's desk and bubble stay.
   await expect(page.locator('.office-pet[data-session-id="demo:5"]')).toBeVisible();
 });
@@ -87,7 +83,7 @@ test('Keyboard triage walks the to-do order and marks results read', async ({ pa
   await page.keyboard.press('j');
   await expect(page.locator('.card-head h2')).toHaveAttribute('title', '모모');
   await page.keyboard.press('r');
-  await expect(page.locator('.inbox-button b')).toHaveText('0');
+  await expect(page.getByRole('button', { name: '확인할 결과 0', exact: true })).toBeDisabled();
   // Reading does not reshuffle the cursor mid-triage: K returns, J continues.
   await page.keyboard.press('k');
   await expect(page.locator('.card-head h2')).toHaveAttribute('title', '당근');
@@ -104,12 +100,32 @@ test('Keyboard triage walks the to-do order and marks results read', async ({ pa
   await expect(page.getByRole('complementary', { name: '동료의 업무 카드' })).toHaveCount(0);
 });
 
-test('Panel tabs switch colleagues and news in one click', async ({ page }) => {
+test('The right panel is the colleagues alone; a result is a dot, and its bubble opens the conversation', async ({
+  page,
+}) => {
   await page.goto('/?demo');
-  await page.locator('.panel-tabs').getByRole('button', { name: /^소식/ }).click();
-  await expect(page.getByRole('complementary', { name: '소식함' })).toBeVisible();
-  await page.locator('.panel-tabs').getByRole('button', { name: '동료', exact: true }).click();
-  await expect(page.getByRole('complementary', { name: '동료 목록' })).toBeVisible();
+  const roster = page.getByRole('complementary', { name: '동료 목록' });
+  await expect(roster).toBeVisible();
+  await expect(page.getByRole('complementary', { name: '소식함' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /소식함/ })).toHaveCount(0);
+  // Whether the latest result is unseen, never how many.
+  const row = roster.locator('.session-row').filter({ hasText: '모모' });
+  await expect(row.locator('.unread-dot')).toHaveCount(1);
+  await expect(row.locator('.unread-dot')).toHaveText('');
+  await expect(row).toContainText(/새 결과 · /);
+  const bubble = page.locator('.desk-station[data-station-id="demo:5"] .speech-bubble');
+  await bubble.click();
+  const card = page.getByRole('complementary', { name: '동료의 업무 카드' });
+  await expect(card.locator('.card-head h2')).toHaveAttribute('title', '모모');
+  await expect(card.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
+  // Already open on another tab, the bubble still brings the conversation back.
+  await card.getByRole('tab', { name: '작업 정보' }).click();
+  await expect(card.getByRole('tab', { name: '작업 정보' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await bubble.click();
+  await expect(card.getByRole('tab', { name: '대화' })).toHaveAttribute('aria-selected', 'true');
 });
 
 test('List hover spotlights a desk without moving any furniture', async ({ page }) => {
@@ -483,6 +499,8 @@ test('A colleague can be sent to a custom office area and returned to its projec
   await expect(mark).toContainText('2명');
 
   await page.getByRole('button', { name: '사무실 설정 열기' }).click();
+  // Zones live under 공간 since the categories (#87).
+  await page.getByRole('tab', { name: '공간' }).click();
   const zones = page.locator('.zone-settings');
   await expect(zones.getByLabel('리서치 구역 이름')).toHaveValue('리서치');
   await expect(zones.getByRole('button', { name: /이 세션만/ })).toHaveCount(2);
@@ -537,7 +555,11 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
   snapshot.notices = snapshot.notices!.filter((n) => n.sessionId !== s.id);
   await page.route('**/api/rpc', async (route) => {
     const { method, args } = route.request().postDataJSON();
-    if (method === 'preferences') Object.assign(snapshot.preferences, args[0]);
+    if (method === 'preferences') {
+      Object.assign(snapshot.preferences, args[0]);
+      // A saved choice returns asynchronously; the dependent choice below waits for its render.
+      if (args[0].readyMinutes === 60) await new Promise((resolve) => setTimeout(resolve, 150));
+    }
     await route.fulfill({ json: { result: snapshot } });
   });
   await page.goto('/');
@@ -556,6 +578,9 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
   );
   // Standing by must end before going home: shortening going home pulls it back.
   await ready.selectOption('60');
+  await expect(page.locator('.office-schedule-preview')).toHaveText(
+    '마지막 활동 → 60분 대기 · 4시간 후 퇴근 · 7일 후 보관',
+  );
   await page.getByLabel('퇴근까지 시간').selectOption('1');
   await expect(ready).toHaveValue('30');
   await expect(ready.locator('option[value="60"]')).toHaveJSProperty('disabled', true);
@@ -568,8 +593,7 @@ test('Just-finished colleagues stand by before resting; the lounge says they wen
 test('Esc in the desk row folds an unfolded bubble first; only an Esc with nothing open folds the dock', async ({
   page,
 }) => {
-  await page.goto('/?demo#mini');
-  await page.locator('.desk-pet').click();
+  await page.goto('/?demo#mini=row');
   const row = page.locator('.desk-row');
   await expect(row).toBeVisible();
   const bubble = row.locator('[data-station-id="demo:0"] .speech-bubble');

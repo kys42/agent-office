@@ -1,12 +1,17 @@
 name: Verify
 on:
   push:
+    branches: [main]
   pull_request:
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   core:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,6 +21,13 @@ jobs:
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      # The shipped app's dependencies block on a high advisory. Build and test tools (Vite and
+      # friends) are still audited, but only reported: an advisory there with no fixed release
+      # yet must not stop every PR.
+      - run: npm audit --omit=dev --audit-level=high
+      - name: npm audit (dev tools, report only)
+        run: npm audit --audit-level=high
+        continue-on-error: true
       - run: npm run format:check
       - run: npm test
       - run: npm run build

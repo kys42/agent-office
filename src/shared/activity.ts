@@ -13,6 +13,30 @@ export function messageExcerpt(text: string, limit = 220): string {
   return plain.length > limit ? plain.slice(0, limit - 1).trimEnd() + '…' : plain;
 }
 
+/**
+ * The start of a message for a folded view: about `limit` characters, never cutting through a
+ * markdown link (a link cut in half shows its raw markup and loses its target).
+ */
+export function clipMarkdown(text: string, limit: number, lines = 12): string {
+  let end = Math.min(text.length, limit);
+  // [label](dest): dest bare (one level of parentheses allowed, "b(1).md") or in <…> (paths
+  // with spaces), with an optional "title".
+  const LINK =
+    /!?\[[^\]\n]*\]\((?:<[^>\n]*>|[^()\s]*(?:\([^()\s]*\)[^()\s]*)*)(?:\s+"[^"\n]*")?\)/g;
+  for (const m of text.matchAll(LINK)) {
+    const start = m.index!;
+    if (start >= end) break;
+    if (start + m[0].length > end) {
+      // The link is short enough to keep whole; a very long one goes to the next fold (unless
+      // it is all there is to show).
+      end = m[0].length <= 600 || start === 0 ? start + m[0].length : start;
+      break;
+    }
+  }
+  const clipped = text.slice(0, end).split('\n').slice(0, lines).join('\n');
+  return clipped.length < text.length ? clipped + '…' : clipped;
+}
+
 export function summarizeActivity(
   events: OfficeEvent[],
   status: Mood,

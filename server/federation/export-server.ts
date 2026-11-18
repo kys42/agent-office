@@ -1,3 +1,4 @@
+import type { PeerLauncher } from './launcher.js';
 import { PeerCommands } from './commands.js';
 import type { PeerSender } from './sender.js';
 import https from 'node:https';
@@ -15,12 +16,17 @@ import {
 } from './protocol.js';
 
 /** Separate API. Never constructs OfficeService or opens the source database for writing. */
-export async function startExportServer(dataDir: string, configDir: string, sender?: PeerSender) {
+export async function startExportServer(
+  dataDir: string,
+  configDir: string,
+  sender?: PeerSender,
+  launcher?: PeerLauncher,
+) {
   const readConfig = () =>
     exportConfigSchema.parse(JSON.parse(readFileSync(path.join(configDir, 'export.json'), 'utf8')));
   const initial = readConfig();
   const store = new OfficeStore(dataDir, true);
-  const commands = new PeerCommands(configDir, store, readConfig, sender);
+  const commands = new PeerCommands(configDir, store, readConfig, sender, launcher);
   let epoch = randomUUID(),
     version = 0,
     signature = '',

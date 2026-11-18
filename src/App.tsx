@@ -1,14 +1,28 @@
+import { ReleaseNotice } from './components/ReleaseNotice';
+import { wantsReleaseCheck } from './shared/release-check';
+import { MiniShellDemoRelease } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
+import { DeskAppearanceContext } from './components/DeskAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { PanelResizer } from './components/PanelResizer';
+import {
+  PANEL,
+  PANEL_WIDTHS_KEY,
+  fitPanels,
+  readWidths,
+  readWidthsAt,
+  type PanelWidths,
+} from './shared/panel-widths';
 import {
   Gauge,
   Home,
   BookOpen,
   Clock3,
   Settings2,
+  AppWindow,
   Search,
   PictureInPicture2,
   Eye,
@@ -18,7 +32,6 @@ import {
   X,
   AlertCircle,
   Sparkles,
-  Inbox,
   Armchair,
   Archive,
   Keyboard,
@@ -27,6 +40,9 @@ import {
   Building2,
   Coffee,
   HelpCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PackageOpen,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import { isWindows, modifierKey, platformKeys } from './lib/platform';
@@ -37,7 +53,7 @@ import { useAnswerSettings } from './lib/useAnswerSettings';
 import { date, time, ago } from './lib/format';
 import { Sprite } from './components/Sprite';
 import { OfficeRooms } from './components/OfficeRooms';
-import { LOCAL_ROOM, sessionRoom, roomModel } from './shared/rooms';
+import { ALL_ROOMS, LOCAL_ROOM, officeLabel, sessionRoom, roomModel } from './shared/rooms';
 import { OfficeWorkspace } from './components/OfficeWorkspace';
 import { projectKey, sessionName } from './shared/office';
 import { projectColor } from './shared/office-layout';
@@ -45,25 +61,31 @@ import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
+import { OutputsPage } from './components/Outputs';
 import type { BookmarkFocus } from './shared/bookmarks';
 import { Settings, type SettingsSection } from './components/Settings';
-import { NewsInbox } from './components/News';
 import { isAttentionNotice } from './shared/notices';
 import type { OfficeZone } from './shared/types';
 import { CommandPalette, type PaletteAction } from './components/CommandPalette';
 import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
 import { useI18n } from './lib/i18n';
-import { NoticePagingContext } from './lib/notice-paging';
+import { useDockLook } from './lib/useDockLook';
+import { dockLookName } from './shared/dock-look';
+import { cardReadSettings } from './shared/card-reads';
+import { resetDue } from './shared/view-prefs';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
   { id: 'office', icon: Home },
   { id: 'memory', icon: BookOpen },
+  { id: 'outputs', icon: PackageOpen },
   { id: 'activity', icon: Clock3 },
   { id: 'settings', icon: Settings2 },
 ] as const;
 export default function App() {
   const { locale, t } = useI18n();
+  // The dock button names the look the dock goes back to (pet, desk row, floor, tiny).
+  const dockLabel = t.dock.view.looks[dockLookName(useDockLook())];
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [guide, setGuide] = useState<'tour' | 'features' | null>(() =>
     new URLSearchParams(location.search).has('onboarding') || (!demo && !hasSeenOnboarding(false))
@@ -78,9 +100,67 @@ export default function App() {
     // A sample-office visit never consumes the first tour of the live office.
     if (!demo && !hasSeenOnboarding(false)) setGuide('tour');
   }, [demo]);
-  const [inbox, setInbox] = useState(false);
+  // The left menu folded away for room (remembered on this computer).
+  const [sidebarHidden, setSidebarHiddenState] = useState(() => {
+    try {
+      return localStorage.getItem('office:sidebar') === 'hidden';
+    } catch {
+      return false;
+    }
+  });
+  const setSidebarHidden = (hidden: boolean) => {
+    setSidebarHiddenState(hidden);
+    try {
+      localStorage.setItem('office:sidebar', hidden ? 'hidden' : 'shown');
+    } catch {
+      // Remembering is a convenience.
+    }
+  };
+  // Widths the person dragged the left menu and the right column to (remembered here), fitted to
+  // the window as it is now.
+  // `widthsAt`: when the person last dragged them, so a later reset (from any window) wins.
+  const widthsAt = useRef(0);
+  const [widths, setWidthsState] = useState<PanelWidths>(() => {
+    try {
+      const raw = localStorage.getItem(PANEL_WIDTHS_KEY);
+      widthsAt.current = readWidthsAt(raw);
+      return readWidths(raw);
+    } catch {
+      return {};
+    }
+  });
+  const setWidths = (patch: PanelWidths) => {
+    widthsAt.current = Date.now();
+    setWidthsState((was) => ({ ...was, ...patch }));
+  };
+  useEffect(() => {
+    // Saved once the edge rests, not on every step of a drag (and on leaving, if sooner).
+    const save = () => {
+      try {
+        localStorage.setItem(
+          PANEL_WIDTHS_KEY,
+          JSON.stringify({ ...widths, at: widthsAt.current || undefined }),
+        );
+      } catch {
+        // Remembering is a convenience.
+      }
+    };
+    const timer = setTimeout(save, 300);
+    window.addEventListener('pagehide', save);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('pagehide', save);
+    };
+  }, [widths]);
+  const [viewport, setViewport] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const resized = () => setViewport(window.innerWidth);
+    window.addEventListener('resize', resized);
+    return () => window.removeEventListener('resize', resized);
+  }, []);
   const [showUsage, setShowUsage] = useState(false);
-  const [showNews, setShowNews] = useState<string | null>(null);
+  // Bumped when a bubble opens a card: the card shows the conversation, whatever tab it was on.
+  const [conversationAt, setConversationAt] = useState(0);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
   const [selected, setSelected] = useState<string | null>(
     location.hash.startsWith('#session=')
@@ -89,6 +169,19 @@ export default function App() {
         ? localStorage.getItem('office:last-session')
         : null,
   );
+  // A card restored on startup (last session or `#session=`) reads nothing until the person
+  // touches the office: any press or key, or choosing a colleague.
+  const [engaged, setEngaged] = useState(() => !selected);
+  useEffect(() => {
+    if (engaged) return;
+    const engage = () => setEngaged(true);
+    window.addEventListener('pointerdown', engage, true);
+    window.addEventListener('keydown', engage, true);
+    return () => {
+      window.removeEventListener('pointerdown', engage, true);
+      window.removeEventListener('keydown', engage, true);
+    };
+  }, [engaged]);
   useEffect(() => {
     if (!demo) {
       if (selected) localStorage.setItem('office:last-session', selected);
@@ -112,9 +205,9 @@ export default function App() {
     patch: onPatch,
     pin,
     receipt: onReceipt,
-    readAll,
     visit,
     veil,
+    reorderSeats,
     returnToOffice,
     bookmark,
     unbookmark,
@@ -123,7 +216,9 @@ export default function App() {
   const roomsEnabled = !demo && !!snapshot?.federation?.enabled;
   const activeRoom =
     roomsEnabled &&
-    (room === LOCAL_ROOM || snapshot?.federation?.peers.some((p) => p.officeId === room))
+    (room === ALL_ROOMS ||
+      room === LOCAL_ROOM ||
+      snapshot?.federation?.peers.some((p) => p.officeId === room))
       ? room
       : LOCAL_ROOM;
   const model = useMemo(
@@ -136,15 +231,24 @@ export default function App() {
   const chosenSession = snapshot?.sessions.find((s) => s.id === selected);
   const chosenRoom = chosenSession ? sessionRoom(chosenSession) : undefined;
   useEffect(() => {
-    if (chosenRoom && roomsEnabled) setRoom(chosenRoom);
-  }, [chosenRoom, roomsEnabled]);
+    if (chosenRoom && roomsEnabled && room !== ALL_ROOMS) setRoom(chosenRoom);
+  }, [chosenRoom, roomsEnabled, room]);
   // A bookmark being opened: its colleague's card, at its message.
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
     () =>
-      api.onSelect?.((id) => {
+      api.onSelect?.((id, bookmark) => {
         setView('office');
+        setEngaged(true);
         setSelected(id);
+        // From a reader window: the conversation at the bookmarked message.
+        if (bookmark)
+          setBookmarkFocus({
+            sessionId: id,
+            eventId: bookmark.eventId,
+            at: bookmark.at,
+            key: Date.now(),
+          });
       }),
     [],
   );
@@ -153,6 +257,11 @@ export default function App() {
   const [memoryQuery, setMemoryQuery] = useState('');
   const [settingsFocus, setSettingsFocus] = useState<{ section: SettingsSection; at: number }>();
   const clearSettingsFocus = useCallback(() => setSettingsFocus(undefined), []);
+  // The settings page at one category/section (guide links, the office's gear, rooms).
+  const openSettings = (section: SettingsSection) => {
+    setSettingsFocus({ section, at: Date.now() });
+    setView('settings');
+  };
   const [zoneRequest, setZoneRequest] = useState<{ zone: OfficeZone; at: number } | null>(null);
   const [areaDrop, setAreaDrop] = useState<{ id: string; zone: string | null } | null>(null);
   const openSearch = () => setPalette(true);
@@ -202,7 +311,24 @@ export default function App() {
   // J/K walks what the office shows: hidden colleagues stay out until they talk again.
   const ordered = model.scene;
   const current = sessions.find((s) => s.id === selected);
+  // The desktop skips notifications about the colleague whose card is open here (#229).
+  const currentId = current?.id ?? null;
+  useEffect(() => {
+    if (!demo) api.selected?.(currentId);
+  }, [demo, currentId]);
   const prefs = snapshot?.preferences;
+  // Output lists read again when an output is recorded (keeping what was loaded further down),
+  // and start over when the settings that hide some change.
+  const outputStamp = snapshot?.outputStamp ?? '';
+  const outputVisibility = JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders]);
+  // '패널 폭 초기화' in settings (maybe the settings window, another renderer): a stamp newer
+  // than the last drag puts both columns back to their defaults.
+  const widthsResetAt = prefs?.panelWidthsResetAt;
+  useEffect(() => {
+    if (!resetDue(widthsResetAt, widthsAt.current)) return;
+    widthsAt.current = widthsResetAt!;
+    setWidthsState({});
+  }, [widthsResetAt]);
   const notices = snapshot?.notices ?? [];
   const unread = model.unread;
   useEffect(() => {
@@ -243,7 +369,12 @@ export default function App() {
       .filter((s) => !s.attachedTo)
       .reduce((map, s) => {
         const key = projectKey(s);
-        const item = map.get(key) ?? { key, name: s.area?.name ?? s.project, count: 0 };
+        const name = s.area?.name ?? s.project;
+        const item = map.get(key) ?? {
+          key,
+          name: activeRoom === ALL_ROOMS ? `${officeLabel(s)} · ${name}` : name,
+          count: 0,
+        };
         item.count += 1;
         return map.set(key, item);
       }, new Map<string, { key: string; name: string; count: number }>())
@@ -265,11 +396,6 @@ export default function App() {
     name: string;
     at: number;
   } | null>(null);
-  const openInbox = () => {
-    setShowUsage(false);
-    setInbox(true);
-    setSelected(null);
-  };
   // Desktop-only Send to terminal setting and the quick-reply send, shared with the dock card.
   const {
     enabled: terminalSend,
@@ -279,11 +405,6 @@ export default function App() {
   } = useTerminalSend(demo, notify);
   // Desktop-only answering of questions, plans and permission prompts (both off by default).
   const answers = useAnswerSettings(demo, notify);
-  // A first answer from a card may have turned one on: show it as saved.
-  const reloadAnswers = answers.reload;
-  useEffect(() => {
-    if (view === 'settings') reloadAnswers();
-  }, [view, reloadAnswers]);
   // The desk pin and the card pin are one switch on the colleague.
   const onPin = (s: Session) =>
     void pin(s)
@@ -293,10 +414,9 @@ export default function App() {
     if (await onPrefs({ zoneRules })) notify(t.app.toast.zonesSaved);
   };
   const choose = (id: string) => {
+    setEngaged(true);
     setBookmarkFocus(null);
     setShowUsage(false);
-    setInbox(false);
-    setShowNews(null);
     setSelected(id);
     visit(id);
   };
@@ -310,7 +430,7 @@ export default function App() {
       list.map(({ id, version }) => ({ id, version })),
       'read',
     );
-    notify(t.app.toast.markedRead(list.length));
+    notify(t.app.toast.markedRead);
   };
   // Keep the order stable during a burst of J/K so reading an item doesn't reshuffle the cursor.
   const navOrder = useRef<{ ids: string[]; at: number }>({ ids: [], at: 0 });
@@ -348,10 +468,7 @@ export default function App() {
     if (e.key === 'Escape') {
       // In a field, Esc leaves the field first; the panels close on the next press.
       if (field) field.blur();
-      else {
-        setSelected(null);
-        setInbox(false);
-      }
+      else setSelected(null);
       return;
     }
     if (field || document.querySelector('[role="dialog"]') || e.metaKey || e.ctrlKey || e.altKey)
@@ -367,7 +484,6 @@ export default function App() {
     else if (e.key === '/' || code === 'Slash') run(() => setPalette(true));
     else if (code === 'KeyJ') run(() => step(1));
     else if (code === 'KeyK') run(() => step(-1));
-    else if (code === 'KeyI') run(() => (inbox ? setInbox(false) : openInbox()));
     else if (code === 'KeyR' && selected) run(() => markRead(selected));
     else if (view === 'office' && code === 'KeyF') run(() => officeCommand('fit'));
     else if (view === 'office' && (code === 'Equal' || code === 'NumpadAdd'))
@@ -380,10 +496,8 @@ export default function App() {
   const guideAction = (action: GuideAction) => {
     closeGuide();
     setSelected(null);
-    setInbox(false);
     setShowUsage(false);
-    if (action === 'inbox') openInbox();
-    else if (action === 'usage') setShowUsage(true);
+    if (action === 'usage') setShowUsage(true);
     else if (action === 'card') {
       setView('office');
       if (model.scene[0]) choose(model.scene[0].id);
@@ -402,10 +516,9 @@ export default function App() {
           : action === 'space'
             ? 'office'
             : action === 'privacy' || action === 'terminal'
-              ? 'rhythm'
+              ? action
               : 'connections';
-      setSettingsFocus({ section, at: Date.now() });
-      setView('settings');
+      openSettings(section);
     }
   };
   const actions: PaletteAction[] = [
@@ -415,15 +528,6 @@ export default function App() {
       keywords: `${t.guide.tour} ${t.guide.features} onboarding help`,
       icon: <BookOpen size={15} />,
       run: () => setGuide('features'),
-    },
-    {
-      id: 'inbox',
-      label: t.palette.actions.inbox,
-      hint: t.palette.actions.inboxHint(unread),
-      keys: 'I',
-      icon: <Inbox size={15} />,
-      keywords: t.palette.actions.inboxKeywords,
-      run: openInbox,
     },
     {
       id: 'office',
@@ -449,11 +553,26 @@ export default function App() {
       run: () => goZone('archive'),
     },
     {
+      id: 'sidebar',
+      label: sidebarHidden ? t.app.showSidebar : t.app.hideSidebar,
+      icon: sidebarHidden ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />,
+      keywords: t.palette.actions.sidebarKeywords,
+      run: () => setSidebarHidden(!sidebarHidden),
+    },
+    {
       id: 'memory',
       label: t.palette.actions.memory,
       hint: t.palette.actions.memoryHint,
       icon: <BookOpen size={15} />,
       run: () => setView('memory'),
+    },
+    {
+      id: 'outputs',
+      label: t.palette.actions.outputs,
+      hint: t.palette.actions.outputsHint,
+      icon: <PackageOpen size={15} />,
+      keywords: t.palette.actions.outputsKeywords,
+      run: () => setView('outputs'),
     },
     {
       id: 'activity',
@@ -469,6 +588,19 @@ export default function App() {
       keywords: t.palette.actions.settingsKeywords,
       run: () => setView('settings'),
     },
+    // Desktop: a separate settings window that stays open beside work (#87).
+    ...(api.settings && !demo
+      ? [
+          {
+            id: 'settings-window',
+            label: t.palette.actions.settingsWindow,
+            hint: t.palette.actions.settingsWindowHint,
+            icon: <AppWindow size={15} />,
+            keywords: t.palette.actions.settingsKeywords,
+            run: () => void api.settings?.open(),
+          },
+        ]
+      : []),
     {
       id: 'privacy',
       label: prefs?.privacy ? t.palette.actions.showContent : t.palette.actions.hideContent,
@@ -508,10 +640,31 @@ export default function App() {
       run: () => setHelp(true),
     },
   ];
-  const docked = !!current || inbox || showUsage;
+  const docked = !!current || showUsage;
+  // The right column: the office's list, or a card or usage beside any view.
+  const rightColumn = (view === 'office' && !!snapshot) || docked;
+  const panels = fitPanels(widths, viewport, { sidebar: !sidebarHidden, dock: rightColumn });
+  const sidebarToggle = (
+    <button
+      className="icon-btn sidebar-toggle"
+      aria-label={t.app.sidebarToggle}
+      aria-expanded={!sidebarHidden}
+      aria-controls="main-menu"
+      title={sidebarHidden ? t.app.showSidebar : t.app.hideSidebar}
+      onClick={() => setSidebarHidden(!sidebarHidden)}
+    >
+      {sidebarHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+    </button>
+  );
   const content = (
     <div
-      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''}`}
+      className={`app ${prefs?.reducedMotion ? 'reduce-motion' : ''} ${docked ? 'has-dock' : ''} ${prefs?.privacy ? 'is-private' : ''} ${sidebarHidden ? 'sidebar-hidden' : ''}`}
+      style={
+        {
+          ...(panels.css.side ? { '--side-w': `${panels.css.side}px` } : {}),
+          ...(panels.css.dock ? { '--dock-w': `${panels.css.dock}px` } : {}),
+        } as CSSProperties
+      }
     >
       {isDesktop && isWindows && (
         <div className="windows-titlebar">
@@ -519,7 +672,7 @@ export default function App() {
           <span>Agent Office</span>
         </div>
       )}
-      <aside className="sidebar" aria-label={t.app.mainMenu}>
+      <aside className="sidebar" id="main-menu" aria-label={t.app.mainMenu}>
         <div className="sidebar-top">
           <div className="brand">
             <div className="brand-mark" aria-hidden="true">
@@ -540,11 +693,10 @@ export default function App() {
               setRoom(id);
               setSelected(null);
               setProjectRequest(null);
-              setInbox(false);
               setShowUsage(false);
               setView('office');
             }}
-            onSettings={() => setView('settings')}
+            onSettings={() => openSettings('federation')}
           />
         )}
         <nav className="source-list">
@@ -607,8 +759,7 @@ export default function App() {
                   title={prefs?.privacy ? undefined : p.name}
                   onClick={() => {
                     setSelected(null);
-                    // The filtered roster shows where the inbox or usage panel would cover it.
-                    setInbox(false);
+                    // The filtered roster shows where the usage panel would cover it.
                     setShowUsage(false);
                     setView('office');
                     setProjectRequest({ key: p.key, name: p.name, at: Date.now() });
@@ -625,7 +776,7 @@ export default function App() {
           )}
           <div className="source-group">
             <h6>{t.app.sidebar.records}</h6>
-            {(['memory', 'activity'] as const).map((id) => {
+            {(['memory', 'outputs', 'activity'] as const).map((id) => {
               const tab = tabs.find((x) => x.id === id)!;
               return (
                 <button
@@ -711,18 +862,44 @@ export default function App() {
             {demo ? t.app.footer.toLive : t.app.footer.toDemo}
           </button>
         </div>
+        <PanelResizer
+          edge="left"
+          width={panels.side}
+          min={PANEL.sideMin}
+          max={panels.sideMax}
+          label={t.app.resizeSidebar}
+          hint={t.app.resizeHint}
+          controls="main-menu"
+          onWidth={(side) => setWidths({ side })}
+          onReset={() => setWidths({ side: undefined })}
+        />
       </aside>
       <div className="app-body">
+        {rightColumn && (
+          <PanelResizer
+            edge="right"
+            width={panels.dock}
+            min={PANEL.dockMin}
+            max={panels.dockMax}
+            label={t.app.resizeDock}
+            hint={t.app.resizeHint}
+            onWidth={(dock) => setWidths({ dock })}
+            onReset={() => setWidths({ dock: undefined })}
+          />
+        )}
         <main className={`main-content view-${view}`}>
           <header className="toolbar app-header">
+            {sidebarToggle}
             <div className="toolbar-title">
               <h1>
                 {view === 'office' && roomsEnabled
-                  ? activeRoom === LOCAL_ROOM
-                    ? t.federation.localOffice
-                    : prefs?.privacy
-                      ? t.federation.remoteOffice
-                      : snapshot?.federation?.peers.find((p) => p.officeId === activeRoom)?.label
+                  ? activeRoom === ALL_ROOMS
+                    ? t.federation.allOffices
+                    : activeRoom === LOCAL_ROOM
+                      ? t.federation.localOffice
+                      : prefs?.privacy
+                        ? t.federation.remoteOffice
+                        : snapshot?.federation?.peers.find((p) => p.officeId === activeRoom)?.label
                   : view === 'office'
                     ? t.office.zones[officeZoneNow]
                     : t.app.tabs[view].title}
@@ -754,25 +931,11 @@ export default function App() {
             </button>
             <div className="header-actions">
               <button
-                className={`icon-btn inbox-button ${inbox ? 'active is-on' : ''} ${unread ? 'has-unread' : ''}`}
-                aria-label={t.app.header.openInbox}
-                title={t.app.header.inboxTitle}
-                onClick={() => {
-                  setShowUsage(false);
-                  setInbox((v) => !v);
-                  setSelected(null);
-                }}
-              >
-                <Inbox size={16} />
-                <b>{unread}</b>
-              </button>
-              <button
                 className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
                 aria-label={t.app.header.openUsage}
                 title={t.app.header.usageTitle}
                 onClick={() => {
                   setShowUsage((v) => !v);
-                  setInbox(false);
                   setSelected(null);
                 }}
               >
@@ -787,15 +950,17 @@ export default function App() {
                 {prefs?.privacy ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
               <button
-                className="icon-btn mini-button"
-                aria-label={t.app.header.mini}
-                title={t.app.header.miniTitle}
+                className="mini-button"
+                aria-label={dockLabel}
+                title={t.app.header.miniTitle(dockLabel)}
                 onClick={() => api.window('mini')}
               >
-                <PictureInPicture2 size={16} />
+                <PictureInPicture2 size={15} />
+                <span>{dockLabel}</span>
               </button>
             </div>
           </header>
+          {!demo && isDesktop && <ReleaseNotice enabled={wantsReleaseCheck(prefs)} />}
           {demo && (
             <div className="demo-banner">
               <Sparkles size={14} />
@@ -812,10 +977,12 @@ export default function App() {
             </div>
           )}
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="status">
               <AlertCircle size={16} />
               <span>{error}</span>
-              <button onClick={refresh}>{t.app.reconnect}</button>
+              <button onClick={refresh} disabled={refreshing}>
+                {t.app.reconnect}
+              </button>
             </div>
           )}
           {digest && digest.results + digest.attention > 0 && (
@@ -835,13 +1002,18 @@ export default function App() {
               <button
                 onClick={() => {
                   setAway(null);
+                  // One colleague opens on its card; several are marked in the office's list.
                   if (digest.sessionIds.length === 1) {
                     setView('office');
                     choose(digest.sessionIds[0]);
-                  } else openInbox();
+                  } else {
+                    setSelected(null);
+                    setShowUsage(false);
+                    goZone('office');
+                  }
                 }}
               >
-                {digest.sessionIds.length === 1 ? t.app.away.viewOne : t.app.away.viewInbox}
+                {digest.sessionIds.length === 1 ? t.app.away.viewOne : t.app.away.viewOffice}
               </button>
               <button
                 className="icon-btn"
@@ -866,7 +1038,7 @@ export default function App() {
               <h2>{t.app.offline.title}</h2>
               <p>{t.app.offline.body}</p>
               <div className="empty-actions">
-                <button className="button primary" onClick={refresh}>
+                <button className="button primary" onClick={refresh} disabled={refreshing}>
                   {t.app.reconnect}
                 </button>
                 <button className="button subtle" onClick={() => setDemo(true)}>
@@ -879,25 +1051,25 @@ export default function App() {
               key={demo ? 'demo' : `live:${activeRoom}`}
               snapshot={snapshot}
               model={model}
+              showOffice={roomsEnabled && activeRoom === ALL_ROOMS}
               onVeil={(ids, on) => {
-                void veil(ids, on);
-                notify(on ? t.app.toast.hidden : t.app.toast.shown);
+                void veil(ids, on).then((saved) => {
+                  if (saved) notify(on ? t.app.toast.hidden : t.app.toast.shown);
+                });
               }}
               onPin={onPin}
-              onSettings={() => setView('settings')}
+              onSettings={() => openSettings('office')}
               selected={selected}
               onSelect={choose}
+              onConversation={(id) => {
+                choose(id);
+                setConversationAt((n) => n + 1);
+              }}
               onReturn={returnToOffice}
               onReceipt={onReceipt}
-              onNews={(id) => {
-                choose(id);
-                setShowNews(id + Date.now());
-              }}
               onRefresh={refresh}
               refreshing={refreshing}
               demo={demo}
-              unread={unread}
-              onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
               onZoneChange={setOfficeZoneNow}
@@ -908,6 +1080,7 @@ export default function App() {
               onZoneDrop={(id, zone) => {
                 if (!sessions.find((s) => s.id === id)?.remote) setAreaDrop({ id, zone });
               }}
+              onReorder={(ids) => void reorderSeats(ids)}
             />
           ) : view === 'memory' ? (
             <Memory
@@ -937,6 +1110,15 @@ export default function App() {
               onUnbookmark={unbookmark}
               notify={notify}
             />
+          ) : view === 'outputs' ? (
+            <OutputsPage
+              sessions={sessions}
+              demo={demo}
+              privacy={prefs?.privacy ?? false}
+              stamp={outputStamp}
+              visibility={outputVisibility}
+              notify={notify}
+            />
           ) : view === 'settings' ? (
             <Settings
               demo={demo}
@@ -948,6 +1130,7 @@ export default function App() {
               onTerminalSend={toggleTerminalSend}
               answers={answers.available ? answers.settings : undefined}
               onAnswers={(key) => void answers.toggle(key)}
+              layout="page"
               focusSection={settingsFocus}
               onSectionFocused={clearSettingsFocus}
             />
@@ -960,13 +1143,18 @@ export default function App() {
             onPrefs={onPrefs}
             session={current}
             sessions={sessions}
+            colleagues={allModel.residents}
             notices={snapshot?.notices ?? []}
             memberIds={ownerOf(current.id)?.resident?.sessionIds ?? [current.id]}
             resident={ownerOf(current.id)}
             onReceipt={onReceipt}
             onSelect={choose}
-            showNews={showNews}
+            showConversation={conversationAt}
+            readOnOpen={engaged}
+            reading={cardReadSettings(prefs)}
             onClose={() => setSelected(null)}
+            // In the office the card takes the list's place; elsewhere it just closes.
+            onBack={view === 'office' ? () => setSelected(null) : undefined}
             onPatch={onPatch}
             onPin={onPin}
             onReturn={returnToOffice}
@@ -997,6 +1185,11 @@ export default function App() {
             }}
             focus={bookmarkFocus}
             onFocused={() => setBookmarkFocus(null)}
+            outputStamp={outputStamp}
+            outputVisibility={outputVisibility}
+            showOutputs={prefs?.cardOutputs !== false}
+            showChatOutputs={prefs?.chatOutputs !== false}
+            onOutputs={() => setView('outputs')}
           />
         )}
         {showUsage && (
@@ -1004,20 +1197,6 @@ export default function App() {
             demo={demo}
             privacy={prefs?.privacy ?? false}
             onClose={() => setShowUsage(false)}
-          />
-        )}
-        {inbox && (
-          <NewsInbox
-            notices={snapshot?.notices ?? []}
-            unread={unread}
-            sessions={sessions}
-            privacy={prefs?.privacy ?? false}
-            onReceipt={onReceipt}
-            onClose={() => setInbox(false)}
-            onSelect={(id) => {
-              choose(id);
-              setShowNews(id + Date.now());
-            }}
           />
         )}
       </div>
@@ -1075,7 +1254,6 @@ export default function App() {
                 ['next', [['J']]],
                 ['previous', [['K']]],
                 ['markRead', [['R']]],
-                ['inbox', [['I']]],
                 ['zones', [['1'], ['2'], ['3']]],
                 ['zoom', [['F'], ['+'], ['−']]],
                 ['close', [['Esc']]],
@@ -1101,6 +1279,7 @@ export default function App() {
           <p className="shortcut-note">{t.app.help.note}</p>
         </Modal>
       )}
+      <MiniShellDemoRelease demo={demo} />
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />
@@ -1119,15 +1298,9 @@ export default function App() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <NoticePagingContext.Provider
-        value={{
-          paged: model.noticesPaged,
-          stats: JSON.stringify(snapshot?.noticeStats ?? null),
-          readAll,
-        }}
-      >
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
         {content}
-      </NoticePagingContext.Provider>
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

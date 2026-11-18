@@ -10,6 +10,7 @@ test('Provider customization saves across reload and matches office, roster, lou
   });
   await page.goto('/?demo');
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await page.getByRole('tab', { name: '모습' }).click();
   await page.getByRole('button', { name: 'Claude 캐릭터 꾸미기' }).click();
   const dialog = page.getByRole('dialog', { name: 'Claude 기본 캐릭터' });
   await dialog.getByRole('button', { name: '캐릭터 말랑', exact: true }).click();
@@ -21,10 +22,11 @@ test('Provider customization saves across reload and matches office, roster, lou
   await expect
     .poll(() =>
       dialog.locator('.pet-preview .sprite-window').evaluate((element) => {
-        // Remember the running loop: choosing an accessory must not restart it.
+        // Remember the loop: choosing an accessory must not restart it. The office tick holds
+        // it paused between frames and steps it (frame-clock.ts), so it is paused, not running.
         const loop = element.querySelector('.sprite')?.getAnimations()[0];
         (window as unknown as { sheetLoop?: Animation }).sheetLoop = loop;
-        return loop?.playState === 'running';
+        return loop?.playState === 'paused' && Number(loop.currentTime) > 0;
       }),
     )
     .toBe(true);
@@ -68,7 +70,15 @@ test('Provider customization saves across reload and matches office, roster, lou
   await expect(
     page.locator('.office-pet [data-pet-color="mint"][data-pet-accessory="crown"]'),
   ).toHaveCount(3);
+  await page.getByRole('button', { name: '리스트', exact: true }).click();
+  await expect(
+    page.locator(
+      '.office-list-avatar [data-asset-id="pet.slime.v1"][data-pet-color="mint"][data-pet-accessory="crown"]',
+    ),
+  ).toHaveCount(3);
+  await page.getByRole('button', { name: '그래픽', exact: true }).click();
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await page.getByRole('tab', { name: '모습' }).click();
   await page.getByRole('button', { name: 'Codex 캐릭터 꾸미기' }).click();
   await page.getByRole('button', { name: '캐릭터 돌돌', exact: true }).click();
   await page.getByRole('button', { name: '이 모습으로 저장' }).click();
@@ -110,6 +120,7 @@ test('One colleague keeps an individual look while defaults change, and reset re
   await expect(page.locator('.card-avatar [data-asset-id="pet.devcat.v1"]')).toHaveCount(1);
   await page.getByRole('button', { name: '업무 카드 닫기' }).click();
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await page.getByRole('tab', { name: '모습' }).click();
   await page.getByRole('button', { name: 'Claude 캐릭터 꾸미기' }).click();
   await page.getByRole('button', { name: '캐릭터 몽실', exact: true }).click();
   await page.getByRole('button', { name: '색상 버터' }).click();
@@ -137,6 +148,7 @@ test('Cancel leaves saved appearance intact and the editor works at phone width 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?demo');
   await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await page.getByRole('tab', { name: '모습' }).click();
   const trigger = page.getByRole('button', { name: 'OpenClaw 캐릭터 꾸미기' });
   await trigger.click();
   const dialog = page.getByRole('dialog', { name: 'OpenClaw 기본 캐릭터' });

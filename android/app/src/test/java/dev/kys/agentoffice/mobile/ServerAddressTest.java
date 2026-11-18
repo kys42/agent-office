@@ -5,7 +5,7 @@ import static org.junit.Assert.*;
 
 public class ServerAddressTest {
     @Test public void savesOnlyAnOrigin() {
-        assertEquals("http://100.93.102.28:4321", ServerAddress.normalize(" http://100.93.102.28:4321/mobile.html "));
+        assertEquals("http://100.64.12.34:4321", ServerAddress.normalize(" http://100.64.12.34:4321/mobile.html "));
         assertEquals("https://office.example.com", ServerAddress.normalize("HTTPS://Office.Example.COM/"));
         assertEquals("http://127.0.0.1:4321", ServerAddress.normalize("http://127.0.0.1:4321"));
     }

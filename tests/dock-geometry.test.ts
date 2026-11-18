@@ -12,14 +12,35 @@ import {
   ROW_HEIGHT,
   ROW_SCALE,
   ROW_SCENE_HEIGHT,
-  ROW_TOOLS_BAND,
+  ROW_TOP_ROOM,
+  dockHeight,
+  readDockPrefs,
+  TINY_HEIGHT,
+  TINY_SCENE_HEIGHT,
+  TINY_SCALE,
+  TINY_TOP_ROOM,
+  TINY_NAME_ROOM,
+  TINY_NAME_TOP,
+  TINY_FEET,
+  PILL_HOME,
+  PILL_MARGIN,
+  pillLeft,
+  readPillSpot,
+  TINY_TOP,
   clampInto,
+  moveOntoArea,
   petBounds,
   petFeet,
   readPetSpot,
   rowBounds,
+  DOCK_ROOM_HEIGHT,
+  PET_ROOM_HEIGHT,
+  PET_ROOM_WIDTH,
+  petRoomRect,
+  petStand,
+  roomyRect,
 } from '../src/shared/dock-geometry.js';
-import { DESK_FOOT, FLOOR_TOP } from '../src/shared/office-layout.js';
+import { DESK_FOOT, FLOOR_TOP, ROW_TOP } from '../src/shared/office-layout.js';
 
 // A 1512×982 MacBook display: 25px menu bar on top, 70px Dock at the bottom.
 const area = { x: 0, y: 25, width: 1512, height: 887 };
@@ -74,13 +95,19 @@ test('desk-pet.json: the standing spot, and the first format converted in place'
 
 test('the row keeps desks at a fixed readable scale and its window holds the scene', () => {
   assert.equal(ROW_SCALE, 1, 'same size as the big office at 100%');
-  assert.ok(ROW_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= ROW_HEIGHT, 'tools sit above bubbles');
+  // As before the pill: 376 + 44 = 420, the desks on the window's bottom edge (no band).
+  assert.equal(ROW_HEIGHT, 420);
+  assert.equal(ROW_HEIGHT, Math.ceil(ROW_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM);
+  // A bubble's bottom (ROW_TOP + 58) keeps 206px to the window top for answer + request.
+  assert.equal(ROW_HEIGHT - ROW_SCENE_HEIGHT * ROW_SCALE + ROW_TOP + 58, 206);
 });
 
-test('floor desks: the scene ends at the desk feet, and the window holds it under the tools', () => {
+test("floor desks: the scene ends at the desk feet, on the window's bottom edge", () => {
   assert.ok(FLOOR_SCENE_HEIGHT >= FLOOR_TOP + DESK_FOOT, 'desk legs fit in the scene');
   assert.ok(FLOOR_SCENE_HEIGHT - (FLOOR_TOP + DESK_FOOT) <= 12, 'and stand right on its bottom');
-  assert.ok(FLOOR_SCENE_HEIGHT * ROW_SCALE + ROW_TOOLS_BAND <= FLOOR_HEIGHT);
+  assert.equal(FLOOR_HEIGHT, 340);
+  assert.equal(FLOOR_HEIGHT, Math.ceil(FLOOR_SCENE_HEIGHT * ROW_SCALE) + ROW_TOP_ROOM);
+  assert.equal(FLOOR_HEIGHT - FLOOR_SCENE_HEIGHT * ROW_SCALE + FLOOR_TOP + 58, 206);
   assert.ok(FLOOR_HEIGHT < ROW_HEIGHT, 'no rugs or name cards: a shorter strip');
   const floor = rowBounds(area, FLOOR_HEIGHT);
   assert.equal(floor.y + floor.height, area.y + area.height);
@@ -140,4 +167,177 @@ test('the card opens at the size the person gave it, and a bad remembered size i
   });
   assert.deepEqual([b.width, b.height], [600, 900]);
   assert.ok(CARD_SIZE.width >= CARD_MIN.width && CARD_SIZE.height >= CARD_MIN.height);
+});
+
+test('tiny drops the bubble headroom and draws the scene at helper-desk size', () => {
+  assert.ok(Math.abs(TINY_SCALE - 68 / 164) < 1e-9);
+  // The scene ends at the desk legs (plus shadow) and starts just above the heads.
+  assert.equal(TINY_SCENE_HEIGHT, TINY_TOP + DESK_FOOT + 4);
+  assert.equal(TINY_FEET, DESK_FOOT + 4);
+  // The name tag rides on the desk's front (bench at 134, legs to 188), not under it.
+  assert.ok(TINY_NAME_TOP >= 134, 'below the bench top');
+  assert.ok(TINY_NAME_TOP + TINY_NAME_ROOM <= DESK_FOOT, 'above the floor line');
+  assert.ok(TINY_NAME_ROOM * TINY_SCALE >= 13, 'room for a 9px name chip');
+  assert.equal(TINY_HEIGHT, Math.ceil(TINY_SCENE_HEIGHT * TINY_SCALE) + TINY_TOP_ROOM);
+  // A little taller than before the effects (93): room for the shared effects above the desks.
+  assert.equal(TINY_HEIGHT, 109);
+  assert.ok(TINY_HEIGHT <= 110 && TINY_HEIGHT < ROW_HEIGHT / 3);
+  assert.ok(TINY_HEIGHT < FLOOR_HEIGHT / 3);
+  // The highest effect, an arriving sheet setting off at station y 112 − 170 (plus its own
+  // 15px height turned on its side), starts inside the window.
+  const arrivalTop = TINY_TOP + 112 - 170 - 12;
+  assert.ok(-arrivalTop * TINY_SCALE <= TINY_TOP_ROOM, 'arriving papers are not clipped');
+  assert.equal(dockHeight(false, false), ROW_HEIGHT);
+  assert.equal(dockHeight(true, false), FLOOR_HEIGHT);
+  assert.equal(dockHeight(false, true), TINY_HEIGHT);
+  assert.equal(dockHeight(true, true), TINY_HEIGHT);
+  // The tiny strip still rests on the work area's bottom edge.
+  const strip = rowBounds(area, TINY_HEIGHT);
+  assert.equal(strip.y + strip.height, area.y + area.height);
+});
+
+test('dock.json remembers tiny; anything unexpected is the normal size', () => {
+  assert.deepEqual(readDockPrefs({ v: 1, tiny: true }), { tiny: true });
+  assert.deepEqual(readDockPrefs({ v: 1, tiny: false }), { tiny: false });
+  const bad = [null, undefined, 'x', 1, [], {}, { tiny: true }, { v: 2, tiny: true }];
+  for (const raw of [...bad, { v: 1, tiny: 'yes' }])
+    assert.deepEqual(readDockPrefs(raw), { tiny: false });
+});
+
+test('the pill spot is a centre fraction, the right end (home) when unreadable', () => {
+  assert.equal(readPillSpot({ v: 1, x: 0.25 }), 0.25);
+  assert.equal(readPillSpot({ v: 1, x: 1.4 }), 1, 'clamped to the window');
+  assert.equal(readPillSpot({ v: 1, x: -3 }), 0);
+  for (const raw of [null, undefined, 'x', 0.3, {}, { x: 0.3 }, { v: 2, x: 0.3 }, { v: 1, x: NaN }])
+    assert.equal(readPillSpot(raw), PILL_HOME);
+  assert.equal(PILL_HOME, 1, 'home is the right end, off the centred desks and zone signs');
+});
+
+test('the pill stays whole inside the window, wherever its spot is', () => {
+  assert.equal(pillLeft(0.5, 1000, 400), 300, 'centred');
+  assert.equal(pillLeft(0.25, 2000, 400), 300, 'same fraction on a wider screen');
+  assert.equal(pillLeft(0, 1000, 400), PILL_MARGIN, 'left edge');
+  assert.equal(pillLeft(1, 1000, 400), 1000 - 400 - PILL_MARGIN, 'right edge');
+  assert.equal(pillLeft(0.5, 300, 400), PILL_MARGIN, 'wider than the window: from the left');
+});
+
+test('the big office moves onto the display it was opened from, same size and relative spot', () => {
+  // A 2560×1440 external display (scale 1) beside a 1512×982 Retina laptop (scale 2): Electron
+  // hands both over in DIPs, so the maths is the same at any scale factor.
+  const laptop = { x: 0, y: 25, width: 1512, height: 919 };
+  const external = { x: 1512, y: -200, width: 2560, height: 1415 };
+  const centred = {
+    x: 1512 + (2560 - 1440) / 2,
+    y: -200 + (1415 - 970) / 2,
+    width: 1440,
+    height: 970,
+  };
+  // Centred on the external display: centred on the laptop too, shrunk to its work area.
+  assert.deepEqual(moveOntoArea(centred, external, laptop), {
+    x: 36,
+    y: 25,
+    width: 1440,
+    height: 919,
+  });
+  // Back the other way: the size it has now, centred again.
+  assert.deepEqual(moveOntoArea({ x: 36, y: 25, width: 1440, height: 919 }, laptop, external), {
+    x: 1512 + 560,
+    y: Math.round(-200 + (1415 - 919) / 2),
+    width: 1440,
+    height: 919,
+  });
+  // Flush to the top-left stays flush; flush to the bottom-right stays flush.
+  assert.deepEqual(moveOntoArea({ x: 1512, y: -200, width: 1200, height: 800 }, external, laptop), {
+    x: 0,
+    y: 25,
+    width: 1200,
+    height: 800,
+  });
+  assert.deepEqual(
+    moveOntoArea(
+      { x: 1512 + 2560 - 1200, y: -200 + 1415 - 800, width: 1200, height: 800 },
+      external,
+      laptop,
+    ),
+    { x: 1512 - 1200, y: 25 + 919 - 800, width: 1200, height: 800 },
+  );
+  // Always whole inside the target, even from a window hanging off its old display or bigger
+  // than the target area.
+  for (const b of [
+    { x: -900, y: -900, width: 1440, height: 970 },
+    { x: 5000, y: 3000, width: 3000, height: 2000 },
+  ]) {
+    const r = moveOntoArea(b, external, laptop);
+    assert.ok(r.x >= laptop.x && r.x + r.width <= laptop.x + laptop.width, JSON.stringify(r));
+    assert.ok(r.y >= laptop.y && r.y + r.height <= laptop.y + laptop.height, JSON.stringify(r));
+  }
+  // A display left of the primary (negative x) works the same.
+  assert.deepEqual(
+    moveOntoArea({ x: 36, y: 25, width: 1440, height: 919 }, laptop, {
+      x: -1920,
+      y: 0,
+      width: 1920,
+      height: 1080,
+    }),
+    { x: -1920 + 240, y: Math.round((1080 - 919) / 2), width: 1440, height: 919 },
+  );
+});
+
+test('room for a dialog or the 보기 menu grows the window upward, the feet staying put', () => {
+  // The row: the whole work area's bottom, as tall as the room (never above the area's top).
+  const row = rowBounds(area);
+  const tall = roomyRect(row, area, DOCK_ROOM_HEIGHT);
+  assert.equal(tall.y + tall.height, row.y + row.height);
+  assert.equal(tall.height, Math.min(DOCK_ROOM_HEIGHT, area.height));
+  assert.deepEqual([tall.x, tall.width], [row.x, row.width]);
+  // The pet: same width and bottom-centre (petFeet), so the pet does not move on screen.
+  const pet = petBounds({ x: 700, y: 800 }, area);
+  const roomy = roomyRect(pet, area, PET_ROOM_HEIGHT);
+  assert.deepEqual(petFeet(roomy), petFeet(pet));
+  assert.equal(roomy.height, PET_ROOM_HEIGHT);
+  // A pet near the top of the screen takes only the room there is, never pushed down.
+  const high = petBounds({ x: 700, y: area.y + PET_SIZE.height + 40 }, area);
+  const near = roomyRect(high, area, PET_ROOM_HEIGHT);
+  assert.equal(near.y, area.y);
+  assert.deepEqual(petFeet(near), petFeet(high));
+  // Never smaller than the window itself.
+  assert.deepEqual(roomyRect(high, { ...area, y: high.y + 10 }, PET_ROOM_HEIGHT), high);
+});
+
+test("the pet's room grows left, or right near the left side; the pet keeps its spot", () => {
+  const pet = petBounds({ x: 700, y: 800 }, area);
+  const { rect: wide, side } = petRoomRect(pet, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.equal(side, 'right', 'room on the left: the pet stands at the right edge');
+  assert.equal(wide.width, PET_ROOM_WIDTH);
+  assert.equal(wide.height, PET_ROOM_HEIGHT);
+  assert.equal(wide.x + wide.width, pet.x + pet.width, 'the right edge stays');
+  assert.equal(wide.y + wide.height, pet.y + pet.height, 'the bottom edge stays');
+  assert.deepEqual(petStand(wide, side), pet);
+  assert.deepEqual(petFeet(petStand(wide, side)), petFeet(pet));
+  // Near the left side: it grows to the right instead, the pet at the window's left edge.
+  const left = petBounds({ x: area.x + PET_SIZE.width / 2 + 40, y: 800 }, area);
+  const near = petRoomRect(left, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.equal(near.side, 'left');
+  assert.equal(near.rect.x, left.x, 'the left edge stays');
+  assert.equal(near.rect.width, PET_ROOM_WIDTH, 'the full room, to the right');
+  assert.deepEqual(petStand(near.rect, near.side), left);
+  // Near the top-left corner: up as far as the top allows, right for the width.
+  const corner = petBounds(
+    { x: area.x + PET_SIZE.width / 2, y: area.y + PET_SIZE.height + 20 },
+    area,
+  );
+  const tight = petRoomRect(corner, area, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.equal(tight.side, 'left');
+  assert.equal(tight.rect.y, area.y);
+  assert.equal(tight.rect.width, PET_ROOM_WIDTH);
+  assert.deepEqual(petStand(tight.rect, tight.side), corner);
+  // A display narrower than the room on both sides: the side with more, never pushed.
+  const narrow = { x: 0, y: 0, width: 500, height: 900 };
+  const mid = petBounds({ x: 230, y: 800 }, narrow);
+  const squeezed = petRoomRect(mid, narrow, PET_ROOM_HEIGHT, PET_ROOM_WIDTH);
+  assert.ok(squeezed.rect.x >= narrow.x && squeezed.rect.x + squeezed.rect.width <= narrow.width);
+  assert.deepEqual(petStand(squeezed.rect, squeezed.side), mid);
+  // At the pet's own size either side is the window itself.
+  assert.deepEqual(petStand(pet, 'left'), pet);
+  assert.deepEqual(petStand(pet, 'right'), pet);
 });

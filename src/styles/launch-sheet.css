@@ -1,0 +1,294 @@
+/*
+ * The launch sheet (#319): three numbered steps (what, where, progress) in the terminal sheet
+ * frame (tmux.css), with the same grouped surfaces and native controls as Settings.
+ */
+.launch-sheet {
+  gap: 20px;
+}
+.launch-step {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.launch-step > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.launch-step-number {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--bg-4);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.launch-sheet .launch-hint {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.launch-kinds button {
+  min-width: 0;
+  height: auto;
+  min-height: 29px;
+  padding: 4px 6px;
+  line-height: 1.25;
+  text-align: center;
+}
+.launch-sheet .summon-field > small.is-invalid {
+  color: var(--st-call);
+}
+.launch-sheet .summon-field :is(input, textarea)[aria-invalid='true'] {
+  border-color: color-mix(in srgb, var(--st-call) 55%, transparent);
+}
+.launch-conversation {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+}
+.launch-conversation b {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.launch-conversation small {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+/* Conversations of the project: the office's, the lounge's and the archive's. */
+.summon-existing-list {
+  max-height: 196px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  list-style: none;
+}
+.summon-existing-list li + li {
+  border-top: 1px solid var(--line);
+}
+.summon-existing-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  color: var(--text);
+  text-align: left;
+}
+.summon-existing-row:hover:not(:disabled),
+.summon-existing-row[aria-pressed='true'] {
+  background: var(--bg-4);
+}
+.summon-existing-row:disabled {
+  cursor: default;
+}
+.summon-existing-row:disabled .summon-existing-name b {
+  color: var(--text-3);
+}
+.summon-existing-row:focus-visible {
+  outline: 2px solid var(--line-3);
+  outline-offset: -2px;
+}
+.summon-existing-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.summon-existing-name b {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summon-existing-name small {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.summon-existing-name .summon-existing-reason {
+  color: var(--text-2);
+}
+.summon-existing-zone {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.summon-existing-zone[data-zone='archive'] {
+  color: var(--text-3);
+}
+
+/* Where: a native radio list, each row with its availability or the reason it is not. */
+.launch-destinations {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+.launch-destination {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.launch-destination + .launch-destination {
+  border-top: 1px solid var(--line);
+}
+.launch-destination:has(input:checked) {
+  background: var(--bg-4);
+}
+.launch-destination[data-available='false'] {
+  cursor: default;
+}
+.launch-destination input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.launch-destination input:focus-visible {
+  outline: 2px solid var(--line-3);
+  outline-offset: 2px;
+}
+.launch-destination-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+.launch-destination-text b {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.launch-destination[data-available='false'] .launch-destination-text b {
+  color: var(--text-3);
+}
+.launch-destination-text small {
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.launch-remembered {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+}
+.launch-destination-text .launch-reason {
+  margin-top: 3px;
+  color: var(--text-2);
+}
+.launch-badge {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+.launch-badge[data-state='ok'] {
+  border-color: color-mix(in srgb, var(--st-work) 30%, transparent);
+  color: var(--st-work);
+}
+.launch-badge[data-state='running'] {
+  border-color: color-mix(in srgb, var(--st-think) 35%, transparent);
+  color: var(--st-think);
+}
+.launch-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.launch-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* Progress: checking, opening, then what came of it. */
+.launch-sheet .launch-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-1);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.launch-progress > svg {
+  margin-top: 3px;
+}
+.launch-progress[data-tone='ready'] > svg {
+  color: var(--st-work);
+}
+.launch-progress[data-tone='alert'] {
+  border-color: color-mix(in srgb, var(--st-call) 20%, transparent);
+  background: color-mix(in srgb, var(--st-call) 7%, var(--bg-1));
+  color: var(--st-call);
+}
+.launch-notice.is-running,
+.launch-notice.is-pending {
+  color: var(--text-2);
+}
+.launch-actions-main {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.launch-actions-main .button.primary {
+  margin-left: 0;
+}
+@media (max-width: 400px) {
+  .launch-kinds button {
+    gap: 4px;
+    font-size: 12px;
+  }
+}
+.launch-destinations[data-stale='true'] .launch-badge {
+  opacity: 0.55;
+}

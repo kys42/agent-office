@@ -1,11 +1,15 @@
-import ReactMarkdown from 'react-markdown';
+import { memo } from 'react';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
+import { keepFileLinks } from '../shared/links';
 import remarkGfm from 'remark-gfm';
 import { parseArtifact } from '../shared/office';
 import { api, isDesktop } from '../lib/api';
 import { WebLink } from './WebLink';
 
+const urlTransform = keepFileLinks(defaultUrlTransform);
+
 /** The same message formatting in conversations, saved messages and their notes/context. */
-export function MessageMarkdown({
+export const MessageMarkdown = memo(function MessageMarkdown({
   text,
   notify,
   interactive = true,
@@ -17,6 +21,7 @@ export function MessageMarkdown({
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
+      urlTransform={urlTransform}
       components={{
         a: ({ href, children }) => {
           if (!interactive) return <span>{children}</span>;
@@ -45,4 +50,4 @@ export function MessageMarkdown({
       {text}
     </ReactMarkdown>
   );
-}
+});

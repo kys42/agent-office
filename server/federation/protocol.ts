@@ -105,6 +105,7 @@ export const exportConfigSchema = z
     projects: z.array(z.string().max(4000)).max(100),
     conversation: z.boolean(),
     allowSend: z.boolean().default(false),
+    allowLaunch: z.boolean().default(false),
     sendToken: z.string().min(32).max(256).optional(),
     profileDir: z.string().min(1).optional(),
   })
@@ -116,6 +117,10 @@ export const exportConfigSchema = z
   .refine(
     (c) => !c.allowSend || !!c.profileDir,
     'Sending requires the owning desktop profile directory',
+  )
+  .refine(
+    (c) => !c.allowLaunch || (c.allowSend && !!c.sendToken),
+    'Launching requires send authorization',
   );
 export type ExportConfig = z.infer<typeof exportConfigSchema>;
 export const peerSchema = z

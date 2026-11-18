@@ -26,6 +26,69 @@ body.is-mac .app {
 body.is-mac .sidebar {
   background: var(--sidebar-tint);
 }
+/* The left menu folded away for room (wide windows only: phones keep their bottom bar). On a
+   Mac the toolbar then keeps clear of the traffic lights the sidebar used to hold. */
+@media (min-width: 861px) {
+  .app.sidebar-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app.sidebar-hidden > .sidebar {
+    display: none;
+  }
+  body.is-mac .app.sidebar-hidden .app-header {
+    padding-left: 84px;
+  }
+}
+@media (max-width: 860px) {
+  .sidebar-toggle {
+    display: none;
+  }
+}
+/* Column edges dragged to resize the left menu and the right column (wide windows only: narrower
+   ones float the card over the office, phones stack). The right edge follows --dock-w. */
+.sidebar {
+  position: relative;
+}
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 60;
+  width: 9px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+  -webkit-app-region: no-drag;
+}
+.panel-resizer.is-left {
+  right: -5px;
+}
+.panel-resizer.is-right {
+  right: var(--dock-w);
+  transform: translateX(50%);
+}
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 2px;
+  transition: background 0.15s;
+}
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after,
+body.is-resizing .panel-resizer:active::after {
+  background: var(--accent);
+}
+body.is-resizing,
+body.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+@media (max-width: 1100px) {
+  .panel-resizer {
+    display: none;
+  }
+}
 .sidebar-top {
   flex-shrink: 0;
   height: var(--bar-h);
@@ -168,6 +231,9 @@ body.is-mac .sidebar-top .brand {
 .icon-memory {
   background: #ff9500;
 }
+.icon-outputs {
+  background: #34c759;
+}
 .icon-activity {
   background: #30b0c7;
 }
@@ -261,7 +327,7 @@ body.is-mac .sidebar-top .brand {
   color: var(--st-error);
 }
 
-/* Body: content column + the right dock (inspector / inbox / usage). */
+/* Body: content column + the right dock (inspector / usage). */
 .app-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -366,29 +432,37 @@ body.is-mac .sidebar-top .brand {
   align-items: center;
   gap: 2px;
 }
-.inbox-button {
-  position: relative;
+/* The way back to the small modes: a labelled accent pill, so it reads at a glance. */
+.mini-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  margin-left: 6px;
+  padding: 0 10px 0 8px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    color 0.12s,
+    border-color 0.12s;
 }
-.inbox-button b {
-  position: absolute;
-  top: 0;
-  right: 0;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 4px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  font-size: 9.5px;
-  font-weight: 700;
-  color: #ffffff;
-  background: var(--badge);
-  box-shadow: 0 0 0 1.5px var(--bg-1);
+.mini-button:hover {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
 }
-.inbox-button:not(.has-unread) b {
-  display: none;
+.mini-button:active {
+  background: var(--accent-2);
 }
 /* Info bars under the toolbar (like Safari / Mail banners) */
+.release-banner,
 .demo-banner,
 .error-banner {
   flex-shrink: 0;
@@ -398,6 +472,10 @@ body.is-mac .sidebar-top .brand {
   padding: 6px 10px 6px 16px;
   font-size: 12px;
   border-bottom: 0.5px solid var(--line-2);
+}
+.release-banner {
+  color: var(--text);
+  background: var(--bg-1);
 }
 .demo-banner {
   color: var(--text-2);
@@ -410,10 +488,12 @@ body.is-mac .sidebar-top .brand {
   color: var(--st-call);
   background: color-mix(in srgb, var(--st-call) 8%, var(--bg-1));
 }
+.release-banner span,
 .demo-banner span,
 .error-banner span {
   flex: 1;
 }
+.release-banner button,
 .demo-banner button,
 .error-banner button {
   display: inline-flex;
@@ -429,6 +509,7 @@ body.is-mac .sidebar-top .brand {
   border: 0.5px solid var(--control-line);
   box-shadow: var(--control-shadow);
 }
+.release-banner button:hover,
 .demo-banner button:hover,
 .error-banner button:hover {
   filter: brightness(0.97);

@@ -9,7 +9,7 @@ export const desk = {
   openWork: (name: string) => `View ${name}'s work`,
   working: 'Working',
   runningTasks: (n: number) => `${n} ${n === 1 ? 'task' : 'tasks'} running`,
-  unread: (n: number) => `${n} new`,
+  unread: 'New',
   // Effects: the arrival tag, the minutes on the working beacon, the pet's chip.
   arrival: "Work's here!",
   focusMinutes: (minutes: number) => `${minutes}m+`,
@@ -42,11 +42,17 @@ export const desk = {
     zoneHint:
       'Hides everyone here now. Each comes back on their next conversation; anyone waiting for you stays.',
   },
+  teammate: {
+    tag: 'Team agent',
+    hint: 'An agent-team member another session (its lead) started. Its lead is not in the office, so it has a desk of its own.',
+  },
   helper: {
     name: 'Helper',
     stackLabel: (count: number, calling: boolean) =>
       `${count} helpers${calling ? ', one is calling' : ''} · show list`,
     stackCount: (count: number) => `${count} helpers`,
+    stackOpen: (count: number, calling: boolean, name: string) =>
+      `${count} helpers${calling ? ', one is calling' : ''} · open ${name}'s work`,
     stackList: 'Helper roster',
     responded: 'Left a reply',
     label: (name: string, responded: boolean) =>
@@ -66,15 +72,15 @@ export const desk = {
     copied: 'Copied',
     dismiss: (name?: string) =>
       name ? `Dismiss ${name}'s speech bubble` : 'Dismiss speech bubble',
-    dismissTitle: 'Dismiss just the bubble · unread updates stay in the Inbox',
+    dismissTitle: 'Dismiss just the bubble · its result stays unread',
+    keep: (name?: string) => `Keep ${name ?? 'colleague'}'s bubble up`,
+    keepTitle: 'Keep it up · for later (marks it unread again)',
   },
   // The office row and floor desks along the screen edge.
   row: {
-    refresh: 'Refresh',
-    refreshTitle: 'Refresh · check the records again now (restarts a stalled collector too)',
+    reorderHint: 'Drag to reorder within the zone',
     openCard: (name: string) => `Open ${name}'s work card`,
     cardTitle: 'Open as popup',
-    cardHint: "Opens the work card right here. The card's full mode takes you to the big office.",
     empty: 'Waiting for teammate activity.',
     left: (n: number) => `Show ${n} ${n === 1 ? 'teammate' : 'teammates'} to the left`,
     leftTitle: 'Previous desks · ←',
@@ -87,16 +93,15 @@ export const desk = {
     veiledTitle: (n: number) =>
       `${n} hidden ${n === 1 ? 'teammate' : 'teammates'} · Click to show them all\nThey come back on their own with their next conversation`,
     veiled: (n: number) => `${n} hidden`,
-    lounge: 'Lounge · Off-duty teammates',
-    toRow: 'Show as office row',
-    toFloor: 'Show as floor desks',
-    toRowTitle: 'Office row · zone rugs and name cards',
-    toFloorTitle: 'Floor desks · just desks along the bottom edge, flags for zones',
-    expand: 'Expand the office',
-    expandTitle: 'Open the big office',
-    collapse: 'Collapse the desk row',
-    collapseTitle: 'Collapse to pet · Esc',
+    pill: 'Desk row tools',
+    pillMove: 'Move the tool bar',
+    pillHint:
+      'Drag left or right · ← → (Shift: bigger) · Home/End: either end · Double-click: back to the right end',
+    tinyDesk: (work: string, dot?: 'attention' | 'error' | 'reply') =>
+      dot
+        ? `${work}, ${dot === 'attention' ? 'calling' : dot === 'error' ? 'error' : 'new reply'}`
+        : work,
+    tinyWaiting: (n: number) => `${n} waiting for you`,
     hide: 'Hide the desk pet',
-    hideTitle: 'Hide · reopen it from the tray',
   },
 };

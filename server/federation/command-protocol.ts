@@ -11,7 +11,15 @@ export const targetSchema = z
   .strict()
   .nullable();
 export const targetResponseSchema = z
-  .object({ officeId: z.uuid(), epoch: z.uuid(), targets: z.record(idSchema, targetSchema) })
+  .object({
+    officeId: z.uuid(),
+    epoch: z.uuid(),
+    targets: z.record(idSchema, targetSchema),
+    codexThreads: z
+      .record(idSchema, z.uuid())
+      .refine((v) => Object.keys(v).length <= 20)
+      .optional(),
+  })
   .strict();
 export const sendResponseSchema = z
   .object({ officeId: z.uuid(), requestId: z.uuid(), status: z.enum(['sent', 'uncertain']) })

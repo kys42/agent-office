@@ -27,7 +27,7 @@ async function office(page: Page) {
         return () => {};
       },
       onCard: (cb: any) => {
-        w.show = (id: string | null) => cb(id ? { id, news: false } : null);
+        w.show = (id: string | null) => cb(id ? { id } : null);
         setTimeout(() => w.show(snapshot.sessions[0].id), 20);
         return () => {};
       },
@@ -45,7 +45,7 @@ async function office(page: Page) {
           status: 'needs-confirm',
           agent: 'Claude',
           draft: w.draft,
-          ...(w.partial && { clearable: false }),
+          ...(w.partial && { partial: true }),
         };
       },
       send: async (id: string, text: string, options?: { replaceDraft?: string }) => {

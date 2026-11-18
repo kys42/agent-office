@@ -47,7 +47,7 @@ try {
 
     // The first demo teammate is busy, so the work card shows live progress.
     await page.locator('.office-pet[data-session-id="demo:0"]').click();
-    await page.locator('aside.inspector:not(.news-inbox)').waitFor();
+    await page.locator('aside.inspector').waitFor();
     await page.waitForFunction(() => {
       const el = document.querySelector('.inspector-scroll');
       return el && el.scrollHeight - el.scrollTop - el.clientHeight < 4;
@@ -55,12 +55,6 @@ try {
     await ready(page);
     await shot('detail', await panel('aside.inspector'));
     await page.keyboard.press('Escape');
-
-    await page.locator('.inbox-button').click();
-    await page.locator('aside.news-inbox').waitFor();
-    await ready(page);
-    await shot('inbox', await panel('aside.news-inbox'));
-    await page.locator('.inbox-button').click();
 
     await page.keyboard.press('ControlOrMeta+k');
     await page.locator('.palette').waitFor();
@@ -96,7 +90,14 @@ try {
       return { x: x - 24, y: y - 24, width: right - x + 48, height: bottom - y + 36 };
     });
     await dock.screenshot({ path: `${dir}/desk-pet.png`, ...still, clip: pet });
-    await dock.locator('.desk-pet').click();
+    // The pet's 보기 menu unfolds the desks.
+    await dock.locator('.dock-pet-anchor').hover();
+    await dock
+      .getByRole('button', { name: lang === 'ko' ? '보기 바꾸기' : 'Change view', exact: true })
+      .click();
+    await dock
+      .getByRole('menuitemradio', { name: lang === 'ko' ? '책상 줄' : 'Desk row', exact: true })
+      .click();
     await dock.waitForSelector('.desk-row [data-station-id]');
     await dock.locator('.desk-row').screenshot({ path: `${dir}/desk-row.png`, ...still });
     await dock.goto(`${base}/?demo&lang=${lang}#mini=floor`);

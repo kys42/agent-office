@@ -1,0 +1,688 @@
+<title>에이전트 오피스 네이티브 테마</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500;600;700;800&family=Gowun+Batang:wght@400;700&family=Gowun+Dodum&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+@font-face { font-family: 'Galmuri11'; src: url(data:font/woff2;base64,%%GALMURI%%) format('woff2'); font-display: swap; }
+/* Review chrome: a quiet light-table around the six windows. */
+:root {
+  --bg: #eceef1; --panel: #ffffff; --ink: #1d2128; --ink-2: #5a616d; --ink-3: #8a909a;
+  --line: rgba(20, 28, 40, 0.1); --accent: #2f6fe4; --chip: #e2e6ec;
+  --font: 'IBM Plex Sans KR', 'Noto Sans KR', -apple-system, 'Apple SD Gothic Neo', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #15171b; --panel: #1e2126; --ink: #eceef2; --ink-2: #a7adb7; --ink-3: #737a85;
+  --line: rgba(255, 255, 255, 0.09); --accent: #6aa0ff; --chip: #2a2e35; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #15171b; --panel: #1e2126; --ink: #eceef2; --ink-2: #a7adb7; --ink-3: #737a85;
+  --line: rgba(255, 255, 255, 0.09); --accent: #6aa0ff; --chip: #2a2e35; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; line-height: 1.55; }
+.page { max-width: 1360px; margin: 0 auto; padding: 28px 20px 48px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.head h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; text-wrap: balance; }
+.head p { margin: 4px 0 0; color: var(--ink-2); max-width: 62ch; }
+.meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); letter-spacing: 0.04em; }
+.picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.picker button { font: inherit; font-size: 13px; padding: 7px 12px 7px 9px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.picker button i { width: 22px; height: 16px; border-radius: 4px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.picker button[aria-pressed="true"] { color: var(--ink); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.picker button:focus-visible, .grid-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.picker .all { margin-left: auto; }
+.stage { position: relative; width: 100%; border-radius: 14px; overflow: hidden; background: #000; box-shadow: 0 18px 50px -24px rgba(0,0,0,.45); }
+.stage.actual { overflow-x: auto; }
+.stage > .win { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.notes { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 14px; margin-top: 16px; }
+.notes section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.notes h2 { margin: 0 0 2px; font-size: 18px; letter-spacing: -0.01em; }
+.notes h3 { margin: 0 0 6px; font-size: 11.5px; font-family: var(--mono); letter-spacing: 0.08em; color: var(--ink-3); font-weight: 500; }
+.notes p, .notes li { margin: 0; color: var(--ink-2); font-size: 13.5px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+.notes .en { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-top: 10px; color: var(--ink-3); font-size: 12.5px; flex-wrap: wrap; }
+.toolbar button { font: inherit; font-size: 12.5px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.grid { display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.grid.on { display: grid; }
+.grid-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+.grid-card .thumb { position: relative; width: 100%; aspect-ratio: 1280 / 800; max-width: 100%; border-radius: 9px; overflow: hidden; background: #000; }
+.grid-card .thumb > .win { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
+.grid-card b { display: block; margin: 9px 2px 0; font-size: 14px; }
+.grid-card span { display: block; margin: 0 2px 2px; color: var(--ink-2); font-size: 12.5px; }
+.foot { margin-top: 22px; color: var(--ink-3); font-size: 12px; }
+@media (max-width: 900px) { .notes { grid-template-columns: 1fr; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .grid { grid-template-columns: 1fr; } .picker .all { margin-left: 0; } }
+
+/* ───────── shared mock primitives (each theme restyles them) ───────── */
+.win { width: 1280px; height: 800px; overflow: hidden; position: relative; font-size: 13px; line-height: 1.45; }
+.win * { box-sizing: border-box; }
+.spr { display: inline-block; width: var(--s); height: var(--s); background-repeat: no-repeat; background-size: calc(var(--s) * 4) calc(var(--s) * 8); background-position: 0 calc(var(--s) * var(--r) * -1); image-rendering: pixelated; animation: frames 0.9s steps(4) infinite; flex-shrink: 0; }
+.spr.slow { animation-duration: 1.8s; }
+@keyframes frames { to { background-position-x: calc(var(--s) * -4); } }
+@media (prefers-reduced-motion: reduce) { .spr { animation: none; } .win * { animation: none !important; } }
+.room { position: relative; display: flex; flex-wrap: wrap; align-content: flex-start; gap: var(--zgap, 16px); }
+.zone { position: relative; padding: 34px 10px 10px; }
+.zlabel { position: absolute; left: 10px; top: 8px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.desks { display: flex; }
+.st { position: relative; width: var(--stw, 124px); height: var(--sth, 168px); cursor: pointer; }
+.st .pet { position: absolute; left: 50%; top: var(--pety, 58px); transform: translateX(-50%); z-index: 1; }
+.st .desk { position: absolute; left: 8px; right: 8px; top: var(--desky, 100px); height: 28px; z-index: 2; }
+.st .desk .mon { position: absolute; left: 14px; top: -14px; width: 26px; height: 17px; }
+.st .plate { position: absolute; left: 50%; transform: translateX(-50%); top: var(--platey, 136px); z-index: 3; white-space: nowrap; max-width: 116px; overflow: hidden; text-overflow: ellipsis; }
+.st .bub { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--sth, 168px) - var(--pety, 58px) + 2px); width: calc(var(--stw, 124px) - 6px); z-index: 4; }
+.st .bub small { display: block; }
+.st .bub span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+
+<div class="page">
+  <header class="head">
+    <div>
+      <div class="meta">AGENT OFFICE · NATIVE THEMES · ROUND 03 · 2026-10-08</div>
+      <h1>에이전트 오피스 네이티브 테마</h1>
+      <p>창 전체를 다시 그린 여섯 가지 방향입니다. 모든 시안은 같은 동료 여섯 명과 같은 상황(당근이 답을 기다리고, 모모가 결과를 남김)을 보여 줍니다. 명단이나 사무실의 동료를 누르면 오른쪽 상세가 바뀝니다.</p>
+    </div>
+  </header>
+  <nav class="picker" id="picker" aria-label="시안 고르기"></nav>
+  <div class="stage" id="stage"></div>
+  <div class="toolbar">
+    <button type="button" id="sizeBtn">실제 크기로 보기</button>
+    <span id="sizeNote">창은 1280 × 800 기준이에요. 좁은 화면에서는 줄여서 보여 줘요.</span>
+  </div>
+  <div class="notes" id="notes"></div>
+  <div class="grid" id="grid"></div>
+  <p class="foot">시안의 동료·대화·사용량은 데모 예시예요. 실제 세션 데이터가 아니고, 버튼은 상세 전환 외에는 동작하지 않아요. 캐릭터는 Agent Office 원본 에셋, 픽셀 글꼴은 Galmuri(OFL)입니다.</p>
+</div>
+
+<script>
+const SPR = { claude: 'data:image/png;base64,%%CLAUDE%%', codex: 'data:image/png;base64,%%CODEX%%', openclaw: 'data:image/png;base64,%%OPENCLAW%%' };
+const ROWS = { idle: 0, work: 1, think: 2, call: 3, done: 4, error: 5, sleep: 6, leave: 7 };
+const PROV = { claude: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw' };
+const STATUS = { work: '일하는 중', think: '생각 중', call: '불러요', done: '응답 완료', idle: '쉬는 중', sleep: '대기 중' };
+const GROUP = { attention: '나를 기다려요', results: '확인할 결과', working: '일하는 중', resting: '쉬는 중' };
+const KIND = { attention: '확인 필요', result: '최종 응답', progress: '진행', think: '생각 중' };
+const TEAM = [
+  { id: 'carrot', name: '당근', p: 'claude', project: 'my-notes', branch: 'main', status: 'call', group: 'attention', kind: 'attention',
+    text: '회고 제목을 골라 주세요. 후보 세 개를 정리했어요.', ago: '방금', req: '9월 작업 회고를 정리해 줘. 제목은 내가 고를게.', reply: '회고 초안을 정리했어요. 제목 후보는 ① 작은 사무실의 9월 ② 이어지는 업무 기억 ③ 한자리에 모인 동료들 입니다. 어떤 걸로 할까요?' },
+  { id: 'momo', name: '모모', p: 'claude', project: 'design-system', branch: 'feat/tokens', status: 'done', group: 'results', kind: 'result', unread: 1,
+    text: '버튼 컴포넌트 정리를 마쳤어요. 변경 요약을 남겼어요.', ago: '3분 전', req: '버튼 컴포넌트 크기를 세 단계로 정리해 줘.', reply: '버튼을 S·M·L 세 단계로 정리했어요. 토큰 6개를 추가하고 기존 화면 14곳을 새 크기로 바꿨어요. 테스트는 모두 통과했어요.' },
+  { id: 'coco', name: '코코', p: 'claude', project: 'agent-office', branch: 'feat/tiny-office', status: 'work', group: 'working', kind: 'progress', elapsed: '12분째',
+    text: '세션 수집기를 연결하고 있어요', ago: '방금', req: '사무실에 새 동료 맞이하기 작업 이어서 해 줘.', reply: '세션 수집기를 연결하고 있어요. 같은 프로젝트 동료가 가까이 앉도록 자리 배치도 확인 중이에요.' },
+  { id: 'nemo', name: '네모', p: 'codex', project: 'agent-office', branch: 'feat/tiny-office', status: 'think', group: 'working', kind: 'think', elapsed: '4분째',
+    text: '검색 흐름을 살펴보는 중이에요', ago: '방금', req: '검색 결과가 느린 이유를 찾아 줘.', reply: '검색 흐름을 살펴보는 중이에요. 인덱스를 매번 다시 만드는 구간이 보여요.' },
+  { id: 'butler', name: '집사', p: 'openclaw', project: 'daily-brief', branch: 'main', status: 'work', group: 'working', kind: 'progress', elapsed: '31분째',
+    text: '오늘의 기록을 모으고 있어요', ago: '1분 전', req: '오늘 업무 브리핑 만들어 줘.', reply: '오늘의 기록을 모으고 있어요. 캘린더 4건과 메일 12건을 확인했어요.' },
+  { id: 'beep', name: '삑삑', p: 'codex', project: 'api-server', branch: 'fix/login-retry', status: 'work', group: 'working', kind: 'progress', elapsed: '8분째',
+    text: '회귀 테스트를 돌리는 중이에요', ago: '방금', req: '로그인 재시도 오류 고쳐 줘.', reply: '재시도 간격을 고쳤고 회귀 테스트를 돌리는 중이에요. 48개 중 31개 통과.' },
+];
+const LOUNGE = [{ id: 'cube', name: '큐브', p: 'codex', project: 'web-app', ago: '5시간 전' }];
+const ZONES = [
+  { name: 'agent-office', color: '#7fae86', ids: ['coco', 'nemo'] },
+  { name: 'daily-brief', color: '#a48fd0', ids: ['butler'] },
+  { name: 'my-notes', color: '#d39a62', ids: ['carrot'] },
+  { name: 'api-server', color: '#6fa9bd', ids: ['beep'] },
+  { name: 'design-system', color: '#d08497', ids: ['momo'] },
+];
+const byId = Object.fromEntries(TEAM.map((t) => [t.id, t]));
+const ORDER = ['attention', 'results', 'working', 'resting'];
+const grouped = () => ORDER.map((g) => ({ g, items: TEAM.filter((t) => t.group === g) })).filter((x) => x.items.length);
+const counts = { attention: 1, results: 1, working: 4, all: 6 };
+let selected = 'carrot';
+
+function spr(p, mood = 'idle', size = 48, extra = '') {
+  return `<span class="spr ${mood === 'idle' || mood === 'sleep' || mood === 'done' ? 'slow' : ''} ${extra}" style="--s:${size}px;--r:${ROWS[mood]};background-image:url(${SPR[p]})"></span>`;
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/* Same office in every theme: five project zones, six desks. Themes only restyle it. */
+function office(opts = {}) {
+  const showBubble = opts.bubbles || ((t) => true);
+  return `<div class="room">${ZONES.map((z) => `
+    <div class="zone" style="--zc:${z.color}">
+      <div class="zlabel"><b>${z.name}</b><i>${z.ids.length}명</i></div>
+      <div class="desks ${z.ids.length > 1 ? 'shared' : ''}">${z.ids.map((id) => {
+        const t = byId[id];
+        return `<div class="st st-${t.status} ${t.id === selected ? 'sel' : ''}" data-pick="${t.id}">
+          ${showBubble(t) ? `<div class="bub k-${t.kind}"><small>${KIND[t.kind]} · ${t.ago}</small><span>${esc(t.text)}</span></div>` : ''}
+          <div class="pet">${spr(t.p, t.status, opts.pet || 48)}</div>
+          <div class="desk"><i class="mon"></i></div>
+          <div class="plate"><i class="dot"></i>${t.name}${t.unread ? `<em>${t.unread}</em>` : ''}</div>
+        </div>`;
+      }).join('')}</div>
+    </div>`).join('')}</div>`;
+}
+function nowCopy(t) {
+  if (t.group === 'attention') return { title: '답변을 기다리고 있어요', body: t.reply, action: '재개 명령 복사', note: '답변은 원래 앱에서 해 주세요.' };
+  if (t.group === 'results') return { title: '새 결과가 도착했어요', body: t.reply, action: '읽음으로 표시', note: '최종 응답은 이번 답변의 끝이에요.' };
+  return { title: `작업 중 · ${t.elapsed}`, body: t.reply, action: '인수인계 꾸리기', note: '공개 진행 메시지를 보여 줘요.' };
+}
+
+/* ═════════════ 1. SONOMA — 순정 macOS 라이트 ═════════════ */
+const sonomaCSS = `
+.w-sonoma { font-family: -apple-system, 'SF Pro Text', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; color: #1d1d1f; background: linear-gradient(135deg, #c9d6e8, #e9dfd2 55%, #d6e3d4); padding: 26px 34px; }
+.w-sonoma .frame { position: relative; height: 100%; border-radius: 12px; overflow: hidden; display: grid; grid-template-columns: 228px 1fr 300px; background: #fbfbfc; box-shadow: 0 0 0 0.5px rgba(0,0,0,.28), 0 24px 60px -18px rgba(30,40,60,.45); }
+.w-sonoma .side { background: rgba(236,236,240,.72); backdrop-filter: blur(30px) saturate(1.6); border-right: 0.5px solid rgba(0,0,0,.12); padding: 14px 10px; display: flex; flex-direction: column; gap: 14px; }
+.w-sonoma .lights { display: flex; gap: 8px; padding: 2px 6px 6px; }
+.w-sonoma .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18); }
+.w-sonoma .lights i:nth-child(2) { background: #febc2e; } .w-sonoma .lights i:nth-child(3) { background: #28c840; }
+.w-sonoma .src h6 { margin: 0 0 3px 8px; font-size: 11px; font-weight: 600; color: #8a8a8e; }
+.w-sonoma .src a { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; font-size: 13px; color: #1d1d1f; }
+.w-sonoma .src a.on { background: rgba(0,0,0,.08); font-weight: 500; }
+.w-sonoma .src a .ic { width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; color: #fff; font-size: 10px; font-weight: 700; }
+.w-sonoma .src a em { margin-left: auto; font-style: normal; font-size: 12px; color: #8a8a8e; font-variant-numeric: tabular-nums; }
+.w-sonoma .src a em.hot { color: #fff; background: #ff3b30; border-radius: 9px; padding: 0 6px; font-weight: 600; }
+.w-sonoma .src .dotp { width: 9px; height: 9px; border-radius: 50%; margin: 0 3px; }
+.w-sonoma .me { margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 8px; font-size: 12px; color: #6e6e73; }
+.w-sonoma .me i { width: 8px; height: 8px; border-radius: 50%; background: #34c759; }
+.w-sonoma .main { display: flex; flex-direction: column; min-width: 0; background: #fff; }
+.w-sonoma .tb { height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 14px; border-bottom: 0.5px solid rgba(0,0,0,.1); }
+.w-sonoma .tb h1 { margin: 0; font-size: 15px; font-weight: 700; }
+.w-sonoma .tb h1 small { display: block; font-size: 11px; font-weight: 400; color: #8a8a8e; }
+.w-sonoma .seg { display: flex; background: rgba(0,0,0,.06); border-radius: 7px; padding: 2px; margin-left: 10px; }
+.w-sonoma .seg span { padding: 3px 12px; font-size: 12px; border-radius: 5px; color: #3a3a3c; }
+.w-sonoma .seg span.on { background: #fff; box-shadow: 0 0.5px 2px rgba(0,0,0,.2); font-weight: 500; }
+.w-sonoma .tb .sp { flex: 1; }
+.w-sonoma .search { width: 190px; height: 26px; border-radius: 7px; background: rgba(0,0,0,.06); display: flex; align-items: center; gap: 6px; padding: 0 8px; font-size: 12px; color: #8a8a8e; }
+.w-sonoma .tbtn { width: 30px; height: 26px; border-radius: 6px; display: grid; place-items: center; color: #6e6e73; font-size: 15px; position: relative; }
+.w-sonoma .tbtn b { position: absolute; top: -3px; right: -4px; background: #ff3b30; color: #fff; font-size: 9px; border-radius: 7px; padding: 0 4px; line-height: 14px; }
+.w-sonoma .canvas { flex: 1; display: grid; place-items: center; background: #f5f5f7; padding: 18px; }
+.w-sonoma .room { width: 600px; padding: 18px; border-radius: 14px; background: repeating-linear-gradient(0deg, #f4e6d2 0 22px, #ead8bf 22px 23px), #f4e6d2; box-shadow: 0 0 0 0.5px rgba(0,0,0,.12), 0 10px 30px -14px rgba(80,60,30,.35); --zgap: 14px; --stw: 112px; }
+.w-sonoma .zone { background: color-mix(in srgb, var(--zc) 16%, rgba(255,255,255,.55)); border-radius: 12px; box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--zc) 60%, transparent); }
+.w-sonoma .zlabel b { font-size: 11.5px; font-weight: 600; color: #3a3a3c; } .w-sonoma .zlabel i { font-style: normal; font-size: 11px; color: #8a8a8e; }
+.w-sonoma .desk { background: #fff; border-radius: 6px; box-shadow: 0 1px 0 #d9cbb6, 0 3px 6px -2px rgba(80,60,30,.25); }
+.w-sonoma .desk .mon { background: #2c2c2e; border-radius: 3px; border: 2px solid #48484a; }
+.w-sonoma .st-work .desk .mon, .w-sonoma .st-think .desk .mon { background: #9be7c0; }
+.w-sonoma .st-call .desk .mon { background: #ff9f96; }
+.w-sonoma .plate { background: #fff; border-radius: 10px; padding: 2px 8px; font-size: 11.5px; font-weight: 500; box-shadow: 0 0.5px 0 rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.12); display: inline-flex; align-items: center; gap: 5px; }
+.w-sonoma .plate .dot { width: 6px; height: 6px; border-radius: 50%; background: #8e8e93; }
+.w-sonoma .st-work .dot, .w-sonoma .st-think .dot { background: #34c759; } .w-sonoma .st-call .dot { background: #ff3b30; } .w-sonoma .st-done .dot { background: #007aff; }
+.w-sonoma .plate em { font-style: normal; background: #007aff; color: #fff; font-size: 10px; border-radius: 7px; padding: 0 5px; }
+.w-sonoma .sel .plate { background: #007aff; color: #fff; } .w-sonoma .sel .plate .dot { background: #fff; }
+.w-sonoma .bub { background: rgba(255,255,255,.96); border-radius: 9px; padding: 5px 8px; font-size: 11px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.14), 0 6px 14px -6px rgba(0,0,0,.3); }
+.w-sonoma .bub small { font-size: 10px; font-weight: 600; color: #8a8a8e; }
+.w-sonoma .bub.k-attention small { color: #ff3b30; } .w-sonoma .bub.k-result small { color: #007aff; } .w-sonoma .bub.k-progress small { color: #248a3d; }
+.w-sonoma .insp { border-left: 0.5px solid rgba(0,0,0,.1); background: #f5f5f7; display: flex; flex-direction: column; }
+.w-sonoma .insp .ih { height: 52px; display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 0 12px; border-bottom: 0.5px solid rgba(0,0,0,.08); color: #6e6e73; }
+.w-sonoma .insp .who { display: flex; gap: 12px; align-items: center; padding: 16px; }
+.w-sonoma .insp .ava { width: 56px; height: 56px; border-radius: 14px; background: #fff; display: grid; place-items: end center; box-shadow: 0 0 0 0.5px rgba(0,0,0,.1); overflow: hidden; }
+.w-sonoma .insp h2 { margin: 0; font-size: 18px; } .w-sonoma .insp .who small { color: #8a8a8e; font-size: 12px; }
+.w-sonoma .grp { margin: 0 14px 12px; background: #fff; border-radius: 10px; box-shadow: 0 0 0 0.5px rgba(0,0,0,.08); overflow: hidden; }
+.w-sonoma .grp > div { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; font-size: 12.5px; }
+.w-sonoma .grp > div + div { border-top: 0.5px solid rgba(0,0,0,.08); }
+.w-sonoma .grp > div span { color: #8a8a8e; }
+.w-sonoma .grp > div.now { display: block; padding: 12px; } .w-sonoma .now b { font-size: 13px; display: block; } .w-sonoma .now p { margin: 4px 0 10px; font-size: 12.5px; color: #3a3a3c; }
+.w-sonoma .now.t-attention b { color: #d70015; } .w-sonoma .now.t-results b { color: #0060df; }
+.w-sonoma .btn { display: inline-flex; padding: 4px 12px; border-radius: 6px; font-size: 12.5px; background: #007aff; color: #fff; font-weight: 500; box-shadow: inset 0 0.5px 0 rgba(255,255,255,.3); }
+.w-sonoma .btn.sec { background: #fff; color: #1d1d1f; box-shadow: 0 0 0 0.5px rgba(0,0,0,.2), 0 0.5px 1px rgba(0,0,0,.1); }
+.w-sonoma .lbl { margin: 4px 26px 6px; font-size: 11px; font-weight: 600; color: #8a8a8e; }
+.w-sonoma .msg { padding: 9px 12px; font-size: 12.5px; } .w-sonoma .msg.u { background: #e9f1ff; }
+`;
+function sonoma() {
+  const t = byId[selected], n = nowCopy(t);
+  return `<div class="win w-sonoma"><div class="frame">
+    <aside class="side">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="src"><h6>공간</h6>
+        <a class="on"><span class="ic" style="background:#007aff">⌂</span>사무실<em>6</em></a>
+        <a><span class="ic" style="background:#af52de">☾</span>대기 라운지<em>1</em></a>
+        <a><span class="ic" style="background:#8e8e93">▤</span>보관 공간<em>1</em></a></div>
+      <div class="src"><h6>할 일</h6>
+        <a><span class="dotp" style="background:#ff3b30"></span>나를 기다려요<em class="hot">1</em></a>
+        <a><span class="dotp" style="background:#007aff"></span>확인할 결과<em>1</em></a>
+        <a><span class="dotp" style="background:#34c759"></span>일하는 중<em>4</em></a></div>
+      <div class="src"><h6>프로젝트</h6>${ZONES.map((z) => `<a><span class="dotp" style="background:${z.color}"></span>${z.name}<em>${z.ids.length}</em></a>`).join('')}</div>
+      <div class="src"><h6>기록</h6><a><span class="ic" style="background:#ff9500">✎</span>기억 서랍</a><a><span class="ic" style="background:#5ac8fa">◷</span>활동 기록</a></div>
+      <div class="me"><i></i>Claude · Codex · OpenClaw 연결됨</div>
+    </aside>
+    <main class="main">
+      <div class="tb"><h1>우리 사무실<small>5개 프로젝트 · 4명 작업 중</small></h1>
+        <div class="seg"><span class="on">사무실</span><span>라운지</span><span>보관</span></div>
+        <div class="sp"></div><div class="search">⌕ 동료, 기록, 명령</div>
+        <div class="tbtn">✉<b>1</b></div><div class="tbtn">◐</div><div class="tbtn">⧉</div></div>
+      <div class="canvas">${office({ pet: 46 })}</div>
+    </main>
+    <aside class="insp">
+      <div class="ih">⌖ &nbsp; ✕</div>
+      <div class="who"><div class="ava">${spr(t.p, t.status, 52)}</div><div><h2>${t.name}</h2><small>${PROV[t.p]} · ${t.project}</small></div></div>
+      <div class="grp"><div class="now t-${t.group}"><b>${n.title}</b><p>${esc(n.body)}</p><span class="btn">${n.action}</span> <span class="btn sec">소식에서 보기</span></div></div>
+      <div class="grp"><div><span>상태</span>${STATUS[t.status]}</div><div><span>브랜치</span>${t.branch}</div><div><span>마지막 활동</span>${t.ago}</div></div>
+      <div class="lbl">대화</div>
+      <div class="grp"><div class="msg u">${esc(t.req)}</div><div class="msg">${esc(t.reply)}</div></div>
+    </aside></div></div>`;
+}
+
+/* ═════════════ 2. DESK TOY — 손에 잡히는 기계 ═════════════ */
+const toyCSS = `
+.w-toy { background: #2b2a28; font-family: 'Gothic A1', 'Noto Sans KR', sans-serif; color: #2a2724; padding: 30px; }
+.w-toy .body { height: 100%; border-radius: 26px; background: #d9d6cf; box-shadow: inset 0 2px 0 #f2efe8, inset 0 -6px 0 #b9b5ac, 0 30px 60px -20px rgba(0,0,0,.7); display: grid; grid-template-columns: 96px 1fr 330px; grid-template-rows: 64px 1fr 86px; gap: 14px; padding: 18px 22px; }
+.w-toy .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; }
+.w-toy .silk { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: .32em; color: #4b4741; }
+.w-toy .silk small { display: block; letter-spacing: .12em; font-weight: 400; font-size: 9.5px; color: #8b867d; }
+.w-toy .lcd { flex: 1; height: 44px; border-radius: 8px; background: #1c2a24; box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 1px 0 #f2efe8; display: flex; align-items: center; gap: 26px; padding: 0 18px; font-family: 'Galmuri11', monospace; color: #8ef0b4; font-size: 13px; text-shadow: 0 0 6px rgba(142,240,180,.55); }
+.w-toy .lcd b { color: #ff8f7d; text-shadow: 0 0 6px rgba(255,143,125,.6); font-weight: 400; }
+.w-toy .lcd .clk { margin-left: auto; font-size: 18px; }
+.w-toy .led { width: 12px; height: 12px; border-radius: 50%; background: #ff5a36; box-shadow: 0 0 10px #ff5a36, inset 0 -2px 0 rgba(0,0,0,.25); }
+.w-toy .keys { display: flex; flex-direction: column; gap: 12px; }
+.w-toy .key { height: 64px; border-radius: 12px; background: #efece6; box-shadow: inset 0 -5px 0 #c4c0b7, 0 2px 0 #a8a49b, 0 4px 8px rgba(0,0,0,.18); display: grid; place-items: center; text-align: center; font-size: 11px; font-weight: 700; color: #4b4741; padding-bottom: 4px; }
+.w-toy .key big { display: block; font-size: 20px; line-height: 1; margin-bottom: 4px; }
+.w-toy .key.on { background: #ff6a3d; color: #fff; box-shadow: inset 0 -5px 0 #c94a24, 0 2px 0 #a8401f, 0 4px 8px rgba(0,0,0,.18); }
+.w-toy .screen { border-radius: 16px; background: #3a3833; padding: 12px; box-shadow: inset 0 2px 0 #24221f, 0 1px 0 #f2efe8; display: flex; }
+.w-toy .glass { flex: 1; border-radius: 9px; background: #e9efe4; background-image: linear-gradient(rgba(60,90,70,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(60,90,70,.08) 1px, transparent 1px); background-size: 20px 20px; display: grid; place-items: center; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25), inset 0 6px 18px rgba(0,0,0,.18); }
+.w-toy .room { width: 620px; --stw: 116px; --zgap: 14px; }
+.w-toy .zone { border: 2px solid #3d3a35; border-radius: 6px; background: rgba(255,255,255,.35); }
+.w-toy .zlabel b { font-family: 'IBM Plex Mono', monospace; font-size: 11px; background: #3d3a35; color: #f0ede6; padding: 1px 6px; border-radius: 3px; }
+.w-toy .zlabel i { font-style: normal; font-size: 10px; color: #5f5a52; font-family: 'IBM Plex Mono', monospace; }
+.w-toy .desk { background: #ff6a3d; border-radius: 5px; box-shadow: inset 0 -5px 0 #c94a24, 0 3px 0 #3d3a35; }
+.w-toy .desk .mon { background: #1c2a24; border: 2px solid #3d3a35; border-radius: 2px; }
+.w-toy .st-work .mon, .w-toy .st-think .mon { background: #8ef0b4; } .w-toy .st-call .mon { background: #ff8f7d; }
+.w-toy .plate { font-family: 'Gothic A1', sans-serif; font-size: 11px; font-weight: 800; letter-spacing: .06em; background: #161616; color: #f5f5f5; padding: 2px 8px 2px 7px; border-radius: 2px; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 1px 0 rgba(0,0,0,.4); display: inline-flex; gap: 5px; align-items: center; }
+.w-toy .plate .dot { width: 5px; height: 5px; background: #8b867d; }
+.w-toy .st-work .dot, .w-toy .st-think .dot { background: #8ef0b4; } .w-toy .st-call .dot { background: #ff5a36; } .w-toy .st-done .dot { background: #6fb5ff; }
+.w-toy .plate em { font-style: normal; background: #ff6a3d; padding: 0 4px; }
+.w-toy .sel .plate { background: #ff6a3d; }
+.w-toy .bub { background: #fffbe8; border: 2px solid #3d3a35; border-radius: 4px; padding: 4px 7px; font-size: 11px; box-shadow: 3px 3px 0 #3d3a35; }
+.w-toy .bub small { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 600; color: #8b867d; }
+.w-toy .bub.k-attention { background: #ffd9cf; } .w-toy .bub.k-result { background: #d8ebff; }
+.w-toy .cards { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.w-toy .tab { display: flex; gap: 6px; }
+.w-toy .tab span { flex: 1; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; padding: 6px 0 5px; border-radius: 8px 8px 0 0; background: #c9c5bd; color: #5f5a52; }
+.w-toy .tab span.on { background: #f7f4ee; color: #2a2724; }
+.w-toy .file { flex: 1; background: #f7f4ee; border-radius: 0 0 12px 12px; margin-top: -10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; box-shadow: 0 2px 0 #b9b5ac; overflow: hidden; }
+.w-toy .card { position: relative; background: #fff; border-radius: 6px; padding: 9px 10px 9px 52px; box-shadow: 0 1px 0 #d8d3c9, 0 2px 4px rgba(0,0,0,.06); border-top: 3px solid #c9c5bd; }
+.w-toy .card .spr { position: absolute; left: 8px; top: 8px; }
+.w-toy .card b { font-size: 13px; } .w-toy .card small { display: block; font-size: 11px; color: #8b867d; font-family: 'IBM Plex Mono', monospace; }
+.w-toy .card p { margin: 3px 0 0; font-size: 11.5px; color: #4b4741; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.w-toy .card.g-attention { border-top-color: #ff5a36; } .w-toy .card.g-results { border-top-color: #4a90e2; } .w-toy .card.g-working { border-top-color: #3fae6d; }
+.w-toy .card.sel { box-shadow: 0 0 0 2px #2a2724; }
+.w-toy .gh { font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: .14em; color: #8b867d; margin-top: 2px; }
+.w-toy .bottom { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; }
+.w-toy .knob { width: 62px; height: 62px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #f7f4ee, #c9c5bd 70%); box-shadow: 0 3px 0 #a8a49b, 0 6px 12px rgba(0,0,0,.2); position: relative; }
+.w-toy .knob::after { content: ''; position: absolute; left: 50%; top: 7px; width: 4px; height: 14px; margin-left: -2px; border-radius: 2px; background: #ff6a3d; transform-origin: 2px 24px; transform: rotate(35deg); }
+.w-toy .klabel { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #6f6a62; letter-spacing: .1em; }
+.w-toy .sk { min-width: 54px; height: 46px; border-radius: 9px; background: #efece6; box-shadow: inset 0 -4px 0 #c4c0b7, 0 2px 0 #a8a49b; display: grid; place-items: center; font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; padding: 0 12px 3px; }
+.w-toy .sk small { display: block; font-size: 9px; font-weight: 500; color: #8b867d; font-family: 'Gothic A1', sans-serif; margin-top: -2px; }
+.w-toy .sk.big { background: #3d3a35; color: #f7f4ee; box-shadow: inset 0 -4px 0 #24221f, 0 2px 0 #151412; padding: 0 18px 3px; }
+.w-toy .sk.big small { color: #c9c5bd; }
+.w-toy .grill { margin-left: auto; width: 120px; height: 40px; background: radial-gradient(circle, #8b867d 1.6px, transparent 2px); background-size: 9px 9px; opacity: .55; }
+.w-toy .detail { background: #2a2724; color: #f0ede6; border-radius: 10px; padding: 10px 12px; }
+.w-toy .detail b { font-size: 12.5px; color: #ff9b7d; display: block; } .w-toy .detail p { margin: 4px 0 8px; font-size: 11.5px; color: #d6d2ca; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.w-toy .detail span { display: inline-block; background: #ff6a3d; color: #fff; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 5px; box-shadow: inset 0 -2px 0 #c94a24; }
+`;
+function toy() {
+  const t = byId[selected], n = nowCopy(t);
+  return `<div class="win w-toy"><div class="body">
+    <div class="top"><span class="led"></span><div class="silk">AGENT OFFICE<small>AO-6 · LOCAL SESSION RECEIVER</small></div>
+      <div class="lcd">동료 06 <span>작업 04</span> <b>호출 01</b> <span>결과 01</span> <span>CLAUDE 5H ▮▮▮▯▯ 42%</span><span class="clk">09:12</span></div></div>
+    <div class="keys">
+      <div class="key on"><span><big>⌂</big>사무실</span></div><div class="key"><span><big>☾</big>라운지</span></div>
+      <div class="key"><span><big>▤</big>보관</span></div><div class="key"><span><big>✉</big>소식 1</span></div><div class="key"><span><big>✎</big>기억</span></div></div>
+    <div class="screen"><div class="glass">${office({ pet: 46 })}</div></div>
+    <div class="cards"><div class="tab"><span class="on">동료 카드</span><span>소식 1</span></div>
+      <div class="file">${grouped().map(({ g, items }) => `<div class="gh">${GROUP[g]} · ${items.length}</div>${items.slice(0, g === 'working' ? 1 : 3).map((x) => `
+        <div class="card g-${g} ${x.id === selected ? 'sel' : ''}" data-pick="${x.id}">${spr(x.p, x.status, 36)}<b>${x.name}</b><small>${x.project} · ${x.ago}</small><p>${esc(x.text)}</p></div>`).join('')}`).join('')}
+        <div class="detail"><b>${t.name} — ${n.title}</b><p>${esc(n.body)}</p><span>${n.action}</span></div></div></div>
+    <div class="bottom"><div class="knob"></div><div class="klabel">ZOOM<br>FIT ◀ ▶ 2×</div>
+      <div class="sk">J<small>다음</small></div><div class="sk">K<small>이전</small></div><div class="sk">R<small>읽음</small></div><div class="sk">I<small>소식</small></div>
+      <div class="sk big">⌘K<small>찾기</small></div><div class="grill"></div></div>
+  </div></div>`;
+}
+
+/* ═════════════ 3. PLATINUM — 픽셀 운영체제 ═════════════ */
+const platCSS = `
+.w-plat { font-family: 'Galmuri11', monospace; font-size: 12px; color: #000; background: #6f7fa6; background-image: radial-gradient(#5d6c92 1px, transparent 1px); background-size: 4px 4px; }
+.w-plat .menubar { height: 24px; background: #dedede; border-bottom: 1px solid #000; display: flex; align-items: center; gap: 18px; padding: 0 12px; box-shadow: inset 0 -1px 0 #9a9a9a; }
+.w-plat .menubar .logo { width: 16px; height: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; }
+.w-plat .menubar .logo i { background: #e8956b; } .w-plat .menubar .logo i:nth-child(2) { background: #7fd6c0; } .w-plat .menubar .logo i:nth-child(3) { background: #f2878f; } .w-plat .menubar .logo i:nth-child(4) { background: #f4b86c; }
+.w-plat .menubar .r { margin-left: auto; display: flex; gap: 14px; }
+.w-plat .pw { position: absolute; background: #dedede; border: 1px solid #000; box-shadow: 2px 2px 0 rgba(0,0,0,.45), inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a9a; }
+.w-plat .ttl { height: 22px; display: flex; align-items: center; gap: 8px; padding: 0 6px; background: repeating-linear-gradient(0deg, #dedede 0 1px, #9a9a9a 1px 2px); border-bottom: 1px solid #000; }
+.w-plat .ttl .box { width: 13px; height: 13px; border: 1px solid #000; background: #dedede; box-shadow: inset 1px 1px 0 #fff; }
+.w-plat .ttl b { margin: 0 auto; background: #dedede; padding: 0 8px; font-weight: 700; }
+.w-plat .ttl .box.r { margin-left: 0; }
+.w-plat .inner { position: absolute; inset: 23px 3px 3px; background: #fff; border: 1px solid #000; overflow: hidden; }
+.w-plat .office { left: 18px; top: 40px; width: 780px; height: 560px; }
+.w-plat .office .inner { background: #c8c8c8; background-image: linear-gradient(45deg, #bdbdbd 25%, transparent 25%, transparent 75%, #bdbdbd 75%), linear-gradient(45deg, #bdbdbd 25%, transparent 25%, transparent 75%, #bdbdbd 75%); background-size: 4px 4px; background-position: 0 0, 2px 2px; display: grid; place-items: center; }
+.w-plat .office .stat { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; background: #dedede; border-top: 1px solid #000; display: flex; gap: 18px; align-items: center; padding: 0 8px; font-size: 11px; }
+.w-plat .room { width: 640px; --stw: 116px; --zgap: 14px; margin-top: -10px; }
+.w-plat .zone { background: #fff; border: 1px solid #000; box-shadow: 2px 2px 0 #000; }
+.w-plat .zlabel b { font-weight: 700; font-size: 11px; } .w-plat .zlabel i { font-style: normal; font-size: 11px; color: #555; }
+.w-plat .zlabel::before { content: ''; width: 9px; height: 9px; background: var(--zc); border: 1px solid #000; }
+.w-plat .desk { background: #dedede; border: 1px solid #000; box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a9a; }
+.w-plat .desk .mon { background: #fff; border: 1px solid #000; }
+.w-plat .st-work .mon, .w-plat .st-think .mon { background: #000; box-shadow: inset 0 0 0 2px #fff; }
+.w-plat .plate { background: #fff; border: 1px solid #000; padding: 0 6px; font-size: 11px; display: inline-flex; gap: 4px; align-items: center; }
+.w-plat .plate .dot { width: 7px; height: 7px; border: 1px solid #000; background: #fff; }
+.w-plat .st-work .dot, .w-plat .st-think .dot { background: #000; } .w-plat .st-call .dot { background: #e33; } .w-plat .st-done .dot { background: #36f; }
+.w-plat .plate em { font-style: normal; background: #000; color: #fff; padding: 0 3px; }
+.w-plat .sel .plate { background: #000; color: #fff; } .w-plat .sel .plate .dot { border-color: #fff; }
+.w-plat .bub { background: #fff; border: 1px solid #000; border-radius: 10px; padding: 4px 8px; font-size: 11px; box-shadow: 2px 2px 0 #000; }
+.w-plat .bub small { font-size: 10px; color: #555; } .w-plat .bub.k-attention small { color: #d00; }
+.w-plat .list { left: 812px; top: 40px; width: 450px; height: 330px; }
+.w-plat table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.w-plat th { text-align: left; font-weight: 400; background: #dedede; border-bottom: 1px solid #000; border-right: 1px solid #9a9a9a; padding: 2px 6px; }
+.w-plat td { padding: 3px 6px; border-bottom: 1px dotted #bbb; white-space: nowrap; }
+.w-plat td .spr { vertical-align: middle; margin-right: 4px; }
+.w-plat tr.sel td { background: #000; color: #fff; }
+.w-plat tr.gr td { background: #eee; font-size: 10.5px; color: #333; padding: 1px 6px; }
+.w-plat .news { left: 812px; top: 384px; width: 450px; height: 216px; }
+.w-plat .news .inner { padding: 10px 12px; }
+.w-plat .news h4 { margin: 0 0 6px; font-size: 12px; } .w-plat .news p { margin: 0 0 10px; font-size: 11.5px; line-height: 1.55; }
+.w-plat .pbtn { display: inline-block; border: 1px solid #000; border-radius: 6px; padding: 2px 12px; background: #dedede; box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a9a; margin-right: 6px; }
+.w-plat .pbtn.def { box-shadow: 0 0 0 2px #dedede, 0 0 0 3px #000, inset 1px 1px 0 #fff, inset -1px -1px 0 #9a9a9a; }
+.w-plat .icons { position: absolute; left: 18px; top: 620px; display: flex; gap: 34px; }
+.w-plat .icons div { width: 72px; text-align: center; color: #fff; font-size: 11px; }
+.w-plat .icons i { display: block; width: 36px; height: 36px; margin: 0 auto 4px; background: #fff; border: 1px solid #000; box-shadow: 2px 2px 0 rgba(0,0,0,.4); font-style: normal; color: #000; font-size: 20px; line-height: 34px; }
+.w-plat .icons span { background: #fff; color: #000; padding: 0 3px; }
+.w-plat .lounge { left: 812px; top: 614px; width: 450px; height: 156px; }
+.w-plat .lounge .inner { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: #f3f0ff; }
+`;
+function plat() {
+  const t = byId[selected], n = nowCopy(t);
+  const row = (x) => `<tr class="${x.id === selected ? 'sel' : ''}" data-pick="${x.id}"><td>${spr(x.p, x.status, 18)}${x.name}</td><td>${x.project}</td><td>${STATUS[x.status]}</td><td>${x.ago}</td></tr>`;
+  return `<div class="win w-plat">
+    <div class="menubar"><span class="logo"><i></i><i></i><i></i><i></i></span><b>사무실</b><span>파일</span><span>편집</span><span>보기</span><span>동료</span><span>창</span><span>도움말</span>
+      <span class="r"><span>✉ 1</span><span>Claude ● Codex ● Claw ●</span><span>오전 9:12</span></span></div>
+    <div class="pw office"><div class="ttl"><span class="box"></span><b>우리 사무실 — 6명 · 5개 프로젝트</b><span class="box r"></span></div>
+      <div class="inner">${office({ pet: 44 })}<div class="stat"><span>● 4명 작업 중</span><span>! 1명 호출</span><span>✉ 결과 1</span><span style="margin-left:auto">100% · 모두 보기</span></div></div></div>
+    <div class="pw list"><div class="ttl"><span class="box"></span><b>동료 — 할 일 순서</b><span class="box r"></span></div>
+      <div class="inner"><table><thead><tr><th>이름</th><th>프로젝트</th><th>상태</th><th>활동</th></tr></thead><tbody>
+        ${grouped().map(({ g, items }) => `<tr class="gr"><td colspan="4">▾ ${GROUP[g]} (${items.length})</td></tr>${items.map(row).join('')}`).join('')}</tbody></table></div></div>
+    <div class="pw news"><div class="ttl"><span class="box"></span><b>${t.name}의 업무 카드</b><span class="box r"></span></div>
+      <div class="inner"><h4>${n.title}</h4><p>${esc(n.body)}</p><span class="pbtn def">${n.action}</span><span class="pbtn">인수인계…</span><span class="pbtn">닫기</span></div></div>
+    <div class="pw lounge"><div class="ttl"><span class="box"></span><b>대기 라운지</b><span class="box r"></span></div>
+      <div class="inner">${spr('codex', 'sleep', 44)}<div><b>큐브</b> · web-app<br><span style="color:#555">5시간 전 활동 · 쉬는 중</span></div><span class="pbtn" style="margin-left:auto">사무실로 데려오기</span></div></div>
+    <div class="icons"><div><i>✎</i><span>기억 서랍</span></div><div><i>◷</i><span>활동 기록</span></div><div><i>⚙</i><span>설정</span></div><div><i>▤</i><span>보관함</span></div></div>
+  </div>`;
+}
+
+/* ═════════════ 4. STUDIO — 프로 앱 트랙 ═════════════ */
+const studioCSS = `
+.w-studio { background: #1b1c1f; color: #d6d8dc; font-family: 'IBM Plex Sans KR', sans-serif; display: grid; grid-template-rows: 44px 1fr 214px; }
+.w-studio .bar { display: flex; align-items: center; gap: 10px; padding: 0 12px; background: #2a2b2f; border-bottom: 1px solid #111; }
+.w-studio .lights { display: flex; gap: 7px; margin-right: 8px; } .w-studio .lights i { width: 11px; height: 11px; border-radius: 50%; background: #4a4b50; }
+.w-studio .tool { height: 26px; padding: 0 10px; border-radius: 5px; background: #3a3b40; border: 1px solid #111; box-shadow: inset 0 1px 0 rgba(255,255,255,.06); display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #c9cbd0; }
+.w-studio .tool.on { background: #4b4d53; color: #fff; }
+.w-studio .rec { width: 9px; height: 9px; border-radius: 50%; background: #ff453a; box-shadow: 0 0 6px #ff453a; }
+.w-studio .lcd { margin: 0 auto; height: 30px; min-width: 330px; border-radius: 6px; background: #0e1a1c; border: 1px solid #000; display: flex; align-items: center; justify-content: center; gap: 22px; font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: #63e6be; letter-spacing: .06em; }
+.w-studio .lcd small { font-size: 10px; color: #4f8f80; letter-spacing: .12em; }
+.w-studio .mid { display: grid; grid-template-columns: 220px 1fr 300px; min-height: 0; }
+.w-studio .lib { background: #222327; border-right: 1px solid #111; padding: 10px 0; font-size: 12px; }
+.w-studio .lib h6 { margin: 8px 12px 4px; font-size: 10px; letter-spacing: .14em; color: #7d8088; font-weight: 600; }
+.w-studio .lib div { padding: 4px 12px; display: flex; gap: 7px; align-items: center; color: #b8bbc2; }
+.w-studio .lib div.on { background: #3c5a8c; color: #fff; }
+.w-studio .lib div i { width: 8px; height: 8px; border-radius: 2px; }
+.w-studio .lib div em { margin-left: auto; font-style: normal; color: #7d8088; font-family: 'IBM Plex Mono', monospace; font-size: 11px; }
+.w-studio .viewer { background: #141518; display: grid; place-items: center; position: relative; }
+.w-studio .viewer .vlabel { position: absolute; top: 8px; left: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #7d8088; letter-spacing: .1em; }
+.w-studio .room { width: 610px; --stw: 112px; --zgap: 12px; }
+.w-studio .zone { background: #1f2024; border: 1px solid #2f3136; border-radius: 4px; }
+.w-studio .zone::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--zc); border-radius: 4px 0 0 4px; }
+.w-studio .zlabel b { font-size: 11px; font-weight: 600; color: #e6e7ea; } .w-studio .zlabel i { font-style: normal; font-size: 10.5px; color: #7d8088; font-family: 'IBM Plex Mono', monospace; }
+.w-studio .desk { background: #3a3b40; border-radius: 3px; border-top: 2px solid #55575e; }
+.w-studio .desk .mon { background: #0e1a1c; border: 2px solid #55575e; border-radius: 2px; }
+.w-studio .st-work .mon, .w-studio .st-think .mon { background: #63e6be; box-shadow: 0 0 12px rgba(99,230,190,.6); }
+.w-studio .st-call .mon { background: #ff6b6b; box-shadow: 0 0 12px rgba(255,107,107,.6); }
+.w-studio .plate { font-size: 11px; background: #2a2b2f; border: 1px solid #111; border-radius: 3px; padding: 1px 7px; display: inline-flex; gap: 5px; align-items: center; color: #e6e7ea; }
+.w-studio .plate .dot { width: 6px; height: 6px; border-radius: 1px; background: #7d8088; }
+.w-studio .st-work .dot, .w-studio .st-think .dot { background: #63e6be; } .w-studio .st-call .dot { background: #ff6b6b; } .w-studio .st-done .dot { background: #6aa8ff; }
+.w-studio .plate em { font-style: normal; background: #6aa8ff; color: #0b1a33; font-size: 10px; padding: 0 4px; border-radius: 2px; font-weight: 600; }
+.w-studio .sel .plate { border-color: #f5c451; box-shadow: 0 0 0 1px #f5c451; }
+.w-studio .bub { background: #2a2b2f; border: 1px solid #111; border-left: 3px solid #63e6be; border-radius: 3px; padding: 4px 7px; font-size: 11px; color: #d6d8dc; }
+.w-studio .bub small { font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #7d8088; }
+.w-studio .bub.k-attention { border-left-color: #ff6b6b; } .w-studio .bub.k-result { border-left-color: #6aa8ff; } .w-studio .bub.k-think { border-left-color: #b39dff; }
+.w-studio .insp { background: #222327; border-left: 1px solid #111; overflow: hidden; }
+.w-studio .disc { border-bottom: 1px solid #111; }
+.w-studio .disc h5 { margin: 0; padding: 7px 12px; font-size: 11px; font-weight: 600; color: #b8bbc2; background: #2a2b2f; }
+.w-studio .disc .c { padding: 10px 12px; font-size: 12px; }
+.w-studio .kv { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; font-size: 11.5px; } .w-studio .kv span { color: #7d8088; }
+.w-studio .who { display: flex; gap: 10px; align-items: center; padding: 12px; }
+.w-studio .who .ava { width: 48px; height: 48px; background: #141518; border: 1px solid #111; border-radius: 6px; display: grid; place-items: end center; overflow: hidden; }
+.w-studio .who b { font-size: 15px; color: #fff; display: block; } .w-studio .who small { color: #7d8088; font-size: 11px; }
+.w-studio .nowc b { color: #ff8a8a; font-size: 12.5px; } .w-studio .nowc.t-results b { color: #8fbcff; } .w-studio .nowc.t-working b { color: #63e6be; }
+.w-studio .nowc p { margin: 4px 0 9px; color: #c9cbd0; font-size: 11.5px; }
+.w-studio .meter { height: 6px; background: #141518; border-radius: 3px; overflow: hidden; margin: 4px 0 8px; } .w-studio .meter i { display: block; height: 100%; background: #63e6be; }
+.w-studio .tracks { background: #1f2024; border-top: 1px solid #000; display: grid; grid-template-columns: 220px 1fr; }
+.w-studio .theads { background: #26272b; border-right: 1px solid #111; }
+.w-studio .theads div, .w-studio .lanes .lane { height: 28px; border-bottom: 1px solid #17181b; }
+.w-studio .theads div { display: flex; align-items: center; gap: 7px; padding: 0 10px; font-size: 11.5px; }
+.w-studio .theads div.ruler, .w-studio .lanes .ruler { height: 22px; background: #2a2b2f; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7d8088; }
+.w-studio .theads .sel { background: #2f3f5c; }
+.w-studio .theads .m { margin-left: auto; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #7d8088; }
+.w-studio .lanes { position: relative; overflow: hidden; }
+.w-studio .lanes .ruler { display: flex; justify-content: space-between; align-items: center; padding: 0 10px; }
+.w-studio .lane { position: relative; }
+.w-studio .clip { position: absolute; top: 4px; height: 20px; border-radius: 3px; font-size: 10.5px; padding: 2px 6px; white-space: nowrap; overflow: hidden; color: #0d1512; }
+.w-studio .clip.w { background: #4fc79f; } .w-studio .clip.t { background: #9d88f0; } .w-studio .clip.c { background: #ff7b7b; } .w-studio .clip.d { background: #6aa8ff; } .w-studio .clip.u { background: #f5c451; }
+.w-studio .playhead { position: absolute; top: 0; bottom: 0; right: 40px; width: 1px; background: #f5c451; }
+.w-studio .playhead::before { content: '지금'; position: absolute; bottom: 4px; left: -14px; font-size: 10px; color: #1b1c1f; background: #f5c451; padding: 0 4px; border-radius: 2px; }
+`;
+function studio() {
+  const t = byId[selected], n = nowCopy(t);
+  const lanes = {
+    carrot: [['u', 2, 10, '요청'], ['w', 12, 38, '회고 초안 작성'], ['c', 52, 46, '제목을 골라 주세요 · 대기 중']],
+    momo: [['u', 4, 6, '요청'], ['w', 10, 58, '버튼 S·M·L 정리 · 테스트'], ['d', 70, 10, '응답']],
+    coco: [['u', 30, 6, '요청'], ['w', 36, 62, '세션 수집기 연결']],
+    nemo: [['u', 70, 6, ''], ['t', 76, 22, '검색 흐름 분석']],
+    butler: [['w', 0, 20, '메일 정리'], ['u', 40, 5, ''], ['w', 45, 53, '오늘 브리핑 수집']],
+    beep: [['u', 60, 5, ''], ['w', 65, 33, '회귀 테스트 31/48']],
+  };
+  const order = ['carrot', 'momo', 'coco', 'nemo', 'butler', 'beep'];
+  return `<div class="win w-studio">
+    <div class="bar"><div class="lights"><i></i><i></i><i></i></div>
+      <span class="tool on">⌂ 사무실</span><span class="tool">☾ 라운지</span><span class="tool">▤ 보관</span>
+      <div class="lcd"><span class="rec"></span><span><small>LIVE</small> 09:12:40</span><span><small>작업</small> 4</span><span style="color:#ff8a8a"><small>호출</small> 1</span><span style="color:#8fbcff"><small>결과</small> 1</span></div>
+      <span class="tool">⌕ ⌘K</span><span class="tool">✉ 1</span></div>
+    <div class="mid">
+      <div class="lib"><h6>할 일</h6><div class="on"><i style="background:#ff6b6b"></i>나를 기다려요<em>1</em></div><div><i style="background:#6aa8ff"></i>확인할 결과<em>1</em></div><div><i style="background:#63e6be"></i>일하는 중<em>4</em></div>
+        <h6>프로젝트</h6>${ZONES.map((z) => `<div><i style="background:${z.color}"></i>${z.name}<em>${z.ids.length}</em></div>`).join('')}
+        <h6>사용 한도</h6><div style="display:block"><span style="font-size:11px;color:#b8bbc2">Claude 5시간 창 · 42%</span><div class="meter"><i style="width:42%"></i></div><span style="font-size:11px;color:#b8bbc2">Codex 주간 · 18%</span><div class="meter"><i style="width:18%;background:#6aa8ff"></i></div></div></div>
+      <div class="viewer"><span class="vlabel">VIEWER · 우리 사무실 · FIT</span>${office({ pet: 44 })}</div>
+      <div class="insp"><div class="who"><div class="ava">${spr(t.p, t.status, 44)}</div><div><b>${t.name}</b><small>${PROV[t.p]} · ${t.project}</small></div></div>
+        <div class="disc"><h5>▾ 지금</h5><div class="c nowc t-${t.group}"><b>${n.title}</b><p>${esc(n.body)}</p><span class="tool on">${n.action}</span></div></div>
+        <div class="disc"><h5>▾ 작업 정보</h5><div class="c kv"><span>상태</span>${STATUS[t.status]}<span>브랜치</span>${t.branch}<span>모델</span>${t.p === 'codex' ? 'GPT Codex' : 'Claude Opus'}<span>토큰</span>14.7k / 200k</div></div>
+        <div class="disc"><h5>▸ 대화 · 최근 요청</h5><div class="c" style="color:#b8bbc2;font-size:11.5px">${esc(t.req)}</div></div></div>
+    </div>
+    <div class="tracks"><div class="theads"><div class="ruler">동료 · 지난 2시간</div>${order.map((id) => { const x = byId[id]; return `<div class="${id === selected ? 'sel' : ''}" data-pick="${id}">${spr(x.p, x.status, 20)}${x.name}<span class="m">${x.project}</span></div>`; }).join('')}</div>
+      <div class="lanes"><div class="ruler"><span>07:10</span><span>07:40</span><span>08:10</span><span>08:40</span><span>09:12</span></div>
+        ${order.map((id) => `<div class="lane">${lanes[id].map(([k, l, w, s]) => `<span class="clip ${k}" style="left:${l}%;width:${w}%">${s}</span>`).join('')}</div>`).join('')}<div class="playhead"></div></div></div>
+  </div>`;
+}
+
+/* ═════════════ 5. NOTEBOOK — 업무 수첩 ═════════════ */
+const noteCSS = `
+.w-note { background: #fdfdfb; color: #23262b; font-family: 'Gowun Dodum', 'Noto Sans KR', sans-serif; display: grid; grid-template-columns: 210px 1fr 380px; }
+.w-note .nav { background: #f3f4f1; border-right: 1px solid #e3e4df; padding: 18px 12px; display: flex; flex-direction: column; gap: 2px; }
+.w-note .lights { display: flex; gap: 7px; margin: 0 4px 22px; } .w-note .lights i { width: 11px; height: 11px; border-radius: 50%; background: #d8d9d4; }
+.w-note .nav a { display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 7px; font-size: 14px; color: #3b3f45; }
+.w-note .nav a.on { background: #e4e8f3; color: #1f3d8a; }
+.w-note .nav a .ic { width: 18px; text-align: center; color: #8a9099; }
+.w-note .nav a em { margin-left: auto; font-style: normal; font-size: 12px; color: #8a9099; }
+.w-note .nav a.on .ic, .w-note .nav a.on em { color: #1f3d8a; }
+.w-note .nav h6 { margin: 18px 9px 6px; font-size: 11.5px; color: #9aa0a8; font-weight: 400; }
+.w-note .nav a .area { width: 10px; height: 10px; border-radius: 3px; }
+.w-note .list { padding: 34px 40px 20px; overflow: hidden; display: flex; flex-direction: column; gap: 14px; }
+.w-note .date { font-family: 'Gowun Batang', serif; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: baseline; gap: 12px; }
+.w-note .date small { font-family: 'Gowun Dodum', sans-serif; font-size: 14px; font-weight: 400; color: #8a9099; }
+.w-note .vignette { position: relative; border-radius: 12px; overflow: hidden; height: 318px; flex-shrink: 0; background: #fbf8f1; border: 1px solid #ebe6da; display: grid; place-items: center; }
+.w-note .vignette::after { content: '오늘의 사무실 · 오전 9:12'; position: absolute; left: 12px; bottom: 9px; font-size: 12px; color: #9a8f78; }
+.w-note .room { width: 610px; --stw: 112px; --zgap: 12px; zoom: 0.62; }
+.w-note .zone { border: 1.5px solid #3b3f45; border-radius: 14px 18px 12px 16px; background: color-mix(in srgb, var(--zc) 10%, #fffdf8); }
+.w-note .zlabel b { font-family: 'Gowun Batang', serif; font-size: 13px; } .w-note .zlabel i { font-style: normal; font-size: 11px; color: #9aa0a8; }
+.w-note .desk { border: 1.5px solid #3b3f45; border-radius: 4px; background: #fff; }
+.w-note .desk .mon { border: 1.5px solid #3b3f45; background: #fff; border-radius: 2px; }
+.w-note .st-work .mon, .w-note .st-think .mon { background: #d4f0dc; } .w-note .st-call .mon { background: #ffd9d4; }
+.w-note .plate { font-size: 13px; display: inline-flex; gap: 5px; align-items: center; }
+.w-note .plate .dot { width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid #3b3f45; }
+.w-note .st-work .dot, .w-note .st-think .dot { background: #5bbf7d; } .w-note .st-call .dot { background: #f06a5a; } .w-note .st-done .dot { background: #4a78e0; }
+.w-note .plate em { font-style: normal; font-size: 11px; color: #1f3d8a; }
+.w-note .sel .plate { background: linear-gradient(transparent 55%, #fff07a 55%); }
+.w-note .bub { background: #fff6b8; padding: 5px 8px; font-size: 11.5px; transform: translateX(-50%) rotate(-1.5deg); box-shadow: 0 3px 6px -3px rgba(80,60,0,.35); }
+.w-note .bub small { font-size: 10.5px; color: #8a7a30; } .w-note .bub.k-result { background: #dbe7ff; } .w-note .bub.k-attention { background: #ffd6cf; transform: translateX(-50%) rotate(1.5deg); }
+.w-note .todo { display: flex; flex-direction: column; }
+.w-note .todo h4 { margin: 8px 0 2px; font-size: 13px; color: #8a9099; font-weight: 400; }
+.w-note .row { display: flex; gap: 12px; align-items: flex-start; padding: 8px 4px; border-bottom: 1px solid #efefea; cursor: pointer; }
+.w-note .row .ck { width: 18px; height: 18px; margin-top: 2px; border-radius: 50%; border: 1.5px solid #b9bec6; flex-shrink: 0; }
+.w-note .row.g-attention .ck { border-color: #f06a5a; } .w-note .row.g-results .ck { border-color: #4a78e0; }
+.w-note .row b { font-size: 14.5px; font-weight: 400; } .w-note .row small { display: block; color: #9aa0a8; font-size: 12px; }
+.w-note .row .tag { margin-left: auto; font-size: 11.5px; color: #8a9099; white-space: nowrap; }
+.w-note .row.sel { background: #f1f4fb; border-radius: 8px; }
+.w-note .page { border-left: 1px solid #e3e4df; padding: 34px 30px; background: #ffffff; display: flex; flex-direction: column; gap: 14px; }
+.w-note .page .who { display: flex; gap: 12px; align-items: center; }
+.w-note .page h2 { margin: 0; font-family: 'Gowun Batang', serif; font-size: 26px; }
+.w-note .page .who small { color: #9aa0a8; font-size: 13px; }
+.w-note .page .callout { border-radius: 10px; padding: 12px 14px; background: #fff3f1; }
+.w-note .page .callout.t-results { background: #eef3ff; } .w-note .page .callout.t-working { background: #effaf2; }
+.w-note .page .callout b { font-size: 14px; } .w-note .page .callout p { margin: 5px 0 10px; font-size: 13.5px; line-height: 1.65; }
+.w-note .nbtn { display: inline-block; font-size: 13px; padding: 5px 12px; border-radius: 7px; background: #1f3d8a; color: #fff; margin-right: 6px; }
+.w-note .nbtn.sec { background: transparent; color: #1f3d8a; box-shadow: inset 0 0 0 1px #c8d2ea; }
+.w-note .page h5 { margin: 6px 0 0; font-size: 12.5px; color: #9aa0a8; font-weight: 400; }
+.w-note .page .q { font-size: 13.5px; line-height: 1.7; padding-left: 12px; border-left: 2px solid #e3e4df; color: #4a4f57; }
+.w-note .page .props { display: grid; grid-template-columns: 80px 1fr; gap: 6px; font-size: 13px; } .w-note .page .props span { color: #9aa0a8; }
+`;
+function note() {
+  const t = byId[selected], n = nowCopy(t);
+  return `<div class="win w-note">
+    <aside class="nav"><div class="lights"><i></i><i></i><i></i></div>
+      <a class="on"><span class="ic">◉</span>오늘<em>6</em></a><a><span class="ic">!</span>나를 기다려요<em>1</em></a><a><span class="ic">✉</span>확인할 결과<em>1</em></a><a><span class="ic">◐</span>일하는 중<em>4</em></a>
+      <a><span class="ic">☾</span>대기 라운지<em>1</em></a><a><span class="ic">▤</span>보관<em>1</em></a>
+      <h6>영역 · 프로젝트</h6>${ZONES.map((z) => `<a><span class="area" style="background:${z.color}"></span>${z.name}</a>`).join('')}
+      <h6>기록</h6><a><span class="ic">✎</span>기억 서랍</a><a><span class="ic">◷</span>활동 기록</a></aside>
+    <main class="list"><div class="date">10월 8일 목요일 <small>할 일 2 · 일하는 중 4</small></div>
+      <div class="vignette">${office({ pet: 46, bubbles: (x) => x.group !== 'working' || x.id === 'coco' })}</div>
+      <div class="todo">${grouped().map(({ g, items }) => `<h4>${GROUP[g]}</h4>${items.slice(0, g === 'working' ? 2 : 9).map((x) => `
+        <div class="row g-${g} ${x.id === selected ? 'sel' : ''}" data-pick="${x.id}"><span class="ck"></span><div><b>${x.name} — ${esc(x.text)}</b><small>${x.project} · ${x.ago}</small></div><span class="tag">${x.elapsed || STATUS[x.status]}</span></div>`).join('')}`).join('')}</div></main>
+    <section class="page"><div class="who">${spr(t.p, t.status, 52)}<div><h2>${t.name}</h2><small>${PROV[t.p]} · ${t.project} · ${t.branch}</small></div></div>
+      <div class="callout t-${t.group}"><b>${n.title}</b><p>${esc(n.body)}</p><span class="nbtn">${n.action}</span><span class="nbtn sec">인수인계 꾸리기</span></div>
+      <h5>내가 남긴 요청</h5><div class="q">${esc(t.req)}</div>
+      <h5>속성</h5><div class="props"><span>상태</span>${STATUS[t.status]}<span>마지막 활동</span>${t.ago}<span>메모</span><span style="color:#c0c4ca">다음의 나에게 남길 말…</span></div></section>
+  </div>`;
+}
+
+/* ═════════════ 6. DIORAMA — 떠 있는 유리 공간 ═════════════ */
+const glassCSS = `
+.w-glass { font-family: -apple-system, 'SF Pro Text', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; color: #1c1e22; background: #b9c9d6; overflow: hidden; }
+.w-glass .wall { position: absolute; inset: 0; background: radial-gradient(60% 70% at 18% 20%, #f6d9b8 0%, transparent 60%), radial-gradient(50% 60% at 85% 15%, #c9e4f2 0%, transparent 60%), radial-gradient(70% 70% at 70% 95%, #d7e8cf 0%, transparent 60%), #dfe3e6; }
+.w-glass .pane { position: absolute; background: rgba(255,255,255,.5); backdrop-filter: blur(26px) saturate(1.5); border-radius: 26px; box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 0 0 0.5px rgba(255,255,255,.6), 0 20px 50px -20px rgba(40,50,70,.35); }
+.w-glass .rail { left: 22px; top: 50%; transform: translateY(-50%); width: 60px; padding: 10px 0; display: flex; flex-direction: column; align-items: center; gap: 8px; border-radius: 30px; }
+.w-glass .rail i { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 17px; color: #3a3f47; }
+.w-glass .rail i.on { background: rgba(255,255,255,.85); box-shadow: 0 4px 10px -4px rgba(0,0,0,.25); }
+.w-glass .title { left: 104px; top: 22px; padding: 10px 18px; border-radius: 18px; display: flex; gap: 14px; align-items: center; font-size: 13px; }
+.w-glass .title b { font-size: 15px; } .w-glass .title span { color: #5c636d; }
+.w-glass .title .pill { padding: 3px 10px; border-radius: 12px; background: rgba(255,59,48,.14); color: #c41e14; font-weight: 600; }
+.w-glass .stagewrap { position: absolute; left: 104px; top: 90px; width: 720px; height: 600px; perspective: 1400px; display: grid; place-items: center; }
+.w-glass .slab { transform: rotateX(26deg); transform-style: preserve-3d; border-radius: 22px; padding: 18px; background: #e9d2b0; background-image: repeating-linear-gradient(90deg, rgba(120,80,40,.08) 0 1px, transparent 1px 64px), repeating-linear-gradient(0deg, rgba(120,80,40,.1) 0 1px, transparent 1px 22px); box-shadow: 0 2px 0 #d8bd96, 0 4px 0 #c9aa82, 0 6px 0 #ba9a72, 0 8px 0 #ab8b63, 0 10px 0 #9c7c55, 0 40px 60px -10px rgba(60,40,20,.45); }
+.w-glass .room { width: 620px; --stw: 114px; --zgap: 14px; }
+.w-glass .zone { background: color-mix(in srgb, var(--zc) 22%, rgba(255,255,255,.35)); border-radius: 16px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.6); }
+.w-glass .zlabel b { font-size: 11.5px; font-weight: 700; color: #2a2e34; } .w-glass .zlabel i { font-style: normal; font-size: 11px; color: #5c636d; }
+.w-glass .desk { background: #fff; border-radius: 8px; box-shadow: 0 3px 0 #d9c9b2, 0 6px 10px -4px rgba(60,40,20,.4); }
+.w-glass .desk .mon { background: #1c1e22; border-radius: 3px; border: 2px solid #3a3f47; }
+.w-glass .st-work .mon, .w-glass .st-think .mon { background: #9be7c0; box-shadow: 0 0 10px rgba(110,230,170,.8); } .w-glass .st-call .mon { background: #ff9f96; }
+.w-glass .plate { background: rgba(255,255,255,.8); backdrop-filter: blur(10px); border-radius: 12px; padding: 2px 9px; font-size: 11.5px; font-weight: 600; display: inline-flex; gap: 5px; align-items: center; box-shadow: 0 4px 10px -4px rgba(0,0,0,.3); }
+.w-glass .plate .dot { width: 6px; height: 6px; border-radius: 50%; background: #8e8e93; }
+.w-glass .st-work .dot, .w-glass .st-think .dot { background: #34c759; } .w-glass .st-call .dot { background: #ff3b30; } .w-glass .st-done .dot { background: #007aff; }
+.w-glass .plate em { font-style: normal; background: #007aff; color: #fff; font-size: 10px; border-radius: 7px; padding: 0 5px; }
+.w-glass .sel .plate { background: #1c1e22; color: #fff; }
+.w-glass .bub { background: rgba(255,255,255,.82); backdrop-filter: blur(12px); border-radius: 12px; padding: 5px 9px; font-size: 11px; box-shadow: 0 8px 18px -8px rgba(0,0,0,.35); }
+.w-glass .bub small { font-size: 10px; font-weight: 600; color: #5c636d; } .w-glass .bub.k-attention small { color: #d70015; } .w-glass .bub.k-result small { color: #0060df; }
+.w-glass .insp { right: 26px; top: 22px; bottom: 112px; width: 400px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.w-glass .insp .who { display: flex; gap: 12px; align-items: center; }
+.w-glass .insp .ava { width: 60px; height: 60px; border-radius: 18px; background: rgba(255,255,255,.75); display: grid; place-items: end center; overflow: hidden; }
+.w-glass .insp h2 { margin: 0; font-size: 22px; } .w-glass .insp .who small { color: #5c636d; }
+.w-glass .card { background: rgba(255,255,255,.7); border-radius: 18px; padding: 14px; }
+.w-glass .card b { font-size: 14px; } .w-glass .card.t-attention b { color: #d70015; } .w-glass .card.t-results b { color: #0060df; }
+.w-glass .card p { margin: 5px 0 12px; font-size: 13px; line-height: 1.6; color: #3a3f47; }
+.w-glass .gbtn { display: inline-block; padding: 7px 16px; border-radius: 16px; background: #1c1e22; color: #fff; font-size: 13px; font-weight: 600; margin-right: 6px; }
+.w-glass .gbtn.sec { background: rgba(255,255,255,.85); color: #1c1e22; }
+.w-glass .queue { display: flex; flex-direction: column; gap: 6px; }
+.w-glass .queue div { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 14px; font-size: 13px; cursor: pointer; }
+.w-glass .queue div.on { background: rgba(255,255,255,.75); }
+.w-glass .queue small { margin-left: auto; color: #5c636d; font-size: 11.5px; }
+.w-glass .queue h6 { margin: 4px 8px 0; font-size: 11.5px; color: #5c636d; font-weight: 600; }
+.w-glass .orn { left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; gap: 6px; padding: 8px; border-radius: 26px; }
+.w-glass .orn span { padding: 9px 16px; border-radius: 18px; font-size: 13px; color: #2a2e34; }
+.w-glass .orn span.on { background: rgba(255,255,255,.85); font-weight: 600; }
+.w-glass .orn span b { background: #ff3b30; color: #fff; border-radius: 8px; font-size: 10px; padding: 0 5px; margin-left: 4px; }
+`;
+function glass() {
+  const t = byId[selected], n = nowCopy(t);
+  return `<div class="win w-glass"><div class="wall"></div>
+    <div class="pane rail"><i class="on">⌂</i><i>☾</i><i>▤</i><i>✎</i><i>◷</i><i>⚙</i></div>
+    <div class="pane title"><b>우리 사무실</b><span>5개 프로젝트 · 4명 작업 중</span><span class="pill">당근이 기다려요</span></div>
+    <div class="stagewrap"><div class="slab">${office({ pet: 46 })}</div></div>
+    <div class="pane insp"><div class="who"><div class="ava">${spr(t.p, t.status, 56)}</div><div><h2>${t.name}</h2><small>${PROV[t.p]} · ${t.project}</small></div></div>
+      <div class="card t-${t.group}"><b>${n.title}</b><p>${esc(n.body)}</p><span class="gbtn">${n.action}</span><span class="gbtn sec">대화 보기</span></div>
+      <div class="card" style="padding:12px 14px"><small style="color:#5c636d;font-size:11.5px">내가 남긴 요청</small><div style="font-size:13px;margin-top:3px">${esc(t.req)}</div></div>
+      <div class="queue"><h6>다음 할 일</h6>${TEAM.slice(0, 4).map((x) => `<div class="${x.id === selected ? 'on' : ''}" data-pick="${x.id}">${spr(x.p, x.status, 28)}<b>${x.name}</b><small>${GROUP[x.group]}</small></div>`).join('')}</div></div>
+    <div class="pane orn"><span class="on">사무실</span><span>라운지</span><span>보관</span><span>✉ 소식<b>1</b></span><span>⌕ ⌘K</span><span>⤢ 모두 보기</span></div>
+  </div>`;
+}
+
+/* ═════════════ catalog ═════════════ */
+const THEMES = [
+  { id: 'sonoma', name: '순정 맥', en: 'Sonoma Native', swatch: 'linear-gradient(90deg,#e8e8ec 0 30%,#fff 30% 72%,#007aff 72%)', css: sonomaCSS, render: sonoma,
+    idea: '진짜 macOS 앱처럼 보이는 3단 분할 화면. 반투명 소스 목록, 통합 툴바, 세그먼트 컨트롤, 시스템 설정식 묶음 상세.',
+    why: '개발자가 하루 종일 쓰는 다른 Mac 앱과 나란히 있어도 어색하지 않아요. 사무실 그림만 따뜻하고 나머지는 시스템이 그려 준 것처럼 조용해요.',
+    new: ['할 일·프로젝트가 왼쪽 소스 목록 항목이 되어 클릭 한 번으로 필터', '상세는 시스템 설정처럼 묶음 카드', '라이트 기본, 다크는 시스템을 따라감'] },
+  { id: 'toy', name: '책상 위 기계', en: 'Desk Toy', swatch: 'linear-gradient(90deg,#d9d6cf 0 40%,#ff6a3d 40% 62%,#1c2a24 62%)', css: toyCSS, render: toy,
+    idea: '사무실을 들여다보는 작은 하드웨어. 키캡 버튼, LCD 상태창, 줌 다이얼, 라벨 테이프 명패, 인덱스 카드 명단.',
+    why: '“에이전트를 키우는 작은 사무실”이라는 장난감 같은 정체성을 기계로 번역했어요. J/K/R/I 단축키가 실제 키로 보여서 저절로 배워져요.',
+    new: ['단축키를 물리 키로 노출', 'LCD 한 줄에 동료·호출·사용량 요약', '동료는 할 일 순서의 인덱스 카드'] },
+  { id: 'plat', name: '픽셀 운영체제', en: 'Platinum OS', swatch: 'linear-gradient(90deg,#6f7fa6 0 35%,#dedede 35% 80%,#000 80%)', css: platCSS, render: plat,
+    idea: '앱 전체가 90년대 Mac처럼 생긴 작은 운영체제. 메뉴 막대, 줄무늬 제목 막대, 여러 창, 바탕화면 아이콘, 리스트 보기.',
+    why: '픽셀 캐릭터와 가장 자연스럽게 맞는 세계관이에요. 사무실·명단·업무 카드·라운지를 각각 창으로 띄워 여러 정보를 한 화면에 둬요.',
+    new: ['정보 단위가 창 하나씩: 겹치고 옮길 수 있는 구조', 'Finder식 리스트 보기로 할 일 순서', '도움말 풍선 스타일 말풍선'] },
+  { id: 'studio', name: '스튜디오 트랙', en: 'Studio Tracks', swatch: 'linear-gradient(90deg,#1b1c1f 0 40%,#63e6be 40% 60%,#3c5a8c 60%)', css: studioCSS, render: studio,
+    idea: 'Logic·Final Cut 같은 프로 앱 문법. 가운데 뷰어(사무실), 오른쪽 접히는 인스펙터, 아래 동료별 활동 트랙과 “지금” 재생 막대.',
+    why: '여러 에이전트를 동시에 지휘하는 사람에게는 “언제부터 누가 무엇을 했나”가 중요해요. 시간축 트랙이 그걸 한눈에 보여 줘요.',
+    new: ['동료별 지난 2시간 활동 트랙(요청·작업·호출·응답)', 'LIVE 표시와 시각을 LCD로', '사용 한도를 라이브러리 패널에 상시 표시'] },
+  { id: 'note', name: '업무 수첩', en: 'Notebook', swatch: 'linear-gradient(90deg,#f3f4f1 0 30%,#fdfdfb 30% 75%,#1f3d8a 75%)', css: noteCSS, render: note,
+    idea: '할 일 앱처럼 읽히는 사무실. 큰 날짜, 오늘의 사무실 삽화, 동그라미 체크 목록, 펼친 페이지 같은 상세.',
+    why: '앱의 핵심 흐름(기다림 → 결과 → 작업 중)을 할 일 목록 그대로 보여 줘요. 체크가 곧 “읽음”이라 처리 감각이 분명해요.',
+    new: ['사무실은 오늘 페이지의 삽화로 축소', '할 일 행 체크 = 읽음 처리', '메모·요청을 수첩 페이지처럼'] },
+  { id: 'glass', name: '유리 디오라마', en: 'Glass Diorama', swatch: 'linear-gradient(90deg,#f6d9b8 0 35%,#ffffffaa 35% 70%,#1c1e22 70%)', css: glassCSS, render: glass,
+    idea: '바탕화면 위에 떠 있는 사무실 미니어처와 유리 패널. 왼쪽 원형 탭, 오른쪽 상세 카드, 아래 가운데 장식 툴바.',
+    why: '사무실을 “화면 속 그림”이 아니라 책상 위 모형처럼 보여 줘요. 창 테두리 대신 떠 있는 패널이라 바탕화면 펫·미니 모드와 이어져요.',
+    new: ['기울어진 두께감 있는 사무실 판', '도구는 아래 가운데 한 줄로 모음', '오른쪽 카드에 다음 할 일 큐'] },
+];
+document.head.insertAdjacentHTML('beforeend', `<style>${THEMES.map((t) => t.css).join('\n')}</style>`);
+
+const stage = document.getElementById('stage');
+const picker = document.getElementById('picker');
+const notes = document.getElementById('notes');
+const grid = document.getElementById('grid');
+let current = 'sonoma', actual = false, gridOn = false;
+try { const h = location.hash.slice(1); if (THEMES.some((t) => t.id === h)) current = h; } catch {}
+
+function fit(box, win) { const s = box.clientWidth / 1280; win.style.transform = `scale(${s})`; return s; }
+function draw() {
+  const th = THEMES.find((t) => t.id === current);
+  stage.innerHTML = th.render();
+  const win = stage.firstElementChild;
+  if (actual) { win.style.transform = 'none'; stage.style.height = '800px'; stage.classList.add('actual'); win.style.position = 'relative'; }
+  else { stage.classList.remove('actual'); win.style.position = 'absolute'; stage.style.height = 800 * fit(stage, win) + 'px'; }
+  picker.querySelectorAll('button[data-id]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.id === current && !gridOn)));
+  notes.innerHTML = `<section><h3>방향</h3><h2>${th.name}</h2><div class="en">${th.en}</div><p style="margin-top:8px">${th.idea}</p></section>
+    <section><h3>이 앱에 어울리는 이유</h3><p>${th.why}</p></section>
+    <section><h3>새로 제안하는 경험</h3><ul>${th.new.map((x) => `<li>${x}</li>`).join('')}</ul></section>`;
+}
+function drawGrid() {
+  grid.innerHTML = THEMES.map((t) => `<button type="button" class="grid-card" data-open="${t.id}"><div class="thumb">${t.render()}</div><b>${t.name}</b><span>${t.en} · ${t.idea.split('.')[0]}</span></button>`).join('');
+  grid.querySelectorAll('.thumb').forEach((th) => fit(th, th.firstElementChild));
+}
+picker.innerHTML = THEMES.map((t) => `<button type="button" data-id="${t.id}"><i style="background:${t.swatch}"></i>${t.name}</button>`).join('') + `<button type="button" class="all" id="allBtn" aria-pressed="false">한눈에 비교</button>`;
+picker.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.id === 'allBtn') { gridOn = !gridOn; b.setAttribute('aria-pressed', String(gridOn)); }
+  else { current = b.dataset.id; gridOn = false; document.getElementById('allBtn').setAttribute('aria-pressed', 'false'); try { history.replaceState(null, '', '#' + current); } catch {} }
+  toggleGrid();
+});
+function toggleGrid() {
+  grid.classList.toggle('on', gridOn);
+  [stage, notes, document.querySelector('.toolbar')].forEach((el) => (el.hidden = gridOn));
+  if (gridOn) drawGrid(); else draw();
+}
+grid.addEventListener('click', (e) => { const c = e.target.closest('[data-open]'); if (!c) return; current = c.dataset.open; gridOn = false; document.getElementById('allBtn').setAttribute('aria-pressed', 'false'); toggleGrid(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+stage.addEventListener('click', (e) => { const p = e.target.closest('[data-pick]'); if (!p) return; selected = p.dataset.pick; draw(); });
+document.getElementById('sizeBtn').addEventListener('click', (e) => { actual = !actual; e.target.textContent = actual ? '화면에 맞추기' : '실제 크기로 보기'; draw(); });
+addEventListener('resize', () => (gridOn ? drawGrid() : draw()));
+draw();
+</script>

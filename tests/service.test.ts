@@ -75,6 +75,34 @@ test('Stopping the collector ends polling without touching the closed store', as
   }
 });
 
+test('Reordering desks is one validated call and one snapshot', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-reorder-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  try {
+    const sessions = ['a', 'b'].map((id) =>
+      parseRecords([{ type: 'session_meta', payload: { id, cwd: '/test/project' } }], {
+        provider: 'codex',
+        sourcePath: `/test/${id}.jsonl`,
+        mtime: Date.now(),
+      }),
+    );
+    service.store.upsert(sessions, 'codex');
+    const seats = (snapshot: Snapshot) =>
+      [...snapshot.sessions].sort((x, y) => x.officeSeat! - y.officeSeat!).map((s) => s.id);
+    const first = seats((await service.call('snapshot', [])) as Snapshot);
+    let emitted = 0;
+    service.on('snapshot', () => emitted++);
+    const snapshot = (await service.call('reorderSeats', [[...first].reverse()])) as Snapshot;
+    assert.deepEqual(seats(snapshot), [...first].reverse());
+    assert.equal(emitted, 1);
+    for (const args of [['a'], [[1]], [Array.from({ length: 501 }, () => first[0])]])
+      await assert.rejects(service.call('reorderSeats', args));
+    assert.equal(emitted, 1, 'a refused request emits nothing');
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
 test('Pinning a persona is one validated call and one snapshot; identities are read-only', async () => {
   const temp = await mkdtemp(path.join(os.tmpdir(), 'office-pin-'));
   const service = new OfficeService(path.join(temp, 'data'), temp);
@@ -111,6 +139,96 @@ test('Pinning a persona is one validated call and one snapshot; identities are r
     for (const args of [[ids[0]], [[1]], [Array.from({ length: 501 }, () => ids[0])]])
       await assert.rejects(service.call('identities', args));
     assert.equal(emitted, 1);
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test('The view preferences of #228 save, round-trip, and refuse out-of-range values', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-view-prefs-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  try {
+    // Absent before anyone chose: the defaults stay implicit (viewPrefs fills them in).
+    const before = service.store.preferences();
+    assert.equal(before.tinyNames, undefined);
+    assert.equal(before.helperStackAt, undefined);
+    const patch = {
+      tinyNames: false,
+      tinyFinalDot: false,
+      dockPill: 'hover',
+      dockPillResetAt: 1_700_000_000_000,
+      panelWidthsResetAt: 1_700_000_000_001,
+      readOnOpen: false,
+      readDwellSeconds: 1.5,
+      helperDesks: false,
+      helperStackAt: 2,
+      helperRetainMinutes: 120,
+    };
+    const saved = (await service.call('preferences', [patch])) as Snapshot;
+    for (const [key, value] of Object.entries(patch))
+      assert.equal(saved.preferences[key as keyof typeof patch], value, key);
+    for (const bad of [
+      { dockPill: 'sometimes' },
+      { helperStackAt: 1 },
+      { helperStackAt: 9 },
+      { helperRetainMinutes: 1 },
+      { readDwellSeconds: -1 },
+      { readDwellSeconds: 11 },
+      { tinyNames: 'no' },
+      { dockPillResetAt: -5 },
+    ])
+      await assert.rejects(service.call('preferences', [bad]), JSON.stringify(bad));
+  } finally {
+    service.stop();
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test('Screen choices (#324) save mode by mode, merge deeply, and refuse unknown values', async () => {
+  const temp = await mkdtemp(path.join(os.tmpdir(), 'office-views-'));
+  const service = new OfficeService(path.join(temp, 'data'), temp);
+  try {
+    assert.equal(service.store.preferences().views, undefined);
+    const call = async (views: unknown) =>
+      ((await service.call('preferences', [{ views }])) as Snapshot).preferences.views;
+    assert.deepEqual(await call({ pet: { tally: false, tallyGroups: ['attention'] } }), {
+      pet: { tally: false, tallyGroups: ['attention'] },
+    });
+    // Another key of the same mode, then another mode: nothing chosen before is lost.
+    await call({ pet: { name: 'always' } });
+    assert.deepEqual(await call({ office: { branch: false }, tiny: { effects: false } }), {
+      pet: { tally: false, tallyGroups: ['attention'], name: 'always' },
+      office: { branch: false },
+      tiny: { effects: false },
+    });
+    // The row's and tiny's numbers pill: saved beside the screen's other choices.
+    await call({ dock: { tally: false } });
+    assert.deepEqual(await call({ tiny: { tally: false } }), {
+      pet: { tally: false, tallyGroups: ['attention'], name: 'always' },
+      office: { branch: false },
+      tiny: { effects: false, tally: false },
+      dock: { tally: false },
+    });
+    // A patch without views leaves them as they are.
+    await service.call('preferences', [{ tinyNames: false }]);
+    assert.deepEqual(service.store.preferences().views?.office, { branch: false });
+    for (const bad of [
+      { pet: { tallyGroups: ['resting'] } },
+      { pet: { tallyGroups: ['attention', 'results', 'working', 'standby', 'attention'] } },
+      { pet: { name: 'sometimes' } },
+      { pet: { petting: 'yes' } },
+      { pet: { size: 2 } },
+      { dock: { hideRead: 1 } },
+      { dock: { tally: 'on' } },
+      { dock: { tallyGroups: ['working'] } },
+      { tiny: { tally: 1 } },
+      { tiny: { branch: false } },
+      { office: { hideRead: false } },
+      { card: { tally: true } },
+    ])
+      await assert.rejects(service.call('preferences', [{ views: bad }]), JSON.stringify(bad));
+    assert.deepEqual(service.store.preferences().views?.pet?.name, 'always');
   } finally {
     service.stop();
     await rm(temp, { recursive: true, force: true });

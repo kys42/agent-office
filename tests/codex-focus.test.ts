@@ -2,11 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   codexScreenPids,
+  codexScreens,
   codexTitleThread,
   findCodexTerminal,
+  lookupCodexTerminal,
   resolveCodexTitleThread,
 } from '../desktop/codex-focus.js';
 import { codexTarget } from '../desktop/codex-queue.js';
+import { codexLiveness } from '../desktop/launch-guard.js';
 import { focusTerminal, type TerminalDeps } from '../desktop/terminals.js';
 import { focusLine, focusName } from '../src/shared/terminal-target.js';
 
@@ -72,6 +75,8 @@ function fixture(
           return `4242 ttys012 /bin/codex\n5000 ?? /bin/codex\n${options.duplicate ? '4243 ttys013 /bin/codex' : ''}`;
         if (args.includes('pid=,ppid=,tty=,comm='))
           return `4242 4000 ttys012 /bin/codex\n4000 3146 ttys012 /bin/zsh\n4243 4001 ttys013 /bin/codex\n4001 3146 ttys013 /bin/zsh\n3146 1 ?? ${options.owner ?? (options.host === 'tmux' ? '/bin/tmux' : '/Applications/Orca.app/Contents/MacOS/Orca')}`;
+        if (args.includes('pid=,ppid=,comm='))
+          return '7000 6999 /bin/tmux\n6999 1 /Applications/Ghostty.app/Contents/MacOS/ghostty';
         if (args.includes('lstart='))
           return options.reused && ++starts > 1 ? 'Wed Oct 7 10:00:00 2026' : START;
         if (args.includes('stat=,pgid=,tpgid=')) return options.stat ?? `S+ ${pid} ${pid}`;
@@ -125,6 +130,7 @@ function fixture(
         if (args.includes('switch'))
           return JSON.stringify({ ok: true, result: { focus: { navigated: true } } });
       }
+      if (file === '/bin/tmux' && args.includes('list-clients')) return '/dev/ttys020\t7000\t1\n';
       if (file === '/bin/tmux' && args.includes('display-message'))
         return args.at(-1) === '#{pane_title}' ? title : '/dev/ttys012\twork:0.3';
       if (
@@ -177,6 +183,27 @@ test('Resolve only unique full live IDs, rejecting collisions, invalid locks and
   assert.equal(resolveCodexTitleThread(reference, new Set([THREAD, OTHER])), null);
   assert.equal(resolveCodexTitleThread(reference, new Set()), null);
   assert.equal(resolveCodexTitleThread(`${THREAD.slice(0, 12)}...`, new Set([THREAD])), null);
+});
+
+test('Action Required title decoration preserves the leading thread identity', async () => {
+  for (const marker of ['.', '!']) {
+    for (const reference of [THREAD, `${THREAD.slice(0, 29)}...`]) {
+      const title = `[ ${marker} ] Action Required | ${reference} | project | task`;
+      assert.equal(codexTitleThread(title), reference);
+      const f = fixture({ title });
+      assert.equal(
+        (await findCodexTerminal(THREAD, { deps: f.deps, fresh: true }))?.threadId,
+        THREAD,
+      );
+    }
+  }
+  for (const title of [
+    `Action Required | ${THREAD}`,
+    `[ x ] Action Required | ${THREAD}`,
+    `[ ! ] Action Required | task | ${THREAD}`,
+    `[ ! ] Action Required | [ . ] Action Required | ${THREAD}`,
+  ])
+    assert.equal(codexTitleThread(title), null, title);
 });
 
 test('Real 0.162.1 abbreviated title resolves to its live thread and focuses Orca or tmux', async () => {
@@ -361,4 +388,59 @@ test('A focusable Codex target still sends through its queue; screen labels do n
   const unavailable = codexTarget(null, false);
   assert.equal(unavailable.canSend, false);
   assert.equal(unavailable.canFocus, false);
+});
+
+test('lookupCodexTerminal tells no screen from an ambiguous or unreadable one', async () => {
+  const kind = async (options: Parameters<typeof fixture>[0], fresh = true) =>
+    (await lookupCodexTerminal(THREAD, { deps: fixture(options).deps, fresh })).kind;
+  assert.equal(await kind({}), 'found');
+  assert.equal(await kind({}, false), 'found');
+  // Every Codex screen was read and shows another thread: nothing there.
+  assert.equal(await kind({ title: `${OTHER} | task`, loaded: [OTHER] }), 'none');
+  // Could be this thread somewhere: never "none".
+  for (const options of [
+    { duplicate: true },
+    { duplicate: true, secondFailed: true },
+    { closed: true },
+    { reused: true },
+    { owner: '/bin/screen' },
+    { stat: 'T 4242 4242' },
+    { title: 'zsh' },
+    { failed: true },
+  ])
+    assert.equal(await kind(options), 'unknown', JSON.stringify(options));
+});
+
+test('Codex liveness for a launch: any verified screen of the thread means running', async () => {
+  const kind = async (options: Parameters<typeof fixture>[0], fresh = true) =>
+    // The screens read are macOS terminals: pinned so a Linux CI runner proves absence the same way.
+    (
+      await codexLiveness.lookup(THREAD, fresh, {
+        ...fixture(options).deps,
+        platform: 'darwin',
+      } as never)
+    ).kind;
+  assert.equal(await kind({}), 'found');
+  // Two screens of the thread, or one plus an unreadable one: no single place to go to, but
+  // it certainly runs, so a launch must not start it again.
+  assert.equal(await kind({ duplicate: true }), 'found');
+  assert.equal(await kind({ duplicate: true }, false), 'found');
+  assert.equal(await kind({ duplicate: true, secondFailed: true }), 'found');
+  assert.equal(await kind({ title: `${OTHER} | task`, loaded: [OTHER] }), 'none');
+  // Nothing verified shows it, but something could: unknown, never none.
+  for (const options of [{ closed: true }, { reused: true }, { title: 'zsh' }, { failed: true }])
+    assert.equal(await kind(options), 'unknown', JSON.stringify(options));
+});
+
+test('Too many Codex screens to read is unknown, never "no screen"', async () => {
+  const table = Array.from({ length: 65 }, (_, i) => `${5000 + i} ttys${100 + i} /bin/codex`).join(
+    '\n',
+  );
+  assert.deepEqual(codexScreens(table), { pids: [], oversized: true });
+  assert.deepEqual(codexScreenPids(table), []);
+  const f = fixture();
+  const run = f.deps.run;
+  f.deps.run = async (file, args, options) =>
+    file === '/bin/ps' && args.includes('pid=,tty=,comm=') ? table : run(file, args, options);
+  assert.equal((await lookupCodexTerminal(THREAD, { deps: f.deps, fresh: true })).kind, 'unknown');
 });

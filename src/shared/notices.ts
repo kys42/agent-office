@@ -4,6 +4,7 @@ import { messageExcerpt, sessionActivity } from './activity';
 import { getLocale, m, messagesFor, type Locale } from './i18n';
 import { liveLabels } from './labels';
 import { CANONICAL, canonical, localizeText } from './canonical';
+import { isRemoteId } from './federation';
 export const NOTICE_LABELS: Record<NoticeKind, string> = liveLabels((t) => t.shared.notice.label);
 export const noticeVersion = (text: string) => {
   let n = 2166136261;
@@ -132,6 +133,22 @@ export const isAttentionNotice = (n: OfficeNotice) =>
   !n.resolvedAt && (n.kind === 'attention' || n.kind === 'error');
 export const isInboxNotice = (n: OfficeNotice) =>
   isAttentionNotice(n) || (!n.background && isFinalNotice(n));
+/**
+ * What opening a colleague's work card reads: the unread final replies of all its runs. Calls
+ * and errors stay until handled, and a remote office's notices are read-only here.
+ */
+export const cardReadNotices = (notices: OfficeNotice[], memberIds: Iterable<string>) => {
+  const ids = new Set(memberIds);
+  return notices.filter(
+    (n) =>
+      ids.has(n.sessionId) &&
+      !n.seenAt &&
+      isInboxNotice(n) &&
+      isFinalNotice(n) &&
+      !isRemoteId(n.id) &&
+      !isRemoteId(n.sessionId),
+  );
+};
 export const unreadNoticeCount = (notices: OfficeNotice[]) =>
   notices.filter((n) => !n.seenAt && isInboxNotice(n)).length;
 export const noticeLabel = (n: OfficeNotice) =>
