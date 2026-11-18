@@ -78,11 +78,18 @@ try {
 `;
 }
 
+/**
+ * How long the bridge may take to vouch for the pipe's owner. Each bridge starts Windows
+ * PowerShell, compiles its helper type (`Add-Type`) and asks CIM, Appx and Authenticode: with a
+ * cold PowerShell that alone has taken over 6 s on CI runners, failing a healthy send (#388).
+ */
+export const PIPE_VERIFY_TIMEOUT = 15_000;
+
 /** Generic only for isolated pipe fixtures; production always supplies the fixed Codex pipe. */
 export async function verifiedWindowsPipe(
   pipeName: string,
   validate: (owner: WindowsPipeOwner) => boolean,
-  timeout = 6000,
+  timeout = PIPE_VERIFY_TIMEOUT,
 ): Promise<Duplex> {
   const shell = path.win32.join(
     process.env.SystemRoot || 'C:\\Windows',
