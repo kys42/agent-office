@@ -440,3 +440,36 @@ test('the core offers the built-in terminal only while it is on', async () => {
   // Reserved like a Terminal window: a second start right away is cautioned.
   assert.equal((await core.guard(NEW)(true)).state, 'open');
 });
+
+test('a started session opens its window; a remote office launch opens nothing here', async () => {
+  const opened: string[] = [];
+  const { deps } = destinationDeps({ opened: (id) => void opened.push(id) });
+  const d = builtinDestination(deps);
+  await d.start(NEW, { probe: await d.probe(NEW, true), hold: () => {} });
+  assert.deepEqual(opened, ['ao-test']);
+  const remote = { ...NEW, background: true };
+  await d.start(remote, { probe: await d.probe(remote, true), hold: () => {} });
+  assert.deepEqual(opened, ['ao-test']);
+});
+
+test('a session is looked up, ended and viewed only through a daemon that runs', async () => {
+  const w = wired();
+  await w.builtin.create({ id: 'ao-k', argv: ['/bin/sh'], cwd: '/tmp', cols: 40, rows: 5 });
+  assert.equal((await w.builtin.session('ao-k'))?.cwd, '/tmp');
+  assert.equal(await w.builtin.session('nope'), null);
+  const view = await w.builtin.connectView();
+  assert.equal((await view.list()).sessions.length, 1);
+  view.close();
+  assert.equal(await w.builtin.kill('ao-k'), true);
+  assert.deepEqual(w.t.groupSignals.at(-1), [w.t.ptys[0].pid, 'SIGHUP']);
+  w.t.ptys[0].exit(0);
+  w.builtin.close();
+  await w.t.host.shutdown();
+  const none = new TermBuiltin({
+    dataDir: '/nonexistent',
+    platform: 'darwin',
+    socketExists: () => false,
+  });
+  await assert.rejects(none.connectView(), (e: unknown) => (e as TermHostError).absent);
+  await assert.rejects(none.kill('x'), (e: unknown) => (e as TermHostError).absent);
+});

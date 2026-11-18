@@ -29,4 +29,21 @@ export const shell = {
   gone: 'That shell is no longer running.',
   hidden: 'The mini terminal cannot open while the screen content is hidden.',
   noPty: 'Could not attach a terminal to the shell.',
+  /** The built-in terminal's window (#401): one session of the app's own terminal host. */
+  term: {
+    hint: 'Kept by the app: it keeps running when this window or the app closes.',
+    ended: 'The agent has ended.',
+    away: 'Paused while hidden. It shows again when the window does.',
+    killTitle: 'End the agent in the built-in terminal?',
+    killConfirm: (names: string) =>
+      names
+        ? `End the agent of the conversation ‘${names}’?`
+        : 'End the agent in this built-in terminal?',
+    killDetail:
+      'The agent in this terminal stops, and whatever it runs there with it. The conversation is kept and can be continued later. Closing the window alone keeps it running.',
+    killButton: 'End the agent',
+    agent: 'Agent',
+    command: 'Running',
+    hidden: "The built-in terminal can't open while screen content is hidden.",
+  },
 };
