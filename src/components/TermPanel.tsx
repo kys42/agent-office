@@ -6,7 +6,14 @@ import { LoaderCircle, Power, SquareTerminal, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { OnTopButton, usePopupOnTop } from './WindowPin';
-import { clampCols, clampRows, fitSize, OutputFlow, splitInput } from '../shared/mini-shell';
+import {
+  clampCols,
+  clampRows,
+  fitSize,
+  OutputFlow,
+  SHELL_LIMITS,
+  splitInput,
+} from '../shared/mini-shell';
 import { TERM_VIEW_SCROLLBACK, wantsAttach, type TermTarget } from '../shared/term-view';
 
 type Status = 'connecting' | 'live' | 'away' | 'ended' | 'error';
@@ -58,7 +65,21 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       | { kind: 'exit' }
       | { kind: 'lost' };
     const early = new Map<string, Early[]>();
-    const hold = (id: string, event: Early) => early.set(id, [...(early.get(id) ?? []), event]);
+    /** Output held per view, and the views already told to pause while it is held. */
+    const heldBytes = new Map<string, number>();
+    const heldPaused = new Set<string>();
+    const hold = (id: string, event: Early) => {
+      early.set(id, [...(early.get(id) ?? []), event]);
+      if (event.kind !== 'data') return;
+      // Held output counts like drawn-later output: past the high-water mark that view's
+      // connection pauses now, not only once it is replayed (its replay then resumes it).
+      const bytes = (heldBytes.get(id) ?? 0) + event.data.length;
+      heldBytes.set(id, bytes);
+      if (bytes > SHELL_LIMITS.flowHigh && !heldPaused.has(id)) {
+        heldPaused.add(id);
+        void term.command({ type: 'flow', viewId: id, paused: true }).catch(() => {});
+      }
+    };
     const xterm = new XTerm({
       fontFamily: '"JetBrains Mono", Menlo, Monaco, monospace',
       fontSize: 12,
@@ -215,6 +236,8 @@ export default function TermPanel({ target }: { target: TermTarget }) {
       } finally {
         attaching = false;
         early.clear();
+        heldBytes.clear();
+        heldPaused.clear();
       }
     };
     const detach = () => {
