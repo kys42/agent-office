@@ -128,8 +128,11 @@ async function setup(
           if (next.after) Object.assign(w, next.after);
           return { destination: request.destination, ...next, after: undefined };
         },
-        orcaReveal: async () => {
+        orcaReveal: async (id?: string) => {
           w.revealed++;
+          (w.revealedIds ??= []).push(id ?? null);
+          // What main did (#380); left out, the older "Orca is in front" answer.
+          return w.revealAs;
         },
         orcaSleeping: async () => w.sleeping ?? null,
         dock: async (action: string) => {
@@ -351,6 +354,42 @@ test('the card opens the sheet on its conversation; going there jumps to its ter
   await modal.getByRole('button', { name: '그곳으로 이동' }).click();
   await expect(modal).toHaveCount(0);
   expect(await read(page, 'jumps')).toEqual(['demo:0']);
+});
+
+test('running where no tab was confirmed: going to its app first, or a fork right there (#376)', async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 760, height: 900 });
+  const host = { app: 'iterm', canGo: true };
+  await set(page, { duplicate: { resume: { state: 'running', where: 'other', host } } });
+  const modal = await openCard(page);
+  await expect(modal.locator('.launch-notice')).toContainText('iTerm2에서 실행 중');
+  const actions = modal.locator('.launch-actions-main button');
+  await expect(actions).toHaveText(['그곳으로 이동', '복제해서 새로']);
+  await expect(actions.first()).toHaveClass(/primary/);
+  await modal.locator('.launch-actions').getByRole('button', { name: '그곳으로 이동' }).click();
+  await expect(modal).toHaveCount(0);
+  expect(await read(page, 'jumps')).toEqual(['demo:0']);
+});
+
+test('running where nothing can take you there: a fork, never a dead end (#376)', async ({
+  page,
+}) => {
+  await setup(page, '/#card', { width: 760, height: 900 });
+  await set(page, {
+    duplicate: { resume: { state: 'running', where: 'other', host: { app: 'unknown' } } },
+  });
+  const modal = await openCard(page);
+  await expect(modal.locator('.launch-notice')).toContainText('바로 갈 수 없어요');
+  const actions = modal.locator('.launch-actions-main button');
+  await expect(actions).toHaveText(['복제해서 새로']);
+  await expect(actions.first()).toHaveClass(/primary/);
+  await actions.first().click();
+  // The sheet turns into a fork of it: a name, a first message and where to start it.
+  await expect(kind(modal, '복제해서 새로')).toHaveAttribute('aria-pressed', 'true');
+  await expect(modal.getByRole('heading', { name: '어디서' })).toBeVisible();
+  await expect(modal.locator('.launch-notice')).toHaveCount(0);
+  expect(await read(page, 'jumps')).toEqual([]);
 });
 
 test("the card's main action jumps when there is a terminal, and opens the sheet when not", async ({
@@ -579,6 +618,24 @@ test("the card's main action brings Orca forward when its tab sleeps there", asy
   await expect(page.getByRole('dialog', { name: '세션 시작' })).toHaveCount(0);
   expect(await read(page, 'launches')).toEqual([]);
   await expect(actions.getByRole('button', { name: '터미널에서 이어가기' })).toHaveCount(1);
+});
+
+test("the card's main action wakes the sleeping workspace and shows its tab", async ({ page }) => {
+  await setup(
+    page,
+    '/#card',
+    { width: 380, height: 480 },
+    { sleeping: { workspace: 'app', sure: true }, revealAs: 'tab' },
+  );
+  const actions = page.locator('.card-actions');
+  await actions.getByRole('button', { name: 'Orca로 이동' }).click();
+  // The conversation's id only: main finds its workspace itself.
+  await expect.poll(() => read(page, 'revealedIds')).toEqual([expect.any(String)]);
+  await expect(
+    page.getByText("Orca에서 'app' 작업 공간의 이 대화 탭으로 이동했어요"),
+  ).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '세션 시작' })).toHaveCount(0);
+  expect(await read(page, 'launches')).toEqual([]);
 });
 
 test('a refusal because it runs meanwhile offers going there', async ({ page }) => {

@@ -76,8 +76,30 @@ export const tmux: Messages['tmux'] = {
   orcaNotWorkspace:
     '이 폴더는 이 Mac의 Orca 작업 공간 안에 있지 않아요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
   place: { orca: 'Orca', tmux: 'tmux', other: '다른 터미널' },
+  hostPlace: {
+    orca: 'Orca',
+    terminal: '터미널(Terminal)',
+    iterm: 'iTerm2',
+    ghostty: 'Ghostty',
+    cmux: 'cmux',
+    vscode: 'VS Code',
+    warp: 'Warp',
+    tmux: 'tmux',
+    swarm: 'Claude 팀원 tmux',
+    background: 'Claude 백그라운드 세션',
+    app: '다른 앱',
+    unknown: '다른 터미널',
+  },
   runningNotice: (place) =>
     `이 대화는 이미 ${place}에서 실행 중이에요. 새로 띄우지 말고 그쪽으로 이동하세요.`,
+  runningHostNotice: (place) =>
+    `이 대화는 이미 ${place}에서 실행 중이에요. 정확히 어느 탭인지는 확인하지 못했어요. 새로 띄우지 말고 그쪽으로 이동하거나, 복제해서 새로 이어가세요.`,
+  parkedNotice: (place) =>
+    `이 대화는 ${place}의 창에서 백그라운드로 넘겨져(← for agents) 아직 실행 중이에요. 그 창의 Claude 에이전트 보기에서 다시 열거나, 복제해서 새로 이어가세요.`,
+  backgroundNotice:
+    '이 대화는 Claude 백그라운드 세션으로 실행 중이에요. 재접속 명령을 복사해 터미널에서 열거나, 복제해서 새로 이어가세요.',
+  runningNowhereNotice: (place) =>
+    `이 대화는 이미 ${place}에서 실행 중이지만 여기서 그곳으로 바로 갈 수 없어요. 그 창을 직접 찾아 이동하거나, 복제해서 새로 이어가세요.`,
   openNotice: (place) => `${place}에 이 대화가 이미 열려 있어요.`,
   openHint:
     '그 안에서 에이전트가 실행 중인지는 확인하지 못했어요. 새로 띄우면 같은 대화가 두 개 돌 수 있어요.',
@@ -103,5 +125,11 @@ export const tmux: Messages['tmux'] = {
     `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열면 이 대화 탭이 다시 살아나요.`,
   sleepingMaybeRevealed: (workspace) =>
     `Orca를 열었어요. ${workspace ? `'${workspace}' ` : ''}작업 공간을 열어 이 대화가 있는지 확인하세요.`,
+  sleepingTabShown: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' 작업 공간의 ` : ''}이 대화 탭으로 이동했어요.`,
+  sleepingWoken: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' ` : '그 '}작업 공간을 열었어요. 이 대화 탭도 곧 다시 살아나요.`,
+  sleepingMaybeWoken: (workspace) =>
+    `Orca에서 ${workspace ? `'${workspace}' ` : '그 '}작업 공간을 열었어요. 이 대화가 있는지 확인하세요.`,
   tabGone: '그 Orca 탭을 다시 찾지 못했어요. 상태를 다시 확인해주세요.',
 };

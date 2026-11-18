@@ -69,6 +69,14 @@ export const desktop = {
       "Orca didn't answer in time. Bring Orca to the front (its tab may not be shown yet) and try again.",
     orcaRefusedSwitch: (reason: string) => `Orca couldn't switch to that terminal: ${reason}`,
     orcaFocused: 'Switched to the terminal in Orca',
+    /** A running conversation's app brought forward; its window is not known (#376). */
+    appRaised: (app: string) => `Brought ${app} forward. Find this conversation's window there.`,
+    appTabFocused: (app: string) => `Switched to its tab in ${app}`,
+    /** After going to a window that moved the conversation to the background. */
+    parkedHint: "It is in Claude's agents view there: press Enter to open it again.",
+    /** A running conversation whose place cannot be brought forward from here. */
+    noWay:
+      "This conversation is running somewhere this app can't bring forward. Find its window yourself, or fork it to continue in a new session.",
     tmuxFocused: (label: string, app: string) => `Switched to tmux pane ${label} in ${app}`,
     /** No client was attached, so a new Terminal window was opened attached to the session. */
     tmuxAttached: (label: string) => `Opened Terminal attached to tmux ${label}`,

@@ -152,10 +152,13 @@ export function cluesMatch(agent: OrcaPsAgent, clues: ConversationClues): boolea
  *   starting the conversation anywhere else could then run it twice (#342 follow-up).
  * - `none`: its folder is in no sleeping local workspace, or Orca has no tab of its agent. A
  *   workspace with terminals is left to `terminal list` (the Orca tab check).
+ * `workspace` is the name shown; `path` the workspace's folder, which "Go to Orca" wakes (#380);
+ * `paneKey` the matched agent's `<tabId>:<leafId>`, its tab once the workspace is awake. Both stay
+ * in main: a window only ever gets the name.
  */
 export type SleepingLookup =
-  | { kind: 'found'; workspace: string }
-  | { kind: 'unknown'; workspace: string; count?: number }
+  | { kind: 'found'; workspace: string; path: string; paneKey: string }
+  | { kind: 'unknown'; workspace: string; path: string; count?: number }
   | { kind: 'none' };
 
 export function matchSleeping(
@@ -175,6 +178,7 @@ export function matchSleeping(
   const unknown: SleepingLookup = {
     kind: 'unknown',
     workspace: home.name,
+    path: home.path,
     ...(agents.length > 0 && { count: agents.length }),
   };
   if (!agents.length) return unknown;
@@ -191,5 +195,5 @@ export function matchSleeping(
       holdsFolder(home.path, o.cwd),
   );
   if (rivals.some((o) => cluesMatch(matched[0], conversationClues(o)))) return unknown;
-  return { kind: 'found', workspace: home.name };
+  return { kind: 'found', workspace: home.name, path: home.path, paneKey: matched[0].paneKey };
 }

@@ -84,8 +84,35 @@ export const tmux = {
     'This folder is not in an Orca workspace on this Mac. Add the project in Orca first, or start it in tmux.',
   /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
   place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
+  /** The app a running conversation was found in when no tab of it was verified (#376). */
+  hostPlace: {
+    orca: 'Orca',
+    terminal: 'Terminal',
+    iterm: 'iTerm2',
+    ghostty: 'Ghostty',
+    cmux: 'cmux',
+    vscode: 'VS Code',
+    warp: 'Warp',
+    tmux: 'tmux',
+    swarm: 'a Claude teammate tmux',
+    background: 'a Claude background session',
+    app: 'another app',
+    unknown: 'another terminal',
+  },
   runningNotice: (place: string) =>
     `This conversation is already running in ${place}. Go to it instead of starting it again.`,
+  /** Its process runs there, but which tab or window was not verified. */
+  runningHostNotice: (place: string) =>
+    `This conversation is already running in ${place}, though its exact tab could not be confirmed. Go there instead of starting it again, or fork it to continue in a new session.`,
+  /** Moved to the background (← for agents) from a window in `place`. */
+  parkedNotice: (place: string) =>
+    `This conversation was moved to the background from a window in ${place} and is still running there. Open it again from Claude's agents view in that window, or fork it to continue in a new session.`,
+  /** A background session no window shows. */
+  backgroundNotice:
+    'This conversation is running as a Claude background session. Copy its attach command to open it in a terminal, or fork it to continue in a new session.',
+  /** Running, but nowhere this app can bring forward. */
+  runningNowhereNotice: (place: string) =>
+    `This conversation is already running in ${place}, but this app can't take you there. Find that window yourself, or fork it to continue in a new session.`,
   openNotice: (place: string) => `This conversation is already open in ${place}.`,
   openHint:
     'Its agent could not be confirmed running there. Starting it again may run the same conversation twice.',
@@ -118,5 +145,16 @@ export const tmux = {
   /** The same, where the conversation may or may not be in that workspace. */
   sleepingMaybeRevealed: (workspace?: string) =>
     `Opened Orca. Open the ${workspace ? `“${workspace}” ` : ''}workspace there to check whether this conversation is in it.`,
+  /** The card's main action woke the sleeping workspace and switched to this conversation's tab (#380). */
+  sleepingTabShown: (workspace?: string) =>
+    workspace
+      ? `Went to this conversation’s tab in the “${workspace}” workspace in Orca.`
+      : 'Went to this conversation’s tab in Orca.',
+  /** It woke the workspace where this conversation’s tab sleeps; the tab was not seen back yet. */
+  sleepingWoken: (workspace?: string) =>
+    `Opened ${workspace ? `the “${workspace}” workspace` : 'its workspace'} in Orca. This conversation’s tab comes back there shortly.`,
+  /** It woke the workspace this conversation may be in. */
+  sleepingMaybeWoken: (workspace?: string) =>
+    `Opened ${workspace ? `the “${workspace}” workspace` : 'that workspace'} in Orca. Check whether this conversation is in it.`,
   tabGone: 'That Orca tab could not be found again. Check the status again.',
 };

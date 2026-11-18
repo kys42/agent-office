@@ -1129,6 +1129,7 @@ export default function App() {
             onPrefs={onPrefs}
             session={current}
             sessions={sessions}
+            colleagues={allModel.residents}
             notices={snapshot?.notices ?? []}
             memberIds={ownerOf(current.id)?.resident?.sessionIds ?? [current.id]}
             resident={ownerOf(current.id)}
