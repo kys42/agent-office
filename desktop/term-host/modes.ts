@@ -26,7 +26,16 @@ export interface TerminalModes {
   originMode: boolean;
   reverseWraparound: boolean;
   wraparound: boolean;
+  /** Scroll margins (DECSTBM), 0-based and inclusive; null when they span the whole screen. */
+  scrollRegion: { top: number; bottom: number } | null;
+  /** Where the cursor is on the visible screen, 0-based. */
+  cursor: { x: number; y: number };
 }
+
+type TerminalWithBuffer = Terminal & {
+  // The scroll margins are not in xterm's public API; read the active buffer they live on.
+  _core?: { buffer?: { scrollTop?: unknown; scrollBottom?: unknown } };
+};
 
 const MOUSE_ENCODINGS = {
   1005: 'utf8',
@@ -79,7 +88,18 @@ export class ModeTracker {
       originMode: m.originMode,
       reverseWraparound: m.reverseWraparoundMode,
       wraparound: m.wraparoundMode,
+      scrollRegion: this.scrollRegion(),
+      cursor: { x: this.terminal.buffer.active.cursorX, y: this.terminal.buffer.active.cursorY },
     };
+  }
+
+  private scrollRegion() {
+    const buffer = (this.terminal as TerminalWithBuffer)._core?.buffer;
+    const top = buffer?.scrollTop;
+    const bottom = buffer?.scrollBottom;
+    if (typeof top !== 'number' || typeof bottom !== 'number') return null;
+    if (top === 0 && bottom === this.terminal.rows - 1) return null;
+    return { top, bottom };
   }
 
   private screen(): Screen {
@@ -169,5 +189,13 @@ export function modeSequences(modes: TerminalModes): string {
   if (!modes.cursorVisible) out += '\x1b[?25l';
   if (modes.insertMode) out += '\x1b[4h';
   if (modes.kittyKeyboardFlags > 0) out += `\x1b[=${modes.kittyKeyboardFlags};1u`;
+  const region = modes.scrollRegion;
+  if (region) out += `\x1b[${region.top + 1};${region.bottom + 1}r`;
+  // Setting margins or origin mode homes the cursor: put it back where the snapshot left it
+  // (relative to the top margin while origin mode is on).
+  if (region || modes.originMode) {
+    const row = modes.cursor.y - (modes.originMode && region ? region.top : 0) + 1;
+    out += `\x1b[${row};${modes.cursor.x + 1}H`;
+  }
   return out;
 }

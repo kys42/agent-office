@@ -49,6 +49,8 @@ export interface SessionEvents {
 export class Attachment {
   /** `capturing`: waiting for a snapshot; `live`: forwarding; `lagged`: needs a snapshot. */
   state: 'capturing' | 'live' | 'lagged' = 'capturing';
+  /** No screen has reached the client yet (its attach answer is still being prepared). */
+  initial = true;
   queue: { seq: number; data: Buffer }[] = [];
   queuedBytes = 0;
   constructor(
@@ -80,6 +82,7 @@ export class Session {
   private screen: HeadlessScreen | null;
   /** The last screen, kept after the emulator is freed so a late attach still sees it. */
   private finalRestore: ScreenRestore | null = null;
+  private finalWaiters: (() => void)[] = [];
   private seq = 0;
   private killTimer: NodeJS.Timeout | null = null;
   private killing = false;
@@ -149,6 +152,7 @@ export class Session {
         screen.dispose();
         this.screen = null;
         this.events.exited(this);
+        for (const waiter of this.finalWaiters.splice(0)) waiter();
       });
     }, 20);
   }
@@ -175,10 +179,22 @@ export class Session {
       }
       const restore = screen.snapshot(scrollback);
       attachment.dropThrough(screen.parsedSeq);
+      // Half a sequence at the snapshot point goes first, so the next chunk completes it.
+      const tail = screen.pendingTail();
+      if (tail.length > 0 && attachment.state !== 'lagged') {
+        attachment.queue.unshift({ seq: screen.parsedSeq, data: tail });
+        attachment.queuedBytes += tail.length;
+      }
       done(restore);
     };
     if (this.screen) this.screen.whenParsed(take);
     else queueMicrotask(take);
+  }
+
+  /** Runs `callback` once an ended session's last screen is kept (at once if it already is). */
+  afterFinal(callback: () => void) {
+    if (this.screen) this.finalWaiters.push(callback);
+    else queueMicrotask(callback);
   }
 
   /** The screen of a session that has ended (empty until the emulator has been read). */

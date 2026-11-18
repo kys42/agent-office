@@ -216,7 +216,8 @@ export interface SocketIdentity {
  *   permission error proves nothing and we decline.
  * - The entry is re-checked by inode after the probe and probed again just before the rename,
  *   so a replacement that appeared meanwhile is not destroyed.
- * - `rename` swaps the name in one step (unlink-then-link would leave a gap clients see).
+ * - `rename` swaps the name in one step (unlink-then-link would leave a gap clients see), and
+ *   the result is confirmed again after a short settle, since POSIX has no compare-and-swap.
  * - The departing daemon never removes the public name; the next publisher replaces it.
  *
  * Windows named pipes are exclusive by name and vanish with their process: listening is the
@@ -226,6 +227,7 @@ export async function publishSocket(
   bindPath: string,
   socketPath: string,
   probe: (p: string) => Promise<ProbeOutcome> = probeSocket,
+  settleMs = 200,
 ): Promise<PublishOutcome> {
   if (process.platform === 'win32') return { status: 'published', identity: null };
   const identity = socketIdentity(bindPath, false);
@@ -252,6 +254,10 @@ export async function publishSocket(
     if (second === 'connected') return { status: 'occupied' };
     if (second === 'unknown') return { status: 'inconclusive' };
     renameSync(bindPath, socketPath);
+    // Two daemons replacing the same dead entry can both pass the probes and rename one after
+    // the other: the earlier one notices here that its name was taken and stands down. (A rename
+    // later than this is caught by the daemon's periodic ownership check.)
+    await new Promise((resolve) => setTimeout(resolve, settleMs));
     return confirm(socketPath, identity);
   }
   return { status: 'inconclusive' };

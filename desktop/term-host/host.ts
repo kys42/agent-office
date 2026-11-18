@@ -253,13 +253,17 @@ export class TermHost implements SessionEvents {
       this.disconnect(client);
     };
     if (message.op !== 'hello') return refuse('auth', 'hello first');
-    // About to exit: the client retries and reaches (or starts) the next daemon.
-    if (this.stopping) return refuse('unavailable', 'daemon is stopping');
     if (message.protocol !== TERM_HOST_PROTOCOL) {
       return refuse('version', `daemon speaks protocol ${TERM_HOST_PROTOCOL}`);
     }
     const token = typeof message.token === 'string' ? message.token : '';
     if (!timingSafeEqual(digest(token), this.tokenDigest)) return refuse('auth', 'bad token');
+    // About to exit, or another daemon holds the socket now: the client retries and reaches
+    // (or starts) the one that serves it.
+    if (this.stopping) return refuse('unavailable', 'daemon is stopping');
+    if (this.deps.ownsEndpoint && !this.deps.ownsEndpoint()) {
+      return refuse('unavailable', 'daemon no longer owns its endpoint');
+    }
     client.authed = true;
     client.decoder.maxFrameBytes = MAX_FRAME_BYTES;
     if (client.helloTimer) clearTimeout(client.helloTimer);
@@ -387,11 +391,12 @@ export class TermHost implements SessionEvents {
           ? (scrollback as number)
           : undefined;
     if (!session.live) {
-      return Promise.resolve({
-        session: session.stats(),
-        exit: session.exit,
-        ...session.lastScreen(),
-      });
+      // Just ended: its last screen is kept once the parser has caught up (a moment later).
+      return new Promise((resolve) =>
+        session.afterFinal(() =>
+          resolve({ session: session.stats(), exit: session.exit, ...session.lastScreen() }),
+        ),
+      );
     }
     const previous = client.attachments.get(session.id);
     if (previous) session.attachments.delete(previous);
@@ -405,10 +410,12 @@ export class TermHost implements SessionEvents {
           ...(session.exit ? { exit: session.exit } : {}),
           ...restore,
         };
+        attachment.initial = false;
         // Detached, reattached or ended meanwhile: answer, but this attachment is not live.
         if (client.attachments.get(session.id) !== attachment) return resolve(result);
+        // Fell behind while the snapshot was taken: it gets a newer one after this answer.
+        if (attachment.state !== 'lagged') attachment.state = 'live';
         // The response is sent before any output queued after the snapshot is flushed.
-        attachment.state = 'live';
         resolve(result);
         client.scheduleFlush();
       });
@@ -430,6 +437,8 @@ export class TermHost implements SessionEvents {
     this.deps.log?.(`session ${session.id}: client lagged, sending a snapshot`);
     session.capture(attachment, 0, (restore) => {
       if (client.closed || client.attachments.get(session.id) !== attachment) return;
+      // Fell behind again while this one was taken: skip it and take a newer one.
+      if (attachment.state === 'lagged') return client.scheduleFlush();
       client.send({ t: 'ev', ev: 'snapshot', sessionId: session.id, reason: 'resync', ...restore });
       attachment.state = 'live';
       client.scheduleFlush();
@@ -443,6 +452,16 @@ export class TermHost implements SessionEvents {
       const client = attachment.owner as Client;
       // Output from before the exit goes first, whatever the socket's backlog.
       if (attachment.state === 'live') client.writeOutput(attachment);
+      else if (!attachment.initial) {
+        // Its output was dropped for a snapshot that will not come now: send the last screen.
+        client.send({
+          t: 'ev',
+          ev: 'snapshot',
+          sessionId: session.id,
+          reason: 'resync',
+          ...session.lastScreen(),
+        });
+      }
       client.attachments.delete(session.id);
     }
     session.attachments.clear();
@@ -460,6 +479,12 @@ export class TermHost implements SessionEvents {
       }, this.limits.exitRetentionMs).unref(),
     );
     this.checkIdle();
+  }
+
+  get liveSessions() {
+    let live = 0;
+    for (const session of this.sessions.values()) if (session.live) live++;
+    return live;
   }
 
   list(): ListResult {

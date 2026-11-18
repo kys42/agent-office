@@ -53,8 +53,14 @@ export class TermHostClient {
   private readonly decoder = new FrameDecoder();
   private readonly pending = new Map<
     number,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    { resolve: (value: unknown) => void; reject: (error: Error) => void; attach?: string }
   >();
+  /**
+   * Events for a session that arrive right after its attach answer, held until the caller has
+   * run: whoever awaits `attach` draws the snapshot before its first output, even when the answer
+   * and that output came in one chunk.
+   */
+  private readonly held = new Map<string, (() => void)[]>();
   private nextId = 1;
   private isClosed = false;
   private readonly output = new Set<Listener<[string, Buffer]>>();
@@ -91,7 +97,7 @@ export class TermHostClient {
 
   /** The screen to draw (feed `restoreSequence(result)` to a fresh xterm), then live output. */
   attach(sessionId: string, options: { scrollback?: number } = {}) {
-    return this.request<AttachResult>({ op: 'attach', sessionId, ...options });
+    return this.request<AttachResult>({ op: 'attach', sessionId, ...options }, sessionId);
   }
 
   async detach(sessionId: string) {
@@ -143,14 +149,38 @@ export class TermHostClient {
     this.finish();
   }
 
-  private request<T>(request: Request): Promise<T> {
+  /** Closes without waiting for the other side (it may not be answering at all). */
+  destroy() {
+    this.conn.destroy();
+    this.finish();
+  }
+
+  private request<T>(request: Request, attach?: string): Promise<T> {
     if (this.isClosed) {
       return Promise.reject(new TermHostError('closed', 'terminal host connection closed'));
     }
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, attach });
       this.conn.write(encodeJson({ t: 'req', id, ...request }));
+    });
+  }
+
+  /** Delivers `event` for `sessionId` now, or after the attach answer it follows (see `held`). */
+  private deliver(sessionId: string, event: () => void) {
+    const held = this.held.get(sessionId);
+    if (held) held.push(event);
+    else event();
+  }
+
+  private holdAfterAttach(sessionId: string) {
+    if (this.held.has(sessionId)) return;
+    this.held.set(sessionId, []);
+    // A macrotask: the awaiting caller's continuation (microtasks) runs first.
+    setImmediate(() => {
+      const events = this.held.get(sessionId) ?? [];
+      this.held.delete(sessionId);
+      for (const event of events) event();
     });
   }
 
@@ -164,7 +194,10 @@ export class TermHostClient {
     }
     for (const frame of frames) {
       if (frame.kind === 'data') {
-        for (const listener of this.output) listener(frame.sessionId, frame.data);
+        const { sessionId, data } = frame;
+        this.deliver(sessionId, () => {
+          for (const listener of this.output) listener(sessionId, data);
+        });
         continue;
       }
       const message = frame.message as Record<string, unknown>;
@@ -172,20 +205,25 @@ export class TermHostClient {
         const waiter = this.pending.get(message.id as number);
         if (!waiter) continue;
         this.pending.delete(message.id as number);
-        if (message.ok) waiter.resolve(message.result);
-        else {
+        if (message.ok) {
+          if (waiter.attach) this.holdAfterAttach(waiter.attach);
+          waiter.resolve(message.result);
+        } else {
           const error = message.error as { code: ErrorCode; message: string };
           waiter.reject(new TermHostError(error.code, error.message));
         }
       } else if (message?.t === 'ev' && message.ev === 'exit') {
-        for (const listener of this.exits) {
-          listener(message.sessionId as string, message.exit as ExitInfo);
-        }
+        const sessionId = message.sessionId as string;
+        const exit = message.exit as ExitInfo;
+        this.deliver(sessionId, () => {
+          for (const listener of this.exits) listener(sessionId, exit);
+        });
       } else if (message?.t === 'ev' && message.ev === 'snapshot') {
+        const sessionId = message.sessionId as string;
         const { snapshot, modes, cols, rows } = message as unknown as ScreenRestore;
-        for (const listener of this.resyncs) {
-          listener(message.sessionId as string, { snapshot, modes, cols, rows });
-        }
+        this.deliver(sessionId, () => {
+          for (const listener of this.resyncs) listener(sessionId, { snapshot, modes, cols, rows });
+        });
       }
     }
   }
@@ -245,6 +283,7 @@ export interface ConnectOptions {
 }
 
 const MAX_SPAWNS = 3;
+const HELLO_TIMEOUT_MS = 3_000;
 const RESPAWN_GAP_MS = 750;
 
 /**
@@ -268,7 +307,9 @@ export async function connectTermHost(options: ConnectOptions): Promise<TermHost
     try {
       const client = new TermHostClient(await deps.connect(paths.socket));
       try {
-        await client.hello(token, options.clientName);
+        // A listener that accepts and never answers must not hold us past the deadline.
+        const left = Math.max(1, Math.min(HELLO_TIMEOUT_MS, deadline - deps.now()));
+        await withTimeout(client.hello(token, options.clientName), left, () => client.destroy());
         return client;
       } catch (error) {
         client.close();
@@ -302,6 +343,25 @@ export async function connectTermHost(options: ConnectOptions): Promise<TermHost
     await deps.sleep(delay);
     delay = Math.min(delay * 2, 200);
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, onTimeout: () => void) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      onTimeout();
+      reject(new TermHostError('unavailable', 'terminal host did not answer hello'));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function daemonFlags(options: ConnectOptions['daemonOptions'] = {}) {

@@ -1,5 +1,6 @@
 import serializeModule from '@xterm/addon-serialize';
 import headlessModule, { type Terminal } from '@xterm/headless';
+import { EscapeTail } from './escape-tail.js';
 import { ModeTracker, modeSequences, type TerminalModes } from './modes.js';
 import type { ScreenRestore } from './protocol.js';
 
@@ -28,6 +29,7 @@ export class HeadlessScreen {
   private readonly terminal: Terminal;
   private readonly serializer = new SerializeAddon();
   private readonly modeTracker: ModeTracker;
+  private readonly tail = new EscapeTail();
   private pendingBytes = 0;
   private disposed = false;
   /** Sequence number of the last chunk the parser has finished. */
@@ -58,6 +60,8 @@ export class HeadlessScreen {
     this.terminal.write(data, () => {
       this.pendingBytes -= size;
       this.parsedSeq = seq;
+      // In parse order, so the tail matches the screen a snapshot taken now would show.
+      if (typeof data !== 'string') this.tail.push(data);
     });
     return true;
   }
@@ -75,6 +79,7 @@ export class HeadlessScreen {
   /**
    * The screen as ANSI plus the modes to restore after it. `scrollback` limits history lines
    * (0: the visible screen only, about 8 KB at 200×50); all held lines when omitted.
+   * See `pendingTail` for what must follow it.
    */
   snapshot(scrollback?: number): ScreenRestore {
     const snapshot = this.serializer.serialize({ scrollback, excludeModes: true });
@@ -84,6 +89,11 @@ export class HeadlessScreen {
       cols: this.terminal.cols,
       rows: this.terminal.rows,
     };
+  }
+
+  /** The unfinished sequence the stream is in (see EscapeTail); goes after a snapshot. */
+  pendingTail(): Buffer {
+    return this.tail.pending();
   }
 
   resize(cols: number, rows: number) {

@@ -9,7 +9,8 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 | `daemon.ts` | 진입점. `dist-desktop/term-host.cjs`로 번들되고 앱 실행 파일을 Node로(`ELECTRON_RUN_AS_NODE=1`) 띄워 detached로 돕니다. |
 | `host.ts` | 세션·클라이언트·요청 처리. 소켓과 node-pty 없이 테스트할 수 있게 분리했습니다. |
 | `session.ts` | PTY 하나, 그 헤드리스 화면, 붙은 화면별 출력 대기열, 종료와 kill. |
-| `screen.ts` / `modes.ts` | `@xterm/headless` + serialize 스냅샷, 스냅샷에 담기지 않는 입력 모드 추적과 복원 시퀀스. |
+| `screen.ts` / `modes.ts` | `@xterm/headless` + serialize 스냅샷, 스냅샷에 담기지 않는 입력 모드·스크롤 영역·커서 추적과 복원 시퀀스. |
+| `escape-tail.ts` | 스트림이 걸쳐 있는 미완성 escape 시퀀스·UTF-8 글자 바이트. |
 | `protocol.ts` | 프레이밍, 메시지 타입, `restoreSequence`. |
 | `endpoint.ts` | 소켓·토큰 경로, 0700 디렉터리, 0600 토큰, 소켓 소유권 게시. |
 | `client.ts` | 메인 프로세스용 타입 있는 클라이언트와 `connectTermHost`(붙거나 없으면 띄우기). |
@@ -27,8 +28,11 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 
 - serialize 스냅샷만으로는 TUI가 깨집니다(Superset #541). 그래서 `modes.ts`가 스트림에서 모드를 추적해 스냅샷 뒤에 다시 켭니다. 대상은 bracketed paste 2004, focus 1004, 마우스 9/1000/1002/1003과 인코딩 1005/1006/1015/1016, 커서 키 1, 키패드 66, 커서 표시 25, kitty 키보드(`CSI > u` push/pop/set, 화면별 스택), origin·insert·wraparound입니다.
 - 대체 화면(47/1047/1049)은 serialize가 직접 전환합니다.
+- 스크롤 영역(DECSTBM)은 xterm 내부 버퍼 값을 읽어 다시 설정합니다. 영역 설정이나 origin 모드는 커서를 맨 위로 보내므로, 그 뒤에 커서를 원래 자리(origin 모드면 위 여백 기준)로 되돌립니다.
 - 스냅샷은 출력 청크 번호에 맞춰 찍습니다. 요청 시점까지 파싱이 끝난 다음 찍고, 그 화면에 이미 들어간 대기 청크는 버리므로 빠지거나 두 번 보이는 출력이 없습니다.
+- 출력이 escape 시퀀스나 UTF-8 글자 중간에서 끊긴 시점에 스냅샷을 찍으면, 그 미완성 바이트를 첫 출력으로 보냅니다(`escape-tail.ts`, Orca의 pending escape tail과 같은 이유). 그래야 다음 청크가 `1mRED`처럼 글자로 찍히지 않고 시퀀스를 마칩니다. 64KB를 넘는 미완성 문자열은 버립니다.
 - 프로그램이 동기화 업데이트(2026) 중이면 최대 100ms 기다렸다가 찍습니다.
+- 클라이언트는 attach 응답 바로 뒤에 온 출력·종료·resync를 매크로태스크 하나만큼 붙잡아 둡니다. `await attach()` 한 쪽이 스냅샷을 먼저 그리게 하려는 것입니다.
 
 ## 흐름 제어
 
@@ -36,6 +40,8 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 - 붙은 화면이 없으면 헤드리스 화면에만 넣고 아무것도 보내지 않습니다.
 - 붙어 있으면 4ms 단위로 묶어 세션당 프레임 하나로 보냅니다.
 - 소켓에 512KB 넘게 쌓이면 쓰기를 멈추고 `drain`을 기다립니다. 그동안 한 화면의 대기열이 4MB를 넘으면 버리고, 소켓이 비면 새 스냅샷(`snapshot` 이벤트)을 보냅니다.
+- 스냅샷을 찍는 사이에 상한을 넘기면, 그 스냅샷 뒤에 한 번 더 새 스냅샷을 보냅니다.
+- 이렇게 밀린 화면이 있는 채로 세션이 끝나면, 종료 이벤트 전에 마지막 화면을 보냅니다.
 - xterm은 비동기 파싱이 50MB 밀리면 예외를 냅니다. 그 전에(32MB) 화면 반영만 건너뛰고 `droppedBytes`로 셉니다. 측정에서는 0이었습니다.
 
 ## 수명과 소켓 소유권
@@ -51,6 +57,9 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
   - inode를 다시 확인하고 한 번 더 접속해 본 뒤 `rename` 한 번으로 바꿉니다.
   - 종료하는 데몬은 공개 이름을 지우지 않습니다.
   - 그래서 앱 두 개가 동시에 데몬을 띄워도 하나만 게시하고 나머지는 종료 코드 20으로 끝납니다.
+  - POSIX에는 compare-and-swap rename이 없습니다. 그래서 같은 죽은 소켓을 둘이 동시에 교체하면 둘 다 rename할 수 있습니다. 교체한 쪽은 200ms 뒤 다시 확인하고, 이름을 빼앗겼으면 물러납니다.
+  - 그보다 늦게 빼앗긴 데몬은 2초마다 하는 확인에서 알아챕니다. 그때부터 새 hello와 create를 거절하고, 남은 세션이 끝나면 종료합니다.
+- 클라이언트는 hello에도 남은 시간(최대 3초)을 적용합니다. 받기만 하고 답하지 않는 리스너에 묶이지 않습니다.
 - 세션도 클라이언트도 없으면 60초 뒤 종료합니다. 끝난 세션의 종료 정보와 마지막 화면은 5분 보존하고, 그동안은 종료를 미룹니다.
 - kill은 프로세스 그룹에 SIGHUP을 보냅니다. 3초 안에 안 끝나면 SIGKILL을 보내고, 리더가 끝난 뒤에도 그룹을 SIGKILL로 한 번 더 쓸어 남은 자식을 없앱니다. Windows는 node-pty의 kill을 씁니다.
 - 데몬 종료(유휴, `shutdown`, SIGTERM) 때도 같은 방법으로 모든 세션을 끝냅니다.
@@ -78,13 +87,14 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 - `TERM_HOST_ENTRY=<…/app.asar/dist-desktop/term-host.cjs>`: asar 안의 번들을 씁니다. node-pty `lib`는 asar 안에, prebuild는 unpacked에 둔 배치로 동작을 확인했습니다.
 - `TERM_HOST_SESSIONS`, `TERM_HOST_COLS`, `TERM_HOST_SCROLLBACK`: 메모리 측정 조건을 바꿉니다.
 - 자동 테스트는 다음 두 가지입니다.
-  - `tests/term-host.test.ts`: 가짜 PTY.
+  - `tests/term-host.test.ts`, `tests/term-host-edges.test.ts`: 가짜 PTY.
   - `tests/term-host-daemon.test.ts`: 실제 데몬과 `/bin/sh`. node-pty를 못 불러오거나 Windows면 건너뜁니다.
 
 ## 한계와 다음 단계
 
 - 앱은 아직 이 데몬을 쓰지 않습니다. 2단계에서 실행 코어에 '내장 터미널' destination을 추가하고 카드·창에 xterm으로 붙입니다(`app.getPath('userData')`, `bundledDaemon()`).
-- serialize는 스크롤 영역(DECSTBM)을 복원하지 않습니다. 2단계에서 붙을 때 크기를 한 번 흔들어(SIGWINCH) TUI가 다시 그리게 할 계획입니다.
+- serialize 밖의 상태(문자 집합, 저장된 커서, 탭 정지 등)는 복원하지 않습니다. 2단계에서 붙을 때 크기를 한 번 흔들어(SIGWINCH) TUI가 다시 그리게 할 계획입니다.
+- 스크롤 영역은 xterm 내부 값(`_core.buffer.scrollTop/scrollBottom`)을 읽습니다. 값이 없으면 복원을 건너뜁니다.
 - 옛 프로토콜 데몬의 세션은 새 앱에서 보이지 않습니다(버전별 소켓). 프로토콜을 바꿀 때 이전 방법을 정합니다.
 - Windows named pipe는 이름이 예측 가능하므로, 누가 먼저 같은 이름을 차지하면 토큰이 새어 나갈 수 있습니다. 또 Windows 패키지에는 아직 node-pty가 없습니다.
 - 그룹 밖으로 나간 자손(`setsid`로 새 세션을 만든 데몬형 자식)은 kill이 쓸지 못합니다.

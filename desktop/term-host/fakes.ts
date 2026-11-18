@@ -14,21 +14,21 @@ export class FakePty implements PtyProcess {
   readonly written: Buffer[] = [];
   readonly sizes: [number, number][] = [];
   readonly kills: (string | undefined)[] = [];
-  private data = new Set<(data: string) => void>();
+  private data = new Set<(data: string | Uint8Array) => void>();
   private exits = new Set<(event: { exitCode: number; signal?: number }) => void>();
   constructor(
     readonly file: string,
     readonly args: string[],
     readonly options: { cwd: string; env: Record<string, string>; cols: number; rows: number },
   ) {}
-  onData(callback: (data: string) => void) {
+  onData(callback: (data: string | Uint8Array) => void) {
     this.data.add(callback);
   }
   onExit(callback: (event: { exitCode: number; signal?: number }) => void) {
     this.exits.add(callback);
   }
   /** The program printed `data`. */
-  output(data: string) {
+  output(data: string | Uint8Array) {
     for (const callback of this.data) callback(data);
   }
   /** The program ended. */

@@ -23,6 +23,7 @@ import type { SpawnPty } from './session.js';
 const EXIT_OCCUPIED = 20;
 const EXIT_NOT_PUBLISHED = 21;
 const LOG_LIMIT = 512 * 1024;
+const OWNERSHIP_CHECK_MS = 2_000;
 
 let logged = 0;
 function log(line: string) {
@@ -140,6 +141,15 @@ async function main() {
   }
   identity = outcome.identity;
   log(`serving ${paths.socket}`);
+  // Another daemon took the socket (see endpoint.ts): new clients reach it, not us. Stop once
+  // nothing of ours is left running; until then, keep serving the clients already here.
+  let lostLogged = false;
+  setInterval(() => {
+    if (ownsSocket(paths.socket, identity)) return;
+    if (!lostLogged) log('endpoint taken by another daemon; draining');
+    lostLogged = true;
+    if (host.liveSessions === 0) void host.shutdown().then(() => exit(EXIT_NOT_PUBLISHED));
+  }, OWNERSHIP_CHECK_MS).unref();
   const stop = () => void host.shutdown().then(() => exit(0));
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
