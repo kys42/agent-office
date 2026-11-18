@@ -19,6 +19,7 @@ import {
   Sparkles,
   LayoutGrid,
   Terminal,
+  SquareTerminal,
   Languages,
   X,
   Pencil,
@@ -518,6 +519,22 @@ export function Settings({
                 <p>{s.rhythm.terminalHint}</p>
               </div>
               <Toggle checked={terminalSend} label={s.rhythm.terminal} onChange={onTerminalSend} />
+            </div>
+          )}
+          {terminalSend !== undefined && !isWindows && (
+            <div className="setting-row" data-setting="builtin-terminal">
+              <SquareTerminal size={18} />
+              <div>
+                <b>{s.builtinTerminal}</b>
+                <p>{s.builtinTerminalHint}</p>
+              </div>
+              <Toggle
+                checked={snapshot.preferences?.builtinTerminal === true}
+                label={s.builtinTerminal}
+                onChange={() =>
+                  onPrefs({ builtinTerminal: !snapshot.preferences?.builtinTerminal })
+                }
+              />
             </div>
           )}
           {terminalSend !== undefined && (

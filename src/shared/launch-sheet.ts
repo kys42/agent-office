@@ -153,7 +153,15 @@ export const firstResumable = (choices: ConversationChoice[]) =>
 
 /** Where a destination's launch runs, as the duplicate check names it (copy: nowhere). */
 export const placeOf = (id: LaunchDestinationId): LaunchPlace | null =>
-  id === 'orca' ? 'orca' : id === 'tmux' ? 'tmux' : id === 'terminalApp' ? 'other' : null;
+  id === 'orca'
+    ? 'orca'
+    : id === 'tmux'
+      ? 'tmux'
+      : id === 'builtin'
+        ? 'builtin'
+        : id === 'terminalApp'
+          ? 'other'
+          : null;
 
 /** How to get to where a conversation already is. */
 export type GoThere =
@@ -357,8 +365,9 @@ export interface DestinationRow {
 export function destinationRows(options: LaunchOptions | null): DestinationRow[] {
   const l = m().launch;
   const s = m().launchSheet;
+  // Before the first answer: an experimental destination (#401) shows once main offers it.
   if (!options)
-    return LAUNCH_DESTINATIONS.map((id) => ({
+    return LAUNCH_DESTINATIONS.filter((id) => id !== 'builtin').map((id) => ({
       id,
       label: l.destination[id],
       hint: s.destinationHint[id],

@@ -18,14 +18,15 @@ export const DRAFT_POLL = {
 } as const;
 
 /**
- * The preview reads only a box a send could reach: a verified Orca or tmux terminal that takes
- * input now. Queues (Codex CLI), Codex Desktop, a bare Orca tab and other offices have none.
+ * The preview reads only a box a send could reach: a verified Orca, tmux or built-in terminal
+ * that takes input now. Queues (Codex CLI), Codex Desktop, a bare Orca tab and other offices
+ * have none.
  */
 export function previewsTarget(target: TerminalTarget | null | undefined): boolean {
   return (
     !!target &&
     target.canSend &&
-    (target.kind === 'orca' || target.kind === 'tmux') &&
+    (target.kind === 'orca' || target.kind === 'tmux' || target.kind === 'builtin') &&
     !target.queues &&
     !target.desktop &&
     !target.tabOnly &&

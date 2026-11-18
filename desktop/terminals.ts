@@ -3,11 +3,15 @@ import {
   inspectProcess,
   focusHost,
   focusTarget,
+  hostLabel,
   hostName,
+  hostWhere,
   TerminalFocusError,
   localOrcaEnv,
   screenTitle,
 } from './terminal-host.js';
+import type { BuiltinTerminals } from './term-builtin.js';
+import type { ScreenRead } from './term-host/protocol.js';
 import type { TerminalHost, TerminalLookup } from './terminal-host.js';
 export { findHost, inspectProcess, hostName, parseProcessEnv, ptyOwner } from './terminal-host.js';
 export type { TerminalHost, ProcessEnv, ProcessView, TerminalLookup } from './terminal-host.js';
@@ -62,6 +66,7 @@ import {
   spaces,
   type ClaudeLiveDeps,
   type ClaudeProcess,
+  type RunOptions,
 } from '../server/adapters/claude-live.js';
 import type { PromptHost, PromptKey } from './prompts/types.js';
 import { hostOf, isSwarmSocket, type HostPlace } from './host-app.js';
@@ -84,6 +89,8 @@ export interface TerminalDeps extends ClaudeLiveDeps {
   codexHome: string;
   bin: (name: 'orca' | 'tmux' | 'codex') => string;
   wait: (ms: number) => Promise<void>;
+  /** The built-in terminal (#401): looked up and typed into, never started from here. */
+  builtin?: BuiltinTerminals;
   /** Claude's process-record folder, read by the absence check (tests count the reads). */
   records?: {
     list: (dir: string) => Promise<string[]>;
@@ -150,6 +157,14 @@ export const defaultTerminalDeps = (): TerminalDeps =>
     },
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   });
+
+/**
+ * The built-in terminal the app's lookups use (#401): main sets it once, so the shared deps (and
+ * their caches) recognise its sessions, read their screens and type into them.
+ */
+export function useBuiltinTerminals(builtin: BuiltinTerminals | undefined) {
+  defaultTerminalDeps().builtin = builtin;
+}
 
 export function locateTerminal(
   sessionId: string,
@@ -470,7 +485,7 @@ async function windowPlace(
     return {
       where: host.kind,
       host: {
-        app: host.kind === 'orca' ? 'orca' : isSwarmSocket(host.socket) ? 'swarm' : 'tmux',
+        app: host.kind === 'tmux' ? (isSwarmSocket(host.socket) ? 'swarm' : 'tmux') : host.kind,
         parked: true,
         canGo: true,
       },
@@ -510,6 +525,16 @@ export async function claudeAttachCommand(
 // Job ids are validated as 8 hex characters: nothing to quote.
 const attachCommand = (jobId: string) => `claude attach ${jobId}`;
 
+/** What a send that went through says, by host. */
+const sentTo = (host: TerminalHost) => {
+  const t = m().desktop.terminal;
+  return host.kind === 'orca'
+    ? t.orcaSent
+    : host.kind === 'tmux'
+      ? t.tmuxSent(host.label)
+      : t.builtinSent(host.label);
+};
+
 /** Drop a cached lookup once its state is known to have changed, e.g. right after sending. */
 export const forgetTerminal = (sessionId: string) =>
   forget(defaultTerminalDeps(), `locate:${sessionId}`);
@@ -525,10 +550,10 @@ export const acceptsInput = (status: string) => OPEN.has(status);
 
 /** What the renderer may know: never the handle or socket, which main re-resolves per action. */
 export function terminalTarget(live: LiveTerminal): TerminalTarget {
-  const { images } = claudeCodeComposer.capabilities({ styled: live.host.kind === 'tmux' });
+  const { images } = claudeCodeComposer.capabilities({ styled: STYLED[live.host.kind] });
   return {
     kind: live.host.kind,
-    label: live.host.kind === 'orca' ? live.host.title : live.host.label,
+    label: hostLabel(live.host),
     status: live.process.status,
     canSend: acceptsInput(live.process.status),
     canFocus: true,
@@ -682,7 +707,7 @@ async function submitDraftNow(
   if (!(await ownsTerminal(screenPid(live), deps))) throw new TerminalInputError(t.notOwner);
   if (live.window && !(await current())) throw new TerminalInputError(t.draftStopped);
   const { host } = live;
-  const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
+  const where = hostWhere(host);
   const composer = options.composer ?? claudeCodeComposer;
   const io = composerHost(host, deps);
   const can = composer.capabilities(io);
@@ -778,9 +803,7 @@ async function submitDraftNow(
       ? t.sentThenPrompt(where)
       : status === 'busy'
         ? t.queued(where)
-        : host.kind === 'orca'
-          ? t.orcaSent
-          : t.tmuxSent(host.label);
+        : sentTo(host);
   return { status: 'sent', message, ...logical };
 }
 
@@ -831,59 +854,191 @@ export function cleanInput(text: unknown, options: { allowEmpty?: boolean } = {}
 }
 
 /**
- * The rendered screen, or `null` when it cannot be read. tmux reports how each character is
- * drawn (`capture-pane -e`); Orca's screen read is plain text. A tmux pane scrolled back (copy
- * mode) would take Enter itself, so it reads as no prompt at all.
+ * How each terminal host is read and typed into (#401): one entry per kind, so the send flow
+ * above (asking, clearing, checking the screen before Enter) is the same for all of them.
+ * - tmux reports how each character is drawn (`capture-pane -e`); a pane scrolled back (copy
+ *   mode) would take Enter itself, so it reads as no prompt at all. Keys go by tmux's names,
+ *   text through a paste buffer (stdin: tmux reads a trailing `;` in an argument as a separator).
+ * - Orca's screen read is plain text; keys and text go as bytes, Enter as its own submit key.
+ * - The built-in terminal reads its daemon's headless screen, faint cells included; keys and
+ *   text go to its pty as the bytes a terminal would send, Enter as `\r`.
  */
-async function readScreen(host: TerminalHost, deps: TerminalDeps): Promise<Screen | null> {
-  try {
-    if (host.kind === 'tmux') {
-      const tmux = deps.bin('tmux');
-      const state = await deps.run(tmux, [
-        '-S',
-        host.socket,
-        'display-message',
-        '-p',
-        '-t',
-        host.pane,
-        '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen} #{cursor_x} #{cursor_y}',
-      ]);
-      const [mode, height, alternate, allowed, x, y] = state.trim().split(' ');
-      if (mode !== '0') return { text: '' };
-      const screen = parseStyledScreen(
-        await deps.run(tmux, ['-S', host.socket, 'capture-pane', '-p', '-e', '-t', host.pane]),
-      );
-      // The pane height tells whether the prompt box may be scrolled (see maxBoxRows); only
-      // Claude Code's fullscreen renderer (the alternate screen) scrolls it. With the pane's
-      // `alternate-screen` option off, tmux draws that renderer on the main screen and
-      // `#{alternate_on}` stays 0: the flag tells the renderer only while the option is on.
-      return {
-        ...screen,
-        ...(/^\d+$/.test(height ?? '') && { height: Number(height) }),
-        ...(allowed === '1' &&
-          (alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
-        // Where the focused input's caret is: a box cut off by a short pane is typed into only
-        // with it right there (see `cut` in composer/types.ts).
-        ...(/^\d+$/.test(x ?? '') &&
-          /^\d+$/.test(y ?? '') && { cursor: { x: Number(x), y: Number(y) } }),
-      };
-    }
-    const out = await deps.run(
-      deps.bin('orca'),
-      ['terminal', 'read', `--terminal=${host.handle}`, '--screen', '--limit=200', '--json'],
-      { env: localOrcaEnv() },
-    );
-    const terminal = JSON.parse(out)?.result?.terminal;
-    // Without a rendered screen Orca falls back to past output, which is not what is shown now.
-    if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
-    const text = terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
-    // Orca 1.4.216 reports the composer's text apart (`draft`) and leaves only the marker on
-    // screen; an older Orca draws it in the screen as tmux does.
-    return typeof terminal.draft === 'string' ? { text, composer: terminal.draft } : { text };
-  } catch {
-    return null;
-  }
+interface HostIO {
+  /** The host reports how characters are drawn (faint), not just the characters. */
+  readonly styled: boolean;
+  /** The rendered screen, or `null` when it cannot be read. */
+  read(): Promise<Screen | null>;
+  /** Composer keys (never empty). */
+  keys(keys: readonly ComposerKey[]): Promise<unknown>;
+  /** Dialog keys, Enter among them (never empty). */
+  dialog(keys: readonly PromptKey[]): Promise<unknown>;
+  /** Text into the prompt, not submitted. `delivering`: right before it may reach the pane. */
+  paste(text: string, delivering: () => void): Promise<unknown>;
+  /** The submit key. */
+  enter(): Promise<unknown>;
 }
+
+/** Whether a host reports how characters are drawn (faint), by kind. */
+const STYLED: { [K in TerminalHost['kind']]: boolean } = { tmux: true, orca: false, builtin: true };
+
+type HostIOs = {
+  [K in TerminalHost['kind']]: (
+    host: Extract<TerminalHost, { kind: K }>,
+    deps: TerminalDeps,
+  ) => HostIO;
+};
+
+const HOST_IO: HostIOs = {
+  tmux: (host, deps) => {
+    const tmux = (args: string[], options?: RunOptions) =>
+      options
+        ? deps.run(deps.bin('tmux'), ['-S', host.socket, ...args], options)
+        : deps.run(deps.bin('tmux'), ['-S', host.socket, ...args]);
+    return {
+      styled: STYLED.tmux,
+      async read() {
+        try {
+          const state = await tmux([
+            'display-message',
+            '-p',
+            '-t',
+            host.pane,
+            '#{pane_in_mode} #{pane_height} #{alternate_on} #{alternate-screen} #{cursor_x} #{cursor_y}',
+          ]);
+          const [mode, height, alternate, allowed, x, y] = state.trim().split(' ');
+          if (mode !== '0') return { text: '' };
+          const screen = parseStyledScreen(
+            await tmux(['capture-pane', '-p', '-e', '-t', host.pane]),
+          );
+          // The pane height tells whether the prompt box may be scrolled (see maxBoxRows); only
+          // Claude Code's fullscreen renderer (the alternate screen) scrolls it. With the pane's
+          // `alternate-screen` option off, tmux draws that renderer on the main screen and
+          // `#{alternate_on}` stays 0: the flag tells the renderer only while the option is on.
+          return {
+            ...screen,
+            ...(/^\d+$/.test(height ?? '') && { height: Number(height) }),
+            ...(allowed === '1' &&
+              (alternate === '0' || alternate === '1') && { alternate: alternate === '1' }),
+            // Where the focused input's caret is: a box cut off by a short pane is typed into only
+            // with it right there (see `cut` in composer/types.ts).
+            ...(/^\d+$/.test(x ?? '') &&
+              /^\d+$/.test(y ?? '') && { cursor: { x: Number(x), y: Number(y) } }),
+          };
+        } catch {
+          return null;
+        }
+      },
+      keys: (keys) => tmux(['send-keys', '-t', host.pane, ...keys]),
+      dialog: (keys) => tmux(['send-keys', '-t', host.pane, ...keys]),
+      async paste(text, delivering) {
+        const buffer = `agent-office-${randomUUID()}`;
+        // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
+        await tmux(['load-buffer', '-b', buffer, '-'], { input: text });
+        delivering();
+        try {
+          // Bracketed paste keeps line breaks inside the prompt instead of submitting early.
+          await tmux(['paste-buffer', '-p', '-d', '-b', buffer, '-t', host.pane]);
+        } catch (error) {
+          await tmux(['delete-buffer', '-b', buffer]).catch(() => '');
+          throw error;
+        }
+      },
+      enter: () => tmux(['send-keys', '-t', host.pane, 'Enter']),
+    };
+  },
+  orca: (host, deps) => ({
+    styled: STYLED.orca,
+    async read() {
+      try {
+        const out = await deps.run(
+          deps.bin('orca'),
+          ['terminal', 'read', `--terminal=${host.handle}`, '--screen', '--limit=200', '--json'],
+          { env: localOrcaEnv() },
+        );
+        const terminal = JSON.parse(out)?.result?.terminal;
+        // Without a rendered screen Orca falls back to past output, which is not what is shown now.
+        if (terminal?.source !== 'screen' || !Array.isArray(terminal.tail)) return null;
+        const text = terminal.tail.filter((line: unknown) => typeof line === 'string').join('\n');
+        // Orca 1.4.216 reports the composer's text apart (`draft`) and leaves only the marker on
+        // screen; an older Orca draws it in the screen as tmux does.
+        return typeof terminal.draft === 'string' ? { text, composer: terminal.draft } : { text };
+      } catch {
+        return null;
+      }
+    },
+    keys: (keys) => orcaSend(host, [`--text=${keys.map((key) => KEY_BYTES[key]).join('')}`], deps),
+    async dialog(keys) {
+      // Enter goes as Orca's own submit key, as for a follow-up.
+      const text = keys.filter((key) => key !== 'Enter');
+      if (text.length)
+        await orcaSend(host, [`--text=${text.map((key) => PROMPT_BYTES[key]).join('')}`], deps);
+      if (keys.includes('Enter')) await orcaSend(host, ['--enter'], deps);
+    },
+    paste(text, delivering) {
+      // Orca writes the bytes as they are: bracketed paste keeps tabs and line breaks as text.
+      // cleanInput removed every ESC, so the text itself can never close the paste early.
+      delivering();
+      return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
+    },
+    enter: () => orcaSend(host, ['--enter'], deps),
+  }),
+  builtin: (host, deps) => {
+    // Not written: no daemon to reach, or its connection closed before the bytes went out.
+    const write = async (data: string) => {
+      try {
+        if (!deps.builtin) throw new Error('no built-in terminal here');
+        await deps.builtin.write(host.session, data);
+      } catch {
+        throw new Undelivered(m().desktop.terminal.builtinUnreachable);
+      }
+    };
+    return {
+      styled: STYLED.builtin,
+      async read() {
+        try {
+          return deps.builtin ? builtinScreen(await deps.builtin.screen(host.session)) : null;
+        } catch {
+          return null;
+        }
+      },
+      keys: (keys) => write(keys.map((key) => KEY_BYTES[key]).join('')),
+      dialog: (keys) => write(keys.map((key) => PROMPT_BYTES[key]).join('')),
+      paste(text, delivering) {
+        // As for Orca: the program turned bracketed paste on, and cleanInput removed every ESC.
+        delivering();
+        return write(`\x1b[200~${text}\x1b[201~`);
+      },
+      enter: () => write('\r'),
+    };
+  },
+};
+
+/** One host's reads and keys (`HOST_IO`). */
+const hostIO = (host: TerminalHost, deps: TerminalDeps): HostIO =>
+  (HOST_IO[host.kind] as (host: TerminalHost, deps: TerminalDeps) => HostIO)(host, deps);
+
+/**
+ * A built-in terminal's screen read (`ScreenRead`) as an adapter reads any screen: its rows, and
+ * per character whether it is drawn faint. Every row is reported, blank ones too, as tmux does.
+ */
+export function builtinScreen(read: ScreenRead): Screen {
+  const faint = read.lines.map((line, row) => {
+    const flags = new Array<boolean>(line.length).fill(false);
+    for (const [start, end] of read.faint[row] ?? [])
+      for (let i = Math.max(0, start); i < Math.min(end, line.length); i++) flags[i] = true;
+    return flags;
+  });
+  return {
+    text: read.lines.join('\n'),
+    faint,
+    height: read.rows,
+    alternate: read.alternate,
+    cursor: read.cursor,
+  };
+}
+
+/** The rendered screen, or `null` when it cannot be read (see `HOST_IO`). */
+const readScreen = (host: TerminalHost, deps: TerminalDeps) => hostIO(host, deps).read();
 
 /** The bytes a key sends: what tmux `send-keys` writes for the same names. */
 const KEY_BYTES: Record<ComposerKey, string> = {
@@ -896,18 +1051,17 @@ const KEY_BYTES: Record<ComposerKey, string> = {
 
 /** The terminal host as a composer adapter sees it: read the screen, press keys, wait. */
 export function composerHost(host: TerminalHost, deps: TerminalDeps): ComposerHost {
+  const io = hostIO(host, deps);
   return {
-    styled: host.kind === 'tmux',
-    read: () => readScreen(host, deps),
+    styled: io.styled,
+    read: () => io.read(),
     wait: deps.wait,
     async press(keys) {
       if (!keys.length) return;
-      if (host.kind === 'orca')
-        return orcaSend(host, [`--text=${keys.map((key) => KEY_BYTES[key]).join('')}`], deps);
-      await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
+      await io.keys(keys);
     },
     submit: async () => {
-      await pressEnter(host, deps);
+      await io.enter();
     },
   };
 }
@@ -924,22 +1078,15 @@ const PROMPT_BYTES: Record<PromptKey, string> = {
 
 /** The terminal host as a prompt adapter sees it: read the screen, press dialog keys, type. */
 export function promptHost(host: TerminalHost, deps: TerminalDeps): PromptHost {
+  const io = hostIO(host, deps);
   return {
     kind: host.kind,
-    read: () => readScreen(host, deps),
+    read: () => io.read(),
     wait: deps.wait,
     type: (text) => typeText(host, text, deps),
     async press(keys) {
       if (!keys.length) return;
-      if (host.kind === 'orca') {
-        // Enter goes as Orca's own submit key, as for a follow-up.
-        const text = keys.filter((key) => key !== 'Enter');
-        if (text.length)
-          await orcaSend(host, [`--text=${text.map((key) => PROMPT_BYTES[key]).join('')}`], deps);
-        if (keys.includes('Enter')) await orcaSend(host, ['--enter'], deps);
-        return;
-      }
-      await deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, ...keys]);
+      await io.dialog(keys);
     },
   };
 }
@@ -962,55 +1109,30 @@ async function orcaSend(host: { handle: string }, input: string[], deps: Termina
     const reason = typeof send?.refusedReason === 'string' ? ` (${send.refusedReason})` : '';
     const message = m().desktop.terminal.orcaRefused(reason);
     // Only an explicit refusal says the bytes never reached the terminal.
-    throw send?.accepted === false ? new OrcaRefusal(message) : new TerminalInputError(message);
+    throw send?.accepted === false ? new Undelivered(message) : new TerminalInputError(message);
   }
 }
 
-/** Orca answered `accepted: false`: nothing it was given reached the terminal. */
-class OrcaRefusal extends TerminalInputError {}
+/**
+ * Nothing it was given reached the terminal: Orca answered `accepted: false`, or the built-in
+ * terminal could not be reached at all.
+ */
+class Undelivered extends TerminalInputError {}
 
-/** Puts the text in the prompt without submitting it. Line breaks stay inside the prompt. */
-/** `delivering` runs right before the text may reach the pane (nothing before it can). */
+/**
+ * Puts the text in the prompt without submitting it. Line breaks stay inside the prompt.
+ * `delivering` runs right before the text may reach the pane (nothing before it can).
+ */
 async function typeText(
   host: TerminalHost,
   text: string,
   deps: TerminalDeps,
   delivering: () => void = () => {},
 ) {
-  // Orca writes the bytes as they are: bracketed paste keeps tabs and line breaks as text.
-  // cleanInput removed every ESC, so the text itself can never close the paste early.
-  if (host.kind === 'orca') {
-    delivering();
-    return orcaSend(host, [`--text=\x1b[200~${text}\x1b[201~`], deps);
-  }
-  const tmux = deps.bin('tmux');
-  const buffer = `agent-office-${randomUUID()}`;
-  // stdin, not argv: tmux treats a trailing `;` in an argument as a command separator.
-  await deps.run(tmux, ['-S', host.socket, 'load-buffer', '-b', buffer, '-'], { input: text });
-  delivering();
-  try {
-    // Bracketed paste keeps line breaks inside the prompt instead of submitting early.
-    await deps.run(tmux, [
-      '-S',
-      host.socket,
-      'paste-buffer',
-      '-p',
-      '-d',
-      '-b',
-      buffer,
-      '-t',
-      host.pane,
-    ]);
-  } catch (error) {
-    await deps.run(tmux, ['-S', host.socket, 'delete-buffer', '-b', buffer]).catch(() => '');
-    throw error;
-  }
+  await hostIO(host, deps).paste(text, delivering);
 }
 
-const pressEnter = (host: TerminalHost, deps: TerminalDeps) =>
-  host.kind === 'orca'
-    ? orcaSend(host, ['--enter'], deps)
-    : deps.run(deps.bin('tmux'), ['-S', host.socket, 'send-keys', '-t', host.pane, 'Enter']);
+const pressEnter = (host: TerminalHost, deps: TerminalDeps) => hostIO(host, deps).enter();
 
 export interface TerminalSendOptions {
   /** Recheck optional network authority immediately before typing and submitting. */
@@ -1151,7 +1273,7 @@ async function deliver(
   const key = live.process.sessionId;
   const memory = backupMemory(deps);
   const typed = typedMemory(deps);
-  const where = host.kind === 'orca' ? 'Orca' : `tmux ${host.label}`;
+  const where = hostWhere(host);
   const composer = options.composer ?? claudeCodeComposer;
   /**
    * Placeholder ids on every screen read before the text goes in, up to the read that found the
@@ -1325,9 +1447,10 @@ async function deliver(
       try {
         await typeText(host, text, deps, () => typed.keep(key, text));
       } catch (error) {
-        // Orca refused the paste outright: none of it is in the composer. Any other failure
-        // (a timeout, no answer) may have delivered it, so it stays the app's.
-        if (error instanceof OrcaRefusal) typed.drop(key);
+        // Orca refused the paste outright (or the built-in terminal was not reached): none of it
+        // is in the composer. Any other failure (a timeout, no answer) may have delivered it, so
+        // it stays the app's.
+        if (error instanceof Undelivered) typed.drop(key);
         throw error;
       }
     }
@@ -1376,7 +1499,7 @@ async function deliver(
     const after = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
     if (after?.status === 'waiting') return sent(t.sentThenPrompt(where));
     if (again.status === 'busy') return sent(t.queued(where));
-    return sent(host.kind === 'orca' ? t.orcaSent : t.tmuxSent(host.label));
+    return sent(sentTo(host));
   }
 
   /**

@@ -117,6 +117,10 @@ export const desktop: Messages['desktop'] = {
       `${host}에 글은 넣었지만 Enter를 보내지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
     sentThenPrompt: (host) => `${host}에 보냈는데 바로 승인 창이 떴어요. 터미널을 확인해 주세요.`,
     tmuxSent: (label) => `tmux ${label}에 보냈어요`,
+    builtinSent: (label) => `내장 터미널 ${label}에 보냈어요`,
+    builtinUnreachable: '내장 터미널에 연결하지 못해서 보내지 않았어요.',
+    builtinNoView:
+      '내장 터미널 화면은 아직 여기서 열 수 없어요. 이 대화는 앱 안의 터미널에서 실행 중이에요.',
     queued: (target) => `${target}에 보냈어요 · 작업 중이라 대기열에 들어가 이어서 반영돼요`,
     codexNoReply: 'Codex 응답을 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
     codexQueued: 'Codex 세션에 전달했어요',

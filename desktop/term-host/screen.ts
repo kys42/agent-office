@@ -2,7 +2,7 @@ import serializeModule from '@xterm/addon-serialize';
 import headlessModule, { type Terminal } from '@xterm/headless';
 import { EscapeTail } from './escape-tail.js';
 import { ModeTracker, kittyStackSequence, modeSequences, type TerminalModes } from './modes.js';
-import type { ScreenRestore } from './protocol.js';
+import type { ScreenRead, ScreenRestore } from './protocol.js';
 
 /**
  * Output waiting for the parser beyond this is not fed to the emulator. xterm parses
@@ -41,6 +41,8 @@ export class HeadlessScreen {
   /** Sequence number of the last chunk the parser has finished. */
   parsedSeq = 0;
   droppedBytes = 0;
+  /** The window title the program last set (OSC 0/2). */
+  title = '';
 
   constructor(cols: number, rows: number, scrollback: number, onReply?: (reply: string) => void) {
     this.terminal = new HeadlessTerminal({
@@ -52,6 +54,7 @@ export class HeadlessScreen {
     });
     this.terminal.loadAddon(this.serializer);
     this.modeTracker = new ModeTracker(this.terminal);
+    this.terminal.onTitleChange((title) => void (this.title = title));
     // Answers to the program's queries (cursor position, device attributes, ...).
     if (onReply) this.terminal.onData((reply) => this.replying && onReply(reply));
   }
@@ -119,6 +122,50 @@ export class HeadlessScreen {
       modes: modeSequences(modes),
       cols: this.terminal.cols,
       rows: this.terminal.rows,
+    };
+  }
+
+  /**
+   * The visible rows as text with their faint ranges, the cursor and the title: what the app's
+   * composer reads (see `ScreenRead`). Rows are trimmed on the right as `tmux capture-pane -p`
+   * trims them; a wide character's second cell adds nothing.
+   */
+  read(): ScreenRead {
+    const buffer = this.terminal.buffer.active;
+    const cell = buffer.getNullCell();
+    const lines: string[] = [];
+    const faint: [number, number][][] = [];
+    for (let y = 0; y < this.terminal.rows; y++) {
+      const line = buffer.getLine(buffer.baseY + y);
+      let text = '';
+      const ranges: [number, number][] = [];
+      for (let x = 0; line && x < this.terminal.cols; x++) {
+        line.getCell(x, cell);
+        if (cell.getWidth() === 0) continue;
+        const chars = cell.getChars() || ' ';
+        const start = text.length;
+        text += chars;
+        if (!cell.isDim()) continue;
+        const last = ranges.at(-1);
+        if (last && last[1] === start) last[1] = text.length;
+        else ranges.push([start, text.length]);
+      }
+      const trimmed = text.replace(/ +$/, '');
+      lines.push(trimmed);
+      faint.push(
+        ranges
+          .map(([a, b]): [number, number] => [a, Math.min(b, trimmed.length)])
+          .filter(([a, b]) => a < b),
+      );
+    }
+    return {
+      lines,
+      faint,
+      cols: this.terminal.cols,
+      rows: this.terminal.rows,
+      cursor: { x: buffer.cursorX, y: buffer.cursorY },
+      alternate: buffer.type === 'alternate',
+      title: this.title,
     };
   }
 

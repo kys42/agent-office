@@ -1,4 +1,5 @@
 import type { TerminalTarget } from './types';
+import { m } from './i18n';
 
 /** Navigation describes the screen, independently of where follow-ups are delivered. */
 export function focusLocation(target: TerminalTarget) {
@@ -15,7 +16,13 @@ export function focusLocation(target: TerminalTarget) {
 
 export function focusName(target: TerminalTarget): string {
   const focus = focusLocation(target);
-  return focus?.kind === 'orca' ? 'Orca' : focus?.kind === 'tmux' ? 'tmux' : '';
+  return focus?.kind === 'orca'
+    ? 'Orca'
+    : focus?.kind === 'tmux'
+      ? 'tmux'
+      : focus?.kind === 'builtin'
+        ? m().launch.destination.builtin
+        : '';
 }
 
 export function focusLine(target: TerminalTarget, privacy: boolean): string {

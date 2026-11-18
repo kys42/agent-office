@@ -8,6 +8,7 @@ import {
   type LiveTerminal,
   type TerminalDeps,
 } from '../terminals.js';
+import { hostWhere } from '../terminal-host.js';
 import type { OpenCall, PromptTarget } from './types.js';
 
 /*
@@ -107,7 +108,7 @@ export function claudeTarget(
     transcript ? await (deps.readTail ?? tail)(transcript).catch(() => null) : null;
   return {
     host: promptHost(live.host, deps),
-    where: live.host.kind === 'orca' ? 'Orca' : `tmux ${live.host.label}`,
+    where: hostWhere(live.host),
     waiting: live.process.status === 'waiting',
     async stillThere() {
       // A background session also needs its window still showing it (desktop/terminals.ts).

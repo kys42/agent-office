@@ -475,7 +475,12 @@ test('paths: versioned socket, short fallback for long data dirs, per-user pipe 
   );
   assert.equal(long.token, `/Users/${'x'.repeat(120)}/term-host/token`);
   const win = termHostPaths('C:\\Users\\me\\AppData\\Roaming\\Agent Office', 'win32');
-  assert.match(win.socket, /^\\\\\.\\pipe\\agent-office-term-host-v1-[0-9a-f]{16}$/);
+  assert.match(
+    win.socket,
+    new RegExp(
+      `^\\\\\\\\\\.\\\\pipe\\\\agent-office-term-host-v${TERM_HOST_PROTOCOL}-[0-9a-f]{16}$`,
+    ),
+  );
 });
 
 test('token: created once with 0600 and shared by every caller', async () => {

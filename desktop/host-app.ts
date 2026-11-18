@@ -32,6 +32,8 @@ export type HostWay =
   | { kind: 'orca'; handle?: string }
   /** The tmux pane its environment names, not verified. */
   | { kind: 'tmux'; socket: string; pane: string }
+  /** The built-in terminal session its environment names (#401), not verified. */
+  | { kind: 'builtin'; session: string }
   /** A macOS app (`name`: its bundle's own name); Terminal and iTerm2 select the tab on `tty`. */
   | { kind: 'app'; bundle: string; name: string; tty?: string }
   /** A background session no window shows: its attach command, to copy. */
@@ -133,6 +135,14 @@ export function placeOfProcess(
         }
       : { where: 'tmux', host: { app }, way: { kind: 'none' } };
   }
+  // Started in the app's own terminal (#401): its window shows it. The variable is inherited, so
+  // a pty Orca holds (a program started from there) is still Orca's.
+  if (env.termSession && !(owner && isOrca(owner.command)))
+    return {
+      where: 'builtin',
+      host: { app: 'builtin', canGo: true },
+      way: { kind: 'builtin', session: env.termSession },
+    };
   if (platform !== 'darwin') return NOWHERE;
   const orca: HostPlace = {
     where: 'orca',
@@ -247,6 +257,8 @@ export async function reachHost(
         await focusHost({ kind: 'tmux', socket: way.socket, pane: way.pane, label }, deps),
       );
     }
+    case 'builtin':
+      return focused(await focusHost({ kind: 'builtin', session: way.session, label: '' }, deps));
     case 'app': {
       const name = hostPlaceName(place.host);
       if (way.tty && (await focusTtyTab(way.name, way.tty, deps)))

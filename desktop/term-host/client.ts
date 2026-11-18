@@ -18,6 +18,7 @@ import {
   type ExitInfo,
   type ListResult,
   type Request,
+  type ScreenRead,
   type ScreenRestore,
   type SessionSpec,
   type SessionStats,
@@ -37,6 +38,8 @@ export class TermHostError extends Error {
   constructor(
     readonly code: ErrorCode,
     message: string,
+    /** No daemon listens at all (no socket, or a stale one): nothing runs there. */
+    readonly absent = false,
   ) {
     super(message);
     this.name = 'TermHostError';
@@ -103,6 +106,11 @@ export class TermHostClient {
 
   async detach(sessionId: string) {
     await this.request({ op: 'detach', sessionId });
+  }
+
+  /** The visible screen as the composer reads it, once the output so far is parsed. */
+  screen(sessionId: string) {
+    return this.request<ScreenRead>({ op: 'screen', sessionId });
   }
 
   /** Keyboard input; ordered with every other message on this connection. */
@@ -330,7 +338,7 @@ export async function connectTermHost(options: ConnectOptions): Promise<TermHost
       const code = (error as NodeJS.ErrnoException).code;
       const absent = code === 'ENOENT' || code === 'ECONNREFUSED' || code === 'ENOTSOCK';
       if (absent && !options.daemon) {
-        throw new TermHostError('unavailable', 'no terminal host is running');
+        throw new TermHostError('unavailable', 'no terminal host is running', true);
       }
       const now = deps.now();
       if (absent && spawns < MAX_SPAWNS && now - lastSpawn >= RESPAWN_GAP_MS) {

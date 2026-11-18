@@ -13,8 +13,11 @@
  * the reader refuse an oversized frame from its header before buffering the body.
  */
 
-/** Bumped on any incompatible change; it also names the socket so old and new daemons coexist. */
-export const TERM_HOST_PROTOCOL = 1;
+/**
+ * Bumped on any incompatible change; it also names the socket so old and new daemons coexist.
+ * 2: `screen` (the visible rows with their faint cells, cursor and title) for the app's composer.
+ */
+export const TERM_HOST_PROTOCOL = 2;
 
 export const FRAME_JSON = 1;
 export const FRAME_DATA = 2;
@@ -102,6 +105,28 @@ export interface ScreenRestore {
   rows: number;
 }
 
+/**
+ * What the program shows right now, as the app's composer reads a terminal (`tmux capture-pane
+ * -p -e` gives the same): the visible rows only, no history.
+ */
+export interface ScreenRead {
+  /** Each visible row as drawn, trailing blanks trimmed. */
+  lines: string[];
+  /**
+   * Per row: the UTF-16 ranges `[start, end)` of `lines[row]` drawn faint (SGR 2). Agents draw
+   * placeholders and suggestions faint where typed text goes, so only this tells them apart.
+   */
+  faint: [number, number][][];
+  cols: number;
+  rows: number;
+  /** The cursor's cell, 0-based, on the visible screen. */
+  cursor: { x: number; y: number };
+  /** The alternate screen (a fullscreen program) is shown. */
+  alternate: boolean;
+  /** The window title the program set (OSC 0/2); '' when it set none. */
+  title: string;
+}
+
 export interface AttachResult extends ScreenRestore {
   session: SessionStats;
   /** Set when the session has already ended: `snapshot` is then its last screen. */
@@ -115,6 +140,8 @@ export type Request =
   /** `scrollback`: lines of history to include (all held lines when omitted). */
   | { op: 'attach'; sessionId: string; scrollback?: number }
   | { op: 'detach'; sessionId: string }
+  /** The visible screen as text and faint ranges (`ScreenRead`), once its output is parsed. */
+  | { op: 'screen'; sessionId: string }
   | { op: 'resize'; sessionId: string; cols: number; rows: number }
   | { op: 'kill'; sessionId: string; signal?: string }
   /** Ends every session and stops the daemon. */

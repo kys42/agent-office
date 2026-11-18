@@ -1,5 +1,5 @@
 import { HeadlessScreen } from './screen.js';
-import type { ExitInfo, ScreenRestore, SessionSpec, SessionStats } from './protocol.js';
+import type { ExitInfo, ScreenRead, ScreenRestore, SessionSpec, SessionStats } from './protocol.js';
 
 /** The part of node-pty a session uses (a fake in tests). */
 export interface PtyProcess {
@@ -198,6 +198,26 @@ export class Session {
         attachment.queuedBytes += tail.length;
       }
       done(restore);
+    };
+    if (this.screen) this.screen.whenParsed(take);
+    else queueMicrotask(take);
+  }
+
+  /**
+   * The visible screen once everything the program wrote so far is parsed, as the composer reads
+   * it. Like `capture`, a frame in the middle of a synchronized update gets up to `syncWaitMs` to
+   * finish. Null once the session has ended (its emulator is freed).
+   */
+  read(done: (screen: ScreenRead | null) => void) {
+    const deadline = Date.now() + this.timing.syncWaitMs;
+    const take = () => {
+      const screen = this.screen;
+      if (!screen) return done(null);
+      if (screen.modes().synchronizedOutput && Date.now() < deadline) {
+        setTimeout(() => (this.screen ? this.screen.whenParsed(take) : take()), 5);
+        return;
+      }
+      done(screen.read());
     };
     if (this.screen) this.screen.whenParsed(take);
     else queueMicrotask(take);

@@ -3,6 +3,7 @@ export const launch = {
   destination: {
     orca: 'Orca',
     tmux: 'tmux',
+    builtin: 'Built-in terminal',
     terminalApp: 'Terminal',
     copy: 'Copy command',
   },
@@ -48,4 +49,14 @@ export const launch = {
     `It was just started in ${place} and may still be starting. Check there before starting it again.`,
   copied: 'Command copied. Run it in a terminal.',
   copyUnsupported: 'Copying a launch command is available on macOS and Linux only.',
+  /** The built-in terminal (#401), an experimental destination. */
+  builtinOff: 'Turn on the built-in terminal (experimental) in Settings first.',
+  builtinUnsupported: 'The built-in terminal is available on macOS and Linux only.',
+  builtinLaunched: 'Started in the built-in terminal.',
+  builtinFailed: (reason: string) =>
+    `Couldn't start it in the built-in terminal${reason ? `: ${reason}` : '.'}`,
+  builtinUncertain:
+    "The built-in terminal didn't confirm the start in time. It may already be running there: check before starting it again.",
+  builtinExited:
+    'It ended right after starting, often at a login or folder-trust prompt. Run it once in a terminal to finish that, then try again.',
 };

@@ -52,6 +52,11 @@ export interface Destination<T, D = unknown, R = unknown> {
   readonly launches: boolean;
   /** Whether it can ever work on `platform` (left out: everywhere). Probes still decide now. */
   supports?(platform: string): boolean;
+  /**
+   * Whether to offer it at all right now (left out: always): an experimental destination behind
+   * a setting is left out of the sheet while that is off. Its probe still says why not.
+   */
+  offered?(): boolean;
   /** Whether `open` (its own place brought to the front) works on `platform` (left out: never). */
   opens?(platform: string): boolean;
   /** Where a launch of it runs, as the duplicate check names it (`other` when left out). */

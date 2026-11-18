@@ -24,9 +24,9 @@ import type { Screen } from '../composer/screen.js';
  */
 export type PromptKey = 'Up' | 'Down' | 'Left' | 'Right' | 'Enter' | 'Space';
 
-/** The terminal a dialog is drawn in: tmux or Orca, as an adapter sees it. */
+/** The terminal a dialog is drawn in: tmux, Orca or the built-in one, as an adapter sees it. */
 export interface PromptHost {
-  readonly kind: 'tmux' | 'orca';
+  readonly kind: 'tmux' | 'orca' | 'builtin';
   /** The screen as shown now, or null when it cannot be read. */
   read(): Promise<Screen | null>;
   press(keys: readonly PromptKey[]): Promise<void>;

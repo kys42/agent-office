@@ -82,7 +82,11 @@ export const AGENT_LAUNCH: Record<Provider, AgentLauncher> = {
     // rather than splitting its window, whatever the person's `teammateMode` says. Orca, Terminal
     // and a copied command keep that setting. The option is hidden from `--help`; Claude Code
     // 2.1.16 is the first to know it (2.1.15 refuses it as unknown and does not start).
-    at: { tmux: [{ words: ['--teammate-mode', 'in-process'], since: '2.1.16' }] },
+    at: {
+      tmux: [{ words: ['--teammate-mode', 'in-process'], since: '2.1.16' }],
+      // The built-in terminal (#401) holds one conversation per session, like the app's tmux.
+      builtin: [{ words: ['--teammate-mode', 'in-process'], since: '2.1.16' }],
+    },
     newSessionId: () => randomUUID(),
     words: (l, flags) => {
       const id = l.sessionId ? ['--session-id', l.sessionId] : [];

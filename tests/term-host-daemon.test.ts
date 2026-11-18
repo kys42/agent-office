@@ -11,6 +11,9 @@ import headless from '@xterm/headless';
 import { connectTermHost, type ConnectOptions } from '../desktop/term-host/client';
 import { termHostPaths } from '../desktop/term-host/endpoint';
 import { restoreSequence, type ExitInfo } from '../desktop/term-host/protocol';
+import { TermBuiltin } from '../desktop/term-builtin';
+import { findHost } from '../desktop/terminal-host';
+import { runCommand } from '../server/adapters/claude-live';
 
 function nodePtyMissing() {
   if (process.platform === 'win32') return 'needs /bin/sh';
@@ -159,6 +162,88 @@ test(
       for (const pid of [childPid, strayPid, daemonPid]) {
         if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
       }
+      await rm(dataDir, { recursive: true, force: true });
+      if (path.dirname(paths.socket) !== paths.dir) {
+        await rm(path.dirname(paths.socket), { recursive: true, force: true });
+      }
+    }
+  },
+);
+
+test(
+  'the app recognises a real built-in session from its process, reads its screen and types into it',
+  {
+    // The process lookup reads macOS terminals (`ttys…`, `ps -E`): Linux `pts/N` is not read yet.
+    skip:
+      nodePtyMissing() || (process.platform !== 'darwin' && 'process lookup reads macOS ttys only'),
+    timeout: 60_000,
+  },
+  async () => {
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'th-builtin-'));
+    const paths = termHostPaths(dataDir);
+    const daemon = {
+      execPath: process.execPath,
+      args: ['--import', import.meta.resolve('tsx'), path.resolve('desktop/term-host/daemon.ts')],
+    };
+    const builtin = new TermBuiltin({ dataDir, daemon, requestMs: 5_000 });
+    let childPid = 0;
+    let daemonPid = 0;
+    try {
+      // Nothing runs yet: a lookup says so without starting anything.
+      assert.equal(await builtin.sessions(true), null);
+      const created = await builtin.create({
+        id: 'ao-real',
+        // Node, not `cat`: macOS hides the environment of its own platform binaries from `ps -E`,
+        // and the lookup reads the session's variable there (an agent CLI is never one of them).
+        argv: [
+          process.execPath,
+          '-e',
+          "process.stdout.write('\\x1b]0;real-title\\x07\\x1b[2mfaint\\x1b[0m plain\\n'); process.stdin.pipe(process.stdout)",
+        ],
+        cwd: dataDir,
+        env: {
+          PATH: process.env.PATH ?? '/usr/bin:/bin',
+          TERM: 'xterm-256color',
+          LANG: 'C',
+          AGENT_OFFICE_TERM_SESSION: 'ao-real',
+        },
+        cols: 80,
+        rows: 10,
+      });
+      childPid = created.pid;
+      const inventory = await builtin.sessions(true);
+      daemonPid = inventory!.daemonPid;
+      let screen = await builtin.screen('ao-real');
+      for (let i = 0; i < 100 && !screen.lines[0].includes('plain'); i++) {
+        await sleep(20);
+        screen = await builtin.screen('ao-real');
+      }
+      assert.equal(screen.lines[0], 'faint plain');
+      assert.deepEqual(screen.faint[0], [[0, 5]]);
+      assert.equal(screen.title, 'real-title');
+      // The session's own process leads its pty, the daemon holds it.
+      const deps = { run: runCommand, bin: (name: string) => name, builtin };
+      assert.deepEqual(await findHost(childPid, deps, undefined, true), {
+        kind: 'builtin',
+        session: 'ao-real',
+        label: path.basename(dataDir),
+      });
+      await builtin.write('ao-real', 'typed-in\r');
+      for (let i = 0; i < 100 && !screen.lines.some((l) => l === 'typed-in'); i++) {
+        await sleep(20);
+        screen = await builtin.screen('ao-real');
+      }
+      assert.ok(screen.lines.filter((l) => l === 'typed-in').length >= 1);
+      builtin.close();
+      const control = await connectTermHost({ dataDir });
+      await control.shutdown();
+      await waitFor(() => !alive(daemonPid), 'the daemon exits');
+    } catch (error) {
+      const log = await readFile(paths.log, 'utf8').catch(() => '(no log)');
+      throw new Error(`${(error as Error).message}\n--- daemon log ---\n${log}`, { cause: error });
+    } finally {
+      builtin.close();
+      for (const pid of [childPid, daemonPid]) if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
       await rm(dataDir, { recursive: true, force: true });
       if (path.dirname(paths.socket) !== paths.dir) {
         await rm(path.dirname(paths.socket), { recursive: true, force: true });

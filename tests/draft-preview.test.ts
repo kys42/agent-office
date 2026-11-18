@@ -339,6 +339,8 @@ const target = (over: Partial<TerminalTarget> = {}): TerminalTarget => ({
 test('The card reads the box only for a terminal a send could reach', () => {
   assert.equal(previewsTarget(target()), true);
   assert.equal(previewsTarget(target({ kind: 'orca', status: 'busy' })), true);
+  // The app's own terminal (#401) has a box a send reaches, like tmux and Orca.
+  assert.equal(previewsTarget(target({ kind: 'builtin' })), true);
   assert.equal(previewsTarget(null), false);
   assert.equal(previewsTarget(target({ canSend: false, status: 'waiting' })), false);
   assert.equal(previewsTarget(target({ kind: 'codex', queues: true })), false);

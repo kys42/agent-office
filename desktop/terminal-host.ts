@@ -1,7 +1,10 @@
+import path from 'node:path';
 import { remember } from '../server/adapters/claude-live.js';
 import type { RunOptions } from '../server/adapters/claude-live.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { TerminalTarget } from '../src/shared/types.js';
+import { TermHostError } from './term-host/client.js';
+import type { BuiltinTerminals } from './term-builtin.js';
 
 /**
  * The environment for Orca CLI calls about this computer: without Orca's remote-runtime
@@ -21,6 +24,8 @@ export interface TerminalHostDeps {
   bin: (name: 'orca' | 'tmux' | 'codex') => string;
   /** `process.platform` when left out; tests pin it. */
   platform?: string;
+  /** The built-in terminal (#401): its sessions are looked up only, never started from here. */
+  builtin?: BuiltinTerminals;
 }
 
 export type TerminalHost =
@@ -32,7 +37,9 @@ export type TerminalHost =
       /** The whole title, only when clipping shortened it: for matching, never shown. */
       fullTitle?: string;
     }
-  | { kind: 'tmux'; socket: string; pane: string; label: string };
+  | { kind: 'tmux'; socket: string; pane: string; label: string }
+  /** A session of the app's own terminal host (#401): its id, and its folder's name to show. */
+  | { kind: 'builtin'; session: string; label: string };
 
 export interface ProcessEnv {
   /** Any tmux marker, valid or not: such a process is never routed to an outer terminal. */
@@ -41,7 +48,12 @@ export interface ProcessEnv {
   orcaTab?: string;
   tmuxSocket?: string;
   tmuxPane?: string;
+  /** The built-in terminal session it was started in (`AGENT_OFFICE_TERM_SESSION`), unverified. */
+  termSession?: string;
 }
+
+/** The variable a built-in terminal session puts in its program's environment (#401). */
+export const TERM_SESSION_ENV = 'AGENT_OFFICE_TERM_SESSION';
 
 /**
  * `ps -E` prints the arguments followed by the environment. The caller passes the arguments
@@ -54,12 +66,14 @@ export function parseProcessEnv(full: string, args: string): ProcessEnv {
     for (const m of env.matchAll(pattern)) value = m[1];
     return value;
   };
+  const termSession = last(/(?:^|\s)AGENT_OFFICE_TERM_SESSION=([A-Za-z0-9_.-]{1,64})(?=\s|$)/g);
   return {
     inTmux: /(?:^|\s)TMUX(?:_PANE)?=/.test(env),
     orcaHandle: last(/(?:^|\s)ORCA_TERMINAL_HANDLE=(term_[\w-]{1,80})(?=\s|$)/g),
     orcaTab: last(/(?:^|\s)ORCA_TAB_ID=([\w-]{1,80})(?=\s|$)/g),
     tmuxSocket: last(/(?:^|\s)TMUX=(\/[^\s,]{1,300}),\d+,\d+(?=\s|$)/g),
     tmuxPane: last(/(?:^|\s)TMUX_PANE=(%\d{1,6})(?=\s|$)/g),
+    ...(termSession && { termSession }),
   };
 }
 
@@ -83,6 +97,29 @@ export function ptyOwner(table: string, pid: number): { tty: string; command: st
     if (!parent) return null;
     if (parent.tty !== own.tty) return { tty: own.tty, command: parent.command };
     current = parent;
+  }
+  return null;
+}
+
+/**
+ * The process that leads the pty `pid` is on (the last parent sharing its tty) and the one that
+ * holds that pty (its parent on another tty, or none): for a built-in terminal session, the
+ * session's own process and the daemon.
+ */
+export function ptyLeader(table: string, pid: number): { leader: number; holder: number } | null {
+  const rows = new Map<number, { ppid: number; tty: string }>();
+  for (const line of table.split('\n')) {
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/.exec(line);
+    if (m) rows.set(Number(m[1]), { ppid: Number(m[2]), tty: m[3] });
+  }
+  const own = rows.get(pid);
+  if (!own || !/^(?:ttys?\d+|pts\/\d+)$/.test(own.tty)) return null;
+  let current = pid;
+  for (let depth = 0; depth < 16; depth++) {
+    const row = rows.get(current)!;
+    const parent = rows.get(row.ppid);
+    if (!parent || parent.tty !== own.tty) return { leader: current, holder: row.ppid };
+    current = row.ppid;
   }
   return null;
 }
@@ -196,7 +233,30 @@ export async function findHost(
           t.title.length <= 4096 && { fullTitle: t.title }),
       };
   }
+  if (env.termSession && deps.builtin) return builtinHost(pid, env.termSession, deps, fresh);
   return null;
+}
+
+/**
+ * A built-in terminal session vouched for by the daemon itself: a live session of that id whose
+ * process leads the pty `pid` is on, held by the daemon. The variable alone proves nothing (any
+ * program started inside inherits it); a daemon that is not running or not answering, none.
+ */
+async function builtinHost(
+  pid: number,
+  id: string,
+  deps: TerminalHostDeps,
+  fresh: boolean,
+): Promise<TerminalHost | null> {
+  const inventory = await deps.builtin!.sessions(fresh).catch(() => null);
+  const session = inventory?.sessions.find((s) => s.id === id);
+  if (!inventory || !session) return null;
+  const table = await remember(deps, 'process-table', 1000, false, () =>
+    deps.run('/bin/ps', ['-axo', 'pid=,ppid=,tty=,comm=']),
+  ).catch(() => '');
+  const pty = ptyLeader(table, pid);
+  if (pty?.leader !== session.pid || pty.holder !== inventory.daemonPid) return null;
+  return { kind: 'builtin', session: id, label: path.basename(session.cwd) || session.cwd };
 }
 
 /**
@@ -207,6 +267,20 @@ export async function screenTitle(
   host: TerminalHost,
   deps: TerminalHostDeps,
 ): Promise<string | null> {
+  if (host.kind === 'builtin') {
+    if (!deps.builtin) throw new Error('Cannot verify current terminal title');
+    try {
+      return (await deps.builtin.screen(host.session)).title;
+    } catch (error) {
+      // The session ended or is gone: no terminal shows anything any more.
+      if (
+        error instanceof TermHostError &&
+        (error.code === 'unknown-session' || error.code === 'exited')
+      )
+        return null;
+      throw error;
+    }
+  }
   if (host.kind === 'tmux')
     return (
       await deps.run(deps.bin('tmux'), [
@@ -237,11 +311,25 @@ export async function screenTitle(
 export type TerminalLookup<T> =
   { kind: 'found'; terminal: T } | { kind: 'none' } | { kind: 'unknown' };
 
-export const hostName = (host: TerminalHost) => (host.kind === 'orca' ? 'Orca' : 'tmux');
+/** What differs between terminal hosts when they are named to the person. */
+const HOST_NAMES: { [K in TerminalHost['kind']]: () => string } = {
+  orca: () => 'Orca',
+  tmux: () => 'tmux',
+  builtin: () => m().launch.destination.builtin,
+};
+
+export const hostName = (host: TerminalHost) => HOST_NAMES[host.kind]();
+
+/** The host's own label for its terminal: Orca's tab title, tmux's pane, a folder's name. */
+export const hostLabel = (host: TerminalHost) => (host.kind === 'orca' ? host.title : host.label);
+
+/** Where a message went, in notices: `Orca`, `tmux <pane>`, the built-in terminal's folder. */
+export const hostWhere = (host: TerminalHost) =>
+  host.kind === 'orca' ? 'Orca' : `${hostName(host)} ${host.label}`;
 
 /** Public screen location; private routing addresses stay in the main process. */
 export function focusTarget(host: TerminalHost): NonNullable<TerminalTarget['focus']> {
-  return { kind: host.kind, label: host.kind === 'orca' ? host.title : host.label };
+  return { kind: host.kind, label: hostLabel(host) };
 }
 
 /** A navigation refusal whose message may be shown directly; transport errors stay private. */
@@ -268,6 +356,11 @@ export function orcaSwitchFailure(error: unknown): string | null {
 }
 
 export async function focusHost(host: TerminalHost, deps: TerminalHostDeps): Promise<string> {
+  if (host.kind === 'builtin') {
+    // Its screen is drawn by the app itself (a terminal window), when the app can show it.
+    if (!deps.builtin?.show) throw new TerminalFocusError(m().desktop.terminal.builtinNoView);
+    return deps.builtin.show(host.session);
+  }
   if (host.kind === 'orca') {
     let out: string;
     try {

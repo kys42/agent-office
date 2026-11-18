@@ -8,8 +8,14 @@ import {
   type OrcaLaunchSession,
   type OrcaPlan,
 } from '../orca-launch.js';
-import { openInTerminalApp } from '../terminal-host.js';
+import { randomBytes } from 'node:crypto';
+import { shellEnv } from '../mini-shell.js';
+import { builtinSupported, type BuiltinTerminals } from '../term-builtin.js';
+import { TermHostError } from '../term-host/client.js';
+import { TERM_HOST_PROTOCOL, type SessionSpec } from '../term-host/protocol.js';
+import { openInTerminalApp, shellQuote as posixQuote, TERM_SESSION_ENV } from '../terminal-host.js';
 import { TmuxResume, type SavedSession, type TmuxInspection } from '../tmux-resume.js';
+import { agentLauncher, agentWords } from './agents.js';
 import type { LaunchDestination, LaunchTarget } from './core.js';
 import type { StartContext } from './pipeline.js';
 
@@ -22,6 +28,8 @@ import type { StartContext } from './pipeline.js';
  * - `terminalApp`: a new macOS Terminal window running the command (nothing to adopt: its
  *   process is found like any terminal's).
  * - `copy`: the command on the clipboard; nothing starts, so nothing is confirmed or pending.
+ * - `builtin` (#401): a session of the app's own terminal host, its program started directly
+ *   (argv, no shell); offered only while its experimental setting is on.
  */
 
 /** tmux's own terms: the session a summon, fork or resume runs in. */
@@ -209,6 +217,165 @@ export function copyDestination(deps: ShellDestinationDeps): LaunchDestination {
       const command = context.probe.detail as string;
       deps.copy?.(command);
       return { state: 'copied', message: m().launch.copied, command };
+    },
+  };
+}
+
+/** What the built-in terminal needs (#401). */
+export interface BuiltinDestinationDeps {
+  platform: string;
+  /** The person's experimental setting (`preferences.builtinTerminal`). */
+  enabled: () => boolean;
+  terminals: Pick<BuiltinTerminals, 'create' | 'sessions'>;
+  /** The agent CLI's absolute path (throws with the reason when not found). */
+  binary: (name: string) => Promise<string>;
+  /** The CLI's version, for the options it takes only here (`AgentLauncher.at`). */
+  version?: (binary: string) => Promise<string | undefined>;
+  directory: (cwd: string) => Promise<boolean>;
+  /** Agent Office's environment: the agent home it reads conversations from. */
+  env?: NodeJS.ProcessEnv;
+  /** A new session's id (random when left out). */
+  newId?: () => string;
+  wait?: (ms: number) => Promise<void>;
+}
+
+/** What a built-in terminal launch starts: its session, and the command shown to confirm it. */
+export interface BuiltinPlan {
+  spec: SessionSpec & { id: string; env: Record<string, string> };
+  command: string;
+}
+
+/** The terminal size a session starts at, as tmux's (a window attaching resizes it). */
+const BUILTIN_SIZE = { cols: 200, rows: 50 };
+/** History a session keeps: the conversation itself is read from the agent's own record. */
+const BUILTIN_SCROLLBACK = 200;
+/** How long after starting a session that ended counts as never started. */
+const START_CHECK_MS = 600;
+
+const newBuiltinId = () => `ao-${randomBytes(6).toString('hex')}`;
+
+/**
+ * The environment of a built-in terminal session: Agent Office's own, as for a terminal (no
+ * inherited tmux or Orca terminal, a UTF-8 locale, xterm colours), the agent's folder first on
+ * PATH as for tmux, the agent's home exactly as Agent Office reads it (an Orca tab's rule: set to
+ * its value, or unset), and the session's own marker for the terminal lookup.
+ */
+export function builtinEnv(
+  base: NodeJS.ProcessEnv,
+  binary: string,
+  provider: LaunchTarget['provider'],
+  id: string,
+): Record<string, string> {
+  const env = shellEnv(base);
+  env.PATH = [
+    path.dirname(binary),
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    base.PATH ?? '/usr/bin:/bin',
+  ].join(path.delimiter);
+  delete env.ORCA_TERMINAL_HANDLE;
+  delete env.ORCA_TAB_ID;
+  const home = agentLauncher(provider).home;
+  if (home) {
+    const value = base[home];
+    if (!value) delete env[home];
+    else if (!path.isAbsolute(value)) throw new Error(m().tmux.unsupported);
+  }
+  env[TERM_SESSION_ENV] = id;
+  env.AGENT_OFFICE_TERM_HOST = String(TERM_HOST_PROTOCOL);
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) if (typeof value === 'string') out[key] = value;
+  return out;
+}
+
+/**
+ * The launch in the built-in terminal's terms: the agent and its words from the shared adapter
+ * (with the options it takes only here), the first prompt after `--`, run directly in the folder.
+ */
+export function builtinPlan(
+  t: LaunchTarget,
+  binary: string,
+  version: string | undefined,
+  env: NodeJS.ProcessEnv,
+  id: string,
+): BuiltinPlan {
+  const words = agentWords({ ...t, destination: 'builtin', version });
+  const argv = [
+    binary,
+    ...words.args,
+    ...(words.message !== undefined ? ['--', words.message] : []),
+  ];
+  return {
+    spec: {
+      id,
+      argv,
+      cwd: t.cwd,
+      env: builtinEnv(env, binary, t.provider, id),
+      ...BUILTIN_SIZE,
+      scrollback: BUILTIN_SCROLLBACK,
+    },
+    command: argv.map(posixQuote).join(' '),
+  };
+}
+
+export function builtinDestination(deps: BuiltinDestinationDeps): LaunchDestination {
+  const offered = () => builtinSupported(deps.platform) && deps.enabled();
+  return {
+    id: 'builtin',
+    launches: true,
+    place: 'builtin',
+    // Like a Terminal window: the session runs once it starts, the agent is seen a moment later.
+    reserves: true,
+    supports: builtinSupported,
+    offered,
+    async probe(t) {
+      if (!builtinSupported(deps.platform))
+        return { available: false, reason: m().launch.builtinUnsupported };
+      if (!deps.enabled()) return { available: false, reason: m().launch.builtinOff };
+      try {
+        const binary =
+          t.executable && path.isAbsolute(t.executable)
+            ? t.executable
+            : await deps.binary(t.provider);
+        if (!(await deps.directory(t.cwd))) throw new Error(m().tmux.folderMissing);
+        const version = await deps.version?.(binary).catch(() => undefined);
+        const plan = builtinPlan(
+          t,
+          binary,
+          version,
+          deps.env ?? process.env,
+          (deps.newId ?? newBuiltinId)(),
+        );
+        return { available: true, command: plan.command, detail: plan };
+      } catch (error) {
+        return { available: false, reason: (error as Error).message };
+      }
+    },
+    async start(_t, context) {
+      const plan = context.probe.detail as BuiltinPlan;
+      context.authorized?.();
+      let id: string;
+      try {
+        id = (await deps.terminals.create(plan.spec)).id;
+      } catch (error) {
+        // The request went out but the connection closed before the answer: it may have started.
+        if (error instanceof TermHostError && error.code === 'closed') {
+          context.hold();
+          return {
+            state: 'uncertain',
+            message: m().launch.builtinUncertain,
+            command: plan.command,
+          };
+        }
+        throw new Error(m().launch.builtinFailed((error as Error).message));
+      }
+      // Gone right after starting: stopped at a prompt never finished (login, folder trust) or
+      // failed. A look that fails proves nothing either way.
+      await (deps.wait ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(START_CHECK_MS);
+      const now = await deps.terminals.sessions(true).catch(() => undefined);
+      if (now !== undefined && !now?.sessions.some((s) => s.id === id))
+        throw new Error(m().launch.builtinExited);
+      return { state: 'launched', message: m().launch.builtinLaunched, command: plan.command };
     },
   };
 }

@@ -15,7 +15,14 @@ import { previewsTarget } from '../lib/terminalDraft';
 
 const quiet = () => {};
 
-export const HOSTS = { orca: 'Orca', tmux: 'tmux', codex: 'Codex' } as const;
+export const HOSTS: Record<TerminalTarget['kind'], string> = {
+  orca: 'Orca',
+  tmux: 'tmux',
+  codex: 'Codex',
+  get builtin() {
+    return m().launch.destination.builtin;
+  },
+};
 
 /** One line naming where the text goes, shared by the card and the bubble quick reply. */
 export function targetLine(target: TerminalTarget, privacy: boolean) {

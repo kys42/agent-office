@@ -561,6 +561,11 @@ export interface Preferences {
    * while it is available, else Orca, else tmux. Missing: never chosen.
    */
   launchDestination?: import('./launch').LaunchDestinationId;
+  /**
+   * Desktop, experimental (#401): the app's own terminal is offered as a launch destination
+   * (macOS and Linux). Sessions already running there are recognised either way. Missing: off.
+   */
+  builtinTerminal?: boolean;
   /** Size of reading text (#246) in every window. Missing: `normal`. */
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
@@ -687,7 +692,8 @@ export interface TerminalTarget {
   codexRemote?: boolean;
   /** An explicit send may open the verified existing Codex conversation first. */
   canPrepare?: boolean;
-  kind: 'orca' | 'tmux' | 'codex';
+  /** `builtin`: a session of the app's own terminal host (#401). */
+  kind: 'orca' | 'tmux' | 'builtin' | 'codex';
   label: string;
   /** Agent CLI process state, e.g. idle, busy, shell. */
   status: string;
@@ -695,7 +701,7 @@ export interface TerminalTarget {
   /** The app can bring the session's terminal to the front. */
   canFocus: boolean;
   /** Current screen destination, independent of the message transport. No handles or sockets. */
-  focus?: { kind: 'orca' | 'tmux'; label: string };
+  focus?: { kind: 'orca' | 'tmux' | 'builtin'; label: string };
   /** Goes through the session's own queue (Codex), never typed into a terminal. */
   queues?: boolean;
   /** Delivered to the existing local Codex Desktop owner, without terminal typing. */
@@ -1329,8 +1335,11 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
 };
 
 /** Whether a saved conversation can open in a new Orca tab, and what a start did. */
-/** Where a conversation already runs, or is open, as checked right before a launch. */
-export type LaunchPlace = 'orca' | 'tmux' | 'other';
+/**
+ * Where a conversation already runs, or is open, as checked right before a launch. `builtin`:
+ * the app's own terminal (#401).
+ */
+export type LaunchPlace = 'orca' | 'tmux' | 'builtin' | 'other';
 /**
  * The app whose terminal holds a running agent, read from its process's parents when no tab
  * or pane could be verified (#376). `swarm`: Claude's own tmux server for teammates
@@ -1349,6 +1358,7 @@ export type HostApp =
   | 'tmux'
   | 'swarm'
   | 'background'
+  | 'builtin'
   | 'app'
   | 'unknown';
 /** Where a running agent is when its terminal tab could not be verified (#376). */

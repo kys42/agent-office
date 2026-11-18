@@ -23,6 +23,7 @@ export const launchSheet: Messages['launchSheet'] = {
   destinationHint: {
     orca: '이 프로젝트의 Orca 작업 공간에 새 탭',
     tmux: '앱이 유지하는 세션 · 창을 닫아도 계속 실행',
+    builtin: '앱 안의 터미널 · 창을 닫아도 계속 실행 · 실험 기능',
     terminalApp: 'macOS 터미널 새 창',
     copy: '명령을 복사해 직접 실행',
   },

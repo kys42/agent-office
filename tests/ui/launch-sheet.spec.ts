@@ -52,9 +52,10 @@ async function setup(
         },
       });
       localStorage.setItem('office:onboarding:v1:live', 'seen');
-      const ids = ['orca', 'tmux', 'terminalApp', 'copy'];
       /** What the core would answer: probes, the remembered default, a fork's origin. */
       const options = (intent: any) => {
+        // The destinations main offers (the built-in terminal only while its setting is on).
+        const ids: string[] = w.ids ?? ['orca', 'tmux', 'terminalApp', 'copy'];
         const probes: Record<string, any> = {
           orca: { available: true, command: 'claude --resume x' },
           tmux: { available: true, command: 'tmux -L agent-office attach -t =office-claude' },
@@ -1132,3 +1133,27 @@ for (const colorScheme of ['light', 'dark'] as const)
       animations: 'disabled',
     });
   });
+
+test('the built-in terminal is offered only when main offers it, and starts there', async ({
+  page,
+}) => {
+  await setup(page);
+  const plain = await openProject(page);
+  await expect(destination(plain, 'Orca')).toBeChecked();
+  await expect(destination(plain, '내장 터미널')).toHaveCount(0);
+  // Its setting on: main offers it (here the remembered choice).
+  await setup(page, '/', undefined, {
+    ids: ['orca', 'tmux', 'builtin', 'terminalApp', 'copy'],
+    probes: { builtin: { available: true, command: "'/opt/bin/claude' '--session-id' 'x'" } },
+    remembered: 'builtin',
+  });
+  const modal = await openProject(page);
+  await expect(destination(modal, '내장 터미널')).toBeChecked();
+  await expect(modal.getByText('앱 안의 터미널 · 창을 닫아도 계속 실행 · 실험 기능')).toBeVisible();
+  await modal.getByLabel('에이전트 이름', { exact: true }).fill('내장 동료');
+  await page.screenshot({ path: '.local/launch-sheet-builtin.png', animations: 'disabled' });
+  await modal.getByRole('button', { name: '내장 터미널에서 시작' }).click();
+  await expect(modal).toHaveCount(0);
+  const launches = await read(page, 'launches');
+  expect(launches.at(-1)).toMatchObject({ destination: 'builtin', action: 'start' });
+});
