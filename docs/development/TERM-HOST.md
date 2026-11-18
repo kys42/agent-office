@@ -1,6 +1,6 @@
-# 내장 터미널 호스트 (1단계, #385)
+# 내장 터미널 호스트 (1단계 #385, 2단계 #401)
 
-tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드에서 유지하기 위한 작은 데몬입니다. 1단계는 데몬, 프로토콜, 앱 쪽 클라이언트까지이며 UI와 실행 destination은 아직 없습니다(2단계).
+tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드에서 유지하기 위한 작은 데몬입니다. 1단계는 데몬, 프로토콜, 앱 쪽 클라이언트까지입니다. 2단계(#401)에서 앱이 이것을 실행 행선지·실행 위치·답장 대상으로 씁니다([앱에서 쓰기](#앱에서-쓰기-2단계-401)).
 
 ## 구조 (`desktop/term-host/`)
 
@@ -20,7 +20,8 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
 
 - 프레임은 `[kind u8][길이 u32 BE][본문]`입니다. kind 1은 JSON 제어 메시지, kind 2는 `[세션 id 길이 u8][id][원본 바이트]` 데이터입니다.
 - 데이터를 NDJSON에 넣지 않은 이유: 터미널 출력은 ESC가 많아 JSON에서 바이트당 최대 6배가 되고, base64는 1/3이 늘고 청크마다 인코딩·디코딩이 듭니다. 길이 접두는 바이트를 그대로 나르고, 헤더만 보고 너무 큰 프레임을 본문 버퍼링 전에 거절합니다(hello 전 4KB, 이후 16MB).
-- 요청은 `hello`(프로토콜 버전 + 토큰), `create`, `list`, `attach`, `detach`, `resize`, `kill`, `shutdown`입니다. 입력(write)은 응답 없는 데이터 프레임이고 같은 연결의 다른 메시지와 순서가 유지됩니다.
+- 요청은 `hello`(프로토콜 버전 + 토큰), `create`, `list`, `attach`, `detach`, `screen`, `resize`, `kill`, `shutdown`입니다.
+- `screen`(프로토콜 2)은 지금 보이는 화면을 줍니다: 행별 글자(오른쪽 공백은 `tmux capture-pane -p`처럼 잘라 냄), 행별 흐린 글자(SGR 2) 범위 `[시작, 끝)`(UTF-16 기준, 넓은 글자의 둘째 칸은 더하지 않음), 커서, 대체 화면 여부, 프로그램이 정한 창 제목(OSC 0/2). 그때까지의 출력이 파싱된 뒤 읽고, 동기화 출력(2026) 중이면 attach처럼 최대 100ms 기다립니다. 끝난 세션은 `exited`입니다. 입력(write)은 응답 없는 데이터 프레임이고 같은 연결의 다른 메시지와 순서가 유지됩니다.
 - 이벤트는 출력(데이터 프레임), `exit`, 그리고 느린 클라이언트용 `snapshot`(resync)입니다.
 - `attach`는 스냅샷과 모드 시퀀스를 돌려주고 그다음 출력부터 실시간으로 보냅니다. 새 xterm에는 `restoreSequence(result)`를 쓰면 됩니다(동기화 출력 2026으로 감싸 한 번에 그립니다).
 
@@ -95,9 +96,42 @@ tmux나 Orca 없이 앱이 에이전트 터미널을 띄우고 백그라운드�
   - `tests/term-host.test.ts`, `tests/term-host-edges.test.ts`: 가짜 PTY.
   - `tests/term-host-daemon.test.ts`: 실제 데몬과 `/bin/sh`. node-pty를 못 불러오거나 Windows면 건너뜁니다.
 
+## 앱에서 쓰기 (2단계, #401)
+
+- **설정**: '내장 터미널(실험)'(`preferences.builtinTerminal`, 기본 꺼짐). 켜고 macOS·Linux이면 실행 시트에 '내장 터미널'이 나옵니다. 꺼도 이미 떠 있는 세션은 계속 알아봅니다(중복 확인·답장).
+- **앱 쪽 서비스** (`desktop/term-builtin.ts` `TermBuiltin`, 데이터 폴더는 `AGENT_OFFICE_DATA_DIR` 또는 `app.getPath('userData')`):
+  - 데몬은 **실행할 때만** 띄웁니다(`bundledDaemon()`). 조회·화면 읽기·키 입력은 떠 있는 데몬에 붙기만 합니다. 소켓 파일이 없으면 `stat` 한 번으로 바로 '없음'이라 답하고, 토큰·디렉터리도 만들지 않습니다.
+  - 세션 목록은 1초 동안 같은 답을 나눠 쓰고, 실패(답 없음 등)도 1초 동안 기억합니다. 조회 요청에는 2초 시간 제한이 있어, 멈춘 데몬이 조회 경로를 붙잡지 않습니다.
+  - 조회용 연결 하나를 같이 쓰고 30초 동안 쓰지 않으면 닫습니다. 데몬은 세션도 클라이언트도 없을 때만 끝나기 때문입니다. 앱을 끄면 연결만 닫히고 세션은 데몬에 남습니다.
+- **실행** (`builtinDestination`): 에이전트 어댑터의 단어를 그대로 argv로 넘깁니다(셸 없음, 첫 메시지는 `--` 뒤). Claude 2.1.16 이상이면 tmux처럼 `--teammate-mode in-process`를 붙입니다(`AgentLauncher.at.builtin`).
+  - 환경은 앱의 것에서 시작합니다(`shellEnv`: tmux·Claude 표식과 `ELECTRON_RUN_AS_NODE` 제거, TERM·UTF-8). 여기에 다음을 더합니다.
+    - 바이너리 폴더를 PATH 앞에 둡니다.
+    - Orca 터미널 변수를 뺍니다.
+    - 에이전트 홈은 Orca 탭 규칙을 따릅니다(앱 값으로 두거나 빼고, 상대 경로는 거절).
+    - `AGENT_OFFICE_TERM_SESSION=<id>`, `AGENT_OFFICE_TERM_HOST=<프로토콜>`을 넣습니다.
+  - 세션은 200×50, 스크롤백 200줄로 시작합니다.
+  - Terminal 창처럼 `reserves`라, 에이전트가 보일 때까지 '시작 중'으로 예약합니다.
+  - 응답 전에 연결이 끊긴 create는 `uncertain`(시작됐을 수 있음)입니다. 시작 0.6초 뒤 이미 없는 세션은 `builtinExited`(로그인·폴더 신뢰 확인 등에서 멈춤)입니다.
+- **실행 위치 인식** (`desktop/terminal-host.ts` `findHost`): tmux 밖이고 세 가지가 모두 맞으면 `{ kind: 'builtin', session, label }`입니다.
+  - env 마커가 있습니다.
+  - 데몬 목록에 그 id의 살아 있는 세션이 있습니다.
+  - 그 세션 pid가 이 프로세스 pty의 leader이고, leader의 부모가 데몬입니다.
+  - 검증 못 한 경우(데몬이 답하지 않음 등)에는 `placeOfProcess`가 env 마커로 '내장 터미널에서 실행 중'(`where: 'builtin'`)이라고만 말합니다.
+  - Codex 화면 인식은 데몬이 준 제목(스레드 id)으로 같은 길을 탑니다.
+- **답장** (`desktop/terminals.ts` `HOST_IO.builtin`):
+  - 화면은 `screen`으로 읽고 흐린 글자까지 봅니다(`styled: true`, `builtinScreen`).
+  - 키는 tmux `send-keys`가 쓰는 것과 같은 바이트, 붙여넣기는 bracketed paste, Enter는 `\r`입니다.
+  - 보내기 흐름(상태·전면 프로세스·화면 확인, 초안 보호, Enter 직전 재확인)은 tmux·Orca와 같은 코드를 탑니다.
+  - 데몬에 닿지 못한 쓰기는 '보내지 않음'으로 알립니다.
+- **화면 보기**는 2b(카드·창의 xterm 뷰)에서 붙습니다. 그 전까지 "터미널로 이동"은 이유를 알립니다.
+- **한계**
+  - macOS의 `ps -E`는 Apple 플랫폼 바이너리(`/bin/cat` 등)의 환경을 보여 주지 않습니다. 에이전트 CLI(Claude·Codex·node)는 보입니다. tmux·Orca 인식도 같은 전제입니다.
+  - Linux는 실행·답장 경로는 같지만, 프로세스 환경·tty 읽기(`ps -wwE`, `ttys…`)가 macOS 기준이라 인식이 되지 않을 수 있습니다(기존 Linux 한계와 같음). 그동안은 '시작 중' 예약만 중복 실행을 막습니다.
+  - 원격 사무실의 소환(`server/federation/launcher.ts`)은 별도 프로세스라 데몬에 묻지 않습니다. 내장 터미널 세션은 env 마커로 '그곳에서 실행 중'으로만 봅니다.
+
 ## 한계와 다음 단계
 
-- 앱은 아직 이 데몬을 쓰지 않습니다. 2단계에서 실행 코어에 '내장 터미널' destination을 추가하고 카드·창에 xterm으로 붙입니다(`app.getPath('userData')`, `bundledDaemon()`).
+- 2b: 카드·창에 xterm 뷰(attach → `restoreSequence` → 크기 흔들기 → 실시간, 보이지 않으면 detach), "터미널로 이동", 종료 버튼.
 - serialize 밖의 상태(문자 집합, 저장된 커서, 탭 정지 등)는 복원하지 않습니다. 2단계에서 붙을 때 크기를 한 번 흔들어(SIGWINCH) TUI가 다시 그리게 할 계획입니다.
 - 스크롤 영역은 xterm 내부 값(`_core.buffer.scrollTop/scrollBottom`)을 읽습니다. 값이 없으면 복원을 건너뜁니다.
 - 옛 프로토콜 데몬의 세션은 새 앱에서 보이지 않습니다(버전별 소켓). 프로토콜을 바꿀 때 이전 방법을 정합니다.
