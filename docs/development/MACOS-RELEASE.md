@@ -116,7 +116,7 @@ GitHub의 **`macos-release` environment를 먼저 생성**하고 허용 브랜�
 
 ### 공증 사전 점검 실패
 
-`release:mac -- preflight`는 업로드 없이 Apple history API 접근을 30초 안에 확인한다. 403 계약 오류는 소유자가 **해당 서명 팀**의 Apple Developer / App Store Connect Agreements를 확인한 뒤 재실행한다. 이미 동의했다면 다른 팀의 계약을 본 것은 아닌지 확인한다. 401은 팀 API 키 또는 keychain profile을 확인한다. 네트워크 timeout은 연결을 복구한 뒤 같은 preflight를 다시 실행한다. 이 단계 실패에는 제출 ID가 없으므로 resume이나 무조건 재제출로 해결하지 않는다. 실패 로그에 원래 인증 인자와 개인 키 경로를 복사하지 않는다.
+`release:mac -- preflight`는 업로드 없이 Apple history API 접근을 30초 안에 확인한다. 403 계약 오류는 소유자가 **해당 서명 팀**의 Apple Developer / App Store Connect Agreements를 확인한 뒤 재실행한다. 이미 동의했다면 다른 팀의 계약을 본 것은 아닌지 확인한다. 401은 팀 API 키 또는 keychain profile을 확인한다. 네트워크 timeout은 연결을 복구한 뒤 같은 preflight를 다시 실행한다. 이 단계 실패에는 제출 ID가 없으므로 resume이나 무조건 재제출로 해결하지 않는다. 분류되지 않은 실패는 notarytool의 stderr를 정리해 `(notarytool: …)`로 함께 보여 준다. 이때 설정된 키 경로·키 ID·issuer·프로필 이름, 인증 플래그 뒤의 값, 절대 경로, UUID는 지우고 500자로 자른다. 실패 로그에 원래 인증 인자와 개인 키 경로를 복사하지 않는다.
 
 ### 유지보수와 복구
 

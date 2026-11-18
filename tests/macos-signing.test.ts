@@ -164,7 +164,8 @@ test('notarization preflight fails with actionable guidance without leaking cred
     ['HTTP 403 required agreement missing or expired', '', /Agreements/],
     ['HTTP 401 unauthorized', '', /authentication failed/],
     ['', 'ETIMEDOUT', /timed out/],
-    ['unknown failure', '', /preflight failed/],
+    ['unknown failure', '', /preflight failed \(notarytool: unknown failure\)/],
+    ['', 'ENOENT', /preflight failed \(notarytool: ENOENT\)/],
   ] as const) {
     assert.throws(
       () =>
@@ -181,4 +182,38 @@ test('notarization preflight fails with actionable guidance without leaking cred
       },
     );
   }
+});
+
+test('unrecognised notarization preflight failures show sanitised notarytool output', () => {
+  const env = {
+    APPLE_API_KEY_PATH: '/Users/someone/.private_keys/AuthKey_SYNTH12345.p8',
+    APPLE_API_KEY: 'SYNTH12345',
+    APPLE_API_ISSUER: '69a6de7e-1111-47e3-e053-5b8c7c11a4d1',
+  };
+  const stderr = [
+    '\u001b[31mError:\u001b[0m HTTP status code: 500. Internal Server Error.',
+    'Request: xcrun notarytool history --key /Users/someone/.private_keys/AuthKey_SYNTH12345.p8',
+    '--key-id SYNTH12345 --issuer 69a6de7e-1111-47e3-e053-5b8c7c11a4d1',
+    'Using AuthKey_SYNTH12345.p8 from ~/Library/notary --password hunter2 --keychain-profile other',
+    'x'.repeat(800),
+  ].join('\n');
+  assert.throws(
+    () =>
+      notary.verifyNotaryAccess(env, () => {
+        throw Object.assign(new Error('Command failed: xcrun notarytool …'), { stderr });
+      }),
+    (error: any) => {
+      assert.match(error.message, /preflight failed \(notarytool: Error: HTTP status code: 500/);
+      assert.match(error.message, /No artifact was submitted\.$/);
+      assert.doesNotMatch(error.stack, /SYNTH12345|69a6de7e|someone|hunter2|other|\u001b/);
+      assert.ok(error.message.length < 800, 'diagnostic is bounded');
+      return true;
+    },
+  );
+  // Credentials passed through a keychain profile are hidden even without env values.
+  assert.equal(
+    notary.sanitizeNotaryDiagnostic('bad --keychain-profile=release-team --apple-id "a b"', {}),
+    'bad --keychain-profile [redacted] --apple-id [redacted]',
+  );
+  assert.equal(notary.sanitizeNotaryDiagnostic('   ', {}), '');
 });
