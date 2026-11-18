@@ -5,6 +5,8 @@ import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import type { MobileCommand, MobileSettings as State } from '../shared/mobile';
 import './mobile-settings.css';
+/** Same as the toasts in the dock, cards and settings window. */
+const NOTICE_MS = 3600;
 export function MobileSettings({ privacy }: { privacy: boolean }) {
   const { locale } = useI18n();
   const ko = locale === 'ko';
@@ -15,7 +17,14 @@ export function MobileSettings({ privacy }: { privacy: boolean }) {
     [notice, setNotice] = useState(''),
     [show, setShow] = useState(false);
   const mounted = useRef(true),
-    requestVersion = useRef(0);
+    requestVersion = useRef(0),
+    noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Like the app's other toasts: a confirmation that clears itself instead of lingering.
+  const flash = useCallback((text: string) => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = text ? setTimeout(() => setNotice(''), NOTICE_MS) : null;
+    setNotice(text);
+  }, []);
   const [address, setAddress] = useState('127.0.0.1'),
     [port, setPort] = useState(4321);
   const accept = (s: State) => {
@@ -44,6 +53,7 @@ export function MobileSettings({ privacy }: { privacy: boolean }) {
     return () => {
       mounted.current = false;
       requestVersion.current++;
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
     };
   }, [reload]);
   useEffect(() => {
@@ -70,7 +80,7 @@ export function MobileSettings({ privacy }: { privacy: boolean }) {
     const version = ++requestVersion.current;
     setBusy(true);
     setError('');
-    setNotice('');
+    flash('');
     try {
       const next = await api.mobile!(value);
       if (mounted.current && version === requestVersion.current) accept(next);
@@ -81,13 +91,13 @@ export function MobileSettings({ privacy }: { privacy: boolean }) {
     }
   };
   const copy = async (value: string) => {
-    setNotice('');
+    flash('');
     setError('');
     try {
       await api.copyText!(value);
-      setNotice(m().mobile.copied);
+      if (mounted.current) flash(m().mobile.copied);
     } catch {
-      setError(ko ? m().mobile.copyFailed : 'Could not copy.');
+      if (mounted.current) setError(ko ? m().mobile.copyFailed : 'Could not copy.');
     }
   };
   return (

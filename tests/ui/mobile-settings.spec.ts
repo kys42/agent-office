@@ -49,6 +49,8 @@ test('mobile settings stay discoverable after a failed load and can recover', as
   await section.getByRole('button', { name: '주소 복사' }).click();
   await expect(section.getByText('복사했어요.', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as any).copied)).toBe('http://127.0.0.1:4321');
+  // A confirmation, not a status: it clears itself like the app's other toasts (3.6s).
+  await expect(section.getByText('복사했어요.', { exact: true })).toBeHidden({ timeout: 6000 });
 });
 
 test('refresh discovers a new tailnet interface and distinguishes enabled from running', async ({
