@@ -209,13 +209,19 @@ test('mobile can read beyond 1,000 records in a bounded window and jump back to 
   await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toBeVisible();
   await page.screenshot({ path: '.local/mobile-history-browsing.png' });
   const before = latestReads;
+  // A refresh sends its chat read before its destination check, so once that check has
+  // answered, any chat read from the same refresh has been counted.
+  const refreshed = page.waitForResponse('**/mobile/api/targets');
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await refreshed;
   // Historical pages stay put across a scheduled refresh; destination checks remain active.
   await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1');
+  expect(latestReads).toBe(before);
   await page.getByRole('button', { name: '최신 대화로 돌아가기' }).click();
   await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1161');
   await expect(page.locator('.message')).toHaveCount(39);
-  expect(latestReads).toBe(before + 1);
+  // Back on the live page the 5-second refresh reads the latest too, so it may add more reads.
+  expect(latestReads).toBeGreaterThan(before);
   await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toHaveCount(0);
   await page.screenshot({ path: '.local/mobile-history-latest.png' });
 });
