@@ -1,4 +1,23 @@
 export const mobile = {
+  settingsLoadFailed: '모바일 웹 설정을 불러오지 못했어요. 상태를 새로고침해 주세요.',
+  refreshServer: '서버 상태 새로고침',
+  serverRunning: '이 컴퓨터에서 웹 서버 실행 중',
+  serverStopped: '켜짐으로 설정됐지만 웹 서버가 멈춰 있어요',
+  serverDisabled: '웹 접속이 꺼져 있어요',
+  copied: '복사했어요.',
+  connectionHelp: '다른 기기에서 접속이 안 되나요?',
+  helpNetwork:
+    '두 기기를 같은 Tailscale 네트워크에 연결해 주세요. 같은 와이파이에만 연결하는 것으로는 접속할 수 없어요.',
+  helpLoopback:
+    '127.0.0.1은 이 컴퓨터에서만 열려요. 웹 접속을 끄고 Tailscale 주소를 고른 뒤 다시 켜주세요.',
+  helpAddress:
+    'http://와 포트를 포함한 주소 전체를 복사해 주세요. 예전 주소나 https://로는 이 서버에 연결되지 않아요.',
+  helpAwake:
+    '이 컴퓨터가 잠자기에 들어가지 않도록 하고 Agent Office를 켜두세요. Tailscale을 다시 연결했다면 서버 상태를 새로고침해 주세요.',
+  helpCode:
+    '로그인 화면이 뜨면 현재 접속 코드를 입력해 주세요. 앱을 재시작하거나 코드를 바꾸면 이전 로그인은 해제돼요.',
+  helpBoundary:
+    '여기서 실행 중이어도 다른 기기의 접속까지 확인된 것은 아니에요. 계속 시간 초과가 나면 Tailscale 접근 규칙과 기기의 방화벽을 확인해 주세요.',
   badCode: '접속 코드를 확인해주세요.',
   rateLimit: '요청이 많습니다. 잠시 후 다시 시도해주세요.',
   connectionSend:
@@ -20,13 +39,15 @@ export const mobile = {
   enableSend: '컴퓨터의 설정에서 메시지 보내기를 켜주세요.',
   noTarget: '지금 전송 가능한 대상이 없습니다. 원래 앱에서 대화를 열어주세요.',
   checkingTarget: '전송 대상을 확인하는 중…',
-  targetFailed: '전송 대상 연결을 확인하지 못했습니다. 자동으로 다시 확인합니다.',
   sendDesktop: 'Codex Desktop으로 보내기',
   sendQueue: 'Codex 대기열로 보내기',
   sendTerminal: '열린 터미널로 보내기',
   back: '목록으로',
   loading: '불러오는 중…',
-  pageLimit: '최근 1,000개까지 표시합니다',
+  browsingHistory: '이전 기록을 보는 중 · 여기서는 실시간 갱신을 잠시 멈춰요',
+  latest: '최신 대화로 돌아가기',
+  chatFailed: '대화를 새로 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.',
+  targetFailed: '전송 대상을 확인하지 못했어요. 대화는 계속 볼 수 있고 잠시 후 다시 확인해요.',
   older: '이전 대화 보기',
   loadingChat: '대화를 불러오는 중…',
   emptyChat: '표시할 대화가 없습니다.',

@@ -3,6 +3,32 @@
   align-items: center;
   gap: 8px;
 }
+.mobile-server-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+}
+.mobile-help {
+  margin-top: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.mobile-help summary {
+  cursor: pointer;
+  color: var(--text);
+}
+.mobile-help ol {
+  padding-inline-start: 22px;
+}
+.mobile-help li + li {
+  margin-top: 8px;
+}
+.mobile-help p {
+  color: var(--text-2);
+}
 .mobile-settings > p {
   color: var(--text-3);
   font-size: 12px;
@@ -29,6 +55,11 @@
   min-width: 0;
   width: 100%;
   padding: 8px;
+  height: 38px;
+  line-height: 1.4;
+}
+.mobile-settings > p[role='alert'] {
+  color: var(--text);
 }
 .mobile-link {
   display: flex;
