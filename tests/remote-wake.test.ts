@@ -6,7 +6,8 @@ import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { demoSnapshot } from '../src/lib/demo.js';
 import { chmod } from 'node:fs/promises';
-import { peerBinary, resumeOrigin } from '../server/federation/wake.js';
+import { peerBinary, peerTerminalDeps, resumeOrigin } from '../server/federation/wake.js';
+import type { TerminalDeps } from '../desktop/terminals.js';
 
 test('a remote wake finds Codex: installed CLI, then PATH, then the desktop app as a last resort', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'peer-binary-'));
@@ -89,4 +90,24 @@ test('wake binds the source and origin to the selected ordinary Codex conversati
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test('a send for a peer queues with the Codex a wake would run; other tools and homes stay', async () => {
+  const base = {
+    codexHome: '/home/.codex',
+    bin: (name: string) => (name === 'codex' ? 'codex' : '/usr/bin/' + name),
+  } as unknown as TerminalDeps;
+  const bundled =
+    '/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex';
+  const deps = await peerTerminalDeps(async () => bundled, base);
+  assert.equal(deps.bin('codex'), bundled);
+  assert.equal(deps.bin('tmux'), '/usr/bin/tmux');
+  assert.equal(deps.codexHome, '/home/.codex');
+  // Nothing found: the same bare name a local send would run (and report as missing).
+  const none = await peerTerminalDeps(async () => {
+    throw Error('missing');
+  }, base);
+  assert.equal(none.bin('codex'), 'codex');
+  // The shared local deps are not changed.
+  assert.equal(base.bin('codex'), 'codex');
 });

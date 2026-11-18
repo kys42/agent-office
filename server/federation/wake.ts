@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { Session } from '../../src/shared/types.js';
 import { scanCodexOrigin } from '../../desktop/codex-queue.js';
 import { findCodexDestination } from '../../desktop/codex-send.js';
-import { defaultTerminalDeps } from '../../desktop/terminals.js';
+import { defaultTerminalDeps, type TerminalDeps } from '../../desktop/terminals.js';
 import { defaultResumeDeps } from '../../desktop/tmux-resume.js';
 
 // Only a saved, ordinary conversation, identified by the exporter. The client supplies no
@@ -122,4 +122,16 @@ export async function peerBinary(
     for (const app of deps.bundled) if (await executable(app)) return app;
     throw e;
   }
+}
+/**
+ * Terminal deps for a send this office makes for a peer (`codex queue`): Codex is found as a
+ * remote wake or summon finds it (`peerBinary`), so a Mac with only the desktop app can take the
+ * messages for the conversation it just woke. Local sends keep `defaultTerminalDeps`.
+ */
+export async function peerTerminalDeps(
+  resolve: (name: string) => Promise<string> = peerBinary,
+  base: TerminalDeps = defaultTerminalDeps(),
+): Promise<TerminalDeps> {
+  const codex = await resolve('codex').catch(() => base.bin('codex'));
+  return { ...base, bin: (name) => (name === 'codex' ? codex : base.bin(name)) };
 }
