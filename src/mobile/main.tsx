@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
@@ -275,24 +276,25 @@ function Chat({
         readVersion.current++;
         readRequest.current?.abort();
       }
-      acceptDetail(combined);
-      setError('');
-      requestAnimationFrame(() => {
-        if (!live.current || version !== historyVersion.current || controller.signal.aborted)
-          return;
-        if (scroller.current) {
-          // Once newer records are evicted, total height cannot measure prepended height.
-          const anchor = [
-            ...scroller.current.querySelectorAll<HTMLElement>('[data-event-id]'),
-          ].find((element) => element.dataset.eventId === anchorId);
-          scroller.current.scrollTop =
-            anchor && anchorTop !== undefined
-              ? scroller.current.scrollTop + anchor.getBoundingClientRect().top - anchorTop
-              : anchorId
-                ? top + scroller.current.scrollHeight - height
-                : 0;
-        }
+      // Commit the prepended page now and restore the position before the next paint. A
+      // later animation frame could run before React renders under load, measure the old
+      // list, and leave the reader one page (thousands of px) away from where they were.
+      flushSync(() => {
+        acceptDetail(combined);
+        setError('');
       });
+      if (scroller.current) {
+        // Once newer records are evicted, total height cannot measure prepended height.
+        const anchor = [...scroller.current.querySelectorAll<HTMLElement>('[data-event-id]')].find(
+          (element) => element.dataset.eventId === anchorId,
+        );
+        scroller.current.scrollTop =
+          anchor && anchorTop !== undefined
+            ? scroller.current.scrollTop + anchor.getBoundingClientRect().top - anchorTop
+            : anchorId
+              ? top + scroller.current.scrollHeight - height
+              : 0;
+      }
     } catch {
       if (live.current && version === historyVersion.current && !controller.signal.aborted)
         setError(m().mobile.olderFailed);
