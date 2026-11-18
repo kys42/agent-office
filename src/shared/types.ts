@@ -1173,6 +1173,12 @@ export interface OfficeAPI {
    */
   send?: (id: string, text: string, options?: SendOptions) => Promise<SendResult>;
   /**
+   * Desktop only, with `send` on: renames the agent's own session by typing its rename command
+   * (`/rename <title>`) into the live terminal as one line (src/shared/session-rename.ts). A
+   * draft in its input box is refused, never cleared; the new title shows once the agent records it.
+   */
+  renameSession?: (id: string, title: string) => Promise<SendResult>;
+  /**
    * Desktop only: saves an image's bytes (PNG, JPEG, GIF, WebP; checked in main) into the app's
    * attachments folder and returns an opaque id for `send`. No path ever crosses back.
    */

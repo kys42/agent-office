@@ -6,6 +6,13 @@ import { useLaunchSupport } from '../lib/useLaunchSupport';
 import { resumeBlock } from '../shared/summon-existing';
 import { sleepingRevealed } from '../shared/launch-sheet';
 import { focusName } from '../shared/terminal-target';
+import {
+  checkSessionTitle,
+  renameBlock,
+  sessionRenameFor,
+  SESSION_TITLE_MAX,
+  titleProblemMessage,
+} from '../shared/session-rename';
 import { branchInfo } from '../shared/branch';
 import { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -242,6 +249,10 @@ export function Inspector({
   }, [tab, session.id]);
   const [alias, setAlias] = useState(session.alias);
   const [editing, setEditing] = useState(false);
+  // The agent's own session title (#384), typed into its terminal: apart from the office nickname.
+  const [retitling, setRetitling] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [retitleBusy, setRetitleBusy] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
   const [petOpen, setPetOpen] = useState(false);
   const [deskOpen, setDeskOpen] = useState(false);
@@ -312,6 +323,7 @@ export function Inspector({
     setNotes(session.notes);
     setNotesDirty(false);
     setEditing(false);
+    setRetitling(false);
     setZoneOpen(false);
     setPetOpen(false);
     setDeskOpen(false);
@@ -327,6 +339,10 @@ export function Inspector({
   useEffect(() => {
     if (!editing) setAlias(session.alias);
   }, [session.alias, editing]);
+  // The form shows the session's title: hiding the screen closes it.
+  useEffect(() => {
+    if (privacy) setRetitling(false);
+  }, [privacy]);
   // Where a follow-up can go (live Orca/tmux terminal or Codex CLI queue), shared with the
   // office bubbles. Keyed by session, so a switch never shows the previous colleague's target.
   const locatable = takesReplies(session, demo);
@@ -335,6 +351,16 @@ export function Inspector({
     stamp: session.updatedAt,
   });
   const live = targets[session.id] ?? null;
+  // Renaming the session itself: the desktop app only, never the demo; the menu says why it is off.
+  const retitleShown = !!api.renameSession && !demo;
+  const retitleBlock = retitleShown
+    ? renameBlock({
+        command: sessionRenameFor(session.provider),
+        target: live,
+        sendOn: terminalSend,
+        privacy,
+      })
+    : null;
   const closePacket = useCallback(() => setPacket(null), []);
   // What was just sent, until the record shows it (a busy Claude reads queued input later).
   // Kept per session outside this panel, so reopening the card or switching back still shows it.
@@ -400,6 +426,33 @@ export function Inspector({
       notify(t.inspector.saved);
     } catch (e) {
       notify((e as Error).message);
+    }
+  };
+  const openRetitle = () => {
+    setEditing(false);
+    setTitleDraft(s.title ?? '');
+    setRetitling(true);
+  };
+  const sendTitle = async () => {
+    const checked = checkSessionTitle(titleDraft);
+    if (!checked.ok) return notify(titleProblemMessage(checked.problem));
+    setRetitleBusy(true);
+    try {
+      const result = await api.renameSession!(s.id, checked.title);
+      // A draft in the agent's box is refused in main, never replaced; said the same way here.
+      if (result.status !== 'sent') return notify(t.desktop.terminal.draft);
+      setRetitling(false);
+      // The agent records the title; the office shows it once that record is read. A nickname
+      // (or a persona's name) keeps standing in front of it on the card.
+      notify(
+        s.resident?.name || s.alias
+          ? t.inspector.sessionTitle.sentNicknamed
+          : t.inspector.sessionTitle.sent,
+      );
+    } catch (e) {
+      notify((e as Error).message);
+    } finally {
+      setRetitleBusy(false);
     }
   };
   const handoff = async () => {
@@ -977,16 +1030,25 @@ export function Inspector({
     moving.current = false;
     void api.card?.('drag-end');
   };
-  const item = (label: string, run: () => void, close: () => void, disabled = false) => (
+  /** `note`: why the item is off, shown under it (an item that is simply off has none). */
+  const item = (
+    label: string,
+    run: () => void,
+    close: () => void,
+    disabled = false,
+    note?: string,
+  ) => (
     <button
       role="menuitem"
       disabled={disabled}
+      className={note ? 'has-note' : undefined}
       onClick={() => {
         close();
         run();
       }}
     >
-      {label}
+      {note ? <span className="card-menu-label">{label}</span> : label}
+      {note && <small className="card-menu-note">{note}</small>}
     </button>
   );
   const calling = state === 'attention';
@@ -1029,7 +1091,50 @@ export function Inspector({
             <Sprite session={s} provider={s.provider} mood={s.status} size={36} />
           </div>
           <div className="card-title">
-            {editing ? (
+            {retitling ? (
+              <form
+                className="name-editor"
+                title={t.inspector.sessionTitle.hint}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!retitleBusy) void sendTitle();
+                }}
+              >
+                <label className="sr-only" htmlFor="session-title">
+                  {t.inspector.sessionTitle.label}
+                </label>
+                <input
+                  autoFocus
+                  id="session-title"
+                  value={titleDraft}
+                  maxLength={SESSION_TITLE_MAX}
+                  disabled={retitleBusy}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && !e.nativeEvent.isComposing) setRetitling(false);
+                  }}
+                  placeholder={t.inspector.sessionTitle.placeholder}
+                />
+                <button
+                  className="icon-btn"
+                  type="submit"
+                  disabled={retitleBusy}
+                  aria-label={t.inspector.sessionTitle.send}
+                >
+                  <Check size={15} />
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  disabled={retitleBusy}
+                  aria-label={t.inspector.sessionTitle.cancel}
+                  onClick={() => setRetitling(false)}
+                >
+                  <X size={15} />
+                </button>
+              </form>
+            ) : editing ? (
               <form
                 className="name-editor"
                 onSubmit={async (e) => {
@@ -1160,7 +1265,22 @@ export function Inspector({
                     {s.zone &&
                       s.zone !== 'office' &&
                       item(t.inspector.returnToOffice, () => onReturn(s.id), close)}
-                    {item(t.inspector.rename, () => setEditing(true), close)}
+                    {item(
+                      t.inspector.rename,
+                      () => {
+                        setRetitling(false);
+                        setEditing(true);
+                      },
+                      close,
+                    )}
+                    {retitleShown &&
+                      item(
+                        t.inspector.sessionTitle.menu,
+                        openRetitle,
+                        close,
+                        !!retitleBlock,
+                        retitleBlock ? t.inspector.sessionTitle.blocks[retitleBlock] : undefined,
+                      )}
                     {item(t.pets.individualTitle, () => setPetOpen(true), close)}
                     {!s.attachedTo && item(t.desks.menuItem, () => setDeskOpen(true), close)}
                     {!privacy &&

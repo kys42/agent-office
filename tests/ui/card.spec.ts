@@ -376,7 +376,7 @@ test('The card menu holds the rest, and works from the keyboard', async ({ page 
   const more = aside.getByRole('button', { name: '카드 메뉴' });
   await more.click();
   const menu = aside.getByRole('menu');
-  for (const name of ['사무실에 고정', '이름 바꾸기', '이 동료 꾸미기', '원본 위치 열기'])
+  for (const name of ['사무실에 고정', '사무실 별명 바꾸기', '이 동료 꾸미기', '원본 위치 열기'])
     await expect(menu.getByRole('menuitem', { name })).toBeVisible();
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('ArrowDown');

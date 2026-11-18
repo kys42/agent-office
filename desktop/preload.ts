@@ -108,6 +108,7 @@ const api: OfficeAPI = {
   terminals: (ids) => action('office:terminals', ids),
   jump: (id) => action('office:jump', id),
   send: (id, text, options) => action('office:send', id, text, options),
+  renameSession: (id, title) => action('office:rename-session', id, title),
   attachImage: (bytes) => action('office:attach-image', bytes),
   attachmentPreview: (id) => action('office:attachment-preview', id),
   inspectDraft: (id) => action('office:inspect-draft', id),
