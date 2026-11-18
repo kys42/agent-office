@@ -160,3 +160,81 @@ test('entering the demo cancels a queued live resync and ignores stale connectio
   await page.evaluate(() => (window as any).health('stale error'));
   await expect(page.locator('.error-banner')).toHaveCount(0);
 });
+
+/**
+ * WCAG contrast of an element's text against every background drawn under it. The canvas
+ * resolves whatever the browser computes, including `color-mix()` results, to sRGB first.
+ */
+async function contrast(page: Page, selector: string) {
+  return page
+    .locator(selector)
+    .first()
+    .evaluate((el) => {
+      const ctx = Object.assign(document.createElement('canvas'), {
+        width: 1,
+        height: 1,
+      }).getContext('2d', { willReadFrequently: true })!;
+      const rgba = (css: string) => {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = css;
+        ctx.fillRect(0, 0, 1, 1);
+        return Array.from(ctx.getImageData(0, 0, 1, 1).data);
+      };
+      const layers: number[][] = [];
+      for (let node: Element | null = el; node; node = node.parentElement)
+        layers.unshift(rgba(getComputedStyle(node).backgroundColor));
+      let bg = [255, 255, 255];
+      for (const layer of layers)
+        bg = bg.map((v, i) => (layer[i] * layer[3]) / 255 + v * (1 - layer[3] / 255));
+      const fg = rgba(getComputedStyle(el).color);
+      const alpha = fg[3] / 255;
+      const ink = bg.map((v, i) => fg[i] * alpha + v * (1 - alpha));
+      const lum = (c: number[]) =>
+        c
+          .slice(0, 3)
+          .map((v) => {
+            const n = v / 255;
+            return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+          })
+          .reduce((n, v, i) => n + v * [0.2126, 0.7152, 0.0722][i], 0);
+      const [hi, lo] = [lum(ink), lum(bg)].sort((a, b) => b - a);
+      return (hi + 0.05) / (lo + 0.05);
+    });
+}
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`roster project names, status, conversation times and hints read at 4.5:1 in ${colorScheme}`, async ({
+    page,
+  }) => {
+    const readable = async (selector: string) =>
+      expect(await contrast(page, selector), `${colorScheme} ${selector}`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    await page.emulateMedia({ colorScheme });
+    await page.goto('/?demo&lang=ko');
+    await expect(page.locator('.session-copy').first()).toBeVisible();
+    await readable('.session-row:not(.selected) .session-meta');
+    await readable('.session-row:not(.selected) .session-copy small');
+    // Hints in empty fields are read too: --text-3 at full opacity, not the decorative --text-4.
+    // The search field is tinted, so the hint is pinned to the token whose ratios
+    // tests/text-contrast.test.ts checks, rather than to a ratio of its own.
+    const hint = await page.locator('.roster-finder input').evaluate((el) => {
+      const probe = el.parentElement!.appendChild(document.createElement('i'));
+      probe.style.color = 'var(--text-3)';
+      const token = getComputedStyle(probe).color;
+      probe.remove();
+      const style = getComputedStyle(el, '::placeholder');
+      return { color: style.color, opacity: style.opacity, token };
+    });
+    expect(hint.color, `${colorScheme} search hint`).toBe(hint.token);
+    expect(hint.opacity).toBe('1');
+    await page.screenshot({ path: `.local/roster-readable-${colorScheme}.png` });
+    await page.locator('.session-row').filter({ hasText: '코코' }).first().click();
+    await expect(page.locator('.message-meta time').first()).toBeVisible();
+    await page
+      .locator('.inspector')
+      .evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+    await readable('.message-meta time');
+    await page.screenshot({ path: `.local/desktop-readable-${colorScheme}.png` });
+  });
+}

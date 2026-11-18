@@ -324,7 +324,11 @@ export function Roster({
                               {result ? result.text : activity.text}
                             </p>
                           )}
-                          <small style={{ color: MOODS[s.status].color }}>
+                          <small
+                            style={{
+                              color: `color-mix(in srgb, ${MOODS[s.status].color} 35%, var(--text))`,
+                            }}
+                          >
                             {elapsed !== null
                               ? t.roster.workingFor(durationShort(elapsed))
                               : result
