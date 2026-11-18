@@ -1,0 +1,4 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@android:color/white" />
+    <foreground><inset android:inset="12%" android:drawable="@drawable/office_icon" /></foreground>
+</adaptive-icon>
