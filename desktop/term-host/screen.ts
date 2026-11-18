@@ -58,10 +58,10 @@ export class HeadlessScreen {
 
   /**
    * Queues one PTY chunk (numbered `seq`) for the parser. False when shed (see the limit).
-   * `answer`: no view gets this chunk, so the emulator answers its queries itself; otherwise a
-   * view does, and two answers would reach the program.
+   * `answer`, asked as the chunk is parsed: whether the emulator answers its queries itself
+   * (no view will see the chunk) or a view does (two answers would reach the program).
    */
-  write(data: string | Uint8Array, seq: number, answer = false): boolean {
+  write(data: string | Uint8Array, seq: number, answer?: () => boolean): boolean {
     if (this.disposed) return false;
     const size = data.length;
     if (this.pendingBytes + size > PARSE_BACKLOG_LIMIT) {
@@ -70,7 +70,7 @@ export class HeadlessScreen {
     }
     this.pendingBytes += size;
     // xterm runs write callbacks in order, so this opens the window right before the chunk.
-    if (answer) this.terminal.write('', () => void (this.replying = true));
+    if (answer) this.terminal.write('', () => void (this.replying = answer()));
     this.terminal.write(data, () => {
       this.replying = false;
       this.pendingBytes -= size;
@@ -105,6 +105,9 @@ export class HeadlessScreen {
       lines = Math.floor(Math.min(lines ?? Infinity, this.scrollbackLines) / 2);
       snapshot = this.serializer.serialize({ scrollback: lines, excludeModes: true });
     }
+    // Even the visible screen alone is too big (a huge window, a colour per cell): send its text
+    // without attributes, which is bounded by its size, rather than a frame the client refuses.
+    if (encodedSize(snapshot, budgetBytes) > budgetBytes) snapshot = this.plainScreen();
     const normalStack = kittyStackSequence(modes.kittyStacks.normal);
     if (modes.alternateScreen && normalStack) {
       // The normal screen's kitty stack must be pushed while that screen is still active.
@@ -117,6 +120,17 @@ export class HeadlessScreen {
       cols: this.terminal.cols,
       rows: this.terminal.rows,
     };
+  }
+
+  private plainScreen() {
+    const buffer = this.terminal.buffer.active;
+    const rows: string[] = [];
+    for (let y = 0; y < this.terminal.rows; y++) {
+      rows.push(buffer.getLine(buffer.viewportY + y)?.translateToString(true) ?? '');
+    }
+    const alternate = buffer.type === 'alternate' ? '\x1b[?1049h' : '';
+    const cursor = `\x1b[${buffer.cursorY + 1};${buffer.cursorX + 1}H`;
+    return `${alternate}\x1b[H\x1b[2J${rows.join('\r\n')}${cursor}`;
   }
 
   /** The unfinished sequence the stream is in (see EscapeTail); goes after a snapshot. */

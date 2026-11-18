@@ -31,6 +31,7 @@ export interface TermHostPaths {
 
 /** Unix socket paths are limited (104 bytes on macOS, 108 on Linux, including the NUL). */
 const SOCKET_PATH_LIMIT = 100;
+const BIND_NAME_SAMPLE = `.p${'0'.repeat(10)}`;
 
 /** Where the terminal host of the app whose data lives in `dataDir` listens. */
 export function termHostPaths(
@@ -47,7 +48,11 @@ export function termHostPaths(
       .update(`${userName()}\0${path.resolve(dir)}`)
       .digest('hex');
     socket = `\\\\.\\pipe\\agent-office-term-host-v${TERM_HOST_PROTOCOL}-${key.slice(0, 16)}`;
-  } else if (Buffer.byteLength(socket) > SOCKET_PATH_LIMIT) {
+  } else if (
+    // The daemon binds a private name next to it first (privateBindPath), which is longer.
+    Math.max(Buffer.byteLength(socket), Buffer.byteLength(path.join(dir, BIND_NAME_SAMPLE))) >
+    SOCKET_PATH_LIMIT
+  ) {
     // A long data dir: a short private directory under /tmp instead (checked like the real one).
     const key = createHash('sha256').update(path.resolve(dir)).digest('hex').slice(0, 12);
     socket = path.posix.join(shortSocketRoot(uid), key, name);

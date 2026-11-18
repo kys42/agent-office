@@ -16,9 +16,15 @@ import {
   encodeJson,
   restoreSequence,
 } from '../desktop/term-host/protocol';
-import { connectionPair, fakeTermHost } from '../desktop/term-host/fakes';
+import { FAKE_TOKEN, connectionPair, fakeTermHost } from '../desktop/term-host/fakes';
 import { TermHostClient, TermHostError, connectTermHost } from '../desktop/term-host/client';
-import { ensurePrivateDir, privateBindPath, publishSocket } from '../desktop/term-host/endpoint';
+import {
+  ensurePrivateDir,
+  privateBindPath,
+  publishSocket,
+  termHostPaths,
+} from '../desktop/term-host/endpoint';
+import { TermHost } from '../desktop/term-host/host';
 
 const { Terminal } = headless;
 type View = InstanceType<typeof Terminal>;
@@ -337,4 +343,82 @@ test('a large paste is split into frames under the limit', async () => {
   await waitFor(() => pty.written.reduce((n, b) => n + b.length, 0) === paste.length, 'paste');
   assert.equal(pty.written.length, 3);
   assert.equal(client.closed, false);
+});
+
+test('a query swallowed by a snapshot is still answered once', async () => {
+  const fake = fakeTermHost({ syncWaitMs: 300 });
+  const { client } = await fake.connect();
+  await client.create({ id: 'q', argv: ['/bin/sh'], cwd: '/', cols: 80, rows: 10 });
+  const pty = fake.ptys[0];
+  const output: string[] = [];
+  client.onOutput((_, data) => output.push(data.toString()));
+  pty.output('\x1b[?2026h');
+  const attaching = client.attach('q');
+  await sleep(30);
+  // Arrives while the view waits for its snapshot, and ends up inside that snapshot.
+  pty.output('abc\x1b[6n\x1b[?2026l');
+  const attached = await attaching;
+  assert.match(attached.snapshot, /abc/);
+  await waitFor(() => pty.input.includes('\x1b[1;4R'), 'the emulator answers');
+  await sleep(20);
+  assert.equal(pty.input, '\x1b[1;4R');
+  assert.doesNotMatch(output.join(''), /\x1b\[6n/);
+});
+
+test('a daemon that does not (yet) own its socket turns hellos away', async () => {
+  let owns = false;
+  const host = new TermHost({
+    token: FAKE_TOKEN,
+    loadSpawn: () => {
+      throw new Error('unused');
+    },
+    killGroup: null,
+    ownsEndpoint: () => owns,
+  });
+  const hello = async () => {
+    const [server, end] = connectionPair();
+    host.handleConnection(server);
+    const client = new TermHostClient(end);
+    try {
+      await client.hello(FAKE_TOKEN);
+      return 'ok';
+    } catch (error) {
+      return (error as TermHostError).code;
+    } finally {
+      client.close();
+    }
+  };
+  assert.equal(await hello(), 'unavailable');
+  owns = true;
+  assert.equal(await hello(), 'ok');
+  await host.shutdown();
+});
+
+test('the socket path limit counts the longer private name it is first bound under', () => {
+  // 90-byte directory: v1.sock fits in 100 bytes, .p0123456789 does not.
+  const dataDir = '/' + 'd'.repeat(79);
+  const paths = termHostPaths(dataDir, 'darwin', 501);
+  assert.equal(Buffer.byteLength(paths.dir), 90);
+  assert.match(paths.socket, /^\/tmp\/agent-office-term-host-501\//);
+});
+
+test('a screen too big to encode even without history is sent as plain text', async () => {
+  const screen = new HeadlessScreen(200, 50, 0);
+  let cells = '';
+  for (let i = 0; i < 200 * 49; i++) cells += `\x1b[38;2;${i % 256};${(i * 7) % 256};9mx`;
+  screen.write(Buffer.from(cells + '\x1b[0mlast'), 1);
+  await new Promise<void>((r) => screen.whenParsed(r));
+  const budget = 64 * 1024;
+  const restore = screen.snapshot(0, budget);
+  assert.ok(Buffer.byteLength(JSON.stringify(restore.snapshot)) <= budget);
+  const view = new Terminal({ cols: 200, rows: 50, allowProposedApi: true });
+  await feed(view, restoreSequence(restore));
+  assert.equal(row(view, 0), 'x'.repeat(200));
+  assert.equal(row(view, 49).trimEnd(), 'last');
+  assert.deepEqual(
+    [view.buffer.active.cursorX, view.buffer.active.cursorY],
+    [screen.modes().cursor.x, screen.modes().cursor.y],
+  );
+  view.dispose();
+  screen.dispose();
 });

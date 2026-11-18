@@ -120,7 +120,7 @@ export class Session {
     const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
     this.bytesIn += bytes.length;
     const seq = ++this.seq;
-    let viewed = false;
+    const viewers: Attachment[] = [];
     for (const attachment of this.attachments) {
       if (attachment.state === 'lagged') continue;
       attachment.queue.push({ seq, data: bytes });
@@ -131,13 +131,16 @@ export class Session {
         attachment.queuedBytes = 0;
         this.events.lagged(attachment);
       } else {
-        viewed = true;
+        viewers.push(attachment);
         this.events.queued(attachment);
       }
     }
     // A query in output no view will see is answered by the emulator, or the program may wait
-    // for it forever; a view that gets the chunk answers it instead (never both).
-    this.screen?.write(bytes, seq, !viewed);
+    // for it forever; a view that gets the chunk answers it instead (never both). Decided as the
+    // chunk is parsed: a view still waiting for its snapshot then gets the chunk inside that
+    // snapshot, not as output, so it will not see the query either.
+    const answer = () => !viewers.some((a) => a.state === 'live' && this.attachments.has(a));
+    this.screen?.write(bytes, seq, bytes.includes(0x1b) ? answer : undefined);
   }
 
   private onExit(event: { exitCode: number; signal?: number }) {

@@ -94,6 +94,7 @@ async function main() {
   ensureSocketDir(paths);
   const token = readOrCreateToken(paths.token);
   let identity: SocketIdentity | null = null;
+  let published = false;
   let exiting = false;
   const exit = (code: number) => {
     if (exiting) return;
@@ -107,7 +108,9 @@ async function main() {
     loadSpawn,
     killGroup: process.platform === 'win32' ? null : (pid, signal) => process.kill(-pid, signal),
     limits: { ...DEFAULT_LIMITS, ...args.limits },
-    ownsEndpoint: () => ownsSocket(paths.socket, identity),
+    // Nothing is served until publication is confirmed: a daemon that loses it must not have
+    // created sessions (clients refused meanwhile retry and reach the winner).
+    ownsEndpoint: () => published && ownsSocket(paths.socket, identity),
     onIdle: () => exit(0),
     onScreenFreed: scheduleCollect,
     log,
@@ -140,6 +143,7 @@ async function main() {
     return exit(outcome.status === 'occupied' ? EXIT_OCCUPIED : EXIT_NOT_PUBLISHED);
   }
   identity = outcome.identity;
+  published = true;
   log(`serving ${paths.socket}`);
   // Another daemon took the socket (see endpoint.ts): new clients reach it, not us. Stop once
   // nothing of ours is left running; until then, keep serving the clients already here.
