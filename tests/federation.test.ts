@@ -23,7 +23,8 @@ import { remoteId, type PeerInput } from '../src/shared/federation.js';
 import { freshConversation, mergeNewest, mergeLive } from '../src/shared/conversation-pages.js';
 import { isWorking } from '../src/shared/presentation.js';
 import { isVeiled } from '../src/shared/veil.js';
-import type { Snapshot } from '../src/shared/types.js';
+import { noticeCandidates } from '../src/shared/notices.js';
+import type { Session, Snapshot } from '../src/shared/types.js';
 import { buildOfficeModel } from '../src/shared/office-model.js';
 import type { OfficeService } from '../server/service.js';
 
@@ -349,6 +350,38 @@ test('remote hiding is local, persists, publishes to every window and follows co
     manager.close();
     reopened?.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('remote hiding compares with the peer clock, not this viewer', async () => {
+  const veiled = (s: Session) => isVeiled([s], noticeCandidates(s));
+  for (const skew of [60_000, -60_000]) {
+    const dir = temp(),
+      p = peer();
+    writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [p] }));
+    const source = packet(p);
+    // The reply the person just read, a second before hiding, on the peer's clock.
+    const seen = { ...source.sessions[0].events[0], at: Date.now() + skew - 1000 };
+    source.sessions[0].events = [seen];
+    source.sessions[0].activity = { kind: 'reply', text: seen.text, at: seen.at, eventId: seen.id };
+    const manager = new PeerManager(dir, async () => ({ ...source, sampledAt: Date.now() + skew }));
+    try {
+      await changed(manager, () => manager.start());
+      const id = manager.sessions()[0].id;
+      manager.veil([id], true);
+      const hidden = manager.sessions()[0];
+      assert.ok(veiled(hidden), `an already-seen reply keeps the hide (skew ${skew})`);
+      const next = { ...seen, id: wireId(`next-${skew}`), at: Date.now() + skew + 1000 };
+      const after = {
+        ...hidden,
+        events: [...hidden.events, { ...next, sourceRef: '' }],
+        activity: { kind: 'reply' as const, text: next.text, at: next.at, eventId: next.id },
+      };
+      assert.equal(veiled(after), false, `a new reply brings them back (skew ${skew})`);
+    } finally {
+      manager.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
 

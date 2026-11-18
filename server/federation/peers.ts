@@ -362,11 +362,22 @@ export class PeerManager extends EventEmitter {
     );
     const now = Date.now();
     for (const id of ids) {
-      if (on) next[id] = now;
+      if (on) next[id] = this.peerClock(parseRemoteId(id).officeId, now);
       else delete next[id];
     }
     hiddenSchema.parse(next);
     return next;
+  }
+  /**
+   * Now on the peer's clock, from its last answer. The hiding time is compared with the peer's
+   * own event times, so a skewed clock must neither undo a hide on an already-seen reply nor
+   * swallow a new conversation.
+   */
+  private peerClock(officeId: string, now: number) {
+    const h = this.held.get(officeId);
+    return h?.snapshot && h.receivedAt
+      ? Math.max(0, h.snapshot.sampledAt + (now - h.receivedAt))
+      : now;
   }
   private saveHidden(next: Record<string, number>) {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
