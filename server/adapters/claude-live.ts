@@ -66,7 +66,7 @@ export interface ClaudeProcess {
 }
 
 /** Claude's job ids: 8 lowercase hex characters, the prefix of the session id. */
-const JOB_ID = /^[0-9a-f]{8}$/;
+export const JOB_ID = /^[0-9a-f]{8}$/;
 
 export const runCommand: ClaudeLiveDeps['run'] = (file, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -308,6 +308,24 @@ export async function findClaudeProcess(
   candidates.sort((a, b) => b.updatedAt - a.updatedAt);
   for (const record of candidates) if (await isLiveProcess(record, deps, fresh)) return record;
   return null;
+}
+
+/**
+ * The live windows whose own record names this session but that parked it (`parkedJobId`),
+ * verified against PID reuse, newest first; null while one of them cannot be verified. Whether
+ * such a window still holds the session is for the job it parked to say (desktop/terminals.ts).
+ */
+export async function parkedHolders(
+  sessionId: string,
+  deps: ClaudeLiveDeps,
+  fresh = false,
+): Promise<ClaudeProcess[] | null> {
+  const found = await liveMatches(
+    deps,
+    fresh,
+    (record) => record.sessionId === sessionId && isParked(record),
+  );
+  return found && found.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 /**

@@ -1,6 +1,31 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 
+/** A menu's enabled items, for the arrow keys. */
+export const menuItems = (box: HTMLElement | null) =>
+  [...(box?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])].filter(
+    (b) => !b.disabled,
+  );
+
+/** Arrows, Home and End move between a menu's items; true when the key moved the focus. */
+export function moveInMenu(e: KeyboardEvent<HTMLElement>, list: HTMLButtonElement[]) {
+  const at = list.indexOf(document.activeElement as HTMLButtonElement);
+  const to =
+    e.key === 'ArrowDown'
+      ? (at + 1) % list.length
+      : e.key === 'ArrowUp'
+        ? (at - 1 + list.length) % list.length
+        : e.key === 'Home'
+          ? 0
+          : e.key === 'End'
+            ? list.length - 1
+            : -1;
+  if (to < 0 || !list.length) return false;
+  e.preventDefault();
+  list[to].focus();
+  return true;
+}
+
 /**
  * The card's menu button: actions that used to take a whole row (hand-off, jump, reveal,
  * archive…) in a small menu. Opening it focuses the first item; arrows, Home and End move;
@@ -17,10 +42,7 @@ export function CardMenu({
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const items = () =>
-    [...(box.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])].filter(
-      (b) => !b.disabled,
-    );
+  const items = () => menuItems(box.current);
   const close = (refocus = true) => {
     setOpen(false);
     if (refocus) trigger.current?.focus();
@@ -45,22 +67,8 @@ export function CardMenu({
     };
   }, [open]);
   const move = (e: KeyboardEvent<HTMLDivElement>) => {
-    const list = items();
-    const at = list.indexOf(document.activeElement as HTMLButtonElement);
-    const to =
-      e.key === 'ArrowDown'
-        ? (at + 1) % list.length
-        : e.key === 'ArrowUp'
-          ? (at - 1 + list.length) % list.length
-          : e.key === 'Home'
-            ? 0
-            : e.key === 'End'
-              ? list.length - 1
-              : -1;
     if (e.key === 'Tab') setOpen(false);
-    if (to < 0 || !list.length) return;
-    e.preventDefault();
-    list[to].focus();
+    moveInMenu(e, items());
   };
   return (
     <div className="card-menu" ref={box}>
