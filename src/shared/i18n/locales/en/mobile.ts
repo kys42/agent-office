@@ -1,4 +1,23 @@
 export const mobile = {
+  settingsLoadFailed: 'Could not load mobile web settings. Refresh to try again.',
+  refreshServer: 'Refresh server status',
+  serverRunning: 'Web server is running on this computer',
+  serverStopped: 'Enabled, but the web server is not running',
+  serverDisabled: 'Web access is off',
+  copied: 'Copied.',
+  connectionHelp: 'Cannot connect from another device?',
+  helpNetwork:
+    'Connect both devices to the same Tailscale network. A shared Wi-Fi network alone is not enough.',
+  helpLoopback:
+    '127.0.0.1 opens this computer only. Turn web access off, choose the Tailscale address, then turn it back on.',
+  helpAddress:
+    'Copy the full address, including http:// and the port. An old address or https:// will not reach this server.',
+  helpAwake:
+    'Keep this computer awake and Agent Office running. Refresh server status after reconnecting Tailscale.',
+  helpCode:
+    'If the login page opens, use the current access code. Restarting the app or rotating the code ends earlier logins.',
+  helpBoundary:
+    'Running here does not confirm access from your other device. If it still times out, check Tailscale access rules and the device firewall.',
   badCode: 'Check the access code.',
   rateLimit: 'Too many requests. Try again in a moment.',
   connectionSend: 'Check the connection. Do not resend until you check the original conversation.',
@@ -23,7 +42,11 @@ export const mobile = {
   sendTerminal: 'Send to the open terminal',
   back: 'Back to agents',
   loading: 'Loading…',
-  pageLimit: 'Showing up to 1,000 recent events',
+  browsingHistory: 'Reading earlier messages · live updates paused here',
+  latest: 'Back to latest messages',
+  chatFailed: 'Could not refresh this conversation. Check the connection and try again.',
+  targetFailed:
+    'Could not check where to send. Your conversation is still readable; we will try again.',
   older: 'Earlier messages',
   loadingChat: 'Loading conversation…',
   emptyChat: 'No messages to show.',

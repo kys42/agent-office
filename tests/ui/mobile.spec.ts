@@ -99,6 +99,150 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('heading', { name: '우리 오피스', exact: true })).toBeVisible();
 }
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test('conversation renders before slow destination discovery and remains readable on lookup failure', async ({
+  page,
+}) => {
+  await mock(page);
+  let destination: import('@playwright/test').Route | undefined;
+  await page.route('**/mobile/api/targets', (route) => {
+    destination = route;
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await expect.poll(() => !!destination).toBe(true);
+  await destination!.fulfill({ status: 503, json: {} });
+  await expect(page.getByText('전송 대상을 확인하지 못했어요.', { exact: false })).toBeVisible();
+  await expect(page.getByText('작업을 확인해줘', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
+});
+
+test('denied visibility cannot be undone by a late successful conversation response', async ({
+  page,
+}) => {
+  await mock(page);
+  let conversation: import('@playwright/test').Route | undefined;
+  await page.route('**/mobile/api/detail', (route) => {
+    conversation = route;
+  });
+  await page.route('**/mobile/api/targets', (route) => route.fulfill({ status: 403, json: {} }));
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.chat [role="alert"]')).toBeVisible();
+  await expect.poll(() => !!conversation).toBe(true);
+  await conversation!.fulfill({
+    json: {
+      id: local.id,
+      older: false,
+      events: [{ id: 'private', kind: 'user', at: 1, text: '이미 가린 대화의 늦은 응답' }],
+    },
+  });
+  await expect(page.getByText('이미 가린 대화의 늦은 응답')).toHaveCount(0);
+});
+
+test('mobile can read beyond 1,000 records in a bounded window and jump back to live', async ({
+  page,
+}) => {
+  test.setTimeout(60000);
+  await mock(page);
+  let latestReads = 0;
+  await page.route('**/mobile/api/detail', async (route) => {
+    const { before } = route.request().postDataJSON();
+    if (!before) latestReads++;
+    const end = before ? Number(before.id) : 1200;
+    const start = Math.max(0, end - 40);
+    return route.fulfill({
+      json: {
+        id: local.id,
+        older: start > 0,
+        events: Array.from({ length: end - start }, (_, i) => ({
+          id: String(start + i),
+          at: start + i,
+          kind: i === 0 ? 'tool' : 'user',
+          text: `합성 기록 ${start + i}`,
+        })),
+      },
+    });
+  });
+  await login(page);
+  await page.locator('.agent').filter({ hasText: local.name }).click();
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1161');
+  for (let start = 1120; start >= 0; start -= 40) {
+    // At the first eviction, prepending and dropping both change the total height.
+    // Each page starts with a hidden tool event: anchor the visible message, not that cursor.
+    const anchor = page.locator(`[data-event-id="${start + 41}"]`);
+    if (start === 760)
+      await page.locator('.messages').evaluate((el) => {
+        el.scrollTop = 0;
+      });
+    const anchorTop = start === 760 ? (await anchor.boundingBox())!.y : null;
+    await page.getByRole('button', { name: '이전 대화 보기', exact: true }).click();
+    await expect(page.locator('.message').first()).toHaveAttribute(
+      'data-event-id',
+      String(start + 1),
+    );
+    expect(await page.locator('.message').count()).toBeLessThanOrEqual(400);
+    if (anchorTop !== null)
+      await expect
+        .poll(async () => Math.abs((await anchor.boundingBox())!.y - anchorTop))
+        .toBeLessThan(2);
+  }
+  await expect(page.getByRole('button', { name: '이전 대화 보기', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toBeVisible();
+  await page.screenshot({ path: '.local/mobile-history-browsing.png' });
+  const before = latestReads;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  // Historical pages stay put across a scheduled refresh; destination checks remain active.
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1');
+  await page.getByRole('button', { name: '최신 대화로 돌아가기' }).click();
+  await expect(page.locator('.message').first()).toHaveAttribute('data-event-id', '1161');
+  await expect(page.locator('.message')).toHaveCount(39);
+  expect(latestReads).toBe(before + 1);
+  await expect(page.getByRole('button', { name: '최신 대화로 돌아가기' })).toHaveCount(0);
+  await page.screenshot({ path: '.local/mobile-history-latest.png' });
+});
+
+test('a late roster refresh cannot restore colleagues after a newer privacy response', async ({
+  page,
+}) => {
+  await mock(page);
+  await login(page);
+  let first: import('@playwright/test').Route | undefined;
+  let calls = 0;
+  await page.route('**/mobile/api/state', async (route) => {
+    if (++calls === 1) {
+      first = route;
+      return;
+    }
+    return route.fulfill({
+      json: {
+        agents: [],
+        privacy: true,
+        sendEnabled: false,
+        at: Date.now(),
+        lastSync: Date.now(),
+      },
+    });
+  });
+  await page.getByRole('button', { name: '새로고침', exact: true }).click();
+  await expect.poll(() => !!first).toBe(true);
+  await page.getByRole('button', { name: '새로고침', exact: true }).click();
+  await expect(page.getByText('컴퓨터에서 개인정보 가림을 해제하면')).toBeVisible();
+  // Aborted network delivery must also be ignored if a transport races with abort.
+  await first!
+    .fulfill({
+      json: {
+        agents: [local],
+        privacy: false,
+        sendEnabled: true,
+        at: Date.now() - 1000,
+        lastSync: Date.now(),
+      },
+    })
+    .catch(() => {});
+  await expect(page.locator('.agent')).toHaveCount(0);
+  await expect(page.getByText('컴퓨터에서 개인정보 가림을 해제하면')).toBeVisible();
+});
 test('a late older page cannot bridge a gap after the latest page resets', async ({ page }) => {
   await mock(page);
   let advanced = false;
@@ -320,4 +464,73 @@ test('late response from an old chat cannot erase the next pending send', async 
   await expect(page.getByLabel('메시지', { exact: true })).toHaveValue('second');
   await expect(page.getByRole('button', { name: '메시지 보내기', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '접수 확인', exact: true })).toBeVisible();
+});
+
+test('mobile reading labels and controls remain legible in light and dark English layouts', async ({
+  browser,
+}) => {
+  for (const colorScheme of ['light', 'dark'] as const) {
+    const context = await browser.newContext({
+      locale: 'en-US',
+      colorScheme,
+      viewport: { width: 390, height: 844 },
+    });
+    const page = await context.newPage();
+    try {
+      await mock(page);
+      const readable = async (selector: string, pseudo?: string) => {
+        const values = await page
+          .locator(selector)
+          .first()
+          .evaluate((el, pseudo) => {
+            const rgb = (value: string) => value.match(/[\d.]+/g)!.map(Number);
+            const style = getComputedStyle(el, pseudo);
+            const foreground = rgb(style.color);
+            const layers: number[][] = [];
+            for (let node: Element | null = el; node; node = node.parentElement)
+              layers.unshift(rgb(getComputedStyle(node).backgroundColor));
+            let background = [255, 255, 255];
+            for (const layer of layers) {
+              const alpha = layer[3] ?? 1;
+              background = background.map((v, i) => layer[i] * alpha + v * (1 - alpha));
+            }
+            const luminance = (color: number[]) =>
+              color
+                .slice(0, 3)
+                .map((v) => {
+                  const n = v / 255;
+                  return n <= 0.04045 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+                })
+                .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+            const a = luminance(foreground),
+              b = luminance(background);
+            return {
+              ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+              size: parseFloat(style.fontSize),
+            };
+          }, pseudo);
+        expect(values.ratio, `${colorScheme} ${selector} contrast`).toBeGreaterThanOrEqual(4.5);
+        expect(values.size, `${selector} text size`).toBeGreaterThanOrEqual(12);
+      };
+      await page.goto('/mobile.html');
+      await page.locator('#code').fill('synthetic-code');
+      await readable('.login small');
+      await readable('.primary');
+      await page.locator('.primary').click();
+      await expect(page.locator('.agent')).toHaveCount(2);
+      await readable('.agent-project');
+      await readable('.state');
+      await page.locator('.agent').filter({ hasText: local.name }).click();
+      await expect(page.locator('.message')).not.toHaveCount(0);
+      await readable('.message-meta');
+      await readable('.send-reason');
+      await readable('textarea', '::placeholder');
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        390,
+      );
+      await page.screenshot({ path: `.local/mobile-readable-${colorScheme}.png` });
+    } finally {
+      await context.close();
+    }
+  }
 });
