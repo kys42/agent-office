@@ -107,7 +107,8 @@ export async function inspectPrompt(
   const no = (reason: PromptUnavailable) => unavailable(adapter.agent, reason);
   if (!asking) return no('no-request');
   if (!adapter.answers('tmux').size && !adapter.answers('orca').size) return no('unsupported');
-  if (setting === 'off') return no('off');
+  // Not turned on (never asked, or turned off): the choices are still offered, and the first
+  // press asks natively before anything is sent (main). Reading the screen presses nothing.
   if (uncheckable(asking)) return no('unverifiable');
   if (!target) return no('no-terminal');
   if (!adapter.answers(target.host.kind).has(asking.request.kind)) return no('unsupported');
@@ -115,6 +116,8 @@ export async function inspectPrompt(
   const state = await look(adapter, target.host);
   if (state.kind === 'unreadable') return no('unreadable');
   if (state.kind === 'unsupported') return no('unsupported');
+  // Something dialog-like this adapter cannot read: not "no question", and nothing is pressed.
+  if (state.kind === 'unknown') return no('unknown');
   if (!isDialog(state)) return no('closed');
   const calls = await target.openCalls();
   if (!calls) return no('unverifiable');
@@ -129,10 +132,15 @@ export async function inspectPrompt(
     choices: adapter.choices(state),
     ...(adapter.hasMore(state) ? { more: true } : {}),
     ...(asked.request.kind === 'question'
-      ? { other: adapter.takesText(state, asked.request) }
+      ? {
+          other: adapter.takesText(state, asked.request),
+          ...(adapter.noText ? { noText: adapter.noText(state, asked.request) } : {}),
+          ...(adapter.chats?.(state) ? { chat: true as const } : {}),
+        }
       : {}),
     ...(asked.request.kind === 'permission' ? { tool: asked.request.tool } : {}),
     ...(asked.subject ? { subject: shown(asked.subject) } : {}),
+    ...(setting !== 'on' ? { consent: setting } : {}),
   };
 }
 
@@ -149,6 +157,12 @@ export function readChoice(asking: AskingEvent, value: unknown): PromptChoice {
     !c.callId
   )
     throw new TerminalInputError(t.changed);
+  if (c.kind === 'question' && 'chat' in c) {
+    // "Chat about this": no answers, nothing else in the choice.
+    if (c.chat !== true || asking.request.kind !== 'question' || 'answers' in c)
+      throw new TerminalInputError(t.badChoice);
+    return { kind: 'chat' };
+  }
   if (c.kind === 'question') {
     const request = asking.request;
     if (request.kind !== 'question' || !Array.isArray(c.answers))
@@ -230,6 +244,7 @@ export async function answerRequest(
       unreadable: t.unreadable(where),
       unverified: t.notVerified,
       unsupported: t.unsupported(adapter.agent),
+      notes: t.notes,
     };
     const message = reasons[outcome.reason];
     throw new TerminalInputError(
@@ -248,6 +263,7 @@ export async function answerRequest(
   }
   if (!seen) return { status: 'answered', message: t.unconfirmedScreen(where) };
   if (open) throw new TerminalInputError(t.stillOpen);
+  const chatted = choice.kind === 'chat';
   // And the transcript must hold that call's result. An allowed command writes it when it ends.
   let recorded: boolean | null = false;
   for (let i = 0; i < 15 && recorded === false; i++) {
@@ -256,6 +272,10 @@ export async function answerRequest(
   }
   return {
     status: 'answered',
-    message: recorded ? t.answered(where) : t.answeredUnconfirmed(where),
+    message: recorded
+      ? chatted
+        ? t.chatted(where)
+        : t.answered(where)
+      : t.answeredUnconfirmed(where),
   };
 }

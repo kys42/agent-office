@@ -1,3 +1,118 @@
+## 2026-11-02 — 책상 꾸미기, 펫 기쁨 모션·쓰다듬기, 펫 모드 인원 표시, 창 유리, Orca 소환, 출근 모션, 읽은 말풍선 접기
+
+- [PR #310](https://github.com/kys42/agent-office/pull/310) 책상 꾸미기([#305](https://github.com/kys42/agent-office/issues/305)): 펫처럼 책상도 꾸밀 수 있어요.
+  - 부품: 상판 8종(CSS 팔레트), 모니터 5종, 의자 5종, 왼쪽·오른쪽 소품 8종
+  - 그림 생성: `scripts/generate-desks.py`(`uv run --with pillow`)가 `public/sprites/desk/`에 레이어별 PNG 18장을 만들어요. CSS 1px를 그림 1칸으로 그리고 2배로 저장하며, 화면에서는 pixelated로 그려요.
+  - 적용 순서는 기본 → 전체 → 프로젝트 → 동료예요. 범위마다 아래 단계와 달라진 부분만 저장해서(`deskLayer`), 전체 모습을 나중에 바꾸면 따로 고르지 않은 부분은 따라가요.
+  - 상판은 벤치를 함께 쓰니까 동료 범위에서는 고를 수 없어요(normalize·`deskLook`·저장 세 곳 모두에서 무시).
+  - 빛나는 화면은 계속 CSS(`.desk-screen`)예요. 모니터마다 화면 위치를 `DESK_MONITORS`에 데이터로 갖고 있고, 듀얼은 화면이 2개예요. 듀얼은 책상 왼쪽 끝까지 써서 왼쪽 소품을 그리지 않아요.
+  - 여는 곳: 설정 › 모습(전체·프로젝트. 사람이 없어도 꾸민 적 있는 프로젝트는 목록에 나와요), 업무 카드 ⋯ 메뉴(전체·이 프로젝트·이 동료. 보조는 빼요). 화면 공유 중에는 프로젝트 이름을 '프로젝트 N'으로 가려요.
+  - 저장은 `Preferences.deskAppearance`예요(zod strict, 상한, 원격 동료 키 거절). 기본값은 지금 책상과 픽셀까지 같아요.
+  - 남은 점: 일하는 중 서류 더미가 왼쪽 소품 자리를 덮고, 의자는 펫 뒤라 게이밍 말고는 차이가 잘 안 보여요. 보조 책상·라운지는 범위 밖이에요.
+- [PR #307](https://github.com/kys42/agent-office/pull/307) 펫 기쁨 모션과 쓰다듬기([#306](https://github.com/kys42/agent-office/issues/306)):
+  - 펫 위에서 버튼 없이 좌우로 문지르면 쓰다듬기예요. 1초 안에 방향을 3번 바꾸면 되고, 그 뒤 2초는 쉬어요.
+  - 반응하면 그림 창(`.sprite-window`)만 통통 뛰고 말랑해져요. 펫 자신의 동작(출근·서류·호출·산책·독 bob)은 끊기지 않아요. 볼터치를 띄우고, 쓰다듬기는 하트, 칭찬은 반짝이를 띄워요.
+  - 공통 입구는 `reactPet(id, 'pat'|'praise')`(`src/lib/petReaction.ts`)예요. 앞으로 만들 칭찬하기 버튼도 이걸 부르면 돼요. 반응은 창 하나 안에서만 나요. 다른 창으로 전달할지는 칭찬하기를 만들 때 정해요.
+  - 쓰다듬기는 mouse 이벤트(`buttons===0`)로 받아요. 끌기 손잡이가 pointer 이벤트를 쓰기 때문이에요. 장면마다 구독 하나(`usePetReactions`)와 추적기 하나(`usePetting`)를 써요(책상이 반복문 안에서 그려져서 책상마다 훅을 쓸 수 없어요).
+  - 펫 꾸미기 미리보기에 쓰다듬기·칭찬하기 시험 버튼이 있어요. 동작 줄이기에서는 움직이지 않아요.
+- [PR #309](https://github.com/kys42/agent-office/pull/309) 데스크 펫([#308](https://github.com/kys42/agent-office/issues/308)):
+  - 알약에 상태별 인원을 색 점과 숫자로 보여 줘요(기다려요 빨강·확인할 결과 파랑·일하는 중 초록·대기 하늘색, 0명 생략). 스크린리더도 같은 숫자를 읽어요.
+  - 펫을 누르면 그 동료의 업무 카드 팝업이 열려요(다른 책상과 같은 동작).
+  - 깃발 버튼은 '책상 펼치기'가 되어 마지막에 쓴 모습(사무실 줄·바닥 책상)으로 펼쳐요. desktop-smoke·screenshots·readme-desktop 스크립트도 이 버튼을 쓰게 바꿨어요.
+- [PR #299](https://github.com/kys42/agent-office/pull/299)·[#301](https://github.com/kys42/agent-office/pull/301) 창 유리([#298](https://github.com/kys42/agent-office/issues/298)): 설정 › 모습 › 창 유리(0~70%).
+  - 업무 카드와 큰 사무실 왼쪽 메뉴·오른쪽 칸을 반투명 흐림 유리(리퀴드 글래스 느낌, 윤기·가장자리 빛)로 바꿔요.
+  - 맥 카드는 값을 정하면 `under-window` 대신 더 맑은 `popover` 재질을 써요. `under-window`는 거의 불투명한 회색이라 색을 걷어도 뒤가 안 비쳤어요. 재질을 아예 끄는 '투명'은 난잡해 보여서 뺐어요.
+  - 큰 사무실은 `.app-body`·사무실 페이지를 비치게 하고, 픽셀 사무실 칸과 좁은 창에서 떠 있는 오른쪽 칸은 불투명하게 둬요. 윈도우는 흐림 재질이 없어 그대로예요.
+- [PR #286](https://github.com/kys42/agent-office/pull/286) 소환 창에 'Orca 새 탭에 소환하기'를 추가했어요(원격 소환이 쓰던 `OrcaLaunch` 새 대화 경로를 재사용, `office:orca-summon`).
+  - 독에서 대화창이 열리면 독 창을 아래 가장자리는 그대로 둔 채 위로 최대 760px까지 늘려요(`room-on/off`, 쪼꼬미 포함).
+- [PR #280](https://github.com/kys42/agent-office/pull/280) 출근 모션:
+  - 데려오거나(`returnedAt`) 새 대화(`startedAt`)로 1분 안에 처음 그려지는 동료는 옆에서 총총 걸어 들어와요. 도착하고 5분은 졸거나 산책하지 않아요.
+  - 한 도착에 한 번만 걸어요(`walksIn`). 앞뒤만 읽은 기록(`windowed`)은 새 대화로 보지 않아요.
+- [PR #251](https://github.com/kys42/agent-office/pull/251) 독 줄·바닥에서 읽은 최종 답변 말풍선을 접어요. 손을 올리면 '지난 말풍선'으로 보이고, 핀을 누르면 다시 미확인이 돼서 계속 떠 있어요.
+- 모두 독립 세션과 Codex 듀얼 리뷰를 반영해 머지했고, 앱을 다시 빌드해 `/Applications`에 설치했어요.
+- 운영 메모
+  - 작업 폴더(worktree)는 `~/orca/workspaces/agent-office/<브랜치>`에 만들어요. 세션 임시 폴더는 재부팅 때 비워져서 커밋 전 작업이 한 번 사라졌어요.
+  - 화면 테스트는 `.local/pw.config.ts`로 포트를 나눠 돌려요. office.spec 'Isolated local collector'는 원래부터 실패해요.
+
+## 2026-10-29 — 최적화 로컬 설치와 실사용 데이터 검수
+
+- 공증한 e5cb58f를 Applications에 적용하고 실제 사무실·현재 세션·이전 대화를 확인했다. 앱/데이터 백업과 개인 설정 보존, 서명 신원 유지도 검증했다.
+- OpenClaw SQLite의 null 이벤트가 정상 대화 전체를 누락시키는 실사용 경계를 발견했다. 해당 비객체 행만 건너뛰고 partial을 유지하도록 보완하고 정상 앞뒤 대화·원본 행 보존 회귀를 추가했다. 설치/CI 근거는 PR #297과 QA 문서에 기록한다.
+
+- 실사용 수정 f177aba의 앱·DMG 재공증과 로컬 교체를 완료했다. Linux UI에서 확인된 자동 페이지 로딩/테스트 클릭 경합은 각 구간을 기다리는 스크롤 검증으로 보완했고 관련 16회 검사를 통과했다.
+
+## 2026-10-29 — 대량 기록 상주 메모리와 페이지 조회 최적화 (#296)
+
+- 최근 소식만 SQL로 읽고 전체 count/receipt는 보존한다. 파생 인덱스와 legacy writer 트리거, 행별 cold session parse, iterator 비용 합산, 변경분만 남기는 hot overlay를 적용했다.
+- parser 48 MiB + 압축 보조 16 MiB, OpenClaw 16 MiB, patch 8 MiB 예산을 적용했다. cache overflow 시 순차 전체 재파싱을 피하고 디스크 장애가 길어지면 저장 대기 checkpoint 후 추가 수용을 제한한다.
+- 대화 400개/소식 500개 window, 이전 페이지 탐색과 최신 복귀, 오래된 발췌 북마크 직접 조회, 상세 요청 교체·소식 throttle을 구현했다. 읽음/접기와 캐시 축출은 분리했다.
+- 합성 5만 소식에서 stage heap 201.80→21.99 MiB, snapshot 평균 566.20→52.00ms. 20만 소식에서도 stage heap 22.03 MiB. 720회 수집 heap +3.5%, 80개 큰 세션 압축 overflow 24회 +0.9%. 자세한 조건/한계와 검증은 [QA](docs/development/QA.md), 재현 명령은 [경량화 설계](docs/development/PERFORMANCE-DESIGN.md)에 기록했다.
+- CI 후속: 오래된 소식의 프로필을 정지 프레임으로 표시하고 동일 Markdown 재파싱을 줄였다. 자동 이전 페이지 로딩과 테스트 클릭 경합을 보완했다. Windows smoke의 숨겨진 원래 창 click 대기를 새 창 검증으로 바꾸고 CI 시간 상한·중복 취소를 추가했다.
+- 소식의 최신 복귀/이전 페이지 응답 경합과 quiet 일시 실패 복구를 보강했다. 숨겨진 Windows 창의 검수는 rAF 대신 Node polling으로 확인하며 앱의 절전 동작은 유지한다.
+- 골든 관측 계약·아키텍처·수집 문서·문서 지도를 함께 갱신했다. 기존 설치 앱과 PR #291 공증 DMG는 이 최적화와 별도이며 교체하지 않았다. 원본 main 변경과 기존 사용자 데이터를 보존했다.
+
+## 2026-10-29 — 프로덕션 검토·개선 3회, 배포 신원과 연결/전송 신뢰성
+
+- Issue #290 / `feat/production-readiness`, base main `ba9b9e4`. 별도 PR235의 서명 파이프라인을 최신 node-pty 패키징과 함께 통합했다.
+- 1회차: preview/정식 패키징을 명시적으로 분리하고, worker 종료·웹 폴링 실패·patch gap의 조용한 정지를 화면에 알리고 제한된 재시도로 복구한다.
+- 2회차: 설정에서 실제 앱 서명/빌드와 필요한 OS 권한을 확인한다. 안내를 접어 기본 연결 흐름을 유지하고 좁은 창·키보드·다크 모드를 확인했다. 이미지 단독 입력의 전송 확인과 공급자 기록 제한을 표시한다.
+- 3회차: 독립 리뷰 후 전송 본문 추가 보관을 제거하고 metadata/SHA-256 지문만 저장했다. 다중 창 UUID/Web Locks/재시작 대응을 검증하고, worker가 잠깐 성공 후 반복 종료해도 무한 재시도하지 않게 했다. 미처리 전송이 없으면 저장소 조회를 하지 않는다.
+- 검증: 단위 806개, typecheck/build/format/MCP 통과. 의존성 갱신 후 로컬 UI 426 pass·6 timeout, 실패 6개 재실행 모두 통과. 전체 432개 suite를 포함한 Linux CI와 Windows CI 통과. 변경 UI 탐지 0건.
+- 추가 배포 검수: Electron 44.10.0 및 호환 의존성 보안 갱신으로 npm audit 10건 → 0건. Windows packaged 상태 검수 기대값·한국어 설치 명령·외장 출력 링크 ignore를 수정했고, 디스크 여유 사전 검사와 CI 보안 게이트/중복 실행 제한을 추가했다.
+- source `c453a57`의 Developer ID 앱·DMG를 Apple 공증·staple·Gatekeeper 검증했다. DMG 임시 설치본 3종 공급자/설정/IPC 및 packaged 미니 터미널 smoke 통과. 외장 mountpoint와 native 창 준비 시점의 검수 스크립트도 보완했다. quiet 모드의 실제 포커스/Dock·카드 창 검수는 생략됐다. 전체 근거는 [프로덕션 검토](docs/development/PRODUCTION-REVIEW.md)와 [QA](docs/development/QA.md)에 기록했다. 공개 배포·main 병합·실제 사용자 설치본 교체는 수행하지 않았다. GitHub 서명 environment 준비는 미확인이다.
+- 원래 main의 미커밋 문서, 기존 사용자 DB/세션, 별도 열린 기능 PR은 보존했다. 검수 산출물은 별도 worktree `.local/` 및 `release/`에 둔다.
+
+---
+
+## 2026-10-26 — 미니 터미널 별도 창, 고정 카드는 보통 창, 채팅창 이미지 첨부
+
+- [PR #275](https://github.com/kys42/agent-office/pull/275): 미니 터미널을 채팅 서랍 대신 연 창 옆의 별도 터미널 창으로 바꿨어요.
+  - 폴더 셸마다 창이 하나이고, 같은 폴더면 그 창을 재사용해요(최대 6개). 크기만 기억해요.
+  - 창을 닫으면 분리만 되고, 종료는 확인 후 `if-shell`로 해요.
+  - 화면 내용 숨기기·데모로 바뀌면 모두 닫아요. 숨기기 중에는 열기와 연결을 거부해요(조회 뒤에도 다시 확인).
+  - 리눅스에서도 크기를 기억해요(`resize`). 언어를 바꾸면 따라가고, 화면 가장자리에서는 다른 방향으로 비켜 열어요.
+  - 고정 카드는 "다른 걸 눌러도 안 꺼짐"만 뜻하는 보통 창이에요. 터미널 창은 떠 있는 창(미리보기 카드·책상 줄) 옆에서 열 때만 위에 떠요.
+- [PR #277](https://github.com/kys42/agent-office/pull/277): 업무 카드 입력창과 빠른 답장에서 이미지를 첨부할 수 있어요(붙여넣기·끌어놓기·버튼, PNG/JPEG/GIF/WebP, 10MB·5장).
+  - main이 형식을 확인해 앱 폴더에 0600으로 저장하고, 보낼 때는 id만 써요. 7일 지나면 정리하고, CSP에 `img-src blob:`을 추가했어요.
+  - Claude Code(Orca·tmux)는 경로를 먼저 붙여 `[Image #N]`을 확인한 뒤 글을 붙여요. 경로가 글로 남으면 공백으로 구분해요.
+  - Codex Desktop은 `localImage`로 보내요. Codex CLI 대기열은 경로 줄로 붙이고 안내해요. OpenClaw·원격은 지원하지 않아요.
+  - 이미지 초안은 카드를 다시 만들거나 앱을 다시 켜도 남아요(id만 저장, 썸네일은 main에서 다시 받음). 올리는 중이면 보내기를 막고, '보냄' 말풍선은 장수까지 맞춰요.
+  - 실제 Claude·Codex 세션에서는 아직 확인하지 않았어요.
+- 두 PR을 넣어 앱을 다시 빌드해 `/Applications`에 설치했어요.
+
+## 2026-10-26 — 터미널 연결 묶음: Orca 탭 찾기·새 탭 재개, tmux 보내기·이동, 중복 실행 확인, 기존 동료 불러오기, 미니 터미널
+
+- [PR #245](https://github.com/kys42/agent-office/pull/245): Orca 탭 자동 찾기와 Orca 새 탭으로 재개.
+  - 살아 있는 에이전트를 못 찾으면, 같은 폴더·같은 제목의 Orca 탭이 정확히 하나일 때만 이동 대상으로 써요(입력은 안 함).
+  - 'Orca에서 새로 띄우기'에도 권한 확인 없이 띄우기 설정이 적용돼요.
+  - Orca 호출은 원격 선택 변수 없이 이 컴퓨터에서만 해요.
+- [PR #249](https://github.com/kys42/agent-office/pull/249): tmux에서 가려진 초안 때문에 '지우고 보내기'가 반복되던 문제를 고쳤어요.
+  - 비운 뒤 한 번 더 확인하고, 앱이 넣은 글은 정확히 그 글이 보일 때만 기억해요.
+  - 줄바꿈·공백·빈 줄·글자 폭(한중일·이모지·결합 문자)은 보수적으로 비교해요.
+  - '터미널로 이동'이 실제로 창을 띄워요: 붙은 창이 없으면 Terminal로 attach(세션 id 사용), 있으면 Orca·Terminal·iTerm2의 그 창이나 탭을 고르고, 모르면 사실대로 안내해요.
+  - 앱이 띄우는 tmux는 200×50으로 만들어요.
+- [PR #268](https://github.com/kys42/agent-office/pull/268): 재개 전 중복 실행 확인(tmux 재개·Orca 새 탭).
+  - 판단 순서는 실행 중 > 열려 있음 > 판단 불가 > 없음이에요.
+  - 확인 창 전후로 main이 새로 확인하고, 상황이 나빠졌으면 거절해요.
+  - Codex는 맞는 화면이 하나라도 있으면 실행 중으로 봐요. 리눅스에서는 화면 부재를 증명하지 못해서 '판단 불가'로 둬요.
+- [PR #270](https://github.com/kys42/agent-office/pull/270): 프로젝트 +에서 대기·보관 동료를 골라 tmux나 Orca로 이어가요.
+  - 터미널이 실제로 열렸을 때만 `returnToOffice`로 사무실에 데려와요. 실패하면 다시 시도해요.
+- [PR #272](https://github.com/kys42/agent-office/pull/272): 앱 안 미니 터미널.
+  - 카드·프로젝트 폴더의 셸을 전용 tmux 서버(`agent-office-shell`)에 둬서 닫거나 껐다 켜도 유지돼요.
+  - node-pty(optional, spawn-helper 권한 수정, asar unpack)와 xterm.js를 써요. 창별 접속 ID, 출력 흐름 제어가 있어요.
+  - 종료는 확인 후 tmux `if-shell`로, 그 셸의 시작 값이 같을 때만 해요.
+- 모두 Codex 리뷰를 여러 번 반영했고, 위 PR을 포함해 앱을 다시 빌드해 `/Applications`에 설치했어요.
+- 남은 일: [#227](https://github.com/kys42/agent-office/issues/227) 로컬 서명 인증서(문서 폴더 권한 창), 페이지 넘김 UI 테스트가 가끔 실패하는 문제([#82](https://github.com/kys42/agent-office/issues/82)), 미니 터미널 후속(서랍 높이 기억·탭·테마, Windows).
+
+## 2026-10-24 — 외장 디스크로 옮긴 세션 누락 수정
+
+- Codex가 계속 사용하는 과거 월 폴더의 심볼릭 링크를 공통 JSONL 탐색기가 건너뛰어 세션을 누락하던 원인을 확인했다.
+- 연결 폴더·파일을 탐색하고 실제 경로로 중복/순환을 막는다. 깊이, 제외 폴더, 최근 수정 시각 정렬과 공급자별 수집 상한은 유지한다.
+- 합성 회귀 4개를 포함한 단위638개·타입·production 빌드·포맷 검사와 독립 리뷰를 통과했다. 실제 Codex 원본을 읽기 전용으로 읽고 별도 임시 Office DB에서 신고된 세션의 원래 제목·ID·office 배치를 확인했다. 개인 원문이나 경로를 저장소 fixture로 복제하지 않았다.
+- PR, 서명 빌드와 실행 앱 반영 결과는 해당 PR/결과 카드에 기록한다. 원본 에이전트 기록과 기존 사용자 메모/읽음/설정은 보존한다.
+
+---
+
 ## 2026-10-24 — 원격 프로젝트에 새 에이전트 소환
 
 - 원격 사무실의 프로젝트 구역과 한줄 깃발에서 Claude/Codex를 선택해 해당 컴퓨터의 tmux 또는 Orca에 새 세션을 만들 수 있습니다.
@@ -36,6 +151,20 @@
 - 대화창에 원격 전송 경로와 대상 다시 확인 버튼을 표시합니다. 대화가 열려 있지 않거나 권한을 확인하지 못하면 전송하지 않습니다.
 - 호스트·대화 ID를 정확히 대조하고 전송 직전 양쪽 권한을 확인합니다. 결과가 불확실한 요청은 앱 재시작 뒤에도 자동 재전송하지 않습니다.
 - 로컬 검증과 실제 Mac mini 대화의 검증 범위는 QA 및 PR에 기록합니다. PR 코드와 설치된 앱은 별개입니다.
+
+## 2026-10-20 — Developer ID 서명·공증 경로와 기존 Apple 프로필 재사용
+
+- 최신 main `9dd9dc0`에서 시작했다. 기존 작업 폴더의 미커밋 문서는 보존했다.
+- `scripts/package.mjs`에 명시적 Developer ID 모드를 추가했다. Team ID/인증서 종류를 검사하고 hardened runtime·타임스탬프·최소 JIT entitlement로 서명한다. 실패 시 ad-hoc으로 대체하지 않는다. 기본 개발 preview는 별도 유지한다.
+- 앱/Helper의 Electron 공용 LC_UUID를 서명 전에 bundle ID별로 구분하고 로컬 네트워크 사용 설명을 넣었다. Apple TN3178/3179를 근거로 하되 기존 권한 장애 원인 확정이나 해결 완료를 주장하지 않는다.
+- TaskDeck/반려주식에서 쓰던 비밀 아닌 Apple Team 프로필을 `release:mac`에서 참조한다. 키를 복사하거나 새로 발급하지 않는다. 앱·DMG 공증과 receipt 재개, 불확실한 제출 재전송 차단, CI 임시 키체인/실패 복구 artifact를 추가했다.
+- [기존 권한 이슈 #227](https://github.com/kys42/agent-office/issues/227)의 자체 인증서 제안 대신 이미 존재하는 Developer ID를 사용하는 방향이다. 설치 후 실제 권한 연속성 확인 전에는 이슈를 닫지 않는다.
+- 단위 574개, 타입, 웹/데스크톱 빌드, 포맷, MCP, actionlint 통과. 실제 arm64 앱의 Developer ID·Team ID·secure timestamp·hardened runtime·strict/deep 서명 검증과 고유 UUID를 확인했다.
+- 전체 native smoke는 통과하지 않았다. 로컬 quiet settings visibility, focus 카드 키보드, 다중 카드 blur assertion이 실패했다. settings visibility는 서명 변경 전 개발 Electron에서도 재현했다. 이를 서명 실패로 단정하지 않으며 최종 설치 검수 성공으로도 기록하지 않는다.
+- 기존 Apple API 키로 읽기 전용 `notarytool history`를 호출했으나 필수 계약 미동의/만료 **403**. 계정 소유자 계약 확인 뒤 preflight/공증 재개가 필요하다. CI secrets/environment 등록, 원격 signed workflow 실행, 실제 앱 교체와 권한/연결 검수, 공개 게시·자동 업데이트는 완료하지 않았다.
+- 정본: [macOS 배포](docs/development/MACOS-RELEASE.md), [결과 카드](https://app.notion.com/p/3ff9c0323a9e81c7b07aebb93405ccd3).
+
+---
 
 ## 2026-10-20 — 앱에서 답하기 Submit 멈춤 수정, 로컬 Electron 검사 조용한 모드
 

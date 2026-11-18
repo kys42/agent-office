@@ -4,7 +4,10 @@ import type { SendResult, TerminalTarget } from '../shared/types';
 import { targetLine, targetPlaceholder } from './TerminalSend';
 import { DraftConfirm } from './DraftConfirm';
 import { useI18n } from '../lib/i18n';
-import { useComposerSend } from '../lib/useComposerSend';
+import { useComposerSend, type ComposerSender } from '../lib/useComposerSend';
+import { api } from '../lib/api';
+import { imageBlock } from '../shared/attachments';
+import { ImageAttachButton, ImageStrip, useImageInput } from './ComposerImages';
 
 /**
  * A short follow-up straight from a desk bubble, without opening the colleague card.
@@ -20,21 +23,28 @@ export function QuickReply({
 }: {
   target: TerminalTarget;
   name: string;
-  onSend: (text: string, replaceDraft?: string, allowPartialDraft?: boolean) => Promise<SendResult>;
+  onSend: ComposerSender;
   /** Brings the session's terminal to the front (offered when its text can't be cleared). */
   onJump?: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
   const reply = useComposerSend(onSend, onClose);
-  const { text, sending, error, draft } = reply;
+  const { text, sending, error, draft, attached } = reply;
+  const block = imageBlock(target, { desktop: !!api.attachImage });
+  const asPaths = target.images === 'path';
+  const dropping = useImageInput(attached, block);
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => field.current?.focus({ preventScroll: true }), []);
   // Not taking input as last seen: still sent; the desktop app checks again and says why.
   const submit = () => void reply.submit();
   return (
     <form
-      className="quick-reply"
+      className={`quick-reply ${dropping.over ? 'composer-drop' : ''}`}
+      onPaste={dropping.onPaste}
+      onDragOver={dropping.onDragOver}
+      onDragLeave={dropping.onDragLeave}
+      onDrop={dropping.onDrop}
       tabIndex={-1}
       data-solid
       aria-label={t.terminal.replyTo(name)}
@@ -77,10 +87,19 @@ export function QuickReply({
           }
         }}
       />
+      {/* Quick replies open only with screen content shown: thumbnails are visible. */}
+      <ImageStrip attached={attached} privacy={false} block={block} asPaths={asPaths} />
       <div className="quick-reply-bar">
         <small>
           {targetLine(target, false)} · {t.terminal.replyKeys}
         </small>
+        <ImageAttachButton
+          attached={attached}
+          block={block}
+          asPaths={asPaths}
+          disabled={sending}
+          className="quick-reply-attach"
+        />
         <button
           type="button"
           className="quick-reply-close"
@@ -93,7 +112,7 @@ export function QuickReply({
           type="submit"
           className="quick-reply-send"
           aria-label={target.canPrepare ? t.federation.connectAndSend : t.terminal.send}
-          disabled={sending || !text.trim()}
+          disabled={sending || !reply.ready || attached.uploading}
         >
           {sending ? <Loader size={12} className="now-spin" /> : <CornerDownLeft size={12} />}
         </button>

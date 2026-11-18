@@ -2,6 +2,10 @@ import type { Messages } from '../en';
 
 export const conversation: Messages['conversation'] = {
   pending: '보냄 · 대화 기록 확인 중',
+  sentUnrecorded: '보냄 · 이 도구는 이미지 단독 요청을 기록하지 않아요',
+  restoredSend:
+    '요청을 보냈어요. 본문은 원래 대화에서 확인해 주세요. 이곳에는 전송 확인만 보관해요.',
+  pendingImages: (n) => `이미지 ${n}장 첨부`,
   hideSent: '보낸 메시지 임시 표시 숨기기',
   hideSentHint: '이 임시 표시만 숨겨요. 터미널이나 대기열에 보낸 메시지는 취소되지 않아요.',
   you: '나',
@@ -38,4 +42,25 @@ export const conversation: Messages['conversation'] = {
   bookmarked: '북마크했어요 · 기억 서랍에서 모아 볼 수 있어요',
   unbookmarked: '북마크를 해제했어요',
   newEntries: '새 기록 보기',
+  share: {
+    startHere: '여기부터 선택',
+    menuLabel: '말풍선 메뉴',
+    pick: '여기까지 선택',
+    start: '시작',
+    barLabel: '고른 말풍선',
+    count: (n) => `${n}개 선택`,
+    pickEnd: '끝낼 말풍선을 누르세요 · Shift+클릭도 돼요',
+    startHidden: '시작한 말풍선이 지금 안 보여요 · 다시 골라 주세요',
+    copy: (n) => `${n}개 복사`,
+    copied: (n) => `말풍선 ${n}개를 복사했어요`,
+    handTo: '동료에게 보내기',
+    handToLabel: '보낼 동료 고르기',
+    noTargets: '초안을 받을 입력창이 있는 다른 동료가 없어요',
+    handOff: '설정에서 ‘터미널로 보내기’를 켜면 동료에게 넘길 수 있어요',
+    from: (name) => `${name} 대화에서 가져옴`,
+    handed: (name) => `${name} 입력창에 초안으로 넣었어요 · 아직 보내지 않았어요`,
+    tooLong: (max) =>
+      `입력창에 다 들어가지 않아요(최대 ${max}자) · 범위를 줄이거나 복사해서 쓰세요`,
+    cancel: '취소',
+  },
 };

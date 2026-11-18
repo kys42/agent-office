@@ -192,6 +192,23 @@ test('a desk waiting for the person keeps saying so through an arrival', () => {
   assert.equal(failed.hop, false);
 });
 
+test('the pet arrows skip resting colleagues, unless everyone rests', () => {
+  const working = make('w', { officeSeat: 1, status: 'work', updatedAt: now });
+  const resting = make('r', { officeSeat: 2, status: 'idle', updatedAt: now - 5 * 3600_000 });
+  const calling = make('c', { officeSeat: 3, status: 'call', updatedAt: now });
+  const busy = buildOfficeModel(snap([working, resting, calling]), now);
+  assert.equal(busy.view('r')?.group, 'resting');
+  assert.deepEqual(
+    petChoices(busy).map((v) => v.session.id),
+    ['w', 'c'],
+  );
+  const quiet = buildOfficeModel(snap([resting]), now);
+  assert.deepEqual(
+    petChoices(quiet).map((v) => v.session.id),
+    ['r'],
+  );
+});
+
 test('the pet steps through visible colleagues in row order and keeps a pick while it is there', () => {
   const a = make('a', { officeSeat: 1 });
   const b = make('b', { officeSeat: 2 });

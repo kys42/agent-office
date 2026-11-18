@@ -1,7 +1,18 @@
-import { drawn } from './screen.js';
-
-/** Lines as drawn, blank ones left out: spacing and wrapping never decide a match. */
-const lines = (text: string) => text.split('\n').map(drawn).filter(Boolean);
+/**
+ * Rows as read, blank ones left out: only the edges' spacing and invisible joiners are ignored.
+ * Spaces inside a row count, so a row with one taken out (`print("ab")` for `print("a b")`) is
+ * new text: neither taken for one already saved nor dropped from a backup.
+ */
+const lines = (text: string) =>
+  text
+    .split('\n')
+    .map((line) =>
+      line
+        .normalize('NFC')
+        .replace(/[\u200b-\u200d\u2060\ufe0e\ufe0f]+/g, '')
+        .trim(),
+    )
+    .filter(Boolean);
 
 /** `small`'s lines appear in `big` as one run, in order. */
 export function containsLines(big: string, small: string): boolean {

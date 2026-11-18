@@ -18,6 +18,7 @@ import {
   type Dialog,
   type OpenCall,
   type PromptKey,
+  withoutSidePane,
 } from '../desktop/prompts/index.js';
 import { answerRequest, decodeSetting, inspectPrompt } from '../desktop/answers.js';
 import type { LiveTerminal, RunOptions } from '../desktop/terminals.js';
@@ -444,13 +445,31 @@ type Question = {
   question: string;
   header: string;
   multiSelect: boolean;
-  options: { label: string; description?: string }[];
+  options: { label: string; description?: string; preview?: string }[];
 };
 type Shown =
   | { kind: 'question'; questions: Question[] }
-  | { kind: 'plan'; plan: string }
+  | {
+      kind: 'plan';
+      plan: string;
+      /** The rows as drawn (2.1.296 by default). */
+      rows?: string[];
+      /** The fullscreen renderer's plan box: this many plan lines, the rest (and `╌`) cut. */
+      box?: number;
+    }
   | { kind: 'bash'; command: string };
 type Answer = Record<string, string> | 'rejected' | 'chat' | { choice: string };
+const PLAN_ROWS_296 = [
+  'Yes, and use auto mode',
+  'Yes, manually approve edits',
+  'Tell Claude what to change',
+];
+/** 2.1.316 without auto mode (its bundle's options builder): accept edits, manual, keep planning. */
+const PLAN_ROWS_316 = [
+  'Yes, auto-accept edits',
+  'Yes, manually approve edits',
+  'No, keep planning',
+];
 
 /** Terminal columns: Hangul, CJK and full-width forms take two. */
 const cols = (text: string) =>
@@ -461,6 +480,34 @@ const cols = (text: string) =>
   );
 /** Claude Code 2.1.304 draws a question with a line break or wider than 80 columns in a gutter. */
 const needsGutter = (question: string) => question.includes('\n') || cols(question) > 80;
+const padCols = (text: string, width: number) => text + ' '.repeat(Math.max(0, width - cols(text)));
+/** Word wrap at `width` columns, a word wider than that broken (wrap-ansi `hard`). */
+function wrapCols(text: string, width: number): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (let word of text.split(' ')) {
+    while (cols(word) > width) {
+      if (line) out.push(line);
+      let head = '';
+      for (const c of word) {
+        if (cols(head + c) > width) break;
+        head += c;
+      }
+      out.push(head);
+      line = '';
+      word = word.slice(head.length);
+    }
+    if (!line) line = word;
+    else if (cols(line) + 1 + cols(word) <= width) line += ' ' + word;
+    else {
+      out.push(line);
+      line = word;
+    }
+  }
+  return line ? [...out, line] : out;
+}
+/** 2.1.322: a single-select question with a preview on any option is drawn side by side. */
+const hasPreview = (q: Question) => !q.multiSelect && q.options.some((o) => o.preview);
 
 /** One dialog as Claude Code 2.1.296 draws it and reacts to keys (TERMINAL.md, measured). */
 class Claude {
@@ -473,6 +520,14 @@ class Claude {
   keys: string[] = [];
   /** Called after every key: tests change the screen mid-way. */
   onKey?: (sim: Claude) => void;
+  /** Preview layout: notes typed in the terminal, per question. */
+  notes: string[];
+  /** A Claude Code plugin pane drawn at the right, behind a `│` divider at column 120. */
+  pane = false;
+  /** A broken tab bar: answered questions keep drawing `☐`. */
+  unmarked = false;
+  /** Preview layout: the marker is on "Chat about this". */
+  private chatFocus = false;
   private q = 0;
   private review = false;
   private cursor: number[];
@@ -486,6 +541,11 @@ class Claude {
     this.checked = qs.map((q) => q.options.map(() => false));
     this.typed = qs.map(() => '');
     this.picked = qs.map(() => null);
+    this.notes = qs.map(() => '');
+  }
+  /** The question the form shows (its tab). */
+  get current() {
+    return this.q;
   }
   get closed() {
     return this.answer !== null;
@@ -522,25 +582,79 @@ class Claude {
       .map((line) => ` │ ${line.slice(1)}`.trimEnd());
   }
   render(): string {
+    const text = this.draw();
+    if (!this.pane) return text;
+    return text
+      .split('\n')
+      .map((line, i) => `${padCols(line, 120)}│${i % 3 ? '' : ' 패널 예시 │'}`)
+      .join('\n');
+  }
+  /** 2.1.322's preview layout (its bundle's `uZ`): options at the left, the box, notes, chat. */
+  private drawPreview(bar: string): string {
+    const q = this.questions()[this.q];
+    const c = this.cursor[this.q];
+    const left = q.options.flatMap((o, i) => {
+      const [first, ...rest] = wrapCols(o.label, 26);
+      return [`${c === i ? '❯' : ' '} ${i + 1}. ${first}`, ...rest.map((l) => `    ${l}`)];
+    });
+    const shown = (q.options[c].preview ?? 'No preview available').split('\n');
+    const widest = Math.max(
+      ...q.options.flatMap((o) => (o.preview ?? '').split('\n').map(cols)),
+      ...shown.map(cols),
+    );
+    const outer = Math.max(4, Math.min(widest + 4, 120 - 34));
+    const inner = outer - 4;
+    const box = [
+      `┌${'─'.repeat(outer - 2)}┐`,
+      ...shown.map(
+        (l) => `│ ${padCols(cols(l) > inner ? l.slice(0, inner - 1) + '…' : l, inner)} │`,
+      ),
+      `└${'─'.repeat(outer - 2)}┘`,
+    ];
+    const rows = Array.from({ length: Math.max(left.length, box.length) }, (_, i) =>
+      `${padCols(left[i] ?? '', 34)}${box[i] ?? ''}`.trimEnd(),
+    );
+    const many = this.questions().length > 1;
+    return [
+      RULE,
+      bar,
+      '',
+      // A question in the gutter wraps at the pane's width (2 columns go to the gutter).
+      ...(needsGutter(q.question)
+        ? q.question
+            .split('\n')
+            .flatMap((line) => wrapCols(line, 118))
+            .map((line) => `│ ${line}`)
+        : [q.question]),
+      '',
+      ...rows,
+      '',
+      `${' '.repeat(34)}Notes: ${this.notes[this.q] || 'press n to add notes'}`,
+      '',
+      RULE,
+      `${this.chatFocus ? '❯' : ' '} Chat about this`,
+      '',
+      `Enter to select · ↑/↓ to navigate · n to add notes · ${many ? 'Tab to switch questions · ' : ''}Esc to cancel`,
+    ].join('\n');
+  }
+  private draw(): string {
     if (this.closed) return ['⏺ Done.', RULE, '❯ ', RULE, '  ⏸ manual mode on'].join('\n');
     const r = this.shown;
     if (r.kind === 'plan') {
-      const rows = [
-        'Yes, and use auto mode',
-        'Yes, manually approve edits',
-        'Tell Claude what to change',
-      ];
+      const rows = r.rows ?? PLAN_ROWS_296;
+      const body = r.plan
+        .trim()
+        .split('\n')
+        .map((l) => '   ' + l.replace(/`/g, ''));
       return [
         '  ' + '─'.repeat(116),
         '   Ready to code?',
         '',
         "   Here is Claude's plan:",
         '  ' + '╌'.repeat(116),
-        ...r.plan
-          .trim()
-          .split('\n')
-          .map((l) => '   ' + l.replace(/`/g, '')),
-        '  ' + '╌'.repeat(116),
+        ...(r.box !== undefined && body.length > r.box
+          ? body.slice(0, r.box)
+          : [...body, '  ' + '╌'.repeat(116)]),
         '  ' + '─'.repeat(116),
         '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
         '',
@@ -568,7 +682,7 @@ class Claude {
     const qs = this.questions();
     const many = this.reviewSingle || qs.length > 1 || qs.some((q) => q.multiSelect);
     const bar = many
-      ? `←  ${qs.map((q, i) => `${this.done(i) ? '☒' : '☐'} ${q.header}`).join('  ')}  ✔ Submit  →`
+      ? `←  ${qs.map((q, i) => `${this.done(i) && !this.unmarked ? '☒' : '☐'} ${q.header}`).join('  ')}  ✔ Submit  →`
       : ` ☐ ${qs[0].header}`;
     if (this.review) {
       const all = qs.every((_, i) => this.done(i));
@@ -592,6 +706,7 @@ class Claude {
       ].join('\n');
     }
     const q = qs[this.q];
+    if (hasPreview(q)) return this.drawPreview(bar);
     const c = this.cursor[this.q];
     const n = q.options.length;
     const mark = (i: number) => (c === i ? '❯' : ' ');
@@ -631,11 +746,21 @@ class Claude {
           .join(', ')
       : (this.picked[i] ?? '');
   }
+  /** ← (tabs:previous): the question before, nothing chosen. */
+  private previous() {
+    if (this.q === 0) return;
+    this.q--;
+    this.cursor[this.q] = 0;
+  }
   private next() {
+    this.chatFocus = false;
     const qs = this.questions();
     if (qs.length === 1 && !qs[0].multiSelect && !this.reviewSingle) return this.submit();
-    if (this.q < qs.length - 1) this.q++;
-    else {
+    if (this.q < qs.length - 1) {
+      this.q++;
+      // A question shown again starts with the marker on its first option (2.1.322 remounts it).
+      this.cursor[this.q] = 0;
+    } else {
       this.review = true;
       this.choice = 0;
     }
@@ -654,7 +779,8 @@ class Claude {
     const r = this.shown;
     if (this.closed) return;
     if (r.kind !== 'question' || this.review) {
-      const rows = r.kind === 'question' ? 2 : 3;
+      const rows =
+        r.kind === 'question' ? 2 : r.kind === 'plan' ? (r.rows ?? PLAN_ROWS_296).length : 3;
       if (name === 'Down') this.choice = Math.min(rows - 1, this.choice + 1);
       if (name === 'Up') this.choice = Math.max(0, this.choice - 1);
       if (name === 'Enter') {
@@ -662,6 +788,27 @@ class Claude {
           if (this.choice === 0) this.submit();
           else this.answer = 'rejected';
         } else this.answer = { choice: String(this.choice + 1) };
+      }
+    } else if (hasPreview(this.questions()[this.q])) {
+      // 2.1.322 `uZ`: ↓ past the last option onto "Chat about this", ↑ back; no wrapping.
+      const q = this.questions()[this.q];
+      const c = this.cursor[this.q];
+      if (name === 'Down') {
+        if (c < q.options.length - 1 && !this.chatFocus) this.cursor[this.q]++;
+        else this.chatFocus = true;
+      }
+      if (name === 'Up') {
+        if (this.chatFocus) this.chatFocus = false;
+        else if (c > 0) this.cursor[this.q]--;
+      }
+      if (name === 'Right' && !this.chatFocus) this.next();
+      if (name === 'Left' && !this.chatFocus) this.previous();
+      if (name === 'Enter') {
+        if (this.chatFocus) this.answer = 'chat';
+        else {
+          this.picked[this.q] = q.options[c].label;
+          this.next();
+        }
       }
     } else {
       const q = this.questions()[this.q];
@@ -672,6 +819,7 @@ class Claude {
       if (name === 'Space' && q.multiSelect && c < n)
         this.checked[this.q][c] = !this.checked[this.q][c];
       if (name === 'Right') this.next();
+      if (name === 'Left') this.previous();
       if (name === 'Enter') {
         if (c === this.stops() - 1) this.answer = 'chat';
         else if (q.multiSelect) {
@@ -775,6 +923,7 @@ async function harness(sim: Claude, options: Harness = {}) {
             '\x1b[A': 'Up',
             '\x1b[B': 'Down',
             '\x1b[C': 'Right',
+            '\x1b[D': 'Left',
             ' ': 'Space',
           };
           if (text.startsWith('\x1b[200~')) sim.type(text.slice(6, -6));
@@ -1208,6 +1357,300 @@ test('A plan matches only when everything the dialog shows is the recorded plan'
   assert.equal(oneOf(screen, [planCallOf(plan)]), 'p');
   // Edited after the first 80 characters (ctrl+g): another plan, never approved from the card.
   assert.equal(oneOf(screen, [planCallOf(plan.replace('npm', 'yarn'))]), 'none');
+  // The whole box is on screen: a recorded plan that goes on past it is another plan.
+  assert.equal(oneOf(screen, [planCallOf(`${plan}\n3. Delete the tag`)]), 'none');
+});
+
+// ── Claude Code 2.1.316 plan dialogs ────────────────────────────────────────────────────────
+// Not captured: drawn from 2.1.316's bundle (the ExitPlanMode dialog and its options builder;
+// the fullscreen renderer sizes the plan's scroll box to the pane and shows its top). Markdown as
+// its renderer draws it: no `#`/`**`/backticks/code fences, `-` bullets, a link with its address.
+
+const PLAN_316 = {
+  plan: [
+    '# Launch core refactor',
+    '',
+    '## Context',
+    '',
+    'Every launch path (**new session**, resume, fork) goes through `desktop/launch/`. The Orca and tmux paths still differ in how they confirm a start.',
+    '',
+    '## Steps',
+    '',
+    '1. Move the confirm step into `pipeline.ts` and call it from every destination.',
+    '2. Keep the waiting record for 2 minutes when the start cannot be confirmed:',
+    '',
+    '   ```ts',
+    '   const WAIT_MS = 120_000;',
+    '   ```',
+    '',
+    '3. Update `tests/launch.test.ts` with the new order.',
+    '- Check the Orca tab with `orca terminal list` (see [Orca docs](https://example.com/orca-docs))',
+    '',
+    '| Destination | Confirmed by |',
+    '|---|---|',
+    "| Orca | the tab's handle |",
+    '| tmux | the session name |',
+    '',
+    '## Verification',
+    '',
+    '- `npm test`',
+    '- `npm run typecheck`',
+  ].join('\n'),
+  planFilePath: '/Users/someone.xyz/.claude/plans/launch-core-refactor-quiet-otter.md',
+};
+const plan316 = (name: string) => {
+  const d = parseDialog(plainScreen(name)) as Dialog;
+  assert.equal(d.kind, 'plan', name);
+  return d as Extract<Dialog, { kind: 'plan' }>;
+};
+
+test('2.1.316: a plan taller than the pane is read as far as it shows, and approvable', () => {
+  // Fullscreen: the box shows the plan's start; its bottom and closing ╌ are cut.
+  const start = plan316('p316-plan-start');
+  assert.equal(start.shows, 'start');
+  assert.equal(start.planFile, '~/.claude/plans/launch-core-refactor-quiet-otter.md');
+  assert.match(start.plan, /^Launch core refactor\n/);
+  assert.match(start.plan, /\| Orca {8}\| the tab's handle \|$/);
+  // 2.1.316's rows: only "manually approve edits"; accept edits and the text row stay there.
+  assert.deepEqual(claudeCodePrompts.choices(start), [
+    { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(start.rows.find((r) => r.number === 3)?.input, true);
+  assert.equal(claudeCodePrompts.hasMore(start), true);
+  const planOf = (input: Record<string, unknown>) => [call('p', 'ExitPlanMode', input)];
+  assert.equal(oneOf(start, planOf(PLAN_316)), 'p');
+  // The stored copy may hide secret-like words; the raw input is what the screen shows.
+  assert.equal(oneOf(start, planOf({ plan: PLAN_316.plan })), 'p');
+  // Anything shown that differs: another plan.
+  for (const edited of [
+    PLAN_316.plan.replace('2 minutes', '5 minutes'),
+    PLAN_316.plan.replace('const WAIT_MS', 'let WAIT_MS'),
+    PLAN_316.plan.replace("the tab's handle", 'the window title'),
+    `# Intro\n\n${PLAN_316.plan}`,
+  ])
+    assert.equal(oneOf(start, planOf({ ...PLAN_316, plan: edited })), 'none', edited);
+  assert.equal(
+    oneOf(start, planOf({ ...PLAN_316, planFilePath: '/x/.claude/plans/other.md' })),
+    'none',
+  );
+
+  // Main screen: the terminal scrolled, leaving the plan's end and the closing ╌; a narrow pane
+  // wrapped the footer before the plan file. "Clear context" is never offered.
+  const end = plan316('p316-plan-end');
+  assert.equal(end.shows, 'end');
+  assert.equal(end.planFile, '~/.claude/plans/launch-core-refactor-quiet-otter.md');
+  assert.deepEqual(claudeCodePrompts.choices(end), [
+    { number: 3, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(oneOf(end, planOf(PLAN_316)), 'p');
+  // Its end only counts with the plan file named on both sides.
+  assert.equal(oneOf(end, planOf({ plan: PLAN_316.plan })), 'none');
+  assert.equal(
+    oneOf(end, planOf({ ...PLAN_316, plan: `${PLAN_316.plan}\n- npm run build` })),
+    'none',
+  );
+});
+
+test('2.1.316: addresses in a plan count letter for letter, however the pane wraps them', () => {
+  const RELEASE = {
+    plan: [
+      '# Release',
+      '',
+      '1. Download from https://trusted.example/releases/v2.1.316/agent-office.dmg',
+      '2. Read the [release notes](https://trusted.example/notes/v2) first.',
+    ].join('\n'),
+    planFilePath: '/Users/someone.xyz/.claude/plans/release-v2.md',
+  };
+  const planOf = (input: Record<string, unknown>) => [call('p', 'ExitPlanMode', input)];
+  const withPlan = (plan: string) => planOf({ ...RELEASE, plan });
+  // A narrow pane: the address and the link (drawn `text (address)`) wrap mid-path.
+  const narrow = plan316('p316-plan-narrow');
+  assert.equal(narrow.shows, 'all');
+  assert.equal(narrow.planFile, '~/.claude/plans/release-v2.md');
+  assert.deepEqual(claudeCodePrompts.choices(narrow), [
+    { number: 2, label: 'Yes, manually approve edits', role: 'allow' },
+  ]);
+  assert.equal(oneOf(narrow, planOf(RELEASE)), 'p');
+  // Another address, plain or behind the link, is another plan.
+  for (const other of [
+    RELEASE.plan.replace(
+      'https://trusted.example/releases/v2.1.316/agent-office.dmg',
+      'https://other.example/payload',
+    ),
+    RELEASE.plan.replace('trusted.example/releases', 'trusted.example.evil/releases'),
+    RELEASE.plan.replace('(https://trusted.example/notes/v2)', '(https://other.example/notes)'),
+    // The link's address is on screen: its text alone is not what it shows.
+    RELEASE.plan.replace('[release notes](https://trusted.example/notes/v2)', 'release notes'),
+  ])
+    assert.equal(oneOf(narrow, withPlan(other)), 'none', other);
+  // A plain address the screen shows another way: none (the safe side).
+  const screen = (from: string, to: string) =>
+    parseDialog({ text: plainScreen('p316-plan-narrow').text.replace(from, to) }) as Dialog;
+  const swapped = screen('https://trusted.example\n', 'https://other.example/payload\n');
+  assert.equal(oneOf(swapped, planOf(RELEASE)), 'none');
+  // A terminal that takes hyperlinks draws the link's text alone (the address hidden in it).
+  const linked = screen(
+    'release notes\n      (https://trusted.example/notes/v2)\n      first.',
+    'release notes first.',
+  );
+  assert.equal((linked as { plan: string }).plan.includes('notes/v2'), false);
+  assert.equal(oneOf(linked, planOf(RELEASE)), 'p');
+  assert.equal(
+    oneOf(linked, withPlan(RELEASE.plan.replace('release notes', 'release checklist'))),
+    'none',
+  );
+  // The plain address is still drawn there: changing it is another plan.
+  assert.equal(oneOf(linked, withPlan(RELEASE.plan.replace('v2.1.316', 'v2.1.317'))), 'none');
+});
+
+/** A whole 2.1.316 plan dialog around these drawn plan lines. */
+const planDialog = (lines: string[], file = 'cleanup.md') =>
+  parseDialog({
+    text: [
+      '  ' + '─'.repeat(116),
+      '   Ready to code?',
+      '',
+      "   Here is Claude's plan:",
+      '  ' + '╌'.repeat(116),
+      ...lines.map((line) => (line ? `   ${line}` : '')),
+      '  ' + '╌'.repeat(116),
+      '',
+      '  ' + '─'.repeat(116),
+      '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
+      '',
+      ...PLAN_ROWS_316.map((label, i) => `   ${i ? ' ' : '❯'} ${i + 1}. ${label}`),
+      '        shift+tab to approve with this feedback',
+      '',
+      `   ctrl+g to edit in VS Code · ~/.claude/plans/${file}`,
+    ].join('\n'),
+  }) as Dialog;
+
+test('2.1.316: every character of a plan counts, punctuation included; only spacing does not', () => {
+  const CLEANUP = {
+    plan: [
+      '## Cleanup',
+      '',
+      '1. Fetch https://trusted.example/path/release.tar.gz',
+      '2. Run `rm -rf build/tmp; npm ci, npm test`',
+      '   1. Check `value != null` before use',
+      '   2. Keep `a < b` in the guard',
+      '      - Nested *note*',
+      '3. Done',
+      '',
+      '> Careful: **only** the build folder.',
+    ].join('\n'),
+    planFilePath: '/Users/someone.xyz/.claude/plans/cleanup.md',
+  };
+  // As its renderer draws it: no `#`/backticks/`*`, nested ordered items lettered, the quote bar.
+  const screen = planDialog([
+    'Cleanup',
+    '',
+    '1. Fetch https://trusted.example/path/release.tar.gz',
+    '2. Run rm -rf build/tmp; npm ci, npm test',
+    '   a. Check value != null before use',
+    '   b. Keep a < b in the guard',
+    '      - Nested note',
+    '3. Done',
+    '',
+    '▎ Careful: only the build folder.',
+  ]);
+  const withPlan = (plan: string) => [call('p', 'ExitPlanMode', { ...CLEANUP, plan })];
+  assert.equal(oneOf(screen, withPlan(CLEANUP.plan)), 'p');
+  for (const [from, to] of [
+    ['trusted.example', 'trustedexample'],
+    ['!=', '=='],
+    ['a < b', 'a > b'],
+    ['build/tmp', 'build-tmp'],
+    ['path/release', 'path/../release'],
+    ['rm -rf', 'rm -f'],
+    ['build/tmp; npm ci, npm test', 'build/tmp, npm ci; npm test'],
+    ['**only**', 'ONLY'],
+  ])
+    assert.equal(oneOf(screen, withPlan(CLEANUP.plan.replace(from, to))), 'none', `${from}→${to}`);
+  // The same change seen on the screen instead: none either.
+  const drawnAs = (from: string, to: string) =>
+    planDialog((screen as { plan: string }).plan.replace(from, to).split('\n'), 'cleanup.md');
+  assert.equal(oneOf(drawnAs('!=', '=='), withPlan(CLEANUP.plan)), 'none');
+  assert.equal(oneOf(drawnAs('trusted.example', 'trustedexample'), withPlan(CLEANUP.plan)), 'none');
+  // Numbers a nested list would not draw (`1.` where it draws `a.`): none, never loosened.
+  assert.equal(oneOf(drawnAs('a. Check', '1. Check'), withPlan(CLEANUP.plan)), 'none');
+  // Wrapped anywhere, even mid-word: the same plan.
+  assert.equal(
+    oneOf(drawnAs('npm ci, npm test', 'npm ci, np\nm test'), withPlan(CLEANUP.plan)),
+    'p',
+  );
+});
+
+test('2.1.316: a code block label shows where the highlighter lacks it; unknown drawings never match', () => {
+  const plan = ['Draw it:', '', '```mermaid', 'graph TD; A-->B', '```', '', 'Then **ship**.'].join(
+    '\n',
+  );
+  const input = { plan, planFilePath: '/Users/someone.xyz/.claude/plans/cleanup.md' };
+  const calls = [call('p', 'ExitPlanMode', input)];
+  // A language the highlighter does not know: its label drawn above the code; or not.
+  const labelled = planDialog(['Draw it:', '', 'mermaid', 'graph TD; A-->B', '', 'Then ship.']);
+  const bare = planDialog(['Draw it:', '', 'graph TD; A-->B', '', 'Then ship.']);
+  assert.equal(oneOf(labelled, calls), 'p');
+  assert.equal(oneOf(bare, calls), 'p');
+  assert.equal(
+    oneOf(planDialog(['Draw it:', '', 'graph TD; A->B', '', 'Then ship.']), calls),
+    'none',
+  );
+  // A character reference is drawn as written by Claude Code's parser: not reproduced, none.
+  const amp = { ...input, plan: 'Run `make` &amp; check the log.' };
+  assert.equal(
+    oneOf(planDialog(['Run make &amp; check the log.']), [call('p', 'ExitPlanMode', amp)]),
+    'none',
+  );
+});
+
+test('2.1.316: a plan whose every Yes is withheld offers no button', () => {
+  const screen = [
+    '  ' + '─'.repeat(116),
+    '   Ready to code?',
+    '',
+    "   Here is Claude's plan:",
+    '  ' + '╌'.repeat(116),
+    '   (the plan is too large to be shown in full — approval is withheld; send feedback asking for a shorter plan, or press Esc)',
+    '  ' + '╌'.repeat(116),
+    '  ' + '─'.repeat(116),
+    '   Claude has written up a plan and is ready to execute. Would you like to proceed?',
+    '',
+    '   ❯ 1. No, keep planning',
+  ].join('\n');
+  const d = parseDialog({ text: screen }) as Dialog;
+  assert.equal(d.kind, 'plan');
+  assert.deepEqual(claudeCodePrompts.choices(d), []);
+  assert.equal(oneOf(d, [call('p', 'ExitPlanMode', PLAN_316)]), 'none');
+});
+
+test('2.1.316: approving a plan cut by the pane presses Down to "manually approve", then Enter', async () => {
+  const plan = Array.from(
+    { length: 30 },
+    (_, i) => `${i + 1}. Step number ${i + 1} of the plan`,
+  ).join('\n');
+  const input = { plan, planFilePath: PLAN_INPUT.planFilePath };
+  const request: InputRequest = { kind: 'plan', plan, planFile: PLAN_INPUT.planFilePath };
+  const shown: Shown = { kind: 'plan', plan, rows: PLAN_ROWS_316, box: 12 };
+  const ok = await answer(request, shown, [{ id: 'toolu_q', name: 'ExitPlanMode', input }], {
+    number: 2,
+    label: 'Yes, manually approve edits',
+  });
+  assert.equal((ok.result as { status: string }).status, 'answered');
+  assert.deepEqual(ok.sim.answer, { choice: '2' });
+  assert.deepEqual(keysOf(ok.calls), ['Down', 'Enter']);
+  // Accept edits keeps applying, and "No, keep planning" takes words: never pressed from here.
+  for (const [number, label] of [
+    [1, 'Yes, auto-accept edits'],
+    [3, 'No, keep planning'],
+  ] as const) {
+    const refused = await answer(request, shown, [{ id: 'toolu_q', name: 'ExitPlanMode', input }], {
+      number,
+      label,
+    });
+    assert.match(failed(refused.result), /한 번짜리 선택지가 아니에요/);
+    assert.equal(refused.sim.keys.length, 0);
+  }
 });
 
 test('Settings stored by pre-release builds as booleans still read as on and off', () => {
@@ -1368,9 +1811,13 @@ test('The card is offered only one-shot choices, only for the exact call', async
       const view = await inspectPrompt(...args);
       return view.status === 'unavailable' ? view.reason : view.status;
     };
-    // Turned off: off. Never set: still offered.
-    assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'off'), 'off');
-    assert.equal(await reason(claudeCodePrompts, asking(BASH), h.target, 'unset'), 'ready');
+    // Not on (never set, or turned off): still offered, marked so the first press asks.
+    for (const setting of ['unset', 'off'] as const) {
+      const view = await inspectPrompt(claudeCodePrompts, asking(BASH), h.target, setting);
+      assert.equal(view.status, 'ready');
+      assert.equal(view.status === 'ready' && view.consent, setting);
+    }
+    assert.ok(ready.status === 'ready' && ready.consent === undefined);
     assert.equal(await reason(claudeCodePrompts, asking(BASH), null, 'on'), 'no-terminal');
     // A question cut at rest cannot be checked; Codex and others are shown, never answered.
     const cut = { ...QUESTION(COLOR_INPUT), truncated: true } as InputRequest;
@@ -1408,7 +1855,7 @@ test('The shared service (also the web preview RPC) can neither inspect nor answ
 });
 
 test('Adapter keys never include digits, Tab, Esc or control keys', () => {
-  const allowed: PromptKey[] = ['Up', 'Down', 'Right', 'Enter', 'Space'];
+  const allowed: PromptKey[] = ['Up', 'Down', 'Left', 'Right', 'Enter', 'Space'];
   const source = readFileSync(
     path.join(import.meta.dirname, '..', 'desktop', 'prompts', 'claude-code.ts'),
     'utf8',
@@ -1418,6 +1865,10 @@ test('Adapter keys never include digits, Tab, Esc or control keys', () => {
       assert.ok(allowed.includes(name.slice(1, -1) as PromptKey), name);
   // Arrows go one at a time.
   assert.ok(!/press\(\[[^\]]*,/.test(source));
+  // ← only switches a form's tabs, in the notes check.
+  const lefts = [...source.matchAll(/press\(\[[^\]]*'Left'/g)];
+  assert.equal(lefts.length, 1);
+  assert.match(source, /press\(\[to < at \? 'Left' : 'Right'\]\)/);
 });
 
 test('A long question wrapping in the review is still read, checked and submitted', async () => {
@@ -1591,4 +2042,508 @@ test('A review drawn with gutters, as tmux and Orca (blank lines dropped) read i
       ],
     );
   }
+});
+
+// ── 2.1.322: questions with previews (#191) ──────────────────────────────────────────────────
+// Fixtures q322-*: drawn as the 2.1.322 bundle lays the dialog out (AskUserQuestion `uZ`), the
+// pane one in the shape of a real Orca read (Claude Code's plugin pane at the right), with
+// neutral placeholder text.
+
+const MOCK = '┌ 목록 ┐\n│ 항목 │\n└──────┘';
+const PREVIEW_INPUT = {
+  questions: [
+    {
+      question:
+        "예시 화면을 어디에 둘까요? 참고로 지금 목록(sample, 8000) 안내문은 '모델 호출·실행기 없는 공용 바탕'으로 범위를 정해 둔 상태입니다.",
+      header: '구역',
+      multiSelect: false,
+      options: [
+        { label: '샘플 목록에 화면 추가 (추천)', description: '목록 안에 둔다', preview: MOCK },
+        { label: '별도 폴더에 단독 예시', description: '따로 둔다', preview: '단독 화면' },
+      ],
+    },
+    {
+      question: '어떤 순서로 진행할까요? (여러 개)',
+      header: '작업 순서',
+      multiSelect: true,
+      options: [
+        { label: '먼저 뼈대', description: '화면 틀부터 만든다' },
+        { label: '다음 연결', description: '도구 호출을 잇는다' },
+      ],
+    },
+    {
+      question: '어느 저장소에 둘까요?',
+      header: '저장소',
+      multiSelect: false,
+      options: [{ label: '지금 저장소' }, { label: '새 저장소' }],
+    },
+  ],
+};
+const LONE_INPUT = {
+  questions: [
+    {
+      question: '제목을 어떻게 놓을까요?',
+      header: '정렬',
+      multiSelect: false,
+      options: [
+        { label: '왼쪽 정렬', preview: '┌──────────┐\n│ 제목     │\n│ 본문 ... │\n└──────────┘' },
+        { label: '가운데 정렬', preview: '가운데' },
+        { label: '오른쪽 정렬', preview: '오른쪽' },
+      ],
+    },
+  ],
+};
+const q322 = (name: string) => parseDialog(plainScreen(name)) as Dialog;
+const asQuestion = (d: Dialog | DialogStateLike) => d as Extract<Dialog, { kind: 'question' }>;
+type DialogStateLike = ReturnType<typeof parseDialog>;
+const askCall = (input: { questions: unknown[] }) => [call('toolu_q', 'AskUserQuestion', input)];
+const withoutPreviews = (input: typeof PREVIEW_INPUT) => ({
+  questions: input.questions.map((q) => ({
+    ...q,
+    options: q.options.map((o) => ({ ...o, preview: undefined })),
+  })),
+});
+const edited = (name: string, edit: (text: string) => string) =>
+  parseDialog({ text: edit(plainScreen(name).text) });
+
+test('2.1.322 previews: the left column only, wrapped labels joined, notes and an unnumbered chat row', () => {
+  const d = asQuestion(q322('q322-preview-multi'));
+  assert.equal(d.kind, 'question');
+  assert.equal(d.layout, 'preview');
+  assert.equal(d.notes, '');
+  assert.deepEqual(d.tabs, [
+    { label: '구역', done: false },
+    { label: '작업 순서', done: false },
+    { label: '저장소', done: false },
+  ]);
+  // The label wrapped in its 30-cell column reads whole; nothing of the box comes along.
+  assert.deepEqual(
+    d.rows.map((r) => [r.number, r.label, r.cursor, !!r.aside]),
+    [
+      [1, '샘플 목록에 화면 추가 (추천)', true, false],
+      [2, '별도 폴더에 단독 예시', false, false],
+      [3, 'Chat about this', false, true],
+    ],
+  );
+  assert.ok(!d.rows.some((r) => r.input), 'no text row beside previews');
+  assert.equal(oneOf(d, askCall(PREVIEW_INPUT)), 'toolu_q');
+  // Claude Code's plugin pane at the right (a real Orca read's shape) is cut off first.
+  const pane = asQuestion(q322('q322-preview-pane'));
+  assert.deepEqual(pane.rows, d.rows);
+  assert.deepEqual(pane.tabs, d.tabs);
+  assert.equal(pane.question.replace(/\s+/g, ' '), d.question.replace(/\s+/g, ' '));
+  assert.equal(oneOf(pane, askCall(PREVIEW_INPUT)), 'toolu_q');
+  // A narrow pane: the box cut to fit, the question and footer wrapped; the options the same.
+  const narrow = asQuestion(q322('q322-preview-narrow'));
+  assert.deepEqual(narrow.rows, d.rows);
+  assert.equal(oneOf(narrow, askCall(PREVIEW_INPUT)), 'toolu_q');
+  // One question alone: a single chip, no arrows, no Submit tab.
+  const lone = asQuestion(q322('q322-preview-single'));
+  assert.deepEqual(lone.tabs, [{ label: '정렬', done: false }]);
+  assert.deepEqual(
+    lone.rows.map((r) => r.label),
+    ['왼쪽 정렬', '가운데 정렬', '오른쪽 정렬', 'Chat about this'],
+  );
+  assert.equal(oneOf(lone, askCall(LONE_INPUT)), 'toolu_q');
+  // The form's multi-select question keeps the list layout; the first tab shows it answered.
+  const multi = asQuestion(q322('q322-multiselect-next'));
+  assert.equal(multi.layout, undefined);
+  assert.equal(multi.multi, true);
+  assert.deepEqual(
+    multi.tabs.map((t) => t.done),
+    [true, false, false],
+  );
+  assert.equal(oneOf(multi, askCall(PREVIEW_INPUT)), 'toolu_q');
+});
+
+test('2.1.322 previews: identified against the recorded call exactly as before', () => {
+  const d = q322('q322-preview-multi');
+  // The record says no previews: the layout does not fit the question.
+  assert.equal(oneOf(d, askCall(withoutPreviews(PREVIEW_INPUT))), 'none');
+  // Another label, another question, another header: not this call.
+  const relabeled = structuredClone(PREVIEW_INPUT);
+  relabeled.questions[0].options[1].label = '별도 폴더에 단독 데모';
+  assert.equal(oneOf(d, askCall(relabeled)), 'none');
+  const reheaded = structuredClone(PREVIEW_INPUT);
+  reheaded.questions[2].header = '브랜치';
+  assert.equal(oneOf(d, askCall(reheaded)), 'none');
+  // A header the bar had to cut (`…`) still names its question; a wrong start does not.
+  const cut = edited('q322-preview-multi', (t) => t.replace('☐ 작업 순서', '☐ 작업…'));
+  assert.equal(oneOf(cut as Dialog, askCall(PREVIEW_INPUT)), 'toolu_q');
+  const wrong = edited('q322-preview-multi', (t) => t.replace('☐ 작업 순서', '☐ 저장…'));
+  assert.equal(oneOf(wrong as Dialog, askCall(PREVIEW_INPUT)), 'none');
+});
+
+test('2.1.322 previews: notes, the marker on chat, a tick, and anything else beside the options', () => {
+  const notes = asQuestion(
+    edited('q322-preview-multi', (t) => t.replace('press n to add notes', '색은 파랑으로')),
+  );
+  assert.equal(notes.notes, '색은 파랑으로');
+  // The notes being typed (the input's placeholder) is not "no notes".
+  const typing = asQuestion(
+    edited('q322-preview-multi', (t) =>
+      t.replace('press n to add notes', 'Add notes on this design…'),
+    ),
+  );
+  assert.equal(typing.notes, 'Add notes on this design…');
+  // On "Chat about this" the option keeps its marker too: both are read.
+  const chat = asQuestion(
+    edited('q322-preview-multi', (t) => t.replace('  Chat about this', '❯ Chat about this')),
+  );
+  assert.deepEqual(
+    chat.rows.map((r) => r.cursor),
+    [true, false, true],
+  );
+  // An option answered before shows a tick after its label.
+  const ticked = asQuestion(
+    edited('q322-preview-multi', (t) =>
+      t.replace('  2. 별도 폴더에 단독 예시  ', '  2. 별도 폴더에 단독 예시 ✔'),
+    ),
+  );
+  assert.equal(ticked.rows[1].label, '별도 폴더에 단독 예시');
+  assert.equal(ticked.rows[1].picked, true);
+  // Words beside the options where the box should be: not read as this layout.
+  const odd = edited('q322-preview-multi', (t) =>
+    t.replace(/(\n {2}2\. 별도 폴더에 단독 예시 {8})│/, '$1x'),
+  );
+  assert.equal(odd.kind, 'unknown');
+});
+
+test('The plugin-pane cut leaves every earlier capture as it was', () => {
+  for (const file of readdirSync(FIXTURES).filter((f) => f.endsWith('.plain.txt'))) {
+    if (file.startsWith('q322-preview-pane')) continue;
+    const lines = readFileSync(path.join(FIXTURES, file), 'utf8')
+      .split('\n')
+      .map((l) => l.trimEnd());
+    assert.deepEqual(withoutSidePane(lines), lines, file);
+  }
+});
+
+const PREVIEW_SHOWN = shownQuestions(PREVIEW_INPUT as { questions: Question[] });
+
+test('2.1.322 previews: one question answered with one arrow and Enter', async () => {
+  const {
+    result: r,
+    sim,
+    calls,
+  } = await answer(
+    QUESTION(LONE_INPUT),
+    shownQuestions(LONE_INPUT as { questions: Question[] }),
+    [ask(LONE_INPUT)],
+    { answers: [{ options: [1] }] },
+  );
+  assert.deepEqual(r, { status: 'answered', message: 'tmux work:1.0에서 답했어요' });
+  assert.deepEqual(sim.answer, { '제목을 어떻게 놓을까요?': '가운데 정렬' });
+  assert.deepEqual(keysOf(calls), ['Down', 'Enter']);
+});
+
+test('2.1.322 previews: a form of three, each question verified on its tab, then Submit', async () => {
+  for (const host of ['tmux', 'orca'] as const) {
+    const { result: r, sim } = await answer(
+      QUESTION(PREVIEW_INPUT),
+      PREVIEW_SHOWN,
+      [ask(PREVIEW_INPUT)],
+      { answers: [{ options: [1] }, { options: [0, 1] }, { options: [0] }] },
+      (s) => {
+        // Orca reads Claude Code's plugin pane with the dialog (as measured).
+        s.pane = host === 'orca';
+        // Its review wraps inside the narrower main area too (the simulator counts characters).
+        if (s.pane) s.reviewWidth = 55;
+      },
+      { host },
+    );
+    assert.equal((r as { status: string }).status, 'answered', host);
+    assert.deepEqual(sim.answer, {
+      [PREVIEW_INPUT.questions[0].question]: '별도 폴더에 단독 예시',
+      '어떤 순서로 진행할까요? (여러 개)': '먼저 뼈대, 다음 연결',
+      '어느 저장소에 둘까요?': '지금 저장소',
+    });
+    // Down + Enter (preview), Space ↓ Space → (multi), Enter (list), Enter on Submit answers.
+    assert.deepEqual(sim.keys, [
+      'Down',
+      'Enter',
+      'Space',
+      'Down',
+      'Space',
+      'Right',
+      'Enter',
+      'Enter',
+    ]);
+  }
+});
+
+test('2.1.322 previews: a step that does not show on screen stops the form mid-way', async () => {
+  const pick = { answers: [{ options: [1] }, { options: [0] }, { options: [0] }] };
+  // The first question's tab never turns `☒`: nothing after its Enter.
+  const unmarked = await answer(
+    QUESTION(PREVIEW_INPUT),
+    PREVIEW_SHOWN,
+    [ask(PREVIEW_INPUT)],
+    pick,
+    (s) => {
+      s.unmarked = true;
+    },
+  );
+  assert.match(failed(unmarked.result), /제대로 반영되지 않아.*일부 키를 눌렀으니/);
+  assert.deepEqual(unmarked.sim.keys, ['Down', 'Enter']);
+  assert.equal(unmarked.sim.answer, null);
+  // The next question turns into another one: stopped, said that it changed.
+  const changed = await answer(
+    QUESTION(PREVIEW_INPUT),
+    PREVIEW_SHOWN,
+    [ask(PREVIEW_INPUT)],
+    pick,
+    (s) => {
+      s.onKey = (sim) => {
+        if (sim.keys.length === 2 && sim.shown.kind === 'question')
+          sim.shown.questions[1] = { ...sim.shown.questions[1], question: '다른 질문?' };
+      };
+    },
+  );
+  assert.match(failed(changed.result), /화면이 바뀌어 멈췄어요/);
+  assert.deepEqual(changed.sim.keys, ['Down', 'Enter']);
+  // Notes typed in the terminal go with the answer: left to the terminal, no key pressed.
+  const noted = await answer(
+    QUESTION(PREVIEW_INPUT),
+    PREVIEW_SHOWN,
+    [ask(PREVIEW_INPUT)],
+    pick,
+    (s) => {
+      s.notes[0] = '파랑으로';
+    },
+  );
+  assert.match(failed(noted.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.equal(noted.sim.keys.length, 0);
+  // No typed answer beside previews: there is no text row.
+  const typed = await answer(
+    QUESTION(LONE_INPUT),
+    shownQuestions(LONE_INPUT as { questions: Question[] }),
+    [ask(LONE_INPUT)],
+    {
+      answers: [{ other: '직접 쓴 답' }],
+    },
+  );
+  assert.match(failed(typed.result), /한 번짜리 선택지가 아니에요/);
+  assert.equal(typed.sim.keys.length, 0);
+});
+
+test('Chat about this: onto the row one arrow at a time, then Enter; nothing typed there', async () => {
+  // Beside previews: ↓ past the last option reaches it.
+  const preview = await answer(QUESTION(PREVIEW_INPUT), PREVIEW_SHOWN, [ask(PREVIEW_INPUT)], {
+    chat: true,
+  });
+  assert.deepEqual(preview.result, {
+    status: 'answered',
+    message:
+      'tmux work:1.0에서 질문 창을 닫고 채팅으로 넘겼어요. Claude가 무엇을 이야기할지 물으면 채팅으로 답해 주세요.',
+  });
+  assert.equal(preview.sim.answer, 'chat');
+  assert.deepEqual(keysOf(preview.calls), ['Down', 'Down', 'Enter']);
+  assert.ok(!preview.calls.some((c) => c.includes('paste-buffer')));
+  // The list layout: past the text row, below the rule.
+  const list = await answer(
+    QUESTION(COLOR_INPUT),
+    shownQuestions(COLOR_INPUT),
+    [ask(COLOR_INPUT)],
+    {
+      chat: true,
+    },
+  );
+  assert.equal(list.sim.answer, 'chat');
+  assert.deepEqual(keysOf(list.calls), ['Down', 'Down', 'Down', 'Down', 'Enter']);
+  // Already partly answered in the terminal: those picks would go along, so it is left there.
+  const partial = await answer(
+    QUESTION(FRUITS_INPUT),
+    shownQuestions(FRUITS_INPUT),
+    [ask(FRUITS_INPUT)],
+    { chat: true },
+    (sim) => {
+      sim.key('Space');
+      sim.keys = [];
+    },
+  );
+  assert.match(failed(partial.result), /이미 고르던 답/);
+  assert.equal(partial.sim.keys.length, 0);
+  // A chat choice carries nothing else, and only questions have it.
+  const mixed = await answer(
+    QUESTION(COLOR_INPUT),
+    shownQuestions(COLOR_INPUT),
+    [ask(COLOR_INPUT)],
+    {
+      chat: true,
+      answers: [{ options: [0] }],
+    },
+  );
+  assert.match(failed(mixed.result), /한 번짜리 선택지가 아니에요/);
+  assert.equal(mixed.sim.keys.length, 0);
+  const plan = await answer(PLAN, { kind: 'plan', plan: PLAN_INPUT.plan }, [planCall], {
+    kind: 'question',
+    chat: true,
+  });
+  assert.ok(plan.result instanceof Error);
+  assert.equal(plan.sim.keys.length, 0);
+});
+
+test('The card hears why a question takes no typed answer, and that it can chat instead', async () => {
+  const sim = new Claude(PREVIEW_SHOWN);
+  const h = await harness(sim, { calls: [ask(PREVIEW_INPUT)] });
+  try {
+    const view = await inspectPrompt(
+      claudeCodePrompts,
+      asking(QUESTION(PREVIEW_INPUT)),
+      h.target,
+      'on',
+    );
+    assert.equal(view.status, 'ready');
+    if (view.status === 'ready') {
+      assert.deepEqual(view.other, [false, false, true]);
+      assert.deepEqual(view.noText, ['preview', 'multi', null]);
+      assert.equal(view.chat, true);
+    }
+    // A dialog-like screen it cannot read is said to be one, never "no prompt open".
+    sim.notes[0] = 'x';
+    const odd = new Claude(PREVIEW_SHOWN);
+    odd.render = () =>
+      plainScreen('q322-preview-multi').text.replace(
+        /(\n {2}2\. 별도 폴더에 단독 예시 {8})│/,
+        '$1x',
+      );
+    const h2 = await harness(odd, { calls: [ask(PREVIEW_INPUT)] });
+    try {
+      const unknown = await inspectPrompt(
+        claudeCodePrompts,
+        asking(QUESTION(PREVIEW_INPUT)),
+        h2.target,
+        'on',
+      );
+      assert.equal(unknown.status === 'unavailable' && unknown.reason, 'unknown');
+    } finally {
+      await h2.done();
+    }
+    assert.equal(sim.keys.length, 0);
+  } finally {
+    await h.done();
+  }
+});
+
+test('a preview dialog left above an open composer beside a plugin pane reads as closed', () => {
+  const old = readFileSync(path.join(FIXTURES, 'q322-preview-single.plain.txt'), 'utf8').trimEnd();
+  const rule = '─'.repeat(100);
+  const plain = [old, '', '⏺ 고마워요.', rule, '❯ ', rule, '  ⏸ manual mode on'].join('\n');
+  assert.equal(parseDialog({ text: plain }).kind, 'closed');
+  // The same screen with Claude Code's plugin pane drawn behind a divider at column 120: the
+  // prompt's rules now end in the pane, yet the open composer still wins over the old dialog.
+  const pane = plain
+    .split('\n')
+    .map((line, i) => `${padCols(line, 120)}│${i % 3 ? '' : ' 패널 예시 │'}`)
+    .join('\n');
+  assert.equal(parseDialog({ text: pane }).kind, 'closed');
+});
+
+/** A form whose first and last questions have previews (notes can sit on either). */
+const TWO_PREVIEWS = {
+  questions: [
+    PREVIEW_INPUT.questions[0],
+    PREVIEW_INPUT.questions[1],
+    {
+      ...PREVIEW_INPUT.questions[2],
+      options: [
+        { label: '지금 저장소', preview: '현재' },
+        { label: '새 저장소', preview: '새로' },
+      ],
+    },
+  ],
+};
+const TWO_SHOWN = shownQuestions(TWO_PREVIEWS as { questions: Question[] });
+
+test('Notes on another preview tab: visited with ← → only, then back, before chat or answers', async () => {
+  // All empty: → → to the last preview, ← ← back, then on to "Chat about this".
+  const clean = await answer(QUESTION(TWO_PREVIEWS), TWO_SHOWN, [ask(TWO_PREVIEWS)], {
+    chat: true,
+  });
+  assert.equal(clean.sim.answer, 'chat');
+  assert.deepEqual(clean.sim.keys, ['Right', 'Right', 'Left', 'Left', 'Down', 'Down', 'Enter']);
+  // Notes typed on the third question, then the person came back: refused, form back on the first.
+  const noted = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      s.notes[2] = '새 저장소는 비공개로';
+    },
+  );
+  assert.match(failed(noted.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.equal(noted.sim.answer, null);
+  assert.deepEqual(noted.sim.keys, ['Right', 'Right', 'Left', 'Left']);
+  assert.equal(noted.sim.current, 0);
+  // Answers too (they carry every preview question's notes): refused before any pick.
+  const answers = { answers: [{ options: [1] }, { options: [0] }, { options: [0] }] };
+  const before = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    answers,
+    (s) => {
+      s.notes[2] = '비공개';
+    },
+  );
+  assert.match(failed(before.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.deepEqual(before.sim.keys, ['Right', 'Right', 'Left', 'Left']);
+  assert.equal(before.sim.current, 0);
+  assert.equal(before.sim.answer, null);
+  const ok = await answer(QUESTION(TWO_PREVIEWS), TWO_SHOWN, [ask(TWO_PREVIEWS)], answers);
+  assert.equal((ok.result as { status: string }).status, 'answered');
+  assert.deepEqual(ok.sim.answer, {
+    [TWO_PREVIEWS.questions[0].question]: '별도 폴더에 단독 예시',
+    '어떤 순서로 진행할까요? (여러 개)': '먼저 뼈대',
+    '어느 저장소에 둘까요?': '지금 저장소',
+  });
+  assert.deepEqual(ok.sim.keys.slice(0, 4), ['Right', 'Right', 'Left', 'Left']);
+});
+
+test('The notes check returns to the tab it started on, and stops when a tab is not as expected', async () => {
+  // Chat from the second question (the person moved there in the terminal): ← to the first,
+  // → → to the last, ← back to the second; the chat row is chosen there.
+  const middle = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      s.key('Right');
+      s.keys = [];
+    },
+  );
+  assert.equal(middle.sim.answer, 'chat');
+  assert.deepEqual(middle.sim.keys.slice(0, 4), ['Left', 'Right', 'Right', 'Left']);
+  // Notes on the first question, seen on the way: back on the second, then refused.
+  const first = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      s.key('Right');
+      s.keys = [];
+      s.notes[0] = '목록 안';
+    },
+  );
+  assert.match(failed(first.result), /노트를 썼거나 쓰는 중이에요/);
+  assert.deepEqual(first.sim.keys, ['Left', 'Right']);
+  assert.equal(first.sim.current, 1);
+  // A tab key that does not switch (the dialog ignores it): stopped, nothing chosen.
+  const stuck = await answer(
+    QUESTION(TWO_PREVIEWS),
+    TWO_SHOWN,
+    [ask(TWO_PREVIEWS)],
+    { chat: true },
+    (s) => {
+      const key = s.key.bind(s);
+      s.key = (name: string) => (name === 'Right' ? void s.keys.push(name) : key(name));
+    },
+  );
+  assert.match(failed(stuck.result), /제대로 반영되지 않아/);
+  assert.equal(stuck.sim.answer, null);
+  assert.deepEqual(stuck.sim.keys, ['Right']);
 });

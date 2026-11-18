@@ -13,21 +13,28 @@ export class ServiceBridge extends EventEmitter {
       authorize?: () => Promise<void>;
     }
   >();
-  /** The collector crashed or exited (e.g. its database was locked); the next call restarts it. */
+  /** Auto-recover within a bounded budget; a later explicit call can try again. */
   dead = false;
   closing = false;
+  private restartAttempts = 0;
+  private recoveryTimer?: ReturnType<typeof setTimeout>;
   constructor(
     private file: string,
     private dataDir?: string,
+    private restartDelays = [1000, 3000, 10000],
   ) {
     super();
     this.start();
   }
   private start() {
+    clearTimeout(this.recoveryTimer);
+    this.recoveryTimer = undefined;
     this.dead = false;
+    const startedAt = Date.now();
     const worker = new Worker(this.file, { workerData: { dataDir: this.dataDir } });
     this.worker = worker;
     worker.on('message', (m) => {
+      if (worker !== this.worker || this.dead || this.closing) return;
       if (m.authorize !== undefined) {
         const pending = this.pending.get(m.authorize);
         const guard = pending?.authorize;
@@ -62,13 +69,37 @@ export class ServiceBridge extends EventEmitter {
         p.reject(new Error(message));
       }
       this.pending.clear();
-      if (!this.closing) this.emit('failure', message);
+      if (!this.closing) {
+        // One successful snapshot is not a healthy run. A flapping collector must stop
+        // retrying rather than consuming a CPU forever. Only a stable minute resets it.
+        if (Date.now() - startedAt >= 60_000) this.restartAttempts = 0;
+        this.emit('failure', message);
+        const delay = this.restartDelays[this.restartAttempts++];
+        if (delay !== undefined) {
+          this.recoveryTimer = setTimeout(() => {
+            this.recoveryTimer = undefined;
+            if (this.closing || !this.dead) return;
+            this.start();
+            void this.call('snapshot').then(
+              (snapshot) => {
+                if (this.closing || this.dead) return;
+                this.emit('snapshot', snapshot);
+              },
+              () => {},
+            );
+          }, delay);
+        }
+      }
     };
     worker.on('error', (e) => fail(e.message));
     worker.on('exit', () => fail(m().server.rpc.stopped));
   }
   call(method: string, args: unknown[] = [], authorize?: () => Promise<void>): Promise<any> {
-    if (this.dead && !this.closing) this.start();
+    if (this.closing) return Promise.reject(new Error(m().server.rpc.closed));
+    if (this.dead) {
+      this.restartAttempts = 0;
+      this.start();
+    }
     return new Promise((resolve, reject) => {
       const id = ++this.nextId;
       const timer = setTimeout(
@@ -89,6 +120,7 @@ export class ServiceBridge extends EventEmitter {
   async close(timeout = 3000) {
     if (this.closing) return;
     this.closing = true;
+    clearTimeout(this.recoveryTimer);
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
       p.reject(new Error(m().server.rpc.closed));

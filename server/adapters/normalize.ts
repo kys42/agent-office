@@ -1,4 +1,5 @@
 import { admissible, editLocation, toolLocation, wrappedLocations } from './working-location.js';
+import { OutputTracker } from './outputs.js';
 import { latestTaskStart } from '../../src/shared/lifecycle.js';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -134,6 +135,17 @@ export function contentText(c: unknown): string {
 }
 /** Claude Code's note that the person stopped the turn (Esc), recorded in the user role. */
 const INTERRUPTED = /^\s*\[Request interrupted by user[^\]\n]*\]\s*$/i;
+/**
+ * The envelope Claude Code agent teams wrap a member's message in
+ * (`<teammate-message teammate_id="…" color="…" summary="…">…</teammate-message>`): the words
+ * stay, the markup goes. An opening tag cut off from its close (a truncated title) goes too.
+ */
+const TEAMMATE_OPEN = String.raw`<teammate-message(?:\s+[\w-]+="[^"]*")*\s*>`;
+const TEAMMATE_MESSAGE = new RegExp(
+  String.raw`${TEAMMATE_OPEN}([\s\S]*?)<\/teammate-message>`,
+  'gi',
+);
+const TEAMMATE_DANGLING = new RegExp(String.raw`^\s*${TEAMMATE_OPEN}\s*`, 'i');
 export function cleanPrompt(t: string): string {
   return (
     t
@@ -145,6 +157,8 @@ export function cleanPrompt(t: string): string {
       // Harness notes recorded in the user role are not the person's words.
       .replace(/<task-notification\b[^>]*>[\s\S]*?<\/task-notification>/gi, '')
       .replace(INTERRUPTED, '')
+      .replace(TEAMMATE_MESSAGE, (_, words: string) => words.trim())
+      .replace(TEAMMATE_DANGLING, '')
       .replace(
         /<external_codex_apps_open_page\b[^>]*>[\s\S]*?<\/external_codex_apps_open_page>/gi,
         '',
@@ -153,6 +167,34 @@ export function cleanPrompt(t: string): string {
       .replace(/^\s*## My request:\s*/i, '')
       .trim()
   );
+}
+/**
+ * Claude Code's records of what ran in the CLI itself, never sent to the model: a local slash
+ * command (`/usage`, `/cost`, `/model`, `/compact` …), whose record starts with `<command-name>`,
+ * and its output, the caveat before it, and a `!` shell command with its output (2.1.322 `kO`,
+ * `I4`). A command that expands into a prompt for the model (a custom command, a skill) starts
+ * with `<command-message>` instead and stays a request. `line` is what the conversation shows
+ * for the command; output and caveat show nothing.
+ */
+export function localCommand(text: string): { line?: string } | undefined {
+  const t = text.trimStart();
+  const tag = (name: string) =>
+    new RegExp(String.raw`<${name}>([\s\S]*?)</${name}>`).exec(t)?.[1]?.trim() ?? '';
+  // Redact the whole command first: clipping could cut a secret short of what redact matches.
+  const clip = (s: string) => {
+    const one = redact(s, 100_000).replace(/\s+/g, ' ').trim();
+    return one.length > 120 ? one.slice(0, 119).trimEnd() + '…' : one;
+  };
+  if (t.startsWith('<command-name>')) {
+    const name = tag('command-name').replace(/^\/+/, '');
+    return name ? { line: clip(`/${name} ${tag('command-args')}`) } : {};
+  }
+  if (t.startsWith('<bash-input>')) {
+    const command = tag('bash-input');
+    return command ? { line: clip(`!${command}`) } : {};
+  }
+  if (/^<(?:local-command-(?:stdout|stderr|caveat)|bash-(?:stdout|stderr))>/.test(t)) return {};
+  return undefined;
 }
 export function cleanTitle(value: unknown): string {
   const text = cleanPrompt(String(value ?? ''));
@@ -211,6 +253,14 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     parentId = relation.parentNativeId;
   let nativeTitle = !!cleanTitle(sourceTitle);
   let titleRank = nativeTitle ? 4 : 0;
+  // An agent-team member goes by its member name, over a generated title; a name the person
+  // gave the session (custom title) still wins.
+  const member = cleanTitle(resolved.member);
+  if (member && titleRank < 3.5) {
+    title = member;
+    titleRank = 3.5;
+    nativeTitle = true;
+  }
   let startedAt = opt.mtime,
     updatedAt = 0,
     status: Mood = 'idle',
@@ -286,9 +336,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
   };
   // Each tool call's input, by event id: read once the pass knows which calls are still open.
   const inputs = new Map<string, unknown>();
+  // Files this record says the session made, and the Artifacts it linked (#350).
+  const outputs = new OutputTracker();
   const set = (s: Mood, why: string) => {
     status = s;
     reason = why;
+  };
+  /**
+   * A command run in Claude Code itself (`localCommand`): a small line in the conversation that
+   * is no request and no activity. Status and the last activity time stay as they were, so an
+   * idle colleague does not wake as if it answered.
+   */
+  const localLine = (r: Obj, at: number, line: string) => {
+    const kept = updatedAt;
+    add(r, at, 'lifecycle', t.event.localCommand(line), undefined, ':command');
+    updatedAt = kept;
   };
   for (const { r, at } of records) {
     const p = r.payload ?? {};
@@ -322,17 +384,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     }
     if (r.type === 'summary' && !title) title = cleanTitle(r.summary);
     launch ??= cwd ?? undefined;
-    if (r.type === 'response_item' && ['function_call', 'custom_tool_call'].includes(p.type))
+    if (r.type === 'response_item' && ['function_call', 'custom_tool_call'].includes(p.type)) {
       locate(String(p.name ?? ''), p.arguments ?? p.input, at);
+      outputs.call(String(p.name ?? ''), p.arguments ?? p.input, cwd, p.call_id ?? undefined);
+    }
     if (Array.isArray(m.content))
       for (const b of m.content)
-        if (['tool_use', 'toolCall'].includes(b.type))
+        if (['tool_use', 'toolCall'].includes(b.type)) {
           locate(
             String(b.name ?? ''),
             b.input ?? b.arguments,
             at,
             b.type === 'tool_use' ? (b.id ?? undefined) : undefined,
           );
+          outputs.call(String(b.name ?? ''), b.input ?? b.arguments, cwd, b.id ?? undefined);
+        }
     if (r.type === 'token_usage_record') {
       const sample = p.usage;
       if (
@@ -430,10 +496,13 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         add(r, at, 'user', text);
         if (text) set('think', t.reason.afterUser);
       }
-      if (type === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel))
-        add(r, at, 'assistant', String(p.message ?? ''), undefined, '', {
+      if (type === 'agent_message' && !['analysis', 'reasoning'].includes(p.phase ?? p.channel)) {
+        const e = add(r, at, 'assistant', String(p.message ?? ''), undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
+        outputs.say(String(p.message ?? ''), at, cwd, e?.id);
+      }
+      if (type === 'patch_apply_end' && p.success === true) outputs.applied(p.changes, at, cwd);
     }
     if (r.type === 'response_item') {
       if (p.type === 'message' && ['user', 'assistant'].includes(p.role)) {
@@ -442,9 +511,10 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         const text =
           p.role === 'user' ? cleanPrompt(contentText(p.content)) : contentText(p.content);
         if (p.role === 'user' && !title && text) title = text.slice(0, 140);
-        add({ ...r, id: p.id ?? r.id }, at, p.role, text, undefined, '', {
+        const e = add({ ...r, id: p.id ?? r.id }, at, p.role, text, undefined, '', {
           phase: publicPhase(p.phase ?? p.channel),
         });
+        if (p.role === 'assistant') outputs.say(text, at, cwd, e?.id);
         if (p.role === 'user' && text) set('think', t.reason.afterUser);
       }
       if (['function_call', 'custom_tool_call'].includes(p.type)) {
@@ -465,7 +535,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         );
       }
       if (['function_call_output', 'custom_tool_call_output'].includes(p.type)) {
-        add(
+        const e = add(
           { ...r, id: `${p.call_id ?? p.id}:result` },
           at,
           'result',
@@ -476,6 +546,15 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
           undefined,
           '',
           call(p.call_id),
+        );
+        // After its event: an output it reports is placed there in the chat (#358).
+        outputs.result(
+          p.call_id ?? undefined,
+          typeof p.output === 'string' ? p.output : JSON.stringify(p.output ?? ''),
+          at,
+          false,
+          undefined,
+          e?.id,
         );
         set('work', t.reason.toolResultWaiting);
       }
@@ -495,10 +574,19 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
         set('think', t.reason.afterUser);
       }
     }
+    // Newer Claude Code writes some local commands and their output as system records.
+    if (r.type === 'system' && r.subtype === 'local_command' && typeof r.content === 'string') {
+      const line = localCommand(r.content)?.line;
+      if (line) localLine(r, at, line);
+    }
     if (['assistant', 'user', 'message'].includes(r.type) && m.role) {
       const role = m.role;
       const text = role === 'user' ? cleanPrompt(contentText(m.content)) : contentText(m.content);
-      if (role === 'user' && !r.isMeta && text) {
+      const local = r.type === 'user' && role === 'user' ? localCommand(text) : undefined;
+      if (local?.line && !r.isMeta) localLine(r, at, local.line);
+      // Neither a local command nor a compaction summary (written by the model, not the person)
+      // is a request: no turn opens, nothing waits for an answer.
+      else if (!local && role === 'user' && !r.isMeta && !r.isCompactSummary && text) {
         if (!title) title = text.slice(0, 140);
         add(r, at, 'user', text);
         set('think', t.reason.afterUser);
@@ -513,18 +601,21 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
       if (role === 'user' && INTERRUPTED.test(contentText(m.content))) aborted();
       if (role === 'assistant') {
         model = m.model ?? model;
+        const said = !['analysis', 'reasoning'].includes(m.phase ?? m.channel)
+          ? add(r, at, 'assistant', text, undefined, ':text', {
+              phase:
+                publicPhase(m.phase ?? m.channel) ??
+                (['end_turn', 'stop'].includes(m.stop_reason ?? m.stopReason)
+                  ? 'final'
+                  : ['tool_use', 'toolUse'].includes(m.stop_reason ?? m.stopReason) ||
+                      (Array.isArray(m.content) &&
+                        m.content.some((b: Obj) => ['tool_use', 'toolCall'].includes(b.type)))
+                    ? 'commentary'
+                    : undefined),
+            })
+          : undefined;
         if (!['analysis', 'reasoning'].includes(m.phase ?? m.channel))
-          add(r, at, 'assistant', text, undefined, ':text', {
-            phase:
-              publicPhase(m.phase ?? m.channel) ??
-              (['end_turn', 'stop'].includes(m.stop_reason ?? m.stopReason)
-                ? 'final'
-                : ['tool_use', 'toolUse'].includes(m.stop_reason ?? m.stopReason) ||
-                    (Array.isArray(m.content) &&
-                      m.content.some((b: Obj) => ['tool_use', 'toolCall'].includes(b.type)))
-                  ? 'commentary'
-                  : undefined),
-          });
+          outputs.say(text, at, cwd, said?.id);
         if (text) set('think', t.reason.recentReply);
         const u = m.usage;
         if (u) {
@@ -591,7 +682,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
             const evidence = pending.get(b.tool_use_id);
             pending.delete(b.tool_use_id);
             if (evidence && !b.is_error) workingLocation = evidence;
-            add(
+            const e = add(
               { ...r, id: b.tool_use_id ?? r.uuid },
               at,
               'result',
@@ -599,6 +690,15 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
               undefined,
               ':result',
               call(b.tool_use_id),
+            );
+            // After its event: an output it reports is placed there in the chat (#358).
+            outputs.result(
+              b.tool_use_id ?? undefined,
+              contentText(b.content) || String(b.content ?? ''),
+              at,
+              !!b.is_error,
+              r.toolUseResult && typeof r.toolUseResult === 'object' ? r.toolUseResult : undefined,
+              e?.id,
             );
             // A subagent stopped mid-tool records the interruption as the tool's error result.
             if (b.is_error && INTERRUPTED.test(contentText(b.content) || String(b.content ?? '')))
@@ -637,6 +737,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     ),
     12,
   );
+  const outputList = outputs.list();
   return {
     protocolVersion: 1,
     id: `${opt.provider}:${opt.agentName ? opt.agentName + ':' : ''}${nativeId}`,
@@ -687,6 +788,7 @@ export function parseRecords(raw: Obj[], opt: ParseOptions): Session {
     usage,
     events: events.slice(-180),
     artifacts,
+    ...(outputList.length ? { outputs: outputList } : {}),
     notes: '',
     revision: hash(
       `${nativeId}:${updatedAt}:${events.length}:${action}:${JSON.stringify([...usageEntries.values()])}:${JSON.stringify(workingLocation)}`,

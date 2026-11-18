@@ -52,6 +52,10 @@ export const memory = {
   sourceGone: 'The original conversation is no longer shown · this is the saved copy',
   truncated: 'A long message: only its beginning was saved',
   excerpt: 'Saved from a retained excerpt',
+  readerOpening: 'Opening the saved conversation…',
+  readerGoneTitle: 'This bookmark is no longer available',
+  readerGoneBody: 'It was removed, or its project or tool is hidden in Settings.',
+  readerHidden: 'Saved conversations do not open while screen content is hidden.',
   bookmarksEmptyTitle: 'No bookmarked messages yet',
   bookmarksEmptyBody:
     'Press the bookmark button next to a message in a conversation to collect it here.',

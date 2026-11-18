@@ -16,7 +16,7 @@ export const guide = {
     },
     attention: {
       title: 'Start with whoever needs you.',
-      body: 'The teammate list puts questions first, then new results, then ongoing work. Click a teammate for their work card; open the Inbox to catch up on final replies.',
+      body: 'The teammate list puts questions first, then new results, then ongoing work. Click a teammate for their work card; a dot marks a result you have not seen yet.',
       label: 'Catch up',
     },
     pet: {
@@ -56,12 +56,6 @@ export const guide = {
   needsColleague: 'Available when a teammate joins',
   liveOnly: 'Available in your live office',
   cards: {
-    inbox: {
-      title: 'Catch up on results',
-      body: 'Inbox keeps final replies and questions together. Mark results as read; acknowledge questions separately.',
-      where: 'Top bar → Inbox',
-      action: 'Open Inbox',
-    },
     pet: {
       title: 'A desk pet beside you',
       body: 'A tiny floating teammate unfolds into a desk row or floor desks. Read, copy and open links right from the bubbles.',
@@ -94,7 +88,7 @@ export const guide = {
     },
     terminal: {
       title: 'Follow up from the office',
-      body: 'Resume older local Claude or Codex conversations with Resume in tmux on the work card. Confirm before starting, then use the session name and reconnect command or open it in Terminal. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
+      body: 'Continue or fork older local Claude or Codex conversations with Continue in a terminal on the work card: pick Orca, tmux, Terminal or a copied command, each saying why when it cannot. Jump to a matched Claude terminal in Orca or tmux. Send to terminal can type into an eligible idle Claude session or queue a reply for a live Codex CLI session; permission prompts stay in the original tool.',
       where: 'Work card or bubble → reply · Settings → General',
       action: 'View reply settings',
     },
@@ -118,7 +112,7 @@ export const guide = {
     },
     keys: {
       title: 'Move without the mouse',
-      body: '⌘K finds teammates, records and commands. J/K moves through the queue, I opens Inbox, and ? shows all shortcuts.',
+      body: '⌘K finds teammates, records and commands. J/K moves through the queue, R marks results read, and ? shows all shortcuts.',
       where: '⌘K · footer → Shortcuts',
       action: 'See shortcuts',
     },

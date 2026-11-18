@@ -57,16 +57,36 @@ export const desktop: Messages['desktop'] = {
     codexUnconfirmed:
       'Codex에 전달됐는지 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
     noTarget: '지금 보낼 수 있는 Orca·tmux 터미널이나 Codex 세션을 찾지 못했어요.',
+    background: (command) =>
+      `백그라운드에서 도는 Claude 세션이라 보여 주는 터미널을 확인하지 못했어요. 터미널에서 ${command}로 연 뒤 보내 주세요.`,
+    parked: (job) =>
+      `이 대화는 백그라운드 세션${job ? ` ‘${job}’` : ''}으로 옮겨졌어요. 그 터미널에 치면 그쪽으로 가니, 그 세션 카드에서 보내 주세요.`,
     unconfirmed: (host) =>
       `${host}에 보냈는지 확인하지 못했어요. 다시 보내기 전에 터미널을 확인해 주세요.`,
     orcaNoSwitch: 'Orca가 그 터미널로 이동하지 못했어요.',
+    orcaSlow:
+      'Orca가 제때 답하지 않았어요. 아직 화면에 띄우지 않은 탭일 수 있어요. Orca를 앞으로 가져온 뒤 다시 시도해주세요.',
+    orcaRefusedSwitch: (reason) => `Orca가 그 터미널로 이동하지 못했어요: ${reason}`,
     orcaFocused: 'Orca의 해당 터미널로 이동했어요',
-    tmuxFocused: (label) => `tmux ${label} 패널을 선택했어요`,
+    appRaised: (app) => `${app} 앱을 앞으로 가져왔어요. 그 안에서 이 대화의 창을 찾아 주세요.`,
+    appTabFocused: (app) => `${app}의 해당 탭으로 이동했어요`,
+    parkedHint: '그 창의 Claude 에이전트 보기에 있어요. Enter로 다시 열 수 있어요.',
+    noWay:
+      '이 대화가 실행 중인 곳으로 여기서 바로 갈 수 없어요. 그 창을 직접 찾거나, 복제해서 새로 이어가 주세요.',
+    tmuxFocused: (label, app) => `${app}에서 tmux ${label} 패널로 이동했어요`,
+    tmuxAttached: (label) => `터미널을 열어 tmux ${label}에 연결했어요`,
+    tmuxNotRaised: (label) =>
+      `tmux를 ${label} 패널로 바꿨지만 그 터미널 창을 앞으로 가져오지 못했어요.`,
+    tmuxAppOnly: (label, app) =>
+      `tmux를 ${label} 패널로 바꾸고 ${app} 앱을 앞으로 가져왔지만, 그 패널이 보이는 창·탭을 고르지는 못했어요.`,
+    tmuxAttachHint: (label, command) =>
+      `tmux ${label}에 연결된 터미널이 없어요. 터미널에서 연결해 주세요: ${command}`,
+    tmuxOpenFailed: (label) => `tmux ${label} 패널은 선택했지만 연결할 터미널을 열지 못했어요.`,
     empty: '보낼 내용을 입력해 주세요.',
     tooLong: (max) => `${max}자 이하로 보내 주세요.`,
     notOwner: 'Claude가 지금 터미널 앞에 있지 않아요(일시정지 등). 터미널을 확인해 주세요.',
     notReady:
-      '지금은 입력을 받을 수 없어요(권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 터미널을 확인해 주세요.',
+      "지금은 입력을 받을 수 없어요(질문·권한 확인·플랜 승인·메뉴·셸 입력 모드 등). 질문 창이 열려 있으면 위 카드에서 답하거나 '질문 대신 채팅으로 답하기'를 눌러 주세요. 그 밖에는 터미널을 확인해 주세요.",
     draft: '입력창에 이미 글이 있어요. 터미널을 확인한 뒤 보내 주세요.',
     backupFailed: '입력창의 글을 클립보드에 복사하지 못해 지우지도 보내지도 않았어요.',
     clearFailed: (agent) =>
@@ -98,5 +118,30 @@ export const desktop: Messages['desktop'] = {
     queued: (target) => `${target}에 보냈어요 · 작업 중이라 대기열에 들어가 이어서 반영돼요`,
     codexNoReply: 'Codex 응답을 확인하지 못했어요. 다시 보내기 전에 Codex 화면을 확인해 주세요.',
     codexQueued: 'Codex 세션에 전달했어요',
+    imagesNotShown:
+      '입력창에 이미지를 붙였지만 첨부된 걸 확인하지 못해 제출하지 않았어요. 터미널을 확인해 주세요.',
+    imagesUnsupported: '이 대화에는 여기서 이미지를 보낼 수 없어요.',
+    draftMoved: '그사이 입력창 글이 바뀌어 보내지 않았어요. 지금 들어 있는 글을 보여 드려요.',
+    draftNotWhole: '입력창 글이 다 보이지 않아 여기서 보내지 않았어요. 터미널을 확인해 주세요.',
+    draftStopped: '에이전트 상태가 바뀌어 보내지 않았어요. 터미널을 확인해 주세요.',
+    draftNotSubmitted: (host) => `${host}에 Enter를 보내지 못했어요. 글은 입력창에 그대로 있어요.`,
+    draftNotTaken: (host) =>
+      `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. 터미널을 확인해 주세요.`,
+    draftNotTakenSuggestion: (host) =>
+      `${host}에 Enter를 눌렀지만 입력창에 같은 글이 그대로예요. Claude 추천 글이면 Enter로는 보내지지 않아요. 터미널에서 Tab으로 받은 뒤 보내 주세요.`,
+    suggestionUnsupported:
+      '이 글은 추천 글로 받아 보낼 수 없어요(한 줄 글만 돼요). 터미널에서 확인해 주세요.',
+    suggestionNotWhole:
+      '추천 글이 다 보이지 않아 여기서 보내지 않았어요. 터미널에서 Tab으로 받아 주세요.',
+    suggestionNotSubmitted: (host) =>
+      `${host}에 추천 글을 보내지 못했어요. 터미널을 확인해 주세요.`,
+    suggestionHeld: (host) =>
+      `${host}에서 추천 글 받기 키(→)를 눌렀지만 Enter 직전 입력창 확인이 맞지 않아 보내지 않았어요. 터미널을 확인해 주세요.`,
+  },
+  attachments: {
+    notImage: 'PNG, JPEG, GIF, WebP 이미지만 첨부할 수 있어요.',
+    tooLarge: (bytes) => `이미지는 ${Math.round(bytes / 1024 / 1024)}MB 이하만 첨부할 수 있어요.`,
+    tooMany: (max) => `이미지는 한 번에 ${max}장까지 첨부할 수 있어요.`,
+    missing: '첨부한 이미지를 더 이상 찾을 수 없어요. 지우고 다시 첨부해 주세요.',
   },
 };

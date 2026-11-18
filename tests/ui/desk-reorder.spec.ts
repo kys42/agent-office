@@ -357,3 +357,53 @@ for (const mode of ['row', 'floor'] as const) {
     expect(await page.evaluate(() => (window as any).opens)).toEqual([]);
   });
 }
+
+/**
+ * The original works in its worktree (it edited files in a subfolder: no move, so it keeps its
+ * recorded branch), with another branch's desk in the zone; the colleague launched from its card
+ * (same folder, same branch) has not arrived yet.
+ */
+function launched(): Snapshot {
+  const snapshot = fixture();
+  const [a, b, , d] = snapshot.sessions;
+  snapshot.sessions = [
+    {
+      ...a,
+      id: 'orig',
+      nativeId: 'orig',
+      alias: '원래 동료',
+      branch: 'feature/ocr',
+      officeSeat: 2,
+    },
+    { ...b, branch: 'main', officeSeat: 1 },
+    d,
+  ];
+  return snapshot;
+}
+for (const mode of ['row', 'floor'] as const) {
+  test(`In the ${mode} a colleague launched from a card sits at its origin’s long desk`, async ({
+    page,
+  }) => {
+    await dock(page, mode, launched());
+    await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['b', 'orig']);
+    const zone = page.locator('.desk-row [data-project-key="/tmp/team-a"]');
+    await expect(zone.locator('.shared-bench')).toHaveCount(0);
+    // It arrives with the lowest free seat token, ahead of everyone in the zone: the bench
+    // still keeps it beside the original, on one long desk.
+    await page.evaluate(() => {
+      const w = window as any;
+      const orig = w.fixture.sessions.find((s: any) => s.id === 'orig');
+      w.fixture.sessions.push({
+        ...orig,
+        id: 'fresh',
+        nativeId: 'fresh',
+        alias: '새 동료',
+        officeSeat: 0,
+      });
+      w.fixture.version++;
+      w.publish();
+    });
+    await expect.poll(() => order(page, '/tmp/team-a')).toEqual(['fresh', 'orig', 'b']);
+    await expect(zone.locator('.shared-bench')).toHaveCount(1);
+  });
+}

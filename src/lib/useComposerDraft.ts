@@ -1,6 +1,13 @@
 import { useCallback, useRef, useState, useSyncExternalStore } from 'react';
+import { addToDraft } from '../shared/bubble-share';
 
 const listeners = new Set<() => void>();
+const storageKey = (draftKey: string) => `office:reply-draft:v1:${draftKey}`;
+
+/** A colleague's chat box draft, kept per run (the card's `draftKey`), not per window. */
+export function replyDraftKey(id: string, demo: boolean) {
+  return `${demo ? 'demo' : 'live'}:${id}`;
+}
 // If storage is unavailable, keep edits through unmounts in this window.
 const unsaved = new Map<string, string>();
 
@@ -24,9 +31,22 @@ function write(key: string, value: string) {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Puts handed text after what a colleague's chat box already holds (bubbles handed on from
+ * another card, #377), as a draft only: its card, open here or in another window, shows it and
+ * nothing is sent. False, and nothing changes, when the two would not fit the box.
+ */
+export function addToComposerDraft(draftKey: string, text: string) {
+  const key = storageKey(draftKey);
+  const next = addToDraft(read(key), text);
+  if (next === null) return false;
+  write(key, next);
+  return true;
+}
+
 /** Write on each edit: a native popup can disappear without an unmount/blur callback. */
 export function useComposerDraft(draftKey?: string) {
-  const key = draftKey ? `office:reply-draft:v1:${draftKey}` : null;
+  const key = draftKey ? storageKey(draftKey) : null;
   const [localText, setLocalText] = useState('');
   const local = useRef('');
   const subscribe = useCallback(

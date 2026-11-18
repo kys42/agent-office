@@ -22,7 +22,25 @@ export const prompts: Messages['prompts'] = {
     sending: '보내는 중…',
     sent: '보냈어요 · 기록에서 확인하는 중',
     more: '계속 적용되는 선택지(항상 허락·auto mode·편집 자동 허락)와 글을 쓰는 선택지는 터미널에서 골라 주세요.',
+    noChoice:
+      '지금 이 창에는 여기서 고를 수 있는 한 번짜리 선택지가 없어요. 터미널에서 답해 주세요.',
     checking: '터미널 화면을 읽는 중…',
+    noText: {
+      preview:
+        '이 질문은 미리보기 형식이라 직접 입력 칸이 없어요. 노트(n)는 터미널에서 입력해 주세요.',
+      multi: '여러 개 고르는 질문의 직접 입력은 터미널에서 해 주세요.',
+      none: '이 질문에는 직접 입력 칸이 없어요.',
+    },
+    showPreview: '미리보기 펼치기',
+    hidePreview: '미리보기 접기',
+    previewCut: '미리보기가 길어 앞부분만 보여요.',
+    chat: '질문 대신 채팅으로 답하기',
+    chatHint:
+      '질문 창을 닫고 Claude에게 먼저 이야기하고 싶다고 알려요. Claude가 무엇을 이야기할지 물으면 아래 채팅으로 답해 주세요(질문 창의 "Chat about this"는 글을 받지 않아요).',
+    consent: {
+      unset: '여기서 처음 답할 때 한 번 확인해요.',
+      off: '설정에서 답하기를 꺼 두었어요. 선택지를 누르면 다시 켤지 한 번 물어봐요.',
+    },
   },
   unavailable: {
     web: '터미널에서 답해 주세요. 여기서 답하기는 데스크탑 앱에서만 돼요.',
@@ -34,7 +52,8 @@ export const prompts: Messages['prompts'] = {
     unreadable: '터미널 화면을 읽지 못했어요.',
     'no-request': '답할 요청이 없어요.',
     unverifiable: '이 요청은 화면과 맞춰 볼 수 없어요. 터미널에서 답해 주세요.',
-    off: '설정에서 답하기를 꺼 두었어요. 설정에서 켜거나 터미널에서 답해 주세요.',
+    unknown:
+      '터미널에 열린 창을 여기서 읽지 못했어요(처음 보는 모양이에요). 터미널에서 답해 주세요.',
   },
   result: {
     answered: (host) => `${host}에서 답했어요`,
@@ -42,7 +61,6 @@ export const prompts: Messages['prompts'] = {
       `${host}에 보냈지만 기록에 아직 답이 보이지 않아요. 터미널을 확인해 주세요.`,
     unconfirmedScreen: (host) =>
       `${host}에 보냈지만 그 뒤 화면을 읽지 못해 확인하지 못했어요. 터미널을 확인해 주세요.`,
-    off: '설정에서 답하기를 꺼 두어서 보내지 않았어요.',
     changed: '화면의 질문이 이 요청인지 확실하지 않아서 보내지 않았어요.',
     stateChanged: '답하는 사이 화면이 바뀌어 멈췄어요. 다시 하기 전에 터미널을 확인해 주세요.',
     notOwner: 'Claude가 지금 터미널 앞에 있지 않아요(일시정지 등). 터미널을 확인해 주세요.',
@@ -58,6 +76,10 @@ export const prompts: Messages['prompts'] = {
     badChoice: '화면에 있는 한 번짜리 선택지가 아니에요.',
     otherTooLong: (max) => `직접 쓴 답은 ${max}자 이하로 써 주세요.`,
     otherEmpty: '직접 쓸 답을 먼저 입력해 주세요.',
+    notes:
+      '터미널에서 노트를 썼거나 쓰는 중이에요. 노트는 여기서 보낼 수 없으니 터미널에서 마저 답해 주세요.',
+    chatted: (host) =>
+      `${host}에서 질문 창을 닫고 채팅으로 넘겼어요. Claude가 무엇을 이야기할지 물으면 채팅으로 답해 주세요.`,
     unsupported: (agent) => `${agent}의 질문에는 여기서 답할 수 없어요.`,
     noTarget: '답할 Orca·tmux 터미널을 찾지 못했어요.',
     unreadable: (host) => `${host} 화면을 읽지 못해서 보내지 않았어요.`,
@@ -81,9 +103,9 @@ export const prompts: Messages['prompts'] = {
   settings: {
     questions: '질문·플랜에 답하기',
     questionsHint:
-      '업무 카드에서 Claude Code의 질문과 플랜 승인에 답해요. Orca·tmux 터미널의 질문 창에 그 키를 눌러 입력해요. 동의하기 전에는 꺼져 있고, 처음 답할 때(또는 여기서 켤 때) 한 번 확인해요.',
+      '업무 카드에서 Claude Code의 질문과 플랜 승인에 답해요. Orca·tmux 터미널의 질문 창에 그 키를 눌러 입력해요. 동의하기 전에는 꺼져 있고, 카드에서 처음 답할 때(또는 여기서 켤 때) 한 번 확인해요. 꺼 둔 뒤에도 카드에서 누르면 다시 물어봐요.',
     permissions: '권한 확인에 답하기',
     permissionsHint:
-      '업무 카드에서 Claude Code의 권한 확인에 한 번 허락하거나 거절해요. 자동으로 허락하지 않고, 누른 버튼만 보내요. 계속 허락하는 선택지는 터미널에서 골라요. 동의하기 전에는 꺼져 있어요.',
+      '업무 카드에서 Claude Code의 권한 확인에 한 번 허락하거나 거절해요. 자동으로 허락하지 않고, 누른 버튼만 보내요. 계속 허락하는 선택지는 터미널에서 골라요. 동의하기 전에는 꺼져 있고, 카드에서 처음 답할 때 한 번 확인해요.',
   },
 };

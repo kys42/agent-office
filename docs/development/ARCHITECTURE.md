@@ -8,7 +8,7 @@ Electron main → 제한된 preload IPC → 워커 스레드 OfficeService → �
 - `server/adapters/`: 원본 형식의 차이와 상태 근거를 해석한다.
 - `server/store.ts`: 앱의 별명·메모·핀·보관·업무 확인과 원본 관측을 분리한다.
 - `server/service.ts`: 5초 폴링, 공급자 오류 격리, 설정·조회 입력 검증.
-- `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고, 다음 호출(새로고침 등)에서 다시 시작한다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
+- `server/worker.ts`, `bridge.ts`: UI를 멈추지 않고 수집·검색을 실행한다. 워커가 죽으면(예: 시작 시 DB 잠김) 대기 중 요청을 실패시키고 화면에 연결 이상을 알린다. 1·3·10초 간격으로 최대 3회 재시작해 전체 스냅샷을 게시한다. 잠깐 성공했다 다시 죽는 반복은 예산을 초기화하지 않고, 60초 이상 안정적으로 실행한 뒤에만 자동 복구 예산을 다시 허용한다. 한도 뒤에는 명시적 호출(새로고침 등)로 다시 시도할 수 있다. 저장소는 시작할 때 다른 인스턴스의 쓰기 잠금을 최대 수십 초 기다린다(`OfficeStore`).
 - `desktop/`: contextIsolation + sandbox + nodeIntegration=false, 메인 프레임·창 검증 IPC. 외부 페이지 내비게이션·새 창·권한 요청은 차단한다. 새 창 요청 중 http·https 웹 링크만 기본 브라우저로 넘기고(`webLink`, IPC `office:open-link`도 같은 검사), 그 밖의 주소는 열지 않는다.
 - `server/mcp.ts`: 같은 SQLite를 readOnly로 열어 4개 조회 도구만 노출한다. 추가 수집기·모델 실행·외부 전송을 시작하지 않는다.
 
@@ -111,7 +111,7 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 
 `src/shared/conversation.ts`가 OfficeEvent의 공개 단계에 따라 사용자 요청/진행/최종/미분류/도구를 나누고 중복 공개 이벤트를 정리한다. Conversation은 이 기준으로 종류 필터와 말풍선 라벨을 적용하며 도구 기록은 기본 숨긴다. 분류를 바꿔도 메시지 확장 상태를 보존한다.
 
-소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 배지와 snapshot.noticeStats.unread가 같은 selector를 사용한다. NewsFeed는 최종/확인/전체 필터, 읽은 항목 포함, version별 일괄 read를 공유한다. snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식이 있으면 NewsFeed는 `noticePage`(cursor `(at,id)`, 범위별 정확한 미확인 수)로 읽고, 일괄 읽음은 `noticeReadAll(query, asOf)`로 범위 전체에 적용한다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
+소식 저장 범위와 중요 알림 범위는 별도다. `src/shared/notices.ts`의 중요 소식 selector는 완료 phase가 있는 reply와 미해결 attention/error만 반환한다. 모든 표시(점·창 제목 수)와 snapshot.noticeStats.unread가 같은 selector를 사용한다. 소식을 모아 보는 목록 화면은 없다(#300): 동료마다 마지막 결과를 봤는지만 점으로 보이고, 카드 열기·말 보내기·터미널 이동이 그 결과를 읽음으로 기록한다(보내기·이동은 `readReplies(sessionId, asOf)`로 snapshot 밖의 응답까지). snapshot의 `notices`는 화면에 필요한 bounded set만 담는다(`residentNotices`: 동료별 최신·최신 요청·최신 대화, 미해결 호출 전부, 미확인 최종 응답 최대 1,000건, 최근 100건). `noticeStats`는 모든 가시 소식 기준의 정확한 값이다. 실리지 않은 소식은 대화 발췌·북마크가 대화 페이지와 함께 cursor `(at,id)`로 읽는다. 대화는 `detail(id, {before, limit=40})` 페이지로 읽는다. 카드는 읽은 페이지만 갖고, 이전 대화 버튼으로 앞 페이지를 붙인다. 이때 읽던 위치는 유지한다. 오래된 phase 없는 reply는 수집 시 본문/시각이 동일한 경우만 읽음 상태를 보존하며 분류를 보완한다. 그 외 오래된 기록은 전체에 남아 있으며 완료로 추측하지 않는다.
 
 
 ## 한줄 모드 구역 위치
@@ -119,3 +119,8 @@ JSONL decoding은 `vendor/orca/runtime/session-scanner-jsonl-reader.ts`를 `serv
 `row-placement.ts`는 기존 `layoutRow`의 구역 내부 공동 책상/보조 구조를 유지하며 구역의 x좌표만 계산한다. 사용한 공간 안에서 수평 위치를 비율로 저장하고, 가까운 구역은 간격을 보존하며 밀어 겹침을 막는다. canvas는 기본 가구 폭보다 줄어들지 않는다. 시각적 순서를 바꿔도 DOM key/순서는 유지하여 Chromium pointer capture가 중간에 풀리지 않게 한다.
 
 `useRowPlacement`는 pointer capture, 끝부분 자동 스크롤, Esc/blur/구조 변경 취소, 키보드 이동을 처리한다. 저장은 `office:row-zones:v1:live`/`demo` localStorage이며 서버 DB/업무 자리 번호를 수정하지 않는다. 화면에 잠시 없는 구역도 한도500개 안에서 기억한다. DeskDock은 제스처 동안 그려진 표지에서 시작한 native 마우스 입력을 붙잡고 끝나면 실제 hit-test로 클릭 통과를 복원한다.
+
+
+## 기록 조회와 메모리 예산 (#296)
+
+수집기 → SQLite 정본/조회 인덱스 → bounded snapshot·cursor page → bounded 화면 window로 나눈다. 소식의 정확한 총계와 영속 receipt는 화면에 실은 본문 수와 독립적이다. 파싱 cache, OpenClaw cache, patch 이력에는 크기와 개수 제한을 함께 둔다. 상세 구현·수치·마이그레이션·검증법은 [경량화 설계](PERFORMANCE-DESIGN.md), 수집 의미는 [세션 기록 분석](SESSION-INGESTION.md)에 둔다.

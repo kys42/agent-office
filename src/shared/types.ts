@@ -1,6 +1,7 @@
 import type { SnapshotMessage } from './snapshot-patch';
 import { m, type Locale, type LocalePreference } from './i18n';
 import type { PetCustomization } from './pets';
+import type { DeskCustomization } from './desks';
 export type Provider = 'claude' | 'codex' | 'openclaw';
 /**
  * Office status. Observed (work/think/call/error/done) or derived from time since the last
@@ -67,6 +68,12 @@ export interface SessionRelation {
   agentPath?: string;
   role?: string;
   parentSessionKey?: string;
+  /**
+   * The agent team this session works in as a member (Claude Code agent teams): another
+   * session (its lead) started it and talks to it. Its title is its member name. With the
+   * lead found it is the lead's helper (`kind: 'subagent'`); without, a desk of its own.
+   */
+  team?: string;
 }
 export interface SessionActor {
   id: string;
@@ -110,35 +117,6 @@ export interface NoticeReceipt {
   version: string;
 }
 export type NoticeAction = 'read' | 'dismiss' | 'unread' | 'view';
-/** The news lists' kinds: confirmed finals, open calls, everything. */
-export type NoticeFilter = 'final' | 'attention' | 'all';
-/** Which notices a news list shows. */
-export interface NoticeQuery {
-  filter: NoticeFilter;
-  includeRead?: boolean;
-  /** Finals of background runs and helpers count too (a colleague's own news tab). */
-  includeBackground?: boolean;
-  /** Only these sessions' notices; absent means the whole office. */
-  sessionIds?: string[];
-}
-/** A place in the news order (newest first, then id): pages continue strictly after it. */
-export interface NoticeCursor {
-  at: number;
-  id: string;
-}
-export interface NoticePageRequest extends NoticeQuery {
-  before?: NoticeCursor | null;
-  limit?: number;
-}
-export interface NoticePage {
-  notices: OfficeNotice[];
-  /** More matching notices come after this page. */
-  more: boolean;
-  /** Exact unread counts of each kind in the query's scope (sessions, background), all pages. */
-  unread: Record<NoticeFilter, number>;
-  /** When the collector read it: a later "read all" leaves what arrived after this alone. */
-  at: number;
-}
 /** A page of a conversation: the newest `limit` events before the `before` event. */
 export interface DetailPage {
   before?: string;
@@ -224,14 +202,96 @@ export interface BookmarkPage {
 }
 /** A session with one page of its conversation. */
 export type SessionDetail = Session & {
+  /** A reached archived page has newer messages available via jump-to-latest. */
+  newerEvents?: boolean;
   /** Older events exist before this page (absent from callers that send whole sessions). */
   olderEvents?: boolean;
   /**
-   * This session's notices from the page's first event on (the oldest page: all earlier ones
-   * too), for excerpts of messages the bounded source window no longer holds.
+   * Bounded notices for this page's retained excerpts. Older excerpts arrive on earlier pages.
    */
   notices?: OfficeNotice[];
 };
+/**
+ * How a session made an output (#350): a file it created with its edit tool (Claude `Write` to
+ * a new file, Codex `apply_patch` `*** Add File:`), a file it pointed to (`open /path`, a
+ * markdown link) that came into being during the conversation, or a Claude Artifact link.
+ */
+export type OutputVia = 'write' | 'patch' | 'mention' | 'artifact';
+/**
+ * Adapter-only: an output the record names, before the collector checks and stores it. Removed
+ * at the persistence boundary (outputs live in their own table, kept across record windows).
+ */
+export interface OutputCandidate {
+  /** The absolute path, or the link: one output per session. */
+  key: string;
+  kind: 'file' | 'link';
+  at: number;
+  via: OutputVia;
+  /** A link's own name in the reply (`[title](url)`). */
+  title?: string;
+  /**
+   * The conversation event that produced it (#358): the tool result that reported the file
+   * made, or the reply that named it. Absent when the record had no such event.
+   */
+  eventId?: string;
+}
+/** A recorded output as the screens show it: redacted, with where and by whom it was made. */
+export interface SessionOutput {
+  id: string;
+  sessionId: string;
+  kind: 'file' | 'link';
+  via: OutputVia;
+  /** File name (redacted), or the link's title. */
+  name: string;
+  /** Folder (redacted); empty for a link. */
+  dir: string;
+  /** The whole path (redacted) or the link. */
+  path: string;
+  /** Lower-case extension without the dot ('' for a link). */
+  ext: string;
+  createdAt: number;
+  /**
+   * Where in the conversation it came from (#358): the producing event's id and time. Outputs
+   * recorded before that keep neither; the chat then places them by `createdAt`.
+   */
+  eventId?: string;
+  eventAt?: number;
+  /** Whose output it was, as it was then (the screens prefer the colleague as shown now). */
+  source: {
+    provider: Provider;
+    project: string;
+    title: string;
+    alias: string;
+  };
+  /** Whether the file is there now (a stat when the page was read); absent for links. */
+  exists?: boolean;
+}
+/** Which outputs a list shows: newest first. */
+export interface OutputQuery {
+  /** Only these sessions' outputs; absent means all. */
+  sessionIds?: string[];
+  /** Words in the name, folder or whose it was. */
+  text?: string;
+  before?: { createdAt: number; id: string } | null;
+  limit?: number;
+}
+export interface OutputPage {
+  outputs: SessionOutput[];
+  more: boolean;
+  /** Every output matching the query, all pages. */
+  total: number;
+}
+/** An output read for the reader window, only when asked (never while listing). */
+export interface OutputPreview {
+  id: string;
+  name: string;
+  format: 'markdown' | 'html';
+  text: string;
+  /** Only the beginning of a large file. */
+  truncated: boolean;
+}
+/** What a desktop action on an output did. */
+export type OutputActionResult = 'opened' | 'revealed' | 'copied' | 'previewed' | 'missing';
 export interface Artifact {
   url: string;
   kind: 'pull' | 'issues';
@@ -272,6 +332,14 @@ export interface OfficeEvent {
 export interface RequestOption {
   label: string;
   description?: string;
+  /**
+   * Claude Code AskUserQuestion `preview`: a mockup or snippet shown beside the options. A
+   * single-select question with one draws a side-by-side layout (no text row; notes instead).
+   * Shown only (never compared), so a cap here never marks the request `truncated`;
+   * `previewCut` says it was cut or left out.
+   */
+  preview?: string;
+  previewCut?: true;
 }
 export interface RequestQuestion {
   /** A short chip-like title (AskUserQuestion `header`). */
@@ -376,6 +444,8 @@ export interface Session {
   workingLocation?: WorkingLocation;
   /** Adapter-only usage samples; removed at the persistence boundary. */
   usageEntries?: UsageEntry[];
+  /** Adapter-only outputs the record names (#350); removed at the persistence boundary. */
+  outputs?: OutputCandidate[];
   cost?: SessionCost;
   branch: string | null;
   gitCommit?: string | null;
@@ -445,11 +515,17 @@ export interface Preferences {
   /** UI and collector language. Missing means `auto` (system language, else English). */
   locale?: LocalePreference;
   petAppearance?: PetCustomization;
+  /** Desk tops, monitors, chairs and items: office → project → colleague (#305). */
+  deskAppearance?: DeskCustomization;
   /** Desktop OS notifications (#229). Missing: calls and errors only, silently. */
   notifications?: NotifyPreferences;
   // #228 — every one optional; a missing value keeps the behaviour from before it existed.
   /** Tiny (쪼꼬미) desks carry a small name. Missing: on. */
   tinyNames?: boolean;
+  /** The work card's Details lists the teammate's outputs (#350). Missing: on. */
+  cardOutputs?: boolean;
+  /** The card's chat shows a chip row of outputs under the message that made them (#358). Missing: on. */
+  chatOutputs?: boolean;
   /** Tiny desks' dot also says "a final reply waits". Off: only calls and errors. Missing: on. */
   tinyFinalDot?: boolean;
   /** How the dock's pill shows at rest. Missing: `subdued`. */
@@ -473,11 +549,71 @@ export interface Preferences {
    * Codex with `--dangerously-bypass-approvals-and-sandbox`. Missing: off.
    */
   tmuxSkipPermissions?: boolean;
+  /** Desktop: cards pinned when the app last ran open again where they were. Missing: on. */
+  restorePinnedCards?: boolean;
+  /**
+   * Desktop: where the person last started a session (#318): the launch sheet offers it first
+   * while it is available, else Orca, else tmux. Missing: never chosen.
+   */
+  launchDestination?: import('./launch').LaunchDestinationId;
   /** Size of reading text (#246) in every window. Missing: `normal`. */
   textSize?: TextSize;
   /** Font of reading text (#246); pixel lettering keeps its own. Missing: `system`. */
   readingFont?: ReadingFont;
+  /**
+   * How see-through the work card popup and the big office's side columns are, in percent
+   * (0 solid … GLASS_MAX). Missing or null: each platform's own look from before.
+   */
+  windowGlass?: number | null;
+  /**
+   * What each screen shows (#324), mode by mode. Every key is optional: a missing one keeps the
+   * look from before it existed (see `viewPrefs`).
+   */
+  views?: ViewSettings;
 }
+/** The groups a numbers pill (the pet's, the row's, tiny's) can count, in triage order. */
+export type PetTallyGroup = 'attention' | 'results' | 'working' | 'standby';
+/** When the desk pet shows its colleague's name: while it speaks (or is picked/hovered), always, never. */
+export type PetNameMode = 'speaking' | 'always' | 'never';
+/** The desk effects a desk scene can draw (row/floor, big office). */
+export interface DeskViewSettings {
+  /** The branch tag under each desk (office row and the big office; the floor has plates). */
+  branch?: boolean;
+  /** Papers stacking up on a busy desk. */
+  papers?: boolean;
+  /** The light over a desk at work. */
+  beacon?: boolean;
+  /** Sparks and heat around a colleague deep in work. */
+  focus?: boolean;
+}
+export interface ViewSettings {
+  pet?: {
+    /** The coloured numbers pill. Off: the single-label pill from before. */
+    tally?: boolean;
+    tallyGroups?: PetTallyGroup[];
+    name?: PetNameMode;
+    /** The slide and puff when the pet turns to someone else. */
+    turnEffect?: boolean;
+    /** Rubbing the pet pats it (and the pointer becomes a hand). */
+    petting?: boolean;
+  };
+  /** The office row and the floor desks. */
+  dock?: DeskViewSettings & {
+    /** A read final reply leaves its desk (a peek brings it back). */
+    hideRead?: boolean;
+    /** The pill counts by group like the pet (the pet's `tallyGroups`). Off: "N명 · 기다려요 N". */
+    tally?: boolean;
+  };
+  tiny?: {
+    /** Focus effects and paper piles on tiny desks. */
+    effects?: boolean;
+    /** The tiny pill counts by group like the pet. Off: the bare number from before. */
+    tally?: boolean;
+  };
+  /** The big office. */
+  office?: DeskViewSettings;
+}
+export type ViewMode = keyof ViewSettings;
 export type TextSize = 'small' | 'normal' | 'large' | 'larger';
 /** `system`: the app's stack from before (system font, then Pretendard). */
 export type ReadingFont = 'system' | 'pretendard' | 'mono';
@@ -495,7 +631,6 @@ export interface Snapshot {
   sessions: Session[];
   connectors: Connector[];
   preferences: Preferences;
-  syncing: boolean;
   lastSync: number | null;
   error: string | null;
   version: number;
@@ -503,7 +638,7 @@ export interface Snapshot {
   epoch?: string;
   /**
    * The notices the office needs live (the latest per colleague, every open call and unread
-   * final, the most recent ones); older ones are read a page at a time (`noticePage`).
+   * final, the most recent ones); a conversation reads older excerpts with its pages.
    */
   notices?: OfficeNotice[];
   /** Exact over all visible notices, not only the ones carried in `notices`. */
@@ -512,6 +647,8 @@ export interface Snapshot {
   bookmarked?: Record<string, string[]>;
   /** Changes whenever any bookmark is added, removed or edited: lists read again. */
   bookmarkStamp?: string;
+  /** Changes whenever an output is recorded (#350): output lists read again. */
+  outputStamp?: string;
   /**
    * The collector's resolved language: its sessions, notices and messages are written in it.
    * With the `auto` preference the UI follows it, so both sides always agree. Demo snapshots
@@ -563,6 +700,11 @@ export interface TerminalTarget {
    * never to type into (it may hold a bare shell).
    */
   tabOnly?: boolean;
+  /**
+   * How images reach it, when they can: attached as images (Claude Code's own paste, Codex
+   * Desktop) or as file paths in the text (Codex CLI queue). Absent: no images (see attachments).
+   */
+  images?: import('./attachments').ImageDelivery;
 }
 /**
  * What a follow-up send did. `needs-confirm`: the agent's composer already holds text (a draft,
@@ -578,6 +720,11 @@ export type SendResult =
       cleared?: boolean;
       /** Only the readable parts of a partially hidden composer could be backed up. */
       partialBackup?: boolean;
+      /**
+       * The agent's record will not show this as a request of its own (images alone to Codex
+       * Desktop: its record keeps text only), so no "sent" receipt waits for it there.
+       */
+      unrecorded?: boolean;
     }
   | {
       status: 'needs-confirm';
@@ -598,11 +745,89 @@ export type SendResult =
       /** A failed send can offer this freshly read draft as an explicit recovery. */
       reason?: string;
     };
+/**
+ * What the agent's terminal input box holds right now, read by the desktop app from the verified
+ * terminal for the work card's preview (never stored). `draft`: text sitting there, not sent;
+ * `suggestion`: only the agent's own suggestion, told by its style; `empty`: nothing (or a
+ * suggestion where only inferred); `unknown`: not read, and why.
+ */
+export type ComposerDraftView =
+  | {
+      kind: 'draft';
+      /**
+       * The box's rows as drawn, indents kept (only its frame taken off): the box's own wrapping
+       * may show as line breaks. [Send as is] hands this very string back, and Enter goes only
+       * while the box still draws exactly it.
+       */
+      text: string;
+      /**
+       * The text as typed (its own line breaks and indents, not the box's wrapping), when that
+       * can be told for sure. Taking it into the card needs it; absent, the screen cannot say
+       * where a URL, path or word was merely wrapped.
+       */
+      logical?: string;
+      /** The agent whose box it is, e.g. "Claude". A brand, never translated. */
+      agent: string;
+      /** It can be submitted as it is from here: known whole, on an agent that allows it. */
+      submittable: boolean;
+      /** Not all of it is on screen (a box too short, a collapsed paste, an image). */
+      partial?: boolean;
+      /** The screen cannot tell it from the agent's own suggestion. */
+      maybeSuggestion?: boolean;
+      /**
+       * With `maybeSuggestion`: sent with `{ suggestion: true }` — the agent's accept key first
+       * (a suggestion is taken in, typed text stays as it is), then Enter only while the box holds
+       * exactly this text. One line known whole only.
+       */
+      acceptsSuggestion?: boolean;
+    }
+  | {
+      /**
+       * The agent's own suggestion (Claude Code's prompt suggestion, accepted with Tab), told
+       * apart from typing by its style: the box holds nothing typed. Never the person's draft.
+       */
+      kind: 'suggestion';
+      /** As drawn on its one row. [Send suggestion] hands it back to compare. */
+      text: string;
+      agent: string;
+      /** Taken in and submitted from here: all of it shows, on a host that tells it apart. */
+      submittable: boolean;
+    }
+  | { kind: 'empty' }
+  | { kind: 'unknown'; reason: ComposerDraftUnknown };
+/**
+ * Why the box was not read: sending is off, the agent's box is not read from here, no verified
+ * terminal, the agent is not taking input, a dialog or menu replaced the box, the screen could
+ * not be read, or a send is typing into it right now.
+ */
+export type ComposerDraftUnknown =
+  'off' | 'unsupported' | 'no-terminal' | 'not-ready' | 'closed' | 'unreadable' | 'sending';
+/**
+ * What submitting the box as it is did. `sent`: Enter went in while the box held exactly the
+ * previewed text. `changed`: it held something else, so nothing was pressed; `draft` is the
+ * fresh read to show instead, `message` why.
+ */
+export type DraftSubmitResult =
+  | {
+      status: 'sent';
+      message: string;
+      /** The text as typed, from the look right before Enter, when the screen could tell. */
+      logical?: string;
+    }
+  | { status: 'changed'; message: string; draft: ComposerDraftView };
 export interface SendOptions {
   /** Clear exactly this text from the composer first (it goes to the clipboard), then send. */
   replaceDraft?: string;
   /** The person accepted losing content that the screen could not fully show or back up. */
   allowPartialDraft?: boolean;
+  /**
+   * `replaceDraft` is the box's rows as drawn (indents kept) when the person took them into the
+   * card to edit: replaced only while the box still draws exactly that — a change in spaces,
+   * line breaks or indents there is asked about (`changed`), never cleared silently.
+   */
+  exactDraft?: boolean;
+  /** Ids from `attachImage`, in order. Desktop main resolves them to its own files. */
+  images?: string[];
 }
 /** Sends a follow-up to a session; `replaceDraft` is the composer text the person agreed to clear. */
 export type ReplySender = (
@@ -610,6 +835,9 @@ export type ReplySender = (
   text: string,
   replaceDraft?: string,
   allowPartialDraft?: boolean,
+  images?: string[],
+  /** See `SendOptions.exactDraft`. */
+  exactDraft?: boolean,
 ) => Promise<SendResult>;
 export interface JumpResult {
   action: 'focused' | 'opened' | 'copy';
@@ -645,8 +873,8 @@ export type PromptUnavailable =
   | 'no-request'
   /** The request cannot be checked against a screen (cut at rest, no call id, no transcript). */
   | 'unverifiable'
-  /** The person turned answering this kind off in Settings. */
-  | 'off';
+  /** A dialog is open, drawn in a way the app cannot read (a new layout): nothing is pressed. */
+  | 'unknown';
 /**
  * The dialog on the session's terminal, read by the desktop app and checked against the open
  * request it recorded. `ready` only when both say the same (same kind, same question and
@@ -668,18 +896,40 @@ export type PromptView =
       /** Questions: per question, whether typed words can be sent (never for multi-select). */
       other?: boolean[];
       /**
+       * Questions: per question, why typed words cannot be sent from here (null where they can):
+       * `preview` the dialog takes notes instead, typed in the terminal; `multi` a multi-select
+       * question; `none` the dialog has no text row.
+       */
+      noText?: (PromptNoText | null)[];
+      /**
+       * Questions: the dialog offers "Chat about this": leave the questions unanswered and tell
+       * the agent you want to talk about them first (it asks what; the reply goes in the chat).
+       */
+      chat?: true;
+      /**
        * Permission prompts: the tool of the call the screen shows (the record may mark another
        * call of the same batch) and what the screen says it does. The card shows these.
        */
       tool?: string;
       subject?: PromptSubject;
+      /**
+       * Answering this kind is not on yet (never asked, or turned off): the first press asks
+       * natively before anything is sent, and turns it on when the person agrees.
+       */
+      consent?: 'unset' | 'off';
     }
   | { status: 'unavailable'; agent: string; reason: PromptUnavailable; message: string };
+/** Why a question takes no typed answer from the card (PromptView.noText). */
+export type PromptNoText = 'preview' | 'multi' | 'none';
 /** One question's answer: picked options (indices into the recorded options) or typed words. */
 export type QuestionAnswer = { options: number[] } | { other: string };
-/** `callId`: the open call the card was shown (PromptView.callId); nothing else is answered. */
+/**
+ * `callId`: the open call the card was shown (PromptView.callId); nothing else is answered.
+ * `chat`: no answers, the dialog's "Chat about this" instead (PromptView.chat).
+ */
 export type AnswerChoice =
   | { kind: 'question'; eventId: string; callId: string; answers: QuestionAnswer[] }
+  | { kind: 'question'; eventId: string; callId: string; chat: true }
   | { kind: 'plan' | 'permission'; eventId: string; callId: string; number: number; label: string };
 export interface AnswerResult {
   /** `cancelled`: the person declined the first-use confirmation; nothing was sent. */
@@ -687,8 +937,8 @@ export interface AnswerResult {
   message: string;
 }
 /**
- * One answering setting: never asked yet (the first answer asks natively), turned on, or turned
- * off explicitly (no answer buttons until turned on in Settings).
+ * One answering setting: never asked yet, turned on, or turned off explicitly. Unless it is on,
+ * the card still offers the choices and the first press asks natively (agreeing turns it on).
  */
 export type AnswerSetting = 'unset' | 'on' | 'off';
 /** Desktop profile settings (never shared preferences): off until the person agrees. */
@@ -713,21 +963,44 @@ export interface ScreenRect {
 /** What the dock card shows: a colleague, opened from its bubble (news first) or its desk. */
 export interface CardTarget {
   id: string;
-  news: boolean;
+  /**
+   * Explicit navigation to the conversation (a bubble opened the card): shown even when that
+   * colleague's card is already open on another tab.
+   */
+  conversation?: boolean;
   /** Explicit navigation intent, also delivered when reusing another pinned window. */
   bookmark?: { eventId: string; at: number };
 }
 /** Native popup presentation state; independent of the colleague's office pin. */
 export interface CardWindowState {
+  /** Kept open (pinned, pinned on top, or in its own window). */
   pinned: boolean;
+  /**
+   * Which pin (src/shared/card-windows.ts `CardPin`): the preview, pinned, pinned on top, or in
+   * its own app window.
+   */
+  pin?: import('./card-windows').CardPin;
   positionRemembered: boolean;
   /** Initial state handshake also recovers a target sent before the renderer subscribed. */
   target?: CardTarget | null;
 }
+/** A popup window's own on-top control: read it (`top`), or set it on top or back to ordinary. */
+export type PopupOnTopAction = 'top' | 'top-on' | 'top-off';
 /** `tiny-on`/`tiny-off`: the row and floor at helper-desk size (remembered by the main process). */
 export type DockAction =
-  DockMode | 'tiny-on' | 'tiny-off' | 'drag-start' | 'drag-end' | 'solid' | 'through';
+  | DockMode
+  | 'tiny-on'
+  | 'tiny-off'
+  | 'drag-start'
+  | 'drag-end'
+  | 'solid'
+  | 'through'
+  /** A dialog (row, floor) or the 보기 menu (any look) is open: room above for it, and back. */
+  | 'room-on'
+  | 'room-off';
 export interface OfficeAPI {
+  appHealth?: () => Promise<import('./app-health').AppHealth>;
+  openPrivacy?: (pane: import('./app-health').PrivacyPane) => Promise<void>;
   mobile?: (
     command: import('./mobile').MobileCommand,
   ) => Promise<import('./mobile').MobileSettings>;
@@ -741,10 +1014,11 @@ export interface OfficeAPI {
   visit: (id: string) => Promise<Snapshot>;
   returnToOffice: (id: string) => Promise<Snapshot>;
   notices: (receipts: NoticeReceipt[], action: NoticeAction) => Promise<Snapshot>;
-  /** A page of the news, older ones included. */
-  noticePage: (request: NoticePageRequest) => Promise<NoticePage>;
-  /** Mark every unread notice matching `query` read, except those received after `asOf`. */
-  noticeReadAll: (query: NoticeQuery, asOf: number) => Promise<Snapshot>;
+  /**
+   * Read every unread final reply of one run received by `asOf`, carried in the snapshot or not
+   * (a message sent to it, a jump to its terminal; #300). Calls and errors stay.
+   */
+  readReplies: (sessionId: string, asOf: number) => Promise<Snapshot>;
   artifacts: (id: string) => Promise<Artifact[]>;
   openArtifact: (url: string) => Promise<void>;
   /** Open a web page (http/https only) from session text in the default browser. */
@@ -775,6 +1049,44 @@ export interface OfficeAPI {
   /** Take the bookmark of one message off (no-op when it has none). */
   unbookmarkMessage: (sessionId: string, eventId: string) => Promise<Snapshot>;
   bookmarkNote: (id: string, note: string) => Promise<Bookmark>;
+  /** One bookmark by id; null when it was removed or the settings no longer show it. */
+  bookmarkById: (id: string) => Promise<Bookmark | null>;
+  /** A page of the outputs sessions made (#350): paths only, nothing is read or opened. */
+  outputs?: (query?: OutputQuery) => Promise<OutputPage>;
+  /**
+   * Desktop only: act on one recorded output, by id (main looks the path up itself and never
+   * takes one from the page): open it in its app, show it in its folder, copy its path, or read
+   * it in a reader window (markdown, HTML).
+   */
+  outputAction?: (
+    action: 'open' | 'reveal' | 'copy' | 'preview',
+    id: string,
+  ) => Promise<OutputActionResult>;
+  /** Desktop reader window: the output's content, read now; null when it is not there. */
+  outputPreview?: (id: string) => Promise<OutputPreview | null>;
+  /**
+   * Desktop only: the bookmark reader's own window, one per bookmark. `open` opens it beside the
+   * asking window (or brings it forward) with only the bookmark's id; in that window, `target`
+   * reads which bookmark it shows, `focus`/`close` act on it and `go` shows the big office at
+   * the bookmarked message. `top` reads whether that window stays on top and `top-on`/`top-off`
+   * set it (`onPopupOnTop` hears each change).
+   */
+  bookmarkWindow?: {
+    (action: 'open', target: import('./bookmark-window').ReaderTarget): Promise<void>;
+    (action: 'target'): Promise<import('./bookmark-window').ReaderTarget>;
+    (action: 'focus' | 'close' | 'go'): Promise<void>;
+    (action: PopupOnTopAction): Promise<boolean>;
+  };
+  /**
+   * Desktop popup windows (mini terminal, bookmark reader): whether this window stays on top,
+   * each time that changes (set by its own toggle, or floated again by a floating opener).
+   */
+  onPopupOnTop?: (callback: (on: boolean) => void) => () => void;
+  /**
+   * Desktop reader window: its output was asked to be previewed again while open (#350), so it
+   * reads the file again.
+   */
+  onReaderRefresh?: (callback: () => void) => () => void;
   handoff: (id: string, revision: string) => Promise<Handoff>;
   preferences: (patch: Partial<Preferences>) => Promise<Snapshot>;
   /**
@@ -784,6 +1096,7 @@ export interface OfficeAPI {
   subscribe: (
     callback: (message: SnapshotMessage) => void,
     since?: () => Pick<Snapshot, 'epoch' | 'version'> | null,
+    health?: (error: string | null) => void,
   ) => () => void;
   window: (action: 'mini' | 'main' | 'hide' | 'quit', sessionId?: string) => Promise<void>;
   reveal: (id: string) => Promise<void>;
@@ -793,17 +1106,62 @@ export interface OfficeAPI {
     action: 'status' | 'start',
     spec: import('./remote-launch').RemoteLaunchSpec,
   ) => Promise<import('./remote-launch').RemoteLaunchInfo>;
-  /** Local desktop only. Starting requires confirmation in the main process. */
-  tmuxSummon?: (
-    id: string,
-    action: 'status' | 'start' | 'open',
-    provider: 'claude' | 'codex',
-    name: string,
-    initialMessage?: string,
-  ) => Promise<TmuxResumeInfo>;
-  tmuxResume?: (id: string, action: 'status' | 'start' | 'open') => Promise<TmuxResumeInfo>;
-  /** Desktop (macOS) only: resume the saved conversation in a new Orca terminal tab. */
-  orcaLaunch?: (id: string, action: 'status' | 'start') => Promise<OrcaLaunchInfo>;
+  /**
+   * Desktop (macOS) only: brings Orca to the front, where a tab whose start was unconfirmed
+   * starts. With a conversation's id whose tab sleeps, or may, in an Orca workspace (#380), main
+   * wakes that workspace and switches to its tab when matched; main finds the workspace itself.
+   */
+  orcaReveal?: (id?: string) => Promise<OrcaRevealResult>;
+  /**
+   * Desktop (macOS) only (#342): the sleeping Orca workspace this conversation's tab rests in,
+   * or may rest in, as the duplicate check says (null otherwise). `sure`: its tab was matched
+   * there; without it the folder only lies in that workspace (it may come back there).
+   * Read-only.
+   */
+  orcaSleeping?: (id: string) => Promise<{ workspace: string; sure?: boolean } | null>;
+  /**
+   * Desktop only (#318): probe, start or open one launch (new, resume, fork) at one
+   * destination. Starting asks a native confirmation in the main process; a refusal is an
+   * answer, not an error (`state: 'refused'` with its reason). The launch sheet (#319) is its
+   * only window caller.
+   */
+  launch?: (request: import('./launch').LaunchRequest) => Promise<import('./launch').LaunchResult>;
+  /** Desktop only: whether this platform can launch at all, and which destinations open. */
+  launchSupport?: () => Promise<import('./launch').LaunchSupport>;
+  /** Desktop only: every destination probed for an intent, with the one to offer first. */
+  launchOptions?: (
+    intent: import('./launch').LaunchIntent,
+  ) => Promise<import('./launch').LaunchOptions>;
+  /** Desktop (macOS/Linux) only: the mini terminal, kept alive by tmux (see mini-shell.ts). */
+  shell?: {
+    command: <C extends import('./mini-shell').ShellCommand>(
+      command: C,
+    ) => Promise<
+      C['type'] extends 'open' | 'attach'
+        ? import('./mini-shell').ShellAttachment
+        : C['type'] extends 'list'
+          ? import('./mini-shell').ShellInfo[]
+          : C['type'] extends 'kill'
+            ? boolean
+            : void
+    >;
+    /** Keystrokes for this window's own attachment. */
+    input: (ptyId: string, data: string) => void;
+    onData: (cb: (ptyId: string, data: string) => void) => () => void;
+    onExit: (cb: (ptyId: string) => void) => () => void;
+    /**
+     * The mini terminal's own window, one per folder shell: `open` opens it beside the asking
+     * window (or brings it forward); in that window, `target` reads what it shows, `focus` takes
+     * the keyboard and `close` closes it (detaching). `close-all` is the big office's only.
+     * `top` reads whether that window stays on top and `top-on`/`top-off` set it.
+     */
+    window: {
+      (action: 'open', target: import('./mini-shell').ShellTarget): Promise<void>;
+      (action: 'target'): Promise<import('./mini-shell').ShellTarget>;
+      (action: 'close' | 'focus' | 'close-all'): Promise<void>;
+      (action: PopupOnTopAction): Promise<boolean>;
+    };
+  };
 
   /** Desktop only: where each session can take a follow-up, if that can be verified. */
   terminals?: (ids: string[]) => Promise<Record<string, TerminalTarget | null>>;
@@ -814,8 +1172,33 @@ export interface OfficeAPI {
    * Text already in the composer is never added to: it comes back as `needs-confirm`.
    */
   send?: (id: string, text: string, options?: SendOptions) => Promise<SendResult>;
+  /**
+   * Desktop only: saves an image's bytes (PNG, JPEG, GIF, WebP; checked in main) into the app's
+   * attachments folder and returns an opaque id for `send`. No path ever crosses back.
+   */
+  attachImage?: (bytes: Uint8Array) => Promise<{ id: string }>;
+  /** Desktop only: an attached image's bytes by id (app-owned files only), or null when gone. */
+  attachmentPreview?: (id: string) => Promise<{ type: string; bytes: Uint8Array } | null>;
   /** Desktop only: reads the owned terminal's current draft without typing or submitting. */
   inspectDraft?: (id: string) => Promise<Extract<SendResult, { status: 'needs-confirm' }> | null>;
+  /**
+   * Desktop only, read-only: what the session's terminal input box holds now (briefly cached in
+   * main, so several windows share one screen read). Nothing is typed or pressed.
+   */
+  composerDraft?: (id: string) => Promise<ComposerDraftView>;
+  /**
+   * Desktop only: submits the box as it is (Enter, nothing typed), only while it still holds
+   * exactly `text` — main reads the screen again right before the key.
+   */
+  submitDraft?: (
+    id: string,
+    text: string,
+    /**
+     * `suggestion`: `text` is the agent's own suggestion — taken into the box (Tab) only while
+     * it is all the box holds, then submitted only if the box then holds exactly it.
+     */
+    options?: { suggestion?: boolean },
+  ) => Promise<DraftSubmitResult>;
   /**
    * Desktop only: read, or change, the setting for `send` (on by default). Kept in the desktop
    * profile, outside the preferences shared with the web preview; turning it back on asks for
@@ -850,8 +1233,9 @@ export interface OfficeAPI {
       | 'drag-start'
       | 'drag-end'
       | 'select'
-      | 'pin-on'
-      | 'pin-off'
+      /** From a kept card: show another colleague beside it, leaving it as it is (#377). */
+      | 'reveal'
+      | import('./card-windows').CardPinAction
       | 'position-on'
       | 'position-off'
       | 'focus',
@@ -866,13 +1250,24 @@ export interface OfficeAPI {
   visible?: () => Promise<boolean>;
   onVisibility?: (callback: (shown: boolean) => void) => () => void;
   exportFile: (name: string, content: string) => Promise<boolean>;
-  onSelect?: (callback: (id: string) => void) => () => void;
+  /** The big office is asked to show a colleague (at a bookmarked message, when given). */
+  onSelect?: (
+    callback: (id: string, bookmark?: { eventId: string; at: number }) => void,
+  ) => () => void;
   /** Desktop big office only: the colleague card open now, so a notification about it is skipped. */
   selected?: (id: string | null) => void;
   /** Desktop only. Browser previews switch the dock layout locally. */
   dock?: (action: DockAction) => Promise<void>;
   /** `tiny` comes along from the desktop main process (undefined: unchanged). */
   onDock?: (callback: (mode: DockMode, tiny?: boolean) => void) => () => void;
+  /** Desktop only: which edge of its window (grown for room) the pet stands at. */
+  onDockSide?: (callback: (side: 'left' | 'right') => void) => () => void;
+  /**
+   * Desktop only: the dock's look (pet, row, floor; tiny), for the big office's button that
+   * goes back to it, and each time it changes. Raw: read it with `readDockLook`.
+   */
+  dockLook?: () => Promise<unknown>;
+  onDockLook?: (callback: (look: unknown) => void) => () => void;
   /**
    * Desktop only: the settings window (`#settings`), which stays open when it loses focus.
    * `open` shows it at a section; the window hears later opens through `onOpen`.
@@ -921,15 +1316,103 @@ export const MOODS: Record<Mood, { label: string; color: string; rank: number }>
 };
 
 /** Whether a saved conversation can open in a new Orca tab, and what a start did. */
+/** Where a conversation already runs, or is open, as checked right before a launch. */
+export type LaunchPlace = 'orca' | 'tmux' | 'other';
+/**
+ * The app whose terminal holds a running agent, read from its process's parents when no tab
+ * or pane could be verified (#376). `swarm`: Claude's own tmux server for teammates
+ * (`claude-swarm-<pid>`); `background`: a Claude background session, in a pty of Claude's own
+ * daemon; `app`: another macOS app, named by its bundle; `unknown`: none found (ssh, a
+ * daemonized server).
+ */
+export type HostApp =
+  | 'orca'
+  | 'terminal'
+  | 'iterm'
+  | 'ghostty'
+  | 'cmux'
+  | 'vscode'
+  | 'warp'
+  | 'tmux'
+  | 'swarm'
+  | 'background'
+  | 'app'
+  | 'unknown';
+/** Where a running agent is when its terminal tab could not be verified (#376). */
+export interface RunningHost {
+  app: HostApp;
+  /** `app`: the macOS app's own name. */
+  name?: string;
+  /** Moved to the background (← for agents): Claude's agents view in that app shows it. */
+  parked?: true;
+  /** The main process can bring that place forward (its tab, its pane, or at least the app). */
+  canGo?: true;
+  /** A background session no window shows: the command that attaches a terminal to it. */
+  attach?: string;
+}
+/**
+ * The duplicate-launch check shared by the tmux and Orca launchers. `running`: the agent
+ * process for this conversation is alive (never launched again). `open`: a tab or tmux session
+ * of the conversation exists but the agent is not verified running (launch only after a
+ * warning). `unknown`: it could not be verified that it is open nowhere else.
+ */
+export type DuplicateCheck =
+  | { state: 'none' }
+  /**
+   * `sleeping`: its folder lies in a sleeping Orca workspace (`workspace`) and no tab there is
+   * surely this one: `count` tabs of its agent rest there (left out when Orca lists none,
+   * which a sleeping workspace often does though it starts its tabs again once opened). Its
+   * tab may come back there, so opening that workspace first is the way (#342).
+   */
+  | { state: 'unknown'; sleeping?: { workspace: string; count?: number } }
+  /**
+   * `pending`: a launch held for a while where it went: not confirmed yet (an Orca tab opening
+   * Orca starts; Terminal or tmux cut off, maybe running), or with `starting` just handed over
+   * (a Terminal window, an Orca tab) and the agent not seen running yet.
+   * `sleeping`: its tab rests in a sleeping Orca workspace (`workspace`): no terminal to switch
+   * to, but opening that workspace in Orca brings the tab back (#342).
+   */
+  | {
+      state: 'open';
+      where: LaunchPlace;
+      pending?: true;
+      starting?: true;
+      sleeping?: { workspace: string };
+    }
+  /**
+   * `inOwnTmux`: the agent was verified running in a pane of the app's own tmux session for
+   * this conversation (main matched the terminal it found to that session's panes). Without
+   * it the conversation may run elsewhere while the own pane shows another one.
+   * `host`: its process lives but no terminal tab of it was verified: the app it runs in, read
+   * from its process (#376). Left out when its terminal was verified (`where` is that terminal).
+   */
+  | { state: 'running'; where: LaunchPlace; inOwnTmux?: true; host?: RunningHost };
+/**
+ * What "Go to Orca" did (#380): `tab` woke the conversation's sleeping workspace and switched to
+ * its own tab; `workspace` woke that workspace (its tab not matched, or not back yet); `front`
+ * only brought Orca to the front, as before (no sleeping workspace, or waking it failed).
+ */
+export type OrcaRevealResult = 'tab' | 'workspace' | 'front';
 export interface OrcaLaunchInfo {
   available: boolean;
+  /** Set by `status`: whether this conversation already runs or is open somewhere. */
+  duplicate?: DuplicateCheck;
   /** The command typed into the new tab's shell (shown before confirming). */
   command?: string;
-  /** Set after `start`: false when the person cancelled. */
+  /** Set after `start`: false when the person cancelled, or when Orca did not confirm it. */
   launched?: boolean;
+  /**
+   * Set after `start`: Orca made the tab but its start was not seen yet. Not a failure: the tab
+   * starts once Orca shows it, and launching it again is cautioned for a while meanwhile.
+   */
+  uncertain?: boolean;
+  /** Set by `status` when the folder cannot take a new Orca tab: why (not a workspace, etc.). */
+  reason?: string;
   message?: string;
 }
 export interface TmuxResumeInfo {
+  /** Set by a resume `status`: whether this conversation already runs or is open somewhere. */
+  duplicate?: DuplicateCheck;
   connections?: { id?: string; name: string; label: string; command?: string }[];
   name: string;
   cwd: string;

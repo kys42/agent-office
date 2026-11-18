@@ -20,6 +20,9 @@ export const REQUEST_LIMITS = {
   question: 1000,
   label: 300,
   description: 600,
+  /** One option's preview, and all previews of one request together (shown only, see below). */
+  preview: 4000,
+  previews: 16_000,
   plan: 20_000,
   planFile: 400,
 } as const;
@@ -28,6 +31,8 @@ const L = REQUEST_LIMITS;
 /** Whether any cap cut something while reading one request. */
 interface Cut {
   cut: boolean;
+  /** Preview characters still allowed in this request (previews never set `cut`). */
+  previews: number;
 }
 function text(value: unknown, limit: number, c: Cut) {
   if (typeof value !== 'string') return '';
@@ -69,7 +74,28 @@ function option(value: unknown, c: Cut): RequestOption | null {
   const label = line(o.label ?? o.title ?? o.value, L.label, c);
   if (!label) return null;
   const description = text(o.description, L.description, c);
-  return description ? { label, description } : { label };
+  return {
+    label,
+    ...(description ? { description } : {}),
+    ...preview(o.preview, c),
+  };
+}
+
+/**
+ * An option's preview (Claude Code AskUserQuestion): shown on the card, never compared with the
+ * screen, so a cap marks only the option (`previewCut`), never the request: a long mockup must
+ * not keep the question from being answered. Line breaks and indents stay (it is often a drawing).
+ */
+function preview(value: unknown, c: Cut): Pick<RequestOption, 'preview' | 'previewCut'> {
+  if (typeof value !== 'string' || !value.trim()) return {};
+  const full = redactStrict(value.replace(/\r\n?/g, '\n').replace(/\s+$/, ''), Infinity);
+  const room = Math.min(L.preview, c.previews);
+  const kept = full.slice(0, room);
+  c.previews -= kept.length;
+  return {
+    ...(kept.trim() ? { preview: kept } : {}),
+    ...(kept.length < full.length ? { previewCut: true as const } : {}),
+  };
 }
 
 function question(value: unknown, c: Cut): RequestQuestion | null {
@@ -94,7 +120,7 @@ function question(value: unknown, c: Cut): RequestQuestion | null {
 export function inputRequest(tool: string, input: unknown): InputRequest | undefined {
   const args = toolInput(input);
   if (!args) return undefined;
-  const c: Cut = { cut: false };
+  const c: Cut = { cut: false, previews: L.previews };
   const truncated = () => (c.cut ? { truncated: true as const } : {});
   if (/ExitPlanMode/.test(tool)) {
     const plan = text(args.plan, L.plan, c);

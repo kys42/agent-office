@@ -1,0 +1,111 @@
+/* ───────── Settings › Look › What each screen shows (#324) ─────────
+   One card per mode: title and a line, a live preview, two or three choices, the rest under
+   a native <details> "More". */
+.view-cards {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.view-card {
+  min-width: 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+}
+.view-card > header h3 {
+  font-size: calc(13px * var(--read-scale));
+  font-weight: 650;
+}
+.view-card > header p {
+  font-size: calc(11.5px * var(--read-scale));
+  color: var(--text-3);
+}
+.view-card .setting-row {
+  padding: 10px 0;
+}
+.view-card-more {
+  border-top: 1px solid var(--line);
+}
+.view-card-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0 2px;
+  font-size: calc(12px * var(--read-scale));
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: none;
+}
+.view-card-more > summary::-webkit-details-marker {
+  display: none;
+}
+.view-card-more > summary svg {
+  transition: transform 0.15s var(--ease-out);
+}
+.view-card-more[open] > summary svg {
+  transform: rotate(90deg);
+}
+.view-card-more > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Narrow windows put a segmented choice under its words. */
+.view-card .text-choice-row > div:not(.segmented) {
+  flex-basis: 180px;
+}
+.view-groups button {
+  white-space: nowrap;
+}
+
+/* The preview: the real scene, shrunk into a box that takes no input (inert). */
+.mode-preview {
+  margin: 10px 0 4px;
+}
+.mode-preview-box {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  /* The dock stands over the desktop: a soft desktop behind it. */
+  background:
+    radial-gradient(
+      120% 90% at 20% 0%,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent
+    ),
+    linear-gradient(180deg, var(--bg-3), var(--bg-4));
+}
+.mode-preview-office .mode-preview-box {
+  background: var(--scene-backdrop);
+}
+.mode-preview figcaption {
+  margin-top: 4px;
+  font-size: calc(11px * var(--read-scale));
+  color: var(--text-4);
+}
+.mode-preview-stage {
+  position: absolute;
+  top: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.mode-preview-office .mode-preview-stage {
+  display: flex;
+  flex-direction: column;
+}
+/* The dock's roots are fixed to its window; here they sit in the stage (also their containing
+   block, being transformed), without the window's entrance. */
+.mode-preview-stage .desk-row,
+.mode-preview-stage .desk-pet-stage {
+  position: absolute;
+  animation: none;
+}
+/* The room fills the stage at every window width (narrow windows give the real card a height). */
+.mode-preview-stage .office-card.dynamic-office {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}

@@ -85,10 +85,6 @@ try {
   await page.waitForTimeout(2400);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
-  await click(page.locator('.inbox-button'));
-  await page.waitForTimeout(2600);
-  await click(page.locator('.inbox-button'));
-  await page.waitForTimeout(1400);
   recording = false;
   await recorder;
 

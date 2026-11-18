@@ -98,6 +98,7 @@ export const server = {
     toolRun: (tool: string) => `Ran ${tool}`,
     toolResult: (tool: string) => `${tool} result`,
     tool: 'Tool',
+    localCommand: (command: string) => `Ran ${command}`,
   },
   session: {
     unknownWorkspace: 'Unknown workspace',

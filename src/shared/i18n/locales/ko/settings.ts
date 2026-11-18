@@ -1,6 +1,48 @@
 import type { Messages } from '../en';
 
 export const settings: Messages['settings'] = {
+  appHealth: {
+    title: '앱 정보와 권한',
+    loading: '설치된 앱을 확인하고 있어요…',
+    failed: '설치 정보를 읽지 못했어요.',
+    retry: '다시 확인',
+    signatures: {
+      'developer-id': '개발자 서명 확인됨',
+      'ad-hoc': '임시 미리보기 빌드',
+      unverified: '서명을 확인하지 못했어요',
+      development: '개발용 앱',
+      unavailable: '서명 확인 미지원',
+    },
+    signedHint:
+      '업데이트도 같은 개발자 신원을 유지해야 해요. 새 컴퓨터에서는 처음 권한을 허용해야 합니다.',
+    previewHint:
+      '계속 사용할 앱은 검증된 배포본을 설치해 주세요. 임시 빌드로 덮어쓰면 권한을 다시 물을 수 있어요.',
+    build: '빌드',
+    platform: '시스템',
+    team: '개발자 팀',
+    unknown: '기록 없음',
+    copy: '앱 정보 복사',
+    copied: '복사됨',
+    copyFailed: '앱 정보를 복사하지 못했어요.',
+    safeCopy: '버전·빌드·서명 정보만 복사해요. 대화, 파일 경로, 인증정보는 포함하지 않습니다.',
+    permissions: '쓰는 기능에 필요한 권한만',
+    permissionHint: 'macOS에서 권한을 각각 관리해요. 앱 서명이 권한을 자동으로 켜 주지는 않습니다.',
+    open: '설정 열기',
+    openFailed: '시스템 설정 → 개인정보 보호 및 보안에서 권한을 확인해 주세요.',
+    panes: {
+      files: {
+        title: '파일 및 폴더',
+        hint: '보호된 폴더나 외장 디스크의 세션 기록을 읽을 때 필요해요.',
+      },
+      network: { title: '로컬 네트워크', hint: '다른 컴퓨터의 Office에 연결할 때 필요해요.' },
+      accessibility: {
+        title: '손쉬운 사용',
+        hint: '지원 터미널로 이동하거나 입력할 때 사용해요. 세션을 읽기만 할 때는 필요하지 않아요.',
+      },
+    },
+    restartHint:
+      '권한 변경 후 macOS가 재시작을 안내하면 앱을 종료하고 다시 열어 주세요. 계속 묻는다면 권한을 초기화하기 전에 빌드와 개발자 신원을 비교해 주세요.',
+  },
   windowsSupport:
     'Windows 미리보기에서는 세션 조회·검색·메모·데스크 펫을 사용할 수 있어요. 이 컴퓨터의 터미널 이동·전송·질문 응답은 아직 지원하지 않아요. 원격 사무실은 해당 컴퓨터의 지원 기능과 권한을 따라요.',
   title: '연결과 설정',
@@ -73,11 +115,66 @@ export const settings: Messages['settings'] = {
     pillResetDone: '독 pill을 오른쪽 끝으로 되돌렸어요.',
     resetButton: '초기화',
   },
+  views: {
+    title: '화면별 표시',
+    hint: '화면마다 무엇을 그릴지 골라요. 그대로 두면 지금 모습이고, 더 고르려면 자세히를 펼쳐요.',
+    more: '자세히',
+    preview: (mode: string) => `${mode} 미리보기`,
+    demo: '동료가 오기 전까지는 예시 동료로 보여 줘요.',
+    modes: {
+      pet: { title: '데스크 펫', hint: '접어 둔 독의 작은 펫이에요.' },
+      dock: { title: '사무실 줄·바닥', hint: '화면 아래에 줄지어 선 책상이에요.' },
+      tiny: { title: '쪼꼬미', hint: '줄·바닥을 보조 책상 크기로 줄인 모습이에요.' },
+      office: { title: '큰 사무실', hint: '큰 창의 사무실 지도예요.' },
+    },
+    pet: {
+      tally: '숫자 알약',
+      tallyHint:
+        '기다리는 동료, 확인할 결과, 일하는 중, 대기 중을 숫자로 세요. 끄면 한 줄 요약만 보여요.',
+      groups: '셀 항목 (모든 알약)',
+      groupsHint:
+        '숫자 알약이 셀 묶음이에요. 펫·줄·바닥·쪼꼬미 알약이 함께 쓰고, 펫 화살표도 이 동료들만 넘겨요.',
+      name: '이름표',
+      nameHint: '펫 아래 이름이 보이는 때예요.',
+      names: { speaking: '말할 때', always: '항상', never: '안 보임' },
+      turnEffect: '넘김 효과',
+      turnEffectHint: '다른 동료로 넘길 때 미끄러지며 퐁 하고 바뀌어요.',
+      petting: '쓰다듬기',
+      pettingHint: '펫을 문지르면 좋아해요. 끄면 손 모양 커서도 사라져요.',
+    },
+    desk: {
+      branch: '브랜치 이름표',
+      branchHint: '책상 아래에 git 브랜치를 붙여요.',
+      tally: '숫자 알약',
+      tallyHint:
+        '펫처럼 묶음별로 색 점과 숫자를 보여요. 숫자에 마우스를 올리면 누구인지 나와요. 끄면 "N명 · 기다려요 N" 요약이에요. 셀 항목은 데스크 펫의 자세히에서 골라요.',
+      tinyTallyHint:
+        '펫처럼 묶음별로 색 점과 숫자를 작게 보여요. 숫자에 마우스를 올리면 누구인지 나와요. 끄면 인원 숫자만 보여요.',
+      hideRead: '읽은 답변 말풍선 접기',
+      hideReadHint: '읽은 최종 응답은 말풍선을 내려요. 마우스를 올리면 다시 보여요.',
+      papers: '서류 더미',
+      papersHint: '일이 쌓이면 책상에 서류가 쌓여요.',
+      beacon: '작업 중 표시',
+      beaconHint: '일하는 책상 위에 불이 들어와요.',
+      focus: '집중 효과',
+      focusHint: '오래 몰두하면 불꽃과 열기가 피어올라요.',
+      effects: '책상 효과',
+      effectsHint: '쪼꼬미 책상에도 집중 효과와 서류 더미를 그려요.',
+      cardOutputs: '업무 카드의 산출물',
+      cardOutputsHint: '업무 카드에 산출물 탭을 두고 이 동료가 새로 만든 문서·페이지를 보여요.',
+      chatOutputs: '대화 속 산출물',
+      chatOutputsHint:
+        '대화에서 파일을 만든 메시지 아래에 작은 칩을 둬요. 누르면 미리보기나 기본 앱으로 열려요.',
+    },
+  },
   reading: {
     title: '읽음 처리',
+    restorePinned: '고정한 카드 다시 열기',
+    restorePinnedHint:
+      '앱을 다시 켜면 고정해 둔 업무 카드가 있던 자리에 다시 떠요. 대기 라운지·보관으로 간 동료도 열리고, 기록이 사라진 동료는 건너뛰어요.',
     readOnOpen: '카드를 열면 최종 응답 읽음 처리',
     readOnOpenHint:
-      '동료의 업무 카드를 열어 두면 그 동료의 최종 응답을 읽음으로 바꿔요. 끄면 직접 읽음 처리할 때까지 안 읽음으로 남아요.',
+      '동료의 업무 카드를 열어 두면 그 동료의 최종 응답을 읽음으로 바꿔요. 끄면 직접 읽음 처리하거나 말을 걸거나 터미널로 갈 때까지 안 읽음으로 남아요.',
     dwell: '읽음 처리까지 머무는 시간',
     dwellAria: '카드를 열고 읽음 처리까지 기다릴 시간',
     now: '바로',
@@ -100,7 +197,7 @@ export const settings: Messages['settings'] = {
     title: '글자',
     size: '글자 크기',
     sizeHint:
-      '업무 카드(대화·소식·작업 정보), 말풍선, 명단·소식함, 기억 서랍·책갈피, 명령 팔레트, 설정 화면의 글자예요. 탭 이름, 책상·쪼꼬미 장면과 이름표, 독 창 크기는 그대로이고, 독의 말풍선은 창 높이에 맞춰 크게까지만 커져요.',
+      '업무 카드(대화·작업 정보·메모), 말풍선, 명단, 기억 서랍·책갈피, 명령 팔레트, 설정 화면의 글자예요. 탭 이름, 책상·쪼꼬미 장면과 이름표, 독 창 크기는 그대로이고, 독의 말풍선은 창 높이에 맞춰 크게까지만 커져요.',
     sizes: { small: '작게', normal: '보통', large: '크게', larger: '더 크게' },
     font: '글꼴',
     fontHint:
@@ -108,6 +205,17 @@ export const settings: Messages['settings'] = {
     fonts: { system: '시스템 기본', pretendard: 'Pretendard', mono: '고정폭' },
     preview: '미리 보기',
     previewText: '끝났어요. 로그인 흐름의 테스트 3개를 고쳤고 npm test가 통과해요.',
+  },
+  glass: {
+    title: '창 유리',
+    level: '투명도',
+    hint: '업무 카드 팝업과 큰 사무실의 왼쪽 메뉴·오른쪽 칸을 반투명 유리처럼 보이게 해요. 높을수록 뒤의 흐린 화면이 더 비쳐요.',
+    platformHint:
+      '맥의 흐림 유리 재질 위에 색을 덜 칠하고 가장자리에 빛을 더해요. 윈도우는 흐림 재질이 없어 지금 모습 그대로예요.',
+    value: (n: number) => `${n}%`,
+    off: '기본',
+    reset: '기본 모습으로',
+    resetHint: '설정하기 전의 모습으로 돌아가요.',
   },
   panels: {
     title: '패널 폭',
@@ -118,7 +226,7 @@ export const settings: Messages['settings'] = {
   terminalTitle: '터미널과 답하기',
   tmuxSkip: '권한 확인 없이 터미널에 띄우기',
   tmuxSkipHint:
-    'tmux로 재개·소환하거나 Orca 새 탭에서 재개할 때 Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
+    '세션 시작 창에서 새 세션·이어가기·복제를 띄울 때(Orca·tmux·터미널 앱·명령 복사) Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',
   notifications: {
     title: '알림',
     finals: '최종 응답',

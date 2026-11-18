@@ -1,4 +1,48 @@
 export const settings = {
+  appHealth: {
+    title: 'App & permissions',
+    loading: 'Checking this installation…',
+    failed: 'Could not read this installation.',
+    retry: 'Check again',
+    signatures: {
+      'developer-id': 'Developer ID signature verified',
+      'ad-hoc': 'Temporary preview build',
+      unverified: 'Signature could not be verified',
+      development: 'Development app',
+      unavailable: 'Signature check unavailable',
+    },
+    signedHint:
+      'Updates must keep the same developer identity. A new computer still needs its own permission approvals.',
+    previewHint:
+      'For everyday use, install a verified release. Replacing it with a temporary build can ask for permissions again.',
+    build: 'Build',
+    platform: 'System',
+    team: 'Developer team',
+    unknown: 'Not recorded',
+    copy: 'Copy app information',
+    copied: 'Copied',
+    copyFailed: 'Could not copy app information.',
+    safeCopy:
+      'Includes only version, build and signature information. No conversations, file paths or credentials.',
+    permissions: 'Access only what you use',
+    permissionHint:
+      'macOS grants each permission separately. Signing does not enable permissions for you.',
+    open: 'Open settings',
+    openFailed: 'Open System Settings → Privacy & Security to review permissions.',
+    panes: {
+      files: {
+        title: 'Files and folders',
+        hint: 'Read session records in protected folders or on external drives.',
+      },
+      network: { title: 'Local network', hint: 'Connect to an Office on another computer.' },
+      accessibility: {
+        title: 'Accessibility',
+        hint: 'Control a supported terminal when sending or switching to it. Not needed just to read sessions.',
+      },
+    },
+    restartHint:
+      'If macOS asks you to restart after a change, quit and reopen Agent Office. For repeated prompts, compare the build and developer identity before resetting permissions.',
+  },
   windowsSupport:
     'Windows preview: session browsing, search, notes and desk pets are available. Local terminal focus, sending and prompt answers are not supported yet. A remote office has its own host capabilities and permissions.',
   title: 'Connections & Settings',
@@ -75,12 +119,68 @@ export const settings = {
     pillResetDone: 'The dock pill went back to the right end.',
     resetButton: 'Reset',
   },
+  /** What each screen shows (#324): one card per mode, the rest under 'More'. */
+  views: {
+    title: 'What each screen shows',
+    hint: 'Pick what each look draws. Left alone it stays as it is; open More for the finer details.',
+    more: 'More',
+    preview: (mode: string) => `${mode} preview`,
+    demo: 'Shown with sample teammates until yours arrive.',
+    modes: {
+      pet: { title: 'Desk pet', hint: 'The small pet of the folded dock.' },
+      dock: { title: 'Office row & floor', hint: 'The desks along the bottom of the screen.' },
+      tiny: { title: 'Tiny', hint: 'The row and floor at helper-desk size.' },
+      office: { title: 'Big office', hint: 'The office map of the main window.' },
+    },
+    pet: {
+      tally: 'Numbers pill',
+      tallyHint: 'Counts who waits, has results, works or stands by. Off, one short summary.',
+      groups: 'What it counts (every pill)',
+      groupsHint:
+        'The groups the numbers pills count, shared by the pet, row, floor and tiny pills. The pet arrows step through these teammates only.',
+      name: 'Name tag',
+      nameHint: 'When the name shows under the pet.',
+      names: { speaking: 'When speaking', always: 'Always', never: 'Never' },
+      turnEffect: 'Turn effect',
+      turnEffectHint: 'A slide and a puff when the pet turns to someone else.',
+      petting: 'Petting',
+      pettingHint: 'Rub the pet to make it happy. Off, the hand cursor goes too.',
+    },
+    desk: {
+      branch: 'Branch tags',
+      branchHint: 'The git branch under each desk.',
+      tally: 'Numbers pill',
+      tallyHint:
+        'A coloured dot and a number per group, like the pet; hover a number to see who. Off, the "N teammates · N waiting" summary. Pick the groups under the desk pet\'s More.',
+      tinyTallyHint:
+        "The pet's coloured numbers, small; hover a number to see who. Off, just the headcount.",
+      hideRead: 'Fold read replies',
+      hideReadHint: 'A final reply you read leaves its bubble; hovering brings it back.',
+      papers: 'Paper piles',
+      papersHint: 'Papers stack up on a busy desk.',
+      beacon: 'Working light',
+      beaconHint: 'A light over each desk at work.',
+      focus: 'Focus effects',
+      focusHint: 'Sparks and heat around a teammate deep in work.',
+      effects: 'Desk effects',
+      effectsHint: 'Focus effects and paper piles on tiny desks too.',
+      cardOutputs: 'Outputs on the work card',
+      cardOutputsHint:
+        'The work card gets an Outputs tab listing the documents and pages this teammate created.',
+      chatOutputs: 'Outputs in the chat',
+      chatOutputsHint:
+        'A small chip under the message that made a file. Click to preview it or open it in its app.',
+    },
+  },
   /** Reading final replies by opening a card (#228). */
   reading: {
     title: 'Read on open',
+    restorePinned: 'Reopen pinned cards',
+    restorePinnedHint:
+      'When the app starts again, the work cards you pinned open where they were. Colleagues moved to the lounge or the archive open too; ones whose records are gone are skipped.',
     readOnOpen: 'Opening a card marks replies read',
     readOnOpenHint:
-      "A teammate's work card you keep open marks its final replies read. Off, they stay unread until you mark them.",
+      "A teammate's work card you keep open marks its final replies read. Off, they stay unread until you mark them, message the teammate or jump to its terminal.",
     dwell: 'Wait before marking read',
     dwellAria: 'Time a card stays open before marking read',
     now: 'Right away',
@@ -105,7 +205,7 @@ export const settings = {
     title: 'Text',
     size: 'Text size',
     sizeHint:
-      'Work cards (conversation, news, info), speech bubbles, the roster and inbox, the memory drawer and bookmarks, the command palette and settings. Tab names, desks, tiny desks, name plates and the dock window keep their size; dock bubbles grow up to Large to fit the window.',
+      'Work cards (conversation, info, notes), speech bubbles, the roster, the memory drawer and bookmarks, the command palette and settings. Tab names, desks, tiny desks, name plates and the dock window keep their size; dock bubbles grow up to Large to fit the window.',
     sizes: { small: 'Small', normal: 'Normal', large: 'Large', larger: 'Larger' },
     font: 'Font',
     fontHint:
@@ -113,6 +213,17 @@ export const settings = {
     fonts: { system: 'System default', pretendard: 'Pretendard', mono: 'Monospace' },
     preview: 'Preview',
     previewText: 'Done. I fixed 3 tests in the login flow — npm test passes.',
+  },
+  glass: {
+    title: 'Window glass',
+    level: 'See-through',
+    hint: "Turns the work card popup and the big office's left menu and right column into frosted glass. Higher lets more of the blurred background through.",
+    platformHint:
+      "Lays less colour over the Mac's blurring glass material and adds a light rim. Windows has no blurring material, so it keeps its look.",
+    value: (n: number) => `${n}%`,
+    off: 'Default',
+    reset: 'Back to default',
+    resetHint: 'Returns to the look from before.',
   },
   panels: {
     title: 'Panel widths',
@@ -123,7 +234,7 @@ export const settings = {
   terminalTitle: 'Terminal and answers',
   tmuxSkip: 'Start terminals without permission prompts',
   tmuxSkipHint:
-    'Resuming or summoning in tmux, or resuming in a new Orca tab, runs Claude Code with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox (--yolo). Commands and file edits run without asking, so turn this on only for projects you trust. A terminal already running picks it up on its next start.',
+    'Starting a new session, continuing or forking one from the Start a session sheet (Orca, tmux, Terminal or a copied command) runs Claude Code with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox (--yolo). Commands and file edits run without asking, so turn this on only for projects you trust. A terminal already running picks it up on its next start.',
   /** Desktop only (#229). */
   notifications: {
     title: 'Notifications',
