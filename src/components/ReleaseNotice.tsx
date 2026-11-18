@@ -5,10 +5,12 @@ import { useI18n } from '../lib/i18n';
 
 const dismissed = 'office:dismissed-release';
 
-export function ReleaseNotice() {
+/** `enabled`: Settings › General › Updates. Off asks nothing and hides a notice already shown. */
+export function ReleaseNotice({ enabled }: { enabled: boolean }) {
   const { t } = useI18n();
   const [release, setRelease] = useState<{ version: string; url: string } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     void api
       .startupRelease?.()
@@ -25,8 +27,8 @@ export function ReleaseNotice() {
     return () => {
       active = false;
     };
-  }, []);
-  if (!release) return null;
+  }, [enabled]);
+  if (!enabled || !release) return null;
   return (
     <div className="release-banner" role="status">
       <Download size={15} aria-hidden="true" />

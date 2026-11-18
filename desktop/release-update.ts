@@ -1,5 +1,7 @@
 import { gt, prerelease, valid } from 'semver';
 import { z } from 'zod';
+import { wantsReleaseCheck } from '../src/shared/release-check.js';
+import type { Preferences } from '../src/shared/types.js';
 
 const repository = 'kys42/agent-office';
 const release = z.object({
@@ -8,8 +10,18 @@ const release = z.object({
   tag_name: z.string().max(128),
 });
 
-/** One anonymous request per app launch, shared by renderer reloads. No office data leaves the app. */
-export function startupRelease(current: string, request: typeof fetch = fetch) {
+type ReleasePrefs = Pick<Preferences, 'startupUpdateCheck'> | null | undefined;
+
+/**
+ * One anonymous request per app launch, shared by renderer reloads. No office data leaves the app.
+ * `preferences` is read on every ask: with the setting off (or not known yet) nothing is fetched,
+ * and a later ask after it is turned on may still check once.
+ */
+export function startupRelease(
+  current: string,
+  preferences: () => ReleasePrefs | Promise<ReleasePrefs>,
+  request: typeof fetch = fetch,
+) {
   let pending: Promise<{ version: string; url: string } | null> | undefined;
   async function check() {
     if (!valid(current)) return null;
@@ -34,5 +46,13 @@ export function startupRelease(current: string, request: typeof fetch = fetch) {
       return null; // Offline, rate limited, or invalid response: keep the office usable.
     }
   }
-  return () => (pending ??= check());
+  return async () => {
+    let wanted = false;
+    try {
+      wanted = wantsReleaseCheck(await preferences());
+    } catch {
+      /* Preferences unreadable: stay off the network. */
+    }
+    return wanted ? (pending ??= check()) : null;
+  };
 }

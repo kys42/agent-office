@@ -191,6 +191,7 @@ const prefsSchema = z
     helperRetainMinutes: z.number().int().min(5).max(240).optional(),
     tmuxSkipPermissions: z.boolean().optional(),
     restorePinnedCards: z.boolean().optional(),
+    startupUpdateCheck: z.boolean().optional(),
     launchDestination: z.enum(LAUNCH_DESTINATIONS).optional(),
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),

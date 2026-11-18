@@ -1118,7 +1118,12 @@ function setupIPC() {
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
     clipboard.writeText(text);
   });
-  const latestRelease = startupRelease(app.getVersion());
+  // Settings › General › Updates (default on). Off: no request leaves the app. Before the first
+  // pushed snapshot the collector is asked, so a launch never checks while the setting is off.
+  const latestRelease = startupRelease(
+    app.getVersion(),
+    async () => (delivery.latest ?? ((await bridge.call('snapshot')) as Snapshot))?.preferences,
+  );
   ipcMain.handle('office:startup-release', (e) => {
     trusted(e);
     if (e.sender !== main?.webContents || !app.isPackaged || quiet || recordNotifications)

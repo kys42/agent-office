@@ -155,7 +155,7 @@ open "release/Agent Office-darwin-arm64/Agent Office.app"
 
 `npm run package:dmg`로 설치용 DMG를 만들고 `npm run test:package`로 DMG에서 꺼낸 실제 앱을 검증합니다. Applications 바로가기와 설치 안내가 포함됩니다. [macOS DMG Preview](.github/workflows/macos-dmg.yml)는 수동 실행으로 arm64 / Intel 산출물을 만듭니다. 버전 태그는 자격증명이 설정된 [macOS Signed Release](.github/workflows/macos-signed.yml)에서 처리합니다. 절차와 배포 범위는 [배포 가이드](docs/development/MACOS-RELEASE.md)를 확인하세요.
 
-설치한 앱을 열면 GitHub의 새 정식 버전을 확인합니다. 사무실 상단의 **새 버전 보기**로 릴리스 페이지를 열거나 **이 버전 건너뛰기**로 해당 버전의 알림을 끌 수 있습니다. 설치 파일은 직접 받아 적용합니다.
+설치한 앱을 열면 GitHub의 새 정식 버전을 확인합니다. 사무실 상단의 **새 버전 보기**로 릴리스 페이지를 열거나 **이 버전 건너뛰기**로 해당 버전의 알림을 끌 수 있습니다. 설치 파일은 직접 받아 적용합니다. 확인 자체를 끄려면 **설정 › 일반 › 업데이트 › 시작할 때 새 버전 확인**을 끄세요. 꺼 두면 GitHub에 아무 요청도 보내지 않습니다.
 
 둘러보기만 하려면 수집기 없이 **합성 데모 데이터**로 UI만 실행하세요.
 
