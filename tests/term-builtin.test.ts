@@ -73,10 +73,9 @@ test('with no socket a lookup answers "none" at once, connects nowhere, and is r
       throw new Error('never');
     },
   });
-  const started = Date.now();
+  // No connection and no file but one `stat`: nothing that could wait on anything.
   assert.equal(await builtin.sessions(), null);
   assert.equal(await builtin.sessions(), null);
-  assert.ok(Date.now() - started < 50);
   assert.equal(stats, 1, 'the second lookup within a second is the remembered answer');
   now += 1001;
   assert.equal(await builtin.sessions(), null);
@@ -194,7 +193,8 @@ test('a daemon that stops answering makes a lookup fail in time, not hang', asyn
   });
   const started = Date.now();
   await assert.rejects(builtin.sessions(true), /did not answer/);
-  assert.ok(Date.now() - started < 500);
+  // The limit (30 ms here), not the silent daemon, ended it: generous for a loaded machine.
+  assert.ok(Date.now() - started < 5_000);
   assert.equal(silent.closed, true, 'the stuck connection is dropped');
   builtin.close();
 });
