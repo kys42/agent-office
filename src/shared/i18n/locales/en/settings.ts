@@ -232,6 +232,9 @@ export const settings = {
     resetDone: 'Panel widths are back to their defaults.',
   },
   terminalTitle: 'Terminal and answers',
+  builtinTerminal: 'Built-in terminal (experimental)',
+  builtinTerminalHint:
+    "Offers the app's own terminal when starting a session, without tmux or Orca. Conversations started there keep running when windows close, and replies from a card reach them like tmux. macOS and Linux.",
   tmuxSkip: 'Start terminals without permission prompts',
   tmuxSkipHint:
     'Starting a new session, continuing or forking one from the Start a session sheet (Orca, tmux, Terminal or a copied command) runs Claude Code with --dangerously-skip-permissions and Codex with --dangerously-bypass-approvals-and-sandbox (--yolo). Commands and file edits run without asking, so turn this on only for projects you trust. A terminal already running picks it up on its next start.',

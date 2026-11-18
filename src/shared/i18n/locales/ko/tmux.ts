@@ -80,7 +80,7 @@ export const tmux: Messages['tmux'] = {
   orcaReveal: 'Orca 열기',
   orcaNotWorkspace:
     '이 폴더는 이 Mac의 Orca 작업 공간 안에 있지 않아요. Orca에 프로젝트를 먼저 추가하거나 tmux로 띄워주세요.',
-  place: { orca: 'Orca', tmux: 'tmux', other: '다른 터미널' },
+  place: { orca: 'Orca', tmux: 'tmux', builtin: '내장 터미널', other: '다른 터미널' },
   hostPlace: {
     orca: 'Orca',
     terminal: '터미널(Terminal)',
@@ -92,6 +92,7 @@ export const tmux: Messages['tmux'] = {
     tmux: 'tmux',
     swarm: 'Claude 팀원 tmux',
     background: 'Claude 백그라운드 세션',
+    builtin: '내장 터미널',
     app: '다른 앱',
     unknown: '다른 터미널',
   },

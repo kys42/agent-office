@@ -24,6 +24,7 @@ export const launchSheet = {
   destinationHint: {
     orca: "A new tab in this project's Orca workspace",
     tmux: 'Kept by the app: keeps running when the window closes',
+    builtin: "The app's own terminal: keeps running when windows close · experimental",
     terminalApp: 'A new macOS Terminal window',
     copy: 'Copy the command and run it yourself',
   },

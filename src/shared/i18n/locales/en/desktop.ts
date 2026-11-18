@@ -142,6 +142,10 @@ export const desktop = {
     sentThenPrompt: (host: string) =>
       `Sent to ${host}, and a permission prompt opened right after. Check the terminal.`,
     tmuxSent: (label: string) => `Sent to tmux ${label}`,
+    builtinSent: (label: string) => `Sent to the built-in terminal ${label}`,
+    builtinUnreachable: "Couldn't reach the built-in terminal, so nothing was sent.",
+    builtinNoView:
+      "The built-in terminal's screen can't be shown here yet. The conversation runs in the app's own terminal.",
     /** Sent mid-turn: Claude queues it and picks it up as it goes. */
     queued: (target: string) =>
       `Sent to ${target} · it's working, so it's queued for the current turn`,

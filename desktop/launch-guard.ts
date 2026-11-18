@@ -43,7 +43,9 @@ export type Liveness = TerminalLookup<{
 }>;
 
 /** Where a verified terminal is, for the duplicate check (its tmux pane when in tmux). */
-const placeOfHost = (host: { kind: 'orca' } | { kind: 'tmux'; socket: string; pane: string }) =>
+const placeOfHost = (
+  host: { kind: 'orca' | 'builtin' } | { kind: 'tmux'; socket: string; pane: string },
+) =>
   host.kind === 'tmux'
     ? { where: host.kind, tmux: { socket: host.socket, pane: host.pane } }
     : { where: host.kind };

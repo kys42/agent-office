@@ -224,6 +224,9 @@ export const settings: Messages['settings'] = {
     resetDone: '패널 폭을 기본으로 되돌렸어요.',
   },
   terminalTitle: '터미널과 답하기',
+  builtinTerminal: '내장 터미널(실험)',
+  builtinTerminalHint:
+    '세션을 시작할 때 tmux·Orca 없이 앱 안의 터미널을 고를 수 있어요. 그곳에서 띄운 대화는 창을 닫아도 계속 실행되고, 카드에서 쓴 답장도 tmux처럼 그 터미널로 가요. macOS·Linux에서 써요.',
   tmuxSkip: '권한 확인 없이 터미널에 띄우기',
   tmuxSkipHint:
     '세션 시작 창에서 새 세션·이어가기·복제를 띄울 때(Orca·tmux·터미널 앱·명령 복사) Claude Code는 --dangerously-skip-permissions, Codex는 --dangerously-bypass-approvals-and-sandbox(--yolo)를 붙여 실행해요. 명령과 파일 수정을 묻지 않고 실행하니 믿는 프로젝트에서만 켜세요. 이미 떠 있는 터미널에는 다음 실행부터 적용돼요.',

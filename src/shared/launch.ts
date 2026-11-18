@@ -8,8 +8,11 @@ import type { DuplicateCheck, LaunchPlace, RunningHost } from './types';
  * conversation itself; a window never sends a path, a command or an executable.
  */
 
-/** Where a launch can go, in the order a launch sheet offers them. */
-export const LAUNCH_DESTINATIONS = ['orca', 'tmux', 'terminalApp', 'copy'] as const;
+/**
+ * Where a launch can go, in the order a launch sheet offers them. `builtin` (#401): the app's
+ * own terminal, offered only while its experimental setting is on.
+ */
+export const LAUNCH_DESTINATIONS = ['orca', 'tmux', 'builtin', 'terminalApp', 'copy'] as const;
 export type LaunchDestinationId = (typeof LAUNCH_DESTINATIONS)[number];
 export type LaunchKind = 'new' | 'resume' | 'fork';
 
@@ -125,6 +128,7 @@ export const runningPlaceName = (check: { where: LaunchPlace; host?: RunningHost
 export function pendingNotice(where: LaunchPlace, starting = false): string {
   if (starting) return m().launch.starting(m().tmux.place[where]);
   if (where === 'orca') return m().tmux.orcaUncertain;
+  if (where === 'builtin') return m().launch.builtinUncertain;
   return where === 'tmux' ? m().launch.tmuxUncertain : m().launch.terminalAppUncertain;
 }
 

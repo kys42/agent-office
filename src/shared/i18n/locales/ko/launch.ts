@@ -3,6 +3,7 @@ export const launch: Messages['launch'] = {
   destination: {
     orca: 'Orca',
     tmux: 'tmux',
+    builtin: '내장 터미널',
     terminalApp: '터미널 앱',
     copy: '명령 복사',
   },
@@ -44,4 +45,12 @@ export const launch: Messages['launch'] = {
     `방금 ${place}에서 띄웠어요. 아직 시작 중일 수 있으니 다시 띄우기 전에 그곳을 확인해주세요.`,
   copied: '명령을 복사했어요. 터미널에서 실행하세요.',
   copyUnsupported: '실행 명령 복사는 macOS·Linux에서만 지원해요.',
+  builtinOff: '설정에서 ‘내장 터미널(실험)’을 먼저 켜 주세요.',
+  builtinUnsupported: '내장 터미널은 macOS·Linux에서만 지원해요.',
+  builtinLaunched: '내장 터미널에서 시작했어요.',
+  builtinFailed: (reason) => `내장 터미널에서 시작하지 못했어요${reason ? `: ${reason}` : '.'}`,
+  builtinUncertain:
+    '내장 터미널이 제때 답하지 않아 시작을 확인하지 못했어요. 이미 실행 중일 수 있으니 다시 띄우기 전에 확인해주세요.',
+  builtinExited:
+    '시작하자마자 끝났어요. 로그인이나 폴더 신뢰 확인에서 멈췄을 수 있어요. 터미널에서 한 번 직접 실행해 마친 뒤 다시 시도해주세요.',
 };

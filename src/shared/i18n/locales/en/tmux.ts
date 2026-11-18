@@ -89,7 +89,12 @@ export const tmux = {
   orcaNotWorkspace:
     'This folder is not in an Orca workspace on this Mac. Add the project in Orca first, or start it in tmux.',
   /** The duplicate-launch check before resuming (tmux or a new Orca tab). */
-  place: { orca: 'Orca', tmux: 'tmux', other: 'another terminal' },
+  place: {
+    orca: 'Orca',
+    tmux: 'tmux',
+    builtin: 'the built-in terminal',
+    other: 'another terminal',
+  },
   /** The app a running conversation was found in when no tab of it was verified (#376). */
   hostPlace: {
     orca: 'Orca',
@@ -102,6 +107,7 @@ export const tmux = {
     tmux: 'tmux',
     swarm: 'a Claude teammate tmux',
     background: 'a Claude background session',
+    builtin: 'the built-in terminal',
     app: 'another app',
     unknown: 'another terminal',
   },

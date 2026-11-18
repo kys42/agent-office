@@ -155,12 +155,18 @@ export class LaunchCore {
     if (!destination) throw new Error(m().launch.agentUnsupported);
     return destination;
   }
+  /** The destinations offered now (`Destination.offered`), in the sheet's order. */
+  private offered() {
+    return LAUNCH_DESTINATIONS.filter((id) => {
+      const d = this.deps.destinations[id];
+      return !!d && (d.offered?.() ?? true);
+    });
+  }
   /** What `platform` can ever do: whether any destination works there, and which open. */
   support(platform: string = process.platform): LaunchSupport {
-    const ids = LAUNCH_DESTINATIONS.filter((id) => {
-      const d = this.deps.destinations[id];
-      return !!d && (d.supports?.(platform) ?? true);
-    });
+    const ids = this.offered().filter(
+      (id) => this.deps.destinations[id]!.supports?.(platform) ?? true,
+    );
     return {
       supported: ids.length > 0,
       opens: ids.filter((id) => this.deps.destinations[id]!.opens?.(platform) ?? false),
@@ -180,7 +186,7 @@ export class LaunchCore {
   }
   /** Every destination probed, the duplicate state, and which one to offer first. */
   async options(target: LaunchTarget): Promise<LaunchOptions> {
-    const ids = LAUNCH_DESTINATIONS.filter((id) => this.deps.destinations[id]);
+    const ids = this.offered();
     // A fork defaults to where its original is now (its check, as if resuming it).
     const original =
       target.kind === 'fork' ? this.deps.conversationCheck?.({ ...target, kind: 'resume' }) : null;

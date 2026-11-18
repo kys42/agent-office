@@ -373,3 +373,35 @@ test('the browser preview has no notification settings', async ({ page }) => {
   await expect(page.getByLabel('언어')).toBeVisible();
   await expect(page.locator('[data-guide-section="notifications"]')).toHaveCount(0);
 });
+
+test('the built-in terminal (experimental) is off by default and saves as a preference', async ({
+  page,
+}) => {
+  await desktop(page);
+  await page.goto('/?lang=ko');
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  const row = page.locator('[data-setting="builtin-terminal"]');
+  await expect(row.getByText('내장 터미널(실험)', { exact: true })).toBeVisible();
+  await expect(row.getByText('tmux·Orca 없이 앱 안의 터미널', { exact: false })).toBeVisible();
+  const toggle = row.getByRole('switch', { name: '내장 터미널(실험)' });
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
+  await expect(toggle).toBeChecked();
+  expect(await page.evaluate(() => (window as any).saved)).toContainEqual({
+    builtinTerminal: true,
+  });
+  await page.screenshot({ path: '.local/builtin-terminal-setting.png', animations: 'disabled' });
+});
+
+test('Windows has no built-in terminal setting yet', async ({ page }) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'userAgent', {
+      get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140',
+    }),
+  );
+  await desktop(page);
+  await page.goto('/?lang=ko');
+  await page.getByRole('button', { name: '연결과 설정', exact: true }).click();
+  await expect(page.getByText('터미널로 보내기', { exact: true }).first()).toBeVisible();
+  await expect(page.locator('[data-setting="builtin-terminal"]')).toHaveCount(0);
+});

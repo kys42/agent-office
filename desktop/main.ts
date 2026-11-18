@@ -1,9 +1,10 @@
 import { launchSpecSchema, type RemoteLaunchInfo } from '../src/shared/remote-launch.js';
 import { readAppHealth } from './app-health.js';
 import { privacyPane } from '../src/shared/app-health.js';
-import { TmuxResume, defaultResumeDeps } from './tmux-resume.js';
+import { TmuxResume, cliVersion, defaultResumeDeps } from './tmux-resume.js';
 import { LaunchCore, launchResult, type LaunchTarget } from './launch/core.js';
 import {
+  builtinDestination,
   copyDestination,
   orcaDestination,
   terminalAppDestination,
@@ -120,11 +121,13 @@ import {
   type Point,
   type Rect,
 } from '../src/shared/dock-geometry.js';
+import { TermBuiltin } from './term-builtin.js';
 import {
   defaultTerminalDeps,
   focusTerminal,
   forgetTerminal,
   hostName,
+  useBuiltinTerminals,
   claudeAttachCommand,
   claudeNoTerminalReason,
   locateTerminal,
@@ -1347,11 +1350,30 @@ function setupIPC() {
     binary: defaultResumeDeps.binary,
     copy: (text: string) => clipboard.writeText(text),
   };
+  /**
+   * The built-in terminal (#401, docs/development/TERM-HOST.md): a launch here starts its daemon;
+   * every lookup (who runs where, a reply's screen and keys) only connects to one that runs, so
+   * sessions started before stay recognised with the setting off.
+   */
+  const builtinTerminals = new TermBuiltin({
+    dataDir: process.env.AGENT_OFFICE_DATA_DIR ?? app.getPath('userData'),
+  });
+  useBuiltinTerminals(builtinTerminals);
+  // Its sessions keep running in the daemon: only this app's connection ends.
+  app.on('before-quit', () => builtinTerminals.close());
   /** Every launch of this app (#318): one core, one queue, one pending record. */
   const launchCore = new LaunchCore({
     destinations: {
       orca: orcaDestination(orcaLaunch),
       tmux: tmuxDestination(tmuxResume),
+      builtin: builtinDestination({
+        platform: process.platform,
+        enabled: () => delivery.latest?.preferences?.builtinTerminal === true,
+        terminals: builtinTerminals,
+        binary: defaultResumeDeps.binary,
+        version: cliVersion,
+        directory: defaultResumeDeps.directory,
+      }),
       terminalApp: terminalAppDestination(shellDeps),
       copy: copyDestination(shellDeps),
     },

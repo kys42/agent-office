@@ -28,6 +28,7 @@ import { OrcaLaunch, shellCommand } from '../desktop/orca-launch.js';
 import { TmuxResume, type ResumeDeps } from '../desktop/tmux-resume.js';
 import { holdsFolder, matchOrcaTab } from '../desktop/orca-tabs.js';
 import { orcaSwitchFailure } from '../desktop/terminal-host.js';
+import type { LaunchDestinationId } from '../src/shared/launch.js';
 import { launchIntentSchema, launchRequestSchema } from '../src/shared/launch.js';
 import { m } from '../src/shared/i18n/index.js';
 import type { DuplicateCheck, Session } from '../src/shared/types.js';
@@ -323,7 +324,7 @@ test('the default: a fork where its original runs, else the last choice, else Or
 });
 
 test('options probe every destination; the choice is remembered only for a launch that went ahead', async () => {
-  let remembered: 'orca' | 'tmux' | 'terminalApp' | 'copy' | undefined = 'tmux';
+  let remembered: LaunchDestinationId | undefined = 'tmux';
   const calls: string[] = [];
   const c = core(
     {
