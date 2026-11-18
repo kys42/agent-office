@@ -345,7 +345,7 @@
   border-radius: 50%;
 }
 .session-meta {
-  font-size: calc(11px * var(--read-scale));
+  font-size: calc(12px * var(--read-scale));
   color: var(--text-3);
   overflow: hidden;
   white-space: nowrap;
@@ -368,7 +368,7 @@
 }
 .session-copy small {
   margin-top: 4px;
-  font-size: calc(10.5px * var(--read-scale));
+  font-size: calc(12px * var(--read-scale));
   font-weight: 560;
 }
 
@@ -834,8 +834,8 @@
 }
 .message-meta time {
   font-family: var(--font-read-num);
-  font-size: calc(10px * var(--read-scale));
-  color: var(--text-4);
+  font-size: calc(12px * var(--read-scale));
+  color: var(--text-3);
 }
 .message-user .message-meta {
   flex-direction: row-reverse;
