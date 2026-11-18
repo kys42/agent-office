@@ -44,8 +44,17 @@ export function Modal({
       }
     };
     el.addEventListener('keydown', key);
+    // A focused control that turns disabled or goes away drops focus to the page, sometimes
+    // after any effect could hand it back: Escape there still closes the dialog on screen.
+    const stray = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      close.current();
+    };
+    document.addEventListener('keydown', stray);
     return () => {
       el.removeEventListener('keydown', key);
+      document.removeEventListener('keydown', stray);
       previous?.focus();
     };
   }, []);

@@ -98,12 +98,7 @@ try {
   await dock.waitForFunction(() => !!window.office);
   const open = (id) =>
     dock.evaluate(
-      (id) =>
-        window.office.card(
-          'open',
-          { id, news: false },
-          { x: 1000, y: 700, width: 120, height: 60 },
-        ),
+      (id) => window.office.card('open', { id }, { x: 1000, y: 700, width: 120, height: 60 }),
       id,
     );
   const newCard = async (id) => {
@@ -141,18 +136,14 @@ try {
   await a.locator('.inspector-card').waitFor();
   assert.deepEqual(await bounds(a), remembered, 'another anchor does not move a remembered popup');
   await a.locator('.card-composer textarea').fill('A의 미전송 글');
-  await a.getByRole('button', { name: '이 카드 고정', exact: true }).click();
-  await expect(a.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await a.locator('.card-head .card-pin').click();
+  await expect(a.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'true');
+  // Pinned means kept open, not kept on top: other windows may cover it.
+  assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'a pinned card is ordinary');
   const titleA = await a.locator('.card-head h2').textContent();
   const b = await newCard('claude:claude-test');
-  await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();
-  await expect(b.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  await b.locator('.card-head .card-pin').click();
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'true');
   await b.locator('.card-composer textarea').fill('B의 미전송 글');
   assert.deepEqual(await bounds(a), remembered, 'pinning never repositions an existing card');
   assert.notDeepEqual(await bounds(b), remembered, 'new popup leaves the pinned header reachable');
@@ -181,7 +172,6 @@ try {
     (bookmark) =>
       window.office.card('select', {
         id: bookmark.sessionId,
-        news: false,
         bookmark: { eventId: bookmark.eventId, at: bookmark.at },
       }),
     bookmark,
@@ -201,7 +191,6 @@ try {
     b.evaluate(() =>
       window.office.card('select', {
         id: 'codex:codex-test',
-        news: false,
         bookmark: { eventId: 'x'.repeat(1001), at: 1 },
       }),
     ),
@@ -212,14 +201,14 @@ try {
   );
   assert.ok(clawId);
   const c = await newCard(clawId);
-  await b.evaluate((id) => window.office.card('select', { id, news: false }), clawId);
+  await b.evaluate((id) => window.office.card('select', { id }), clawId);
   await expect
     .poll(() => b.evaluate(async () => (await window.office.cardState()).target.id))
     .toBe(clawId);
   await expect.poll(() => visible(c)).toBe(false);
   await assert.rejects(() => c.evaluate(() => window.office.card('pin-on')));
   assert.equal((await b.evaluate(() => window.office.cardState())).pinned, true);
-  await b.evaluate(() => window.office.card('select', { id: 'claude:claude-test', news: false }));
+  await b.evaluate(() => window.office.card('select', { id: 'claude:claude-test' }));
   await open(clawId);
   await c.locator('.inspector-card').waitFor();
   await c.bringToFront();
@@ -229,15 +218,31 @@ try {
   assert.equal(await visible(a), true);
   assert.equal(await visible(b), true, 'blur closes only the ordinary preview');
   await assert.rejects(() => main.evaluate(() => window.office.card('pin-on')));
+  await assert.rejects(() => main.evaluate(() => window.office.card('pin-top')));
   await b.bringToFront();
-  await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();
-  await expect(b.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
+  const bw = await app.browserWindow(b);
+  // The pin's next state: pinned on top. Still kept open, now above other windows.
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'pinned');
+  await b.locator('.card-head .card-pin').click();
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'top');
+  await expect(b.locator('.card-head .card-pin')).toHaveAccessibleName(
+    '이 카드 고정: 맨 위 고정 → 고정 안 함',
   );
+  assert.equal(await bw.evaluate((w) => w.isAlwaysOnTop()), true, 'pinned on top floats');
+  assert.equal(await visible(c), false, 'pinning on top leaves the hidden preview alone');
+  await aw.evaluate((w) => w.focus());
+  await b.waitForTimeout(700);
+  assert.equal(await visible(b), true, 'a card pinned on top stays when focus leaves');
+  assert.equal(await aw.evaluate((w) => w.isAlwaysOnTop()), false, 'other pins stay ordinary');
+  await b.bringToFront();
+  // …and the cycle's last step returns it to the preview.
+  await b.locator('.card-head .card-pin').click();
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'false');
+  await expect(b.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'off');
+  assert.equal(await bw.evaluate((w) => w.isAlwaysOnTop()), true, 'the preview floats again');
   await expect.poll(() => c.isClosed()).toBe(true);
   await expect(b.locator('.card-composer textarea')).toHaveValue('B의 미전송 글');
-  await b.getByRole('button', { name: '이 카드 고정', exact: true }).click();
+  await b.locator('.card-head .card-pin').click();
   await a.bringToFront();
   await a.getByRole('button', { name: '업무 카드 닫기', exact: true }).click();
   await expect.poll(() => a.isClosed()).toBe(true);
@@ -255,11 +260,20 @@ try {
   await reopened.keyboard.press('Escape');
   await reopened.screenshot({ path: '.local/popup-position-and-pin.png' });
   await b.screenshot({ path: '.local/popup-pinned-colleague.png' });
+  // B is still pinned as the app quits: it comes back where it was.
+  const pinnedAt = await bounds(b);
   await app.close();
   app = await launch();
   const restarted = await app.firstWindow();
   await restarted.waitForFunction(() => !!window.office);
-  assert.equal(cardsCount(), 0, 'pinned windows are not automatically reopened on app restart');
+  await expect.poll(() => cardsCount(), { timeout: 15_000 }).toBe(1);
+  const back = app.windows().find((p) => p.url().endsWith('#card'));
+  await back.locator('.inspector-card').waitFor();
+  assert.deepEqual(await bounds(back), pinnedAt, 'a pinned card reopens where it was');
+  await expect(back.locator('.card-head .card-pin')).toHaveAttribute('data-pin', 'pinned');
+  // Closed by the person, it stays closed on the next start.
+  await back.evaluate(() => window.office.card('close')).catch(() => {});
+  await expect.poll(() => back.isClosed()).toBe(true);
   const [dock2] = await Promise.all([
     app.waitForEvent('window'),
     restarted.evaluate(() => window.office.window('mini')),
@@ -270,7 +284,7 @@ try {
     dock2.evaluate(() =>
       window.office.card(
         'open',
-        { id: 'codex:codex-test', news: false },
+        { id: 'codex:codex-test' },
         { x: 1100, y: 800, width: 100, height: 50 },
       ),
     ),
@@ -285,16 +299,13 @@ try {
     'aria-pressed',
     'true',
   );
-  await expect(restored.getByRole('button', { name: '이 카드 고정', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
+  await expect(restored.locator('.card-head .card-pin')).toHaveAttribute('aria-pressed', 'false');
   await restored.getByRole('button', { name: '위치 기억', exact: true }).click();
   await restored.evaluate(() => window.office.card('close'));
   await dock2.evaluate(() =>
     window.office.card(
       'open',
-      { id: 'claude:claude-test', news: false },
+      { id: 'claude:claude-test' },
       { x: 1100, y: 800, width: 100, height: 50 },
     ),
   );
@@ -309,6 +320,7 @@ try {
       blurIsolation: true,
       draftIsolation: true,
       positionRestart: true,
+      pinnedRestore: true,
       positionOff: true,
       ipcIsolation: true,
       bookmarkFocus: true,

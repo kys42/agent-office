@@ -62,9 +62,12 @@ test('two matching tabs are ambiguous: no fallback', () => {
   assert.equal(matchOrcaTab([], claude), null);
 });
 
-test('another folder, a subfolder or a remote host never matches', () => {
+test('another folder, a worktree inside the session folder or a remote host never matches', () => {
   assert.equal(matchOrcaTab([row({ worktreePath: '/projects/other' })], claude), null);
-  assert.equal(matchOrcaTab([row({ worktreePath: '/projects' })], claude), null);
+  // A tab deeper than the conversation's folder cannot be where it runs; a name that only
+  // starts the same is another folder.
+  assert.equal(matchOrcaTab([row({ worktreePath: '/projects/office/web' })], claude), null);
+  assert.equal(matchOrcaTab([row({ worktreePath: '/projects/off' })], claude), null);
   assert.equal(matchOrcaTab([row({ worktreePath: 'projects/office' })], claude), null);
   assert.equal(matchOrcaTab([row({ executionHostId: 'ssh-box' })], claude), null);
   assert.equal(matchOrcaTab([row()], { ...claude, cwd: null }), null);
@@ -128,7 +131,7 @@ test('the lookup lists Orca once per 5 s (shared cache) and only reads', async (
   };
   assert.ok(await findOrcaTab(claude, deps));
   assert.ok(await findOrcaTab(claude, deps));
-  assert.deepEqual(calls, [['terminal', 'list', '--json']]);
+  assert.deepEqual(calls, [['terminal', 'list', '--limit=10000', '--json']]);
   assert.ok(await findOrcaTab(claude, deps, true));
   assert.equal(calls.length, 2);
   assert.equal(await findOrcaTab({ ...claude, provider: 'openclaw' }, deps), null);

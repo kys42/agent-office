@@ -366,6 +366,69 @@ test('OpenClaw SQLite reads only session tables, caches updates and namespaces a
     await rm(dir, { recursive: true });
   }
 });
+test('OpenClaw skips non-object SQLite events without losing the surrounding conversation', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'office-claw-null-'));
+  let db: DatabaseSync | undefined;
+  try {
+    const agent = path.join(dir, 'butler', 'agent');
+    await mkdir(agent, { recursive: true });
+    db = new DatabaseSync(path.join(agent, 'openclaw-agent.sqlite'));
+    db.exec(
+      'CREATE TABLE session_nodes(current_session_id TEXT,entry_json TEXT,updated_at INTEGER,status TEXT,label TEXT,display_name TEXT,parent_session_key TEXT,archived_at INTEGER);CREATE TABLE transcript_events(session_id TEXT,seq INTEGER,event_json TEXT)',
+    );
+    db.prepare('INSERT INTO session_nodes VALUES (?,?,?,?,?,?,?,?)').run(
+      's1',
+      '{}',
+      now,
+      'done',
+      'Recovered conversation',
+      null,
+      null,
+      null,
+    );
+    const event = (role: string, text: string) =>
+      JSON.stringify({
+        type: 'message',
+        id: role,
+        timestamp: now,
+        message: { role, content: [{ type: 'text', text }], stopReason: 'stop' },
+      });
+    const rows = [
+      event('user', 'Keep my request'),
+      'null',
+      '[]',
+      '"scalar"',
+      '42',
+      'true',
+      '{broken',
+      event('assistant', 'Keep my reply'),
+    ];
+    const insert = db.prepare('INSERT INTO transcript_events VALUES (?,?,?)');
+    rows.forEach((row, i) => insert.run('s1', i + 1, row));
+    const cache = new Map();
+    const result = await readOpenClawDatabases(dir, 10, cache);
+    assert.equal(result.errors, 0);
+    assert.equal(result.sessions.length, 1);
+    assert.equal(result.sessions[0].nativeId, 's1');
+    assert.equal(result.sessions[0].partial, true);
+    assert.deepEqual(
+      result.sessions[0].events.map((e) => e.text),
+      ['Keep my request', 'Keep my reply'],
+    );
+    assert.equal((await readOpenClawDatabases(dir, 10, cache)).sessions[0], result.sessions[0]);
+    assert.deepEqual(
+      db
+        .prepare('SELECT event_json FROM transcript_events ORDER BY seq')
+        .all()
+        .map((r) => r.event_json),
+      rows,
+      'read-only recovery preserves every original row',
+    );
+  } finally {
+    db?.close();
+    await rm(dir, { recursive: true });
+  }
+});
 test('OpenClaw isolates damaged metadata and invalidates rewritten transcripts at the same sequence', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'office-rewrite-'));
   try {

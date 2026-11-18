@@ -114,7 +114,7 @@ const WIDE =
 /** Cells a stretch of text takes in the terminal. */
 const ZERO = /^[\p{M}\u200b-\u200f\u2060\ufe00-\ufe0f]$/u;
 /** Cells a stretch of text takes in the terminal: combining marks and joiners take none. */
-const cells = (text: string) =>
+export const cells = (text: string) =>
   [...text].reduce((sum, char) => sum + (ZERO.test(char) ? 0 : WIDE.test(char) ? 2 : 1), 0);
 
 /** No box this narrow: a text whose rows are all shorter than this was never wrapped. */

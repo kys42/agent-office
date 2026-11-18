@@ -3,6 +3,7 @@ import { EyeOff } from 'lucide-react';
 import { MOODS, type Mood, type Session } from '../shared/types';
 import { helperName, sessionName } from '../shared/office';
 import { stackLead } from '../shared/presentation';
+import { isTeammate } from '../shared/residents';
 import { Furniture } from './Furniture';
 import { Sprite } from './Sprite';
 import { VeilButton } from './VeilButton';
@@ -49,7 +50,9 @@ export function HelperDesk({
         style={{ transform: `translate(${at.x}px, ${at.y}px)` }}
         aria-label={t.desk.helper.label(privacy ? s.provider : sessionName(s), responded)}
         title={
-          privacy ? undefined : `${sessionName(s)} · ${s.relation?.role || t.desk.helper.name}`
+          privacy
+            ? undefined
+            : `${sessionName(s)} · ${s.relation?.role || (isTeammate(s) ? t.desk.teammate.tag : t.desk.helper.name)}`
         }
         {...grip}
         onClick={onClick}
@@ -158,7 +161,9 @@ export function HelperStack({
   const anyCalling = members.some(calling);
   const anyNews = members.some(news);
   // Helpers often share a role (e.g. "explorer"): keep each one's own name next to it.
-  const role = (s: Session) => (privacy ? '' : (s.relation?.role ?? ''));
+  // An agent-team member goes by its own name: its tag stands where a role would.
+  const role = (s: Session) =>
+    privacy ? '' : s.relation?.role || (isTeammate(s) ? t.desk.teammate.tag : '');
   const name = (s: Session) => (privacy ? t.desk.helper.name : sessionName(s));
   const label = (s: Session) => (role(s) ? `${role(s)} · ${name(s)}` : name(s));
   const count = members.length;

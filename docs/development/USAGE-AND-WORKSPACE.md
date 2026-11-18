@@ -4,7 +4,7 @@
 
 ## 계정 한도
 
-상단 **사용량** 버튼은 오른쪽 패널을 연다. 사무실은 그대로 보이며 동료 상세·소식함과 한 자리만 사용한다. 현재 로그인 계정의 남은 비율과 갱신 시각이다. 세션 토큰/모델 문맥/실제 청구액과 다르다. 두 창 모두 오는 경우 5시간·일주일을 표시하고, 한 창만 오면 그것만 표시한다. `primary`가 반드시 5시간이라는 가정을 하지 않고 기간 값을 읽는다. Codex의 복수 limit ID도 독립 표시한다. null/실패/미지원은 0%가 아니다.
+상단 **사용량** 버튼은 오른쪽 패널을 연다. 사무실은 그대로 보이며 동료 상세와 한 자리만 사용한다. 현재 로그인 계정의 남은 비율과 갱신 시각이다. 세션 토큰/모델 문맥/실제 청구액과 다르다. 두 창 모두 오는 경우 5시간·일주일을 표시하고, 한 창만 오면 그것만 표시한다. `primary`가 반드시 5시간이라는 가정을 하지 않고 기간 값을 읽는다. Codex의 복수 limit ID도 독립 표시한다. null/실패/미지원은 0%가 아니다.
 
 정본 `server/quotas.ts`: 버튼 요청과 책상 소등의 느린 조회에서만 실행, 60초 메모리 캐시, 동시 요청 결합, 실패도 잠시 캐시. 책상 소등(`src/lib/useQuotas.ts`)은 보이는 창에서만 5분마다 한 번 읽고(읽힌 도구가 없으면 15분), 숨은 창·데모·개인정보 모드는 읽지 않는다. 창마다 따로 읽어 큰 사무실·펫이 함께 보이면 5분에 최대 2회 실제 조회가 될 수 있다. 수집 폴링·MCP에서 실행하지 않는다. 공급자 비활성은 조회하지 않는다. 데모는 합성 값, 개인정보 모드는 조회·숫자 표시를 생략한다. 최신 계정을 다시 로그인했다면 캐시 최대 1분 후 반영된다.
 
@@ -26,7 +26,7 @@ Claude/OpenClaw는 message ID별 최대 출력 표본, Codex는 native response 
 
 ## 실제 작업 위치
 
-원본 `cwd`/`branch`/`gitCommit`은 보존한다. `workingLocation`은 가장 최근 **작업 흔적**의 위치·시각·출처다(`server/adapters/working-location.ts`). 흔적이 없으면 없고, 실행 경로(`cwd`)가 기준이다. `WorkspaceIdentity.locationSource`는 그 흔적을 실제 Git 경로로 검증했다는 연결이다. 이 경우 현재 worktree의 branch/HEAD가 책상 표시를 이끈다. Git common-dir는 기존처럼 같은 프로젝트의 worktree를 한 팀으로 묶는다.
+원본 `cwd`/`branch`/`gitCommit`은 보존한다. `workingLocation`은 가장 최근 **작업 흔적**의 위치·시각·출처다(`server/adapters/working-location.ts`). 흔적이 없으면 없고, 실행 경로(`cwd`)가 기준이다. `WorkspaceIdentity.locationSource`는 그 흔적을 실제 Git 경로로 검증했고 **실행한 worktree와 다른 worktree**라는 연결이다. 이 경우 현재 worktree의 branch/HEAD가 책상 표시를 이끈다. 실행한 worktree 안(하위 폴더 파일 수정 등)의 흔적은 이동이 아니어서 `locationSource`를 붙이지 않고 기록 브랜치를 그대로 쓴다. 그래야 같은 worktree에서 새로 띄운 동료와 공동 책상 키(기록/현재 출처 포함)가 같아 긴 책상으로 이어진다. Git common-dir는 기존처럼 같은 프로젝트의 worktree를 한 팀으로 묶는다.
 
 - `file-edit`: Claude `Edit`·`Write`·`MultiEdit`·`NotebookEdit`의 `file_path`/`notebook_path` 폴더, Codex `apply_patch`의 `*** Add/Update/Delete File:` 경로(상대경로는 호출 시작 위치 기준, function_call JSON 인수도 읽음)
 - `git-write`: `git commit|push|merge|rebase|cherry-pick|revert`, 새 브랜치(`switch -c`·`checkout -b`), `git worktree add <경로>`(새 worktree, `-b`·`--reason` 값은 건너뜀), `gh pr create|merge`가 실행된 폴더. 폴더는 `git -C` → 같은 명령 목록의 앞선 `cd` → `workdir` → 호출 시작 위치 순으로 정한다. `--help`·`--dry-run`·`push -n`은 쓰기가 아니다

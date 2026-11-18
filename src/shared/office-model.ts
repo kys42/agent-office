@@ -1,4 +1,11 @@
-import type { OfficeNotice, OfficeZone, ProviderQuota, Session, Snapshot } from './types';
+import type {
+  OfficeNotice,
+  OfficeZone,
+  PetTallyGroup,
+  ProviderQuota,
+  Session,
+  Snapshot,
+} from './types';
 import { officeResidents } from './residents';
 import { officeZone, sessionName } from './office';
 import { presentSession } from './presentation';
@@ -12,7 +19,7 @@ import { m } from './i18n';
 import { liveLabels } from './labels';
 import { quotaExhaustion, type QuotaExhaustion } from './quota';
 import { layoutRow } from './office-layout';
-import { viewPrefs, type ViewPrefs } from './view-prefs';
+import { PET_TALLY_GROUPS, viewPrefs, type ViewPrefs } from './view-prefs';
 
 /**
  * One derived read model shared by every presentation (big office, desk pet, desk row).
@@ -68,10 +75,8 @@ export interface OfficeModel {
   hiddenSessionIds: string[];
   /** Shown office colleagues per triage group, helpers included (same as the roster). */
   counts: Record<TriageGroup, number>;
-  /** Important unread news across the whole office (header/inbox number), exact. */
+  /** Important unread notices across the whole office (window title), exact. */
   unread: number;
-  /** Some visible notices are not carried in `notices`; news lists read them by page. */
-  noticesPaged: boolean;
   /** The colleague that most needs the person right now. */
   lead: ResidentView | undefined;
   view: (id: string) => ResidentView | undefined;
@@ -184,7 +189,6 @@ export function buildOfficeModel(
     counts,
     // Counted over every notice by the collector; the carried ones are a bounded part.
     unread: snapshot?.noticeStats?.unread ?? unreadNoticeCount(notices),
-    noticesPaged: (snapshot?.noticeStats?.total ?? 0) > notices.length,
     lead,
     view,
     ownerOf: (id) => view(id)?.session,
@@ -298,13 +302,46 @@ export function petSummary(model: OfficeModel) {
 
 /**
  * Who the pet can stand for, in the desk row's order (zones side by side): the colleagues the
- * scene draws, helpers left out.
+ * scene draws, helpers left out — and only those its pill counts (waiting, results, at work,
+ * standing by, or the groups the person chose to count, #324), so the arrows skip whoever rests.
+ * An office with nobody counted keeps everyone.
  */
-export function petChoices(model: OfficeModel): ResidentView[] {
-  return layoutRow(model.scene)
+export function petChoices(
+  model: OfficeModel,
+  groups: readonly TriageGroup[] = petCounted(model),
+): ResidentView[] {
+  const drawn = layoutRow(model.scene)
     .zones.flatMap((z) => z.stations.map((st) => model.view(st.id)))
     .filter((v): v is ResidentView => !!v && !v.veiled && !v.session.attachedTo);
+  const counted = drawn.filter((v) => v.group !== 'resting' && groups.includes(v.group));
+  return counted.length ? counted : drawn;
 }
+
+/** One number of a tally pill: a counted group and how many it holds. */
+export type TallyCount = { group: PetTallyGroup; count: number };
+
+/**
+ * The numbers pill (the pet's, and the row's, floor's and tiny's): a dot and a number per
+ * chosen group, in triage order, an empty group left out. Nobody in any chosen group: they all
+ * show at 0, rather than a pill naming a group the person left out.
+ */
+export function tallyCounts(model: OfficeModel, groups: readonly PetTallyGroup[]): TallyCount[] {
+  const picked = PET_TALLY_GROUPS.filter((group) => groups.includes(group));
+  const busy = picked.filter((group) => model.counts[group] > 0);
+  return (busy.length ? busy : picked).map((group) => ({ group, count: model.counts[group] }));
+}
+
+/** Who a number counts: every desk shown in that group, helpers too (as `model.counts`). */
+export function tallyMembers(model: OfficeModel, group: PetTallyGroup): ResidentView[] {
+  return model.seats
+    .filter((v) => !v.veiled)
+    .flatMap((v) => [v, ...v.helpers.filter((h) => !h.veiled)])
+    .filter((v) => v.group === group);
+}
+
+/** The groups the pet counts: the chosen ones on its numbers pill, every busy one without it. */
+export const petCounted = (model: OfficeModel): readonly TriageGroup[] =>
+  model.display.views.pet.tally ? model.display.views.pet.tallyGroups : PET_TALLY_GROUPS;
 
 /**
  * The colleague the pet shows: the one the person picked with its arrows, while that one is

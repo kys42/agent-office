@@ -15,8 +15,7 @@ import {
   workingFor,
   type TriageGroup,
 } from '../shared/triage';
-import { PanelTabs } from './PanelTabs';
-import type { ReceiptHandler } from './News';
+import type { ReceiptHandler } from '../lib/useOffice';
 import { isWorking } from '../shared/presentation';
 import { isAttentionNotice } from '../shared/notices';
 import { useI18n } from '../lib/i18n';
@@ -34,7 +33,6 @@ export function Roster({
   totalSessions,
   zoneCount,
   notices,
-  unread,
   query,
   onQuery,
   sort,
@@ -43,7 +41,6 @@ export function Roster({
   onSelect,
   hovered,
   onHover,
-  onInbox,
   onReceipt,
   privacy,
   filter,
@@ -55,7 +52,6 @@ export function Roster({
   totalSessions: Session[];
   zoneCount: number;
   notices: OfficeNotice[];
-  unread: number;
   query: string;
   onQuery: (q: string) => void;
   sort: 'recent' | 'frequent';
@@ -64,7 +60,6 @@ export function Roster({
   onSelect: (id: string) => void;
   hovered: string | null;
   onHover: (id: string | null) => void;
-  onInbox: () => void;
   onReceipt: ReceiptHandler;
   privacy: boolean;
   filter: Provider | 'all';
@@ -147,11 +142,10 @@ export function Roster({
         : hour < 18
           ? t.roster.greeting.afternoon
           : t.roster.greeting.evening;
-  const resultCount = totalSessions.reduce((n, s) => n + unreadInbox(s, notices).length, 0);
   const headline = tiles[0].ids.length
     ? t.roster.headline.waiting(tiles[0].ids.length)
-    : resultCount
-      ? t.roster.headline.results(resultCount)
+    : tiles[1].ids.length
+      ? t.roster.headline.results(tiles[1].ids.length)
       : tiles[2].ids.length
         ? t.roster.headline.working(tiles[2].ids.length)
         : byGroup.standby?.length
@@ -159,7 +153,7 @@ export function Roster({
           : t.roster.headline.quiet;
   return (
     <aside className="roster" aria-label={t.roster.label}>
-      <PanelTabs active="roster" unread={unread} onInbox={onInbox} />
+      <div className="panel-bar">{t.roster.label}</div>
       <div className="roster-head">
         <span>
           {date(clock)} · {greeting}
@@ -300,8 +294,9 @@ export function Roster({
                           <strong>
                             <span>{privacy ? PROVIDERS[s.provider].name : sessionName(s)}</span>
                             {s.pinned && <Pin size={10} />}
+                            {/* Only whether its latest result is unseen, never how many. */}
                             {news.length > 0 && (
-                              <em title={t.roster.unreadTitle(news.length)}>{news.length}</em>
+                              <em className="unread-dot" title={t.roster.unreadTitle} />
                             )}
                           </strong>
                           <span className="session-meta">
@@ -330,7 +325,7 @@ export function Roster({
                             {elapsed !== null
                               ? t.roster.workingFor(durationShort(elapsed))
                               : result
-                                ? t.roster.newResults(news.length, ago(result.at))
+                                ? t.roster.newResult(ago(result.at))
                                 : MOODS[s.status].label}
                             {s.resident ? ` · ${t.roster.runs(s.resident.sessionIds.length)}` : ''}
                             {s.relation?.kind === 'subagent' || s.relation?.kind === 'child'

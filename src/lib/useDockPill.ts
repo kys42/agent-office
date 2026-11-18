@@ -62,6 +62,7 @@ export function useDockPill({
   onSaveFailed,
   visibility = 'subdued',
   resetAt = null,
+  live = true,
 }: {
   root: RefObject<HTMLElement | null>;
   pill: RefObject<HTMLElement | null>;
@@ -69,6 +70,11 @@ export function useDockPill({
   onSaveFailed: () => void;
   visibility?: DockPillVisibility;
   resetAt?: number | null;
+  /**
+   * False for the settings' preview (#324): it shows the saved spot but never writes it, and
+   * listens to nothing outside itself (the real dock does the reset).
+   */
+  live?: boolean;
 }) {
   // When the saved spot was chosen (0: before #228 or never), so a later reset wins.
   const savedAt = useRef(0);
@@ -100,7 +106,8 @@ export function useDockPill({
     return () => ro.disconnect();
   }, []);
 
-  const shown = moving ?? spot;
+  // The preview never writes the reset; it just draws the pill home once one is due.
+  const shown = moving ?? (!live && resetDue(resetAt, savedAt.current) ? PILL_HOME : spot);
   const left = pillLeft(shown, size.width, size.pill);
   // What the person sees is what is saved: a spot pushed past an edge stays at that edge.
   const effective = (s: number) => {
@@ -139,6 +146,7 @@ export function useDockPill({
   };
   // Leaving the window or Esc puts the pill back where the drag began.
   useEffect(() => {
+    if (!live) return;
     const blur = () => finish(false);
     const key = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape' && gesture.current) {
@@ -157,7 +165,7 @@ export function useDockPill({
 
   // 'pill 위치 초기화' in settings: a stamp newer than the saved spot sends the pill home.
   useEffect(() => {
-    if (!resetDue(resetAt, savedAt.current)) return;
+    if (!live || !resetDue(resetAt, savedAt.current)) return;
     savedAt.current = resetAt!;
     finish(false);
     save(null);
@@ -167,7 +175,7 @@ export function useDockPill({
   const [near, setNear] = useState(false);
   useEffect(() => {
     setNear(false);
-    if (visibility !== 'hover') return;
+    if (visibility !== 'hover' || !live) return;
     const move = (e: globalThis.MouseEvent) => {
       const box = pill.current?.getBoundingClientRect();
       const over =

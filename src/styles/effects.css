@@ -467,6 +467,49 @@
   animation: arrival-hop 0.38s ease-out 0.75s 3 alternate;
 }
 
+/* A colleague just brought in (or on its first conversation) walks in to its chair once, with
+   little steps, instead of turning up asleep. Papers that land meanwhile hop after the walk. */
+.office-pet.commuting {
+  /* No fill after the walk: hover, a call's hop and the rest take over as soon as it ends. */
+  animation: commute-in 2.2s linear backwards;
+}
+.office-pet.commuting .sprite-window {
+  animation: commute-step 0.28s steps(2, jump-none) 7;
+}
+.office-pet.commuting.work-arrival {
+  animation:
+    commute-in 2.2s linear backwards,
+    arrival-hop 0.38s ease-out 2.4s 3 alternate;
+}
+.office-pet.commuting.pose-calling {
+  animation:
+    commute-in 2.2s linear backwards,
+    hop 1s ease-in-out 2.25s infinite;
+}
+@keyframes commute-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-84px);
+  }
+  12% {
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes commute-step {
+  from {
+    transform: translateY(0) rotate(-4deg);
+  }
+  to {
+    transform: translateY(-4px) rotate(4deg);
+  }
+}
+
 /* ───────── Pet arrival (inside the 116×148 pet anchor) ───────── */
 .pet-arrival {
   position: absolute;
@@ -663,13 +706,158 @@
   }
 }
 
+/* Over a pet the pointer becomes a petting hand (rub it to pat, #306): the system's palm-down
+   emoji when it can be drawn (src/lib/patCursor.ts sets --pat-cursor), else this drawn hand. A
+   held button is a drag, so pressing or dragging still shows the grabbing hand. */
+:root {
+  --pat-cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg fill='%23ffe1c2' stroke='%233a2f45' stroke-width='1.5' stroke-linejoin='round' transform='rotate(-40 17 17)'%3E%3Crect x='6.4' y='12.6' width='3.6' height='8' rx='1.8' transform='rotate(-35 8.2 16.6)'/%3E%3Crect x='9.5' y='16' width='3.6' height='10' rx='1.8'/%3E%3Crect x='13.1' y='16' width='3.6' height='11.5' rx='1.8'/%3E%3Crect x='16.7' y='16' width='3.6' height='11' rx='1.8'/%3E%3Crect x='20.3' y='16' width='3.4' height='9' rx='1.7'/%3E%3Cpath d='M9.5 18C9.5 10 11 7 16.5 7S23.7 10 23.7 18Z'/%3E%3C/g%3E%3Cg fill='none' stroke='%23ff7fa3' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M3 8q3-3 6 0'/%3E%3Cpath d='M24 4q3-3 6 0'/%3E%3C/g%3E%3C/svg%3E")
+      16 16,
+    grab;
+}
+/* A pet the person turned petting off for (#324) keeps its plain cursor. */
+:is(.office-pet, .desk-pet, .pet-preview-body):where(:not(.no-petting)):hover {
+  cursor: var(--pat-cursor);
+}
+/* Only pets that can be dragged grab (a still pet just gets patted). */
+:is(.office-pet[draggable='true'], .office-pet[data-desk-handle], .desk-pet):active,
+.desk-station.is-desk-dragging .office-pet,
+.is-dragging .office-pet {
+  cursor: grabbing;
+}
+
+/* ───────── A pleased pet (#306): petted (hearts) or praised (sparkles) ─────────
+   Two bounding hops with a squash, blushing cheeks, and three marks that float up and fade,
+   all inside 1.6s (PET_REACTION_MS). Only the sprite's window moves, so whatever the pet itself
+   is doing (walking in, hopping for papers, calling, strolling, the dock pet's bob) carries on
+   untouched. joy-0/joy-1 alternate per reaction so a new one replays. */
+:is(.office-pet, .joy-host).reacting.joy-0 .sprite-window {
+  animation: joy-bounce-0 0.75s var(--ease-out) 2;
+  transform-origin: 50% 100%;
+}
+:is(.office-pet, .joy-host).reacting.joy-1 .sprite-window {
+  animation: joy-bounce-1 0.75s var(--ease-out) 2;
+  transform-origin: 50% 100%;
+}
+@keyframes joy-bounce-0 {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.12, 0.86);
+  }
+  45% {
+    transform: translateY(-12px) scale(0.94, 1.08);
+  }
+  80% {
+    transform: translateY(0) scale(1.06, 0.95);
+  }
+}
+@keyframes joy-bounce-1 {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  15% {
+    transform: translateY(0) scale(1.12, 0.86);
+  }
+  45% {
+    transform: translateY(-12px) scale(0.94, 1.08);
+  }
+  80% {
+    transform: translateY(0) scale(1.06, 0.95);
+  }
+}
+.pet-joy {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.joy-cheek {
+  position: absolute;
+  top: 58%;
+  width: 14%;
+  height: 7%;
+  border-radius: 50%;
+  background: rgba(255, 120, 150, 0.55);
+  animation: joy-blush 1.6s ease-out both;
+}
+.joy-cheek.left {
+  left: 24%;
+}
+.joy-cheek.right {
+  right: 24%;
+}
+@keyframes joy-blush {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  15%,
+  75% {
+    opacity: 1;
+  }
+}
+.pet-joy b {
+  position: absolute;
+  top: 18%;
+  left: calc(22% + var(--i) * 26%);
+  font-family: var(--font-pixel);
+  font-size: 15px;
+  line-height: 1;
+  color: #ff6f91;
+  text-shadow:
+    1px 1px 0 #fff,
+    -1px -1px 0 #fff;
+  opacity: 0;
+  animation: joy-rise 1.25s ease-out calc(var(--i) * 0.125s) both;
+}
+.pet-joy.joy-praise b {
+  color: #ffc23d;
+}
+@keyframes joy-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.6);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-34px) scale(0.9);
+  }
+}
+/* Without motion: no hops, no rising marks — the cheeks and the marks just show for the moment. */
+:is(.motion-paused, .reduce-motion) :is(.office-pet, .joy-host).reacting .sprite-window,
+:is(.motion-paused, .reduce-motion) .pet-joy :is(b, .joy-cheek) {
+  animation: none !important;
+}
+:is(.motion-paused, .reduce-motion) .pet-joy :is(b, .joy-cheek) {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.office-pet, .joy-host).reacting .sprite-window,
+  .pet-joy :is(b, .joy-cheek) {
+    animation: none !important;
+  }
+  .pet-joy :is(b, .joy-cheek) {
+    opacity: 1;
+  }
+}
+
 /* ───────── Motion budget: still pictures only ───────── */
 .motion-paused :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
 .motion-paused :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
 .reduce-motion :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
-.motion-paused :is(.office-pet.work-arrival, .working-beacon),
-.reduce-motion :is(.office-pet.work-arrival, .working-beacon),
+.motion-paused :is(.office-pet.work-arrival, .office-pet.commuting, .working-beacon),
+.reduce-motion :is(.office-pet.work-arrival, .office-pet.commuting, .working-beacon),
+.motion-paused .office-pet.commuting .sprite-window,
+.reduce-motion .office-pet.commuting .sprite-window,
 .motion-paused .working-beacon::after,
 .reduce-motion .working-beacon::after {
   animation: none !important;
@@ -683,6 +871,8 @@
   :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *,
   :is(.focus-fx, .paper-pile, .arrival-burst, .pet-arrival) *::before,
   .office-pet.work-arrival,
+  .office-pet.commuting,
+  .office-pet.commuting .sprite-window,
   .working-beacon,
   .working-beacon::after {
     animation: none !important;
@@ -723,7 +913,8 @@
   box-shadow: 0 4px 0 -1px #4b4f45;
 }
 .desk-station.lights-out .office-pet .sprite-window,
-.desk-pet.lights-out .dock-pet-body {
+/* The pet dims, not the hearts it gives off (#306). */
+.desk-pet.lights-out .dock-pet-body .sprite-window {
   filter: brightness(0.7) saturate(0.55);
 }
 .quota-badge {

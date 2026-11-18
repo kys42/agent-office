@@ -1,5 +1,6 @@
 import { ProjectSummon } from './ProjectSummon';
 import { focusName, focusLine } from '../shared/terminal-target';
+import { isTeammate } from '../shared/residents';
 import {
   useEffect,
   useEffectEvent,
@@ -11,24 +12,21 @@ import {
   type MouseEvent,
 } from 'react';
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Building2,
-  Expand,
   EyeOff,
-  Flag,
   GripVertical,
   GitBranch,
-  Maximize2,
-  Minimize2,
   Pin,
-  RotateCw,
   Settings,
   Undo2,
   Terminal,
   X,
 } from 'lucide-react';
+import { DockViewMenu, type DockViewControls } from './DockViewMenu';
+import { DockPlus, type DockPlusControls } from './DockPlus';
+import { DockPeek, type DockPeekControls } from './DockPeek';
+import { TallyPill } from './TallyPill';
 import { useRowPlacement } from '../lib/useRowPlacement';
 import { useDockPill } from '../lib/useDockPill';
 import { useDeskReorder } from '../lib/useDeskReorder';
@@ -71,11 +69,13 @@ import {
   TINY_SCALE,
   TINY_TOP,
 } from '../shared/dock-geometry';
-import { residentLabel, zoneVeilIds, type OfficeModel } from '../shared/office-model';
+import { residentLabel, tallyCounts, zoneVeilIds, type OfficeModel } from '../shared/office-model';
 import { deskSpeech, hopping, shownSpeech, speechDot } from '../shared/speech';
 import { deskPapers, focusLevel } from '../shared/presentation';
 import { isInboxNotice } from '../shared/notices';
 import { Furniture } from './Furniture';
+import { useDeskAppearance } from './DeskAppearanceContext';
+import { deskLook } from '../shared/desks';
 import { Sprite } from './Sprite';
 import { SpeechBubble } from './SpeechBubble';
 import { HelperDesk, HelperStack } from './HelperDesk';
@@ -85,6 +85,10 @@ import { VeilButton } from './VeilButton';
 import { PinButton } from './PinButton';
 import { ArrivalBurst, FocusEffects, PaperPile, WorkingBeacon } from './DeskEffects';
 import { useI18n } from '../lib/i18n';
+import { walksIn } from '../lib/commute';
+import { joyClass, usePetReactions } from '../lib/petReaction';
+import { usePetting } from '../lib/usePetting';
+import { PetJoy } from './PetJoy';
 
 /** Breathing room before the first and after the last zone (the row is edge to edge). */
 const LANE_PAD = 48;
@@ -104,7 +108,9 @@ const HELPER_TABLE_FOOT = 46;
 export function DeskRow({
   variant = 'office',
   tiny = false,
-  onTiny,
+  view: viewMenu,
+  plus,
+  peek,
   model,
   status,
   privacy,
@@ -112,21 +118,26 @@ export function DeskRow({
   onReceipt,
   onVeil,
   onPin,
-  onCollapse,
-  onSwitch,
   onReply,
   notify,
-  onRefresh,
-  refreshing = false,
   demo = false,
   onArrange,
   onReorder,
+  onReturn,
+  room,
+  preview = false,
 }: {
+  /** The existing "bring back to the office": lets a project's "+" offer away colleagues. */
+  onReturn?: (id: string) => unknown;
   variant?: 'office' | 'floor';
   /** Helper-desk size, status only. */
   tiny?: boolean;
-  /** Switch between tiny and the normal size. */
-  onTiny?: (on: boolean) => void;
+  /** The 보기 menu (looks, tiny, the big office, settings); absent in the settings preview. */
+  view?: DockViewControls;
+  /** The ＋ popover (start new, bring back); absent in the settings preview. */
+  plus?: DockPlusControls;
+  /** 잠깐 숨기기: the desks step aside, the pill stays. */
+  peek?: DockPeekControls;
   model: OfficeModel;
   status: string | null;
   privacy: boolean;
@@ -134,22 +145,30 @@ export function DeskRow({
   onReceipt: (receipts: NoticeReceipt[], action: ReceiptAction) => void;
   onVeil: (ids: string[], on: boolean) => void;
   onPin: (s: Session) => void;
-  onCollapse: () => void;
-  /** Switch between the office row and the floor desks. */
-  onSwitch: () => void;
   /** Desktop, with Send to terminal on: an unfolded bubble whose session can take a follow-up offers a reply. */
   onReply?: ReplySender;
   /** Short results and failures, shown by the dock. */
   notify: (message: string) => void;
-  /** Look at the session records again now (and restart a stopped collector). */
-  onRefresh: () => void;
-  refreshing?: boolean;
   demo?: boolean;
   onArrange?: (active: boolean, point?: { x: number; y: number }) => void;
   /** Dragging a desk within its zone: the zone's station ids in the new order. */
   onReorder?: (ids: string[]) => void;
+  /**
+   * Room above the strip (the desktop dock): the window grows upward while the pill's list of
+   * who a number counts is open — a tiny strip is far shorter than the list.
+   */
+  room?: (on: boolean) => Promise<void>;
+  /**
+   * Drawn small in the settings (#324): the same desks, without anything that reaches outside
+   * them — no window keys, terminal lookups, saved spots or cards.
+   */
+  preview?: boolean;
 }) {
   const { t, locale } = useI18n();
+  // Pleased pets (petted now, praised later): one subscription and one rub tracker per scene.
+  const reactionOf = usePetReactions((id) => model.view(id) !== undefined);
+  const petting = usePetting();
+  const desks = useDeskAppearance();
   const floor = variant === 'floor';
   // Station-space rows, matching the big office's station (bench at 134 under the chair).
   // Tiny has no bubbles to make room for: the scene starts just above the heads.
@@ -199,6 +218,17 @@ export function DeskRow({
   const veiledCount = model.veiled.length + model.veiledHelpers.length;
   const signature = layoutSignature(sessions);
   const { display } = model;
+  // What the person chose to see here (#324): the row and floor share one set, tiny its own.
+  const show = tiny
+    ? {
+        branch: false,
+        papers: display.views.tiny.effects,
+        focus: display.views.tiny.effects,
+        beacon: true,
+        hideRead: true,
+      }
+    : display.views.dock;
+  const bringBack = onReturn ? { zones: model.zones, onReturn } : undefined;
   const baseLayout = useMemo(
     () =>
       layoutRow(sessions, {
@@ -227,12 +257,13 @@ export function DeskRow({
     onSaveFailed: () => notify(t.dock.arrange.saveFailed),
     visibility: display.dockPill,
     resetAt: display.dockPillResetAt,
+    live: !preview,
   });
   const reorder = useDeskReorder({
     layout,
     track,
     // Tiny desks are click targets only: no reordering at that size.
-    enabled: !!onReorder && !privacy && !tiny,
+    enabled: !!onReorder && !privacy && !tiny && !preview,
     onArrange,
     onReorder: (ids) => onReorder?.(ids),
   });
@@ -270,25 +301,13 @@ export function DeskRow({
   // Tiny draws no bubbles or replies: drop what was open, so a hidden reply or unfolded bubble
   // never eats the first Esc there (it folds the dock to the pet, as in the full size) and
   // never reappears unexpectedly on the way back.
+  // Hidden for a moment (peek) likewise: nothing unseen keeps a reply or an unfolded bubble.
+  const peeking = !!peek?.on;
   useEffect(() => {
-    if (!tiny) return;
+    if (!tiny && !peeking) return;
     setReplying(null);
     setExpanded(null);
-  }, [tiny]);
-  // The size toggle hides the button that was pressed: focus moves to its counterpart once the
-  // new size is drawn (the desktop answers through the main process, a frame or more later).
-  const toggled = useRef(false);
-  const tinyButton = useRef<HTMLButtonElement>(null);
-  const normalButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!toggled.current) return;
-    toggled.current = false;
-    (tiny ? normalButton : tinyButton).current?.focus();
-  }, [tiny]);
-  const toggleTiny = (on: boolean) => {
-    toggled.current = true;
-    onTiny?.(on);
-  };
+  }, [tiny, peeking]);
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.defaultPrevented) return;
     const field =
@@ -313,6 +332,7 @@ export function DeskRow({
   // (children's effects run before their parent's, and the dock remounts the row whenever it
   // registers its own). Re-adding it per render would put it last and let Esc fold the dock.
   useEffect(() => {
+    if (preview) return;
     const key = (e: KeyboardEvent) => onKey(e);
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
@@ -334,7 +354,7 @@ export function DeskRow({
   const { targets, markSent } = useSendTargets(
     privacy ? [] : [...primary.map((s) => s.id), ...speaking],
     {
-      enabled: !privacy,
+      enabled: !privacy && !preview,
       stamp: Math.max(0, ...primary.map((s) => s.updatedAt)),
       pollBusy: false,
     },
@@ -347,27 +367,45 @@ export function DeskRow({
     }
   };
   // A colleague's card opens right at its desk (or bubble); its "전체 모드" goes to the office.
-  const open = (id: string, anchor?: Element | null, news = false) =>
-    openColleague(id, { anchor, news });
+  const open = (id: string, anchor?: Element | null, conversation = false) =>
+    preview ? undefined : openColleague(id, { anchor, conversation });
   const desk = STATION_WIDTH * scale;
   const stations = layout.zones.flatMap((z) =>
     z.stations.map((st) => ({ id: st.id, x: LANE_PAD + (z.x + st.x) * scale })),
   );
+  // The pill counts like the pet (#324): the same groups, colours and list, unless switched off
+  // for this look; the old "N명 · 기다려요 N" summary otherwise (and until the office is known).
+  const tallyGroups = display.views.pet.tallyGroups;
+  const tallied =
+    !status &&
+    (tiny ? display.views.tiny.tally : display.views.dock.tally) &&
+    tallyCounts(model, tallyGroups).length > 0;
+  // A name in that list opens the card as its desk does: at the desk, when it is in view.
+  const openFromList = (id: string, from: Element) => {
+    const desk = document.querySelector(`.desk-row [data-session-id="${CSS.escape(id)}"]`);
+    const r = desk?.getBoundingClientRect();
+    const seen = !!r && r.width > 0 && r.right > 0 && r.left < window.innerWidth;
+    void open(id, seen ? desk : from);
+  };
   const hiddenLeft = stations.filter((st) => st.x + desk / 2 < view.left);
   const hiddenRight = stations.filter((st) => st.x + desk / 2 > view.left + view.width);
   // The tiny pill draws the same buttons with smaller icons.
   const icon = tiny ? 12 : 14;
+  // Desktop only (a settings window); the settings preview draws it when there is one too.
+  const hasSettings = viewMenu ? viewMenu.settings : !!api.settings;
   const calling = (list: typeof stations) =>
     list.some((st) => model.view(st.id)?.group === 'attention');
   return (
     <div
       ref={rootRef}
-      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''} ${tiny && placement.dragging ? 'is-zone-grabbing' : ''}`}
+      className={`desk-row ${floor ? 'desk-floor' : ''} ${tiny ? 'is-tiny' : ''} ${tiny && placement.dragging ? 'is-zone-grabbing' : ''} ${peeking ? 'is-peeking' : ''}`}
       style={{ height: dockHeight(floor, tiny) }}
     >
       <div
         className={`desk-row-track ${hiddenLeft.length ? 'fade-left' : ''} ${hiddenRight.length ? 'fade-right' : ''}`}
         ref={track}
+        // Hidden for a moment: out of the way of the pointer and the keys too.
+        inert={peeking}
       >
         <div
           className="desk-row-lane"
@@ -468,6 +506,7 @@ export function DeskRow({
                             privacy={privacy}
                             notify={notify}
                             demo={demo}
+                            bringBack={bringBack}
                           />
                           {zoneVeil}
                         </div>
@@ -514,6 +553,7 @@ export function DeskRow({
                           privacy={privacy}
                           notify={notify}
                           demo={demo}
+                          bringBack={bringBack}
                         />
                         {zoneVeil}
                       </div>
@@ -536,6 +576,7 @@ export function DeskRow({
                       kind="desk"
                       key={`${bench.key}:${i}`}
                       shared={bench.shared}
+                      look={deskLook(desks, zone.key)}
                       assetKey={privacy ? undefined : bench.key}
                       style={{ left: bench.x, top: benchY, width: bench.width }}
                     />
@@ -544,8 +585,10 @@ export function DeskRow({
                     const s = byId.get(station.id)!;
                     const v = model.view(s.id)!;
                     const pose = v.pose;
+                    const joy = reactionOf(s.id);
                     const label = residentLabel(s, privacy);
                     const branch = branchInfo(s);
+                    const desk = deskLook(desks, zone.key, s);
                     // A just-arrived request plays on the desk and speaks first.
                     const speech = speeches.get(s.id)!;
                     const { arrival, hop } = speech;
@@ -566,7 +609,7 @@ export function DeskRow({
                           hover === s.id || expanded === s.id || replying?.station === s.id,
                           pointing,
                           // Like tiny's dot, a read reply leaves; the peek can keep it up again.
-                          { hideRead: true },
+                          { hideRead: show.hideRead },
                         );
                     const bubble = shown?.speech.bubble;
                     const focus = focusLevel(s, model.now);
@@ -598,10 +641,10 @@ export function DeskRow({
                         }}
                       >
                         <i className="desk-glow" aria-hidden="true" />
-                        <Furniture kind="chair" />
+                        <Furniture kind="chair" look={desk} />
                         <div className="pet-shadow" />
                         <button
-                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''}`}
+                          className={`office-pet pose-${hop ? 'still' : pose.posture} ${hopping(speech) ? 'work-arrival' : ''} ${walksIn(s, pose.commuting) ? 'commuting' : ''} ${joyClass(joy)}`}
                           data-solid
                           data-session-id={s.id}
                           data-seat={s.officeSeat}
@@ -623,13 +666,20 @@ export function DeskRow({
                           }
                           {...(s.remote ? {} : reorder.handle(s.id, zone.key))}
                           {...zoneGrab}
+                          {...(preview ? {} : petting(s.id))}
                           onClick={(e) => {
                             if (!reorder.consumeClick(e) && !placement.consumeClick(e)) open(s.id);
                           }}
                         >
                           {/* The same effects as the full size, shrunk with the scene. */}
-                          <FocusEffects level={focus} />
-                          <Sprite session={s} provider={s.provider} mood={pose.mood} size={80} />
+                          {show.focus && <FocusEffects level={focus} />}
+                          <Sprite
+                            session={s}
+                            provider={s.provider}
+                            mood={joy ? 'idle' : pose.mood}
+                            size={80}
+                          />
+                          {joy && <PetJoy key={joy.key} reaction={joy} />}
                           {pose.posture === 'dozing' && <span className="doze-mark">z z</span>}
                         </button>
                         {dot && (
@@ -676,15 +726,17 @@ export function DeskRow({
                             onClick={() => void jump(s.id)}
                           />
                         )}
-                        <Furniture kind="equipment" />
+                        <Furniture kind="equipment" look={desk} />
                         {/* Tiny keeps every desk effect (scaled with the scene, z-ordered under
                             its dot and name); only the quota's words are too small to read. */}
                         {!tiny && v.quota && <QuotaBadge quota={v.quota} />}
-                        <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                        {show.papers && (
+                          <PaperPile count={deskPapers(s, model.now)} level={focus} />
+                        )}
                         {arrival && (
                           <ArrivalBurst key={arrival.id} receivedAt={arrival.receivedAt} />
                         )}
-                        {pose.working && <WorkingBeacon level={focus} />}
+                        {show.beacon && pose.working && <WorkingBeacon level={focus} />}
                         {tiny ? null : floor ? (
                           // A name plate on the desk front instead of a card on the rug.
                           <button
@@ -708,15 +760,17 @@ export function DeskRow({
                           </button>
                         ) : (
                           <>
-                            <button
-                              className={`desk-branch branch-${branch.kind}`}
-                              data-solid
-                              title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
-                              onClick={() => open(s.id)}
-                            >
-                              <GitBranch size={9} />
-                              <span>{privacy ? t.desk.hidden : branch.label}</span>
-                            </button>
+                            {show.branch && (
+                              <button
+                                className={`desk-branch branch-${branch.kind}`}
+                                data-solid
+                                title={privacy ? undefined : `${branch.label} · ${branch.detail}`}
+                                onClick={() => open(s.id)}
+                              >
+                                <GitBranch size={9} />
+                                <span>{privacy ? t.desk.hidden : branch.label}</span>
+                              </button>
+                            )}
                             <button
                               className="desk-name"
                               data-solid
@@ -736,7 +790,12 @@ export function DeskRow({
                                       : t.desk.working
                                     : MOODS[s.status].label}
                                 </span>
-                                {speech.unread > 0 && <em>{t.desk.unread(speech.unread)}</em>}
+                                {isTeammate(s) && (
+                                  <b className="desk-teammate" title={t.desk.teammate.hint}>
+                                    {t.desk.teammate.tag}
+                                  </b>
+                                )}
+                                {speech.unread > 0 && <em>{t.desk.unread}</em>}
                               </small>
                             </button>
                           </>
@@ -755,7 +814,7 @@ export function DeskRow({
                                 if (bubble && !privacy)
                                   onReceipt([{ id: bubble.id, version: bubble.version }], 'view');
                               }}
-                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el)}
+                              onPopup={(el) => void open(bubble?.sessionId ?? s.id, el, true)}
                               onOpen={() => {
                                 // Opening a bubble reads it in place; the card is one hover away.
                                 if (bubble && !privacy && expanded !== s.id)
@@ -809,12 +868,13 @@ export function DeskRow({
                             name={label.name}
                             onClose={() => setReplying(null)}
                             onJump={api.jump ? () => void jump(replying.id) : undefined}
-                            onSend={async (text, replaceDraft, allowPartialDraft) => {
+                            onSend={async (text, replaceDraft, allowPartialDraft, images) => {
                               const result = await onReply(
                                 replying.id,
                                 text,
                                 replaceDraft,
                                 allowPartialDraft,
+                                images,
                               );
                               if (result.status === 'sent') markSent(replying.id);
                               return result;
@@ -890,24 +950,24 @@ export function DeskRow({
           </div>
         )}
       </div>
-      {hiddenLeft.length > 0 && (
+      {hiddenLeft.length > 0 && !peeking && (
         <button
           className={`desk-row-arrow arrow-left ${calling(hiddenLeft) ? 'has-call' : ''}`}
           data-solid
           aria-label={t.desk.row.left(hiddenLeft.length)}
-          title={t.desk.row.leftTitle}
+          data-tip={t.desk.row.leftTitle}
           onClick={() => page(-1)}
         >
           <ChevronLeft size={22} strokeWidth={2.4} />
           <b>{hiddenLeft.length}</b>
         </button>
       )}
-      {hiddenRight.length > 0 && (
+      {hiddenRight.length > 0 && !peeking && (
         <button
           className={`desk-row-arrow arrow-right ${calling(hiddenRight) ? 'has-call' : ''}`}
           data-solid
           aria-label={t.desk.row.right(hiddenRight.length)}
-          title={t.desk.row.rightTitle}
+          data-tip={t.desk.row.rightTitle}
           onClick={() => page(1)}
         >
           <ChevronRight size={22} strokeWidth={2.4} />
@@ -917,13 +977,15 @@ export function DeskRow({
       {/* The dock's controls: a pill floating over the bottom of the desks (the desks still
           stand on the screen's edge), subdued until hovered (or solid, or hidden until the
           pointer nears it — the person's choice) and slid anywhere along it so it can be
-          parked in an empty spot. Tiny keeps the main ones as small icons: how many,
-          back to normal, the office, fold to the pet, settings and hide. */}
+          parked in an empty spot. It holds what is here (how many, who is hidden) and two
+          doors: View (the looks, tiny, the big office, settings) and hide. Tiny keeps them all
+          as small icons. */}
       <div
         ref={pillRef}
-        className={`dock-pill pill-${display.dockPill} ${pill.dragging ? 'is-dragging' : ''} ${pill.autoHide && pill.revealed ? 'is-revealed' : ''}`}
-        // Hidden (`hover` visibility) it lets clicks through: only a revealed pill is solid.
-        data-solid={pill.revealed ? '' : undefined}
+        className={`dock-pill pill-${display.dockPill} ${pill.dragging ? 'is-dragging' : ''} ${pill.autoHide && pill.revealed ? 'is-revealed' : ''} ${peeking ? 'is-peek-kept' : ''}`}
+        // Hidden (`hover` visibility) it lets clicks through: only a revealed pill is solid —
+        // except while the desks are hidden for a moment (then it is all there is to see).
+        data-solid={pill.revealed || peeking ? '' : undefined}
         role="group"
         aria-label={t.desk.row.pill}
         style={{ left: pill.left }}
@@ -936,7 +998,7 @@ export function DeskRow({
           aria-label={t.desk.row.pillMove}
           aria-describedby={pillHintId}
           aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Home End"
-          title={t.desk.row.pillHint}
+          data-tip={t.dock.tips.grip}
           onKeyDown={pill.onGripKeyDown}
         >
           <GripVertical size={tiny ? 10 : 12} />
@@ -948,106 +1010,71 @@ export function DeskRow({
           <button
             className="icon-btn"
             aria-label={t.dock.arrange.reset}
-            title={t.dock.arrange.reset}
+            data-tip={t.dock.arrange.reset}
             onClick={placement.reset}
           >
             <Undo2 size={14} />
           </button>
         )}
-        <span
-          className="desk-row-summary"
-          title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
-        >
-          <span className="live-dot" />
-          {tiny ? model.seats.length : t.desk.row.seats(model.seats.length)}
-          {model.counts.attention > 0 &&
-            (tiny ? (
-              // A bare number on screen; assistive tech hears who it counts.
-              <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
-                <span aria-hidden="true">{model.counts.attention}</span>
-                <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
-              </em>
-            ) : (
-              <em>{t.desk.row.waiting(model.counts.attention)}</em>
-            ))}
-        </span>
-        {!tiny && (
-          <>
-            {veiledCount > 0 && (
-              <button
-                className="desk-row-veiled"
-                title={t.desk.row.veiledTitle(veiledCount)}
-                onClick={() => onVeil(model.hiddenSessionIds, false)}
-              >
-                <EyeOff size={11} />
-                {t.desk.row.veiled(veiledCount)}
-              </button>
-            )}
-            <i className="dock-pill-sep" aria-hidden="true" />
-            <button
-              className={`icon-btn ${refreshing ? 'is-busy' : ''}`}
-              aria-label={t.desk.row.refresh}
-              title={t.desk.row.refreshTitle}
-              disabled={refreshing}
-              onClick={onRefresh}
-            >
-              <RotateCw size={14} />
-            </button>
-            <button
-              className="icon-btn"
-              aria-label={floor ? t.desk.row.toRow : t.desk.row.toFloor}
-              title={floor ? t.desk.row.toRowTitle : t.desk.row.toFloorTitle}
-              onClick={onSwitch}
-            >
-              {floor ? <Building2 size={14} /> : <Flag size={14} />}
-            </button>
-            {onTiny && (
-              <button
-                ref={tinyButton}
-                className="icon-btn"
-                aria-label={t.desk.row.tiny}
-                title={t.desk.row.tinyTitle}
-                onClick={() => toggleTiny(true)}
-              >
-                <Minimize2 size={14} />
-              </button>
-            )}
-          </>
-        )}
-        {tiny && onTiny && (
-          <button
-            ref={normalButton}
-            className="icon-btn"
-            aria-label={t.desk.row.normal}
-            title={t.desk.row.normalTitle}
-            onClick={() => toggleTiny(false)}
+        {tallied ? (
+          <TallyPill
+            variant="dock"
+            compact={tiny}
+            model={model}
+            groups={tallyGroups}
+            privacy={privacy}
+            room={preview ? undefined : room}
+            edge={pillRef}
+            onOpen={openFromList}
+          />
+        ) : (
+          <span
+            className="desk-row-summary"
+            title={t.desk.row.summaryTitle(layout.zones.length, model.seats.length)}
           >
-            <Maximize2 size={12} />
+            <span className="live-dot" />
+            {tiny ? model.seats.length : t.desk.row.seats(model.seats.length)}
+            {model.counts.attention > 0 &&
+              (tiny ? (
+                // A bare number on screen; assistive tech hears who it counts.
+                <em title={t.desk.row.tinyWaiting(model.counts.attention)}>
+                  <span aria-hidden="true">{model.counts.attention}</span>
+                  <span className="sr-only">{t.desk.row.tinyWaiting(model.counts.attention)}</span>
+                </em>
+              ) : (
+                <em>{t.desk.row.waiting(model.counts.attention)}</em>
+              ))}
+          </span>
+        )}
+        {!tiny && veiledCount > 0 && (
+          <button
+            className="desk-row-veiled"
+            data-tip={t.desk.row.veiledTitle(veiledCount)}
+            onClick={() => onVeil(model.hiddenSessionIds, false)}
+          >
+            <EyeOff size={11} />
+            {t.desk.row.veiled(veiledCount)}
           </button>
         )}
-        <button
-          className="icon-btn"
-          aria-label={t.desk.row.expand}
-          title={t.desk.row.expandTitle}
-          onClick={() => api.window('main')}
-        >
-          <Expand size={icon} />
-        </button>
-        <button
-          className="icon-btn"
-          aria-label={t.desk.row.collapse}
-          title={t.desk.row.collapseTitle}
-          onClick={onCollapse}
-        >
-          <ChevronDown size={tiny ? 14 : 16} />
-        </button>
-        {/* Only the desktop has a settings window; a browser preview has nowhere to open it. */}
-        {api.settings && (
+        <i className="dock-pill-sep" aria-hidden="true" />
+        <DockViewMenu
+          controls={viewMenu && { ...viewMenu, settings: false }}
+          size={icon}
+          edge={pillRef}
+        />
+        <DockPlus controls={plus} size={icon} edge={pillRef} onOpenCard={openFromList} />
+        <DockPeek
+          peek={peek}
+          size={icon}
+          blocked={replying ? t.dock.peek.blockedReply : undefined}
+        />
+        {/* Settings as its own button here (the View menu leaves it out): the pill has room. */}
+        {hasSettings && (
           <button
             className="icon-btn"
-            aria-label={t.desk.row.settings}
-            title={t.desk.row.settingsTitle}
-            onClick={() => void api.settings?.open()}
+            aria-label={t.dock.view.settings}
+            data-tip={t.dock.tips.settings}
+            onClick={() => (viewMenu ? viewMenu.onPick('settings') : undefined)}
           >
             <Settings size={icon} />
           </button>
@@ -1055,7 +1082,7 @@ export function DeskRow({
         <button
           className="icon-btn"
           aria-label={t.desk.row.hide}
-          title={t.desk.row.hideTitle}
+          data-tip={t.dock.tips.hide}
           onClick={() => api.window('hide')}
         >
           <X size={icon} />

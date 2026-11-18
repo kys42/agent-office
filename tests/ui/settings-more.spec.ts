@@ -3,6 +3,7 @@ import './korean';
 import { demoSnapshot } from '../../src/lib/demo';
 import { PILL_MARGIN } from '../../src/shared/dock-geometry';
 import type { OfficeNotice, Preferences, Snapshot } from '../../src/shared/types';
+import { viewButton, viewMenu } from './dock-view';
 
 // #228: more settings — the dock (tiny names, tiny dots, pill visibility and reset), reading on
 // open, helper desks, and resetting the big office's panel widths.
@@ -192,23 +193,26 @@ test('the settings page shows the new sections and saves each choice', async ({ 
   await bridge(page, office());
   await openSettings(page, '모습');
   const panel = page.getByRole('tabpanel');
+  // #324: the dock's controls live in the 화면별 표시 cards (row·floor and tiny); the row·floor
+  // card keeps the old section's `dock` anchor.
+  const views = panel.locator('[data-guide-section="views"]');
   const dock = panel.locator('[data-guide-section="dock"]');
-  await expect(dock.getByRole('heading', { name: '독' })).toBeVisible();
-  await expect(dock.getByRole('switch', { name: '쪼꼬미 이름표 보이기' })).toHaveAttribute(
+  await expect(dock.getByRole('heading', { name: '사무실 줄·바닥' })).toBeVisible();
+  await expect(views.getByRole('switch', { name: '쪼꼬미 이름표 보이기' })).toHaveAttribute(
     'aria-checked',
     'true',
   );
-  await expect(dock.getByRole('switch', { name: '쪼꼬미 점에 최종 응답도 표시' })).toHaveAttribute(
+  await expect(views.getByRole('switch', { name: '쪼꼬미 점에 최종 응답도 표시' })).toHaveAttribute(
     'aria-checked',
     'true',
   );
   const pillSelect = dock.getByLabel('독 버튼 모음(pill)');
   await expect(pillSelect).toHaveValue('subdued');
   await dock.screenshot({ path: '.local/settings-more-dock.png' });
-  await dock.getByRole('switch', { name: '쪼꼬미 이름표 보이기' }).click();
-  await dock.getByRole('switch', { name: '쪼꼬미 점에 최종 응답도 표시' }).click();
+  await views.getByRole('switch', { name: '쪼꼬미 이름표 보이기' }).click();
+  await views.getByRole('switch', { name: '쪼꼬미 점에 최종 응답도 표시' }).click();
   await pillSelect.selectOption('hover');
-  await expect(dock.getByRole('switch', { name: '쪼꼬미 이름표 보이기' })).toHaveAttribute(
+  await expect(views.getByRole('switch', { name: '쪼꼬미 이름표 보이기' })).toHaveAttribute(
     'aria-checked',
     'false',
   );
@@ -268,6 +272,8 @@ test('the settings page shows the new sections and saves each choice', async ({ 
   // The resets stamp the time; the dock and the big office (other renderers) hear it.
   await page.getByRole('tab', { name: '모습', exact: true }).click();
   const before = Date.now();
+  // A one-off action: under the row·floor card's 자세히.
+  await dock.getByText('자세히', { exact: true }).click();
   await dock.getByRole('button', { name: 'pill 위치 초기화' }).click();
   await expect(page.getByText('독 pill을 오른쪽 끝으로 되돌렸어요.')).toBeVisible();
   await panel.getByRole('button', { name: '패널 폭 초기화' }).click();
@@ -289,7 +295,7 @@ test('the settings window deep-links to the dock section and shows it in English
     'true',
   );
   const dock = page.locator('[data-guide-section="dock"]');
-  await expect(dock.getByRole('heading', { name: 'Dock' })).toBeInViewport();
+  await expect(dock.getByRole('heading', { name: 'Office row & floor' })).toBeInViewport();
   await expect(dock.getByLabel('Dock controls')).toHaveValue('subdued');
   await expect(dock.getByLabel('Dock controls').locator('option')).toHaveText([
     'Always clear',
@@ -405,7 +411,7 @@ test('pill visibility hover: a click right as the pill comes up lands on it', as
   await page.mouse.move(200, 200);
   await expect.poll(() => opacity(page)).toBe(0);
   await expect.poll(() => page.evaluate(() => (window as any).dockCalls.at(-1))).toBe('through');
-  const floor = page.getByRole('button', { name: '바닥 책상으로 보기' });
+  const floor = viewButton(page.locator('.dock-pill'));
   const b = (await floor.boundingBox())!;
   // Straight onto the hidden button: that one move was judged see-through (the pill still let
   // clicks through), so once the pill is up the dock must take the mouse with no further move.
@@ -415,9 +421,11 @@ test('pill visibility hover: a click right as the pill comes up lands on it', as
   // Clicked without moving again: in the app the window now holds the click for the pill.
   await page.mouse.down();
   await page.mouse.up();
-  await expect.poll(() => page.evaluate(() => (window as any).dockCalls)).toContain('floor');
+  await expect(viewMenu(page)).toBeVisible();
+  // The menu asks for room above the pill once the click landed on the (solid) pill.
+  await expect.poll(() => page.evaluate(() => (window as any).dockCalls)).toContain('room-on');
   const calls: string[] = await page.evaluate(() => (window as any).dockCalls);
-  const last = calls.lastIndexOf('floor');
+  const last = calls.lastIndexOf('room-on');
   expect(calls.slice(0, last).at(-1)).toBe('solid');
 });
 
@@ -547,4 +555,32 @@ test('stack threshold 2 stacks two helpers in the row and the office', async ({ 
   await setPref(page, { helperStackAt: 2 });
   await expect(page.locator('.helper-stack')).toHaveCount(1);
   await expect(page.locator('.helper-stack-desk')).toHaveText(/×2/);
+});
+
+test('window glass: the slider saves a see-through level for the card and side columns, and resets', async ({
+  page,
+}) => {
+  await bridge(page, office());
+  await openSettings(page, '모습');
+  const glass = page.getByRole('tabpanel').locator('[data-guide-section="glass"]');
+  await expect(glass.getByRole('heading', { name: '창 유리' })).toBeVisible();
+  await expect(glass.locator('output')).toHaveText('기본');
+  await glass.getByRole('slider', { name: '투명도' }).fill('40');
+  await expect(glass.locator('output')).toHaveText('40%');
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixture.preferences.windowGlass))
+    .toBe(40);
+  await expect(page.locator('html')).toHaveAttribute('data-glass', '40');
+  if (await page.locator('body.is-mac').count()) {
+    // macOS: the side columns let the window's glass through (60% of their colour).
+    const bg = await page
+      .getByRole('complementary', { name: '주 메뉴' })
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(bg).toMatch(/0\.6\)$|\/ 0\.6\)$/);
+  }
+  await glass.getByRole('button', { name: '기본', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixture.preferences.windowGlass))
+    .toBeNull();
+  await expect(page.locator('html')).not.toHaveAttribute('data-glass', /.*/);
 });

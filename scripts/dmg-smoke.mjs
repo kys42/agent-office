@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { releaseArchitecture, releaseStem, sha256 } from './release-utils.mjs';
+import { verifyDeveloperId } from './macos-signing.mjs';
 
 const arch = releaseArchitecture(process.env.AGENT_OFFICE_ARCH ?? process.arch);
 const packaged = path.resolve(`release/Agent Office-darwin-${arch}/Agent Office.app`);
@@ -15,7 +16,10 @@ const dmg = path.resolve('release', `${stem}.dmg`);
 const manifest = JSON.parse(await readFile(path.resolve('release', `${stem}.json`), 'utf8'));
 assert.equal(await sha256(dmg), manifest.dmg.sha256, 'DMG checksum');
 const temp = await mkdtemp(path.join(os.tmpdir(), 'agent-office-installed-'));
-const mount = path.join(temp, 'volume');
+// macOS can reject nested image mounts on removable volumes. Keep only the mountpoint
+// on the system volume; the large installed copy/profile may still use an external TMPDIR.
+const mountRoot = await mkdtemp('/private/tmp/agent-office-mount-');
+const mount = path.join(mountRoot, 'volume');
 let attached = false;
 try {
   execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg], {
@@ -42,6 +46,13 @@ try {
     'Installed bundle contains the approved application icon',
   );
   execFileSync('codesign', ['--verify', '--deep', '--strict', installed], { stdio: 'inherit' });
+  if (actual.signing === 'developer-id') {
+    assert.equal(manifest.notarized, true, 'Signed distribution must be notarized');
+    verifyDeveloperId(installed, actual.teamId);
+    for (const artifact of [installed, dmg])
+      execFileSync('xcrun', ['stapler', 'validate', artifact], { stdio: 'inherit' });
+    execFileSync('spctl', ['--assess', '--type', 'execute', installed], { stdio: 'inherit' });
+  }
   for (const smoke of ['scripts/desktop-smoke.mjs', 'scripts/card-windows-smoke.mjs'])
     execFileSync(process.execPath, [smoke], {
       stdio: 'inherit',
@@ -58,10 +69,11 @@ try {
       sourceCommit: actual.sourceCommit,
       arch,
       signing: actual.signing,
-      notarized: actual.notarized,
+      notarized: manifest.notarized,
     }),
   );
 } finally {
   if (attached) execFileSync('hdiutil', ['detach', mount], { stdio: 'inherit' });
   await rm(temp, { recursive: true, force: true });
+  await rm(mountRoot, { recursive: true, force: true });
 }

@@ -173,6 +173,10 @@ test('A zone sign zooms the big office onto that zone; again or Esc sees all', a
   await page.keyboard.press('Escape');
   await expect(card).not.toHaveClass(/is-zone-focus/);
   await expect(holder).toHaveClass(/is-fit/);
+  // The pointer is left where the sign was; zooming out can put a desk under it, whose request
+  // bubble then covers the sign (#105). Step away first so no desk stays pointed at.
+  await page.mouse.move(0, 0);
+  await expect(page.locator('.speech-request-bubble')).toHaveCount(0);
   // The sign toggles, and the back chip returns too.
   await sign.click();
   await expect(card).toHaveClass(/is-zone-focus/);

@@ -1,3 +1,6 @@
+import { serialize, deserialize } from 'node:v8';
+import { deflateRawSync, inflateRawSync } from 'node:zlib';
+import { BoundedCache } from './bounded-cache.js';
 import { QuotaService } from './quotas.js';
 import path from 'node:path';
 import os from 'node:os';
@@ -23,7 +26,7 @@ import { parseRecords, hash } from './adapters/normalize.js';
 import { codexMetadata, type CodexMeta } from './adapters/codex.js';
 import { readOpenClawDatabases } from './adapters/openclaw.js';
 import { artifactDetails } from './artifacts.js';
-import { claudeMetadata, claudeSubagentMetadata } from './adapters/claude.js';
+import { claudeMetadata, claudeSubagentMetadata, claudeTeammateLink } from './adapters/claude.js';
 import {
   applyLiveWait,
   defaultLiveDeps,
@@ -35,9 +38,13 @@ import {
   type ClaudeProcess,
 } from './adapters/claude-live.js';
 import { mergeSessions } from './adapters/merge.js';
-import { NOTICE_PAGE_MAX } from '../src/shared/notice-pages.js';
 import { DETAIL_PAGE_MAX } from '../src/shared/conversation-pages.js';
+import { LAUNCH_DESTINATIONS } from '../src/shared/launch.js';
+import { PET_NAME_CHOICES, PET_TALLY_GROUPS } from '../src/shared/view-prefs.js';
+import type { PetNameMode, PetTallyGroup } from '../src/shared/types.js';
 import { BOOKMARK_NOTE, BOOKMARK_PAGE_MAX } from '../src/shared/bookmarks.js';
+import { OUTPUT_PAGE_MAX } from '../src/shared/outputs.js';
+import { readPreview } from './outputs.js';
 import {
   applyPatch,
   composePatches,
@@ -63,6 +70,28 @@ import {
 import { CANONICAL, localizePreferences, localizeSession } from '../src/shared/canonical.js';
 import { PET_CHARACTERS, PET_COLORS, PET_ACCESSORIES } from '../src/shared/pets.js';
 import type { PetCharacter, PetColor, PetAccessory } from '../src/shared/pets.js';
+import {
+  DESK_CHAIRS,
+  DESK_COLLEAGUE_CAP,
+  DESK_ITEMS,
+  DESK_MONITORS,
+  DESK_PROJECT_CAP,
+  type DeskChair,
+  type DeskItem,
+  type DeskMonitor,
+  type DeskTop,
+} from '../src/shared/desks.js';
+import { OFFICE_PALETTES } from '../src/shared/office-assets.js';
+const deskItem = z.enum(Object.keys(DESK_ITEMS) as [DeskItem, ...DeskItem[]]);
+const deskLayerSchema = z
+  .object({
+    top: z.enum(Object.keys(OFFICE_PALETTES) as [DeskTop, ...DeskTop[]]).optional(),
+    monitor: z.enum(Object.keys(DESK_MONITORS) as [DeskMonitor, ...DeskMonitor[]]).optional(),
+    chair: z.enum(Object.keys(DESK_CHAIRS) as [DeskChair, ...DeskChair[]]).optional(),
+    itemLeft: deskItem.optional(),
+    itemRight: deskItem.optional(),
+  })
+  .strict();
 const petLookSchema = z
   .object({
     character: z.enum(Object.keys(PET_CHARACTERS) as [PetCharacter, ...PetCharacter[]]),
@@ -90,6 +119,43 @@ const zoneRuleSchema = z
     target: z.string().max(1100).optional(),
   })
   .strict();
+const deskViewShape = {
+  branch: z.boolean().optional(),
+  papers: z.boolean().optional(),
+  beacon: z.boolean().optional(),
+  focus: z.boolean().optional(),
+};
+/** #324: what each screen shows; each mode and key optional, nothing else accepted. */
+const viewsSchema = z
+  .object({
+    pet: z
+      .object({
+        tally: z.boolean().optional(),
+        tallyGroups: z
+          .array(z.enum(PET_TALLY_GROUPS as [PetTallyGroup, ...PetTallyGroup[]]))
+          .max(PET_TALLY_GROUPS.length)
+          .optional(),
+        name: z.enum(PET_NAME_CHOICES as [PetNameMode, ...PetNameMode[]]).optional(),
+        turnEffect: z.boolean().optional(),
+        petting: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    dock: z
+      .object({
+        ...deskViewShape,
+        hideRead: z.boolean().optional(),
+        tally: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+    tiny: z
+      .object({ effects: z.boolean().optional(), tally: z.boolean().optional() })
+      .strict()
+      .optional(),
+    office: z.object(deskViewShape).strict().optional(),
+  })
+  .strict();
 const prefsSchema = z
   .object({
     paused: z.boolean().optional(),
@@ -112,6 +178,8 @@ const prefsSchema = z
       .strict()
       .optional(),
     tinyNames: z.boolean().optional(),
+    cardOutputs: z.boolean().optional(),
+    chatOutputs: z.boolean().optional(),
     tinyFinalDot: z.boolean().optional(),
     dockPill: z.enum(['always', 'subdued', 'hover']).optional(),
     dockPillResetAt: z.number().int().min(0).optional(),
@@ -122,8 +190,12 @@ const prefsSchema = z
     helperStackAt: z.number().int().min(2).max(8).optional(),
     helperRetainMinutes: z.number().int().min(5).max(240).optional(),
     tmuxSkipPermissions: z.boolean().optional(),
+    restorePinnedCards: z.boolean().optional(),
+    launchDestination: z.enum(LAUNCH_DESTINATIONS).optional(),
     textSize: z.enum(['small', 'normal', 'large', 'larger']).optional(),
     readingFont: z.enum(['system', 'pretendard', 'mono']).optional(),
+    windowGlass: z.number().int().min(0).max(70).nullable().optional(),
+    views: viewsSchema.optional(),
     petAppearance: z
       .object({
         version: z.literal(1),
@@ -137,6 +209,23 @@ const prefsSchema = z
         colleagues: z
           .record(z.string().min(1).max(500), petLookSchema.nullable())
           .refine((value) => Object.keys(value).length <= 3000, { error: () => m().pets.tooMany }),
+      })
+      .strict()
+      .optional(),
+    deskAppearance: z
+      .object({
+        version: z.literal(1),
+        office: deskLayerSchema.nullable().optional(),
+        projects: z
+          .record(z.string().min(1).max(500), deskLayerSchema.nullable())
+          .refine((value) => Object.keys(value).length <= DESK_PROJECT_CAP, {
+            error: () => m().desks.tooMany,
+          }),
+        colleagues: z
+          .record(z.string().min(1).max(500), deskLayerSchema.nullable())
+          .refine((value) => Object.keys(value).length <= DESK_COLLEAGUE_CAP, {
+            error: () => m().desks.tooMany,
+          }),
       })
       .strict()
       .optional(),
@@ -164,24 +253,19 @@ const bookmarkQuerySchema = z
   })
   .strict();
 const noteSchema = z.string().max(BOOKMARK_NOTE);
-const noticeQueryShape = {
-  filter: z.enum(['final', 'attention', 'all']),
-  includeRead: z.boolean().optional(),
-  includeBackground: z.boolean().optional(),
-  sessionIds: z.array(z.string().max(400)).max(500).optional(),
-};
-const noticeQuerySchema = z.object(noticeQueryShape).strict();
-const noticePageSchema = z
+const outputQuerySchema = z
   .object({
-    ...noticeQueryShape,
+    sessionIds: z.array(z.string().max(400)).max(500).optional(),
+    text: z.string().max(200).optional(),
     before: z
-      .object({ at: z.number(), id: z.string().max(1000) })
+      .object({ createdAt: z.number(), id: z.string().max(100) })
       .strict()
       .nullable()
       .optional(),
-    limit: z.number().int().min(1).max(NOTICE_PAGE_MAX).optional(),
+    limit: z.number().int().min(1).max(OUTPUT_PAGE_MAX).optional(),
   })
   .strict();
+const outputIdSchema = z.string().min(1).max(100);
 /** A quiet office still reports that it checked, at this pace. */
 const HEALTH_MS = 60_000;
 /** Changes kept for pollers that fell behind; further back they get the whole office. */
@@ -294,7 +378,6 @@ export class OfficeService extends EventEmitter {
   private quotaService = new QuotaService();
   store: OfficeStore;
   connectors: Connector[] = [];
-  syncing = false;
   lastSync: number | null = null;
   error: string | null = null;
   version = 0;
@@ -306,18 +389,44 @@ export class OfficeService extends EventEmitter {
   private healthAt = 0;
   /**
    * Every visible notice as the office last listed it, for `emitChanged` to merge into. Kept
-   * between passes: the same objects every full emit builds anyway, so its size follows the
-   * notices table (about what one `officeView` holds).
+   * between passes: the same objects every full emit builds anyway, with a bounded live set (the same projection `officeView` holds).
    */
   private notices: { all: OfficeNotice[]; locale: Locale } | null = null;
   /** Recent changes, for a poller a few versions behind (the web preview). */
   private patches: SnapshotPatch[] = [];
+  private patchSizes: number[] = [];
+  private patchBytes = 0;
   private polledAt = 0;
+  /** Evicted normalized parses, compressed instead of repeatedly reparsing large raw logs.
+   * This tier has its own byte budget and exactly the same source stamp validation. */
+  coldCache = new BoundedCache<string, { stamp: string; provider: Provider; data: Buffer }>(
+    16 * 1048576,
+    4000,
+    (value) => value.data.byteLength + 512,
+  );
   /** `key` feeds revisions: the stamp, plus a marker once a re-verification found drift. */
-  cache = new Map<string, { stamp: string; key?: string; session: Session }>();
+  cache = new BoundedCache<string, { stamp: string; key?: string; session: Session }>(
+    48 * 1048576,
+    4000,
+    undefined,
+    (file, entry) => {
+      try {
+        const packed = serialize(entry);
+        // Avoid a large transient compression allocation for an exceptional single session.
+        if (packed.byteLength > 8 * 1048576) return;
+        this.coldCache.set(file, {
+          stamp: entry.stamp,
+          provider: entry.session.provider,
+          data: deflateRawSync(packed, { level: 1 }),
+        });
+      } catch {
+        /* Cache admission must never make collection fail. */
+      }
+    },
+  );
   /** JSONL read windows: changed files read only their appended lines. */
   windows = new RecordWindowCache();
-  clawCache = new Map<string, Session>();
+  clawCache = new BoundedCache<string, Session>(16 * 1048576, 1000);
   timer: ReturnType<typeof setTimeout> | null = null;
   pending: Promise<Snapshot> | null = null;
   stopped = false;
@@ -401,7 +510,7 @@ export class OfficeService extends EventEmitter {
         preferences: localizePreferences(this.store.preferences(), locale),
         bookmarked: this.store.bookmarkMarks(sessions.map((x) => x.id)),
         bookmarkStamp: this.store.bookmarkStamp(),
-        syncing: this.syncing,
+        outputStamp: this.store.outputStamp(),
         lastSync: this.lastSync,
         error: this.error,
         version: this.version,
@@ -449,17 +558,27 @@ export class OfficeService extends EventEmitter {
           }
         : null;
     this.sent = { index, at: now, snapshot: s };
-    if (patch && now - this.polledAt < POLLER_MS)
-      this.patches = [...this.patches.slice(-(PATCH_HISTORY - 1)), patch];
-    else this.patches = [];
+    if (patch && now - this.polledAt < POLLER_MS) {
+      const size = JSON.stringify(patch).length * 2;
+      this.patches.push(patch);
+      this.patchSizes.push(size);
+      this.patchBytes += size;
+      while (this.patches.length > PATCH_HISTORY || this.patchBytes > 8 * 1048576) {
+        this.patches.shift();
+        this.patchBytes -= this.patchSizes.shift()!;
+      }
+    } else {
+      this.patches = [];
+      this.patchSizes = [];
+      this.patchBytes = 0;
+    }
     this.emit('snapshot', s, patch);
     return s;
   }
   /**
    * After a hot pass: sends what changed in just these sessions without rebuilding the office.
    * Their rows are read and decorated one by one, attached against the published colleagues,
-   * their notices merged into the last full list of notices, and the carried notices and counts
-   * chosen again from it. The result is what `emitSnapshot` would publish, as long as nothing
+   * their live notice projection and exact counts queried from the indexed store. The result is what `emitSnapshot` would publish, as long as nothing
    * about these sessions can move anyone else: the same zone, desk, attachment, relations, actor
    * and background standing, and no unattached helper hanging off them. Otherwise, and before
    * anything was published, it is `emitSnapshot`. Time-driven changes of other colleagues wait
@@ -521,16 +640,8 @@ export class OfficeService extends EventEmitter {
         if (isHelper(s) && !s.attachedTo) return null;
         next.set(s.id, localizeSession(s, locale));
       }
-    // Notices: these sessions' own, merged into the rest as last listed.
-    const background = new Set(
-      [...rows.values()].filter((s) => isBackground(s) || isHelper(s)).map((s) => s.id),
-    );
-    const merged = all
-      .filter((n) => !changed.has(n.sessionId))
-      .concat(this.store.noticesOf([...changed], background, locale))
-      .sort(noticeOrder);
-    const carried = residentNotices(merged);
-    const noticeStats = { unread: unreadNoticeCount(merged), total: merged.length };
+    // Query only the live working set. Old notice bodies never remain in the collector.
+    const { notices: carried, noticeStats } = this.store.noticeView(locale, list);
     // The patch, against the published index.
     const prev = sent.index;
     const index: SnapshotIndex = {
@@ -565,11 +676,11 @@ export class OfficeService extends EventEmitter {
       index.fields.set('noticeStats', stats);
       patch.fields = { noticeStats };
     }
-    return { patch: Object.keys(patch).length ? patch : null, index, all: merged };
+    return { patch: Object.keys(patch).length ? patch : null, index, all: carried };
   }
   /**
    * The office as last published. Every client must hold exactly what a version was published
-   * as, since patches are made against that; a mid-collection read could differ (e.g. `syncing`).
+   * as, since patches are made against that; a mid-collection read could differ (e.g. `lastSync`).
    */
   private published(): Snapshot {
     return this.sent?.snapshot ?? this.emitSnapshot();
@@ -656,7 +767,6 @@ export class OfficeService extends EventEmitter {
       this.forgetHot();
       return this.emitSnapshot();
     }
-    this.syncing = true;
     this.error = null;
     for (const provider of ['claude', 'codex', 'openclaw'] as Provider[]) {
       if (this.stopped) break;
@@ -765,7 +875,6 @@ export class OfficeService extends EventEmitter {
       }
     }
     this.windows.sweep();
-    this.syncing = false;
     this.lastSync = Date.now();
     if (this.stopped) throw new Error(m().server.rpc.stopped);
     this.rehot(Date.now(), prefs);
@@ -782,8 +891,20 @@ export class OfficeService extends EventEmitter {
     file: SourceFile,
     metadata: Map<string, CodexMeta>,
   ): Promise<Session | null | 'error'> {
-    const stamp = `office-v11:${file.size}:${file.mtime}`;
-    const cached = this.cache.get(file.path);
+    const stamp = `office-v13:${file.size}:${file.mtime}`;
+    let cached = this.cache.get(file.path);
+    if (!cached) {
+      const cold = this.coldCache.get(file.path);
+      if (cold?.stamp === stamp) {
+        try {
+          cached = deserialize(inflateRawSync(cold.data, { maxOutputLength: 8 * 1048576 }));
+          // Keep cold hits compressed. Promoting every file in a sequential scan would
+          // evict/recompress the hot tier repeatedly. A changed file earns hot admission.
+        } catch {
+          this.coldCache.delete(file.path);
+        }
+      }
+    }
     let s = cached?.stamp === stamp ? cached.session : null;
     let key = (s && cached?.key) || stamp;
     // A window built by appends trusts its guard bytes; re-verify it in full on schedule
@@ -857,22 +978,23 @@ export class OfficeService extends EventEmitter {
             : undefined,
           revision: hash(`${s.revision}:${sidecar.title}:${sidecar.role}`),
         };
+      // An agent-team member sits with its lead, found again on every pass: the team config
+      // and the lead's transcript can appear after the member's.
+      if (s.relation?.team) s = await claudeTeammateLink(s, this.roots.claude);
     }
     return s;
   }
   /** Parse cache with a size cap as a safety net; pruning to discovered files keeps it far below. */
   private remember(file: string, entry: { stamp: string; key: string; session: Session }) {
-    this.cache.delete(file);
+    this.coldCache.delete(file);
     this.cache.set(file, entry);
-    for (const key of this.cache.keys()) {
-      if (this.cache.size <= 4000) break;
-      this.cache.delete(key);
-    }
   }
   /** Drop one provider's read caches for files that are no longer discovered. */
   private forget(provider: Provider, keep: Set<string>) {
     for (const [file, entry] of this.cache)
       if (entry.session.provider === provider && !keep.has(file)) this.cache.delete(file);
+    for (const [file, entry] of this.coldCache)
+      if (entry.provider === provider && !keep.has(file)) this.coldCache.delete(file);
     this.windows.prune(keep, this.roots[provider]);
   }
   /**
@@ -902,6 +1024,12 @@ export class OfficeService extends EventEmitter {
   }
   /** Which known sessions take the hot path now, at most `hot.max`, the most recently active first. */
   private rehot(now: number, prefs: Preferences) {
+    // Stopped: nothing is hot again. A hot pass in flight at stop() reaches here after its
+    // awaits and would otherwise refill the set `halt` just cleared (#103).
+    if (this.stopped) {
+      this.hotSet.clear();
+      return;
+    }
     const hot = [...this.known.values()]
       .filter((k) => {
         if (!prefs.enabledProviders.includes(k.provider)) return false;
@@ -1080,7 +1208,11 @@ export class OfficeService extends EventEmitter {
           break;
         }
         files.push({ path: file, size: st.size, mtime: st.mtimeMs });
-        if (this.cache.get(file)?.stamp !== `office-v11:${st.size}:${st.mtimeMs}`) moved = true;
+        if (
+          (this.cache.get(file)?.stamp ?? this.coldCache.get(file)?.stamp) !==
+          `office-v13:${st.size}:${st.mtimeMs}`
+        )
+          moved = true;
       }
       if (moved) due.push({ k, files, live });
     }
@@ -1167,11 +1299,9 @@ export class OfficeService extends EventEmitter {
           z.enum(['read', 'dismiss', 'unread', 'view']).parse(args[1]),
         );
         return this.emitSnapshot();
-      case 'noticePage':
-        return this.store.noticePage(noticePageSchema.parse(args[0]));
-      case 'noticeReadAll':
-        this.store.noticeReadAll(
-          noticeQuerySchema.parse(args[0]),
+      case 'readReplies':
+        this.store.noticeReadReplies(
+          z.string().max(400).parse(args[0]),
           z.number().nonnegative().parse(args[1]),
         );
         return this.emitSnapshot();
@@ -1207,6 +1337,8 @@ export class OfficeService extends EventEmitter {
         );
       case 'bookmarks':
         return this.store.bookmarks(bookmarkQuerySchema.optional().parse(args[0] ?? undefined));
+      case 'bookmarkById':
+        return this.store.bookmarkById(z.string().max(100).parse(args[0]));
       case 'bookmark': {
         const bookmark = this.store.bookmark(
           z.string().max(400).parse(args[0]),
@@ -1232,6 +1364,17 @@ export class OfficeService extends EventEmitter {
         // Other windows' lists read the note again.
         this.emitSnapshot();
         return bookmark;
+      }
+      case 'outputs':
+        return this.store.outputs(outputQuerySchema.optional().parse(args[0] ?? undefined));
+      case 'outputTarget':
+        // The real path, for the desktop main process only (it never forwards this call from a
+        // page, and the HTTP preview refuses it): what it opens, shows or copies.
+        return this.store.outputTarget(outputIdSchema.parse(args[0]));
+      case 'outputPreview': {
+        // Read now, on the person's click: only a recorded markdown or HTML file.
+        const target = this.store.outputTarget(outputIdSchema.parse(args[0]));
+        return target ? readPreview(target) : null;
       }
       case 'handoff':
         return this.store.handoff(

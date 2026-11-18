@@ -26,7 +26,6 @@ import { Sprite } from './Sprite';
 
 export type GuideAction =
   | 'office'
-  | 'inbox'
   | 'pet'
   | 'card'
   | 'appearance'
@@ -41,7 +40,6 @@ export type GuideAction =
   | 'settings';
 const steps = ['welcome', 'attention', 'pet', 'ready'] as const;
 const features = [
-  ['inbox', Inbox],
   ['pet', PawPrint],
   ['card', MessageSquare],
   ['appearance', Palette],

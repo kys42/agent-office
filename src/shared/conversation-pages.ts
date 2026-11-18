@@ -1,3 +1,4 @@
+import { noticeOrder } from './notice-pages';
 import type { DetailPage, OfficeEvent, OfficeNotice, Session, SessionDetail } from './types';
 
 /**
@@ -62,6 +63,8 @@ export interface LoadedConversation {
   older: boolean;
   /** A page was read (before that the card shows the snapshot's few events). */
   paged: boolean;
+  /** Browsing an older bounded window; newest messages wait behind the jump-to-latest action. */
+  newer?: boolean;
   /** Notices that came with the pages (resident ones arrive with the snapshot). */
   notices: OfficeNotice[];
 }
@@ -85,14 +88,21 @@ const unionNotices = (a: OfficeNotice[], b: OfficeNotice[]) => [
   ...new Map([...a, ...b].map((n) => [n.id, n])).values(),
 ];
 /** At most `LOADED_EVENTS`, dropping the oldest (which can be read again). */
+function windowNotices(notices: OfficeNotice[], events: OfficeEvent[]) {
+  const first = events[0]?.at ?? -Infinity;
+  const last = events.at(-1)?.at ?? Infinity;
+  return notices
+    .filter((n) => n.at >= first && n.at <= last)
+    .sort(noticeOrder)
+    .slice(0, LOADED_EVENTS * 2);
+}
 function bounded(view: LoadedConversation, events: OfficeEvent[]): LoadedConversation {
-  if (events.length <= LOADED_EVENTS) return { ...view, session: { ...view.session, events } };
   const kept = events.slice(-LOADED_EVENTS);
   return {
     ...view,
     session: { ...view.session, events: kept },
-    older: true,
-    notices: view.notices.filter((n) => n.at >= kept[0].at),
+    older: view.older || events.length > kept.length,
+    notices: windowNotices(view.notices, kept),
   };
 }
 
@@ -104,6 +114,7 @@ function bounded(view: LoadedConversation, events: OfficeEvent[]): LoadedConvers
 export function mergeLive(view: LoadedConversation, live: Session): LoadedConversation {
   if (view.session.id !== live.id || (live.remote && !live.remote.conversation))
     return freshConversation(live);
+  if (view.newer) return { ...view, session: { ...live, events: view.session.events } };
   const first = view.session.events[0]?.at;
   let fresh =
     view.older && first !== undefined ? live.events.filter((e) => e.at >= first) : live.events;
@@ -126,6 +137,7 @@ export function mergeLive(view: LoadedConversation, live: Session): LoadedConver
  * conversation moved on by more than a page meanwhile, the card starts over from this page.
  */
 export function mergeNewest(view: LoadedConversation, page: SessionDetail): LoadedConversation {
+  if (view.newer && view.session.id === page.id) return view;
   const head = page.events[0];
   const joins =
     view.paged &&
@@ -133,11 +145,12 @@ export function mergeNewest(view: LoadedConversation, page: SessionDetail): Load
     !!page.olderEvents &&
     !!head &&
     view.session.events.some((e) => e.id === head.id);
-  const { olderEvents, notices = [], ...session } = page;
+  const { olderEvents, newerEvents, notices = [], ...session } = page;
   if (!joins)
     return {
       session,
       older: !!olderEvents,
+      newer: !!newerEvents,
       paged: true,
       notices,
     };
@@ -163,10 +176,14 @@ export function mergeNewest(view: LoadedConversation, page: SessionDetail): Load
 /** An older page, read before the loaded events. */
 export function prependPage(view: LoadedConversation, page: SessionDetail): LoadedConversation {
   if (view.session.id !== page.id) return view;
+  const all = union(page.events, view.session.events);
+  const events = all.slice(0, LOADED_EVENTS);
+  const newer = !!view.newer || all.length > events.length;
   return {
     ...view,
-    session: { ...view.session, events: union(page.events, view.session.events) },
+    session: { ...view.session, events },
     older: !!page.olderEvents,
-    notices: unionNotices(page.notices ?? [], view.notices),
+    newer,
+    notices: windowNotices(unionNotices(page.notices ?? [], view.notices), events),
   };
 }

@@ -132,6 +132,58 @@ export function petBounds(feet: Point | null | undefined, area: Rect, size = PET
 }
 
 /**
+ * While a dialog (row, floor) or the 보기 menu (any look) is open, the dock window grows upward
+ * to these heights: the desks and the pet keep their bottom edge, so nothing on screen moves.
+ */
+export const DOCK_ROOM_HEIGHT = 760;
+export const PET_ROOM_HEIGHT = 560;
+/**
+ * The pet's window also grows sideways while it holds room: its ＋ popover (about 360px) and a
+ * dialog (the launch sheet) need more than the pet's 300px. See `petRoomRect`.
+ */
+export const PET_ROOM_WIDTH = 560;
+/** Which edge of its window the pet stands at (`.desk-pet-stage`): grown the other way. */
+export type PetSide = 'left' | 'right';
+/**
+ * A dock window grown upward to `height` (and leftward to `width`) for an open dialog or menu:
+ * the same bottom and right edges, taking only the room up to the work area's top and left
+ * side (never pushed down or right instead).
+ */
+export function roomyRect(b: Rect, area: Rect, height: number, width = b.width): Rect {
+  const h = Math.max(b.height, Math.min(height, b.y + b.height - area.y));
+  const w = Math.max(b.width, Math.min(width, b.x + b.width - area.x));
+  return { x: b.x + b.width - w, y: b.y + b.height - h, width: w, height: h };
+}
+/**
+ * The pet's window grown for room: upward like any dock window, and sideways to `width` —
+ * to the left (the pet standing at the window's right edge) when there is room there, else to
+ * the right (the pet at the left edge), whichever side has more when neither has enough. The
+ * pet keeps its spot on screen; `side` tells the page where to draw it.
+ */
+export function petRoomRect(
+  b: Rect,
+  area: Rect,
+  height: number,
+  width: number,
+): { rect: Rect; side: PetSide } {
+  const up = roomyRect(b, area, height);
+  const leftward = b.x + b.width - area.x;
+  const rightward = area.x + area.width - b.x;
+  const side: PetSide = leftward >= width || leftward >= rightward ? 'right' : 'left';
+  const w = Math.max(b.width, Math.min(width, side === 'right' ? leftward : rightward));
+  return { rect: { ...up, x: side === 'right' ? b.x + b.width - w : b.x, width: w }, side };
+}
+/**
+ * The pet's own box inside its window, which may hold room above and to one side: the pet's
+ * size at the bottom corner of `side` (where .desk-pet-stage draws it).
+ */
+export const petStand = (b: Rect, side: PetSide = 'right', size = PET_SIZE): Rect => ({
+  x: side === 'right' ? b.x + b.width - size.width : b.x,
+  y: b.y + b.height - size.height,
+  ...size,
+});
+
+/**
  * Read `desk-pet.json`: v2 stores the standing spot; the first format stored the top-left
  * of the original 132×148 window, converted here so upgrades keep the pet in place.
  */
@@ -191,4 +243,26 @@ export function cardBounds(anchor: Rect, area: Rect, size = CARD_SIZE): Rect {
   const right = anchor.x + anchor.width + CARD_GAP;
   const x = right + width <= inside.x + inside.width ? right : anchor.x - CARD_GAP - width;
   return clampInto({ x, y: anchor.y + anchor.height / 2 - height / 2, width, height }, inside);
+}
+
+/**
+ * The big office opened from a window on another display (the desk pet, the row, a card): the
+ * same size, at the same relative spot of the target work area (its share of the free room
+ * across and down, so a centred window stays centred and one flush to an edge stays there),
+ * kept whole inside it. Coordinates are DIPs, so scale factors need no maths here; a window
+ * bigger than the target area shrinks to fit it.
+ */
+export function moveOntoArea(b: Rect, from: Rect, to: Rect): Rect {
+  const width = Math.min(b.width, to.width);
+  const height = Math.min(b.height, to.height);
+  const share = (at: number, start: number, room: number) =>
+    room > 0 ? Math.min(1, Math.max(0, (at - start) / room)) : 0.5;
+  const fx = share(b.x, from.x, from.width - b.width);
+  const fy = share(b.y, from.y, from.height - b.height);
+  return {
+    width,
+    height,
+    x: Math.round(to.x + fx * (to.width - width)),
+    y: Math.round(to.y + fy * (to.height - height)),
+  };
 }

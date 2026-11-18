@@ -20,7 +20,7 @@ export const roster = {
   },
   headline: {
     waiting: (n: number) => `${n} ${n === 1 ? 'teammate is' : 'teammates are'} waiting on you`,
-    results: (n: number) => `${n} ${n === 1 ? 'result' : 'results'} to review`,
+    results: (n: number) => `${n} ${n === 1 ? 'teammate has' : 'teammates have'} a new result`,
     working: (n: number) => `${n} ${n === 1 ? 'teammate is' : 'teammates are'} working`,
     standby: (n: number) =>
       `${n} ${n === 1 ? 'teammate just finished and is' : 'teammates just finished and are'} standing by`,
@@ -40,11 +40,11 @@ export const roster = {
   all: 'All',
   markAllReadTitle: "Mark this group's final responses as read · items that need you stay",
   markAllRead: 'Mark all read',
-  unreadTitle: (n: number) => `${n} unread ${n === 1 ? 'update' : 'updates'}`,
+  unreadTitle: 'New result you have not seen',
   hidden: 'Hidden',
   opened: (n: number) => `Opened ${n} ${n === 1 ? 'time' : 'times'}`,
   workingFor: (duration: string) => `Working · ${duration}`,
-  newResults: (n: number, ago: string) => `${n} new ${n === 1 ? 'result' : 'results'} · ${ago}`,
+  newResult: (ago: string) => `New result · ${ago}`,
   runs: (n: number) => `${n} ${n === 1 ? 'run' : 'runs'}`,
   helper: 'Helper',
   fork: 'Forked task',

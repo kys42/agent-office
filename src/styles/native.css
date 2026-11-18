@@ -3,13 +3,13 @@
    header on every column, segmented controls instead of underline tabs, Messages-style
    conversation, Spotlight-style palette. Only chrome lives here; the pixel office does not. */
 
-/* ── Right column: roster, inspector, inbox, usage share one grouped surface ── */
+/* ── Right column: roster, inspector, usage share one grouped surface ── */
 .roster,
 .app-body > .inspector {
   background: var(--grouped);
   border-left: 0.5px solid var(--line-2);
 }
-.panel-tabs {
+.panel-bar {
   position: relative;
   flex-shrink: 0;
   height: var(--bar-h);
@@ -20,48 +20,11 @@
   border-bottom: 0.5px solid var(--line-2);
   -webkit-app-region: drag;
 }
-.panel-tabs button {
-  -webkit-app-region: no-drag;
-}
-.roster > .panel-tabs {
+.roster > .panel-bar {
   margin: 0 -14px;
   padding: 0 10px 0 14px;
-}
-.news-inbox > .panel-tabs {
-  padding: 0 10px 0 16px;
-}
-
-.panel-tabs .panel-switch {
-  display: inline-flex;
-  padding: 2px;
-  gap: 0;
-  background: var(--bg-4);
-  border: 0;
-  border-radius: 7px;
-}
-.panel-tabs .panel-switch button {
-  height: 22px;
-  padding: 0 11px;
-  gap: 5px;
-  border-radius: 5px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-}
-.panel-tabs .panel-switch button[aria-pressed='true'] {
-  background: var(--control);
-  box-shadow:
-    0 0 0 0.5px var(--control-line),
-    0 1px 2px rgba(0, 0, 0, 0.12);
-}
-.panel-tabs .panel-switch button b {
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  font-size: 10px;
-  line-height: 15px;
-  color: #ffffff;
-  background: var(--badge);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* ── Roster as an inset-grouped list ── */
@@ -266,8 +229,7 @@
   padding: 4px 16px 18px;
 }
 .artifact-card,
-.completion-button,
-.news-item {
+.completion-button {
   background: var(--bg-2);
   border: 0;
   border-radius: 10px;
@@ -290,8 +252,7 @@
   backdrop-filter: blur(16px) saturate(1.5);
   border-bottom: 0.5px solid var(--line-2);
 }
-.conversation-filters button,
-.news-filter-bar button {
+.conversation-filters button {
   height: 22px;
   padding: 0 8px;
   border: 0;
@@ -299,24 +260,20 @@
   font-size: calc(12px * var(--read-scale));
   color: var(--text-2);
 }
-.conversation-filters button:hover,
-.news-filter-bar button:hover {
+.conversation-filters button:hover {
   background: var(--bg-4);
 }
-.conversation-filters button.active,
-.news-filter-bar button.active {
+.conversation-filters button.active {
   color: var(--accent-ink);
   background: var(--accent);
   border: 0;
 }
-.conversation-filters button span,
-.news-filter-bar button span {
+.conversation-filters button span {
   font-family: var(--font-read);
   color: inherit;
   opacity: 0.7;
 }
-.conversation-filters button.active span,
-.news-filter-bar button.active span {
+.conversation-filters button.active span {
   color: inherit;
 }
 .message-meta b {
@@ -343,6 +300,12 @@
 }
 .message-user .message-text code {
   background: rgba(255, 255, 255, 0.2);
+}
+/* The app's soft-accent selection vanishes on the accent bubble: invert it there. */
+.message-user .message-bubble::selection,
+.message-user .message-bubble *::selection {
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.9);
 }
 .conversation-message.category-reply .message-bubble {
   box-shadow:
@@ -374,37 +337,6 @@
 }
 .new-messages {
   box-shadow: var(--shadow-pop);
-}
-
-/* ── Inbox ── */
-.inbox-heading h2 {
-  font-family: var(--font-read-display);
-  font-size: calc(17px * var(--read-scale));
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.inbox-heading h2 b {
-  font-family: var(--font-read-display);
-  font-weight: 700;
-}
-.news-item.unread {
-  background: var(--bg-2);
-  box-shadow:
-    0 0 0 0.5px var(--line-2),
-    inset 3px 0 0 var(--accent);
-}
-.news-review-bar {
-  border-bottom-color: var(--line-2);
-}
-.news-review-bar button {
-  border: 0;
-  color: var(--accent);
-}
-.news-actions {
-  border-top-color: var(--line);
-}
-.news-footnote {
-  border-top-color: var(--line-2);
 }
 
 /* ── Palette: Spotlight ── */
@@ -517,6 +449,13 @@
   }
 }
 @container bar (max-width: 720px) {
+  /* Still the accent pill, just the icon (its name stays on aria-label). */
+  .mini-button {
+    padding: 0 7px;
+  }
+  .mini-button span {
+    display: none;
+  }
   .zone-tabs button {
     padding: 0 8px;
   }
@@ -534,7 +473,7 @@
 }
 
 /* Narrow windows: the dock floats over the stage, under the toolbar — never over its buttons
-   (search, inbox, usage, hide and the desk pet stay reachable with a card open). */
+   (search, usage, hide and the desk pet stay reachable with a card open). */
 .app-body {
   position: relative;
 }
@@ -714,6 +653,66 @@ body.card-mode.is-mac .dock-card > .inspector-card {
 body.card-mode:not(.is-mac) .dock-card {
   background: color-mix(in srgb, var(--grouped) 90%, transparent);
   backdrop-filter: blur(28px) saturate(1.6);
+}
+/* Settings › Look › Glass: frosted glass in the manner of Liquid Glass. On macOS the card and
+   the big office sit on the system's blurring material; the slider sets how much colour lies
+   over it (less colour, more of the blurred desktop), and a light rim and sheen catch the edge.
+   A Windows window has no blurring material, so its card keeps its look. */
+:root {
+  --glass-sheen: rgba(255, 255, 255, 0.22);
+  --glass-rim: rgba(255, 255, 255, 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.28);
+  --glass-foot: rgba(0, 0, 0, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass-sheen: rgba(255, 255, 255, 0.07);
+    --glass-rim: rgba(255, 255, 255, 0.16);
+    --glass-edge: rgba(255, 255, 255, 0.1);
+    --glass-foot: rgba(0, 0, 0, 0.25);
+  }
+}
+:root[data-glass] body.card-mode.is-mac .dock-card {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 38%),
+    color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim),
+    inset 0 0 0 0.5px var(--glass-edge),
+    inset 0 -1px 0 var(--glass-foot);
+}
+/* The big office's side columns in the same glass (a Windows window is solid, so its columns
+   keep their colour). */
+:root[data-glass] body.is-mac:not(.card-mode) .sidebar {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 30%),
+    color-mix(in srgb, var(--sidebar) var(--glass-fill), transparent);
+  box-shadow: inset -1px 0 0 var(--glass-edge);
+}
+:root[data-glass]
+  body.is-mac:not(.card-mode)
+  :is(.roster, .app-body > .inspector, .app-body > .inspector-card) {
+  background:
+    linear-gradient(180deg, var(--glass-sheen), transparent 30%),
+    color-mix(in srgb, var(--grouped) var(--glass-fill), transparent);
+  box-shadow: inset 1px 0 0 var(--glass-edge);
+}
+/* Behind the right column: the column's own space (and the office page around the stage)
+   lets the glass through too; the pixel stage itself stays solid. */
+:root[data-glass] body.is-mac:not(.card-mode) :is(.app-body, .main-content.view-office) {
+  background: transparent;
+}
+:root[data-glass] body.is-mac:not(.card-mode) .main-content.view-office .office-column {
+  background: var(--bg-0);
+}
+/* Narrow windows float the right column over the pixel office: there it stays solid, or the
+   scene would show through the words. */
+@media (max-width: 1100px) and (min-width: 861px) {
+  :root[data-glass]
+    body.is-mac:not(.card-mode)
+    :is(.app-body > .inspector, .app-body > .inspector-card) {
+    background: var(--grouped);
+  }
 }
 .dock-card > .inspector-card {
   display: flex;
@@ -1255,8 +1254,29 @@ body.card-mode:not(.is-mac) .dock-card {
   border-radius: 12px;
 }
 .terminal-send-chat .terminal-send-error,
-.terminal-send-chat .draft-confirm {
+.terminal-send-chat .draft-confirm,
+.terminal-send-chat .composer-images {
   grid-column: 1 / -1;
+}
+/* With the attach button: box, attach, send on one line. */
+.terminal-send.terminal-send-chat:has(.composer-attach) {
+  grid-template-columns: 1fr auto auto;
+  column-gap: 4px;
+}
+.terminal-send-chat .terminal-send-bar .composer-attach {
+  grid-row: 1;
+  grid-column: 2;
+  width: 32px;
+  height: 38px;
+  margin: 0;
+  border-radius: 12px;
+}
+.terminal-send-chat:has(.composer-attach) .terminal-send-bar .button {
+  grid-column: 3;
+}
+.terminal-send-chat .composer-images {
+  margin-top: 2px;
+  padding: 0 4px;
 }
 .inspector-card .persona-run-picker {
   flex: none;
@@ -1291,6 +1311,152 @@ body.card-mode:not(.is-mac) .dock-card {
   background: var(--bg-1);
   box-shadow: var(--shadow-pop);
   pointer-events: none;
+}
+/* Picking bubbles to copy or hand on (#377), like a messenger: a check beside every bubble, the
+   picked ones on a soft accent row (it shows around the person's blue bubble too, in either
+   theme) and the start marked. A click picks, so text is not selected meanwhile. */
+.conversation.is-selecting .conversation-message.is-pickable {
+  position: relative;
+  padding-left: 30px;
+  border-radius: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.conversation.is-selecting .is-pickable .message-meta button {
+  display: none;
+}
+.conversation.is-selecting .conversation-message.is-picked {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.inspector-card
+  .conversation.is-selecting
+  .conversation-message.is-continued:not(.message-user)
+  .message-meta {
+  left: 32px;
+}
+.bubble-pick {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--bg-1) 85%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--line-3);
+}
+.conversation-message.is-picked .bubble-pick {
+  background: var(--accent);
+  box-shadow: none;
+}
+.conversation-message.is-pick-start .bubble-pick {
+  box-shadow: 0 0 0 3px var(--accent-line);
+}
+.bubble-pick-start {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: calc(9.5px * var(--read-scale));
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--accent);
+}
+/* A folded tool log holding picked entries says so on its summary. */
+.conversation.is-selecting .work-group.has-picked > summary {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+/* The bar standing where the chat box is while bubbles are picked; the box waits underneath. */
+.card-composer.is-picking > :not(.bubble-share-bar) {
+  display: none;
+}
+.bubble-share-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bubble-share-status {
+  margin: 0;
+  font-size: calc(12px * var(--read-scale));
+  color: var(--text-2);
+}
+.bubble-share-status b {
+  font-weight: 600;
+  color: var(--text);
+}
+.bubble-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.bubble-share-hand {
+  position: relative;
+}
+/* Its explanation above the button: below, the card's edge would cut it. */
+.bubble-share-bar [data-tip]:is(:hover, :focus-visible)::after {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+}
+.bubble-share-targets {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  max-width: min(320px, 80vw);
+  max-height: min(320px, 50vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.bubble-share-targets button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bubble-share-face {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.bubble-share-who {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bubble-share-who :is(b, small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bubble-share-who b {
+  font-weight: 600;
+}
+.bubble-share-who small {
+  font-size: calc(10.5px * var(--read-scale));
+  opacity: 0.7;
+}
+.bubble-share-note {
+  font-size: calc(11px * var(--read-scale));
+  color: var(--st-call);
+}
+/* A bubble's right-click menu, where the pointer was. */
+.card-menu-list.bubble-menu {
+  position: fixed;
+  right: auto;
+  z-index: 200;
 }
 /* The card's details: grouped rows like the system settings. */
 .card-info {
@@ -1432,6 +1598,49 @@ body.card-mode:not(.is-mac) .dock-card {
 }
 
 .inspector-card .card-head .icon-btn.is-on {
+  color: var(--accent);
+}
+/* A card in its own app window (창으로 띄우기): the system draws its frame and corners, so the card
+   fills it edge to edge. Its header moves the window natively — a drag region, so the window can
+   be carried to another desktop like any app window — and on macOS leaves room for the traffic
+   lights drawn over it (desktop/window-style.ts `CARD_TRAFFIC_LIGHTS`). */
+body.card-mode.card-window .dock-card {
+  border: 0;
+  border-radius: 0;
+}
+body.card-mode.card-window:not(.is-mac) .dock-card {
+  background: var(--grouped);
+  backdrop-filter: none;
+}
+body.card-window .inspector-card .card-head {
+  cursor: auto;
+  -webkit-app-region: drag;
+}
+body.card-window .inspector-card .card-head :is(button, input, form, a, .card-menu, .card-avatar) {
+  -webkit-app-region: no-drag;
+}
+body.card-window.is-mac .inspector-card .card-head {
+  padding-left: 84px;
+}
+/* Pinned on top: the filled pin in an accent ring, with a small up arrow. */
+.inspector-card .card-head .icon-btn.card-pin.is-top {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.pin-top-icon {
+  position: relative;
+  display: inline-flex;
+}
+.pin-top-badge {
+  position: absolute;
+  top: -4px;
+  right: -5px;
+  padding: 0.5px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+}
+.mini-shell-btn.on-top-toggle.is-on {
   color: var(--accent);
 }
 

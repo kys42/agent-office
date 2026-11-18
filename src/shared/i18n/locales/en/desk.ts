@@ -9,7 +9,7 @@ export const desk = {
   openWork: (name: string) => `View ${name}'s work`,
   working: 'Working',
   runningTasks: (n: number) => `${n} ${n === 1 ? 'task' : 'tasks'} running`,
-  unread: (n: number) => `${n} new`,
+  unread: 'New',
   // Effects: the arrival tag, the minutes on the working beacon, the pet's chip.
   arrival: "Work's here!",
   focusMinutes: (minutes: number) => `${minutes}m+`,
@@ -42,6 +42,10 @@ export const desk = {
     zoneHint:
       'Hides everyone here now. Each comes back on their next conversation; anyone waiting for you stays.',
   },
+  teammate: {
+    tag: 'Team agent',
+    hint: 'An agent-team member another session (its lead) started. Its lead is not in the office, so it has a desk of its own.',
+  },
   helper: {
     name: 'Helper',
     stackLabel: (count: number, calling: boolean) =>
@@ -68,15 +72,13 @@ export const desk = {
     copied: 'Copied',
     dismiss: (name?: string) =>
       name ? `Dismiss ${name}'s speech bubble` : 'Dismiss speech bubble',
-    dismissTitle: 'Dismiss just the bubble · unread updates stay in the Inbox',
+    dismissTitle: 'Dismiss just the bubble · its result stays unread',
     keep: (name?: string) => `Keep ${name ?? 'colleague'}'s bubble up`,
     keepTitle: 'Keep it up · for later (marks it unread again)',
   },
   // The office row and floor desks along the screen edge.
   row: {
     reorderHint: 'Drag to reorder within the zone',
-    refresh: 'Refresh',
-    refreshTitle: 'Refresh · check the records again now (restarts a stalled collector too)',
     openCard: (name: string) => `Open ${name}'s work card`,
     cardTitle: 'Open as popup',
     empty: 'Waiting for teammate activity.',
@@ -95,26 +97,11 @@ export const desk = {
     pillMove: 'Move the tool bar',
     pillHint:
       'Drag left or right · ← → (Shift: bigger) · Home/End: either end · Double-click: back to the right end',
-    settings: 'Settings',
-    settingsTitle: 'Open the settings window',
-    toRow: 'Show as office row',
-    toFloor: 'Show as floor desks',
-    toRowTitle: 'Office row · zone rugs and name cards',
-    toFloorTitle: 'Floor desks · just desks along the bottom edge, flags for zones',
-    expand: 'Expand the office',
-    expandTitle: 'Open the big office',
-    collapse: 'Collapse the desk row',
-    collapseTitle: 'Collapse to pet · Esc',
-    tiny: 'Show small',
-    tinyTitle: 'Show small · status only, no bubbles or flags',
-    normal: 'Show full size',
-    normalTitle: 'Show full size · bubbles and name cards come back',
     tinyDesk: (work: string, dot?: 'attention' | 'error' | 'reply') =>
       dot
         ? `${work}, ${dot === 'attention' ? 'calling' : dot === 'error' ? 'error' : 'new reply'}`
         : work,
     tinyWaiting: (n: number) => `${n} waiting for you`,
     hide: 'Hide the desk pet',
-    hideTitle: 'Hide · reopen it from the tray',
   },
 };

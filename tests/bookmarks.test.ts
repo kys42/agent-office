@@ -245,6 +245,25 @@ test('Store: hidden projects and tools keep their bookmarks out of the list only
     assert.equal(store.bookmarks().total, 0);
   }));
 
+test('Store: a reader window reads one bookmark by id; gone or hidden reads as none', () =>
+  fixture((store) => {
+    const s = session(turn, 'one', 'secret');
+    store.upsert([s], 'codex');
+    const b = store.bookmark(s.id, 'f1', '메모');
+    assert.equal(store.bookmarkById(b.id)?.text, '결정: 캐시를 5분으로 둡니다.');
+    assert.equal(store.bookmarkById(b.id)?.note, '메모');
+    assert.equal(store.bookmarkById('nope'), null);
+    // The same filter as the list: an excluded project or a tool turned off hides it.
+    store.preferences({ excludedProjects: ['secret'] });
+    assert.equal(store.bookmarkById(b.id), null);
+    store.preferences({ excludedProjects: [], enabledProviders: ['claude'] });
+    assert.equal(store.bookmarkById(b.id), null);
+    store.preferences({ enabledProviders: ['claude', 'codex'] });
+    assert.equal(store.bookmarkById(b.id)?.id, b.id);
+    store.unbookmark(b.id);
+    assert.equal(store.bookmarkById(b.id), null);
+  }));
+
 test('Store: a bookmark follows where its colleague is now, its copy only once that is gone', () =>
   fixture((store) => {
     const s = session(turn, 'one', 'first');

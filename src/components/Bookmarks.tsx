@@ -3,16 +3,19 @@ import { ArrowUpRight, BookmarkCheck, Copy, LoaderCircle, PencilLine, Trash2 } f
 import type { Bookmark, Session } from '../shared/types';
 import { PROVIDERS } from '../shared/types';
 import { api } from '../lib/api';
+import { writeClipboard } from '../lib/clipboard';
 import { ago, time, date } from '../lib/format';
 import { MessageMarkdown } from './MessageMarkdown';
 import { BookmarkReader } from './BookmarkReader';
-import { BOOKMARK_NOTE, BOOKMARK_PAGE, BOOKMARK_PAGE_MAX } from '../shared/bookmarks';
+import { BOOKMARK_NOTE, BOOKMARK_PAGE, BOOKMARK_PAGE_MAX, bookmarkName } from '../shared/bookmarks';
+import { readerOpens } from '../shared/bookmark-window';
 import { useI18n } from '../lib/i18n';
 
 function BookmarkCard({
   bookmark: b,
   session,
   privacy,
+  demo,
   onOpen,
   onRemove,
   onNote,
@@ -22,6 +25,7 @@ function BookmarkCard({
   /** Its colleague as the office shows it now; absent when the record is gone or hidden. */
   session?: Session;
   privacy: boolean;
+  demo: boolean;
   onOpen: (b: Bookmark) => void;
   onRemove: (b: Bookmark) => void;
   onNote: (b: Bookmark, note: string) => Promise<void>;
@@ -34,7 +38,13 @@ function BookmarkCard({
   useEffect(() => {
     if (!editing) setNote(b.note);
   }, [b.note, editing]);
-  const name = session ? session.alias || session.title : b.source.alias || b.source.title;
+  const name = bookmarkName(b, session);
+  // The desktop app reads it in a window of its own beside this one (one per bookmark), so it
+  // stays readable while the person works; the web preview reads it over the list.
+  const read = () => {
+    if (readerOpens({ windows: !!api.bookmarkWindow, demo }) === 'modal') return setReading(true);
+    void api.bookmarkWindow!('open', { id: b.id }).catch((e: Error) => notify(e.message));
+  };
   const long = b.text.length > 240;
   useEffect(() => {
     if (privacy) setReading(false);
@@ -63,7 +73,7 @@ function BookmarkCard({
               {b.truncated ? t.memory.truncated : t.memory.excerpt}
             </small>
           )}
-          <button className="bookmark-expand" onClick={() => setReading(true)}>
+          <button className="bookmark-expand" onClick={read}>
             {t.memory.read}
             <ArrowUpRight size={13} />
           </button>
@@ -124,7 +134,7 @@ function BookmarkCard({
             aria-label={t.memory.copy}
             title={t.memory.copy}
             onClick={() =>
-              void (api.copyText ?? ((s: string) => navigator.clipboard.writeText(s)))(b.text)
+              void writeClipboard(b.text)
                 .then(() => notify(t.memory.copied))
                 .catch(() => notify(t.memory.copyFailed))
             }
@@ -293,6 +303,7 @@ export function Bookmarks({
             bookmark={b}
             session={byId.get(b.sessionId)}
             privacy={privacy}
+            demo={demo}
             onOpen={onOpen}
             onRemove={remove}
             onNote={saveNote}

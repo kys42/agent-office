@@ -1,6 +1,8 @@
+import { MiniShellDemoRelease } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
 import { PetAppearanceContext } from './components/PetAppearanceContext';
+import { DeskAppearanceContext } from './components/DeskAppearanceContext';
 import { UsagePanel } from './components/UsagePanel';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { PanelResizer } from './components/PanelResizer';
@@ -28,7 +30,6 @@ import {
   X,
   AlertCircle,
   Sparkles,
-  Inbox,
   Armchair,
   Archive,
   Keyboard,
@@ -39,6 +40,7 @@ import {
   HelpCircle,
   PanelLeftClose,
   PanelLeftOpen,
+  PackageOpen,
 } from 'lucide-react';
 import { api, isDesktop } from './lib/api';
 import { isWindows, modifierKey, platformKeys } from './lib/platform';
@@ -57,27 +59,31 @@ import { messageExcerpt } from './shared/activity';
 import { Inspector } from './components/Inspector';
 import { ZoneEditor } from './components/ZoneEditor';
 import { Memory } from './components/Memory';
+import { OutputsPage } from './components/Outputs';
 import type { BookmarkFocus } from './shared/bookmarks';
 import { Settings, type SettingsSection } from './components/Settings';
-import { NewsInbox } from './components/News';
 import { isAttentionNotice } from './shared/notices';
 import type { OfficeZone } from './shared/types';
 import { CommandPalette, type PaletteAction } from './components/CommandPalette';
 import { Modal } from './components/Modal';
 import { awayDigest, triage, unreadInbox } from './shared/triage';
 import { useI18n } from './lib/i18n';
-import { NoticePagingContext } from './lib/notice-paging';
+import { useDockLook } from './lib/useDockLook';
+import { dockLookName } from './shared/dock-look';
 import { cardReadSettings } from './shared/card-reads';
 import { resetDue } from './shared/view-prefs';
 // Labels live in the `app.tabs` catalog so they follow a language switch.
 const tabs = [
   { id: 'office', icon: Home },
   { id: 'memory', icon: BookOpen },
+  { id: 'outputs', icon: PackageOpen },
   { id: 'activity', icon: Clock3 },
   { id: 'settings', icon: Settings2 },
 ] as const;
 export default function App() {
   const { locale, t } = useI18n();
+  // The dock button names the look the dock goes back to (pet, desk row, floor, tiny).
+  const dockLabel = t.dock.view.looks[dockLookName(useDockLook())];
   const [demo, setDemo] = useState(new URLSearchParams(location.search).has('demo'));
   const [guide, setGuide] = useState<'tour' | 'features' | null>(() =>
     new URLSearchParams(location.search).has('onboarding') || (!demo && !hasSeenOnboarding(false))
@@ -92,7 +98,6 @@ export default function App() {
     // A sample-office visit never consumes the first tour of the live office.
     if (!demo && !hasSeenOnboarding(false)) setGuide('tour');
   }, [demo]);
-  const [inbox, setInbox] = useState(false);
   // The left menu folded away for room (remembered on this computer).
   const [sidebarHidden, setSidebarHiddenState] = useState(() => {
     try {
@@ -152,7 +157,8 @@ export default function App() {
     return () => window.removeEventListener('resize', resized);
   }, []);
   const [showUsage, setShowUsage] = useState(false);
-  const [showNews, setShowNews] = useState<string | null>(null);
+  // Bumped when a bubble opens a card: the card shows the conversation, whatever tab it was on.
+  const [conversationAt, setConversationAt] = useState(0);
   const [view, setView] = useState<(typeof tabs)[number]['id']>('office');
   const [selected, setSelected] = useState<string | null>(
     location.hash.startsWith('#session=')
@@ -197,7 +203,6 @@ export default function App() {
     patch: onPatch,
     pin,
     receipt: onReceipt,
-    readAll,
     visit,
     veil,
     reorderSeats,
@@ -228,10 +233,18 @@ export default function App() {
   const [bookmarkFocus, setBookmarkFocus] = useState<BookmarkFocus | null>(null);
   useEffect(
     () =>
-      api.onSelect?.((id) => {
+      api.onSelect?.((id, bookmark) => {
         setView('office');
         setEngaged(true);
         setSelected(id);
+        // From a reader window: the conversation at the bookmarked message.
+        if (bookmark)
+          setBookmarkFocus({
+            sessionId: id,
+            eventId: bookmark.eventId,
+            at: bookmark.at,
+            key: Date.now(),
+          });
       }),
     [],
   );
@@ -300,6 +313,10 @@ export default function App() {
     if (!demo) api.selected?.(currentId);
   }, [demo, currentId]);
   const prefs = snapshot?.preferences;
+  // Output lists read again when an output is recorded (keeping what was loaded further down),
+  // and start over when the settings that hide some change.
+  const outputStamp = snapshot?.outputStamp ?? '';
+  const outputVisibility = JSON.stringify([prefs?.excludedProjects, prefs?.enabledProviders]);
   // '패널 폭 초기화' in settings (maybe the settings window, another renderer): a stamp newer
   // than the last drag puts both columns back to their defaults.
   const widthsResetAt = prefs?.panelWidthsResetAt;
@@ -370,11 +387,6 @@ export default function App() {
     name: string;
     at: number;
   } | null>(null);
-  const openInbox = () => {
-    setShowUsage(false);
-    setInbox(true);
-    setSelected(null);
-  };
   // Desktop-only Send to terminal setting and the quick-reply send, shared with the dock card.
   const {
     enabled: terminalSend,
@@ -396,8 +408,6 @@ export default function App() {
     setEngaged(true);
     setBookmarkFocus(null);
     setShowUsage(false);
-    setInbox(false);
-    setShowNews(null);
     setSelected(id);
     visit(id);
   };
@@ -411,7 +421,7 @@ export default function App() {
       list.map(({ id, version }) => ({ id, version })),
       'read',
     );
-    notify(t.app.toast.markedRead(list.length));
+    notify(t.app.toast.markedRead);
   };
   // Keep the order stable during a burst of J/K so reading an item doesn't reshuffle the cursor.
   const navOrder = useRef<{ ids: string[]; at: number }>({ ids: [], at: 0 });
@@ -449,10 +459,7 @@ export default function App() {
     if (e.key === 'Escape') {
       // In a field, Esc leaves the field first; the panels close on the next press.
       if (field) field.blur();
-      else {
-        setSelected(null);
-        setInbox(false);
-      }
+      else setSelected(null);
       return;
     }
     if (field || document.querySelector('[role="dialog"]') || e.metaKey || e.ctrlKey || e.altKey)
@@ -468,7 +475,6 @@ export default function App() {
     else if (e.key === '/' || code === 'Slash') run(() => setPalette(true));
     else if (code === 'KeyJ') run(() => step(1));
     else if (code === 'KeyK') run(() => step(-1));
-    else if (code === 'KeyI') run(() => (inbox ? setInbox(false) : openInbox()));
     else if (code === 'KeyR' && selected) run(() => markRead(selected));
     else if (view === 'office' && code === 'KeyF') run(() => officeCommand('fit'));
     else if (view === 'office' && (code === 'Equal' || code === 'NumpadAdd'))
@@ -481,10 +487,8 @@ export default function App() {
   const guideAction = (action: GuideAction) => {
     closeGuide();
     setSelected(null);
-    setInbox(false);
     setShowUsage(false);
-    if (action === 'inbox') openInbox();
-    else if (action === 'usage') setShowUsage(true);
+    if (action === 'usage') setShowUsage(true);
     else if (action === 'card') {
       setView('office');
       if (model.scene[0]) choose(model.scene[0].id);
@@ -515,15 +519,6 @@ export default function App() {
       keywords: `${t.guide.tour} ${t.guide.features} onboarding help`,
       icon: <BookOpen size={15} />,
       run: () => setGuide('features'),
-    },
-    {
-      id: 'inbox',
-      label: t.palette.actions.inbox,
-      hint: t.palette.actions.inboxHint(unread),
-      keys: 'I',
-      icon: <Inbox size={15} />,
-      keywords: t.palette.actions.inboxKeywords,
-      run: openInbox,
     },
     {
       id: 'office',
@@ -561,6 +556,14 @@ export default function App() {
       hint: t.palette.actions.memoryHint,
       icon: <BookOpen size={15} />,
       run: () => setView('memory'),
+    },
+    {
+      id: 'outputs',
+      label: t.palette.actions.outputs,
+      hint: t.palette.actions.outputsHint,
+      icon: <PackageOpen size={15} />,
+      keywords: t.palette.actions.outputsKeywords,
+      run: () => setView('outputs'),
     },
     {
       id: 'activity',
@@ -628,8 +631,8 @@ export default function App() {
       run: () => setHelp(true),
     },
   ];
-  const docked = !!current || inbox || showUsage;
-  // The right column: the office's list, or a card, inbox or usage beside any view.
+  const docked = !!current || showUsage;
+  // The right column: the office's list, or a card or usage beside any view.
   const rightColumn = (view === 'office' && !!snapshot) || docked;
   const panels = fitPanels(widths, viewport, { sidebar: !sidebarHidden, dock: rightColumn });
   const sidebarToggle = (
@@ -681,7 +684,6 @@ export default function App() {
               setRoom(id);
               setSelected(null);
               setProjectRequest(null);
-              setInbox(false);
               setShowUsage(false);
               setView('office');
             }}
@@ -748,8 +750,7 @@ export default function App() {
                   title={prefs?.privacy ? undefined : p.name}
                   onClick={() => {
                     setSelected(null);
-                    // The filtered roster shows where the inbox or usage panel would cover it.
-                    setInbox(false);
+                    // The filtered roster shows where the usage panel would cover it.
                     setShowUsage(false);
                     setView('office');
                     setProjectRequest({ key: p.key, name: p.name, at: Date.now() });
@@ -766,7 +767,7 @@ export default function App() {
           )}
           <div className="source-group">
             <h6>{t.app.sidebar.records}</h6>
-            {(['memory', 'activity'] as const).map((id) => {
+            {(['memory', 'outputs', 'activity'] as const).map((id) => {
               const tab = tabs.find((x) => x.id === id)!;
               return (
                 <button
@@ -919,25 +920,11 @@ export default function App() {
             </button>
             <div className="header-actions">
               <button
-                className={`icon-btn inbox-button ${inbox ? 'active is-on' : ''} ${unread ? 'has-unread' : ''}`}
-                aria-label={t.app.header.openInbox}
-                title={t.app.header.inboxTitle}
-                onClick={() => {
-                  setShowUsage(false);
-                  setInbox((v) => !v);
-                  setSelected(null);
-                }}
-              >
-                <Inbox size={16} />
-                <b>{unread}</b>
-              </button>
-              <button
                 className={`icon-btn usage-button ${showUsage ? 'is-on' : ''}`}
                 aria-label={t.app.header.openUsage}
                 title={t.app.header.usageTitle}
                 onClick={() => {
                   setShowUsage((v) => !v);
-                  setInbox(false);
                   setSelected(null);
                 }}
               >
@@ -952,12 +939,13 @@ export default function App() {
                 {prefs?.privacy ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
               <button
-                className="icon-btn mini-button"
-                aria-label={t.app.header.mini}
-                title={t.app.header.miniTitle}
+                className="mini-button"
+                aria-label={dockLabel}
+                title={t.app.header.miniTitle(dockLabel)}
                 onClick={() => api.window('mini')}
               >
-                <PictureInPicture2 size={16} />
+                <PictureInPicture2 size={15} />
+                <span>{dockLabel}</span>
               </button>
             </div>
           </header>
@@ -977,10 +965,12 @@ export default function App() {
             </div>
           )}
           {error && (
-            <div className="error-banner">
+            <div className="error-banner" role="status">
               <AlertCircle size={16} />
               <span>{error}</span>
-              <button onClick={refresh}>{t.app.reconnect}</button>
+              <button onClick={refresh} disabled={refreshing}>
+                {t.app.reconnect}
+              </button>
             </div>
           )}
           {digest && digest.results + digest.attention > 0 && (
@@ -1000,13 +990,18 @@ export default function App() {
               <button
                 onClick={() => {
                   setAway(null);
+                  // One colleague opens on its card; several are marked in the office's list.
                   if (digest.sessionIds.length === 1) {
                     setView('office');
                     choose(digest.sessionIds[0]);
-                  } else openInbox();
+                  } else {
+                    setSelected(null);
+                    setShowUsage(false);
+                    goZone('office');
+                  }
                 }}
               >
-                {digest.sessionIds.length === 1 ? t.app.away.viewOne : t.app.away.viewInbox}
+                {digest.sessionIds.length === 1 ? t.app.away.viewOne : t.app.away.viewOffice}
               </button>
               <button
                 className="icon-btn"
@@ -1031,7 +1026,7 @@ export default function App() {
               <h2>{t.app.offline.title}</h2>
               <p>{t.app.offline.body}</p>
               <div className="empty-actions">
-                <button className="button primary" onClick={refresh}>
+                <button className="button primary" onClick={refresh} disabled={refreshing}>
                   {t.app.reconnect}
                 </button>
                 <button className="button subtle" onClick={() => setDemo(true)}>
@@ -1053,17 +1048,15 @@ export default function App() {
               onSettings={() => openSettings('office')}
               selected={selected}
               onSelect={choose}
+              onConversation={(id) => {
+                choose(id);
+                setConversationAt((n) => n + 1);
+              }}
               onReturn={returnToOffice}
               onReceipt={onReceipt}
-              onNews={(id) => {
-                choose(id);
-                setShowNews(id + Date.now());
-              }}
               onRefresh={refresh}
               refreshing={refreshing}
               demo={demo}
-              unread={unread}
-              onInbox={openInbox}
               zoneRequest={zoneRequest}
               onZoneHandled={() => setZoneRequest(null)}
               onZoneChange={setOfficeZoneNow}
@@ -1104,6 +1097,15 @@ export default function App() {
               onUnbookmark={unbookmark}
               notify={notify}
             />
+          ) : view === 'outputs' ? (
+            <OutputsPage
+              sessions={sessions}
+              demo={demo}
+              privacy={prefs?.privacy ?? false}
+              stamp={outputStamp}
+              visibility={outputVisibility}
+              notify={notify}
+            />
           ) : view === 'settings' ? (
             <Settings
               demo={demo}
@@ -1128,12 +1130,13 @@ export default function App() {
             onPrefs={onPrefs}
             session={current}
             sessions={sessions}
+            colleagues={allModel.residents}
             notices={snapshot?.notices ?? []}
             memberIds={ownerOf(current.id)?.resident?.sessionIds ?? [current.id]}
             resident={ownerOf(current.id)}
             onReceipt={onReceipt}
             onSelect={choose}
-            showNews={showNews}
+            showConversation={conversationAt}
             readOnOpen={engaged}
             reading={cardReadSettings(prefs)}
             onClose={() => setSelected(null)}
@@ -1169,6 +1172,11 @@ export default function App() {
             }}
             focus={bookmarkFocus}
             onFocused={() => setBookmarkFocus(null)}
+            outputStamp={outputStamp}
+            outputVisibility={outputVisibility}
+            showOutputs={prefs?.cardOutputs !== false}
+            showChatOutputs={prefs?.chatOutputs !== false}
+            onOutputs={() => setView('outputs')}
           />
         )}
         {showUsage && (
@@ -1176,20 +1184,6 @@ export default function App() {
             demo={demo}
             privacy={prefs?.privacy ?? false}
             onClose={() => setShowUsage(false)}
-          />
-        )}
-        {inbox && (
-          <NewsInbox
-            notices={snapshot?.notices ?? []}
-            unread={unread}
-            sessions={sessions}
-            privacy={prefs?.privacy ?? false}
-            onReceipt={onReceipt}
-            onClose={() => setInbox(false)}
-            onSelect={(id) => {
-              choose(id);
-              setShowNews(id + Date.now());
-            }}
           />
         )}
       </div>
@@ -1247,7 +1241,6 @@ export default function App() {
                 ['next', [['J']]],
                 ['previous', [['K']]],
                 ['markRead', [['R']]],
-                ['inbox', [['I']]],
                 ['zones', [['1'], ['2'], ['3']]],
                 ['zoom', [['F'], ['+'], ['−']]],
                 ['close', [['Esc']]],
@@ -1273,6 +1266,7 @@ export default function App() {
           <p className="shortcut-note">{t.app.help.note}</p>
         </Modal>
       )}
+      <MiniShellDemoRelease demo={demo} />
       {toast && (
         <div className="toast" role="status">
           <span className="live-dot" />
@@ -1291,15 +1285,9 @@ export default function App() {
 
   return (
     <PetAppearanceContext.Provider value={prefs?.petAppearance}>
-      <NoticePagingContext.Provider
-        value={{
-          paged: model.noticesPaged,
-          stats: JSON.stringify(snapshot?.noticeStats ?? null),
-          readAll,
-        }}
-      >
+      <DeskAppearanceContext.Provider value={prefs?.deskAppearance}>
         {content}
-      </NoticePagingContext.Provider>
+      </DeskAppearanceContext.Provider>
     </PetAppearanceContext.Provider>
   );
 }

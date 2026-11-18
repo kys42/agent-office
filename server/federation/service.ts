@@ -34,10 +34,10 @@ function remoteReferences(method: string, args: unknown[]): boolean {
   const input = record(args[0]);
   let references: unknown[] = [];
   if (['veil', 'pin', 'reorderSeats', 'identities'].includes(method)) references = list(args[0]);
-  if (['bookmarks', 'noticePage', 'noticeReadAll'].includes(method))
-    references = list(input.sessionIds);
+  if (method === 'bookmarks' || method === 'outputs') references = list(input.sessionIds);
   if (method === 'notices') references = list(args[0]).map((item) => record(item).id);
-  if (['unbookmark', 'bookmarkNote'].includes(method)) references = [args[0]];
+  if (['unbookmark', 'bookmarkNote', 'bookmarkById', 'readReplies'].includes(method))
+    references = [args[0]];
   if (['bookmark', 'unbookmarkMessage'].includes(method)) references = [args[1]];
   if (method === 'preferences') {
     references = list(input.zoneRules)
@@ -45,6 +45,7 @@ function remoteReferences(method: string, args: unknown[]): boolean {
       .filter((rule) => rule.match === 'session')
       .map((rule) => rule.value);
     references.push(...Object.keys(record(record(input.petAppearance).colleagues)));
+    references.push(...Object.keys(record(record(input.deskAppearance).colleagues)));
   }
   return references.some(isRemoteId);
 }
@@ -191,6 +192,9 @@ export class FederatedService extends EventEmitter {
     // Remote references still cannot reach local writes, even after the beta is disabled.
     if (remoteReferences(method, args)) {
       if (method === 'bookmarks') return { bookmarks: [], more: false, total: 0 };
+      // A remote office's outputs stay there (#350): this office never names its files.
+      if (method === 'outputs') return { outputs: [], more: false, total: 0 };
+      if (method === 'bookmarkById') return null;
       throw new Error('Remote Office is read-only in this beta');
     }
     const result = await this.local.call(method, args);

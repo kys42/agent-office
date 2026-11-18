@@ -2,10 +2,9 @@ import { open } from 'node:fs/promises';
 import type { SessionIdentity } from '../../src/shared/types.js';
 import {
   defaultTerminalDeps,
-  findClaudeProcess,
   locateTerminal,
-  ownsTerminal,
   promptHost,
+  stillLive,
   type LiveTerminal,
   type TerminalDeps,
 } from '../terminals.js';
@@ -111,12 +110,8 @@ export function claudeTarget(
     where: live.host.kind === 'orca' ? 'Orca' : `tmux ${live.host.label}`,
     waiting: live.process.status === 'waiting',
     async stillThere() {
-      const now = await findClaudeProcess(live.process.sessionId, deps, true).catch(() => null);
-      return (
-        now?.pid === live.process.pid &&
-        now.status === 'waiting' &&
-        (await ownsTerminal(now.pid, deps))
-      );
+      // A background session also needs its window still showing it (desktop/terminals.ts).
+      return !!(await stillLive(live, deps, (status) => status === 'waiting').catch(() => null));
     },
     async openCalls() {
       const text = await read();

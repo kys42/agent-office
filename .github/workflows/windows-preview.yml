@@ -10,11 +10,15 @@ on:
       - 'package*.json'
       - '.github/workflows/windows-preview.yml'
   workflow_dispatch:
+concurrency:
+  group: windows-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,6 +29,7 @@ jobs:
       - run: npx tsx --test tests/windows-platform.test.ts tests/card-windows.test.ts tests/ingestion-conformance.test.ts
       - run: npm run package:win
       - name: Test the packaged executable with isolated synthetic data
+        timeout-minutes: 5
         shell: pwsh
         run: |
           $preview = Get-ChildItem release -Recurse -Filter 'Agent Office.exe' | Select-Object -First 1
