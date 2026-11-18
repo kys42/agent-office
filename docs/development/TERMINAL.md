@@ -252,6 +252,13 @@ terminal_title = ["session-id", "thread-name", "project"]
   - Claude Code(2.1.327 실행 파일): `/rename [name]`(별칭 `/name`), `immediate: true` — 작업 중에도 대기열에 들어가지 않고 바로 실행. 그래서 `idle·busy·shell` 모두 허용, 승인 창 등(`waiting`)은 보내기와 같이 거절.
   - Codex(0.166): `/rename` 이름 인자. 작업 중 동작은 확인하지 못해 쉬는 중에만(`whileBusy: false`).
   - **Codex는 지금 보내지 않는다:** 이 앱의 Codex 전송은 `codex queue`(app-server `thread/queue/*`)·Codex Desktop이고 TUI에 치지 않는다. 0.166 실행 파일에서 슬래시 명령은 TUI(`tui/src/chatwidget/slash_dispatch.rs`)가 처리하고 `/rename`은 `thread/name/set`을 부르는 반면, 큐는 서버가 곧바로 모델 턴을 시작한다("resume the thread before starting a queued message"). 큐로 보내면 `/rename X`가 프롬프트로 모델에 갈 수 있다. 그래서 컴포저 어댑터의 전달 방식이 `terminal`이 아니면(`codexQueueComposer`는 `queue`) main이 `notTyped`로 거절하고, 메뉴도 대상이 대기열·Desktop이면 이유와 함께 끈다. Codex TUI 입력창 어댑터가 생기면 `whileBusy: false` 규칙으로 바로 켜진다.
+  - **app-server `thread/name/set` 검토(후속 후보, 이번에는 넣지 않음):** 0.166 스키마(`codex app-server generate-json-schema`)에 `thread/name/set { threadId, name } → {}`가 있다.
+    - 임시 `CODEX_HOME`에서 실험했다(실제 세션·터미널 없음). 따로 띄운 app-server로 다른 서버가 들고 있는 스레드와 꺼진 스레드 모두 이름이 바뀌었다. `session_index.jsonl`과 state DB `threads.name`에 둘 다 남았다. 들고 있던 서버의 `thread/read`도 새 이름을 돌려주고, 정상 종료해도 되돌리지 않았다.
+    - 넣지 않은 이유 1: 앱에는 app-server JSON-RPC 클라이언트가 없다. `codex queue`는 CLI를 한 번 실행할 뿐이다. 요청을 stdin에 모아 기존 `deps.run`으로 보내 보면, 서버가 `initialize`만 답하고 EOF에서 끝나 `thread/name/set`에는 답하지 않는다. 그래서 새 대화형 spawn 클라이언트가 필요하다.
+    - 이유 2: 이름 바꿀 때마다 실제 `CODEX_HOME`에서 app-server를 하나 더 띄운다(DB 마이그레이션 등).
+    - 이유 3: `thread/name/updated` 알림은 부른 서버의 클라이언트에만 가서, 실행 중인 TUI 화면의 이름은 다시 열 때까지 그대로다.
+    - 이유 4: 턴 도중에 살아 있는 서버가 메모리의 이름으로 덮어쓰는지는 인증이 없어 확인하지 못했다.
+    - 이유 5: 메뉴 판단도 바뀐다(터미널 대신 세션 상태로 작업 중을 판단하고, 꺼진 대화까지 범위가 넓어짐).
   - OpenClaw: 명령 없음(`null`).
 - **제목 검사(`checkSessionTitle`, 고치지 않고 거절):** 문자열, 앞뒤 공백 제거 뒤 비어 있지 않음, UTF-16 100자 이하(한글 한 음절 = 1). 제어 문자(C0·DEL·C1, 탭·줄바꿈 포함)·줄/문단 구분자·양방향 제어 문자는 거절 — 키 입력이 되거나 화면에 다르게 그려져 확인이 맞지 않는다. `/`·`@`로 시작하는 낱말은 거절 — Claude Code의 명령·파일 목록이 열려 Enter가 항목을 고른다(`@` 완성 화면은 `readPrompt`가 닫힘으로 보지만 미리 막는다). 끝의 `\`도 거절 — Claude Code에서 `\`+Enter는 줄바꿈이다. 낱말 가운데의 `/`·`@`(`feat/x`, `a@b.com`)와 `#`·`!`(줄 맨 앞이 `/rename`이라 셸·메모 모드가 아님)는 그대로 된다. 렌더러가 먼저 같은 규칙으로 알려 주고, main이 다시 검사한다.
 - **메뉴(`renameBlock`):** 데스크탑 앱에서만 보이고(웹·데모에는 없음) 못 쓸 때는 끄고 그 아래에 이유를 적는다: 지원 안 함 → ‘터미널로 보내기’ 꺼짐 → 화면 가리기 → 터미널 없음(Orca 탭만 찾은 경우 포함) → 대기열·Desktop 전달 → 입력 못 받음 → 작업 중(쉬는 중에만 받는 에이전트). 보낸 뒤 알림: "세션 제목을 바꾸라고 보냈어요. 여기 반영되기까지 잠시 걸릴 수 있어요."
