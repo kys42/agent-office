@@ -268,3 +268,73 @@ test(
     }
   },
 );
+
+test('queries are answered by the emulator only while no view gets the output', async () => {
+  const fake = fakeTermHost();
+  const { client } = await fake.connect();
+  await client.create({ id: 'q', argv: ['/bin/sh'], cwd: '/', cols: 80, rows: 10 });
+  const pty = fake.ptys[0];
+  pty.output('abc\x1b[6n');
+  await waitFor(() => pty.input.includes('\x1b[1;4R'), 'cursor position reply');
+  const output: string[] = [];
+  client.onOutput((_, data) => output.push(data.toString()));
+  await client.attach('q');
+  pty.output('\x1b[6n');
+  await waitFor(() => output.join('').includes('\x1b[6n'), 'the query reaches the view');
+  await sleep(20);
+  assert.equal(pty.input, '\x1b[1;4R', 'the view answers, not the emulator');
+  await client.detach('q');
+  pty.output('\x1b[c');
+  await waitFor(() => pty.input.length > '\x1b[1;4R'.length, 'device attributes reply');
+  assert.match(pty.input, /\x1b\[\?\d/);
+});
+
+test('a snapshot keeps less history rather than outgrow a frame', async () => {
+  const screen = new HeadlessScreen(200, 20, 1000);
+  let colourful = '';
+  for (let line = 0; line < 1000; line++) {
+    for (let i = 0; i < 100; i++) colourful += `\x1b[3${(i % 2) + 1}mx`;
+    colourful += `\x1b[0m line ${line}\r\n`;
+  }
+  screen.write(Buffer.from(colourful + 'the end'), 1);
+  await new Promise<void>((r) => screen.whenParsed(r));
+  const budget = 256 * 1024;
+  assert.ok(Buffer.byteLength(JSON.stringify(screen.snapshot().snapshot)) > budget);
+  const kept = screen.snapshot(undefined, budget);
+  assert.ok(Buffer.byteLength(JSON.stringify(kept.snapshot)) <= budget);
+  assert.match(kept.snapshot, /line 999/);
+  assert.match(kept.snapshot, /the end/);
+  screen.dispose();
+});
+
+test('kitty keyboard stacks survive a restore, so later pops behave the same', async () => {
+  const screen = new HeadlessScreen(40, 5, 10);
+  screen.write(Buffer.from('\x1b[>1u\x1b[>5u\x1b[?1049h\x1b[>2u\x1b[>3u'), 1);
+  await new Promise<void>((r) => screen.whenParsed(r));
+  const view = new Terminal({ cols: 40, rows: 5, allowProposedApi: true });
+  const tracker = new ModeTracker(view);
+  await feed(view, restoreSequence(screen.snapshot()));
+  assert.deepEqual(tracker.read().kittyStacks, { normal: [1, 5], alternate: [2, 3] });
+  // The same live bytes now move both to the same flags.
+  for (const step of ['\x1b[<u', '\x1b[?1049l', '\x1b[<u']) {
+    screen.write(Buffer.from(step), 2);
+    await new Promise<void>((r) => screen.whenParsed(r));
+    await feed(view, step);
+    assert.equal(tracker.read().kittyKeyboardFlags, screen.modes().kittyKeyboardFlags, step);
+  }
+  assert.equal(tracker.read().kittyKeyboardFlags, 1);
+  view.dispose();
+  screen.dispose();
+});
+
+test('a large paste is split into frames under the limit', async () => {
+  const fake = fakeTermHost();
+  const { client } = await fake.connect();
+  await client.create({ id: 'p', argv: ['/bin/sh'], cwd: '/', cols: 80, rows: 10 });
+  const paste = 'y'.repeat(2.5 * 1024 * 1024);
+  client.write('p', paste);
+  const pty = fake.ptys[0];
+  await waitFor(() => pty.written.reduce((n, b) => n + b.length, 0) === paste.length, 'paste');
+  assert.equal(pty.written.length, 3);
+  assert.equal(client.closed, false);
+});

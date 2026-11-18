@@ -90,6 +90,8 @@ export class Session {
   bytesIn = 0;
   bytesOut = 0;
   bytesWritten = 0;
+  /** Kept from the emulator when it is freed. */
+  private droppedBytes = 0;
 
   constructor(
     readonly id: string,
@@ -99,7 +101,9 @@ export class Session {
     private readonly timing: SessionTiming,
     private readonly killGroup: KillGroup | null,
   ) {
-    this.screen = new HeadlessScreen(spec.cols, spec.rows, spec.scrollback);
+    this.screen = new HeadlessScreen(spec.cols, spec.rows, spec.scrollback, (reply) => {
+      if (this.live) this.pty.write(reply);
+    });
     pty.onData((data) => this.onOutput(data));
     pty.onExit((event) => this.onExit(event));
   }
@@ -116,7 +120,7 @@ export class Session {
     const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
     this.bytesIn += bytes.length;
     const seq = ++this.seq;
-    this.screen?.write(bytes, seq);
+    let viewed = false;
     for (const attachment of this.attachments) {
       if (attachment.state === 'lagged') continue;
       attachment.queue.push({ seq, data: bytes });
@@ -127,9 +131,13 @@ export class Session {
         attachment.queuedBytes = 0;
         this.events.lagged(attachment);
       } else {
+        viewed = true;
         this.events.queued(attachment);
       }
     }
+    // A query in output no view will see is answered by the emulator, or the program may wait
+    // for it forever; a view that gets the chunk answers it instead (never both).
+    this.screen?.write(bytes, seq, !viewed);
   }
 
   private onExit(event: { exitCode: number; signal?: number }) {
@@ -149,6 +157,7 @@ export class Session {
       if (!screen) return;
       screen.whenParsed(() => {
         this.finalRestore = screen.snapshot(0);
+        this.droppedBytes = screen.droppedBytes;
         screen.dispose();
         this.screen = null;
         this.events.exited(this);
@@ -270,7 +279,7 @@ export class Session {
       bytesIn: this.bytesIn,
       bytesOut: this.bytesOut,
       bytesWritten: this.bytesWritten,
-      droppedBytes: screen?.droppedBytes ?? 0,
+      droppedBytes: screen?.droppedBytes ?? this.droppedBytes,
       attached: this.attachments.size,
       ...(this.exit ? { exit: this.exit } : {}),
     };

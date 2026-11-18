@@ -1,7 +1,7 @@
 import serializeModule from '@xterm/addon-serialize';
 import headlessModule, { type Terminal } from '@xterm/headless';
 import { EscapeTail } from './escape-tail.js';
-import { ModeTracker, modeSequences, type TerminalModes } from './modes.js';
+import { ModeTracker, kittyStackSequence, modeSequences, type TerminalModes } from './modes.js';
 import type { ScreenRestore } from './protocol.js';
 
 /**
@@ -20,6 +20,10 @@ export const PARSE_BACKLOG_LIMIT = 32 * 1024 * 1024;
 const CELL_BYTES = 14;
 const LINE_BYTES = 640;
 
+/** A snapshot larger than this once JSON-encoded keeps less history (frames stop at 16 MB). */
+export const SNAPSHOT_BUDGET_BYTES = 8 * 1024 * 1024;
+const ALT_SCREEN_SWITCH = '\x1b[?1049h\x1b[H';
+
 // Both packages are CommonJS bundles whose exports Node's ESM loader cannot name statically.
 const { SerializeAddon } = serializeModule;
 const { Terminal: HeadlessTerminal } = headlessModule;
@@ -32,11 +36,13 @@ export class HeadlessScreen {
   private readonly tail = new EscapeTail();
   private pendingBytes = 0;
   private disposed = false;
+  /** Replies the emulator makes while parsing a chunk no view will see go to the program. */
+  private replying = false;
   /** Sequence number of the last chunk the parser has finished. */
   parsedSeq = 0;
   droppedBytes = 0;
 
-  constructor(cols: number, rows: number, scrollback: number) {
+  constructor(cols: number, rows: number, scrollback: number, onReply?: (reply: string) => void) {
     this.terminal = new HeadlessTerminal({
       cols,
       rows,
@@ -46,10 +52,16 @@ export class HeadlessScreen {
     });
     this.terminal.loadAddon(this.serializer);
     this.modeTracker = new ModeTracker(this.terminal);
+    // Answers to the program's queries (cursor position, device attributes, ...).
+    if (onReply) this.terminal.onData((reply) => this.replying && onReply(reply));
   }
 
-  /** Queues one PTY chunk (numbered `seq`) for the parser. False when shed (see the limit). */
-  write(data: string | Uint8Array, seq: number): boolean {
+  /**
+   * Queues one PTY chunk (numbered `seq`) for the parser. False when shed (see the limit).
+   * `answer`: no view gets this chunk, so the emulator answers its queries itself; otherwise a
+   * view does, and two answers would reach the program.
+   */
+  write(data: string | Uint8Array, seq: number, answer = false): boolean {
     if (this.disposed) return false;
     const size = data.length;
     if (this.pendingBytes + size > PARSE_BACKLOG_LIMIT) {
@@ -57,7 +69,10 @@ export class HeadlessScreen {
       return false;
     }
     this.pendingBytes += size;
+    // xterm runs write callbacks in order, so this opens the window right before the chunk.
+    if (answer) this.terminal.write('', () => void (this.replying = true));
     this.terminal.write(data, () => {
+      this.replying = false;
       this.pendingBytes -= size;
       this.parsedSeq = seq;
       // In parse order, so the tail matches the screen a snapshot taken now would show.
@@ -81,11 +96,24 @@ export class HeadlessScreen {
    * (0: the visible screen only, about 8 KB at 200×50); all held lines when omitted.
    * See `pendingTail` for what must follow it.
    */
-  snapshot(scrollback?: number): ScreenRestore {
-    const snapshot = this.serializer.serialize({ scrollback, excludeModes: true });
+  snapshot(scrollback?: number, budgetBytes = SNAPSHOT_BUDGET_BYTES): ScreenRestore {
+    const modes = this.modes();
+    let lines = scrollback;
+    let snapshot = this.serializer.serialize({ scrollback: lines, excludeModes: true });
+    // Very colourful history can encode to more than a frame holds: keep the newest part.
+    while (lines !== 0 && encodedSize(snapshot, budgetBytes) > budgetBytes) {
+      lines = Math.floor(Math.min(lines ?? Infinity, this.scrollbackLines) / 2);
+      snapshot = this.serializer.serialize({ scrollback: lines, excludeModes: true });
+    }
+    const normalStack = kittyStackSequence(modes.kittyStacks.normal);
+    if (modes.alternateScreen && normalStack) {
+      // The normal screen's kitty stack must be pushed while that screen is still active.
+      const at = snapshot.indexOf(ALT_SCREEN_SWITCH);
+      if (at >= 0) snapshot = snapshot.slice(0, at) + normalStack + snapshot.slice(at);
+    }
     return {
       snapshot,
-      modes: modeSequences(this.modes()),
+      modes: modeSequences(modes),
       cols: this.terminal.cols,
       rows: this.terminal.rows,
     };
@@ -127,4 +155,11 @@ export class HeadlessScreen {
     this.terminal.reset();
     this.terminal.dispose();
   }
+}
+
+/** Bytes `text` takes as a JSON string; a cheap bound first, the exact size only near `budget`. */
+function encodedSize(text: string, budget: number) {
+  // At most 6 bytes per UTF-16 unit (\u001b); usually far below the budget.
+  if (text.length * 6 <= budget) return text.length;
+  return Buffer.byteLength(JSON.stringify(text));
 }

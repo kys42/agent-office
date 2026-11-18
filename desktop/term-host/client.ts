@@ -44,6 +44,7 @@ export class TermHostError extends Error {
 }
 
 type Listener<A extends unknown[]> = (...args: A) => void;
+const WRITE_CHUNK_BYTES = 1024 * 1024;
 
 /**
  * The app's typed handle on the terminal host: requests resolve with the daemon's answer, and
@@ -107,7 +108,11 @@ export class TermHostClient {
   /** Keyboard input; ordered with every other message on this connection. */
   write(sessionId: string, data: string | Uint8Array) {
     if (this.isClosed) throw new TermHostError('closed', 'terminal host connection closed');
-    this.conn.write(encodeData(sessionId, data));
+    const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
+    // A huge paste goes in several frames, each well under the frame limit.
+    for (let at = 0; at === 0 || at < bytes.length; at += WRITE_CHUNK_BYTES) {
+      this.conn.write(encodeData(sessionId, bytes.subarray(at, at + WRITE_CHUNK_BYTES)));
+    }
   }
 
   async resize(sessionId: string, cols: number, rows: number) {

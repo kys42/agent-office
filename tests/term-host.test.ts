@@ -164,7 +164,10 @@ test('mode tracking follows split sequences and a fresh view restores the same m
   const restore = screen.snapshot();
   assert.match(restore.modes, /\x1b\[\?1;1004;2004;1002;1006h/);
   assert.match(restore.modes, /\x1b\[\?25l/);
-  assert.match(restore.modes, /\x1b\[=3;1u$/);
+  assert.deepEqual(modes.kittyStacks, { normal: [1, 5], alternate: [3] });
+  assert.match(restore.modes, /\x1b\[>3u$/);
+  // The normal screen's stack is rebuilt before the snapshot switches to the alternate screen.
+  assert.match(restore.snapshot, /\x1b\[>1u\x1b\[>5u\x1b\[\?1049h/);
   const view = new Terminal({ cols: 80, rows: 10, allowProposedApi: true });
   const tracker = new ModeTracker(view);
   await write(view, restoreSequence(restore));

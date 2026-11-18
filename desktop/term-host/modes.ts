@@ -19,6 +19,8 @@ export interface TerminalModes {
   cursorVisible: boolean;
   /** The kitty keyboard protocol's flags for the active screen (0: off). */
   kittyKeyboardFlags: number;
+  /** Its flag stacks, one per screen, bottom first: later pops must find the same entries. */
+  kittyStacks: { normal: number[]; alternate: number[] };
   alternateScreen: boolean;
   /** The program is between the begin and end of a synchronized update (mode 2026). */
   synchronizedOutput: boolean;
@@ -82,6 +84,7 @@ export class ModeTracker {
       mouseEncoding: encoding ? MOUSE_ENCODINGS[encoding] : 'default',
       cursorVisible: this.cursorVisible,
       kittyKeyboardFlags: stack.at(-1) ?? 0,
+      kittyStacks: { normal: [...this.kitty.normal], alternate: [...this.kitty.alternate] },
       alternateScreen: this.screen() === 'alternate',
       synchronizedOutput: m.synchronizedOutputMode,
       insertMode: m.insertMode,
@@ -167,10 +170,16 @@ const MOUSE_ENCODING_SET = {
   'sgr-pixels': '1016',
 };
 
+/** Pushes that rebuild a kitty keyboard flag stack on a screen whose stack is empty. */
+export function kittyStackSequence(stack: number[]) {
+  return stack.map((flags) => `\x1b[>${flags}u`).join('');
+}
+
 /**
  * Sequences that put a fresh terminal (all modes at their defaults) into `modes`. Written after
  * the snapshot: none of them changes what is drawn, and the snapshot's own alternate-screen
- * switch has already happened, so the kitty flags land on the right screen's stack.
+ * switch has already happened, so the kitty stack lands on the active screen. (The normal
+ * screen's stack, when the alternate one is shown, goes inside the snapshot: see screen.ts.)
  */
 export function modeSequences(modes: TerminalModes): string {
   const set: string[] = [];
@@ -188,7 +197,7 @@ export function modeSequences(modes: TerminalModes): string {
   if (!modes.wraparound) out += '\x1b[?7l';
   if (!modes.cursorVisible) out += '\x1b[?25l';
   if (modes.insertMode) out += '\x1b[4h';
-  if (modes.kittyKeyboardFlags > 0) out += `\x1b[=${modes.kittyKeyboardFlags};1u`;
+  out += kittyStackSequence(modes.kittyStacks[modes.alternateScreen ? 'alternate' : 'normal']);
   const region = modes.scrollRegion;
   if (region) out += `\x1b[${region.top + 1};${region.bottom + 1}r`;
   // Setting margins or origin mode homes the cursor: put it back where the snapshot left it
