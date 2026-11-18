@@ -153,3 +153,67 @@ test('Mach-O identity patch rejects missing, truncated and duplicate UUID load c
   duplicate.writeUInt32LE(24, 60);
   assert.throws(() => namespaceMachOUuid(duplicate, 'app'));
 });
+
+test('notarization preflight fails with actionable guidance without leaking credential argv', () => {
+  const env = {
+    APPLE_API_KEY_PATH: '/private/synthetic-key.p8',
+    APPLE_API_KEY: 'SYNTHETIC_ID',
+    APPLE_API_ISSUER: 'SYNTHETIC_ISSUER',
+  };
+  for (const [stderr, code, expected] of [
+    ['HTTP 403 required agreement missing or expired', '', /Agreements/],
+    ['HTTP 401 unauthorized', '', /authentication failed/],
+    ['', 'ETIMEDOUT', /timed out/],
+    ['unknown failure', '', /preflight failed \(notarytool: unknown failure\)/],
+    ['', 'ENOENT', /preflight failed \(notarytool: ENOENT\)/],
+  ] as const) {
+    assert.throws(
+      () =>
+        notary.verifyNotaryAccess(env, (_file: string, _args: string[], options: any) => {
+          assert.equal(options.timeout, 30000);
+          throw Object.assign(new Error(JSON.stringify(env)), { stderr, code });
+        }),
+      (error: any) => {
+        assert.match(error.message, expected);
+        assert.match(error.message, /No artifact was submitted/);
+        assert.doesNotMatch(error.stack, /synthetic-key|SYNTHETIC_ID|SYNTHETIC_ISSUER/);
+        assert.equal(error.cause, undefined);
+        return true;
+      },
+    );
+  }
+});
+
+test('unrecognised notarization preflight failures show sanitised notarytool output', () => {
+  const env = {
+    APPLE_API_KEY_PATH: '/Users/someone/.private_keys/AuthKey_SYNTH12345.p8',
+    APPLE_API_KEY: 'SYNTH12345',
+    APPLE_API_ISSUER: '69a6de7e-1111-47e3-e053-5b8c7c11a4d1',
+  };
+  const stderr = [
+    '\u001b[31mError:\u001b[0m HTTP status code: 500. Internal Server Error.',
+    'Request: xcrun notarytool history --key /Users/someone/.private_keys/AuthKey_SYNTH12345.p8',
+    '--key-id SYNTH12345 --issuer 69a6de7e-1111-47e3-e053-5b8c7c11a4d1',
+    'Using AuthKey_SYNTH12345.p8 from ~/Library/notary --password hunter2 --keychain-profile other',
+    'x'.repeat(800),
+  ].join('\n');
+  assert.throws(
+    () =>
+      notary.verifyNotaryAccess(env, () => {
+        throw Object.assign(new Error('Command failed: xcrun notarytool …'), { stderr });
+      }),
+    (error: any) => {
+      assert.match(error.message, /preflight failed \(notarytool: Error: HTTP status code: 500/);
+      assert.match(error.message, /No artifact was submitted\.$/);
+      assert.doesNotMatch(error.stack, /SYNTH12345|69a6de7e|someone|hunter2|other|\u001b/);
+      assert.ok(error.message.length < 800, 'diagnostic is bounded');
+      return true;
+    },
+  );
+  // Credentials passed through a keychain profile are hidden even without env values.
+  assert.equal(
+    notary.sanitizeNotaryDiagnostic('bad --keychain-profile=release-team --apple-id "a b"', {}),
+    'bad --keychain-profile [redacted] --apple-id [redacted]',
+  );
+  assert.equal(notary.sanitizeNotaryDiagnostic('   ', {}), '');
+});

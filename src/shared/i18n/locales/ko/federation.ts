@@ -1,4 +1,13 @@
 export const federation = {
+  tinyColor: '쪼꼬미 이름표 색',
+  colors: {
+    sky: '하늘색',
+    lilac: '연보라',
+    mint: '민트',
+    peach: '살구색',
+    rose: '장미색',
+    gold: '금색',
+  },
   codexConnection: '이 컴퓨터의 Codex 원격 연결',
   codexConnectionOff: '자동으로 찾기',
   codexConnectionHint:
@@ -22,6 +31,8 @@ export const federation = {
   sendPermission: '채팅 권한 포함',
   readPermission: '조회 전용',
   rooms: '사무실',
+  allOffices: '전체 사무실',
+  allOfficesHint: '모든 컴퓨터 함께 보기',
   localOffice: '내 컴퓨터',
   thisComputer: '이 컴퓨터',
   remoteOffice: '원격 사무실',

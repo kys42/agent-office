@@ -4,7 +4,7 @@ import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import type { FederationState, PeerInput } from '../../src/shared/federation.js';
-import { parseRemoteId, remoteId } from '../../src/shared/federation.js';
+import { OFFICE_COLORS, parseRemoteId, remoteId } from '../../src/shared/federation.js';
 import type { Session, SessionDetail, TerminalTarget, SendResult } from '../../src/shared/types.js';
 import {
   peerSchema,
@@ -20,21 +20,40 @@ import { peerRequest, PeerError } from './transport.js';
 
 import type { CodexRelay } from '../../desktop/codex-remote.js';
 import { RelayJournal } from './relay-journal.js';
+import { noticeCandidates } from '../../src/shared/notices.js';
+import { isVeiled } from '../../src/shared/veil.js';
+import { needsAttention, officeResidents } from '../../src/shared/residents.js';
 const hostSchema = z
   .string()
   .regex(/^(?:remote-control|ssh):[A-Za-z0-9._:-]{1,240}$/)
   .optional();
-const localPeerSchema = peerSchema.extend({ codexHostId: hostSchema });
+const colorSchema = z.enum(OFFICE_COLORS).optional();
+const localPeerSchema = peerSchema.extend({ codexHostId: hostSchema, color: colorSchema });
+// Assign distinct defaults to old connection files without asking for a migration.
+function assignColors(peers: PeerInput[]) {
+  const used = new Set(peers.map((p) => p.color));
+  for (const p of peers)
+    if (!p.color) {
+      p.color = OFFICE_COLORS.find((color) => !used.has(color)) ?? OFFICE_COLORS[0];
+      used.add(p.color);
+    }
+}
 const configSchema = z
   .object({ enabled: z.boolean(), peers: z.array(localPeerSchema).max(5) })
   .strict();
+const hiddenSchema = z
+  .record(
+    z.string().regex(/^remote-office:[0-9a-f-]{36}:[0-9a-f]{64}$/),
+    z.number().finite().nonnegative(),
+  )
+  .refine((value) => Object.keys(value).length <= 10000);
 const commandSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('state') }).strict(),
   z.object({ action: z.literal('enable'), enabled: z.boolean() }).strict(),
   z.object({ action: z.literal('add'), peer: peerSchema }).strict(),
   peerSchema
     .pick({ officeId: true, label: true, tags: true, projects: true })
-    .extend({ action: z.literal('update'), codexHostId: hostSchema })
+    .extend({ action: z.literal('update'), codexHostId: hostSchema, color: colorSchema })
     .strict(),
   z.object({ action: z.literal('remove'), officeId: z.uuid() }).strict(),
 ]);
@@ -48,7 +67,8 @@ interface Held {
   timer?: ReturnType<typeof setTimeout>;
   controller?: AbortController;
 }
-export const linkedProjectKey = (name: string) => `federation-project:${wireId(name)}`;
+export const linkedProjectKey = (name: string, officeId: string) =>
+  `federation-project:${officeId}:${wireId(name)}`;
 export function importSession(
   s: WireSession,
   peer: PeerInput,
@@ -106,18 +126,19 @@ export function importSession(
     events: s.events.map((e) => ({ ...e, id: id(e.id), sourceRef: '' })),
     usage: s.usage,
     artifacts: [],
-    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
+    revision: `${s.revision}:${stale}:${conversation}:${wireId(JSON.stringify([peer.color, peer.label, peer.tags, peer.projects, !!peer.sendToken]))}`,
     zone: s.zone,
     officeSeat: s.officeSeat,
     area: {
       key: linked
-        ? linkedProjectKey(linked)
+        ? linkedProjectKey(linked, peer.officeId)
         : `remote-project:${peer.officeId}:${wireId(s.project)}`,
       name: linked ?? s.project,
       ruleId: `remote:${peer.officeId}`,
       match: 'session',
     },
     remote: {
+      color: peer.color,
       officeId: peer.officeId,
       sessionId: s.id,
       label: peer.label,
@@ -130,7 +151,7 @@ export function importSession(
   };
 }
 
-/** Only peer configuration is persisted. Remote contents stay in bounded process memory. */
+/** Only configuration and local hiding times persist. Remote contents stay in memory. */
 export class PeerManager extends EventEmitter {
   private config: z.infer<typeof configSchema> = { enabled: false, peers: [] };
   private held = new Map<string, Held>();
@@ -139,6 +160,9 @@ export class PeerManager extends EventEmitter {
   private closed = false;
   configError: string | null = null;
   private activeSends = new Set<string>();
+  private hidden: Record<string, number> = {};
+  private hiddenError = false;
+  private visibilityError: string | null = null;
   constructor(
     private dir: string,
     private request = peerRequest,
@@ -151,10 +175,18 @@ export class PeerManager extends EventEmitter {
       );
       if (new Set(this.config.peers.map((p) => p.officeId)).size !== this.config.peers.length)
         throw new Error('duplicate');
+      assignColors(this.config.peers);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT')
         this.configError = 'Invalid beta peer configuration; connections disabled';
       this.config = { enabled: false, peers: [] };
+    }
+    try {
+      this.hidden = hiddenSchema.parse(
+        JSON.parse(readFileSync(path.join(dir, 'hidden.json'), 'utf8')),
+      );
+    } catch (e) {
+      this.hiddenError = (e as NodeJS.ErrnoException).code !== 'ENOENT';
     }
   }
   get enabled() {
@@ -167,7 +199,9 @@ export class PeerManager extends EventEmitter {
   state(): FederationState {
     return {
       enabled: this.enabled,
-      error: this.configError,
+      error:
+        this.configError ??
+        (this.hiddenError ? 'Invalid local remote visibility state' : this.visibilityError),
       codexHosts: this.relay?.hosts() ?? [],
       peers: this.config.peers.map(({ token: _token, sendToken, ...peer }) => {
         const h = this.held.get(peer.officeId);
@@ -205,6 +239,7 @@ export class PeerManager extends EventEmitter {
               label: command.label,
               tags: command.tags,
               projects: command.projects,
+              color: command.color ?? p.color,
               codexHostId: command.codexHostId,
             }
           : p,
@@ -213,15 +248,26 @@ export class PeerManager extends EventEmitter {
       if (!next.enabled) throw new Error('Enable the beta before adding a peer');
       next.peers = [
         ...next.peers.filter((p) => p.officeId !== command.peer.officeId),
-        command.peer,
+        {
+          ...command.peer,
+          color: next.peers.find((p) => p.officeId === command.peer.officeId)?.color,
+        },
       ];
     }
+    assignColors(next.peers);
     configSchema.parse(next);
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     const tmp = path.join(this.dir, 'peers.json.tmp');
     writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
     renameSync(tmp, path.join(this.dir, 'peers.json'));
-    this.cancel();
+    // Display edits can reuse live snapshots. Only a routing/config change invalidates requests.
+    const previous =
+      command.action === 'update'
+        ? this.config.peers.find((p) => p.officeId === command.officeId)
+        : undefined;
+    const displayOnly =
+      command.action === 'update' && previous && previous.codexHostId === command.codexHostId;
+    if (!displayOnly) this.cancel();
     this.config = next;
     this.configError = null;
     this.emit('change');
@@ -308,6 +354,7 @@ export class PeerManager extends EventEmitter {
         if (h.receivedAt && Date.now() - h.receivedAt > 86400_000) h.snapshot = undefined;
       }
       if (!current()) return;
+      this.revealConversations();
       this.emit('change');
       const delay = h.failures ? Math.min(60000, 5000 * 2 ** Math.min(h.failures - 1, 4)) : 5000;
       h.timer = setTimeout(() => void poll(), delay);
@@ -322,10 +369,84 @@ export class PeerManager extends EventEmitter {
       if (!h?.snapshot || !h.receivedAt) return [];
       const stale =
         h.state !== 'connected' || h.snapshot.paused || Date.now() - h.receivedAt > 15000;
-      return h.snapshot.sessions.map((s) =>
-        importSession(s, p, h.receivedAt!, stale, h.snapshot!.conversation),
-      );
+      return h.snapshot.sessions.map((s) => {
+        const session = importSession(s, p, h.receivedAt!, stale, h.snapshot!.conversation);
+        return { ...session, hiddenAt: this.hidden[session.id] ?? null };
+      });
     });
+  }
+  /** Preflight before a mixed request writes any local colleagues. Rechecked on commit. */
+  checkVeil(ids: string[], on: boolean) {
+    const visible = new Map(this.sessions().map((s) => [s.id, s]));
+    if (!this.enabled || ids.some((id) => !visible.has(id)))
+      throw Error('Remote session unavailable');
+    if (this.hiddenError) throw Error('Invalid local remote visibility state');
+    const offices = new Set(this.config.peers.map((p) => p.officeId));
+    const next = Object.fromEntries(
+      Object.entries(this.hidden).filter(([id]) => offices.has(parseRemoteId(id).officeId)),
+    );
+    const now = Date.now();
+    for (const id of ids) {
+      if (on) next[id] = this.hideTime(visible.get(id)!, now);
+      else delete next[id];
+    }
+    hiddenSchema.parse(next);
+    return next;
+  }
+  /**
+   * The hiding time on the peer's clock: its last answer's `sampledAt` moved on by the time
+   * since, and never before anything this viewer was already shown. It is compared with the
+   * peer's own event times, so a skewed clock must neither undo a hide on an already-seen reply
+   * nor swallow a new conversation.
+   */
+  private hideTime(s: Session, now: number) {
+    const h = this.held.get(parseRemoteId(s.id).officeId);
+    const clock = h?.snapshot && h.receivedAt ? h.snapshot.sampledAt + (now - h.receivedAt) : now;
+    return Math.max(0, clock, s.activity?.at ?? 0, ...s.events.map((e) => e.at));
+  }
+  private saveHidden(next: Record<string, number>) {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const file = path.join(this.dir, 'hidden.json');
+    writeFileSync(`${file}.tmp`, JSON.stringify(next), { mode: 0o600 });
+    renameSync(`${file}.tmp`, file);
+    this.hidden = next;
+    this.visibilityError = null;
+  }
+  /** This viewer's hide/restore only: no peer request, remote content or local session write. */
+  veil(ids: string[], on: boolean) {
+    this.saveHidden(this.checkVeil(ids, on));
+    this.emit('change');
+  }
+  private revealConversations() {
+    const next = { ...this.hidden };
+    let changed = false;
+    const sessions = this.sessions();
+    const byId = new Map(sessions.map((s) => [s.id, s]));
+    for (const resident of officeResidents(sessions).sessions) {
+      const members = (resident.resident?.sessionIds ?? [resident.id]).map((id) => byId.get(id)!);
+      if (!members.some((s) => next[s.id])) continue;
+      // Remote snapshots carry public events, not the source office's notice receipts.
+      // Retire the marker once a conversation is observed: bounded events may later disappear.
+      if (
+        members.some(needsAttention) ||
+        !isVeiled(
+          members,
+          members.flatMap((s) => noticeCandidates(s)),
+        )
+      ) {
+        for (const s of members) delete next[s.id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    try {
+      this.saveHidden(next);
+    } catch {
+      // A viewer disk error must not turn a healthy peer into a rejected connection or re-hide
+      // an observed conversation in this run. Report that restart persistence could not save.
+      this.hidden = next;
+      this.visibilityError = 'Could not save local remote visibility state';
+    }
   }
   linkedProjects() {
     return new Set(this.enabled ? this.config.peers.flatMap((p) => Object.values(p.projects)) : []);

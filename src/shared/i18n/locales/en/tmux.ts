@@ -1,4 +1,10 @@
 export const tmux = {
+  wake: 'Resume remotely',
+  wakeConfirm: 'Reopen this Codex conversation on the remote computer? No message will be sent.',
+  wakeMissing:
+    'No verified destination can reopen this conversation. Check the remote app, CLI and running sessions.',
+  wakeUncertain: 'The remote send target is still unconfirmed. Check the target again in a moment.',
+  wakeReady: 'Remote sending is ready. Review your draft and send it.',
   remoteTitle: 'Summon in this remote office',
   remoteConfirm: 'Start a new agent on this remote computer?',
   remoteStart: 'Start remotely',

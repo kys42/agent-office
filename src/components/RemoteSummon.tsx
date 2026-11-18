@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { useI18n } from '../lib/i18n';
 import { Modal } from './Modal';
 import type { Session } from '../shared/types';
-import type { RemoteLaunchInfo, RemoteLaunchSpec } from '../shared/remote-launch';
+import type { RemoteLaunchInfo, RemoteSummonSpec } from '../shared/remote-launch';
 
 export function RemoteSummon({
   projects,
@@ -21,7 +21,7 @@ export function RemoteSummon({
   } = useI18n();
   const [open, setOpen] = useState(false);
   const [id, setId] = useState(projects[0].id);
-  const [spec, setSpec] = useState<RemoteLaunchSpec>({
+  const [spec, setSpec] = useState<RemoteSummonSpec>({
     provider: 'claude',
     host: 'tmux',
     name: t.summonDefault,
@@ -42,7 +42,7 @@ export function RemoteSummon({
       if (!current) setId(projects[0].id);
     }
   }, [ids, privacy, current, projects]);
-  const change = (patch: Partial<RemoteLaunchSpec>) => {
+  const change = (patch: Partial<RemoteSummonSpec>) => {
     setSpec({ ...spec, ...patch });
     setInfo(null);
     setError('');
@@ -133,7 +133,7 @@ export function RemoteSummon({
                     disabled={busy}
                     value={spec.provider}
                     onChange={(e) =>
-                      change({ provider: e.target.value as RemoteLaunchSpec['provider'] })
+                      change({ provider: e.target.value as RemoteSummonSpec['provider'] })
                     }
                   >
                     <option value="claude">Claude</option>
@@ -146,7 +146,7 @@ export function RemoteSummon({
                     aria-label={t.remoteHost}
                     disabled={busy}
                     value={spec.host}
-                    onChange={(e) => change({ host: e.target.value as RemoteLaunchSpec['host'] })}
+                    onChange={(e) => change({ host: e.target.value as RemoteSummonSpec['host'] })}
                   >
                     {(['tmux', 'orca'] as const).map((host) => (
                       <option key={host} value={host}>

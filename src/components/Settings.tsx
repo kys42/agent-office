@@ -60,6 +60,7 @@ import {
   Pin,
   PackageOpen,
   FileText,
+  Download,
 } from 'lucide-react';
 import type {
   AnswerSettings,
@@ -486,6 +487,24 @@ export function Settings({
             );
           })}
           <p className="notify-history-note">{s.notifications.historyNote}</p>
+        </section>
+      )}
+      {/* Desktop: the installed app's launch-time release check (#369). Off: no request. */}
+      {isDesktop && !demo && (
+        <section className="settings-section" data-guide-section="updates" tabIndex={-1}>
+          <h2>{s.updates.title}</h2>
+          <div className="setting-row">
+            <Download size={18} />
+            <div>
+              <b>{s.updates.startupCheck}</b>
+              <p>{s.updates.startupCheckHint}</p>
+            </div>
+            <Toggle
+              checked={p.startupUpdateCheck !== false}
+              label={s.updates.startupCheck}
+              onChange={() => onPrefs({ startupUpdateCheck: p.startupUpdateCheck === false })}
+            />
+          </div>
         </section>
       )}
       {((terminalSend !== undefined && onTerminalSend) || (answers && onAnswers)) && (

@@ -1,4 +1,6 @@
 export const federation = {
+  tinyColor: 'Tiny nameplate color',
+  colors: { sky: 'Sky', lilac: 'Lilac', mint: 'Mint', peach: 'Peach', rose: 'Rose', gold: 'Gold' },
   codexConnection: 'Codex remote connection on this computer',
   codexConnectionOff: 'Find automatically',
   codexConnectionHint:
@@ -23,6 +25,8 @@ export const federation = {
   sendPermission: 'Chat credential included',
   readPermission: 'Read only',
   rooms: 'Offices',
+  allOffices: 'All offices',
+  allOfficesHint: 'All computers together',
   localOffice: 'My computer',
   thisComputer: 'This computer',
   remoteOffice: 'Remote office',

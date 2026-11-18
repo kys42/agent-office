@@ -1,11 +1,16 @@
 import type { OfficeModel } from './office-model';
 import type { Session } from './types';
 import { TRIAGE_ORDER } from './triage';
+import { m } from './i18n';
 
 export const LOCAL_ROOM = 'local';
+export const ALL_ROOMS = 'all';
 export const sessionRoom = (s: Session) => s.remote?.officeId ?? LOCAL_ROOM;
+export const officeLabel = (s: Session, privacy = false) =>
+  s.remote ? (privacy ? m().federation.remoteOffice : s.remote.label) : m().federation.localOffice;
 /** A computer is a whole office. Projects and the three lifecycle spaces stay inside it. */
 export function roomModel(all: OfficeModel, room: string): OfficeModel {
+  if (room === ALL_ROOMS) return all;
   const belongs = (s: Session) => sessionRoom(s) === room;
   const ids = new Set([...all.residents, ...all.hidden].filter(belongs).map((s) => s.id));
   const seats = all.seats.filter((v) => belongs(v.session));

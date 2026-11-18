@@ -552,6 +552,11 @@ export interface Preferences {
   /** Desktop: cards pinned when the app last ran open again where they were. Missing: on. */
   restorePinnedCards?: boolean;
   /**
+   * Desktop: the installed app asks GitHub once per launch for a newer stable release (#369).
+   * Off sends no request at all. Missing: on.
+   */
+  startupUpdateCheck?: boolean;
+  /**
    * Desktop: where the person last started a session (#318): the launch sheet offers it first
    * while it is available, else Orca, else tmux. Missing: never chosen.
    */
@@ -999,6 +1004,7 @@ export type DockAction =
   | 'room-on'
   | 'room-off';
 export interface OfficeAPI {
+  startupRelease?: () => Promise<{ version: string; url: string } | null>;
   appHealth?: () => Promise<import('./app-health').AppHealth>;
   openPrivacy?: (pane: import('./app-health').PrivacyPane) => Promise<void>;
   mobile?: (
