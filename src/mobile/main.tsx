@@ -106,9 +106,12 @@ function Chat({
   }, []);
   const [target, setTarget] = useState<{
     canSend: boolean;
+    canPrepare?: boolean;
     desktop: boolean;
     queues: boolean;
   } | null>(null);
+  const [targetState, setTargetState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const canSend = !!(target?.canSend || target?.canPrepare);
   const [tools, setTools] = useState(false);
   const draftKey = `mobile:draft:${agent.id}`,
     pendingKey = `mobile:pending:${agent.id}`;
@@ -120,7 +123,6 @@ function Chat({
     [olderBusy, setOlderBusy] = useState(false);
   const [notice, setNotice] = useState(''),
     [error, setError] = useState('');
-  const [targetError, setTargetError] = useState('');
   const [latestBusy, setLatestBusy] = useState(false);
   const live = useRef(true),
     scroller = useRef<HTMLDivElement>(null),
@@ -195,11 +197,11 @@ function Chat({
           );
           if (!current()) return;
           setTarget(targets[agent.id] ?? null);
-          setTargetError('');
+          setTargetState('ready');
         } catch (e) {
           if (!current()) return;
           setTarget(null);
-          setTargetError(m().mobile.targetFailed);
+          setTargetState('error');
           if (e instanceof ApiError && [401, 403].includes(e.status)) {
             visibilityDenied = true;
             acceptDetail(null);
@@ -329,7 +331,7 @@ function Chat({
     } else if (live.current) setNotice(m().mobile.uncertain);
   };
   const send = async () => {
-    if (busy || pending || !draft.trim() || !enabled || !target?.canSend) return;
+    if (busy || pending || !draft.trim() || !enabled || !canSend) return;
     const input = { requestId: uuid(), text: draft };
     save(pendingKey, input);
     pendingRef.current = input;
@@ -362,15 +364,19 @@ function Chat({
     ? m().mobile.officeOffline
     : !enabled
       ? m().mobile.enableSend
-      : targetError
-        ? targetError
-        : !target?.canSend
-          ? m().mobile.noTarget
-          : target.desktop
-            ? m().mobile.sendDesktop
-            : target.queues
-              ? m().mobile.sendQueue
-              : m().mobile.sendTerminal;
+      : targetState === 'loading'
+        ? m().mobile.checkingTarget
+        : targetState === 'error'
+          ? m().mobile.targetFailed
+          : !canSend
+            ? m().mobile.noTarget
+            : target?.canPrepare
+              ? m().federation.codexConnectHint
+              : target?.desktop
+                ? m().mobile.sendDesktop
+                : target?.queues
+                  ? m().mobile.sendQueue
+                  : m().mobile.sendTerminal;
   return (
     <section className="chat">
       <header className="chat-header">
@@ -491,10 +497,8 @@ function Chat({
           <button
             className="send-button"
             type="submit"
-            aria-label={m().mobile.send}
-            disabled={
-              busy || !!pending || !enabled || !target?.canSend || agent.stale || !draft.trim()
-            }
+            aria-label={target?.canPrepare ? m().federation.connectAndSend : m().mobile.send}
+            disabled={busy || !!pending || !enabled || !canSend || agent.stale || !draft.trim()}
           >
             <ArrowUp size={22} />
           </button>
