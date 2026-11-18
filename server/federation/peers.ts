@@ -376,7 +376,7 @@ export class PeerManager extends EventEmitter {
   }
   /** Preflight before a mixed request writes any local colleagues. Rechecked on commit. */
   checkVeil(ids: string[], on: boolean) {
-    const visible = new Set(this.sessions().map((s) => s.id));
+    const visible = new Map(this.sessions().map((s) => [s.id, s]));
     if (!this.enabled || ids.some((id) => !visible.has(id)))
       throw Error('Remote session unavailable');
     if (this.hiddenError) throw Error('Invalid local remote visibility state');
@@ -386,22 +386,22 @@ export class PeerManager extends EventEmitter {
     );
     const now = Date.now();
     for (const id of ids) {
-      if (on) next[id] = this.peerClock(parseRemoteId(id).officeId, now);
+      if (on) next[id] = this.hideTime(visible.get(id)!, now);
       else delete next[id];
     }
     hiddenSchema.parse(next);
     return next;
   }
   /**
-   * Now on the peer's clock, from its last answer. The hiding time is compared with the peer's
-   * own event times, so a skewed clock must neither undo a hide on an already-seen reply nor
-   * swallow a new conversation.
+   * The hiding time on the peer's clock: its last answer's `sampledAt` moved on by the time
+   * since, and never before anything this viewer was already shown. It is compared with the
+   * peer's own event times, so a skewed clock must neither undo a hide on an already-seen reply
+   * nor swallow a new conversation.
    */
-  private peerClock(officeId: string, now: number) {
-    const h = this.held.get(officeId);
-    return h?.snapshot && h.receivedAt
-      ? Math.max(0, h.snapshot.sampledAt + (now - h.receivedAt))
-      : now;
+  private hideTime(s: Session, now: number) {
+    const h = this.held.get(parseRemoteId(s.id).officeId);
+    const clock = h?.snapshot && h.receivedAt ? h.snapshot.sampledAt + (now - h.receivedAt) : now;
+    return Math.max(0, clock, s.activity?.at ?? 0, ...s.events.map((e) => e.at));
   }
   private saveHidden(next: Record<string, number>) {
     mkdirSync(this.dir, { recursive: true, mode: 0o700 });
