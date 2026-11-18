@@ -68,6 +68,82 @@ async function changed(manager: PeerManager, action: () => void) {
   await promise;
 }
 
+test('nameplate colors survive legacy config, re-import and restart without entering the wire', () => {
+  const dir = temp();
+  const a = peer(),
+    b = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [a, b] }));
+  const manager = new PeerManager(dir, async () => {
+    throw new Error('offline');
+  });
+  try {
+    assert.deepEqual(
+      manager.state().peers.map((p) => p.color),
+      ['sky', 'lilac'],
+    );
+    const update = {
+      action: 'update',
+      officeId: b.officeId,
+      label: b.label,
+      tags: b.tags,
+      projects: b.projects,
+    };
+    assert.throws(() => manager.command({ ...update, color: '#untrusted' }));
+    manager.command({ ...update, color: 'mint' });
+    manager.command({ action: 'add', peer: { ...b, endpoint: 'https://localhost:9876/' } });
+    const restored = new PeerManager(dir);
+    const configured = restored.state().peers.find((p) => p.officeId === b.officeId)!;
+    assert.equal(configured.color, 'mint');
+    const wire = packet(b).sessions[0];
+    const session = importSession(wire, { ...b, color: configured.color }, Date.now(), false);
+    assert.equal(session.remote?.color, 'mint');
+    assert.notEqual(
+      session.revision,
+      importSession(wire, { ...b, color: 'sky' }, Date.now(), false).revision,
+    );
+    assert.ok(!('color' in wire));
+    restored.close();
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('display-only edits keep the live poll; a new Codex route restarts it', () => {
+  const dir = temp();
+  const a = peer();
+  writeFileSync(path.join(dir, 'peers.json'), JSON.stringify({ enabled: true, peers: [a] }));
+  const signals: AbortSignal[] = [];
+  const relay = { hosts: () => [{ id: 'ssh:mini' }] } as unknown as ConstructorParameters<
+    typeof PeerManager
+  >[2];
+  // Every poll stays in flight, so an abort or a second request shows what the edit did.
+  const manager = new PeerManager(
+    dir,
+    (_peer, _path, signal) => {
+      signals.push(signal!);
+      return new Promise(() => {});
+    },
+    relay,
+  );
+  try {
+    manager.start();
+    assert.equal(signals.length, 1);
+    const update = { action: 'update', officeId: a.officeId, tags: [], projects: {} };
+    manager.command({ ...update, label: 'Renamed', color: 'rose' });
+    assert.equal(signals[0].aborted, false);
+    assert.equal(signals.length, 1);
+    assert.equal(manager.state().peers[0].label, 'Renamed');
+    assert.equal(manager.state().peers[0].color, 'rose');
+    manager.command({ ...update, label: 'Renamed', codexHostId: 'ssh:mini' });
+    assert.equal(signals[0].aborted, true);
+    assert.equal(signals.length, 2);
+  } finally {
+    manager.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('export allowlist removes private fields and opaque keys isolate parents and actors', () => {
   const root = fixture();
   const child = {
