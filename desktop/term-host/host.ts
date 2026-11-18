@@ -295,6 +295,15 @@ export class TermHost implements SessionEvents {
         }
         return null;
       }
+      case 'screen': {
+        const session = this.session(message.sessionId);
+        if (!session.live) throw new RequestError('exited', 'session has exited');
+        return new Promise((resolve, reject) =>
+          session.read((screen) =>
+            screen ? resolve(screen) : reject(new RequestError('exited', 'session has exited')),
+          ),
+        );
+      }
       case 'resize': {
         const session = this.session(message.sessionId);
         const cols = size(message.cols, 'cols');
