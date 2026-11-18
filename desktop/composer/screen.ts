@@ -20,6 +20,13 @@ export interface Screen {
   /** The pane's height in rows, when the host reports it (tmux). */
   height?: number;
   /**
+   * The terminal cursor's cell, 0-based, when the host reports it (tmux `#{cursor_x}`,
+   * `#{cursor_y}`). Claude Code puts it at the caret of the input that has the focus (measured on
+   * 2.1.327: right after `❯ ` in an empty box). A caret below the screen's edge is drawn on the
+   * last row, further along it.
+   */
+  cursor?: { x: number; y: number };
+  /**
    * The pane shows its alternate screen (tmux `#{alternate_on}`), when the host reports it.
    * Claude Code's fullscreen renderer draws there and caps its box (see maxBoxRows); its
    * default (inline) renderer draws on the main screen and shows every row of the box. Reported

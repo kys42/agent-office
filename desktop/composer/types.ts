@@ -44,6 +44,12 @@ export interface ComposerHost {
  *   `logical`: the text as typed — its own line breaks and indents, none of the box's wrapping —
  *   when that can be told for sure: the host reports it apart (Orca's `draft`), or every row
  *   break on screen falls where no wrap could have (see `typedLines`). Absent otherwise.
+ * - `cut`: the box's top rule and first row are the last rows on screen, its lower edge cut off by
+ *   a pane too short for all of the agent's UI. Nothing below that row shows: the rest of the
+ *   box, its footer, a list. Like `closed` for everything but a narrow send (`typesIntoCut`):
+ *   `room`, the cells that one row offers, is given only when the row shows what the agent draws
+ *   only in an empty composer (a blank row may hide rows below it), the screen's edge is proven
+ *   and the input has the focus there. Its text is never read or cleared.
  * - `closed`: no composer on screen (a permission prompt, menu, other view): nothing may be typed.
  * - `unreadable`: the screen could not be read.
  * - `unsupported`: the adapter has no composer to look at (e.g. a queue).
@@ -60,6 +66,7 @@ export type ComposerState =
       rows?: string;
       logical?: string;
     }
+  | { kind: 'cut'; room?: number }
   | { kind: 'closed' }
   | { kind: 'unreadable' }
   | { kind: 'unsupported' };
@@ -116,7 +123,8 @@ export type ClearResult =
  * right after the box was seen holding exactly the expected text, all of it (`state`: that last
  * look). Otherwise nothing was pressed: `changed` the box holds something else now (`state`); `partial` not all of its text
  * is known; `lost` the agent stopped being the one at the terminal; `closed` a dialog or menu
- * replaced the box; `unreadable` the screen could not be read; `unsupported` no such adapter.
+ * replaced the box; `cut` the pane is too short to show the box whole (`ComposerState` `cut`);
+ * `unreadable` the screen could not be read; `unsupported` no such adapter.
  * `accepted` (`submitSuggestion` only): the accept key already went in when it stopped, so the
  * box may now hold the suggestion as typed text; nothing more was pressed.
  */
@@ -125,7 +133,7 @@ export type DraftSubmitOutcome =
   | { status: 'changed'; state: ComposerState; accepted?: boolean }
   | {
       status: 'refused';
-      reason: 'partial' | 'lost' | 'closed' | 'unreadable' | 'unsupported';
+      reason: 'partial' | 'lost' | 'closed' | 'cut' | 'unreadable' | 'unsupported';
       accepted?: boolean;
     };
 
@@ -170,6 +178,12 @@ export interface ComposerAdapter {
     expected: string,
     proceed: () => Promise<boolean>,
   ): Promise<DraftSubmitOutcome>;
+  /**
+   * `text` may be typed into a box cut off by the bottom edge of the screen (`cut` with `room`),
+   * then checked on the one row that shows before Enter: it fits that row and opens nothing
+   * below it (a list there would take Enter out of sight). Absent: never.
+   */
+  typesIntoCut?(state: Extract<ComposerState, { kind: 'cut' }>, text: string): boolean;
 }
 
 /** Ready to type into: typing replaces a suggestion, and the box is otherwise empty. */

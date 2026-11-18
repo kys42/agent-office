@@ -96,6 +96,12 @@ export const desktop = {
     /** A permission prompt, plan approval, menu or `!` shell mode on screen would take the text. */
     notReady:
       "It isn't taking input right now (a question, permission prompt, plan approval, menu or shell mode may be open). For questions, answer on the card above or use 'Answer by chatting instead'; otherwise check the terminal.",
+    /**
+     * The pane is too short: the input box's lower edge (and what is below it) is cut off, so only
+     * a short line at rest can go in, checked on its one visible row.
+     */
+    promptCut:
+      'The terminal window is too short, so the bottom of the input box is cut off and nothing was sent. Make the terminal window taller, then send again.',
     draft: 'There is already text in the prompt. Check the terminal before sending.',
     /** Copying the composer's text to the clipboard failed, so it was left alone. */
     backupFailed:

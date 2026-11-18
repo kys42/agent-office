@@ -8,7 +8,9 @@ import {
   claudeCodeComposer,
   codexQueueComposer,
   composerFor,
+  cutPromptHolds,
   parseStyledScreen,
+  readPrompt,
   sameWrapped,
   type ComposerHost,
   type Screen,
@@ -849,4 +851,199 @@ test('sameWrapped: no wrap is proven across an emoji sequence', () => {
 test('sameWrapped: nor before an emoji word', () => {
   const e = '👨‍👩‍👧'.repeat(6);
   assert.ok(!sameWrapped(`hello\n${e}`, `hello ${e}`, 38));
+});
+
+/**
+ * Claude Code 2.1.327 in an 80×22 tmux pane with a plugin band above the prompt (the pinboard's
+ * open-questions panel, 8 rows): the pane is too short for all of the UI, so the box's lower rule
+ * and the footer are not drawn, and its top rule and `❯` row are the last rows (rows 20 and 21,
+ * then the capture's trailing line break). `prompt` is drawn after `❯ `; the cursor sits right
+ * after the marker (measured: 2,21). Text is a neutral stand-in for what was on screen.
+ */
+const CUT_WIDTH = 80;
+const CUT_RULE = '─'.repeat(CUT_WIDTH);
+const cutRaw = (prompt = '', last: string[] = [`\x1b[38;5;244m${CUT_RULE}`]) => {
+  const transcript = [
+    '❯ an earlier question from the person',
+    '  ⎿  [Image #1]',
+    '',
+    '⏺ Finding how the logs are read',
+    '  ⎿  $ git fetch -q origin',
+    '     grep -n poll src/*.ts',
+    '',
+    '⏺ The poll interval is two seconds.',
+    '',
+    '  Nothing else changed.',
+    '',
+  ];
+  const band = [
+    `\x1b[38;5;220m╭${'─'.repeat(CUT_WIDTH - 1)}`,
+    '\x1b[39m│  Open questions 0/4 0: fold (0 on an empty prompt · clear /pin-clear)',
+    '│',
+    '│ [ ] 1. Merge the first step now?',
+    '│ [ ] 2. Start the second step right away?',
+    '│ [ ] 3. Darken the faint text colour everywhere?',
+    '│ [ ] 4. Ship the Android app?',
+    `\x1b[38;5;220m╰${'─'.repeat(CUT_WIDTH - 1)}`,
+  ];
+  const rows = [
+    ...transcript,
+    ...band,
+    '\x1b[39m',
+    ...last,
+    `\x1b[38;5;246m❯\xa0\x1b[39m${prompt}`,
+  ];
+  // 22 rows, each ending in a line break as `capture-pane -p` prints them.
+  return `${rows.slice(-22).join('\n')}\n`;
+};
+/** tmux, as read with `#{pane_height}` and the cursor (default: right after the marker). */
+const cutScreen = (
+  prompt = '',
+  over: Partial<Pick<Screen, 'height' | 'cursor'>> = {},
+  last?: string[],
+): Screen => ({
+  ...parseStyledScreen(cutRaw(prompt, last)),
+  height: 22,
+  cursor: { x: 2, y: 21 },
+  ...over,
+});
+
+/** An empty box after a reply: Claude's suggestion, faint. */
+const SUGGESTED = '\x1b[2mRun the tests next\x1b[0m';
+
+test('The observed 80×22 screen: a box cut off by the pane edge, typed into only when proven empty', () => {
+  const screen = cutScreen();
+  const lines = screen.text.split('\n');
+  assert.equal(lines.length, 23, '22 rows and the trailing line break');
+  assert.deepEqual(lines.slice(18), [`╰${'─'.repeat(79)}`, '', CUT_RULE, '❯\xa0', '']);
+  // No bottom rule: the whole box is never read from it.
+  assert.equal(readPrompt(screen), null);
+  // A blank row proves nothing: a draft that starts with a line break, its caret moved to the
+  // top, looks the same while the rest of it is below the edge.
+  assert.deepEqual(classifyPrompt(screen), { kind: 'cut' });
+  // What Claude draws only in an empty box does: its suggestion, or a fresh session's example,
+  // drawn faint (the first character plain under the cursor too). Room: 80 columns less `❯ `
+  // and the margin the box's padding may take.
+  for (const empty of [
+    '\x1b[2mRun the tests next\x1b[0m',
+    'R\x1b[2mun the tests next\x1b[0m',
+    '\x1b[2mTry "fix lint errors"\x1b[0m',
+  ])
+    assert.deepEqual(classifyPrompt(cutScreen(empty)), { kind: 'cut', room: 74 }, empty);
+  // Typed text: its rest may be below the edge, and so may a list it opened. Never read.
+  assert.deepEqual(classifyPrompt(cutScreen('hello draft')), { kind: 'cut' });
+  assert.deepEqual(classifyPrompt(cutScreen('/mo')), { kind: 'cut' }, 'a picker cut off below');
+  // Typed and faint together is typing (two plain characters).
+  assert.deepEqual(classifyPrompt(cutScreen('Ru\x1b[2mn the tests next\x1b[0m')), { kind: 'cut' });
+  // The agents view's own placeholder (its box looks the same; there Enter starts a session).
+  for (const faint of ['describe a task for a new session', 'describe a task for a…'])
+    assert.deepEqual(classifyPrompt(cutScreen(`\x1b[2m${faint}\x1b[0m`)), { kind: 'cut' }, faint);
+  // The caret elsewhere: further down the box (drawn on the last row, further along), in a
+  // footer's search field, a row up, or not reported at all.
+  for (const cursor of [{ x: 4, y: 21 }, { x: 18, y: 21 }, { x: 2, y: 20 }, undefined])
+    assert.deepEqual(classifyPrompt(cutScreen(SUGGESTED, { cursor })), { kind: 'cut' });
+  // The edge unproven (no height) or the box ending above it (some frame drawn short).
+  assert.deepEqual(classifyPrompt(cutScreen(SUGGESTED, { height: undefined })), { kind: 'cut' });
+  assert.deepEqual(classifyPrompt(cutScreen(SUGGESTED, { height: 40 })), { kind: 'closed' });
+  // Orca: no styles, no height.
+  assert.deepEqual(classifyPrompt({ text: strip(cutRaw(SUGGESTED)) }), { kind: 'cut' });
+  assert.deepEqual(
+    classifyPrompt({ text: strip(cutRaw()), composer: '' }),
+    { kind: 'cut' },
+    "Orca's composer reported apart",
+  );
+});
+
+test('A cut box is never a dialog, a list or shell mode, and a whole box reads as before', () => {
+  // A dialog's choices are indented (or numbered at column 0): closed, never cut.
+  for (const choice of [' ❯ 1. Yes', '  ❯ 1. Yes', '❯ 1. Yes'])
+    assert.deepEqual(
+      classifyPrompt({
+        ...parseStyledScreen(cutRaw().replace(/❯\xa0\x1b\[39m\n$/, `${choice}\n`)),
+        height: 22,
+      }),
+      { kind: 'closed' },
+      choice,
+    );
+  const dialog = cutScreen('', {}, [CUT_RULE, ' Bash command', ' Do you want to proceed?']);
+  assert.equal(dialog.text.split('\n').at(-2), '❯\xa0');
+  assert.deepEqual(classifyPrompt(dialog), { kind: 'closed' }, 'a title row is no rule');
+  // `!` shell mode changes the marker.
+  assert.deepEqual(
+    classifyPrompt({ ...cutScreen(), text: cutScreen().text.replace(/❯\xa0\n$/, '!\xa0\n') }),
+    { kind: 'closed' },
+  );
+  // A list touching the box from above (completions drawn there) would take Enter.
+  const above = cutScreen('', {}, ['    ◇ src/app.ts', '    ◇ src/api.ts', CUT_RULE]);
+  assert.deepEqual(classifyPrompt(above), { kind: 'closed' });
+  const picked = cutScreen('', {}, ['  ❯ /model    Set the AI model', CUT_RULE]);
+  assert.deepEqual(classifyPrompt(picked), { kind: 'closed' });
+  // A taller pane draws the whole box under the same band: exactly the reading it always had.
+  const whole = (prompt: string) =>
+    tmux(`${cutRaw(prompt)}\x1b[38;5;244m${CUT_RULE}\n${FOOT}\n`, 40);
+  assert.deepEqual(classify(whole('')), { kind: 'empty' });
+  assert.deepEqual(classify(whole('hello draft')), {
+    kind: 'draft',
+    text: 'hello draft',
+    whole: true,
+  });
+  assert.equal(readPrompt(whole('hello draft')), 'hello draft');
+});
+
+test('Only one short line that opens nothing below goes into a cut box, checked on its row', () => {
+  const into = claudeCodeComposer.typesIntoCut!;
+  const ready = { kind: 'cut', room: 74 } as const;
+  assert.ok(into(ready, 'a short reply'));
+  assert.ok(into(ready, 'x'.repeat(74)));
+  assert.ok(!into(ready, 'x'.repeat(75)), 'wider than the row');
+  // Counted at the widest: Korean takes two cells.
+  assert.ok(into(ready, '가'.repeat(37)));
+  assert.ok(!into(ready, '가'.repeat(38)));
+  assert.ok(into(ready, 'see https://example.com/a/b'));
+  for (const text of [
+    'two\nlines',
+    'a\ttab',
+    '/rename a new title',
+    'run it, then /compact',
+    'see @src/app.ts',
+    'mail me@example.com',
+    // Typed, it would read as a dialog's numbered choice: never checked, so never typed.
+    '1. Continue',
+  ])
+    assert.ok(!into(ready, text), text);
+  assert.ok(into(ready, '1.5 is fine'));
+  assert.ok(!into({ kind: 'cut' }, 'a short reply'), 'no room: not empty, or not proven');
+  // What is typed is what the row is checked for: a numbered reply would never pass.
+  assert.ok(!cutPromptHolds(cutScreen('1. Continue', { cursor: { x: 13, y: 21 } }), '1. Continue'));
+  // After typing: the row holds exactly the text, typed (not faint), the caret on that row.
+  const typed = (prompt: string, over = {}) =>
+    cutScreen(prompt, { cursor: { x: 15, y: 21 }, ...over });
+  assert.ok(cutPromptHolds(typed('a short reply'), 'a short reply'));
+  assert.ok(!cutPromptHolds(typed('a short'), 'a short reply'), 'part of it');
+  assert.ok(!cutPromptHolds(typed('a short reply more'), 'a short reply'));
+  assert.ok(!cutPromptHolds(typed('\x1b[2ma short reply\x1b[0m'), 'a short reply'), 'faint');
+  assert.ok(!cutPromptHolds(typed('a short reply', { cursor: { x: 2, y: 20 } }), 'a short reply'));
+  assert.ok(!cutPromptHolds(typed('a short reply', { height: 40 }), 'a short reply'));
+  assert.ok(!cutPromptHolds(typed('a short reply', { height: undefined }), 'a short reply'));
+  assert.ok(!cutPromptHolds(strip(cutRaw('a short reply')), 'a short reply'), 'no pane height');
+});
+
+test('Send as is and the suggestion never act on a cut box', async () => {
+  const host = (screen: Screen): ComposerHost => ({
+    styled: true,
+    read: async () => screen,
+    press: async () => assert.fail('no key'),
+    submit: async () => assert.fail('no Enter'),
+    wait: async () => {},
+  });
+  const proceed = async () => true;
+  assert.deepEqual(
+    await claudeCodeComposer.submitDraft!(host(cutScreen('go on')), 'go on', proceed),
+    { status: 'refused', reason: 'cut' },
+  );
+  const faint = cutScreen('\x1b[2mgo on\x1b[0m');
+  assert.deepEqual(await claudeCodeComposer.submitSuggestion!(host(faint), 'go on', proceed), {
+    status: 'refused',
+    reason: 'cut',
+  });
 });

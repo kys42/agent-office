@@ -802,11 +802,12 @@ export type ComposerDraftView =
   | { kind: 'unknown'; reason: ComposerDraftUnknown };
 /**
  * Why the box was not read: sending is off, the agent's box is not read from here, no verified
- * terminal, the agent is not taking input, a dialog or menu replaced the box, the screen could
- * not be read, or a send is typing into it right now.
+ * terminal, the agent is not taking input, a dialog or menu replaced the box, the pane is too
+ * short to show the box whole (its lower edge cut off), the screen could not be read, or a send
+ * is typing into it right now.
  */
 export type ComposerDraftUnknown =
-  'off' | 'unsupported' | 'no-terminal' | 'not-ready' | 'closed' | 'unreadable' | 'sending';
+  'off' | 'unsupported' | 'no-terminal' | 'not-ready' | 'closed' | 'cut' | 'unreadable' | 'sending';
 /**
  * What submitting the box as it is did. `sent`: Enter went in while the box held exactly the
  * previewed text. `changed`: it held something else, so nothing was pressed; `draft` is the

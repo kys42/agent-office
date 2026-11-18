@@ -52,24 +52,158 @@ function promptBox(screen: Screen): PromptBox | null {
       .replace(/^❯\s?/, '');
   // A slash command typed in full selects its own row: Enter then runs exactly that command.
   const command = /^\/\S+$/.test(typed) ? typed : null;
-  // List rows are indented; queued messages and the person's turns sit at column 0.
-  const picks = (line: string) => {
-    const row = /^\s{2,}❯\s+(\S+)/.exec(line);
-    return !!row && row[1] !== command;
-  };
   const below = lines.slice(bottom + 1);
   // Joined, so a hint wrapped across rows in a narrow pane still reads whole.
   if (
     FOOT.test(below.join(' ').replace(/\s+/g, ' ')) ||
-    below.some((line) => /^\s*❯/.test(line) && (!command || picks(` ${line}`)))
+    below.some((line) => /^\s*❯/.test(line) && (!command || picks(` ${line}`, command)))
   )
     return null;
-  // The list touching the box (rows, wrapped descriptions) up to a blank line; older output
-  // that merely looks like a list is no list.
+  if (listAbove(lines, top, command)) return null;
+  return { lines, top, bottom, typed };
+}
+
+/**
+ * A list's selected row, other than the command typed in full (`command`). List rows are
+ * indented; queued messages and the person's turns sit at column 0.
+ */
+function picks(line: string, command: string | null) {
+  const row = /^\s{2,}❯\s+(\S+)/.exec(line);
+  return !!row && row[1] !== command;
+}
+
+/**
+ * A list touches the box from above (rows, wrapped descriptions) up to a blank line; older
+ * output that merely looks like a list is no list.
+ */
+function listAbove(lines: string[], top: number, command: string | null) {
   const start = lines.slice(0, top).findLastIndex((line) => !line.trim());
   const list = lines.slice(Math.max(start + 1, top - 30), top);
-  if (list.some((line) => /^\s{2,}◇\s/.test(line) || picks(line))) return null;
-  return { lines, top, bottom, typed };
+  return list.some((line) => /^\s{2,}◇\s/.test(line) || picks(line, command));
+}
+
+/** The prompt's first row: the marker at column 0 (a dialog indents its choices). */
+const MARKER_ROW = /^❯(\s|$)/;
+/** A numbered choice, as a dialog draws it: never the prompt, wherever it sits. */
+const CHOICE_ROW = /^❯\s*\d+\.\s/;
+/** Cells the marker takes with its space: an empty box's caret sits right after them. */
+const MARKER_CELLS = 2;
+
+interface CutBox {
+  lines: string[];
+  /** Rows of the rule above the prompt and of its first row, the last thing on screen. */
+  top: number;
+  row: number;
+  /** That row is the pane's last (its height known): the screen's own edge cut the box. */
+  edge: boolean;
+}
+
+/**
+ * Claude Code's box cut off by the bottom edge of the screen: a pane too short for all of its UI
+ * (a plugin band above the prompt, a short window) stops drawing at that edge, leaving the box's
+ * top rule and first row as the last rows on screen (seen on 2.1.327: 80×22, a band of 8 rows).
+ * Only that shape: a rule, then a `❯` row at column 0, then nothing but blank rows; with the
+ * pane height known, that row is its last. A dialog's numbered choice, a list touching the box
+ * from above, and a box that ends higher up than the edge (some frame drawn short) are not it.
+ * Whatever is below that row is unknown: the rest of the box, its footer, a list.
+ */
+function cutBox(screen: Screen): CutBox | null {
+  const lines = screen.text.split('\n').map((line) => line.trimEnd());
+  const row = lines.findLastIndex((line) => !!line.trim());
+  const top = row - 1;
+  if (top < 0 || !MARKER_ROW.test(lines[row]) || CHOICE_ROW.test(lines[row])) return null;
+  if (!RULE.test(lines[top])) return null;
+  const edge = screen.height !== undefined && row === screen.height - 1;
+  if (screen.height !== undefined && !edge) return null;
+  if (listAbove(lines, top, null)) return null;
+  return { lines, top, row, edge };
+}
+
+/**
+ * The agents view's own placeholder (2.1.327): its box looks like the main prompt's, and Enter
+ * there starts a new session with what was typed. Cut short with `…` in a narrow pane.
+ */
+const AGENTS_PLACEHOLDER = 'describe a task for a new session';
+
+/**
+ * The whole composer is empty, proven by what Claude Code draws only in an empty box: its
+ * example or queued-message hint, or its suggestion, drawn faint after the marker (the first
+ * character maybe plain under the cursor, as `classifyPrompt` reads them). A blank row proves
+ * nothing: a draft that starts with a line break, its caret moved to the top, shows the same row
+ * while the rest of it is below the edge. Styles unknown (Orca) prove nothing either, and neither
+ * does the agents view's placeholder.
+ */
+function showsEmpty(screen: Screen, line: string, row: number): boolean {
+  const shown = line.replace(/^❯\s?/, '').trim();
+  if (!shown || !screen.faint) return false;
+  const start = shown.replace(/…$/, '');
+  if (AGENTS_PLACEHOLDER.startsWith(start)) return false;
+  const flags = screen.faint[row] ?? [];
+  let faint = 0;
+  let plain = 0;
+  let plainFirst = false;
+  for (let i = line.indexOf('❯') + 1; i < line.length; i++)
+    if (line[i].trim()) {
+      if (flags[i]) faint++;
+      else if (!plain++ && !faint) plainFirst = true;
+    }
+  return faint > 0 && (plain === 0 || (plain === 1 && plainFirst));
+}
+
+/**
+ * A cut box as a state. Typing may go in (`room`) only when the screen's edge is proven, the
+ * row shows the composer empty (`showsEmpty`), and the cursor sits right after the marker on that
+ * row: the box has the focus, its caret at the start (a caret further down the box, in a footer's
+ * search field or in an overlay would be elsewhere, or past the marker on the last row).
+ */
+function cutState(screen: Screen, cut: CutBox): ComposerState {
+  const line = cut.lines[cut.row];
+  const at = screen.cursor;
+  const caret = !!at && at.y === cut.row && at.x === MARKER_CELLS;
+  const room = [...cut.lines[cut.top]].length - MARKER_CELLS - WRAP_MARGIN;
+  return cut.edge && caret && room >= 10 && showsEmpty(screen, line, cut.row)
+    ? { kind: 'cut', room }
+    : { kind: 'cut' };
+}
+
+/**
+ * Typing that would open something below the box: a command list (`/` at the start of a word,
+ * since a `/` command may be named mid-line) or a file and agent list (`@`). In a cut box that
+ * list is out of sight, and Enter would pick from it instead of submitting.
+ */
+const OPENS_LIST = /@|(?:^|\s)\//;
+
+/**
+ * One line that fits the cut box's row (counted at its widest), opens nothing below it, and will
+ * not read as a dialog's numbered choice once typed (`cutBox` refuses that row, so it could never
+ * be checked).
+ */
+export function typesIntoCut(state: Extract<ComposerState, { kind: 'cut' }>, text: string) {
+  return (
+    state.room !== undefined &&
+    !!text.trim() &&
+    !/[\n\r\t]/.test(text) &&
+    widest(text) <= state.room &&
+    !OPENS_LIST.test(text) &&
+    !CHOICE_ROW.test(`❯ ${text}`)
+  );
+}
+
+/**
+ * After typing into a cut box (`typesIntoCut`): the screen's edge still cuts it, its one row
+ * holds exactly `text` as drawn, none of it faint (a hint or suggestion is not typing), and the
+ * cursor is on that row. A row that shows only part of the text, or anything else, is no match.
+ */
+export function cutPromptHolds(screen: string | Screen, text: string): boolean {
+  const view = asScreen(screen);
+  if (promptBox(view)) return false;
+  const cut = cutBox(view);
+  if (!cut?.edge || view.cursor?.y !== cut.row) return false;
+  const line = cut.lines[cut.row];
+  const flags = view.faint?.[cut.row] ?? [];
+  for (let i = line.indexOf('❯') + 1; i < line.length; i++)
+    if (line[i].trim() && flags[i]) return false;
+  return drawn(line.replace(/^❯\s?/, '')) === drawn(text);
 }
 
 /**
@@ -263,8 +397,9 @@ export function promptHoldsImages(
 export const maxBoxRows = (height: number) => Math.max(MIN_BOX_ROWS, Math.floor((height - 10) / 2));
 /** The fewest rows a box capped by the fullscreen renderer shows (both formulas clamp to it). */
 const MIN_BOX_ROWS = 3;
-// Below height 12 the box's lower edge is cut off (measured at 8–11): no prompt is read there
-// at all, and `wholeText` never counts one whole.
+// Below height 12 the box's lower edge is cut off (measured at 8–11), as in a taller pane with a
+// plugin band above the box: no prompt with text is read there (`cutBox`), and `wholeText`
+// never counts one whole.
 
 /**
  * Placeholders for content the box does not show: a collapsed paste, an attached image, the
@@ -346,7 +481,10 @@ const plainKind = (text: string): 'draft' | 'unknown' =>
  */
 export function classifyPrompt(screen: Screen): ComposerState {
   const box = promptBox(screen);
-  if (!box) return { kind: 'closed' };
+  if (!box) {
+    const cut = cutBox(screen);
+    return cut ? cutState(screen, cut) : { kind: 'closed' };
+  }
   const text = box.typed;
   const rows = box.bottom - box.top - 1;
   const whole = (shown: string) => wholeText(screen, box, shown);
@@ -614,6 +752,7 @@ export const claudeCodeComposer: ComposerAdapter = {
   inspect,
   submitDraft,
   submitSuggestion,
+  typesIntoCut,
   async clear(host, from, backup, proceed, options): Promise<ClearResult> {
     if (!from.whole) {
       if (!options?.allowPartial) return { status: 'failed', state: from, partial: true };
@@ -696,7 +835,8 @@ async function submitDraft(
   let seen: ComposerState = { kind: 'unreadable' };
   const check = async (): Promise<DraftSubmitOutcome | null> => {
     const state = (seen = await inspect(host));
-    if (state.kind === 'closed' || state.kind === 'unreadable')
+    // A cut box shows one row of its text at most, and nothing of what is below it.
+    if (state.kind === 'closed' || state.kind === 'cut' || state.kind === 'unreadable')
       return { status: 'refused', reason: state.kind };
     // Exactly as previewed, indents and wrapping included (`rows`, untrimmed): an indent
     // changed there (Python, YAML) or a resized box re-wrapping is another text, shown again.
@@ -753,7 +893,7 @@ async function submitSuggestion(
     holdsText(state) && state.text === expected && (state.rows ?? state.text) === expected;
   const check = async (): Promise<DraftSubmitOutcome | null> => {
     const state = await inspect(host);
-    if (state.kind === 'closed' || state.kind === 'unreadable')
+    if (state.kind === 'closed' || state.kind === 'cut' || state.kind === 'unreadable')
       return { status: 'refused', reason: state.kind };
     if (host.styled) {
       if (state.kind !== 'suggestion' || state.inferred || state.text !== expected)
@@ -781,7 +921,7 @@ async function submitSuggestion(
   }
   const taken = host.styled ? state.kind === 'draft' : holdsText(state);
   if (!taken || !exact(state) || !(state as { whole?: boolean }).whole)
-    return state.kind === 'closed' || state.kind === 'unreadable'
+    return state.kind === 'closed' || state.kind === 'cut' || state.kind === 'unreadable'
       ? { status: 'refused', reason: state.kind, accepted: true }
       : { status: 'changed', state, accepted: true };
   const sent = await submitDraft(host, expected, proceed);

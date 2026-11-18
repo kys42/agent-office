@@ -6,6 +6,7 @@ export {
   claudeCodeComposer,
   classifyPrompt,
   collapsedPaste,
+  cutPromptHolds,
   drawn,
   placeholderIds,
   promptHolds,
