@@ -5,7 +5,53 @@ import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { demoSnapshot } from '../src/lib/demo.js';
-import { resumeOrigin } from '../server/federation/wake.js';
+import { chmod } from 'node:fs/promises';
+import { peerBinary, resumeOrigin } from '../server/federation/wake.js';
+
+test('a remote wake finds Codex: installed CLI, then PATH, then the desktop app as a last resort', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'peer-binary-'));
+  const exe = async (name: string) => {
+    const file = path.join(dir, name);
+    await writeFile(file, '#!/bin/sh\n');
+    await chmod(file, 0o755);
+    return file;
+  };
+  try {
+    const [installed, onPath, bundled] = await Promise.all([
+      exe('installed'),
+      exe('on-path'),
+      exe('bundled'),
+    ]);
+    const missing = async () => {
+      throw Error('missing');
+    };
+    const deps = (over: Partial<Parameters<typeof peerBinary>[1]>) => ({
+      installed: () => installed,
+      onPath: async () => onPath,
+      bundled: [path.join(dir, 'absent'), bundled],
+      ...over,
+    });
+    assert.equal(await peerBinary('codex', deps({})), installed);
+    // No native CLI found (`bin` falls back to the bare name): the one local resume would use.
+    assert.equal(await peerBinary('codex', deps({ installed: () => 'codex' })), onPath);
+    // Only the desktop app is installed: its bundled CLI.
+    assert.equal(
+      await peerBinary('codex', deps({ installed: () => 'codex', onPath: missing })),
+      bundled,
+    );
+    await assert.rejects(
+      peerBinary('codex', deps({ installed: () => 'codex', onPath: missing, bundled: [] })),
+      /missing/,
+    );
+    // Other tools never look at Codex locations.
+    assert.equal(
+      await peerBinary('tmux', deps({ onPath: async (n: string) => '/x/' + n })),
+      '/x/tmux',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test('wake binds the source and origin to the selected ordinary Codex conversation', async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), 'peer-wake-'));

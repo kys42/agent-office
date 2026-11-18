@@ -1292,17 +1292,18 @@ export function Inspector({
             </div>
           )}
           <div className="card-actions">
-            {s.remote ? (
-              locatable &&
-              terminalSend &&
-              !privacy &&
-              api.remoteLaunch &&
-              s.provider === 'codex' &&
-              ['root', 'fork'].includes(s.relation?.kind ?? 'root') &&
-              ['unknown', 'interactive'].includes(s.origin?.kind ?? 'unknown') &&
-              (!live?.canSend || live.codexRemote) && (
-                <RemoteWake key={s.id} id={s.id} notify={notify} refresh={refreshTargets} />
-              )
+            {/* A remote Codex chat that cannot be reached can be woken on the office that exported
+                it; any other remote colleague keeps the disabled resume button (no local launch). */}
+            {s.remote &&
+            locatable &&
+            terminalSend &&
+            !privacy &&
+            api.remoteLaunch &&
+            s.provider === 'codex' &&
+            ['root', 'fork'].includes(s.relation?.kind ?? 'root') &&
+            ['unknown', 'interactive'].includes(s.origin?.kind ?? 'unknown') &&
+            (!live?.canSend || live.codexRemote) ? (
+              <RemoteWake key={s.id} id={s.id} notify={notify} refresh={refreshTargets} />
             ) : (
               <button
                 className={`card-action ${calling ? 'primary' : ''}`}

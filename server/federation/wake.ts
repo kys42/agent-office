@@ -89,17 +89,37 @@ export async function waitForDestination(s: Session, authorize: () => void) {
   } while (Date.now() < until);
   return false;
 }
-export async function peerBinary(name: string) {
-  if (name === 'codex') {
-    const file = defaultTerminalDeps().bin('codex');
-    if (
-      path.isAbsolute(file) &&
-      (await access(file, constants.X_OK).then(
-        () => true,
-        () => false,
-      ))
-    )
-      return file;
+/** The Codex desktop app's own CLI, for a Mac where the app is the only Codex installed. */
+export const BUNDLED_CODEX = [
+  '/Applications/Codex.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex',
+  '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex',
+];
+const executable = (file: string) =>
+  access(file, constants.X_OK).then(
+    () => true,
+    () => false,
+  );
+/**
+ * The binary a remote summon or wake runs on this (exporting) office. Codex: the shared daemon's
+ * or an installed native CLI (`defaultTerminalDeps`), then the one on PATH as local resume finds
+ * it, and only then the desktop app's bundled CLI. The bundled CLI stays out of `terminals.ts`
+ * `BINARIES`, so local `codex queue` and resume keep the binary they used before.
+ */
+export async function peerBinary(
+  name: string,
+  deps = {
+    installed: () => defaultTerminalDeps().bin('codex'),
+    onPath: (n: string) => defaultResumeDeps.binary(n),
+    bundled: BUNDLED_CODEX,
+  },
+) {
+  if (name !== 'codex') return deps.onPath(name);
+  const file = deps.installed();
+  if (path.isAbsolute(file) && (await executable(file))) return file;
+  try {
+    return await deps.onPath(name);
+  } catch (e) {
+    for (const app of deps.bundled) if (await executable(app)) return app;
+    throw e;
   }
-  return defaultResumeDeps.binary(name);
 }
