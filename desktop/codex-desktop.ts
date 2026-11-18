@@ -4,6 +4,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { cleanInput, TerminalInputError } from './terminals.js';
 import { m } from '../src/shared/i18n/index.js';
+import type { Duplex } from 'node:stream';
+import { windowsCodexPipe } from './codex-windows-pipe.js';
 
 // Observed Desktop IPC contract, not the public app-server protocol. Versioned requests fail
 // closed on incompatible apps. Never start a router, resume a thread, or answer approvals.
@@ -22,6 +24,10 @@ export const remoteCodexHost = (host: string) =>
 class MissingOwnerError extends Error {}
 
 class DesktopIPC {
+  private static windows = new Map<string, { promise: Promise<DesktopIPC>; ipc?: DesktopIPC }>();
+  private users = 0;
+  private idle?: NodeJS.Timeout;
+  private dead = false;
   private buffer: Buffer = Buffer.alloc(0);
   private clientId = 'initializing-client';
   private pending = new Map<
@@ -34,7 +40,10 @@ class DesktopIPC {
       timer: NodeJS.Timeout;
     }
   >();
-  private constructor(private socket: net.Socket) {
+  private constructor(
+    private socket: Duplex,
+    private shared = false,
+  ) {
     socket.on('data', (chunk) => {
       try {
         this.buffer = Buffer.concat([this.buffer, chunk]);
@@ -47,13 +56,46 @@ class DesktopIPC {
           this.receive(frame);
         }
       } catch {
-        this.close();
+        this.destroy();
       }
     });
-    socket.on('error', () => this.close());
-    socket.on('close', () => this.close());
+    socket.on('error', () => this.destroy());
+    socket.on('close', () => this.destroy());
   }
   static async connect(home: string, timeout: number) {
+    if (process.platform !== 'win32') return this.open(home, timeout);
+    let entry = this.windows.get(home);
+    if (!entry) {
+      entry = { promise: this.open(home, timeout, true) };
+      this.windows.set(home, entry);
+    }
+    try {
+      const ipc = await entry.promise;
+      entry.ipc = ipc;
+      if (ipc.dead) throw Error('disconnected');
+      clearTimeout(ipc.idle);
+      ipc.users++;
+      return ipc;
+    } catch (error) {
+      if (this.windows.get(home) === entry) this.windows.delete(home);
+      throw error;
+    }
+  }
+  private static async open(home: string, timeout: number, shared = false) {
+    const socket = shared ? await windowsCodexPipe(home) : await this.posixSocket(home);
+    const ipc = new DesktopIPC(socket, shared);
+    try {
+      const reply = await ipc.request('initialize', { clientType: 'agent-office' }, timeout);
+      if (typeof reply.result?.clientId !== 'string' || !reply.result.clientId)
+        throw Error('invalid-initialize');
+      ipc.clientId = reply.result.clientId;
+      return ipc;
+    } catch (e) {
+      ipc.destroy();
+      throw e;
+    }
+  }
+  private static async posixSocket(home: string) {
     const directory = path.join(home, 'ipc');
     const endpoint = path.join(directory, 'ipc.sock');
     const uid = process.getuid?.();
@@ -69,17 +111,7 @@ class DesktopIPC {
       (file.mode & 0o077) !== 0
     )
       throw Error('unsafe-endpoint');
-    const ipc = new DesktopIPC(net.createConnection(endpoint));
-    try {
-      const reply = await ipc.request('initialize', { clientType: 'agent-office' }, timeout);
-      if (typeof reply.result?.clientId !== 'string' || !reply.result.clientId)
-        throw Error('invalid-initialize');
-      ipc.clientId = reply.result.clientId;
-      return ipc;
-    } catch (e) {
-      ipc.close();
-      throw e;
-    }
+    return net.createConnection(endpoint);
   }
   private write(frame: Frame) {
     const payload = Buffer.from(JSON.stringify(frame));
@@ -163,6 +195,23 @@ class DesktopIPC {
     });
   }
   close() {
+    if (this.shared && !this.dead) {
+      this.users = Math.max(0, this.users - 1);
+      if (!this.users) {
+        clearTimeout(this.idle);
+        this.idle = setTimeout(() => this.destroy(), 3000);
+        this.idle.unref();
+      }
+      return;
+    }
+    this.destroy();
+  }
+  private destroy() {
+    if (this.dead) return;
+    this.dead = true;
+    clearTimeout(this.idle);
+    for (const [home, entry] of DesktopIPC.windows)
+      if (entry.ipc === this) DesktopIPC.windows.delete(home);
     this.socket.destroy();
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);

@@ -47,7 +47,10 @@ export interface CodexOriginScan {
 }
 
 /** The rollout's `session_meta`: who started the session. Null when the file cannot be read. */
-export async function scanCodexOrigin(file: string): Promise<CodexOriginScan | null> {
+export async function scanCodexOrigin(
+  file: string,
+  expectedId?: string,
+): Promise<CodexOriginScan | null> {
   const handle = await open(file, 'r').catch(() => null);
   if (!handle) return null;
   try {
@@ -74,6 +77,7 @@ export async function scanCodexOrigin(file: string): Promise<CodexOriginScan | n
         }
         if (d?.type !== 'session_meta') continue;
         const p = d.payload ?? {};
+        if (expectedId && p.id !== expectedId) return { origin: null, final: true };
         const source = p.source;
         return {
           origin: {

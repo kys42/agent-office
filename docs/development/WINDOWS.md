@@ -18,7 +18,7 @@
 | Git/파일 | Windows APPDATA 기본 경로, 명시한 data override 유지, Git CRLF 줄 분리 | UNC·네트워크 드라이브·WSL 경로 이관/중복은 #166 |
 | 펫/줄/바닥/카드 | 기존 Windows native smoke의 합성 3종·팝업·IPC 저장·격리 검증을 재사용 | 다중 DPI/모니터 해제·음수 좌표·전체 화면·투명 클릭 통과의 수동 매트릭스는 #167 |
 | 트레이/프로세스 | 앱 PNG 컬러 트레이, ICO EXE·창 아이콘, 최소화→열기/닫기→다시 열기 | toast·시작 프로그램은 기존 제품에 없는 기능. crash recovery/업데이트 수명은 #167 |
-| 로컬 터미널 제어 | Orca/tmux/ps/lsof 기반. Windows 이동·전송·질문 응답 미지원 안내 | Windows 소유권/시작 시각/대상 identity 어댑터와 Codex Desktop named pipe 검증은 #166. 임의 창 제목으로 대상을 추정하지 않음 |
+| 로컬 터미널 제어 | Windows의 Codex Desktop에서 이미 열린 일반 사용자 대화는 검증한 named pipe로 전송. Orca/tmux/CLI·질문 응답은 기존 POSIX 경로 | 같은 사용자·설치된 MSIX Codex·OpenAI 서명을 확인. Windows CLI/WSL·터미널 소유권과 질문 응답은 #166. 임의 창 제목으로 대상을 추정하지 않음 |
 | 사용량·GitHub | Claude 파일 자격증명, Codex read-only RPC, gh 경로의 공통 로직 | Windows npm cmd shim·Store 설치/PATH·콘솔 창·deep link fallback·권한은 #166. macOS keychain 경로를 Windows에 적용하지 않음 |
 | WSL | native Windows 로그 위치만 기본 수집 | 배포판 선택·Linux 경로·프로세스 분리·탐색 UX 미구현, #166 |
 | LAN 베타 | PR162의 Windows client 합성 HTTPS/권한 테스트 통과. 이번 PR과 별도 | 이 PC에 connection.json이 없어 실제 Windows↔Mac 조회 미검증. exporter ACL/OpenSSL/방화벽은 #167 |

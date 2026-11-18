@@ -156,6 +156,7 @@ import { CardWindows, type CardMaterial } from './card-windows.js';
 import { isSettingsSection, type SettingsSection } from '../src/shared/settings.js';
 import type { SnapshotPatch } from '../src/shared/snapshot-patch.js';
 import { present, quiet, quietStart } from './quiet.js';
+import { startupRelease } from './release-update.js';
 import { Notifier } from './notify.js';
 /** Test runs read notifications instead of showing them, even when not quiet (CI). */
 const recordNotifications = process.env.AGENT_OFFICE_RECORD_NOTIFICATIONS === '1';
@@ -1117,6 +1118,18 @@ function setupIPC() {
     if (typeof text !== 'string' || text.length > 200_000) throw new Error(m().desktop.badRequest);
     clipboard.writeText(text);
   });
+  // Settings › General › Updates (default on). Off: no request leaves the app. Before the first
+  // pushed snapshot the collector is asked, so a launch never checks while the setting is off.
+  const latestRelease = startupRelease(
+    app.getVersion(),
+    async () => (delivery.latest ?? ((await bridge.call('snapshot')) as Snapshot))?.preferences,
+  );
+  ipcMain.handle('office:startup-release', (e) => {
+    trusted(e);
+    if (e.sender !== main?.webContents || !app.isPackaged || quiet || recordNotifications)
+      return null;
+    return latestRelease();
+  });
   // Whether this page's window is on screen right now (the page also hears each change).
   ipcMain.handle('office:visible', (e) => {
     trustedReader(e);
@@ -1569,10 +1582,12 @@ function setupIPC() {
     const owner = BrowserWindow.fromWebContents(e.sender);
     const options = {
       type: 'question' as const,
-      title: t.summonTitle,
-      message: t.remoteConfirm,
-      detail: `${info.office} · ${spec.host} · ${spec.provider}\n${t.folder}: ${info.cwd}\n${t.agentName}: ${spec.name}\n\n${t.remoteHint}\n\n${spec.initialMessage}`,
-      buttons: [t.cancel, t.remoteStart],
+      title: spec.resume ? t.wake : t.summonTitle,
+      message: spec.resume ? t.wakeConfirm : t.remoteConfirm,
+      detail: spec.resume
+        ? `${info.office} · ${spec.host} · Codex\n${delivery.latest?.sessions.find((s) => s.id === id)?.title ?? info.project}\n${info.cwd}`
+        : `${info.office} · ${spec.host} · ${spec.provider}\n${t.folder}: ${info.cwd}\n${t.agentName}: ${spec.name}\n\n${t.remoteHint}\n\n${spec.initialMessage}`,
+      buttons: [t.cancel, spec.resume ? t.wake : t.remoteStart],
       defaultId: 0,
       cancelId: 0,
     };
@@ -1688,7 +1703,7 @@ function setupIPC() {
       : known.provider === 'codex'
         ? lookupCodexTerminal(known.nativeId, { fresh })
         : Promise.resolve({ kind: 'none' });
-  const sendTargets = async (ids: unknown) => {
+  const sendTargets = async (ids: unknown, focus = true) => {
     if (!Array.isArray(ids) || ids.length > 200 || ids.some((id) => typeof id !== 'string'))
       throw new Error(m().desktop.badRequest);
     const unique = [...new Set(ids as string[])];
@@ -1712,6 +1727,9 @@ function setupIPC() {
             const tab = lookup.kind === 'none' ? await orcaTab(sessions.get(id)) : null;
             return [id, tab ? orcaTabTarget(tab) : null] as const;
           }
+          // Mobile only needs the message transport; terminal screen discovery can take
+          // seconds and must not delay an already available Desktop/queue destination.
+          if (!focus) return [id, codexDestinationTarget(await codex(known))] as const;
           // A screen can be present even while the queue's loaded-thread lookup is unavailable.
           const [thread, screen] = await Promise.all([
             Promise.resolve(codex(known)).catch(() => null),
@@ -2070,7 +2088,7 @@ function setupIPC() {
   mobile = new MobileServer(app.getPath('userData'), path.join(root, 'dist'), {
     snapshot: () => bridge.call('snapshot'),
     detail: (id, page) => bridge.call('detail', [id, page]),
-    targets: sendTargets,
+    targets: (ids) => sendTargets(ids, false),
     send: (id, text, authorized) => sendMessage(id, text, undefined, authorized),
     sendEnabled: terminalSendEnabled,
   });

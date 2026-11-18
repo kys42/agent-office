@@ -462,6 +462,7 @@ body.is-mac .sidebar-top .brand {
   background: var(--accent-2);
 }
 /* Info bars under the toolbar (like Safari / Mail banners) */
+.release-banner,
 .demo-banner,
 .error-banner {
   flex-shrink: 0;
@@ -471,6 +472,10 @@ body.is-mac .sidebar-top .brand {
   padding: 6px 10px 6px 16px;
   font-size: 12px;
   border-bottom: 0.5px solid var(--line-2);
+}
+.release-banner {
+  color: var(--text);
+  background: var(--bg-1);
 }
 .demo-banner {
   color: var(--text-2);
@@ -483,10 +488,12 @@ body.is-mac .sidebar-top .brand {
   color: var(--st-call);
   background: color-mix(in srgb, var(--st-call) 8%, var(--bg-1));
 }
+.release-banner span,
 .demo-banner span,
 .error-banner span {
   flex: 1;
 }
+.release-banner button,
 .demo-banner button,
 .error-banner button {
   display: inline-flex;
@@ -502,6 +509,7 @@ body.is-mac .sidebar-top .brand {
   border: 0.5px solid var(--control-line);
   box-shadow: var(--control-shadow);
 }
+.release-banner button:hover,
 .demo-banner button:hover,
 .error-banner button:hover {
   filter: brightness(0.97);

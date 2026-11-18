@@ -11,6 +11,7 @@ import {
   codexDestinationTarget,
 } from '../../desktop/codex-send.js';
 import { composerFor } from '../../desktop/composer/index.js';
+import { peerTerminalDeps } from './wake.js';
 
 /** Only the owning computer resolves native paths/processes. No handles come from the client. */
 export interface PeerSender {
@@ -33,7 +34,7 @@ export const nativePeerSender: PeerSender = {
     if (s.provider === 'codex') {
       const thread = await findCodexDestination(s.nativeId, s.sourcePath, { fresh: true });
       if (!thread) throw new Error('unavailable');
-      await sendToCodex(thread, text, undefined, authorized);
+      await sendToCodex(thread, text, await peerTerminalDeps(), authorized);
       return;
     }
     if (s.provider !== 'claude') throw new Error('unsupported');

@@ -5,7 +5,12 @@ import { exportSession } from '../../server/federation/protocol';
 import { importSession } from '../../server/federation/peers';
 import { runtimeObservation } from '../../src/shared/runtime';
 
-async function fixture(page: Page, writable = true, combined = false) {
+async function fixture(
+  page: Page,
+  writable = true,
+  combined = false,
+  provider = demoSnapshot().sessions[0].provider,
+) {
   const snapshot = demoSnapshot();
   const local = snapshot.sessions.slice(0, 1).map((s) => ({
     ...s,
@@ -35,6 +40,7 @@ async function fixture(page: Page, writable = true, combined = false) {
       exportSession(
         {
           ...local[0],
+          provider,
           id: `remote-${i}`,
           nativeId: `remote-${i}`,
           alias: '',
@@ -389,4 +395,67 @@ test('unloaded remote Codex offers connect and send, preserving drafts on connec
   await composer.getByRole('button', { name: '연결하고 보내기', exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as any).sends.length)).toBe(1);
   await expect(composer.locator('textarea')).toHaveValue('');
+});
+
+test('remote wake checks the selected office and preserves the draft on cancel and start', async ({
+  page,
+}) => {
+  const { remote } = await fixture(page, true, false, 'codex');
+  await page.evaluate(() => {
+    const w = window as any;
+    w.wakes = [];
+    w.ready = false;
+    w.accept = false;
+    w.office.remoteLaunch = async (id: string, phase: string, spec: unknown) => {
+      w.wakes.push({ id, phase, spec });
+      if (phase === 'start' && w.accept) w.ready = true;
+      return {
+        hosts: { desktop: true, tmux: false, orca: false },
+        status: phase === 'status' ? 'ready' : w.ready ? 'started' : 'cancelled',
+      };
+    };
+    w.office.terminals = async (ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [
+          id,
+          {
+            kind: 'codex',
+            status: w.ready ? 'desktop' : 'unavailable',
+            canSend: w.ready,
+            canFocus: false,
+            remoteOffice: 'MacBook Pro',
+          },
+        ]),
+      );
+  });
+  await page.getByRole('tab', { name: /MacBook Pro/ }).click();
+  await page.locator('.roster .session-row').first().click();
+  const draft = page.locator('.terminal-send-chat textarea');
+  await draft.fill('남겨 둔 초안');
+  expect(await page.evaluate(() => (window as any).wakes)).toEqual([]);
+  await page.getByRole('button', { name: '원격에서 이어 열기', exact: true }).click();
+  const open = page.getByRole('button', { name: 'Codex Desktop · 원격에서 이어 열기' });
+  await open.click();
+  await expect(draft).toHaveValue('남겨 둔 초안');
+  await page.evaluate(() => {
+    (window as any).accept = true;
+  });
+  await open.click();
+  await expect(
+    page
+      .locator('.terminal-send-chat button[type="submit"], .terminal-send-chat button')
+      .filter({ hasText: '보내기' })
+      .first(),
+  ).toBeEnabled();
+  await expect(draft).toHaveValue('남겨 둔 초안');
+  const calls = await page.evaluate(() => (window as any).wakes);
+  expect(calls.map((x: any) => x.phase)).toEqual(['status', 'start', 'start']);
+  expect(remote.map((x) => x.id)).toContain(calls[0].id);
+  for (const x of calls)
+    expect(x).toEqual({
+      id: calls[0].id,
+      phase: x.phase,
+      spec: { resume: true, provider: 'codex', host: 'desktop' },
+    });
+  expect(await page.evaluate(() => (window as any).sends)).toEqual([]);
 });

@@ -63,6 +63,7 @@
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "semver": "^7.8.6",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
@@ -75,6 +76,7 @@
     "@types/node": "^24.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/semver": "^7.8.0",
     "@vitejs/plugin-react": "^6.0.0",
     "concurrently": "^9.2.1",
     "electron": "44.10.0",

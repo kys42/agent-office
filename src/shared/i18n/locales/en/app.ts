@@ -1,6 +1,11 @@
 export const app = {
   docTitle: 'Agent Office',
   docTitleUnread: (n: number) => `(${n}) Agent Office`,
+  releaseNotice: {
+    available: (version: string) => `Agent Office ${version} is available.`,
+    view: 'View release',
+    dismiss: 'Skip this version',
+  },
   tabs: {
     office: { title: 'Our Office', short: 'Office' },
     memory: { title: 'Memory Drawer', short: 'Memory' },

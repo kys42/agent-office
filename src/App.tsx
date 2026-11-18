@@ -1,3 +1,5 @@
+import { ReleaseNotice } from './components/ReleaseNotice';
+import { wantsReleaseCheck } from './shared/release-check';
 import { MiniShellDemoRelease } from './components/MiniShell';
 import { OfficeGuide, type GuideAction } from './components/OfficeGuide';
 import { hasSeenOnboarding, rememberOnboarding } from './lib/onboarding';
@@ -958,6 +960,7 @@ export default function App() {
               </button>
             </div>
           </header>
+          {!demo && isDesktop && <ReleaseNotice enabled={wantsReleaseCheck(prefs)} />}
           {demo && (
             <div className="demo-banner">
               <Sparkles size={14} />
@@ -1050,8 +1053,9 @@ export default function App() {
               model={model}
               showOffice={roomsEnabled && activeRoom === ALL_ROOMS}
               onVeil={(ids, on) => {
-                void veil(ids, on);
-                notify(on ? t.app.toast.hidden : t.app.toast.shown);
+                void veil(ids, on).then((saved) => {
+                  if (saved) notify(on ? t.app.toast.hidden : t.app.toast.shown);
+                });
               }}
               onPin={onPin}
               onSettings={() => openSettings('office')}
